@@ -176,10 +176,12 @@ Demo: "选中一段网页文字 → 系统总结 → 显示结果"
 docs/
   ├─ prd_v1.0.md
   ├─ architecture/
-  │   ├─ layer_overview.png
-  │   ├─ data_flow.png
-  │   ├─ process_topology.png
-  │   └─ state_machines.md
+  │   ├─ README.md
+  │   ├─ layer_overview.md
+  │   ├─ data_flow.md
+  │   ├─ process_topology.md
+  │   ├─ state_machines.md
+  │   └─ open_spikes.md
   ├─ protocols/
   │   ├─ context_packet.schema.json
   │   ├─ task.schema.json
