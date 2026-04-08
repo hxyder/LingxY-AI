@@ -14,6 +14,7 @@ This repository contains the planning documents, task breakdown, and implementat
 ```text
 docs/
   planning/        original planning narrative and review context
+  operations/      failure taxonomy and retry strategy notes
   runtime/         runtime setup notes for concrete integrations
 phases/            formal phase specifications
 phases/tasks/      executable task packets and Git workflow
@@ -48,3 +49,4 @@ Current implemented slices include:
 - file submission pipeline with batch aggregation
 - mockable Kimi CLI JSONL executor
 - browser extension and native host capture scaffold
+- task lifecycle, retry, cancellation, and metrics scaffold

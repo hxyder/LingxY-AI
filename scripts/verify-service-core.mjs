@@ -32,4 +32,16 @@ if (service.endpoints.browserNativeHost !== "native://com.uca.host") {
   throw new Error("Browser native host manifest is invalid.");
 }
 
+if (service.endpoints.metrics !== "/metrics") {
+  throw new Error("Metrics endpoint manifest is invalid.");
+}
+
+if (service.endpoints.cancelTask !== "/task/:id/cancel") {
+  throw new Error("Cancel endpoint manifest is invalid.");
+}
+
+if (service.runtime.metrics.snapshot().queue_depth !== 0) {
+  throw new Error("Metrics registry scaffold did not initialize correctly.");
+}
+
 console.log("Service core scaffold verification passed.");

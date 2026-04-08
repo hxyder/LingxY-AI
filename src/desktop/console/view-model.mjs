@@ -5,7 +5,12 @@ export function createConsoleViewModel() {
     windowId: "console",
     route: "/console",
     defaultState: "hidden",
-    panes: ["task-list", "task-detail", "artifacts", "settings"],
+    panes: ["task-list", "task-detail", "timeline", "artifacts", "settings"],
+    summaryCards: ["running", "queued", "today_success", "today_failed"],
+    filters: ["status", "source_type", "executor", "created_at"],
+    detailSections: ["summary", "timeline", "logs", "artifacts", "retries"],
+    metricsEndpoint: "/metrics",
+    supportsEventReplay: true,
     subscribedChannels: [
       IPC_CHANNELS.consoleOpen,
       IPC_CHANNELS.shellStatus

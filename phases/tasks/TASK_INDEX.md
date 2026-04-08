@@ -11,7 +11,7 @@
 | 4 | UCA-004 | [04_phase1a_service_core.md](04_phase1a_service_core.md) | Phase 1a | UCA-003 | `task/uca-004-phase1a-service-core` | in_progress |
 | 5 | UCA-005 | [05_phase1b_file_entry_and_kimi.md](05_phase1b_file_entry_and_kimi.md) | Phase 1b | UCA-004 | `task/uca-005-phase1b-file-kimi` | in_progress |
 | 6 | UCA-006 | [06_phase1c_browser_extension.md](06_phase1c_browser_extension.md) | Phase 1c | UCA-004 | `task/uca-006-phase1c-browser-extension` | in_progress |
-| 7 | UCA-007 | [07_phase2_status_retry_metrics.md](07_phase2_status_retry_metrics.md) | Phase 2 | UCA-005,UCA-006 | `task/uca-007-phase2-status-metrics` | todo |
+| 7 | UCA-007 | [07_phase2_status_retry_metrics.md](07_phase2_status_retry_metrics.md) | Phase 2 | UCA-005,UCA-006 | `task/uca-007-phase2-status-metrics` | in_progress |
 | 8 | UCA-008 | [08_phase_action_tools.md](08_phase_action_tools.md) | Action Tools | UCA-007 | `task/uca-008-action-tools` | todo |
 | 9 | UCA-009 | [09_phase2_5_security_privacy.md](09_phase2_5_security_privacy.md) | Phase 2.5 | UCA-007,UCA-008 | `task/uca-009-phase2-5-security` | todo |
 | 10 | UCA-010 | [10_phase_scheduler_pending_approval.md](10_phase_scheduler_pending_approval.md) | Scheduler | UCA-008,UCA-009 | `task/uca-010-scheduler-pending-approval` | todo |

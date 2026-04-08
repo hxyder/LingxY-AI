@@ -19,7 +19,8 @@ export async function executeKimiTask({
   env = process.env,
   taskPackage,
   maxRuntimeSeconds = 600,
-  onEvent = () => {}
+  onEvent = () => {},
+  abortSignal
 }) {
   const child = spawn(command, args, {
     env,
@@ -31,6 +32,8 @@ export async function executeKimiTask({
   const parserState = { remainder: "" };
   const stderrPath = path.join(taskPackage.output_requirements.output_dir, "kimi.stderr.log");
   const stderrStream = createWriteStream(stderrPath, { flags: "a" });
+  let aborted = abortSignal?.aborted ?? false;
+  let forceKillTimer = null;
 
   child.stderr.pipe(stderrStream);
 
@@ -60,17 +63,30 @@ export async function executeKimiTask({
   });
 
   const timeoutHandle = setTimeout(() => {
+    aborted = true;
     child.kill("SIGTERM");
   }, maxRuntimeSeconds * 1000);
+
+  const abortListener = () => {
+    aborted = true;
+    child.kill("SIGTERM");
+    forceKillTimer = setTimeout(() => {
+      child.kill("SIGKILL");
+    }, 250);
+  };
+
+  abortSignal?.addEventListener("abort", abortListener, { once: true });
 
   child.stdin.write(`${JSON.stringify(taskPackage)}\n`);
   child.stdin.end();
 
-  const exitCode = await new Promise((resolve, reject) => {
+  const exit = await new Promise((resolve, reject) => {
     child.once("error", reject);
-    child.once("close", resolve);
+    child.once("close", (code, signal) => resolve({ code, signal }));
   }).finally(() => {
     clearTimeout(timeoutHandle);
+    clearTimeout(forceKillTimer);
+    abortSignal?.removeEventListener("abort", abortListener);
     stderrStream.end();
   });
 
@@ -79,8 +95,9 @@ export async function executeKimiTask({
   }
 
   return {
-    status: exitCode === 0 ? "success" : "failed",
-    exitCode,
+    status: aborted || exit.signal ? "cancelled" : exit.code === 0 ? "success" : "failed",
+    exitCode: exit.code,
+    exitSignal: exit.signal,
     events,
     artifacts,
     stderrPath

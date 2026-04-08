@@ -1,0 +1,13 @@
+{
+  "context_capture_error": "上下文读取失败，请确认原始内容仍然可访问后重试。",
+  "permission_denied": "权限不足，请检查文件或系统权限后重试。",
+  "parse_error": "内容解析失败，请确认源文件未损坏、未加密。",
+  "tool_unavailable": "所需外部工具不可用，请先安装或配置对应执行器。",
+  "cli_execution_error": "外部执行器异常退出，请查看日志或切换执行器重试。",
+  "model_call_error": "模型调用失败，请稍后重试或更换模型。",
+  "output_save_error": "结果保存失败，请检查磁盘空间和输出目录权限。",
+  "user_interrupted": "任务已被手动取消，可在调整后重新执行。",
+  "network_error": "网络异常导致任务失败，可稍后自动或手动重试。",
+  "timeout": "任务执行超时，请缩小范围或延长运行时限制。",
+  "internal_error": "发生未分类内部错误，请复制日志并上报。"
+}

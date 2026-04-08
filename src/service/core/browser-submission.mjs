@@ -1,28 +1,17 @@
 import crypto from "node:crypto";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function createId(prefix) {
-  return `${prefix}_${crypto.randomUUID()}`;
-}
-
-function emitTaskEvent({ store, eventBus, taskId, eventType, payload }) {
-  const record = {
-    event_id: createId("evt"),
-    task_id: taskId,
-    ts: nowIso(),
-    event_type: eventType,
-    payload
-  };
-
-  store.appendEvent(record);
-  eventBus.publish(record);
-  return record;
-}
+import {
+  applyExecutorEvent,
+  createTaskRecord,
+  emitTaskEvent,
+  ensureRuntimeServices,
+  markTaskFailed,
+  markTaskSucceeded,
+  registerActiveExecution,
+  unregisterActiveExecution,
+  updateTask
+} from "./task-runtime.mjs";
 
 function createSelectionMetadata(capture) {
   return {
@@ -84,64 +73,87 @@ export function buildBrowserContextPacket({
   };
 }
 
-async function runFastExecutor({ task, runtime, store, eventBus }) {
+async function runFastExecutor({ task, runtime }) {
   const fastExecutor = runtime.executors?.find((executor) => executor.id === "fast");
   if (!fastExecutor) {
     return { status: "queued" };
   }
 
-  task.status = "running";
-  task.updated_at = nowIso();
+  const controller = new AbortController();
+  registerActiveExecution(runtime, task.task_id, {
+    cancel: async () => controller.abort()
+  });
+  runtime.queue.markRunning(task.task_id);
+  updateTask(runtime, task, {
+    status: "running",
+    sub_status: "fast_executor"
+  }, true);
 
-  for await (const event of fastExecutor.execute(task)) {
-    emitTaskEvent({
-      store,
-      eventBus,
-      taskId: task.task_id,
-      eventType: event.event_type,
-      payload: event.payload
-    });
+  try {
+    for await (const event of fastExecutor.execute(task, { signal: controller.signal })) {
+      emitTaskEvent({
+        runtime,
+        taskId: task.task_id,
+        eventType: event.event_type,
+        payload: event.payload
+      });
+      applyExecutorEvent(runtime, task, {
+        type: event.event_type,
+        ...event.payload
+      });
+    }
+
+    if (task.status !== "success") {
+      updateTask(runtime, task, {
+        status: "success",
+        sub_status: "completed",
+        progress: 1
+      }, true);
+    }
+    markTaskSucceeded(runtime, task);
+    return { status: "success" };
+  } catch (error) {
+    markTaskFailed(runtime, task, error);
+    return { status: task.status };
+  } finally {
+    unregisterActiveExecution(runtime, task.task_id);
   }
-
-  task.status = "success";
-  task.updated_at = nowIso();
-  return { status: "success" };
 }
 
 export async function submitBrowserTask({
   capture,
   userCommand,
   runtime,
-  executionMode
+  executionMode,
+  parentTaskId = null,
+  retryCount = 0,
+  executorOverride = null
 }) {
+  ensureRuntimeServices(runtime);
   const store = runtime.store;
-  const eventBus = runtime.eventBus;
   const queue = runtime.queue;
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const route = routeIntent(userCommand);
   const contextPacket = buildBrowserContextPacket({
     capture,
-    traceId: createId("trace"),
-    contextId: createId("ctx")
+    traceId: `trace_${crypto.randomUUID()}`,
+    contextId: `ctx_${crypto.randomUUID()}`
   });
 
-  const task = {
-    task_id: createId("task"),
-    created_at: nowIso(),
-    updated_at: nowIso(),
-    status: "queued",
-    intent: route.intent,
-    executor: route.executor,
-    user_command: userCommand,
-    execution_mode: executionMode ?? (route.requires_confirmation ? "approval_required" : "interactive"),
-    context_packet: contextPacket
-  };
+  const task = createTaskRecord({
+    route,
+    contextPacket,
+    userCommand,
+    executionMode,
+    parentTaskId,
+    retryCount,
+    executorOverride
+  });
 
   store.insertTask(task);
-  queue.enqueue(task);
+  const enqueued = queue.enqueue(task);
   emitTaskEvent({
-    store,
-    eventBus,
+    runtime,
     taskId: task.task_id,
     eventType: "task_created",
     payload: {
@@ -150,26 +162,44 @@ export async function submitBrowserTask({
     }
   });
 
-  if (capture.sourceType === "image") {
-    task.status = "unsupported";
-    task.updated_at = nowIso();
+  if (!enqueued.accepted) {
+    updateTask(runtime, task, {
+      status: "partial_success",
+      sub_status: "deduped_recent_submission"
+    }, true);
     emitTaskEvent({
-      store,
-      eventBus,
+      runtime,
+      taskId: task.task_id,
+      eventType: "partial_success",
+      payload: {
+        deduped_task_id: enqueued.dedupedTaskId
+      }
+    });
+    markTaskSucceeded(runtime, task);
+    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+  }
+
+  if (capture.sourceType === "image") {
+    updateTask(runtime, task, {
+      status: "unsupported",
+      sub_status: "image_pipeline_not_available_in_phase_1c"
+    }, true);
+    emitTaskEvent({
+      runtime,
       taskId: task.task_id,
       eventType: "unsupported",
       payload: {
         reason: "image_pipeline_not_available_in_phase_1c"
       }
     });
-    return { task, taskEvents: store.taskEvents.filter((event) => event.task_id === task.task_id), artifacts: [] };
+    queue.markFinished(task.task_id);
+    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
   }
 
   if (capture.sourceType === "link" && !capture.html) {
     const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
     emitTaskEvent({
-      store,
-      eventBus,
+      runtime,
       taskId: task.task_id,
       eventType: "step_started",
       payload: {
@@ -178,8 +208,7 @@ export async function submitBrowserTask({
       }
     });
     emitTaskEvent({
-      store,
-      eventBus,
+      runtime,
       taskId: task.task_id,
       eventType: "step_finished",
       payload: {
@@ -188,17 +217,17 @@ export async function submitBrowserTask({
     });
   }
 
-  await runFastExecutor({ task, runtime, store, eventBus });
+  await runFastExecutor({ task, runtime });
 
   return {
     task,
-    taskEvents: store.taskEvents.filter((event) => event.task_id === task.task_id),
+    taskEvents: store.getTaskEvents(task.task_id),
     artifacts: []
   };
 }
 
 export function listRecentTasks(store, limit = 5) {
-  return [...store.tasks.values()]
+  return store.listTasks()
     .sort((left, right) => right.created_at.localeCompare(left.created_at))
     .slice(0, limit)
     .map((task) => ({

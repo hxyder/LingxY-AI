@@ -21,6 +21,18 @@ export interface TaskRecord {
   created_at: string;
   updated_at: string;
   status: string;
+  sub_status?: string;
+  progress?: number;
+  current_step?: string | null;
+  completed_steps?: string[];
+  remaining_steps_estimate?: string[];
+  failure_category?: string | null;
+  failure_user_message?: string | null;
+  failure_internal_log_excerpt?: string | null;
+  retryable?: boolean;
+  parent_task_id?: string | null;
+  retry_count?: number;
+  executor_history?: Array<Record<string, unknown>>;
   intent: string;
   executor: string;
   user_command: string;

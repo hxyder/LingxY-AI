@@ -6,22 +6,33 @@ import { routeIntent } from "./router/intent-router.mjs";
 import { createFastExecutorScaffold } from "../executors/fast/fast-executor.mjs";
 import { createKimiCliExecutorScaffold } from "../executors/kimi/kimi-cli-executor.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import { createMetricsRegistry } from "../metrics/registry.mjs";
 
 export function createServiceBootstrap() {
+  const storeAdapter = createInMemoryStoreScaffold();
+  const queue = createTaskQueueScaffold();
   return {
     store: buildStoreManifest(),
     runtime: {
-      storeAdapter: createInMemoryStoreScaffold(),
+      store: storeAdapter,
+      storeAdapter,
       eventBus: createEventBusScaffold(),
-      queue: createTaskQueueScaffold(),
+      queue,
       artifactStore: createArtifactStore(),
-      executors: [createFastExecutorScaffold(), createKimiCliExecutorScaffold()]
+      executors: [createFastExecutorScaffold(), createKimiCliExecutorScaffold()],
+      metrics: createMetricsRegistry({
+        store: storeAdapter,
+        queue
+      })
     },
     routeIntent,
     endpoints: {
       postContext: "/context",
       postTask: "/task",
       getTaskEvents: "/task/:id/events",
+      cancelTask: "/task/:id/cancel",
+      retryTask: "/task/:id/retry",
+      metrics: "/metrics",
       helperSelection: "pipe://uca-helper/explorer-selection",
       browserNativeHost: "native://com.uca.host"
     }
