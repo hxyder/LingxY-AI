@@ -177,6 +177,10 @@ export async function runToolAgentLoop({
     }
 
     const risk = registry.evaluate(tool.id, decision.args, runtime.toolContext ?? {});
+    const securityDecision = runtime.securityBroker?.authorizeToolCall(tool, decision.args) ?? {
+      allowed: true,
+      reason: null
+    };
     runtime.emitTaskEvent?.("tool_call_proposed", {
       tool_id: tool.id,
       args: decision.args,
@@ -188,6 +192,27 @@ export async function runToolAgentLoop({
       args: decision.args,
       risk
     });
+
+    if (!securityDecision.allowed) {
+      runtime.emitTaskEvent?.("tool_call_denied", {
+        tool_id: tool.id,
+        reason: securityDecision.reason
+      });
+      appendAuditLog(runtime, task, "tool.denied", {
+        tool_id: tool.id,
+        reason: securityDecision.reason
+      });
+      transcript.push({
+        type: "tool_denied",
+        tool: tool.id,
+        reason: securityDecision.reason
+      });
+      return {
+        status: "partial_success",
+        final_text: `Blocked tool ${tool.id}: ${securityDecision.reason}`,
+        transcript
+      };
+    }
 
     if (task.execution_mode === "interactive" && risk.requires_confirmation) {
       const interactiveDecision = await resolveInteractiveConfirmation({

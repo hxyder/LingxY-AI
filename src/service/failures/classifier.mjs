@@ -9,6 +9,7 @@ export const FAILURE_CATEGORIES = Object.freeze([
   "user_interrupted",
   "network_error",
   "timeout",
+  "redaction_state_lost",
   "internal_error"
 ]);
 
@@ -23,6 +24,7 @@ const USER_MESSAGES = Object.freeze({
   user_interrupted: "任务已被手动取消，可在调整后重新执行。",
   network_error: "网络异常导致任务失败，可稍后自动或手动重试。",
   timeout: "任务执行超时，请缩小范围或延长运行时限制。",
+  redaction_state_lost: "由于程序异常退出，含敏感数据的任务无法恢复，请重新运行原命令。",
   internal_error: "发生未分类内部错误，请复制日志并上报。"
 });
 
@@ -37,6 +39,7 @@ const USER_ACTIONS = Object.freeze({
   user_interrupted: ["直接重试", "修改命令后重试"],
   network_error: ["等待网络恢复", "再次重试"],
   timeout: ["拆分任务", "提高 max runtime"],
+  redaction_state_lost: ["重新采集原始上下文", "重新运行任务"],
   internal_error: ["复制日志", "提交 issue 或人工排查"]
 });
 
@@ -57,6 +60,8 @@ export function classifyFailure(errorLike) {
     category = "user_interrupted";
   } else if (code.includes("timeout") || message.includes("timeout")) {
     category = "timeout";
+  } else if (message.includes("redaction_state_lost") || message.includes("敏感数据的任务无法恢复")) {
+    category = "redaction_state_lost";
   } else if (code.includes("enotfound") || code.includes("econn") || message.includes("network")) {
     category = "network_error";
   } else if (message.includes("parse") || message.includes("pdf") || message.includes("docx")) {
@@ -73,7 +78,7 @@ export function classifyFailure(errorLike) {
 
   return {
     category,
-    retryable: !["permission_denied", "parse_error"].includes(category),
+    retryable: !["permission_denied", "parse_error", "redaction_state_lost"].includes(category),
     userMessage: USER_MESSAGES[category],
     userActions: USER_ACTIONS[category],
     internalExcerpt: clip(errorLike?.message ?? errorLike?.stderr ?? errorLike?.stack ?? errorLike?.summary ?? "")

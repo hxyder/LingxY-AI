@@ -67,6 +67,25 @@ export async function submitActionToolTask({
     executor: task.executor
   });
 
+  const inspection = runtime.securityBroker.inspectContext(contextPacket, {
+    taskId: task.task_id,
+    trigger: "action_tool_submission"
+  });
+  if (!inspection.allowed) {
+    markTaskFailed(runtime, task, {
+      message: `Security broker blocked action tool task: ${inspection.reason}`
+    });
+    return {
+      task,
+      taskEvents: runtime.store.getTaskEvents(task.task_id),
+      artifacts: []
+    };
+  }
+
+  task.context_packet = inspection.contextPacket;
+  runtime.store.updateTask(task.task_id, task);
+  runtime.securityBroker.registerTaskRedactionMap(task.task_id, inspection.redactionMap);
+
   updateTask(runtime, task, {
     status: "running",
     sub_status: "tool_loop"

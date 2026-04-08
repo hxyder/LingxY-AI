@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { classifyFailure } from "../failures/classifier.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
+import { createSecurityBroker } from "../security/broker.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -24,6 +25,7 @@ export function ensureRuntimeServices(runtime) {
     store: runtime.store,
     queue: runtime.queue
   });
+  runtime.securityBroker ??= createSecurityBroker({ runtime });
   return runtime;
 }
 
@@ -174,6 +176,7 @@ export function markTaskFailed(runtime, task, errorLike) {
     }
   ];
   runtime.store.updateTask(task.task_id, task);
+  runtime.securityBroker?.clearTaskRedactionMap(task.task_id);
   runtime.queue.markFinished(task.task_id);
   return failure;
 }
@@ -188,6 +191,7 @@ export function markTaskSucceeded(runtime, task) {
     }
   ];
   runtime.store.updateTask(task.task_id, task);
+  runtime.securityBroker?.clearTaskRedactionMap(task.task_id);
   runtime.queue.markFinished(task.task_id);
 }
 

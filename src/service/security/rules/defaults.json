@@ -1,0 +1,25 @@
+{
+  "global_kill_switch": false,
+  "offline_mode": false,
+  "presenter_mode": false,
+  "blocklist": {
+    "process_names": ["KeePass.exe", "1Password.exe", "BankClient.exe"],
+    "window_title_patterns": ["(?i)password", "(?i)credit\\s*card", "(?i)login"],
+    "url_domains": ["bank.example.com", "*.gov.cn"]
+  },
+  "allowlist": {
+    "enable_only": false,
+    "process_names": [],
+    "url_domains": []
+  },
+  "field_redaction": {
+    "enabled_rules": ["email", "phone_cn", "idcard_cn", "bankcard", "jwt", "ipv4"],
+    "user_custom_rules": []
+  },
+  "data_retention": {
+    "clipboard_cache_minutes": 5,
+    "screenshot_hours": 24,
+    "artifact_days": 30,
+    "audit_log_days": 90
+  }
+}

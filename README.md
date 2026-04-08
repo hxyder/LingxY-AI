@@ -16,6 +16,7 @@ docs/
   planning/        original planning narrative and review context
   action_tools/    action tool authoring and risk docs
   operations/      failure taxonomy and retry strategy notes
+  privacy/         privacy policy and secure data-flow notes
   runtime/         runtime setup notes for concrete integrations
 phases/            formal phase specifications
 phases/tasks/      executable task packets and Git workflow
@@ -52,3 +53,4 @@ Current implemented slices include:
 - browser extension and native host capture scaffold
 - task lifecycle, retry, cancellation, and metrics scaffold
 - action tool registry and execution-mode-aware tool loop scaffold
+- security broker, presenter mode, offline gating, and redaction scaffold

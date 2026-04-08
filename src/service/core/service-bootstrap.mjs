@@ -10,25 +10,28 @@ import { createArtifactStore } from "../store/artifact-store.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createActionToolRegistry } from "../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
+import { createSecurityBroker } from "../security/broker.mjs";
 
 export function createServiceBootstrap() {
   const storeAdapter = createInMemoryStoreScaffold();
   const queue = createTaskQueueScaffold();
+  const runtime = {
+    store: storeAdapter,
+    storeAdapter,
+    eventBus: createEventBusScaffold(),
+    queue,
+    artifactStore: createArtifactStore(),
+    executors: [createFastExecutorScaffold(), createKimiCliExecutorScaffold(), createToolUsingExecutorScaffold()],
+    actionToolRegistry: createActionToolRegistry(BUILTIN_ACTION_TOOLS),
+    metrics: createMetricsRegistry({
+      store: storeAdapter,
+      queue
+    })
+  };
+  runtime.securityBroker = createSecurityBroker({ runtime });
   return {
     store: buildStoreManifest(),
-    runtime: {
-      store: storeAdapter,
-      storeAdapter,
-      eventBus: createEventBusScaffold(),
-      queue,
-      artifactStore: createArtifactStore(),
-      executors: [createFastExecutorScaffold(), createKimiCliExecutorScaffold(), createToolUsingExecutorScaffold()],
-      actionToolRegistry: createActionToolRegistry(BUILTIN_ACTION_TOOLS),
-      metrics: createMetricsRegistry({
-        store: storeAdapter,
-        queue
-      })
-    },
+    runtime,
     routeIntent,
     endpoints: {
       postContext: "/context",
@@ -37,6 +40,8 @@ export function createServiceBootstrap() {
       cancelTask: "/task/:id/cancel",
       retryTask: "/task/:id/retry",
       getPendingApprovals: "/approvals",
+      getAuditLogs: "/audit-log",
+      getSecurityState: "/security/state",
       metrics: "/metrics",
       helperSelection: "pipe://uca-helper/explorer-selection",
       browserNativeHost: "native://com.uca.host"

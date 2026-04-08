@@ -22,6 +22,11 @@ export const DEFAULT_SHORTCUTS = Object.freeze([
     id: "open-console",
     accelerator: "Ctrl+Shift+O",
     description: "Open the main console workspace"
+  },
+  {
+    id: "toggle-presenter-mode",
+    accelerator: "Ctrl+Alt+P",
+    description: "Toggle Presenter Mode"
   }
 ]);
 

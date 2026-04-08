@@ -134,11 +134,15 @@ export async function submitBrowserTask({
   const queue = runtime.queue;
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const route = routeIntent(userCommand);
-  const contextPacket = buildBrowserContextPacket({
+  const rawContextPacket = buildBrowserContextPacket({
     capture,
     traceId: `trace_${crypto.randomUUID()}`,
     contextId: `ctx_${crypto.randomUUID()}`
   });
+  const inspection = runtime.securityBroker.inspectContext(rawContextPacket, {
+    trigger: "browser_submission"
+  });
+  const contextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
 
   const task = createTaskRecord({
     route,
@@ -161,6 +165,15 @@ export async function submitBrowserTask({
       url: contextPacket.url ?? null
     }
   });
+
+  if (!inspection.allowed) {
+    markTaskFailed(runtime, task, {
+      message: `Security broker blocked context capture: ${inspection.reason}`
+    });
+    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+  }
+
+  runtime.securityBroker.registerTaskRedactionMap(task.task_id, inspection.redactionMap);
 
   if (!enqueued.accepted) {
     updateTask(runtime, task, {

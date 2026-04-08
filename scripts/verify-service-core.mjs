@@ -18,6 +18,10 @@ if (!service.runtime.executors.find((executor) => executor.id === "tool_using"))
   throw new Error("Tool-using executor scaffold is missing.");
 }
 
+if (!service.runtime.securityBroker) {
+  throw new Error("Security broker scaffold is missing.");
+}
+
 const route = service.routeIntent("请帮我总结剪贴板内容");
 if (route.intent !== "summarize") {
   throw new Error("Intent router scaffold did not resolve summarize.");
@@ -46,6 +50,14 @@ if (service.endpoints.cancelTask !== "/task/:id/cancel") {
 
 if (service.endpoints.getPendingApprovals !== "/approvals") {
   throw new Error("Pending approvals endpoint manifest is invalid.");
+}
+
+if (service.endpoints.getAuditLogs !== "/audit-log") {
+  throw new Error("Audit log endpoint manifest is invalid.");
+}
+
+if (service.endpoints.getSecurityState !== "/security/state") {
+  throw new Error("Security state endpoint manifest is invalid.");
 }
 
 if (service.runtime.metrics.snapshot().queue_depth !== 0) {
