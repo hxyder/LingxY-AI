@@ -14,6 +14,10 @@ if (!service.runtime.executors.find((executor) => executor.id === "kimi")) {
   throw new Error("Kimi executor scaffold is missing.");
 }
 
+if (!service.runtime.executors.find((executor) => executor.id === "tool_using")) {
+  throw new Error("Tool-using executor scaffold is missing.");
+}
+
 const route = service.routeIntent("请帮我总结剪贴板内容");
 if (route.intent !== "summarize") {
   throw new Error("Intent router scaffold did not resolve summarize.");
@@ -40,8 +44,16 @@ if (service.endpoints.cancelTask !== "/task/:id/cancel") {
   throw new Error("Cancel endpoint manifest is invalid.");
 }
 
+if (service.endpoints.getPendingApprovals !== "/approvals") {
+  throw new Error("Pending approvals endpoint manifest is invalid.");
+}
+
 if (service.runtime.metrics.snapshot().queue_depth !== 0) {
   throw new Error("Metrics registry scaffold did not initialize correctly.");
+}
+
+if (service.runtime.actionToolRegistry.list().length !== 12) {
+  throw new Error("Action tool registry scaffold did not initialize correctly.");
 }
 
 console.log("Service core scaffold verification passed.");

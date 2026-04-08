@@ -5,12 +5,13 @@
   "type": "module",
   "description": "Repository bootstrap and architecture skeleton for Universal Context Agent.",
   "scripts": {
-    "check": "node scripts/verify-structure.mjs && node scripts/verify-desktop-shell.mjs && node scripts/verify-service-core.mjs && node scripts/verify-file-kimi.mjs && node scripts/verify-browser-extension.mjs && node scripts/verify-status-metrics.mjs",
+    "check": "node scripts/verify-structure.mjs && node scripts/verify-desktop-shell.mjs && node scripts/verify-service-core.mjs && node scripts/verify-file-kimi.mjs && node scripts/verify-browser-extension.mjs && node scripts/verify-status-metrics.mjs && node scripts/verify-action-tools.mjs",
     "verify:structure": "node scripts/verify-structure.mjs",
     "verify:desktop-shell": "node scripts/verify-desktop-shell.mjs",
     "verify:service-core": "node scripts/verify-service-core.mjs",
     "verify:file-kimi": "node scripts/verify-file-kimi.mjs",
     "verify:browser-extension": "node scripts/verify-browser-extension.mjs",
-    "verify:status-metrics": "node scripts/verify-status-metrics.mjs"
+    "verify:status-metrics": "node scripts/verify-status-metrics.mjs",
+    "verify:action-tools": "node scripts/verify-action-tools.mjs"
   }
 }

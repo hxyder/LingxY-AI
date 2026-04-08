@@ -3,6 +3,8 @@ export function createInMemoryStoreScaffold() {
     tasks: new Map(),
     taskEvents: [],
     artifacts: [],
+    pendingApprovals: [],
+    auditLogs: [],
     insertTask(task) {
       this.tasks.set(task.task_id, task);
       return task;
@@ -39,6 +41,32 @@ export function createInMemoryStoreScaffold() {
     },
     getArtifactsForTask(taskId) {
       return this.artifacts.filter((artifact) => artifact.task_id === taskId);
+    },
+    appendPendingApproval(approval) {
+      this.pendingApprovals.push(approval);
+      return approval;
+    },
+    listPendingApprovals() {
+      return [...this.pendingApprovals];
+    },
+    updatePendingApproval(approvalId, patch) {
+      const index = this.pendingApprovals.findIndex((approval) => approval.approval_id === approvalId);
+      if (index === -1) {
+        return null;
+      }
+
+      this.pendingApprovals[index] = {
+        ...this.pendingApprovals[index],
+        ...patch
+      };
+      return this.pendingApprovals[index];
+    },
+    appendAuditLog(entry) {
+      this.auditLogs.push(entry);
+      return entry;
+    },
+    listAuditLogs() {
+      return [...this.auditLogs];
     }
   };
 }

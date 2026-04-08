@@ -14,6 +14,7 @@ This repository contains the planning documents, task breakdown, and implementat
 ```text
 docs/
   planning/        original planning narrative and review context
+  action_tools/    action tool authoring and risk docs
   operations/      failure taxonomy and retry strategy notes
   runtime/         runtime setup notes for concrete integrations
 phases/            formal phase specifications
@@ -50,3 +51,4 @@ Current implemented slices include:
 - mockable Kimi CLI JSONL executor
 - browser extension and native host capture scaffold
 - task lifecycle, retry, cancellation, and metrics scaffold
+- action tool registry and execution-mode-aware tool loop scaffold
