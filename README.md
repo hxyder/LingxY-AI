@@ -54,3 +54,4 @@ Current implemented slices include:
 - task lifecycle, retry, cancellation, and metrics scaffold
 - action tool registry and execution-mode-aware tool loop scaffold
 - security broker, presenter mode, offline gating, and redaction scaffold
+- scheduler, pending approvals, misfire handling, and schedule management scaffold

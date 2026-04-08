@@ -8,6 +8,7 @@
 - [risks/](risks/) contains the current risk register.
 - [action_tools/](action_tools/) contains tool authoring and risk guidance.
 - [privacy/](privacy/) contains privacy policy and data-flow references.
+- [scheduler/](scheduler/) contains trigger, cron, and misfire references.
 - [runtime/](runtime/) contains install and runtime notes for active integrations.
 - [operations/](operations/) contains failure taxonomy and retry strategy docs.
 - [planning/](planning/) keeps the long-form planning context and pre-execution discussion records.

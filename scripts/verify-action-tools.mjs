@@ -31,11 +31,11 @@ function createRuntime(name, extras = {}) {
   };
 }
 
-assert.equal(BUILTIN_ACTION_TOOLS.length, 12);
-assert.equal(Object.keys(ACTION_TOOL_SCHEMAS).length, 12);
+assert.equal(BUILTIN_ACTION_TOOLS.length, 16);
+assert.equal(Object.keys(ACTION_TOOL_SCHEMAS).length, 16);
 
 const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
-assert.equal(registry.list().length, 12);
+assert.equal(registry.list().length, 16);
 assert.equal(evaluateToolRisk(registry.get("send_email_smtp"), { to: ["a@example.com"], subject: "x", body: "y" }, {}).requires_confirmation, true);
 
 let interactivePlannerState = 0;

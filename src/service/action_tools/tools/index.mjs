@@ -176,6 +176,115 @@ export const TAKE_SCREENSHOT_TOOL = {
   }
 };
 
+function getSchedulerRuntime(ctx) {
+  const scheduler = ctx.runtime?.scheduler;
+  if (!scheduler) {
+    throw new Error("Scheduler runtime is unavailable.");
+  }
+  return scheduler;
+}
+
+export const CREATE_SCHEDULED_TASK_TOOL = {
+  id: "create_scheduled_task",
+  name: "Create Scheduled Task",
+  description: "Create a cron, interval, or file-watch schedule.",
+  parameters: ACTION_TOOL_SCHEMAS.create_scheduled_task,
+  risk_level: "high",
+  required_capabilities: ["schedule_manage"],
+  requires_confirmation: true,
+  async execute(args, ctx) {
+    const scheduler = getSchedulerRuntime(ctx);
+    const schedule = scheduler.createSchedule({
+      name: args.name,
+      description: args.description ?? "",
+      trigger: args.trigger,
+      action: args.action,
+      executionMode: args.execution_mode ?? "unattended_safe",
+      catchupPolicy: args.catchup_policy ?? "skip"
+    }, {
+      createdBy: ctx.task ? "agent" : "user"
+    });
+
+    return createActionResult({
+      success: true,
+      observation: `Created schedule ${schedule.schedule_id}`,
+      metadata: {
+        schedule_id: schedule.schedule_id,
+        next_run_at: schedule.next_run_at
+      }
+    });
+  }
+};
+
+export const LIST_SCHEDULED_TASKS_TOOL = {
+  id: "list_scheduled_tasks",
+  name: "List Scheduled Tasks",
+  description: "List configured schedules and their current status.",
+  parameters: ACTION_TOOL_SCHEMAS.list_scheduled_tasks,
+  risk_level: "low",
+  required_capabilities: ["schedule_read"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx) {
+    const scheduler = getSchedulerRuntime(ctx);
+    const schedules = scheduler.listSchedules()
+      .filter((schedule) => args.includeDisabled || schedule.enabled);
+    return createActionResult({
+      success: true,
+      observation: `Listed ${schedules.length} schedules`,
+      metadata: {
+        schedules
+      }
+    });
+  }
+};
+
+export const DELETE_SCHEDULED_TASK_TOOL = {
+  id: "delete_scheduled_task",
+  name: "Delete Scheduled Task",
+  description: "Delete a schedule and its active registrations.",
+  parameters: ACTION_TOOL_SCHEMAS.delete_scheduled_task,
+  risk_level: "high",
+  required_capabilities: ["schedule_manage"],
+  requires_confirmation: true,
+  async execute(args = {}, ctx) {
+    const scheduler = getSchedulerRuntime(ctx);
+    const deleted = scheduler.deleteSchedule(args.schedule_id);
+    return createActionResult({
+      success: Boolean(deleted),
+      observation: deleted ? `Deleted schedule ${args.schedule_id}` : `Schedule ${args.schedule_id} not found`,
+      metadata: {
+        schedule_id: args.schedule_id
+      },
+      error: deleted ? null : "schedule_not_found"
+    });
+  }
+};
+
+export const PAUSE_SCHEDULED_TASK_TOOL = {
+  id: "pause_scheduled_task",
+  name: "Pause Scheduled Task",
+  description: "Pause or resume a schedule.",
+  parameters: ACTION_TOOL_SCHEMAS.pause_scheduled_task,
+  risk_level: "medium",
+  required_capabilities: ["schedule_manage"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx) {
+    const scheduler = getSchedulerRuntime(ctx);
+    const schedule = scheduler.pauseSchedule(args.schedule_id, args.enabled ?? false);
+    return createActionResult({
+      success: Boolean(schedule),
+      observation: schedule
+        ? `${schedule.enabled ? "Resumed" : "Paused"} schedule ${args.schedule_id}`
+        : `Schedule ${args.schedule_id} not found`,
+      metadata: {
+        schedule_id: args.schedule_id,
+        enabled: schedule?.enabled ?? null
+      },
+      error: schedule ? null : "schedule_not_found"
+    });
+  }
+};
+
 export const BUILTIN_ACTION_TOOLS = Object.freeze([
   OPEN_URL_TOOL,
   WEB_SEARCH_TOOL,
@@ -188,5 +297,9 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   NOTIFY_TOOL,
   FILE_OP_TOOL,
   TAKE_SCREENSHOT_TOOL,
-  READ_CLIPBOARD_TOOL
+  READ_CLIPBOARD_TOOL,
+  CREATE_SCHEDULED_TASK_TOOL,
+  LIST_SCHEDULED_TASKS_TOOL,
+  DELETE_SCHEDULED_TASK_TOOL,
+  PAUSE_SCHEDULED_TASK_TOOL
 ]);

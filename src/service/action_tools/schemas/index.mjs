@@ -90,5 +90,59 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     type: "object",
     required: [],
     properties: {}
+  },
+  create_scheduled_task: {
+    type: "object",
+    required: ["name", "trigger", "action"],
+    properties: {
+      name: { type: "string" },
+      description: { type: "string" },
+      trigger: {
+        type: "object",
+        properties: {
+          type: { type: "string", enum: ["cron", "interval", "file_watch", "clipboard_watch"] },
+          expression: { type: "string" },
+          seconds: { type: "integer" },
+          path: { type: "string" },
+          events: { type: "array", items: { type: "string" } },
+          glob: { type: "string" },
+          natural_language: { type: "string" },
+          timezone: { type: "string" }
+        }
+      },
+      action: {
+        type: "object",
+        required: ["type", "target"],
+        properties: {
+          type: { type: "string", enum: ["task_template", "action_tool"] },
+          target: { type: "string" },
+          params: { type: "object" }
+        }
+      },
+      execution_mode: { type: "string", enum: ["unattended_safe", "approval_required"] },
+      catchup_policy: { type: "string", enum: ["skip", "run_once", "run_all"] }
+    }
+  },
+  list_scheduled_tasks: {
+    type: "object",
+    required: [],
+    properties: {
+      includeDisabled: { type: "boolean" }
+    }
+  },
+  delete_scheduled_task: {
+    type: "object",
+    required: ["schedule_id"],
+    properties: {
+      schedule_id: { type: "string" }
+    }
+  },
+  pause_scheduled_task: {
+    type: "object",
+    required: ["schedule_id"],
+    properties: {
+      schedule_id: { type: "string" },
+      enabled: { type: "boolean" }
+    }
   }
 });

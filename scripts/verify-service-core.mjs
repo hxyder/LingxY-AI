@@ -22,6 +22,10 @@ if (!service.runtime.securityBroker) {
   throw new Error("Security broker scaffold is missing.");
 }
 
+if (!service.runtime.scheduler) {
+  throw new Error("Scheduler scaffold is missing.");
+}
+
 const route = service.routeIntent("请帮我总结剪贴板内容");
 if (route.intent !== "summarize") {
   throw new Error("Intent router scaffold did not resolve summarize.");
@@ -52,6 +56,14 @@ if (service.endpoints.getPendingApprovals !== "/approvals") {
   throw new Error("Pending approvals endpoint manifest is invalid.");
 }
 
+if (service.endpoints.approvePendingApproval !== "/approvals/:id/approve") {
+  throw new Error("Approve pending approval endpoint manifest is invalid.");
+}
+
+if (service.endpoints.rejectPendingApproval !== "/approvals/:id/reject") {
+  throw new Error("Reject pending approval endpoint manifest is invalid.");
+}
+
 if (service.endpoints.getAuditLogs !== "/audit-log") {
   throw new Error("Audit log endpoint manifest is invalid.");
 }
@@ -60,11 +72,19 @@ if (service.endpoints.getSecurityState !== "/security/state") {
   throw new Error("Security state endpoint manifest is invalid.");
 }
 
+if (service.endpoints.getSchedules !== "/schedules") {
+  throw new Error("Schedules endpoint manifest is invalid.");
+}
+
+if (service.endpoints.getScheduleRuns !== "/schedules/:id/runs") {
+  throw new Error("Schedule runs endpoint manifest is invalid.");
+}
+
 if (service.runtime.metrics.snapshot().queue_depth !== 0) {
   throw new Error("Metrics registry scaffold did not initialize correctly.");
 }
 
-if (service.runtime.actionToolRegistry.list().length !== 12) {
+if (service.runtime.actionToolRegistry.list().length !== 16) {
   throw new Error("Action tool registry scaffold did not initialize correctly.");
 }
 

@@ -5,6 +5,8 @@ export function createInMemoryStoreScaffold() {
     artifacts: [],
     pendingApprovals: [],
     auditLogs: [],
+    schedules: new Map(),
+    scheduleRuns: [],
     insertTask(task) {
       this.tasks.set(task.task_id, task);
       return task;
@@ -46,6 +48,9 @@ export function createInMemoryStoreScaffold() {
       this.pendingApprovals.push(approval);
       return approval;
     },
+    getPendingApproval(approvalId) {
+      return this.pendingApprovals.find((approval) => approval.approval_id === approvalId) ?? null;
+    },
     listPendingApprovals() {
       return [...this.pendingApprovals];
     },
@@ -60,6 +65,50 @@ export function createInMemoryStoreScaffold() {
         ...patch
       };
       return this.pendingApprovals[index];
+    },
+    insertSchedule(schedule) {
+      this.schedules.set(schedule.schedule_id, schedule);
+      return schedule;
+    },
+    updateSchedule(scheduleId, schedule) {
+      this.schedules.set(scheduleId, schedule);
+      return schedule;
+    },
+    getSchedule(scheduleId) {
+      return this.schedules.get(scheduleId) ?? null;
+    },
+    listSchedules() {
+      return [...this.schedules.values()];
+    },
+    deleteSchedule(scheduleId) {
+      const schedule = this.schedules.get(scheduleId) ?? null;
+      this.schedules.delete(scheduleId);
+      return schedule;
+    },
+    appendScheduleRun(run) {
+      this.scheduleRuns.push(run);
+      return run;
+    },
+    updateScheduleRun(runId, patch) {
+      const index = this.scheduleRuns.findIndex((run) => run.run_id === runId);
+      if (index === -1) {
+        return null;
+      }
+
+      this.scheduleRuns[index] = {
+        ...this.scheduleRuns[index],
+        ...patch
+      };
+      return this.scheduleRuns[index];
+    },
+    getScheduleRun(runId) {
+      return this.scheduleRuns.find((run) => run.run_id === runId) ?? null;
+    },
+    listScheduleRuns(scheduleId = null) {
+      if (!scheduleId) {
+        return [...this.scheduleRuns];
+      }
+      return this.scheduleRuns.filter((run) => run.schedule_id === scheduleId);
     },
     appendAuditLog(entry) {
       this.auditLogs.push(entry);

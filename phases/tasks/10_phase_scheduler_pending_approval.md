@@ -44,18 +44,48 @@
 
 ## 8. 对下一个任务的交接
 
-- 下一个任务：UCA-014
+- 下一个任务：UCA-011、UCA-014
 - 本任务新增了什么：可靠调度与审批队列
 - 下一个任务直接可复用什么：schedule action model、pending approval entity、misfire 规则
 - 还没解决的问题：模板化复用和 DAG 还未引入
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
+- 状态：in_progress
+- 执行分支：`task/uca-010-scheduler-pending-approval`
+- 开始日期：2026-04-08
 - 完成日期：
+- 支持的 trigger 类型：
+  - `cron`
+  - `interval`
+  - `file_watch`
+  - `clipboard_watch`
+- pending_approvals 状态流：
+  - `pending -> approved`
+  - `pending -> rejected`
+  - `pending -> expired`
+  - `pending -> superseded`
+- schedule 上限与保护规则：
+  - 单实例最大 `50` 个 schedule
+  - `approval_required` 一律不直接执行，而是进入 `pending_approvals`
+  - `unattended_safe` 遇到高风险 action tool 会自动转入 `pending_approvals`
+  - misfire `run_all` 仍受恢复枚举上限保护，避免 catch-up 雪崩
+  - 连续失败 `3` 次会自动 disable
 - 实际新增内容：
+  - 新增 `src/service/scheduler/`，落地 `engine / store / dispatch / misfire / failure_guard / nl_to_cron / pending-approvals / execute-action`
+  - 将 `pending_approvals` 从 Action Tool loop 的局部逻辑抽成共享服务，补齐 `approve / reject / expire / superseded / resulting_task_id`
+  - 在 in-memory store 与 SQLite schema manifest 中加入 `schedules / schedule_runs / pending_approvals`
+  - 新增 4 个 scheduler action tools：`create_scheduled_task`、`list_scheduled_tasks`、`delete_scheduled_task`、`pause_scheduled_task`
+  - 新增 console 侧 `schedules` 与 `pending-approvals` 视图模型
+  - 新增 `docs/scheduler/` 与 `scripts/verify-scheduler.mjs`
 - 验证结果：
+  - `npm run check`
+  - `node scripts/verify-scheduler.mjs`
 - 遗留问题：
+  - 真实 `node-cron` / `chokidar` watcher 尚未接入，目前是本地调度骨架与手动事件入口
+  - `pending_approvals` 和 `schedule_runs` 仍是内存态，没有真实 SQLite DAO
+  - task template 执行目前是 fast-executor 占位路径，还不是可配置模板引擎
+  - “编辑参数后批准 / 推迟到明天” 还停留在 view model 和语义层，未接真实 UI 交互
 - 交接给下一个任务：
+  - `UCA-011` 可直接复用 `pending_approvals`、`/approvals`、console 视图模型入口，以及 `execution_mode` 语义做浏览器内动作确认
+  - `UCA-014` 可直接复用 `schedule action model`、`schedule_runs`、misfire 策略和共享审批实体，继续往模板化与 DAG 扩展

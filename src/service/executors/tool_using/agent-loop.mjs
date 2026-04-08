@@ -7,10 +7,6 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function createApprovalId() {
-  return `appr_${crypto.randomUUID()}`;
-}
-
 function defaultPlanner({ task }) {
   const text = task.user_command.toLowerCase();
 
@@ -70,31 +66,6 @@ function appendAuditLog(runtime, task, subtype, payload) {
     event_subtype: subtype,
     payload
   });
-}
-
-function createPendingApproval(runtime, task, tool, args, previewText) {
-  const approval = {
-    approval_id: createApprovalId(),
-    created_at: nowIso(),
-    expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-    source_type: "agent_tool_call",
-    source_id: task.task_id,
-    proposed_action: "action_tool",
-    proposed_target: tool.id,
-    proposed_params: args,
-    preview_text: previewText,
-    status: "pending",
-    decided_at: null,
-    decided_by: null,
-    resulting_task_id: null
-  };
-
-  runtime.store.appendPendingApproval(approval);
-  appendAuditLog(runtime, task, "pending_approval.created", {
-    approval_id: approval.approval_id,
-    tool_id: tool.id
-  });
-  return approval;
 }
 
 async function resolveInteractiveConfirmation({ runtime, task, tool, args, risk }) {
@@ -260,7 +231,14 @@ export async function runToolAgentLoop({
     }
 
     if (task.execution_mode === "approval_required" && risk.requires_confirmation) {
-      const approval = createPendingApproval(runtime, task, tool, decision.args, `Pending tool ${tool.id}`);
+      const approval = runtime.pendingApprovals.create({
+        sourceType: "agent_tool_call",
+        sourceId: task.task_id,
+        proposedAction: "action_tool",
+        proposedTarget: tool.id,
+        proposedParams: decision.args,
+        previewText: `Pending tool ${tool.id}`
+      });
       runtime.emitTaskEvent?.("pending_approval_created", {
         approval_id: approval.approval_id,
         tool_id: tool.id
@@ -279,7 +257,9 @@ export async function runToolAgentLoop({
 
     const result = await registry.call(tool.id, decision.args, {
       ...(runtime.toolContext ?? {}),
-      outputDir: runtime.toolOutputDir
+      outputDir: runtime.toolOutputDir,
+      runtime,
+      task
     });
 
     runtime.emitTaskEvent?.("tool_call_completed", {

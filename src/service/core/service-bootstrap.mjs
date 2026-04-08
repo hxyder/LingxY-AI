@@ -11,6 +11,7 @@ import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createActionToolRegistry } from "../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
+import { createSchedulerRuntime } from "../scheduler/engine.mjs";
 
 export function createServiceBootstrap() {
   const storeAdapter = createInMemoryStoreScaffold();
@@ -22,13 +23,14 @@ export function createServiceBootstrap() {
     queue,
     artifactStore: createArtifactStore(),
     executors: [createFastExecutorScaffold(), createKimiCliExecutorScaffold(), createToolUsingExecutorScaffold()],
-    actionToolRegistry: createActionToolRegistry(BUILTIN_ACTION_TOOLS),
     metrics: createMetricsRegistry({
       store: storeAdapter,
       queue
     })
   };
   runtime.securityBroker = createSecurityBroker({ runtime });
+  runtime.scheduler = createSchedulerRuntime({ runtime });
+  runtime.actionToolRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
   return {
     store: buildStoreManifest(),
     runtime,
@@ -40,8 +42,12 @@ export function createServiceBootstrap() {
       cancelTask: "/task/:id/cancel",
       retryTask: "/task/:id/retry",
       getPendingApprovals: "/approvals",
+      approvePendingApproval: "/approvals/:id/approve",
+      rejectPendingApproval: "/approvals/:id/reject",
       getAuditLogs: "/audit-log",
       getSecurityState: "/security/state",
+      getSchedules: "/schedules",
+      getScheduleRuns: "/schedules/:id/runs",
       metrics: "/metrics",
       helperSelection: "pipe://uca-helper/explorer-selection",
       browserNativeHost: "native://com.uca.host"

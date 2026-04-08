@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { classifyFailure } from "../failures/classifier.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
+import { createPendingApprovalService } from "../scheduler/pending-approvals.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -26,6 +27,7 @@ export function ensureRuntimeServices(runtime) {
     queue: runtime.queue
   });
   runtime.securityBroker ??= createSecurityBroker({ runtime });
+  runtime.pendingApprovals ??= createPendingApprovalService({ runtime });
   return runtime;
 }
 
