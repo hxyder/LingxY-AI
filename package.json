@@ -1,0 +1,11 @@
+{
+  "name": "universal-context-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Repository bootstrap and architecture skeleton for Universal Context Agent.",
+  "scripts": {
+    "check": "node scripts/verify-structure.mjs",
+    "verify:structure": "node scripts/verify-structure.mjs"
+  }
+}

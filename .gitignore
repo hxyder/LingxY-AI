@@ -1,0 +1,46 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / JS
+node_modules/
+dist/
+build/
+coverage/
+.turbo/
+.vite/
+
+# Logs
+*.log
+logs/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Editors
+.idea/
+.vscode/
+*.suo
+*.user
+*.userosscache
+
+# Python / OCR helpers
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime artifacts
+tmp/
+temp/
+.tmp/
+.cache/
+artifacts/
+outputs/
+
+# Local app/runtime
+external/paddle_ocr_runtime/
+
+# Git task leftovers
+*.orig

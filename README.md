@@ -1,0 +1,39 @@
+# Universal Context Agent
+
+This repository contains the planning documents, task breakdown, and implementation skeleton for UCA.
+
+## Start Here
+
+- Planning index: [phases/README.md](phases/README.md)
+- Task execution rules: [phases/tasks/README.md](phases/tasks/README.md)
+- Task order: [phases/tasks/TASK_INDEX.md](phases/tasks/TASK_INDEX.md)
+- Archived planning context: [docs/planning/README.md](docs/planning/README.md)
+
+## Repository Layout
+
+```text
+docs/
+  planning/        original planning narrative and review context
+phases/            formal phase specifications
+phases/tasks/      executable task packets and Git workflow
+src/
+  desktop/         tray / overlay / console skeleton
+  service/         core service and integration skeleton
+  shared/          shared contracts and cross-process types
+browser_ext/       browser extension placeholder
+office_addin/      Office add-in placeholder
+scripts/           verification and repository utility scripts
+tests/             future automated tests
+tools/             local dev utilities
+```
+
+## Current Scope
+
+This bootstrap commit focuses on:
+
+- repository structure
+- Git workflow baseline
+- documentation placement
+- AI provider / code CLI / MCP / skills interface reservations
+
+Business implementation starts in later tasks.
