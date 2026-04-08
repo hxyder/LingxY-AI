@@ -5,8 +5,9 @@
   "type": "module",
   "description": "Repository bootstrap and architecture skeleton for Universal Context Agent.",
   "scripts": {
-    "check": "node scripts/verify-structure.mjs && node scripts/verify-desktop-shell.mjs",
+    "check": "node scripts/verify-structure.mjs && node scripts/verify-desktop-shell.mjs && node scripts/verify-service-core.mjs",
     "verify:structure": "node scripts/verify-structure.mjs",
-    "verify:desktop-shell": "node scripts/verify-desktop-shell.mjs"
+    "verify:desktop-shell": "node scripts/verify-desktop-shell.mjs",
+    "verify:service-core": "node scripts/verify-service-core.mjs"
   }
 }
