@@ -1,0 +1,45 @@
+{
+  "manifest_version": 3,
+  "name": "Universal Context Agent",
+  "version": "0.1.0",
+  "description": "Capture webpage context and forward it to UCA.",
+  "permissions": [
+    "activeTab",
+    "contextMenus",
+    "nativeMessaging",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content_script/selection-cache.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "UCA",
+    "default_popup": "popup/index.html"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "shadow_ui/floating-chip.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

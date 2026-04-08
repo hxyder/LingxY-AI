@@ -23,6 +23,7 @@ src/
   service/         core service and integration skeleton
   shared/          shared contracts and cross-process types
 browser_ext/       browser extension placeholder
+uca-native-host/   native messaging bridge for Chrome / Edge
 office_addin/      Office add-in placeholder
 scripts/           verification and repository utility scripts
 tests/             future automated tests
@@ -46,3 +47,4 @@ Current implemented slices include:
 - desktop shell and service core scaffolds
 - file submission pipeline with batch aggregation
 - mockable Kimi CLI JSONL executor
+- browser extension and native host capture scaffold

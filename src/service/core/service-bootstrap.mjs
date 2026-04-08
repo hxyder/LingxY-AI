@@ -22,7 +22,8 @@ export function createServiceBootstrap() {
       postContext: "/context",
       postTask: "/task",
       getTaskEvents: "/task/:id/events",
-      helperSelection: "pipe://uca-helper/explorer-selection"
+      helperSelection: "pipe://uca-helper/explorer-selection",
+      browserNativeHost: "native://com.uca.host"
     }
   };
 }

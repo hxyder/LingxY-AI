@@ -28,4 +28,8 @@ if (service.endpoints.postTask !== "/task") {
   throw new Error("Task endpoint manifest is invalid.");
 }
 
+if (service.endpoints.browserNativeHost !== "native://com.uca.host") {
+  throw new Error("Browser native host manifest is invalid.");
+}
+
 console.log("Service core scaffold verification passed.");

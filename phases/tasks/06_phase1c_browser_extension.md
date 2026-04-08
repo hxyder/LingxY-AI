@@ -50,11 +50,42 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
+- 状态：in_progress
+- 执行分支：`task/uca-006-phase1c-browser-extension`
+- 开始日期：2026-04-08
 - 完成日期：
 - 实际新增内容：
+  - 新增 `browser_ext/manifest.json`、background/content script/popup/shadow UI 结构
+  - 新增 `uca-native-host/`，完成 Native Messaging framing、request handler、注册 manifest builder
+  - 新增 `src/service/core/browser-submission.mjs`，接入 `text_selection` / `link` / `image` / `webpage` context
+  - 新增浏览器 runtime 文档：扩展安装说明与 Native Messaging 协议说明
+  - 新增 `scripts/verify-browser-extension.mjs`，覆盖 manifest、Native Host framing、browser capture happy path
+- 扩展权限：
+  - `activeTab`
+  - `contextMenus`
+  - `nativeMessaging`
+  - `scripting`
+  - `storage`
+  - `host_permissions: <all_urls>`
+- Native Host 注册方式：
+  - 当前使用 `com.uca.host`
+  - 注册 manifest 的构造函数位于 `uca-native-host/registry-manifest.mjs`
+  - Chrome / Edge 用户级注册说明见 `docs/runtime/install_extension.md`
+- 兼容站点与已知例外：
+  - 默认目标是 Chrome / Edge 的常规网页内容
+  - 图片流程当前只创建 `unsupported` 任务，不做 OCR
+  - Shadow DOM 浮标仅是骨架，复杂 SPA 的重定位和滚动修正仍待 Phase 3/后续补完
 - 验证结果：
+  - `node scripts/verify-structure.mjs` 通过
+  - `node scripts/verify-desktop-shell.mjs` 通过
+  - `node scripts/verify-service-core.mjs` 通过
+  - `node scripts/verify-file-kimi.mjs` 通过
+  - `node scripts/verify-browser-extension.mjs` 通过
 - 遗留问题：
+  - 还没有真实 Chrome / Edge unpacked 安装验证与实际 Native Host 注册表写入
+  - `link` 抓取仍是 placeholder，没有接 `readability`
+  - popup 还没有打开主控制台的真实跳转协议
+  - content script 还没有处理复杂滚动、选区折叠和站点黑名单
 - 交接给下一个任务：
+  - `UCA-007` 可直接复用 browser task 事件流和 `unsupported` 状态来补状态机、失败分类、取消重试
+  - `UCA-011` 可直接扩展 `browser_ext/content_script/selection-cache.js` 与 `shadow_ui/floating-chip.js` 做跟随浮标和浏览器内状态呈现

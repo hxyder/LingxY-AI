@@ -8,7 +8,11 @@ export interface ContextPacketRecord {
   security_level: string;
   redaction_applied: boolean;
   text?: string;
+  html?: string;
+  url?: string;
   file_paths?: string[];
+  image_paths?: string[];
+  selection_metadata?: Record<string, unknown>;
   captured_at: string;
 }
 

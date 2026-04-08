@@ -6,7 +6,8 @@ export const EVENT_TYPES = Object.freeze([
   "log",
   "artifact_created",
   "success",
-  "failed"
+  "failed",
+  "unsupported"
 ]);
 
 export function createEventBusScaffold() {
