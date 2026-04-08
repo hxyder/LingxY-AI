@@ -50,11 +50,28 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
+- 状态：in_progress
+- 执行分支：`task/uca-001-phase0-prd-architecture`
+- 开始日期：2026-04-08
 - 完成日期：
 - 实际新增内容：
+  - 新增 [docs/prd_v1.0.md](/e:/linxi/docs/prd_v1.0.md)
+  - 新增 [docs/architecture/README.md](/e:/linxi/docs/architecture/README.md)
+  - 新增 [docs/architecture/layer_overview.md](/e:/linxi/docs/architecture/layer_overview.md)
+  - 新增 [docs/architecture/data_flow.md](/e:/linxi/docs/architecture/data_flow.md)
+  - 新增 [docs/architecture/process_topology.md](/e:/linxi/docs/architecture/process_topology.md)
+  - 新增 [docs/architecture/open_spikes.md](/e:/linxi/docs/architecture/open_spikes.md)
+  - 更新 [docs/README.md](/e:/linxi/docs/README.md)
+  - 更新 [scripts/verify-structure.mjs](/e:/linxi/scripts/verify-structure.mjs) 以覆盖本任务新增文档
 - 验证结果：
+  - `node scripts/verify-structure.mjs` 通过
+  - 已完成文档自检与主流程自 walkthrough
+  - 外部团队评审尚未执行，因此暂不标记 `done`
 - 遗留问题：
+  - 还没有正式评审纪要
+  - 状态机图、协议 schema、风险登记册仍在 UCA-002
+  - `phases/phase_0_definition.md` 的交付物清单仍是目标态，需要在 UCA-002 一并对齐
 - 交接给下一个任务：
+  - `UCA-002` 可以直接基于本任务的 PRD 与 architecture package 继续冻结协议、FSM 与风险登记
+  - 统一术语以 `docs/prd_v1.0.md` 和 `docs/architecture/*.md` 为准
+  - 本任务明确的 4 个 spike 项在 [docs/architecture/open_spikes.md](/e:/linxi/docs/architecture/open_spikes.md)，后续协议与风险文档必须引用这些 open items

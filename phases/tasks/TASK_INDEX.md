@@ -5,7 +5,7 @@
 | 顺序 | Task ID | 文件 | 对应 Phase | 依赖 | 建议分支 | 状态 |
 |---|---|---|---|---|---|---|
 | 0 | UCA-000 | [00_repo_bootstrap.md](00_repo_bootstrap.md) | 基础流程 | - | `task/uca-000-repo-bootstrap` | done |
-| 1 | UCA-001 | [01_phase0_prd_architecture.md](01_phase0_prd_architecture.md) | Phase 0 | UCA-000 | `task/uca-001-phase0-prd-architecture` | todo |
+| 1 | UCA-001 | [01_phase0_prd_architecture.md](01_phase0_prd_architecture.md) | Phase 0 | UCA-000 | `task/uca-001-phase0-prd-architecture` | in_progress |
 | 2 | UCA-002 | [02_phase0_protocols_and_risks.md](02_phase0_protocols_and_risks.md) | Phase 0 | UCA-001 | `task/uca-002-phase0-protocols-risks` | todo |
 | 3 | UCA-003 | [03_phase1a_desktop_shell.md](03_phase1a_desktop_shell.md) | Phase 1a | UCA-002 | `task/uca-003-phase1a-desktop-shell` | todo |
 | 4 | UCA-004 | [04_phase1a_service_core.md](04_phase1a_service_core.md) | Phase 1a | UCA-003 | `task/uca-004-phase1a-service-core` | todo |
