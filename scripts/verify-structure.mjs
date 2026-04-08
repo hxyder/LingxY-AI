@@ -19,6 +19,7 @@ const requiredPaths = [
   "docs/protocols/artifact.schema.json",
   "docs/protocols/kimi_bridge_protocol.md",
   "docs/risks/risk_register_v1.md",
+  "docs/runtime/README.md",
   "docs/phase_1a_demo_script.md",
   "docs/planning/universal_context_agent_detailed_plan.md",
   "docs/planning/requirements_response.md",
@@ -38,13 +39,25 @@ const requiredPaths = [
   "src/service/core/events/event-bus.mjs",
   "src/service/core/queue/task-queue.mjs",
   "src/service/core/router/intent-router.mjs",
+  "src/service/core/file-submission.mjs",
+  "src/service/store/artifact-store.mjs",
+  "src/service/extractors/file-ingest.mjs",
   "src/service/executors/fast/fast-executor.mjs",
+  "src/service/executors/kimi/kimi-cli-executor.mjs",
+  "src/service/executors/kimi/task-package-builder.mjs",
+  "uca-cli/src/submit.mjs",
+  "src/helper/explorer_selection/selection-contract.mjs",
   "scripts/verify-desktop-shell.mjs",
   "scripts/verify-service-core.mjs",
+  "scripts/verify-file-kimi.mjs",
   "src/service/ai/providers/README.md",
   "src/service/ai/code_cli/README.md",
+  "src/service/ai/code_cli/kimi/README.md",
   "src/service/ai/mcp/README.md",
-  "src/service/ai/skills/README.md"
+  "src/service/ai/skills/README.md",
+  "docs/runtime/kimi_cli_setup.md",
+  "docs/runtime/file_entry_setup.md",
+  "tests/fixtures/mock-kimi-cli.mjs"
 ];
 
 const missing = requiredPaths.filter((path) => !existsSync(path));

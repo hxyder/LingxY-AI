@@ -13,6 +13,12 @@ export interface CodeCliEvent {
   payload?: Record<string, unknown>;
 }
 
+export interface CodeCliRuntimeConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string | undefined>;
+}
+
 export interface CodeCliAdapter {
   id: string;
   displayName: string;

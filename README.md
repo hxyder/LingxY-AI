@@ -14,8 +14,10 @@ This repository contains the planning documents, task breakdown, and implementat
 ```text
 docs/
   planning/        original planning narrative and review context
+  runtime/         runtime setup notes for concrete integrations
 phases/            formal phase specifications
 phases/tasks/      executable task packets and Git workflow
+uca-cli/           file submission entry for shell integrations
 src/
   desktop/         tray / overlay / console skeleton
   service/         core service and integration skeleton
@@ -37,3 +39,10 @@ This bootstrap commit focuses on:
 - AI provider / code CLI / MCP / skills interface reservations
 
 Business implementation starts in later tasks.
+
+Current implemented slices include:
+
+- architecture and protocol baseline
+- desktop shell and service core scaffolds
+- file submission pipeline with batch aggregation
+- mockable Kimi CLI JSONL executor

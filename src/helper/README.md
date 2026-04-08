@@ -1,3 +1,3 @@
 # Helper
 
-Native helper placeholder for hotkeys, screenshots, and OS integration.
+Native helper boundary for hotkeys, Explorer selection capture, screenshots, and OS integration.
