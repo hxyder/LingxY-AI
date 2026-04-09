@@ -17,7 +17,8 @@ await rm(runtimeDir, {
 
 const runtime = createPersistentRuntime({
   baseDir: runtimeDir,
-  port: 0
+  port: 0,
+  pipeName: "\\\\.\\pipe\\uca-helper-verify-runtime-wiring"
 });
 
 const listening = await runtime.start();
@@ -86,7 +87,8 @@ await runtime.stop();
 
 const restarted = createPersistentRuntime({
   baseDir: runtimeDir,
-  port: 0
+  port: 0,
+  pipeName: "\\\\.\\pipe\\uca-helper-verify-runtime-wiring-restart"
 });
 const restartedListening = await restarted.start();
 const restartedTaskResponse = await fetch(`${restartedListening.baseUrl}/task/${created.task.task_id}`);

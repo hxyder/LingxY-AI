@@ -41,7 +41,8 @@ export function createPersistentRuntime({
   baseDir = null,
   port = 0,
   host = "127.0.0.1",
-  kimiRuntime = null
+  kimiRuntime = null,
+  pipeName = DEFAULT_EXPLORER_PIPE_NAME
 } = {}) {
   const paths = ensureRuntimePaths(resolveRuntimePaths({ baseDir }));
   const configStore = createRuntimeConfigStore({
@@ -80,7 +81,7 @@ export function createPersistentRuntime({
   });
   const pipeServer = createExplorerSelectionPipeServer({
     runtime: service.runtime,
-    pipeName: DEFAULT_EXPLORER_PIPE_NAME
+    pipeName
   });
 
   recoverInterruptedTasks(service.runtime);

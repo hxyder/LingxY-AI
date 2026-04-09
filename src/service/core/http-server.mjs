@@ -133,6 +133,7 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
     const retryMatch = url.pathname.match(/^\/task\/([^/]+)\/retry$/);
     const approvalApproveMatch = url.pathname.match(/^\/approvals\/([^/]+)\/approve$/);
     const approvalRejectMatch = url.pathname.match(/^\/approvals\/([^/]+)\/reject$/);
+    const scheduleRunsMatch = url.pathname.match(/^\/schedules\/([^/]+)\/runs$/);
 
     try {
       if (method === "GET" && url.pathname === "/health") {
@@ -287,6 +288,13 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       if (method === "GET" && url.pathname === "/schedules") {
         return sendJson(response, 200, {
           schedules: runtime.scheduler.listSchedules()
+        });
+      }
+
+      if (scheduleRunsMatch && method === "GET") {
+        return sendJson(response, 200, {
+          schedule_id: scheduleRunsMatch[1],
+          runs: runtime.store.listScheduleRuns(scheduleRunsMatch[1])
         });
       }
 

@@ -1,4 +1,5 @@
 import { buildDesktopShellBootstrapState, validateShellManifest } from "./bootstrap.mjs";
+import { createConsoleRuntimeClient } from "../console/runtime-client.mjs";
 
 export function createDesktopRuntimeHost({
   serviceBaseUrl = "http://127.0.0.1:4310",
@@ -41,6 +42,9 @@ export function createDesktopRuntimeHost({
       this.lifecycle.shortcutsRegistered = false;
       this.lifecycle.serviceBridgeAttached = false;
       return { ...this.lifecycle };
+    },
+    createConsoleClient() {
+      return createConsoleRuntimeClient(this.serviceBaseUrl);
     },
     openWindow(windowId) {
       const windowState = windows.get(windowId);
