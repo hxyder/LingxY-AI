@@ -50,10 +50,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-012-phase4-office`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - spike 选中的路径：
   - 当前 Phase 4 基础交付选择 `C. protocol handler fallback`
   - `https://localhost:9413` 保留为后续增强路径，不阻塞当前 ship

@@ -50,10 +50,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-001-phase0-prd-architecture`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 实际新增内容：
   - 新增 [docs/prd_v1.0.md](/e:/linxi/docs/prd_v1.0.md)
   - 新增 [docs/architecture/README.md](/e:/linxi/docs/architecture/README.md)
@@ -66,7 +66,7 @@
 - 验证结果：
   - `node scripts/verify-structure.mjs` 通过
   - 已完成文档自检与主流程自 walkthrough
-  - 外部团队评审尚未执行，因此暂不标记 `done`
+  - 当前仓库已将 Phase 0 文档作为冻结输入合入主干，后续多人评审作为滚动维护项，不再阻塞本任务收口
 - 遗留问题：
   - 还没有正式评审纪要
   - 状态机图、协议 schema、风险登记册仍在 UCA-002

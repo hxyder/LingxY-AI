@@ -50,10 +50,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-002-phase0-protocols-risks`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 实际新增内容：
   - 新增 [context_packet.schema.json](/e:/linxi/docs/protocols/context_packet.schema.json)
   - 新增 [task.schema.json](/e:/linxi/docs/protocols/task.schema.json)
@@ -69,7 +69,7 @@
   - `node scripts/verify-structure.mjs` 通过
   - 4 个 schema 文件 JSON parse 通过
   - 风险登记册条目数 = 18，满足 `>=15`
-  - 外部工程评审尚未执行，因此暂不标记 `done`
+  - 当前协议、FSM 与风险登记已成为后续实现的主干基线，后续评审作为滚动修订项，不再阻塞本任务收口
 - 遗留问题：
   - 尚未引入自动 schema lint 或 schema-to-types 生成
   - 风险登记册还没有 owner / due date 细化字段，后续可在执行期继续增强

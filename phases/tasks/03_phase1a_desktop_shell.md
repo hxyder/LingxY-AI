@@ -50,10 +50,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-003-phase1a-desktop-shell`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 实际新增内容：
   - 新增 [desktop-shell.ts](/e:/linxi/src/shared/contracts/desktop-shell.ts) 作为桌面壳共享契约
   - 更新 [index.ts](/e:/linxi/src/shared/contracts/index.ts) 导出桌面壳契约

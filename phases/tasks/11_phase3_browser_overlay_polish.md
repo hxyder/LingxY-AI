@@ -50,10 +50,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-011-phase3-browser-overlay`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 显示规则最终值：
   - `debounce = 150ms`
   - `stability = 200ms`

@@ -52,10 +52,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-004-phase1a-service-core`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 实际新增内容：
   - 新增 [uca-models.ts](/e:/linxi/src/shared/contracts/uca-models.ts) 作为 service 共享数据模型
   - 新增 [sqlite-schema.mjs](/e:/linxi/src/service/core/store/sqlite-schema.mjs) 冻结 tasks / task_events / artifacts 三张表的 Phase 1a 结构

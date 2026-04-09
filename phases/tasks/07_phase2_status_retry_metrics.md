@@ -51,10 +51,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-007-phase2-status-metrics`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 实际新增内容：
   - 新增 `src/service/failures/classifier.mjs` 与 `user_messages.json`，冻结失败分类与用户提示
   - 新增 `src/service/events/sse.mjs`，提供历史回放 + 订阅的事件流骨架

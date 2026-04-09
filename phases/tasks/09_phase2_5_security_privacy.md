@@ -52,10 +52,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-009-phase2-5-security`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 实际新增内容：
   - 新增 `src/service/security/`，完成 Security Broker、blocklist、PII redaction、kill switch、Presenter Mode、audit log helper
   - 将 file / browser / action-tool 三条入口接到 broker 上，统一执行 capture gating 与 redaction

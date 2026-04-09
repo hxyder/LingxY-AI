@@ -51,10 +51,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-010-scheduler-pending-approval`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 支持的 trigger 类型：
   - `cron`
   - `interval`

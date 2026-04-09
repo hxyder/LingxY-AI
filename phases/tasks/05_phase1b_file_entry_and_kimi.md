@@ -52,10 +52,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-005-phase1b-file-kimi`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 实际新增内容：
   - 新增 `uca-cli/`，完成 `submit --files ...` 参数解析与 batch 聚合骨架
   - 新增 `src/service/extractors/file-ingest.mjs`，支持 TXT/MD 原生提取，PDF/DOCX 先走 placeholder 提取并产出标准 metadata

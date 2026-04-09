@@ -50,10 +50,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-013-phase5-pdf-ocr`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - OCR 引擎版本：
   - 当前本地 OCR scaffold 选择 `paddle-3.0-placeholder`
   - 发布策略为按需安装，不打进主包

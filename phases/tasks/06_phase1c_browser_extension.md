@@ -50,10 +50,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-006-phase1c-browser-extension`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 实际新增内容：
   - 新增 `browser_ext/manifest.json`、background/content script/popup/shadow UI 结构
   - 新增 `uca-native-host/`，完成 Native Messaging framing、request handler、注册 manifest builder

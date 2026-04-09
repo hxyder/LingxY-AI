@@ -51,10 +51,10 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-008-action-tools`
 - 开始日期：2026-04-08
-- 完成日期：
+- 完成日期：2026-04-08
 - 实际新增内容：
   - 新增 `src/service/action_tools/`，包含 registry、schema、risk matrix、12 类基础工具
   - 新增 `src/service/executors/tool_using/`，完成 bounded agent loop 与 tool call validator
