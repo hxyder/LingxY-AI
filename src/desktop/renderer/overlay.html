@@ -30,7 +30,7 @@
           <h1 class="title" style="font-size: 22px;">快速输入</h1>
           <p class="subtitle">面向 master plan 的一级轻交互入口。</p>
         </div>
-        <button id="closeButton" class="secondary">隐藏</button>
+        <button id="closeButton" class="secondary">取消</button>
       </div>
 
       <div id="overlayState" class="chip warning">正在连接 runtime…</div>
@@ -43,13 +43,19 @@
       </div>
 
       <div class="stack">
+        <section id="pendingFilesCard" class="card stack" style="padding:14px;">
+          <span class="eyebrow">File Context</span>
+          <strong>文件上下文</strong>
+          <p id="pendingFilesSummary" class="muted">当前没有待处理文件。</p>
+          <div id="pendingFilesList" class="stack muted"></div>
+        </section>
         <div>
           <label for="overlayCommand">任务要求</label>
           <textarea id="overlayCommand" rows="3" placeholder="请输入你的要求"></textarea>
         </div>
         <div>
           <label for="overlayContext">上下文</label>
-          <textarea id="overlayContext" rows="6" placeholder="贴入文字，或等待后续文件/剪贴板/右键入口接入"></textarea>
+          <textarea id="overlayContext" rows="6" placeholder="贴入文字，或等待剪贴板/文件上下文接入"></textarea>
         </div>
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
           <button id="pasteClipboardButton" class="secondary">读取剪贴板</button>

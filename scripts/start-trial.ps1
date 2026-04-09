@@ -14,6 +14,8 @@ $ElectronLog = Join-Path $StateDir "electron.out.log"
 $ElectronErrorLog = Join-Path $StateDir "electron.err.log"
 $ElectronPidFile = Join-Path $StateDir "electron.pid"
 $RuntimeUrl = "http://127.0.0.1:4310"
+$NodeExe = (Get-Command node).Source
+$ElectronCli = Join-Path $RepoRoot "node_modules\\electron\\cli.js"
 
 New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
 
@@ -86,9 +88,8 @@ elseif (-not (Test-Path $RuntimePidFile)) {
 }
 
 if ($WithShell) {
-  $electronExe = Join-Path $RepoRoot "node_modules\\electron\\dist\\electron.exe"
-  if (-not (Test-Path $electronExe)) {
-    throw "Electron executable was not found: $electronExe"
+  if (-not (Test-Path $ElectronCli)) {
+    throw "Electron CLI entry was not found: $ElectronCli"
   }
 
   $existingElectronPid = $null
@@ -106,15 +107,37 @@ if ($WithShell) {
   }
 
   if (-not $existingElectronPid) {
-    $electronStartArgs = @{
-      FilePath = $electronExe
-      ArgumentList = "."
-      WorkingDirectory = $RepoRoot
-      RedirectStandardOutput = $ElectronLog
-      RedirectStandardError = $ElectronErrorLog
-      PassThru = $true
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $NodeExe
+    $startInfo.WorkingDirectory = $RepoRoot
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.UseShellExecute = $false
+    $startInfo.ArgumentList.Add($ElectronCli)
+    $startInfo.ArgumentList.Add(".")
+    if ($startInfo.Environment.ContainsKey("ELECTRON_RUN_AS_NODE")) {
+      $startInfo.Environment.Remove("ELECTRON_RUN_AS_NODE")
     }
-    $electronProcess = Start-Process @electronStartArgs
+
+    $electronProcess = [System.Diagnostics.Process]::Start($startInfo)
+    $stdoutWriter = [System.IO.StreamWriter]::new($ElectronLog, $false, [System.Text.Encoding]::UTF8)
+    $stderrWriter = [System.IO.StreamWriter]::new($ElectronErrorLog, $false, [System.Text.Encoding]::UTF8)
+    $electronProcess.BeginOutputReadLine()
+    $electronProcess.BeginErrorReadLine()
+    $electronProcess.add_OutputDataReceived({
+      param($sender, $eventArgs)
+      if ($null -ne $eventArgs.Data) {
+        $stdoutWriter.WriteLine($eventArgs.Data)
+        $stdoutWriter.Flush()
+      }
+    })
+    $electronProcess.add_ErrorDataReceived({
+      param($sender, $eventArgs)
+      if ($null -ne $eventArgs.Data) {
+        $stderrWriter.WriteLine($eventArgs.Data)
+        $stderrWriter.Flush()
+      }
+    })
     Write-PidFile -Path $ElectronPidFile -ProcessId $electronProcess.Id
   }
 }

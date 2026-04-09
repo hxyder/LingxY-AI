@@ -49,11 +49,11 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：blocked
 - 执行分支：`task/uca-023-context-handoff-ui`
-- 开始日期：
+- 开始日期：2026-04-08
 - 完成日期：
-- 实际新增内容：
-- 验证结果：
-- 遗留问题：
-- 交接给下一个任务：
+- 实际新增内容：Explorer helper 向桌面浮窗交接文件列表；Electron 单实例 handoff；浮窗文件预览卡片与按文件提交逻辑；安装脚本已切到 overlay_prompt 模式。
+- 验证结果：`node scripts/verify-context-handoff-ui.mjs`、`dotnet build src/helper/explorer_selection/UcaExplorerSelectionHelper/UcaExplorerSelectionHelper.csproj`、`node scripts/verify-native-integrations.mjs`、`npm run check` 通过。
+- 遗留问题：当前 Windows 环境下实际拉起 Electron 壳时，`require('electron')` 会解析到 npm stub 路径字符串而不是 Electron API，导致 `start-trial.ps1 -WithShell` 与 helper 唤起流程还不能完成真实 UI smoke。
+- 交接给下一个任务：先完成 UCA-025，解决 Windows 下 Electron bootstrap 阻塞，再回到本任务做“右键 -> 输入 -> 执行”的真实端到端验收。

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 
 const requiredPaths = [
   "README.md",
+  "index.cjs",
   "package.json",
   "phases/README.md",
   "phases/tasks/README.md",
@@ -196,6 +197,7 @@ const requiredPaths = [
   "scripts/verify-desktop-shell.mjs",
   "scripts/verify-desktop-renderer.mjs",
   "scripts/verify-overlay-composer.mjs",
+  "scripts/verify-context-handoff-ui.mjs",
   "scripts/verify-console-ui.mjs",
   "scripts/verify-console-runtime-client.mjs",
   "scripts/verify-service-core.mjs",

@@ -7,12 +7,16 @@ const closeButton = document.querySelector("#closeButton");
 const openConsoleButton = document.querySelector("#openConsoleButton");
 const pasteClipboardButton = document.querySelector("#pasteClipboardButton");
 const clearContextButton = document.querySelector("#clearContextButton");
+const pendingFilesCard = document.querySelector("#pendingFilesCard");
+const pendingFilesSummary = document.querySelector("#pendingFilesSummary");
+const pendingFilesList = document.querySelector("#pendingFilesList");
 const recentTaskCard = document.querySelector("#recentTaskCard");
 const quickActions = [...document.querySelectorAll(".quick-action")];
 
 let serviceBaseUrl = new URLSearchParams(window.location.search).get("serviceBaseUrl") ?? "http://127.0.0.1:4310";
 let activeTaskId = null;
 let lastTask = null;
+let pendingFileSelection = null;
 
 async function fetchJson(pathname, options = {}) {
   const response = await fetch(`${serviceBaseUrl}${pathname}`, options);
@@ -33,6 +37,45 @@ async function refreshStatus() {
   } catch (error) {
     overlayState.textContent = `Runtime unavailable · ${error.message}`;
     overlayState.className = "chip danger";
+  }
+}
+
+function formatFileSelectionSummary(filePaths = []) {
+  if (filePaths.length === 0) {
+    return "当前没有待处理文件。";
+  }
+  if (filePaths.length === 1) {
+    return `已接收 1 个文件，准备打开输入流程。`;
+  }
+  return `已接收 ${filePaths.length} 个文件，准备合并提交。`;
+}
+
+function renderPendingFiles(selection = null) {
+  pendingFilesCard.hidden = false;
+  pendingFilesList.replaceChildren();
+
+  if (!selection?.filePaths?.length) {
+    pendingFilesSummary.textContent = "当前没有待处理文件。";
+    const placeholder = document.createElement("p");
+    placeholder.className = "muted";
+    placeholder.textContent = "你可以继续使用剪贴板文本，也可以从 Explorer 右键把文件交给这里。";
+    pendingFilesList.append(placeholder);
+    return;
+  }
+
+  pendingFilesSummary.textContent = formatFileSelectionSummary(selection.filePaths);
+  selection.filePaths.slice(0, 6).forEach((filePath) => {
+    const row = document.createElement("p");
+    row.className = "muted";
+    row.textContent = filePath;
+    pendingFilesList.append(row);
+  });
+
+  if (selection.filePaths.length > 6) {
+    const remainder = document.createElement("p");
+    remainder.className = "muted";
+    remainder.textContent = `还有 ${selection.filePaths.length - 6} 个文件未展开显示。`;
+    pendingFilesList.append(remainder);
   }
 }
 
@@ -73,6 +116,9 @@ function renderRecentTask(task = null) {
 }
 
 async function loadClipboardIntoContext() {
+  if (pendingFileSelection?.filePaths?.length) {
+    return;
+  }
   try {
     const clipboardText = (await window.ucaShell.readClipboardText()).trim();
     if (clipboardText) {
@@ -105,27 +151,54 @@ async function refreshActiveTask() {
 async function submitTask() {
   overlayResult.textContent = "提交中…";
   try {
-    const result = await fetchJson("/task", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
+    const payload = pendingFileSelection?.filePaths?.length
+      ? {
+        sourceApp: pendingFileSelection.sourceApp ?? "explorer.exe",
+        captureMode: pendingFileSelection.captureMode ?? "shell_menu",
+        filePaths: pendingFileSelection.filePaths,
+        userCommand: overlayCommand.value || "请分析这些文件并给出结论",
+        executionMode: "interactive"
+      }
+      : {
         sourceApp: "uca.overlay",
         captureMode: "overlay",
         sourceType: "clipboard",
         text: overlayContext.value,
         userCommand: overlayCommand.value || "请处理当前上下文",
         executionMode: "interactive"
-      })
+      };
+
+    const result = await fetchJson("/task", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
     });
     activeTaskId = result.task.task_id;
     lastTask = result.task;
     renderRecentTask(result.task);
+    if (pendingFileSelection?.filePaths?.length) {
+      overlayContext.value = `已从 Explorer 接收 ${pendingFileSelection.filePaths.length} 个文件`;
+      pendingFileSelection = null;
+      renderPendingFiles();
+    }
     overlayResult.textContent = `已提交 ${result.task.task_id}`;
   } catch (error) {
     overlayResult.textContent = `提交失败：${error.message}`;
   }
+}
+
+function applyExplorerHandoff(payload) {
+  pendingFileSelection = {
+    sourceApp: payload.source_app ?? "explorer.exe",
+    captureMode: payload.capture_mode ?? "shell_menu",
+    filePaths: payload.file_paths ?? []
+  };
+  renderPendingFiles(pendingFileSelection);
+  overlayCommand.focus();
+  overlayResult.textContent = "已接收文件列表，请输入你的要求后执行";
+  overlayContext.value = pendingFileSelection.filePaths.join("\n");
 }
 
 quickActions.forEach((button) => {
@@ -139,6 +212,9 @@ submitButton.addEventListener("click", () => {
 });
 
 closeButton.addEventListener("click", () => {
+  pendingFileSelection = null;
+  renderPendingFiles();
+  overlayResult.textContent = "已取消本次输入";
   window.ucaShell.hideWindow("overlay");
 });
 
@@ -152,6 +228,8 @@ pasteClipboardButton.addEventListener("click", () => {
 
 clearContextButton.addEventListener("click", () => {
   overlayContext.value = "";
+  pendingFileSelection = null;
+  renderPendingFiles();
   overlayResult.textContent = "已清空上下文";
 });
 
@@ -175,6 +253,13 @@ window.ucaShell.onWindowFocused((payload) => {
   }
 });
 
+window.ucaShell.onContextReceived((payload) => {
+  if (payload.targetWindow === "overlay" || payload.source_app === "explorer.exe") {
+    applyExplorerHandoff(payload);
+  }
+});
+
+renderPendingFiles();
 renderRecentTask(lastTask);
 loadClipboardIntoContext();
 refreshStatus();

@@ -1,0 +1,59 @@
+# Task UCA-025 — Windows 下 Electron Bootstrap 阻塞解法
+
+## 1. 任务目标
+
+解决当前 Windows 环境里 Electron 壳无法稳定拉起的问题，使桌面壳至少能完成一次真实 overlay 启动与 handoff 验收。
+
+## 2. 前置依赖
+
+- 上一个任务：UCA-021、UCA-022、UCA-023
+- 必须已有的产物：renderer 页面、overlay composer、Explorer handoff 代码
+- 不能同时修改的区域：Office Add-in
+
+## 3. 实施范围
+
+- 负责模块：Electron bootstrap、Windows 启动策略、shell smoke
+- 允许改动文件/目录：`package.json`, `index.cjs`, `src/desktop/tray/`, `scripts/`, `docs/release/`
+- 明确不做：切换整套桌面框架
+
+## 4. 交付产物
+
+- 可稳定启动的 Electron desktop shell
+- 明确的 Windows 启动策略
+- 一次真实 overlay 启动 smoke 记录
+
+## 5. 验证方式
+
+- `start-trial.ps1 -WithShell` 可成功启动
+- helper 可成功唤起 overlay
+- 至少一次真实窗口级 smoke
+
+## 6. Git 执行方式
+
+- 分支名：`task/uca-025-electron-windows-bootstrap`
+- Commit 格式：`UCA-025: fix electron windows bootstrap`
+- 合并条件：当前机器上 Electron 壳可真实启动
+
+## 7. 完成后必须更新本文件
+
+- 写明最终采用的启动策略
+- 写明是否仍受 Electron Windows bug 影响
+- 记录真实 smoke 的结果
+
+## 8. 对下一个任务的交接
+
+- 下一个任务：回到 UCA-023、再继续 UCA-024
+- 本任务新增了什么：可启动的桌面壳入口
+- 下一个任务直接可复用什么：overlay handoff 与 renderer UI
+- 还没解决的问题：完整控制台工作台与发布打磨
+
+## 9. 执行记录
+
+- 状态：todo
+- 执行分支：`task/uca-025-electron-windows-bootstrap`
+- 开始日期：
+- 完成日期：
+- 实际新增内容：
+- 验证结果：
+- 遗留问题：
+- 交接给下一个任务：

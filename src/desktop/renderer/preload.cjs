@@ -27,5 +27,10 @@ contextBridge.exposeInMainWorld("ucaShell", {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:shell-window-focused", listener);
     return () => ipcRenderer.removeListener("uca:shell-window-focused", listener);
+  },
+  onContextReceived(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:shell-context-received", listener);
+    return () => ipcRenderer.removeListener("uca:shell-context-received", listener);
   }
 });
