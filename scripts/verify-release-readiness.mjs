@@ -27,10 +27,22 @@ execFileSync(process.execPath, [path.join(repoRoot, "scripts", "build-trial-pack
   stdio: "pipe"
 });
 
+execFileSync(process.execPath, [path.join(repoRoot, "scripts", "generate-trial-readiness-report.mjs")], {
+  cwd: repoRoot,
+  stdio: "pipe"
+});
+
+execFileSync(process.execPath, [path.join(repoRoot, "scripts", "verify-trial-launch.mjs")], {
+  cwd: repoRoot,
+  stdio: "pipe"
+});
+
 const bundleRoot = path.join(repoRoot, "dist", "trial", releaseConfig.trial_version);
 const manifestPath = path.join(bundleRoot, "release-manifest.json");
 const checksumsPath = path.join(bundleRoot, "checksums.sha256");
 const installPath = path.join(bundleRoot, "INSTALL.txt");
+const readinessReportMdPath = path.join(bundleRoot, "TRIAL_READINESS_REPORT.md");
+const readinessReportJsonPath = path.join(bundleRoot, "TRIAL_READINESS_REPORT.json");
 const checkCmdPath = path.join(bundleRoot, "Check UCA Desktop Trial.cmd");
 const setupCmdPath = path.join(bundleRoot, "Setup UCA Desktop Trial.cmd");
 const launchCmdPath = path.join(bundleRoot, "Launch UCA Desktop Trial.cmd");
@@ -39,6 +51,8 @@ const stopCmdPath = path.join(bundleRoot, "Stop UCA Desktop Trial.cmd");
 assert.equal(existsSync(manifestPath), true);
 assert.equal(existsSync(checksumsPath), true);
 assert.equal(existsSync(installPath), true);
+assert.equal(existsSync(readinessReportMdPath), true);
+assert.equal(existsSync(readinessReportJsonPath), true);
 assert.equal(existsSync(checkCmdPath), true);
 assert.equal(existsSync(setupCmdPath), true);
 assert.equal(existsSync(launchCmdPath), true);
@@ -59,5 +73,9 @@ assert.equal(installText.includes("Check UCA Desktop Trial.cmd"), true);
 assert.equal(installText.includes("Setup UCA Desktop Trial.cmd"), true);
 assert.equal(installText.includes("Launch UCA Desktop Trial.cmd"), true);
 assert.equal(installText.includes("repo-local sideload kit"), true);
+
+const readinessReportText = readFileSync(readinessReportMdPath, "utf8");
+assert.equal(readinessReportText.includes("Trial Readiness Report"), true);
+assert.equal(readinessReportText.includes("Remaining Manual Validation"), true);
 
 console.log("Release readiness verification passed.");

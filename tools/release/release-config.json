@@ -35,6 +35,8 @@
   ],
   "validation_targets": [
     "npm run check",
-    "node scripts/build-trial-package.mjs"
+    "node scripts/build-trial-package.mjs",
+    "node scripts/verify-trial-launch.mjs",
+    "node scripts/generate-trial-readiness-report.mjs"
   ]
 }

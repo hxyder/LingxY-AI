@@ -33,7 +33,8 @@
     "verify:template-dag-persistence": "node scripts/verify-template-dag-persistence.mjs",
     "verify:runtime-wiring": "node scripts/verify-runtime-wiring.mjs",
     "verify:native-integrations": "node scripts/verify-native-integrations.mjs",
-    "verify:release-readiness": "node scripts/verify-release-readiness.mjs"
+    "verify:release-readiness": "node scripts/verify-release-readiness.mjs",
+    "verify:trial-launch": "node scripts/verify-trial-launch.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
