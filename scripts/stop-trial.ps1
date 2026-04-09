@@ -20,9 +20,9 @@ function Stop-ProcessFromPidFile {
   if (-not [string]::IsNullOrWhiteSpace($pidValue)) {
     try {
       Stop-Process -Id ([int]$pidValue.Trim()) -Force -ErrorAction Stop
-      Write-Host "已停止 $Name 进程: $($pidValue.Trim())"
+      Write-Host "Stopped $Name process: $($pidValue.Trim())"
     } catch {
-      Write-Host "$Name 进程已不存在: $($pidValue.Trim())"
+      Write-Host "$Name process was already gone: $($pidValue.Trim())"
     }
   }
 

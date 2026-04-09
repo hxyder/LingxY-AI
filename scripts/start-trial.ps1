@@ -44,7 +44,7 @@ function Get-RuntimeProcessId {
 }
 
 if (-not (Test-Path (Join-Path $RepoRoot "node_modules"))) {
-  throw "node_modules 不存在，请先在仓库根目录执行 npm install。"
+  throw "node_modules is missing. Run npm install in the repo root first."
 }
 
 if (-not (Test-RuntimeHealth)) {
@@ -75,7 +75,7 @@ if (-not (Test-RuntimeHealth)) {
   }
 
   if (-not $started) {
-    throw "本地 runtime 启动失败，请检查 $RuntimeLog"
+    throw "Local runtime failed to start. Check $RuntimeLog"
   }
 }
 elseif (-not (Test-Path $RuntimePidFile)) {
@@ -88,7 +88,7 @@ elseif (-not (Test-Path $RuntimePidFile)) {
 if ($WithShell) {
   $electronExe = Join-Path $RepoRoot "node_modules\\electron\\dist\\electron.exe"
   if (-not (Test-Path $electronExe)) {
-    throw "找不到 Electron 可执行文件：$electronExe"
+    throw "Electron executable was not found: $electronExe"
   }
 
   $existingElectronPid = $null
@@ -119,7 +119,7 @@ if ($WithShell) {
   }
 }
 
-Write-Host "UCA 已启动。"
+Write-Host "UCA started."
 Write-Host "Runtime: $RuntimeUrl"
 Write-Host "Runtime out log: $RuntimeLog"
 Write-Host "Runtime err log: $RuntimeErrorLog"
@@ -127,6 +127,6 @@ if ($WithShell) {
   Write-Host "Electron out log: $ElectronLog"
   Write-Host "Electron err log: $ElectronErrorLog"
 } else {
-  Write-Host "当前默认只启动本地 runtime。需要实验性 Electron 壳时可加 -WithShell。"
+  Write-Host "Default mode starts the local runtime only. Use -WithShell for the experimental Electron shell."
 }
-Write-Host "停止命令: powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-trial.ps1"
+Write-Host "Stop command: powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-trial.ps1"
