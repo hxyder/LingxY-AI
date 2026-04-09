@@ -51,11 +51,20 @@
           <label for="overlayContext">上下文</label>
           <textarea id="overlayContext" rows="6" placeholder="贴入文字，或等待后续文件/剪贴板/右键入口接入"></textarea>
         </div>
+        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+          <button id="pasteClipboardButton" class="secondary">读取剪贴板</button>
+          <button id="clearContextButton" class="secondary">清空上下文</button>
+        </div>
         <div style="display:flex; gap:10px; align-items:center;">
           <button id="submitButton" class="primary">立即执行</button>
           <button id="openConsoleButton" class="secondary">打开控制台</button>
         </div>
         <p id="overlayResult" class="muted">尚未提交</p>
+        <section id="recentTaskCard" class="card stack" style="padding:14px;">
+          <span class="eyebrow">Recent Task</span>
+          <strong>最近任务</strong>
+          <p class="muted">还没有任务。</p>
+        </section>
       </div>
     </main>
     <script type="module" src="./overlay.js"></script>

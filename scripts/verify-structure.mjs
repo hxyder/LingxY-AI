@@ -195,6 +195,7 @@ const requiredPaths = [
   "src/helper/Screenshot/capture-contract.mjs",
   "scripts/verify-desktop-shell.mjs",
   "scripts/verify-desktop-renderer.mjs",
+  "scripts/verify-overlay-composer.mjs",
   "scripts/verify-console-ui.mjs",
   "scripts/verify-console-runtime-client.mjs",
   "scripts/verify-service-core.mjs",

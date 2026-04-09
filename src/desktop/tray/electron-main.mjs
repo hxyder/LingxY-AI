@@ -61,8 +61,20 @@ export function createElectronShellRuntime({
           browserWindow.hide();
         }
       });
+      browserWindow.on("focus", () => {
+        browserWindow.webContents.send(IPC_CHANNELS.shellWindowFocused, {
+          windowId: windowDef.id
+        });
+      });
       browserWindow.on("closed", () => {
         windows.delete(windowDef.id);
+      });
+      browserWindow.webContents.on("did-finish-load", () => {
+        browserWindow.webContents.send(IPC_CHANNELS.shellReady, {
+          windowId: windowDef.id,
+          route: windowDef.route,
+          serviceBaseUrl
+        });
       });
       browserWindow.loadURL(buildWindowUrl(windowDef, serviceBaseUrl));
       windows.set(windowDef.id, browserWindow);

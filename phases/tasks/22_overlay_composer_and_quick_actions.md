@@ -49,11 +49,11 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：done
 - 执行分支：`task/uca-022-overlay-composer`
-- 开始日期：
-- 完成日期：
-- 实际新增内容：
-- 验证结果：
-- 遗留问题：
-- 交接给下一个任务：
+- 开始日期：2026-04-08
+- 完成日期：2026-04-08
+- 实际新增内容：真实浮窗输入器页面；剪贴板读取与自动填充；最近任务反馈卡片；壳层 ready/focus 事件；快捷动作与控制台跳转联动；浮窗激活后自动尝试拉取剪贴板上下文；支持文本/剪贴板上下文提交。
+- 验证结果：`node scripts/verify-overlay-composer.mjs`、`node scripts/verify-desktop-renderer.mjs`、`npm run check` 通过。
+- 遗留问题：右键文件后的输入弹窗和上下文交接还未接入；跟随鼠标定位与复杂动效仍未做。
+- 交接给下一个任务：UCA-023 直接复用当前浮窗表单、最近任务反馈卡片和 clipboard/context 注入入口，把文件右键 handoff 接进来。
