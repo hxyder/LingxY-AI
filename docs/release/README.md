@@ -6,7 +6,7 @@ Current positioning:
 
 - The current output is a repo-local trial kit for Windows, not a standalone signed installer
 - The preferred launch path is the desktop shell via `scripts/start-trial.ps1`
-- The generated bundle in `dist/trial/<version>/` now includes `Setup UCA Desktop Trial.cmd`, plus one-click launchers for starting and stopping the desktop app from the same workspace
+- The generated bundle in `dist/trial/<version>/` now includes `Check UCA Desktop Trial.cmd`, `Setup UCA Desktop Trial.cmd`, plus one-click launchers for starting and stopping the desktop app from the same workspace
 
 Included documents:
 

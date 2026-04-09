@@ -221,6 +221,7 @@ const requiredPaths = [
   "scripts/verify-release-readiness.mjs",
   "scripts/install-explorer-entry.ps1",
   "scripts/install-native-host.ps1",
+  "scripts/check-trial-prereqs.ps1",
   "scripts/setup-trial.ps1",
   "scripts/submit-file-task.ps1",
   "src/service/ai/providers/README.md",

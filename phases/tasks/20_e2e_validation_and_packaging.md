@@ -55,7 +55,7 @@
 - 执行分支：`task/uca-020-e2e-packaging`
 - 开始日期：2026-04-08
 - 完成日期：
-- 实际新增内容：新增 `docs/release/` 发布文档区，包含 trial release notes、E2E 验证矩阵、已知问题与回滚方案；新增 `tools/release/release-config.json` 作为试用发布配置；新增 `scripts/build-trial-package.mjs` 生成版本化 trial bundle、release manifest、checksums 和安装说明；新增 `scripts/verify-release-readiness.mjs` 验证发布文档与构建产物；仓库入口文档和结构校验已同步接入 release 目录；trial bundle 现在额外生成 `Setup UCA Desktop Trial.cmd`、`Launch UCA Desktop Trial.cmd` / `Stop UCA Desktop Trial.cmd`；新增 `scripts/setup-trial.ps1` 作为桌面优先的试用准备脚本，默认准备 Explorer 右键入口并启动桌面壳。
-- 验证结果：`build:trial-package`、`verify-release-readiness`、`npm run check`、`powershell -ExecutionPolicy Bypass -File .\scripts\setup-trial.ps1 -DryRun` 均已通过；本地已生成 `dist/trial/0.1.0-trial.1/` 版本化试用包目录和一键启动器。
+- 实际新增内容：新增 `docs/release/` 发布文档区，包含 trial release notes、E2E 验证矩阵、已知问题与回滚方案；新增 `tools/release/release-config.json` 作为试用发布配置；新增 `scripts/build-trial-package.mjs` 生成版本化 trial bundle、release manifest、checksums 和安装说明；新增 `scripts/verify-release-readiness.mjs` 验证发布文档与构建产物；仓库入口文档和结构校验已同步接入 release 目录；trial bundle 现在额外生成 `Check UCA Desktop Trial.cmd`、`Setup UCA Desktop Trial.cmd`、`Launch UCA Desktop Trial.cmd` / `Stop UCA Desktop Trial.cmd`；新增 `scripts/setup-trial.ps1` 作为桌面优先的试用准备脚本，默认准备 Explorer 右键入口并启动桌面壳；新增 `scripts/check-trial-prereqs.ps1` 作为试用前检查脚本，用于确认 Node、依赖、Electron CLI 和 Kimi CLI 状态；`build-trial-package` 也补了 Windows 下删除旧 bundle 的重试逻辑，避免 trial 包重建时偶发失败。
+- 验证结果：`build:trial-package`、`verify-release-readiness`、`npm run check`、`powershell -ExecutionPolicy Bypass -File .\scripts\setup-trial.ps1 -DryRun`、`powershell -ExecutionPolicy Bypass -File .\scripts\check-trial-prereqs.ps1` 均已通过；本地已生成 `dist/trial/0.1.0-trial.1/` 版本化试用包目录和一键入口。
 - 遗留问题：当前产物仍是 repo-local trial sideload bundle，不是可脱离仓库独立运行的签名安装程序；新机器人工安装验证和 SmartScreen 反馈仍需线下执行。
 - 交接给下一个任务：试用发布前可直接复用 `npm run build:trial-package` 产出的 bundle、release manifest、E2E 矩阵、桌面启动器和 rollback 文档。

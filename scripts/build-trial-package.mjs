@@ -25,7 +25,12 @@ function writeText(filePath, content) {
   writeFileSync(filePath, content, "utf8");
 }
 
-rmSync(bundleRoot, { recursive: true, force: true });
+rmSync(bundleRoot, {
+  recursive: true,
+  force: true,
+  maxRetries: 5,
+  retryDelay: 200
+});
 mkdirSync(bundleRoot, { recursive: true });
 
 const copiedAssets = [];
@@ -50,6 +55,7 @@ for (const relativePath of releaseConfig.required_assets) {
 
 const installChecklist = [
   "Keep this trial bundle inside the repository workspace; it is a repo-local sideload kit, not a standalone installer",
+  "Double-click `Check UCA Desktop Trial.cmd` first if you want a quick prerequisite check",
   "Double-click `Setup UCA Desktop Trial.cmd` for the guided desktop-first setup path",
   "Double-click `Launch UCA Desktop Trial.cmd` to start the desktop app and local runtime together",
   "Explorer entry is the default recommended integration for first use",
@@ -91,12 +97,26 @@ writeText(
     `UCA trial bundle: ${releaseConfig.trial_version}`,
     "",
     "This bundle is intended to be used from the repository workspace that generated it.",
+    "Optional first step: Check UCA Desktop Trial.cmd",
     "Recommended first step: Setup UCA Desktop Trial.cmd",
     "Primary entry: Launch UCA Desktop Trial.cmd",
     "Stop entry: Stop UCA Desktop Trial.cmd",
     "",
     ...installChecklist.map((step, index) => `${index + 1}. ${step}`)
   ].join("\n") + "\n"
+);
+
+writeText(
+  path.join(bundleRoot, "Check UCA Desktop Trial.cmd"),
+  [
+    "@echo off",
+    "setlocal",
+    `set "REPO_ROOT=%~dp0${relativeRepoRootFromBundle.replaceAll("/", "\\")}"`,
+    'powershell -ExecutionPolicy Bypass -File "%REPO_ROOT%\\scripts\\check-trial-prereqs.ps1"',
+    "pause",
+    "endlocal",
+    ""
+  ].join("\r\n")
 );
 
 writeText(
