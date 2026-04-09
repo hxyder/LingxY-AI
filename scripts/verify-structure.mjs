@@ -137,6 +137,7 @@ const requiredPaths = [
   "src/service/extractors/pdf_text.mjs",
   "src/service/executors/fast/fast-executor.mjs",
   "src/service/executors/kimi/kimi-cli-executor.mjs",
+  "src/service/executors/kimi/output-format.mjs",
   "src/service/executors/kimi/print-mode-prompt.mjs",
   "src/service/executors/kimi/task-package-builder.mjs",
   "src/service/executors/tool_using/README.md",

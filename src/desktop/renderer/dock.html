@@ -23,7 +23,6 @@
         width: 122px;
         height: 122px;
         border-radius: 999px;
-        border: 1px solid rgba(255, 255, 255, 0.45);
         background:
           radial-gradient(circle at 28% 24%, rgba(255, 244, 232, 0.98), rgba(255, 244, 232, 0.14) 28%, rgba(255, 244, 232, 0) 40%),
           radial-gradient(circle at 50% 50%, rgba(205, 88, 43, 0.98), rgba(135, 42, 16, 0.98) 72%);
@@ -43,19 +42,10 @@
         animation: dock-breathe 2.8s ease-in-out infinite;
       }
 
-      .dock-dropzone::after {
-        content: "";
-        position: absolute;
-        inset: 10px;
-        border-radius: 999px;
-        border: 1px dashed rgba(255, 255, 255, 0.34);
-        pointer-events: none;
-      }
-
       .dock-dropzone.dragover {
         transform: scale(1.06);
         box-shadow:
-          0 0 0 16px rgba(163, 58, 22, 0.14),
+          0 0 0 18px rgba(163, 58, 22, 0.12),
           0 30px 60px rgba(84, 26, 8, 0.38);
         animation-play-state: paused;
       }

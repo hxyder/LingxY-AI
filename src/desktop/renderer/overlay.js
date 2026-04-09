@@ -16,6 +16,7 @@ const pendingFilesList = document.querySelector("#pendingFilesList");
 const recentTaskCard = document.querySelector("#recentTaskCard");
 const quickActions = [...document.querySelectorAll(".quick-action")];
 const outputStyleButtons = [...document.querySelectorAll(".output-style")];
+const outputFormatButtons = [...document.querySelectorAll(".output-format")];
 const contextBubble = document.querySelector("#contextBubble");
 const userIntentBubble = document.querySelector("#userIntentBubble");
 const statusBubble = document.querySelector("#statusBubble");
@@ -30,6 +31,7 @@ let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
 let notifiedTaskId = null;
 let selectedOutputSuffix = "";
+let selectedFormatInstruction = "";
 let lastArtifactPreview = "";
 
 function clearPendingFileContext({ clearContextText = true } = {}) {
@@ -51,7 +53,7 @@ function refreshConversationBubbles() {
     contextBubble.textContent = "当前还没有接收到文件或上下文。";
   }
 
-  const commandText = overlayCommand.value.trim();
+  const commandText = appendFormatInstruction(appendOutputSuffix(overlayCommand.value.trim()));
   userIntentBubble.textContent = commandText
     ? `我的要求是：${commandText}`
     : "你可以直接输入，也可以点下面的动作按钮。";
@@ -99,6 +101,24 @@ function appendOutputSuffix(baseCommand) {
     return baseCommand;
   }
   return `${baseCommand}${selectedOutputSuffix}`;
+}
+
+function appendFormatInstruction(baseCommand) {
+  if (!selectedFormatInstruction) {
+    return baseCommand;
+  }
+  if (!baseCommand) {
+    return selectedFormatInstruction.replace(/^并/, "请");
+  }
+  if (baseCommand.includes(selectedFormatInstruction)) {
+    return baseCommand;
+  }
+  return `${baseCommand}${selectedFormatInstruction}`;
+}
+
+function choosePreviewArtifactPath(artifacts = []) {
+  const previewableExtensions = [".md", ".txt", ".json", ".csv", ".html", ".htm"];
+  return artifacts.find((artifact) => previewableExtensions.some((ext) => artifact.path?.toLowerCase().endsWith(ext)))?.path ?? null;
 }
 
 function markActiveButton(buttons, activeButton) {
@@ -253,7 +273,7 @@ async function refreshActiveTask() {
     if (task.status) {
       if (task.status === "success" && task.artifacts?.length) {
         overlayResult.textContent = `已完成，结果保存在 ${task.artifacts[0].path}`;
-        await loadArtifactPreview(task.artifacts[0].path);
+        await loadArtifactPreview(choosePreviewArtifactPath(task.artifacts) ?? task.artifacts[0].path);
         if (notifiedTaskId !== task.task_id) {
           notifiedTaskId = task.task_id;
           await window.ucaShell.notify({
@@ -283,7 +303,7 @@ async function submitTask() {
   overlayResult.textContent = "提交中…";
   refreshConversationBubbles();
   try {
-    const commandText = appendOutputSuffix(overlayCommand.value.trim()) || "请处理当前上下文";
+    const commandText = appendFormatInstruction(appendOutputSuffix(overlayCommand.value.trim())) || "请处理当前上下文";
     const payload = pendingFileSelection?.filePaths?.length
       ? {
         sourceApp: pendingFileSelection.sourceApp ?? "explorer.exe",
@@ -318,6 +338,10 @@ async function submitTask() {
     }
     overlayResult.textContent = `已提交 ${result.task.task_id}`;
     renderResultPreview("");
+    await window.ucaShell.notify({
+      title: "UCA 正在处理",
+      body: "任务已转入后台，完成后会通知你。"
+    });
     refreshConversationBubbles();
     setTimeout(() => {
       window.ucaShell.hideWindow("overlay");
@@ -354,6 +378,14 @@ outputStyleButtons.forEach((button) => {
   button.addEventListener("click", () => {
     selectedOutputSuffix = button.dataset.suffix ?? "";
     markActiveButton(outputStyleButtons, button);
+    refreshConversationBubbles();
+  });
+});
+
+outputFormatButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    selectedFormatInstruction = button.dataset.formatInstruction ?? "";
+    markActiveButton(outputFormatButtons, button);
     refreshConversationBubbles();
   });
 });

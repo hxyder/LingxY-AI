@@ -15,12 +15,15 @@ const overlayHtml = await read("src/desktop/renderer/overlay.html");
 assert.equal(overlayHtml.includes("读取剪贴板"), true);
 assert.equal(overlayHtml.includes("清空上下文"), true);
 assert.equal(overlayHtml.includes("最近任务"), true);
+assert.equal(overlayHtml.includes("返回格式"), true);
 
 const overlayJs = await read("src/desktop/renderer/overlay.js");
 assert.equal(overlayJs.includes("loadClipboardIntoContext"), true);
 assert.equal(overlayJs.includes("refreshActiveTask"), true);
 assert.equal(overlayJs.includes("onWindowFocused"), true);
 assert.equal(overlayJs.includes("ucaShell.notify"), true);
+assert.equal(overlayJs.includes("selectedFormatInstruction"), true);
+assert.equal(overlayJs.includes("UCA 正在处理"), true);
 
 const preload = await read("src/desktop/renderer/preload.cjs");
 assert.equal(preload.includes("readClipboardText"), true);
@@ -29,6 +32,8 @@ assert.equal(preload.includes(IPC_CHANNELS.shellWindowFocused), true);
 assert.equal(preload.includes("submitDroppedFiles"), true);
 assert.equal(preload.includes("uca:shell-submit-dropped-files"), true);
 assert.equal(preload.includes("uca:shell-notify"), true);
+assert.equal(preload.includes("readTextFile"), true);
+assert.equal(preload.includes("writeClipboardText"), true);
 
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
 assert.equal(mainProcess.includes("did-finish-load"), true);

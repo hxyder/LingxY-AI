@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { finalizeJsonLines, parseJsonLinesChunk } from "./jsonl-parser.mjs";
 import { buildKimiPrintPrompt, deriveKimiWorkspace } from "./print-mode-prompt.mjs";
+import { detectRequestedOutputFormat, writeRequestedArtifacts } from "./output-format.mjs";
 
 export function createKimiCliExecutorScaffold() {
   return {
@@ -323,12 +324,17 @@ async function executeKimiPrintModeTask({
     .map(extractAssistantText)
     .find((entry) => entry.length > 0) ?? "";
 
-  const reportPath = path.join(taskPackage.output_requirements.output_dir, "report.md");
-  const reportBody = finalAssistantText || "# Kimi Report\n\nKimi CLI completed without returning a final markdown body.\n";
-  await writeFile(reportPath, `${reportBody.trim()}\n`, "utf8");
+  const requestedFormat = detectRequestedOutputFormat(taskPackage.user_command);
+  const outputArtifacts = await writeRequestedArtifacts({
+    assistantText: finalAssistantText,
+    outputDir: taskPackage.output_requirements.output_dir,
+    requestedFormat
+  });
 
   publish({ type: "step_finished", step: "run_kimi_cli", progress: 0.95 });
-  publish({ type: "artifact_created", path: reportPath, mime: "text/markdown" });
+  for (const artifact of outputArtifacts) {
+    publish({ type: "artifact_created", path: artifact.path, mime: artifact.mime_type });
+  }
   publish({ type: "success", summary: "Kimi CLI print-mode execution completed." });
 
   return {

@@ -1,4 +1,7 @@
+import { detectRequestedOutputFormat } from "./output-format.mjs";
+
 export function buildKimiTaskPackage({ task, outputDir }) {
+  const requestedFormat = detectRequestedOutputFormat(task.user_command);
   return {
     task_id: task.task_id,
     task_type: task.intent,
@@ -13,7 +16,9 @@ export function buildKimiTaskPackage({ task, outputDir }) {
       }
     },
     output_requirements: {
-      primary: "markdown_report",
+      primary: requestedFormat.primaryRequirement,
+      format_id: requestedFormat.id,
+      suggested_extension: requestedFormat.extension,
       save_required: true,
       output_dir: outputDir
     },

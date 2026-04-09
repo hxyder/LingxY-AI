@@ -88,6 +88,26 @@ export function buildKimiPrintPrompt({ taskPackage }) {
     ? sanitizeUtf16(taskPackage.context.text).slice(0, 6_000)
     : "";
 
+  const outputFormatId = taskPackage.output_requirements?.format_id ?? "markdown";
+  const outputInstruction = (() => {
+    if (outputFormatId === "json") {
+      return "- Return valid JSON only.";
+    }
+    if (outputFormatId === "csv") {
+      return "- Return CSV content only.";
+    }
+    if (outputFormatId === "html") {
+      return "- Return a complete HTML fragment or document only.";
+    }
+    if (outputFormatId === "txt") {
+      return "- Return plain text only, without markdown syntax.";
+    }
+    if (outputFormatId === "docx") {
+      return "- Return clean structured plain text suitable for saving into a Word document.";
+    }
+    return "- Produce a complete markdown report as your final answer.";
+  })();
+
   return sanitizeUtf16(
     [
       "You are running inside Universal Context Agent.",
@@ -100,7 +120,7 @@ export function buildKimiPrintPrompt({ taskPackage }) {
       "Required behavior:",
       "- Read the provided source material before answering.",
       "- Do not modify any source files.",
-      "- Produce a complete markdown report as your final answer.",
+      outputInstruction,
       "- Mention missing or unreadable files explicitly instead of guessing.",
       "- Keep the report factual and directly tied to the provided inputs.",
       "",
@@ -110,7 +130,7 @@ export function buildKimiPrintPrompt({ taskPackage }) {
         ? `\nInline captured text:\n${inlineContext}`
         : "",
       "",
-      "Return only the final markdown report."
+      `Return only the final ${outputFormatId} body.`
     ].filter(Boolean).join("\n")
   );
 }

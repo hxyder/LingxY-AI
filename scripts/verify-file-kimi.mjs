@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -96,6 +96,7 @@ const runtime = {
     command: process.execPath,
     args: [mockCli],
     env: process.env,
+    transport: "stream_json_print",
     maxRuntimeSeconds: 30
   }
 };
@@ -139,5 +140,27 @@ assert.equal(result.response.task.status, "success");
 assert.equal(result.response.artifacts.length, 1);
 assert.match(result.response.artifacts[0].path, /report\.md$/);
 assert.ok(runtime.store.taskEvents.some((event) => event.event_type === "artifact_created"));
+
+const htmlResult = await submitFileTask({
+  filePaths: [sampleNote],
+  userCommand: "请总结这个文件，并保存为 html 文件",
+  captureMode: "shell_menu",
+  sourceApp: "explorer.exe",
+  runtime
+});
+assert.equal(htmlResult.task.status, "success");
+assert.match(htmlResult.artifacts[0].path, /result\.html$/);
+assert.equal((await readFile(htmlResult.artifacts[0].path, "utf8")).includes("<html"), true);
+
+const docxResult = await submitFileTask({
+  filePaths: [sampleText],
+  userCommand: "请总结这个文件，并保存为 docx 文档",
+  captureMode: "shell_menu",
+  sourceApp: "explorer.exe",
+  runtime
+});
+assert.equal(docxResult.task.status, "success");
+assert.match(docxResult.artifacts[0].path, /result\.docx$/);
+assert.match(docxResult.artifacts[1].path, /result-preview\.txt$/);
 
 console.log("File entry and Kimi bridge verification passed.");

@@ -32,6 +32,10 @@
 | 25 | UCA-025 | [25_electron_windows_bootstrap_blocker.md](25_electron_windows_bootstrap_blocker.md) | Desktop Runtime Blocker | UCA-021,UCA-022,UCA-023 | `task/uca-025-electron-windows-bootstrap` | done |
 | 26 | UCA-026 | [26_external_trial_validation.md](26_external_trial_validation.md) | External Trial Validation | UCA-020 | `task/uca-026-external-trial-validation` | in_progress |
 | 27 | UCA-027 | [27_desktop_dock_and_notifications.md](27_desktop_dock_and_notifications.md) | Desktop Dock UX | UCA-023,UCA-024,UCA-026 | `task/uca-027-desktop-dock` | in_progress |
+| 28 | UCA-028 | [28_output_format_and_background_delivery.md](28_output_format_and_background_delivery.md) | Output Delivery | UCA-027 | `task/uca-028-output-format` | in_progress |
+| 29 | UCA-029 | [29_unified_capture_entrypoints.md](29_unified_capture_entrypoints.md) | Unified Capture UX | UCA-027,UCA-028 | `task/uca-029-unified-capture` | todo |
+| 30 | UCA-030 | [30_overlay_session_timeline_and_followup.md](30_overlay_session_timeline_and_followup.md) | Overlay Session UX | UCA-028,UCA-029 | `task/uca-030-overlay-session` | todo |
+| 31 | UCA-031 | [31_artifact_center_and_multiformat_results.md](31_artifact_center_and_multiformat_results.md) | Artifact Center | UCA-028,UCA-030 | `task/uca-031-artifact-center` | todo |
 
 ## 当前执行规则
 
