@@ -24,9 +24,17 @@ const templateList = document.querySelector("#templateList");
 const templateForm = document.querySelector("#templateForm");
 const templateNameInput = document.querySelector("#templateNameInput");
 const templatePromptInput = document.querySelector("#templatePromptInput");
+const templateImportInput = document.querySelector("#templateImportInput");
+const importTemplateButton = document.querySelector("#importTemplateButton");
 const deleteTemplateButton = document.querySelector("#deleteTemplateButton");
 const templateState = document.querySelector("#templateState");
 const templatePreview = document.querySelector("#templatePreview");
+const previewDagButton = document.querySelector("#previewDagButton");
+const loadSampleDagButton = document.querySelector("#loadSampleDagButton");
+const dagEditorInput = document.querySelector("#dagEditorInput");
+const dagPreview = document.querySelector("#dagPreview");
+const dagExecutionCount = document.querySelector("#dagExecutionCount");
+const dagExecutionList = document.querySelector("#dagExecutionList");
 const budgetSummary = document.querySelector("#budgetSummary");
 const budgetForm = document.querySelector("#budgetForm");
 const monthlyBudgetInput = document.querySelector("#monthlyBudgetInput");
@@ -57,13 +65,15 @@ const state = {
     codeCliAdapters: [],
     history: [],
     security: null,
-    audit: []
+    audit: [],
+    dagExecutions: []
   },
   selectedTaskId: null,
   selectedTemplateId: null,
   currentHistoryQuery: "",
   detailVersion: 0,
-  updatingSecurity: false
+  updatingSecurity: false,
+  selectedDagExecutionId: null
 };
 
 function escapeHtml(value) {
@@ -82,6 +92,35 @@ function slugify(value) {
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
   return normalized || "template";
+}
+
+function buildSampleDag() {
+  return {
+    nodes: [
+      {
+        id: "extract",
+        target: "browser"
+      },
+      {
+        id: "summarize",
+        target: "kimi_cli"
+      },
+      {
+        id: "report",
+        target: "template.email.draft"
+      }
+    ],
+    edges: [
+      {
+        from: "extract",
+        to: "summarize"
+      },
+      {
+        from: "summarize",
+        to: "report"
+      }
+    ]
+  };
 }
 
 async function fetchJson(pathname, options = {}) {
@@ -454,6 +493,7 @@ async function loadTemplatePreview(templateId) {
     ]);
     const template = templatePayload.template ?? null;
     templatePreview.textContent = exportPayload.raw ?? "暂无导出内容。";
+    templateImportInput.value = exportPayload.raw ?? "";
     templateNameInput.value = template?.name ?? "";
     const prompt = template?.steps?.find((step) => step.kind === "executor")?.inputs?.prompt ?? "";
     templatePromptInput.value = prompt;
@@ -499,6 +539,72 @@ function renderTemplates() {
   for (const button of templateList.querySelectorAll("[data-template-id]")) {
     button.addEventListener("click", () => {
       void selectTemplate(button.dataset.templateId);
+    });
+  }
+}
+
+function renderDagExecutions() {
+  const executions = state.workspace.dagExecutions ?? [];
+  dagExecutionCount.textContent = `${executions.length}`;
+  if (!state.selectedDagExecutionId || !executions.some((execution) => execution.execution_id === state.selectedDagExecutionId)) {
+    state.selectedDagExecutionId = executions[0]?.execution_id ?? null;
+  }
+
+  if (executions.length === 0) {
+    renderEmpty(dagExecutionList, "还没有 DAG 执行快照。");
+    return;
+  }
+
+  dagExecutionList.innerHTML = executions.map((execution) => {
+    const selected = execution.execution_id === state.selectedDagExecutionId;
+    const failedNodeId = execution.failedNodeId ?? execution.failed_node_id ?? null;
+    return `
+      <div class="timeline-item ${selected ? "selected" : ""}" style="${selected ? "border-color: rgba(10, 88, 202, 0.35);" : ""}">
+        <div class="row">
+          <strong>${escapeHtml(execution.execution_id)}</strong>
+          <span class="chip ${execution.status === "success" ? "ready" : execution.status === "failed" ? "danger" : "warning"}">${escapeHtml(execution.status)}</span>
+        </div>
+        <p class="muted" style="margin-top:8px;">节点: ${escapeHtml(execution.graph?.nodes?.length ?? 0)} · 更新时间: ${escapeHtml(formatDateTime(execution.updated_at))}</p>
+        <p class="muted" style="margin-top:8px;">失败节点: ${escapeHtml(failedNodeId ?? "无")}</p>
+        <div class="toolbar" style="margin-top:10px;">
+          <button class="secondary" data-view-dag-id="${escapeHtml(execution.execution_id)}">查看</button>
+          <button class="secondary" data-resume-dag-id="${escapeHtml(execution.execution_id)}" ${execution.status !== "failed" ? "disabled" : ""}>恢复</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  for (const button of dagExecutionList.querySelectorAll("[data-view-dag-id]")) {
+    button.addEventListener("click", () => {
+      const execution = executions.find((entry) => entry.execution_id === button.dataset.viewDagId);
+      if (!execution) {
+        return;
+      }
+      state.selectedDagExecutionId = execution.execution_id;
+      dagEditorInput.value = JSON.stringify(execution.graph ?? buildSampleDag(), null, 2);
+      dagPreview.textContent = JSON.stringify({
+        execution_id: execution.execution_id,
+        status: execution.status,
+        statuses: execution.statuses ?? {},
+        failedNodeId: execution.failedNodeId ?? execution.failed_node_id ?? null
+      }, null, 2);
+      renderDagExecutions();
+    });
+  }
+
+  for (const button of dagExecutionList.querySelectorAll("[data-resume-dag-id]")) {
+    button.addEventListener("click", async () => {
+      const executionId = button.dataset.resumeDagId;
+      dagPreview.textContent = "正在恢复 DAG 执行…";
+      try {
+        const result = await fetchJson(`/dag/executions/${encodeURIComponent(executionId)}/resume`, {
+          method: "POST"
+        });
+        dagPreview.textContent = JSON.stringify(result.execution ?? result, null, 2);
+        await refreshWorkspace();
+      } catch (error) {
+        dagPreview.textContent = `恢复失败：${error.message}`;
+      }
     });
   }
 }
@@ -660,6 +766,7 @@ async function refreshWorkspace() {
       budgetPayload,
       securityPayload,
       auditPayload,
+      dagExecutionsPayload,
       providersPayload,
       codeCliPayload,
       historyPayload
@@ -672,6 +779,7 @@ async function refreshWorkspace() {
       fetchJson("/budget"),
       fetchJson("/security/state"),
       fetchJson("/audit-log"),
+      fetchJson("/dag/executions"),
       fetchJson("/ai/providers"),
       fetchJson("/ai/code-cli"),
       historyPromise
@@ -688,7 +796,8 @@ async function refreshWorkspace() {
       codeCliAdapters: codeCliPayload.adapters ?? [],
       history: historyPayload.results ?? [],
       security: securityPayload.security ?? null,
-      audit: auditPayload.entries ?? []
+      audit: auditPayload.entries ?? [],
+      dagExecutions: dagExecutionsPayload.executions ?? []
     };
 
     setRuntimeBadge(true, `Desktop Runtime 已连接 · ${state.serviceBaseUrl}`);
@@ -699,6 +808,7 @@ async function refreshWorkspace() {
     renderApprovals();
     renderSchedules();
     renderTemplates();
+    renderDagExecutions();
     renderBudget();
     renderHistory();
     renderPrivacy();
@@ -833,6 +943,33 @@ templateForm.addEventListener("submit", async (event) => {
   }
 });
 
+importTemplateButton.addEventListener("click", async () => {
+  const raw = templateImportInput.value.trim();
+  if (!raw) {
+    templateState.textContent = "请先粘贴模板 JSON";
+    return;
+  }
+
+  templateState.textContent = "导入中…";
+  try {
+    await fetchJson("/templates/import", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        actor: "desktop_console",
+        raw
+      })
+    });
+    templateState.textContent = "模板已导入";
+    templateImportInput.value = "";
+    await refreshWorkspace();
+  } catch (error) {
+    templateState.textContent = `导入失败：${error.message}`;
+  }
+});
+
 deleteTemplateButton.addEventListener("click", async () => {
   if (!state.selectedTemplateId) {
     return;
@@ -880,6 +1017,36 @@ historyForm.addEventListener("submit", async (event) => {
   await refreshWorkspace();
 });
 
+previewDagButton.addEventListener("click", async () => {
+  const raw = dagEditorInput.value.trim();
+  if (!raw) {
+    dagPreview.textContent = "请先输入 DAG JSON。";
+    return;
+  }
+
+  dagPreview.textContent = "正在校验…";
+  try {
+    const graph = JSON.parse(raw);
+    const result = await fetchJson("/dag/preview", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        graph
+      })
+    });
+    dagPreview.textContent = JSON.stringify(result.validation ?? result, null, 2);
+  } catch (error) {
+    dagPreview.textContent = `校验失败：${error.message}`;
+  }
+});
+
+loadSampleDagButton.addEventListener("click", () => {
+  dagEditorInput.value = JSON.stringify(buildSampleDag(), null, 2);
+  dagPreview.textContent = "已载入样例 DAG。";
+});
+
 killSwitchToggle.addEventListener("change", async () => {
   await updateSecurityConfig({
     global_kill_switch: killSwitchToggle.checked
@@ -911,6 +1078,8 @@ window.ucaShell.onWindowFocused((payload) => {
     void refreshWorkspace();
   }
 });
+
+dagEditorInput.value = JSON.stringify(buildSampleDag(), null, 2);
 
 void refreshWorkspace();
 setInterval(() => {

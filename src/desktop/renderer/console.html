@@ -156,7 +156,9 @@
       }
 
       .template-preview,
-      .history-preview {
+      .history-preview,
+      .dag-editor,
+      .dag-preview {
         min-height: 140px;
         border-radius: 16px;
         border: 1px solid var(--line);
@@ -167,6 +169,13 @@
 
       .audit-list {
         max-height: 420px;
+        overflow: auto;
+      }
+
+      .execution-list {
+        display: grid;
+        gap: 12px;
+        max-height: 340px;
         overflow: auto;
       }
 
@@ -232,6 +241,7 @@
             <button class="secondary nav-link" data-target="approvalsSection">审批</button>
             <button class="secondary nav-link" data-target="schedulesSection">计划</button>
             <button class="secondary nav-link" data-target="templatesSection">模板</button>
+            <button class="secondary nav-link" data-target="dagSection">DAG</button>
             <button class="secondary nav-link" data-target="budgetSection">预算</button>
             <button class="secondary nav-link" data-target="historySection">历史</button>
             <button class="secondary nav-link" data-target="privacySection">隐私</button>
@@ -379,14 +389,48 @@
                   </div>
                   <div class="toolbar">
                     <button type="submit" class="primary">保存模板</button>
+                    <button type="button" id="importTemplateButton" class="secondary">导入 JSON</button>
                     <button type="button" id="deleteTemplateButton" class="secondary">删除所选</button>
                     <span id="templateState" class="muted">尚未保存</span>
                   </div>
                 </form>
                 <div>
+                  <strong>导入 JSON</strong>
+                  <textarea id="templateImportInput" rows="8" class="dag-editor" placeholder="粘贴模板 JSON 后点击“导入 JSON”。"></textarea>
+                </div>
+                <div>
                   <strong>导出预览</strong>
                   <pre id="templatePreview" class="template-preview muted">选择模板后显示。</pre>
                 </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="workspace-section section-anchor" id="dagSection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">DAG 工作流</h3>
+                <p class="muted" style="margin:4px 0 0;">校验工作流定义，查看执行快照，并从失败节点恢复。</p>
+              </div>
+            </div>
+            <div class="panel-grid">
+              <div class="surface stack">
+                <div class="row">
+                  <strong>DAG 定义</strong>
+                  <div class="toolbar">
+                    <button id="previewDagButton" type="button" class="secondary">校验预览</button>
+                    <button id="loadSampleDagButton" type="button" class="secondary">载入样例</button>
+                  </div>
+                </div>
+                <textarea id="dagEditorInput" rows="12" class="dag-editor" placeholder='{"nodes":[{"id":"extract","target":"browser"},{"id":"summarize","target":"kimi_cli"}],"edges":[{"from":"extract","to":"summarize"}]}'></textarea>
+                <pre id="dagPreview" class="dag-preview muted">尚未预览。</pre>
+              </div>
+              <div class="surface stack">
+                <div class="row">
+                  <strong>执行快照</strong>
+                  <span id="dagExecutionCount" class="muted">0</span>
+                </div>
+                <div id="dagExecutionList" class="execution-list"></div>
               </div>
             </div>
           </section>
