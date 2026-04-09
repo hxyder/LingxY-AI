@@ -32,6 +32,8 @@ export async function submitFileTask({
   const queue = runtime.queue;
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const route = routeIntent(userCommand);
+  const preferredExecutorOverride = executorOverride
+    ?? ((runtime.kimiRuntime && ["fast", "none"].includes(route.executor)) ? "kimi" : null);
   const rawContextPacket = await buildFileContextPacket({
     filePaths,
     captureMode,
@@ -51,7 +53,7 @@ export async function submitFileTask({
     executionMode,
     parentTaskId,
     retryCount,
-    executorOverride
+    executorOverride: preferredExecutorOverride
   });
 
   store.insertTask(task);

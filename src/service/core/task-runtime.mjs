@@ -12,12 +12,12 @@ function createId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`;
 }
 
-function buildSourceDedupeKey(contextPacket, userCommand) {
+function buildSourceDedupeKey(contextPacket, userCommand, executor) {
   const sourceKey = contextPacket.file_paths?.join("|")
     ?? contextPacket.url
     ?? contextPacket.text?.slice(0, 120)
     ?? contextPacket.source_type;
-  return `${contextPacket.source_type}:${contextPacket.source_app}:${userCommand}:${sourceKey}`;
+  return `${contextPacket.source_type}:${contextPacket.source_app}:${executor}:${userCommand}:${sourceKey}`;
 }
 
 function buildHistoryRecord(task) {
@@ -93,7 +93,11 @@ export function createTaskRecord({
     user_command: userCommand,
     execution_mode: executionMode ?? (route.requires_confirmation ? "approval_required" : "interactive"),
     context_packet: contextPacket,
-    source_dedupe_key: buildSourceDedupeKey(contextPacket, userCommand)
+    source_dedupe_key: buildSourceDedupeKey(
+      contextPacket,
+      userCommand,
+      executorOverride ?? route.executor
+    )
   };
 }
 

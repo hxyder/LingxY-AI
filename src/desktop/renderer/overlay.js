@@ -5,6 +5,7 @@ const overlayResult = document.querySelector("#overlayResult");
 const submitButton = document.querySelector("#submitButton");
 const closeButton = document.querySelector("#closeButton");
 const openConsoleButton = document.querySelector("#openConsoleButton");
+const openResultButton = document.querySelector("#openResultButton");
 const pasteClipboardButton = document.querySelector("#pasteClipboardButton");
 const clearContextButton = document.querySelector("#clearContextButton");
 const pendingFilesCard = document.querySelector("#pendingFilesCard");
@@ -17,6 +18,8 @@ let serviceBaseUrl = new URLSearchParams(window.location.search).get("serviceBas
 let activeTaskId = null;
 let lastTask = null;
 let pendingFileSelection = null;
+let lastArtifactPath = null;
+let autoOpenedArtifactTaskId = null;
 
 async function fetchJson(pathname, options = {}) {
   const response = await fetch(`${serviceBaseUrl}${pathname}`, options);
@@ -93,7 +96,7 @@ function renderRecentTask(task = null) {
     return;
   }
 
-  const summary = task.userCommand ?? task.prompt ?? "已提交任务";
+  const summary = task.userCommand ?? task.user_command ?? task.prompt ?? "已提交任务";
   const status = task.status ?? "queued";
   recentTaskCard.replaceChildren();
 
@@ -113,6 +116,18 @@ function renderRecentTask(task = null) {
   statusLine.textContent = `当前状态：${status}`;
 
   recentTaskCard.append(eyebrow, title, taskIdLine, statusLine);
+
+  if (task.artifacts?.length) {
+    const artifactLine = document.createElement("p");
+    artifactLine.className = "muted";
+    artifactLine.textContent = `结果文件：${task.artifacts[0].path}`;
+    recentTaskCard.append(artifactLine);
+  }
+}
+
+function renderResultAction(task = null) {
+  lastArtifactPath = task?.artifacts?.[0]?.path ?? null;
+  openResultButton.hidden = !lastArtifactPath;
 }
 
 async function loadClipboardIntoContext() {
@@ -137,11 +152,23 @@ async function refreshActiveTask() {
 
   try {
     const payload = await fetchJson(`/task/${activeTaskId}`);
-    const task = payload.task ?? payload;
+    const task = {
+      ...(payload.task ?? payload),
+      artifacts: payload.artifacts ?? []
+    };
     lastTask = task;
     renderRecentTask(task);
+    renderResultAction(task);
     if (task.status) {
-      overlayResult.textContent = `任务 ${task.task_id} · ${task.status}`;
+      if (task.status === "success" && task.artifacts?.length) {
+        overlayResult.textContent = `已完成，结果保存在 ${task.artifacts[0].path}`;
+        if (autoOpenedArtifactTaskId !== task.task_id) {
+          autoOpenedArtifactTaskId = task.task_id;
+          await window.ucaShell.openPath(task.artifacts[0].path);
+        }
+      } else {
+        overlayResult.textContent = `任务 ${task.task_id} · ${task.status}`;
+      }
     }
   } catch (error) {
     overlayResult.textContent = `刷新任务失败：${error.message}`;
@@ -157,7 +184,8 @@ async function submitTask() {
         captureMode: pendingFileSelection.captureMode ?? "shell_menu",
         filePaths: pendingFileSelection.filePaths,
         userCommand: overlayCommand.value || "请分析这些文件并给出结论",
-        executionMode: "interactive"
+        executionMode: "interactive",
+        executorOverride: "kimi"
       }
       : {
         sourceApp: "uca.overlay",
@@ -178,12 +206,16 @@ async function submitTask() {
     activeTaskId = result.task.task_id;
     lastTask = result.task;
     renderRecentTask(result.task);
+    renderResultAction(result.task);
     if (pendingFileSelection?.filePaths?.length) {
       overlayContext.value = `已从 Explorer 接收 ${pendingFileSelection.filePaths.length} 个文件`;
       pendingFileSelection = null;
       renderPendingFiles();
     }
     overlayResult.textContent = `已提交 ${result.task.task_id}`;
+    setTimeout(() => {
+      window.ucaShell.hideWindow("overlay");
+    }, 500);
   } catch (error) {
     overlayResult.textContent = `提交失败：${error.message}`;
   }
@@ -220,6 +252,13 @@ closeButton.addEventListener("click", () => {
 
 openConsoleButton.addEventListener("click", async () => {
   await window.ucaShell.showWindow("console");
+});
+
+openResultButton.addEventListener("click", async () => {
+  if (!lastArtifactPath) {
+    return;
+  }
+  await window.ucaShell.openPath(lastArtifactPath);
 });
 
 pasteClipboardButton.addEventListener("click", () => {
@@ -261,6 +300,7 @@ window.ucaShell.onContextReceived((payload) => {
 
 renderPendingFiles();
 renderRecentTask(lastTask);
+renderResultAction(lastTask);
 loadClipboardIntoContext();
 refreshStatus();
 setInterval(refreshActiveTask, 2000);

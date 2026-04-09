@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer, clipboard } = require("electron");
+const { contextBridge, ipcRenderer, clipboard, shell } = require("electron");
 
 contextBridge.exposeInMainWorld("ucaShell", {
   getShellStatus() {
@@ -12,6 +12,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   },
   readClipboardText() {
     return clipboard.readText();
+  },
+  openPath(targetPath) {
+    return shell.openPath(targetPath);
   },
   onShortcutTriggered(callback) {
     const listener = (_event, payload) => callback(payload);
