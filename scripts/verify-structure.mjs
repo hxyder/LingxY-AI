@@ -38,6 +38,8 @@ const requiredPaths = [
   "docs/release/known_issues.md",
   "docs/release/rollback_plan.md",
   "docs/release/trial_release_notes_v0.1.0-trial.1.md",
+  "docs/release/external_trial_checklist.md",
+  "docs/release/trial_feedback_template.md",
   "docs/scheduler/README.md",
   "docs/scheduler/cron_cheatsheet.md",
   "docs/scheduler/trigger_types.md",

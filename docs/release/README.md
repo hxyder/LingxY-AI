@@ -16,5 +16,7 @@ Included documents:
 - `e2e_matrix.md`
 - `known_issues.md`
 - `rollback_plan.md`
+- `external_trial_checklist.md`
+- `trial_feedback_template.md`
 
 The generated sideload bundle is produced by `npm run build:trial-package`.

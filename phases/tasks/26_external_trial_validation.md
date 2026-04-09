@@ -50,11 +50,11 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：in_progress
 - 执行分支：`task/uca-026-external-trial-validation`
-- 开始日期：
+- 开始日期：2026-04-09
 - 完成日期：
-- 实际新增内容：
-- 验证结果：
+- 实际新增内容：新增 `docs/release/external_trial_checklist.md` 作为外部试用执行清单；新增 `docs/release/trial_feedback_template.md` 作为统一反馈模板；trial bundle 资产清单、release 文档入口和自动验证已同步接入这两份文档，方便直接随包发给测试者。
+- 验证结果：`node scripts/verify-release-readiness.mjs`、`npm run check`
 - 遗留问题：
 - 交接给下一个任务：

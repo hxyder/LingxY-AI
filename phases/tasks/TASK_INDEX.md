@@ -30,7 +30,7 @@
 | 23 | UCA-023 | [23_context_handoff_and_file_prompt_ui.md](23_context_handoff_and_file_prompt_ui.md) | Context Handoff UI | UCA-021,UCA-022,UCA-016 | `task/uca-023-context-handoff-ui` | done |
 | 24 | UCA-024 | [24_console_rendered_workspace.md](24_console_rendered_workspace.md) | Console Workspace | UCA-021,UCA-019 | `task/uca-024-console-workspace` | done |
 | 25 | UCA-025 | [25_electron_windows_bootstrap_blocker.md](25_electron_windows_bootstrap_blocker.md) | Desktop Runtime Blocker | UCA-021,UCA-022,UCA-023 | `task/uca-025-electron-windows-bootstrap` | done |
-| 26 | UCA-026 | [26_external_trial_validation.md](26_external_trial_validation.md) | External Trial Validation | UCA-020 | `task/uca-026-external-trial-validation` | todo |
+| 26 | UCA-026 | [26_external_trial_validation.md](26_external_trial_validation.md) | External Trial Validation | UCA-020 | `task/uca-026-external-trial-validation` | in_progress |
 
 ## 当前执行规则
 

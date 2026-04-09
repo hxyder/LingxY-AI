@@ -15,6 +15,8 @@ for (const relativePath of [
   "docs/release/known_issues.md",
   "docs/release/rollback_plan.md",
   "docs/release/trial_release_notes_v0.1.0-trial.1.md",
+  "docs/release/external_trial_checklist.md",
+  "docs/release/trial_feedback_template.md",
   "scripts/build-trial-package.mjs",
   "tools/release/README.md",
   "tools/release/release-config.json"
