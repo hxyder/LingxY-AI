@@ -25,6 +25,10 @@
 | 18 | UCA-018 | [18_console_and_operator_ui.md](18_console_and_operator_ui.md) | UI | UCA-015,UCA-016 | `task/uca-018-console-ui` | in_progress |
 | 19 | UCA-019 | [19_template_persistence_and_dag_resume.md](19_template_persistence_and_dag_resume.md) | Platform Hardening | UCA-015,UCA-017,UCA-018 | `task/uca-019-template-dag` | in_progress |
 | 20 | UCA-020 | [20_e2e_validation_and_packaging.md](20_e2e_validation_and_packaging.md) | Release Readiness | UCA-016,UCA-017,UCA-018,UCA-019 | `task/uca-020-e2e-packaging` | in_progress |
+| 21 | UCA-021 | [21_desktop_renderer_foundation.md](21_desktop_renderer_foundation.md) | Desktop UI | UCA-018,UCA-020 | `task/uca-021-desktop-renderer` | in_progress |
+| 22 | UCA-022 | [22_overlay_composer_and_quick_actions.md](22_overlay_composer_and_quick_actions.md) | Overlay UI | UCA-021 | `task/uca-022-overlay-composer` | todo |
+| 23 | UCA-023 | [23_context_handoff_and_file_prompt_ui.md](23_context_handoff_and_file_prompt_ui.md) | Context Handoff UI | UCA-021,UCA-022,UCA-016 | `task/uca-023-context-handoff-ui` | todo |
+| 24 | UCA-024 | [24_console_rendered_workspace.md](24_console_rendered_workspace.md) | Console Workspace | UCA-021,UCA-019 | `task/uca-024-console-workspace` | todo |
 
 ## 当前执行规则
 

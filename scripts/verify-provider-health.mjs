@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { createPersistentRuntime } from "../src/service/core/persistent-runtime.mjs";
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+
 const runtime = createPersistentRuntime({
-  port: 0
+  baseDir: path.join(repoRoot, ".tmp", "verify-provider-health", crypto.randomUUID()),
+  port: 0,
+  pipeName: `\\\\.\\pipe\\uca-helper-provider-health-${crypto.randomUUID()}`
 });
 
 const listening = await runtime.start();

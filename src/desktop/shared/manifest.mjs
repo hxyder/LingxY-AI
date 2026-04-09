@@ -6,6 +6,8 @@ export const WINDOW_IDS = Object.freeze({
 export const IPC_CHANNELS = Object.freeze({
   shellReady: "uca:shell-ready",
   shellStatus: "uca:shell-status",
+  shellShowWindow: "uca:shell-show-window",
+  shellHideWindow: "uca:shell-hide-window",
   overlayToggle: "uca:overlay-toggle",
   consoleOpen: "uca:console-open",
   shortcutTriggered: "uca:shortcut-triggered",

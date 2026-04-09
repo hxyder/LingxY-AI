@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>UCA Console</title>
+    <link rel="stylesheet" href="./shared.css">
+    <style>
+      body {
+        min-height: 100vh;
+        padding: 28px;
+      }
+
+      .console-shell {
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+        gap: 20px;
+      }
+
+      .sidebar,
+      .workspace {
+        padding: 22px;
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .summary-tile {
+        padding: 14px;
+        border-radius: 18px;
+        background: var(--panel-strong);
+      }
+
+      .summary-tile strong {
+        display: block;
+        font-size: 24px;
+        margin-top: 6px;
+      }
+
+      .composer {
+        display: grid;
+        gap: 12px;
+      }
+
+      .task-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .task-item {
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.86);
+      }
+
+      .task-item h4 {
+        margin: 0 0 6px;
+        font-size: 15px;
+      }
+
+      .task-item p {
+        margin: 0;
+      }
+
+      .integration-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .integration-item {
+        padding: 14px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid var(--line);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="console-shell">
+      <aside class="sidebar card stack">
+        <div class="shell-header">
+          <div class="shell-brand">
+            <span class="eyebrow">Desktop Console</span>
+            <h1 class="title">UCA</h1>
+            <p class="subtitle">任务、入口、预算和最近执行状态。</p>
+          </div>
+        </div>
+        <div id="runtimeState" class="chip warning">正在连接 runtime…</div>
+        <div class="summary-grid" id="summaryGrid"></div>
+        <div class="stack">
+          <div>
+            <h3>集成状态</h3>
+            <p class="muted">当前阶段以 Code CLI 路径为主。</p>
+          </div>
+          <div id="integrationList" class="integration-list"></div>
+        </div>
+      </aside>
+      <main class="workspace card stack">
+        <div class="shell-header">
+          <div class="shell-brand">
+            <span class="eyebrow">Task Composer</span>
+            <h2 class="title" style="font-size: 24px;">快速提交任务</h2>
+            <p class="subtitle">不打开聊天窗口，直接把当前要求提交给 UCA runtime。</p>
+          </div>
+          <button id="refreshButton" class="secondary">刷新</button>
+        </div>
+
+        <form id="taskComposer" class="composer">
+          <div>
+            <label for="commandInput">你要 UCA 做什么</label>
+            <textarea id="commandInput" rows="3" placeholder="例如：请解释这段内容并输出 5 条要点"></textarea>
+          </div>
+          <div>
+            <label for="contextInput">上下文文本</label>
+            <textarea id="contextInput" rows="8" placeholder="粘贴文字、摘录、说明，或者留空"></textarea>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button type="submit" class="primary">提交任务</button>
+            <span id="submitState" class="muted">尚未提交</span>
+          </div>
+        </form>
+
+        <section class="stack">
+          <div class="shell-header">
+            <div>
+              <h3 style="margin:0;">最近任务</h3>
+              <p class="muted" style="margin:4px 0 0;">查看最近执行，后续会扩展为完整工作台。</p>
+            </div>
+          </div>
+          <div id="taskList" class="task-list"></div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="./console.js"></script>
+  </body>
+</html>

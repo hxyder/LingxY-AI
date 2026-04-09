@@ -1,20 +1,34 @@
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage } from "electron";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
 
-function buildWindowHtml(windowDef, serviceBaseUrl) {
-  const payload = JSON.stringify({
-    windowId: windowDef.id,
-    route: windowDef.route,
-    serviceBaseUrl
-  });
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const RENDERER_DIR = path.join(__dirname, "..", "renderer");
+const PRELOAD_PATH = path.join(RENDERER_DIR, "preload.cjs");
 
-  return `data:text/html;charset=utf-8,${encodeURIComponent(`<!doctype html>
-<html lang="en">
-  <head><meta charset="utf-8"><title>${windowDef.title}</title></head>
-  <body>
-    <pre id="uca-shell">${payload}</pre>
-  </body>
-</html>`)}`;
+function buildWindowUrl(windowDef, serviceBaseUrl) {
+  const filePath = path.join(RENDERER_DIR, `${windowDef.id}.html`);
+  const url = new URL(pathToFileURL(filePath).toString());
+  url.searchParams.set("windowId", windowDef.id);
+  url.searchParams.set("route", windowDef.route);
+  url.searchParams.set("serviceBaseUrl", serviceBaseUrl);
+  return url.toString();
+}
+
+function resolveWindowOptions(windowDef) {
+  if (windowDef.id === "overlay") {
+    return {
+      alwaysOnTop: true,
+      autoHideMenuBar: true,
+      maximizable: false,
+      minimizable: false
+    };
+  }
+
+  return {
+    autoHideMenuBar: true
+  };
 }
 
 export function createElectronShellRuntime({
@@ -22,22 +36,56 @@ export function createElectronShellRuntime({
 } = {}) {
   const windows = new Map();
   let tray = null;
+  let quitting = false;
 
   function createWindows() {
     for (const windowDef of DESKTOP_SHELL_MANIFEST.windows) {
+      if (windows.has(windowDef.id)) {
+        continue;
+      }
       const browserWindow = new BrowserWindow({
         width: windowDef.width,
         height: windowDef.height,
         show: !windowDef.startsHidden,
         title: windowDef.title,
+        ...resolveWindowOptions(windowDef),
         webPreferences: {
-          sandbox: true,
-          contextIsolation: true
+          sandbox: false,
+          contextIsolation: true,
+          preload: PRELOAD_PATH
         }
       });
-      browserWindow.loadURL(buildWindowHtml(windowDef, serviceBaseUrl));
+      browserWindow.on("close", (event) => {
+        if (!quitting) {
+          event.preventDefault();
+          browserWindow.hide();
+        }
+      });
+      browserWindow.on("closed", () => {
+        windows.delete(windowDef.id);
+      });
+      browserWindow.loadURL(buildWindowUrl(windowDef, serviceBaseUrl));
       windows.set(windowDef.id, browserWindow);
     }
+  }
+
+  function showWindow(windowId) {
+    const target = windows.get(windowId);
+    if (!target) {
+      return false;
+    }
+    target.show();
+    target.focus();
+    return true;
+  }
+
+  function hideWindow(windowId) {
+    const target = windows.get(windowId);
+    if (!target) {
+      return false;
+    }
+    target.hide();
+    return true;
   }
 
   function registerShortcuts() {
@@ -48,10 +96,10 @@ export function createElectronShellRuntime({
           accelerator: shortcut.accelerator
         };
         if (shortcut.id === "toggle-overlay") {
-          windows.get("overlay")?.show();
+          showWindow("overlay");
         }
         if (shortcut.id === "open-console") {
-          windows.get("console")?.show();
+          showWindow("console");
         }
         for (const browserWindow of windows.values()) {
           browserWindow.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
@@ -67,13 +115,13 @@ export function createElectronShellRuntime({
       {
         label: "Open Console",
         click() {
-          windows.get("console")?.show();
+          showWindow("console");
         }
       },
       {
         label: "Open Overlay",
         click() {
-          windows.get("overlay")?.show();
+          showWindow("overlay");
         }
       },
       {
@@ -93,12 +141,23 @@ export function createElectronShellRuntime({
       registerShortcuts();
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({
         serviceBaseUrl,
-        windowIds: [...windows.keys()]
+        windowIds: [...windows.keys()],
+        windows: DESKTOP_SHELL_MANIFEST.windows.map((windowDef) => ({
+          id: windowDef.id,
+          title: windowDef.title,
+          route: windowDef.route,
+          visible: windows.get(windowDef.id)?.isVisible() ?? false
+        }))
       }));
+      ipcMain.handle(IPC_CHANNELS.shellShowWindow, (_event, windowId) => showWindow(windowId));
+      ipcMain.handle(IPC_CHANNELS.shellHideWindow, (_event, windowId) => hideWindow(windowId));
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
           createWindows();
         }
+      });
+      app.on("before-quit", () => {
+        quitting = true;
       });
       return {
         serviceBaseUrl,

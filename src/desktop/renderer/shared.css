@@ -1,0 +1,146 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f2ea;
+  --panel: #fffdf8;
+  --panel-strong: #f1e6d4;
+  --ink: #1f1b16;
+  --muted: #6b6257;
+  --line: rgba(59, 43, 24, 0.14);
+  --accent: #a33a16;
+  --accent-soft: rgba(163, 58, 22, 0.12);
+  --success: #1f7a4a;
+  --warning: #a66a00;
+  --danger: #a12020;
+  --shadow: 0 18px 50px rgba(54, 34, 8, 0.16);
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0) 35%),
+    linear-gradient(160deg, #efe3cf 0%, #f7f3ec 48%, #ede7de 100%);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+button.primary {
+  color: white;
+  background: var(--accent);
+  box-shadow: 0 10px 24px rgba(163, 58, 22, 0.22);
+}
+
+button.secondary {
+  color: var(--ink);
+  background: var(--panel);
+  border-color: var(--line);
+}
+
+textarea,
+input[type="text"] {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 12px 14px;
+  color: var(--ink);
+}
+
+.shell-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.shell-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.eyebrow {
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--muted);
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.chip.ready {
+  color: var(--success);
+  background: rgba(31, 122, 74, 0.1);
+}
+
+.chip.warning {
+  color: var(--warning);
+  background: rgba(166, 106, 0, 0.12);
+}
+
+.chip.danger {
+  color: var(--danger);
+  background: rgba(161, 32, 32, 0.12);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.mono {
+  font-family: Consolas, "SFMono-Regular", monospace;
+}

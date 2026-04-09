@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>UCA Overlay</title>
+    <link rel="stylesheet" href="./shared.css">
+    <style>
+      body {
+        min-height: 100vh;
+        padding: 18px;
+      }
+
+      .overlay-shell {
+        padding: 18px;
+      }
+
+      .quick-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="overlay-shell card stack">
+      <div class="shell-header">
+        <div class="shell-brand">
+          <span class="eyebrow">Quick Overlay</span>
+          <h1 class="title" style="font-size: 22px;">快速输入</h1>
+          <p class="subtitle">面向 master plan 的一级轻交互入口。</p>
+        </div>
+        <button id="closeButton" class="secondary">隐藏</button>
+      </div>
+
+      <div id="overlayState" class="chip warning">正在连接 runtime…</div>
+
+      <div class="quick-grid">
+        <button class="secondary quick-action" data-command="请总结这段内容并列出要点">总结</button>
+        <button class="secondary quick-action" data-command="请解释这段内容">解释</button>
+        <button class="secondary quick-action" data-command="请翻译成中文">翻译</button>
+        <button class="secondary quick-action" data-command="请改写成更清晰的表达">改写</button>
+      </div>
+
+      <div class="stack">
+        <div>
+          <label for="overlayCommand">任务要求</label>
+          <textarea id="overlayCommand" rows="3" placeholder="请输入你的要求"></textarea>
+        </div>
+        <div>
+          <label for="overlayContext">上下文</label>
+          <textarea id="overlayContext" rows="6" placeholder="贴入文字，或等待后续文件/剪贴板/右键入口接入"></textarea>
+        </div>
+        <div style="display:flex; gap:10px; align-items:center;">
+          <button id="submitButton" class="primary">立即执行</button>
+          <button id="openConsoleButton" class="secondary">打开控制台</button>
+        </div>
+        <p id="overlayResult" class="muted">尚未提交</p>
+      </div>
+    </main>
+    <script type="module" src="./overlay.js"></script>
+  </body>
+</html>
