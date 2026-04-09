@@ -18,6 +18,12 @@ $RuntimeUrl = "http://127.0.0.1:4310"
 $NodeExe = (Get-Command node).Source
 $ElectronCli = Join-Path $RepoRoot "node_modules\\electron\\cli.js"
 
+try {
+  & (Join-Path $PSScriptRoot "stop-trial.ps1") | Out-Null
+} catch {
+  # Best effort cleanup of stale repo-local trial processes before launch.
+}
+
 New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
 
 function Test-RuntimeHealth {

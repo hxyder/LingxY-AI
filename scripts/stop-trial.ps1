@@ -5,6 +5,24 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $StateDir = Join-Path $RepoRoot ".tmp\\trial"
 $RuntimePidFile = Join-Path $StateDir "runtime.pid"
 $ElectronPidFile = Join-Path $StateDir "electron.pid"
+$RepoRootResolved = [System.IO.Path]::GetFullPath($RepoRoot)
+
+function Get-UcaTrialProcesses {
+  $escapedRepoRoot = [Regex]::Escape($RepoRootResolved)
+
+  Get-CimInstance Win32_Process |
+    Where-Object {
+      $_.CommandLine -and (
+        $_.CommandLine -match $escapedRepoRoot -or
+        $_.CommandLine -match 'universal-context-agent' -or
+        $_.CommandLine -match 'start-runtime\.mjs' -or
+        $_.CommandLine -match 'node_modules\\electron\\cli\.js'
+      )
+    } |
+    Where-Object {
+      $_.Name -in @('electron.exe', 'node.exe')
+    }
+}
 
 function Stop-ProcessFromPidFile {
   param(
@@ -31,3 +49,13 @@ function Stop-ProcessFromPidFile {
 
 Stop-ProcessFromPidFile -PidFile $ElectronPidFile -Name "Electron"
 Stop-ProcessFromPidFile -PidFile $RuntimePidFile -Name "Runtime"
+
+$staleProcesses = Get-UcaTrialProcesses | Sort-Object ProcessId -Descending
+foreach ($process in $staleProcesses) {
+  try {
+    Stop-Process -Id $process.ProcessId -Force -ErrorAction Stop
+    Write-Host "Stopped stale $($process.Name) process: $($process.ProcessId)"
+  } catch {
+    Write-Host "Stale $($process.Name) process was already gone: $($process.ProcessId)"
+  }
+}
