@@ -1,3 +1,5 @@
+import { getBuiltinProviderStatus } from "./runtime.mjs";
+
 function createBuiltinProvider({
   id,
   kind,
@@ -9,11 +11,28 @@ function createBuiltinProvider({
     kind,
     displayName,
     capabilities,
-    async isConfigured() {
+    async isConfigured({ config } = {}) {
+      const status = await getBuiltinProviderStatus(id, {
+        config: config?.ai?.providers?.[id] ?? {}
+      });
+      return status.configured;
+    },
+    async validateConfig({ config } = {}) {
+      const status = await getBuiltinProviderStatus(id, {
+        config: config?.ai?.providers?.[id] ?? {}
+      });
+      if (!status.configured) {
+        throw new Error(`${id}: ${status.detail}`);
+      }
       return true;
     },
-    async validateConfig() {
-      return true;
+    async getStatus({ config } = {}) {
+      return {
+        ...(await getBuiltinProviderStatus(id, {
+          config: config?.ai?.providers?.[id] ?? {}
+        })),
+        capabilities
+      };
     }
   };
 }

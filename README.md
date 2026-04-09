@@ -62,3 +62,4 @@ Current implemented slices include:
 - persistent local runtime scaffold with SQLite, HTTP/SSE, config storage, and Electron main entry
 - native integration install scripts plus .NET Explorer helper / Native Messaging host
 - resolved Kimi CLI runtime with real print-mode execution and health probing
+- provider health detection for OpenAI, Claude, Kimi API, and Ollama

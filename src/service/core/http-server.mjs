@@ -136,12 +136,17 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
 
     try {
       if (method === "GET" && url.pathname === "/health") {
+        const config = runtime.configStore?.load?.() ?? {};
         return sendJson(response, 200, {
           ok: true,
           runtime_dir: paths.baseDir,
           db_path: paths.dbPath,
           task_total: runtime.store.listTasks().length,
-          kimi: runtime.kimiRuntimeStatus ?? null
+          kimi: runtime.kimiRuntimeStatus ?? null,
+          providers: await runtime.platform.aiProviders.listStatus({
+            runtime,
+            config
+          })
         });
       }
 
@@ -330,8 +335,12 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       }
 
       if (method === "GET" && url.pathname === "/ai/providers") {
+        const config = runtime.configStore?.load?.() ?? {};
         return sendJson(response, 200, {
-          providers: runtime.platform.aiProviders.list()
+          providers: await runtime.platform.aiProviders.listStatus({
+            runtime,
+            config
+          })
         });
       }
 

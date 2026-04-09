@@ -55,7 +55,7 @@
 - 执行分支：`task/uca-017-real-ai`
 - 开始日期：2026-04-08
 - 完成日期：
-- 实际新增内容：接入真实 Kimi CLI runtime 解析、PATH/配置探测、真实 print-mode 执行、`/health` 与 `/ai/code-cli` 状态透出、`verify-kimi-runtime` 烟测。
-- 验证结果：`npm run check` 通过；真实 `kimi.exe` 已在本机解析并验证通过，版本 `1.30.0`；本地 runtime 的 `/health` 与 `/ai/code-cli` 已返回 Kimi 状态。
-- 遗留问题：OpenAI / Claude / Ollama provider、真实 OCR / PDF 正式 runtime、多模态成本回写仍未完成。
+- 实际新增内容：接入真实 Kimi CLI runtime 解析、PATH/配置探测、真实 print-mode 执行、OpenAI / Claude / Kimi API / Ollama provider health 检测、`/health` 与 `/ai/code-cli` / `/ai/providers` 状态透出、`verify-kimi-runtime` 与 `verify-provider-health` 烟测。
+- 验证结果：`npm run check` 通过；真实 `kimi.exe` 已在本机解析并验证通过，版本 `1.30.0`；本地 runtime 的 `/health`、`/ai/code-cli`、`/ai/providers` 已返回 provider 状态。
+- 遗留问题：OpenAI / Claude / Kimi API / Ollama 的真实模型调用链与成本回写仍未完成；真实 OCR / PDF 正式 runtime、多模态成本回写仍未完成。
 - 交接给下一个任务：后续继续在本任务内补 provider / OCR / vision 的真实接线；UI 任务可以直接读取新的 Kimi health 与 adapter 状态。
