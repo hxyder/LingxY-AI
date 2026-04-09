@@ -49,11 +49,11 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：done
 - 执行分支：`task/uca-025-electron-windows-bootstrap`
-- 开始日期：
-- 完成日期：
-- 实际新增内容：
-- 验证结果：
-- 遗留问题：
-- 交接给下一个任务：
+- 开始日期：2026-04-08
+- 完成日期：2026-04-08
+- 实际新增内容：恢复 Electron CJS bootstrap 入口；修正 `start-trial.ps1` 在 Windows PowerShell 5 下的进程参数拼接；显式清理 `ELECTRON_RUN_AS_NODE`；修复 helper overlay_prompt 的 mutex/同步 IO 问题，使 shell 可被 helper 真实唤起。
+- 验证结果：`powershell -ExecutionPolicy Bypass -File .\\scripts\\start-trial.ps1 -WithShell` 可启动 Electron 进程；helper `overlay_prompt` 调用成功返回；`node scripts/verify-native-integrations.mjs`、`npm run check` 通过。
+- 遗留问题：仍缺少窗口级自动化 UI smoke；当前机器上可能残留历史 Electron 进程，调试时建议先跑 `stop-trial.ps1`。
+- 交接给下一个任务：回到 UCA-024，继续把控制台渲染工作台做成真实桌面页。

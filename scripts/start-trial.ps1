@@ -113,8 +113,7 @@ if ($WithShell) {
     $startInfo.RedirectStandardOutput = $true
     $startInfo.RedirectStandardError = $true
     $startInfo.UseShellExecute = $false
-    $startInfo.ArgumentList.Add($ElectronCli)
-    $startInfo.ArgumentList.Add(".")
+    $startInfo.Arguments = "`"$ElectronCli`" ."
     if ($startInfo.Environment.ContainsKey("ELECTRON_RUN_AS_NODE")) {
       $startInfo.Environment.Remove("ELECTRON_RUN_AS_NODE")
     }

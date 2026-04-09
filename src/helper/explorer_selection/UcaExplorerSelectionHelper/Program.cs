@@ -79,15 +79,17 @@ if (launchMode == "overlay_prompt")
     var invocationId = Guid.NewGuid().ToString("N");
 
     using var mutex = new Mutex(false, @"Local\UCA.ExplorerSelection.Batch");
+    var ownsMutex = false;
     if (!mutex.WaitOne(TimeSpan.FromSeconds(5)))
     {
         throw new TimeoutException("Could not acquire Explorer selection batch mutex.");
     }
+    ownsMutex = true;
 
     ExplorerSelectionBatchState batchState;
     if (File.Exists(batchFilePath))
     {
-        batchState = JsonSerializer.Deserialize<ExplorerSelectionBatchState>(await File.ReadAllTextAsync(batchFilePath, Encoding.UTF8))
+        batchState = JsonSerializer.Deserialize<ExplorerSelectionBatchState>(File.ReadAllText(batchFilePath, Encoding.UTF8))
             ?? new ExplorerSelectionBatchState();
     }
     else
@@ -112,8 +114,9 @@ if (launchMode == "overlay_prompt")
         .ToArray();
 
     var serializedBatch = JsonSerializer.Serialize(batchState, jsonOptions);
-    await File.WriteAllTextAsync(batchFilePath, serializedBatch, new UTF8Encoding(false));
+    File.WriteAllText(batchFilePath, serializedBatch, new UTF8Encoding(false));
     mutex.ReleaseMutex();
+    ownsMutex = false;
 
     await WaitForBatchWindowAsync(batchFilePath);
 
@@ -121,6 +124,7 @@ if (launchMode == "overlay_prompt")
     {
         throw new TimeoutException("Could not re-acquire Explorer selection batch mutex.");
     }
+    ownsMutex = true;
 
     try
     {
@@ -130,7 +134,7 @@ if (launchMode == "overlay_prompt")
             return;
         }
 
-        var latestBatch = JsonSerializer.Deserialize<ExplorerSelectionBatchState>(await File.ReadAllTextAsync(batchFilePath, Encoding.UTF8))
+        var latestBatch = JsonSerializer.Deserialize<ExplorerSelectionBatchState>(File.ReadAllText(batchFilePath, Encoding.UTF8))
             ?? new ExplorerSelectionBatchState();
 
         if (!string.Equals(latestBatch.OwnerId, invocationId, StringComparison.Ordinal))
@@ -151,7 +155,7 @@ if (launchMode == "overlay_prompt")
             captured_at = latestBatch.CapturedAt ?? DateTime.UtcNow.ToString("O")
         };
         var handoffJson = JsonSerializer.Serialize(handoffPayload, jsonOptions);
-        await File.WriteAllTextAsync(handoffPath, handoffJson, new UTF8Encoding(false));
+        File.WriteAllText(handoffPath, handoffJson, new UTF8Encoding(false));
         File.Delete(batchFilePath);
 
         var startInfo = new ProcessStartInfo
@@ -190,7 +194,10 @@ if (launchMode == "overlay_prompt")
     }
     finally
     {
-        mutex.ReleaseMutex();
+        if (ownsMutex)
+        {
+            mutex.ReleaseMutex();
+        }
     }
 }
 
