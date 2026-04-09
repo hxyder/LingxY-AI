@@ -1,4 +1,5 @@
-const { contextBridge, ipcRenderer, clipboard, shell } = require("electron");
+const { contextBridge, ipcRenderer, clipboard, shell, webUtils } = require("electron");
+const { promises: fs } = require("node:fs");
 
 contextBridge.exposeInMainWorld("ucaShell", {
   getShellStatus() {
@@ -13,8 +14,29 @@ contextBridge.exposeInMainWorld("ucaShell", {
   readClipboardText() {
     return clipboard.readText();
   },
+  writeClipboardText(text) {
+    clipboard.writeText(text ?? "");
+  },
   openPath(targetPath) {
     return shell.openPath(targetPath);
+  },
+  async readTextFile(targetPath, maxChars = 4000) {
+    const content = await fs.readFile(targetPath, "utf8");
+    if (typeof maxChars !== "number" || maxChars <= 0) {
+      return content;
+    }
+    return content.slice(0, maxChars);
+  },
+  resolveDroppedFilePaths(files) {
+    return (files ?? [])
+      .map((file) => {
+        try {
+          return webUtils.getPathForFile(file);
+        } catch {
+          return "";
+        }
+      })
+      .filter((filePath) => typeof filePath === "string" && filePath.length > 0);
   },
   submitDroppedFiles(filePaths) {
     return ipcRenderer.invoke("uca:shell-submit-dropped-files", filePaths);

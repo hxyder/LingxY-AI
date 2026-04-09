@@ -6,6 +6,8 @@ const submitButton = document.querySelector("#submitButton");
 const closeButton = document.querySelector("#closeButton");
 const openConsoleButton = document.querySelector("#openConsoleButton");
 const openResultButton = document.querySelector("#openResultButton");
+const copyResultButton = document.querySelector("#copyResultButton");
+const reuseResultButton = document.querySelector("#reuseResultButton");
 const pasteClipboardButton = document.querySelector("#pasteClipboardButton");
 const clearContextButton = document.querySelector("#clearContextButton");
 const pendingFilesCard = document.querySelector("#pendingFilesCard");
@@ -13,6 +15,12 @@ const pendingFilesSummary = document.querySelector("#pendingFilesSummary");
 const pendingFilesList = document.querySelector("#pendingFilesList");
 const recentTaskCard = document.querySelector("#recentTaskCard");
 const quickActions = [...document.querySelectorAll(".quick-action")];
+const outputStyleButtons = [...document.querySelectorAll(".output-style")];
+const contextBubble = document.querySelector("#contextBubble");
+const userIntentBubble = document.querySelector("#userIntentBubble");
+const statusBubble = document.querySelector("#statusBubble");
+const resultPreviewCard = document.querySelector("#resultPreviewCard");
+const resultPreviewText = document.querySelector("#resultPreviewText");
 
 let serviceBaseUrl = new URLSearchParams(window.location.search).get("serviceBaseUrl") ?? "http://127.0.0.1:4310";
 let activeTaskId = null;
@@ -21,6 +29,75 @@ let pendingFileSelection = null;
 let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
 let notifiedTaskId = null;
+let selectedOutputSuffix = "";
+let lastArtifactPreview = "";
+
+function refreshConversationBubbles() {
+  if (pendingFileSelection?.filePaths?.length) {
+    const preview = pendingFileSelection.filePaths.slice(0, 2).join("\n");
+    const remainder = pendingFileSelection.filePaths.length > 2 ? `\n还有 ${pendingFileSelection.filePaths.length - 2} 个文件。` : "";
+    contextBubble.textContent = `我已经接收到这些文件：\n${preview}${remainder}`;
+  } else if (overlayContext.value.trim()) {
+    contextBubble.textContent = `当前上下文已就绪：\n${overlayContext.value.trim().slice(0, 160)}`;
+  } else {
+    contextBubble.textContent = "当前还没有接收到文件或上下文。";
+  }
+
+  const commandText = overlayCommand.value.trim();
+  userIntentBubble.textContent = commandText
+    ? `我的要求是：${commandText}`
+    : "你可以直接输入，也可以点下面的动作按钮。";
+
+  statusBubble.textContent = overlayResult.textContent || "尚未提交";
+}
+
+function normalisePreviewText(rawText = "") {
+  return rawText
+    .replace(/\r\n/g, "\n")
+    .replace(/^#{1,6}\s*/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function renderResultPreview(previewText = "") {
+  lastArtifactPreview = previewText.trim();
+  resultPreviewCard.hidden = lastArtifactPreview.length === 0;
+  resultPreviewText.textContent = lastArtifactPreview || "结果将在这里显示。";
+}
+
+async function loadArtifactPreview(artifactPath) {
+  if (!artifactPath) {
+    renderResultPreview("");
+    return;
+  }
+
+  try {
+    const rawText = await window.ucaShell.readTextFile(artifactPath, 2400);
+    const preview = normalisePreviewText(rawText).slice(0, 800);
+    renderResultPreview(preview);
+  } catch {
+    renderResultPreview("");
+  }
+}
+
+function appendOutputSuffix(baseCommand) {
+  if (!selectedOutputSuffix) {
+    return baseCommand;
+  }
+  if (!baseCommand) {
+    return selectedOutputSuffix.replace(/^并/, "请");
+  }
+  if (baseCommand.includes(selectedOutputSuffix)) {
+    return baseCommand;
+  }
+  return `${baseCommand}${selectedOutputSuffix}`;
+}
+
+function markActiveButton(buttons, activeButton) {
+  buttons.forEach((button) => {
+    button.classList.toggle("active", button === activeButton);
+  });
+}
 
 async function fetchJson(pathname, options = {}) {
   const response = await fetch(`${serviceBaseUrl}${pathname}`, options);
@@ -64,6 +141,7 @@ function renderPendingFiles(selection = null) {
     placeholder.className = "muted";
     placeholder.textContent = "你可以继续使用剪贴板文本，也可以从 Explorer 右键把文件交给这里。";
     pendingFilesList.append(placeholder);
+    refreshConversationBubbles();
     return;
   }
 
@@ -81,6 +159,8 @@ function renderPendingFiles(selection = null) {
     remainder.textContent = `还有 ${selection.filePaths.length - 6} 个文件未展开显示。`;
     pendingFilesList.append(remainder);
   }
+
+  refreshConversationBubbles();
 }
 
 function renderRecentTask(task = null) {
@@ -140,9 +220,11 @@ async function loadClipboardIntoContext() {
     if (clipboardText) {
       overlayContext.value = clipboardText;
       overlayResult.textContent = "已读取剪贴板内容";
+      refreshConversationBubbles();
     }
   } catch (error) {
     overlayResult.textContent = `读取剪贴板失败：${error.message}`;
+    refreshConversationBubbles();
   }
 }
 
@@ -163,6 +245,7 @@ async function refreshActiveTask() {
     if (task.status) {
       if (task.status === "success" && task.artifacts?.length) {
         overlayResult.textContent = `已完成，结果保存在 ${task.artifacts[0].path}`;
+        await loadArtifactPreview(task.artifacts[0].path);
         if (notifiedTaskId !== task.task_id) {
           notifiedTaskId = task.task_id;
           await window.ucaShell.notify({
@@ -176,22 +259,29 @@ async function refreshActiveTask() {
         }
       } else {
         overlayResult.textContent = `任务 ${task.task_id} · ${task.status}`;
+        if (task.status !== "success") {
+          renderResultPreview("");
+        }
       }
+      refreshConversationBubbles();
     }
   } catch (error) {
     overlayResult.textContent = `刷新任务失败：${error.message}`;
+    refreshConversationBubbles();
   }
 }
 
 async function submitTask() {
   overlayResult.textContent = "提交中…";
+  refreshConversationBubbles();
   try {
+    const commandText = appendOutputSuffix(overlayCommand.value.trim()) || "请处理当前上下文";
     const payload = pendingFileSelection?.filePaths?.length
       ? {
         sourceApp: pendingFileSelection.sourceApp ?? "explorer.exe",
         captureMode: pendingFileSelection.captureMode ?? "shell_menu",
         filePaths: pendingFileSelection.filePaths,
-        userCommand: overlayCommand.value || "请分析这些文件并给出结论",
+        userCommand: commandText,
         executionMode: "interactive",
         executorOverride: "kimi"
       }
@@ -200,7 +290,7 @@ async function submitTask() {
         captureMode: "overlay",
         sourceType: "clipboard",
         text: overlayContext.value,
-        userCommand: overlayCommand.value || "请处理当前上下文",
+        userCommand: commandText,
         executionMode: "interactive"
       };
 
@@ -221,11 +311,14 @@ async function submitTask() {
       renderPendingFiles();
     }
     overlayResult.textContent = `已提交 ${result.task.task_id}`;
+    renderResultPreview("");
+    refreshConversationBubbles();
     setTimeout(() => {
       window.ucaShell.hideWindow("overlay");
     }, 500);
   } catch (error) {
     overlayResult.textContent = `提交失败：${error.message}`;
+    refreshConversationBubbles();
   }
 }
 
@@ -239,12 +332,32 @@ function applyExplorerHandoff(payload) {
   overlayCommand.focus();
   overlayResult.textContent = "已接收文件列表，请输入你的要求后执行";
   overlayContext.value = pendingFileSelection.filePaths.join("\n");
+  refreshConversationBubbles();
 }
 
 quickActions.forEach((button) => {
   button.addEventListener("click", () => {
     overlayCommand.value = button.dataset.command ?? "";
+    markActiveButton(quickActions, button);
+    refreshConversationBubbles();
   });
+});
+
+outputStyleButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    selectedOutputSuffix = button.dataset.suffix ?? "";
+    markActiveButton(outputStyleButtons, button);
+    refreshConversationBubbles();
+  });
+});
+
+overlayCommand.addEventListener("input", () => {
+  markActiveButton(quickActions, null);
+  refreshConversationBubbles();
+});
+
+overlayContext.addEventListener("input", () => {
+  refreshConversationBubbles();
 });
 
 submitButton.addEventListener("click", () => {
@@ -255,6 +368,7 @@ closeButton.addEventListener("click", () => {
   pendingFileSelection = null;
   renderPendingFiles();
   overlayResult.textContent = "已取消本次输入";
+  refreshConversationBubbles();
   window.ucaShell.hideWindow("overlay");
 });
 
@@ -269,6 +383,26 @@ openResultButton.addEventListener("click", async () => {
   await window.ucaShell.openPath(lastArtifactPath);
 });
 
+copyResultButton.addEventListener("click", async () => {
+  if (!lastArtifactPreview) {
+    return;
+  }
+  await window.ucaShell.writeClipboardText(lastArtifactPreview);
+  overlayResult.textContent = "已复制结果摘要";
+  refreshConversationBubbles();
+});
+
+reuseResultButton.addEventListener("click", async () => {
+  if (!lastArtifactPreview) {
+    return;
+  }
+  overlayContext.value = lastArtifactPreview;
+  overlayCommand.focus();
+  overlayResult.textContent = "已把结果摘要放入上下文，可继续追问";
+  await window.ucaShell.showWindow("overlay");
+  refreshConversationBubbles();
+});
+
 pasteClipboardButton.addEventListener("click", () => {
   loadClipboardIntoContext();
 });
@@ -278,12 +412,14 @@ clearContextButton.addEventListener("click", () => {
   pendingFileSelection = null;
   renderPendingFiles();
   overlayResult.textContent = "已清空上下文";
+  refreshConversationBubbles();
 });
 
 window.ucaShell.onShortcutTriggered((payload) => {
   if (payload.shortcutId === "toggle-overlay") {
     overlayResult.textContent = "浮窗已通过快捷键唤起";
     loadClipboardIntoContext();
+    refreshConversationBubbles();
   }
 });
 
@@ -309,6 +445,8 @@ window.ucaShell.onContextReceived((payload) => {
 renderPendingFiles();
 renderRecentTask(lastTask);
 renderResultAction(lastTask);
+renderResultPreview("");
 loadClipboardIntoContext();
 refreshStatus();
+refreshConversationBubbles();
 setInterval(refreshActiveTask, 2000);

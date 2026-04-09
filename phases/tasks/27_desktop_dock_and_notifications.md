@@ -12,7 +12,7 @@
 
 ## 3. 实施范围
 
-- 负责模块：桌面 Dock 窗口、拖拽文件交接、Overlay 完成通知、基础结构校验
+- 负责模块：桌面 Dock 窗口、拖拽文件交接、Overlay 完成通知、气泡式会话层、基础结构校验
 - 允许改动文件/目录：`src/desktop/`, `scripts/`, `phases/tasks/`
 - 明确不做：网页内浮层统一设计、图片/文字/网页全场景入口统一交互
 
@@ -21,6 +21,8 @@
 - 常驻桌面 Dock 浮标窗口
 - Dock -> Overlay 的拖拽文件交接链路
 - Overlay 任务完成后的桌面通知
+- 气泡式会话 Overlay 与选择按钮
+- 结果摘要预览、复制与继续追问
 - 对应结构校验与渲染校验
 
 ## 5. 验证方式
@@ -56,7 +58,7 @@
 - 执行分支：`main`
 - 开始日期：2026-04-09
 - 完成日期：
-- 实际新增内容：新增 `src/desktop/renderer/dock.html` 与 `src/desktop/renderer/dock.js` 作为常驻桌面 Dock；扩展 `src/desktop/shared/manifest.mjs` 增加 `dock` 窗口和 `shellSubmitDroppedFiles` / `shellNotify` IPC；扩展 `src/desktop/tray/electron-main.mjs` 以支持 Dock 窗口定位、拖拽文件交接到 Overlay、桌面通知；扩展 `src/desktop/renderer/preload.cjs` 和 `src/desktop/renderer/overlay.js` 以支持拖拽文件提交与完成通知；补充结构与渲染校验。
+- 实际新增内容：新增 `src/desktop/renderer/dock.html` 与 `src/desktop/renderer/dock.js` 作为常驻桌面 Dock，并调整为圆形呼吸态浮标；扩展 `src/desktop/shared/manifest.mjs` 增加 `dock` 窗口和 `shellSubmitDroppedFiles` / `shellNotify` IPC；扩展 `src/desktop/tray/electron-main.mjs` 以支持 Dock 窗口定位、拖拽文件交接到 Overlay、桌面通知；扩展 `src/desktop/renderer/preload.cjs` 以支持拖拽文件路径解析、本地文本读取与剪贴板写入；扩展 `src/desktop/renderer/overlay.js` 与 `src/desktop/renderer/overlay.html`，加入气泡式会话层、动作选择按钮、结果摘要预览、复制结果摘要和基于结果继续追问；补充结构与渲染校验。
 - 验证结果：`node scripts/verify-structure.mjs`、`node scripts/verify-desktop-renderer.mjs`、`node scripts/verify-overlay-composer.mjs` 通过；`powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-trial.ps1` 与 `powershell -ExecutionPolicy Bypass -File .\\scripts\\start-trial.ps1` 成功；运行态进程中可见标题为 `UCA Dock` 的 Electron 窗口；`http://127.0.0.1:4310/health` 返回 `ok: true`。
-- 遗留问题：尚未把图片、网页、纯文本选区统一接到和 Dock 一样的一级轻交互模型中；Dock 拖拽链路还需要继续做一次真实用户侧拖拽 smoke test。
-- 交接给下一个任务：可以直接在当前桌面壳上继续做“拖网页/拖图片/选中文字后唤起输入器”的统一交互设计，不需要再改壳层或通知链路。
+- 遗留问题：尚未把图片、网页、纯文本选区统一接到和 Dock 一样的一级轻交互模型中；Dock 拖拽链路虽然已通过真实试用确认可用，但还缺统一的跨媒介会话入口。
+- 交接给下一个任务：可以直接在当前桌面壳上继续做“拖网页/拖图片/选中文字后唤起输入器”的统一交互设计，并复用现有气泡会话层、结果摘要预览与继续追问能力。

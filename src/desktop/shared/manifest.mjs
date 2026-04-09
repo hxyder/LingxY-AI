@@ -52,8 +52,8 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
       route: "/dock",
       singleton: true,
       startsHidden: false,
-      width: 108,
-      height: 108
+      width: 146,
+      height: 146
     },
     {
       id: WINDOW_IDS.overlay,

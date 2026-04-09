@@ -15,10 +15,114 @@
         padding: 18px;
       }
 
-      .quick-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+      .bubble-stream {
+        display: flex;
+        flex-direction: column;
         gap: 10px;
+        padding: 14px;
+        border-radius: 24px;
+        background: linear-gradient(180deg, rgba(255,255,255,0.72), rgba(255,255,255,0.36));
+        border: 1px solid rgba(59, 43, 24, 0.08);
+      }
+
+      .bubble {
+        max-width: 88%;
+        padding: 12px 14px;
+        border-radius: 18px;
+        line-height: 1.5;
+        box-shadow: 0 10px 24px rgba(54, 34, 8, 0.08);
+        white-space: pre-wrap;
+      }
+
+      .bubble.assistant {
+        align-self: flex-start;
+        background: rgba(255, 255, 255, 0.92);
+        border-top-left-radius: 8px;
+      }
+
+      .bubble.user {
+        align-self: flex-end;
+        background: rgba(163, 58, 22, 0.12);
+        border-top-right-radius: 8px;
+      }
+
+      .bubble.meta {
+        align-self: center;
+        max-width: 100%;
+        padding: 8px 12px;
+        font-size: 12px;
+        background: rgba(59, 43, 24, 0.06);
+        color: var(--muted);
+      }
+
+      .choice-groups {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .choice-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .choice-pill {
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(59, 43, 24, 0.12);
+        color: var(--ink);
+        padding: 10px 14px;
+      }
+
+      .choice-pill.active {
+        background: rgba(163, 58, 22, 0.14);
+        border-color: rgba(163, 58, 22, 0.32);
+        color: var(--accent);
+      }
+
+      .composer-shell {
+        padding: 14px;
+        border-radius: 24px;
+        background: rgba(255, 253, 248, 0.84);
+        border: 1px solid rgba(59, 43, 24, 0.1);
+      }
+
+      .composer-shell textarea {
+        background: white;
+      }
+
+      .composer-actions {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .section-caption {
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .result-preview {
+        padding: 14px;
+        border-radius: 24px;
+        background: rgba(255, 255, 255, 0.78);
+        border: 1px solid rgba(59, 43, 24, 0.08);
+      }
+
+      .result-preview[hidden] {
+        display: none;
+      }
+
+      .result-preview-text {
+        margin: 0;
+        white-space: pre-wrap;
+        line-height: 1.6;
+        color: var(--ink);
       }
     </style>
   </head>
@@ -35,12 +139,34 @@
 
       <div id="overlayState" class="chip warning">正在连接 runtime…</div>
 
-      <div class="quick-grid">
-        <button class="secondary quick-action" data-command="请总结这段内容并列出要点">总结</button>
-        <button class="secondary quick-action" data-command="请解释这段内容">解释</button>
-        <button class="secondary quick-action" data-command="请翻译成中文">翻译</button>
-        <button class="secondary quick-action" data-command="请改写成更清晰的表达">改写</button>
-      </div>
+      <section class="bubble-stream">
+        <div id="assistantLeadBubble" class="bubble assistant">把文件、文本或网页上下文交给我，然后用下面的选择按钮快速说出你要我做什么。</div>
+        <div id="contextBubble" class="bubble assistant">当前还没有接收到文件或上下文。</div>
+        <div id="userIntentBubble" class="bubble user">你可以直接输入，也可以点下面的动作按钮。</div>
+        <div id="statusBubble" class="bubble meta">尚未提交</div>
+      </section>
+
+      <section class="choice-groups">
+        <div class="stack" style="gap:8px;">
+          <span class="section-caption">快速动作</span>
+          <div class="choice-row">
+            <button class="choice-pill quick-action" data-command="请总结这段内容并列出要点">总结</button>
+            <button class="choice-pill quick-action" data-command="请解释这段内容，并说明它的重要性">解释</button>
+            <button class="choice-pill quick-action" data-command="请翻译成中文，并保持自然表达">翻译</button>
+            <button class="choice-pill quick-action" data-command="请改写成更清晰、专业的表达">改写</button>
+          </div>
+        </div>
+
+        <div class="stack" style="gap:8px;">
+          <span class="section-caption">输出形式</span>
+          <div class="choice-row">
+            <button class="choice-pill output-style" data-suffix="并输出 3 条要点">3 条要点</button>
+            <button class="choice-pill output-style" data-suffix="并按步骤列出执行建议">步骤建议</button>
+            <button class="choice-pill output-style" data-suffix="并整理成正式说明">正式说明</button>
+            <button class="choice-pill output-style" data-suffix="并给出一个简短结论">简短结论</button>
+          </div>
+        </div>
+      </section>
 
       <div class="stack">
         <section id="pendingFilesCard" class="card stack" style="padding:14px;">
@@ -49,30 +175,43 @@
           <p id="pendingFilesSummary" class="muted">当前没有待处理文件。</p>
           <div id="pendingFilesList" class="stack muted"></div>
         </section>
-        <div>
-          <label for="overlayCommand">任务要求</label>
-          <textarea id="overlayCommand" rows="3" placeholder="请输入你的要求"></textarea>
-        </div>
-        <div>
-          <label for="overlayContext">上下文</label>
-          <textarea id="overlayContext" rows="6" placeholder="贴入文字，或等待剪贴板/文件上下文接入"></textarea>
-        </div>
-        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-          <button id="pasteClipboardButton" class="secondary">读取剪贴板</button>
-          <button id="clearContextButton" class="secondary">清空上下文</button>
-        </div>
-        <div style="display:flex; gap:10px; align-items:center;">
-          <button id="submitButton" class="primary">立即执行</button>
-          <button id="openConsoleButton" class="secondary">打开控制台</button>
-          <button id="openResultButton" class="secondary" hidden>打开结果</button>
-        </div>
-        <p id="overlayResult" class="muted">尚未提交</p>
-        <section id="recentTaskCard" class="card stack" style="padding:14px;">
-          <span class="eyebrow">Recent Task</span>
-          <strong>最近任务</strong>
-          <p class="muted">还没有任务。</p>
+
+        <section class="composer-shell stack">
+          <div>
+            <label for="overlayCommand">任务要求</label>
+            <textarea id="overlayCommand" rows="3" placeholder="例如：请比较这几个文件，并输出一个中文结论"></textarea>
+          </div>
+          <div>
+            <label for="overlayContext">上下文</label>
+            <textarea id="overlayContext" rows="5" placeholder="贴入文字，或等待剪贴板/文件上下文接入"></textarea>
+          </div>
+          <div class="composer-actions">
+            <button id="pasteClipboardButton" class="secondary">读取剪贴板</button>
+            <button id="clearContextButton" class="secondary">清空上下文</button>
+          </div>
+          <div class="composer-actions">
+            <button id="submitButton" class="primary">立即执行</button>
+            <button id="openConsoleButton" class="secondary">打开控制台</button>
+            <button id="openResultButton" class="secondary" hidden>打开结果</button>
+          </div>
         </section>
       </div>
+
+      <section id="resultPreviewCard" class="result-preview stack" hidden>
+        <span class="section-caption">结果摘要</span>
+        <p id="resultPreviewText" class="result-preview-text">结果将在这里显示。</p>
+        <div class="composer-actions">
+          <button id="copyResultButton" class="secondary" type="button">复制结果摘要</button>
+          <button id="reuseResultButton" class="secondary" type="button">基于结果继续追问</button>
+        </div>
+      </section>
+
+      <p id="overlayResult" class="muted">尚未提交</p>
+      <section id="recentTaskCard" class="card stack" style="padding:14px;">
+        <span class="eyebrow">Recent Task</span>
+        <strong>最近任务</strong>
+        <p class="muted">还没有任务。</p>
+      </section>
     </main>
     <script type="module" src="./overlay.js"></script>
   </body>

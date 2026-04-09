@@ -8,7 +8,7 @@
     <style>
       body {
         min-height: 100vh;
-        padding: 0;
+        padding: 12px;
         background: transparent;
       }
 
@@ -19,28 +19,45 @@
         place-items: center;
       }
 
-      .dock-button {
-        width: 92px;
-        height: 92px;
-        border-radius: 28px;
+      .dock-dropzone {
+        width: 122px;
+        height: 122px;
+        border-radius: 999px;
         border: 1px solid rgba(255, 255, 255, 0.45);
         background:
-          radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.08) 42%),
-          linear-gradient(160deg, rgba(163, 58, 22, 0.96), rgba(117, 34, 15, 0.96));
+          radial-gradient(circle at 28% 24%, rgba(255, 244, 232, 0.98), rgba(255, 244, 232, 0.14) 28%, rgba(255, 244, 232, 0) 40%),
+          radial-gradient(circle at 50% 50%, rgba(205, 88, 43, 0.98), rgba(135, 42, 16, 0.98) 72%);
         color: white;
-        box-shadow: 0 20px 40px rgba(84, 26, 8, 0.32);
+        box-shadow:
+          0 0 0 0 rgba(163, 58, 22, 0.24),
+          0 22px 42px rgba(84, 26, 8, 0.28);
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 6px;
         text-align: center;
-        padding: 10px;
+        padding: 18px 14px;
+        position: relative;
+        overflow: hidden;
+        animation: dock-breathe 2.8s ease-in-out infinite;
       }
 
-      .dock-button.dragover {
-        transform: scale(1.04);
-        box-shadow: 0 24px 56px rgba(84, 26, 8, 0.4);
+      .dock-dropzone::after {
+        content: "";
+        position: absolute;
+        inset: 10px;
+        border-radius: 999px;
+        border: 1px dashed rgba(255, 255, 255, 0.34);
+        pointer-events: none;
+      }
+
+      .dock-dropzone.dragover {
+        transform: scale(1.06);
+        box-shadow:
+          0 0 0 16px rgba(163, 58, 22, 0.14),
+          0 30px 60px rgba(84, 26, 8, 0.38);
+        animation-play-state: paused;
       }
 
       .dock-label {
@@ -54,13 +71,38 @@
         font-size: 22px;
         font-weight: 800;
       }
+
+      .dock-hint {
+        font-size: 10px;
+        line-height: 1.4;
+        color: rgba(255, 255, 255, 0.82);
+        max-width: 76px;
+      }
+
+      @keyframes dock-breathe {
+        0%,
+        100% {
+          transform: translateY(0) scale(1);
+          box-shadow:
+            0 0 0 0 rgba(163, 58, 22, 0.18),
+            0 22px 42px rgba(84, 26, 8, 0.28);
+        }
+
+        50% {
+          transform: translateY(-2px) scale(1.02);
+          box-shadow:
+            0 0 0 12px rgba(163, 58, 22, 0.08),
+            0 28px 50px rgba(84, 26, 8, 0.34);
+        }
+      }
     </style>
   </head>
   <body>
     <main class="dock-shell">
-      <button id="dockButton" class="dock-button" type="button" title="点击打开 UCA，或把文件拖到这里">
+      <button id="dockButton" class="dock-dropzone" type="button" title="点击打开 UCA，或把文件拖到这里">
         <span class="dock-icon">UCA</span>
         <span class="dock-label">拖文件到这里</span>
+        <span class="dock-hint">点击也能直接打开输入浮窗</span>
       </button>
     </main>
     <script type="module" src="./dock.js"></script>
