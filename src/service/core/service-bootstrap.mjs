@@ -27,8 +27,14 @@ import { BUILTIN_MCP_SERVERS } from "../ai/mcp/builtin.mjs";
 import { createSkillRegistry } from "../ai/skills/registry.mjs";
 import { BUILTIN_SKILL_REGISTRIES } from "../ai/skills/builtin.mjs";
 
-export function createServiceBootstrap() {
-  const storeAdapter = createInMemoryStoreScaffold();
+export function createServiceBootstrap({
+  storeAdapter = createInMemoryStoreScaffold(),
+  artifactStore = createArtifactStore(),
+  configStore = null,
+  securityConfig = {},
+  kimiRuntime = null,
+  paths = null
+} = {}) {
   const queue = createTaskQueueScaffold();
   const executors = [
     createFastExecutorScaffold(),
@@ -41,14 +47,20 @@ export function createServiceBootstrap() {
     storeAdapter,
     eventBus: createEventBusScaffold(),
     queue,
-    artifactStore: createArtifactStore(),
+    artifactStore,
     executors,
+    kimiRuntime,
+    configStore,
+    paths,
     metrics: createMetricsRegistry({
       store: storeAdapter,
       queue
     })
   };
-  runtime.securityBroker = createSecurityBroker({ runtime });
+  runtime.securityBroker = createSecurityBroker({
+    runtime,
+    config: securityConfig
+  });
   runtime.scheduler = createSchedulerRuntime({ runtime });
   runtime.officeHttps = createOfficeHttpsRuntime();
   runtime.actionToolRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
@@ -61,6 +73,13 @@ export function createServiceBootstrap() {
     codeCliAdapters: createCodeCliRegistry(BUILTIN_CODE_CLI_ADAPTERS),
     mcpServers: createMCPRegistry(BUILTIN_MCP_SERVERS),
     skillRegistries: createSkillRegistry(BUILTIN_SKILL_REGISTRIES)
+  };
+  runtime.persistSecurityConfig = (patch) => {
+    const security = runtime.securityBroker.setConfig(patch);
+    runtime.configStore?.patch({
+      security
+    });
+    return security;
   };
   return {
     store: buildStoreManifest(),
@@ -78,6 +97,7 @@ export function createServiceBootstrap() {
       rejectPendingApproval: "/approvals/:id/reject",
       getAuditLogs: "/audit-log",
       getSecurityState: "/security/state",
+      updateSecurityState: "/security/state",
       getSchedules: "/schedules",
       getScheduleRuns: "/schedules/:id/runs",
       getOfficeHealth: "/office/health",
@@ -94,6 +114,9 @@ export function createServiceBootstrap() {
       getCodeCliAdapters: "/ai/code-cli",
       getMcpServers: "/ai/mcp",
       getSkillRegistries: "/ai/skills",
+      health: "/health",
+      listTasks: "/tasks",
+      getTask: "/task/:id",
       officeHttpsBase: "https://localhost:9413",
       officeProtocolFallback: "uca://office-submit",
       helperSelection: "pipe://uca-helper/explorer-selection",

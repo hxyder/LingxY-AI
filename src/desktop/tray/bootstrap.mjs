@@ -28,6 +28,7 @@ export function buildDesktopShellBootstrapState() {
 
   return {
     manifest: DESKTOP_SHELL_MANIFEST,
+    entryPoint: pathToElectronMain(),
     lifecycle: {
       trayReady: false,
       windowsCreated: false,
@@ -42,4 +43,8 @@ export function buildDesktopShellBootstrapState() {
       "attach service bridge"
     ]
   };
+}
+
+export function pathToElectronMain() {
+  return "src/desktop/tray/electron-main.mjs";
 }

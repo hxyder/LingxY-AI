@@ -1,30 +1,34 @@
 export const SQLITE_SCHEMA_SQL = Object.freeze({
-  tasks: `CREATE TABLE tasks (
+  tasks: `CREATE TABLE IF NOT EXISTS tasks (
   task_id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   status TEXT NOT NULL,
+  sub_status TEXT,
   intent TEXT NOT NULL,
   executor TEXT NOT NULL,
+  source_type TEXT NOT NULL,
   user_command TEXT NOT NULL,
   execution_mode TEXT NOT NULL,
-  context_packet_json TEXT NOT NULL
+  source_dedupe_key TEXT,
+  context_packet_json TEXT NOT NULL,
+  task_json TEXT NOT NULL
 );`,
-  taskEvents: `CREATE TABLE task_events (
-  event_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  taskEvents: `CREATE TABLE IF NOT EXISTS task_events (
+  event_id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL,
   ts TEXT NOT NULL,
   event_type TEXT NOT NULL,
   payload_json TEXT NOT NULL
 );`,
-  artifacts: `CREATE TABLE artifacts (
+  artifacts: `CREATE TABLE IF NOT EXISTS artifacts (
   artifact_id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL,
   path TEXT NOT NULL,
   mime_type TEXT,
   created_at TEXT NOT NULL
 );`,
-  schedules: `CREATE TABLE schedules (
+  schedules: `CREATE TABLE IF NOT EXISTS schedules (
   schedule_id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT,
@@ -47,7 +51,7 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   failure_count INTEGER NOT NULL DEFAULT 0,
   consecutive_failure_count INTEGER NOT NULL DEFAULT 0
 );`,
-  scheduleRuns: `CREATE TABLE schedule_runs (
+  scheduleRuns: `CREATE TABLE IF NOT EXISTS schedule_runs (
   run_id TEXT PRIMARY KEY,
   schedule_id TEXT NOT NULL,
   task_id TEXT,
@@ -58,7 +62,7 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   error_message TEXT,
   metadata_json TEXT
 );`,
-  pendingApprovals: `CREATE TABLE pending_approvals (
+  pendingApprovals: `CREATE TABLE IF NOT EXISTS pending_approvals (
   approval_id TEXT PRIMARY KEY,
   created_at TEXT NOT NULL,
   expires_at TEXT NOT NULL,
@@ -73,6 +77,13 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   decided_by TEXT,
   resulting_task_id TEXT,
   metadata_json TEXT
+);`,
+  auditLogs: `CREATE TABLE IF NOT EXISTS audit_logs (
+  audit_id TEXT PRIMARY KEY,
+  ts TEXT NOT NULL,
+  task_id TEXT,
+  event_subtype TEXT NOT NULL,
+  payload_json TEXT NOT NULL
 );`
 });
 

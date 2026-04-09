@@ -59,3 +59,4 @@ Current implemented slices include:
 - security broker, presenter mode, offline gating, and redaction scaffold
 - scheduler, pending approvals, misfire handling, and schedule management scaffold
 - platform foundation scaffold for templates, DAG orchestration, budget controls, executor routing, and local history search
+- persistent local runtime scaffold with SQLite, HTTP/SSE, config storage, and Electron main entry

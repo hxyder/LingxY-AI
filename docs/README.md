@@ -13,6 +13,7 @@
 - [scheduler/](scheduler/) contains trigger, cron, and misfire references.
 - [runtime/](runtime/) contains install and runtime notes for active integrations.
 - [operations/](operations/) contains failure taxonomy and retry strategy docs.
+- Persistent local runtime notes live in `docs/runtime/local_runtime.md` and pair with `src/service/core/persistent-runtime.mjs`.
 - Phase 6 platform foundation currently lives in `src/service/templates/`, `src/service/dag/`, `src/service/cost/`, and `src/service/embeddings/` with execution notes tracked in `phases/tasks/14_phase6_platform_foundation.md`.
 - [planning/](planning/) keeps the long-form planning context and pre-execution discussion records.
 

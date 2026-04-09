@@ -19,7 +19,7 @@
 | 12 | UCA-012 | [12_phase4_office_spike_and_base.md](12_phase4_office_spike_and_base.md) | Phase 4 | UCA-009 | `task/uca-012-phase4-office` | done |
 | 13 | UCA-013 | [13_phase5_pdf_ocr.md](13_phase5_pdf_ocr.md) | Phase 5 | UCA-009,UCA-005 | `task/uca-013-phase5-pdf-ocr` | done |
 | 14 | UCA-014 | [14_phase6_platform_foundation.md](14_phase6_platform_foundation.md) | Phase 6 | UCA-010,UCA-012,UCA-013 | `task/uca-014-phase6-platform-foundation` | done |
-| 15 | UCA-015 | [15_runtime_wiring_and_persistence.md](15_runtime_wiring_and_persistence.md) | Runtime | UCA-014 | `task/uca-015-runtime-wiring` | todo |
+| 15 | UCA-015 | [15_runtime_wiring_and_persistence.md](15_runtime_wiring_and_persistence.md) | Runtime | UCA-014 | `task/uca-015-runtime-wiring` | done |
 | 16 | UCA-016 | [16_native_integrations.md](16_native_integrations.md) | Native Integrations | UCA-015 | `task/uca-016-native-integrations` | todo |
 | 17 | UCA-017 | [17_real_ai_and_multimodal.md](17_real_ai_and_multimodal.md) | AI Runtime | UCA-015,UCA-016 | `task/uca-017-real-ai` | todo |
 | 18 | UCA-018 | [18_console_and_operator_ui.md](18_console_and_operator_ui.md) | UI | UCA-015,UCA-016 | `task/uca-018-console-ui` | todo |

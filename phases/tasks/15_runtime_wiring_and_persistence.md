@@ -50,11 +50,39 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：done
 - 执行分支：`task/uca-015-runtime-wiring`
-- 开始日期：
-- 完成日期：
+- 开始日期：2026-04-08
+- 完成日期：2026-04-08
 - 实际新增内容：
+  - 新增 SQLite 持久化 store、runtime path/config store、HTTP/SSE server、persistent runtime launcher
+  - 新增 Electron main entry 与 desktop runtime host
+  - 扩展 service bootstrap 支持注入持久化 store、artifact store、config store、security config
+  - 新增 `docs/runtime/local_runtime.md` 与 `scripts/start-runtime.mjs`
+- 实际启用的端口与进程模型：
+  - 本地 HTTP runtime 默认监听 `127.0.0.1:4310`
+  - 验证脚本使用随机端口 `0` 启动后回填真实监听端口
+  - 进程模型当前为 “Node service runtime + Electron main entry”，桌面窗口仍使用 data URL 壳承接后续 UI
+- SQLite 表与 DAO 的最终落地范围：
+  - `tasks`
+  - `task_events`
+  - `artifacts`
+  - `schedules`
+  - `schedule_runs`
+  - `pending_approvals`
+  - `audit_logs`
+- 配置持久化位置与迁移策略：
+  - 默认配置文件为 `%APPDATA%/UCA/config/runtime.json`
+  - 当前持久化字段以 `security` 配置为主
+  - 当前采用“向后兼容 JSON 合并”策略，尚未引入版本化 migration
 - 验证结果：
+  - `node scripts/verify-runtime-wiring.mjs`
+  - `npm run check`
 - 遗留问题：
+  - 真实 Electron UI 仍是 data URL 壳，不是最终渲染层
+  - 真实原生入口、真实 provider SDK、真实 Office/browser 安装链仍在后续任务
+  - `/templates/validate` 与 `/dag/preview` 目前只提供网络落点，尚未接完整业务逻辑
 - 交接给下一个任务：
+  - `UCA-016` 可直接复用本地 HTTP base URL、持久化 SQLite、runtime config 和 Electron entry
+  - `UCA-017` 可直接复用持久化 runtime、budget/config store 和 provider registry 网络入口
+  - `UCA-018` 可直接复用 `/task`、`/task/:id/events`、`/tasks`、`/security/state` 等真实 API

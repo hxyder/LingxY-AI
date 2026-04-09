@@ -1,4 +1,5 @@
 import { submitBrowserTask } from "../core/browser-submission.mjs";
+import { submitContextTask } from "../core/context-submission.mjs";
 import { submitFileTask } from "../core/file-submission.mjs";
 import { submitImageTask } from "../core/image-submission.mjs";
 
@@ -12,6 +13,10 @@ function isBrowserSource(task) {
 
 function isImageSource(task) {
   return task.context_packet.source_type === "image";
+}
+
+function isGenericContextSource(task) {
+  return !isFileSource(task) && !isBrowserSource(task) && !isImageSource(task);
 }
 
 export function buildRetryRequest(task, mode = "retry_same", overrides = {}) {
@@ -65,6 +70,14 @@ export function buildRetryRequest(task, mode = "retry_same", overrides = {}) {
     };
   }
 
+  if (isGenericContextSource(task)) {
+    return {
+      ...base,
+      submissionType: "context",
+      contextPacket: task.context_packet
+    };
+  }
+
   throw new Error(`Unsupported retry source type: ${task.context_packet.source_type}`);
 }
 
@@ -102,6 +115,18 @@ export async function retryTask({
       source: request.source,
       sourceApp: request.sourceApp,
       captureMode: request.captureMode,
+      executionMode: request.executionMode,
+      parentTaskId: request.parentTaskId,
+      retryCount: request.retryCount,
+      executorOverride: request.executorOverride,
+      runtime
+    });
+  }
+
+  if (request.submissionType === "context") {
+    return submitContextTask({
+      contextPacket: request.contextPacket,
+      userCommand: request.userCommand,
       executionMode: request.executionMode,
       parentTaskId: request.parentTaskId,
       retryCount: request.retryCount,

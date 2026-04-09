@@ -1,16 +1,13 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { resolveRuntimeBaseDir } from "../core/runtime-paths.mjs";
 
 function resolveBaseDir(baseDir) {
   if (baseDir) {
     return baseDir;
   }
 
-  if (process.env.APPDATA) {
-    return path.join(process.env.APPDATA, "UCA");
-  }
-
-  return path.join(process.cwd(), ".uca-runtime");
+  return resolveRuntimeBaseDir();
 }
 
 export function createArtifactStore({ baseDir } = {}) {

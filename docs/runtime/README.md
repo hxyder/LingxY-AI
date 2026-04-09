@@ -7,3 +7,4 @@
 - [Office Add-in sideload](office_addin_sideload.md)
 - [Office localhost certificate setup](self_signed_cert_setup.md)
 - [Office HTTPS spike report](office_https_spike_report.md)
+- [Local runtime](local_runtime.md)

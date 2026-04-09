@@ -34,6 +34,10 @@ if (!service.runtime.officeHttps) {
   throw new Error("Office HTTPS scaffold is missing.");
 }
 
+if (service.runtime.persistSecurityConfig({ offline_mode: true }).offline_mode !== true) {
+  throw new Error("Security config persistence hook is missing.");
+}
+
 if (!service.runtime.executorRegistry) {
   throw new Error("Executor registry scaffold is missing.");
 }
@@ -87,6 +91,18 @@ if (service.endpoints.getBudget !== "/budget") {
 
 if (service.endpoints.postHistorySearch !== "/history/search") {
   throw new Error("History search endpoint manifest is invalid.");
+}
+
+if (service.endpoints.health !== "/health") {
+  throw new Error("Health endpoint manifest is invalid.");
+}
+
+if (service.endpoints.listTasks !== "/tasks") {
+  throw new Error("Tasks endpoint manifest is invalid.");
+}
+
+if (service.endpoints.getTask !== "/task/:id") {
+  throw new Error("Task detail endpoint manifest is invalid.");
 }
 
 if (service.endpoints.cancelTask !== "/task/:id/cancel") {

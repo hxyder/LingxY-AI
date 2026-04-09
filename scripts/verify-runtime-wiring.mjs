@@ -1,0 +1,111 @@
+import assert from "node:assert/strict";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { rm } from "node:fs/promises";
+import { createPersistentRuntime } from "../src/service/core/persistent-runtime.mjs";
+import { createDesktopRuntimeHost } from "../src/desktop/tray/runtime-host.mjs";
+import { pathToElectronMain } from "../src/desktop/tray/bootstrap.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+const runtimeDir = path.join(repoRoot, ".tmp", "verify-runtime-wiring");
+
+await rm(runtimeDir, {
+  recursive: true,
+  force: true
+});
+
+const runtime = createPersistentRuntime({
+  baseDir: runtimeDir,
+  port: 0
+});
+
+const listening = await runtime.start();
+assert.equal(listening.port > 0, true);
+
+const healthResponse = await fetch(`${listening.baseUrl}/health`);
+assert.equal(healthResponse.ok, true);
+const health = await healthResponse.json();
+assert.equal(health.ok, true);
+assert.equal(health.db_path.endsWith("uca.db"), true);
+
+const createResponse = await fetch(`${listening.baseUrl}/task`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    userCommand: "请总结这段内容",
+    contextPacket: {
+      source_type: "clipboard",
+      source_app: "verify-runtime",
+      capture_mode: "manual",
+      text: "This is a runtime verification payload."
+    }
+  })
+});
+assert.equal(createResponse.ok, true);
+const created = await createResponse.json();
+assert.equal(created.task.status, "success");
+
+const taskResponse = await fetch(`${listening.baseUrl}/task/${created.task.task_id}`);
+assert.equal(taskResponse.ok, true);
+const taskPayload = await taskResponse.json();
+assert.equal(taskPayload.task.task_id, created.task.task_id);
+assert.equal(taskPayload.events.length >= 2, true);
+
+const eventsResponse = await fetch(`${listening.baseUrl}/task/${created.task.task_id}/events`);
+assert.equal(eventsResponse.ok, true);
+const eventsPayload = await eventsResponse.json();
+assert.equal(eventsPayload.events.length >= 2, true);
+
+const metricsResponse = await fetch(`${listening.baseUrl}/metrics`);
+assert.equal(metricsResponse.ok, true);
+const metricsText = await metricsResponse.text();
+assert.equal(metricsText.includes("uca_task_total"), true);
+
+const securityPatchResponse = await fetch(`${listening.baseUrl}/security/state`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    offline_mode: true
+  })
+});
+assert.equal(securityPatchResponse.ok, true);
+const securityPayload = await securityPatchResponse.json();
+assert.equal(securityPayload.security.offline_mode, true);
+
+const listResponse = await fetch(`${listening.baseUrl}/tasks`);
+assert.equal(listResponse.ok, true);
+const listPayload = await listResponse.json();
+assert.equal(listPayload.tasks.length, 1);
+
+await runtime.stop();
+
+const restarted = createPersistentRuntime({
+  baseDir: runtimeDir,
+  port: 0
+});
+const restartedListening = await restarted.start();
+const restartedTaskResponse = await fetch(`${restartedListening.baseUrl}/task/${created.task.task_id}`);
+assert.equal(restartedTaskResponse.ok, true);
+const restartedTaskPayload = await restartedTaskResponse.json();
+assert.equal(restartedTaskPayload.task.task_id, created.task.task_id);
+
+const restartedSecurityResponse = await fetch(`${restartedListening.baseUrl}/security/state`);
+const restartedSecurity = await restartedSecurityResponse.json();
+assert.equal(restartedSecurity.security.offline_mode, true);
+
+const host = createDesktopRuntimeHost({
+  serviceBaseUrl: restartedListening.baseUrl
+});
+const hostState = host.start();
+assert.equal(hostState.trayReady, true);
+assert.equal(host.openWindow("console").visible, true);
+assert.equal(pathToElectronMain(), "src/desktop/tray/electron-main.mjs");
+
+await restarted.stop();
+
+console.log("Runtime wiring and persistence verification passed.");
