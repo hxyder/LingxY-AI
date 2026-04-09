@@ -32,6 +32,11 @@ const requiredPaths = [
   "docs/privacy/privacy_policy.md",
   "docs/privacy/data_flow.md",
   "docs/privacy/pii_rules_reference.md",
+  "docs/release/README.md",
+  "docs/release/e2e_matrix.md",
+  "docs/release/known_issues.md",
+  "docs/release/rollback_plan.md",
+  "docs/release/trial_release_notes_v0.1.0-trial.1.md",
   "docs/scheduler/README.md",
   "docs/scheduler/cron_cheatsheet.md",
   "docs/scheduler/trigger_types.md",
@@ -200,6 +205,8 @@ const requiredPaths = [
   "scripts/verify-template-dag-persistence.mjs",
   "scripts/verify-runtime-wiring.mjs",
   "scripts/verify-native-integrations.mjs",
+  "scripts/build-trial-package.mjs",
+  "scripts/verify-release-readiness.mjs",
   "scripts/install-explorer-entry.ps1",
   "scripts/install-native-host.ps1",
   "src/service/ai/providers/README.md",
@@ -245,7 +252,9 @@ const requiredPaths = [
   "browser_ext/shadow_ui/floating-chip.js",
   "tests/fixtures/mock-kimi-cli.mjs",
   "tests/fixtures/mock-failing-kimi-cli.mjs",
-  "tests/fixtures/mock-slow-kimi-cli.mjs"
+  "tests/fixtures/mock-slow-kimi-cli.mjs",
+  "tools/release/README.md",
+  "tools/release/release-config.json"
 ];
 
 const missing = requiredPaths.filter((path) => !existsSync(path));

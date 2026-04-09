@@ -15,6 +15,7 @@ This repository contains the planning documents, task breakdown, and implementat
 docs/
   planning/        original planning narrative and review context
   action_tools/    action tool authoring and risk docs
+  release/         trial release notes, E2E matrix, rollback and known issues
   operations/      failure taxonomy and retry strategy notes
   privacy/         privacy policy and secure data-flow notes
   runtime/         runtime setup notes for concrete integrations
@@ -63,3 +64,4 @@ Current implemented slices include:
 - native integration install scripts plus .NET Explorer helper / Native Messaging host
 - resolved Kimi CLI runtime with real print-mode execution and health probing
 - provider health detection for OpenAI, Claude, Kimi API, and Ollama
+- release readiness docs, trial package builder, and bundle verification

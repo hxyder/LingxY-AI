@@ -1,0 +1,35 @@
+{
+  "channel": "trial",
+  "trial_version": "0.1.0-trial.1",
+  "bundle_name": "uca-trial-kit",
+  "runtime": {
+    "target_os": "windows",
+    "supported_shells": [
+      "powershell"
+    ]
+  },
+  "required_assets": [
+    "docs/release/README.md",
+    "docs/release/e2e_matrix.md",
+    "docs/release/known_issues.md",
+    "docs/release/rollback_plan.md",
+    "docs/release/trial_release_notes_v0.1.0-trial.1.md",
+    "docs/runtime/local_runtime.md",
+    "docs/runtime/native_integrations.md",
+    "docs/runtime/kimi_cli_setup.md",
+    "docs/runtime/install_extension.md",
+    "docs/runtime/office_addin_sideload.md",
+    "scripts/install-explorer-entry.ps1",
+    "scripts/install-native-host.ps1",
+    "scripts/start-runtime.mjs",
+    "browser_ext/manifest.json",
+    "office_addin/word/manifest.xml",
+    "office_addin/excel/manifest.xml",
+    "office_addin/ppt/manifest.xml",
+    "uca-native-host/registry-manifest.mjs"
+  ],
+  "validation_targets": [
+    "npm run check",
+    "node scripts/build-trial-package.mjs"
+  ]
+}

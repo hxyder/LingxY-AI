@@ -10,6 +10,7 @@
 - [browser_overlay/](browser_overlay/) contains browser-only floating chip rules and test references.
 - [pdf/](pdf/) contains PDF parsing and OCR setup references.
 - [privacy/](privacy/) contains privacy policy and data-flow references.
+- [release/](release/) contains trial release notes, E2E validation matrix, rollback steps, and known issues.
 - [scheduler/](scheduler/) contains trigger, cron, and misfire references.
 - [runtime/](runtime/) contains install and runtime notes for active integrations.
 - [operations/](operations/) contains failure taxonomy and retry strategy docs.
