@@ -17,6 +17,8 @@ assert.equal(consoleHtml.includes("计划任务"), true);
 assert.equal(consoleHtml.includes("模板工作区"), true);
 assert.equal(consoleHtml.includes("预算与配额"), true);
 assert.equal(consoleHtml.includes("历史搜索"), true);
+assert.equal(consoleHtml.includes("隐私与安全"), true);
+assert.equal(consoleHtml.includes("审计日志"), true);
 
 const consoleJs = await read("src/desktop/renderer/console.js");
 assert.equal(consoleJs.includes('fetchJson("/approvals")'), true);
@@ -24,6 +26,8 @@ assert.equal(consoleJs.includes('fetchJson("/schedules")'), true);
 assert.equal(consoleJs.includes('fetchJson("/templates")'), true);
 assert.equal(consoleJs.includes('fetchJson("/budget")'), true);
 assert.equal(consoleJs.includes('fetchJson("/history/search"'), true);
+assert.equal(consoleJs.includes('fetchJson("/security/state")'), true);
+assert.equal(consoleJs.includes('fetchJson("/audit-log")'), true);
 assert.equal(consoleJs.includes('window.ucaShell.showWindow("overlay")'), true);
 
 console.log("Rendered console workspace verification passed.");

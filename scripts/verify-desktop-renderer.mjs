@@ -18,7 +18,10 @@ assert.equal(preload.includes(IPC_CHANNELS.shellHideWindow), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
 assert.equal(consoleHtml.includes("主控工作台"), true);
+assert.equal(consoleHtml.includes("首启引导"), true);
 assert.equal(consoleHtml.includes("审批中心"), true);
+assert.equal(consoleHtml.includes("隐私与安全"), true);
+assert.equal(consoleHtml.includes("审计日志"), true);
 assert.equal(consoleHtml.includes("模板工作区"), true);
 
 const overlayHtml = await read("src/desktop/renderer/overlay.html");

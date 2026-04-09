@@ -32,12 +32,16 @@
       .summary-grid,
       .integration-list,
       .nav-grid,
+      .wizard-list,
       .task-list,
       .detail-timeline,
       .approval-list,
       .schedule-list,
       .template-list,
-      .history-list {
+      .history-list,
+      .audit-list,
+      .privacy-list,
+      .retention-list {
         display: grid;
         gap: 12px;
       }
@@ -61,6 +65,12 @@
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
+      }
+
+      .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
       }
 
       .workspace-section,
@@ -155,6 +165,32 @@
         white-space: pre-wrap;
       }
 
+      .audit-list {
+        max-height: 420px;
+        overflow: auto;
+      }
+
+      .switch-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.86);
+      }
+
+      .switch-copy {
+        display: grid;
+        gap: 6px;
+      }
+
+      .switch-control {
+        inline-size: 20px;
+        block-size: 20px;
+      }
+
       .section-anchor {
         scroll-margin-top: 24px;
       }
@@ -162,7 +198,8 @@
       @media (max-width: 1080px) {
         .console-shell,
         .panel-grid,
-        .budget-grid {
+        .budget-grid,
+        .settings-grid {
           grid-template-columns: 1fr;
         }
 
@@ -190,12 +227,15 @@
             <p class="muted" style="margin:4px 0 0;">围绕任务、审批、计划和模板组织。</p>
           </div>
           <div class="nav-grid">
+            <button class="secondary nav-link" data-target="onboardingSection">引导</button>
             <button class="secondary nav-link" data-target="tasksSection">任务</button>
             <button class="secondary nav-link" data-target="approvalsSection">审批</button>
             <button class="secondary nav-link" data-target="schedulesSection">计划</button>
             <button class="secondary nav-link" data-target="templatesSection">模板</button>
             <button class="secondary nav-link" data-target="budgetSection">预算</button>
             <button class="secondary nav-link" data-target="historySection">历史</button>
+            <button class="secondary nav-link" data-target="privacySection">隐私</button>
+            <button class="secondary nav-link" data-target="auditSection">审计</button>
           </div>
         </div>
         <div class="stack">
@@ -209,6 +249,19 @@
 
       <main class="workspace card">
         <div class="workspace-stack">
+          <section class="workspace-section section-anchor" id="onboardingSection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">首启引导</h3>
+                <p class="muted" style="margin:4px 0 0;">在桌面应用里确认当前环境是否已经达到可试用状态。</p>
+              </div>
+              <span id="onboardingState" class="chip warning">检查中…</span>
+            </div>
+            <div class="surface stack">
+              <div id="wizardList" class="wizard-list"></div>
+            </div>
+          </section>
+
           <section class="workspace-section section-anchor" id="composerSection">
             <div class="shell-header">
               <div class="shell-brand">
@@ -376,6 +429,64 @@
                 <pre id="historyPreview" class="history-preview muted">还没有搜索结果。</pre>
               </div>
             </div>
+          </section>
+
+          <section class="workspace-section section-anchor" id="privacySection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">隐私与安全</h3>
+                <p class="muted" style="margin:4px 0 0;">控制 kill switch、离线模式、演示模式，并查看脱敏与留存策略。</p>
+              </div>
+              <span id="privacyState" class="muted">尚未更新</span>
+            </div>
+            <div class="settings-grid">
+              <div class="surface stack">
+                <div class="privacy-list">
+                  <label class="switch-row">
+                    <div class="switch-copy">
+                      <strong>全局停止开关</strong>
+                      <span class="muted">打开后，UCA 将拒绝新的上下文分析与工具调用。</span>
+                    </div>
+                    <input id="killSwitchToggle" class="switch-control" type="checkbox">
+                  </label>
+                  <label class="switch-row">
+                    <div class="switch-copy">
+                      <strong>离线模式</strong>
+                      <span class="muted">阻止需要网络能力的动作工具。</span>
+                    </div>
+                    <input id="offlineModeToggle" class="switch-control" type="checkbox">
+                  </label>
+                  <label class="switch-row">
+                    <div class="switch-copy">
+                      <strong>演示模式</strong>
+                      <span class="muted">适合屏幕共享场景，自动阻止敏感内容流向模型。</span>
+                    </div>
+                    <input id="presenterModeToggle" class="switch-control" type="checkbox">
+                  </label>
+                </div>
+              </div>
+              <div class="surface stack">
+                <div>
+                  <strong>脱敏规则</strong>
+                  <div id="redactionRuleList" class="privacy-list" style="margin-top:10px;"></div>
+                </div>
+                <div>
+                  <strong>数据留存</strong>
+                  <div id="retentionList" class="retention-list" style="margin-top:10px;"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="workspace-section section-anchor" id="auditSection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">审计日志</h3>
+                <p class="muted" style="margin:4px 0 0;">查看最近发生的 runtime、审批、隐私与任务事件。</p>
+              </div>
+              <span id="auditCount" class="muted">0</span>
+            </div>
+            <div id="auditList" class="audit-list surface"></div>
           </section>
         </div>
       </main>

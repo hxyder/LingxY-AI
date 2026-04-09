@@ -131,6 +131,11 @@ input[type="text"] {
   background: rgba(161, 32, 32, 0.12);
 }
 
+.chip.muted {
+  color: var(--muted);
+  background: rgba(107, 98, 87, 0.12);
+}
+
 .stack {
   display: flex;
   flex-direction: column;

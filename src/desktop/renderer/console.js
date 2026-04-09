@@ -3,6 +3,8 @@ const summaryGrid = document.querySelector("#summaryGrid");
 const integrationList = document.querySelector("#integrationList");
 const refreshButton = document.querySelector("#refreshButton");
 const openOverlayButton = document.querySelector("#openOverlayButton");
+const onboardingState = document.querySelector("#onboardingState");
+const wizardList = document.querySelector("#wizardList");
 const taskComposer = document.querySelector("#taskComposer");
 const commandInput = document.querySelector("#commandInput");
 const contextInput = document.querySelector("#contextInput");
@@ -33,6 +35,14 @@ const historyForm = document.querySelector("#historyForm");
 const historyQueryInput = document.querySelector("#historyQueryInput");
 const historyList = document.querySelector("#historyList");
 const historyPreview = document.querySelector("#historyPreview");
+const privacyState = document.querySelector("#privacyState");
+const killSwitchToggle = document.querySelector("#killSwitchToggle");
+const offlineModeToggle = document.querySelector("#offlineModeToggle");
+const presenterModeToggle = document.querySelector("#presenterModeToggle");
+const redactionRuleList = document.querySelector("#redactionRuleList");
+const retentionList = document.querySelector("#retentionList");
+const auditCount = document.querySelector("#auditCount");
+const auditList = document.querySelector("#auditList");
 
 const state = {
   serviceBaseUrl: new URLSearchParams(window.location.search).get("serviceBaseUrl") ?? "http://127.0.0.1:4310",
@@ -45,12 +55,15 @@ const state = {
     budget: null,
     providers: [],
     codeCliAdapters: [],
-    history: []
+    history: [],
+    security: null,
+    audit: []
   },
   selectedTaskId: null,
   selectedTemplateId: null,
   currentHistoryQuery: "",
-  detailVersion: 0
+  detailVersion: 0,
+  updatingSecurity: false
 };
 
 function escapeHtml(value) {
@@ -131,6 +144,55 @@ function renderSummary() {
     <div class="summary-tile">
       <span class="muted">${escapeHtml(label)}</span>
       <strong>${escapeHtml(value)}</strong>
+    </div>
+  `).join("");
+}
+
+function renderOnboarding() {
+  const kimi = state.workspace.health?.kimi ?? state.workspace.codeCliAdapters.find((item) => item.id === "kimi-code-cli") ?? null;
+  const providerReady = state.workspace.providers.some((provider) => provider.available && provider.configured);
+  const tasks = state.workspace.tasks ?? [];
+  const hasFileFlow = tasks.some((task) => ["file", "file_group"].includes(task.source_type));
+  const hasBrowserFlow = tasks.some((task) => ["text_selection", "image", "webpage", "link"].includes(task.source_type));
+  const steps = [
+    {
+      title: "欢迎使用桌面版 UCA",
+      status: "ready",
+      detail: "当前已经运行在 Electron 桌面壳中。"
+    },
+    {
+      title: "本地 runtime",
+      status: state.workspace.health?.ok ? "ready" : "action_needed",
+      detail: state.workspace.health?.ok ? `已连接 ${state.serviceBaseUrl}` : "本地 runtime 尚未连接。"
+    },
+    {
+      title: "Kimi Code CLI",
+      status: kimi?.available ? "ready" : kimi?.configured ? "recommended" : "action_needed",
+      detail: kimi?.command ?? kimi?.detail ?? (providerReady ? "云端 provider 已可用，但当前阶段建议优先使用 Code CLI。" : "请先安装并登录 Kimi Code CLI。")
+    },
+    {
+      title: "文件右键入口",
+      status: hasFileFlow ? "ready" : "recommended",
+      detail: hasFileFlow ? "已检测到文件入口任务记录。" : "右键文件后可直接拉起桌面浮窗输入要求。"
+    },
+    {
+      title: "浏览器/扩展入口",
+      status: hasBrowserFlow ? "ready" : "optional",
+      detail: hasBrowserFlow ? "已检测到网页类任务记录。" : "如果你需要网页选区和页面抓取，再启用浏览器入口。"
+    }
+  ];
+
+  const hasBlocking = steps.some((step) => step.status === "action_needed");
+  const hasRecommended = steps.some((step) => step.status === "recommended");
+  onboardingState.textContent = hasBlocking ? "需处理" : hasRecommended ? "建议完善" : "已就绪";
+  onboardingState.className = `chip ${hasBlocking ? "danger" : hasRecommended ? "warning" : "ready"}`;
+  wizardList.innerHTML = steps.map((step, index) => `
+    <div class="surface">
+      <div class="row">
+        <strong>${index + 1}. ${escapeHtml(step.title)}</strong>
+        <span class="chip ${step.status === "ready" ? "ready" : step.status === "optional" ? "muted" : step.status === "recommended" ? "warning" : "danger"}">${escapeHtml(step.status)}</span>
+      </div>
+      <p class="muted" style="margin:10px 0 0;">${escapeHtml(step.detail)}</p>
     </div>
   `).join("");
 }
@@ -488,6 +550,89 @@ function renderHistory() {
   }
 }
 
+function renderPrivacy() {
+  const security = state.workspace.security ?? {
+    global_kill_switch: false,
+    offline_mode: false,
+    presenter_mode: false,
+    field_redaction: {
+      enabled_rules: []
+    },
+    data_retention: {}
+  };
+
+  killSwitchToggle.checked = Boolean(security.global_kill_switch);
+  offlineModeToggle.checked = Boolean(security.offline_mode);
+  presenterModeToggle.checked = Boolean(security.presenter_mode);
+  killSwitchToggle.disabled = state.updatingSecurity;
+  offlineModeToggle.disabled = state.updatingSecurity;
+  presenterModeToggle.disabled = state.updatingSecurity;
+
+  const rules = security.field_redaction?.enabled_rules ?? [];
+  redactionRuleList.innerHTML = rules.length > 0
+    ? rules.map((rule) => `
+        <div class="surface">
+          <strong>${escapeHtml(rule)}</strong>
+        </div>
+      `).join("")
+    : `<div class="surface"><p class="muted" style="margin:0;">当前没有启用脱敏规则。</p></div>`;
+
+  const retentionEntries = Object.entries(security.data_retention ?? {});
+  retentionList.innerHTML = retentionEntries.length > 0
+    ? retentionEntries.map(([label, value]) => `
+        <div class="surface">
+          <div class="row">
+            <strong>${escapeHtml(label)}</strong>
+            <span class="muted">${escapeHtml(value)}</span>
+          </div>
+        </div>
+      `).join("")
+    : `<div class="surface"><p class="muted" style="margin:0;">当前没有留存策略。</p></div>`;
+}
+
+function renderAudit() {
+  const entries = state.workspace.audit ?? [];
+  auditCount.textContent = `${entries.length}`;
+  if (entries.length === 0) {
+    renderEmpty(auditList, "还没有审计记录。");
+    return;
+  }
+
+  auditList.innerHTML = entries.slice(0, 24).map((entry) => `
+    <div class="timeline-item">
+      <div class="row">
+        <strong>${escapeHtml(entry.event_subtype ?? "event")}</strong>
+        <span class="muted">${escapeHtml(formatDateTime(entry.ts))}</span>
+      </div>
+      <p class="muted" style="margin-top:8px;">task: ${escapeHtml(entry.task_id ?? "n/a")}</p>
+    </div>
+  `).join("");
+}
+
+async function updateSecurityConfig(patch, label) {
+  privacyState.textContent = `${label}中…`;
+  state.updatingSecurity = true;
+  renderPrivacy();
+  try {
+    const payload = await fetchJson("/security/state", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(patch)
+    });
+    state.workspace.security = payload.security ?? state.workspace.security;
+    privacyState.textContent = `${label}已更新`;
+    renderPrivacy();
+    await refreshWorkspace();
+  } catch (error) {
+    privacyState.textContent = `${label}失败：${error.message}`;
+  } finally {
+    state.updatingSecurity = false;
+    renderPrivacy();
+  }
+}
+
 async function refreshWorkspace() {
   try {
     const shell = await window.ucaShell.getShellStatus();
@@ -513,6 +658,8 @@ async function refreshWorkspace() {
       schedulesPayload,
       templatesPayload,
       budgetPayload,
+      securityPayload,
+      auditPayload,
       providersPayload,
       codeCliPayload,
       historyPayload
@@ -523,6 +670,8 @@ async function refreshWorkspace() {
       fetchJson("/schedules"),
       fetchJson("/templates"),
       fetchJson("/budget"),
+      fetchJson("/security/state"),
+      fetchJson("/audit-log"),
       fetchJson("/ai/providers"),
       fetchJson("/ai/code-cli"),
       historyPromise
@@ -537,11 +686,14 @@ async function refreshWorkspace() {
       budget: budgetPayload.budget ?? null,
       providers: providersPayload.providers ?? [],
       codeCliAdapters: codeCliPayload.adapters ?? [],
-      history: historyPayload.results ?? []
+      history: historyPayload.results ?? [],
+      security: securityPayload.security ?? null,
+      audit: auditPayload.entries ?? []
     };
 
     setRuntimeBadge(true, `Desktop Runtime 已连接 · ${state.serviceBaseUrl}`);
     renderSummary();
+    renderOnboarding();
     renderIntegrations();
     renderTasks();
     renderApprovals();
@@ -549,6 +701,8 @@ async function refreshWorkspace() {
     renderTemplates();
     renderBudget();
     renderHistory();
+    renderPrivacy();
+    renderAudit();
     await Promise.all([
       refreshTaskDetail(),
       loadTemplatePreview(state.selectedTemplateId)
@@ -724,6 +878,24 @@ historyForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   state.currentHistoryQuery = historyQueryInput.value.trim();
   await refreshWorkspace();
+});
+
+killSwitchToggle.addEventListener("change", async () => {
+  await updateSecurityConfig({
+    global_kill_switch: killSwitchToggle.checked
+  }, "Kill switch");
+});
+
+offlineModeToggle.addEventListener("change", async () => {
+  await updateSecurityConfig({
+    offline_mode: offlineModeToggle.checked
+  }, "离线模式");
+});
+
+presenterModeToggle.addEventListener("change", async () => {
+  await updateSecurityConfig({
+    presenter_mode: presenterModeToggle.checked
+  }, "演示模式");
 });
 
 window.ucaShell.onShortcutTriggered((payload) => {

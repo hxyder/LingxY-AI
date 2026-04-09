@@ -50,11 +50,11 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-018-console-ui`
 - 开始日期：2026-04-08
-- 完成日期：
-- 实际新增内容：console 总 view model 接入 runtime health / Code CLI / provider / budget 摘要；first-run wizard 接入 Kimi Code CLI 主路径推荐；task detail 接入 provider / model / retry / cost 摘要；新增 `verify-console-ui`；新增 console runtime client，从本地 HTTP 组装 approvals / schedules / budget / history / audit 各子页面快照；补齐 `/schedules/:id/runs` 的读取与手动触发接口；desktop runtime host 可直接创建 console client；console runtime client 新增 task detail 拉取、SSE 事件订阅、任务取消/重试、审批通过/拒绝、计划任务立即执行能力。
-- 验证结果：`npm run check` 通过；`verify-console-ui`、`verify-console-runtime-client`、`verify-status-metrics`、`verify-security-broker`、`verify-runtime-wiring` 均通过。
-- 遗留问题：真实 Electron 渲染层、overlay 提交流程、pending approvals / schedules / history / templates 的页面级联动仍未完成；当前 SSE 已具备客户端接入能力，但页面级断线重连与状态保活还未做完。
-- 交接给下一个任务：后续优先继续把 console 各子页面接到 HTTP / SSE；当前运行时客户端已经可直接复用任务详情、审批动作、计划任务触发和实时事件订阅能力。
+- 完成日期：2026-04-09
+- 实际新增内容：console 总 view model 接入 runtime health / Code CLI / provider / budget 摘要；first-run wizard 接入 Kimi Code CLI 主路径推荐；task detail 接入 provider / model / retry / cost 摘要；新增 `verify-console-ui`；新增 console runtime client，从本地 HTTP 组装 approvals / schedules / budget / history / audit 各子页面快照；补齐 `/schedules/:id/runs` 的读取与手动触发接口；desktop runtime host 可直接创建 console client；console runtime client 新增 task detail 拉取、SSE 事件订阅、任务取消/重试、审批通过/拒绝、计划任务立即执行能力；Electron console renderer 已具备首启引导、任务列表/详情、审批、计划、模板、预算、历史搜索、隐私开关与审计日志的桌面工作台。
+- 验证结果：`npm run check`、`node scripts/verify-desktop-renderer.mjs`、`node scripts/verify-console-rendered-workspace.mjs`、`powershell -ExecutionPolicy Bypass -File .\scripts\start-trial.ps1 -WithShell` 均通过。
+- 遗留问题：页面级 SSE 断线重连和更细的视觉打磨仍可继续增强，但核心桌面操作流已闭环。
+- 交接给下一个任务：UCA-019 / UCA-020 可直接复用当前桌面工作台、隐私设置入口、审计入口和已有的 HTTP runtime 操作链路做最终打磨与发布验证。
