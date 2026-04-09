@@ -15,7 +15,7 @@ import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
 import { createSchedulerRuntime } from "../scheduler/engine.mjs";
 import { createOfficeHttpsRuntime } from "../https/port-9413.mjs";
-import { createBuiltinTemplateRegistry } from "../templates/runtime.mjs";
+import { createBuiltinTemplateRegistry, createPersistentTemplateRegistry } from "../templates/runtime.mjs";
 import { createBudgetManager } from "../cost/budget.mjs";
 import { createEmbeddingStore } from "../embeddings/store.mjs";
 import { createAIProviderRegistry } from "../ai/providers/registry.mjs";
@@ -26,6 +26,7 @@ import { createMCPRegistry } from "../ai/mcp/registry.mjs";
 import { BUILTIN_MCP_SERVERS } from "../ai/mcp/builtin.mjs";
 import { createSkillRegistry } from "../ai/skills/registry.mjs";
 import { BUILTIN_SKILL_REGISTRIES } from "../ai/skills/builtin.mjs";
+import { createDagCheckpointStore } from "../dag/scheduler.mjs";
 
 export function createServiceBootstrap({
   storeAdapter = createInMemoryStoreScaffold(),
@@ -66,9 +67,18 @@ export function createServiceBootstrap({
   runtime.actionToolRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
   runtime.executorRegistry = createExecutorRegistry(executors);
   runtime.platform = {
-    templateRegistry: createBuiltinTemplateRegistry(),
-    budgetManager: createBudgetManager(),
-    embeddingStore: createEmbeddingStore(),
+    templateRegistry: paths?.templatesDir
+      ? createPersistentTemplateRegistry({ templatesDir: paths.templatesDir })
+      : createBuiltinTemplateRegistry(),
+    budgetManager: createBudgetManager(undefined, {
+      stateFilePath: paths?.budgetStatePath ?? null
+    }),
+    embeddingStore: createEmbeddingStore({
+      filePath: paths?.historyStorePath ?? null
+    }),
+    dagCheckpointStore: createDagCheckpointStore({
+      runsDir: paths?.dagRunsDir ?? null
+    }),
     aiProviders: createAIProviderRegistry(BUILTIN_AI_PROVIDERS),
     codeCliAdapters: createCodeCliRegistry(BUILTIN_CODE_CLI_ADAPTERS),
     mcpServers: createMCPRegistry(BUILTIN_MCP_SERVERS),
@@ -105,9 +115,17 @@ export function createServiceBootstrap({
       metrics: "/metrics",
       getTemplates: "/templates",
       getTemplateById: "/templates/:id",
+      postTemplateSave: "/templates",
+      postTemplateImport: "/templates/import",
+      deleteTemplateById: "/templates/:id",
+      getTemplateExport: "/templates/:id/export",
       postTemplateValidate: "/templates/validate",
       postDagPreview: "/dag/preview",
+      getDagExecutions: "/dag/executions",
+      getDagExecutionById: "/dag/executions/:id",
+      postDagResume: "/dag/executions/:id/resume",
       getBudget: "/budget",
+      postBudget: "/budget",
       postHistorySearch: "/history/search",
       getExecutors: "/executors",
       getAIProviders: "/ai/providers",

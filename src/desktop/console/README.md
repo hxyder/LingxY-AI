@@ -15,3 +15,4 @@ Current runtime-connected additions:
 - task detail view now exposes provider, model, retry, and cost summaries
 - console runtime client now loads HTTP snapshots and builds approvals / schedules / budget / history / audit view models
 - console runtime client now exposes task detail loading, SSE subscriptions, retry / cancel actions, approval actions, and manual schedule dispatch
+- console runtime client now also exposes template persistence, budget updates, DAG preview / resume, and page-level data loading for template and DAG panes

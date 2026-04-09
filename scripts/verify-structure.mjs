@@ -197,6 +197,7 @@ const requiredPaths = [
   "scripts/verify-security-broker.mjs",
   "scripts/verify-scheduler.mjs",
   "scripts/verify-platform-foundation.mjs",
+  "scripts/verify-template-dag-persistence.mjs",
   "scripts/verify-runtime-wiring.mjs",
   "scripts/verify-native-integrations.mjs",
   "scripts/install-explorer-entry.ps1",

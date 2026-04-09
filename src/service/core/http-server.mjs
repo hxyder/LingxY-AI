@@ -9,6 +9,9 @@ import { submitContextTask } from "./context-submission.mjs";
 import { submitFileTask } from "./file-submission.mjs";
 import { submitImageTask } from "./image-submission.mjs";
 import { submitOfficeTask } from "./office-submission.mjs";
+import { normalizeTemplateDocument } from "../templates/parser.mjs";
+import { validateTemplateDocument } from "../templates/schema.mjs";
+import { resumeDagGraph, validateDagDefinition } from "../dag/scheduler.mjs";
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -123,6 +126,21 @@ async function submitTaskFromBody(runtime, body) {
   });
 }
 
+async function resumeDagExecution(runtime, executionId) {
+  return resumeDagGraph({
+    checkpointStore: runtime.platform.dagCheckpointStore,
+    executionId,
+    async executeNode(node, context) {
+      return {
+        nodeId: node.id,
+        target: node.target ?? node.executor ?? null,
+        resumed: true,
+        previousCount: Object.keys(context.results ?? {}).length
+      };
+    }
+  });
+}
+
 export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.0.0.1" }) {
   const server = http.createServer(async (request, response) => {
     const method = request.method ?? "GET";
@@ -134,6 +152,10 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
     const approvalApproveMatch = url.pathname.match(/^\/approvals\/([^/]+)\/approve$/);
     const approvalRejectMatch = url.pathname.match(/^\/approvals\/([^/]+)\/reject$/);
     const scheduleRunsMatch = url.pathname.match(/^\/schedules\/([^/]+)\/runs$/);
+    const templateExportMatch = url.pathname.match(/^\/templates\/([^/]+)\/export$/);
+    const templateMatch = url.pathname.match(/^\/templates\/([^/]+)$/);
+    const dagExecutionMatch = url.pathname.match(/^\/dag\/executions\/([^/]+)$/);
+    const dagResumeMatch = url.pathname.match(/^\/dag\/executions\/([^/]+)\/resume$/);
 
     try {
       if (method === "GET" && url.pathname === "/health") {
@@ -313,8 +335,42 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         });
       }
 
-      if (method === "GET" && url.pathname.startsWith("/templates/")) {
-        const templateId = decodeURIComponent(url.pathname.slice("/templates/".length));
+      if (method === "POST" && url.pathname === "/templates") {
+        const body = await readJsonBody(request);
+        const result = runtime.platform.templateRegistry.save(body.template ?? body, {
+          actor: body.actor ?? "console"
+        });
+        if (!result.ok) {
+          return sendJson(response, 400, result);
+        }
+        return sendJson(response, 200, result);
+      }
+
+      if (method === "POST" && url.pathname === "/templates/import") {
+        const body = await readJsonBody(request);
+        const result = runtime.platform.templateRegistry.import(body.template ?? body.raw ?? body, {
+          actor: body.actor ?? "console_import"
+        });
+        if (!result.ok) {
+          return sendJson(response, 400, result);
+        }
+        return sendJson(response, 200, result);
+      }
+
+      if (templateExportMatch && method === "GET") {
+        const templateId = decodeURIComponent(templateExportMatch[1]);
+        const raw = runtime.platform.templateRegistry.export(templateId);
+        if (!raw) {
+          return sendJson(response, 404, { error: "template_not_found" });
+        }
+        return sendJson(response, 200, {
+          template_id: templateId,
+          raw
+        });
+      }
+
+      if (templateMatch && method === "GET") {
+        const templateId = decodeURIComponent(templateMatch[1]);
         const template = runtime.platform.templateRegistry.get(templateId);
         if (!template) {
           return sendJson(response, 404, { error: "template_not_found" });
@@ -322,19 +378,72 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, { template });
       }
 
+      if (templateMatch && method === "DELETE") {
+        const templateId = decodeURIComponent(templateMatch[1]);
+        const removed = runtime.platform.templateRegistry.remove(templateId);
+        if (!removed) {
+          return sendJson(response, 404, { error: "template_not_found_or_builtin" });
+        }
+        return sendJson(response, 200, {
+          removed
+        });
+      }
+
       if (method === "POST" && url.pathname === "/templates/validate") {
         const body = await readJsonBody(request);
-        return sendJson(response, 200, body);
+        const template = normalizeTemplateDocument(body.template ?? body);
+        return sendJson(response, 200, {
+          template,
+          validation: validateTemplateDocument(template)
+        });
       }
 
       if (method === "POST" && url.pathname === "/dag/preview") {
         const body = await readJsonBody(request);
-        return sendJson(response, 200, body);
+        const graph = body.graph ?? body;
+        return sendJson(response, 200, {
+          graph,
+          validation: validateDagDefinition(graph)
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/dag/executions") {
+        return sendJson(response, 200, {
+          executions: runtime.platform.dagCheckpointStore.list()
+        });
+      }
+
+      if (dagExecutionMatch && method === "GET") {
+        const executionId = decodeURIComponent(dagExecutionMatch[1]);
+        const execution = runtime.platform.dagCheckpointStore.get(executionId);
+        if (!execution) {
+          return sendJson(response, 404, { error: "dag_execution_not_found" });
+        }
+        return sendJson(response, 200, { execution });
+      }
+
+      if (dagResumeMatch && method === "POST") {
+        const executionId = decodeURIComponent(dagResumeMatch[1]);
+        const execution = runtime.platform.dagCheckpointStore.get(executionId);
+        if (!execution) {
+          return sendJson(response, 404, { error: "dag_execution_not_found" });
+        }
+        const resumed = await resumeDagExecution(runtime, executionId);
+        return sendJson(response, 200, {
+          execution: resumed
+        });
       }
 
       if (method === "GET" && url.pathname === "/budget") {
         return sendJson(response, 200, {
           budget: runtime.platform.budgetManager.getState()
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/budget") {
+        const body = await readJsonBody(request);
+        return sendJson(response, 200, {
+          budget: runtime.platform.budgetManager.setLimits(body.limits ?? body)
         });
       }
 

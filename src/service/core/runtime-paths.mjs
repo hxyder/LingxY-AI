@@ -21,13 +21,29 @@ export function resolveRuntimePaths({ baseDir = null } = {}) {
     configPath: path.join(resolvedBaseDir, "config", "runtime.json"),
     dataDir: path.join(resolvedBaseDir, "data"),
     dbPath: path.join(resolvedBaseDir, "data", "uca.db"),
+    templatesDir: path.join(resolvedBaseDir, "data", "templates"),
+    historyDir: path.join(resolvedBaseDir, "data", "history"),
+    historyStorePath: path.join(resolvedBaseDir, "data", "history", "embeddings.json"),
+    dagDir: path.join(resolvedBaseDir, "data", "dag"),
+    dagRunsDir: path.join(resolvedBaseDir, "data", "dag", "runs"),
+    budgetStatePath: path.join(resolvedBaseDir, "data", "budget.json"),
     logsDir: path.join(resolvedBaseDir, "logs"),
     outputsDir: path.join(resolvedBaseDir, "outputs")
   };
 }
 
 export function ensureRuntimePaths(paths) {
-  for (const directory of [paths.baseDir, paths.configDir, paths.dataDir, paths.logsDir, paths.outputsDir]) {
+  for (const directory of [
+    paths.baseDir,
+    paths.configDir,
+    paths.dataDir,
+    paths.templatesDir,
+    paths.historyDir,
+    paths.dagDir,
+    paths.dagRunsDir,
+    paths.logsDir,
+    paths.outputsDir
+  ]) {
     mkdirSync(directory, { recursive: true });
   }
   return paths;

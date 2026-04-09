@@ -51,11 +51,11 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：in_progress
 - 执行分支：`task/uca-019-template-dag`
-- 开始日期：
+- 开始日期：2026-04-08
 - 完成日期：
-- 实际新增内容：
-- 验证结果：
-- 遗留问题：
-- 交接给下一个任务：
+- 实际新增内容：运行时目录补齐 `data/templates`、`data/history`、`data/dag/runs`、`data/budget.json` 等持久化位置；模板注册表升级为 builtin + user 双层存储，新增保存 / 导入 / 导出 / 删除接口；历史搜索存储升级为可持久化本地记录，并在任务完成后自动写入搜索索引；预算管理器支持本地持久化与限额更新；DAG 运行支持 checkpoint 保存、执行列表读取与失败后 resume；console runtime client 新增模板、预算与 DAG 相关接口，并把模板编辑器 / DAG 面板接入 workspace snapshot。
+- 验证结果：`verify-console-runtime-client`、`verify-template-dag-persistence`、`verify-platform-foundation`、`npm run check` 均已通过。
+- 遗留问题：真实 DAG 节点执行器仍是平台占位实现，模板 schema 迁移策略与导入冲突处理还需要下一轮细化。
+- 交接给下一个任务：下一步可直接基于 runtime client 接 UI 页面操作；模板保存、历史搜索持久化、DAG resume 的服务端接口已预留完成。

@@ -1,5 +1,5 @@
 # History Search
 
-Local history search and embedding placeholders live here.
+Local history search and embedding storage live here.
 
-The current implementation uses a lightweight lexical embedding approximation so later tasks can swap in a persistent vector backend without changing the higher-level contract.
+The current implementation still uses a lightweight lexical embedding approximation, but records now persist under the runtime `data/history/` directory so search survives restarts.

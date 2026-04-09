@@ -20,6 +20,36 @@ function buildSourceDedupeKey(contextPacket, userCommand) {
   return `${contextPacket.source_type}:${contextPacket.source_app}:${userCommand}:${sourceKey}`;
 }
 
+function buildHistoryRecord(task) {
+  const text = [
+    task.user_command,
+    task.intent,
+    task.context_packet?.title,
+    task.context_packet?.text,
+    task.context_packet?.url,
+    task.context_packet?.file_paths?.join(" "),
+    task.failure_user_message
+  ].filter(Boolean).join("\n");
+
+  if (!text) {
+    return null;
+  }
+
+  return {
+    id: task.task_id,
+    text,
+    metadata: {
+      summary: task.user_command ?? task.intent ?? task.task_id,
+      created_at: task.created_at,
+      updated_at: task.updated_at,
+      status: task.status,
+      source_type: task.context_packet?.source_type ?? "unknown",
+      intent: task.intent,
+      executor: task.executor
+    }
+  };
+}
+
 export function ensureRuntimeServices(runtime) {
   runtime.activeExecutions ??= new Map();
   runtime.metrics ??= createMetricsRegistry({
@@ -178,6 +208,10 @@ export function markTaskFailed(runtime, task, errorLike) {
     }
   ];
   runtime.store.updateTask(task.task_id, task);
+  const historyRecord = buildHistoryRecord(task);
+  if (historyRecord) {
+    runtime.platform?.embeddingStore?.add(historyRecord);
+  }
   runtime.securityBroker?.clearTaskRedactionMap(task.task_id);
   runtime.queue.markFinished(task.task_id);
   return failure;
@@ -193,6 +227,10 @@ export function markTaskSucceeded(runtime, task) {
     }
   ];
   runtime.store.updateTask(task.task_id, task);
+  const historyRecord = buildHistoryRecord(task);
+  if (historyRecord) {
+    runtime.platform?.embeddingStore?.add(historyRecord);
+  }
   runtime.securityBroker?.clearTaskRedactionMap(task.task_id);
   runtime.queue.markFinished(task.task_id);
 }

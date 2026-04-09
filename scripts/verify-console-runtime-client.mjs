@@ -115,6 +115,37 @@ try {
   });
 
   const client = createConsoleRuntimeClient(listening.baseUrl);
+  const savedTemplate = await client.saveTemplate({
+    schema_version: "1.0",
+    id: "user.console.template",
+    name: "Console Template",
+    version: "1.0.0",
+    steps: [
+      {
+        id: "draft",
+        kind: "executor",
+        target: "kimi_cli"
+      }
+    ]
+  }, "verify-console-runtime-client");
+  assert.equal(savedTemplate.ok, true);
+
+  const budgetUpdate = await client.updateBudget({
+    monthly_usd_limit: 75
+  });
+  assert.equal(budgetUpdate.budget.limits.monthly_usd_limit, 75);
+
+  const dagPreview = await client.previewDag({
+    nodes: [
+      { id: "extract", target: "browser" },
+      { id: "summarize", target: "kimi_cli" }
+    ],
+    edges: [
+      { from: "extract", to: "summarize" }
+    ]
+  });
+  assert.equal(dagPreview.validation.ok, true);
+
   const snapshot = await client.loadWorkspaceSnapshot({
     historyQuery: "Kimi report",
     historyLimit: 3
@@ -125,7 +156,9 @@ try {
   assert.equal(snapshot.viewModels.schedules.schedules.length, 1);
   assert.equal(snapshot.viewModels.schedules.historyCount, 1);
   assert.equal(snapshot.viewModels.audit.total >= 1, true);
-  assert.equal(snapshot.viewModels.history.resultCount, 1);
+  assert.equal(snapshot.viewModels.history.resultCount >= 1, true);
+  assert.equal(snapshot.viewModels.templateEditor.templateCount, 6);
+  assert.equal(snapshot.viewModels.budget.monthlyLimitUsd, 75);
 
   const detail = await client.loadTaskDetail(createdTask.task.task_id);
   assert.equal(detail.viewModel.taskId, createdTask.task.task_id);

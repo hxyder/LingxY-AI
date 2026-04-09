@@ -7,6 +7,8 @@ import { buildHistorySearchViewModel } from "./history_search/view-model.mjs";
 import { buildAuditLogViewerModel } from "./audit_log_viewer/view-model.mjs";
 import { buildConsoleFiltersViewModel } from "./filters/view-model.mjs";
 import { buildTaskDetailViewModel } from "./task-detail/view-model.mjs";
+import { buildTemplateEditorViewModel } from "./template_editor/view-model.mjs";
+import { buildDagConsoleViewModel } from "./dag_view/view-model.mjs";
 
 async function readJson(response) {
   const text = await response.text();
@@ -53,8 +55,88 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
     getBudget() {
       return fetchJson("/budget");
     },
+    updateBudget(limits) {
+      return fetchJson("/budget", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ limits })
+      });
+    },
     getAuditLog() {
       return fetchJson("/audit-log");
+    },
+    getTemplates() {
+      return fetchJson("/templates");
+    },
+    getTemplate(templateId) {
+      return fetchJson(`/templates/${encodeURIComponent(templateId)}`);
+    },
+    saveTemplate(template, actor = "console") {
+      return fetchJson("/templates", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          actor,
+          template
+        })
+      });
+    },
+    importTemplate(raw, actor = "console_import") {
+      return fetchJson("/templates/import", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          actor,
+          raw
+        })
+      });
+    },
+    exportTemplate(templateId) {
+      return fetchJson(`/templates/${encodeURIComponent(templateId)}/export`);
+    },
+    deleteTemplate(templateId) {
+      return fetchJson(`/templates/${encodeURIComponent(templateId)}`, {
+        method: "DELETE"
+      });
+    },
+    validateTemplate(template) {
+      return fetchJson("/templates/validate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          template
+        })
+      });
+    },
+    previewDag(graph) {
+      return fetchJson("/dag/preview", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          graph
+        })
+      });
+    },
+    getDagExecutions() {
+      return fetchJson("/dag/executions");
+    },
+    getDagExecution(executionId) {
+      return fetchJson(`/dag/executions/${encodeURIComponent(executionId)}`);
+    },
+    resumeDagExecution(executionId) {
+      return fetchJson(`/dag/executions/${encodeURIComponent(executionId)}/resume`, {
+        method: "POST"
+      });
     },
     getProviders() {
       return fetchJson("/ai/providers");
@@ -201,6 +283,8 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
         schedulesPayload,
         budgetPayload,
         auditPayload,
+        templatesPayload,
+        dagExecutionsPayload,
         providersPayload,
         codeCliPayload,
         historyPayload
@@ -211,6 +295,8 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
         this.getSchedules(),
         this.getBudget(),
         this.getAuditLog(),
+        this.getTemplates(),
+        this.getDagExecutions(),
         this.getProviders(),
         this.getCodeCliAdapters(),
         this.searchHistory(historyQuery, historyLimit)
@@ -231,6 +317,8 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
           scheduleRuns,
           budget: budgetPayload.budget ?? null,
           audit: auditPayload.entries ?? [],
+          templates: templatesPayload.templates ?? [],
+          dagExecutions: dagExecutionsPayload.executions ?? [],
           providers: providersPayload.providers ?? [],
           codeCliAdapters: codeCliPayload.adapters ?? [],
           history: historyPayload.results ?? []
@@ -250,6 +338,17 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
             budgetState: budgetPayload.budget ?? null,
             pricingEntries: Object.entries(pricing.executors)
           }),
+          templateEditor: buildTemplateEditorViewModel({
+            templates: templatesPayload.templates ?? [],
+            selectedTemplateId: templatesPayload.templates?.[0]?.id ?? null
+          }),
+          dag: buildDagConsoleViewModel(
+            dagExecutionsPayload.executions?.[0]?.graph ?? {
+              nodes: [],
+              edges: []
+            },
+            dagExecutionsPayload.executions?.[0] ?? null
+          ),
           history: buildHistorySearchViewModel(historyQuery, historyPayload.results ?? []),
           audit: buildAuditLogViewerModel(auditPayload.entries ?? [])
         }
