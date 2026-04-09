@@ -1,0 +1,132 @@
+param(
+  [switch]$WithShell
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+$StateDir = Join-Path $RepoRoot ".tmp\\trial"
+$RuntimeLog = Join-Path $StateDir "runtime.out.log"
+$RuntimeErrorLog = Join-Path $StateDir "runtime.err.log"
+$RuntimePidFile = Join-Path $StateDir "runtime.pid"
+$ElectronLog = Join-Path $StateDir "electron.out.log"
+$ElectronErrorLog = Join-Path $StateDir "electron.err.log"
+$ElectronPidFile = Join-Path $StateDir "electron.pid"
+$RuntimeUrl = "http://127.0.0.1:4310"
+
+New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+
+function Test-RuntimeHealth {
+  try {
+    $response = Invoke-WebRequest -UseBasicParsing "$RuntimeUrl/health" -TimeoutSec 2
+    return ($response.StatusCode -eq 200)
+  } catch {
+    return $false
+  }
+}
+
+function Write-PidFile {
+  param(
+    [string]$Path,
+    [int]$ProcessId
+  )
+  Set-Content -Path $Path -Value $ProcessId -Encoding ascii
+}
+
+function Get-RuntimeProcessId {
+  try {
+    return (Get-NetTCPConnection -LocalPort 4310 -State Listen -ErrorAction Stop |
+      Select-Object -First 1 -ExpandProperty OwningProcess)
+  } catch {
+    return $null
+  }
+}
+
+if (-not (Test-Path (Join-Path $RepoRoot "node_modules"))) {
+  throw "node_modules 不存在，请先在仓库根目录执行 npm install。"
+}
+
+if (-not (Test-RuntimeHealth)) {
+  if (Test-Path $RuntimePidFile) {
+    Remove-Item -LiteralPath $RuntimePidFile -Force
+  }
+
+  $runtimeStartArgs = @{
+    FilePath = "node"
+    ArgumentList = "scripts/start-runtime.mjs"
+    WorkingDirectory = $RepoRoot
+    RedirectStandardOutput = $RuntimeLog
+    RedirectStandardError = $RuntimeErrorLog
+    WindowStyle = "Hidden"
+    PassThru = $true
+  }
+  $runtimeProcess = Start-Process @runtimeStartArgs
+
+  Write-PidFile -Path $RuntimePidFile -ProcessId $runtimeProcess.Id
+
+  $started = $false
+  foreach ($attempt in 1..20) {
+    Start-Sleep -Milliseconds 500
+    if (Test-RuntimeHealth) {
+      $started = $true
+      break
+    }
+  }
+
+  if (-not $started) {
+    throw "本地 runtime 启动失败，请检查 $RuntimeLog"
+  }
+}
+elseif (-not (Test-Path $RuntimePidFile)) {
+  $existingRuntimePid = Get-RuntimeProcessId
+  if ($existingRuntimePid) {
+    Write-PidFile -Path $RuntimePidFile -ProcessId ([int]$existingRuntimePid)
+  }
+}
+
+if ($WithShell) {
+  $electronExe = Join-Path $RepoRoot "node_modules\\electron\\dist\\electron.exe"
+  if (-not (Test-Path $electronExe)) {
+    throw "找不到 Electron 可执行文件：$electronExe"
+  }
+
+  $existingElectronPid = $null
+  if (Test-Path $ElectronPidFile) {
+    $existingElectronPid = Get-Content $ElectronPidFile -Raw
+  }
+
+  if ($existingElectronPid) {
+    try {
+      $null = Get-Process -Id ([int]$existingElectronPid) -ErrorAction Stop
+    } catch {
+      Remove-Item -LiteralPath $ElectronPidFile -Force -ErrorAction SilentlyContinue
+      $existingElectronPid = $null
+    }
+  }
+
+  if (-not $existingElectronPid) {
+    $electronStartArgs = @{
+      FilePath = $electronExe
+      ArgumentList = "."
+      WorkingDirectory = $RepoRoot
+      RedirectStandardOutput = $ElectronLog
+      RedirectStandardError = $ElectronErrorLog
+      PassThru = $true
+    }
+    $electronProcess = Start-Process @electronStartArgs
+    Write-PidFile -Path $ElectronPidFile -ProcessId $electronProcess.Id
+  }
+}
+
+Write-Host "UCA 已启动。"
+Write-Host "Runtime: $RuntimeUrl"
+Write-Host "Runtime out log: $RuntimeLog"
+Write-Host "Runtime err log: $RuntimeErrorLog"
+if ($WithShell) {
+  Write-Host "Electron out log: $ElectronLog"
+  Write-Host "Electron err log: $ElectronErrorLog"
+} else {
+  Write-Host "当前默认只启动本地 runtime。需要实验性 Electron 壳时可加 -WithShell。"
+}
+Write-Host "停止命令: powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-trial.ps1"

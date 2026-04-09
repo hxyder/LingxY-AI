@@ -139,10 +139,19 @@ function probeVersion(command, env) {
 }
 
 function buildMergedEnv({ baseEnv = process.env, envPatch = {} } = {}) {
-  return {
+  const merged = {
     ...baseEnv,
     ...normalizeEnvPatch(envPatch)
   };
+
+  if (process.platform === "win32") {
+    merged.PYTHONIOENCODING ??= "utf-8";
+    merged.PYTHONUTF8 ??= "1";
+    merged.LANG ??= "C.UTF-8";
+    merged.LC_ALL ??= "C.UTF-8";
+  }
+
+  return merged;
 }
 
 export function getKimiRuntimeStatus({
