@@ -26,6 +26,10 @@ if (!service.runtime.scheduler) {
   throw new Error("Scheduler scaffold is missing.");
 }
 
+if (!service.runtime.officeHttps) {
+  throw new Error("Office HTTPS scaffold is missing.");
+}
+
 const route = service.routeIntent("请帮我总结剪贴板内容");
 if (route.intent !== "summarize") {
   throw new Error("Intent router scaffold did not resolve summarize.");
@@ -38,6 +42,10 @@ if (kimiRoute.executor !== "kimi") {
 
 if (service.endpoints.postTask !== "/task") {
   throw new Error("Task endpoint manifest is invalid.");
+}
+
+if (service.endpoints.postOfficeTask !== "/office/task") {
+  throw new Error("Office task endpoint manifest is invalid.");
 }
 
 if (service.endpoints.browserNativeHost !== "native://com.uca.host") {
@@ -78,6 +86,22 @@ if (service.endpoints.getSchedules !== "/schedules") {
 
 if (service.endpoints.getScheduleRuns !== "/schedules/:id/runs") {
   throw new Error("Schedule runs endpoint manifest is invalid.");
+}
+
+if (service.endpoints.getOfficeHealth !== "/office/health") {
+  throw new Error("Office health endpoint manifest is invalid.");
+}
+
+if (service.endpoints.postOfficeWriteback !== "/office/writeback") {
+  throw new Error("Office writeback endpoint manifest is invalid.");
+}
+
+if (service.endpoints.officeHttpsBase !== "https://localhost:9413") {
+  throw new Error("Office HTTPS base manifest is invalid.");
+}
+
+if (service.endpoints.officeProtocolFallback !== "uca://office-submit") {
+  throw new Error("Office fallback protocol manifest is invalid.");
 }
 
 if (service.runtime.metrics.snapshot().queue_depth !== 0) {

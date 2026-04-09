@@ -50,11 +50,34 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
+- 状态：in_progress
+- 执行分支：`task/uca-012-phase4-office`
+- 开始日期：2026-04-08
 - 完成日期：
+- spike 选中的路径：
+  - 当前 Phase 4 基础交付选择 `C. protocol handler fallback`
+  - `https://localhost:9413` 保留为后续增强路径，不阻塞当前 ship
+- 企业环境限制：
+  - 企业 GPO 可能禁止安装自签根证书
+  - Office WebView 在部分加固环境中即使导入根证书也可能拒绝 `localhost TLS`
+  - 因此当前基础版不把直连本地 HTTPS 当成必达前提
+- 是否支持文档回写：
+  - 当前基础版不把文档回写作为 ship 前提
+  - manifest / endpoint / transport 预留了 writeback 落点，但未接真实 Office.js 回写执行
 - 实际新增内容：
+  - 新增 `office_addin/word|excel|ppt/manifest.xml` 与 `office_addin/shared/` Task Pane 骨架
+  - 新增 `src/service/core/office-submission.mjs`，完成 `office_selection -> Security Broker -> task` 基础链路
+  - 新增 `src/service/https/`，记录 localhost TLS spike 选项、9413 端口清单与回退策略
+  - 新增运行文档：`office_addin_sideload.md`、`self_signed_cert_setup.md`、`office_https_spike_report.md`
+  - 新增验证脚本 `scripts/verify-office-base.mjs`
 - 验证结果：
+  - `node scripts/verify-office-base.mjs`
+  - `npm run check`
 - 遗留问题：
+  - 当前 Add-in 仍是骨架，没有真实 Office.js API 调用与真实 HTTPS server
+  - Task Pane 目前用 bridge 占位，不包含真实流式结果渲染
+  - 文档回写、Excel 写回和 PowerPoint 备注回写仍未实现
+  - Office Add-in Validator 尚未在真实开发环境里执行
 - 交接给下一个任务：
+  - `UCA-014` 可直接复用 `office_selection` ContextPacket、Task Pane 骨架、9413 transport manifest 与 spike 结论
+  - 后续若推进增强版，可从 `src/service/https/` 和 `office_addin/shared/office_bridge.js` 继续接真实 localhost HTTPS / 回写链

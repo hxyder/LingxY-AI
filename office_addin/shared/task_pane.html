@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>UCA Office</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        background: linear-gradient(180deg, #f6fbf7 0%, #eef5ff 100%);
+        color: #163047;
+      }
+      .pane {
+        padding: 16px;
+        display: grid;
+        gap: 14px;
+      }
+      .hero h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+      .eyebrow {
+        margin: 0 0 4px;
+        color: #0f766e;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+      }
+      .panel {
+        padding: 12px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.82);
+        border: 1px solid rgba(15, 118, 110, 0.12);
+      }
+      .selection-preview {
+        white-space: pre-wrap;
+        max-height: 180px;
+        overflow: auto;
+        font-size: 12px;
+      }
+      .actions {
+        display: grid;
+        gap: 8px;
+      }
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 10px 12px;
+        background: #163047;
+        color: white;
+        cursor: pointer;
+      }
+      .secondary {
+        background: rgba(15, 118, 110, 0.14);
+        color: #0f172a;
+      }
+      .transport {
+        font-size: 12px;
+        color: #4b5563;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="pane">
+      <header class="hero">
+        <p class="eyebrow">Universal Context Agent</p>
+        <h1>Office Task Pane</h1>
+      </header>
+      <section class="panel">
+        <strong>当前选区</strong>
+        <pre id="selection-preview" class="selection-preview">等待 Office 选区...</pre>
+      </section>
+      <section class="panel actions">
+        <button id="summarize-selection" type="button">总结选区</button>
+        <button id="rewrite-selection" type="button" class="secondary">改写选区</button>
+        <div id="transport-status" class="transport">传输策略加载中...</div>
+      </section>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+  </html>

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xsi:type="TaskPaneApp">
+  <Id>1d1dd5db-1b91-4e32-8fd5-0cb0f8d40003</Id>
+  <Version>0.1.0.0</Version>
+  <ProviderName>Universal Context Agent</ProviderName>
+  <DefaultLocale>zh-CN</DefaultLocale>
+  <DisplayName DefaultValue="UCA for PowerPoint"/>
+  <Description DefaultValue="Capture PowerPoint selections and send them to UCA."/>
+  <IconUrl DefaultValue="https://localhost:9413/assets/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://localhost:9413/assets/icon-80.png"/>
+  <SupportUrl DefaultValue="https://localhost:9413/support"/>
+  <Hosts>
+    <Host Name="Presentation"/>
+  </Hosts>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:9413/office/task_pane.html?host=ppt"/>
+  </DefaultSettings>
+  <Permissions>ReadWriteDocument</Permissions>
+</OfficeApp>

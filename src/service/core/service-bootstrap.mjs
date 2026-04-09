@@ -12,6 +12,7 @@ import { createActionToolRegistry } from "../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
 import { createSchedulerRuntime } from "../scheduler/engine.mjs";
+import { createOfficeHttpsRuntime } from "../https/port-9413.mjs";
 
 export function createServiceBootstrap() {
   const storeAdapter = createInMemoryStoreScaffold();
@@ -30,6 +31,7 @@ export function createServiceBootstrap() {
   };
   runtime.securityBroker = createSecurityBroker({ runtime });
   runtime.scheduler = createSchedulerRuntime({ runtime });
+  runtime.officeHttps = createOfficeHttpsRuntime();
   runtime.actionToolRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
   return {
     store: buildStoreManifest(),
@@ -39,6 +41,7 @@ export function createServiceBootstrap() {
       postContext: "/context",
       postTask: "/task",
       getTaskEvents: "/task/:id/events",
+      postOfficeTask: "/office/task",
       cancelTask: "/task/:id/cancel",
       retryTask: "/task/:id/retry",
       getPendingApprovals: "/approvals",
@@ -48,7 +51,11 @@ export function createServiceBootstrap() {
       getSecurityState: "/security/state",
       getSchedules: "/schedules",
       getScheduleRuns: "/schedules/:id/runs",
+      getOfficeHealth: "/office/health",
+      postOfficeWriteback: "/office/writeback",
       metrics: "/metrics",
+      officeHttpsBase: "https://localhost:9413",
+      officeProtocolFallback: "uca://office-submit",
       helperSelection: "pipe://uca-helper/explorer-selection",
       browserNativeHost: "native://com.uca.host"
     }
