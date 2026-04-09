@@ -14,3 +14,9 @@
 ## Helper Boundary
 
 `src/helper/explorer_selection/selection-contract.mjs` is the stable payload contract for the native helper.
+
+## Installation
+
+- Run `scripts/install-explorer-entry.ps1`
+- The script publishes `UcaExplorerSelectionHelper` under `%LOCALAPPDATA%/UCA/helper/explorer-selection`
+- Explorer right-click currently registers under `HKCU\Software\Classes\*\shell\UCA.Analyze`

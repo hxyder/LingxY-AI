@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Repository bootstrap and architecture skeleton for Universal Context Agent.",
   "scripts": {
-    "check": "node scripts/verify-structure.mjs && node scripts/verify-desktop-shell.mjs && node scripts/verify-service-core.mjs && node scripts/verify-file-kimi.mjs && node scripts/verify-browser-extension.mjs && node scripts/verify-browser-overlay.mjs && node scripts/verify-office-base.mjs && node scripts/verify-pdf-ocr.mjs && node scripts/verify-status-metrics.mjs && node scripts/verify-action-tools.mjs && node scripts/verify-security-broker.mjs && node scripts/verify-scheduler.mjs && node scripts/verify-platform-foundation.mjs && node scripts/verify-runtime-wiring.mjs",
+    "check": "node scripts/verify-structure.mjs && node scripts/verify-desktop-shell.mjs && node scripts/verify-service-core.mjs && node scripts/verify-file-kimi.mjs && node scripts/verify-browser-extension.mjs && node scripts/verify-browser-overlay.mjs && node scripts/verify-office-base.mjs && node scripts/verify-pdf-ocr.mjs && node scripts/verify-status-metrics.mjs && node scripts/verify-action-tools.mjs && node scripts/verify-security-broker.mjs && node scripts/verify-scheduler.mjs && node scripts/verify-platform-foundation.mjs && node scripts/verify-runtime-wiring.mjs && node scripts/verify-native-integrations.mjs",
     "start:runtime": "node scripts/start-runtime.mjs",
     "verify:structure": "node scripts/verify-structure.mjs",
     "verify:desktop-shell": "node scripts/verify-desktop-shell.mjs",
@@ -20,7 +20,8 @@
     "verify:security-broker": "node scripts/verify-security-broker.mjs",
     "verify:scheduler": "node scripts/verify-scheduler.mjs",
     "verify:platform-foundation": "node scripts/verify-platform-foundation.mjs",
-    "verify:runtime-wiring": "node scripts/verify-runtime-wiring.mjs"
+    "verify:runtime-wiring": "node scripts/verify-runtime-wiring.mjs",
+    "verify:native-integrations": "node scripts/verify-native-integrations.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",

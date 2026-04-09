@@ -1,0 +1,5 @@
+E:\linxi\.tmp\verify-native-integrations\native-host-publish\UcaNativeHost.exe
+E:\linxi\.tmp\verify-native-integrations\native-host-publish\UcaNativeHost.dll
+E:\linxi\.tmp\verify-native-integrations\native-host-publish\UcaNativeHost.deps.json
+E:\linxi\.tmp\verify-native-integrations\native-host-publish\UcaNativeHost.runtimeconfig.json
+E:\linxi\.tmp\verify-native-integrations\native-host-publish\UcaNativeHost.pdb

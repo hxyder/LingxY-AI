@@ -21,6 +21,8 @@ export const CONTEXT_MENU_DEFINITIONS = Object.freeze([
   }
 ]);
 
+export const NATIVE_HOST_NAME = "com.uca.host";
+
 export const DEFAULT_OVERLAY_SETTINGS = Object.freeze({
   enabled: true,
   displayMode: "smart",
@@ -123,7 +125,7 @@ export function registerExtensionRuntime(chromeApi = chrome) {
       selectionState
     });
 
-    chromeApi.runtime.sendNativeMessage("com.uca.host", request);
+    chromeApi.runtime.sendNativeMessage(NATIVE_HOST_NAME, request);
   });
 
   chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -145,6 +147,15 @@ export function registerExtensionRuntime(chromeApi = chrome) {
       chromeApi.storage.local.set({
         ucaOverlaySettings: merged
       }).then(() => sendResponse({ ok: true, settings: merged }));
+      return true;
+    }
+
+    if (message?.type === "uca.runtime.openTasks") {
+      chromeApi.runtime.sendNativeMessage(NATIVE_HOST_NAME, {
+        protocolVersion: "1.0",
+        requestId: crypto.randomUUID(),
+        action: "open_runtime_tasks"
+      }, (response) => sendResponse(response));
       return true;
     }
 

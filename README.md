@@ -60,3 +60,4 @@ Current implemented slices include:
 - scheduler, pending approvals, misfire handling, and schedule management scaffold
 - platform foundation scaffold for templates, DAG orchestration, budget controls, executor routing, and local history search
 - persistent local runtime scaffold with SQLite, HTTP/SSE, config storage, and Electron main entry
+- native integration install scripts plus .NET Explorer helper / Native Messaging host

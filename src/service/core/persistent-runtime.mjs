@@ -5,6 +5,7 @@ import { createServiceHttpServer } from "./http-server.mjs";
 import { resolveRuntimePaths, ensureRuntimePaths } from "./runtime-paths.mjs";
 import { createServiceBootstrap } from "./service-bootstrap.mjs";
 import { createSqliteStore } from "./store/sqlite-store.mjs";
+import { createExplorerSelectionPipeServer, DEFAULT_EXPLORER_PIPE_NAME } from "./windows-pipe-server.mjs";
 
 function recoverInterruptedTasks(runtime) {
   const recovered = [];
@@ -66,6 +67,10 @@ export function createPersistentRuntime({
     port,
     host
   });
+  const pipeServer = createExplorerSelectionPipeServer({
+    runtime: service.runtime,
+    pipeName: DEFAULT_EXPLORER_PIPE_NAME
+  });
 
   recoverInterruptedTasks(service.runtime);
   service.runtime.securityBroker.recoverRedactionStateLost();
@@ -76,22 +81,31 @@ export function createPersistentRuntime({
     service,
     runtime: service.runtime,
     async start() {
-      const listening = await server.start();
+      const [listening, pipeState] = await Promise.all([
+        server.start(),
+        pipeServer.start()
+      ]);
       service.runtime.serverState = {
         baseUrl: `http://${listening.host}:${listening.port}`,
+        pipeName: pipeState.pipeName,
         ...listening
       };
       appendAuditLog(service.runtime, "runtime.started", {
         host: listening.host,
-        port: listening.port
+        port: listening.port,
+        pipe_name: pipeState.pipeName
       });
       return service.runtime.serverState;
     },
     async stop() {
       appendAuditLog(service.runtime, "runtime.stopped", {});
-      await server.stop();
+      await Promise.all([
+        pipeServer.stop(),
+        server.stop()
+      ]);
       storeAdapter.close();
     },
-    server
+    server,
+    pipeServer
   };
 }

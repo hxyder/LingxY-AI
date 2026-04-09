@@ -1,0 +1,14 @@
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\bin\Release\net9.0\UcaExplorerSelectionHelper.exe
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\bin\Release\net9.0\UcaExplorerSelectionHelper.deps.json
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\bin\Release\net9.0\UcaExplorerSelectionHelper.runtimeconfig.json
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\bin\Release\net9.0\UcaExplorerSelectionHelper.dll
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\bin\Release\net9.0\UcaExplorerSelectionHelper.pdb
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\obj\Release\net9.0\UcaExplorerSelectionHelper.GeneratedMSBuildEditorConfig.editorconfig
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\obj\Release\net9.0\UcaExplorerSelectionHelper.AssemblyInfoInputs.cache
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\obj\Release\net9.0\UcaExplorerSelectionHelper.AssemblyInfo.cs
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\obj\Release\net9.0\UcaExplorerSelectionHelper.csproj.CoreCompileInputs.cache
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\obj\Release\net9.0\UcaExplorerSelectionHelper.dll
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\obj\Release\net9.0\refint\UcaExplorerSelectionHelper.dll
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\obj\Release\net9.0\UcaExplorerSelectionHelper.pdb
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\obj\Release\net9.0\UcaExplorerSelectionHelper.genruntimeconfig.cache
+E:\linxi\src\helper\explorer_selection\UcaExplorerSelectionHelper\obj\Release\net9.0\ref\UcaExplorerSelectionHelper.dll

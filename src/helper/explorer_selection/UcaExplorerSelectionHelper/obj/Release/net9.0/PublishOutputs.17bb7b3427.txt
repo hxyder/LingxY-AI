@@ -1,0 +1,5 @@
+E:\linxi\.tmp\verify-native-integrations\helper-publish\UcaExplorerSelectionHelper.exe
+E:\linxi\.tmp\verify-native-integrations\helper-publish\UcaExplorerSelectionHelper.dll
+E:\linxi\.tmp\verify-native-integrations\helper-publish\UcaExplorerSelectionHelper.deps.json
+E:\linxi\.tmp\verify-native-integrations\helper-publish\UcaExplorerSelectionHelper.runtimeconfig.json
+E:\linxi\.tmp\verify-native-integrations\helper-publish\UcaExplorerSelectionHelper.pdb

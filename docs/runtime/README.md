@@ -4,6 +4,7 @@
 - [File entry setup](file_entry_setup.md)
 - [Browser extension install](install_extension.md)
 - [Native messaging protocol](native_messaging_protocol.md)
+- [Native integrations](native_integrations.md)
 - [Office Add-in sideload](office_addin_sideload.md)
 - [Office localhost certificate setup](self_signed_cert_setup.md)
 - [Office HTTPS spike report](office_https_spike_report.md)

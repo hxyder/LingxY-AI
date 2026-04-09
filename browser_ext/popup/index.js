@@ -49,6 +49,14 @@ export async function updateOverlaySettings(patch, chromeApi = chrome) {
   });
 }
 
+export async function openRuntimeTasks(chromeApi = chrome) {
+  return new Promise((resolve) => {
+    chromeApi.runtime.sendMessage({
+      type: "uca.runtime.openTasks"
+    }, (response) => resolve(response));
+  });
+}
+
 export function renderOverlaySettings(model, doc = document) {
   doc.getElementById("overlay-status").textContent = model.securityState.presenterMode ? "Presenter Mode" : "正常";
   doc.getElementById("display-mode").value = model.settings.displayMode;
@@ -82,6 +90,11 @@ async function bootPopup(doc = document, chromeApi = chrome) {
       settings: response.settings,
       securityState: overlayModel.securityState
     }, doc);
+  });
+
+  doc.getElementById("open-console").addEventListener("click", async () => {
+    await openRuntimeTasks(chromeApi);
+    window.close();
   });
 }
 

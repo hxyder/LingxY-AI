@@ -7,3 +7,4 @@ Current scope in `UCA-006`:
 - Native Messaging framing helpers
 - request router for `ping`, `submit_capture`, and `get_recent_tasks`
 - registry manifest generator for Chrome and Edge
+- .NET native host executable in `UcaNativeHost/` that forwards requests to the local runtime
