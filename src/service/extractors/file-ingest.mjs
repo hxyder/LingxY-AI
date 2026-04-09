@@ -1,20 +1,79 @@
 import { readFile, stat } from "node:fs/promises";
+import { execFile } from "node:child_process";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { runImageOcr } from "./image_ocr.mjs";
 import { extractScannedPdfWithOcr } from "./pdf_ocr.mjs";
 import { extractPdfTablePreview } from "./pdf_table.mjs";
 import { extractTextPdf, hasUsablePdfTextLayer, countPdfPagesFromBuffer } from "./pdf_text.mjs";
 
+const execFileAsync = promisify(execFile);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const OOXML_EXTRACTOR_SCRIPT = path.join(__dirname, "extract-office-openxml.ps1");
+
 const MIME_BY_EXTENSION = {
   ".txt": "text/plain",
   ".md": "text/markdown",
   ".markdown": "text/markdown",
+  ".log": "text/plain",
+  ".csv": "text/csv",
+  ".tsv": "text/tab-separated-values",
+  ".json": "application/json",
+  ".yaml": "application/yaml",
+  ".yml": "application/yaml",
+  ".xml": "application/xml",
+  ".html": "text/html",
+  ".htm": "text/html",
+  ".js": "text/plain",
+  ".mjs": "text/plain",
+  ".cjs": "text/plain",
+  ".ts": "text/plain",
+  ".tsx": "text/plain",
+  ".jsx": "text/plain",
+  ".py": "text/plain",
+  ".java": "text/plain",
+  ".cs": "text/plain",
+  ".css": "text/plain",
+  ".sql": "text/plain",
+  ".ini": "text/plain",
+  ".toml": "text/plain",
   ".pdf": "application/pdf",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   ".png": "image/png",
   ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg"
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".bmp": "image/bmp",
+  ".gif": "image/gif"
 };
+
+const TEXT_BASED_MIME_TYPES = new Set([
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "text/tab-separated-values",
+  "application/json",
+  "application/yaml",
+  "application/xml",
+  "text/html"
+]);
+
+const IMAGE_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/bmp",
+  "image/gif"
+]);
+
+const OFFICE_OPEN_XML_MIME_TYPES = new Set([
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+]);
 
 function asLatin1(buffer) {
   return Buffer.from(buffer).toString("latin1");
@@ -32,8 +91,8 @@ export async function detectMimeType(filePath) {
     return "application/pdf";
   }
 
-  if (bytes.subarray(0, 2).toString("latin1") === "PK" && extension === ".docx") {
-    return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+  if (bytes.subarray(0, 2).toString("latin1") === "PK" && [".docx", ".xlsx", ".pptx"].includes(extension)) {
+    return MIME_BY_EXTENSION[extension];
   }
 
   return MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
@@ -43,11 +102,48 @@ async function readTextFile(filePath) {
   return readFile(filePath, "utf8");
 }
 
+function getOfficePlaceholder(filePath, mime) {
+  if (mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
+    return `[XLSX extraction placeholder] ${path.basename(filePath)}`;
+  }
+  if (mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+    return `[PPTX extraction placeholder] ${path.basename(filePath)}`;
+  }
+  return `[DOCX extraction placeholder] ${path.basename(filePath)}`;
+}
+
+async function extractOfficeOpenXmlText(filePath, mime) {
+  try {
+    const { stdout } = await execFileAsync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-File",
+        OOXML_EXTRACTOR_SCRIPT,
+        "-TargetPath",
+        filePath,
+        "-Mime",
+        mime
+      ],
+      {
+        encoding: "utf8",
+        maxBuffer: 4 * 1024 * 1024
+      }
+    );
+    const extracted = stdout.trim();
+    return extracted || getOfficePlaceholder(filePath, mime);
+  } catch {
+    return getOfficePlaceholder(filePath, mime);
+  }
+}
+
 export async function extractFileContent(filePath) {
   const fileStat = await stat(filePath);
   const mime = await detectMimeType(filePath);
 
-  if (mime === "text/plain" || mime === "text/markdown") {
+  if (TEXT_BASED_MIME_TYPES.has(mime)) {
     const text = await readTextFile(filePath);
     return {
       path: filePath,
@@ -76,7 +172,7 @@ export async function extractFileContent(filePath) {
     };
   }
 
-  if (mime === "image/png" || mime === "image/jpeg") {
+  if (IMAGE_MIME_TYPES.has(mime)) {
     const ocrResult = await runImageOcr(filePath);
     return {
       path: filePath,
@@ -90,13 +186,13 @@ export async function extractFileContent(filePath) {
     };
   }
 
-  if (mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+  if (OFFICE_OPEN_XML_MIME_TYPES.has(mime)) {
     return {
       path: filePath,
       size: fileStat.size,
       mime,
-      extraction_mode: "binary_placeholder",
-      text: `[DOCX placeholder extraction] ${path.basename(filePath)}`
+      extraction_mode: "office_open_xml_text",
+      text: await extractOfficeOpenXmlText(filePath, mime)
     };
   }
 

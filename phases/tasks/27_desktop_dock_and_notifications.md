@@ -58,7 +58,7 @@
 - 执行分支：`main`
 - 开始日期：2026-04-09
 - 完成日期：
-- 实际新增内容：新增 `src/desktop/renderer/dock.html` 与 `src/desktop/renderer/dock.js` 作为常驻桌面 Dock，并调整为圆形呼吸态浮标；扩展 `src/desktop/shared/manifest.mjs` 增加 `dock` 窗口和 `shellSubmitDroppedFiles` / `shellNotify` IPC；扩展 `src/desktop/tray/electron-main.mjs` 以支持 Dock 窗口定位、拖拽文件交接到 Overlay、桌面通知；扩展 `src/desktop/renderer/preload.cjs` 以支持拖拽文件路径解析、本地文本读取与剪贴板写入；扩展 `src/desktop/renderer/overlay.js` 与 `src/desktop/renderer/overlay.html`，加入气泡式会话层、动作选择按钮、结果摘要预览、复制结果摘要和基于结果继续追问；补充结构与渲染校验。
-- 验证结果：`node scripts/verify-structure.mjs`、`node scripts/verify-desktop-renderer.mjs`、`node scripts/verify-overlay-composer.mjs` 通过；`powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-trial.ps1` 与 `powershell -ExecutionPolicy Bypass -File .\\scripts\\start-trial.ps1` 成功；运行态进程中可见标题为 `UCA Dock` 的 Electron 窗口；`http://127.0.0.1:4310/health` 返回 `ok: true`。
-- 遗留问题：尚未把图片、网页、纯文本选区统一接到和 Dock 一样的一级轻交互模型中；Dock 拖拽链路虽然已通过真实试用确认可用，但还缺统一的跨媒介会话入口。
-- 交接给下一个任务：可以直接在当前桌面壳上继续做“拖网页/拖图片/选中文字后唤起输入器”的统一交互设计，并复用现有气泡会话层、结果摘要预览与继续追问能力。
+- 实际新增内容：新增 `src/desktop/renderer/dock.html` 与 `src/desktop/renderer/dock.js` 作为常驻桌面 Dock，并调整为圆形呼吸态浮标；扩展 `src/desktop/shared/manifest.mjs` 增加 `dock` 窗口和 `shellSubmitDroppedFiles` / `shellNotify` IPC；扩展 `src/desktop/tray/electron-main.mjs` 以支持 Dock 窗口定位、拖拽文件交接到 Overlay、桌面通知；扩展 `src/desktop/renderer/preload.cjs` 以支持拖拽文件路径解析、本地文本读取与剪贴板写入；扩展 `src/desktop/renderer/overlay.js` 与 `src/desktop/renderer/overlay.html`，加入气泡式会话层、动作选择按钮、结果摘要预览、复制结果摘要和基于结果继续追问；修复 Overlay 里旧文件路径残留导致的上下文误导；扩展 `src/service/extractors/file-ingest.mjs` 及配套脚本，使文本类、结构化文本类与常见 OOXML 办公文件（`docx`、`xlsx`）能够被更稳定地识别和提取。
+- 验证结果：`node scripts/verify-structure.mjs`、`node scripts/verify-desktop-renderer.mjs`、`node scripts/verify-overlay-composer.mjs`、`node scripts/verify-file-kimi.mjs`、`npm run check` 通过；`powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-trial.ps1` 与 `powershell -ExecutionPolicy Bypass -File .\\scripts\\start-trial.ps1` 成功；运行态进程中可见标题为 `UCA Dock` 的 Electron 窗口；`http://127.0.0.1:4310/health` 返回 `ok: true`。
+- 遗留问题：尚未把图片、网页、纯文本选区统一接到和 Dock 一样的一级轻交互模型中；Dock 拖拽链路虽然已通过真实试用确认可用，但还缺统一的跨媒介会话入口；`pptx` 目前已接入解析通道但还没有单独的端到端验证夹具。
+- 交接给下一个任务：可以直接在当前桌面壳上继续做“拖网页/拖图片/选中文字后唤起输入器”的统一交互设计，并复用现有气泡会话层、结果摘要预览与继续追问能力；文件入口侧已经具备 `txt/md/csv/json/yaml/html/xml/docx/xlsx/pdf/png/jpg/jpeg/webp/bmp/gif` 这一档常见类型支持基础。

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { submitCommand } from "../uca-cli/src/submit.mjs";
@@ -8,6 +9,7 @@ import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
 import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
 import { submitFileTask } from "../src/service/core/file-submission.mjs";
+import { extractFileContent } from "../src/service/extractors/file-ingest.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -15,9 +17,75 @@ const runtimeDir = path.join(repoRoot, ".tmp", "verify-file-kimi");
 const sampleNote = path.join(repoRoot, "tests", "fixtures", "sample-note.md");
 const sampleText = path.join(repoRoot, "tests", "fixtures", "sample-text.txt");
 const mockCli = path.join(repoRoot, "tests", "fixtures", "mock-kimi-cli.mjs");
+const sampleCsv = path.join(runtimeDir, "sample-table.csv");
+const sampleJson = path.join(runtimeDir, "sample-data.json");
+const sampleDocx = path.join(runtimeDir, "sample-brief.docx");
+const sampleXlsx = path.join(runtimeDir, "sample-sheet.xlsx");
 
 await rm(runtimeDir, { recursive: true, force: true });
 await mkdir(runtimeDir, { recursive: true });
+await writeFile(sampleCsv, "name,score\nalpha,91\nbeta,88\n", "utf8");
+await writeFile(sampleJson, JSON.stringify({ team: "uca", status: "ready", count: 3 }, null, 2), "utf8");
+execFileSync(
+  "powershell",
+  [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    path.join(repoRoot, "scripts", "create-ooxml-fixture.ps1"),
+    "-TargetPath",
+    sampleDocx,
+    "-Kind",
+    "docx",
+    "-Text",
+    "UCA DOCX verification content"
+  ],
+  {
+    cwd: repoRoot,
+    stdio: "pipe"
+  }
+);
+execFileSync(
+  "powershell",
+  [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-File",
+    path.join(repoRoot, "scripts", "create-ooxml-fixture.ps1"),
+    "-TargetPath",
+    sampleXlsx,
+    "-Kind",
+    "xlsx",
+    "-Text",
+    "UCA XLSX verification content"
+  ],
+  {
+    cwd: repoRoot,
+    stdio: "pipe"
+  }
+);
+
+const csvExtract = await extractFileContent(sampleCsv);
+assert.equal(csvExtract.mime, "text/csv");
+assert.equal(csvExtract.extraction_mode, "native_text");
+assert.equal(csvExtract.text.includes("alpha,91"), true);
+
+const jsonExtract = await extractFileContent(sampleJson);
+assert.equal(jsonExtract.mime, "application/json");
+assert.equal(jsonExtract.extraction_mode, "native_text");
+assert.equal(jsonExtract.text.includes("\"status\": \"ready\""), true);
+
+const docxExtract = await extractFileContent(sampleDocx);
+assert.equal(docxExtract.mime, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+assert.equal(docxExtract.extraction_mode, "office_open_xml_text");
+assert.equal(docxExtract.text.includes("UCA DOCX verification content"), true);
+
+const xlsxExtract = await extractFileContent(sampleXlsx);
+assert.equal(xlsxExtract.mime, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+assert.equal(xlsxExtract.extraction_mode, "office_open_xml_text");
+assert.equal(xlsxExtract.text.includes("UCA XLSX verification content"), true);
 
 const runtime = {
   store: createInMemoryStoreScaffold(),
@@ -50,6 +118,10 @@ const result = await submitCommand(
     "--files",
     sampleNote,
     sampleText,
+    sampleCsv,
+    sampleJson,
+    sampleDocx,
+    sampleXlsx,
     "--command",
     "分析这些文件并生成详细报告",
     "--batch-key",
@@ -62,6 +134,7 @@ assert.equal(result.accepted, true);
 assert.equal(result.mode, "file_group");
 assert.equal(result.response.task.executor, "kimi");
 assert.equal(result.response.task.context_packet.source_type, "file_group");
+assert.equal(result.response.task.context_packet.file_metadata.length, 6);
 assert.equal(result.response.task.status, "success");
 assert.equal(result.response.artifacts.length, 1);
 assert.match(result.response.artifacts[0].path, /report\.md$/);

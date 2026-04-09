@@ -32,6 +32,14 @@ let notifiedTaskId = null;
 let selectedOutputSuffix = "";
 let lastArtifactPreview = "";
 
+function clearPendingFileContext({ clearContextText = true } = {}) {
+  pendingFileSelection = null;
+  if (clearContextText) {
+    overlayContext.value = "";
+  }
+  renderPendingFiles();
+}
+
 function refreshConversationBubbles() {
   if (pendingFileSelection?.filePaths?.length) {
     const preview = pendingFileSelection.filePaths.slice(0, 2).join("\n");
@@ -306,9 +314,7 @@ async function submitTask() {
     renderRecentTask(result.task);
     renderResultAction(result.task);
     if (pendingFileSelection?.filePaths?.length) {
-      overlayContext.value = `已从 Explorer 接收 ${pendingFileSelection.filePaths.length} 个文件`;
-      pendingFileSelection = null;
-      renderPendingFiles();
+      clearPendingFileContext();
     }
     overlayResult.textContent = `已提交 ${result.task.task_id}`;
     renderResultPreview("");
@@ -328,10 +334,11 @@ function applyExplorerHandoff(payload) {
     captureMode: payload.capture_mode ?? "shell_menu",
     filePaths: payload.file_paths ?? []
   };
+  overlayContext.value = "";
+  renderResultPreview("");
   renderPendingFiles(pendingFileSelection);
   overlayCommand.focus();
   overlayResult.textContent = "已接收文件列表，请输入你的要求后执行";
-  overlayContext.value = pendingFileSelection.filePaths.join("\n");
   refreshConversationBubbles();
 }
 
@@ -365,8 +372,7 @@ submitButton.addEventListener("click", () => {
 });
 
 closeButton.addEventListener("click", () => {
-  pendingFileSelection = null;
-  renderPendingFiles();
+  clearPendingFileContext();
   overlayResult.textContent = "已取消本次输入";
   refreshConversationBubbles();
   window.ucaShell.hideWindow("overlay");
@@ -408,10 +414,9 @@ pasteClipboardButton.addEventListener("click", () => {
 });
 
 clearContextButton.addEventListener("click", () => {
-  overlayContext.value = "";
-  pendingFileSelection = null;
-  renderPendingFiles();
+  clearPendingFileContext();
   overlayResult.textContent = "已清空上下文";
+  renderResultPreview("");
   refreshConversationBubbles();
 });
 
