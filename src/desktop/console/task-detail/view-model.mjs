@@ -4,6 +4,22 @@ export function buildTaskDetailViewModel(task, events = [], artifacts = []) {
     status: task.status,
     progress: task.progress ?? 0,
     currentStep: task.current_step ?? null,
+    executor: task.executor,
+    provider: task.provider_id ?? null,
+    model: task.model_id ?? null,
+    retryCount: task.retry_count ?? 0,
+    canRetry: Boolean(task.retryable),
+    canCancel: ["queued", "running", "cancelling"].includes(task.status),
+    source: {
+      sourceType: task.context_packet?.source_type ?? null,
+      sourceApp: task.context_packet?.source_app ?? null,
+      captureMode: task.context_packet?.capture_mode ?? null
+    },
+    cost: {
+      usd: task.cost_usd ?? 0,
+      tokensIn: task.usage_summary?.tokens_in ?? 0,
+      tokensOut: task.usage_summary?.tokens_out ?? 0
+    },
     failure: task.failure_category
       ? {
           category: task.failure_category,

@@ -50,11 +50,11 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：in_progress
 - 执行分支：`task/uca-018-console-ui`
-- 开始日期：
+- 开始日期：2026-04-08
 - 完成日期：
-- 实际新增内容：
-- 验证结果：
-- 遗留问题：
-- 交接给下一个任务：
+- 实际新增内容：console 总 view model 接入 runtime health / Code CLI / provider / budget 摘要；first-run wizard 接入 Kimi Code CLI 主路径推荐；task detail 接入 provider / model / retry / cost 摘要；新增 `verify-console-ui`。
+- 验证结果：`npm run check` 通过；`verify-console-ui`、`verify-status-metrics`、`verify-security-broker` 均通过。
+- 遗留问题：真实 Electron 渲染层、overlay 提交流程、pending approvals / schedules / history / templates 的页面级联动仍未完成。
+- 交接给下一个任务：后续优先继续把 console 各子页面接到 HTTP / SSE；当前首启向导和任务详情已经可复用 runtime health 与 Code CLI 状态。

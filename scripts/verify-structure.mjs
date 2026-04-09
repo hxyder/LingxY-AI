@@ -181,6 +181,7 @@ const requiredPaths = [
   "src/helper/Screenshot/README.md",
   "src/helper/Screenshot/capture-contract.mjs",
   "scripts/verify-desktop-shell.mjs",
+  "scripts/verify-console-ui.mjs",
   "scripts/verify-service-core.mjs",
   "scripts/verify-provider-health.mjs",
   "scripts/verify-file-kimi.mjs",
