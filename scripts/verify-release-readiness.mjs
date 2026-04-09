@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -34,10 +34,25 @@ execFileSync(process.execPath, [path.join(repoRoot, "scripts", "generate-trial-r
   stdio: "pipe"
 });
 
-execFileSync(process.execPath, [path.join(repoRoot, "scripts", "verify-trial-launch.mjs")], {
-  cwd: repoRoot,
-  stdio: "pipe"
-});
+const trialLaunchResult = spawnSync(
+  "powershell",
+  [
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-Command",
+    `& { try { & '${path.join(repoRoot, "scripts", "verify-trial-launch.ps1").replace(/'/g, "''")}' } catch { Write-Error $_; exit 1 }; exit 0 }`
+  ],
+  {
+    cwd: repoRoot,
+    encoding: "utf8"
+  }
+);
+assert.equal(
+  trialLaunchResult.stdout.includes("Trial desktop launch verification passed."),
+  true,
+  trialLaunchResult.stderr || trialLaunchResult.stdout || "trial launch verification did not report success"
+);
 
 const bundleRoot = path.join(repoRoot, "dist", "trial", releaseConfig.trial_version);
 const manifestPath = path.join(bundleRoot, "release-manifest.json");

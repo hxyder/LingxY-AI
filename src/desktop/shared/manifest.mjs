@@ -1,4 +1,5 @@
 export const WINDOW_IDS = Object.freeze({
+  dock: "dock",
   overlay: "overlay",
   console: "console"
 });
@@ -10,6 +11,8 @@ export const IPC_CHANNELS = Object.freeze({
   shellStatus: "uca:shell-status",
   shellShowWindow: "uca:shell-show-window",
   shellHideWindow: "uca:shell-hide-window",
+  shellSubmitDroppedFiles: "uca:shell-submit-dropped-files",
+  shellNotify: "uca:shell-notify",
   overlayToggle: "uca:overlay-toggle",
   consoleOpen: "uca:console-open",
   shortcutTriggered: "uca:shortcut-triggered",
@@ -43,6 +46,15 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
   appId: "uca.desktop",
   trayTooltip: "Universal Context Agent",
   windows: [
+    {
+      id: WINDOW_IDS.dock,
+      title: "UCA Dock",
+      route: "/dock",
+      singleton: true,
+      startsHidden: false,
+      width: 108,
+      height: 108
+    },
     {
       id: WINDOW_IDS.overlay,
       title: "UCA Overlay",

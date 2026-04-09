@@ -20,6 +20,7 @@ let lastTask = null;
 let pendingFileSelection = null;
 let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
+let notifiedTaskId = null;
 
 async function fetchJson(pathname, options = {}) {
   const response = await fetch(`${serviceBaseUrl}${pathname}`, options);
@@ -162,6 +163,13 @@ async function refreshActiveTask() {
     if (task.status) {
       if (task.status === "success" && task.artifacts?.length) {
         overlayResult.textContent = `已完成，结果保存在 ${task.artifacts[0].path}`;
+        if (notifiedTaskId !== task.task_id) {
+          notifiedTaskId = task.task_id;
+          await window.ucaShell.notify({
+            title: "UCA 任务已完成",
+            body: task.userCommand ?? task.user_command ?? "结果已生成，可直接查看 report.md"
+          });
+        }
         if (autoOpenedArtifactTaskId !== task.task_id) {
           autoOpenedArtifactTaskId = task.task_id;
           await window.ucaShell.openPath(task.artifacts[0].path);

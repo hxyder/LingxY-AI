@@ -20,11 +20,15 @@ const overlayJs = await read("src/desktop/renderer/overlay.js");
 assert.equal(overlayJs.includes("loadClipboardIntoContext"), true);
 assert.equal(overlayJs.includes("refreshActiveTask"), true);
 assert.equal(overlayJs.includes("onWindowFocused"), true);
+assert.equal(overlayJs.includes("ucaShell.notify"), true);
 
 const preload = await read("src/desktop/renderer/preload.cjs");
 assert.equal(preload.includes("readClipboardText"), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellReady), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellWindowFocused), true);
+assert.equal(preload.includes("submitDroppedFiles"), true);
+assert.equal(preload.includes("uca:shell-submit-dropped-files"), true);
+assert.equal(preload.includes("uca:shell-notify"), true);
 
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
 assert.equal(mainProcess.includes("did-finish-load"), true);

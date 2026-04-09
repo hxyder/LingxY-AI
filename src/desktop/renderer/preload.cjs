@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   openPath(targetPath) {
     return shell.openPath(targetPath);
   },
+  submitDroppedFiles(filePaths) {
+    return ipcRenderer.invoke("uca:shell-submit-dropped-files", filePaths);
+  },
+  notify(payload) {
+    return ipcRenderer.invoke("uca:shell-notify", payload);
+  },
   onShortcutTriggered(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:shortcut-triggered", listener);

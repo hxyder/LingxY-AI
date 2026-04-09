@@ -73,6 +73,8 @@ const requiredPaths = [
   "src/desktop/renderer/shared.css",
   "src/desktop/renderer/console.html",
   "src/desktop/renderer/console.js",
+  "src/desktop/renderer/dock.html",
+  "src/desktop/renderer/dock.js",
   "src/desktop/renderer/overlay.html",
   "src/desktop/renderer/overlay.js",
   "src/desktop/overlay/view-model.mjs",

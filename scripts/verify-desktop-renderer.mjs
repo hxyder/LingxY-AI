@@ -29,8 +29,12 @@ const overlayHtml = await read("src/desktop/renderer/overlay.html");
 assert.equal(overlayHtml.includes("快速输入"), true);
 assert.equal(overlayHtml.includes("立即执行"), true);
 
+const dockHtml = await read("src/desktop/renderer/dock.html");
+assert.equal(dockHtml.includes("拖文件到这里"), true);
+
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
 assert.equal(mainProcess.includes("preload: PRELOAD_PATH"), true);
 assert.equal(mainProcess.includes("buildWindowUrl"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.shellSubmitDroppedFiles"), true);
 
 console.log("Desktop renderer verification passed.");

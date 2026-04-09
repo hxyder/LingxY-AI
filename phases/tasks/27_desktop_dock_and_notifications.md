@@ -1,0 +1,62 @@
+# Task UCA-027 — 桌面 Dock 拖拽入口与完成通知
+
+## 1. 任务目标
+
+把当前“右键文件 -> 浮窗输入”扩展为更直观的桌面一级入口：常驻桌面 Dock 浮标支持点击打开输入浮窗、拖拽文件触发上下文交接，并在任务完成后给出桌面通知。
+
+## 2. 前置依赖
+
+- 上一个任务：UCA-023、UCA-024、UCA-026
+- 必须已有的产物：Electron 桌面壳、Overlay 输入器、文件提交流程、Kimi Code CLI 可用
+- 不能同时修改的区域：协议 schema 与已冻结 release baseline
+
+## 3. 实施范围
+
+- 负责模块：桌面 Dock 窗口、拖拽文件交接、Overlay 完成通知、基础结构校验
+- 允许改动文件/目录：`src/desktop/`, `scripts/`, `phases/tasks/`
+- 明确不做：网页内浮层统一设计、图片/文字/网页全场景入口统一交互
+
+## 4. 交付产物
+
+- 常驻桌面 Dock 浮标窗口
+- Dock -> Overlay 的拖拽文件交接链路
+- Overlay 任务完成后的桌面通知
+- 对应结构校验与渲染校验
+
+## 5. 验证方式
+
+- `node scripts/verify-structure.mjs`
+- `node scripts/verify-desktop-renderer.mjs`
+- `node scripts/verify-overlay-composer.mjs`
+- `powershell -ExecutionPolicy Bypass -File .\\scripts\\start-trial.ps1`
+- 桌面进程中可见 `UCA Dock` 窗口
+
+## 6. Git 执行方式
+
+- 分支名：`task/uca-027-desktop-dock`
+- Commit 格式：`UCA-027: add desktop dock launcher`
+- 合并条件：Dock 窗口、拖拽交接 IPC、完成通知与验证脚本均已落地
+
+## 7. 完成后必须更新本文件
+
+- 写明 Dock 的交互范围与当前限制
+- 写明验证命令和运行态结果
+- 写明下一步 UI 交接方向
+
+## 8. 对下一个任务的交接
+
+- 下一个任务：统一网页/图片/文字的一级轻交互入口
+- 本任务新增了什么：桌面常驻图标式入口、拖拽文件交接、完成通知
+- 下一个任务直接可复用什么：Dock -> Overlay handoff、桌面通知 IPC、现有 Overlay 输入器
+- 还没解决的问题：非文件上下文如何以同样轻量的方式呈现
+
+## 9. 执行记录
+
+- 状态：in_progress
+- 执行分支：`main`
+- 开始日期：2026-04-09
+- 完成日期：
+- 实际新增内容：新增 `src/desktop/renderer/dock.html` 与 `src/desktop/renderer/dock.js` 作为常驻桌面 Dock；扩展 `src/desktop/shared/manifest.mjs` 增加 `dock` 窗口和 `shellSubmitDroppedFiles` / `shellNotify` IPC；扩展 `src/desktop/tray/electron-main.mjs` 以支持 Dock 窗口定位、拖拽文件交接到 Overlay、桌面通知；扩展 `src/desktop/renderer/preload.cjs` 和 `src/desktop/renderer/overlay.js` 以支持拖拽文件提交与完成通知；补充结构与渲染校验。
+- 验证结果：`node scripts/verify-structure.mjs`、`node scripts/verify-desktop-renderer.mjs`、`node scripts/verify-overlay-composer.mjs` 通过；`powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-trial.ps1` 与 `powershell -ExecutionPolicy Bypass -File .\\scripts\\start-trial.ps1` 成功；运行态进程中可见标题为 `UCA Dock` 的 Electron 窗口；`http://127.0.0.1:4310/health` 返回 `ok: true`。
+- 遗留问题：尚未把图片、网页、纯文本选区统一接到和 Dock 一样的一级轻交互模型中；Dock 拖拽链路还需要继续做一次真实用户侧拖拽 smoke test。
+- 交接给下一个任务：可以直接在当前桌面壳上继续做“拖网页/拖图片/选中文字后唤起输入器”的统一交互设计，不需要再改壳层或通知链路。

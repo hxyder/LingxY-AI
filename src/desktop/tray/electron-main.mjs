@@ -18,6 +18,21 @@ function buildWindowUrl(windowDef, serviceBaseUrl) {
 }
 
 function resolveWindowOptions(windowDef) {
+  if (windowDef.id === "dock") {
+    return {
+      alwaysOnTop: true,
+      autoHideMenuBar: true,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      maximizable: false,
+      minimizable: false,
+      hasShadow: false
+    };
+  }
+
   if (windowDef.id === "overlay") {
     return {
       alwaysOnTop: true,
@@ -40,7 +55,7 @@ export function createElectronShellRuntime({
     throw new Error("Electron bindings are required to create the shell runtime.");
   }
 
-  const { app, BrowserWindow, Tray, Menu, globalShortcut, ipcMain, nativeImage } = electron;
+  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen } = electron;
   const windows = new Map();
   const readyWindows = new Set();
   const pendingWindowMessages = new Map();
@@ -51,6 +66,15 @@ export function createElectronShellRuntime({
   let quitting = false;
   let resolvedServiceBaseUrl = serviceBaseUrl;
   let handoffWatcher = null;
+
+  function buildOverlayPayloadFromFiles(filePaths, sourceApp = "uca.dock", captureMode = "dock_drop") {
+    return {
+      source_app: sourceApp,
+      capture_mode: captureMode,
+      file_paths: filePaths,
+      targetWindow: "overlay"
+    };
+  }
 
   function enqueueWindowMessage(windowId, channel, payload) {
     const target = windows.get(windowId);
@@ -228,6 +252,14 @@ export function createElectronShellRuntime({
         flushWindowMessages(windowDef.id);
       });
       browserWindow.loadURL(buildWindowUrl(windowDef, resolvedServiceBaseUrl));
+      if (windowDef.id === "dock") {
+        const { workArea } = screen.getPrimaryDisplay();
+        const [width, height] = browserWindow.getSize();
+        browserWindow.setPosition(
+          Math.max(workArea.x, workArea.x + workArea.width - width - 28),
+          Math.max(workArea.y, workArea.y + workArea.height - height - 56)
+        );
+      }
       windows.set(windowDef.id, browserWindow);
     }
   }
@@ -325,6 +357,34 @@ export function createElectronShellRuntime({
       }));
       ipcMain.handle(IPC_CHANNELS.shellShowWindow, (_event, windowId) => showWindow(windowId));
       ipcMain.handle(IPC_CHANNELS.shellHideWindow, (_event, windowId) => hideWindow(windowId));
+      ipcMain.handle(IPC_CHANNELS.shellSubmitDroppedFiles, async (_event, filePaths = []) => {
+        const acceptedFilePaths = filePaths.filter((filePath) => typeof filePath === "string" && filePath.length > 0);
+        if (acceptedFilePaths.length === 0) {
+          return { accepted: false, reason: "no_files" };
+        }
+        showWindow("overlay");
+        enqueueWindowMessage(
+          "overlay",
+          IPC_CHANNELS.shellContextReceived,
+          buildOverlayPayloadFromFiles(acceptedFilePaths)
+        );
+        return {
+          accepted: true,
+          fileCount: acceptedFilePaths.length
+        };
+      });
+      ipcMain.handle(IPC_CHANNELS.shellNotify, (_event, payload = {}) => {
+        if (!Notification?.isSupported?.()) {
+          return { shown: false, reason: "unsupported" };
+        }
+        const notification = new Notification({
+          title: payload.title ?? "UCA",
+          body: payload.body ?? "",
+          silent: false
+        });
+        notification.show();
+        return { shown: true };
+      });
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
           createWindows();
