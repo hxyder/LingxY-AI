@@ -93,14 +93,7 @@ export function createElectronShellRuntime({
 
     const handoffFile = getArgValue(argv, "--uca-handoff-file");
     if (handoffFile) {
-      const raw = await readFile(handoffFile, "utf8");
-      const payload = JSON.parse(raw);
-      await unlink(handoffFile).catch(() => {});
-      showWindow("overlay");
-      enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
-        ...payload,
-        targetWindow: "overlay"
-      });
+      await consumeHandoffFile(handoffFile);
       return true;
     }
 
@@ -122,7 +115,15 @@ export function createElectronShellRuntime({
 
     processedHandoffFiles.add(handoffFile);
     try {
-      const raw = await readFile(handoffFile, "utf8");
+      const raw = await readFile(handoffFile, "utf8").catch((error) => {
+        if (error?.code === "ENOENT") {
+          return null;
+        }
+        throw error;
+      });
+      if (!raw) {
+        return false;
+      }
       const payload = JSON.parse(raw);
       await unlink(handoffFile).catch(() => {});
       showWindow("overlay");
@@ -236,7 +237,12 @@ export function createElectronShellRuntime({
     if (!target) {
       return false;
     }
+    if (target.isMinimized()) {
+      target.restore();
+    }
+    target.setAlwaysOnTop(true, "screen-saver");
     target.show();
+    target.moveTop();
     target.focus();
     return true;
   }

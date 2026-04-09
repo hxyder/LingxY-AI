@@ -31,6 +31,8 @@ assert.equal(mainProcess.includes("--uca-handoff-file"), true);
 assert.equal(mainProcess.includes("shellContextReceived"), true);
 assert.equal(mainProcess.includes("drainHandoffDirectory"), true);
 assert.equal(mainProcess.includes("startHandoffWatcher"), true);
+assert.equal(mainProcess.includes("await consumeHandoffFile(handoffFile)"), true);
+assert.equal(mainProcess.includes("error?.code === \"ENOENT\""), true);
 
 const helperProgram = await read("src/helper/explorer_selection/UcaExplorerSelectionHelper/Program.cs");
 assert.equal(helperProgram.includes("overlay_prompt"), true);

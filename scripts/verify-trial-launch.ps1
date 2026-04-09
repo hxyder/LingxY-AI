@@ -44,6 +44,26 @@ function Test-RuntimeHealth {
   }
 }
 
+function Test-ElectronShellReady {
+  if (Test-Path $ElectronPidPath) {
+    $electronPid = (Get-Content $ElectronPidPath -Raw).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($electronPid)) {
+      try {
+        Get-Process -Id ([int]$electronPid) -ErrorAction Stop | Out-Null
+        return $true
+      } catch {
+        # Fall through to the actual Electron window process probe.
+      }
+    }
+  }
+
+  $overlayWindow = Get-Process electron -ErrorAction SilentlyContinue |
+    Where-Object { $_.MainWindowTitle -eq "UCA Overlay" } |
+    Select-Object -First 1
+
+  return ($null -ne $overlayWindow)
+}
+
 Invoke-BestEffortStop
 
 try {
@@ -52,12 +72,11 @@ try {
   Wait-Until -Condition { Test-Path $RuntimePidPath } -TimeoutMs 15000 -IntervalMs 250 -Label "runtime pid file"
   Wait-Until -Condition { Test-Path $ElectronPidPath } -TimeoutMs 15000 -IntervalMs 250 -Label "electron pid file"
   Wait-Until -Condition { Test-RuntimeHealth } -TimeoutMs 15000 -IntervalMs 500 -Label "runtime health endpoint"
+  Wait-Until -Condition { Test-ElectronShellReady } -TimeoutMs 15000 -IntervalMs 500 -Label "electron overlay window"
 
   $runtimePid = [int](Get-Content $RuntimePidPath -Raw).Trim()
-  $electronPid = [int](Get-Content $ElectronPidPath -Raw).Trim()
 
   Get-Process -Id $runtimePid -ErrorAction Stop | Out-Null
-  Get-Process -Id $electronPid -ErrorAction Stop | Out-Null
 
   if (Test-Path $RuntimeErrLogPath) {
     $runtimeErrLog = Get-Content $RuntimeErrLogPath -Raw
