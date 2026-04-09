@@ -8,6 +8,7 @@ const repoRoot = path.resolve(__dirname, "..");
 const releaseConfig = JSON.parse(readFileSync(path.join(repoRoot, "tools", "release", "release-config.json"), "utf8"));
 const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 const bundleRoot = path.join(repoRoot, "dist", "trial", releaseConfig.trial_version);
+const relativeRepoRootFromBundle = path.relative(bundleRoot, repoRoot).replace(/\\/g, "/") || ".";
 
 function sha256(filePath) {
   const hash = crypto.createHash("sha256");
@@ -48,10 +49,11 @@ for (const relativePath of releaseConfig.required_assets) {
 }
 
 const installChecklist = [
-  "Run `node scripts/start-runtime.mjs` or start the packaged runtime host",
-  "Install Explorer entry with `scripts/install-explorer-entry.ps1`",
-  "Install browser native host with `scripts/install-native-host.ps1`",
-  "Sideload browser extension from `browser_ext/`",
+  "Keep this trial bundle inside the repository workspace; it is a repo-local sideload kit, not a standalone installer",
+  "Double-click `Launch UCA Desktop Trial.cmd` to start the desktop app and local runtime together",
+  "Install Explorer entry with `scripts/install-explorer-entry.ps1` if you want right-click file submission",
+  "Install browser native host with `scripts/install-native-host.ps1` if you want browser capture",
+  "Sideload browser extension from `browser_ext/` when webpage capture is needed",
   "Sideload Office add-in manifests from `office_addin/` as needed",
   "Verify Kimi CLI availability before first task submission"
 ];
@@ -84,7 +86,39 @@ writeText(
 
 writeText(
   path.join(bundleRoot, "INSTALL.txt"),
-  `UCA trial bundle: ${releaseConfig.trial_version}\n\n${installChecklist.map((step, index) => `${index + 1}. ${step}`).join("\n")}\n`
+  [
+    `UCA trial bundle: ${releaseConfig.trial_version}`,
+    "",
+    "This bundle is intended to be used from the repository workspace that generated it.",
+    "Primary entry: Launch UCA Desktop Trial.cmd",
+    "Stop entry: Stop UCA Desktop Trial.cmd",
+    "",
+    ...installChecklist.map((step, index) => `${index + 1}. ${step}`)
+  ].join("\n") + "\n"
+);
+
+writeText(
+  path.join(bundleRoot, "Launch UCA Desktop Trial.cmd"),
+  [
+    "@echo off",
+    "setlocal",
+    `set "REPO_ROOT=%~dp0${relativeRepoRootFromBundle.replaceAll("/", "\\")}"`,
+    'powershell -ExecutionPolicy Bypass -File "%REPO_ROOT%\\scripts\\start-trial.ps1"',
+    "endlocal",
+    ""
+  ].join("\r\n")
+);
+
+writeText(
+  path.join(bundleRoot, "Stop UCA Desktop Trial.cmd"),
+  [
+    "@echo off",
+    "setlocal",
+    `set "REPO_ROOT=%~dp0${relativeRepoRootFromBundle.replaceAll("/", "\\")}"`,
+    'powershell -ExecutionPolicy Bypass -File "%REPO_ROOT%\\scripts\\stop-trial.ps1"',
+    "endlocal",
+    ""
+  ].join("\r\n")
 );
 
 console.log(`Trial package generated at ${bundleRoot}`);

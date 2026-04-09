@@ -1,5 +1,6 @@
 param(
-  [switch]$WithShell
+  [switch]$WithShell,
+  [switch]$RuntimeOnly
 )
 
 Set-StrictMode -Version Latest
@@ -49,6 +50,8 @@ if (-not (Test-Path (Join-Path $RepoRoot "node_modules"))) {
   throw "node_modules is missing. Run npm install in the repo root first."
 }
 
+$LaunchShell = $WithShell -or (-not $RuntimeOnly)
+
 if (-not (Test-RuntimeHealth)) {
   if (Test-Path $RuntimePidFile) {
     Remove-Item -LiteralPath $RuntimePidFile -Force
@@ -87,7 +90,7 @@ elseif (-not (Test-Path $RuntimePidFile)) {
   }
 }
 
-if ($WithShell) {
+if ($LaunchShell) {
   if (-not (Test-Path $ElectronCli)) {
     throw "Electron CLI entry was not found: $ElectronCli"
   }
@@ -145,10 +148,10 @@ Write-Host "UCA started."
 Write-Host "Runtime: $RuntimeUrl"
 Write-Host "Runtime out log: $RuntimeLog"
 Write-Host "Runtime err log: $RuntimeErrorLog"
-if ($WithShell) {
+if ($LaunchShell) {
   Write-Host "Electron out log: $ElectronLog"
   Write-Host "Electron err log: $ElectronErrorLog"
 } else {
-  Write-Host "Default mode starts the local runtime only. Use -WithShell for the experimental Electron shell."
+  Write-Host "Runtime-only mode is active. Use the default start command to launch the desktop shell as well."
 }
 Write-Host "Stop command: powershell -ExecutionPolicy Bypass -File .\\scripts\\stop-trial.ps1"
