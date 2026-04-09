@@ -21,6 +21,7 @@
     "docs/runtime/office_addin_sideload.md",
     "scripts/install-explorer-entry.ps1",
     "scripts/install-native-host.ps1",
+    "scripts/setup-trial.ps1",
     "scripts/start-trial.ps1",
     "scripts/stop-trial.ps1",
     "scripts/submit-file-task.ps1",

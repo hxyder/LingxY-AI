@@ -31,12 +31,14 @@ const bundleRoot = path.join(repoRoot, "dist", "trial", releaseConfig.trial_vers
 const manifestPath = path.join(bundleRoot, "release-manifest.json");
 const checksumsPath = path.join(bundleRoot, "checksums.sha256");
 const installPath = path.join(bundleRoot, "INSTALL.txt");
+const setupCmdPath = path.join(bundleRoot, "Setup UCA Desktop Trial.cmd");
 const launchCmdPath = path.join(bundleRoot, "Launch UCA Desktop Trial.cmd");
 const stopCmdPath = path.join(bundleRoot, "Stop UCA Desktop Trial.cmd");
 
 assert.equal(existsSync(manifestPath), true);
 assert.equal(existsSync(checksumsPath), true);
 assert.equal(existsSync(installPath), true);
+assert.equal(existsSync(setupCmdPath), true);
 assert.equal(existsSync(launchCmdPath), true);
 assert.equal(existsSync(stopCmdPath), true);
 
@@ -51,6 +53,7 @@ const checksums = readFileSync(checksumsPath, "utf8");
 assert.equal(checksums.includes("docs/release/e2e_matrix.md"), true);
 
 const installText = readFileSync(installPath, "utf8");
+assert.equal(installText.includes("Setup UCA Desktop Trial.cmd"), true);
 assert.equal(installText.includes("Launch UCA Desktop Trial.cmd"), true);
 assert.equal(installText.includes("repo-local sideload kit"), true);
 

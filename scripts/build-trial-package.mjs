@@ -50,9 +50,10 @@ for (const relativePath of releaseConfig.required_assets) {
 
 const installChecklist = [
   "Keep this trial bundle inside the repository workspace; it is a repo-local sideload kit, not a standalone installer",
+  "Double-click `Setup UCA Desktop Trial.cmd` for the guided desktop-first setup path",
   "Double-click `Launch UCA Desktop Trial.cmd` to start the desktop app and local runtime together",
-  "Install Explorer entry with `scripts/install-explorer-entry.ps1` if you want right-click file submission",
-  "Install browser native host with `scripts/install-native-host.ps1` if you want browser capture",
+  "Explorer entry is the default recommended integration for first use",
+  "Install browser native host only when you need browser capture",
   "Sideload browser extension from `browser_ext/` when webpage capture is needed",
   "Sideload Office add-in manifests from `office_addin/` as needed",
   "Verify Kimi CLI availability before first task submission"
@@ -90,11 +91,24 @@ writeText(
     `UCA trial bundle: ${releaseConfig.trial_version}`,
     "",
     "This bundle is intended to be used from the repository workspace that generated it.",
+    "Recommended first step: Setup UCA Desktop Trial.cmd",
     "Primary entry: Launch UCA Desktop Trial.cmd",
     "Stop entry: Stop UCA Desktop Trial.cmd",
     "",
     ...installChecklist.map((step, index) => `${index + 1}. ${step}`)
   ].join("\n") + "\n"
+);
+
+writeText(
+  path.join(bundleRoot, "Setup UCA Desktop Trial.cmd"),
+  [
+    "@echo off",
+    "setlocal",
+    `set "REPO_ROOT=%~dp0${relativeRepoRootFromBundle.replaceAll("/", "\\")}"`,
+    'powershell -ExecutionPolicy Bypass -File "%REPO_ROOT%\\scripts\\setup-trial.ps1"',
+    "endlocal",
+    ""
+  ].join("\r\n")
 );
 
 writeText(

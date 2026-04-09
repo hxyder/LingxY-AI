@@ -14,3 +14,11 @@ npm run start:runtime
 ```
 
 Override the port with `UCA_PORT`.
+
+For day-to-day desktop trial use, prefer:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\start-trial.ps1
+```
+
+That command starts the local runtime and the Electron desktop shell together.
