@@ -6,6 +6,7 @@ import { resolveRuntimePaths, ensureRuntimePaths } from "./runtime-paths.mjs";
 import { createServiceBootstrap } from "./service-bootstrap.mjs";
 import { createSqliteStore } from "./store/sqlite-store.mjs";
 import { createExplorerSelectionPipeServer, DEFAULT_EXPLORER_PIPE_NAME } from "./windows-pipe-server.mjs";
+import { getKimiRuntimeStatus, resolveKimiRuntime } from "../ai/code_cli/kimi/runtime.mjs";
 
 function recoverInterruptedTasks(runtime) {
   const recovered = [];
@@ -50,6 +51,15 @@ export function createPersistentRuntime({
     }
   });
   const config = configStore.load();
+  const kimiConfig = config.ai?.codeCli?.kimi ?? {};
+  const resolvedKimiRuntime = resolveKimiRuntime({
+    explicitRuntime: kimiRuntime,
+    config: kimiConfig
+  });
+  const kimiRuntimeStatus = getKimiRuntimeStatus({
+    explicitRuntime: resolvedKimiRuntime ?? kimiRuntime,
+    config: kimiConfig
+  });
   const storeAdapter = createSqliteStore({
     dbPath: paths.dbPath
   });
@@ -58,9 +68,10 @@ export function createPersistentRuntime({
     artifactStore: createArtifactStore({ baseDir: paths.baseDir }),
     configStore,
     securityConfig: config.security ?? {},
-    kimiRuntime,
+    kimiRuntime: resolvedKimiRuntime,
     paths
   });
+  service.runtime.kimiRuntimeStatus = kimiRuntimeStatus;
   const server = createServiceHttpServer({
     runtime: service.runtime,
     paths,

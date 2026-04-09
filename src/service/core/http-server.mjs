@@ -140,7 +140,8 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           ok: true,
           runtime_dir: paths.baseDir,
           db_path: paths.dbPath,
-          task_total: runtime.store.listTasks().length
+          task_total: runtime.store.listTasks().length,
+          kimi: runtime.kimiRuntimeStatus ?? null
         });
       }
 
@@ -335,8 +336,12 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       }
 
       if (method === "GET" && url.pathname === "/ai/code-cli") {
+        const config = runtime.configStore?.load?.() ?? {};
         return sendJson(response, 200, {
-          adapters: runtime.platform.codeCliAdapters.list()
+          adapters: await runtime.platform.codeCliAdapters.listStatus({
+            runtime,
+            config
+          })
         });
       }
 

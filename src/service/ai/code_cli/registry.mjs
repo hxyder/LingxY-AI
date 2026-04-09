@@ -8,6 +8,42 @@ export function createCodeCliRegistry(adapters = []) {
     },
     list() {
       return [...registered.values()];
+    },
+    async listStatus(context = {}) {
+      return Promise.all(
+        [...registered.values()].map(async (adapter) => {
+          if (typeof adapter.getStatus === "function") {
+            return adapter.getStatus(context);
+          }
+          return {
+            id: adapter.id,
+            displayName: adapter.displayName,
+            executable: adapter.executable,
+            supportsCheckpointResume: adapter.supportsCheckpointResume,
+            available: typeof adapter.isAvailable === "function"
+              ? await adapter.isAvailable(context)
+              : true
+          };
+        })
+      );
+    },
+    async getStatus(adapterId, context = {}) {
+      const adapter = registered.get(adapterId);
+      if (!adapter) {
+        return null;
+      }
+      if (typeof adapter.getStatus === "function") {
+        return adapter.getStatus(context);
+      }
+      return {
+        id: adapter.id,
+        displayName: adapter.displayName,
+        executable: adapter.executable,
+        supportsCheckpointResume: adapter.supportsCheckpointResume,
+        available: typeof adapter.isAvailable === "function"
+          ? await adapter.isAvailable(context)
+          : true
+      };
     }
   };
 }

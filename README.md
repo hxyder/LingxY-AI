@@ -61,3 +61,4 @@ Current implemented slices include:
 - platform foundation scaffold for templates, DAG orchestration, budget controls, executor routing, and local history search
 - persistent local runtime scaffold with SQLite, HTTP/SSE, config storage, and Electron main entry
 - native integration install scripts plus .NET Explorer helper / Native Messaging host
+- resolved Kimi CLI runtime with real print-mode execution and health probing

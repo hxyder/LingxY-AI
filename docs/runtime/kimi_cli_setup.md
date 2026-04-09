@@ -2,22 +2,40 @@
 
 ## Required
 
-- A local Kimi-compatible CLI executable
+- A local `kimi` executable
 - UTF-8 stdio support
-- JSON Lines progress events on stdout
+- A logged-in Kimi CLI session or equivalent credential state
 
 ## Expected Contract
 
-- stdin receives one JSON task package
-- stdout emits JSON Lines events
-- created artifacts must be written under the provided `output_dir`
+- UCA resolves Kimi from this precedence order:
+  - injected runtime in code
+  - `config.runtime.json` under `ai.codeCli.kimi`
+  - env vars such as `UCA_KIMI_COMMAND`
+  - `kimi` found on `PATH`
+- For mock and fixture execution, UCA still supports the legacy JSONL task-package mode.
+- For the real Kimi CLI, UCA uses print mode with `--output-format stream-json`, scopes the workspace to the selected files, captures the final markdown reply, and writes `report.md` into the task output directory.
 
-## Current Dev Verification
+## Supported Configuration
 
-Repository verification uses `tests/fixtures/mock-kimi-cli.mjs` as a stand-in executable.
+- `UCA_KIMI_COMMAND`: override executable path
+- `UCA_KIMI_ARGS_JSON`: JSON array of extra base args
+- `UCA_KIMI_MODEL`: default model name
+- `UCA_KIMI_MAX_RUNTIME_SECONDS`: override runtime limit
+- `UCA_KIMI_CONFIG_FILE`: explicit Kimi config file
+- `UCA_KIMI_MCP_CONFIG_FILES`: path-delimited list of MCP config files
 
-Replace it with the real executable by wiring:
+Runtime config file also supports:
 
-- `command`: CLI binary path
-- `args`: provider-specific arguments
-- `env`: required provider credentials
+- `ai.codeCli.kimi.command`
+- `ai.codeCli.kimi.args`
+- `ai.codeCli.kimi.env`
+- `ai.codeCli.kimi.model`
+- `ai.codeCli.kimi.maxRuntimeSeconds`
+- `ai.codeCli.kimi.configFile`
+- `ai.codeCli.kimi.mcpConfigFiles`
+
+## Verification
+
+- `npm run verify:file-kimi` exercises the mock JSONL bridge.
+- `npm run verify:kimi-runtime` exercises the real CLI when `kimi` is installed and already configured locally; otherwise it skips cleanly.

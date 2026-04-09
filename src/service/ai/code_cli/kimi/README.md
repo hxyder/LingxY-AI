@@ -1,10 +1,12 @@
 # Kimi Code CLI Adapter
 
-This folder is reserved for provider-specific Kimi Code CLI integration details.
+This directory now contains the runtime-side Kimi CLI adapter logic used by UCA.
 
-Phase `UCA-005` keeps runtime execution inside `src/service/executors/kimi/` while this directory remains the long-term adapter home for:
+Current responsibilities:
 
-- provider discovery
-- credential checks
-- version probing
-- CLI install guidance
+- runtime discovery from injected config, runtime config file, env vars, or `PATH`
+- credential / config presence checks
+- version probing via `kimi --version`
+- normalized runtime config for the Kimi executor
+
+Execution still lives in `src/service/executors/kimi/`, while adapter-specific resolution and health checks live here.

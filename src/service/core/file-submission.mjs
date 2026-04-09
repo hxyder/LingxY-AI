@@ -123,6 +123,10 @@ export async function submitFileTask({
       args: runtime.kimiRuntime.args,
       env: runtime.kimiRuntime.env,
       taskPackage,
+      transport: runtime.kimiRuntime.transport,
+      model: runtime.kimiRuntime.model,
+      configFile: runtime.kimiRuntime.configFile,
+      mcpConfigFiles: runtime.kimiRuntime.mcpConfigFiles,
       maxRuntimeSeconds: runtime.kimiRuntime.maxRuntimeSeconds ?? 600,
       abortSignal: controller.signal,
       onEvent(event) {
