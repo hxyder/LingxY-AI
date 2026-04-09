@@ -10,6 +10,7 @@ import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
 import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
 import { createFastExecutorScaffold } from "../src/service/executors/fast/fast-executor.mjs";
+import { createMultiModalExecutorScaffold } from "../src/service/executors/multi_modal/multi-modal-executor.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -27,7 +28,7 @@ const runtime = {
   eventBus: createEventBusScaffold(),
   queue: createTaskQueueScaffold(),
   artifactStore: createArtifactStore({ baseDir: path.join(repoRoot, ".tmp", "verify-browser-extension") }),
-  executors: [createFastExecutorScaffold()]
+  executors: [createFastExecutorScaffold(), createMultiModalExecutorScaffold()]
 };
 
 const handler = createNativeHostHandler({
@@ -80,7 +81,7 @@ const imageResponse = await handler({
 });
 
 assert.equal(imageResponse.ok, true);
-assert.equal(imageResponse.payload.status, "unsupported");
+assert.equal(imageResponse.payload.status, "success");
 
 const recentTasksResponse = await handler({
   protocolVersion: "1.0",
@@ -89,6 +90,6 @@ const recentTasksResponse = await handler({
 });
 
 assert.equal(recentTasksResponse.ok, true);
-assert.equal(recentTasksResponse.payload.tasks.length, 2);
+assert.equal(recentTasksResponse.payload.tasks.length, 3);
 
 console.log("Browser extension pipeline verification passed.");

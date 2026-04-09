@@ -53,6 +53,7 @@ Current implemented slices include:
 - browser extension and native host capture scaffold
 - browser-only floating chip rules, positioning, and popup settings scaffold
 - Office Add-in base scaffold with spike-driven localhost HTTPS fallback plan
+- PDF text extraction, OCR routing, screenshot submission, and multi-modal scaffold
 - task lifecycle, retry, cancellation, and metrics scaffold
 - action tool registry and execution-mode-aware tool loop scaffold
 - security broker, presenter mode, offline gating, and redaction scaffold

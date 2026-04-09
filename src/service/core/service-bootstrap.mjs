@@ -6,6 +6,7 @@ import { routeIntent } from "./router/intent-router.mjs";
 import { createFastExecutorScaffold } from "../executors/fast/fast-executor.mjs";
 import { createKimiCliExecutorScaffold } from "../executors/kimi/kimi-cli-executor.mjs";
 import { createToolUsingExecutorScaffold } from "../executors/tool_using/agent-loop.mjs";
+import { createMultiModalExecutorScaffold } from "../executors/multi_modal/multi-modal-executor.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createActionToolRegistry } from "../action_tools/registry.mjs";
@@ -23,7 +24,7 @@ export function createServiceBootstrap() {
     eventBus: createEventBusScaffold(),
     queue,
     artifactStore: createArtifactStore(),
-    executors: [createFastExecutorScaffold(), createKimiCliExecutorScaffold(), createToolUsingExecutorScaffold()],
+    executors: [createFastExecutorScaffold(), createKimiCliExecutorScaffold(), createToolUsingExecutorScaffold(), createMultiModalExecutorScaffold()],
     metrics: createMetricsRegistry({
       store: storeAdapter,
       queue

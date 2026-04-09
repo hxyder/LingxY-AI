@@ -11,8 +11,11 @@ export interface ContextPacketRecord {
   html?: string;
   url?: string;
   file_paths?: string[];
+  file_metadata?: Array<Record<string, unknown>>;
   image_paths?: string[];
+  image_metadata?: Record<string, unknown>;
   selection_metadata?: Record<string, unknown>;
+  entity_hints?: Record<string, unknown>;
   captured_at: string;
 }
 

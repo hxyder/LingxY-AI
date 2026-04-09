@@ -6,7 +6,8 @@ Current built-ins:
 
 - `text/plain`
 - `text/markdown`
-- `application/pdf` detection with placeholder extraction
+- `application/pdf` detection with text-layer vs OCR branching
 - `application/vnd.openxmlformats-officedocument.wordprocessingml.document` detection with placeholder extraction
+- `image/png` and `image/jpeg` with OCR placeholder extraction
 
-The placeholder binary extractors keep the pipeline stable until dedicated PDF/DOCX libraries are introduced.
+The current Phase 5 scaffold keeps the pipeline stable until dedicated runtime dependencies are introduced.

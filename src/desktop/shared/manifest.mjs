@@ -27,6 +27,11 @@ export const DEFAULT_SHORTCUTS = Object.freeze([
     id: "toggle-presenter-mode",
     accelerator: "Ctrl+Alt+P",
     description: "Toggle Presenter Mode"
+  },
+  {
+    id: "capture-screenshot",
+    accelerator: "Ctrl+Shift+S",
+    description: "Capture a screenshot for OCR"
   }
 ]);
 

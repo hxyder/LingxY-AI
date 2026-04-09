@@ -1,12 +1,19 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { runImageOcr } from "./image_ocr.mjs";
+import { extractScannedPdfWithOcr } from "./pdf_ocr.mjs";
+import { extractPdfTablePreview } from "./pdf_table.mjs";
+import { extractTextPdf, hasUsablePdfTextLayer, countPdfPagesFromBuffer } from "./pdf_text.mjs";
 
 const MIME_BY_EXTENSION = {
   ".txt": "text/plain",
   ".md": "text/markdown",
   ".markdown": "text/markdown",
   ".pdf": "application/pdf",
-  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg"
 };
 
 function asLatin1(buffer) {
@@ -14,9 +21,7 @@ function asLatin1(buffer) {
 }
 
 function countPdfPages(buffer) {
-  const text = asLatin1(buffer);
-  const matches = text.match(/\/Type\s*\/Page\b/g);
-  return matches?.length ?? undefined;
+  return countPdfPagesFromBuffer(buffer);
 }
 
 export async function detectMimeType(filePath) {
@@ -55,13 +60,33 @@ export async function extractFileContent(filePath) {
 
   if (mime === "application/pdf") {
     const bytes = await readFile(filePath);
+    if (hasUsablePdfTextLayer(bytes)) {
+      const extracted = await extractTextPdf(filePath);
+      return {
+        ...extracted,
+        size: fileStat.size,
+        table_preview: extractPdfTablePreview(extracted.text)
+      };
+    }
+
+    return {
+      ...(await extractScannedPdfWithOcr(filePath)),
+      size: fileStat.size,
+      page_count: countPdfPages(bytes)
+    };
+  }
+
+  if (mime === "image/png" || mime === "image/jpeg") {
+    const ocrResult = await runImageOcr(filePath);
     return {
       path: filePath,
       size: fileStat.size,
       mime,
-      extraction_mode: "binary_placeholder",
-      text: `[PDF placeholder extraction] ${path.basename(filePath)}`,
-      page_count: countPdfPages(bytes)
+      extraction_mode: "image_ocr",
+      text: ocrResult.ocr_text,
+      ocr_engine: ocrResult.ocr_engine,
+      ocr_confidence: ocrResult.ocr_confidence,
+      ocr_low_confidence_regions: ocrResult.ocr_low_confidence_regions
     };
   }
 
@@ -102,7 +127,9 @@ export async function buildFileContextPacket({
       size: extracted.size,
       mime: extracted.mime,
       page_count: extracted.page_count,
-      extraction_mode: extracted.extraction_mode
+      extraction_mode: extracted.extraction_mode,
+      ocr_engine: extracted.ocr_engine,
+      ocr_confidence: extracted.ocr_confidence
     });
     extractedTexts.push(`## ${path.basename(filePath)}\n${extracted.text}`);
   }

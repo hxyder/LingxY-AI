@@ -50,11 +50,37 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
+- 状态：in_progress
+- 执行分支：`task/uca-013-phase5-pdf-ocr`
+- 开始日期：2026-04-08
 - 完成日期：
+- OCR 引擎版本：
+  - 当前本地 OCR scaffold 选择 `paddle-3.0-placeholder`
+  - 发布策略为按需安装，不打进主包
+- PDF 语料集结果：
+  - `sample-text-layer.pdf` -> `text_pdf`
+  - `sample-scanned.pdf` -> `pdf_ocr`
+  - 基础验证已覆盖文本层 / 扫描件两条路径
+- 多模态成本控制策略：
+  - 当前只保留 `multi_modal` 执行器骨架
+  - 图片/OCR 任务默认走本地 OCR，再进入多模态描述路径
+  - 云端视觉模型尚未接入，因此当前没有真实 token 消耗
+  - 后续接入时需默认压缩、缓存和预算上限
 - 实际新增内容：
+  - 新增 `pdf_text / pdf_table / pdf_ocr / image_ocr` extractors
+  - 新增 `image-submission.mjs` 与 `screenshot-submission.mjs`
+  - 新增 `multi_modal` 执行器骨架
+  - 新增 `src/helper/Screenshot/`、`external/paddle_ocr_runtime/`、`docs/pdf/`
+  - 浏览器 `image` capture 现在会委派到统一 image pipeline
+  - 新增 `Ctrl+Shift+S` 截图快捷键预留
 - 验证结果：
+  - `node scripts/verify-pdf-ocr.mjs`
+  - `npm run check`
 - 遗留问题：
+  - 真实 PaddleOCR runtime、真实截图 overlay、真实图片压缩与缓存尚未实现
+  - 表格抽取目前只有 preview 级启发式，不是正式 parser
+  - 低置信度区域还没有接真实 UI 高亮
+  - 公式 OCR、手写体和真实多模态云模型仍未接入
 - 交接给下一个任务：
+  - `UCA-014` 可直接复用 `image` source pipeline、`multi_modal` executor、OCR metadata 格式和 `external/paddle_ocr_runtime` 落点
+  - 后续若推进增强版，可从 `src/service/extractors/pdf_ocr.mjs` 和 `src/service/core/image-submission.mjs` 继续接真实 OCR / vision runtime

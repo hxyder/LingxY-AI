@@ -18,6 +18,10 @@ if (!service.runtime.executors.find((executor) => executor.id === "tool_using"))
   throw new Error("Tool-using executor scaffold is missing.");
 }
 
+if (!service.runtime.executors.find((executor) => executor.id === "multi_modal")) {
+  throw new Error("Multi-modal executor scaffold is missing.");
+}
+
 if (!service.runtime.securityBroker) {
   throw new Error("Security broker scaffold is missing.");
 }
@@ -38,6 +42,11 @@ if (route.intent !== "summarize") {
 const kimiRoute = service.routeIntent("分析这个文件并生成报告");
 if (kimiRoute.executor !== "kimi") {
   throw new Error("Intent router did not resolve Kimi report flow.");
+}
+
+const imageRoute = service.routeIntent("请分析这张图片");
+if (imageRoute.executor !== "multi_modal") {
+  throw new Error("Intent router did not resolve the image flow.");
 }
 
 if (service.endpoints.postTask !== "/task") {

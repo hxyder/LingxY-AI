@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildTaskDetailViewModel } from "../src/desktop/console/task-detail/view-model.mjs";
@@ -7,6 +7,7 @@ import { buildConsoleFiltersViewModel } from "../src/desktop/console/filters/vie
 import { createConsoleViewModel } from "../src/desktop/console/view-model.mjs";
 import { submitBrowserTask } from "../src/service/core/browser-submission.mjs";
 import { submitFileTask } from "../src/service/core/file-submission.mjs";
+import { submitImageTask } from "../src/service/core/image-submission.mjs";
 import { cancelTask } from "../src/service/core/task-runtime.mjs";
 import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs";
 import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
@@ -17,6 +18,7 @@ import { createMetricsRegistry } from "../src/service/metrics/registry.mjs";
 import { retryTask } from "../src/service/retry/retry-manager.mjs";
 import { createArtifactStore } from "../src/service/store/artifact-store.mjs";
 import { createFastExecutorScaffold } from "../src/service/executors/fast/fast-executor.mjs";
+import { createMultiModalExecutorScaffold } from "../src/service/executors/multi_modal/multi-modal-executor.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -24,9 +26,12 @@ const runtimeDir = path.join(repoRoot, ".tmp", "verify-status-metrics");
 const failingCli = path.join(repoRoot, "tests", "fixtures", "mock-failing-kimi-cli.mjs");
 const slowCli = path.join(repoRoot, "tests", "fixtures", "mock-slow-kimi-cli.mjs");
 const sampleNote = path.join(repoRoot, "tests", "fixtures", "sample-note.md");
+const sampleImage = path.join(runtimeDir, "sample-capture.png");
 
 await rm(runtimeDir, { recursive: true, force: true });
 await mkdir(runtimeDir, { recursive: true });
+await mkdir(path.dirname(sampleImage), { recursive: true });
+await writeFile(sampleImage, "placeholder image bytes", "utf8");
 
 function createRuntime(name, extras = {}) {
   const runtime = {
@@ -34,7 +39,7 @@ function createRuntime(name, extras = {}) {
     eventBus: createEventBusScaffold(),
     queue: createTaskQueueScaffold(),
     artifactStore: createArtifactStore({ baseDir: path.join(runtimeDir, name) }),
-    executors: [createFastExecutorScaffold()],
+    executors: [createFastExecutorScaffold(), createMultiModalExecutorScaffold()],
     ...extras
   };
   runtime.metrics = createMetricsRegistry({
@@ -79,6 +84,21 @@ const browserRetryResult = await retryTask({
 });
 assert.equal(browserRetryResult.task.parent_task_id, browserResult.task.task_id);
 assert.equal(browserRetryResult.task.retry_count, 1);
+
+const imageResult = await submitImageTask({
+  imagePaths: [sampleImage],
+  userCommand: "请分析这张截图",
+  source: "screenshot",
+  runtime: baseRuntime
+});
+assert.equal(imageResult.task.status, "success");
+
+const imageRetryResult = await retryTask({
+  taskId: imageResult.task.task_id,
+  runtime: baseRuntime,
+  mode: "retry_same"
+});
+assert.equal(imageRetryResult.task.parent_task_id, imageResult.task.task_id);
 
 const failingRuntime = createRuntime("failing", {
   kimiRuntime: {

@@ -1,5 +1,8 @@
 import crypto from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import { submitImageTask } from "./image-submission.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import {
   applyExecutorEvent,
@@ -193,20 +196,29 @@ export async function submitBrowserTask({
   }
 
   if (capture.sourceType === "image") {
-    updateTask(runtime, task, {
-      status: "unsupported",
-      sub_status: "image_pipeline_not_available_in_phase_1c"
-    }, true);
-    emitTaskEvent({
+    const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+    const imageArtifactPath = path.join(outputDir, "browser-image.txt");
+    await writeFile(imageArtifactPath, `Browser image placeholder for ${capture.imageUrl ?? capture.url ?? "image"}`, "utf8");
+    const delegated = await submitImageTask({
+      imagePaths: [imageArtifactPath],
+      userCommand,
+      source: "browser",
+      sourceApp: capture.browser,
+      captureMode: "extension",
       runtime,
-      taskId: task.task_id,
-      eventType: "unsupported",
-      payload: {
-        reason: "image_pipeline_not_available_in_phase_1c"
-      }
+      parentTaskId: task.task_id
     });
-    queue.markFinished(task.task_id);
-    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+    updateTask(runtime, task, {
+      status: "success",
+      sub_status: "delegated_to_image_pipeline",
+      progress: 1
+    }, true);
+    markTaskSucceeded(runtime, task);
+    return {
+      task,
+      taskEvents: store.getTaskEvents(task.task_id),
+      artifacts: delegated.artifacts ?? []
+    };
   }
 
   if (capture.sourceType === "link" && !capture.html) {

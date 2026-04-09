@@ -17,7 +17,7 @@
 | 10 | UCA-010 | [10_phase_scheduler_pending_approval.md](10_phase_scheduler_pending_approval.md) | Scheduler | UCA-008,UCA-009 | `task/uca-010-scheduler-pending-approval` | in_progress |
 | 11 | UCA-011 | [11_phase3_browser_overlay_polish.md](11_phase3_browser_overlay_polish.md) | Phase 3 | UCA-006,UCA-009 | `task/uca-011-phase3-browser-overlay` | in_progress |
 | 12 | UCA-012 | [12_phase4_office_spike_and_base.md](12_phase4_office_spike_and_base.md) | Phase 4 | UCA-009 | `task/uca-012-phase4-office` | in_progress |
-| 13 | UCA-013 | [13_phase5_pdf_ocr.md](13_phase5_pdf_ocr.md) | Phase 5 | UCA-009,UCA-005 | `task/uca-013-phase5-pdf-ocr` | todo |
+| 13 | UCA-013 | [13_phase5_pdf_ocr.md](13_phase5_pdf_ocr.md) | Phase 5 | UCA-009,UCA-005 | `task/uca-013-phase5-pdf-ocr` | in_progress |
 | 14 | UCA-014 | [14_phase6_platform_foundation.md](14_phase6_platform_foundation.md) | Phase 6 | UCA-010,UCA-012,UCA-013 | `task/uca-014-phase6-platform-foundation` | todo |
 
 ## 当前执行规则

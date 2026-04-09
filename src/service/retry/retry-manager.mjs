@@ -1,12 +1,17 @@
 import { submitBrowserTask } from "../core/browser-submission.mjs";
 import { submitFileTask } from "../core/file-submission.mjs";
+import { submitImageTask } from "../core/image-submission.mjs";
 
 function isFileSource(task) {
   return ["file", "file_group"].includes(task.context_packet.source_type);
 }
 
 function isBrowserSource(task) {
-  return ["text_selection", "link", "image", "webpage"].includes(task.context_packet.source_type);
+  return ["text_selection", "link", "webpage"].includes(task.context_packet.source_type);
+}
+
+function isImageSource(task) {
+  return task.context_packet.source_type === "image";
 }
 
 export function buildRetryRequest(task, mode = "retry_same", overrides = {}) {
@@ -49,6 +54,17 @@ export function buildRetryRequest(task, mode = "retry_same", overrides = {}) {
     };
   }
 
+  if (isImageSource(task)) {
+    return {
+      ...base,
+      submissionType: "image",
+      imagePaths: task.context_packet.image_paths ?? [],
+      source: task.context_packet.selection_metadata?.image_source ?? "file",
+      sourceApp: task.context_packet.source_app,
+      captureMode: task.context_packet.capture_mode
+    };
+  }
+
   throw new Error(`Unsupported retry source type: ${task.context_packet.source_type}`);
 }
 
@@ -71,6 +87,21 @@ export async function retryTask({
       userCommand: request.userCommand,
       captureMode: request.captureMode,
       sourceApp: request.sourceApp,
+      executionMode: request.executionMode,
+      parentTaskId: request.parentTaskId,
+      retryCount: request.retryCount,
+      executorOverride: request.executorOverride,
+      runtime
+    });
+  }
+
+  if (request.submissionType === "image") {
+    return submitImageTask({
+      imagePaths: request.imagePaths,
+      userCommand: request.userCommand,
+      source: request.source,
+      sourceApp: request.sourceApp,
+      captureMode: request.captureMode,
       executionMode: request.executionMode,
       parentTaskId: request.parentTaskId,
       retryCount: request.retryCount,
