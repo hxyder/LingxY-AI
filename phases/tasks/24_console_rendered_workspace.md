@@ -50,11 +50,11 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：done
 - 执行分支：`task/uca-024-console-workspace`
-- 开始日期：
-- 完成日期：
-- 实际新增内容：
-- 验证结果：
-- 遗留问题：
-- 交接给下一个任务：
+- 开始日期：2026-04-08
+- 完成日期：2026-04-08
+- 实际新增内容：已把 Electron console renderer 升级为桌面工作台布局，并接上任务列表/详情、审批、计划、模板、预算、历史搜索的本地 runtime 读写链路；新增 `verify-console-rendered-workspace.mjs` 收口桌面工作台结构校验；补充了桌面壳启动烟测，确认控制台与浮窗走 Electron，而不是浏览器页面。
+- 验证结果：`node scripts/verify-desktop-renderer.mjs`、`node scripts/verify-console-rendered-workspace.mjs`、`npm run check`、`powershell -ExecutionPolicy Bypass -File .\scripts\start-trial.ps1 -WithShell`
+- 遗留问题：需要继续做视觉细化、真实用户流程打磨和发布安装体验，但当前桌面工作台已经具备一级管理操作能力。
+- 交接给下一个任务：下一个任务可直接在当前桌面工作台基础上做发布体验打磨、真实用户试用回路、首启引导和安装后默认入口收口。

@@ -200,6 +200,7 @@ const requiredPaths = [
   "scripts/verify-context-handoff-ui.mjs",
   "scripts/verify-console-ui.mjs",
   "scripts/verify-console-runtime-client.mjs",
+  "scripts/verify-console-rendered-workspace.mjs",
   "scripts/verify-service-core.mjs",
   "scripts/verify-provider-health.mjs",
   "scripts/verify-file-kimi.mjs",

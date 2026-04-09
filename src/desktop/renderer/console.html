@@ -8,12 +8,12 @@
     <style>
       body {
         min-height: 100vh;
-        padding: 28px;
+        padding: 24px;
       }
 
       .console-shell {
         display: grid;
-        grid-template-columns: 300px minmax(0, 1fr);
+        grid-template-columns: 290px minmax(0, 1fr);
         gap: 20px;
       }
 
@@ -22,16 +22,76 @@
         padding: 22px;
       }
 
+      .sidebar {
+        position: sticky;
+        top: 24px;
+        align-self: start;
+      }
+
+      .workspace-stack,
+      .summary-grid,
+      .integration-list,
+      .nav-grid,
+      .task-list,
+      .detail-timeline,
+      .approval-list,
+      .schedule-list,
+      .template-list,
+      .history-list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .workspace-stack {
+        gap: 18px;
+      }
+
+      .nav-grid,
       .summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .panel-grid {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 18px;
+      }
+
+      .budget-grid {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 12px;
       }
 
-      .summary-tile {
-        padding: 14px;
+      .workspace-section,
+      .surface {
+        padding: 18px;
+      }
+
+      .surface {
         border-radius: 18px;
-        background: var(--panel-strong);
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.86);
+      }
+
+      .summary-tile,
+      .task-item,
+      .approval-item,
+      .schedule-item,
+      .template-item,
+      .history-item,
+      .integration-item,
+      .timeline-item {
+        padding: 14px;
+        border-radius: 16px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.86);
+      }
+
+      .task-item.selected,
+      .template-item.selected {
+        border-color: rgba(10, 88, 202, 0.35);
+        box-shadow: 0 12px 28px rgba(10, 88, 202, 0.12);
       }
 
       .summary-tile strong {
@@ -45,37 +105,70 @@
         gap: 12px;
       }
 
-      .task-list {
-        display: grid;
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .row.wrap,
+      .toolbar {
+        display: flex;
+        align-items: center;
         gap: 10px;
+        flex-wrap: wrap;
       }
 
-      .task-item {
-        padding: 14px;
-        border-radius: 16px;
-        border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.86);
-      }
-
-      .task-item h4 {
+      .task-item h4,
+      .approval-item h4,
+      .schedule-item h4,
+      .template-item h4 {
         margin: 0 0 6px;
         font-size: 15px;
       }
 
-      .task-item p {
+      .task-item p,
+      .approval-item p,
+      .schedule-item p,
+      .template-item p,
+      .history-item p,
+      .timeline-item p {
         margin: 0;
       }
 
-      .integration-list {
-        display: grid;
-        gap: 12px;
+      .nav-link {
+        text-align: left;
       }
 
-      .integration-item {
-        padding: 14px;
+      .pill-input {
+        max-width: 240px;
+      }
+
+      .template-preview,
+      .history-preview {
+        min-height: 140px;
         border-radius: 16px;
-        background: rgba(255, 255, 255, 0.86);
         border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.82);
+        padding: 14px;
+        white-space: pre-wrap;
+      }
+
+      .section-anchor {
+        scroll-margin-top: 24px;
+      }
+
+      @media (max-width: 1080px) {
+        .console-shell,
+        .panel-grid,
+        .budget-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          position: static;
+        }
       }
     </style>
   </head>
@@ -86,53 +179,205 @@
           <div class="shell-brand">
             <span class="eyebrow">Desktop Console</span>
             <h1 class="title">UCA</h1>
-            <p class="subtitle">任务、入口、预算和最近执行状态。</p>
+            <p class="subtitle">桌面级主控工作台。</p>
           </div>
         </div>
         <div id="runtimeState" class="chip warning">正在连接 runtime…</div>
-        <div class="summary-grid" id="summaryGrid"></div>
+        <div id="summaryGrid" class="summary-grid"></div>
         <div class="stack">
           <div>
-            <h3>集成状态</h3>
-            <p class="muted">当前阶段以 Code CLI 路径为主。</p>
+            <h3 style="margin:0;">工作台导航</h3>
+            <p class="muted" style="margin:4px 0 0;">围绕任务、审批、计划和模板组织。</p>
+          </div>
+          <div class="nav-grid">
+            <button class="secondary nav-link" data-target="tasksSection">任务</button>
+            <button class="secondary nav-link" data-target="approvalsSection">审批</button>
+            <button class="secondary nav-link" data-target="schedulesSection">计划</button>
+            <button class="secondary nav-link" data-target="templatesSection">模板</button>
+            <button class="secondary nav-link" data-target="budgetSection">预算</button>
+            <button class="secondary nav-link" data-target="historySection">历史</button>
+          </div>
+        </div>
+        <div class="stack">
+          <div>
+            <h3 style="margin:0;">集成状态</h3>
+            <p class="muted" style="margin:4px 0 0;">当前阶段仍以 Code CLI 为主路径。</p>
           </div>
           <div id="integrationList" class="integration-list"></div>
         </div>
       </aside>
-      <main class="workspace card stack">
-        <div class="shell-header">
-          <div class="shell-brand">
-            <span class="eyebrow">Task Composer</span>
-            <h2 class="title" style="font-size: 24px;">快速提交任务</h2>
-            <p class="subtitle">不打开聊天窗口，直接把当前要求提交给 UCA runtime。</p>
-          </div>
-          <button id="refreshButton" class="secondary">刷新</button>
-        </div>
 
-        <form id="taskComposer" class="composer">
-          <div>
-            <label for="commandInput">你要 UCA 做什么</label>
-            <textarea id="commandInput" rows="3" placeholder="例如：请解释这段内容并输出 5 条要点"></textarea>
-          </div>
-          <div>
-            <label for="contextInput">上下文文本</label>
-            <textarea id="contextInput" rows="8" placeholder="粘贴文字、摘录、说明，或者留空"></textarea>
-          </div>
-          <div style="display:flex; gap:10px; align-items:center;">
-            <button type="submit" class="primary">提交任务</button>
-            <span id="submitState" class="muted">尚未提交</span>
-          </div>
-        </form>
-
-        <section class="stack">
-          <div class="shell-header">
-            <div>
-              <h3 style="margin:0;">最近任务</h3>
-              <p class="muted" style="margin:4px 0 0;">查看最近执行，后续会扩展为完整工作台。</p>
+      <main class="workspace card">
+        <div class="workspace-stack">
+          <section class="workspace-section section-anchor" id="composerSection">
+            <div class="shell-header">
+              <div class="shell-brand">
+                <span class="eyebrow">Task Composer</span>
+                <h2 class="title" style="font-size: 26px;">主控工作台</h2>
+                <p class="subtitle">桌面程序里直接发任务、看状态、做审批和管理模板。</p>
+              </div>
+              <div class="toolbar">
+                <button id="refreshButton" class="secondary">刷新</button>
+                <button id="openOverlayButton" class="secondary">打开浮窗</button>
+              </div>
             </div>
-          </div>
-          <div id="taskList" class="task-list"></div>
-        </section>
+
+            <form id="taskComposer" class="composer surface">
+              <div>
+                <label for="commandInput">你要 UCA 做什么</label>
+                <textarea id="commandInput" rows="3" placeholder="例如：请分析当前材料并输出 5 条行动建议"></textarea>
+              </div>
+              <div>
+                <label for="contextInput">上下文文本</label>
+                <textarea id="contextInput" rows="6" placeholder="可直接粘贴文本，也可以只写任务要求"></textarea>
+              </div>
+              <div class="row wrap">
+                <div class="toolbar">
+                  <button type="submit" class="primary">提交任务</button>
+                  <span id="submitState" class="muted">尚未提交</span>
+                </div>
+                <div class="toolbar">
+                  <button type="button" class="secondary quick-command" data-command="请总结当前上下文并列出要点">总结</button>
+                  <button type="button" class="secondary quick-command" data-command="请整理成执行清单">行动清单</button>
+                  <button type="button" class="secondary quick-command" data-command="请写成专业邮件草稿">邮件草稿</button>
+                </div>
+              </div>
+            </form>
+          </section>
+
+          <section class="workspace-section section-anchor" id="tasksSection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">任务与详情</h3>
+                <p class="muted" style="margin:4px 0 0;">点击任务可查看时间线、成本、重试和取消操作。</p>
+              </div>
+            </div>
+            <div class="panel-grid">
+              <div class="surface stack">
+                <div class="row">
+                  <strong>最近任务</strong>
+                  <span id="taskCount" class="muted">0</span>
+                </div>
+                <div id="taskList" class="task-list"></div>
+              </div>
+              <div class="surface stack">
+                <div class="row">
+                  <strong>任务详情</strong>
+                  <div class="toolbar">
+                    <button id="retryTaskButton" class="secondary">重试</button>
+                    <button id="cancelTaskButton" class="secondary">取消</button>
+                  </div>
+                </div>
+                <div id="taskDetailSummary" class="stack muted">选择一个任务后显示详情。</div>
+                <div>
+                  <strong>时间线</strong>
+                  <div id="taskTimeline" class="detail-timeline" style="margin-top:10px;"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="workspace-section section-anchor" id="approvalsSection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">审批中心</h3>
+                <p class="muted" style="margin:4px 0 0;">对待审批动作进行批准或拒绝。</p>
+              </div>
+              <span id="approvalCount" class="muted">0</span>
+            </div>
+            <div id="approvalList" class="approval-list surface"></div>
+          </section>
+
+          <section class="workspace-section section-anchor" id="schedulesSection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">计划任务</h3>
+                <p class="muted" style="margin:4px 0 0;">查看最近计划并手动触发。</p>
+              </div>
+              <span id="scheduleCount" class="muted">0</span>
+            </div>
+            <div id="scheduleList" class="schedule-list surface"></div>
+          </section>
+
+          <section class="workspace-section section-anchor" id="templatesSection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">模板工作区</h3>
+                <p class="muted" style="margin:4px 0 0;">创建轻量模板，并查看当前模板的导出内容。</p>
+              </div>
+            </div>
+            <div class="panel-grid">
+              <div class="surface stack">
+                <div class="row">
+                  <strong>模板列表</strong>
+                  <span id="templateCount" class="muted">0</span>
+                </div>
+                <div id="templateList" class="template-list"></div>
+              </div>
+              <div class="surface stack">
+                <form id="templateForm" class="stack">
+                  <div>
+                    <label for="templateNameInput">模板名称</label>
+                    <input id="templateNameInput" type="text" placeholder="例如：会议纪要提炼">
+                  </div>
+                  <div>
+                    <label for="templatePromptInput">默认要求</label>
+                    <textarea id="templatePromptInput" rows="5" placeholder="例如：请从当前上下文中提取会议决定、负责人和截止日期"></textarea>
+                  </div>
+                  <div class="toolbar">
+                    <button type="submit" class="primary">保存模板</button>
+                    <button type="button" id="deleteTemplateButton" class="secondary">删除所选</button>
+                    <span id="templateState" class="muted">尚未保存</span>
+                  </div>
+                </form>
+                <div>
+                  <strong>导出预览</strong>
+                  <pre id="templatePreview" class="template-preview muted">选择模板后显示。</pre>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="workspace-section section-anchor" id="budgetSection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">预算与配额</h3>
+                <p class="muted" style="margin:4px 0 0;">调整月度预算上限并查看当前消耗。</p>
+              </div>
+            </div>
+            <div class="surface stack">
+              <div id="budgetSummary" class="budget-grid"></div>
+              <form id="budgetForm" class="row wrap">
+                <label class="muted" for="monthlyBudgetInput">月度预算上限（USD）</label>
+                <input id="monthlyBudgetInput" class="pill-input" type="text" inputmode="decimal" placeholder="50">
+                <button type="submit" class="primary">更新预算</button>
+                <span id="budgetState" class="muted">尚未更新</span>
+              </form>
+            </div>
+          </section>
+
+          <section class="workspace-section section-anchor" id="historySection">
+            <div class="shell-header">
+              <div>
+                <h3 style="margin:0;">历史搜索</h3>
+                <p class="muted" style="margin:4px 0 0;">快速找回相似任务和上下文。</p>
+              </div>
+            </div>
+            <div class="panel-grid">
+              <div class="surface stack">
+                <form id="historyForm" class="row wrap">
+                  <input id="historyQueryInput" type="text" placeholder="输入关键词，例如：合同审查">
+                  <button type="submit" class="primary">搜索</button>
+                </form>
+                <div id="historyList" class="history-list"></div>
+              </div>
+              <div class="surface stack">
+                <strong>当前搜索摘要</strong>
+                <pre id="historyPreview" class="history-preview muted">还没有搜索结果。</pre>
+              </div>
+            </div>
+          </section>
+        </div>
       </main>
     </div>
     <script type="module" src="./console.js"></script>

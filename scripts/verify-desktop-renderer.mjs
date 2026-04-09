@@ -17,8 +17,9 @@ assert.equal(preload.includes(IPC_CHANNELS.shellShowWindow), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellHideWindow), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
-assert.equal(consoleHtml.includes("快速提交任务"), true);
-assert.equal(consoleHtml.includes("最近任务"), true);
+assert.equal(consoleHtml.includes("主控工作台"), true);
+assert.equal(consoleHtml.includes("审批中心"), true);
+assert.equal(consoleHtml.includes("模板工作区"), true);
 
 const overlayHtml = await read("src/desktop/renderer/overlay.html");
 assert.equal(overlayHtml.includes("快速输入"), true);

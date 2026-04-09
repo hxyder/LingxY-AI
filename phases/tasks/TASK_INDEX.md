@@ -28,7 +28,7 @@
 | 21 | UCA-021 | [21_desktop_renderer_foundation.md](21_desktop_renderer_foundation.md) | Desktop UI | UCA-018,UCA-020 | `task/uca-021-desktop-renderer` | in_progress |
 | 22 | UCA-022 | [22_overlay_composer_and_quick_actions.md](22_overlay_composer_and_quick_actions.md) | Overlay UI | UCA-021 | `task/uca-022-overlay-composer` | done |
 | 23 | UCA-023 | [23_context_handoff_and_file_prompt_ui.md](23_context_handoff_and_file_prompt_ui.md) | Context Handoff UI | UCA-021,UCA-022,UCA-016 | `task/uca-023-context-handoff-ui` | done |
-| 24 | UCA-024 | [24_console_rendered_workspace.md](24_console_rendered_workspace.md) | Console Workspace | UCA-021,UCA-019 | `task/uca-024-console-workspace` | todo |
+| 24 | UCA-024 | [24_console_rendered_workspace.md](24_console_rendered_workspace.md) | Console Workspace | UCA-021,UCA-019 | `task/uca-024-console-workspace` | done |
 | 25 | UCA-025 | [25_electron_windows_bootstrap_blocker.md](25_electron_windows_bootstrap_blocker.md) | Desktop Runtime Blocker | UCA-021,UCA-022,UCA-023 | `task/uca-025-electron-windows-bootstrap` | done |
 
 ## 当前执行规则
