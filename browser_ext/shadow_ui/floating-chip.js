@@ -1,20 +1,31 @@
-export function createFloatingChipController(doc = document) {
+export const DEFAULT_FLOATING_CHIP_THEME = Object.freeze({
+  chipWidth: 182,
+  chipHeight: 44,
+  gapX: 16,
+  gapY: 8
+});
+
+export function createFloatingChipController(doc = document, theme = DEFAULT_FLOATING_CHIP_THEME) {
   const host = doc.createElement("div");
   host.setAttribute("data-uca-floating-chip", "true");
   const root = host.attachShadow({ mode: "open" });
   root.innerHTML = `
     <style>
-      :host { all: initial; }
+      :host {
+        all: initial;
+      }
       button {
         all: initial;
-        font-family: "Segoe UI", sans-serif;
+        min-width: ${theme.chipWidth}px;
+        box-sizing: border-box;
+        font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
         font-size: 12px;
-        padding: 8px 12px;
+        padding: 10px 14px;
         border-radius: 999px;
-        background: #0f766e;
+        background: linear-gradient(135deg, rgba(13, 148, 136, 0.96), rgba(21, 94, 117, 0.96));
         color: white;
         cursor: pointer;
-        box-shadow: 0 8px 20px rgba(15, 118, 110, 0.25);
+        box-shadow: 0 12px 26px rgba(8, 47, 73, 0.22);
       }
     </style>
     <button type="button">用 UCA 总结</button>
@@ -29,8 +40,8 @@ export function createFloatingChipController(doc = document) {
   return {
     show({ rect, label }) {
       button.textContent = label;
-      host.style.left = `${rect.left + rect.width + 16}px`;
-      host.style.top = `${Math.max(rect.top - 8, 12)}px`;
+      host.style.left = `${rect.left + rect.width + theme.gapX}px`;
+      host.style.top = `${Math.max(rect.top - theme.gapY, 12)}px`;
       host.style.display = "block";
     },
     hide() {

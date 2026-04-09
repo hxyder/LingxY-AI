@@ -51,6 +51,7 @@ Current implemented slices include:
 - file submission pipeline with batch aggregation
 - mockable Kimi CLI JSONL executor
 - browser extension and native host capture scaffold
+- browser-only floating chip rules, positioning, and popup settings scaffold
 - task lifecycle, retry, cancellation, and metrics scaffold
 - action tool registry and execution-mode-aware tool loop scaffold
 - security broker, presenter mode, offline gating, and redaction scaffold

@@ -50,11 +50,40 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
+- 状态：in_progress
+- 执行分支：`task/uca-011-phase3-browser-overlay`
+- 开始日期：2026-04-08
 - 完成日期：
+- 显示规则最终值：
+  - `debounce = 150ms`
+  - `stability = 200ms`
+  - `minLength = 5`
+  - `longSelectionMinLength = 32`
+  - `autoHideMs = 5000`
+  - `previewDelayMs = 300`
+  - 默认模式 `smart`
+- 黑名单行为：
+  - 默认黑名单域名包含 `mail.google.com`、`outlook.live.com`
+  - 命中黑名单域名时浮标直接不显示
+  - Presenter Mode 开启时浮标直接不显示
+  - 输入框 / `textarea` / `contenteditable` 内的选区不显示
+- 典型例外站点：
+  - `mail.google.com`
+  - `outlook.live.com`
+  - 任意富文本编辑器页面（按输入法保护规则默认不显示）
 - 实际新增内容：
+  - 将浏览器浮标逻辑拆分为 `rules / placement / stability-watcher / selection-cache`
+  - 新增显示策略、黑名单、Presenter Mode、Esc dismiss、滚动重定位、自动隐藏与 hover 预览
+  - 为扩展 popup 增加浮标模式和启用状态的配置入口
+  - 新增 `docs/browser_overlay/` 与 `scripts/verify-browser-overlay.mjs`
 - 验证结果：
+  - `node scripts/verify-browser-extension.mjs`
+  - `node scripts/verify-browser-overlay.mjs`
+  - `npm run check`
 - 遗留问题：
+  - 20 站点人工兼容矩阵还没有逐站执行，当前只是规则和脚本级验证
+  - 主按钮和预览动作目前只记录 `window.__ucaOverlayLastAction`，还没真正直连 UCA 提交流程
+  - 富文本复杂站点的 `MutationObserver / ResizeObserver` 专项适配尚未接入
 - 交接给下一个任务：
+  - 后续扩展优化可以直接复用 `browser_ext/content_script/rules.js`、`placement.js`、`stability-watcher.js`
+  - 若需要将浮标动作真正提交到 UCA，可从 `window.__ucaOverlayLastAction` 与现有 Native Messaging 通路继续接

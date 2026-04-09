@@ -7,6 +7,7 @@
 - [protocols/](protocols/) contains frozen contract definitions and bridge protocol documents.
 - [risks/](risks/) contains the current risk register.
 - [action_tools/](action_tools/) contains tool authoring and risk guidance.
+- [browser_overlay/](browser_overlay/) contains browser-only floating chip rules and test references.
 - [privacy/](privacy/) contains privacy policy and data-flow references.
 - [scheduler/](scheduler/) contains trigger, cron, and misfire references.
 - [runtime/](runtime/) contains install and runtime notes for active integrations.

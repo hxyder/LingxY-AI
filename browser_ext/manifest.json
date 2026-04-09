@@ -23,6 +23,9 @@
         "<all_urls>"
       ],
       "js": [
+        "content_script/rules.js",
+        "content_script/placement.js",
+        "content_script/stability-watcher.js",
         "content_script/selection-cache.js"
       ],
       "run_at": "document_idle"

@@ -12,6 +12,26 @@
         <p class="eyebrow">Universal Context Agent</p>
         <h1>最近任务</h1>
       </header>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>浏览器浮标</h2>
+          <span id="overlay-status" class="status-pill">加载中</span>
+        </div>
+        <label class="field">
+          <span>显示模式</span>
+          <select id="display-mode">
+            <option value="smart">智能显示</option>
+            <option value="long_selection_only">仅长选区</option>
+            <option value="manual">仅手动</option>
+          </select>
+        </label>
+        <label class="field toggle">
+          <input id="overlay-enabled" type="checkbox" checked />
+          <span>启用浮标</span>
+        </label>
+      </section>
+
       <ul id="task-list" class="task-list"></ul>
       <button id="open-console" class="open-console" type="button">打开主控制台</button>
     </main>

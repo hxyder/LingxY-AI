@@ -21,8 +21,37 @@ export const CONTEXT_MENU_DEFINITIONS = Object.freeze([
   }
 ]);
 
+export const DEFAULT_OVERLAY_SETTINGS = Object.freeze({
+  enabled: true,
+  displayMode: "smart",
+  minLength: 5,
+  longSelectionMinLength: 32,
+  autoHideMs: 5000,
+  previewDelayMs: 300,
+  debounceMs: 150,
+  stabilityMs: 200,
+  blockedDomains: ["mail.google.com", "outlook.live.com"],
+  blacklistMode: "suffix"
+});
+
 export function createContextMenuDefinitions() {
   return CONTEXT_MENU_DEFINITIONS.map((item) => ({ ...item }));
+}
+
+async function ensureOverlayDefaults(chromeApi = chrome) {
+  const stored = await chromeApi.storage.local.get(["ucaOverlaySettings", "ucaOverlaySecurityState"]);
+  if (!stored.ucaOverlaySettings) {
+    await chromeApi.storage.local.set({
+      ucaOverlaySettings: DEFAULT_OVERLAY_SETTINGS
+    });
+  }
+  if (!stored.ucaOverlaySecurityState) {
+    await chromeApi.storage.local.set({
+      ucaOverlaySecurityState: {
+        presenterMode: false
+      }
+    });
+  }
 }
 
 export function buildNativeRequest({ menuItemId, info, tab, selectionState }) {
@@ -74,10 +103,11 @@ export function buildNativeRequest({ menuItemId, info, tab, selectionState }) {
 }
 
 export function registerExtensionRuntime(chromeApi = chrome) {
-  chromeApi.runtime.onInstalled.addListener(() => {
+  chromeApi.runtime.onInstalled.addListener(async () => {
     for (const item of createContextMenuDefinitions()) {
       chromeApi.contextMenus.create(item);
     }
+    await ensureOverlayDefaults(chromeApi);
   });
 
   chromeApi.contextMenus.onClicked.addListener(async (info, tab) => {
@@ -94,6 +124,31 @@ export function registerExtensionRuntime(chromeApi = chrome) {
     });
 
     chromeApi.runtime.sendNativeMessage("com.uca.host", request);
+  });
+
+  chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "uca.overlay.getSettings") {
+      chromeApi.storage.local.get(["ucaOverlaySettings", "ucaOverlaySecurityState"]).then((data) => {
+        sendResponse({
+          settings: data.ucaOverlaySettings ?? DEFAULT_OVERLAY_SETTINGS,
+          securityState: data.ucaOverlaySecurityState ?? { presenterMode: false }
+        });
+      });
+      return true;
+    }
+
+    if (message?.type === "uca.overlay.updateSettings") {
+      const merged = {
+        ...DEFAULT_OVERLAY_SETTINGS,
+        ...(message.patch ?? {})
+      };
+      chromeApi.storage.local.set({
+        ucaOverlaySettings: merged
+      }).then(() => sendResponse({ ok: true, settings: merged }));
+      return true;
+    }
+
+    return false;
   });
 }
 
