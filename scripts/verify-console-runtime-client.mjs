@@ -5,15 +5,17 @@ import { fileURLToPath } from "node:url";
 import { createPersistentRuntime } from "../src/service/core/persistent-runtime.mjs";
 import { createConsoleRuntimeClient } from "../src/desktop/console/runtime-client.mjs";
 import { createDesktopRuntimeHost } from "../src/desktop/tray/runtime-host.mjs";
+import { submitContextTask } from "../src/service/core/context-submission.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const runtimeDir = path.join(repoRoot, ".tmp", "verify-console-runtime-client", crypto.randomUUID());
+const pipeName = `\\\\.\\pipe\\uca-helper-console-runtime-client-${crypto.randomUUID()}`;
 
 const runtime = createPersistentRuntime({
   baseDir: runtimeDir,
   port: 0,
-  pipeName: "\\\\.\\pipe\\uca-helper-console-runtime-client"
+  pipeName
 });
 
 const listening = await runtime.start();
@@ -29,6 +31,22 @@ try {
     proposed_target: "notify",
     proposed_params: { title: "UCA" },
     preview_text: "Pending notify action",
+    status: "pending",
+    decided_at: null,
+    decided_by: null,
+    resulting_task_id: null,
+    metadata: {}
+  });
+  runtime.runtime.store.appendPendingApproval({
+    approval_id: "approval_console_reject",
+    created_at: "2026-04-08T12:10:00.000Z",
+    expires_at: "2026-04-15T12:10:00.000Z",
+    source_type: "agent_tool_call",
+    source_id: "task_console_reject",
+    proposed_action: "action_tool",
+    proposed_target: "notify",
+    proposed_params: { title: "Reject" },
+    preview_text: "Pending reject action",
     status: "pending",
     decided_at: null,
     decided_by: null,
@@ -85,6 +103,16 @@ try {
       created_at: "2026-04-08T09:10:00.000Z"
     }
   });
+  const createdTask = await submitContextTask({
+    contextPacket: {
+      source_type: "clipboard",
+      source_app: "verify-console-runtime-client",
+      capture_mode: "manual",
+      text: "Console runtime client test payload"
+    },
+    userCommand: "请总结这段内容",
+    runtime: runtime.runtime
+  });
 
   const client = createConsoleRuntimeClient(listening.baseUrl);
   const snapshot = await client.loadWorkspaceSnapshot({
@@ -93,11 +121,49 @@ try {
   });
 
   assert.equal(snapshot.viewModels.console.codeCliEndpoint, "/ai/code-cli");
-  assert.equal(snapshot.viewModels.approvals.count, 1);
+  assert.equal(snapshot.viewModels.approvals.count, 2);
   assert.equal(snapshot.viewModels.schedules.schedules.length, 1);
   assert.equal(snapshot.viewModels.schedules.historyCount, 1);
   assert.equal(snapshot.viewModels.audit.total >= 1, true);
   assert.equal(snapshot.viewModels.history.resultCount, 1);
+
+  const detail = await client.loadTaskDetail(createdTask.task.task_id);
+  assert.equal(detail.viewModel.taskId, createdTask.task.task_id);
+  assert.equal(detail.viewModel.timeline.length >= 2, true);
+
+  const streamedEvents = [];
+  const subscription = client.subscribeTaskEvents(createdTask.task.task_id, {
+    onEvent(event) {
+      streamedEvents.push(event);
+      if (streamedEvents.length >= 2) {
+        subscription.close();
+      }
+    }
+  });
+  await subscription.promise;
+  assert.equal(streamedEvents.length >= 2, true);
+
+  const retryResult = await client.retryTask(createdTask.task.task_id);
+  assert.equal(retryResult.task.parent_task_id, createdTask.task.task_id);
+
+  const cancelResult = await client.cancelTask(createdTask.task.task_id);
+  assert.equal(cancelResult.task.task_id, createdTask.task.task_id);
+
+  const approved = await client.approveApproval("approval_console", {
+    actor: "verify-console-runtime-client"
+  });
+  assert.equal(approved.approval.status, "approved");
+
+  const rejected = await client.rejectApproval("approval_console_reject", {
+    actor: "verify-console-runtime-client",
+    reason: "manual test"
+  });
+  assert.equal(rejected.approval.status, "rejected");
+
+  const runNow = await client.runScheduleNow("schedule_console", {
+    source: "verify-console-runtime-client"
+  });
+  assert.equal(runNow.status === "success" || runNow.status === "pending_approval", true);
 
   const host = createDesktopRuntimeHost({
     serviceBaseUrl: listening.baseUrl

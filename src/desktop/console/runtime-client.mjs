@@ -6,6 +6,7 @@ import { buildBudgetDashboardViewModel } from "./budget_dashboard/view-model.mjs
 import { buildHistorySearchViewModel } from "./history_search/view-model.mjs";
 import { buildAuditLogViewerModel } from "./audit_log_viewer/view-model.mjs";
 import { buildConsoleFiltersViewModel } from "./filters/view-model.mjs";
+import { buildTaskDetailViewModel } from "./task-detail/view-model.mjs";
 
 async function readJson(response) {
   const text = await response.text();
@@ -36,6 +37,10 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
     getTask(taskId) {
       return fetchJson(`/task/${encodeURIComponent(taskId)}`);
     },
+    getTaskEvents(taskId, since = null) {
+      const search = since ? `?since=${encodeURIComponent(since)}` : "";
+      return fetchJson(`/task/${encodeURIComponent(taskId)}/events${search}`);
+    },
     getApprovals() {
       return fetchJson("/approvals");
     },
@@ -65,6 +70,125 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
         },
         body: JSON.stringify({ query, limit })
       });
+    },
+    cancelTask(taskId) {
+      return fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, {
+        method: "POST"
+      });
+    },
+    retryTask(taskId, {
+      mode = "retry_same",
+      overrides = {}
+    } = {}) {
+      return fetchJson(`/task/${encodeURIComponent(taskId)}/retry`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          mode,
+          overrides
+        })
+      });
+    },
+    approveApproval(approvalId, options = {}) {
+      return fetchJson(`/approvals/${encodeURIComponent(approvalId)}/approve`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(options)
+      });
+    },
+    rejectApproval(approvalId, options = {}) {
+      return fetchJson(`/approvals/${encodeURIComponent(approvalId)}/reject`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(options)
+      });
+    },
+    runScheduleNow(scheduleId, triggerPayload = {}) {
+      return fetchJson(`/schedules/${encodeURIComponent(scheduleId)}/runs`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          triggerPayload
+        })
+      });
+    },
+    async loadTaskDetail(taskId) {
+      const payload = await this.getTask(taskId);
+      return {
+        raw: payload,
+        viewModel: buildTaskDetailViewModel(
+          payload.task,
+          payload.events ?? [],
+          payload.artifacts ?? []
+        )
+      };
+    },
+    subscribeTaskEvents(taskId, {
+      since = null,
+      onEvent = () => {},
+      signal = null
+    } = {}) {
+      const controller = new AbortController();
+      const cleanup = [];
+      if (signal) {
+        const abort = () => controller.abort();
+        signal.addEventListener("abort", abort, { once: true });
+        cleanup.push(() => signal.removeEventListener("abort", abort));
+      }
+
+      const promise = (async () => {
+        const search = since ? `?since=${encodeURIComponent(since)}` : "";
+        const response = await fetch(`${baseUrl}/task/${encodeURIComponent(taskId)}/events${search}`, {
+          headers: {
+            Accept: "text/event-stream"
+          },
+          signal: controller.signal
+        });
+        if (!response.ok || !response.body) {
+          throw new Error(`Failed to subscribe task events: ${taskId}`);
+        }
+
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        for await (const chunk of response.body) {
+          buffer += decoder.decode(chunk, { stream: true });
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary !== -1) {
+            const frame = buffer.slice(0, boundary);
+            buffer = buffer.slice(boundary + 2);
+            const parsed = parseSseFrame(frame);
+            if (parsed) {
+              onEvent(parsed);
+            }
+            boundary = buffer.indexOf("\n\n");
+          }
+        }
+      })().catch((error) => {
+        if (error.name === "AbortError") {
+          return null;
+        }
+        throw error;
+      }).finally(() => {
+        for (const release of cleanup) {
+          release();
+        }
+      });
+
+      return {
+        close() {
+          controller.abort();
+        },
+        promise
+      };
     },
     async loadWorkspaceSnapshot({
       historyQuery = "",
@@ -132,4 +256,35 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
       };
     }
   };
+}
+
+function parseSseFrame(frame) {
+  const parsed = {
+    id: null,
+    event: "message",
+    data: null
+  };
+  for (const line of frame.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+    if (line.startsWith("id:")) {
+      parsed.id = line.slice(3).trim();
+      continue;
+    }
+    if (line.startsWith("event:")) {
+      parsed.event = line.slice(6).trim();
+      continue;
+    }
+    if (line.startsWith("data:")) {
+      const payloadText = line.slice(5).trim();
+      parsed.data = payloadText ? JSON.parse(payloadText) : null;
+    }
+  }
+
+  if (!parsed.id && !parsed.data) {
+    return null;
+  }
+
+  return parsed;
 }

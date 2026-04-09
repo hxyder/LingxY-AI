@@ -298,6 +298,15 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         });
       }
 
+      if (scheduleRunsMatch && method === "POST") {
+        const body = await readJsonBody(request);
+        const result = await runtime.scheduler.dispatch(scheduleRunsMatch[1], "manual", body.triggerPayload ?? {});
+        if (!result) {
+          return sendJson(response, 404, { error: "schedule_not_found" });
+        }
+        return sendJson(response, 200, result);
+      }
+
       if (method === "GET" && url.pathname === "/templates") {
         return sendJson(response, 200, {
           templates: runtime.platform.templateRegistry.list()
