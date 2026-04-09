@@ -58,3 +58,4 @@ Current implemented slices include:
 - action tool registry and execution-mode-aware tool loop scaffold
 - security broker, presenter mode, offline gating, and redaction scaffold
 - scheduler, pending approvals, misfire handling, and schedule management scaffold
+- platform foundation scaffold for templates, DAG orchestration, budget controls, executor routing, and local history search

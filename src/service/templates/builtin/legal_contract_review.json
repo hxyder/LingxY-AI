@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "id": "legal.contract.review",
+  "name": "合同条款审查",
+  "description": "读取合同文本并输出风险摘要。",
+  "version": "1.0.0",
+  "input": {
+    "source_types": ["file", "file_group"]
+  },
+  "steps": [
+    {
+      "id": "extract",
+      "kind": "executor",
+      "target": "pdf_ocr",
+      "inputs": {
+        "source": "${context.file_paths[0]}"
+      }
+    },
+    {
+      "id": "analyze",
+      "kind": "executor",
+      "target": "kimi",
+      "inputs": {
+        "prompt": "审查合同条款并总结风险。"
+      }
+    },
+    {
+      "id": "report",
+      "kind": "executor",
+      "target": "fast",
+      "inputs": {
+        "prompt": "整理成中文报告。"
+      }
+    }
+  ],
+  "output": {
+    "primary": "${steps.report.result}"
+  },
+  "cost_estimate": {
+    "tokens_in": 30000,
+    "tokens_out": 5000
+  }
+}

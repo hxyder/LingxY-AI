@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "id": "academic.paper.summary",
+  "name": "学术论文总结",
+  "description": "提炼论文摘要、方法、结论。",
+  "version": "1.0.0",
+  "input": {
+    "source_types": ["file", "file_group"]
+  },
+  "steps": [
+    {
+      "id": "extract",
+      "kind": "executor",
+      "target": "pdf_ocr",
+      "inputs": {
+        "source": "${context.file_paths[0]}"
+      }
+    },
+    {
+      "id": "summarize",
+      "kind": "executor",
+      "target": "fast",
+      "inputs": {
+        "prompt": "总结论文重点、创新点和局限。"
+      }
+    }
+  ],
+  "output": {
+    "primary": "${steps.summarize.result}"
+  },
+  "cost_estimate": {
+    "tokens_in": 18000,
+    "tokens_out": 3000
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "schema_version": "1.0",
+  "id": "email.draft.followup",
+  "name": "邮件起草",
+  "description": "根据当前上下文生成跟进邮件草稿。",
+  "version": "1.0.0",
+  "input": {
+    "source_types": ["clipboard", "office_selection", "text_selection", "file", "file_group"]
+  },
+  "steps": [
+    {
+      "id": "draft",
+      "kind": "executor",
+      "target": "fast",
+      "inputs": {
+        "prompt": "起草一封语气专业、简洁的跟进邮件。"
+      }
+    },
+    {
+      "id": "compose",
+      "kind": "action_tool",
+      "target": "compose_email",
+      "inputs": {
+        "subject": "后续跟进",
+        "body": "${steps.draft.result}"
+      }
+    }
+  ],
+  "output": {
+    "primary": "${steps.draft.result}"
+  },
+  "cost_estimate": {
+    "tokens_in": 4000,
+    "tokens_out": 1200
+  }
+}

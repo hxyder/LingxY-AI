@@ -34,6 +34,14 @@ if (!service.runtime.officeHttps) {
   throw new Error("Office HTTPS scaffold is missing.");
 }
 
+if (!service.runtime.executorRegistry) {
+  throw new Error("Executor registry scaffold is missing.");
+}
+
+if (!service.runtime.platform) {
+  throw new Error("Platform foundation scaffold is missing.");
+}
+
 const route = service.routeIntent("请帮我总结剪贴板内容");
 if (route.intent !== "summarize") {
   throw new Error("Intent router scaffold did not resolve summarize.");
@@ -63,6 +71,22 @@ if (service.endpoints.browserNativeHost !== "native://com.uca.host") {
 
 if (service.endpoints.metrics !== "/metrics") {
   throw new Error("Metrics endpoint manifest is invalid.");
+}
+
+if (service.endpoints.getTemplates !== "/templates") {
+  throw new Error("Templates endpoint manifest is invalid.");
+}
+
+if (service.endpoints.postDagPreview !== "/dag/preview") {
+  throw new Error("DAG preview endpoint manifest is invalid.");
+}
+
+if (service.endpoints.getBudget !== "/budget") {
+  throw new Error("Budget endpoint manifest is invalid.");
+}
+
+if (service.endpoints.postHistorySearch !== "/history/search") {
+  throw new Error("History search endpoint manifest is invalid.");
 }
 
 if (service.endpoints.cancelTask !== "/task/:id/cancel") {
@@ -119,6 +143,26 @@ if (service.runtime.metrics.snapshot().queue_depth !== 0) {
 
 if (service.runtime.actionToolRegistry.list().length !== 16) {
   throw new Error("Action tool registry scaffold did not initialize correctly.");
+}
+
+if (service.runtime.platform.templateRegistry.list().length < 5) {
+  throw new Error("Builtin template registry scaffold did not initialize correctly.");
+}
+
+if (service.runtime.platform.aiProviders.list().length < 4) {
+  throw new Error("AI provider registry scaffold did not initialize correctly.");
+}
+
+if (service.runtime.platform.codeCliAdapters.list().length < 2) {
+  throw new Error("Code CLI registry scaffold did not initialize correctly.");
+}
+
+if (service.runtime.platform.mcpServers.list().length < 2) {
+  throw new Error("MCP registry scaffold did not initialize correctly.");
+}
+
+if (service.runtime.platform.skillRegistries.list().length < 1) {
+  throw new Error("Skill registry scaffold did not initialize correctly.");
 }
 
 console.log("Service core scaffold verification passed.");
