@@ -11,6 +11,7 @@ import { captureOfficeSelection, submitOfficeSelection } from "../office_addin/s
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const tmpRoot = path.join(repoRoot, ".tmp", "verify-native-integrations", crypto.randomUUID());
+const verifyPipeName = `\\\\.\\pipe\\uca-helper-explorer-selection-${crypto.randomUUID()}`;
 
 async function cleanupTempDir(directory) {
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -92,7 +93,8 @@ async function runNativeHost(hostExe, message, env) {
 await mkdir(tmpRoot, { recursive: true });
 const runtime = createPersistentRuntime({
   baseDir: path.join(tmpRoot, "runtime"),
-  port: 0
+  port: 0,
+  pipeName: verifyPipeName
 });
 
 try {

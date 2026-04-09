@@ -1,6 +1,7 @@
 import path from "node:path";
-import { readFile, unlink } from "node:fs/promises";
+import { readdir, readFile, unlink, watch } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import os from "node:os";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -43,9 +44,13 @@ export function createElectronShellRuntime({
   const windows = new Map();
   const readyWindows = new Set();
   const pendingWindowMessages = new Map();
+  const handoffDir = path.join(os.homedir(), "AppData", "Local", "UCA", "handoffs", "explorer");
+  const handoffFilePattern = /^prompt-handoff-.*\.json$/i;
+  const processedHandoffFiles = new Set();
   let tray = null;
   let quitting = false;
   let resolvedServiceBaseUrl = serviceBaseUrl;
+  let handoffWatcher = null;
 
   function enqueueWindowMessage(windowId, channel, payload) {
     const target = windows.get(windowId);
@@ -105,6 +110,78 @@ export function createElectronShellRuntime({
     }
 
     return false;
+  }
+
+  async function consumeHandoffFile(handoffFile) {
+    if (!handoffFilePattern.test(path.basename(handoffFile))) {
+      return false;
+    }
+    if (processedHandoffFiles.has(handoffFile)) {
+      return false;
+    }
+
+    processedHandoffFiles.add(handoffFile);
+    try {
+      const raw = await readFile(handoffFile, "utf8");
+      const payload = JSON.parse(raw);
+      await unlink(handoffFile).catch(() => {});
+      showWindow("overlay");
+      enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
+        ...payload,
+        targetWindow: "overlay"
+      });
+      return true;
+    } finally {
+      processedHandoffFiles.delete(handoffFile);
+    }
+  }
+
+  async function drainHandoffDirectory() {
+    try {
+      const entries = await readdir(handoffDir, { withFileTypes: true });
+      const handoffFiles = entries
+        .filter((entry) => entry.isFile() && handoffFilePattern.test(entry.name))
+        .map((entry) => path.join(handoffDir, entry.name))
+        .sort((left, right) => left.localeCompare(right));
+
+      for (const handoffFile of handoffFiles) {
+        await consumeHandoffFile(handoffFile);
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        console.error("Failed to drain explorer handoff directory", error);
+      }
+    }
+  }
+
+  async function startHandoffWatcher() {
+    await drainHandoffDirectory();
+
+    try {
+      handoffWatcher = watch(handoffDir);
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        console.error("Failed to watch explorer handoff directory", error);
+      }
+      return;
+    }
+
+    (async () => {
+      try {
+        for await (const event of handoffWatcher) {
+          if (!event.filename || !handoffFilePattern.test(event.filename)) {
+            continue;
+          }
+          await consumeHandoffFile(path.join(handoffDir, event.filename));
+        }
+      } catch (error) {
+        if (!quitting && error?.name !== "AbortError") {
+          console.error("Explorer handoff watcher stopped unexpectedly", error);
+        }
+      }
+    })().catch((error) => {
+      console.error("Explorer handoff watcher task failed", error);
+    });
   }
 
   function createWindows() {
@@ -224,6 +301,7 @@ export function createElectronShellRuntime({
       createWindows();
       createTray();
       registerShortcuts();
+      await startHandoffWatcher();
       app.on("second-instance", (_event, argv) => {
         handleLaunchArgs(argv).catch((error) => {
           console.error("Failed to process second-instance args", error);
@@ -248,6 +326,7 @@ export function createElectronShellRuntime({
       });
       app.on("before-quit", () => {
         quitting = true;
+        handoffWatcher?.return?.().catch?.(() => {});
       });
       await handleLaunchArgs(process.argv);
       return {

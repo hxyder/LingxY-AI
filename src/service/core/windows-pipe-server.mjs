@@ -67,9 +67,12 @@ export function createExplorerSelectionPipeServer({
       };
     },
     async stop() {
+      if (!server.listening) {
+        return;
+      }
       await new Promise((resolve, reject) => {
         server.close((error) => {
-          if (error) {
+          if (error && error.code !== "ERR_SERVER_NOT_RUNNING") {
             reject(error);
             return;
           }

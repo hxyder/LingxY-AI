@@ -514,9 +514,12 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       };
     },
     async stop() {
+      if (!server.listening) {
+        return;
+      }
       await new Promise((resolve, reject) => {
         server.close((error) => {
-          if (error) {
+          if (error && error.code !== "ERR_SERVER_NOT_RUNNING") {
             reject(error);
             return;
           }

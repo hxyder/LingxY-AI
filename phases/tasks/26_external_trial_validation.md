@@ -54,7 +54,7 @@
 - 执行分支：`task/uca-026-external-trial-validation`
 - 开始日期：2026-04-09
 - 完成日期：
-- 实际新增内容：新增 `docs/release/external_trial_checklist.md` 作为外部试用执行清单；新增 `docs/release/trial_feedback_template.md` 作为统一反馈模板；trial bundle 资产清单、release 文档入口和自动验证已同步接入这两份文档，方便直接随包发给测试者。
-- 验证结果：`node scripts/verify-release-readiness.mjs`、`npm run check`
-- 遗留问题：
-- 交接给下一个任务：
+- 实际新增内容：新增 `docs/release/external_trial_checklist.md` 作为外部试用执行清单；新增 `docs/release/trial_feedback_template.md` 作为统一反馈模板；trial bundle 资产清单、release 文档入口和自动验证已同步接入这两份文档，方便直接随包发给测试者；根据真实试用排障结果，补上了 Explorer helper 启动 Electron 时移除 `ELECTRON_RUN_AS_NODE`，并在 Electron 主进程加入 explorer handoff 目录监听与自动消费，避免右键文件后 handoff 残留、浮窗不出现。
+- 验证结果：`node scripts/verify-release-readiness.mjs`、`node scripts/verify-context-handoff-ui.mjs`、`npm run check`、helper `overlay_prompt` 实测返回成功且 handoff 文件在 3 秒内被桌面壳消费清空。
+- 遗留问题：仍需另一台新机器完成完整外部试用记录与 SmartScreen/Defender 观察。
+- 交接给下一个任务：当前机器上可直接按外部试用清单执行“右键文件 -> 浮窗输入 -> 提交任务”实测；下一步重点转到跨机器验证与反馈收集。

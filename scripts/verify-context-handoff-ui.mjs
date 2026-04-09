@@ -29,12 +29,15 @@ const mainProcess = await read("src/desktop/tray/electron-main.mjs");
 assert.equal(mainProcess.includes("requestSingleInstanceLock"), true);
 assert.equal(mainProcess.includes("--uca-handoff-file"), true);
 assert.equal(mainProcess.includes("shellContextReceived"), true);
+assert.equal(mainProcess.includes("drainHandoffDirectory"), true);
+assert.equal(mainProcess.includes("startHandoffWatcher"), true);
 
 const helperProgram = await read("src/helper/explorer_selection/UcaExplorerSelectionHelper/Program.cs");
 assert.equal(helperProgram.includes("overlay_prompt"), true);
 assert.equal(helperProgram.includes("--uca-open-overlay"), true);
 assert.equal(helperProgram.includes("explorer-selection-batch.json"), true);
 assert.equal(helperProgram.includes("--electron-cli"), true);
+assert.equal(helperProgram.includes("ELECTRON_RUN_AS_NODE"), true);
 
 const installScript = await read("scripts/install-explorer-entry.ps1");
 assert.equal(installScript.includes("UcaExplorerSelectionHelper.exe"), true);

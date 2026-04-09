@@ -181,6 +181,10 @@ if (launchMode == "overlay_prompt")
             startInfo.ArgumentList.Add("--uca-service-url");
             startInfo.ArgumentList.Add(serviceUrl);
         }
+        if (startInfo.Environment.ContainsKey("ELECTRON_RUN_AS_NODE"))
+        {
+            startInfo.Environment.Remove("ELECTRON_RUN_AS_NODE");
+        }
 
         Process.Start(startInfo);
         Console.WriteLine(JsonSerializer.Serialize(new
