@@ -25,6 +25,8 @@ logs/
 *.suo
 *.user
 *.userosscache
+bin/
+obj/
 
 # Python / OCR helpers
 .venv/
