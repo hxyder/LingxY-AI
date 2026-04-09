@@ -50,11 +50,11 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`task/uca-021-desktop-renderer`
 - 开始日期：2026-04-08
-- 完成日期：
-- 实际新增内容：新增 `src/desktop/renderer/` 真实 renderer 目录，包含 `console.html/.js`、`overlay.html/.js`、`shared.css` 和 `preload.cjs`；Electron main 从 data-url 占位页切换到本地 HTML 页面加载；新增 `uca:shell-show-window` / `uca:shell-hide-window` IPC；console 页面具备 runtime 状态、快速文本任务提交、最近任务列表的基础布局；overlay 页面具备快捷动作、输入框和提交按钮的基础布局；新增 `verify-desktop-renderer` 并接入全量校验。
-- 验证结果：`verify-structure`、`verify-desktop-shell`、`verify-desktop-renderer`、`npm run check` 均已通过。
-- 遗留问题：当前 renderer 还是基础功能层，尚未接入真正的文件右键输入弹窗、任务详情工作台、审批页和完整视觉体系；Electron 运行层还需要继续做体验打磨。
-- 交接给下一个任务：UCA-022 可直接复用 overlay renderer 和 preload bridge 做轻交互浮窗；UCA-023 可基于现有 shell window 生命周期接 Explorer 文件上下文弹窗；UCA-024 可直接在现有 console renderer 上继续扩展完整管理界面。
+- 完成日期：2026-04-09
+- 实际新增内容：新增 `src/desktop/renderer/` 真实 renderer 目录，包含 `console.html/.js`、`overlay.html/.js`、`shared.css` 和 `preload.cjs`；Electron main 从 data-url 占位页切换到本地 HTML 页面加载；新增 `uca:shell-show-window` / `uca:shell-hide-window` IPC；console 页面具备 runtime 状态、快速文本任务提交、最近任务列表的基础布局；overlay 页面具备快捷动作、输入框和提交按钮的基础布局；新增 `verify-desktop-renderer` 并接入全量校验；后续 UCA-022、UCA-023、UCA-024 已分别在此基础上补齐浮窗交互、文件右键输入和完整桌面工作台。
+- 验证结果：`verify-structure`、`verify-desktop-shell`、`verify-desktop-renderer`、`npm run check`、`powershell -ExecutionPolicy Bypass -File .\scripts\start-trial.ps1` 均已通过。
+- 遗留问题：桌面渲染基础层已完成，后续只剩持续的体验打磨与发布细化，不再属于本任务范围。
+- 交接给下一个任务：下一个阶段可直接复用完整 renderer 页面、preload bridge、窗口装载方式和已落地的 console / overlay / handoff UI。
