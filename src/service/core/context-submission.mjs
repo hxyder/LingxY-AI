@@ -1,5 +1,10 @@
 import crypto from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
+import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import { detectRequestedOutputFormat, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import {
@@ -13,6 +18,46 @@ import {
   unregisterActiveExecution,
   updateTask
 } from "./task-runtime.mjs";
+
+import {
+  hasAnyConfiguredProvider,
+  resolveProviderForTask,
+  resolveCodeCliRuntimeForTask,
+  describeCodeCliRuntime,
+  describeResolvedProvider
+} from "../executors/shared/provider-resolver.mjs";
+import { appendAuditLog } from "../security/audit-log.mjs";
+
+function hasFastProvider() {
+  return hasAnyConfiguredProvider();
+}
+
+function chatRoutedToCodeCli() {
+  const provider = resolveProviderForTask("chat");
+  return provider?.kind === "code_cli";
+}
+
+function hasChatApiProvider() {
+  const provider = resolveProviderForTask("chat");
+  return Boolean(provider && provider.kind !== "code_cli");
+}
+
+function hasFileOrImageContext(contextPacket = {}) {
+  return Boolean(contextPacket.file_paths?.length || contextPacket.image_paths?.length);
+}
+
+function shouldSaveToDesktop(userCommand = "") {
+  return /(?:桌面|desktop)/i.test(userCommand);
+}
+
+async function createOutputDirForTask({ runtime, artifactStore, task }) {
+  if (shouldSaveToDesktop(task.user_command)) {
+    const desktopDir = path.join(os.homedir(), "Desktop", "UCA", task.task_id);
+    await mkdir(desktopDir, { recursive: true });
+    return desktopDir;
+  }
+  return artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+}
 
 function normalizeContextPacket(contextPacket) {
   return {
@@ -42,16 +87,140 @@ function pickRunnableExecutor(task, runtime) {
   }
 
   if (task.executor === "tool_using") {
+    return runtime.executors?.find((executor) => executor.id === "tool_using")
+      ?? runtime.executors?.find((executor) => executor.id === "fast")
+      ?? null;
+  }
+
+  if (task.executor === "agentic") {
+    // Agentic executor accepts every provider kind. Native function-calling
+    // providers (anthropic / openai / ollama) drive the planner directly;
+    // code_cli providers go through the JSON planning-mode bridge in
+    // code-cli-bridge.mjs. Falls back to fast only if no provider is
+    // configured at all.
+    const provider = resolveProviderForTask("chat");
+    const agenticExecutor = runtime.executors?.find((executor) => executor.id === "agentic");
+    if (agenticExecutor && provider) {
+      return agenticExecutor;
+    }
     return runtime.executors?.find((executor) => executor.id === "fast") ?? null;
   }
 
-  if (task.executor === "kimi" && !runtime.kimiRuntime) {
+  if ((task.executor === "kimi" || task.executor === "code_cli") && !resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime)) {
     return runtime.executors?.find((executor) => executor.id === "fast") ?? null;
   }
 
   return runtime.executors?.find((executor) => executor.id === task.executor)
     ?? runtime.executors?.find((executor) => executor.id === "fast")
     ?? null;
+}
+
+function attachProviderFieldsToEvent(descriptor, payload) {
+  if (!descriptor) return payload ?? {};
+  const base = payload ?? {};
+  return {
+    ...base,
+    provider_id: descriptor.provider_id ?? null,
+    provider_kind: descriptor.provider_kind ?? null,
+    provider_name: descriptor.provider_name ?? null,
+    model: descriptor.model ?? null,
+    transport: descriptor.transport ?? null
+  };
+}
+
+async function runKimiExecutor({ task, runtime, store, queue, artifactStore, markFailure = true, cliRuntime = null, providerDescriptor = null }) {
+  const controller = new AbortController();
+  registerActiveExecution(runtime, task.task_id, {
+    cancel: async () => controller.abort()
+  });
+
+  const activeCliRuntime = cliRuntime ?? resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime);
+  if (!activeCliRuntime) {
+    if (markFailure) {
+      markTaskFailed(runtime, task, { message: "No code_cli runtime resolved for task." });
+    }
+    unregisterActiveExecution(runtime, task.task_id);
+    return { status: "failed", artifacts: [] };
+  }
+  const activeDescriptor = providerDescriptor ?? describeCodeCliRuntime(activeCliRuntime);
+
+  try {
+    queue.markRunning(task.task_id);
+    updateTask(runtime, task, {
+      status: "running",
+      sub_status: "starting_executor"
+    }, true);
+
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "provider_resolved",
+      payload: attachProviderFieldsToEvent(activeDescriptor, { task_type: "chat" })
+    });
+    appendAuditLog(runtime, "ai.provider_resolved", {
+      task_id: task.task_id,
+      task_type: "chat",
+      ...activeDescriptor
+    }, task.task_id);
+
+    const outputDir = await createOutputDirForTask({ runtime, artifactStore, task });
+    const taskPackage = buildKimiTaskPackage({ task, outputDir });
+    const execution = await executeKimiTask({
+      command: activeCliRuntime.command,
+      args: activeCliRuntime.args,
+      env: activeCliRuntime.env,
+      taskPackage,
+      transport: activeCliRuntime.transport,
+      model: activeCliRuntime.model,
+      configFile: activeCliRuntime.configFile,
+      mcpConfigFiles: activeCliRuntime.mcpConfigFiles,
+      maxRuntimeSeconds: activeCliRuntime.maxRuntimeSeconds ?? 600,
+      abortSignal: controller.signal,
+      onEvent(event) {
+        emitTaskEvent({
+          runtime,
+          taskId: task.task_id,
+          eventType: event.type,
+          payload: attachProviderFieldsToEvent(activeDescriptor, event)
+        });
+        applyExecutorEvent(runtime, task, event);
+      }
+    });
+
+    if (execution.status === "cancelled") {
+      if (markFailure) {
+        markTaskFailed(runtime, task, { code: "ABORT_ERR", summary: "Kimi CLI execution cancelled." });
+      }
+      return { status: task.status, artifacts: [] };
+    }
+
+    if (execution.status !== "success") {
+      if (markFailure) {
+        markTaskFailed(runtime, task, { exitCode: execution.exitCode, message: `Kimi CLI failed with exit code ${execution.exitCode ?? "unknown"}` });
+      }
+      return { status: "failed", artifacts: [], stderrPath: execution.stderrPath, exitCode: execution.exitCode };
+    }
+
+    const artifactRecords = execution.artifacts.map((artifact) =>
+      artifactStore.registerArtifact(task.task_id, artifact.path, artifact.mime_type)
+    );
+    for (const record of artifactRecords) {
+      store.appendArtifact(record);
+    }
+
+    if (task.status !== "success") {
+      updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
+    }
+    markTaskSucceeded(runtime, task);
+    return { status: "success", artifacts: artifactRecords };
+  } catch (error) {
+    if (markFailure) {
+      markTaskFailed(runtime, task, error);
+    }
+    return { status: "failed", artifacts: [], error };
+  } finally {
+    unregisterActiveExecution(runtime, task.task_id);
+  }
 }
 
 async function runExecutor({ runtime, task, executor }) {
@@ -68,13 +237,42 @@ async function runExecutor({ runtime, task, executor }) {
     sub_status: `${executor.id}_executor`
   }, true);
 
+  // Surface the provider that this task is actually going to call. The fast /
+  // tool_using / multi_modal executors each resolve the provider themselves,
+  // but we record it here so Console + verify scripts see one canonical
+  // `provider_resolved` event per task.
+  const resolvedProvider = resolveProviderForTask(executor.id === "multi_modal" ? "vision" : "chat");
+  const executorDescriptor = describeResolvedProvider(resolvedProvider);
+  if (executorDescriptor) {
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "provider_resolved",
+      payload: attachProviderFieldsToEvent(executorDescriptor, {
+        task_type: executor.id === "multi_modal" ? "vision" : "chat",
+        executor_id: executor.id
+      })
+    });
+    appendAuditLog(runtime, "ai.provider_resolved", {
+      task_id: task.task_id,
+      task_type: executor.id === "multi_modal" ? "vision" : "chat",
+      executor_id: executor.id,
+      ...executorDescriptor
+    }, task.task_id);
+  }
+
+  // Stash runtime on task so executors that need runtime context (e.g. tool_using) can access it
+  task.__runtime = runtime;
+
   try {
     for await (const event of executor.execute(task, { signal: controller.signal })) {
       emitTaskEvent({
         runtime,
         taskId: task.task_id,
         eventType: event.event_type,
-        payload: event.payload
+        payload: executorDescriptor
+          ? attachProviderFieldsToEvent(executorDescriptor, event.payload)
+          : event.payload
       });
       if (event.event_type === "inline_result" || event.event_type === "success") {
         inlineText = event.payload?.text ?? event.payload?.summary ?? inlineText;
@@ -92,7 +290,7 @@ async function runExecutor({ runtime, task, executor }) {
 
     const requestedFormat = detectRequestedOutputFormat(task.user_command);
     if (requestedFormat.id !== "conversational" && generatedArtifacts.length === 0) {
-      const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+      const outputDir = await createOutputDirForTask({ runtime, artifactStore, task });
       const artifacts = await writeRequestedArtifacts({
         assistantText: inlineText || task.context_packet?.text || task.user_command,
         outputDir,
@@ -199,10 +397,88 @@ export async function submitContextTask({
       }
     });
     markTaskSucceeded(runtime, task);
+    // Return the original task's events+artifacts so clients see the cached result
+    const dedupedTaskId = enqueued.dedupedTaskId;
+    const originalTask = dedupedTaskId ? store.getTask(dedupedTaskId) : null;
+    const originalEvents = dedupedTaskId ? store.getTaskEvents(dedupedTaskId) : [];
+    const originalArtifacts = dedupedTaskId ? store.getArtifactsForTask(dedupedTaskId) : [];
+    return {
+      task: originalTask ?? task,
+      taskEvents: originalEvents.length > 0 ? originalEvents : store.getTaskEvents(task.task_id),
+      artifacts: originalArtifacts
+    };
+  }
+
+  // route to code_cli (Kimi/Claude CLI/etc.) if:
+  // 1. task explicitly uses the kimi/code_cli executor
+  // 2. fast executor has no API provider configured
+  // 3. user routed chat to a code_cli provider (e.g. their own Kimi/Claude CLI)
+  // The dedicated `translate` executor never delegates — it uses the free
+  // translator client directly. Neither does `agentic`: if the user asked
+  // for multi-step tool use, we honour that intent and let pickRunnableExecutor
+  // decide whether to actually run the agentic executor or fall back to fast.
+  const shouldUseKimi = task.executor !== "translate"
+    && task.executor !== "agentic"
+    && ((task.executor === "kimi" || task.executor === "code_cli")
+      || (task.executor === "fast" && !hasFastProvider())
+      || (task.executor === "general" && !hasFastProvider())
+      || chatRoutedToCodeCli());
+
+  const requestedFormat = detectRequestedOutputFormat(task.user_command);
+  const shouldPreferProviderArtifactFlow = requestedFormat.id !== "conversational"
+    && hasChatApiProvider()
+    && !hasFileOrImageContext(normalizedContextPacket);
+
+  if (shouldPreferProviderArtifactFlow && (task.executor === "kimi" || task.executor === "code_cli")) {
+    task.executor = "fast";
+    store.updateTask(task.task_id, task);
+  }
+
+  // Resolve the code_cli runtime *per task* so that provider switches in the
+  // UI take effect on the next submission without needing a service restart.
+  const resolvedCliRuntime = resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime);
+
+  if (shouldUseKimi && resolvedCliRuntime && !shouldPreferProviderArtifactFlow) {
+    const artifactStore = runtime.artifactStore ?? createArtifactStore();
+    const allowFallback = !hasFileOrImageContext(normalizedContextPacket);
+    const providerDescriptor = describeCodeCliRuntime(resolvedCliRuntime);
+    const kimiResult = await runKimiExecutor({
+      task,
+      runtime,
+      store,
+      queue,
+      artifactStore,
+      markFailure: !allowFallback,
+      cliRuntime: resolvedCliRuntime,
+      providerDescriptor
+    });
+    if (kimiResult.status !== "success" && allowFallback) {
+      const fallbackExecutor = runtime.executors?.find((executor) => executor.id === "fast");
+      if (fallbackExecutor) {
+        updateTask(runtime, task, {
+          status: "queued",
+          sub_status: "fallback_to_fast_executor",
+          failure_category: null,
+          failure_user_message: null,
+          failure_internal_log_excerpt: null
+        }, true);
+        task.executor = "fast";
+        store.updateTask(task.task_id, task);
+        const fallbackResult = await runExecutor({ runtime, task, executor: fallbackExecutor });
+        return {
+          task,
+          taskEvents: store.getTaskEvents(task.task_id),
+          artifacts: fallbackResult.artifacts ?? []
+        };
+      }
+      markTaskFailed(runtime, task, {
+        message: `Kimi CLI failed with exit code ${kimiResult.exitCode ?? "unknown"}`
+      });
+    }
     return {
       task,
       taskEvents: store.getTaskEvents(task.task_id),
-      artifacts: []
+      artifacts: kimiResult.artifacts ?? []
     };
   }
 

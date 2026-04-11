@@ -3,6 +3,24 @@ import { buildFileContextPacket } from "../extractors/file-ingest.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
+import {
+  resolveKimiRuntimeForTask,
+  describeCodeCliRuntime
+} from "../executors/shared/provider-resolver.mjs";
+import { appendAuditLog } from "../security/audit-log.mjs";
+
+function attachProviderFieldsToEvent(descriptor, payload) {
+  if (!descriptor) return payload ?? {};
+  const base = payload ?? {};
+  return {
+    ...base,
+    provider_id: descriptor.provider_id ?? null,
+    provider_kind: descriptor.provider_kind ?? null,
+    provider_name: descriptor.provider_name ?? null,
+    model: descriptor.model ?? null,
+    transport: descriptor.transport ?? null
+  };
+}
 import { routeIntent } from "./router/intent-router.mjs";
 import {
   applyExecutorEvent,
@@ -32,8 +50,16 @@ export async function submitFileTask({
   const queue = runtime.queue;
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const route = routeIntent(userCommand);
+  // file-submission specialises in file-backed analysis, which the Kimi CLI
+  // handles natively via its task package. When the router upgrades the
+  // executor to agentic (because analyze+generate_report tags trigger the
+  // new planner), we still prefer kimi here IF a kimi runtime is available —
+  // the agentic planner doesn't currently read attached files, and the
+  // existing kimi path is the authoritative file-analysis flow. Commit 3
+  // will add an agentic file-reading branch; until then "agentic on files"
+  // degrades gracefully to "kimi on files".
   const preferredExecutorOverride = executorOverride
-    ?? ((runtime.kimiRuntime && ["fast", "none"].includes(route.executor)) ? "kimi" : null);
+    ?? ((runtime.kimiRuntime && ["fast", "none", "agentic"].includes(route.executor)) ? "kimi" : null);
   const rawContextPacket = await buildFileContextPacket({
     filePaths,
     captureMode,
@@ -102,9 +128,15 @@ export async function submitFileTask({
     };
   }
 
-  if (task.executor !== "kimi" || !runtime.kimiRuntime) {
+  // Use user-routed CLI for file_analysis if configured, else boot-time kimiRuntime.
+  // Resolved per-task so provider switches in the UI apply to the next submission.
+  const cliRuntime = resolveKimiRuntimeForTask("file_analysis", runtime.kimiRuntime);
+
+  if ((task.executor !== "kimi" && task.executor !== "code_cli") || !cliRuntime) {
     return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
   }
+
+  const providerDescriptor = describeCodeCliRuntime(cliRuntime);
 
   const controller = new AbortController();
   registerActiveExecution(runtime, task.task_id, {
@@ -118,25 +150,37 @@ export async function submitFileTask({
       sub_status: "starting_executor"
     }, true);
 
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "provider_resolved",
+      payload: attachProviderFieldsToEvent(providerDescriptor, { task_type: "file_analysis" })
+    });
+    appendAuditLog(runtime, "ai.provider_resolved", {
+      task_id: task.task_id,
+      task_type: "file_analysis",
+      ...providerDescriptor
+    }, task.task_id);
+
     const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
     const taskPackage = buildKimiTaskPackage({ task, outputDir });
     const execution = await executeKimiTask({
-      command: runtime.kimiRuntime.command,
-      args: runtime.kimiRuntime.args,
-      env: runtime.kimiRuntime.env,
+      command: cliRuntime.command,
+      args: cliRuntime.args,
+      env: cliRuntime.env,
       taskPackage,
-      transport: runtime.kimiRuntime.transport,
-      model: runtime.kimiRuntime.model,
-      configFile: runtime.kimiRuntime.configFile,
-      mcpConfigFiles: runtime.kimiRuntime.mcpConfigFiles,
-      maxRuntimeSeconds: runtime.kimiRuntime.maxRuntimeSeconds ?? 600,
+      transport: cliRuntime.transport,
+      model: cliRuntime.model,
+      configFile: cliRuntime.configFile,
+      mcpConfigFiles: cliRuntime.mcpConfigFiles,
+      maxRuntimeSeconds: cliRuntime.maxRuntimeSeconds ?? 600,
       abortSignal: controller.signal,
       onEvent(event) {
         emitTaskEvent({
           runtime,
           taskId: task.task_id,
           eventType: event.type,
-          payload: event
+          payload: attachProviderFieldsToEvent(providerDescriptor, event)
         });
         applyExecutorEvent(runtime, task, event);
       }

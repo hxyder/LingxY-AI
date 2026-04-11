@@ -53,6 +53,13 @@ export function createPersistentRuntime({
   });
   const config = configStore.load();
   const kimiConfig = config.ai?.codeCli?.kimi ?? {};
+  // Boot-time Kimi runtime resolution is now strictly a *last-resort fallback*
+  // for fresh installs where the user has not configured any AI provider yet.
+  // Every submission path re-resolves the active code_cli runtime per task via
+  // `resolveCodeCliRuntimeForTask`, which reads `config.ai.customProviders` +
+  // `config.ai.taskRouting` on every call. That means the user can switch
+  // providers in Console → Settings and the next task immediately respects it
+  // without a service restart. See UCA-049 bug #7.
   const resolvedKimiRuntime = resolveKimiRuntime({
     explicitRuntime: kimiRuntime,
     config: kimiConfig
@@ -83,6 +90,7 @@ export function createPersistentRuntime({
     runtime: service.runtime,
     pipeName
   });
+  let schedulePollTimer = null;
 
   recoverInterruptedTasks(service.runtime);
   service.runtime.securityBroker.recoverRedactionStateLost();
@@ -107,10 +115,21 @@ export function createPersistentRuntime({
         port: listening.port,
         pipe_name: pipeState.pipeName
       });
+      schedulePollTimer = setInterval(() => {
+        service.runtime.scheduler.runDueSchedules().catch((error) => {
+          appendAuditLog(service.runtime, "schedule.dispatch_failed", {
+            message: error.message
+          });
+        });
+      }, 5000);
       return service.runtime.serverState;
     },
     async stop() {
       appendAuditLog(service.runtime, "runtime.stopped", {});
+      if (schedulePollTimer) {
+        clearInterval(schedulePollTimer);
+        schedulePollTimer = null;
+      }
       await Promise.all([
         pipeServer.stop(),
         server.stop()

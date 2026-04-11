@@ -3,6 +3,15 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { runImageOcr } from "../extractors/image_ocr.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
+import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
+import {
+  resolveProviderForTask,
+  resolveCodeCliRuntimeForTask,
+  describeCodeCliRuntime,
+  describeResolvedProvider
+} from "../executors/shared/provider-resolver.mjs";
+import { appendAuditLog } from "../security/audit-log.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import {
   applyExecutorEvent,
@@ -15,6 +24,19 @@ import {
   unregisterActiveExecution,
   updateTask
 } from "./task-runtime.mjs";
+
+function attachProviderFieldsToEvent(descriptor, payload) {
+  if (!descriptor) return payload ?? {};
+  const base = payload ?? {};
+  return {
+    ...base,
+    provider_id: descriptor.provider_id ?? null,
+    provider_kind: descriptor.provider_kind ?? null,
+    provider_name: descriptor.provider_name ?? null,
+    model: descriptor.model ?? null,
+    transport: descriptor.transport ?? null
+  };
+}
 
 export function buildImageContextPacket({
   imagePaths,
@@ -53,6 +75,79 @@ export function buildImageContextPacket({
   };
 }
 
+async function runKimiImageFallback({ task, runtime, artifactStore, store, queue, cliRuntime = null, providerDescriptor = null }) {
+  const controller = new AbortController();
+  registerActiveExecution(runtime, task.task_id, { cancel: async () => controller.abort() });
+
+  const activeCliRuntime = cliRuntime ?? resolveCodeCliRuntimeForTask("vision", runtime.kimiRuntime);
+  if (!activeCliRuntime) {
+    markTaskFailed(runtime, task, { message: "No code_cli runtime resolved for image fallback." });
+    unregisterActiveExecution(runtime, task.task_id);
+    return { status: "failed", artifacts: [] };
+  }
+  const activeDescriptor = providerDescriptor ?? describeCodeCliRuntime(activeCliRuntime);
+
+  try {
+    queue.markRunning(task.task_id);
+    updateTask(runtime, task, { status: "running", sub_status: "kimi_image_fallback" }, true);
+
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "provider_resolved",
+      payload: attachProviderFieldsToEvent(activeDescriptor, { task_type: "vision" })
+    });
+    appendAuditLog(runtime, "ai.provider_resolved", {
+      task_id: task.task_id,
+      task_type: "vision",
+      ...activeDescriptor
+    }, task.task_id);
+
+    const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+    const taskPackage = buildKimiTaskPackage({ task, outputDir });
+    const execution = await executeKimiTask({
+      command: activeCliRuntime.command,
+      args: activeCliRuntime.args,
+      env: activeCliRuntime.env,
+      taskPackage,
+      transport: activeCliRuntime.transport,
+      model: activeCliRuntime.model,
+      configFile: activeCliRuntime.configFile,
+      mcpConfigFiles: activeCliRuntime.mcpConfigFiles,
+      maxRuntimeSeconds: activeCliRuntime.maxRuntimeSeconds ?? 600,
+      abortSignal: controller.signal,
+      onEvent(event) {
+        emitTaskEvent({
+          runtime,
+          taskId: task.task_id,
+          eventType: event.type,
+          payload: attachProviderFieldsToEvent(activeDescriptor, event)
+        });
+        applyExecutorEvent(runtime, task, event);
+      }
+    });
+
+    if (execution.status !== "success") {
+      markTaskFailed(runtime, task, { message: `Kimi CLI failed: ${execution.exitCode ?? "unknown"}` });
+      return { status: task.status, artifacts: [] };
+    }
+
+    const artifactRecords = execution.artifacts.map((a) => artifactStore.registerArtifact(task.task_id, a.path, a.mime_type));
+    for (const r of artifactRecords) store.appendArtifact(r);
+
+    if (task.status !== "success") {
+      updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
+    }
+    markTaskSucceeded(runtime, task);
+    return { status: "success", artifacts: artifactRecords };
+  } catch (error) {
+    markTaskFailed(runtime, task, error);
+    return { status: task.status, artifacts: [] };
+  } finally {
+    unregisterActiveExecution(runtime, task.task_id);
+  }
+}
+
 async function runExecutor({ task, runtime }) {
   const executor = runtime.executors?.find((item) => item.id === "multi_modal")
     ?? runtime.executors?.find((item) => item.id === "fast");
@@ -70,13 +165,35 @@ async function runExecutor({ task, runtime }) {
     sub_status: executor.id === "multi_modal" ? "multi_modal_executor" : "fast_executor"
   }, true);
 
+  const resolvedProvider = resolveProviderForTask(executor.id === "multi_modal" ? "vision" : "chat");
+  const executorDescriptor = describeResolvedProvider(resolvedProvider);
+  if (executorDescriptor) {
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "provider_resolved",
+      payload: attachProviderFieldsToEvent(executorDescriptor, {
+        task_type: executor.id === "multi_modal" ? "vision" : "chat",
+        executor_id: executor.id
+      })
+    });
+    appendAuditLog(runtime, "ai.provider_resolved", {
+      task_id: task.task_id,
+      task_type: executor.id === "multi_modal" ? "vision" : "chat",
+      executor_id: executor.id,
+      ...executorDescriptor
+    }, task.task_id);
+  }
+
   try {
     for await (const event of executor.execute(task, { signal: controller.signal })) {
       emitTaskEvent({
         runtime,
         taskId: task.task_id,
         eventType: event.event_type,
-        payload: event.payload
+        payload: executorDescriptor
+          ? attachProviderFieldsToEvent(executorDescriptor, event.payload)
+          : event.payload
       });
       applyExecutorEvent(runtime, task, {
         type: event.event_type,
@@ -207,6 +324,29 @@ export async function submitImageTask({
       ocr_confidence: ocrResult.ocr_confidence
     }
   });
+
+  // if multi_modal executor has no Vision API key, fallback to code_cli
+  const visionProvider = resolveProviderForTask("vision");
+  const hasVisionApiProvider = Boolean(visionProvider && visionProvider.kind !== "code_cli");
+  const visionCliRuntime = resolveCodeCliRuntimeForTask("vision", runtime.kimiRuntime);
+
+  if (!hasVisionApiProvider && visionCliRuntime) {
+    const providerDescriptor = describeCodeCliRuntime(visionCliRuntime);
+    const kimiResult = await runKimiImageFallback({
+      task,
+      runtime,
+      artifactStore,
+      store,
+      queue,
+      cliRuntime: visionCliRuntime,
+      providerDescriptor
+    });
+    return {
+      task,
+      taskEvents: store.getTaskEvents(task.task_id),
+      artifacts: kimiResult.artifacts ?? []
+    };
+  }
 
   await runExecutor({ task, runtime });
 
