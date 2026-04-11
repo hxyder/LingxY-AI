@@ -1,4 +1,11 @@
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
+import {
+  resolveRoutedModel,
+  describeResolvedProvider,
+  resolveCodeCliRuntimeForTask,
+  resolveActiveProviderForTask
+} from "../src/service/executors/shared/provider-resolver.mjs";
+import { createProviderAdapter } from "../src/service/executors/agentic/provider-adapter.mjs";
 
 const service = createServiceBootstrap();
 
@@ -51,14 +58,35 @@ if (route.intent !== "summarize") {
   throw new Error("Intent router scaffold did not resolve summarize.");
 }
 
+// UCA-049: "分析 / generate report" now gets upgraded to the agentic
+// executor so the planner can coordinate search + generate_document. The
+// underlying matched rule is still `kimi` — verify via intent_tags.
 const kimiRoute = service.routeIntent("分析这个文件并生成报告");
-if (kimiRoute.executor !== "kimi") {
-  throw new Error("Intent router did not resolve Kimi report flow.");
+if (kimiRoute.executor !== "agentic") {
+  throw new Error(`Intent router should upgrade analyze+report flow to agentic; got ${kimiRoute.executor}.`);
+}
+if (!kimiRoute.intent_tags?.includes("analyze") || !kimiRoute.intent_tags?.includes("generate_report")) {
+  throw new Error("Intent router did not tag analyze+generate_report correctly.");
 }
 
 const imageRoute = service.routeIntent("请分析这张图片");
 if (imageRoute.executor !== "multi_modal") {
-  throw new Error("Intent router did not resolve the image flow.");
+  throw new Error("Intent router must keep image analysis on multi_modal (not agentic).");
+}
+
+// pptx request → suggested_formats includes pptx and executor is agentic.
+const pptxRoute = service.routeIntent("分析 AI 发展趋势，并生成一份 ppt");
+if (pptxRoute.executor !== "agentic") {
+  throw new Error("Intent router must upgrade pptx requests to the agentic executor.");
+}
+if (!pptxRoute.suggested_formats?.includes("pptx")) {
+  throw new Error("Intent router must surface pptx in suggested_formats.");
+}
+
+// translate request → stays on translate executor (single-shot).
+const translateRoute = service.routeIntent("翻译这段话");
+if (translateRoute.executor !== "translate") {
+  throw new Error("Intent router must not upgrade translate requests to agentic.");
 }
 
 if (service.endpoints.postTask !== "/task") {
@@ -157,7 +185,7 @@ if (service.runtime.metrics.snapshot().queue_depth !== 0) {
   throw new Error("Metrics registry scaffold did not initialize correctly.");
 }
 
-if (service.runtime.actionToolRegistry.list().length !== 16) {
+if (service.runtime.actionToolRegistry.list().length !== 21) {
   throw new Error("Action tool registry scaffold did not initialize correctly.");
 }
 
@@ -167,6 +195,27 @@ if (service.runtime.platform.templateRegistry.list().length < 5) {
 
 if (service.runtime.platform.aiProviders.list().length < 4) {
   throw new Error("AI provider registry scaffold did not initialize correctly.");
+}
+
+const deepSeekProvider = {
+  id: "deepseek",
+  name: "DeepSeek",
+  kind: "openai",
+  baseUrl: "https://api.deepseek.com/v1",
+  defaultModel: "deepseek-chat"
+};
+if (resolveRoutedModel(deepSeekProvider, { model: "deepseek-chat", mode: "reasoner" }, "chat") !== "deepseek-reasoner") {
+  throw new Error("DeepSeek mode routing did not resolve reasoner model.");
+}
+
+const anthropicProvider = {
+  id: "claude",
+  name: "Claude",
+  kind: "anthropic",
+  defaultModel: "claude-sonnet-4-5-20250514"
+};
+if (resolveRoutedModel(anthropicProvider, { model: "claude-sonnet-4-5-20250514", mode: "fast" }, "chat") !== "claude-haiku-4-5-20250514") {
+  throw new Error("Anthropic mode routing did not resolve fast model.");
 }
 
 if (service.runtime.platform.codeCliAdapters.list().length < 2) {
@@ -180,5 +229,61 @@ if (service.runtime.platform.mcpServers.list().length < 2) {
 if (service.runtime.platform.skillRegistries.list().length < 1) {
   throw new Error("Skill registry scaffold did not initialize correctly.");
 }
+
+// UCA-049: provider-resolver must export the commit-1 helpers that the
+// submission layer depends on. This is a smoke test — full per-config
+// routing behaviour is covered by verify-provider-routing.mjs.
+const descriptorOfSample = describeResolvedProvider({
+  id: "openai",
+  configId: "deepseek",
+  kind: "openai",
+  model: "deepseek-chat",
+  providerName: "DeepSeek"
+});
+if (descriptorOfSample?.provider_id !== "deepseek"
+    || descriptorOfSample?.provider_kind !== "openai"
+    || descriptorOfSample?.transport !== "https") {
+  throw new Error("describeResolvedProvider did not return the UCA-049 event descriptor shape.");
+}
+
+const descriptorOfCli = describeResolvedProvider({
+  id: "code_cli",
+  configId: "my-kimi-cli",
+  kind: "code_cli",
+  model: "kimi-k2",
+  providerName: "Kimi CLI"
+});
+if (descriptorOfCli?.transport !== "subprocess"
+    || descriptorOfCli?.provider_id !== "my-kimi-cli") {
+  throw new Error("describeResolvedProvider mis-classifies code_cli transport.");
+}
+
+// The agentic provider adapter must at least instantiate for all 4 kinds
+// without throwing; commit 2 will exercise generate() more thoroughly.
+for (const stubResolved of [
+  { id: "openai", configId: "test", kind: "openai", model: "gpt-4o-mini", apiKey: "x", baseUrl: "https://example/v1", providerName: "OpenAI" },
+  { id: "anthropic", configId: "test", kind: "anthropic", model: "claude-sonnet", apiKey: "x", baseUrl: "https://example", providerName: "Claude" },
+  { id: "ollama", configId: "test", kind: "ollama", model: "llama3.2", baseUrl: "http://localhost", providerName: "Ollama" },
+  { id: "code_cli", configId: "test", kind: "code_cli", model: "kimi-k2", command: "kimi.exe", providerName: "Kimi CLI" }
+]) {
+  const adapter = createProviderAdapter(stubResolved);
+  if (!adapter || typeof adapter.generate !== "function") {
+    throw new Error(`createProviderAdapter did not produce a usable adapter for kind=${stubResolved.kind}.`);
+  }
+}
+
+// resolveCodeCliRuntimeForTask + resolveActiveProviderForTask should at least
+// not throw when called with a null fallback on an unconfigured process.
+process.env.UCA_FORCE_BOOT_KIMI_RUNTIME = "1";
+const fallbackRuntime = { command: "noop", args: [], transport: "stream_json_print", model: "test-model", providerName: "Boot Kimi" };
+const cliRuntime = resolveCodeCliRuntimeForTask("chat", fallbackRuntime);
+if (cliRuntime !== fallbackRuntime) {
+  throw new Error("resolveCodeCliRuntimeForTask did not honour UCA_FORCE_BOOT_KIMI_RUNTIME fallback.");
+}
+const active = resolveActiveProviderForTask("chat", fallbackRuntime);
+if (!active?.descriptor || active.descriptor.transport !== "subprocess") {
+  throw new Error("resolveActiveProviderForTask did not return a subprocess descriptor for boot fallback.");
+}
+delete process.env.UCA_FORCE_BOOT_KIMI_RUNTIME;
 
 console.log("Service core scaffold verification passed.");

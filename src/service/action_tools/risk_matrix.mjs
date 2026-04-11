@@ -33,6 +33,31 @@ export function evaluateToolRisk(tool, args = {}, ctx = {}) {
         reason = requiresConfirmation ? "create_folder_outside_allowed_roots" : null;
       }
       break;
+    case "write_file":
+      // medium risk: no hard confirmation for in-workspace writes, but the
+      // unattended_safe execution mode still disallows it — that gate sits
+      // upstream in the submission layer, not here.
+      if (ctx.executionMode === "unattended_safe" && args.overwrite === true) {
+        requiresConfirmation = true;
+        reason = "unattended_overwrite_requires_confirmation";
+      }
+      break;
+    case "run_script":
+      // High risk: always requires interactive confirmation; unattended_safe
+      // execution must reject the call at the broker level.
+      if (ctx.executionMode === "unattended_safe") {
+        requiresConfirmation = true;
+        reason = "run_script_forbidden_unattended";
+      } else {
+        requiresConfirmation = true;
+        reason = "run_script_requires_confirmation";
+      }
+      break;
+    case "generate_document":
+      // Low risk: structured artifact generation with a sandbox-checked
+      // target path. No confirmation needed.
+      requiresConfirmation = false;
+      break;
     default:
       requiresConfirmation = tool.requires_confirmation === true;
       reason = requiresConfirmation ? "tool_default_confirmation" : null;

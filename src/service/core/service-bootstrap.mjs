@@ -7,6 +7,8 @@ import { createFastExecutorScaffold } from "../executors/fast/fast-executor.mjs"
 import { createKimiCliExecutorScaffold } from "../executors/kimi/kimi-cli-executor.mjs";
 import { createToolUsingExecutorScaffold } from "../executors/tool_using/agent-loop.mjs";
 import { createMultiModalExecutorScaffold } from "../executors/multi_modal/multi-modal-executor.mjs";
+import { createTranslateExecutorScaffold } from "../executors/translate/translate-executor.mjs";
+import { createAgenticExecutorScaffold } from "../executors/agentic/executor.mjs";
 import { createExecutorRegistry } from "../executors/registry.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
@@ -41,7 +43,9 @@ export function createServiceBootstrap({
     createFastExecutorScaffold(),
     createKimiCliExecutorScaffold(),
     createToolUsingExecutorScaffold(),
-    createMultiModalExecutorScaffold()
+    createMultiModalExecutorScaffold(),
+    createTranslateExecutorScaffold(),
+    createAgenticExecutorScaffold()
   ];
   const runtime = {
     store: storeAdapter,
