@@ -27,6 +27,11 @@ using var requestDocument = JsonDocument.Parse(requestJson);
 var root = requestDocument.RootElement;
 var action = root.GetProperty("action").GetString() ?? string.Empty;
 var requestId = root.GetProperty("requestId").GetString();
+var handoffDir = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    "UCA",
+    "handoffs",
+    "explorer");
 
 object response;
 switch (action)
@@ -78,6 +83,27 @@ switch (action)
                     taskId = task.GetProperty("task_id").GetString(),
                     status = task.GetProperty("status").GetString(),
                     sourceType = task.GetProperty("context_packet").GetProperty("source_type").GetString()
+                }
+            };
+        }
+        break;
+    case "handoff_capture":
+        {
+            Directory.CreateDirectory(handoffDir);
+            var handoffPath = Path.Combine(handoffDir, $"prompt-handoff-{Guid.NewGuid():N}.json");
+            var payloadJson = root.GetProperty("payload").GetRawText();
+            await File.WriteAllTextAsync(handoffPath, payloadJson, new UTF8Encoding(false));
+            response = new
+            {
+                protocolVersion = "1.0",
+                requestId,
+                ok = true,
+                payload = new
+                {
+                    accepted = true,
+                    delivery = "overlay",
+                    handoffPath,
+                    sourceType = root.GetProperty("payload").GetProperty("capture").GetProperty("sourceType").GetString()
                 }
             };
         }

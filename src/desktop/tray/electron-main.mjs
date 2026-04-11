@@ -1,8 +1,12 @@
 import path from "node:path";
-import { readdir, readFile, unlink, watch } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, watch } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import os from "node:os";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
+
+const execFileAsync = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RENDERER_DIR = path.join(__dirname, "..", "renderer");
@@ -33,12 +37,18 @@ function resolveWindowOptions(windowDef) {
     };
   }
 
-  if (windowDef.id === "overlay") {
+  if (windowDef.id === "overlay" || windowDef.id === "notification") {
     return {
       alwaysOnTop: true,
       autoHideMenuBar: true,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
       maximizable: false,
-      minimizable: false
+      minimizable: false,
+      hasShadow: false
     };
   }
 
@@ -55,17 +65,21 @@ export function createElectronShellRuntime({
     throw new Error("Electron bindings are required to create the shell runtime.");
   }
 
-  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen } = electron;
+  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session } = electron;
   const windows = new Map();
   const readyWindows = new Set();
   const pendingWindowMessages = new Map();
   const handoffDir = path.join(os.homedir(), "AppData", "Local", "UCA", "handoffs", "explorer");
   const handoffFilePattern = /^prompt-handoff-.*\.json$/i;
   const processedHandoffFiles = new Set();
+  const notificationDir = path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "UCA", "notifications");
+  const notificationFilePattern = /^notification-.*\.json$/i;
+  const processedNotificationFiles = new Set();
   let tray = null;
   let quitting = false;
   let resolvedServiceBaseUrl = serviceBaseUrl;
   let handoffWatcher = null;
+  let notificationWatcher = null;
 
   function buildOverlayPayloadFromFiles(filePaths, sourceApp = "uca.dock", captureMode = "dock_drop") {
     return {
@@ -99,6 +113,35 @@ export function createElectronShellRuntime({
       target.webContents.send(message.channel, message.payload);
     }
     pendingWindowMessages.delete(windowId);
+  }
+
+  function showDesktopNotification(payload = {}) {
+    const target = windows.get("notification");
+    if (target) {
+      const { workArea } = screen.getPrimaryDisplay();
+      const [width, height] = target.getSize();
+      target.setPosition(
+        Math.max(workArea.x, Math.round(workArea.x + workArea.width - width - 18)),
+        Math.max(workArea.y, Math.round(workArea.y + workArea.height - height - 18))
+      );
+      target.setAlwaysOnTop(true, "screen-saver");
+      target.showInactive();
+      target.moveTop();
+      enqueueWindowMessage("notification", IPC_CHANNELS.shellNotificationReceived, payload);
+      return { shown: true, delivery: "bottom_toast" };
+    }
+
+    if (!Notification?.isSupported?.()) {
+      return { shown: false, reason: "unsupported" };
+    }
+
+    const notification = new Notification({
+      title: payload.title ?? "UCA",
+      body: payload.body ?? payload.message ?? "",
+      silent: false
+    });
+    notification.show();
+    return { shown: true, delivery: "native_notification" };
   }
 
   function getArgValue(argv, flagName) {
@@ -209,6 +252,151 @@ export function createElectronShellRuntime({
     });
   }
 
+  async function consumeNotificationFile(notificationFile) {
+    if (!notificationFilePattern.test(path.basename(notificationFile))) {
+      return false;
+    }
+    if (processedNotificationFiles.has(notificationFile)) {
+      return false;
+    }
+
+    processedNotificationFiles.add(notificationFile);
+    try {
+      const raw = await readFile(notificationFile, "utf8").catch((error) => {
+        if (error?.code === "ENOENT") {
+          return null;
+        }
+        throw error;
+      });
+      if (!raw) {
+        return false;
+      }
+      const payload = JSON.parse(raw);
+      await unlink(notificationFile).catch(() => {});
+      showDesktopNotification(payload);
+      return true;
+    } finally {
+      processedNotificationFiles.delete(notificationFile);
+    }
+  }
+
+  async function drainNotificationDirectory() {
+    try {
+      await mkdir(notificationDir, { recursive: true });
+      const entries = await readdir(notificationDir, { withFileTypes: true });
+      const notificationFiles = entries
+        .filter((entry) => entry.isFile() && notificationFilePattern.test(entry.name))
+        .map((entry) => path.join(notificationDir, entry.name))
+        .sort((left, right) => left.localeCompare(right));
+
+      for (const notificationFile of notificationFiles) {
+        await consumeNotificationFile(notificationFile);
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        console.error("Failed to drain notification directory", error);
+      }
+    }
+  }
+
+  async function startNotificationWatcher() {
+    await drainNotificationDirectory();
+
+    try {
+      await mkdir(notificationDir, { recursive: true });
+      notificationWatcher = watch(notificationDir);
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        console.error("Failed to watch notification directory", error);
+      }
+      return;
+    }
+
+    (async () => {
+      try {
+        for await (const event of notificationWatcher) {
+          if (!event.filename || !notificationFilePattern.test(event.filename)) {
+            continue;
+          }
+          await consumeNotificationFile(path.join(notificationDir, event.filename));
+        }
+      } catch (error) {
+        if (!quitting && error?.name !== "AbortError") {
+          console.error("Notification watcher stopped unexpectedly", error);
+        }
+      }
+    })().catch((error) => {
+      console.error("Notification watcher task failed", error);
+    });
+  }
+
+  const captureScriptPath = path.join(__dirname, "..", "..", "..", "scripts", "capture-context.ps1");
+
+  async function captureActiveWindowContext() {
+    const result = { processName: null, windowTitle: null, filePaths: [], selectedText: null };
+
+    try {
+      const { stdout } = await execFileAsync("powershell", [
+        "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", captureScriptPath,
+        "-SimulateCopy"
+      ], { encoding: "utf8", timeout: 3000 });
+
+      const info = JSON.parse(stdout.trim());
+      result.processName = info.process ?? null;
+      result.windowTitle = info.title ?? null;
+
+      const files = info.files;
+      if (Array.isArray(files) && files.length > 0) {
+        result.filePaths = files.filter((f) => typeof f === "string" && f.length > 0);
+      }
+
+      const clipText = info.text ?? "";
+      if (clipText && clipText.trim().length > 2) {
+        result.selectedText = clipText.trim();
+        lastClipboardText = clipText.trim();
+      }
+    } catch {
+      // PowerShell failed — fall back to Electron clipboard
+      const clipText = clipboard.readText() ?? "";
+      if (clipText && clipText.trim().length > 2) {
+        result.selectedText = clipText.trim();
+      }
+    }
+
+    return result;
+  }
+
+  let lastClipboardText = "";
+  let clipboardPollTimer = null;
+
+  function startClipboardWatcher() {
+    lastClipboardText = clipboard.readText() ?? "";
+    clipboardPollTimer = setInterval(() => {
+      try {
+        const current = clipboard.readText() ?? "";
+        if (current && current !== lastClipboardText && current.trim().length >= 4) {
+          lastClipboardText = current;
+          // notify dock to pulse
+          const dock = windows.get("dock");
+          if (dock && readyWindows.has("dock")) {
+            dock.webContents.send(IPC_CHANNELS.shellClipboardChanged, {
+              length: current.length,
+              preview: current.slice(0, 60)
+            });
+          }
+        }
+      } catch { /* ignore clipboard read errors */ }
+    }, 800);
+  }
+
+  function stopClipboardWatcher() {
+    if (clipboardPollTimer) {
+      clearInterval(clipboardPollTimer);
+      clipboardPollTimer = null;
+    }
+  }
+
   function createWindows() {
     for (const windowDef of DESKTOP_SHELL_MANIFEST.windows) {
       if (windows.has(windowDef.id)) {
@@ -272,6 +460,14 @@ export function createElectronShellRuntime({
     if (target.isMinimized()) {
       target.restore();
     }
+    if (windowId === "overlay") {
+      const { workArea } = screen.getPrimaryDisplay();
+      const [width, height] = target.getSize();
+      target.setPosition(
+        Math.round(workArea.x + (workArea.width - width) / 2),
+        Math.max(workArea.y, workArea.y + workArea.height - height - 16)
+      );
+    }
     target.setAlwaysOnTop(true, "screen-saver");
     target.show();
     target.moveTop();
@@ -295,9 +491,103 @@ export function createElectronShellRuntime({
           shortcutId: shortcut.id,
           accelerator: shortcut.accelerator
         };
+
         if (shortcut.id === "toggle-overlay") {
+          // Clean open — no auto-capture. Earlier behaviour ran a PowerShell
+          // selection capture that could mojibake non-ASCII text in stdout
+          // and confused users who just wanted an empty input.
           showWindow("overlay");
+          for (const bw of windows.values()) {
+            bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+          }
+          return;
         }
+
+        if (shortcut.id === "voice-wake") {
+          // Open overlay and immediately start voice input.
+          showWindow("overlay");
+          for (const bw of windows.values()) {
+            bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+          }
+          return;
+        }
+
+        if (shortcut.id === "capture-and-ask") {
+          // Explicit "grab whatever the user is looking at" hotkey. Files
+          // pass through cleanly; selected text only attaches when it
+          // round-trips through stdout without encoding loss.
+          captureActiveWindowContext().then((ctx) => {
+            showWindow("overlay");
+            for (const bw of windows.values()) {
+              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+            }
+
+            const hasFiles = ctx.filePaths.length > 0;
+            const hasText = Boolean(ctx.selectedText);
+
+            if (hasFiles) {
+              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
+                targetWindow: "overlay",
+                source_app: ctx.processName ?? "explorer.exe",
+                capture_mode: "hotkey_capture",
+                file_paths: ctx.filePaths
+              });
+            } else if (hasText) {
+              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
+                targetWindow: "overlay",
+                source_app: ctx.processName ?? "unknown",
+                capture_mode: "hotkey_capture",
+                capture: {
+                  sourceType: "text_selection",
+                  text: ctx.selectedText,
+                  url: "",
+                  pageTitle: ctx.windowTitle ?? "",
+                  processName: ctx.processName ?? null
+                }
+              });
+            }
+          }).catch(() => {
+            showWindow("overlay");
+            for (const bw of windows.values()) {
+              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+            }
+          });
+          return;
+        }
+
+        if (shortcut.id === "capture-screenshot") {
+          const screenshotScriptPath = path.join(__dirname, "..", "..", "..", "scripts", "capture-screenshot.ps1");
+          const screenshotPath = path.join(os.tmpdir(), "UCA", "screenshots", `capture-${Date.now()}.png`);
+
+          execFileAsync("powershell", [
+            "-NoProfile", "-ExecutionPolicy", "Bypass",
+            "-File", screenshotScriptPath,
+            "-OutputPath", screenshotPath
+          ], { encoding: "utf8", timeout: 8000 }).then(({ stdout }) => {
+            const result = JSON.parse(stdout.trim());
+            if (result.ok) {
+              showWindow("overlay");
+              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
+                targetWindow: "overlay",
+                source_app: "uca.screenshot",
+                capture_mode: "hotkey_capture",
+                file_paths: [screenshotPath]
+              });
+            } else {
+              showWindow("overlay");
+            }
+            for (const bw of windows.values()) {
+              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+            }
+          }).catch(() => {
+            showWindow("overlay");
+            for (const bw of windows.values()) {
+              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+            }
+          });
+          return;
+        }
+
         if (shortcut.id === "open-console") {
           showWindow("console");
         }
@@ -336,10 +626,40 @@ export function createElectronShellRuntime({
   return {
     async start() {
       await app.whenReady();
+
+      // Grant microphone access to our own renderer windows so the Web
+      // Speech API (used by the overlay's voice input) doesn't fail with
+      // `not-allowed`. Permission is only granted to file:// or http://127.0.0.1
+      // URLs that we serve ourselves — never to arbitrary remote origins.
+      try {
+        session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+          const requestingUrl = webContents?.getURL?.() ?? "";
+          const isLocal = requestingUrl.startsWith("file://")
+            || requestingUrl.startsWith("http://127.0.0.1")
+            || requestingUrl.startsWith("http://localhost");
+          if (isLocal && (permission === "media" || permission === "audioCapture" || permission === "microphone")) {
+            callback(true);
+            return;
+          }
+          callback(false);
+        });
+        session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin) => {
+          const url = requestingOrigin ?? webContents?.getURL?.() ?? "";
+          const isLocal = url.startsWith("file://")
+            || url.startsWith("http://127.0.0.1")
+            || url.startsWith("http://localhost");
+          return isLocal && (permission === "media" || permission === "audioCapture" || permission === "microphone");
+        });
+      } catch (error) {
+        console.error("Failed to install permission handler", error);
+      }
+
       createWindows();
       createTray();
       registerShortcuts();
       await startHandoffWatcher();
+      await startNotificationWatcher();
+      startClipboardWatcher();
       app.on("second-instance", (_event, argv) => {
         handleLaunchArgs(argv).catch((error) => {
           console.error("Failed to process second-instance args", error);
@@ -373,17 +693,21 @@ export function createElectronShellRuntime({
           fileCount: acceptedFilePaths.length
         };
       });
+      ipcMain.handle(IPC_CHANNELS.shellMoveWindowBy, (_event, { windowId, deltaX, deltaY } = {}) => {
+        const target = windows.get(windowId);
+        if (!target) return false;
+        const [x, y] = target.getPosition();
+        target.setPosition(Math.round(x + (deltaX ?? 0)), Math.round(y + (deltaY ?? 0)));
+        return true;
+      });
       ipcMain.handle(IPC_CHANNELS.shellNotify, (_event, payload = {}) => {
-        if (!Notification?.isSupported?.()) {
-          return { shown: false, reason: "unsupported" };
-        }
-        const notification = new Notification({
-          title: payload.title ?? "UCA",
-          body: payload.body ?? "",
-          silent: false
-        });
-        notification.show();
-        return { shown: true };
+        return showDesktopNotification(payload);
+      });
+      ipcMain.handle(IPC_CHANNELS.shellNavigateConsole, (_event, payload = {}) => {
+        const tabId = typeof payload?.tabId === "string" ? payload.tabId : "settings";
+        showWindow("console");
+        enqueueWindowMessage("console", IPC_CHANNELS.shellNavigateConsole, { tabId });
+        return { ok: true, tabId };
       });
       app.on("activate", () => {
         if (BrowserWindow.getAllWindows().length === 0) {
@@ -392,7 +716,9 @@ export function createElectronShellRuntime({
       });
       app.on("before-quit", () => {
         quitting = true;
+        stopClipboardWatcher();
         handoffWatcher?.return?.().catch?.(() => {});
+        notificationWatcher?.return?.().catch?.(() => {});
       });
       await handleLaunchArgs(process.argv);
       return {

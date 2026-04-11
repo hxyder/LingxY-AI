@@ -8,134 +8,175 @@
     <style>
       body {
         min-height: 100vh;
-        padding: 24px;
+        padding: 0;
+        background: var(--bg-0);
       }
 
-      .console-shell {
-        display: grid;
-        grid-template-columns: 290px minmax(0, 1fr);
-        gap: 20px;
-      }
-
-      .sidebar,
-      .workspace {
-        padding: 22px;
-      }
-
-      .sidebar {
+      /* ── top bar ── */
+      .topbar {
         position: sticky;
-        top: 24px;
-        align-self: start;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 12px 24px;
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(20px);
+        border-bottom: 1px solid var(--line);
       }
 
-      .workspace-stack,
-      .summary-grid,
-      .integration-list,
-      .nav-grid,
-      .wizard-list,
+      .topbar-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .topbar-logo {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        display: grid;
+        place-items: center;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .topbar-title {
+        font-family: var(--font-display);
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .topbar-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* ── tab nav ── */
+      .tab-bar {
+        display: flex;
+        gap: 2px;
+        padding: 0 24px;
+        background: rgba(255, 255, 255, 0.48);
+        border-bottom: 1px solid var(--line);
+      }
+
+      .tab-btn {
+        padding: 10px 18px;
+        border: none;
+        border-bottom: 2px solid transparent;
+        border-radius: 0;
+        background: transparent;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: color 120ms, border-color 120ms;
+      }
+
+      .tab-btn:hover {
+        color: var(--ink);
+        transform: none;
+      }
+
+      .tab-btn.active {
+        color: var(--accent);
+        border-bottom-color: var(--accent);
+      }
+
+      /* ── tab panels ── */
+      .tab-panel {
+        display: none;
+        padding: 20px 24px;
+        min-height: calc(100vh - 110px);
+      }
+
+      .tab-panel.active {
+        display: block;
+      }
+
+      /* ── tasks panel ── */
+      .tasks-layout {
+        display: grid;
+        grid-template-columns: 340px minmax(0, 1fr);
+        gap: 16px;
+      }
+
+      .task-sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .task-main {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+      }
+
+      /* ── composer (inside tasks tab) ── */
+      .composer-bar {
+        display: flex;
+        gap: 10px;
+        align-items: flex-end;
+        padding: 14px;
+        border-radius: var(--radius-lg);
+        background: var(--surface-strong);
+        border: 1px solid var(--line);
+      }
+
+      .composer-bar textarea {
+        flex: 1;
+        border: none;
+        background: transparent;
+        padding: 6px 0;
+        resize: none;
+        box-shadow: none;
+      }
+
+      .composer-bar textarea:focus {
+        outline: none;
+        box-shadow: none;
+        border: none;
+      }
+
+      /* ── lists ── */
+      .item-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
       .task-list,
-      .detail-timeline,
       .approval-list,
       .schedule-list,
       .template-list,
       .history-list,
       .audit-list,
-      .privacy-list,
-      .retention-list {
-        display: grid;
-        gap: 12px;
-      }
-
-      .workspace-stack {
-        gap: 18px;
-      }
-
-      .nav-grid,
-      .summary-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-      }
-
-      .panel-grid {
-        display: grid;
-        grid-template-columns: 1.1fr 0.9fr;
-        gap: 18px;
-      }
-
-      .budget-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-
-      .settings-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 18px;
-      }
-
-      .workspace-section,
-      .surface {
-        padding: 18px;
-      }
-
-      .surface {
-        border-radius: 18px;
-        border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.86);
-      }
-
-      .summary-tile,
-      .task-item,
-      .approval-item,
-      .schedule-item,
-      .template-item,
-      .history-item,
-      .integration-item,
-      .timeline-item {
-        padding: 14px;
-        border-radius: 16px;
-        border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.86);
-      }
-
-      .task-item.selected,
-      .template-item.selected {
-        border-color: rgba(10, 88, 202, 0.35);
-        box-shadow: 0 12px 28px rgba(10, 88, 202, 0.12);
-      }
-
-      .summary-tile strong {
-        display: block;
-        font-size: 24px;
-        margin-top: 6px;
-      }
-
-      .composer {
-        display: grid;
-        gap: 12px;
-      }
-
-      .row {
+      .execution-list {
         display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
+        flex-direction: column;
+        gap: 6px;
       }
 
-      .row.wrap,
-      .toolbar {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        flex-wrap: wrap;
+      .audit-list,
+      .execution-list {
+        max-height: 420px;
+        overflow: auto;
       }
 
       .task-item h4,
       .approval-item h4,
       .schedule-item h4,
       .template-item h4 {
-        margin: 0 0 6px;
-        font-size: 15px;
+        margin: 0 0 4px;
+        font-size: 13px;
       }
 
       .task-item p,
@@ -145,396 +186,629 @@
       .history-item p,
       .timeline-item p {
         margin: 0;
+        font-size: 12px;
       }
 
       .nav-link {
         text-align: left;
+        min-height: 44px;
       }
 
-      .pill-input {
-        max-width: 240px;
-      }
-
-      .template-preview,
-      .history-preview,
-      .dag-editor,
-      .dag-preview {
-        min-height: 140px;
-        border-radius: 16px;
+      /* ── detail areas ── */
+      .detail-section {
+        padding: 16px;
+        border-radius: var(--radius-lg);
+        background: var(--surface-strong);
         border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.82);
-        padding: 14px;
+      }
+
+      .detail-timeline {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      /* ── artifact items ── */
+      .artifact-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .artifact-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .artifact-item {
+        width: 100%;
+        text-align: left;
+        padding: 10px 12px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+      }
+
+      .artifact-item.active {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .artifact-preview {
+        min-height: 100px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+        padding: 12px;
         white-space: pre-wrap;
+        font-size: 12px;
+        line-height: 1.55;
       }
 
-      .audit-list {
-        max-height: 420px;
-        overflow: auto;
+      /* ── settings panel sections ── */
+      .settings-sections {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        max-width: 800px;
       }
 
-      .execution-list {
-        display: grid;
-        gap: 12px;
-        max-height: 340px;
-        overflow: auto;
+      .settings-group {
+        padding: 16px;
+        border-radius: var(--radius-lg);
+        background: var(--surface-strong);
+        border: 1px solid var(--line);
+      }
+
+      .settings-group-title {
+        font-size: 14px;
+        font-weight: 700;
+        margin: 0 0 12px;
       }
 
       .switch-row {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 14px;
-        padding: 14px;
-        border-radius: 16px;
-        border: 1px solid var(--line);
-        background: rgba(255, 255, 255, 0.86);
+        gap: 12px;
+        padding: 10px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .switch-row:last-child {
+        border-bottom: none;
       }
 
       .switch-copy {
-        display: grid;
-        gap: 6px;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+
+      .switch-copy strong {
+        font-size: 13px;
+      }
+
+      .switch-copy span {
+        font-size: 12px;
       }
 
       .switch-control {
-        inline-size: 20px;
-        block-size: 20px;
+        width: 18px;
+        height: 18px;
+      }
+
+      /* ── history panel ── */
+      .history-layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        max-width: 1000px;
+      }
+
+      .history-preview,
+      .template-preview,
+      .dag-editor,
+      .dag-preview {
+        min-height: 120px;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+        padding: 12px;
+        white-space: pre-wrap;
+        font-size: 12px;
+      }
+
+      /* ── summary tiles ── */
+      .summary-row {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .summary-tile {
+        min-width: 120px;
+        flex: 1;
+      }
+
+      /* ── advanced panel sub-grids ── */
+      .advanced-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+
+      /* ── integration ── */
+      .integration-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .privacy-list,
+      .retention-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .budget-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+      }
+
+      .capsule-row {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
       }
 
       .section-anchor {
         scroll-margin-top: 24px;
       }
 
-      @media (max-width: 1080px) {
-        .console-shell,
-        .panel-grid,
-        .budget-grid,
-        .settings-grid {
+      @media (max-width: 900px) {
+        .tasks-layout {
           grid-template-columns: 1fr;
         }
-
-        .sidebar {
-          position: static;
+        .history-layout,
+        .advanced-grid {
+          grid-template-columns: 1fr;
         }
       }
     </style>
   </head>
   <body>
-    <div class="console-shell">
-      <aside class="sidebar card stack">
-        <div class="shell-header">
-          <div class="shell-brand">
-            <span class="eyebrow">Desktop Console</span>
-            <h1 class="title">UCA</h1>
-            <p class="subtitle">桌面级主控工作台。</p>
+    <!-- ── Top Bar ── -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="topbar-logo">U</div>
+        <span class="topbar-title">UCA Console</span>
+        <span id="runtimeState" class="chip warning">connecting...</span>
+      </div>
+      <div class="topbar-right">
+        <button id="openOverlayButton" class="secondary">Quick Input</button>
+        <button id="refreshButton" class="ghost">Refresh</button>
+      </div>
+    </header>
+
+    <!-- ── Tab Bar ── -->
+    <nav class="tab-bar">
+      <button class="tab-btn active" data-tab="tasks">Tasks</button>
+      <button class="tab-btn" data-tab="files">Files</button>
+      <button class="tab-btn" data-tab="history">History</button>
+      <button class="tab-btn" data-tab="schedules">Schedules</button>
+      <button class="tab-btn" data-tab="advanced">Advanced</button>
+      <button class="tab-btn" data-tab="settings">Settings</button>
+    </nav>
+
+    <!-- ═══════════════════════════════════════
+         TAB: TASKS
+         ═══════════════════════════════════════ -->
+    <section id="panel-tasks" class="tab-panel active">
+      <!-- summary row -->
+      <div id="summaryGrid" class="summary-row" style="margin-bottom:16px;"></div>
+
+      <!-- composer -->
+      <form id="taskComposer" class="composer-bar" style="margin-bottom:16px;">
+        <textarea id="commandInput" rows="1" placeholder="Enter your task..."></textarea>
+        <button type="submit" class="primary">Submit</button>
+        <span id="submitState" class="muted" style="font-size:12px;white-space:nowrap;"></span>
+      </form>
+
+      <!-- tasks grid -->
+      <div class="tasks-layout">
+        <div class="task-sidebar">
+          <div class="row">
+            <strong style="font-size:13px;">Recent Tasks</strong>
+            <span id="taskCount" class="muted" style="font-size:12px;">0</span>
+          </div>
+          <div id="taskList" class="task-list"></div>
+        </div>
+        <div class="task-main">
+          <div class="detail-section stack">
+            <div class="row">
+              <strong>Details</strong>
+              <div class="toolbar">
+                <button id="retryTaskButton" class="ghost" disabled>Retry</button>
+                <button id="cancelTaskButton" class="ghost" disabled>Cancel</button>
+                <button id="deleteTaskButton" class="ghost" disabled>Delete</button>
+              </div>
+            </div>
+            <div id="taskDetailSummary" class="stack muted">Select a task to view details.</div>
+            <div class="artifact-panel">
+              <div class="row">
+                <strong style="font-size:13px;">Artifacts</strong>
+                <span id="taskArtifactCount" class="muted" style="font-size:12px;">0</span>
+              </div>
+              <div id="taskArtifactList" class="artifact-list">
+                <p class="muted" style="font-size:12px;">No artifacts yet.</p>
+              </div>
+              <pre id="taskArtifactPreview" class="artifact-preview muted">Select an artifact to preview.</pre>
+              <div class="toolbar">
+                <button id="openTaskArtifactButton" class="secondary" hidden>Open</button>
+                <button id="copyTaskArtifactPathButton" class="secondary" hidden>Copy Path</button>
+                <button id="useTaskArtifactContextButton" class="secondary" hidden>Use as Context</button>
+              </div>
+            </div>
+            <div class="stack">
+              <strong style="font-size:13px;">Timeline</strong>
+              <div id="taskTimeline" class="detail-timeline"></div>
+            </div>
           </div>
         </div>
-        <div id="runtimeState" class="chip warning">正在连接 runtime…</div>
-        <div id="summaryGrid" class="summary-grid"></div>
-        <div class="stack">
-          <div>
-            <h3 style="margin:0;">工作台导航</h3>
-            <p class="muted" style="margin:4px 0 0;">围绕任务、审批、计划和模板组织。</p>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════
+         TAB: FILES (artifact manager)
+         ═══════════════════════════════════════ -->
+    <section id="panel-files" class="tab-panel">
+      <div class="files-layout" style="display:grid;grid-template-columns:340px 1fr;gap:18px;height:100%;">
+        <div class="stack" style="min-height:0;">
+          <div class="row">
+            <strong style="font-size:13px;">All Generated Files</strong>
+            <div class="row" style="gap:8px;">
+              <span id="filesCount" class="muted" style="font-size:12px;">0</span>
+              <button id="filesRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+            </div>
           </div>
-          <div class="nav-grid">
-            <button class="secondary nav-link" data-target="onboardingSection">引导</button>
-            <button class="secondary nav-link" data-target="tasksSection">任务</button>
-            <button class="secondary nav-link" data-target="approvalsSection">审批</button>
-            <button class="secondary nav-link" data-target="schedulesSection">计划</button>
-            <button class="secondary nav-link" data-target="templatesSection">模板</button>
-            <button class="secondary nav-link" data-target="dagSection">DAG</button>
-            <button class="secondary nav-link" data-target="budgetSection">预算</button>
-            <button class="secondary nav-link" data-target="historySection">历史</button>
-            <button class="secondary nav-link" data-target="privacySection">隐私</button>
-            <button class="secondary nav-link" data-target="auditSection">审计</button>
+          <input id="filesFilterInput" type="text" placeholder="Filter by name, task, or extension..." style="margin-bottom:8px;">
+          <div id="filesList" class="files-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;min-height:0;">
+            <p class="muted" style="font-size:12px;">No files yet. Generated artifacts will appear here.</p>
           </div>
         </div>
-        <div class="stack">
-          <div>
-            <h3 style="margin:0;">集成状态</h3>
-            <p class="muted" style="margin:4px 0 0;">当前阶段仍以 Code CLI 为主路径。</p>
+        <div class="stack" style="min-height:0;">
+          <div class="row">
+            <strong id="filesPreviewLabel" style="font-size:13px;">Preview</strong>
+            <div class="toolbar">
+              <button id="filesOpenBtn" class="secondary" type="button" hidden>Open</button>
+              <button id="filesRevealBtn" class="secondary" type="button" hidden>Show in Folder</button>
+              <button id="filesCopyPathBtn" class="secondary" type="button" hidden>Copy Path</button>
+            </div>
           </div>
+          <pre id="filesPreviewBody" class="artifact-preview muted" style="flex:1;min-height:0;overflow:auto;">Select a file to preview.</pre>
+          <div id="filesPreviewMeta" class="muted" style="font-size:11px;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════
+         TAB: HISTORY
+         ═══════════════════════════════════════ -->
+    <section id="panel-history" class="tab-panel">
+      <div class="history-layout">
+        <div class="stack">
+          <form id="historyForm" class="row" style="gap:8px;">
+            <input id="historyQueryInput" type="text" placeholder="Search keyword...">
+            <button type="submit" class="primary">Search</button>
+          </form>
+          <div id="historyList" class="history-list"></div>
+        </div>
+        <div class="stack">
+          <strong style="font-size:13px;">Preview</strong>
+          <pre id="historyPreview" class="history-preview muted">No results yet.</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════
+         TAB: SCHEDULES
+         ═══════════════════════════════════════ -->
+    <section id="panel-schedules" class="tab-panel">
+      <div style="max-width:700px;">
+        <form id="scheduleForm" class="settings-group" style="margin-bottom:16px;">
+          <h3 class="settings-group-title">Create Schedule</h3>
+          <div class="stack" style="gap:10px;">
+            <div>
+              <label for="scheduleWhenInput">When</label>
+              <input id="scheduleWhenInput" type="text" placeholder="例如：2分钟以后 / 每天 9点 / every hour">
+            </div>
+            <div>
+              <label for="scheduleCommandInput">Reminder / Task</label>
+              <textarea id="scheduleCommandInput" rows="3" placeholder="例如：提醒我时间到了"></textarea>
+            </div>
+            <div class="toolbar">
+              <button type="submit" class="primary">Create Schedule</button>
+              <span id="scheduleCreateState" class="muted" style="font-size:12px;"></span>
+            </div>
+          </div>
+        </form>
+        <div class="row" style="margin-bottom:14px;">
+          <strong>Scheduled Tasks</strong>
+          <span id="scheduleCount" class="muted" style="font-size:12px;">0</span>
+        </div>
+        <div id="scheduleList" class="schedule-list"></div>
+
+        <div style="margin-top:24px;">
+          <div class="row" style="margin-bottom:14px;">
+            <strong>Pending Approvals</strong>
+            <span id="approvalCount" class="muted" style="font-size:12px;">0</span>
+          </div>
+          <div id="approvalList" class="approval-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════
+         TAB: ADVANCED
+         ═══════════════════════════════════════ -->
+    <section id="panel-advanced" class="tab-panel">
+      <div class="stack" style="max-width:900px;">
+        <!-- Templates -->
+        <div class="settings-group">
+          <h3 class="settings-group-title">Templates</h3>
+          <span id="templateCount" class="muted" style="font-size:12px;margin-bottom:10px;display:block;">0</span>
+          <div class="advanced-grid">
+            <div class="stack">
+              <div id="templateList" class="template-list"></div>
+            </div>
+            <div class="stack">
+              <form id="templateForm" class="stack">
+                <div>
+                  <label for="templateNameInput">Template Name</label>
+                  <input id="templateNameInput" type="text" placeholder="e.g. Meeting Notes">
+                </div>
+                <div>
+                  <label for="templatePromptInput">Default Prompt</label>
+                  <textarea id="templatePromptInput" rows="4" placeholder="e.g. Extract action items and deadlines"></textarea>
+                </div>
+                <div class="toolbar">
+                  <button type="submit" class="primary">Save</button>
+                  <button type="button" id="importTemplateButton" class="secondary">Import JSON</button>
+                  <button type="button" id="deleteTemplateButton" class="secondary">Delete</button>
+                  <span id="templateState" class="muted" style="font-size:12px;"></span>
+                </div>
+              </form>
+              <div>
+                <label for="templateImportInput">Import JSON</label>
+                <textarea id="templateImportInput" rows="6" class="dag-editor" placeholder="Paste template JSON..."></textarea>
+              </div>
+              <div>
+                <strong style="font-size:12px;">Export Preview</strong>
+                <pre id="templatePreview" class="template-preview muted">Select a template.</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DAG Workflow -->
+        <div class="settings-group">
+          <h3 class="settings-group-title">DAG Workflow</h3>
+          <span id="dagExecutionCount" class="muted" style="font-size:12px;margin-bottom:10px;display:block;">0</span>
+          <div class="advanced-grid">
+            <div class="stack">
+              <div class="toolbar">
+                <button id="previewDagButton" type="button" class="secondary">Validate</button>
+                <button id="loadSampleDagButton" type="button" class="ghost">Load Sample</button>
+              </div>
+              <textarea id="dagEditorInput" rows="10" class="dag-editor" placeholder='{"nodes":[...],"edges":[...]}'></textarea>
+              <pre id="dagPreview" class="dag-preview muted">Not validated yet.</pre>
+            </div>
+            <div class="stack">
+              <strong style="font-size:12px;">Execution Snapshots</strong>
+              <div id="dagExecutionList" class="execution-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Budget -->
+        <div class="settings-group">
+          <h3 class="settings-group-title">Budget</h3>
+          <div id="budgetSummary" class="budget-grid" style="margin-bottom:12px;"></div>
+          <form id="budgetForm" class="row" style="gap:8px;">
+            <label class="muted" for="monthlyBudgetInput" style="white-space:nowrap;">Monthly Limit (USD)</label>
+            <input id="monthlyBudgetInput" class="pill-input" type="text" inputmode="decimal" placeholder="50">
+            <button type="submit" class="primary">Update</button>
+            <span id="budgetState" class="muted" style="font-size:12px;"></span>
+          </form>
+        </div>
+
+        <!-- Audit Log -->
+        <div class="settings-group">
+          <div class="row" style="margin-bottom:10px;">
+            <h3 class="settings-group-title" style="margin:0;">Audit Log</h3>
+            <span id="auditCount" class="muted" style="font-size:12px;">0</span>
+          </div>
+          <div id="auditList" class="audit-list"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════
+         TAB: SETTINGS
+         ═══════════════════════════════════════ -->
+    <section id="panel-settings" class="tab-panel">
+      <div class="settings-sections">
+        <!-- ── Custom Providers ── -->
+        <div class="settings-group">
+          <div class="row" style="margin-bottom:10px;">
+            <h3 class="settings-group-title" style="margin:0;">AI Providers</h3>
+            <button id="addProviderBtn" class="secondary" type="button">+ Add Provider</button>
+          </div>
+          <p class="muted" style="font-size:12px;margin:0 0 12px;">Add any OpenAI-compatible or Anthropic API. Saved instantly — no restart needed.</p>
+          <div id="providersList" class="stack" style="gap:8px;"></div>
+        </div>
+
+        <!-- ── Task Routing ── -->
+        <div class="settings-group">
+          <h3 class="settings-group-title">Task Routing</h3>
+          <p class="muted" style="font-size:12px;margin:0 0 12px;">Choose which provider+model handles each task type.</p>
+          <div id="taskRoutingForm" class="stack" style="gap:10px;"></div>
+          <div class="toolbar" style="margin-top:10px;">
+            <button id="saveRoutingBtn" class="primary" type="button">Save Routing</button>
+            <span id="routingSaveState" class="muted" style="font-size:12px;"></span>
+          </div>
+        </div>
+
+        <!-- Status -->
+        <div class="settings-group">
+          <h3 class="settings-group-title">System Status</h3>
+          <span id="onboardingState" class="chip warning" style="margin-bottom:10px;">Checking...</span>
+          <div id="wizardList" class="stack" style="gap:8px;"></div>
+        </div>
+
+        <!-- Integrations -->
+        <div class="settings-group">
+          <h3 class="settings-group-title">Integrations</h3>
           <div id="integrationList" class="integration-list"></div>
         </div>
-      </aside>
 
-      <main class="workspace card">
-        <div class="workspace-stack">
-          <section class="workspace-section section-anchor" id="onboardingSection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">首启引导</h3>
-                <p class="muted" style="margin:4px 0 0;">在桌面应用里确认当前环境是否已经达到可试用状态。</p>
-              </div>
-              <span id="onboardingState" class="chip warning">检查中…</span>
-            </div>
-            <div class="surface stack">
-              <div id="wizardList" class="wizard-list"></div>
-            </div>
-          </section>
-
-          <section class="workspace-section section-anchor" id="composerSection">
-            <div class="shell-header">
-              <div class="shell-brand">
-                <span class="eyebrow">Task Composer</span>
-                <h2 class="title" style="font-size: 26px;">主控工作台</h2>
-                <p class="subtitle">桌面程序里直接发任务、看状态、做审批和管理模板。</p>
+        <!-- One-click setup -->
+        <div class="settings-group">
+          <h3 class="settings-group-title">One-click Setup</h3>
+          <p class="muted" style="font-size:12px;margin:0 0 12px;">
+            Configure local integrations that usually require manual Windows or Office setup.
+          </p>
+          <div class="surface" style="padding:12px;">
+            <div class="row" style="align-items:flex-start;gap:12px;">
+              <div style="flex:1;">
+                <strong style="font-size:13px;">Office Add-ins</strong>
+                <p class="muted" style="font-size:12px;margin:4px 0 0;">
+                  Copies Word / Excel / PowerPoint manifests, creates the local add-in catalog share, and registers it as an Office trusted catalog.
+                </p>
+                <p id="officeAddinSetupState" class="muted" style="font-size:12px;margin:8px 0 0;">Not checked yet.</p>
               </div>
               <div class="toolbar">
-                <button id="refreshButton" class="secondary">刷新</button>
-                <button id="openOverlayButton" class="secondary">打开浮窗</button>
+                <button id="checkOfficeAddinsButton" class="ghost" type="button">Check</button>
+                <button id="setupOfficeAddinsButton" class="secondary" type="button">Configure</button>
               </div>
             </div>
-
-            <form id="taskComposer" class="composer surface">
-              <div>
-                <label for="commandInput">你要 UCA 做什么</label>
-                <textarea id="commandInput" rows="3" placeholder="例如：请分析当前材料并输出 5 条行动建议"></textarea>
-              </div>
-              <div>
-                <label for="contextInput">上下文文本</label>
-                <textarea id="contextInput" rows="6" placeholder="可直接粘贴文本，也可以只写任务要求"></textarea>
-              </div>
-              <div class="row wrap">
-                <div class="toolbar">
-                  <button type="submit" class="primary">提交任务</button>
-                  <span id="submitState" class="muted">尚未提交</span>
-                </div>
-                <div class="toolbar">
-                  <button type="button" class="secondary quick-command" data-command="请总结当前上下文并列出要点">总结</button>
-                  <button type="button" class="secondary quick-command" data-command="请整理成执行清单">行动清单</button>
-                  <button type="button" class="secondary quick-command" data-command="请写成专业邮件草稿">邮件草稿</button>
-                </div>
-              </div>
-            </form>
-          </section>
-
-          <section class="workspace-section section-anchor" id="tasksSection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">任务与详情</h3>
-                <p class="muted" style="margin:4px 0 0;">点击任务可查看时间线、成本、重试和取消操作。</p>
-              </div>
-            </div>
-            <div class="panel-grid">
-              <div class="surface stack">
-                <div class="row">
-                  <strong>最近任务</strong>
-                  <span id="taskCount" class="muted">0</span>
-                </div>
-                <div id="taskList" class="task-list"></div>
-              </div>
-              <div class="surface stack">
-                <div class="row">
-                  <strong>任务详情</strong>
-                  <div class="toolbar">
-                    <button id="retryTaskButton" class="secondary">重试</button>
-                    <button id="cancelTaskButton" class="secondary">取消</button>
-                  </div>
-                </div>
-                <div id="taskDetailSummary" class="stack muted">选择一个任务后显示详情。</div>
-                <div>
-                  <strong>时间线</strong>
-                  <div id="taskTimeline" class="detail-timeline" style="margin-top:10px;"></div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="workspace-section section-anchor" id="approvalsSection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">审批中心</h3>
-                <p class="muted" style="margin:4px 0 0;">对待审批动作进行批准或拒绝。</p>
-              </div>
-              <span id="approvalCount" class="muted">0</span>
-            </div>
-            <div id="approvalList" class="approval-list surface"></div>
-          </section>
-
-          <section class="workspace-section section-anchor" id="schedulesSection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">计划任务</h3>
-                <p class="muted" style="margin:4px 0 0;">查看最近计划并手动触发。</p>
-              </div>
-              <span id="scheduleCount" class="muted">0</span>
-            </div>
-            <div id="scheduleList" class="schedule-list surface"></div>
-          </section>
-
-          <section class="workspace-section section-anchor" id="templatesSection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">模板工作区</h3>
-                <p class="muted" style="margin:4px 0 0;">创建轻量模板，并查看当前模板的导出内容。</p>
-              </div>
-            </div>
-            <div class="panel-grid">
-              <div class="surface stack">
-                <div class="row">
-                  <strong>模板列表</strong>
-                  <span id="templateCount" class="muted">0</span>
-                </div>
-                <div id="templateList" class="template-list"></div>
-              </div>
-              <div class="surface stack">
-                <form id="templateForm" class="stack">
-                  <div>
-                    <label for="templateNameInput">模板名称</label>
-                    <input id="templateNameInput" type="text" placeholder="例如：会议纪要提炼">
-                  </div>
-                  <div>
-                    <label for="templatePromptInput">默认要求</label>
-                    <textarea id="templatePromptInput" rows="5" placeholder="例如：请从当前上下文中提取会议决定、负责人和截止日期"></textarea>
-                  </div>
-                  <div class="toolbar">
-                    <button type="submit" class="primary">保存模板</button>
-                    <button type="button" id="importTemplateButton" class="secondary">导入 JSON</button>
-                    <button type="button" id="deleteTemplateButton" class="secondary">删除所选</button>
-                    <span id="templateState" class="muted">尚未保存</span>
-                  </div>
-                </form>
-                <div>
-                  <strong>导入 JSON</strong>
-                  <textarea id="templateImportInput" rows="8" class="dag-editor" placeholder="粘贴模板 JSON 后点击“导入 JSON”。"></textarea>
-                </div>
-                <div>
-                  <strong>导出预览</strong>
-                  <pre id="templatePreview" class="template-preview muted">选择模板后显示。</pre>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="workspace-section section-anchor" id="dagSection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">DAG 工作流</h3>
-                <p class="muted" style="margin:4px 0 0;">校验工作流定义，查看执行快照，并从失败节点恢复。</p>
-              </div>
-            </div>
-            <div class="panel-grid">
-              <div class="surface stack">
-                <div class="row">
-                  <strong>DAG 定义</strong>
-                  <div class="toolbar">
-                    <button id="previewDagButton" type="button" class="secondary">校验预览</button>
-                    <button id="loadSampleDagButton" type="button" class="secondary">载入样例</button>
-                  </div>
-                </div>
-                <textarea id="dagEditorInput" rows="12" class="dag-editor" placeholder='{"nodes":[{"id":"extract","target":"browser"},{"id":"summarize","target":"kimi_cli"}],"edges":[{"from":"extract","to":"summarize"}]}'></textarea>
-                <pre id="dagPreview" class="dag-preview muted">尚未预览。</pre>
-              </div>
-              <div class="surface stack">
-                <div class="row">
-                  <strong>执行快照</strong>
-                  <span id="dagExecutionCount" class="muted">0</span>
-                </div>
-                <div id="dagExecutionList" class="execution-list"></div>
-              </div>
-            </div>
-          </section>
-
-          <section class="workspace-section section-anchor" id="budgetSection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">预算与配额</h3>
-                <p class="muted" style="margin:4px 0 0;">调整月度预算上限并查看当前消耗。</p>
-              </div>
-            </div>
-            <div class="surface stack">
-              <div id="budgetSummary" class="budget-grid"></div>
-              <form id="budgetForm" class="row wrap">
-                <label class="muted" for="monthlyBudgetInput">月度预算上限（USD）</label>
-                <input id="monthlyBudgetInput" class="pill-input" type="text" inputmode="decimal" placeholder="50">
-                <button type="submit" class="primary">更新预算</button>
-                <span id="budgetState" class="muted">尚未更新</span>
-              </form>
-            </div>
-          </section>
-
-          <section class="workspace-section section-anchor" id="historySection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">历史搜索</h3>
-                <p class="muted" style="margin:4px 0 0;">快速找回相似任务和上下文。</p>
-              </div>
-            </div>
-            <div class="panel-grid">
-              <div class="surface stack">
-                <form id="historyForm" class="row wrap">
-                  <input id="historyQueryInput" type="text" placeholder="输入关键词，例如：合同审查">
-                  <button type="submit" class="primary">搜索</button>
-                </form>
-                <div id="historyList" class="history-list"></div>
-              </div>
-              <div class="surface stack">
-                <strong>当前搜索摘要</strong>
-                <pre id="historyPreview" class="history-preview muted">还没有搜索结果。</pre>
-              </div>
-            </div>
-          </section>
-
-          <section class="workspace-section section-anchor" id="privacySection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">隐私与安全</h3>
-                <p class="muted" style="margin:4px 0 0;">控制 kill switch、离线模式、演示模式，并查看脱敏与留存策略。</p>
-              </div>
-              <span id="privacyState" class="muted">尚未更新</span>
-            </div>
-            <div class="settings-grid">
-              <div class="surface stack">
-                <div class="privacy-list">
-                  <label class="switch-row">
-                    <div class="switch-copy">
-                      <strong>全局停止开关</strong>
-                      <span class="muted">打开后，UCA 将拒绝新的上下文分析与工具调用。</span>
-                    </div>
-                    <input id="killSwitchToggle" class="switch-control" type="checkbox">
-                  </label>
-                  <label class="switch-row">
-                    <div class="switch-copy">
-                      <strong>离线模式</strong>
-                      <span class="muted">阻止需要网络能力的动作工具。</span>
-                    </div>
-                    <input id="offlineModeToggle" class="switch-control" type="checkbox">
-                  </label>
-                  <label class="switch-row">
-                    <div class="switch-copy">
-                      <strong>演示模式</strong>
-                      <span class="muted">适合屏幕共享场景，自动阻止敏感内容流向模型。</span>
-                    </div>
-                    <input id="presenterModeToggle" class="switch-control" type="checkbox">
-                  </label>
-                </div>
-              </div>
-              <div class="surface stack">
-                <div>
-                  <strong>脱敏规则</strong>
-                  <div id="redactionRuleList" class="privacy-list" style="margin-top:10px;"></div>
-                </div>
-                <div>
-                  <strong>数据留存</strong>
-                  <div id="retentionList" class="retention-list" style="margin-top:10px;"></div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section class="workspace-section section-anchor" id="auditSection">
-            <div class="shell-header">
-              <div>
-                <h3 style="margin:0;">审计日志</h3>
-                <p class="muted" style="margin:4px 0 0;">查看最近发生的 runtime、审批、隐私与任务事件。</p>
-              </div>
-              <span id="auditCount" class="muted">0</span>
-            </div>
-            <div id="auditList" class="audit-list surface"></div>
-          </section>
+          </div>
         </div>
-      </main>
+
+        <!-- Privacy & Security -->
+        <div class="settings-group">
+          <div class="row" style="margin-bottom:10px;">
+            <h3 class="settings-group-title" style="margin:0;">Privacy & Security</h3>
+            <span id="privacyState" class="muted" style="font-size:12px;"></span>
+          </div>
+          <label class="switch-row">
+            <div class="switch-copy">
+              <strong>Kill Switch</strong>
+              <span class="muted">Blocks all new context analysis and tool calls.</span>
+            </div>
+            <input id="killSwitchToggle" class="switch-control" type="checkbox">
+          </label>
+          <label class="switch-row">
+            <div class="switch-copy">
+              <strong>Offline Mode</strong>
+              <span class="muted">Blocks action tools requiring network.</span>
+            </div>
+            <input id="offlineModeToggle" class="switch-control" type="checkbox">
+          </label>
+          <label class="switch-row">
+            <div class="switch-copy">
+              <strong>Presenter Mode</strong>
+              <span class="muted">Blocks sensitive content during screen sharing.</span>
+            </div>
+            <input id="presenterModeToggle" class="switch-control" type="checkbox">
+          </label>
+          <div style="margin-top:12px;">
+            <strong style="font-size:12px;">Redaction Rules</strong>
+            <div id="redactionRuleList" class="privacy-list" style="margin-top:6px;"></div>
+          </div>
+          <div style="margin-top:12px;">
+            <strong style="font-size:12px;">Data Retention</strong>
+            <div id="retentionList" class="retention-list" style="margin-top:6px;"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Provider edit modal -->
+    <div id="providerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:1000;align-items:center;justify-content:center;">
+      <div style="background:#fff;border-radius:16px;padding:24px;width:440px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+        <h3 style="margin:0 0 16px;font-size:16px;">Add / Edit Provider</h3>
+        <form id="providerEditForm" class="stack" style="gap:12px;">
+          <input type="hidden" id="provEditOriginalId" value="">
+          <div>
+            <label for="provName">Name</label>
+            <input id="provName" type="text" placeholder="e.g. My Claude, DeepSeek, Kimi CLI" required>
+          </div>
+          <div>
+            <label for="provKind">Type</label>
+            <select id="provKind" style="width:100%;">
+              <optgroup label="Cloud API">
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI compatible (OpenAI / Kimi / DeepSeek / etc)</option>
+              </optgroup>
+              <optgroup label="Local">
+                <option value="ollama">Ollama (HTTP)</option>
+                <option value="code_cli">Code CLI (subprocess: kimi, claude, codex, etc)</option>
+              </optgroup>
+            </select>
+          </div>
+
+          <!-- API fields (anthropic / openai / ollama) -->
+          <div id="provApiFields" class="stack" style="gap:12px;">
+            <div>
+              <label for="provBaseUrl">Base URL</label>
+              <input id="provBaseUrl" type="text" placeholder="https://api.openai.com/v1">
+            </div>
+            <div>
+              <label for="provApiKey">API Key</label>
+              <input id="provApiKey" type="password" placeholder="sk-..." autocomplete="off">
+            </div>
+          </div>
+
+          <!-- Code CLI fields -->
+          <div id="provCliFields" class="stack" style="gap:12px;display:none;">
+            <div>
+              <button type="button" id="provDetectCliBtn" class="secondary" style="width:100%;font-size:12px;">🔍 Auto-detect installed CLIs</button>
+              <div id="provDetectResults" style="margin-top:8px;display:none;"></div>
+            </div>
+            <div>
+              <label for="provCommand">Executable Path</label>
+              <input id="provCommand" type="text" placeholder="C:\\Users\\you\\.local\\bin\\kimi.exe">
+            </div>
+            <div>
+              <label for="provArgs">Extra Args (space-separated)</label>
+              <input id="provArgs" type="text" placeholder="(usually empty)">
+            </div>
+            <div>
+              <label for="provTransport">Transport</label>
+              <select id="provTransport" style="width:100%;">
+                <option value="stream_json_print">stream_json_print (Kimi / Claude Code)</option>
+                <option value="jsonl_task_package">jsonl_task_package (custom)</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label for="provDefaultModel">Default Model (optional)</label>
+            <input id="provDefaultModel" type="text" placeholder="e.g. claude-sonnet-4-5-20250514, kimi-k2">
+          </div>
+          <div class="toolbar" style="justify-content:flex-end;margin-top:8px;">
+            <button type="button" id="provCancelBtn" class="ghost">Cancel</button>
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </div>
     </div>
+
     <script type="module" src="./console.js"></script>
   </body>
 </html>

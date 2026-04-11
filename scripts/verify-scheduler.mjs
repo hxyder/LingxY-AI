@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
+import { createSqliteStore } from "../src/service/core/store/sqlite-store.mjs";
 import { buildPendingApprovalsViewModel } from "../src/desktop/console/pending-approvals/view-model.mjs";
 import { buildSchedulesViewModel } from "../src/desktop/console/schedules/view-model.mjs";
 import { parseNaturalLanguageTrigger } from "../src/service/scheduler/nl_to_cron.mjs";
@@ -12,6 +16,67 @@ assert.ok(runtime.scheduler);
 const parsed = parseNaturalLanguageTrigger("每天 9 点提醒我喝水");
 assert.equal(parsed.ok, true);
 assert.equal(parsed.trigger.expression, "0 9 * * *");
+
+const futureRunAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+const sqliteTempDir = await mkdtemp(path.join(os.tmpdir(), "uca-scheduler-"));
+const sqliteStore = createSqliteStore({
+  dbPath: path.join(sqliteTempDir, "scheduler.sqlite")
+});
+try {
+  const sqliteService = createServiceBootstrap({
+    storeAdapter: sqliteStore
+  });
+  const oneShotSchedule = sqliteService.runtime.scheduler.createSchedule({
+    name: "One-shot reminder",
+    trigger: {
+      type: "interval",
+      seconds: 60
+    },
+    action: {
+      type: "action_tool",
+      target: "notify",
+      params: {
+        title: "One-shot",
+        body: "Run only once"
+      }
+    },
+    metadata: {
+      one_shot: true
+    }
+  });
+  assert.equal(sqliteStore.getSchedule(oneShotSchedule.schedule_id).metadata.one_shot, true);
+
+  const oneShotRun = await sqliteService.runtime.scheduler.dispatch(oneShotSchedule.schedule_id, "manual");
+  assert.equal(oneShotRun.status, "success");
+  const oneShotAfterRun = sqliteStore.getSchedule(oneShotSchedule.schedule_id);
+  assert.equal(oneShotAfterRun.enabled, false);
+  assert.equal(oneShotAfterRun.next_run_at, null);
+  assert.equal(oneShotAfterRun.metadata.one_shot, true);
+
+  const atSchedule = sqliteService.runtime.scheduler.createSchedule({
+    name: "Exact reminder",
+    trigger: {
+      type: "at",
+      run_at: futureRunAt
+    },
+    action: {
+      type: "action_tool",
+      target: "notify",
+      params: {
+        title: "At",
+        body: "Run at exact time"
+      }
+    },
+    metadata: {
+      one_shot: true
+    }
+  });
+  assert.equal(sqliteStore.getSchedule(atSchedule.schedule_id).next_run_at, futureRunAt);
+} finally {
+  sqliteStore.close();
+  await rm(sqliteTempDir, { recursive: true, force: true });
+}
 
 const createResult = await runtime.actionToolRegistry.call("create_scheduled_task", {
   name: "Daily Reminder",
@@ -45,6 +110,30 @@ assert.equal(listResult.metadata.schedules.length >= 1, true);
 const dispatchResult = await runtime.scheduler.dispatch(scheduleId, "manual");
 assert.equal(dispatchResult.status, "success");
 assert.equal(runtime.store.listScheduleRuns(scheduleId).length, 1);
+
+const aiWorkSchedule = runtime.scheduler.createSchedule({
+  name: "Scheduled AI work",
+  trigger: {
+    type: "at",
+    run_at: futureRunAt
+  },
+  action: {
+    type: "task",
+    target: "context_task",
+    params: {
+      userCommand: "总结今天的待办",
+      contextText: "Scheduled AI work smoke test"
+    }
+  },
+  executionMode: "unattended_safe",
+  metadata: {
+    one_shot: true
+  }
+});
+const aiWorkRun = await runtime.scheduler.dispatch(aiWorkSchedule.schedule_id, "manual");
+assert.equal(aiWorkRun.status, "success");
+assert.equal(runtime.store.getSchedule(aiWorkSchedule.schedule_id).enabled, false);
+assert.equal(Boolean(aiWorkRun.task?.task_id), true);
 
 const pauseResult = await runtime.actionToolRegistry.call("pause_scheduled_task", {
   schedule_id: scheduleId

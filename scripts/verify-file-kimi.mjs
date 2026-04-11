@@ -8,12 +8,15 @@ import { createArtifactStore } from "../src/service/store/artifact-store.mjs";
 import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs";
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
 import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
+import { submitContextTask } from "../src/service/core/context-submission.mjs";
 import { submitFileTask } from "../src/service/core/file-submission.mjs";
 import { extractFileContent } from "../src/service/extractors/file-ingest.mjs";
+import { detectRequestedOutputFormat } from "../src/service/executors/kimi/output-format.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const runtimeDir = path.join(repoRoot, ".tmp", "verify-file-kimi");
+process.env.UCA_FORCE_BOOT_KIMI_RUNTIME = "1";
 const sampleNote = path.join(repoRoot, "tests", "fixtures", "sample-note.md");
 const sampleText = path.join(repoRoot, "tests", "fixtures", "sample-text.txt");
 const mockCli = path.join(repoRoot, "tests", "fixtures", "mock-kimi-cli.mjs");
@@ -21,6 +24,8 @@ const sampleCsv = path.join(runtimeDir, "sample-table.csv");
 const sampleJson = path.join(runtimeDir, "sample-data.json");
 const sampleDocx = path.join(runtimeDir, "sample-brief.docx");
 const sampleXlsx = path.join(runtimeDir, "sample-sheet.xlsx");
+
+assert.equal(detectRequestedOutputFormat("给我生成一份word文档，关于AI的分析发展报告，保存到桌面").id, "docx");
 
 await rm(runtimeDir, { recursive: true, force: true });
 await mkdir(runtimeDir, { recursive: true });
@@ -124,7 +129,7 @@ const result = await submitCommand(
     sampleDocx,
     sampleXlsx,
     "--command",
-    "分析这些文件并生成详细报告",
+    "分析这些文件并生成 markdown 报告文件",
     "--batch-key",
     "verify-file-kimi"
   ],
@@ -162,5 +167,29 @@ const docxResult = await submitFileTask({
 assert.equal(docxResult.task.status, "success");
 assert.match(docxResult.artifacts[0].path, /result\.docx$/);
 assert.match(docxResult.artifacts[1].path, /result-preview\.txt$/);
+
+const contextRuntime = {
+  store: createInMemoryStoreScaffold(),
+  eventBus: createEventBusScaffold(),
+  queue: createTaskQueueScaffold(),
+  artifactStore: createArtifactStore({ baseDir: path.join(runtimeDir, "context-artifacts") }),
+  executors: [
+    {
+      id: "fast",
+      async *execute() {
+        yield { event_type: "inline_result", payload: { text: "AI 发展分析报告\n\n核心观点：模型能力与工具生态同步扩展。" } };
+        yield { event_type: "success", payload: { text: "AI 发展分析报告\n\n核心观点：模型能力与工具生态同步扩展。" } };
+      }
+    }
+  ]
+};
+const contextDocxResult = await submitContextTask({
+  contextPacket: { text: "AI development context" },
+  userCommand: "给我生成一份word文档，关于AI的分析发展报告",
+  runtime: contextRuntime
+});
+assert.equal(contextDocxResult.task.status, "success");
+assert.ok(contextDocxResult.artifacts.some((artifact) => /result\.docx$/.test(artifact.path)));
+assert.ok(contextRuntime.store.taskEvents.some((event) => event.event_type === "artifact_created"));
 
 console.log("File entry and Kimi bridge verification passed.");

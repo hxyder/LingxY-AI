@@ -13,9 +13,13 @@ function createId(prefix) {
 }
 
 function buildSourceDedupeKey(contextPacket, userCommand, executor) {
+  const textKey = contextPacket.text?.trim()?.slice(0, 240);
   const sourceKey = contextPacket.file_paths?.join("|")
+    ?? ((contextPacket.source_type === "text_selection" || contextPacket.source_type === "text") && textKey
+      ? textKey
+      : null)
     ?? contextPacket.url
-    ?? contextPacket.text?.slice(0, 120)
+    ?? textKey
     ?? contextPacket.source_type;
   return `${contextPacket.source_type}:${contextPacket.source_app}:${executor}:${userCommand}:${sourceKey}`;
 }

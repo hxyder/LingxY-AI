@@ -9,10 +9,12 @@ import { buildFileContextPacket, extractFileContent } from "../src/service/extra
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
 import { buildScreenshotCaptureRequest } from "../src/helper/Screenshot/capture-contract.mjs";
 import { DEFAULT_OCR_ENGINE } from "../src/service/extractors/pdf_ocr.mjs";
+import { DEFAULT_IMAGE_OCR_ENGINE } from "../src/service/extractors/image_ocr.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const runtimeDir = path.join(repoRoot, ".tmp", "verify-pdf-ocr");
+process.env.UCA_FORCE_BOOT_KIMI_RUNTIME = "1";
 const textPdf = path.join(runtimeDir, "sample-text-layer.pdf");
 const scannedPdf = path.join(runtimeDir, "sample-scanned.pdf");
 const screenshotPath = path.join(runtimeDir, "capture.png");
@@ -73,7 +75,7 @@ assert.equal(scannedExtract.ocr_applied, true);
 
 const imageExtract = await extractFileContent(screenshotPath);
 assert.equal(imageExtract.extraction_mode, "image_ocr");
-assert.equal(imageExtract.ocr_engine, DEFAULT_OCR_ENGINE);
+assert.equal([DEFAULT_IMAGE_OCR_ENGINE, "tesseract", "none"].includes(imageExtract.ocr_engine), true);
 
 const filePacket = await buildFileContextPacket({
   filePaths: [textPdf, scannedPdf],

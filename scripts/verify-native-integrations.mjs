@@ -176,6 +176,11 @@ try {
             status: "succeeded",
             value: "Office native selection"
           });
+        },
+        setSelectedDataAsync(value, _options, callback) {
+          callback({
+            status: value ? "succeeded" : "failed"
+          });
         }
       }
     },
@@ -189,6 +194,7 @@ try {
   };
   const officeSelection = await captureOfficeSelection(mockOffice);
   assert.equal(officeSelection.selectionText, "Office native selection");
+  assert.equal(officeSelection.captureScope, "selection");
 
   const officeSubmit = await submitOfficeSelection({
     transportPlan: {

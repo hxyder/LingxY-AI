@@ -50,11 +50,18 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：done
 - 执行分支：`main`
-- 开始日期：
-- 完成日期：
+- 开始日期：2026-04-10
+- 完成日期：2026-04-11
 - 实际新增内容：
-- 验证结果：
+  - Overlay 会话时间线（气泡流）、最近任务列表、载入最近任务回填上下文、基于结果继续追问的 follow-up 记录
+  - 多轮追问：每次用户提交时，完整的对话历史被折叠进 `capture.text` 发给 LLM，模型能看到之前说过什么（详细实现见 UCA-038）
+  - 从内联结果框 → Overlay 的 handoff 会携带 `priorResult` / `priorUserCommand`，应用 handoff 时自动把前一轮 Q+A 以气泡渲染，并进入"持久会话"模式（不自动消失）
+- 验证结果：`node scripts/verify-overlay-composer.mjs`、`node scripts/verify-browser-extension.mjs`、`npm run check` 通过
 - 遗留问题：
-- 交接给下一个任务：
+  - 会话历史面板（侧边栏列出多个历史会话供用户点击恢复）尚未实现 —— 见 UCA-041
+  - **[已知缺陷]** 用户反馈：新建会话后，发送的用户消息在 UI 上看不到（气泡没绘制），但提交链路似乎继续运行；需要定位 `handleUserSend` 在新会话下的 `addBubble("user", ...)` 路径
+  - **[已知缺陷]** 用户反馈：关闭 Overlay 后，之前的对话气泡看不到了；虽然 conversationState 已持久化到 localStorage，但 `restoreConversation()` 恢复时没有把 turns 重新渲染成 bubble；需要在 init 阶段遍历 `conversationState.turns` 调用 `addBubble`
+  - **[已知缺陷]** 用户反馈：AI 说"已启动应用"但实际没启动 —— 出现在 tool_using 路径；可能是 `launch_app` 返回 success 但实际 Start-Process 是空回退，或 LLM 在工具调用失败后没如实汇报；需要让 LLM 汇报严格绑定在 tool 返回的 `success` 字段
+- 交接给下一个任务：UCA-038 把 sessionEntries 泛化为统一 `conversationState`；UCA-031 复用本任务的 artifact 气泡继续做结果中心

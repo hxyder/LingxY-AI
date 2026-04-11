@@ -35,7 +35,12 @@ function updateScheduleAfterRun(runtime, schedule, runStatus, now) {
   schedule.last_run_at = now;
   schedule.last_run_status = runStatus;
   schedule.run_count += 1;
-  schedule.next_run_at = computeNextRunAt(schedule, { after: now });
+  if (schedule.metadata?.one_shot) {
+    schedule.enabled = false;
+    schedule.next_run_at = null;
+  } else {
+    schedule.next_run_at = computeNextRunAt(schedule, { after: now });
+  }
 
   const outcome = applyScheduleRunOutcome(schedule, runStatus);
   runtime.store.updateSchedule(schedule.schedule_id, schedule);

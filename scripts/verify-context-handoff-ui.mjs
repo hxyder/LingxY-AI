@@ -14,16 +14,23 @@ const packageJson = JSON.parse(await read("package.json"));
 assert.equal(packageJson.main, "index.cjs");
 
 const overlayHtml = await read("src/desktop/renderer/overlay.html");
-assert.equal(overlayHtml.includes("文件上下文"), true);
-assert.equal(overlayHtml.includes("pendingFilesSummary"), true);
+assert.equal(overlayHtml.includes("bubbleArea"), true);
+assert.equal(overlayHtml.includes("commandInput"), true);
+assert.equal(overlayHtml.includes("clipboardBtn"), true);
+assert.equal(overlayHtml.includes("resultToast"), true);
 
 const overlayJs = await read("src/desktop/renderer/overlay.js");
-assert.equal(overlayJs.includes("applyExplorerHandoff"), true);
-assert.equal(overlayJs.includes("filePaths"), true);
+assert.equal(overlayJs.includes("applyShellHandoff"), true);
+assert.equal(overlayJs.includes("pendingFileSelection"), true);
 assert.equal(overlayJs.includes("onContextReceived"), true);
+assert.equal(overlayJs.includes("pendingCapture"), true);
+assert.equal(overlayJs.includes("showContextReceivedBubble"), true);
+assert.equal(overlayJs.includes("hotkey_capture"), true);
 
 const preload = await read("src/desktop/renderer/preload.cjs");
 assert.equal(preload.includes("onContextReceived"), true);
+assert.equal(preload.includes("resolveDroppedFilePaths"), true);
+assert.equal(preload.includes("submitDroppedFiles"), true);
 
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
 assert.equal(mainProcess.includes("requestSingleInstanceLock"), true);
@@ -33,6 +40,9 @@ assert.equal(mainProcess.includes("drainHandoffDirectory"), true);
 assert.equal(mainProcess.includes("startHandoffWatcher"), true);
 assert.equal(mainProcess.includes("await consumeHandoffFile(handoffFile)"), true);
 assert.equal(mainProcess.includes("error?.code === \"ENOENT\""), true);
+assert.equal(mainProcess.includes("captureActiveWindowContext"), true);
+assert.equal(mainProcess.includes("capture-context.ps1"), true);
+assert.equal(mainProcess.includes("shellSubmitDroppedFiles"), true);
 
 const helperProgram = await read("src/helper/explorer_selection/UcaExplorerSelectionHelper/Program.cs");
 assert.equal(helperProgram.includes("overlay_prompt"), true);

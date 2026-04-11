@@ -18,6 +18,13 @@ export function createInMemoryStoreScaffold() {
     getTask(taskId) {
       return this.tasks.get(taskId) ?? null;
     },
+    deleteTask(taskId) {
+      const existed = this.tasks.has(taskId);
+      this.tasks.delete(taskId);
+      this.taskEvents = this.taskEvents.filter((e) => e.task_id !== taskId);
+      this.artifacts = this.artifacts.filter((a) => a.task_id !== taskId);
+      return existed;
+    },
     listTasks() {
       return [...this.tasks.values()];
     },

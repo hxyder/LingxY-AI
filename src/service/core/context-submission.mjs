@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { createArtifactStore } from "../store/artifact-store.mjs";
+import { detectRequestedOutputFormat, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import {
   applyExecutorEvent,
@@ -53,6 +55,9 @@ function pickRunnableExecutor(task, runtime) {
 }
 
 async function runExecutor({ runtime, task, executor }) {
+  const artifactStore = runtime.artifactStore ?? createArtifactStore();
+  const generatedArtifacts = [];
+  let inlineText = "";
   const controller = new AbortController();
   registerActiveExecution(runtime, task.task_id, {
     cancel: async () => controller.abort()
@@ -71,10 +76,42 @@ async function runExecutor({ runtime, task, executor }) {
         eventType: event.event_type,
         payload: event.payload
       });
+      if (event.event_type === "inline_result" || event.event_type === "success") {
+        inlineText = event.payload?.text ?? event.payload?.summary ?? inlineText;
+      }
+      if (event.event_type === "artifact_created" && event.payload?.path) {
+        const artifactRecord = artifactStore.registerArtifact(task.task_id, event.payload.path, event.payload.mime ?? event.payload.mime_type);
+        runtime.store.appendArtifact(artifactRecord);
+        generatedArtifacts.push(artifactRecord);
+      }
       applyExecutorEvent(runtime, task, {
         type: event.event_type,
         ...event.payload
       });
+    }
+
+    const requestedFormat = detectRequestedOutputFormat(task.user_command);
+    if (requestedFormat.id !== "conversational" && generatedArtifacts.length === 0) {
+      const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+      const artifacts = await writeRequestedArtifacts({
+        assistantText: inlineText || task.context_packet?.text || task.user_command,
+        outputDir,
+        requestedFormat
+      });
+      for (const artifact of artifacts) {
+        const artifactRecord = artifactStore.registerArtifact(task.task_id, artifact.path, artifact.mime_type);
+        runtime.store.appendArtifact(artifactRecord);
+        generatedArtifacts.push(artifactRecord);
+        emitTaskEvent({
+          runtime,
+          taskId: task.task_id,
+          eventType: "artifact_created",
+          payload: {
+            path: artifact.path,
+            mime: artifact.mime_type
+          }
+        });
+      }
     }
 
     if (task.status !== "success") {
@@ -85,10 +122,10 @@ async function runExecutor({ runtime, task, executor }) {
       }, true);
     }
     markTaskSucceeded(runtime, task);
-    return { status: "success" };
+    return { status: "success", artifacts: generatedArtifacts };
   } catch (error) {
     markTaskFailed(runtime, task, error);
-    return { status: task.status };
+    return { status: task.status, artifacts: generatedArtifacts };
   } finally {
     unregisterActiveExecution(runtime, task.task_id);
   }
@@ -181,10 +218,10 @@ export async function submitContextTask({
     };
   }
 
-  await runExecutor({ runtime, task, executor });
+  const executionResult = await runExecutor({ runtime, task, executor });
   return {
     task,
     taskEvents: store.getTaskEvents(task.task_id),
-    artifacts: []
+    artifacts: executionResult.artifacts ?? []
   };
 }

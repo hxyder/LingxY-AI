@@ -6,12 +6,12 @@ function isString(value) {
 
 function validateAgainstSchema(schema, args) {
   if (schema.type !== "object" || typeof args !== "object" || args === null || Array.isArray(args)) {
-    return false;
+    return { ok: false, reason: "args must be an object" };
   }
 
   for (const requiredKey of schema.required ?? []) {
     if (!(requiredKey in args)) {
-      return false;
+      return { ok: false, reason: `missing required field: ${requiredKey}` };
     }
   }
 
@@ -21,28 +21,38 @@ function validateAgainstSchema(schema, args) {
     }
     const value = args[key];
 
+    // empty schema {} means accept anything
+    if (!descriptor.type && !descriptor.enum) continue;
+
     if (descriptor.type === "string" && !isString(value)) {
-      return false;
+      return { ok: false, reason: `${key} must be string, got ${typeof value}` };
     }
     if (descriptor.type === "array" && !Array.isArray(value)) {
-      return false;
+      return { ok: false, reason: `${key} must be array` };
     }
     if (descriptor.type === "array" && descriptor.items?.type === "string" && !value.every((item) => typeof item === "string")) {
-      return false;
+      return { ok: false, reason: `${key} array items must be strings` };
+    }
+    if (descriptor.type === "integer" && (typeof value !== "number" || !Number.isInteger(value))) {
+      return { ok: false, reason: `${key} must be integer` };
+    }
+    if (descriptor.type === "boolean" && typeof value !== "boolean") {
+      return { ok: false, reason: `${key} must be boolean` };
     }
     if (descriptor.enum && !descriptor.enum.includes(value)) {
-      return false;
+      return { ok: false, reason: `${key} must be one of: ${descriptor.enum.join(", ")}` };
     }
   }
 
-  return true;
+  return { ok: true };
 }
 
 export function validateToolCall(tool, args, ctx = {}) {
-  if (!validateAgainstSchema(tool.parameters, args)) {
+  const result = validateAgainstSchema(tool.parameters, args);
+  if (!result.ok) {
     return {
       ok: false,
-      error: "schema_validation_failed"
+      error: `schema validation failed: ${result.reason}`
     };
   }
 

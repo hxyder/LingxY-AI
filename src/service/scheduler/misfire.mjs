@@ -98,6 +98,14 @@ export function computeNextRunAt(schedule, {
     return new Date(afterDate.getTime() + seconds * 1000).toISOString();
   }
 
+  if (schedule.trigger_type === "at") {
+    const runAt = new Date(schedule.trigger_config.run_at ?? schedule.trigger_config.at ?? "");
+    if (Number.isNaN(runAt.getTime())) {
+      throw new Error("At trigger requires a valid run_at timestamp.");
+    }
+    return runAt.getTime() > afterDate.getTime() ? runAt.toISOString() : null;
+  }
+
   if (schedule.trigger_type === "file_watch") {
     return null;
   }
@@ -131,7 +139,7 @@ export function computeMissedRunTimes(schedule, {
     return [];
   }
 
-  if (!["cron", "interval", "clipboard_watch"].includes(schedule.trigger_type)) {
+  if (!["cron", "interval", "at", "clipboard_watch"].includes(schedule.trigger_type)) {
     return [];
   }
 

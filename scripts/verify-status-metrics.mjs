@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// Isolate from the real user config so per-task provider resolution falls
+// back to the boot-time kimiRuntime this test injects (see UCA-049).
+process.env.UCA_FORCE_BOOT_KIMI_RUNTIME = "1";
 import { buildTaskDetailViewModel } from "../src/desktop/console/task-detail/view-model.mjs";
 import { buildConsoleFiltersViewModel } from "../src/desktop/console/filters/view-model.mjs";
 import { createConsoleViewModel } from "../src/desktop/console/view-model.mjs";
@@ -17,8 +21,6 @@ import { classifyFailure } from "../src/service/failures/classifier.mjs";
 import { createMetricsRegistry } from "../src/service/metrics/registry.mjs";
 import { retryTask } from "../src/service/retry/retry-manager.mjs";
 import { createArtifactStore } from "../src/service/store/artifact-store.mjs";
-import { createFastExecutorScaffold } from "../src/service/executors/fast/fast-executor.mjs";
-import { createMultiModalExecutorScaffold } from "../src/service/executors/multi_modal/multi-modal-executor.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -27,6 +29,22 @@ const failingCli = path.join(repoRoot, "tests", "fixtures", "mock-failing-kimi-c
 const slowCli = path.join(repoRoot, "tests", "fixtures", "mock-slow-kimi-cli.mjs");
 const sampleNote = path.join(repoRoot, "tests", "fixtures", "sample-note.md");
 const sampleImage = path.join(runtimeDir, "sample-capture.png");
+
+const stubFastExecutor = {
+  id: "fast",
+  async *execute() {
+    yield { event_type: "inline_result", payload: { text: "Stub fast executor result." } };
+    yield { event_type: "success", payload: { text: "Stub fast executor result." } };
+  }
+};
+
+const stubMultiModalExecutor = {
+  id: "multi_modal",
+  async *execute() {
+    yield { event_type: "inline_result", payload: { text: "Stub image analysis result." } };
+    yield { event_type: "success", payload: { text: "Stub image analysis result." } };
+  }
+};
 
 await rm(runtimeDir, { recursive: true, force: true });
 await mkdir(runtimeDir, { recursive: true });
@@ -39,7 +57,7 @@ function createRuntime(name, extras = {}) {
     eventBus: createEventBusScaffold(),
     queue: createTaskQueueScaffold(),
     artifactStore: createArtifactStore({ baseDir: path.join(runtimeDir, name) }),
-    executors: [createFastExecutorScaffold(), createMultiModalExecutorScaffold()],
+    executors: [stubFastExecutor, stubMultiModalExecutor],
     ...extras
   };
   runtime.metrics = createMetricsRegistry({

@@ -11,16 +11,20 @@ async function read(relativePath) {
 }
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
-assert.equal(consoleHtml.includes("任务与详情"), true);
-assert.equal(consoleHtml.includes("审批中心"), true);
-assert.equal(consoleHtml.includes("计划任务"), true);
-assert.equal(consoleHtml.includes("模板工作区"), true);
-assert.equal(consoleHtml.includes("导入 JSON"), true);
-assert.equal(consoleHtml.includes("DAG 工作流"), true);
-assert.equal(consoleHtml.includes("预算与配额"), true);
-assert.equal(consoleHtml.includes("历史搜索"), true);
-assert.equal(consoleHtml.includes("隐私与安全"), true);
-assert.equal(consoleHtml.includes("审计日志"), true);
+assert.equal(consoleHtml.includes("Tasks"), true);
+assert.equal(consoleHtml.includes("Pending Approvals"), true);
+assert.equal(consoleHtml.includes("Scheduled Tasks"), true);
+assert.equal(consoleHtml.includes("Templates"), true);
+assert.equal(consoleHtml.includes("Import JSON"), true);
+assert.equal(consoleHtml.includes("DAG Workflow"), true);
+assert.equal(consoleHtml.includes("Budget"), true);
+assert.equal(consoleHtml.includes("History"), true);
+assert.equal(consoleHtml.includes("Privacy & Security"), true);
+assert.equal(consoleHtml.includes("Audit Log"), true);
+assert.equal(consoleHtml.includes("Artifacts"), true);
+assert.equal(consoleHtml.includes("Open"), true);
+assert.equal(consoleHtml.includes("One-click Setup"), true);
+assert.equal(consoleHtml.includes("Office Add-ins"), true);
 
 const consoleJs = await read("src/desktop/renderer/console.js");
 assert.equal(consoleJs.includes('fetchJson("/approvals")'), true);
@@ -33,6 +37,24 @@ assert.equal(consoleJs.includes('fetchJson("/dag/preview"'), true);
 assert.equal(consoleJs.includes('fetchJson("/history/search"'), true);
 assert.equal(consoleJs.includes('fetchJson("/security/state")'), true);
 assert.equal(consoleJs.includes('fetchJson("/audit-log")'), true);
+assert.equal(consoleJs.includes("renderTaskArtifacts"), true);
+assert.equal(consoleJs.includes("openTaskArtifactButton"), true);
+assert.equal(consoleJs.includes("useTaskArtifactContextButton"), true);
 assert.equal(consoleJs.includes('window.ucaShell.showWindow("overlay")'), true);
+assert.equal(consoleJs.includes("ensureSelectedTaskEventStream"), true);
+assert.equal(consoleJs.includes("handleSelectedTaskEventFrame"), true);
+assert.equal(consoleJs.includes("formatTaskEventSummary"), true);
+assert.equal(consoleJs.includes("configureOfficeAddins"), true);
+assert.equal(consoleJs.includes("/setup/office-addins"), true);
+assert.equal(consoleJs.includes("providerModelPresets"), true);
+assert.equal(consoleJs.includes("modeOptionsForModel"), true);
+assert.equal(consoleJs.includes("deepseek-reasoner"), true);
+assert.equal(consoleJs.includes("data-routing-mode"), true);
+// UCA-049 commit 3: task detail panel surfaces the resolved provider line
+// + downgraded warning, derived from per-event provider_* fields.
+assert.equal(consoleJs.includes("extractTaskProviderInfo"), true);
+assert.equal(consoleJs.includes("renderProviderLine"), true);
+assert.equal(consoleJs.includes("renderDowngradedWarning"), true);
+assert.equal(consoleJs.includes("data-uca-downgraded"), true);
 
 console.log("Rendered console workspace verification passed.");

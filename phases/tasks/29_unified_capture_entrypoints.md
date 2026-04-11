@@ -49,11 +49,19 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：done
 - 执行分支：`main`
-- 开始日期：
-- 完成日期：
+- 开始日期：2026-04-09
+- 完成日期：2026-04-11
 - 实际新增内容：
-- 验证结果：
+  - 浏览器右键菜单改为 handoff 到桌面 Overlay
+  - 页面内浮动 chip 的 翻译/总结/解释 动作不再直接跳到桌面 Overlay —— 而是在网页上就地显示 Apple 风格内联结果框（由 UCA-037 接管），只有用户显式点击 "在对话框打开" 才 handoff
+  - Overlay 新增网页 / 图片 / 文字选区上下文接收与统一提交逻辑
+  - 浏览器 capture 任务支持按 executor 选择执行器
+  - 统一的 handoff payload 追加了 `priorResult` / `priorUserCommand` 字段，实现跨媒介的跟进上下文传递
+- 验证结果：`node scripts/verify-browser-extension.mjs`、`node scripts/verify-overlay-composer.mjs`、`node scripts/verify-desktop-renderer.mjs`、`npm run check` 通过
 - 遗留问题：
-- 交接给下一个任务：
+  - 真实网页正文抓取仍以选区 / URL / 元数据为主，复杂网页结构化提取和跨浏览器细节还需要继续补强
+  - **[已知缺陷]** 用户反馈：对不同段落连续触发翻译时，**第二次翻译显示的仍是上一段的内容** —— 怀疑是浮动 chip 的 selection state、service-worker 的 runQuickAction 闭包、或内联结果框旧实例导致，需要进一步定位（上下文：用户测试路径是网页上选中 A 段→翻译→换选 B 段→翻译）
+  - **[与 UCA-047 冲突 / 待扩展]** 2026-04-11 新需求："检测当前活动的主窗口，可以直接基于主窗口，理解文件路径。如果是网页，可以识别链接，并进行一系列操作，当用户唤醒以后。" 本任务的 `capture-context.ps1` 只抓 clipboard 和 Explorer 选中文件；真正的 active window 深度抓取（浏览器 URL、Word/Excel 当前文件路径、VS Code 打开的文件等）由 UCA-047 继续做
+- 交接给下一个任务：统一 handoff payload + priorResult 已成形，UCA-030 / UCA-038 直接复用此通道做会话记忆传递；UCA-047 在此基础上深化 active window extractor

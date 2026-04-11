@@ -44,6 +44,17 @@ contextBridge.exposeInMainWorld("ucaShell", {
   notify(payload) {
     return ipcRenderer.invoke("uca:shell-notify", payload);
   },
+  navigateConsole(payload) {
+    return ipcRenderer.invoke("uca:shell-navigate-console", payload ?? {});
+  },
+  onNavigateConsole(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:shell-navigate-console", listener);
+    return () => ipcRenderer.removeListener("uca:shell-navigate-console", listener);
+  },
+  moveWindowBy(windowId, deltaX, deltaY) {
+    return ipcRenderer.invoke("uca:shell-move-window-by", { windowId, deltaX, deltaY });
+  },
   onShortcutTriggered(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:shortcut-triggered", listener);
@@ -63,5 +74,15 @@ contextBridge.exposeInMainWorld("ucaShell", {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:shell-context-received", listener);
     return () => ipcRenderer.removeListener("uca:shell-context-received", listener);
+  },
+  onClipboardChanged(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:shell-clipboard-changed", listener);
+    return () => ipcRenderer.removeListener("uca:shell-clipboard-changed", listener);
+  },
+  onNotificationReceived(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:shell-notification-received", listener);
+    return () => ipcRenderer.removeListener("uca:shell-notification-received", listener);
   }
 });

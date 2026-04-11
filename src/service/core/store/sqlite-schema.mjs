@@ -49,7 +49,8 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   last_run_status TEXT,
   run_count INTEGER NOT NULL DEFAULT 0,
   failure_count INTEGER NOT NULL DEFAULT 0,
-  consecutive_failure_count INTEGER NOT NULL DEFAULT 0
+  consecutive_failure_count INTEGER NOT NULL DEFAULT 0,
+  metadata_json TEXT
 );`,
   scheduleRuns: `CREATE TABLE IF NOT EXISTS schedule_runs (
   run_id TEXT PRIMARY KEY,

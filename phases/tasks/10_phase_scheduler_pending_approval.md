@@ -85,6 +85,7 @@
   - 真实 `node-cron` / `chokidar` watcher 尚未接入，目前是本地调度骨架与手动事件入口
   - `pending_approvals` 和 `schedule_runs` 仍是内存态，没有真实 SQLite DAO
   - task template 执行目前是 fast-executor 占位路径，还不是可配置模板引擎
+  - **[与 UCA-046 冲突 / 待扩展]** 2026-04-11 新需求：scheduler 需要支持 **提前通知**（lead time reminder）和 **分类标签**（颜色 + 类别）。参考 Teams Calendar：8 小时 / 1 天任务默认提前 1 小时；1 周任务默认提前 1 天；用户可在创建时自定义，或通过 schedule 任务与 "需要用户做但还没做" 的状态互斥规则调整。本任务的 `schedule` 实体需在 UCA-046 里扩展 `{ category, color, leadTimeMs, userTodo: boolean, lastReminderAt }` 字段，scheduler engine 要加一条"到达 (run_at - leadTime) 时发通知"的 watcher 规则
   - “编辑参数后批准 / 推迟到明天” 还停留在 view model 和语义层，未接真实 UI 交互
 - 交接给下一个任务：
   - `UCA-011` 可直接复用 `pending_approvals`、`/approvals`、console 视图模型入口，以及 `execution_mode` 语义做浏览器内动作确认

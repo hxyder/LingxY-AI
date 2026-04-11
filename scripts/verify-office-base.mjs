@@ -17,8 +17,20 @@ for (const [host, hostName] of [
 ]) {
   const manifest = await readFile(path.join(repoRoot, "office_addin", host, "manifest.xml"), "utf8");
   assert.match(manifest, new RegExp(`<Host Name="${hostName}"`));
-  assert.match(manifest, /https:\/\/localhost:9413\/office\/task_pane\.html/);
+  assert.match(manifest, /http:\/\/127\.0\.0\.1:4310\/office\/task_pane\.html/);
+  assert.match(manifest, /VersionOverridesV1_0/);
+  assert.match(manifest, /PrimaryCommandSurface/);
+  assert.match(manifest, /OfficeTab id="TabHome"/);
+  assert.match(manifest, /ShowTaskpane/);
+  assert.match(manifest, /UCA\.Button\.Label/);
 }
+
+const setupScript = await readFile(path.join(repoRoot, "scripts", "setup-office-addins.ps1"), "utf8");
+assert.match(setupScript, /UCAOfficeAddins/);
+assert.match(setupScript, /TrustedCatalogs/);
+assert.match(setupScript, /uca-word\.xml/);
+assert.match(setupScript, /uca-excel\.xml/);
+assert.match(setupScript, /uca-ppt\.xml/);
 
 const fallbackPlan = createSelfSignedCertPlan();
 assert.equal(fallbackPlan.selectedPath, "path_c_protocol_fallback");
@@ -127,6 +139,7 @@ const runtimeSource = await readFile(path.join(repoRoot, "office_addin", "shared
 const bridgeContext = {
   window: {},
   console,
+  fetch: null,
   globalThis: null
 };
 bridgeContext.globalThis = bridgeContext;
@@ -137,6 +150,42 @@ vm.runInContext(runtimeSource.replace(/export /g, ""), bridgeContext, { filename
 const bridge = bridgeContext.createOfficeBridge();
 const selection = await bridge.captureSelection();
 const viewModel = bridgeContext.createOfficeTaskPaneViewModel(selection, bridge.getTransportPlan());
-assert.match(viewModel.transportStatus, /基础版走协议回退路径/);
+assert.equal(viewModel.hostTitle, "UCA for Word");
+assert.equal(viewModel.supportsWriteback, true);
+assert.match(viewModel.transportStatus, /127\.0\.0\.1:4310/);
+
+let writtenBack = "";
+const mockWritableOffice = {
+  context: {
+    host: "Word",
+    platform: "PC",
+    document: {
+      url: "C:/Docs/Writeback.docx",
+      getSelectedDataAsync(_coercion, callback) {
+        callback({ status: "succeeded", value: "Selected text" });
+      },
+      setSelectedDataAsync(value, _options, callback) {
+        writtenBack = value;
+        callback({ status: "succeeded" });
+      }
+    }
+  },
+  AsyncResultStatus: {
+    Succeeded: "succeeded"
+  },
+  CoercionType: {
+    Text: "text",
+    Matrix: "matrix"
+  },
+  FileType: {
+    Text: "text"
+  }
+};
+const writableBridge = bridgeContext.createOfficeBridge({ officeApi: mockWritableOffice });
+const writableSelection = await writableBridge.captureSelection({ scope: "selection" });
+assert.equal(writableSelection.selectionText, "Selected text");
+const writeResult = await writableBridge.writeResult("UCA edited text", { mode: "replace_selection" });
+assert.equal(writeResult.ok, true);
+assert.equal(writtenBack, "UCA edited text");
 
 console.log("Office spike and base integration verification passed.");

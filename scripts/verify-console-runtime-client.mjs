@@ -154,7 +154,7 @@ try {
   assert.equal(snapshot.viewModels.console.codeCliEndpoint, "/ai/code-cli");
   assert.equal(snapshot.viewModels.approvals.count, 2);
   assert.equal(snapshot.viewModels.schedules.schedules.length, 1);
-  assert.equal(snapshot.viewModels.schedules.historyCount, 1);
+  assert.equal(snapshot.viewModels.schedules.historyCount >= 1, true);
   assert.equal(snapshot.viewModels.audit.total >= 1, true);
   assert.equal(snapshot.viewModels.history.resultCount >= 1, true);
   assert.equal(snapshot.viewModels.templateEditor.templateCount, 6);

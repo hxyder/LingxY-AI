@@ -34,6 +34,20 @@ export function createNativeHostHandler(runtime) {
           }
         };
       }
+      case "handoff_capture": {
+        const result = await runtime.handoffCapture(message.payload);
+        return {
+          protocolVersion: "1.0",
+          requestId: message.requestId,
+          ok: true,
+          payload: {
+            accepted: result.accepted ?? true,
+            delivery: "overlay",
+            sourceType: result.sourceType ?? message.payload?.capture?.sourceType ?? null,
+            handoffPath: result.handoffPath ?? null
+          }
+        };
+      }
       default:
         return {
           protocolVersion: "1.0",

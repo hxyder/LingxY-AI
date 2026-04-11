@@ -325,6 +325,27 @@ async function executeKimiPrintModeTask({
     .find((entry) => entry.length > 0) ?? "";
 
   const requestedFormat = detectRequestedOutputFormat(taskPackage.user_command);
+
+  if (requestedFormat.id === "conversational") {
+    publish({ type: "step_finished", step: "run_kimi_cli", progress: 0.95 });
+    publish({
+      type: "inline_result",
+      text: finalAssistantText || "No response from AI."
+    });
+    publish({ type: "success", summary: finalAssistantText.slice(0, 200) });
+
+    return {
+      status: "success",
+      exitCode: exit.code,
+      exitSignal: exit.signal,
+      events,
+      artifacts,
+      inlineText: finalAssistantText,
+      stderrPath,
+      stdoutPath
+    };
+  }
+
   const outputArtifacts = await writeRequestedArtifacts({
     assistantText: finalAssistantText,
     outputDir: taskPackage.output_requirements.output_dir,

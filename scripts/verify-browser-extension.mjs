@@ -4,6 +4,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createNativeHostHandler } from "../uca-native-host/index.mjs";
 import { encodeNativeMessage, decodeNativeMessage } from "../uca-native-host/protocol.mjs";
+import {
+  buildOverlayHandoffRequest,
+  dispatchOverlayHandoff,
+  RUNTIME_OVERLAY_HANDOFF_URL,
+  runQuickAction
+} from "../browser_ext/background/service-worker.js";
 import { submitBrowserTask, listRecentTasks } from "../src/service/core/browser-submission.mjs";
 import { createArtifactStore } from "../src/service/store/artifact-store.mjs";
 import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs";
@@ -40,6 +46,13 @@ const handler = createNativeHostHandler({
       runtime
     });
   },
+  async handoffCapture(payload) {
+    return {
+      accepted: true,
+      handoffPath: path.join(repoRoot, ".tmp", "verify-browser-extension", "prompt-handoff.json"),
+      sourceType: payload.capture.sourceType
+    };
+  },
   listRecentTasks() {
     return listRecentTasks(runtime.store, 5);
   }
@@ -65,6 +78,26 @@ assert.equal(selectionResponse.ok, true);
 assert.equal(selectionResponse.payload.status, "success");
 assert.equal(runtime.store.taskEvents.some((event) => event.event_type === "success"), true);
 
+const secondSelectionResponse = await handler({
+  protocolVersion: "1.0",
+  requestId: "req-selection-2",
+  action: "submit_capture",
+  payload: {
+    userCommand: "请总结这段网页内容",
+    capture: {
+      sourceType: "text_selection",
+      browser: "chrome.exe",
+      url: "https://example.com/article",
+      pageTitle: "Example Article",
+      text: "This is a different captured browser selection from the same URL."
+    }
+  }
+});
+
+assert.equal(secondSelectionResponse.ok, true);
+assert.equal(secondSelectionResponse.payload.status, "success");
+assert.notEqual(secondSelectionResponse.payload.taskId, selectionResponse.payload.taskId);
+
 const imageResponse = await handler({
   protocolVersion: "1.0",
   requestId: "req-image",
@@ -83,6 +116,80 @@ const imageResponse = await handler({
 assert.equal(imageResponse.ok, true);
 assert.equal(imageResponse.payload.status, "success");
 
+const handoffRequest = buildOverlayHandoffRequest({
+  actionId: "summarize",
+  selectionState: {
+    text: "Browser selection for overlay handoff.",
+    contextBefore: "Browser selection",
+    contextAfter: "overlay handoff.",
+    sourceType: "text_selection",
+    url: "https://example.com/overlay",
+    pageTitle: "Overlay"
+  }
+});
+
+assert.equal(handoffRequest.action, "handoff_capture");
+assert.equal(handoffRequest.payload.targetWindow, "overlay");
+assert.equal(handoffRequest.payload.priorResult, null);
+assert.equal(handoffRequest.payload.priorUserCommand, null);
+
+// Carrying a prior result back into the desktop overlay (follow-up thread)
+const followUpRequest = buildOverlayHandoffRequest({
+  actionId: "translate",
+  selectionState: {
+    text: "Hello world",
+    sourceType: "text_selection",
+    url: "https://example.com/translate",
+    pageTitle: "Translate"
+  },
+  priorResult: "[zh] 你好世界"
+});
+assert.equal(followUpRequest.payload.priorResult, "[zh] 你好世界");
+assert.equal(typeof followUpRequest.payload.priorUserCommand, "string");
+assert.ok(followUpRequest.payload.priorUserCommand.length > 0);
+
+let fetchRequest = null;
+const runtimeHandoffResponse = await dispatchOverlayHandoff(
+  handoffRequest,
+  {
+    runtime: {
+      sendNativeMessage(_hostName, _request, callback) {
+        callback?.({ ok: false });
+      }
+    }
+  },
+  async (url, options) => {
+    fetchRequest = {
+      url,
+      options
+    };
+    return {
+      ok: true,
+      async json() {
+        return {
+          accepted: true,
+          delivery: "overlay"
+        };
+      }
+    };
+  }
+);
+
+assert.equal(fetchRequest.url, RUNTIME_OVERLAY_HANDOFF_URL);
+assert.equal(JSON.parse(fetchRequest.options.body).targetWindow, "overlay");
+assert.equal(runtimeHandoffResponse.accepted, true);
+
+const handoffResponse = await handler({
+  protocolVersion: "1.0",
+  requestId: "req-handoff",
+  action: "handoff_capture",
+  payload: handoffRequest.payload
+});
+
+assert.equal(handoffResponse.ok, true);
+assert.equal(handoffResponse.payload.accepted, true);
+assert.equal(handoffResponse.payload.delivery, "overlay");
+
 const recentTasksResponse = await handler({
   protocolVersion: "1.0",
   requestId: "req-recent",
@@ -90,6 +197,74 @@ const recentTasksResponse = await handler({
 });
 
 assert.equal(recentTasksResponse.ok, true);
-assert.equal(recentTasksResponse.payload.tasks.length, 3);
+assert.equal(recentTasksResponse.payload.tasks.length, 4);
+
+// runQuickAction (inline result frame backend) — mocked fetch round-trip
+let submittedTask = null;
+const quickActionResult = await runQuickAction(
+  {
+    action: "translate",
+    selectionState: {
+      text: "Hello world",
+      url: "https://example.com",
+      pageTitle: "Example"
+    }
+  },
+  async (url, opts) => {
+    if (url.endsWith("/task") && opts?.method === "POST") {
+      submittedTask = JSON.parse(opts.body);
+      return {
+        ok: true,
+        async json() {
+          return {
+            task: { task_id: "task_qa", status: "success", executor: "translate" },
+            taskEvents: [
+              { event_type: "inline_result", payload: { text: "[zh] Hello world" } }
+            ]
+          };
+        }
+      };
+    }
+    throw new Error(`unexpected url ${url}`);
+  }
+);
+assert.equal(quickActionResult.ok, true);
+assert.equal(quickActionResult.text, "[zh] Hello world");
+assert.equal(quickActionResult.taskId, "task_qa");
+assert.equal(submittedTask?.userCommand?.includes("翻译"), true);
+assert.equal(submittedTask?.capture?.text, "Hello world");
+
+const emptyQuickAction = await runQuickAction(
+  { action: "translate", selectionState: { text: "  " } },
+  async () => { throw new Error("should not be called"); }
+);
+assert.equal(emptyQuickAction.ok, false);
+assert.equal(emptyQuickAction.error, "empty_selection");
+
+// Inline result frame helper exists in the content script
+const selectionCacheJs = await readFile(path.join(repoRoot, "browser_ext", "content_script", "selection-cache.js"), "utf8");
+assert.equal(selectionCacheJs.includes("showInlineResultFrame"), true);
+assert.equal(selectionCacheJs.includes("sendRuntimeMessageSafely"), true);
+assert.equal(selectionCacheJs.includes("uca.runtime.runQuickAction"), true);
+assert.equal(selectionCacheJs.includes("ACTION_LABELS"), true);
+// "Open in dialog" button must carry the prior result back to the overlay
+assert.equal(selectionCacheJs.includes("uca.overlay.openWithResult"), true);
+assert.equal(selectionCacheJs.includes("priorResult: resultText"), true);
+
+// Service worker must register the openWithResult message handler
+const serviceWorkerJs = await readFile(path.join(repoRoot, "browser_ext", "background", "service-worker.js"), "utf8");
+assert.equal(serviceWorkerJs.includes("uca.overlay.openWithResult"), true);
+
+// Overlay renderer must handle priorResult by rendering history + conversation state
+const overlayJs = await readFile(path.join(repoRoot, "src", "desktop", "renderer", "overlay.js"), "utf8");
+assert.equal(overlayJs.includes("conversationState"), true);
+assert.equal(overlayJs.includes("ensureConversation"), true);
+assert.equal(overlayJs.includes("startNewConversation"), true);
+assert.equal(overlayJs.includes("appendTurn"), true);
+assert.equal(overlayJs.includes("compressIfNeeded"), true);
+assert.equal(overlayJs.includes("persistConversation"), true);
+assert.equal(overlayJs.includes("restoreConversation"), true);
+assert.equal(overlayJs.includes("payload.priorResult"), true);
+assert.equal(overlayJs.includes("newSessionBtn"), true);
 
 console.log("Browser extension pipeline verification passed.");

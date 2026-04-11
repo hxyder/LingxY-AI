@@ -95,7 +95,8 @@ function mapSchedule(row) {
     last_run_status: row.last_run_status,
     run_count: row.run_count,
     failure_count: row.failure_count,
-    consecutive_failure_count: row.consecutive_failure_count
+    consecutive_failure_count: row.consecutive_failure_count,
+    metadata: decodeJson(row.metadata_json, {})
   };
 }
 
@@ -137,6 +138,11 @@ export function createSqliteStore({ dbPath }) {
 
   for (const sql of Object.values(SQLITE_SCHEMA_SQL)) {
     db.exec(sql);
+  }
+
+  const scheduleColumns = new Set(db.prepare("PRAGMA table_info(schedules)").all().map((column) => column.name));
+  if (!scheduleColumns.has("metadata_json")) {
+    db.exec("ALTER TABLE schedules ADD COLUMN metadata_json TEXT");
   }
 
   const statements = {
@@ -194,9 +200,9 @@ export function createSqliteStore({ dbPath }) {
     getPendingApproval: db.prepare("SELECT * FROM pending_approvals WHERE approval_id = ?"),
     listPendingApprovals: db.prepare("SELECT * FROM pending_approvals ORDER BY created_at DESC"),
     upsertSchedule: db.prepare(`INSERT INTO schedules (
-      schedule_id, name, description, enabled, created_at, updated_at, created_by, trigger_type, trigger_config_json, action_type, action_target, action_params_json, execution_mode, catchup_policy, max_runtime_seconds, next_run_at, last_run_at, last_run_status, run_count, failure_count, consecutive_failure_count
+      schedule_id, name, description, enabled, created_at, updated_at, created_by, trigger_type, trigger_config_json, action_type, action_target, action_params_json, execution_mode, catchup_policy, max_runtime_seconds, next_run_at, last_run_at, last_run_status, run_count, failure_count, consecutive_failure_count, metadata_json
     ) VALUES (
-      @schedule_id, @name, @description, @enabled, @created_at, @updated_at, @created_by, @trigger_type, @trigger_config_json, @action_type, @action_target, @action_params_json, @execution_mode, @catchup_policy, @max_runtime_seconds, @next_run_at, @last_run_at, @last_run_status, @run_count, @failure_count, @consecutive_failure_count
+      @schedule_id, @name, @description, @enabled, @created_at, @updated_at, @created_by, @trigger_type, @trigger_config_json, @action_type, @action_target, @action_params_json, @execution_mode, @catchup_policy, @max_runtime_seconds, @next_run_at, @last_run_at, @last_run_status, @run_count, @failure_count, @consecutive_failure_count, @metadata_json
     )
     ON CONFLICT(schedule_id) DO UPDATE SET
       name = excluded.name,
@@ -218,7 +224,8 @@ export function createSqliteStore({ dbPath }) {
       last_run_status = excluded.last_run_status,
       run_count = excluded.run_count,
       failure_count = excluded.failure_count,
-      consecutive_failure_count = excluded.consecutive_failure_count`),
+      consecutive_failure_count = excluded.consecutive_failure_count,
+      metadata_json = excluded.metadata_json`),
     getSchedule: db.prepare("SELECT * FROM schedules WHERE schedule_id = ?"),
     listSchedules: db.prepare("SELECT * FROM schedules ORDER BY created_at DESC"),
     deleteSchedule: db.prepare("DELETE FROM schedules WHERE schedule_id = ?"),
@@ -308,7 +315,8 @@ export function createSqliteStore({ dbPath }) {
       last_run_status: record.last_run_status ?? null,
       run_count: record.run_count ?? 0,
       failure_count: record.failure_count ?? 0,
-      consecutive_failure_count: record.consecutive_failure_count ?? 0
+      consecutive_failure_count: record.consecutive_failure_count ?? 0,
+      metadata_json: encodeJson(record.metadata ?? {})
     });
     return clone(record);
   }
@@ -341,6 +349,12 @@ export function createSqliteStore({ dbPath }) {
     },
     getTask(taskId) {
       return mapTask(statements.getTask.get(taskId));
+    },
+    deleteTask(taskId) {
+      db.prepare("DELETE FROM task_events WHERE task_id = ?").run(taskId);
+      db.prepare("DELETE FROM artifacts WHERE task_id = ?").run(taskId);
+      const result = db.prepare("DELETE FROM tasks WHERE task_id = ?").run(taskId);
+      return result.changes > 0;
     },
     listTasks() {
       return statements.listTasks.all().map((row) => decodeJson(row.task_json, null));

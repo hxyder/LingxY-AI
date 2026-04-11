@@ -45,6 +45,10 @@ export function buildScheduleActionPreview(actionType, actionTarget, actionParam
     return `拟执行工具 ${actionTarget}`;
   }
 
+  if (actionType === "task") {
+    return `拟执行 AI 任务 ${actionParams.userCommand ?? actionTarget}`;
+  }
+
   return `拟执行模板 ${actionTarget}`;
 }
 
@@ -54,6 +58,8 @@ export function buildScheduleTriggerSummary(schedule) {
       return `cron ${schedule.trigger_config.expression}`;
     case "interval":
       return `every ${schedule.trigger_config.seconds}s`;
+    case "at":
+      return `at ${schedule.trigger_config.run_at}`;
     case "file_watch":
       return `watch ${schedule.trigger_config.path}`;
     case "clipboard_watch":

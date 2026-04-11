@@ -2,6 +2,7 @@ import { detectRequestedOutputFormat } from "./output-format.mjs";
 
 export function buildKimiTaskPackage({ task, outputDir }) {
   const requestedFormat = detectRequestedOutputFormat(task.user_command);
+  const isConversational = requestedFormat.id === "conversational";
   return {
     task_id: task.task_id,
     task_type: task.intent,
@@ -10,22 +11,25 @@ export function buildKimiTaskPackage({ task, outputDir }) {
       source_type: task.context_packet.source_type,
       file_paths: task.context_packet.file_paths ?? [],
       text: task.context_packet.text ?? "",
+      html: task.context_packet.html ?? "",
+      url: task.context_packet.url ?? "",
       metadata: {
         source_app: task.context_packet.source_app,
-        capture_mode: task.context_packet.capture_mode
+        capture_mode: task.context_packet.capture_mode,
+        selection_metadata: task.context_packet.selection_metadata ?? {}
       }
     },
     output_requirements: {
       primary: requestedFormat.primaryRequirement,
       format_id: requestedFormat.id,
       suggested_extension: requestedFormat.extension,
-      save_required: true,
+      save_required: !isConversational,
       output_dir: outputDir
     },
     rules: {
       must_read_source: true,
-      must_save_result: true,
-      must_return_artifact_paths: true,
+      must_save_result: !isConversational,
+      must_return_artifact_paths: !isConversational,
       must_emit_progress: true,
       max_runtime_seconds: 600
     },

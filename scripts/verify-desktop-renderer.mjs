@@ -17,24 +17,43 @@ assert.equal(preload.includes(IPC_CHANNELS.shellShowWindow), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellHideWindow), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
-assert.equal(consoleHtml.includes("主控工作台"), true);
-assert.equal(consoleHtml.includes("首启引导"), true);
-assert.equal(consoleHtml.includes("审批中心"), true);
-assert.equal(consoleHtml.includes("DAG 工作流"), true);
-assert.equal(consoleHtml.includes("隐私与安全"), true);
-assert.equal(consoleHtml.includes("审计日志"), true);
-assert.equal(consoleHtml.includes("模板工作区"), true);
+assert.equal(consoleHtml.includes("UCA Console"), true);
+assert.equal(consoleHtml.includes("Tasks"), true);
+assert.equal(consoleHtml.includes("Settings"), true);
+assert.equal(consoleHtml.includes("DAG Workflow"), true);
+assert.equal(consoleHtml.includes("Privacy & Security"), true);
+assert.equal(consoleHtml.includes("Audit Log"), true);
+assert.equal(consoleHtml.includes("Templates"), true);
+assert.equal(consoleHtml.includes("One-click Setup"), true);
+// Files tab (artifact manager)
+assert.equal(consoleHtml.includes("data-tab=\"files\""), true);
+assert.equal(consoleHtml.includes("panel-files"), true);
+assert.equal(consoleHtml.includes("filesList"), true);
+assert.equal(consoleHtml.includes("filesPreviewBody"), true);
+
+const consoleJs = await read("src/desktop/renderer/console.js");
+assert.equal(consoleJs.includes("loadAllArtifacts"), true);
+assert.equal(consoleJs.includes("renderFilesList"), true);
+assert.equal(consoleJs.includes("selectFileArtifact"), true);
+assert.equal(consoleJs.includes("CODE_EXTENSIONS"), true);
 
 const overlayHtml = await read("src/desktop/renderer/overlay.html");
-assert.equal(overlayHtml.includes("快速输入"), true);
-assert.equal(overlayHtml.includes("立即执行"), true);
+assert.equal(overlayHtml.includes("commandInput"), true);
+assert.equal(overlayHtml.includes("sendBtn"), true);
 
 const dockHtml = await read("src/desktop/renderer/dock.html");
-assert.equal(dockHtml.includes("拖文件到这里"), true);
+assert.equal(dockHtml.includes("dockButton"), true);
+
+const notificationHtml = await read("src/desktop/renderer/notification.html");
+assert.equal(notificationHtml.includes("UCA Notification"), true);
 
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
 assert.equal(mainProcess.includes("preload: PRELOAD_PATH"), true);
 assert.equal(mainProcess.includes("buildWindowUrl"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.shellSubmitDroppedFiles"), true);
+assert.equal(mainProcess.includes("showDesktopNotification"), true);
+// Permission handler for the Web Speech API mic access
+assert.equal(mainProcess.includes("setPermissionRequestHandler"), true);
+assert.equal(mainProcess.includes("setPermissionCheckHandler"), true);
 
 console.log("Desktop renderer verification passed.");

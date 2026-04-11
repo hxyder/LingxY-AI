@@ -25,12 +25,38 @@ uca-cli/           file submission entry for shell integrations
 src/
   desktop/         tray / overlay / console skeleton
   service/         core service and integration skeleton
+    action_tools/    tool schemas + implementations + risk matrix
+    core/            submission layer, router, http server, bootstrap
+    executors/       runnable task executors
+      fast/            lightweight LLM API calls (Anthropic / OpenAI / DeepSeek / Ollama)
+      kimi/            Kimi CLI subprocess + OOXML output format (pptx/docx/xlsx)
+      tool_using/      legacy tool-planner loop
+      multi_modal/     vision-first executor for image tasks
+      translate/       free-translation client (no LLM)
+      shared/          provider-resolver (per-task routing + UCA_CONFIG_PATH hot-reload)
+      agentic/         UCA-049: provider-agnostic agentic runtime
+        provider-adapter.mjs   unified generate({messages,tools}) for 4 kinds
+        prompt-builder.mjs     dynamic tool-catalogue system prompt
+        planner.mjs            8-step tool-use loop + truthfulness guard
+        executor.mjs           id:"agentic" executor scaffold
+        code-cli-bridge.mjs    JSON planning-mode bridge for code_cli providers
+    search/          free DuckDuckGo search client
+    translation/     free translation client
+    ai/              provider / MCP / code-CLI / skills registries
+    extractors/      file + image + PDF content extractors
+    scheduler/       cron-ish recurring task engine
+    security/        broker, audit log, redaction
+    store/           artifact store
+    metrics/         task metrics registry
   shared/          shared contracts and cross-process types
 browser_ext/       browser extension placeholder
 uca-native-host/   native messaging bridge for Chrome / Edge
 office_addin/      Office add-in placeholder
 scripts/           verification and repository utility scripts
+  create-ooxml-fixture.ps1   PowerShell generator for docx/xlsx/pptx artifacts
+  verify-*.mjs               per-subsystem verify scripts invoked by `npm run check`
 tests/             future automated tests
+  fixtures/                  mock CLIs + sample inputs for verify scripts
 tools/             local dev utilities
 ```
 
@@ -65,3 +91,4 @@ Current implemented slices include:
 - resolved Kimi CLI runtime with real print-mode execution and health probing
 - provider health detection for OpenAI, Claude, Kimi API, and Ollama
 - release readiness docs, trial package builder, and bundle verification
+- UCA-049 provider-agnostic agentic runtime: unified `generate({messages,tools})` adapter covering anthropic / openai-compat / ollama / code_cli, per-task provider resolution (no more boot-time snapshot), universal tool belt (`write_file`, `run_script`, `generate_document`), dynamic tool-catalogue system prompt, 8-step planner loop with truthfulness guard, intent_tags multi-label routing, pptx output format, and a JSON planning-mode bridge that lets any `--print` capable code CLI (Kimi CLI / Claude Code CLI / Codex / Gemini) drive multi-step tool use

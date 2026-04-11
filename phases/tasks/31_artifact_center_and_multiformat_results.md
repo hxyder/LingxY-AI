@@ -50,11 +50,19 @@
 
 ## 9. 执行记录
 
-- 状态：todo
+- 状态：done
 - 执行分支：`main`
-- 开始日期：
-- 完成日期：
+- 开始日期：2026-04-10
+- 完成日期：2026-04-11
 - 实际新增内容：
-- 验证结果：
+  - Overlay 新增结果中心、artifact 列表、多格式结果预览切换、复制结果路径、把当前结果作为上下文继续处理
+  - Console 任务详情新增结果资产面板，历史搜索结果可跳回对应任务并打开结果
+  - **新增 Console `Files` Tab（跨任务全局文件管理器）**：在 Console 顶栏加入新标签，两栏布局 —— 左栏列出最近 30 个已完成任务产出的全部 artifact（带过滤 / 刷新按钮 / 按时间倒序），右栏是预览 + Open / Show in Folder / Copy Path 按钮
+  - `isPreviewableArtifactPath` 扩展支持 19 种代码文件扩展名（.js/.ts/.py/.rs/.go/.java/.cpp/.cs/.php/.sh/.ps1/.yaml/.toml/...），代码文件也能在 Console Files Tab 内联预览
+  - Overlay 气泡内的 artifact 通知新增 `打开文件 / 预览 / 复制路径` 三个内联按钮
+  - 移除旧的"任务完成自动打开文件"行为 —— 改为用户显式点击才打开，避免抢焦点
+- 验证结果：`node scripts/verify-overlay-composer.mjs`、`node scripts/verify-desktop-renderer.mjs`、`npm run check` 通过
 - 遗留问题：
-- 交接给下一个任务：
+  - docx 等非文本格式当前仍以路径 / 外部打开为主，复杂富媒体预览器暂未内建
+  - 文件"版本历史"、"标签分类"尚未实现 —— 当前只有按任务分组和按时间排序
+- 交接给下一个任务：可直接复用 artifact 列表、预览优先级和 Files Tab 布局，继续扩展成更完整的资产管理体验

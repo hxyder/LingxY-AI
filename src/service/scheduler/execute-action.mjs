@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { submitContextTask } from "../core/context-submission.mjs";
 import { submitActionToolTask } from "../core/action-tool-submission.mjs";
 import {
   createTaskRecord,
@@ -161,6 +162,20 @@ async function executeTaskTemplate({ runtime, actionTarget, actionParams, execut
   };
 }
 
+async function executeScheduledTask({ runtime, actionTarget, actionParams, executionMode, sourceLabel, sourceId }) {
+  const userCommand = actionParams.userCommand ?? actionParams.command ?? sourceLabel ?? actionTarget;
+  return submitContextTask({
+    contextPacket: buildSchedulerContextPacket({
+      title: actionParams.contextText ?? userCommand,
+      sourceId
+    }),
+    userCommand,
+    executionMode,
+    executorOverride: actionParams.executorOverride ?? actionParams.executor ?? null,
+    runtime
+  });
+}
+
 export async function executeProposedAction({
   runtime,
   actionType,
@@ -177,6 +192,17 @@ export async function executeProposedAction({
       actionParams,
       executionMode,
       sourceLabel
+    });
+  }
+
+  if (actionType === "task") {
+    return executeScheduledTask({
+      runtime,
+      actionTarget,
+      actionParams,
+      executionMode,
+      sourceLabel,
+      sourceId
     });
   }
 

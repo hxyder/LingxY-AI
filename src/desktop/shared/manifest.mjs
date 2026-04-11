@@ -1,7 +1,8 @@
 export const WINDOW_IDS = Object.freeze({
   dock: "dock",
   overlay: "overlay",
-  console: "console"
+  console: "console",
+  notification: "notification"
 });
 
 export const IPC_CHANNELS = Object.freeze({
@@ -13,6 +14,10 @@ export const IPC_CHANNELS = Object.freeze({
   shellHideWindow: "uca:shell-hide-window",
   shellSubmitDroppedFiles: "uca:shell-submit-dropped-files",
   shellNotify: "uca:shell-notify",
+  shellNotificationReceived: "uca:shell-notification-received",
+  shellMoveWindowBy: "uca:shell-move-window-by",
+  shellClipboardChanged: "uca:shell-clipboard-changed",
+  shellNavigateConsole: "uca:shell-navigate-console",
   overlayToggle: "uca:overlay-toggle",
   consoleOpen: "uca:console-open",
   shortcutTriggered: "uca:shortcut-triggered",
@@ -22,8 +27,18 @@ export const IPC_CHANNELS = Object.freeze({
 export const DEFAULT_SHORTCUTS = Object.freeze([
   {
     id: "toggle-overlay",
+    accelerator: "Ctrl+Shift+U",
+    description: "Open or focus the fixed overlay (no auto-capture)"
+  },
+  {
+    id: "capture-and-ask",
     accelerator: "Ctrl+Shift+Space",
-    description: "Open or focus the fixed overlay"
+    description: "Capture current selection or active file, then open overlay"
+  },
+  {
+    id: "voice-wake",
+    accelerator: "Ctrl+Shift+V",
+    description: "Open overlay and start voice input immediately"
   },
   {
     id: "open-console",
@@ -52,8 +67,8 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
       route: "/dock",
       singleton: true,
       startsHidden: false,
-      width: 146,
-      height: 146
+      width: 64,
+      height: 64
     },
     {
       id: WINDOW_IDS.overlay,
@@ -61,8 +76,8 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
       route: "/overlay",
       singleton: true,
       startsHidden: true,
-      width: 420,
-      height: 580
+      width: 600,
+      height: 520
     },
     {
       id: WINDOW_IDS.console,
@@ -72,6 +87,15 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
       startsHidden: true,
       width: 1280,
       height: 820
+    },
+    {
+      id: WINDOW_IDS.notification,
+      title: "UCA Notification",
+      route: "/notification",
+      singleton: true,
+      startsHidden: true,
+      width: 360,
+      height: 132
     }
   ],
   shortcuts: DEFAULT_SHORTCUTS,

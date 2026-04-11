@@ -87,9 +87,22 @@ export function buildKimiPrintPrompt({ taskPackage }) {
   const inlineContext = taskPackage.context.text?.trim()
     ? sanitizeUtf16(taskPackage.context.text).slice(0, 6_000)
     : "";
+  const sourceUrl = taskPackage.context.url?.trim()
+    ? sanitizeUtf16(taskPackage.context.url).slice(0, 1_000)
+    : "";
+  const selectionMetadata = taskPackage.context.metadata?.selection_metadata ?? {};
+  const selectionMetadataLines = [
+    selectionMetadata.page_title ? `- Page title: ${sanitizeUtf16(String(selectionMetadata.page_title)).slice(0, 500)}` : "",
+    selectionMetadata.anchor_text ? `- Anchor text: ${sanitizeUtf16(String(selectionMetadata.anchor_text)).slice(0, 500)}` : "",
+    selectionMetadata.image_url ? `- Image URL: ${sanitizeUtf16(String(selectionMetadata.image_url)).slice(0, 1_000)}` : ""
+  ].filter(Boolean);
 
   const outputFormatId = taskPackage.output_requirements?.format_id ?? "markdown";
+  const isConversational = outputFormatId === "conversational";
   const outputInstruction = (() => {
+    if (isConversational) {
+      return "- Reply concisely and directly in plain text. Do not use markdown headings, code fences, or lengthy formatting. Keep it brief and natural, like a chat reply.";
+    }
     if (outputFormatId === "json") {
       return "- Return valid JSON only.";
     }
@@ -102,8 +115,14 @@ export function buildKimiPrintPrompt({ taskPackage }) {
     if (outputFormatId === "txt") {
       return "- Return plain text only, without markdown syntax.";
     }
+    if (outputFormatId === "pdf") {
+      return "- Return a well-structured HTML document suitable for printing to PDF. Use clean headings, paragraphs, and tables.";
+    }
     if (outputFormatId === "docx") {
       return "- Return clean structured plain text suitable for saving into a Word document.";
+    }
+    if (outputFormatId === "xlsx") {
+      return "- Return clean structured plain text suitable for saving into an Excel spreadsheet. Use one line per row, separate columns with tabs.";
     }
     return "- Produce a complete markdown report as your final answer.";
   })();
@@ -126,11 +145,19 @@ export function buildKimiPrintPrompt({ taskPackage }) {
       "",
       "Source files:",
       fileList,
+      sourceUrl
+        ? `\nSource URL:\n${sourceUrl}`
+        : "",
+      selectionMetadataLines.length > 0
+        ? `\nCaptured metadata:\n${selectionMetadataLines.join("\n")}`
+        : "",
       inlineContext
         ? `\nInline captured text:\n${inlineContext}`
         : "",
       "",
-      `Return only the final ${outputFormatId} body.`
+      isConversational
+        ? "Reply directly and concisely."
+        : `Return only the final ${outputFormatId} body.`
     ].filter(Boolean).join("\n")
   );
 }

@@ -51,11 +51,12 @@
 
 ## 9. 执行记录
 
-- 状态：in_progress
+- 状态：done
 - 执行分支：`main`
 - 开始日期：2026-04-09
-- 完成日期：
+- 完成日期：2026-04-11
 - 实际新增内容：新增 `src/service/executors/kimi/output-format.mjs` 作为输出格式协商模块；扩展 `src/service/executors/kimi/task-package-builder.mjs` 与 `src/service/executors/kimi/print-mode-prompt.mjs`，把用户请求的格式要求透传给 Kimi 执行链；扩展 `src/service/executors/kimi/kimi-cli-executor.mjs`，使其能按请求落盘为 `md / txt / html / json / docx / csv` 这一档结果文件，并在 `docx` 场景同步生成可预览的 `txt` 摘要；扩展 `src/desktop/renderer/overlay.html` 与 `src/desktop/renderer/overlay.js`，加入“返回格式”选择按钮、后台处理中通知、预览优先选择可读 artifact；同步更新测试夹具与验证脚本，覆盖多格式产出；顺手收掉了 Dock 外圈边框与虚线视觉噪音。
 - 验证结果：`node scripts/verify-file-kimi.mjs`、`node scripts/verify-overlay-composer.mjs`、`npm run check` 通过。
 - 遗留问题：复杂 Office 排版仍未实现，当前 `docx` 更偏“文本落文档”；`xlsx / pptx` 仍是提取链可读，不是结果导出格式；云端 provider 还没有统一接入这套格式协商能力。
-- 交接给下一个任务：可以直接基于 Overlay 里的“返回格式”选择器继续做网页 / 图片 / 文字入口统一，也可以在结果中心里复用新的 artifact 策略，不需要再改 Kimi 主链。
+  - **[2026-04-11 新增]** 用户反馈：输入 "分析 AI 发展趋势，并生成一份 ppt" 时，系统退化为 `report.md` 加一句免责声明 —— 根因是 `detectRequestedOutputFormat` 完全没有 pptx 分支，`print-mode-prompt` 里的 `"Do not modify any source files"` 也劝退 LLM 写文件。**pptx 要并入 UCA-049 的 provider 无关 agentic 文档生成通道**（`detectRequestedOutputFormat`、`generate_document`、`create-ooxml-fixture.ps1 -Kind pptx`、provider-aware task event 一起落地），完成后本文件这一条同步划掉。
+- 交接给下一个任务：可以直接基于 Overlay 里的“返回格式”选择器继续做网页 / 图片 / 文字入口统一，也可以在结果中心里复用新的 artifact 策略，不需要再改 Kimi 主链；pptx 的真正落地交给 UCA-049。

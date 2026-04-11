@@ -1,0 +1,258 @@
+function parseSseFrame(frame) {
+  const parsed = {
+    id: null,
+    event: "message",
+    data: null
+  };
+
+  for (const line of frame.split(/\r?\n/)) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    if (line.startsWith("id:")) {
+      parsed.id = line.slice(3).trim();
+      continue;
+    }
+
+    if (line.startsWith("event:")) {
+      parsed.event = line.slice(6).trim();
+      continue;
+    }
+
+    if (line.startsWith("data:")) {
+      const payloadText = line.slice(5).trim();
+      parsed.data = payloadText ? JSON.parse(payloadText) : null;
+    }
+  }
+
+  if (!parsed.id && !parsed.data) {
+    return null;
+  }
+
+  return parsed;
+}
+
+export function toTaskEventFrame(event) {
+  return {
+    id: event?.id ?? event?.event_id ?? null,
+    event: event?.event ?? event?.event_type ?? "message",
+    data: event?.data ?? event?.payload ?? null,
+    timestamp: event?.timestamp ?? event?.ts ?? event?.at ?? null
+  };
+}
+
+export function formatTaskEventSummary(rawEvent) {
+  const frame = toTaskEventFrame(rawEvent);
+  const payload = frame.data ?? {};
+  const step = payload.step ?? payload.sub_status ?? payload.status ?? "任务步骤";
+
+  switch (frame.event) {
+    case "status_changed":
+      return {
+        title: "状态更新",
+        body: `任务进入 ${payload.status ?? "unknown"}${payload.sub_status ? ` / ${payload.sub_status}` : ""}${typeof payload.progress === "number" ? ` · ${Math.round(payload.progress * 100)}%` : ""}`.trim()
+      };
+    case "step_started":
+      return {
+        title: "开始执行",
+        body: `${step}${typeof payload.progress === "number" ? ` · ${Math.round(payload.progress * 100)}%` : ""}`.trim()
+      };
+    case "step_finished":
+      return {
+        title: "步骤完成",
+        body: `${step}${typeof payload.progress === "number" ? ` · ${Math.round(payload.progress * 100)}%` : ""}`.trim()
+      };
+    case "artifact_created":
+      return {
+        title: "结果已生成",
+        body: payload.path ?? "已生成新的结果文件。"
+      };
+    case "success":
+      return {
+        title: "任务完成",
+        body: payload.summary ?? "任务已经成功完成。"
+      };
+    case "partial_success":
+      return {
+        title: "部分完成",
+        body: payload.summary ?? payload.message ?? "任务已完成，但包含部分警告。"
+      };
+    case "failed":
+      return {
+        title: "任务失败",
+        body: payload.message ?? "任务执行失败。"
+      };
+    case "cancel_requested":
+      return {
+        title: "正在取消",
+        body: "已收到取消请求。"
+      };
+    case "cancelled":
+      return {
+        title: "任务已取消",
+        body: payload.message ?? "任务已停止执行。"
+      };
+    case "inline_result":
+      return {
+        title: "回复",
+        body: payload.text ?? payload.message ?? "已返回结果。"
+      };
+    case "log":
+      return {
+        title: "执行日志",
+        body: payload.message ?? JSON.stringify(payload)
+      };
+    default:
+      return {
+        title: frame.event,
+        body: payload.message ?? JSON.stringify(payload)
+      };
+  }
+}
+
+export function applyTaskEventPatch(task, rawEvent) {
+  const frame = toTaskEventFrame(rawEvent);
+  const payload = frame.data ?? {};
+  const nextTask = {
+    ...(task ?? {})
+  };
+
+  if (!nextTask.task_id) {
+    return nextTask;
+  }
+
+  switch (frame.event) {
+    case "status_changed":
+      nextTask.status = payload.status ?? nextTask.status;
+      nextTask.sub_status = payload.sub_status ?? nextTask.sub_status;
+      if (typeof payload.progress === "number") {
+        nextTask.progress = payload.progress;
+      }
+      break;
+    case "step_started":
+      nextTask.status = nextTask.status === "queued" ? "running" : nextTask.status;
+      nextTask.current_step = payload.step ?? nextTask.current_step;
+      nextTask.sub_status = payload.step ?? nextTask.sub_status;
+      if (typeof payload.progress === "number") {
+        nextTask.progress = payload.progress;
+      }
+      break;
+    case "step_finished":
+      if (payload.step) {
+        const completed = new Set(nextTask.completed_steps ?? []);
+        completed.add(payload.step);
+        nextTask.completed_steps = [...completed];
+      }
+      if (typeof payload.progress === "number") {
+        nextTask.progress = payload.progress;
+      }
+      break;
+    case "success":
+      nextTask.status = "success";
+      nextTask.sub_status = "completed";
+      nextTask.progress = 1;
+      break;
+    case "partial_success":
+      nextTask.status = "partial_success";
+      nextTask.sub_status = "completed_with_warnings";
+      if (typeof payload.progress === "number") {
+        nextTask.progress = payload.progress;
+      }
+      break;
+    case "failed":
+      nextTask.status = "failed";
+      nextTask.sub_status = payload.category ?? nextTask.sub_status;
+      nextTask.failure_user_message = payload.message ?? nextTask.failure_user_message;
+      break;
+    case "cancel_requested":
+      nextTask.status = "cancelling";
+      nextTask.sub_status = "cancelling";
+      break;
+    case "cancelled":
+      nextTask.status = "cancelled";
+      nextTask.sub_status = payload.category ?? "user_interrupted";
+      nextTask.failure_user_message = payload.message ?? nextTask.failure_user_message;
+      break;
+    default:
+      break;
+  }
+
+  return nextTask;
+}
+
+export function applyTaskEventToDetail(detail, rawEvent) {
+  const frame = toTaskEventFrame(rawEvent);
+  const currentEvents = detail?.events ?? [];
+  if (frame.id && currentEvents.some((event) => (event.event_id ?? event.id) === frame.id)) {
+    return detail;
+  }
+
+  const task = applyTaskEventPatch(detail?.task ?? {}, frame);
+  return {
+    ...(detail ?? {}),
+    task,
+    events: [
+      ...currentEvents,
+      {
+        event_id: frame.id,
+        event_type: frame.event,
+        payload: frame.data,
+        ts: frame.timestamp ?? new Date().toISOString()
+      }
+    ]
+  };
+}
+
+export function subscribeTaskEvents(serviceBaseUrl, taskId, {
+  since = null,
+  onEvent = () => {},
+  onError = () => {}
+} = {}) {
+  const controller = new AbortController();
+  const baseUrl = serviceBaseUrl.replace(/\/+$/, "");
+
+  const promise = (async () => {
+    const search = since ? `?since=${encodeURIComponent(since)}` : "";
+    const response = await fetch(`${baseUrl}/task/${encodeURIComponent(taskId)}/events${search}`, {
+      headers: {
+        Accept: "text/event-stream"
+      },
+      signal: controller.signal
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error(`Failed to subscribe task events: ${taskId}`);
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    for await (const chunk of response.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const parsed = parseSseFrame(frame);
+        if (parsed) {
+          onEvent(parsed);
+        }
+        boundary = buffer.indexOf("\n\n");
+      }
+    }
+  })().catch((error) => {
+    if (error.name === "AbortError") {
+      return null;
+    }
+    onError(error);
+    return null;
+  });
+
+  return {
+    close() {
+      controller.abort();
+    },
+    promise
+  };
+}
