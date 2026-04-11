@@ -221,6 +221,21 @@
         gap: 6px;
       }
 
+      .task-child-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .task-child-item {
+        width: 100%;
+        text-align: left;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+      }
+
       .artifact-item {
         width: 100%;
         text-align: left;
@@ -438,6 +453,15 @@
               </div>
             </div>
             <div id="taskDetailSummary" class="stack muted">Select a task to view details.</div>
+            <div class="stack">
+              <div class="row">
+                <strong style="font-size:13px;">Subtasks</strong>
+                <span id="taskChildCount" class="muted" style="font-size:12px;">0</span>
+              </div>
+              <div id="taskChildList" class="task-child-list">
+                <p class="muted" style="font-size:12px;">No subtasks.</p>
+              </div>
+            </div>
             <div class="artifact-panel">
               <div class="row">
                 <strong style="font-size:13px;">Artifacts</strong>
@@ -661,6 +685,228 @@
             <button id="saveRoutingBtn" class="primary" type="button">Save Routing</button>
             <span id="routingSaveState" class="muted" style="font-size:12px;"></span>
           </div>
+        </div>
+
+        <!-- ── MCP Servers ── -->
+        <div class="settings-group">
+          <div class="row" style="margin-bottom:10px;">
+            <h3 class="settings-group-title" style="margin:0;">MCP Servers</h3>
+            <div class="row" style="gap:8px;">
+              <span id="mcpServerCount" class="muted" style="font-size:12px;">0</span>
+              <button id="mcpServerRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+            </div>
+          </div>
+          <form id="mcpServerForm" class="stack" style="gap:10px;margin-bottom:12px;">
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="mcpServerId">Server ID</label>
+                <input id="mcpServerId" type="text" placeholder="e.g. my-mcp" required>
+              </div>
+              <div style="flex:1;">
+                <label for="mcpServerName">Display Name</label>
+                <input id="mcpServerName" type="text" placeholder="e.g. My MCP Server">
+              </div>
+            </div>
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="mcpTransport">Transport</label>
+                <select id="mcpTransport">
+                  <option value="stdio">stdio</option>
+                  <option value="http">http</option>
+                  <option value="ws">ws</option>
+                </select>
+              </div>
+              <div style="flex:1;">
+                <label for="mcpCommand">Command / URL</label>
+                <input id="mcpCommand" type="text" placeholder="stdio: node ...  http: https://host">
+              </div>
+            </div>
+            <div>
+              <label for="mcpArgs">Args (space-separated, stdio only)</label>
+              <input id="mcpArgs" type="text" placeholder="e.g. C:\\tools\\server.mjs">
+            </div>
+            <div class="toolbar">
+              <button type="submit" class="primary">Add / Update MCP</button>
+              <span id="mcpServerState" class="muted" style="font-size:12px;"></span>
+            </div>
+          </form>
+          <div id="mcpServerList" class="stack" style="gap:8px;"></div>
+        </div>
+
+        <!-- ── Skills Registries ── -->
+        <div class="settings-group">
+          <div class="row" style="margin-bottom:10px;">
+            <h3 class="settings-group-title" style="margin:0;">Skills Registries</h3>
+            <div class="row" style="gap:8px;">
+              <span id="skillRegistryCount" class="muted" style="font-size:12px;">0</span>
+              <button id="skillRegistryRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+            </div>
+          </div>
+          <form id="skillRegistryForm" class="stack" style="gap:10px;margin-bottom:12px;">
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="skillRegistryId">Registry ID</label>
+                <input id="skillRegistryId" type="text" placeholder="e.g. team-skills" required>
+              </div>
+              <div style="flex:1;">
+                <label for="skillRegistryName">Display Name</label>
+                <input id="skillRegistryName" type="text" placeholder="e.g. Team Skills">
+              </div>
+            </div>
+            <div>
+              <label for="skillRegistryPath">Root Path</label>
+              <input id="skillRegistryPath" type="text" placeholder="e.g. C:\\skills">
+            </div>
+            <div class="toolbar">
+              <button type="submit" class="primary">Add / Update Registry</button>
+              <span id="skillRegistryState" class="muted" style="font-size:12px;"></span>
+            </div>
+          </form>
+          <div id="skillRegistryList" class="stack" style="gap:8px;"></div>
+        </div>
+
+        <!-- ── Code CLI Adapters ── -->
+        <div class="settings-group">
+          <div class="row" style="margin-bottom:10px;">
+            <h3 class="settings-group-title" style="margin:0;">Code CLI Adapters</h3>
+            <div class="row" style="gap:8px;">
+              <span id="codeCliAdapterCount" class="muted" style="font-size:12px;">0</span>
+              <button id="codeCliAdapterRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+            </div>
+          </div>
+          <form id="codeCliAdapterForm" class="stack" style="gap:10px;margin-bottom:12px;">
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="codeCliAdapterId">Adapter ID</label>
+                <input id="codeCliAdapterId" type="text" placeholder="e.g. codex-local" required>
+              </div>
+              <div style="flex:1;">
+                <label for="codeCliAdapterName">Display Name</label>
+                <input id="codeCliAdapterName" type="text" placeholder="e.g. Codex Local">
+              </div>
+            </div>
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="codeCliAdapterCommand">Command</label>
+                <input id="codeCliAdapterCommand" type="text" placeholder="e.g. codex">
+              </div>
+              <div style="flex:1;">
+                <label for="codeCliAdapterModel">Default Model</label>
+                <input id="codeCliAdapterModel" type="text" placeholder="e.g. gpt-5.4-mini">
+              </div>
+            </div>
+            <div>
+              <label for="codeCliAdapterArgs">Args (space-separated)</label>
+              <input id="codeCliAdapterArgs" type="text" placeholder="e.g. --print --output-format stream-json">
+            </div>
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="codeCliAdapterTransport">Transport</label>
+                <select id="codeCliAdapterTransport">
+                  <option value="stream_json_print">stream_json_print</option>
+                  <option value="jsonl_task_package">jsonl_task_package</option>
+                </select>
+              </div>
+              <div style="flex:1;">
+                <label for="codeCliAdapterMcpFiles">MCP Config Files (comma-separated)</label>
+                <input id="codeCliAdapterMcpFiles" type="text" placeholder="C:\\mcp\\servers.json">
+              </div>
+            </div>
+            <div class="toolbar">
+              <button type="submit" class="primary">Add / Update Adapter</button>
+              <span id="codeCliAdapterState" class="muted" style="font-size:12px;"></span>
+            </div>
+          </form>
+          <div id="codeCliAdapterList" class="stack" style="gap:8px;"></div>
+        </div>
+
+        <!-- ── Email Accounts ── -->
+        <div class="settings-group">
+          <div class="row" style="margin-bottom:10px;">
+            <h3 class="settings-group-title" style="margin:0;">Email Accounts</h3>
+            <div class="row" style="gap:8px;">
+              <span id="emailAccountCount" class="muted" style="font-size:12px;">0</span>
+              <button id="emailAccountRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+            </div>
+          </div>
+          <form id="emailAccountForm" class="stack" style="gap:10px;margin-bottom:12px;">
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="emailAccountId">Account ID</label>
+                <input id="emailAccountId" type="text" placeholder="e.g. work-gmail" required>
+              </div>
+              <div style="flex:1;">
+                <label for="emailAccountEmail">Email</label>
+                <input id="emailAccountEmail" type="email" placeholder="me@example.com" required>
+              </div>
+            </div>
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="emailAccountName">Display Name</label>
+                <input id="emailAccountName" type="text" placeholder="e.g. Work Gmail">
+              </div>
+              <div style="flex:1;">
+                <label for="emailAccountProvider">Provider</label>
+                <select id="emailAccountProvider">
+                  <option value="imap">IMAP</option>
+                  <option value="graph">Microsoft Graph</option>
+                  <option value="mock">Mock</option>
+                </select>
+              </div>
+            </div>
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="emailAccountAuthType">Auth Type</label>
+                <select id="emailAccountAuthType">
+                  <option value="password">Password</option>
+                  <option value="oauth">OAuth</option>
+                </select>
+              </div>
+              <div style="flex:1;">
+                <label for="emailAccountSecret">Password / Token</label>
+                <input id="emailAccountSecret" type="password" placeholder="stored in local credential store">
+              </div>
+            </div>
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="emailAccountHost">IMAP Host</label>
+                <input id="emailAccountHost" type="text" placeholder="imap.gmail.com">
+              </div>
+              <div style="flex:1;">
+                <label for="emailAccountPort">IMAP Port</label>
+                <input id="emailAccountPort" type="number" placeholder="993">
+              </div>
+            </div>
+            <div class="toolbar">
+              <button type="submit" class="primary">Add / Update Account</button>
+              <span id="emailAccountState" class="muted" style="font-size:12px;"></span>
+            </div>
+          </form>
+          <div class="stack" style="gap:8px;margin-bottom:12px;">
+            <div class="row" style="align-items:center;gap:8px;">
+              <label for="emailDigestEnabled" style="flex:1;">启用每日汇总</label>
+              <input id="emailDigestEnabled" type="checkbox">
+            </div>
+            <div class="row" style="gap:8px;">
+              <div style="flex:1;">
+                <label for="emailDigestWindowStart">推送开始时间</label>
+                <input id="emailDigestWindowStart" type="time" value="06:00">
+              </div>
+              <div style="flex:1;">
+                <label for="emailDigestWindowEnd">推送结束时间</label>
+                <input id="emailDigestWindowEnd" type="time" value="12:00">
+              </div>
+            </div>
+            <div class="row" style="align-items:center;gap:8px;">
+              <label for="emailDigestSkipWeekends" style="flex:1;">跳过周末</label>
+              <input id="emailDigestSkipWeekends" type="checkbox">
+            </div>
+            <div class="toolbar">
+              <button id="emailDigestSaveBtn" type="button" class="secondary">保存汇总设置</button>
+              <span id="emailDigestState" class="muted" style="font-size:12px;"></span>
+            </div>
+          </div>
+          <div id="emailAccountList" class="stack" style="gap:8px;"></div>
         </div>
 
         <!-- Status -->

@@ -65,6 +65,16 @@ function renderToolBlock(tool) {
   ].join("\n");
 }
 
+function renderSkillBlock(skill) {
+  return [
+    `<skill id="${skill.id}">`,
+    `  name: ${skill.displayName ?? skill.id}`,
+    `  description: ${(skill.description ?? "").slice(0, 500)}`,
+    `  entry: ${skill.entryPath ?? ""}`,
+    `</skill>`
+  ].join("\n");
+}
+
 /**
  * Render a system prompt that tells the LLM:
  *   1. Its role and constraints
@@ -82,11 +92,13 @@ function renderToolBlock(tool) {
  */
 export function buildAgenticSystemPrompt({
   tools = [],
+  skills = [],
   task = null,
   requestedFormat = null,
   language = "auto"
 } = {}) {
   const toolBlocks = tools.map((tool) => renderToolBlock(tool)).join("\n\n");
+  const skillBlocks = skills.slice(0, 20).map((skill) => renderSkillBlock(skill)).join("\n\n");
 
   const outputFormatLine = requestedFormat && requestedFormat.id && requestedFormat.id !== "conversational"
     ? `The user asked for a ${requestedFormat.id} artifact. Use the generate_document tool (kind=${requestedFormat.id}) or write_file to produce it. Do not refuse by claiming you cannot save files — you can.`
@@ -102,6 +114,10 @@ export function buildAgenticSystemPrompt({
     "## Available tools",
     "",
     toolBlocks,
+    "",
+    "## Available skills",
+    "",
+    skillBlocks || "(none)",
     "",
     "## Rules",
     "",

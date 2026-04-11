@@ -35,6 +35,8 @@ Runtime config file also supports:
 - `ai.codeCli.kimi.configFile`
 - `ai.codeCli.kimi.mcpConfigFiles`
 
+Generic code CLI providers can also receive MCP config files through `ai.customProviders[*].mcpConfigFiles` or `ai.codeCli.adapters[*].mcpConfigFiles`; see [AI integrations](ai_integrations.md).
+
 ## Verification
 
 - `npm run verify:file-kimi` exercises the mock JSONL bridge.

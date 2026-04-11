@@ -1,4 +1,5 @@
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
+import { decomposeUserCommand } from "../src/service/core/router/decomposer.mjs";
 import {
   resolveRoutedModel,
   describeResolvedProvider,
@@ -87,6 +88,14 @@ if (!pptxRoute.suggested_formats?.includes("pptx")) {
 const translateRoute = service.routeIntent("翻译这段话");
 if (translateRoute.executor !== "translate") {
   throw new Error("Intent router must not upgrade translate requests to agentic.");
+}
+
+const decomposition = await decomposeUserCommand({
+  userCommand: "翻译这段话，然后总结那份报告",
+  mode: "rules_only"
+});
+if (decomposition.subtasks.length < 2) {
+  throw new Error("Multi-intent decomposer should split simple conjunctions.");
 }
 
 if (service.endpoints.postTask !== "/task") {

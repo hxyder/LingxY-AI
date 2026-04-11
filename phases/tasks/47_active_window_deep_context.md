@@ -77,12 +77,26 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
+- 状态：done
+- 执行分支：`main`
+- 开始日期：2026-04-11
+- 完成日期：2026-04-11
 - 实际新增内容：
-- 验证结果：
+  - `scripts/active-window-probe.ps1` — Win32 UI Automation 浏览器 URL 抓取 + Office COM ActiveDocument + VSCode/JetBrains/Notepad++ 标题解析 + 进程黑名单 + 隐身模式检测
+  - `src/desktop/tray/active-window-context.mjs` — 纯 JS helper，Promise.allSettled 并联两个 PowerShell 探测器 + 合并 + `buildShellContextPayload()` 构造 IPC payload
+  - `src/desktop/renderer/overlay.js` — `showActiveWindowPreviewCard()` 渲染 🌐/📄/📝/🪟 预览卡片 + 分析/翻译/总结/审阅 quick-action 按钮
+  - `src/desktop/tray/electron-main.mjs` — `captureActiveWindowContext()` 委托给 helper，热键处理合并 `active_window` 字段
+  - `scripts/verify-active-window-probe.mjs` — parser 单元测试 + 8 场景端到端 + payload merge
+  - `tests/fixtures/mock-active-window-probe.mjs` — 8 场景 mock fixture
+- 验证结果：全部 31 个 verify 脚本通过
+- 已支持 process → 抓取方式映射：
+  - `msedge / chrome / brave / firefox` → UI Automation 爬 Accessibility tree 找 address bar → ValuePattern.Value → URL
+  - `winword / excel / powerpnt` → COM `Marshal.GetActiveObject` → ActiveDocument/ActiveWorkbook/ActivePresentation.FullName → 文件路径；COM 失败时退化为标题解析
+  - `Code` → `<file> - <folder> - Visual Studio Code` 标题正则 → 文件名 + 文件夹
+  - `idea64 / rider64 / pycharm64 / webstorm64 / clion64` → JetBrains `<project> [path] - file` 标题解析
+  - `notepad++ / sublime_text` → `<file> - Editor` 标题解析
+  - 其他 → 返回 `{process, title, pid, detected_kind: "unknown"}`
+- 默认黑名单：KeePass / KeePassXC / 1Password / BitWarden / Dashlane / LastPass / BankClient / TokenKeeper / Authy + 浏览器隐身窗口标题匹配
 - 遗留问题（开工前已识别）：
   - 用户需求（2026-04-11）："检测当前活动的主窗口，可以直接基于主窗口，理解文件路径。如果是网页，可以识别链接，并进行一系列操作，当用户唤醒以后。"
   - UI Automation 在部分有 DPI 缩放 / Chromium Widevine 的浏览器里可能抓不到地址栏

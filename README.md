@@ -68,6 +68,7 @@ This bootstrap commit focuses on:
 - Git workflow baseline
 - documentation placement
 - AI provider / code CLI / MCP / skills interface reservations
+- hot-reloadable AI integration registry for providers, code CLIs, MCP servers, and Codex-style skills
 
 Business implementation starts in later tasks.
 
@@ -92,3 +93,4 @@ Current implemented slices include:
 - provider health detection for OpenAI, Claude, Kimi API, and Ollama
 - release readiness docs, trial package builder, and bundle verification
 - UCA-049 provider-agnostic agentic runtime: unified `generate({messages,tools})` adapter covering anthropic / openai-compat / ollama / code_cli, per-task provider resolution (no more boot-time snapshot), universal tool belt (`write_file`, `run_script`, `generate_document`), dynamic tool-catalogue system prompt, 8-step planner loop with truthfulness guard, intent_tags multi-label routing, pptx output format, and a JSON planning-mode bridge that lets any `--print` capable code CLI (Kimi CLI / Claude Code CLI / Codex / Gemini) drive multi-step tool use
+- hot-reloadable AI integration configuration under `data/integrations/{mcp,skills,code_cli}` plus HTTP endpoints for adding MCP servers, Skills registries, and code CLI adapters without a runtime restart

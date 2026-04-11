@@ -52,6 +52,11 @@
     "failure_category": { "type": ["string", "null"] },
     "retryable": { "type": "boolean" },
     "parent_task_id": { "type": ["string", "null"] },
+    "child_task_ids": {
+      "type": ["array", "null"],
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "child_index": { "type": ["integer", "null"], "minimum": 0 },
     "progress": { "type": "number", "minimum": 0, "maximum": 1 }
   },
   "additionalProperties": false

@@ -5,6 +5,10 @@ import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import os from "node:os";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
+import {
+  captureActiveWindowContext as runCaptureActiveWindowContext,
+  buildShellContextPayload
+} from "./active-window-context.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -330,41 +334,48 @@ export function createElectronShellRuntime({
     });
   }
 
-  const captureScriptPath = path.join(__dirname, "..", "..", "..", "scripts", "capture-context.ps1");
+  async function requestMorningDigestCheck() {
+    if (typeof fetch !== "function") {
+      return;
+    }
+    try {
+      await fetch(`${resolvedServiceBaseUrl}/email/digest/check`, { method: "POST" });
+    } catch (error) {
+      console.warn("Morning digest check failed", error?.message ?? error);
+    }
+  }
+
+  const scriptsDir = path.join(__dirname, "..", "..", "..", "scripts");
+
+  // Shared PowerShell runner used by both capture-context.ps1 and
+  // active-window-probe.ps1. Returns `{stdout, stderr}` the same way
+  // execFile does, so the helper in `active-window-context.mjs` can stay
+  // Electron-free (and therefore testable from verify scripts).
+  async function runPowerShellScript({ script, args = [], timeoutMs = 3000 }) {
+    const scriptPath = path.join(scriptsDir, script);
+    return execFileAsync("powershell", [
+      "-NoProfile", "-ExecutionPolicy", "Bypass",
+      "-File", scriptPath,
+      ...args
+    ], { encoding: "utf8", timeout: timeoutMs });
+  }
 
   async function captureActiveWindowContext() {
-    const result = { processName: null, windowTitle: null, filePaths: [], selectedText: null };
+    const context = await runCaptureActiveWindowContext({
+      runPowerShell: runPowerShellScript,
+      clipboardFallback: () => clipboard.readText() ?? "",
+      timeoutMs: 3000
+    });
 
-    try {
-      const { stdout } = await execFileAsync("powershell", [
-        "-NoProfile", "-ExecutionPolicy", "Bypass",
-        "-File", captureScriptPath,
-        "-SimulateCopy"
-      ], { encoding: "utf8", timeout: 3000 });
-
-      const info = JSON.parse(stdout.trim());
-      result.processName = info.process ?? null;
-      result.windowTitle = info.title ?? null;
-
-      const files = info.files;
-      if (Array.isArray(files) && files.length > 0) {
-        result.filePaths = files.filter((f) => typeof f === "string" && f.length > 0);
-      }
-
-      const clipText = info.text ?? "";
-      if (clipText && clipText.trim().length > 2) {
-        result.selectedText = clipText.trim();
-        lastClipboardText = clipText.trim();
-      }
-    } catch {
-      // PowerShell failed — fall back to Electron clipboard
-      const clipText = clipboard.readText() ?? "";
-      if (clipText && clipText.trim().length > 2) {
-        result.selectedText = clipText.trim();
-      }
+    // Keep the clipboard watcher in sync when capture-context.ps1 surfaced
+    // selected text. Before UCA-047 this was done inline; the helper now
+    // owns the merge but we still have to update this closure's mutable
+    // `lastClipboardText` for dock pulse behaviour.
+    if (context.selectedText) {
+      lastClipboardText = context.selectedText;
     }
 
-    return result;
+    return context;
   }
 
   let lastClipboardText = "";
@@ -515,7 +526,11 @@ export function createElectronShellRuntime({
         if (shortcut.id === "capture-and-ask") {
           // Explicit "grab whatever the user is looking at" hotkey. Files
           // pass through cleanly; selected text only attaches when it
-          // round-trips through stdout without encoding loss.
+          // round-trips through stdout without encoding loss. UCA-047 also
+          // runs the active-window-probe in parallel to add URL / document
+          // path hints so the overlay can offer "analyse this page" /
+          // "summarise this document" quick-actions even when there's no
+          // clipboard selection.
           captureActiveWindowContext().then((ctx) => {
             showWindow("overlay");
             for (const bw of windows.values()) {
@@ -524,27 +539,15 @@ export function createElectronShellRuntime({
 
             const hasFiles = ctx.filePaths.length > 0;
             const hasText = Boolean(ctx.selectedText);
+            const hasActiveWindow = Boolean(ctx.activeWindow && !ctx.activeWindow.blocked);
 
-            if (hasFiles) {
-              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
-                targetWindow: "overlay",
-                source_app: ctx.processName ?? "explorer.exe",
-                capture_mode: "hotkey_capture",
-                file_paths: ctx.filePaths
+            if (hasFiles || hasText || hasActiveWindow) {
+              const shellPayload = buildShellContextPayload({
+                context: ctx,
+                sourceApp: ctx.processName ?? ctx.activeWindow?.process ?? "unknown",
+                captureMode: "hotkey_capture"
               });
-            } else if (hasText) {
-              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
-                targetWindow: "overlay",
-                source_app: ctx.processName ?? "unknown",
-                capture_mode: "hotkey_capture",
-                capture: {
-                  sourceType: "text_selection",
-                  text: ctx.selectedText,
-                  url: "",
-                  pageTitle: ctx.windowTitle ?? "",
-                  processName: ctx.processName ?? null
-                }
-              });
+              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
             }
           }).catch(() => {
             showWindow("overlay");
@@ -659,6 +662,9 @@ export function createElectronShellRuntime({
       registerShortcuts();
       await startHandoffWatcher();
       await startNotificationWatcher();
+      setTimeout(() => {
+        requestMorningDigestCheck().catch(() => {});
+      }, 1500);
       startClipboardWatcher();
       app.on("second-instance", (_event, argv) => {
         handleLaunchArgs(argv).catch((error) => {

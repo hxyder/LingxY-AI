@@ -22,6 +22,7 @@ logs/
 # Editors
 .idea/
 .vscode/
+.claude/settings.local.json
 *.suo
 *.user
 *.userosscache

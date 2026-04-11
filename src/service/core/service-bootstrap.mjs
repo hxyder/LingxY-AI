@@ -20,15 +20,38 @@ import { createOfficeHttpsRuntime } from "../https/port-9413.mjs";
 import { createBuiltinTemplateRegistry, createPersistentTemplateRegistry } from "../templates/runtime.mjs";
 import { createBudgetManager } from "../cost/budget.mjs";
 import { createEmbeddingStore } from "../embeddings/store.mjs";
-import { createAIProviderRegistry } from "../ai/providers/registry.mjs";
-import { BUILTIN_AI_PROVIDERS } from "../ai/providers/builtin.mjs";
-import { createCodeCliRegistry } from "../ai/code_cli/registry.mjs";
-import { BUILTIN_CODE_CLI_ADAPTERS } from "../ai/code_cli/builtin.mjs";
-import { createMCPRegistry } from "../ai/mcp/registry.mjs";
-import { BUILTIN_MCP_SERVERS } from "../ai/mcp/builtin.mjs";
-import { createSkillRegistry } from "../ai/skills/registry.mjs";
-import { BUILTIN_SKILL_REGISTRIES } from "../ai/skills/builtin.mjs";
+import { createAIIntegrationRuntime } from "../ai/integrations/runtime.mjs";
 import { createDagCheckpointStore } from "../dag/scheduler.mjs";
+import { createEmailMonitor } from "../email/monitor.mjs";
+
+// Minimal in-memory config store: survives within a single process lifetime
+// but doesn't persist to disk. Used when createServiceBootstrap() is called
+// without an explicit configStore (e.g. from verify scripts). Production code
+// passes a real disk-backed configStore from createPersistentRuntime().
+function createInMemoryConfigStore() {
+  let state = {};
+  return {
+    configPath: null,
+    load() { return JSON.parse(JSON.stringify(state)); },
+    save(config) { state = JSON.parse(JSON.stringify(config)); return state; },
+    patch(nextPatch) {
+      function deepMerge(base, patch) {
+        const merged = { ...base };
+        for (const [key, value] of Object.entries(patch ?? {})) {
+          if (value && typeof value === "object" && !Array.isArray(value)
+              && merged[key] && typeof merged[key] === "object" && !Array.isArray(merged[key])) {
+            merged[key] = deepMerge(merged[key], value);
+          } else {
+            merged[key] = value;
+          }
+        }
+        return merged;
+      }
+      state = deepMerge(state, nextPatch);
+      return state;
+    }
+  };
+}
 
 export function createServiceBootstrap({
   storeAdapter = createInMemoryStoreScaffold(),
@@ -38,6 +61,11 @@ export function createServiceBootstrap({
   kimiRuntime = null,
   paths = null
 } = {}) {
+  // Ensure configStore is always available — verify scripts and email monitor
+  // need load()/save()/patch() even when no disk-backed store is provided.
+  if (!configStore) {
+    configStore = createInMemoryConfigStore();
+  }
   const queue = createTaskQueueScaffold();
   const executors = [
     createFastExecutorScaffold(),
@@ -83,11 +111,13 @@ export function createServiceBootstrap({
     dagCheckpointStore: createDagCheckpointStore({
       runsDir: paths?.dagRunsDir ?? null
     }),
-    aiProviders: createAIProviderRegistry(BUILTIN_AI_PROVIDERS),
-    codeCliAdapters: createCodeCliRegistry(BUILTIN_CODE_CLI_ADAPTERS),
-    mcpServers: createMCPRegistry(BUILTIN_MCP_SERVERS),
-    skillRegistries: createSkillRegistry(BUILTIN_SKILL_REGISTRIES)
+    ...createAIIntegrationRuntime({
+      configStore,
+      paths
+    })
   };
+  runtime.emailMonitor = createEmailMonitor({ runtime });
+  runtime.emailMonitor.start();
   runtime.persistSecurityConfig = (patch) => {
     const security = runtime.securityBroker.setConfig(patch);
     runtime.configStore?.patch({
@@ -136,6 +166,10 @@ export function createServiceBootstrap({
       getCodeCliAdapters: "/ai/code-cli",
       getMcpServers: "/ai/mcp",
       getSkillRegistries: "/ai/skills",
+      getIntegrationConfig: "/config/integrations",
+      postMcpServerConfig: "/config/mcp/servers",
+      postSkillRegistryConfig: "/config/skills/registries",
+      postCodeCliAdapterConfig: "/config/code-cli/adapters",
       health: "/health",
       listTasks: "/tasks",
       getTask: "/task/:id",

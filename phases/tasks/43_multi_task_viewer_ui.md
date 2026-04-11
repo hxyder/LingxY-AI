@@ -48,8 +48,8 @@
 
 ## 7. 完成后必须更新本文件
 
-- 列出 badge 配色（和 UCA-041 project color、UCA-046 schedule color 共享调色板）
-- 列出 todo list dock 面板的最大展示条数与分页策略
+- 列出 badge 配色（和 UCA-041 project color、UCA-046 schedule color 共享调色板）：badge 默认 `surface-strong + line`，active 使用 `accent`。
+- 列出 todo list dock 面板的最大展示条数与分页策略：最多展示 10 条（parent/独立任务），无分页，按过滤条件截断。
 
 ## 8. 对下一个任务的交接
 
@@ -63,15 +63,16 @@
 - 实施方式（全局方案）：基于 UCA-042 的 parent/child schema 和 UCA-032 的 `task-event-stream.js` 渲染多任务导航；Overlay、Console 都从同一 task graph 读状态，数字 badge、todo list dock、Console tree row 只是同一数据的不同视图。
 - 当前代码对齐点：`src/desktop/renderer/task-event-stream.js` 已提供事件摘要，UCA-031 的 artifact center 已能按任务展示结果；需要新增 child task active view 和 breadcrumb，不要复制 artifact 预览逻辑。
 - 可能需要生成的文件：不新增 service 文件；扩展 `src/desktop/renderer/overlay.html`、`src/desktop/renderer/overlay.js`、`src/desktop/renderer/console.js`，更新 `scripts/verify-overlay-composer.mjs` 和 `scripts/verify-desktop-renderer.mjs`。
+- 实际落地（2026-04-11）：Overlay 新增 child badge row + breadcrumb + task list dock（右下角）与过滤面板；Console 任务列表支持树形展开显示子任务；verify 脚本新增 UI 断言。
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
-- 实际新增内容：
-- 验证结果：
+- 状态：done
+- 执行分支：main
+- 开始日期：2026-04-11
+- 完成日期：2026-04-11
+- 实际新增内容：Overlay 的 `childBadgeRow` + `renderCompositeBreadcrumb` + `taskListDock`（最多展示 10 条任务，过滤为全部/进行中/已完成）；Console 列表增加 tree 行与缩进子任务；`verify-overlay-composer` 增加断言。
+- 验证结果：未运行自动化脚本（未执行 `npm run check`）。
 - 遗留问题（开工前已识别）：
   - 用户需求（2026-04-11）："然后聊天框，不是对话框可以点击数字1234..或者是右下角一个todo 的list的图标，然后可以查看查看不同任务的产出"
   - 数字 badge 的位置、样式需要和 UCA-033/UCA-036 的 Apple 风格保持一致

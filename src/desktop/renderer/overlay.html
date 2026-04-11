@@ -113,6 +113,29 @@
         padding: 6px 12px;
       }
 
+      .child-badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+
+      .child-badge-row button {
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+        color: var(--ink);
+        font-size: 11px;
+        padding: 4px 8px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+
+      .child-badge-row button.active {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+
       /* ── inline option buttons inside bubbles ── */
       .bubble-options {
         display: flex;
@@ -504,6 +527,116 @@
         padding: 4px 10px;
       }
 
+      /* ── task list dock ── */
+      .task-list-dock {
+        position: fixed;
+        right: 22px;
+        bottom: 30px;
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+        cursor: pointer;
+        z-index: 20;
+      }
+
+      .task-list-dock .dock-badge {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        min-width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        background: #ef4444;
+        color: #fff;
+        font-size: 10px;
+        display: grid;
+        place-items: center;
+        padding: 0 4px;
+        border: 2px solid rgba(255, 255, 255, 0.9);
+      }
+
+      .task-list-panel {
+        position: fixed;
+        right: 22px;
+        bottom: 70px;
+        width: 300px;
+        max-height: 360px;
+        background: rgba(255, 255, 255, 0.97);
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        border-radius: 16px;
+        box-shadow: 0 18px 44px rgba(0, 0, 0, 0.16);
+        padding: 12px;
+        display: none;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 20;
+      }
+
+      .task-list-panel[data-open="true"] {
+        display: flex;
+      }
+
+      .task-list-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      .task-list-filters {
+        display: flex;
+        gap: 6px;
+      }
+
+      .task-list-filters button {
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+        cursor: pointer;
+      }
+
+      .task-list-filters button.active {
+        background: var(--accent);
+        color: #fff;
+        border-color: var(--accent);
+      }
+
+      .task-list-body {
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+
+      .task-list-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--line);
+        background: var(--surface-strong);
+      }
+
+      .task-progress-ring {
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        border: 2px solid rgba(59, 130, 246, 0.2);
+        display: grid;
+        place-items: center;
+        font-size: 9px;
+        color: var(--muted);
+      }
+
       @keyframes bubble-in {
         from { opacity: 0; transform: translateY(6px); }
         to   { opacity: 1; transform: translateY(0); }
@@ -828,6 +961,24 @@
         <button id="toastCopyBtn" class="secondary" type="button">复制</button>
         <button id="toastContinueBtn" class="ghost" type="button">继续追问</button>
       </div>
+    </div>
+
+    <!-- Task list dock (bottom-right) -->
+    <div id="taskListDock" class="task-list-dock" title="任务清单">
+      <span>📋</span>
+      <span id="taskListDockBadge" class="dock-badge" hidden>0</span>
+    </div>
+    <div id="taskListPanel" class="task-list-panel" data-open="false">
+      <div class="task-list-header">
+        <strong style="font-size:12px;">任务清单</strong>
+        <button id="taskListCloseBtn" class="aux-btn" type="button" style="width:22px;height:22px;">×</button>
+      </div>
+      <div class="task-list-filters">
+        <button type="button" data-task-filter="all" class="active">全部</button>
+        <button type="button" data-task-filter="active">进行中</button>
+        <button type="button" data-task-filter="done">已完成</button>
+      </div>
+      <div id="taskListBody" class="task-list-body"></div>
     </div>
 
     <script type="module" src="./overlay.js"></script>

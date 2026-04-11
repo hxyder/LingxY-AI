@@ -9,4 +9,5 @@
 - [Office localhost certificate setup](self_signed_cert_setup.md)
 - [Office HTTPS spike report](office_https_spike_report.md)
 - [Local runtime](local_runtime.md)
+- [AI integrations](ai_integrations.md)
 - Trial release packaging and validation live in `docs/release/`.

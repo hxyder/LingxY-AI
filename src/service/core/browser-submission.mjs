@@ -6,6 +6,8 @@ import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import { submitImageTask } from "./image-submission.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
+import { decomposeUserCommand } from "./router/decomposer.mjs";
+import { submitCompositeTask } from "./composite-submission.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -185,8 +187,16 @@ async function runBrowserExecutor({ task, runtime }) {
     sub_status: `${executor.id}_executor`
   }, true);
 
-  // Stash runtime on task so executors that need runtime context (e.g. tool_using) can access it
-  task.__runtime = runtime;
+  // Stash runtime on task so executors that need runtime context (e.g.
+  // tool_using / agentic) can access it. Non-enumerable so sqlite-store's
+  // JSON.stringify(task) doesn't trip over the runtime's live setInterval
+  // Timers (`_idlePrev / _idleNext / TimersList` circular refs).
+  Object.defineProperty(task, "__runtime", {
+    value: runtime,
+    enumerable: false,
+    configurable: true,
+    writable: true
+  });
 
   const resolvedProvider = resolveProviderForTask(executor.id === "multi_modal" ? "vision" : "chat");
   const executorDescriptor = describeResolvedProvider(resolvedProvider);
@@ -347,8 +357,10 @@ export async function submitBrowserTask({
   runtime,
   executionMode,
   parentTaskId = null,
+  childIndex = null,
   retryCount = 0,
-  executorOverride = null
+  executorOverride = null,
+  skipDecomposition = false
 }) {
   ensureRuntimeServices(runtime);
   const store = runtime.store;
@@ -365,12 +377,41 @@ export async function submitBrowserTask({
   });
   const contextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
 
+  if (inspection.allowed && !skipDecomposition && !parentTaskId) {
+    const decomposition = await decomposeUserCommand({
+      userCommand,
+      runtime,
+      contextPacket
+    });
+    if (decomposition.subtasks.length > 1) {
+      return submitCompositeTask({
+        runtime,
+        contextPacket,
+        userCommand,
+        executionMode,
+        subtasks: decomposition.subtasks,
+        submitChild: ({ subtask, index, parentTaskId: compositeId }) =>
+          submitBrowserTask({
+            capture,
+            userCommand: subtask.command,
+            runtime,
+            executionMode,
+            parentTaskId: compositeId,
+            childIndex: index,
+            executorOverride: subtask.suggested_executor ?? null,
+            skipDecomposition: true
+          })
+      });
+    }
+  }
+
   const task = createTaskRecord({
     route,
     contextPacket,
     userCommand,
     executionMode,
     parentTaskId,
+    childIndex,
     retryCount,
     executorOverride
   });

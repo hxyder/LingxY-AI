@@ -131,6 +131,7 @@ export async function retryTask({
       parentTaskId: request.parentTaskId,
       retryCount: request.retryCount,
       executorOverride: request.executorOverride,
+      skipDecomposition: true,
       runtime
     });
   }
@@ -142,6 +143,7 @@ export async function retryTask({
     parentTaskId: request.parentTaskId,
     retryCount: request.retryCount,
     executorOverride: request.executorOverride,
+    skipDecomposition: true,
     runtime
   });
 }

@@ -26,3 +26,15 @@ export interface CodeCliAdapter {
   supportsCheckpointResume: boolean;
   isAvailable(): Promise<boolean>;
 }
+
+export interface CodeCliAdapterConfig {
+  id: string;
+  displayName?: string;
+  command: string;
+  args?: string[];
+  transport?: "stream_json_print" | "jsonl_task_package";
+  defaultModel?: string;
+  configFile?: string;
+  mcpConfigFiles?: string[];
+  supportsCheckpointResume?: boolean;
+}

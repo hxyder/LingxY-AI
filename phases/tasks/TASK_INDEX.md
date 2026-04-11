@@ -46,12 +46,12 @@
 | 39 | UCA-039 | [39_smart_launch_and_free_search.md](39_smart_launch_and_free_search.md) | Smart Launch + Free Search | UCA-008,UCA-017 | `task/uca-039-smart-launch-and-search` | in_progress |
 | 40 | UCA-040 | [40_misc_reliability_fixes.md](40_misc_reliability_fixes.md) | Misc Reliability Fixes | UCA-013,UCA-023 | `task/uca-040-misc-reliability-fixes` | done |
 | 41 | UCA-041 | [41_conversation_history_list_ui.md](41_conversation_history_list_ui.md) | Projects + History Sessions | UCA-038 | `task/uca-041-projects-and-history` | todo |
-| 42 | UCA-042 | [42_multi_intent_decomposition.md](42_multi_intent_decomposition.md) | Multi-Intent Decomposition | UCA-007,UCA-017,UCA-039,UCA-046,UCA-049 | `task/uca-042-multi-intent-decomposition` | todo |
-| 43 | UCA-043 | [43_multi_task_viewer_ui.md](43_multi_task_viewer_ui.md) | Multi-Task Viewer UI | UCA-032,UCA-031,UCA-042 | `task/uca-043-multi-task-viewer` | todo |
-| 44 | UCA-044 | [44_email_monitoring_and_auto_schedule.md](44_email_monitoring_and_auto_schedule.md) | Email Monitoring + Auto-Schedule | UCA-010,UCA-017,UCA-027,UCA-046,UCA-049 | `task/uca-044-email-monitoring` | todo |
-| 45 | UCA-045 | [45_morning_email_digest.md](45_morning_email_digest.md) | Morning Email Digest | UCA-044,UCA-027,UCA-049 | `task/uca-045-morning-digest` | todo |
+| 42 | UCA-042 | [42_multi_intent_decomposition.md](42_multi_intent_decomposition.md) | Multi-Intent Decomposition | UCA-007,UCA-017,UCA-039,UCA-046,UCA-049 | `task/uca-042-multi-intent-decomposition` | done |
+| 43 | UCA-043 | [43_multi_task_viewer_ui.md](43_multi_task_viewer_ui.md) | Multi-Task Viewer UI | UCA-032,UCA-031,UCA-042 | `task/uca-043-multi-task-viewer` | done |
+| 44 | UCA-044 | [44_email_monitoring_and_auto_schedule.md](44_email_monitoring_and_auto_schedule.md) | Email Monitoring + Auto-Schedule | UCA-010,UCA-017,UCA-027,UCA-046,UCA-049 | `task/uca-044-email-monitoring` | done |
+| 45 | UCA-045 | [45_morning_email_digest.md](45_morning_email_digest.md) | Morning Email Digest | UCA-044,UCA-027,UCA-049 | `task/uca-045-morning-digest` | done |
 | 46 | UCA-046 | [46_advanced_scheduler_ux.md](46_advanced_scheduler_ux.md) | Advanced Scheduler UX | UCA-010,UCA-036,UCA-024 | `task/uca-046-advanced-scheduler-ux` | todo |
-| 47 | UCA-047 | [47_active_window_deep_context.md](47_active_window_deep_context.md) | Active Window Deep Context | UCA-029,UCA-023,UCA-040,UCA-049 | `task/uca-047-active-window-context` | todo |
+| 47 | UCA-047 | [47_active_window_deep_context.md](47_active_window_deep_context.md) | Active Window Deep Context | UCA-029,UCA-023,UCA-040,UCA-049 | `task/uca-047-active-window-context` | done |
 | 48 | UCA-048 | [48_settings_v2_output_path_and_feature_toggles.md](48_settings_v2_output_path_and_feature_toggles.md) | Settings v2 (output path + feature toggles) | UCA-018,UCA-036,UCA-034~047 | `task/uca-048-settings-v2` | todo |
 | 49 | UCA-049 | [49_provider_agnostic_agentic_runtime.md](49_provider_agnostic_agentic_runtime.md) | Provider-agnostic Agentic Runtime + Universal Tool Belt | UCA-008,UCA-017,UCA-028,UCA-039 | `task/uca-049-agentic-runtime` | done |
 
@@ -61,7 +61,7 @@
 - UCA-015 ~ UCA-033 是"真实运行时、真实集成、真实 UI、发布验证"四类收尾任务；截至 2026-04-11 代码审计，UCA-027 ~ UCA-032 对应的 dock、输出格式、统一 capture、会话时间线、结果中心与事件流代码均已落地并有验证脚本覆盖，状态收口为 `done`
 - UCA-026 需要另一台新机器的外部试用证据，本机代码和文档准备已完成但验收条件不可在当前工作区内闭环，因此标为 `blocked`
 - UCA-034 ~ UCA-041 是 2026-04-11 会话里新加入的增量能力：免费翻译、语音输入、Apple UI 重做、浏览器内联结果、对话记忆、智能启动、杂项可靠性修复、项目+历史 UI（预留）；其中 UCA-037 ~ UCA-039 保持 `in_progress`，因为仍有用户反馈缺陷需要按全局方案修正
-- UCA-042 ~ UCA-048 是 2026-04-11 晚些加入的产品层能力：多意图分解、多任务查看 UI、邮箱监测、早晨 digest、高级 scheduler UX、活动窗口深度上下文、设置 v2 —— 全部 todo，按依赖链推进
+- UCA-042 ~ UCA-048 是 2026-04-11 晚些加入的产品层能力：多意图分解、多任务查看 UI、邮箱监测、早晨 digest、高级 scheduler UX、活动窗口深度上下文、设置 v2 —— UCA-042/UCA-043/UCA-044/UCA-045 已完成，其余按依赖链推进
 - UCA-049 已完成（2026-04-11，三个 commit 全部落地）：provider 无关的 agentic 运行时 + 通用工具带（write_file / run_script / generate_document）+ 修复 "切到 DeepSeek 后还在跑 Kimi CLI" 的真实 bug —— 是 UCA-042 的前置，完成后让 intent 分解器直接复用同一套 planner。
   - **Commit 1**：provider-resolver 的 `resolveCodeCliRuntimeForTask` + `describeResolvedProvider` + 所有提交路径的 per-task 动态解析 + `provider_resolved` 事件 + `/ai/active-provider-for-task` 端点 + `scripts/verify-provider-routing.mjs`；bug #7 根治
   - **Commit 2**：universal tool belt（write_file / run_script / generate_document）+ agentic prompt-builder（动态从 registry 渲染）+ agentic planner（8 步 tool-use 循环 + truthfulness guard）+ agentic executor 注册 + router intent_tags 多标签升级 + pptx 输出格式 + create-ooxml-fixture.ps1 的 pptx 分支 + `scripts/verify-agentic-planner.mjs`；UCA-039 bug #5（AI 撒谎）+ bug #6（ppt 退化 report.md）根治
@@ -86,16 +86,16 @@
 | 用户需求 | 对应任务 | 状态 |
 |---|---|---|
 | 1. 对话框加项目 + 历史会话 | UCA-041（已扩展）| todo |
-| 2. 一次输入 → 多个 todo / 子任务卡片 | UCA-042 | todo |
-| 3. 聊天框数字 badge / 右下角 todo list 图标 | UCA-043 | todo |
-| 4. 邮箱监测 + 弹总结 + 自动 schedule + 回复追踪 | UCA-044 | todo |
-| 5. 早晨 5 分钟内邮件汇总 + 多账户 | UCA-045 | todo |
+| 2. 一次输入 → 多个 todo / 子任务卡片 | UCA-042 | done |
+| 3. 聊天框数字 badge / 右下角 todo list 图标 | UCA-043 | done |
+| 4. 邮箱监测 + 弹总结 + 自动 schedule + 回复追踪 | UCA-044 | done |
+| 5. 早晨 5 分钟内邮件汇总 + 多账户 | UCA-045 | done |
 | 6. Schedule 提前提醒 + 日历视图 + 分类颜色 | UCA-046（+ UCA-010/036 标注扩展）| todo |
 | 7. 活动主窗口深度上下文（文件路径 / 网页链接）| UCA-047（+ UCA-029 标注扩展）| todo |
 | 8. 默认文件输出路径 | UCA-048 | todo |
 | 9. 功能开关 + 被屏蔽功能时引导跳转设置 | UCA-048 | todo |
-| 10. AI 能自主搜索 + 写代码 + 生成真 pptx/docx/xlsx/pdf（不再死板） | UCA-049 | todo |
-| 11. 选中的 provider（DeepSeek/Claude/Ollama/任何 API 或 CLI）必须真的被调用 | UCA-049 | todo |
+| 10. AI 能自主搜索 + 写代码 + 生成真 pptx/docx/xlsx/pdf（不再死板） | UCA-049 | done |
+| 11. 选中的 provider（DeepSeek/Claude/Ollama/任何 API 或 CLI）必须真的被调用 | UCA-049 | done |
 
 ## 跨任务依赖关系（2026-04-11 新任务）
 

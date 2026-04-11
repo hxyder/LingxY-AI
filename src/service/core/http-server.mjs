@@ -15,6 +15,8 @@ import { submitContextTask } from "./context-submission.mjs";
 import { submitFileTask } from "./file-submission.mjs";
 import { submitImageTask } from "./image-submission.mjs";
 import { submitOfficeTask } from "./office-submission.mjs";
+import { listEmailAccounts, upsertEmailAccount, deleteEmailAccount } from "../email/accounts.mjs";
+import { maybeRunMorningDigest } from "../email/digest.mjs";
 import { normalizeTemplateDocument } from "../templates/parser.mjs";
 import { validateTemplateDocument } from "../templates/schema.mjs";
 import { resumeDagGraph, validateDagDefinition } from "../dag/scheduler.mjs";
@@ -74,7 +76,10 @@ function listTaskSummaries(runtime) {
     intent: task.intent,
     executor: task.executor,
     source_type: task.context_packet?.source_type ?? null,
-    user_command: task.user_command
+    user_command: task.user_command,
+    parent_task_id: task.parent_task_id ?? null,
+    child_index: task.child_index ?? null,
+    child_count: Array.isArray(task.child_task_ids) ? task.child_task_ids.length : 0
   }));
 }
 
@@ -220,6 +225,20 @@ function buildScheduleActionRequest(body = {}) {
       body: message
     }
   };
+}
+
+function upsertById(list = [], entry) {
+  const index = list.findIndex((item) => item.id === entry.id);
+  return index >= 0
+    ? list.map((item, itemIndex) => itemIndex === index ? entry : item)
+    : [...list, entry];
+}
+
+function saveRuntimeConfig(runtime, updater) {
+  const currentConfig = runtime.configStore?.load?.() ?? {};
+  const nextConfig = updater(currentConfig);
+  runtime.configStore?.save?.(nextConfig);
+  return nextConfig;
 }
 
 // Known code CLI signatures: name, common executable names, default args, transport
@@ -496,6 +515,205 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, { ok: true, taskRouting: body });
       }
 
+      if (method === "GET" && url.pathname === "/config/integrations") {
+        const config = runtime.configStore?.load?.() ?? {};
+        return sendJson(response, 200, {
+          paths: runtime.platform.integrationPaths ?? {},
+          mcp: config.ai?.mcp ?? { servers: [] },
+          skills: config.ai?.skills ?? { registries: [] },
+          codeCli: {
+            ...(config.ai?.codeCli ?? {}),
+            adapters: config.ai?.codeCli?.adapters ?? []
+          },
+          email: config.email ?? { accounts: [] }
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/config/email/accounts") {
+        return sendJson(response, 200, {
+          accounts: listEmailAccounts(runtime)
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/config/email/settings") {
+        const config = runtime.configStore?.load?.() ?? {};
+        return sendJson(response, 200, {
+          settings: config.email?.digest ?? {}
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/config/email/accounts") {
+        const body = await readJsonBody(request);
+        if (!body.id || !body.email) {
+          return sendJson(response, 400, { error: "id and email required" });
+        }
+        const account = await upsertEmailAccount(runtime, {
+          id: body.id,
+          provider: body.provider ?? "imap",
+          displayName: body.displayName ?? body.email,
+          email: body.email,
+          authType: body.authType ?? "password",
+          imapHost: body.imapHost ?? "",
+          imapPort: body.imapPort ?? 993,
+          enabled: body.enabled !== false
+        }, body.credentials ?? null);
+        return sendJson(response, 200, { ok: true, account });
+      }
+
+      if (method === "POST" && url.pathname === "/config/email/settings") {
+        const body = await readJsonBody(request);
+        const config = runtime.configStore?.load?.() ?? {};
+        const nextConfig = {
+          ...config,
+          email: {
+            ...(config.email ?? {}),
+            digest: {
+              ...(config.email?.digest ?? {}),
+              ...body
+            }
+          }
+        };
+        runtime.configStore?.save?.(nextConfig);
+        return sendJson(response, 200, { ok: true, settings: nextConfig.email.digest });
+      }
+
+      if (method === "DELETE" && url.pathname.startsWith("/config/email/accounts/")) {
+        const id = decodeURIComponent(url.pathname.replace(/^\/config\/email\/accounts\//, ""));
+        const removed = await deleteEmailAccount(runtime, id);
+        return sendJson(response, 200, { ok: true, deleted: id, account: removed });
+      }
+
+      if (method === "POST" && url.pathname === "/email/digest/check") {
+        const result = await maybeRunMorningDigest({ runtime });
+        return sendJson(response, 200, result);
+      }
+
+      if (method === "POST" && url.pathname === "/config/mcp/servers") {
+        const body = await readJsonBody(request);
+        if (!body.id) {
+          return sendJson(response, 400, { error: "id required" });
+        }
+        const entry = {
+          id: body.id,
+          displayName: body.displayName ?? body.name ?? body.id,
+          transport: body.transport ?? "stdio",
+          command: body.command ?? null,
+          args: Array.isArray(body.args) ? body.args : [],
+          url: body.url ?? null,
+          env: body.env ?? null,
+          enabled: body.enabled !== false
+        };
+        saveRuntimeConfig(runtime, (currentConfig) => ({
+          ...currentConfig,
+          ai: {
+            ...(currentConfig.ai ?? {}),
+            mcp: {
+              ...(currentConfig.ai?.mcp ?? {}),
+              servers: upsertById(currentConfig.ai?.mcp?.servers ?? [], entry)
+            }
+          }
+        }));
+        return sendJson(response, 200, { ok: true, server: entry });
+      }
+
+      if (method === "DELETE" && url.pathname.startsWith("/config/mcp/servers/")) {
+        const id = decodeURIComponent(url.pathname.replace(/^\/config\/mcp\/servers\//, ""));
+        saveRuntimeConfig(runtime, (currentConfig) => ({
+          ...currentConfig,
+          ai: {
+            ...(currentConfig.ai ?? {}),
+            mcp: {
+              ...(currentConfig.ai?.mcp ?? {}),
+              servers: (currentConfig.ai?.mcp?.servers ?? []).filter((server) => server.id !== id)
+            }
+          }
+        }));
+        return sendJson(response, 200, { ok: true, deleted: id });
+      }
+
+      if (method === "POST" && url.pathname === "/config/skills/registries") {
+        const body = await readJsonBody(request);
+        if (!body.id || !(body.rootPath ?? body.path)) {
+          return sendJson(response, 400, { error: "id and rootPath required" });
+        }
+        const entry = {
+          id: body.id,
+          displayName: body.displayName ?? body.name ?? body.id,
+          rootPath: body.rootPath ?? body.path,
+          enabled: body.enabled !== false
+        };
+        saveRuntimeConfig(runtime, (currentConfig) => ({
+          ...currentConfig,
+          ai: {
+            ...(currentConfig.ai ?? {}),
+            skills: {
+              ...(currentConfig.ai?.skills ?? {}),
+              registries: upsertById(currentConfig.ai?.skills?.registries ?? [], entry)
+            }
+          }
+        }));
+        return sendJson(response, 200, { ok: true, registry: entry });
+      }
+
+      if (method === "DELETE" && url.pathname.startsWith("/config/skills/registries/")) {
+        const id = decodeURIComponent(url.pathname.replace(/^\/config\/skills\/registries\//, ""));
+        saveRuntimeConfig(runtime, (currentConfig) => ({
+          ...currentConfig,
+          ai: {
+            ...(currentConfig.ai ?? {}),
+            skills: {
+              ...(currentConfig.ai?.skills ?? {}),
+              registries: (currentConfig.ai?.skills?.registries ?? []).filter((registry) => registry.id !== id)
+            }
+          }
+        }));
+        return sendJson(response, 200, { ok: true, deleted: id });
+      }
+
+      if (method === "POST" && url.pathname === "/config/code-cli/adapters") {
+        const body = await readJsonBody(request);
+        if (!body.id || !(body.command ?? body.executable)) {
+          return sendJson(response, 400, { error: "id and command required" });
+        }
+        const entry = {
+          id: body.id,
+          displayName: body.displayName ?? body.name ?? body.id,
+          command: body.command ?? body.executable,
+          args: Array.isArray(body.args) ? body.args : [],
+          transport: body.transport ?? "stream_json_print",
+          defaultModel: body.defaultModel ?? body.model ?? "",
+          configFile: body.configFile ?? null,
+          mcpConfigFiles: Array.isArray(body.mcpConfigFiles) ? body.mcpConfigFiles : [],
+          supportsCheckpointResume: Boolean(body.supportsCheckpointResume)
+        };
+        saveRuntimeConfig(runtime, (currentConfig) => ({
+          ...currentConfig,
+          ai: {
+            ...(currentConfig.ai ?? {}),
+            codeCli: {
+              ...(currentConfig.ai?.codeCli ?? {}),
+              adapters: upsertById(currentConfig.ai?.codeCli?.adapters ?? [], entry)
+            }
+          }
+        }));
+        return sendJson(response, 200, { ok: true, adapter: entry });
+      }
+
+      if (method === "DELETE" && url.pathname.startsWith("/config/code-cli/adapters/")) {
+        const id = decodeURIComponent(url.pathname.replace(/^\/config\/code-cli\/adapters\//, ""));
+        saveRuntimeConfig(runtime, (currentConfig) => ({
+          ...currentConfig,
+          ai: {
+            ...(currentConfig.ai ?? {}),
+            codeCli: {
+              ...(currentConfig.ai?.codeCli ?? {}),
+              adapters: (currentConfig.ai?.codeCli?.adapters ?? []).filter((adapter) => adapter.id !== id)
+            }
+          }
+        }));
+        return sendJson(response, 200, { ok: true, deleted: id });
+      }
+
       // Diagnostic: which provider will the next task of the given type hit?
       // Used by Console / Overlay UI so users can verify their routing config
       // is actually in effect, and by scripts/verify-provider-routing.mjs.
@@ -518,6 +736,7 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           db_path: paths.dbPath,
           task_total: runtime.store.listTasks().length,
           kimi: runtime.kimiRuntimeStatus ?? null,
+          email: runtime.emailMonitor?.status?.() ?? null,
           providers: await runtime.platform.aiProviders.listStatus({
             runtime,
             config
@@ -909,13 +1128,23 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
 
       if (method === "GET" && url.pathname === "/ai/mcp") {
         return sendJson(response, 200, {
-          servers: runtime.platform.mcpServers.list()
+          servers: await runtime.platform.mcpServers.listStatus({
+            runtime,
+            config: runtime.configStore?.load?.() ?? {}
+          })
         });
       }
 
       if (method === "GET" && url.pathname === "/ai/skills") {
         return sendJson(response, 200, {
-          registries: runtime.platform.skillRegistries.list()
+          registries: await runtime.platform.skillRegistries.listStatus({
+            runtime,
+            config: runtime.configStore?.load?.() ?? {}
+          }),
+          skills: await runtime.platform.skillRegistries.listSkills({
+            runtime,
+            config: runtime.configStore?.load?.() ?? {}
+          })
         });
       }
 

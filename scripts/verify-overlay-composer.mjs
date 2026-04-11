@@ -28,6 +28,8 @@ assert.equal(overlayHtml.includes("schedulePanel"), true);
 assert.equal(overlayHtml.includes("settingsBtn"), true);
 assert.equal(overlayHtml.includes("data-quick-action=\"translate\""), true);
 assert.equal(overlayHtml.includes("<svg"), true); // paper-plane SVG inside send button
+assert.equal(overlayHtml.includes("taskListDock"), true);
+assert.equal(overlayHtml.includes("taskListPanel"), true);
 
 const overlayJs = await read("src/desktop/renderer/overlay.js");
 assert.equal(overlayJs.includes("loadClipboardIntoContext"), true);
@@ -49,6 +51,8 @@ assert.equal(overlayJs.includes("applyShellHandoff"), true);
 assert.equal(overlayJs.includes("subscribeTaskEvents"), true);
 assert.equal(overlayJs.includes("handleTaskEventFrame"), true);
 assert.equal(overlayJs.includes("ensureActiveTaskEventStream"), true);
+assert.equal(overlayJs.includes("childBadgeRow"), true);
+assert.equal(overlayJs.includes("renderCompositeBreadcrumb"), true);
 // Voice mode + pop-bubble + Apple-style auto-hide additions
 assert.equal(overlayJs.includes("enterVoiceMode"), true);
 assert.equal(overlayJs.includes("exitVoiceMode"), true);
@@ -67,6 +71,11 @@ assert.equal(overlayJs.includes("extractTaskProviderInfo"), true);
 assert.equal(overlayJs.includes("appendProviderFooterBubble"), true);
 assert.equal(overlayJs.includes("formatProviderTag"), true);
 assert.equal(overlayJs.includes("AI claim downgraded"), true);
+// UCA-047: active window preview card + quick-action buttons
+assert.equal(overlayJs.includes("showActiveWindowPreviewCard"), true);
+assert.equal(overlayJs.includes("data-uca-active-window-card") || overlayJs.includes("dataset.ucaActiveWindowCard"), true);
+assert.equal(overlayJs.includes("分析此页面"), true);
+assert.equal(overlayJs.includes("payload.active_window"), true);
 
 const taskEventStream = await read("src/desktop/renderer/task-event-stream.js");
 assert.equal(taskEventStream.includes("formatTaskEventSummary"), true);

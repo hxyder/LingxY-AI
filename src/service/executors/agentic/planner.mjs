@@ -143,6 +143,9 @@ export async function runAgenticPlanner({
   const effectiveTools = tools
     ?? runtime?.actionToolRegistry?.list?.()
     ?? [];
+  const effectiveSkills = await runtime?.platform?.skillRegistries?.listSkills?.({
+    runtime
+  }) ?? [];
 
   const resolvedProvider = provider ?? resolveProviderForTask("chat");
   if (!resolvedProvider && !adapterOverride) {
@@ -169,6 +172,7 @@ export async function runAgenticPlanner({
 
   const systemPrompt = buildAgenticSystemPrompt({
     tools: effectiveTools,
+    skills: effectiveSkills,
     task,
     requestedFormat
   });

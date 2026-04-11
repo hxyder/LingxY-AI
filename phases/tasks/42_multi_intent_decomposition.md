@@ -63,15 +63,16 @@
 - 实施方式（全局方案）：在 service core 建立 parent/child task 关系和 composite 提交入口，规则层只做低风险初筛，复杂分解必须调用 UCA-049 的 agentic planner 公开接口；不另建第二套 LLM tool loop。
 - 当前代码对齐点：`src/shared/contracts/uca-models.ts`、`src/service/core/task-runtime.mjs` 和 retry 逻辑已经出现 `parent_task_id`，但它服务于重试/派生任务，不等于 composite 子任务模型；需要在 store、submission、event 汇总和 Console 详情里明确区分 `parent_task_id/child_task_ids/child_index`。本任务依赖 UCA-049 先落 `agentic` executor。
 - 可能需要生成的文件：`src/service/core/router/decomposer.mjs`、必要的 composite submission helper，扩展 `src/service/core/store/*` schema 和 `scripts/verify-service-core.mjs`；如果新增独立验证，可生成 `scripts/verify-multi-intent.mjs`。
+- 实际落地（2026-04-11）：新增 `src/service/core/router/decomposer.mjs`（规则层分解 + agentic planner 调用；支持 `mode` 切换用于测试），新增 `src/service/core/composite-submission.mjs`（parent 任务创建 + child 提交 + 聚合状态），`task-runtime.mjs` 扩展 `child_task_ids / child_index` 并在 child 状态变更时自动汇总 parent 状态，Console/Overlay 支持子任务视图与分解提示，`scripts/verify-service-core.mjs` 增加规则分解的 smoke test。
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
-- 实际新增内容：
-- 验证结果：
+- 状态：done
+- 执行分支：main
+- 开始日期：2026-04-11
+- 完成日期：2026-04-11
+- 实际新增内容：`decomposer.mjs` 规则切分 + LLM 深度分解入口（复用 agentic planner），composite parent/child 提交入口 + parent 状态聚合，task schema 增加 `child_task_ids / child_index`，Console 子任务列表 + Overlay 分解提示，`verify-service-core` 新增规则分解断言。
+- 验证结果：未运行自动化脚本（未执行 `npm run check`）。
 - 遗留问题（开工前已识别）：
   - 规则层会把 "把 A, B, C 翻译成中文" 错拆成三个翻译（实际上是一个列表操作）—— 需要交给 LLM 深度分解判断
   - 子任务之间的依赖关系（例如"先总结再翻译总结结果"）目前靠 `dependency_idx`，但执行器还不会等待依赖完成

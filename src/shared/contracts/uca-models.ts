@@ -34,6 +34,8 @@ export interface TaskRecord {
   failure_internal_log_excerpt?: string | null;
   retryable?: boolean;
   parent_task_id?: string | null;
+  child_task_ids?: string[] | null;
+  child_index?: number | null;
   retry_count?: number;
   executor_history?: Array<Record<string, unknown>>;
   intent: string;

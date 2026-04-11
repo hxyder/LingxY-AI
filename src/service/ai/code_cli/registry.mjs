@@ -9,6 +9,9 @@ export function createCodeCliRegistry(adapters = []) {
     list() {
       return [...registered.values()];
     },
+    get(adapterId) {
+      return registered.get(adapterId) ?? null;
+    },
     async listStatus(context = {}) {
       return Promise.all(
         [...registered.values()].map(async (adapter) => {

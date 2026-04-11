@@ -7,6 +7,8 @@ import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import { detectRequestedOutputFormat, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
+import { decomposeUserCommand } from "./router/decomposer.mjs";
+import { submitCompositeTask } from "./composite-submission.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -261,8 +263,18 @@ async function runExecutor({ runtime, task, executor }) {
     }, task.task_id);
   }
 
-  // Stash runtime on task so executors that need runtime context (e.g. tool_using) can access it
-  task.__runtime = runtime;
+  // Stash runtime on task so executors that need runtime context (e.g.
+  // tool_using / agentic) can access it. We use a non-enumerable property so
+  // that sqlite-store's `JSON.stringify(task)` does NOT try to serialize the
+  // runtime — which contains live setInterval Timers and a circular
+  // `_idlePrev / _idleNext / TimersList` reference that would otherwise
+  // crash `upsertTask` with a "Converting circular structure to JSON" error.
+  Object.defineProperty(task, "__runtime", {
+    value: runtime,
+    enumerable: false,
+    configurable: true,
+    writable: true
+  });
 
   try {
     for await (const event of executor.execute(task, { signal: controller.signal })) {
@@ -335,8 +347,10 @@ export async function submitContextTask({
   runtime,
   executionMode,
   parentTaskId = null,
+  childIndex = null,
   retryCount = 0,
-  executorOverride = null
+  executorOverride = null,
+  skipDecomposition = false
 }) {
   ensureRuntimeServices(runtime);
   const store = runtime.store;
@@ -348,12 +362,41 @@ export async function submitContextTask({
   });
   const normalizedContextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
 
+  if (inspection.allowed && !skipDecomposition && !parentTaskId) {
+    const decomposition = await decomposeUserCommand({
+      userCommand,
+      runtime,
+      contextPacket: normalizedContextPacket
+    });
+    if (decomposition.subtasks.length > 1) {
+      return submitCompositeTask({
+        runtime,
+        contextPacket: normalizedContextPacket,
+        userCommand,
+        executionMode,
+        subtasks: decomposition.subtasks,
+        submitChild: ({ subtask, index, parentTaskId: compositeId }) =>
+          submitContextTask({
+            contextPacket: normalizedContextPacket,
+            userCommand: subtask.command,
+            runtime,
+            executionMode,
+            parentTaskId: compositeId,
+            childIndex: index,
+            executorOverride: subtask.suggested_executor ?? null,
+            skipDecomposition: true
+          })
+      });
+    }
+  }
+
   const task = createTaskRecord({
     route,
     contextPacket: normalizedContextPacket,
     userCommand,
     executionMode,
     parentTaskId,
+    childIndex,
     retryCount,
     executorOverride
   });

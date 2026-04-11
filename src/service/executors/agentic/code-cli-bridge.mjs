@@ -109,7 +109,14 @@ export function buildCodeCliChatPrompt({ messages = [] } = {}) {
 /* 2. Subprocess spawn                                                       */
 /* ------------------------------------------------------------------------ */
 
-function buildInvocationArgs({ baseArgs, transport, model }) {
+function pushFlagValue(args, flag, value) {
+  if (!value || args.includes(flag)) {
+    return;
+  }
+  args.push(flag, value);
+}
+
+function buildInvocationArgs({ baseArgs, transport, model, configFile = null, mcpConfigFiles = [] }) {
   const args = [...(Array.isArray(baseArgs) ? baseArgs : [])];
 
   // Kimi CLI / Claude Code CLI / Codex CLI / Gemini CLI all support `--print`
@@ -122,7 +129,13 @@ function buildInvocationArgs({ baseArgs, transport, model }) {
     if (!args.includes("--print")) args.push("--print");
     if (!args.includes("--output-format")) args.push("--output-format", "stream-json");
     if (!args.includes("--input-format")) args.push("--input-format", "text");
-    if (model && !args.includes("--model")) args.push("--model", model);
+    pushFlagValue(args, "--model", model);
+    pushFlagValue(args, "--config-file", configFile);
+    for (const mcpConfigFile of mcpConfigFiles ?? []) {
+      if (mcpConfigFile) {
+        args.push("--mcp-config-file", mcpConfigFile);
+      }
+    }
   }
 
   return args;
@@ -138,6 +151,8 @@ export function spawnCodeCliChat({
   env = process.env,
   prompt = "",
   model = null,
+  configFile = null,
+  mcpConfigFiles = [],
   transport = "stream_json_print",
   timeoutSeconds = 120,
   abortSignal = null
@@ -153,7 +168,13 @@ export function spawnCodeCliChat({
     });
   }
 
-  const invocationArgs = buildInvocationArgs({ baseArgs: args, transport, model });
+  const invocationArgs = buildInvocationArgs({
+    baseArgs: args,
+    transport,
+    model,
+    configFile,
+    mcpConfigFiles
+  });
 
   return new Promise((resolve) => {
     let child;
@@ -437,6 +458,8 @@ export async function runCodeCliChat({ resolved, messages, signal, timeoutSecond
     env: resolved.env ?? process.env,
     transport: resolved.transport ?? "stream_json_print",
     model: resolved.model ?? null,
+    configFile: resolved.configFile ?? null,
+    mcpConfigFiles: resolved.mcpConfigFiles ?? [],
     prompt,
     timeoutSeconds,
     abortSignal: signal

@@ -144,6 +144,12 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
     getCodeCliAdapters() {
       return fetchJson("/ai/code-cli");
     },
+    getMcpServers() {
+      return fetchJson("/ai/mcp");
+    },
+    getSkillRegistries() {
+      return fetchJson("/ai/skills");
+    },
     async searchHistory(query, limit = 5) {
       return fetchJson("/history/search", {
         method: "POST",
@@ -287,6 +293,8 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
         dagExecutionsPayload,
         providersPayload,
         codeCliPayload,
+        mcpPayload,
+        skillsPayload,
         historyPayload
       ] = await Promise.all([
         this.getHealth(),
@@ -299,6 +307,8 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
         this.getDagExecutions(),
         this.getProviders(),
         this.getCodeCliAdapters(),
+        this.getMcpServers(),
+        this.getSkillRegistries(),
         this.searchHistory(historyQuery, historyLimit)
       ]);
 
@@ -321,6 +331,9 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
           dagExecutions: dagExecutionsPayload.executions ?? [],
           providers: providersPayload.providers ?? [],
           codeCliAdapters: codeCliPayload.adapters ?? [],
+          mcpServers: mcpPayload.servers ?? [],
+          skillRegistries: skillsPayload.registries ?? [],
+          skills: skillsPayload.skills ?? [],
           history: historyPayload.results ?? []
         },
         viewModels: {

@@ -23,6 +23,8 @@ const submitState = document.querySelector("#submitState");
 const taskCount = document.querySelector("#taskCount");
 const taskList = document.querySelector("#taskList");
 const taskDetailSummary = document.querySelector("#taskDetailSummary");
+const taskChildCount = document.querySelector("#taskChildCount");
+const taskChildList = document.querySelector("#taskChildList");
 const taskTimeline = document.querySelector("#taskTimeline");
 const taskArtifactCount = document.querySelector("#taskArtifactCount");
 const taskArtifactList = document.querySelector("#taskArtifactList");
@@ -75,6 +77,55 @@ const auditList = document.querySelector("#auditList");
 const officeAddinSetupState = document.querySelector("#officeAddinSetupState");
 const checkOfficeAddinsButton = document.querySelector("#checkOfficeAddinsButton");
 const setupOfficeAddinsButton = document.querySelector("#setupOfficeAddinsButton");
+const mcpServerCount = document.querySelector("#mcpServerCount");
+const mcpServerForm = document.querySelector("#mcpServerForm");
+const mcpServerId = document.querySelector("#mcpServerId");
+const mcpServerName = document.querySelector("#mcpServerName");
+const mcpTransport = document.querySelector("#mcpTransport");
+const mcpCommand = document.querySelector("#mcpCommand");
+const mcpArgs = document.querySelector("#mcpArgs");
+const mcpServerState = document.querySelector("#mcpServerState");
+const mcpServerList = document.querySelector("#mcpServerList");
+const mcpServerRefreshBtn = document.querySelector("#mcpServerRefreshBtn");
+const skillRegistryCount = document.querySelector("#skillRegistryCount");
+const skillRegistryForm = document.querySelector("#skillRegistryForm");
+const skillRegistryId = document.querySelector("#skillRegistryId");
+const skillRegistryName = document.querySelector("#skillRegistryName");
+const skillRegistryPath = document.querySelector("#skillRegistryPath");
+const skillRegistryState = document.querySelector("#skillRegistryState");
+const skillRegistryList = document.querySelector("#skillRegistryList");
+const skillRegistryRefreshBtn = document.querySelector("#skillRegistryRefreshBtn");
+const codeCliAdapterCount = document.querySelector("#codeCliAdapterCount");
+const codeCliAdapterForm = document.querySelector("#codeCliAdapterForm");
+const codeCliAdapterId = document.querySelector("#codeCliAdapterId");
+const codeCliAdapterName = document.querySelector("#codeCliAdapterName");
+const codeCliAdapterCommand = document.querySelector("#codeCliAdapterCommand");
+const codeCliAdapterModel = document.querySelector("#codeCliAdapterModel");
+const codeCliAdapterArgs = document.querySelector("#codeCliAdapterArgs");
+const codeCliAdapterTransport = document.querySelector("#codeCliAdapterTransport");
+const codeCliAdapterMcpFiles = document.querySelector("#codeCliAdapterMcpFiles");
+const codeCliAdapterState = document.querySelector("#codeCliAdapterState");
+const codeCliAdapterList = document.querySelector("#codeCliAdapterList");
+const codeCliAdapterRefreshBtn = document.querySelector("#codeCliAdapterRefreshBtn");
+const emailAccountCount = document.querySelector("#emailAccountCount");
+const emailAccountForm = document.querySelector("#emailAccountForm");
+const emailAccountId = document.querySelector("#emailAccountId");
+const emailAccountEmail = document.querySelector("#emailAccountEmail");
+const emailAccountName = document.querySelector("#emailAccountName");
+const emailAccountProvider = document.querySelector("#emailAccountProvider");
+const emailAccountAuthType = document.querySelector("#emailAccountAuthType");
+const emailAccountHost = document.querySelector("#emailAccountHost");
+const emailAccountPort = document.querySelector("#emailAccountPort");
+const emailAccountSecret = document.querySelector("#emailAccountSecret");
+const emailAccountState = document.querySelector("#emailAccountState");
+const emailAccountList = document.querySelector("#emailAccountList");
+const emailAccountRefreshBtn = document.querySelector("#emailAccountRefreshBtn");
+const emailDigestEnabled = document.querySelector("#emailDigestEnabled");
+const emailDigestWindowStart = document.querySelector("#emailDigestWindowStart");
+const emailDigestWindowEnd = document.querySelector("#emailDigestWindowEnd");
+const emailDigestSkipWeekends = document.querySelector("#emailDigestSkipWeekends");
+const emailDigestSaveBtn = document.querySelector("#emailDigestSaveBtn");
+const emailDigestState = document.querySelector("#emailDigestState");
 
 /* ═══════════════════════════════════════════════
    TAB NAVIGATION
@@ -120,6 +171,11 @@ const state = {
     budget: null,
     providers: [],
     codeCliAdapters: [],
+    mcpServers: [],
+    skillRegistries: [],
+    skills: [],
+    emailAccounts: [],
+    emailDigestSettings: {},
     history: [],
     security: null,
     audit: [],
@@ -357,9 +413,13 @@ function renderOnboarding() {
 function renderIntegrations() {
   const health = state.workspace.health ?? {};
   const kimi = health.kimi ?? state.workspace.codeCliAdapters.find((i) => i.id === "kimi-code-cli") ?? null;
+  const mcpCount = state.workspace.mcpServers?.length ?? 0;
+  const skillCount = state.workspace.skills?.length ?? 0;
   const cards = [
     { title: "Kimi Code CLI", status: kimi?.available ? "ready" : kimi?.configured ? "warning" : "danger", detail: kimi?.command ?? kimi?.detail ?? "Primary execution path." },
-    ...state.workspace.providers.slice(0, 3).map((p) => ({ title: p.displayName, status: p.available ? "ready" : p.configured ? "warning" : "danger", detail: p.detail ?? p.id }))
+    ...state.workspace.providers.slice(0, 3).map((p) => ({ title: p.displayName, status: p.available ? "ready" : p.configured ? "warning" : "danger", detail: p.detail ?? p.id })),
+    { title: "MCP Servers", status: mcpCount > 0 ? "ready" : "muted", detail: mcpCount > 0 ? `${mcpCount} configured` : "None configured" },
+    { title: "Skills", status: skillCount > 0 ? "ready" : "muted", detail: skillCount > 0 ? `${skillCount} discovered` : "None discovered" }
   ];
   integrationList.innerHTML = cards.map((c) => `
     <div class="integration-item" style="padding:10px 12px;">
@@ -372,6 +432,158 @@ function renderIntegrations() {
   `).join("");
 }
 
+function renderEmailAccounts() {
+  const accounts = state.workspace.emailAccounts ?? [];
+  emailAccountCount.textContent = `${accounts.length}`;
+  if (accounts.length === 0) {
+    renderEmpty(emailAccountList, "No email accounts configured.");
+    return;
+  }
+  emailAccountList.innerHTML = accounts.map((account) => `
+    <div class="surface" style="padding:10px 12px;">
+      <div class="row">
+        <strong style="font-size:13px;">${escapeHtml(account.displayName ?? account.email ?? account.id)}</strong>
+        <span class="chip ${account.enabled ? "ready" : "muted"}">${account.enabled ? "enabled" : "disabled"}</span>
+      </div>
+      <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(account.email ?? "")} · ${escapeHtml(account.provider ?? "imap")}</p>
+      <div class="toolbar" style="margin-top:6px;">
+        <button class="ghost" data-email-delete="${escapeHtml(account.id)}">Delete</button>
+      </div>
+    </div>
+  `).join("");
+
+  for (const btn of emailAccountList.querySelectorAll("[data-email-delete]")) {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.emailDelete;
+      if (!id) return;
+      emailAccountState.textContent = "Deleting...";
+      try {
+        await fetchJson(`/config/email/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+        emailAccountState.textContent = "Deleted.";
+        await refreshWorkspace();
+      } catch (error) {
+        emailAccountState.textContent = `Failed: ${error.message}`;
+      }
+    });
+  }
+}
+
+function renderEmailDigestSettings() {
+  const settings = state.workspace.emailDigestSettings ?? {};
+  const enabled = settings.enabled !== false;
+  emailDigestEnabled.checked = enabled;
+  emailDigestWindowStart.value = settings.windowStart ?? "06:00";
+  emailDigestWindowEnd.value = settings.windowEnd ?? "12:00";
+  emailDigestSkipWeekends.checked = Boolean(settings.skipWeekends);
+}
+
+function renderMcpServers() {
+  const servers = state.workspace.mcpServers ?? [];
+  mcpServerCount.textContent = `${servers.length}`;
+  if (servers.length === 0) {
+    renderEmpty(mcpServerList, "No MCP servers configured.");
+    return;
+  }
+  mcpServerList.innerHTML = servers.map((server) => `
+    <div class="surface" style="padding:10px 12px;">
+      <div class="row">
+        <strong style="font-size:13px;">${escapeHtml(server.displayName ?? server.id)}</strong>
+        <span class="chip ${server.available ? "ready" : server.enabled === false ? "muted" : "warning"}">${escapeHtml(server.available ? "ready" : server.enabled === false ? "disabled" : "unavailable")}</span>
+      </div>
+      <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(server.transport ?? "stdio")} · ${escapeHtml(server.command ?? server.url ?? "n/a")}</p>
+      <div class="toolbar" style="margin-top:6px;">
+        <button class="ghost" data-mcp-delete="${escapeHtml(server.id)}">Delete</button>
+      </div>
+    </div>
+  `).join("");
+
+  for (const btn of mcpServerList.querySelectorAll("[data-mcp-delete]")) {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.mcpDelete;
+      if (!id) return;
+      mcpServerState.textContent = "Deleting...";
+      try {
+        await fetchJson(`/config/mcp/servers/${encodeURIComponent(id)}`, { method: "DELETE" });
+        mcpServerState.textContent = "Deleted.";
+        await refreshWorkspace();
+      } catch (error) {
+        mcpServerState.textContent = `Failed: ${error.message}`;
+      }
+    });
+  }
+}
+
+function renderSkillRegistries() {
+  const registries = state.workspace.skillRegistries ?? [];
+  skillRegistryCount.textContent = `${registries.length}`;
+  if (registries.length === 0) {
+    renderEmpty(skillRegistryList, "No skill registries configured.");
+    return;
+  }
+  skillRegistryList.innerHTML = registries.map((registry) => `
+    <div class="surface" style="padding:10px 12px;">
+      <div class="row">
+        <strong style="font-size:13px;">${escapeHtml(registry.displayName ?? registry.id)}</strong>
+        <span class="chip ${registry.available ? "ready" : "warning"}">${escapeHtml(registry.available ? "ready" : "unavailable")}</span>
+      </div>
+      <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(registry.rootPath ?? "n/a")} · ${escapeHtml(registry.skillCount ?? 0)} skills</p>
+      <div class="toolbar" style="margin-top:6px;">
+        <button class="ghost" data-skill-registry-delete="${escapeHtml(registry.id)}">Delete</button>
+      </div>
+    </div>
+  `).join("");
+
+  for (const btn of skillRegistryList.querySelectorAll("[data-skill-registry-delete]")) {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.skillRegistryDelete;
+      if (!id) return;
+      skillRegistryState.textContent = "Deleting...";
+      try {
+        await fetchJson(`/config/skills/registries/${encodeURIComponent(id)}`, { method: "DELETE" });
+        skillRegistryState.textContent = "Deleted.";
+        await refreshWorkspace();
+      } catch (error) {
+        skillRegistryState.textContent = `Failed: ${error.message}`;
+      }
+    });
+  }
+}
+
+function renderCodeCliAdapters() {
+  const adapters = state.workspace.codeCliAdapters ?? [];
+  codeCliAdapterCount.textContent = `${adapters.length}`;
+  if (adapters.length === 0) {
+    renderEmpty(codeCliAdapterList, "No code CLI adapters configured.");
+    return;
+  }
+  codeCliAdapterList.innerHTML = adapters.map((adapter) => `
+    <div class="surface" style="padding:10px 12px;">
+      <div class="row">
+        <strong style="font-size:13px;">${escapeHtml(adapter.displayName ?? adapter.id)}</strong>
+        <span class="chip ${adapter.available ? "ready" : adapter.configured ? "warning" : "muted"}">${escapeHtml(adapter.available ? "ready" : adapter.configured ? "configured" : "missing")}</span>
+      </div>
+      <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(adapter.executable ?? adapter.command ?? "n/a")} · ${escapeHtml(adapter.transport ?? "stream_json_print")}</p>
+      <div class="toolbar" style="margin-top:6px;">
+        <button class="ghost" data-code-cli-delete="${escapeHtml(adapter.id)}">Delete</button>
+      </div>
+    </div>
+  `).join("");
+
+  for (const btn of codeCliAdapterList.querySelectorAll("[data-code-cli-delete]")) {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.codeCliDelete;
+      if (!id) return;
+      codeCliAdapterState.textContent = "Deleting...";
+      try {
+        await fetchJson(`/config/code-cli/adapters/${encodeURIComponent(id)}`, { method: "DELETE" });
+        codeCliAdapterState.textContent = "Deleted.";
+        await refreshWorkspace();
+      } catch (error) {
+        codeCliAdapterState.textContent = `Failed: ${error.message}`;
+      }
+    });
+  }
+}
 // ── Provider + routing state ──
 let customProviders = [];
 let taskRouting = {};
@@ -898,18 +1110,60 @@ function renderTasks() {
     return;
   }
 
+  function buildTaskListEntries(list) {
+    const byId = new Map(list.map((task) => [task.task_id, task]));
+    const childrenByParent = new Map();
+    for (const task of list) {
+      if (task.parent_task_id) {
+        if (!childrenByParent.has(task.parent_task_id)) {
+          childrenByParent.set(task.parent_task_id, []);
+        }
+        childrenByParent.get(task.parent_task_id).push(task);
+      }
+    }
+
+    for (const [parentId, children] of childrenByParent) {
+      children.sort((a, b) => (a.child_index ?? 0) - (b.child_index ?? 0));
+      childrenByParent.set(parentId, children);
+    }
+
+    const parentsOrSingles = list.filter((task) => !task.parent_task_id);
+    const sorted = parentsOrSingles.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+    const entries = [];
+    for (const task of sorted) {
+      if (entries.length >= 12) break;
+      entries.push({ task, indent: 0, isChild: false });
+      const children = childrenByParent.get(task.task_id) ?? [];
+      for (const child of children) {
+        if (entries.length >= 12) break;
+        entries.push({ task: child, indent: 1, isChild: true });
+      }
+    }
+
+    const seen = new Set(entries.map((entry) => entry.task.task_id));
+    for (const task of list) {
+      if (entries.length >= 12) break;
+      if (seen.has(task.task_id)) continue;
+      entries.push({ task, indent: 0, isChild: false });
+    }
+
+    return entries;
+  }
+
   if (!state.selectedTaskId || !tasks.some((t) => t.task_id === state.selectedTaskId)) {
     state.selectedTaskId = tasks[0].task_id;
   }
 
-  taskList.innerHTML = tasks.slice(0, 12).map((task) => {
+  const entries = buildTaskListEntries(tasks);
+  taskList.innerHTML = entries.map(({ task, indent, isChild }) => {
     const selected = task.task_id === state.selectedTaskId;
     const sc = task.status === "success" ? "ready" : task.status === "failed" ? "danger" : "warning";
+    const childCount = Number(task.child_count ?? 0) || (Array.isArray(task.child_task_ids) ? task.child_task_ids.length : 0);
     return `
-      <button class="task-item ${selected ? "selected" : ""}" data-task-id="${escapeHtml(task.task_id)}" style="text-align:left;">
+      <button class="task-item ${selected ? "selected" : ""}" data-task-id="${escapeHtml(task.task_id)}" style="text-align:left;${indent ? "margin-left:18px;" : ""}">
         <div class="row">
           <div>
-            <h4>${escapeHtml(task.user_command ?? task.intent ?? "Unnamed")}</h4>
+            <h4>${isChild ? "<span class=\"muted\" style=\"margin-right:6px;\">↳</span>" : childCount > 0 ? "<span class=\"muted\" style=\"margin-right:6px;\">▸</span>" : ""}${escapeHtml(task.user_command ?? task.intent ?? "Unnamed")}${childCount > 0 ? ` <span class="chip muted" style="font-size:10px;padding:2px 6px;">${escapeHtml(childCount)}</span>` : ""}</h4>
             <p class="muted">${escapeHtml(task.executor ?? "unknown")} · ${escapeHtml(task.source_type ?? "unknown")}</p>
           </div>
           <span class="chip ${sc}">${escapeHtml(task.status)}</span>
@@ -922,6 +1176,45 @@ function renderTasks() {
   for (const btn of taskList.querySelectorAll("[data-task-id]")) {
     btn.addEventListener("click", () => {
       state.selectedTaskId = btn.dataset.taskId;
+      renderTasks();
+      void refreshTaskDetail();
+    });
+  }
+}
+
+function renderTaskChildren(detail) {
+  const task = detail?.task ?? {};
+  const childIds = Array.isArray(task.child_task_ids) ? task.child_task_ids : [];
+  taskChildCount.textContent = `${childIds.length}`;
+
+  if (childIds.length === 0) {
+    taskChildList.innerHTML = `<p class="muted" style="font-size:12px;">No subtasks.</p>`;
+    return;
+  }
+
+  const childEntries = childIds.map((childId, index) => {
+    const child = state.workspace.tasks.find((t) => t.task_id === childId) ?? { task_id: childId };
+    const label = child.user_command ?? child.intent ?? child.task_id ?? "Subtask";
+    const childIndex = Number.isInteger(child.child_index) ? child.child_index + 1 : index + 1;
+    const status = child.status ?? "unknown";
+    const sc = status === "success" ? "ready" : status === "failed" ? "danger" : "warning";
+    return `
+      <button class="task-child-item" data-child-task-id="${escapeHtml(childId)}">
+        <div class="row">
+          <div>
+            <strong style="font-size:12px;">#${childIndex} · ${escapeHtml(label)}</strong>
+            <p class="muted" style="margin-top:4px;">${escapeHtml(child.executor ?? "unknown")} · ${escapeHtml(child.source_type ?? "unknown")}</p>
+          </div>
+          <span class="chip ${sc}">${escapeHtml(status)}</span>
+        </div>
+      </button>
+    `;
+  }).join("");
+
+  taskChildList.innerHTML = childEntries;
+  for (const btn of taskChildList.querySelectorAll("[data-child-task-id]")) {
+    btn.addEventListener("click", () => {
+      state.selectedTaskId = btn.dataset.childTaskId;
       renderTasks();
       void refreshTaskDetail();
     });
@@ -1236,6 +1529,7 @@ function renderTaskDetail(detail) {
     taskDetailSummary.innerHTML = `<p class="muted" style="font-size:12px;">Select a task to view details.</p>`;
     taskTimeline.innerHTML = `<div class="timeline-item"><p class="muted">No timeline.</p></div>`;
     renderTaskArtifacts(null);
+    renderTaskChildren(null);
     retryTaskButton.disabled = true;
     cancelTaskButton.disabled = true;
     if (deleteTaskButton) deleteTaskButton.disabled = true;
@@ -1251,6 +1545,11 @@ function renderTaskDetail(detail) {
       <p class="muted" style="margin:4px 0 0;font-size:12px;">${escapeHtml(task.failure_user_message ?? task.failure_category)}</p>
     </div>
   ` : "";
+  const parentLink = task.parent_task_id ? `
+    <span>Parent:
+      <button class="ghost" data-parent-task-id="${escapeHtml(task.parent_task_id)}" style="padding:0 6px;font-size:11px;">${escapeHtml(task.parent_task_id)}</button>
+    </span>
+  ` : "";
   taskDetailSummary.innerHTML = `
     <div class="stack" style="gap:8px;">
       <div class="row">
@@ -1264,12 +1563,20 @@ function renderTaskDetail(detail) {
         <span>Retry: ${escapeHtml(task.retry_count ?? 0)}</span>
         <span>Cost: ${escapeHtml(formatMoney(task.cost_usd ?? 0))}</span>
         <span>${escapeHtml(formatDateTime(task.created_at))}</span>
+        ${parentLink}
       </div>
       ${renderProviderLine(providerDescriptor)}
     </div>
     ${renderDowngradedWarning(downgraded)}
     ${failBlock}
   `;
+  for (const btn of taskDetailSummary.querySelectorAll("[data-parent-task-id]")) {
+    btn.addEventListener("click", () => {
+      state.selectedTaskId = btn.dataset.parentTaskId;
+      renderTasks();
+      void refreshTaskDetail();
+    });
+  }
   taskTimeline.innerHTML = (detail.events ?? []).length > 0
     ? detail.events.map((ev) => {
       const s = formatTaskEventSummary(ev);
@@ -1282,6 +1589,7 @@ function renderTaskDetail(detail) {
     }).join("")
     : `<div class="timeline-item"><p class="muted" style="font-size:12px;">No timeline.</p></div>`;
   renderTaskArtifacts(detail);
+  renderTaskChildren(detail);
   retryTaskButton.disabled = !task.retryable;
   cancelTaskButton.disabled = !["queued", "running", "cancelling"].includes(task.status);
   if (deleteTaskButton) deleteTaskButton.disabled = false;
@@ -1623,7 +1931,7 @@ async function refreshWorkspace() {
       ? fetchJson("/history/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: state.currentHistoryQuery, limit: 8 }) })
       : Promise.resolve({ results: [] });
 
-    const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, historyP] = await Promise.all([
+    const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, emailP, emailSettingsP, historyP] = await Promise.all([
       fetchJson("/health"),
       fetchJson("/tasks"),
       fetchJson("/approvals"),
@@ -1635,6 +1943,10 @@ async function refreshWorkspace() {
       fetchJson("/dag/executions"),
       fetchJson("/ai/providers"),
       fetchJson("/ai/code-cli"),
+      fetchJson("/ai/mcp"),
+      fetchJson("/ai/skills"),
+      fetchJson("/config/email/accounts"),
+      fetchJson("/config/email/settings"),
       historyPromise
     ]);
 
@@ -1647,6 +1959,11 @@ async function refreshWorkspace() {
       budget: budgetP.budget ?? null,
       providers: providersP.providers ?? [],
       codeCliAdapters: cliP.adapters ?? [],
+      mcpServers: mcpP.servers ?? [],
+      skillRegistries: skillsP.registries ?? [],
+      skills: skillsP.skills ?? [],
+      emailAccounts: emailP.accounts ?? [],
+      emailDigestSettings: emailSettingsP.settings ?? {},
       history: historyP.results ?? [],
       security: securityP.security ?? null,
       audit: auditP.entries ?? [],
@@ -1667,6 +1984,11 @@ async function refreshWorkspace() {
     renderHistory();
     renderPrivacy();
     renderAudit();
+    renderMcpServers();
+    renderSkillRegistries();
+    renderCodeCliAdapters();
+    renderEmailAccounts();
+    renderEmailDigestSettings();
     void loadAllArtifacts();
     await Promise.all([refreshTaskDetail(), loadTemplatePreview(state.selectedTemplateId)]);
   } catch (error) {
@@ -1815,6 +2137,170 @@ historyForm.addEventListener("submit", async (event) => {
 scheduleForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   await createScheduleFromConsole();
+});
+
+mcpServerRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
+skillRegistryRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
+codeCliAdapterRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
+emailAccountRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
+
+mcpServerForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const id = mcpServerId.value.trim();
+  const displayName = mcpServerName.value.trim();
+  const transport = mcpTransport.value;
+  const commandOrUrl = mcpCommand.value.trim();
+  if (!id || !commandOrUrl) {
+    mcpServerState.textContent = "ID and command/url required.";
+    return;
+  }
+  const payload = {
+    id,
+    displayName: displayName || id,
+    transport,
+    command: transport === "stdio" ? commandOrUrl : null,
+    args: transport === "stdio" ? mcpArgs.value.trim().split(/\s+/).filter(Boolean) : [],
+    url: transport !== "stdio" ? commandOrUrl : null
+  };
+  mcpServerState.textContent = "Saving...";
+  try {
+    await fetchJson("/config/mcp/servers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    mcpServerState.textContent = "Saved.";
+    mcpServerId.value = "";
+    mcpServerName.value = "";
+    mcpCommand.value = "";
+    mcpArgs.value = "";
+    await refreshWorkspace();
+  } catch (error) {
+    mcpServerState.textContent = `Failed: ${error.message}`;
+  }
+});
+
+skillRegistryForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const id = skillRegistryId.value.trim();
+  const displayName = skillRegistryName.value.trim();
+  const rootPath = skillRegistryPath.value.trim();
+  if (!id || !rootPath) {
+    skillRegistryState.textContent = "ID and root path required.";
+    return;
+  }
+  const payload = {
+    id,
+    displayName: displayName || id,
+    rootPath
+  };
+  skillRegistryState.textContent = "Saving...";
+  try {
+    await fetchJson("/config/skills/registries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    skillRegistryState.textContent = "Saved.";
+    skillRegistryId.value = "";
+    skillRegistryName.value = "";
+    skillRegistryPath.value = "";
+    await refreshWorkspace();
+  } catch (error) {
+    skillRegistryState.textContent = `Failed: ${error.message}`;
+  }
+});
+
+codeCliAdapterForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const id = codeCliAdapterId.value.trim();
+  const displayName = codeCliAdapterName.value.trim();
+  const command = codeCliAdapterCommand.value.trim();
+  if (!id || !command) {
+    codeCliAdapterState.textContent = "ID and command required.";
+    return;
+  }
+  const args = codeCliAdapterArgs.value.trim()
+    ? codeCliAdapterArgs.value.trim().split(/\s+/).filter(Boolean)
+    : [];
+  const mcpFiles = codeCliAdapterMcpFiles.value.trim()
+    ? codeCliAdapterMcpFiles.value.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+  const payload = {
+    id,
+    displayName: displayName || id,
+    command,
+    args,
+    transport: codeCliAdapterTransport.value,
+    defaultModel: codeCliAdapterModel.value.trim(),
+    mcpConfigFiles: mcpFiles
+  };
+  codeCliAdapterState.textContent = "Saving...";
+  try {
+    await fetchJson("/config/code-cli/adapters", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    codeCliAdapterState.textContent = "Saved.";
+    codeCliAdapterId.value = "";
+    codeCliAdapterName.value = "";
+    codeCliAdapterCommand.value = "";
+    codeCliAdapterModel.value = "";
+    codeCliAdapterArgs.value = "";
+    codeCliAdapterMcpFiles.value = "";
+    await refreshWorkspace();
+  } catch (error) {
+    codeCliAdapterState.textContent = `Failed: ${error.message}`;
+  }
+});
+
+emailAccountForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const id = emailAccountId.value.trim();
+  const email = emailAccountEmail.value.trim();
+  if (!id || !email) {
+    emailAccountState.textContent = "ID and email required.";
+    return;
+  }
+  const payload = {
+    id,
+    email,
+    displayName: emailAccountName.value.trim() || email,
+    provider: emailAccountProvider.value,
+    authType: emailAccountAuthType.value,
+    imapHost: emailAccountHost.value.trim(),
+    imapPort: emailAccountPort.value.trim() ? Number(emailAccountPort.value.trim()) : 993,
+    credentials: emailAccountSecret.value.trim()
+      ? { secret: emailAccountSecret.value.trim() }
+      : null
+  };
+  emailAccountState.textContent = "Saving...";
+  try {
+    await fetchJson("/config/email/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    emailAccountState.textContent = "Saved.";
+    emailAccountId.value = "";
+    emailAccountEmail.value = "";
+    emailAccountName.value = "";
+    emailAccountHost.value = "";
+    emailAccountPort.value = "";
+    emailAccountSecret.value = "";
+    await refreshWorkspace();
+  } catch (error) {
+    emailAccountState.textContent = `Failed: ${error.message}`;
+  }
+});
+
+emailDigestSaveBtn?.addEventListener("click", async () => {
+  const windowStart = emailDigestWindowStart.value || "06:00";
+  const windowEnd = emailDigestWindowEnd.value || "12:00";
+  const payload = {
+    enabled: emailDigestEnabled.checked,
+    windowStart,
+    windowEnd,
+    skipWeekends: emailDigestSkipWeekends.checked
+  };
+  emailDigestState.textContent = "Saving...";
+  try {
+    const result = await fetchJson("/config/email/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    state.workspace.emailDigestSettings = result.settings ?? payload;
+    emailDigestState.textContent = "Saved.";
+    renderEmailDigestSettings();
+  } catch (error) {
+    emailDigestState.textContent = `Failed: ${error.message}`;
+  }
 });
 
 previewDagButton.addEventListener("click", async () => {

@@ -45,6 +45,12 @@ const popLabel = document.querySelector("#popLabel");
 const popBody = document.querySelector("#popBody");
 const popOpenBtn = document.querySelector("#popOpenBtn");
 const popCopyBtn = document.querySelector("#popCopyBtn");
+const taskListDock = document.querySelector("#taskListDock");
+const taskListDockBadge = document.querySelector("#taskListDockBadge");
+const taskListPanel = document.querySelector("#taskListPanel");
+const taskListBody = document.querySelector("#taskListBody");
+const taskListCloseBtn = document.querySelector("#taskListCloseBtn");
+const taskListFilterBtns = document.querySelectorAll("[data-task-filter]");
 
 /* ── state ── */
 let serviceBaseUrl = new URLSearchParams(window.location.search).get("serviceBaseUrl") ?? "http://127.0.0.1:4310";
@@ -55,6 +61,7 @@ let pendingCapture = null;
 let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
 let notifiedTaskId = null;
+let notifiedCompositeTaskId = null;
 let selectedOutputSuffix = "";
 let selectedFormatInstruction = "";
 let lastArtifactPreview = "";
@@ -63,6 +70,19 @@ let activeTaskEventStream = null;
 let activeTaskEventTaskId = null;
 let activeTaskEventBaseUrl = null;
 let handledTaskEventIds = new Set();
+let taskSummaries = [];
+let taskListFilter = "all";
+let lastTaskSummaryRefresh = 0;
+let compositeHeaderTaskId = null;
+
+function escapeHtml(value) {
+  return `${value ?? ""}`
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 /* ── conversational state ── */
 let conversationPhase = "idle"; // idle | awaiting_options | running | done
@@ -500,9 +520,115 @@ function ensureActiveTaskEventStream(taskId) {
   });
 }
 
+function switchActiveTask(taskId) {
+  if (!taskId) return;
+  activeTaskId = taskId;
+  ensureActiveTaskEventStream(taskId);
+  void refreshActiveTask();
+}
+
 function clearPendingInputContext() {
   pendingFileSelection = null;
   pendingCapture = null;
+}
+
+async function refreshTaskSummaries(force = false) {
+  const now = Date.now();
+  if (!force && now - lastTaskSummaryRefresh < 4000) return taskSummaries;
+  try {
+    const payload = await fetchJson("/tasks");
+    taskSummaries = payload.tasks ?? [];
+    lastTaskSummaryRefresh = now;
+  } catch {
+    // ignore
+  }
+  return taskSummaries;
+}
+
+function taskIsActive(status) {
+  return ["queued", "running", "cancelling", "starting"].includes(status);
+}
+
+function taskIsDone(status) {
+  return ["success", "partial_success", "failed", "cancelled"].includes(status);
+}
+
+function renderCompositeBreadcrumb({ parentTask, currentTask, childIndex }) {
+  if (!parentTask) return "";
+  const childLabel = childIndex != null ? `#${childIndex + 1} ${currentTask?.user_command ?? currentTask?.intent ?? ""}`.trim() : "";
+  const label = `📦 复合任务${childLabel ? ` > ${childLabel}` : ""}`;
+  return escapeHtml(label);
+}
+
+function buildChildBadgeRow({ parentTask, activeChildId }) {
+  const childIds = Array.isArray(parentTask?.child_task_ids) ? parentTask.child_task_ids : [];
+  if (childIds.length === 0) return "";
+  return `
+    <div class="child-badge-row" data-role="childBadgeRow">
+      ${childIds.map((childId, index) => {
+        const isActive = childId === activeChildId;
+        return `<button type="button" data-child-badge="${escapeHtml(childId)}" class="${isActive ? "active" : ""}">#${index + 1}</button>`;
+      }).join("")}
+    </div>
+  `;
+}
+
+async function ensureCompositeHeader(task) {
+  if (!bubbleArea) return;
+  if (!task?.task_id) {
+    compositeHeaderTaskId = null;
+    const existing = bubbleArea.querySelector("[data-composite-header]");
+    if (existing) existing.remove();
+    return;
+  }
+
+  const isParent = Array.isArray(task.child_task_ids) && task.child_task_ids.length > 0;
+  const parentId = isParent ? task.task_id : task.parent_task_id;
+  if (!parentId) {
+    compositeHeaderTaskId = null;
+    const existing = bubbleArea.querySelector("[data-composite-header]");
+    if (existing) existing.remove();
+    return;
+  }
+
+  if (compositeHeaderTaskId === `${task.task_id}:${parentId}`) {
+    return;
+  }
+
+  let parentTask = isParent ? task : null;
+  if (!parentTask) {
+    try {
+      const detail = await fetchJson(`/task/${encodeURIComponent(parentId)}`);
+      parentTask = detail.task ?? detail;
+    } catch { /* ignore */ }
+  }
+
+  if (!parentTask) return;
+
+  compositeHeaderTaskId = `${task.task_id}:${parentId}`;
+  const childIndex = Number.isInteger(task.child_index) ? task.child_index : null;
+  const breadcrumb = renderCompositeBreadcrumb({ parentTask, currentTask: task, childIndex });
+  const badgeRow = buildChildBadgeRow({ parentTask, activeChildId: isParent ? null : task.task_id });
+  const existing = bubbleArea.querySelector("[data-composite-header]");
+  if (existing) existing.remove();
+
+  const header = document.createElement("div");
+  header.className = "bubble system";
+  header.dataset.compositeHeader = "1";
+  header.innerHTML = `
+    <div style="display:flex;align-items:center;gap:6px;justify-content:space-between;">
+      <span>${breadcrumb}</span>
+      ${!isParent ? `<button data-parent-task="${escapeHtml(parentId)}" class="ghost" style="font-size:10px;padding:2px 6px;">返回总览</button>` : ""}
+    </div>
+    ${badgeRow}
+  `;
+  bubbleArea.prepend(header);
+
+  for (const btn of header.querySelectorAll("[data-child-badge]")) {
+    btn.addEventListener("click", () => switchActiveTask(btn.dataset.childBadge));
+  }
+  const parentBtn = header.querySelector("[data-parent-task]");
+  parentBtn?.addEventListener("click", () => switchActiveTask(parentBtn.dataset.parentTask));
 }
 
 function normalisePreviewText(rawText = "") {
@@ -532,6 +658,52 @@ function isPreviewableArtifactPath(artifactPath = "") {
 function choosePreviewArtifactPath(artifacts = []) {
   const exts = [".md", ".txt", ".json", ".csv", ".html", ".htm"];
   return artifacts.find((a) => exts.some((ext) => a.path?.toLowerCase().endsWith(ext)))?.path ?? null;
+}
+
+function renderTaskListDock() {
+  if (!taskListDock || !taskListBody) return;
+  const tasks = taskSummaries ?? [];
+  const parentOrStandalone = tasks.filter((task) => !task.parent_task_id);
+  const filtered = parentOrStandalone.filter((task) => {
+    if (taskListFilter === "active") return taskIsActive(task.status);
+    if (taskListFilter === "done") return taskIsDone(task.status);
+    return true;
+  });
+  const limited = filtered.slice(0, 10);
+
+  const pendingCount = parentOrStandalone.filter((task) => taskIsActive(task.status)).length;
+  if (taskListDockBadge) {
+    taskListDockBadge.textContent = `${pendingCount}`;
+    taskListDockBadge.hidden = pendingCount === 0;
+  }
+
+  if (limited.length === 0) {
+    taskListBody.innerHTML = `<p class="muted" style="font-size:12px;">暂无任务。</p>`;
+    return;
+  }
+
+  taskListBody.innerHTML = limited.map((task) => {
+    const progress = Math.round((task.progress ?? 0) * 100);
+    const status = task.status ?? "unknown";
+    const statusClass = status === "success" ? "ready" : status === "failed" ? "danger" : "warning";
+    return `
+      <div class="task-list-item">
+        <div style="display:flex;flex-direction:column;gap:2px;">
+          <strong style="font-size:12px;">${escapeHtml(task.user_command ?? task.intent ?? "任务")}</strong>
+          <span class="muted" style="font-size:10px;">${escapeHtml(task.executor ?? "executor")} · ${escapeHtml(task.source_type ?? "source")}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <div class="task-progress-ring">${progress}%</div>
+          <span class="chip ${statusClass}" style="font-size:10px;">${escapeHtml(status)}</span>
+          <button class="ghost" data-task-open="${escapeHtml(task.task_id)}" style="font-size:10px;padding:2px 6px;">查看</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  for (const btn of taskListBody.querySelectorAll("[data-task-open]")) {
+    btn.addEventListener("click", () => switchActiveTask(btn.dataset.taskOpen));
+  }
 }
 
 function appendOutputSuffix(baseCommand) {
@@ -606,7 +778,11 @@ function appendProviderFooterBubble({ descriptor, downgraded }) {
 }
 
 async function refreshActiveTask() {
-  if (!activeTaskId) return;
+  if (!activeTaskId) {
+    await refreshTaskSummaries();
+    renderTaskListDock();
+    return;
+  }
 
   try {
     ensureActiveTaskEventStream(activeTaskId);
@@ -617,6 +793,20 @@ async function refreshActiveTask() {
     };
     lastTask = task;
     lastArtifacts = task.artifacts;
+    await refreshTaskSummaries();
+    ensureCompositeHeader(task);
+    renderTaskListDock();
+
+    const childIds = Array.isArray(task.child_task_ids) ? task.child_task_ids : [];
+    if (childIds.length > 0 && notifiedCompositeTaskId !== task.task_id) {
+      notifiedCompositeTaskId = task.task_id;
+      addBubble("assistant", `已分解为 ${childIds.length} 个任务。`, {
+        optionButtons: childIds.slice(0, 6).map((id, index) => ({
+          label: `查看任务 ${index + 1}`,
+          onClick: () => switchActiveTask(id)
+        }))
+      });
+    }
 
     if (task.status === "success" && task.artifacts?.length) {
       const previewPath = choosePreviewArtifactPath(task.artifacts) ?? task.artifacts[0].path;
@@ -880,6 +1070,82 @@ async function submitTask() {
    SHELL HANDOFF (file drop, browser context)
    ═══════════════════════════════════════════════ */
 
+// UCA-047 — render a compact "you're currently looking at X" card in the
+// overlay whenever the hotkey probe detected a real URL / document path.
+// The card appends 2-3 quick-action buttons that auto-fill the command
+// input so the user can hit Enter without typing anything.
+function showActiveWindowPreviewCard(activeWindow) {
+  if (!activeWindow || activeWindow.blocked) return;
+  const kind = activeWindow.detected_kind ?? activeWindow.detectedKind;
+  const process = activeWindow.process ?? "app";
+  const title = activeWindow.title ?? "";
+  let icon = "🪟";
+  let label = process;
+  let subLabel = "";
+  let quickActions = [];
+
+  if (kind === "web_url" && activeWindow.url) {
+    icon = "🌐";
+    label = `当前浏览器：${title || process}`;
+    subLabel = activeWindow.url;
+    quickActions = [
+      { label: "分析此页面", command: `分析这个页面的内容并总结要点：${activeWindow.url}` },
+      { label: "翻译此页面", command: `把这个页面翻译成中文：${activeWindow.url}` },
+      { label: "提取关键信息", command: `从这个页面里抽取最重要的数据点：${activeWindow.url}` }
+    ];
+  } else if (kind === "file_path" && (activeWindow.file_path || activeWindow.filePath)) {
+    const filePath = activeWindow.file_path ?? activeWindow.filePath;
+    const filename = filePath.split(/[\\/]/).pop() || filePath;
+    icon = /\.(docx?|xlsx?|pptx?)$/i.test(filename) ? "📄" : "📝";
+    label = `当前文件：${filename}`;
+    subLabel = filePath;
+    quickActions = [
+      { label: "总结", command: `总结这个文件的内容：${filePath}` },
+      { label: "审阅", command: `审阅这个文件并指出问题：${filePath}` }
+    ];
+  } else if (kind === "window_title" && title) {
+    icon = "🪟";
+    label = `当前窗口：${process}`;
+    subLabel = title;
+    quickActions = [
+      { label: "基于此上下文提问", command: `基于当前窗口"${title}"的上下文` }
+    ];
+  } else {
+    return;
+  }
+
+  const card = document.createElement("div");
+  card.dataset.ucaActiveWindowCard = "1";
+  card.style.cssText = "display:flex;flex-direction:column;gap:4px;";
+  const head = document.createElement("div");
+  head.style.cssText = "display:flex;align-items:center;gap:6px;font-size:12px;";
+  const iconEl = document.createElement("span");
+  iconEl.textContent = icon;
+  const labelEl = document.createElement("span");
+  labelEl.style.cssText = "font-weight:500;";
+  labelEl.textContent = label;
+  head.appendChild(iconEl);
+  head.appendChild(labelEl);
+  card.appendChild(head);
+  if (subLabel) {
+    const subEl = document.createElement("div");
+    subEl.style.cssText = "font-size:11px;color:var(--muted);word-break:break-all;max-height:32px;overflow:hidden;";
+    subEl.textContent = subLabel;
+    card.appendChild(subEl);
+  }
+
+  addBubble("assistant", card, {
+    optionButtons: quickActions.map((action) => ({
+      label: action.label,
+      onClick: () => {
+        commandInput.value = action.command;
+        autoSizeInput();
+        commandInput.focus();
+      }
+    }))
+  });
+}
+
 function applyShellHandoff(payload) {
   if (payload?.file_paths?.length) {
     pendingCapture = null;
@@ -889,6 +1155,18 @@ function applyShellHandoff(payload) {
       filePaths: payload.file_paths ?? []
     };
     showContextReceivedBubble();
+    if (payload.active_window) {
+      showActiveWindowPreviewCard(payload.active_window);
+    }
+    commandInput.focus();
+    return;
+  }
+
+  // UCA-047: hotkey probe may return active_window hints even when there's
+  // no clipboard text or file selection — render the preview card so the
+  // user can click "分析此页面 / 总结 / ..." without typing anything.
+  if (payload?.active_window && !payload.capture && !payload.file_paths?.length) {
+    showActiveWindowPreviewCard(payload.active_window);
     commandInput.focus();
     return;
   }
@@ -938,6 +1216,12 @@ function applyShellHandoff(payload) {
     }
     ensureConversation(payload.capture, payload.userCommand ?? null);
     showContextReceivedBubble();
+    // UCA-047: layer the active-window preview card on top of the capture
+    // bubble so the user sees BOTH "here's your selected text" and
+    // "you're currently on https://... — want me to summarise the whole page?"
+    if (payload.active_window) {
+      showActiveWindowPreviewCard(payload.active_window);
+    }
     if (payload.userCommand && !commandInput.value) {
       commandInput.value = payload.userCommand;
     }
@@ -1490,6 +1774,31 @@ settingsBtn?.addEventListener("click", async () => {
 });
 
 /* ═══════════════════════════════════════════════
+   TASK LIST DOCK
+   ═══════════════════════════════════════════════ */
+
+taskListDock?.addEventListener("click", async () => {
+  const isOpen = taskListPanel?.dataset.open === "true";
+  if (taskListPanel) taskListPanel.dataset.open = isOpen ? "false" : "true";
+  await refreshTaskSummaries(true);
+  renderTaskListDock();
+});
+
+taskListCloseBtn?.addEventListener("click", () => {
+  if (taskListPanel) taskListPanel.dataset.open = "false";
+});
+
+for (const btn of taskListFilterBtns) {
+  btn.addEventListener("click", () => {
+    taskListFilter = btn.dataset.taskFilter ?? "all";
+    for (const sibling of taskListFilterBtns) {
+      sibling.classList.toggle("active", sibling === btn);
+    }
+    renderTaskListDock();
+  });
+}
+
+/* ═══════════════════════════════════════════════
    SMART INTENT DETECTION
    ═══════════════════════════════════════════════ */
 
@@ -1698,6 +2007,7 @@ window.ucaShell.onShellReady((payload) => {
   if (payload.windowId === "overlay") {
     serviceBaseUrl = payload.serviceBaseUrl ?? serviceBaseUrl;
     refreshStatus();
+    refreshTaskSummaries(true).then(renderTaskListDock);
     showWelcome();
   }
 });

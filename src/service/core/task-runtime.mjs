@@ -71,6 +71,8 @@ export function createTaskRecord({
   userCommand,
   executionMode,
   parentTaskId = null,
+  childTaskIds = null,
+  childIndex = null,
   retryCount = 0,
   executorOverride = null
 }) {
@@ -89,6 +91,8 @@ export function createTaskRecord({
     failure_internal_log_excerpt: null,
     retryable: true,
     parent_task_id: parentTaskId,
+    child_task_ids: Array.isArray(childTaskIds) ? childTaskIds : null,
+    child_index: Number.isInteger(childIndex) ? childIndex : null,
     retry_count: retryCount,
     bypass_dedupe: retryCount > 0,
     executor_history: [],
@@ -102,6 +106,61 @@ export function createTaskRecord({
       userCommand,
       executorOverride ?? route.executor
     )
+  };
+}
+
+function listChildTasks(runtime, parentTask) {
+  if (!parentTask) return [];
+  const childIds = Array.isArray(parentTask.child_task_ids) ? parentTask.child_task_ids : [];
+  if (childIds.length > 0) {
+    return childIds.map((id) => runtime.store.getTask(id)).filter(Boolean);
+  }
+  return runtime.store.listTasks().filter((task) => task.parent_task_id === parentTask.task_id && task.child_index != null);
+}
+
+function aggregateCompositeStatus(childTasks) {
+  if (childTasks.length === 0) {
+    return { status: "running", sub_status: "composite_waiting", progress: 0 };
+  }
+
+  const statuses = childTasks.map((task) => task.status);
+  const finished = statuses.filter((status) => ["success", "failed", "cancelled", "partial_success"].includes(status)).length;
+  const progress = Math.min(1, finished / childTasks.length);
+
+  if (statuses.every((status) => status === "success")) {
+    return { status: "success", sub_status: "completed", progress: 1 };
+  }
+
+  if (statuses.some((status) => status === "failed" || status === "cancelled")) {
+    return { status: "partial_success", sub_status: "completed_with_warnings", progress };
+  }
+
+  if (statuses.some((status) => status === "partial_success")) {
+    return { status: "partial_success", sub_status: "completed_with_warnings", progress };
+  }
+
+  if (statuses.some((status) => ["running", "queued", "cancelling"].includes(status))) {
+    return { status: "running", sub_status: "composite_running", progress };
+  }
+
+  return { status: "running", sub_status: "composite_pending", progress };
+}
+
+export function refreshCompositeParentStatus(runtime, parentTaskId) {
+  const parentTask = runtime.store.getTask(parentTaskId);
+  if (!parentTask) return null;
+  const childTasks = listChildTasks(runtime, parentTask);
+  const aggregate = aggregateCompositeStatus(childTasks);
+  const previousStatus = parentTask.status;
+  updateTask(runtime, parentTask, {
+    status: aggregate.status,
+    sub_status: aggregate.sub_status,
+    progress: aggregate.progress
+  }, true);
+  return {
+    parentTask,
+    previousStatus,
+    aggregate
   };
 }
 
@@ -136,6 +195,10 @@ export function updateTask(runtime, task, patch, emitStatus = false) {
         progress: task.progress
       }
     });
+  }
+
+  if (task.parent_task_id && task.child_index != null && previousStatus !== task.status) {
+    refreshCompositeParentStatus(runtime, task.parent_task_id);
   }
 
   return task;

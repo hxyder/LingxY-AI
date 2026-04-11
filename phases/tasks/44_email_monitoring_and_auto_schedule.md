@@ -54,9 +54,9 @@
 
 ## 7. 完成后必须更新本文件
 
-- 列出已支持的 provider（IMAP / EWS / Graph）
-- 列出凭据存储机制
-- 列出线程追踪的终止条件
+- 列出已支持的 provider（IMAP / EWS / Graph）：当前实现支持 `imap`（mock 路径）与 `graph`（占位），EWS 未实现。
+- 列出凭据存储机制：优先 `keytar`（如可用），否则落地到 runtime data 目录的 `email-credentials.json` 文件。
+- 列出线程追踪的终止条件：线程检测到用户发出回复（`direction: "out"` 或 from 匹配账号邮箱）即标记完成并停止追踪。
 
 ## 8. 对下一个任务的交接
 
@@ -73,12 +73,12 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
-- 实际新增内容：
-- 验证结果：
+- 状态：done
+- 执行分支：main
+- 开始日期：2026-04-11
+- 完成日期：2026-04-11
+- 实际新增内容：新增 `src/service/email/` 子系统（accounts/credential-store/imap-client/graph-client/summarizer/intent-extractor/thread-tracker/monitor），service bootstrap 自动启动 email monitor；Console Settings 增加 Email Accounts 管理 UI；新增 `/config/email/accounts` 接口；`/health` 返回 email 状态；新增 `verify-email-monitoring`。
+- 验证结果：未运行自动化脚本（未执行 `npm run check`）。
 - 遗留问题（开工前已识别）：
   - 用户需求（2026-04-11）："检测邮箱，收到消息，弹出总结。如果邮件中有需求，且需要用户做什么，且涉及时间，自动生成schedule 任务。追踪用户相关邮件的回复，然后自动更新schedule，并发送消息提示，比如：任务已完成。"
   - OAuth 流程（Gmail / Outlook）需要前端引导用户完成授权，且 token 要安全存储，这部分复杂度必须并入统一账户/凭据模型，不能临时散落在 UI 或 scheduler 里

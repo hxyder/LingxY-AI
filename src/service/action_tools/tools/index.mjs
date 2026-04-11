@@ -465,7 +465,8 @@ export const NOTIFY_TOOL = {
     const payload = {
       title: args.title ?? "UCA 提醒",
       body: args.body ?? args.message ?? "时间到了",
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      handoff: args.handoff ?? null
     };
     await writeFile(notificationPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
     return createActionResult({
