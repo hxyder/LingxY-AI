@@ -32,6 +32,7 @@
 import { buildAgenticSystemPrompt } from "./prompt-builder.mjs";
 import { createProviderAdapter } from "./provider-adapter.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
+import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
 
@@ -80,11 +81,12 @@ function buildUserMessage(task) {
 
 /**
  * Execute a single tool call against the action tool registry.
+ * Also checks `mcpToolById` for MCP-sourced tools that aren't in the registry.
  * The caller is expected to pass the runtime's registry + toolContext;
  * no risk-matrix gating happens here — that's the executor's job.
  */
-async function executeToolCall({ registry, toolContext, call }) {
-  const tool = registry?.get?.(call.name);
+async function executeToolCall({ registry, mcpToolById, toolContext, call }) {
+  const tool = registry?.get?.(call.name) ?? mcpToolById?.get?.(call.name);
   if (!tool) {
     return {
       success: false,
@@ -140,9 +142,22 @@ export async function runAgenticPlanner({
   maxIterations = DEFAULT_MAX_ITERATIONS,
   fetchImpl = null
 } = {}) {
-  const effectiveTools = tools
+  const builtinTools = tools
     ?? runtime?.actionToolRegistry?.list?.()
     ?? [];
+
+  // UCA-067: inject MCP tools from enabled stdio servers so ALL providers
+  // (including native Anthropic/OpenAI) can call them as first-class tools.
+  const mcpRegistry = runtime?.platform?.mcpServers;
+  let mcpTools = [];
+  try {
+    mcpTools = await getMcpActionTools(mcpRegistry);
+  } catch { /* MCP unavailable — continue without it */ }
+
+  // Merge: built-in tools first so they take priority on id collision
+  const mcpToolById = new Map(mcpTools.map((t) => [t.id, t]));
+  const effectiveTools = [...builtinTools, ...mcpTools];
+
   const effectiveSkills = await runtime?.platform?.skillRegistries?.listSkills?.({
     runtime
   }) ?? [];
@@ -245,6 +260,7 @@ export async function runAgenticPlanner({
 
       const result = await executeToolCall({
         registry: runtime?.actionToolRegistry,
+        mcpToolById,
         toolContext: {
           ...(runtime?.toolContext ?? {}),
           runtime,

@@ -105,7 +105,7 @@ service.runtime.platform.embeddingStore.add({
     created_at: "2026-04-08T11:00:00Z"
   }
 });
-const matches = service.runtime.platform.embeddingStore.search("合同条款风险总结", 1);
+const matches = await service.runtime.platform.embeddingStore.search("合同条款风险总结", 1);
 assert.equal(matches[0].id, "task-001");
 
 const templateVm = buildTemplateEditorViewModel({
@@ -130,7 +130,8 @@ assert.equal(historyVm.resultCount, 1);
 assert.equal(service.runtime.executorRegistry.pick({ privacyLevel: "local_only" }).id, "fast");
 assert.equal(service.runtime.platform.aiProviders.list().length, 4);
 assert.equal(service.runtime.platform.codeCliAdapters.list().length, 2);
-assert.equal(service.runtime.platform.mcpServers.list().length, 2);
+// UCA-067: 2 legacy stubs (local-fs, figma) + 4 MIT servers = 6
+assert.ok(service.runtime.platform.mcpServers.list().length >= 6, `Expected >= 6 MCP servers, got ${service.runtime.platform.mcpServers.list().length}`);
 assert.equal(service.runtime.platform.skillRegistries.list().length, 1);
 
 console.log("Platform foundation verification passed.");

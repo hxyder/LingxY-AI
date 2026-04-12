@@ -3,6 +3,7 @@ import { createActionToolRegistry } from "../../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { validateToolCall } from "./tool-call-validator.mjs";
 import { extractFirstTier0Action, hasCompoundIntent } from "../../core/router/fast-path-router.mjs";
+import { emitTaskEvent as _emitTaskEventFn } from "../../core/task-runtime.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -235,6 +236,21 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
   const toolList = tools.map((t) => `- ${t.id}: ${t.description ?? ""}`).join("\n");
   const maxIter = 8;
 
+  // UCA-067: Append enabled MCP server capabilities to the tool list so the AI
+  // is aware of them. Actual MCP tool invocation is handled separately; this is
+  // informational so the AI can suggest using them when relevant.
+  let mcpCapabilitiesNote = "";
+  try {
+    const mcpServers = task.__runtime?.platform?.mcpServers;
+    if (mcpServers) {
+      const statuses = await mcpServers.listStatus();
+      const enabledServers = statuses.filter((s) => s.enabled && s.available);
+      if (enabledServers.length > 0) {
+        mcpCapabilitiesNote = `\n\nRegistered MCP capabilities (not directly callable via tool JSON — mention them to the user if relevant):\n${enabledServers.map((s) => `- ${s.id}: ${s.displayName}`).join("\n")}`;
+      }
+    }
+  } catch { /* non-fatal */ }
+
   // UCA-039: Inject a hard requirement when the task spec flags current web data as needed.
   const needsCurrentDataInstruction = (task.task_spec?.needs_current_web_data === true)
     ? "\n\nREQUIRED: You MUST call web_search_fetch before answering. Do NOT answer from memory for current-events questions. Failure to call web_search_fetch will result in a partial_success downgrade."
@@ -271,7 +287,8 @@ Decision rules:
 7. Never repeat the exact same tool+args you already tried.
 8. Maximum ${maxIter} tool calls. End early when the task is clearly done.
 9. CONTEXT: If the conversation history contains previous search results or URLs, use them when the user asks to "open the appropriate one" or refers to "that website".
-${needsCurrentDataInstruction}${forceToolInstruction}
+10. After open_url succeeds, do NOT include that URL as a clickable markdown hyperlink in your final answer (e.g. do NOT write [site](https://...)). Write plain text instead, like "已为你打开 example.com". This prevents the user from accidentally opening the page twice.
+${needsCurrentDataInstruction}${forceToolInstruction}${mcpCapabilitiesNote}
 Respond ONLY with a single JSON object (no markdown, no code fences):
 - Call a tool:       {"tool": "tool_id", "args": { ... }}
 - Ask clarification: {"final": "your clarifying question"}
@@ -369,10 +386,20 @@ export function createToolUsingExecutorScaffold() {
         return;
       }
 
+      // Ensure emitTaskEvent is available on the runtime so tool_call_proposed /
+      // tool_call_completed events are forwarded to the SSE stream (and rendered
+      // in the overlay conversation view). action-tool-submission already sets
+      // this; context-submission does not, so we patch it here.
+      const runtimeWithEmit = runtime.emitTaskEvent ? runtime : {
+        ...runtime,
+        emitTaskEvent: (eventType, payload) =>
+          _emitTaskEventFn({ runtime, taskId: task.task_id, eventType, payload })
+      };
+
       try {
         const result = await runToolAgentLoop({
           task,
-          runtime,
+          runtime: runtimeWithEmit,
           planner: llmPlanner
         });
 

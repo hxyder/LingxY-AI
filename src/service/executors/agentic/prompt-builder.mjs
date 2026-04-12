@@ -75,6 +75,26 @@ function renderSkillBlock(skill) {
   ].join("\n");
 }
 
+function renderTaskContract(task) {
+  const spec = task?.task_spec;
+  if (!spec) return "(none)";
+  const requiredSteps = Array.isArray(spec.required_steps) && spec.required_steps.length > 0
+    ? spec.required_steps.join(" -> ")
+    : "(none)";
+  const requiredTools = Array.isArray(spec.success_contract?.required_tool_names) && spec.success_contract.required_tool_names.length > 0
+    ? spec.success_contract.required_tool_names.join(", ")
+    : "(none)";
+  return [
+    `goal: ${spec.goal ?? "unknown"}`,
+    `needs_current_web_data: ${Boolean(spec.needs_current_web_data)}`,
+    `artifact_required: ${Boolean(spec.artifact?.required)}`,
+    `artifact_kind: ${spec.artifact?.kind ?? "(none)"}`,
+    `required_steps: ${requiredSteps}`,
+    `required_tools: ${requiredTools}`,
+    `must_verify_artifact: ${Boolean(spec.constraints?.must_verify_artifact)}`
+  ].join("\n");
+}
+
 /**
  * Render a system prompt that tells the LLM:
  *   1. Its role and constraints
@@ -119,15 +139,20 @@ export function buildAgenticSystemPrompt({
     "",
     skillBlocks || "(none)",
     "",
+    "## Task contract",
+    "",
+    renderTaskContract(task),
+    "",
     "## Rules",
     "",
-    "1. Before writing about recent, current, or time-sensitive topics, call `web_search_fetch` first and base your answer on the observation. Do not rely on training data alone.",
-    "2. When the user asks for a file artifact (pptx / docx / xlsx / pdf), call `generate_document` with the appropriate `kind`. For pptx the outline shape is `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`. For ad-hoc text files, use `write_file`.",
-    "3. When the user asks you to run code, use `run_script` with `language` strictly in `powershell | node | python`. Do not invent other languages.",
-    "4. You may call multiple tools in sequence. Each tool returns an observation you should read before deciding the next step.",
-    "5. Only say something was \"done\", \"saved\", \"launched\", or \"created\" when the corresponding tool returned `success: true` in the conversation transcript. If every attempt failed, tell the user what failed and suggest next steps — do not pretend.",
-    "6. Keep your final natural-language reply concise. The real deliverables live in the generated artifacts; the reply just summarises what you did and where to find them.",
-    `7. ${languageLine}`,
+    "1. If the task contract lists required_steps or required_tools, satisfy them before claiming completion.",
+    "2. Before writing about recent, current, or time-sensitive topics, call `web_search_fetch` first and base your answer on the observation. Do not rely on training data alone.",
+    "3. When the user asks for a file artifact (pptx / docx / xlsx / pdf), call `generate_document` with the appropriate `kind`. For pptx the outline shape is `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`. For ad-hoc text files, use `write_file`.",
+    "4. When the user asks you to run code, use `run_script` with `language` strictly in `powershell | node | python`. Do not invent other languages.",
+    "5. You may call multiple tools in sequence. Each tool returns an observation you should read before deciding the next step.",
+    "6. Only say something was \"done\", \"saved\", \"launched\", or \"created\" when the corresponding tool returned `success: true` in the conversation transcript. If every attempt failed, tell the user what failed and suggest next steps — do not pretend.",
+    "7. Keep your final natural-language reply concise. The real deliverables live in the generated artifacts; the reply just summarises what you did and where to find them.",
+    `8. ${languageLine}`,
     "",
     "## Output format",
     "",

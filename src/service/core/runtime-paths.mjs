@@ -28,6 +28,7 @@ export function resolveRuntimePaths({ baseDir = null } = {}) {
     codeCliDir: path.join(resolvedBaseDir, "data", "integrations", "code_cli"),
     historyDir: path.join(resolvedBaseDir, "data", "history"),
     historyStorePath: path.join(resolvedBaseDir, "data", "history", "embeddings.json"),
+    skillPatternsPath: path.join(resolvedBaseDir, "data", "skill-patterns.json"),
     dagDir: path.join(resolvedBaseDir, "data", "dag"),
     dagRunsDir: path.join(resolvedBaseDir, "data", "dag", "runs"),
     budgetStatePath: path.join(resolvedBaseDir, "data", "budget.json"),

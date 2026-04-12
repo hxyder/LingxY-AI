@@ -167,7 +167,8 @@ export function classifyGoal(text) {
 // ---------------------------------------------------------------------------
 
 const WEB_DATA_PATTERNS = [
-  /\b(最新|最近|今日|今天|今年|本周|本月|latest|recent|today|current|news|新闻|动态|资讯|热点|搜索|search)\b/i
+  /(最新|最近|今日|今天|今年|本周|本月|新闻|动态|资讯|热点|搜索)/i,
+  /\b(latest|recent|today|current|news|search)\b/i
 ];
 
 function needsCurrentWebData(text) {
@@ -213,7 +214,11 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
 
   const goal = classifyGoal(text);
   const suggestedFormats = detectFormats(text);
-  const fileArtifactKind = suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? null;
+  const explicitFileArtifactKind = suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? null;
+  const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file"].includes(goal)
+    ? "docx"
+    : null;
+  const fileArtifactKind = explicitFileArtifactKind ?? inferredFileArtifactKind;
   const artifactRequired = FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
     goal === "generate_document" ||
     goal === "analyze_and_report" ||

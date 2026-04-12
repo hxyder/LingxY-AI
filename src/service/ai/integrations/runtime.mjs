@@ -114,7 +114,33 @@ export function buildAIIntegrationRegistries({ config = {}, paths = null, manual
     codeCliAdapters.register(adapter);
   }
 
-  const mcpServers = createMCPRegistry(BUILTIN_MCP_SERVERS);
+  // Apply per-server toggles and env overrides from config (set via Console → Connectors)
+  const builtinToggles = config.ai?.mcp?.builtinToggles ?? {};
+  const envOverrides = config.ai?.mcp?.envOverrides ?? {};
+  const patchedBuiltins = BUILTIN_MCP_SERVERS.map((server) => {
+    const toggle = builtinToggles[server.id];
+    const envPatch = envOverrides[server.id];
+    if (!toggle && !envPatch) return server;
+    // Shallow-clone the server object with patched enabled / env fields
+    return {
+      ...server,
+      enabled: toggle ? toggle.enabled : server.enabled,
+      env: envPatch ? { ...(server.env ?? {}), ...envPatch } : server.env,
+      // Re-bind async methods that read from `enabled` closure to use the patched value
+      async isAvailable() {
+        const eff = toggle ? toggle.enabled : server.enabled;
+        const orig = await server.isAvailable?.();
+        return eff && orig !== false;
+      },
+      async getStatus() {
+        const base = await server.getStatus?.() ?? {};
+        const eff = toggle ? toggle.enabled : server.enabled;
+        return { ...base, enabled: eff, available: eff && (base.available !== false) };
+      }
+    };
+  });
+
+  const mcpServers = createMCPRegistry(patchedBuiltins);
   for (const server of mcpEntries(config, paths)) {
     mcpServers.register(createConfiguredMCPServer(server));
   }

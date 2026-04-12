@@ -1,4 +1,5 @@
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
+import { createTaskRecord } from "../src/service/core/task-runtime.mjs";
 import { decomposeUserCommand } from "../src/service/core/router/decomposer.mjs";
 import {
   resolveRoutedModel,
@@ -57,6 +58,28 @@ if (!service.runtime.platform) {
 const route = service.routeIntent("请帮我总结剪贴板内容");
 if (route.intent !== "summarize") {
   throw new Error("Intent router scaffold did not resolve summarize.");
+}
+
+const latestTaskRoute = service.routeIntent("搜索最新 AI 新闻并生成一份 ppt");
+const latestTask = createTaskRecord({
+  route: latestTaskRoute,
+  contextPacket: {
+    schema_version: "1.0",
+    source_type: "manual",
+    source_app: "verify-service-core",
+    capture_mode: "test",
+    text: ""
+  },
+  userCommand: "搜索最新 AI 新闻并生成一份 ppt"
+});
+if (!latestTask.task_spec || latestTask.task_spec_valid !== true) {
+  throw new Error(`TaskSpec was not attached to created task: ${(latestTask.task_spec_errors ?? []).join("; ")}`);
+}
+if (!latestTask.task_spec.needs_current_web_data || !latestTask.task_spec.success_contract.required_tool_names.includes("web_search_fetch")) {
+  throw new Error("TaskSpec must require web_search_fetch for latest/current tasks.");
+}
+if (!latestTask.task_spec.artifact.required || latestTask.task_spec.artifact.kind !== "pptx" || !latestTask.task_spec.required_steps.includes("verify_file_exists")) {
+  throw new Error("TaskSpec must require artifact verification for generated PPT tasks.");
 }
 
 // UCA-049: "分析 / generate report" now gets upgraded to the agentic

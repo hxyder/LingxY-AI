@@ -18,6 +18,7 @@ import { submitImageTask } from "./image-submission.mjs";
 import { submitOfficeTask } from "./office-submission.mjs";
 import { listEmailAccounts, upsertEmailAccount, deleteEmailAccount } from "../email/accounts.mjs";
 import { maybeRunMorningDigest } from "../email/digest.mjs";
+import { saveAutoSkill } from "./skill-pattern-tracker.mjs";
 import { normalizeTemplateDocument } from "../templates/parser.mjs";
 import { validateTemplateDocument } from "../templates/schema.mjs";
 import { resumeDagGraph, validateDagDefinition } from "../dag/scheduler.mjs";
@@ -714,6 +715,24 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, result);
       }
 
+      // UCA-075: Save auto-generated skill from pattern proposal
+      if (method === "POST" && url.pathname === "/skills/save") {
+        const body = await readJsonBody(request);
+        const skillsDir = runtime.paths?.skillsDir ?? null;
+        const skillPatternsPath = runtime.paths?.skillPatternsPath ?? null;
+        if (!skillsDir) {
+          return sendJson(response, 400, { error: "skillsDir not configured" });
+        }
+        const { patternKey, tools, examples, suggestedId, suggestedName } = body;
+        if (!patternKey || !Array.isArray(tools)) {
+          return sendJson(response, 400, { error: "patternKey and tools required" });
+        }
+        const saved = saveAutoSkill(skillPatternsPath, skillsDir, {
+          patternKey, tools, examples: examples ?? [], suggestedId, suggestedName
+        });
+        return sendJson(response, 200, { ok: true, ...saved });
+      }
+
       if (method === "POST" && url.pathname === "/config/mcp/servers") {
         const body = await readJsonBody(request);
         if (!body.id) {
@@ -1266,9 +1285,8 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
 
       if (method === "POST" && url.pathname === "/history/search") {
         const body = await readJsonBody(request);
-        return sendJson(response, 200, {
-          results: runtime.platform.embeddingStore.search(body.query ?? "", body.limit ?? 5)
-        });
+        const results = await runtime.platform.embeddingStore.search(body.query ?? "", body.limit ?? 5);
+        return sendJson(response, 200, { results });
       }
 
       if (method === "GET" && url.pathname === "/executors") {
@@ -1304,6 +1322,54 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
             config: runtime.configStore?.load?.() ?? {}
           })
         });
+      }
+
+      // PATCH /ai/mcp/:id/toggle  — enable or disable a builtin MCP server
+      if (method === "PATCH" && /^\/ai\/mcp\/[^/]+\/toggle$/.test(url.pathname)) {
+        const serverId = decodeURIComponent(url.pathname.replace(/^\/ai\/mcp\//, "").replace(/\/toggle$/, ""));
+        const { enabled } = body ?? {};
+        const currentConfig = runtime.configStore?.load?.() ?? {};
+        const toggles = currentConfig.ai?.mcp?.builtinToggles ?? {};
+        toggles[serverId] = { enabled: Boolean(enabled) };
+        const updatedConfig = {
+          ...currentConfig,
+          ai: {
+            ...(currentConfig.ai ?? {}),
+            mcp: {
+              ...(currentConfig.ai?.mcp ?? {}),
+              builtinToggles: toggles
+            }
+          }
+        };
+        runtime.configStore?.save?.(updatedConfig);
+        // Also invalidate any cached MCP client connection so it picks up the new state
+        try {
+          const { disconnectAll } = await import("../ai/mcp/client-bridge.mjs");
+          await disconnectAll();
+        } catch { /* bridge may not be loaded yet */ }
+        return sendJson(response, 200, { ok: true, serverId, enabled: Boolean(enabled) });
+      }
+
+      // PATCH /ai/mcp/:id/config  — save env-var config (e.g. Brave API Key)
+      if (method === "PATCH" && /^\/ai\/mcp\/[^/]+\/config$/.test(url.pathname)) {
+        const serverId = decodeURIComponent(url.pathname.replace(/^\/ai\/mcp\//, "").replace(/\/config$/, ""));
+        const { key, value } = body ?? {};
+        if (!key) return sendJson(response, 400, { error: "key required" });
+        const currentConfig = runtime.configStore?.load?.() ?? {};
+        const envOverrides = currentConfig.ai?.mcp?.envOverrides ?? {};
+        if (!envOverrides[serverId]) envOverrides[serverId] = {};
+        envOverrides[serverId][key] = value ?? "";
+        runtime.configStore?.save?.({
+          ...currentConfig,
+          ai: {
+            ...(currentConfig.ai ?? {}),
+            mcp: {
+              ...(currentConfig.ai?.mcp ?? {}),
+              envOverrides
+            }
+          }
+        });
+        return sendJson(response, 200, { ok: true, serverId, key });
       }
 
       if (method === "GET" && url.pathname === "/ai/skills") {

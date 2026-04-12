@@ -3,6 +3,8 @@ import { classifyFailure } from "../failures/classifier.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
 import { createPendingApprovalService } from "../scheduler/pending-approvals.mjs";
+import { extractToolSequence, recordToolSequence } from "./skill-pattern-tracker.mjs";
+import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -93,6 +95,9 @@ export function createTaskRecord({
   retryCount = 0,
   executorOverride = null
 }) {
+  const taskSpec = createTaskSpec(userCommand, contextPacket, route);
+  const taskSpecValidation = validateTaskSpec(taskSpec);
+
   return {
     task_id: createId("task"),
     created_at: nowIso(),
@@ -116,6 +121,9 @@ export function createTaskRecord({
     intent: route.intent,
     executor: executorOverride ?? route.executor,
     user_command: userCommand,
+    task_spec: taskSpec,
+    task_spec_valid: taskSpecValidation.valid,
+    task_spec_errors: taskSpecValidation.errors,
     execution_mode: executionMode ?? (route.requires_confirmation ? "approval_required" : "interactive"),
     context_packet: contextPacket,
     source_dedupe_key: buildSourceDedupeKey(
@@ -448,6 +456,33 @@ export function markTaskSucceeded(runtime, task) {
   if (historyRecord) {
     runtime.platform?.embeddingStore?.add(historyRecord);
   }
+
+  // UCA-075: Auto-skill classification — detect repeated tool sequences
+  try {
+    const skillPatternsPath = runtime.paths?.skillPatternsPath ?? null;
+    if (skillPatternsPath) {
+      const taskEvents = runtime.store.getTaskEvents?.(task.task_id) ?? [];
+      const toolSequence = extractToolSequence(taskEvents);
+      const proposal = recordToolSequence(skillPatternsPath, {
+        taskId: task.task_id,
+        command: task.user_command,
+        toolSequence
+      });
+      if (proposal) {
+        // Emit as inline_result so the overlay shows a save-skill bubble
+        emitTaskEvent({
+          runtime,
+          taskId: task.task_id,
+          eventType: "skill_proposal",
+          payload: {
+            text: `💡 此操作流程已重复执行 ${proposal.count} 次：${proposal.tools.join(" → ")}\n是否保存为可复用技能「${proposal.suggestedName}」？`,
+            proposal
+          }
+        });
+      }
+    }
+  } catch { /* non-fatal */ }
+
   runtime.securityBroker?.clearTaskRedactionMap(task.task_id);
   runtime.queue.markFinished(task.task_id);
 }

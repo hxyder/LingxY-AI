@@ -32,6 +32,7 @@ import {
 import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../src/service/action_tools/tools/index.mjs";
 import { detectRequestedOutputFormat } from "../src/service/executors/kimi/output-format.mjs";
+import { createTaskSpec } from "../src/service/core/task-spec.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -44,7 +45,14 @@ const repoRoot = path.resolve(__dirname, "..");
   const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
   const prompt = buildAgenticSystemPrompt({
     tools: registry.list(),
-    task: { user_command: "analyse AI trends and make a ppt" },
+    task: {
+      user_command: "analyse latest AI trends and make a ppt",
+      task_spec: createTaskSpec("analyse latest AI trends and make a ppt", {}, {
+        suggested_executor: "agentic",
+        intent_tags: ["analyze", "search"],
+        suggested_formats: ["pptx"]
+      })
+    },
     requestedFormat: detectRequestedOutputFormat("analyse AI trends and make a ppt")
   });
   const toolIds = listToolIdsInPrompt(prompt);
@@ -58,6 +66,9 @@ const repoRoot = path.resolve(__dirname, "..");
   // Pptx request should surface the generate_document instruction
   assert.match(prompt, /generate_document/);
   assert.match(prompt, /pptx/);
+  assert.match(prompt, /Task contract/);
+  assert.match(prompt, /required_steps: web_search_fetch -> generate_artifact -> verify_file_exists -> register_artifact/);
+  assert.match(prompt, /required_tools: web_search_fetch/);
 }
 
 /* ------------------------------------------------------------------------ */
