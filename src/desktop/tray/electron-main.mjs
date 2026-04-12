@@ -530,7 +530,7 @@ export function createElectronShellRuntime({
 
   function registerShortcuts() {
     for (const shortcut of DESKTOP_SHELL_MANIFEST.shortcuts) {
-      globalShortcut.register(shortcut.accelerator, () => {
+      const registered = globalShortcut.register(shortcut.accelerator, () => {
         const payload = {
           shortcutId: shortcut.id,
           accelerator: shortcut.accelerator
@@ -642,11 +642,14 @@ export function createElectronShellRuntime({
           browserWindow.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
         }
       });
+      if (!registered) {
+        safeError(`[UCA] Failed to register shortcut ${shortcut.id} (${shortcut.accelerator}). It may be used by another app.`);
+      }
     }
   }
 
   function createTray() {
-    tray = new Tray(nativeImage.createEmpty());
+    tray = new Tray(buildTrayIcon(0));
     tray.setToolTip(DESKTOP_SHELL_MANIFEST.trayTooltip);
     tray.setContextMenu(Menu.buildFromTemplate([
       {

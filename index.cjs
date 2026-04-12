@@ -1,3 +1,25 @@
+const { spawn } = require("node:child_process");
+const path = require("node:path");
+
+if (process.env.ELECTRON_RUN_AS_NODE === "1") {
+  const nextEnv = { ...process.env };
+  delete nextEnv.ELECTRON_RUN_AS_NODE;
+
+  const relaunchCwd = process.defaultApp
+    ? process.cwd()
+    : path.dirname(process.execPath);
+
+  const child = spawn(process.execPath, process.argv.slice(1), {
+    cwd: relaunchCwd,
+    env: nextEnv,
+    detached: true,
+    stdio: "ignore",
+    windowsHide: false
+  });
+  child.unref();
+  process.exit(0);
+}
+
 const electron = require("electron");
 
 // Guard against EPIPE on stderr — when Electron is launched from a parent

@@ -91,8 +91,10 @@ npm install
 npm run start:runtime
 
 # 启动 Electron 桌面应用（另开终端）
-npx electron .
+npm run start:desktop
 ```
+
+`start:desktop` 会清理当前终端里可能残留的 `ELECTRON_RUN_AS_NODE`，避免 Electron 被当成普通 Node 进程启动，导致托盘图标和全局快捷键不生效。
 
 ### 打包
 
