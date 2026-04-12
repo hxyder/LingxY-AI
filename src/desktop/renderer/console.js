@@ -66,6 +66,14 @@ const historyForm = document.querySelector("#historyForm");
 const historyQueryInput = document.querySelector("#historyQueryInput");
 const historyList = document.querySelector("#historyList");
 const historyPreview = document.querySelector("#historyPreview");
+const projectCount = document.querySelector("#projectCount");
+const projectList = document.querySelector("#projectList");
+const projectConversationCount = document.querySelector("#projectConversationCount");
+const projectConversationList = document.querySelector("#projectConversationList");
+const projectConversationPreview = document.querySelector("#projectConversationPreview");
+const projectCreateForm = document.querySelector("#projectCreateForm");
+const projectNameInput = document.querySelector("#projectNameInput");
+const projectState = document.querySelector("#projectState");
 const privacyState = document.querySelector("#privacyState");
 const killSwitchToggle = document.querySelector("#killSwitchToggle");
 const offlineModeToggle = document.querySelector("#offlineModeToggle");
@@ -144,6 +152,9 @@ tabButtons.forEach((btn) => {
     switchTab(btn.dataset.tab);
     if (btn.dataset.tab === "files") {
       void loadAllArtifacts();
+    } else if (btn.dataset.tab === "projects") {
+      renderProjectsWorkspace();
+      void syncConsoleProjectStoreFromService({ rerender: true });
     }
   });
 });
@@ -153,6 +164,10 @@ if (window.ucaShell?.onNavigateConsole) {
   window.ucaShell.onNavigateConsole((payload = {}) => {
     const tabId = typeof payload.tabId === "string" ? payload.tabId : "settings";
     switchTab(tabId);
+    if (tabId === "projects") {
+      renderProjectsWorkspace();
+      void syncConsoleProjectStoreFromService({ rerender: true });
+    }
   });
 }
 
@@ -188,7 +203,12 @@ const state = {
   updatingSecurity: false,
   selectedDagExecutionId: null,
   selectedTaskDetail: null,
-  selectedTaskArtifactPath: null
+  selectedTaskArtifactPath: null,
+  selectedProjectId: null,
+  selectedProjectConversationId: null,
+  projectStore: null,
+  projectStoreRemoteReady: false,
+  projectStoreSyncing: false
 };
 
 let selectedTaskEventStream = null;
@@ -297,6 +317,10 @@ const CODE_EXTENSIONS = new Set([
   ".c", ".h", ".cpp", ".hpp", ".cs", ".php",
   ".sh", ".ps1", ".bat", ".sql", ".yaml", ".yml", ".toml", ".ini", ".xml"
 ]);
+
+const PROJECT_STORE_KEY = "uca.overlay.projects.v3";
+const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6"];
+const DEFAULT_PROJECT_ID = "proj_default";
 
 function formatArtifactLabel(artifactPath = "") {
   const p = `${artifactPath}`.toLowerCase();
@@ -1952,6 +1976,179 @@ function renderHistory() {
   }
 }
 
+function buildDefaultProjectStore() {
+  return {
+    currentProjectId: DEFAULT_PROJECT_ID,
+    currentConversationId: null,
+    projects: [{ id: DEFAULT_PROJECT_ID, name: "默认", color: PROJECT_COLORS[0], createdAt: Date.now(), metadata: {} }],
+    conversations: []
+  };
+}
+
+function normalizeProjectStore(store) {
+  const next = store && typeof store === "object" ? store : buildDefaultProjectStore();
+  next.projects = Array.isArray(next.projects) ? next.projects : [];
+  next.conversations = Array.isArray(next.conversations) ? next.conversations : [];
+  if (!next.projects.some((project) => project.id === DEFAULT_PROJECT_ID)) {
+    next.projects.unshift({ id: DEFAULT_PROJECT_ID, name: "默认", color: PROJECT_COLORS[0], createdAt: Date.now(), metadata: {} });
+  }
+  next.currentProjectId = next.currentProjectId || DEFAULT_PROJECT_ID;
+  next.currentConversationId = next.currentConversationId ?? null;
+  return next;
+}
+
+function mergeProjectStores(localStore, remoteStore) {
+  const local = normalizeProjectStore(localStore);
+  const remote = normalizeProjectStore(remoteStore);
+  const projects = new Map();
+  for (const project of [...remote.projects, ...local.projects]) {
+    projects.set(project.id, { ...(projects.get(project.id) ?? {}), ...project });
+  }
+  const conversations = new Map();
+  for (const conversation of [...remote.conversations, ...local.conversations]) {
+    const existing = conversations.get(conversation.id);
+    if (!existing || (conversation.updatedAt ?? 0) >= (existing.updatedAt ?? 0)) {
+      conversations.set(conversation.id, conversation);
+    }
+  }
+  return normalizeProjectStore({
+    currentProjectId: remote.currentProjectId || local.currentProjectId || DEFAULT_PROJECT_ID,
+    currentConversationId: remote.currentConversationId ?? local.currentConversationId ?? null,
+    projects: [...projects.values()],
+    conversations: [...conversations.values()]
+  });
+}
+
+function loadConsoleProjectStore() {
+  try {
+    const raw = localStorage.getItem(PROJECT_STORE_KEY);
+    if (!raw) return state.projectStore ?? buildDefaultProjectStore();
+    return normalizeProjectStore(JSON.parse(raw));
+  } catch {
+    return buildDefaultProjectStore();
+  }
+}
+
+function saveConsoleProjectStore(store) {
+  const normalized = normalizeProjectStore(store);
+  state.projectStore = normalized;
+  localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(normalized));
+  void saveConsoleProjectStoreToService(normalized);
+}
+
+async function saveConsoleProjectStoreToService(store) {
+  try {
+    await fetchJson("/projects/store", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ store: normalizeProjectStore(store) })
+    });
+    state.projectStoreRemoteReady = true;
+  } catch {
+    state.projectStoreRemoteReady = false;
+  }
+}
+
+async function syncConsoleProjectStoreFromService({ rerender = false } = {}) {
+  if (state.projectStoreSyncing) return;
+  state.projectStoreSyncing = true;
+  try {
+    const local = state.projectStore ?? loadConsoleProjectStore();
+    const payload = await fetchJson("/projects/store");
+    const merged = mergeProjectStores(local, payload.store);
+    state.projectStore = merged;
+    localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(merged));
+    await saveConsoleProjectStoreToService(merged);
+    if (rerender) renderProjectsWorkspace();
+  } catch {
+    state.projectStore = state.projectStore ?? loadConsoleProjectStore();
+  } finally {
+    state.projectStoreSyncing = false;
+  }
+}
+
+function formatProjectConversationPreview(conversation) {
+  if (!conversation) return "Select a conversation.";
+  const lines = [
+    conversation.title || conversation.seedCommand || conversation.id,
+    `Updated: ${formatDateTime(conversation.updatedAt)}`,
+    ""
+  ];
+  for (const turn of (conversation.turns ?? []).slice(-12)) {
+    const label = turn.role === "user" ? "User" : turn.role === "assistant" ? "Assistant" : "System";
+    lines.push(`${label}: ${turn.content ?? ""}`);
+    lines.push("");
+  }
+  return lines.join("\n").trim() || "No turns yet.";
+}
+
+function renderProjectsWorkspace() {
+  if (!projectList || !projectConversationList) return;
+  const store = state.projectStore ?? loadConsoleProjectStore();
+  state.projectStore = store;
+  const projects = store.projects ?? [];
+  if (!state.selectedProjectId || !projects.some((project) => project.id === state.selectedProjectId)) {
+    state.selectedProjectId = store.currentProjectId || projects[0]?.id || DEFAULT_PROJECT_ID;
+  }
+  const selectedProject = projects.find((project) => project.id === state.selectedProjectId) ?? projects[0] ?? null;
+  const conversations = (store.conversations ?? [])
+    .filter((conversation) => conversation.projectId === selectedProject?.id)
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  if (!state.selectedProjectConversationId || !conversations.some((conversation) => conversation.id === state.selectedProjectConversationId)) {
+    state.selectedProjectConversationId = conversations[0]?.id ?? null;
+  }
+  const selectedConversation = conversations.find((conversation) => conversation.id === state.selectedProjectConversationId) ?? null;
+
+  projectCount.textContent = `${projects.length}`;
+  projectConversationCount.textContent = `${conversations.length}`;
+  projectConversationPreview.textContent = formatProjectConversationPreview(selectedConversation);
+
+  projectList.innerHTML = projects.map((project) => {
+    const selected = project.id === selectedProject?.id;
+    return `
+      <button class="history-item ${selected ? "active" : ""}" data-project-id="${escapeHtml(project.id)}" style="text-align:left;border-left:4px solid ${escapeHtml(project.color ?? PROJECT_COLORS[0])};">
+        <div class="row">
+          <strong style="font-size:13px;">${escapeHtml(project.name ?? project.id)}</strong>
+          <span class="muted" style="font-size:11px;">${escapeHtml((store.conversations ?? []).filter((conversation) => conversation.projectId === project.id).length)}</span>
+        </div>
+        <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(project.id)}</p>
+      </button>
+    `;
+  }).join("");
+
+  projectConversationList.innerHTML = conversations.length > 0
+    ? conversations.map((conversation) => `
+      <button class="history-item ${conversation.id === selectedConversation?.id ? "active" : ""}" data-project-conversation-id="${escapeHtml(conversation.id)}" style="text-align:left;">
+        <div class="row">
+          <strong style="font-size:13px;">${escapeHtml(conversation.title || conversation.seedCommand || "新会话")}</strong>
+          <span class="muted" style="font-size:11px;">${escapeHtml((conversation.turns ?? []).length)}</span>
+        </div>
+        <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(formatDateTime(conversation.updatedAt ?? conversation.startedAt))}</p>
+      </button>
+    `).join("")
+    : `<p class="muted" style="font-size:12px;">No conversations in this project.</p>`;
+
+  for (const btn of projectList.querySelectorAll("[data-project-id]")) {
+    btn.addEventListener("click", () => {
+      state.selectedProjectId = btn.dataset.projectId;
+      state.selectedProjectConversationId = null;
+      store.currentProjectId = state.selectedProjectId;
+      store.currentConversationId = null;
+      saveConsoleProjectStore(store);
+      renderProjectsWorkspace();
+    });
+  }
+  for (const btn of projectConversationList.querySelectorAll("[data-project-conversation-id]")) {
+    btn.addEventListener("click", () => {
+      state.selectedProjectConversationId = btn.dataset.projectConversationId;
+      store.currentConversationId = state.selectedProjectConversationId;
+      store.currentProjectId = state.selectedProjectId || store.currentProjectId;
+      saveConsoleProjectStore(store);
+      renderProjectsWorkspace();
+    });
+  }
+}
+
 function renderPrivacy() {
   const sec = state.workspace.security ?? { global_kill_switch: false, offline_mode: false, presenter_mode: false, field_redaction: { enabled_rules: [] }, data_retention: {} };
   killSwitchToggle.checked = Boolean(sec.global_kill_switch);
@@ -2153,6 +2350,8 @@ async function refreshWorkspace() {
     renderDagExecutions();
     renderBudget();
     renderHistory();
+    renderProjectsWorkspace();
+    void syncConsoleProjectStoreFromService({ rerender: true });
     renderPrivacy();
     renderAudit();
     renderMcpServers();
@@ -2305,6 +2504,31 @@ historyForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   state.currentHistoryQuery = historyQueryInput.value.trim();
   await refreshWorkspace();
+});
+
+projectCreateForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const name = projectNameInput.value.trim();
+  if (!name) {
+    projectState.textContent = "Project name required.";
+    return;
+  }
+  const store = loadConsoleProjectStore();
+  const project = {
+    id: `proj_${crypto.randomUUID().slice(0, 8)}`,
+    name,
+    color: PROJECT_COLORS[store.projects.length % PROJECT_COLORS.length],
+    createdAt: Date.now(),
+    metadata: {}
+  };
+  store.projects.push(project);
+  store.currentProjectId = project.id;
+  saveConsoleProjectStore(store);
+  state.selectedProjectId = project.id;
+  state.selectedProjectConversationId = null;
+  projectNameInput.value = "";
+  projectState.textContent = "Project created.";
+  renderProjectsWorkspace();
 });
 
 scheduleForm?.addEventListener("submit", async (event) => {

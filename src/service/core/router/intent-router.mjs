@@ -1,12 +1,34 @@
+// UCA-052: Legacy RULES table kept for intent label back-compat only.
+// Executor selection is now primarily driven by TaskSpec goal family
+// (see classifyGoal() in task-spec.mjs). These keyword lists are word-boundary
+// safe and no longer use raw text.includes() which caused false matches
+// ("profile" triggering file_action, "lifestyle" triggering file_action, etc.).
+// Rule ordering matters: more-specific / higher-priority intents come first.
+// Content-processing verbs (总结/翻译/改写) must precede noun-based tool rules
+// so "总结剪贴板内容" resolves to summarize, not act.
+//
+// NOTE on \b: JavaScript \b only works between \w ([a-zA-Z0-9_]) and \W.
+// Chinese characters are all \W, so \b never fires between two Chinese chars.
+// For Chinese-only alternatives we omit \b; for English we keep it.
 const RULES = [
-  { keywords: ["图片", "image", "截图", "screenshot", "ocr"], intent: "describe_image", executor: "multi_modal", requires_confirmation: false },
-  { keywords: ["报告", "report", "分析", "analyze", "analyse"], intent: "generate_report", executor: "kimi", requires_confirmation: true },
-  { keywords: ["邮件", "email", "搜索", "search", "新闻", "消息", "要闻", "时政", "最新", "最近", "动态", "资讯", "热点", "latest", "recent", "news", "current", "打开", "open", "启动", "运行", "launch", "start", "run", "复制", "clipboard", "通知", "notify", "定时", "schedule", "每天", "每周", "提醒"], intent: "act", executor: "tool_using", requires_confirmation: false },
-  { keywords: ["总结", "summarize", "summary"], intent: "summarize", executor: "fast" },
-  { keywords: ["翻译", "translate"], intent: "translate", executor: "translate" },
-  { keywords: ["改写", "rewrite"], intent: "rewrite", executor: "fast" },
-  { keywords: ["解释", "explain"], intent: "explain", executor: "fast" }
+  { patterns: [/(图片|image|截图|screenshot|\bocr\b)/i], intent: "describe_image", executor: "multi_modal", requires_confirmation: false },
+  // Content-processing verbs — MUST come before generic "act" rules
+  { patterns: [/(总结|摘要|\bsummarize\b|\bsummary\b)/i], intent: "summarize", executor: "fast" },
+  { patterns: [/(翻译|\btranslate\b)/i], intent: "translate", executor: "translate" },
+  { patterns: [/(改写|润色|\brewrite\b|\bpolish\b)/i], intent: "rewrite", executor: "fast" },
+  { patterns: [/(解释|\bexplain\b)/i], intent: "explain", executor: "fast" },
+  // Action/tool rules
+  { patterns: [/(报告|\breport\b|分析|\banalyze\b|\banalyse\b)/i], intent: "generate_report", executor: "agentic", requires_confirmation: false },
+  { patterns: [/(邮件|\bemail\b)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
+  { patterns: [/(搜索|\bsearch\b|新闻|最新|最近|动态|资讯|热点|\blatest\b|\brecent\b|\bnews\b|\bcurrent\b)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
+  { patterns: [/(启动|\blaunch\b)|(打开|\bopen\b|运行|\brun\b).{0,20}(应用|\bapp\b|程序|\bsoftware\b)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
+  // Clipboard copy — only when the primary verb is copy/复制, not when it's just the data source
+  { patterns: [/(复制|\bcopy\b).{0,20}(剪贴板|\bclipboard\b)|(剪贴板|\bclipboard\b).{0,20}(复制|\bcopy\b)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
+  { patterns: [/(通知|\bnotify\b|定时|\bschedule\b|每天|每周|提醒)/i], intent: "act", executor: "tool_using", requires_confirmation: false }
 ];
+
+// UCA-051/052: import goal classification from task-spec
+import { classifyGoal } from "../task-spec.mjs";
 
 /* ------------------------------------------------------------------------ */
 /* UCA-049 commit 2: intent_tags multi-label routing                         */
@@ -37,7 +59,7 @@ const TAG_PATTERNS = [
   { tag: "file_action", patterns: [/(\bfile\b|文件|复制到|copy\s+to|move|rename|delete)/i] },
   { tag: "clipboard", patterns: [/(剪贴板|clipboard)/i] },
   { tag: "notify", patterns: [/(通知|notify|提醒)/i] },
-  { tag: "schedule", patterns: [/(定时|schedule|每天|每周|cron)/i] },
+  { tag: "schedule", patterns: [/(定时|schedule|每天|每周|cron|(?:提醒.*(?:明天|今天|上午|下午|\d+\s*点))|(?:(?:明天|今天|上午|下午|\d+\s*点).*提醒))/i] },
   { tag: "act", patterns: [/(打开|open|运行|run)/i] }
 ];
 
@@ -55,8 +77,14 @@ const FORMAT_PATTERNS = [
 
 const FILE_PRODUCING_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf"]);
 const AGENTIC_TRIGGERING_TAGS = new Set([
+  "act",
   "analyze",
+  "clipboard",
+  "file_action",
   "generate_report",
+  "launch_app",
+  "notify",
+  "schedule",
   "search"
 ]);
 
@@ -82,8 +110,12 @@ function deriveSuggestedFormats(text) {
 
 export function routeIntent(userCommand = "") {
   const raw = String(userCommand ?? "");
-  const text = raw.toLowerCase();
-  const matched = RULES.find((rule) => rule.keywords.some((keyword) => text.includes(keyword.toLowerCase())));
+
+  // UCA-051/052: classify goal family first (word-boundary safe, no substring traps)
+  const goal = classifyGoal(raw);
+
+  // UCA-052: use pattern matching instead of text.includes() to avoid false positives
+  const matched = RULES.find((rule) => rule.patterns.some((pattern) => pattern.test(raw)));
 
   const intent_tags = deriveIntentTags(raw);
   const suggested_formats = deriveSuggestedFormats(raw);
@@ -92,14 +124,20 @@ export function routeIntent(userCommand = "") {
   // when the request clearly needs multi-step tool use:
   //   1. Output format is a file that the universal tool belt can produce
   //   2. The intent tags include analyze / generate_report / search
-  //   3. There's both a single-shot tag (e.g. summarize) *and* a file format
+  //   3. Goal family requires multi-step execution
   const requiresFileArtifact = suggested_formats.some((format) => FILE_PRODUCING_FORMATS.has(format));
   const hasAgenticTag = intent_tags.some((tag) => AGENTIC_TRIGGERING_TAGS.has(tag));
+  const goalRequiresAgentic = ["generate_document", "analyze_and_report", "search_and_answer", "open_or_reveal_file", "transform_existing_file", "launch_and_act"].includes(goal);
 
   if (!matched) {
-    const suggested_executor = requiresFileArtifact || hasAgenticTag ? "agentic" : "fast";
+    const suggested_executor = requiresFileArtifact || hasAgenticTag || goalRequiresAgentic
+      ? "agentic"
+      : goal === "translate" ? "translate"
+      : goal === "multimodal_analyze" ? "multi_modal"
+      : "fast";
     return {
       intent: "general",
+      goal,
       executor: suggested_executor,
       suggested_executor,
       intent_tags,
@@ -109,19 +147,17 @@ export function routeIntent(userCommand = "") {
   }
 
   // Upgrade the matched executor to agentic when the request needs
-  // multi-step tool use. The dedicated translate/rewrite/explain paths
-  // stay on their single-shot executor — they're cheap and deterministic.
-  // multi_modal keeps its vision-first routing; an image analysis task
-  // stays on the multi_modal executor even if "analyze" is a tag.
-  const isSingleShot = matched.executor === "translate"
-    || matched.executor === "multi_modal"
-    || (matched.executor === "fast" && ["rewrite", "explain", "summarize"].includes(matched.intent));
-  const suggested_executor = (!isSingleShot && (requiresFileArtifact || hasAgenticTag))
+  // multi-step tool use or a generated file artifact. Vision tasks keep their
+  // multi_modal first hop; otherwise "summarize into pptx/docx" must not stay
+  // on the cheap single-shot fast executor.
+  const isVisionFirst = matched.executor === "multi_modal";
+  const suggested_executor = (!isVisionFirst && (requiresFileArtifact || hasAgenticTag || goalRequiresAgentic))
     ? "agentic"
     : matched.executor;
 
   return {
     intent: matched.intent,
+    goal,
     executor: suggested_executor,
     suggested_executor,
     intent_tags,

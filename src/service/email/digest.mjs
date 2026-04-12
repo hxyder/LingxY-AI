@@ -5,6 +5,7 @@ import { listEmailAccounts } from "./accounts.mjs";
 import { summarizeEmail } from "./summarizer.mjs";
 import { extractEmailIntent } from "./intent-extractor.mjs";
 import { appendAuditLog } from "../security/audit-log.mjs";
+import { requireFeature } from "../core/feature-flags.mjs";
 
 function resolveStatePath(runtime) {
   const baseDir = runtime?.paths?.dataDir
@@ -100,6 +101,10 @@ async function sendNotification(runtime, payload) {
 
 export async function maybeRunMorningDigest({ runtime, now = new Date() } = {}) {
   const config = runtime.configStore?.load?.() ?? {};
+  const featureGate = requireFeature("morning_digest", runtime.configStore);
+  if (!featureGate.ok) {
+    return { ok: false, reason: "feature_disabled", gate: featureGate };
+  }
   const digestConfig = config.email?.digest ?? {};
   if (digestConfig.enabled === false) {
     return { ok: false, reason: "disabled" };

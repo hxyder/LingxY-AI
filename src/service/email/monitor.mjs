@@ -5,6 +5,7 @@ import { summarizeEmail } from "./summarizer.mjs";
 import { extractEmailIntent } from "./intent-extractor.mjs";
 import { createThreadTracker } from "./thread-tracker.mjs";
 import { appendAuditLog } from "../security/audit-log.mjs";
+import { requireFeature } from "../core/feature-flags.mjs";
 
 const DEFAULT_POLL_INTERVAL_MS = 120000;
 const MAX_MESSAGES_PER_ACCOUNT = 20;
@@ -120,7 +121,8 @@ export function createEmailMonitor({ runtime, pollIntervalMs = DEFAULT_POLL_INTE
 
   async function pollAllAccounts() {
     const config = runtime.configStore?.load?.() ?? {};
-    if (config.email?.enabled === false) {
+    const featureGate = requireFeature("email_monitoring", runtime.configStore);
+    if (config.email?.enabled === false || !featureGate.ok) {
       return [];
     }
     const accounts = listEmailAccounts(runtime).filter((account) => account.enabled);

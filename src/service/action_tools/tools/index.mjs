@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { mkdir, writeFile, lstat, realpath, access } from "node:fs/promises";
+import { mkdir, writeFile, readFile, lstat, stat, readdir, access } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -458,15 +458,19 @@ export const COPY_TO_CLIPBOARD_TOOL = {
 };
 export const NOTIFY_TOOL = {
   ...TOOL_DEFINITIONS.find((tool) => tool.id === "notify"),
-  async execute(args = {}) {
-    const notificationDir = path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "UCA", "notifications");
+  async execute(args = {}, ctx = {}) {
+    const baseDir = ctx.runtime?.paths?.baseDir
+      ?? path.join(os.tmpdir(), "uca-test-runtime");
+    const notificationDir = args.notificationDir
+      ?? path.join(baseDir, "notifications");
     await mkdir(notificationDir, { recursive: true });
     const notificationPath = path.join(notificationDir, `notification-${Date.now()}-${crypto.randomUUID()}.json`);
     const payload = {
       title: args.title ?? "UCA 提醒",
       body: args.body ?? args.message ?? "时间到了",
       created_at: new Date().toISOString(),
-      handoff: args.handoff ?? null
+      handoff: args.handoff ?? null,
+      navigate: args.navigate ?? null
     };
     await writeFile(notificationPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
     return createActionResult({
@@ -1102,6 +1106,382 @@ export const GENERATE_DOCUMENT_TOOL = {
   }
 };
 
+/* ------------------------------------------------------------------------ */
+/* UCA-053: File Discovery & Artifact Verification tools                     */
+/* ------------------------------------------------------------------------ */
+
+// Resolve the default output directory from ctx (runtime config or fallback)
+function resolveDefaultOutputDir(ctx) {
+  return ctx?.runtime?.config?.output?.defaultDir
+    ?? ctx?.outputDir
+    ?? path.join(os.homedir(), "Documents", "UCA");
+}
+
+// The artifact manifest lives at <defaultOutputDir>/.uca-manifest.json
+async function readManifest(outputDir) {
+  const manifestPath = path.join(outputDir, ".uca-manifest.json");
+  try {
+    const raw = await readFile(manifestPath, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+async function writeManifest(outputDir, entries) {
+  const manifestPath = path.join(outputDir, ".uca-manifest.json");
+  await mkdir(outputDir, { recursive: true });
+  await writeFile(manifestPath, JSON.stringify(entries, null, 2) + "\n", "utf8");
+}
+
+// Simple glob-to-regex converter (supports * and ** only)
+function globToRegex(pattern) {
+  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const converted = escaped.replace(/\\\*\\\*/g, ".*").replace(/\\\*/g, "[^/\\\\]*");
+  return new RegExp(`^${converted}$`, "i");
+}
+
+const FILE_KIND_EXTS = {
+  pptx: [".pptx"],
+  docx: [".docx"],
+  xlsx: [".xlsx"],
+  pdf: [".pdf"],
+  txt: [".txt"],
+  md: [".md"],
+  csv: [".csv"],
+  html: [".html", ".htm"]
+};
+
+export const LIST_FILES_TOOL = {
+  id: "list_files",
+  name: "List Files",
+  description: "List files in a directory, optionally filtered by glob pattern (e.g. *.pptx).",
+  parameters: ACTION_TOOL_SCHEMAS.list_files,
+  risk_level: "low",
+  required_capabilities: ["file_read"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const dir = args.dir
+      ? path.resolve(args.dir.replace(/^~/, os.homedir()))
+      : resolveDefaultOutputDir(ctx);
+    const limit = Math.max(1, Math.min(100, Number(args.limit) || 20));
+    const patternRegex = args.pattern ? globToRegex(args.pattern) : null;
+    try {
+      const entries = await readdir(dir, { withFileTypes: true });
+      const files = entries
+        .filter((e) => e.isFile())
+        .filter((e) => !patternRegex || patternRegex.test(e.name))
+        .slice(0, limit)
+        .map((e) => path.join(dir, e.name));
+      return createActionResult({
+        success: true,
+        observation: files.length > 0
+          ? `Found ${files.length} file(s) in ${dir}:\n${files.join("\n")}`
+          : `No files found in ${dir}${args.pattern ? ` matching "${args.pattern}"` : ""}`,
+        metadata: { tool_id: "list_files", dir, files }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `list_files failed: ${error.message}`,
+        metadata: { tool_id: "list_files", dir }
+      });
+    }
+  }
+};
+
+export const GLOB_FILES_TOOL = {
+  id: "glob_files",
+  name: "Glob Files",
+  description: "Search for files matching a glob pattern (supports * and **). E.g. ~/Documents/**/*.pptx",
+  parameters: ACTION_TOOL_SCHEMAS.glob_files,
+  risk_level: "low",
+  required_capabilities: ["file_read"],
+  requires_confirmation: false,
+  async execute(args = {}) {
+    const pattern = String(args.pattern ?? "").replace(/^~/, os.homedir());
+    if (!pattern) return createActionResult({ success: false, observation: "pattern required" });
+    // Split into base dir and file pattern
+    const parts = pattern.replace(/\\/g, "/").split("/");
+    let baseIdx = parts.findIndex((p) => p.includes("*"));
+    if (baseIdx < 0) baseIdx = parts.length - 1;
+    const baseDir = path.resolve(parts.slice(0, baseIdx).join("/") || ".");
+    const filePattern = parts.slice(baseIdx).join("/");
+    const patternRegex = globToRegex(filePattern);
+
+    async function walk(dir, depth = 0) {
+      if (depth > 10) return [];
+      const results = [];
+      try {
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          const relPath = path.relative(baseDir, fullPath).replace(/\\/g, "/");
+          if (entry.isFile() && patternRegex.test(relPath)) {
+            results.push(fullPath);
+          } else if (entry.isDirectory() && !entry.name.startsWith(".")) {
+            results.push(...await walk(fullPath, depth + 1));
+          }
+        }
+      } catch { /* skip inaccessible dirs */ }
+      return results;
+    }
+
+    try {
+      const files = (await walk(baseDir)).slice(0, 50);
+      return createActionResult({
+        success: true,
+        observation: files.length > 0
+          ? `Found ${files.length} file(s) matching "${args.pattern}":\n${files.join("\n")}`
+          : `No files found matching "${args.pattern}"`,
+        metadata: { tool_id: "glob_files", pattern, files }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `glob_files failed: ${error.message}`
+      });
+    }
+  }
+};
+
+export const FIND_RECENT_FILES_TOOL = {
+  id: "find_recent_files",
+  name: "Find Recent Files",
+  description: "Find the most recently modified files of a given type (pptx, docx, xlsx, pdf, txt, md).",
+  parameters: ACTION_TOOL_SCHEMAS.find_recent_files,
+  risk_level: "low",
+  required_capabilities: ["file_read"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const kind = String(args.kind ?? "").toLowerCase();
+    const limit = Math.max(1, Math.min(20, Number(args.limit) || 5));
+    const sinceHours = Number(args.since_hours) || 24;
+    const sinceMs = Date.now() - sinceHours * 3600 * 1000;
+    const exts = FILE_KIND_EXTS[kind] ?? Object.values(FILE_KIND_EXTS).flat();
+    const searchDir = resolveDefaultOutputDir(ctx);
+
+    async function walk(dir, depth = 0) {
+      if (depth > 6) return [];
+      const results = [];
+      try {
+        const entries = await readdir(dir, { withFileTypes: true });
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+          if (entry.isFile() && exts.includes(path.extname(entry.name).toLowerCase())) {
+            try {
+              const info = await stat(fullPath);
+              if (info.mtimeMs >= sinceMs) {
+                results.push({ path: fullPath, mtime: info.mtimeMs, size: info.size });
+              }
+            } catch { /* skip */ }
+          } else if (entry.isDirectory() && !entry.name.startsWith(".")) {
+            results.push(...await walk(fullPath, depth + 1));
+          }
+        }
+      } catch { /* skip */ }
+      return results;
+    }
+
+    try {
+      const found = (await walk(searchDir))
+        .sort((a, b) => b.mtime - a.mtime)
+        .slice(0, limit);
+      if (found.length === 0) {
+        return createActionResult({
+          success: true,
+          observation: `No ${kind || "any"} files found in the last ${sinceHours}h under ${searchDir}`,
+          metadata: { tool_id: "find_recent_files", files: [] }
+        });
+      }
+      const lines = found.map((f) => `${f.path} (${Math.round(f.size / 1024)}KB, ${new Date(f.mtime).toLocaleString()})`);
+      return createActionResult({
+        success: true,
+        observation: `Found ${found.length} recent ${kind || "any"} file(s):\n${lines.join("\n")}`,
+        metadata: { tool_id: "find_recent_files", files: found.map((f) => f.path) }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `find_recent_files failed: ${error.message}`
+      });
+    }
+  }
+};
+
+export const GET_LATEST_ARTIFACT_TOOL = {
+  id: "get_latest_artifact",
+  name: "Get Latest Artifact",
+  description: "Get the latest artifact of a given kind from the UCA artifact manifest.",
+  parameters: ACTION_TOOL_SCHEMAS.get_latest_artifact,
+  risk_level: "low",
+  required_capabilities: ["file_read"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const kind = String(args.kind ?? "").toLowerCase() || null;
+    const outputDir = resolveDefaultOutputDir(ctx);
+    try {
+      const manifest = await readManifest(outputDir);
+      let entries = manifest;
+      if (kind && kind !== "any") {
+        entries = manifest.filter((e) => e.kind === kind);
+      }
+      if (args.task_id) {
+        entries = entries.filter((e) => e.task_id === args.task_id);
+      }
+      entries = entries.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
+      const latest = entries[0];
+      if (!latest) {
+        return createActionResult({
+          success: false,
+          observation: `No ${kind ?? "any"} artifact found in manifest${args.task_id ? ` for task ${args.task_id}` : ""}`,
+          metadata: { tool_id: "get_latest_artifact" }
+        });
+      }
+      return createActionResult({
+        success: true,
+        observation: `Latest ${latest.kind} artifact: ${latest.path} (created ${latest.created_at})`,
+        metadata: { tool_id: "get_latest_artifact", artifact: latest }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `get_latest_artifact failed: ${error.message}`
+      });
+    }
+  }
+};
+
+export const STAT_FILE_TOOL = {
+  id: "stat_file",
+  name: "Stat File",
+  description: "Check a file's existence, size, and modification time.",
+  parameters: ACTION_TOOL_SCHEMAS.stat_file,
+  risk_level: "low",
+  required_capabilities: ["file_read"],
+  requires_confirmation: false,
+  async execute(args = {}) {
+    const filePath = args.path ? path.resolve(args.path.replace(/^~/, os.homedir())) : "";
+    if (!filePath) return createActionResult({ success: false, observation: "path required" });
+    try {
+      const info = await stat(filePath);
+      return createActionResult({
+        success: true,
+        observation: `File ${filePath}: size=${info.size}B, modified=${info.mtime.toISOString()}`,
+        metadata: {
+          tool_id: "stat_file",
+          path: filePath,
+          size: info.size,
+          mtime: info.mtime.toISOString(),
+          isFile: info.isFile()
+        }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: error.code === "ENOENT" ? `File not found: ${filePath}` : `stat_file failed: ${error.message}`,
+        metadata: { tool_id: "stat_file", path: filePath, exists: false }
+      });
+    }
+  }
+};
+
+export const VERIFY_FILE_EXISTS_TOOL = {
+  id: "verify_file_exists",
+  name: "Verify File Exists",
+  description: "Assert that a file exists and has non-zero size. Required before claiming a document was successfully generated.",
+  parameters: ACTION_TOOL_SCHEMAS.verify_file_exists,
+  risk_level: "low",
+  required_capabilities: ["file_read"],
+  requires_confirmation: false,
+  async execute(args = {}) {
+    const filePath = args.path ? path.resolve(args.path.replace(/^~/, os.homedir())) : "";
+    if (!filePath) return createActionResult({ success: false, observation: "path required" });
+    try {
+      const info = await stat(filePath);
+      const exists = info.isFile() && info.size > 0;
+      return createActionResult({
+        success: exists,
+        observation: exists
+          ? `File verified: ${filePath} exists (${info.size} bytes)`
+          : `File is empty or not a regular file: ${filePath}`,
+        metadata: { tool_id: "verify_file_exists", path: filePath, exists, size: info.size }
+      });
+    } catch {
+      return createActionResult({
+        success: false,
+        observation: `File does not exist: ${filePath}`,
+        metadata: { tool_id: "verify_file_exists", path: filePath, exists: false }
+      });
+    }
+  }
+};
+
+export const REGISTER_ARTIFACT_TOOL = {
+  id: "register_artifact",
+  name: "Register Artifact",
+  description: "Register a generated file into the UCA artifact manifest so it can be found later.",
+  parameters: ACTION_TOOL_SCHEMAS.register_artifact,
+  risk_level: "low",
+  required_capabilities: ["file_write"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const filePath = args.path ? path.resolve(args.path.replace(/^~/, os.homedir())) : "";
+    if (!filePath) return createActionResult({ success: false, observation: "path required" });
+    const kind = String(args.kind ?? path.extname(filePath).slice(1) ?? "unknown");
+    const outputDir = resolveDefaultOutputDir(ctx);
+    try {
+      const info = await stat(filePath);
+      const manifest = await readManifest(outputDir);
+      // avoid duplicate registration
+      const alreadyRegistered = manifest.some((e) => e.path === filePath);
+      if (!alreadyRegistered) {
+        manifest.push({
+          path: filePath,
+          kind,
+          task_id: args.task_id ?? ctx?.task?.task_id ?? null,
+          size: info.size,
+          created_at: new Date().toISOString()
+        });
+        await writeManifest(outputDir, manifest);
+      }
+      return createActionResult({
+        success: true,
+        observation: `Registered ${kind} artifact: ${filePath}${alreadyRegistered ? " (already registered)" : ""}`,
+        metadata: { tool_id: "register_artifact", path: filePath, kind }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `register_artifact failed: ${error.message}`,
+        metadata: { tool_id: "register_artifact", path: filePath }
+      });
+    }
+  }
+};
+
+export const RESOLVE_OUTPUT_PATH_TOOL = {
+  id: "resolve_output_path",
+  name: "Resolve Output Path",
+  description: "Resolve a filename to the full path in the UCA default output directory (from Settings).",
+  parameters: ACTION_TOOL_SCHEMAS.resolve_output_path,
+  risk_level: "low",
+  required_capabilities: [],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const filename = String(args.filename ?? "").trim();
+    if (!filename) return createActionResult({ success: false, observation: "filename required" });
+    const outputDir = resolveDefaultOutputDir(ctx);
+    const resolved = path.join(outputDir, filename);
+    await mkdir(outputDir, { recursive: true });
+    return createActionResult({
+      success: true,
+      observation: `Resolved output path: ${resolved}`,
+      metadata: { tool_id: "resolve_output_path", path: resolved, outputDir }
+    });
+  }
+};
+
 export const BUILTIN_ACTION_TOOLS = Object.freeze([
   OPEN_URL_TOOL,
   WEB_SEARCH_TOOL,
@@ -1123,5 +1503,14 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   WEB_SEARCH_FETCH_TOOL,
   WRITE_FILE_TOOL,
   RUN_SCRIPT_TOOL,
-  GENERATE_DOCUMENT_TOOL
+  GENERATE_DOCUMENT_TOOL,
+  // UCA-053: File Discovery & Artifact Verification
+  LIST_FILES_TOOL,
+  GLOB_FILES_TOOL,
+  FIND_RECENT_FILES_TOOL,
+  GET_LATEST_ARTIFACT_TOOL,
+  STAT_FILE_TOOL,
+  VERIFY_FILE_EXISTS_TOOL,
+  REGISTER_ARTIFACT_TOOL,
+  RESOLVE_OUTPUT_PATH_TOOL
 ]);

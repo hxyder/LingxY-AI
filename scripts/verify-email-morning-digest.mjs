@@ -31,6 +31,7 @@ const configStore = {
 const service = createServiceBootstrap({
   configStore,
   paths: {
+    baseDir: tempRoot,
     outputsDir,
     dataDir
   }
@@ -76,7 +77,7 @@ const digestText = await readFile(result.digestPath, "utf8");
 assert.equal(digestText.includes("昨日邮件汇总"), true);
 assert.equal(digestText.includes("需要回复"), true);
 
-const notificationsDir = path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "UCA", "notifications");
+const notificationsDir = path.join(tempRoot, "notifications");
 const candidates = (await readdir(notificationsDir)).filter((name) => name.startsWith("notification-") && name.endsWith(".json"));
 assert.equal(candidates.length > 0, true);
 

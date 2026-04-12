@@ -329,10 +329,12 @@ assert.equal(categorizedSchedule.lead_time_ms, null);
 
 // Reminder watcher — direct tick invocation
 let notifiedBody = null;
+let notifiedNavigate = null;
 const testNotifyTool = {
   id: "notify",
   async execute(args) {
     notifiedBody = args.body;
+    notifiedNavigate = args.navigate ?? null;
     return { success: true, observation: "ok" };
   }
 };
@@ -355,6 +357,8 @@ await watcher.tick();
 assert.ok(notifiedBody, "reminder watcher should have fired a notification");
 assert.match(notifiedBody, /待办/);   // userTodo → "你有一项待办"
 assert.match(notifiedBody, /Morning standup/);
+assert.equal(notifiedNavigate?.tabId, "schedules");
+assert.equal(notifiedNavigate?.scheduleId, categorizedSchedule.schedule_id);
 
 // After tick, reminder_sent_at should be stamped
 const afterReminder = runtime.store.getSchedule(categorizedSchedule.schedule_id);

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { createActionToolRegistry } from "../../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { validateToolCall } from "./tool-call-validator.mjs";
+import { extractFirstTier0Action, hasCompoundIntent } from "../../core/router/fast-path-router.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -152,11 +153,69 @@ function buildHistoryString(transcript) {
   }).join("\n");
 }
 
+/**
+ * UCA-054: Build a proper multi-turn messages array that injects tool
+ * observations as actual message turns (not just system-prompt text).
+ *
+ * Pattern (ReAct: Thought → Action → Observation):
+ *   user:      original request
+ *   assistant: {"tool": "web_search_fetch", "args": {...}}
+ *   user:      [Tool result] <observation text>
+ *   assistant: {"tool": "..."} | {"final": "..."}
+ *   ...
+ *
+ * The LLM genuinely sees each observation before it decides the next step,
+ * eliminating the "LLM answers from memory without calling tools" failure mode.
+ */
+function buildConversationMessages(userCommand, transcript) {
+  const messages = [{ role: "user", content: userCommand }];
+
+  for (const entry of transcript) {
+    if (entry.type === "tool_result") {
+      // Represent the assistant's tool call decision
+      messages.push({
+        role: "assistant",
+        content: JSON.stringify({ tool: entry.tool, args: entry.args ?? {} })
+      });
+      // Inject the actual observation as a user turn (standard ReAct convention)
+      const successNote = entry.success === false
+        ? "\n[IMPORTANT: This tool call FAILED. Do NOT claim success. You must handle the failure.]"
+        : "";
+      messages.push({
+        role: "user",
+        content: `[Tool observation: ${entry.tool}]\n${entry.observation ?? "(no result)"}${successNote}`
+      });
+    } else if (entry.type === "tool_denied") {
+      messages.push({
+        role: "assistant",
+        content: JSON.stringify({ tool: entry.tool, args: {} })
+      });
+      messages.push({
+        role: "user",
+        content: `[Tool denied: ${entry.tool}] Reason: ${entry.reason ?? "user denied"}`
+      });
+    } else if (entry.type === "validation_error") {
+      messages.push({
+        role: "user",
+        content: `[Validation error for ${entry.tool}]: ${entry.error ?? "invalid arguments"}`
+      });
+    }
+  }
+
+  return messages;
+}
+
 async function llmPlanner({ task, transcript, tools, iteration }) {
   // dynamic import to avoid circular dep
   const deterministic = planDeterministicToolCall(task.user_command);
   if (deterministic) return deterministic;
-  if (!transcript.some((entry) => entry.tool === "web_search_fetch") && isSearchOrNewsRequest(task.user_command)) {
+
+  // UCA-054/039: Enforce web search for current-data requests before trying LLM.
+  // Both explicit TaskSpec flag and heuristic text detection trigger this.
+  const needsCurrentData = task.task_spec?.needs_current_web_data === true
+    || isSearchOrNewsRequest(task.user_command);
+  const searchAlreadyCalled = transcript.some((entry) => entry.tool === "web_search_fetch");
+  if (needsCurrentData && !searchAlreadyCalled) {
     return {
       type: "tool_call",
       tool: "web_search_fetch",
@@ -174,45 +233,51 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
   }
 
   const toolList = tools.map((t) => `- ${t.id}: ${t.description ?? ""}`).join("\n");
-  const history = buildHistoryString(transcript);
+  const maxIter = 8;
 
-  const systemPrompt = `You are a desktop action agent. You can call tools to help the user, then synthesize the results into a final answer.
+  // UCA-039: Inject a hard requirement when the task spec flags current web data as needed.
+  const needsCurrentDataInstruction = (task.task_spec?.needs_current_web_data === true)
+    ? "\n\nREQUIRED: You MUST call web_search_fetch before answering. Do NOT answer from memory for current-events questions. Failure to call web_search_fetch will result in a partial_success downgrade."
+    : "";
+
+  // UCA-063: Override instruction when refusal retry is active.
+  const forceToolInstruction = task.__forceToolUse
+    ? "\n\nCRITICAL OVERRIDE: You MUST call a tool. Saying 'I cannot operate your computer' or any similar refusal is STRICTLY FORBIDDEN. You have tools available — use them. The user is on a desktop computer and you have launch_app, open_url, and other action tools."
+    : "";
+
+  const systemPrompt = `You are a desktop action agent. Call tools to help the user, then synthesize results into a final answer.
 
 Available tools:
 ${toolList}
 
-Tool argument schemas:
-- launch_app: { "app": "outlook" | "word" | "excel" | "powerpoint" | "notepad" | "calc" | "edge" | "chrome" | "firefox" | "vscode" | "paint" }
+Key tool schemas:
+- launch_app: { "app": "<app name>" }
 - open_url: { "url": "https://..." }
-- web_search: { "query": "search terms" }   // opens Google in browser, does NOT return content
-- web_search_fetch: { "query": "search terms", "recency": "day" | "week" | "month" | "year" } // returns snippets; use for latest/current/news searches
+- web_search_fetch: { "query": "...", "recency": "day"|"week"|"month"|"year" } — returns text snippets
 - open_file: { "path": "C:\\\\path\\\\to\\\\file" }
-- compose_email: { "to": "addr@x.com" (optional), "subject": "..." (optional), "body": "..." }
+- verify_file_exists: { "path": "..." } — check before claiming a file was created
+- find_recent_files: { "kind": "pptx"|"docx"|"xlsx"|"pdf", "limit": 5 }
+- compose_email: { "to": "...", "subject": "...", "body": "..." }
 - notify: { "title": "...", "body": "..." }
 - copy_to_clipboard: { "content": "..." }
-- reveal_in_explorer: { "path": "C:\\\\..." }
 
 Decision rules:
-1. If the user wants you to PERFORM an action (open, launch, copy, notify), call the matching tool.
-2. If the user asks for latest/current/recent information, news, updates, Chinese "新闻/消息/最新/最近/动态/资讯/热点", or explicitly asks to search, call web_search_fetch and include recency when appropriate.
-3. After you have already executed a tool that completes the user's request, return {"final": "..."} acknowledging the action.
-4. Never call the same tool twice with the same arguments — if a step is done, move on or finish.
-5. When summarizing web_search_fetch results, format the final answer with short Chinese sections such as "要点", "来源", and "还需要确认", and keep links readable.
-6. Maximum 4 tool calls per task. Prefer ending early.
-
-Respond ONLY with a single JSON object, no markdown, no code fences:
-- To call a tool: {"tool": "tool_id", "args": { ... }}
-- To finish:    {"final": "your reply to the user"}
-
-User request: ${task.user_command}
-
-History so far:
-${history}
-
-This is iteration ${iteration + 1}/4. What's the next step?`;
+1. PERFORM actions (open, launch, copy, notify) → call the matching tool immediately.
+2. Latest/current information requests → call web_search_fetch FIRST; do NOT answer from memory.
+3. After a tool succeeds, use its observation to formulate the final answer.
+4. If a tool returns success:false, acknowledge the failure — do NOT claim success.
+5. Never repeat the exact same tool+args you already tried.
+6. Maximum ${maxIter} tool calls. End early when the task is clearly done.
+${needsCurrentDataInstruction}${forceToolInstruction}
+Respond ONLY with a single JSON object (no markdown, no code fences):
+- Call a tool: {"tool": "tool_id", "args": { ... }}
+- Finish:      {"final": "your reply to the user"}`;
 
   try {
     let resultText = "";
+    // UCA-054: Use proper multi-turn messages with observations injected as turns
+    const conversationMessages = buildConversationMessages(task.user_command, transcript);
+
     if (provider.kind === "anthropic") {
       const r = await fetch(`${provider.baseUrl}/v1/messages`, {
         method: "POST",
@@ -221,7 +286,7 @@ This is iteration ${iteration + 1}/4. What's the next step?`;
           model: provider.model,
           max_tokens: 1024,
           system: systemPrompt,
-          messages: [{ role: "user", content: task.user_command }]
+          messages: conversationMessages
         })
       });
       const data = await r.json();
@@ -235,7 +300,7 @@ This is iteration ${iteration + 1}/4. What's the next step?`;
           max_tokens: 1024,
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: task.user_command }
+            ...conversationMessages
           ]
         })
       });
@@ -264,6 +329,22 @@ This is iteration ${iteration + 1}/4. What's the next step?`;
   }
 }
 
+// UCA-063: Detect AI refusal text so we can force a retry with tool calls.
+// Generic — catches any refusal regardless of app/action/language.
+const REFUSAL_PATTERNS = [
+  /我无法.{0,15}(直接|帮你|为你)?操作/,
+  /我不能.{0,15}(直接|帮你|为你)?操作/,
+  /I\s+(cannot|can't|am\s+unable\s+to).{0,25}(operate|control|access|open|launch|run)/i,
+  /无法直接.{0,15}(为你|帮你|操作)/,
+  /需要你.{0,15}(手动|自行|自己)/,
+  /请你?.{0,10}(手动|自行|自己).{0,15}(打开|启动|操作)/,
+  /please.{0,15}(manually|yourself).{0,15}(open|launch|start)/i
+];
+
+function isRefusalText(text) {
+  return REFUSAL_PATTERNS.some((p) => p.test(String(text ?? "")));
+}
+
 export function createToolUsingExecutorScaffold() {
   return {
     id: "tool_using",
@@ -290,6 +371,41 @@ export function createToolUsingExecutorScaffold() {
           runtime,
           planner: llmPlanner
         });
+
+        // UCA-039: Verify that web_search_fetch was actually called when the task
+        // spec requires current web data. If the LLM skipped the search and answered
+        // from memory, downgrade to partial_success so the user knows the result
+        // may not reflect the latest information.
+        const searchWasRequired = task.task_spec?.needs_current_web_data === true
+          || isSearchOrNewsRequest(task.user_command);
+        const searchWasCalled = (result.transcript ?? []).some(
+          (entry) => entry.type === "tool_result" && entry.tool === "web_search_fetch"
+        );
+        if (result.status === "success" && searchWasRequired && !searchWasCalled) {
+          const warningNote = "\n\n[UCA] 注意：未能确认调用了网络搜索，结果可能不是最新的。";
+          yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
+          yield { event_type: "inline_result", payload: { text: (result.final_text || "Done.") + warningNote } };
+          yield { event_type: "partial_success", payload: { text: (result.final_text || "Done.") + warningNote } };
+          return;
+        }
+
+        // UCA-063: Refusal guard — if LLM returned a refusal text but had tools
+        // available and the task goal is action-oriented, force a retry with an
+        // explicit system-level override. Generic: works for any app/action.
+        const isActionGoal = ["launch_and_act", "open_or_reveal_file", "transform_existing_file"]
+          .includes(task.task_spec?.goal);
+        const noToolsUsed = !(result.transcript ?? []).some((e) => e.type === "tool_result");
+        if (result.status === "success" && isActionGoal && noToolsUsed && isRefusalText(result.final_text)) {
+          // Inject override and retry once with llmPlanner
+          task.__forceToolUse = true;
+          const retryResult = await runToolAgentLoop({ task, runtime, maxIterations: 4, planner: llmPlanner });
+          task.__forceToolUse = false;
+          const retryText = retryResult.final_text || "Done.";
+          yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
+          yield { event_type: "inline_result", payload: { text: retryText } };
+          yield { event_type: retryResult.status === "success" ? "success" : "partial_success", payload: { text: retryText } };
+          return;
+        }
 
         if (result.status === "success") {
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
@@ -353,15 +469,47 @@ async function resolveInteractiveConfirmation({ runtime, task, tool, args, risk 
 export async function runToolAgentLoop({
   task,
   runtime,
-  maxIterations = 4,
-  planner = runtime.toolPlanner ?? defaultPlanner
+  maxIterations = 8,
+  planner = null  // resolved below
 }) {
   const registry = runtime.actionToolRegistry ?? createActionToolRegistry(BUILTIN_ACTION_TOOLS);
   const transcript = [];
   const seenCalls = new Set(); // dedupe identical tool+args to prevent infinite loops
 
+  // UCA-065/066: Choose planner based on command structure.
+  // - Compound intent ("open X, do Y"): force llmPlanner so both steps are handled.
+  // - Otherwise: use runtime override, then defaultPlanner.
+  // This ensures "打开Outlook写邮件" always uses llmPlanner, never defaultPlanner
+  // (which exits after one tool call).
+  const resolvedPlanner = planner
+    ?? (hasCompoundIntent(task.user_command) ? llmPlanner : null)
+    ?? runtime.toolPlanner
+    ?? defaultPlanner;
+
+  // UCA-066: Tier 0 in-loop optimisation.
+  // On the first iteration, if the command starts with a deterministic action
+  // (launch app / open URL), execute it immediately without calling the LLM.
+  // The LLM then only needs to handle what comes AFTER (e.g. drafting an email).
+  // This saves 2-5s per compound action and works for ANY app, not just Outlook.
+  if (resolvedPlanner !== defaultPlanner) {
+    const tier0 = extractFirstTier0Action(task.user_command);
+    if (tier0) {
+      const toolContext = { ...(runtime.toolContext ?? {}), outputDir: runtime.toolOutputDir, runtime, task };
+      const t0result = await registry.call(tier0.tool, tier0.args, toolContext);
+      runtime.emitTaskEvent?.("tool_call_completed", { tool_id: tier0.tool, success: t0result.success });
+      transcript.push({
+        type: "tool_result",
+        tool: tier0.tool,
+        args: tier0.args,
+        success: t0result.success,
+        observation: t0result.observation ?? ""
+      });
+      seenCalls.add(`${tier0.tool}::${JSON.stringify(tier0.args)}`);
+    }
+  }
+
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
-    const decision = await planner({
+    const decision = await resolvedPlanner({
       task,
       transcript,
       tools: registry.list(),
@@ -537,9 +685,13 @@ export async function runToolAgentLoop({
       success: result.success,
       observation: result.observation
     });
+    // UCA-054: Record args and success so buildConversationMessages can inject
+    // proper observations into the next LLM turn (ReAct pattern)
     transcript.push({
       type: "tool_result",
       tool: tool.id,
+      args: decision.args,
+      success: result.success,
       observation: result.observation
     });
 

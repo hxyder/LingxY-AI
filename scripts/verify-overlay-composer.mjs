@@ -39,7 +39,9 @@ assert.equal(overlayJs.includes("showContextReceivedBubble"), true);
 assert.equal(overlayJs.includes("showToast"), true);
 assert.equal(overlayJs.includes("handleUserSend"), true);
 assert.equal(overlayJs.includes("createScheduleFromText"), true);
-assert.equal(overlayJs.includes("Creating reminder"), true);
+assert.equal(overlayJs.includes("showScheduleConfirmCard"), true);
+assert.equal(overlayJs.includes("syncProjectStoreFromService"), true);
+assert.equal(overlayJs.includes("/projects/store"), true);
 assert.equal(overlayJs.includes("buildScheduleActionFromText"), true);
 assert.equal(overlayJs.includes("parseScheduleTriggerFromText"), true);
 assert.equal(overlayJs.includes("onWindowFocused"), true);
@@ -85,6 +87,7 @@ assert.equal(overlayJs.includes("scheduleLeadTimeSelect"), true);
 assert.equal(overlayJs.includes("STORAGE_KEY_V3"), true);
 assert.equal(overlayJs.includes("projectStore"), true);
 assert.equal(overlayJs.includes("loadProjectStore"), true);
+assert.equal(overlayJs.includes("renderConversationFromState"), true);
 assert.equal(overlayJs.includes("switchConversation"), true);
 assert.equal(overlayJs.includes("switchProject"), true);
 assert.equal(overlayJs.includes("createProject"), true);
@@ -130,5 +133,7 @@ assert.equal(notificationHtml.includes("UCA Notification"), true);
 
 const notificationJs = await read("src/desktop/renderer/notification.js");
 assert.equal(notificationJs.includes("onNotificationReceived"), true);
+assert.equal(notificationJs.includes("lastPayload?.navigate"), true);
+assert.equal(notificationJs.includes("navigateConsole"), true);
 
 console.log("Overlay composer verification passed.");

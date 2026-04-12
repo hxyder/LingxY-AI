@@ -20,6 +20,10 @@ const consoleHtml = await read("src/desktop/renderer/console.html");
 assert.equal(consoleHtml.includes("UCA Console"), true);
 assert.equal(consoleHtml.includes("Tasks"), true);
 assert.equal(consoleHtml.includes("Settings"), true);
+assert.equal(consoleHtml.includes("data-tab=\"projects\""), true);
+assert.equal(consoleHtml.includes("panel-projects"), true);
+assert.equal(consoleHtml.includes("projectList"), true);
+assert.equal(consoleHtml.includes("projectConversationList"), true);
 assert.equal(consoleHtml.includes("DAG Workflow"), true);
 assert.equal(consoleHtml.includes("Privacy & Security"), true);
 assert.equal(consoleHtml.includes("Audit Log"), true);
@@ -36,6 +40,11 @@ assert.equal(consoleJs.includes("loadAllArtifacts"), true);
 assert.equal(consoleJs.includes("renderFilesList"), true);
 assert.equal(consoleJs.includes("selectFileArtifact"), true);
 assert.equal(consoleJs.includes("CODE_EXTENSIONS"), true);
+assert.equal(consoleJs.includes("PROJECT_STORE_KEY"), true);
+assert.equal(consoleJs.includes("syncConsoleProjectStoreFromService"), true);
+assert.equal(consoleJs.includes("/projects/store"), true);
+assert.equal(consoleJs.includes("renderProjectsWorkspace"), true);
+assert.equal(consoleJs.includes("projectCreateForm"), true);
 
 // UCA-048: console settings has output path + feature toggles
 assert.equal(consoleHtml.includes("outputDirInput"), true);

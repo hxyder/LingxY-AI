@@ -103,13 +103,14 @@
 - 开始日期：2026-04-11
 - 完成日期：2026-04-11
 - 实际新增内容：
-  - `src/service/core/feature-flags.mjs`（新文件）：`FEATURE_REGISTRY`（10 项）、`isFeatureEnabled`、`requireFeature`、`listFeatureStates`、`resolveDefaultOutputDir` — fail-open 策略（config 读取失败 → 默认启用）
+  - `src/service/core/feature-flags.mjs`（新文件）：`FEATURE_REGISTRY`（10 项）、`isFeatureEnabled`、`requireFeature`、`listFeatureStates`、`resolveDefaultOutputDir` — 默认全开 + fail-open 策略（config 读取失败 → 默认启用）
   - `src/service/core/http-server.mjs`：新增 `POST /config/output` + `POST /config/features` 端点；`GET /health` 响应新增 `config.output` + `config.features` 供 Console 读取
   - `src/service/core/context-submission.mjs`：`createOutputDirForTask` 新增 `configStore.output.defaultDir` 读取分支
   - `src/desktop/renderer/console.html`：Settings panel 新增"Default Output Path"分组（输入 + 使用默认按钮 + 保存）+ "Feature Toggles"分组（toggle matrix + 锚点 `id="features.<id>"` + 保存）
   - `src/desktop/renderer/console.js`：`FEATURE_DEFINITIONS` 常量 + `renderFeatureToggles` + `renderOutputDir` + save 事件处理
   - `src/desktop/renderer/overlay.js`：`checkFeatureGate(featureId)` helper — 被禁用时 show pop bubble + "打开设置" 按钮调 `navigateConsole({ tabId:"settings", anchor:"features.<id>" })`；translate quick-action 已挂 `featureId: "translation"`
-- feature flag 清单：translation / voice_input / email_monitoring(default off) / morning_digest(default off) / inline_web_result / active_window_probe / web_search_fetch / multi_intent_decomposition / schedule_reminders / projects_and_history
+  - email monitoring / morning digest / active window probe 已接入 feature gate：关闭后对应轮询、digest、活动窗口探测入口会短路
+- feature flag 清单：translation / voice_input / email_monitoring / morning_digest / inline_web_result / active_window_probe / web_search_fetch / multi_intent_decomposition / schedule_reminders / projects_and_history（默认全部启用，用户可在 Settings 关闭）
 - 默认输出路径平台行为：`configStore.output.defaultDir` → 用户设置的绝对路径；未设时 → `~/Documents/UCA`；用户命令含"桌面" → `~/Desktop/UCA/<taskId>`（优先级最高）
 - gate 校验失败策略：configStore 读取异常 → fail-open（允许功能运行）；feature 未注册 → fail-open
 - 验证结果：全部 31 个 verify 脚本通过；verify-service-core 新增 FEATURE_REGISTRY / isFeatureEnabled / requireFeature 断言；verify-desktop-renderer 新增 Settings UI 元素断言

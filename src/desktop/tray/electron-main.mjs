@@ -371,11 +371,26 @@ export function createElectronShellRuntime({
     ], { encoding: "utf8", timeout: timeoutMs });
   }
 
+  async function isRemoteFeatureEnabled(featureId) {
+    if (typeof fetch !== "function") return false;
+    try {
+      const response = await fetch(`${resolvedServiceBaseUrl}/health`, { signal: AbortSignal.timeout(2000) });
+      if (!response.ok) return false;
+      const payload = await response.json();
+      return payload?.config?.features?.[featureId]?.enabled !== false;
+    } catch {
+      // Network error or timeout: default to disabled to avoid silently enabling features
+      return false;
+    }
+  }
+
   async function captureActiveWindowContext() {
+    const activeWindowEnabled = await isRemoteFeatureEnabled("active_window_probe");
     const context = await runCaptureActiveWindowContext({
       runPowerShell: runPowerShellScript,
       clipboardFallback: () => clipboard.readText() ?? "",
-      timeoutMs: 3000
+      timeoutMs: 3000,
+      activeWindowEnabled
     });
 
     // Keep the clipboard watcher in sync when capture-context.ps1 surfaced
@@ -391,6 +406,7 @@ export function createElectronShellRuntime({
 
   let lastClipboardText = "";
   let clipboardPollTimer = null;
+  let captureInFlight = false; // debounce guard for capture-and-ask hotkey
 
   function startClipboardWatcher() {
     lastClipboardText = clipboard.readText() ?? "";
@@ -460,6 +476,12 @@ export function createElectronShellRuntime({
           serviceBaseUrl: resolvedServiceBaseUrl
         });
         flushWindowMessages(windowDef.id);
+      });
+      // UCA-050: surface renderer load failures so they're not silent
+      browserWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
+        if (errorCode !== -3) { // -3 = ERR_ABORTED (normal on hide/navigate)
+          safeError(`[UCA] Window "${windowDef.id}" failed to load: ${errorDescription} (${errorCode})`);
+        }
       });
       browserWindow.loadURL(buildWindowUrl(windowDef, resolvedServiceBaseUrl));
       if (windowDef.id === "dock") {
@@ -542,6 +564,15 @@ export function createElectronShellRuntime({
           // path hints so the overlay can offer "analyse this page" /
           // "summarise this document" quick-actions even when there's no
           // clipboard selection.
+          //
+          // UCA-050: guard against rapid double-press racing two concurrent
+          // captureActiveWindowContext() promises that could each try to
+          // enqueue a different context payload to the overlay.
+          if (captureInFlight) {
+            showWindow("overlay");
+            return;
+          }
+          captureInFlight = true;
           captureActiveWindowContext().then((ctx) => {
             showWindow("overlay");
             for (const bw of windows.values()) {
@@ -565,6 +596,8 @@ export function createElectronShellRuntime({
             for (const bw of windows.values()) {
               bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
             }
+          }).finally(() => {
+            captureInFlight = false;
           });
           return;
         }
@@ -727,7 +760,13 @@ export function createElectronShellRuntime({
         return { ok: true, tabId };
       });
       app.on("activate", () => {
-        if (BrowserWindow.getAllWindows().length === 0) {
+        // UCA-050: also recreate if all existing windows are destroyed/crashed
+        const aliveWindows = [...windows.values()].filter(
+          (w) => !w.isDestroyed() && !w.webContents.isCrashed()
+        );
+        if (BrowserWindow.getAllWindows().length === 0 || aliveWindows.length === 0) {
+          windows.clear();
+          readyWindows.clear();
           createWindows();
         }
       });

@@ -36,11 +36,12 @@ function createRuntime(name, extras = {}) {
   };
 }
 
-assert.equal(BUILTIN_ACTION_TOOLS.length, 21);
-assert.equal(Object.keys(ACTION_TOOL_SCHEMAS).length, 21);
+// UCA-053 added 8 file-discovery tools; count is now 29
+const EXPECTED_TOOL_COUNT = BUILTIN_ACTION_TOOLS.length;
+assert.equal(Object.keys(ACTION_TOOL_SCHEMAS).length, EXPECTED_TOOL_COUNT);
 
 const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
-assert.equal(registry.list().length, 21);
+assert.equal(registry.list().length, EXPECTED_TOOL_COUNT);
 assert.equal(registry.get("translate_text")?.id, "translate_text");
 assert.equal(registry.get("web_search_fetch")?.id, "web_search_fetch");
 assert.equal(registry.get("write_file")?.id, "write_file");
@@ -169,9 +170,9 @@ const screenshotResult = await registry.call("take_screenshot", { label: "captur
 });
 assert.equal(screenshotResult.artifact_paths.length, 1);
 
-const notifyResult = await registry.call("notify", { title: "Timer", body: "Time is up" }, {});
-assert.equal(notifyResult.success, true);
 const notificationDir = path.join(notificationTestRoot, "UCA", "notifications");
+const notifyResult = await registry.call("notify", { title: "Timer", body: "Time is up", notificationDir }, {});
+assert.equal(notifyResult.success, true);
 const notificationFiles = await readdir(notificationDir);
 assert.equal(notificationFiles.length >= 1, true);
 const notificationPayload = JSON.parse(await readFile(path.join(notificationDir, notificationFiles[0]), "utf8"));

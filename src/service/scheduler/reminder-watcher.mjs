@@ -60,11 +60,18 @@ function buildReminderText(schedule, nowMs) {
 export function createReminderWatcher({ runtime, tickMs = DEFAULT_TICK_MS } = {}) {
   let timer = null;
 
-  async function sendNotification(title, body) {
+  async function sendNotification(title, body, schedule) {
     const notifyTool = runtime.actionToolRegistry?.get?.("notify");
     if (notifyTool) {
       try {
-        await notifyTool.execute({ title, body }, { runtime });
+        await notifyTool.execute({
+          title,
+          body,
+          navigate: {
+            tabId: "schedules",
+            scheduleId: schedule?.schedule_id ?? null
+          }
+        }, { runtime });
       } catch { /* non-fatal */ }
     }
   }
@@ -77,7 +84,7 @@ export function createReminderWatcher({ runtime, tickMs = DEFAULT_TICK_MS } = {}
       if (!shouldRemind(schedule, nowMs)) continue;
 
       const body = buildReminderText(schedule, nowMs);
-      await sendNotification("UCA 提醒", body);
+      await sendNotification("UCA 提醒", body, schedule);
 
       // Stamp reminder_sent_at to prevent duplicate reminders for this cycle.
       // After the schedule fires and next_run_at advances, reminder_sent_at

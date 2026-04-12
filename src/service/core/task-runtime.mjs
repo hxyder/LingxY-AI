@@ -124,29 +124,37 @@ function aggregateCompositeStatus(childTasks) {
   }
 
   const statuses = childTasks.map((task) => task.status);
-  const finished = statuses.filter((status) => ["success", "failed", "cancelled", "partial_success"].includes(status)).length;
-  const progress = Math.min(1, finished / childTasks.length);
+  // UCA-056: Progress counts only successful/partial outcomes, NOT failures.
+  // A failed subtask should show as failure_count in the UI, not inflate progress.
+  const succeeded = statuses.filter((s) => s === "success" || s === "partial_success").length;
+  const failed = statuses.filter((s) => s === "failed" || s === "cancelled").length;
+  const total = childTasks.length;
+  const progress = Math.min(1, succeeded / total);
 
+  // UCA-056: Include failure_count in all return values so UI can show "2/5 failed"
   if (statuses.every((status) => status === "success")) {
-    return { status: "success", sub_status: "completed", progress: 1 };
+    return { status: "success", sub_status: "completed", progress: 1, failure_count: 0 };
   }
 
   if (statuses.some((status) => status === "failed" || status === "cancelled")) {
-    return { status: "partial_success", sub_status: "completed_with_warnings", progress };
+    return { status: "partial_success", sub_status: "completed_with_warnings", progress, failure_count: failed };
   }
 
   if (statuses.some((status) => status === "partial_success")) {
-    return { status: "partial_success", sub_status: "completed_with_warnings", progress };
+    return { status: "partial_success", sub_status: "completed_with_warnings", progress, failure_count: failed };
   }
 
   if (statuses.some((status) => ["running", "queued", "cancelling"].includes(status))) {
-    return { status: "running", sub_status: "composite_running", progress };
+    return { status: "running", sub_status: "composite_running", progress, failure_count: failed };
   }
 
-  return { status: "running", sub_status: "composite_pending", progress };
+  return { status: "running", sub_status: "composite_pending", progress, failure_count: failed };
 }
 
 export function refreshCompositeParentStatus(runtime, parentTaskId) {
+  // UCA-056: Re-read parent task inside this call to avoid stale state from
+  // concurrent child completions. If another child already updated the parent
+  // between our read and write, we just emit the latest state (eventual consistency).
   const parentTask = runtime.store.getTask(parentTaskId);
   if (!parentTask) return null;
   const childTasks = listChildTasks(runtime, parentTask);
@@ -155,7 +163,8 @@ export function refreshCompositeParentStatus(runtime, parentTaskId) {
   updateTask(runtime, parentTask, {
     status: aggregate.status,
     sub_status: aggregate.sub_status,
-    progress: aggregate.progress
+    progress: aggregate.progress,
+    failure_count: aggregate.failure_count ?? 0
   }, true);
   return {
     parentTask,
@@ -231,6 +240,10 @@ export function applyExecutorEvent(runtime, task, event) {
   }
 
   if (event.type === "success") {
+    // UCA-056: Guard against duplicate success events — executor should only succeed once
+    if (task.status === "success") {
+      return; // already succeeded, ignore duplicate
+    }
     updateTask(runtime, task, {
       status: "success",
       sub_status: "completed",
@@ -239,6 +252,9 @@ export function applyExecutorEvent(runtime, task, event) {
   }
 
   if (event.type === "partial_success") {
+    if (task.status === "success") {
+      return; // don't downgrade a success to partial_success retroactively
+    }
     updateTask(runtime, task, {
       status: "partial_success",
       sub_status: "completed_with_warnings",
@@ -289,8 +305,10 @@ export function markTaskFailed(runtime, task, errorLike) {
 }
 
 export function markTaskSucceeded(runtime, task) {
+  const freshTask = runtime.store.getTask(task.task_id) ?? task;
+  Object.assign(task, freshTask);
   task.executor_history = [
-    ...task.executor_history,
+    ...(task.executor_history ?? []),
     {
       executor: task.executor,
       outcome: task.status,

@@ -389,6 +389,7 @@
           grid-template-columns: 1fr;
         }
         .history-layout,
+        .projects-layout,
         .advanced-grid {
           grid-template-columns: 1fr;
         }
@@ -414,6 +415,7 @@
       <button class="tab-btn active" data-tab="tasks">Tasks</button>
       <button class="tab-btn" data-tab="files">Files</button>
       <button class="tab-btn" data-tab="history">History</button>
+      <button class="tab-btn" data-tab="projects">Projects</button>
       <button class="tab-btn" data-tab="schedules">Schedules</button>
       <button class="tab-btn" data-tab="advanced">Advanced</button>
       <button class="tab-btn" data-tab="settings">Settings</button>
@@ -534,6 +536,37 @@
         <div class="stack">
           <strong style="font-size:13px;">Preview</strong>
           <pre id="historyPreview" class="history-preview muted">No results yet.</pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════
+         TAB: PROJECTS
+         ═══════════════════════════════════════ -->
+    <section id="panel-projects" class="tab-panel">
+      <div class="projects-layout" style="display:grid;grid-template-columns:280px minmax(0,1fr) minmax(260px,0.8fr);gap:16px;max-width:1100px;">
+        <div class="stack">
+          <div class="row">
+            <strong style="font-size:13px;">Projects</strong>
+            <span id="projectCount" class="muted" style="font-size:12px;">0</span>
+          </div>
+          <form id="projectCreateForm" class="row" style="gap:8px;">
+            <input id="projectNameInput" type="text" placeholder="New project name">
+            <button type="submit" class="secondary">Create</button>
+          </form>
+          <span id="projectState" class="muted" style="font-size:12px;"></span>
+          <div id="projectList" class="item-list"></div>
+        </div>
+        <div class="stack">
+          <div class="row">
+            <strong style="font-size:13px;">Conversations</strong>
+            <span id="projectConversationCount" class="muted" style="font-size:12px;">0</span>
+          </div>
+          <div id="projectConversationList" class="item-list"></div>
+        </div>
+        <div class="stack">
+          <strong style="font-size:13px;">Preview</strong>
+          <pre id="projectConversationPreview" class="history-preview muted">Select a conversation.</pre>
         </div>
       </div>
     </section>

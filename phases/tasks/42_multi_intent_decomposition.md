@@ -19,9 +19,9 @@
 ## 4. 交付产物
 
 - **Intent decomposer**：
-  - 基于规则 + LLM 的两段分解
-  - 规则层：用句号 / 逗号 / 连词（然后/接着/再/并/and/then）切分；对每段跑 `routeIntent`，如果产出的 intent_tags 不同则视为一个独立子任务
-  - LLM 层（深度分解）：对复合句**直接调 UCA-049 的 agentic planner**，让它产出 JSON 结构 `{ subtasks: [{command, suggested_executor, suggested_formats, dependency_idx}] }`。禁止自建 tool-calling 回路或 prompt 模板 —— 必须通过 `executors/agentic/planner.mjs` 的公开接口，这样 provider 切换（DeepSeek / Kimi CLI / Claude / Ollama）对分解器也自动生效
+  - AI-first 分解：默认先调用 UCA-049 的 agentic planner（或测试注入的 `runtime.intentDecomposer`），让模型判断一句话到底是单一产物请求还是多个独立子任务。
+  - 规则层只保留为显式 `mode: "rules_only"` 的测试/兜底模式；默认路径不再用逗号、顿号、"并且/然后"直接拆任务，避免把"总结趋势，并生成 PPT，加图表"错拆成多个不相干任务。
+  - LLM 层（深度分解）：产出 JSON 结构 `{ subtasks: [{command, suggested_executor, suggested_formats, dependency_idx}] }`。禁止自建 tool-calling 回路 —— 必须通过 `executors/agentic/planner.mjs` 的公开接口，这样 provider 切换（DeepSeek / Kimi CLI / Claude / Ollama）对分解器也自动生效。
 - **task-runtime.mjs 扩展**：
   - task 记录加 `parent_task_id: string | null`、`child_task_ids: string[]`、`child_index: number | null`
   - `submitCompositeTask({ userCommand, capture, runtime })`：跑 decomposer → 创建 parent task（executor: "composite"）→ 对每个子任务递归调用 `submitBrowserTask` / `submitContextTask`，并把 parent 的 `child_task_ids` 填回
@@ -60,10 +60,10 @@
 
 ## 8.1 实现对齐（2026-04-11）
 
-- 实施方式（全局方案）：在 service core 建立 parent/child task 关系和 composite 提交入口，规则层只做低风险初筛，复杂分解必须调用 UCA-049 的 agentic planner 公开接口；不另建第二套 LLM tool loop。
+- 实施方式（全局方案）：在 service core 建立 parent/child task 关系和 composite 提交入口；默认分解路径 AI-first，复杂分解必须调用 UCA-049 的 agentic planner 公开接口；规则层只作为显式 `rules_only` 测试模式，不再抢在 AI 前面硬切句子。不另建第二套 LLM tool loop。
 - 当前代码对齐点：`src/shared/contracts/uca-models.ts`、`src/service/core/task-runtime.mjs` 和 retry 逻辑已经出现 `parent_task_id`，但它服务于重试/派生任务，不等于 composite 子任务模型；需要在 store、submission、event 汇总和 Console 详情里明确区分 `parent_task_id/child_task_ids/child_index`。本任务依赖 UCA-049 先落 `agentic` executor。
 - 可能需要生成的文件：`src/service/core/router/decomposer.mjs`、必要的 composite submission helper，扩展 `src/service/core/store/*` schema 和 `scripts/verify-service-core.mjs`；如果新增独立验证，可生成 `scripts/verify-multi-intent.mjs`。
-- 实际落地（2026-04-11）：新增 `src/service/core/router/decomposer.mjs`（规则层分解 + agentic planner 调用；支持 `mode` 切换用于测试），新增 `src/service/core/composite-submission.mjs`（parent 任务创建 + child 提交 + 聚合状态），`task-runtime.mjs` 扩展 `child_task_ids / child_index` 并在 child 状态变更时自动汇总 parent 状态，Console/Overlay 支持子任务视图与分解提示，`scripts/verify-service-core.mjs` 增加规则分解的 smoke test。
+- 实际落地（2026-04-11）：新增 `src/service/core/router/decomposer.mjs`（AI-first agentic planner 调用；支持 `runtime.intentDecomposer` 测试注入与 `mode: "rules_only"` 显式规则模式），新增 `src/service/core/composite-submission.mjs`（parent 任务创建 + child 提交 + 聚合状态），`task-runtime.mjs` 扩展 `child_task_ids / child_index` 并在 child 状态变更时自动汇总 parent 状态，Console/Overlay 支持子任务视图与分解提示，`scripts/verify-service-core.mjs` 增加 AI-first 单产物保留与 rules_only 分解 smoke test。
 
 ## 9. 执行记录
 
@@ -71,9 +71,11 @@
 - 执行分支：main
 - 开始日期：2026-04-11
 - 完成日期：2026-04-11
-- 实际新增内容：`decomposer.mjs` 规则切分 + LLM 深度分解入口（复用 agentic planner），composite parent/child 提交入口 + parent 状态聚合，task schema 增加 `child_task_ids / child_index`，Console 子任务列表 + Overlay 分解提示，`verify-service-core` 新增规则分解断言。
-- 验证结果：未运行自动化脚本（未执行 `npm run check`）。
+- 实际新增内容：`decomposer.mjs` AI-first LLM 深度分解入口（复用 agentic planner）+ 显式 rules_only 规则模式，composite parent/child 提交入口 + parent 状态聚合，task schema 增加 `child_task_ids / child_index`，Console 子任务列表 + Overlay 分解提示，`verify-service-core` 新增 AI-first 与 rules_only 双断言。
+- 验证结果：`node scripts/verify-service-core.mjs` 通过；额外 smoke 断言"总结近一年 AI 趋势，并生成 PPT，加图表"在无 runtime 时也保留为单个 agentic/pptx 任务，不再默认拆成 3 个。
+- 2026-04-11 追加修复：
+  - 用户反馈："发给 AI 一个会话，拆解任务错了，相关的东西拆成了 3 个不相干的"。根因是 `decomposer.mjs` 先跑规则切分，逗号/并列短语把同一产物请求拆散；已改为默认 AI-first，规则只在 `rules_only` 测试模式生效。
+  - `routeIntent` 对 `pptx/docx/xlsx/pdf` 等文件产物请求现在即使命中 summarize/translate 这类单步 intent，也升级到 `agentic`，避免"总结并生成 PPT"留在 fast executor。
 - 遗留问题（开工前已识别）：
-  - 规则层会把 "把 A, B, C 翻译成中文" 错拆成三个翻译（实际上是一个列表操作）—— 需要交给 LLM 深度分解判断
   - 子任务之间的依赖关系（例如"先总结再翻译总结结果"）目前靠 `dependency_idx`，但执行器还不会等待依赖完成
 - 交接给下一个任务：

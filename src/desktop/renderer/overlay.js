@@ -116,6 +116,8 @@ const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "
 
 let projectStore = null;
 let conversationState = null;
+let projectStoreRemoteReady = false;
+let projectStoreSyncInFlight = null;
 
 function newConversationId() {
   return `conv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -135,6 +137,96 @@ function ensureDefaultProject() {
   if (!projectStore.projects.some((p) => p.id === DEFAULT_PROJECT_ID)) {
     projectStore.projects.unshift({ id: DEFAULT_PROJECT_ID, name: "默认", color: PROJECT_COLORS[0], createdAt: Date.now(), metadata: {} });
   }
+}
+
+function buildDefaultProjectStore() {
+  return { currentProjectId: DEFAULT_PROJECT_ID, currentConversationId: null, projects: [], conversations: [] };
+}
+
+function normalizeProjectStore(store) {
+  const next = store && typeof store === "object"
+    ? JSON.parse(JSON.stringify(store))
+    : buildDefaultProjectStore();
+  next.projects = Array.isArray(next.projects) ? next.projects.filter((project) => project?.id) : [];
+  next.conversations = Array.isArray(next.conversations) ? next.conversations.filter((conversation) => conversation?.id) : [];
+  next.currentProjectId = next.currentProjectId || DEFAULT_PROJECT_ID;
+  next.currentConversationId = next.currentConversationId ?? null;
+  const previous = projectStore;
+  projectStore = next;
+  ensureDefaultProject();
+  const normalized = projectStore;
+  projectStore = previous;
+  return normalized;
+}
+
+function mergeProjectStores(localStore, remoteStore) {
+  const local = normalizeProjectStore(localStore);
+  const remote = normalizeProjectStore(remoteStore);
+  const projects = new Map();
+  for (const project of [...remote.projects, ...local.projects]) {
+    projects.set(project.id, { ...(projects.get(project.id) ?? {}), ...project });
+  }
+
+  const conversations = new Map();
+  for (const conversation of [...remote.conversations, ...local.conversations]) {
+    const existing = conversations.get(conversation.id);
+    if (!existing || (conversation.updatedAt ?? 0) >= (existing.updatedAt ?? 0)) {
+      conversations.set(conversation.id, conversation);
+    }
+  }
+
+  return normalizeProjectStore({
+    currentProjectId: remote.currentProjectId || local.currentProjectId || DEFAULT_PROJECT_ID,
+    currentConversationId: remote.currentConversationId ?? local.currentConversationId ?? null,
+    projects: [...projects.values()],
+    conversations: [...conversations.values()]
+  });
+}
+
+function updateConversationPointerFromStore() {
+  conversationState = projectStore?.conversations?.find((c) => c.id === projectStore.currentConversationId) ?? null;
+}
+
+async function syncProjectStoreFromService({ render = false } = {}) {
+  if (projectStoreSyncInFlight) return projectStoreSyncInFlight;
+  projectStoreSyncInFlight = (async () => {
+    try {
+      if (!projectStore) loadProjectStore();
+      const payload = await fetchJson("/projects/store");
+      const merged = mergeProjectStores(projectStore, payload.store);
+      projectStore = merged;
+      updateConversationPointerFromStore();
+      projectStoreRemoteReady = true;
+      localStorage.setItem(STORAGE_KEY_V3, JSON.stringify(projectStore));
+      await fetchJson("/projects/store", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ store: projectStore })
+      });
+      if (render) {
+        renderProjectPanel();
+        if (conversationState?.turns?.length) renderConversationState();
+      }
+    } catch {
+      projectStoreRemoteReady = false;
+    } finally {
+      projectStoreSyncInFlight = null;
+    }
+  })();
+  return projectStoreSyncInFlight;
+}
+
+function persistProjectStoreToService() {
+  if (!projectStore) return;
+  void fetchJson("/projects/store", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ store: projectStore })
+  }).then(() => {
+    projectStoreRemoteReady = true;
+  }).catch(() => {
+    projectStoreRemoteReady = false;
+  });
 }
 
 function migrateV1ToV3() {
@@ -162,7 +254,7 @@ function loadProjectStore() {
       }
     }
   } catch { /* rebuild */ }
-  projectStore = { currentProjectId: DEFAULT_PROJECT_ID, currentConversationId: null, projects: [], conversations: [] };
+  projectStore = buildDefaultProjectStore();
   ensureDefaultProject();
   const migrated = migrateV1ToV3();
   if (migrated) {
@@ -183,6 +275,7 @@ function saveProjectStore() {
       }
     }
     localStorage.setItem(STORAGE_KEY_V3, JSON.stringify(projectStore));
+    persistProjectStoreToService();
   } catch { /* quota */ }
 }
 
@@ -293,6 +386,10 @@ function renderConversationState() {
     const role = ["user", "assistant", "system"].includes(turn.role) ? turn.role : "system";
     addBubble(role, turn.content);
   }
+}
+
+function renderConversationFromState() {
+  renderConversationState();
 }
 
 function startNewConversation() {
@@ -1052,10 +1149,28 @@ async function refreshActiveTask() {
 
 async function submitTask() {
   const rawCommand = commandInput.value.trim();
-  if (!rawCommand && !pendingFileSelection?.filePaths?.length && !pendingCapture?.capture) return;
 
-  // smart default command based on context type
-  let defaultCommand = "Process the current context";
+  // UCA-060: Strict separation of user instruction vs captured context.
+  // A captured active-window context is BACKGROUND information, NOT the query.
+  // If the user hasn't typed anything, we must ask them what they want —
+  // never substitute the window content as the question.
+  // Exception: file/image selections have sensible defaults (analyze/describe).
+  if (!rawCommand) {
+    if (pendingFileSelection?.filePaths?.length) {
+      // File/image context: allow a meaningful default command (see below)
+    } else {
+      // No input, no file — do nothing; hint the user to type first.
+      commandInput.placeholder = "请先输入你的问题或指令…";
+      commandInput.focus();
+      // Flash placeholder to draw attention
+      commandInput.classList.add("input-hint-flash");
+      setTimeout(() => commandInput.classList.remove("input-hint-flash"), 1200);
+      return;
+    }
+  }
+
+  // smart default command based on context type (only reached for file selections)
+  let defaultCommand = "Analyze and summarize these files.";
   if (pendingFileSelection?.filePaths?.length) {
     const imageExts = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
     const isImageTask = pendingFileSelection.filePaths.every((fp) =>
@@ -1715,6 +1830,7 @@ popBubble?.addEventListener("pointerdown", (event) => {
 });
 
 function openSchedulePanel() {
+  exitVoiceMode();
   setPanelOpen(voicePanel, false);
   setPanelOpen(schedulePanel, true);
   // default time = 5 minutes from now, formatted for datetime-local
@@ -2167,36 +2283,6 @@ async function handleUserSend() {
   const text = commandInput.value.trim();
   if (!text && !pendingFileSelection?.filePaths?.length && !pendingCapture?.capture) return;
 
-  // smart intent detection — check before submitting as task
-  if (text) {
-    const intent = detectSpecialIntent(text);
-    if (intent?.type === "schedule") {
-      addBubble("user", text);
-      commandInput.value = "";
-      autoSizeInput();
-      const trigger = parseScheduleTriggerFromText(text);
-      if (trigger.oneShot) {
-        addBubble("assistant", "Creating reminder...");
-        try {
-          const schedule = await createScheduleFromText(text, trigger);
-          addBubble("assistant", `Reminder created.\nNext: ${schedule?.next_run_at ?? "pending"}`);
-        } catch (error) {
-          addBubble("assistant", `Failed to create reminder: ${error.message}`);
-        }
-        return;
-      }
-      showScheduleConfirmCard(text);
-      return;
-    }
-    if (intent?.type === "template") {
-      addBubble("user", text);
-      commandInput.value = "";
-      autoSizeInput();
-      showTemplateConfirmCard(text);
-      return;
-    }
-  }
-
   // normal task submission
   if (text && conversationPhase === "idle") {
     addBubble("user", text);
@@ -2231,6 +2317,7 @@ window.ucaShell.onShellReady((payload) => {
   if (payload.windowId === "overlay") {
     serviceBaseUrl = payload.serviceBaseUrl ?? serviceBaseUrl;
     refreshStatus();
+    void syncProjectStoreFromService({ render: true });
     refreshTaskSummaries(true).then(renderTaskListDock);
     showWelcome();
   }
@@ -2238,6 +2325,7 @@ window.ucaShell.onShellReady((payload) => {
 
 window.ucaShell.onWindowFocused((payload) => {
   if (payload.windowId === "overlay") {
+    void syncProjectStoreFromService({ render: true });
     // Each time the user re-summons the overlay, start in "ephemeral" mode.
     // The first interaction with the input box will switch it to "kept" mode.
     popKeptOpen = false;
@@ -2266,4 +2354,5 @@ if (conversationState?.turns?.length) {
   showWelcome();
 }
 refreshStatus();
+void syncProjectStoreFromService({ render: true });
 setInterval(refreshActiveTask, 2000);

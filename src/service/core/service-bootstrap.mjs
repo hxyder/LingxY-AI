@@ -161,6 +161,8 @@ export function createServiceBootstrap({
       getBudget: "/budget",
       postBudget: "/budget",
       postHistorySearch: "/history/search",
+      getProjectStore: "/projects/store",
+      postProjectStore: "/projects/store",
       getExecutors: "/executors",
       getAIProviders: "/ai/providers",
       getCodeCliAdapters: "/ai/code-cli",

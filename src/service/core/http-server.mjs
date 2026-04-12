@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { createTaskEventStream, encodeSseFrame } from "../events/sse.mjs";
 import { retryTask } from "../retry/retry-manager.mjs";
 import { cancelTask } from "./task-runtime.mjs";
+import { tryFastPath } from "./router/fast-path-router.mjs";
 import { submitActionToolTask } from "./action-tool-submission.mjs";
 import { submitBrowserTask } from "./browser-submission.mjs";
 import { submitContextTask } from "./context-submission.mjs";
@@ -96,6 +97,41 @@ function summarizeTask(runtime, taskId) {
 }
 
 async function submitTaskFromBody(runtime, body) {
+  // UCA-060: Reject requests with no user command — prevents the hotkey
+  // "capture active window then send immediately" from using window content
+  // as the query when the user hasn't typed anything yet.
+  const userCommand = String(body.userCommand ?? "").trim();
+  if (!userCommand) {
+    return {
+      ok: false,
+      error: "missing_user_command",
+      message: "请先输入你的问题或指令"
+    };
+  }
+  // Write normalised command back so all branches below see the trimmed value
+  body.userCommand = userCommand;
+
+  // UCA-066: Fast-path for deterministic Tier 0/1 actions.
+  // Pure "open app / open URL / copy to clipboard / translate" bypass the
+  // full LLM pipeline entirely and run in < 200ms.
+  // Compound actions ("open X, then do Y") intentionally fall through to the
+  // normal pipeline so llmPlanner can handle both steps in one tool loop.
+  const contextPacket = body.contextPacket ?? { text: body.text ?? "" };
+  const fastPath = tryFastPath(userCommand, contextPacket);
+  if (fastPath?.tier === 0) {
+    return submitActionToolTask({
+      userCommand,
+      executionMode: body.executionMode ?? "interactive",
+      sourceApp: body.sourceApp ?? "uca.http",
+      captureMode: body.captureMode ?? "fast_path",
+      runtime,
+      fastPathTool: fastPath.tool,
+      fastPathArgs: fastPath.args
+    });
+  }
+  // Tier 1 (translation) — handled by specialised executor (future: translation_fast)
+  // For now fall through to normal pipeline which will route to translate executor.
+
   if (body.filePaths?.length) {
     return submitFileTask({
       filePaths: body.filePaths,
@@ -232,6 +268,42 @@ function upsertById(list = [], entry) {
   return index >= 0
     ? list.map((item, itemIndex) => itemIndex === index ? entry : item)
     : [...list, entry];
+}
+
+const DEFAULT_PROJECT_ID = "proj_default";
+const DEFAULT_PROJECT_COLOR = "#6366f1";
+
+function buildDefaultProjectStore() {
+  return {
+    currentProjectId: DEFAULT_PROJECT_ID,
+    currentConversationId: null,
+    projects: [{
+      id: DEFAULT_PROJECT_ID,
+      name: "默认",
+      color: DEFAULT_PROJECT_COLOR,
+      createdAt: Date.now(),
+      metadata: {}
+    }],
+    conversations: []
+  };
+}
+
+function normalizeProjectStore(store) {
+  const next = store && typeof store === "object" ? structuredClone(store) : buildDefaultProjectStore();
+  next.projects = Array.isArray(next.projects) ? next.projects.filter((project) => project?.id) : [];
+  next.conversations = Array.isArray(next.conversations) ? next.conversations.filter((conversation) => conversation?.id) : [];
+  if (!next.projects.some((project) => project.id === DEFAULT_PROJECT_ID)) {
+    next.projects.unshift({
+      id: DEFAULT_PROJECT_ID,
+      name: "默认",
+      color: DEFAULT_PROJECT_COLOR,
+      createdAt: Date.now(),
+      metadata: {}
+    });
+  }
+  next.currentProjectId = next.currentProjectId || DEFAULT_PROJECT_ID;
+  next.currentConversationId = next.currentConversationId ?? null;
+  return next;
 }
 
 function saveRuntimeConfig(runtime, updater) {
@@ -441,6 +513,26 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       if (method === "GET" && url.pathname === "/config") {
         const config = runtime.configStore?.load?.() ?? {};
         return sendJson(response, 200, { config });
+      }
+
+      if (method === "GET" && url.pathname === "/projects/store") {
+        const config = runtime.configStore?.load?.() ?? {};
+        return sendJson(response, 200, {
+          store: normalizeProjectStore(config.ui?.projectStore)
+        });
+      }
+
+      if (method === "POST" && url.pathname === "/projects/store") {
+        const body = await readJsonBody(request);
+        const store = normalizeProjectStore(body.store ?? body);
+        saveRuntimeConfig(runtime, (currentConfig) => ({
+          ...currentConfig,
+          ui: {
+            ...(currentConfig.ui ?? {}),
+            projectStore: store
+          }
+        }));
+        return sendJson(response, 200, { ok: true, store });
       }
 
       // Auto-detect installed code CLIs (kimi, claude, codex, gemini, etc.)

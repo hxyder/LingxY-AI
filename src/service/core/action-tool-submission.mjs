@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 import { routeIntent } from "./router/intent-router.mjs";
+import { createActionToolRegistry } from "../action_tools/registry.mjs";
+import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 import {
   createTaskRecord,
   emitTaskEvent,
@@ -32,7 +34,11 @@ export async function submitActionToolTask({
   captureMode = "manual",
   parentTaskId = null,
   retryCount = 0,
-  runtime
+  runtime,
+  // UCA-066: Tier 0 fast-path — skip the tool-agent loop entirely,
+  // call the tool directly and return immediately (< 200ms).
+  fastPathTool = null,
+  fastPathArgs = null
 }) {
   ensureRuntimeServices(runtime);
   const contextPacket = buildActionContextPacket({
@@ -93,6 +99,26 @@ export async function submitActionToolTask({
   runtime.queue.markRunning(task.task_id);
 
   try {
+    // UCA-066: Tier 0 fast path — execute single deterministic tool directly,
+    // completely bypassing the LLM planner loop. Latency target: < 200ms.
+    // Applies to: launch_app, open_url, copy_to_clipboard, notify, open_file.
+    if (fastPathTool) {
+      const registry = runtime.actionToolRegistry ?? createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+      const toolContext = { ...(runtime.toolContext ?? {}), outputDir: runtime.toolOutputDir, runtime, task };
+      const toolResult = await registry.call(fastPathTool, fastPathArgs ?? {}, toolContext);
+      emitExecutorEvent("tool_call_completed", { tool_id: fastPathTool, success: toolResult.success });
+      const finalText = toolResult.observation ?? (toolResult.success ? "完成。" : "操作失败。");
+      updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
+      markTaskSucceeded(runtime, task);
+      return {
+        task,
+        taskEvents: runtime.store.getTaskEvents(task.task_id),
+        artifacts: toolResult.artifact_paths ?? [],
+        fast_path: true,
+        final_text: finalText
+      };
+    }
+
     const loopResult = await runToolAgentLoop({
       task,
       runtime: {

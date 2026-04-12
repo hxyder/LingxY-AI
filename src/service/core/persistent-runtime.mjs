@@ -9,10 +9,31 @@ import { createExplorerSelectionPipeServer, DEFAULT_EXPLORER_PIPE_NAME } from ".
 import { getKimiRuntimeStatus, resolveKimiRuntime } from "../ai/code_cli/kimi/runtime.mjs";
 import { createReminderWatcher } from "../scheduler/reminder-watcher.mjs";
 
+const QUEUED_RECOVERY_MAX_AGE_MS = 60 * 60 * 1000;
+
 function recoverInterruptedTasks(runtime) {
   const recovered = [];
+  const nowMs = Date.now();
   for (const task of runtime.store.listTasks()) {
     if (task.status === "queued") {
+      const createdAtMs = Date.parse(task.created_at);
+      const isStaleQueued = Number.isFinite(createdAtMs) && nowMs - createdAtMs > QUEUED_RECOVERY_MAX_AGE_MS;
+      if (isStaleQueued) {
+        task.status = "failed";
+        task.sub_status = "stale_queued_after_restart";
+        task.failure_category = "internal_error";
+        task.failure_user_message = "本地服务重启后发现过期排队任务，已停止自动恢复，请按需重试。";
+        task.retryable = true;
+        runtime.store.updateTask(task.task_id, task);
+        appendAuditLog(runtime, "runtime.recovered_task", {
+          task_id: task.task_id,
+          previous_status: "queued",
+          stale: true
+        }, task.task_id);
+        recovered.push(task.task_id);
+        continue;
+      }
+
       runtime.queue.enqueue({
         ...task,
         bypass_dedupe: true

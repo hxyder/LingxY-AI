@@ -19,8 +19,8 @@
 export const FEATURE_REGISTRY = Object.freeze([
   { id: "translation",                label: "翻译",             description: "免费翻译功能（浏览器选区 / Overlay 快捷翻译）",       defaultEnabled: true,  settingsAnchor: "features.translation" },
   { id: "voice_input",                label: "语音输入",          description: "Overlay 语音识别 + 听写转文字",                       defaultEnabled: true,  settingsAnchor: "features.voice_input" },
-  { id: "email_monitoring",           label: "邮件监测",          description: "IMAP/Graph 邮件轮询 + 自动 schedule + 回复追踪",      defaultEnabled: false, settingsAnchor: "features.email_monitoring" },
-  { id: "morning_digest",             label: "早晨邮件汇总",       description: "每日早晨自动汇总昨日邮件",                            defaultEnabled: false, settingsAnchor: "features.morning_digest" },
+  { id: "email_monitoring",           label: "邮件监测",          description: "IMAP/Graph 邮件轮询 + 自动 schedule + 回复追踪",      defaultEnabled: true,  settingsAnchor: "features.email_monitoring" },
+  { id: "morning_digest",             label: "早晨邮件汇总",       description: "每日早晨自动汇总昨日邮件",                            defaultEnabled: true,  settingsAnchor: "features.morning_digest" },
   { id: "inline_web_result",          label: "网页内联结果",       description: "浏览器选区翻译 / 总结 / 解释 在网页内直接显示",         defaultEnabled: true,  settingsAnchor: "features.inline_web_result" },
   { id: "active_window_probe",        label: "活动窗口探测",       description: "热键唤起时自动检测当前窗口 URL / 文件路径",            defaultEnabled: true,  settingsAnchor: "features.active_window_probe" },
   { id: "web_search_fetch",           label: "网络搜索",          description: "AI 自动调用 DuckDuckGo 搜索获取最新信息",              defaultEnabled: true,  settingsAnchor: "features.web_search_fetch" },

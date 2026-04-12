@@ -102,7 +102,8 @@ export async function captureActiveWindowContext({
   clipboardFallback = null,
   captureScriptName = CAPTURE_SCRIPT_NAME,
   probeScriptName = PROBE_SCRIPT_NAME,
-  timeoutMs = 3000
+  timeoutMs = 3000,
+  activeWindowEnabled = true
 } = {}) {
   if (typeof runPowerShell !== "function") {
     throw new Error("captureActiveWindowContext requires a runPowerShell({script,args}) function.");
@@ -122,11 +123,13 @@ export async function captureActiveWindowContext({
       args: ["-SimulateCopy"],
       timeoutMs
     }),
-    runPowerShell({
-      script: probeScriptName,
-      args: [],
-      timeoutMs
-    })
+    activeWindowEnabled
+      ? runPowerShell({
+          script: probeScriptName,
+          args: [],
+          timeoutMs
+        })
+      : Promise.resolve({ stdout: "" })
   ]);
 
   if (captureResult.status === "fulfilled") {

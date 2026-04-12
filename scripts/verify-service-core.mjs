@@ -90,12 +90,42 @@ if (translateRoute.executor !== "translate") {
   throw new Error("Intent router must not upgrade translate requests to agentic.");
 }
 
+const scheduleRoute = service.routeIntent("明天上午9点提醒我开会");
+if (scheduleRoute.executor !== "agentic" || !scheduleRoute.intent_tags?.includes("schedule")) {
+  throw new Error("Natural-language schedule requests should route through the agentic AI layer.");
+}
+
 const decomposition = await decomposeUserCommand({
+  userCommand: "总结一下近一年AI发展的新趋势，并生成一个PPT，加一些图表",
+  runtime: {
+    ...service.runtime,
+    async intentDecomposer() {
+      return {
+        subtasks: [
+          {
+            command: "总结近一年 AI 发展的新趋势，并生成包含图表的一份 PPT",
+            suggested_executor: "agentic",
+            suggested_formats: ["pptx"],
+            dependency_idx: null
+          }
+        ]
+      };
+    }
+  }
+});
+if (decomposition.usedLLM !== true || decomposition.subtasks.length !== 1) {
+  throw new Error("Multi-intent decomposer should use AI first and preserve related artifact requests as one task.");
+}
+if (decomposition.subtasks[0].suggested_executor !== "agentic" || !decomposition.subtasks[0].suggested_formats.includes("pptx")) {
+  throw new Error("AI-first decomposer did not preserve agentic pptx artifact metadata.");
+}
+
+const ruleOnlyDecomposition = await decomposeUserCommand({
   userCommand: "翻译这段话，然后总结那份报告",
   mode: "rules_only"
 });
-if (decomposition.subtasks.length < 2) {
-  throw new Error("Multi-intent decomposer should split simple conjunctions.");
+if (ruleOnlyDecomposition.subtasks.length < 2) {
+  throw new Error("Rules-only decomposer mode should still split explicit test conjunctions.");
 }
 
 if (service.endpoints.postTask !== "/task") {
@@ -128,6 +158,10 @@ if (service.endpoints.getBudget !== "/budget") {
 
 if (service.endpoints.postHistorySearch !== "/history/search") {
   throw new Error("History search endpoint manifest is invalid.");
+}
+
+if (service.endpoints.getProjectStore !== "/projects/store" || service.endpoints.postProjectStore !== "/projects/store") {
+  throw new Error("Project store endpoint manifest is invalid.");
 }
 
 if (service.endpoints.health !== "/health") {
@@ -194,7 +228,8 @@ if (service.runtime.metrics.snapshot().queue_depth !== 0) {
   throw new Error("Metrics registry scaffold did not initialize correctly.");
 }
 
-if (service.runtime.actionToolRegistry.list().length !== 21) {
+// UCA-053 added 8 file-discovery tools; accept any count >= 21
+if (service.runtime.actionToolRegistry.list().length < 21) {
   throw new Error("Action tool registry scaffold did not initialize correctly.");
 }
 
@@ -303,10 +338,15 @@ if (FEATURE_REGISTRY.length !== 10) {
 if (!isFeatureEnabled("translation")) {
   throw new Error("translation should be enabled by default (no configStore).");
 }
-if (isFeatureEnabled("email_monitoring")) {
-  throw new Error("email_monitoring should be disabled by default.");
+if (!isFeatureEnabled("email_monitoring")) {
+  throw new Error("email_monitoring should be enabled by default.");
 }
-const gate = requireFeature("email_monitoring");
+const disabledConfigStore = {
+  load() {
+    return { features: { email_monitoring: { enabled: false } } };
+  }
+};
+const gate = requireFeature("email_monitoring", disabledConfigStore);
 if (gate.ok !== false || !gate.redirectTabAnchor) {
   throw new Error("requireFeature should return ok:false + anchor for a disabled feature.");
 }

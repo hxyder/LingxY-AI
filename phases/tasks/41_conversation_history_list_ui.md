@@ -8,17 +8,17 @@
 
 - 上一个任务：UCA-038（单会话记忆 + 新会话按钮 + 持久化）、UCA-030（overlay session timeline）、UCA-024（console workspace）
 - 必须已有的产物：`conversationState` schema、`persistConversation`、`restoreConversation`
-- 不能同时修改的区域：service 端任务模型
+- 不能同时修改的区域：service 端任务执行模型；允许新增轻量 `/projects/store` 配置端点作为跨窗口共享源
 
 ## 3. 实施范围
 
 - 负责模块：localStorage schema 升级到 v3（加入 projects 层）、Overlay 项目/会话切换 UI、Console Projects Tab、会话标题生成、恢复会话到 bubble 流
-- 允许改动文件/目录：`src/desktop/renderer/overlay.html`、`src/desktop/renderer/overlay.js`、`src/desktop/renderer/console.html`、`src/desktop/renderer/console.js`、`scripts/verify-overlay-composer.mjs`、`scripts/verify-desktop-renderer.mjs`
+- 允许改动文件/目录：`src/desktop/renderer/overlay.html`、`src/desktop/renderer/overlay.js`、`src/desktop/renderer/console.html`、`src/desktop/renderer/console.js`、`src/service/core/http-server.mjs`、`src/service/core/service-bootstrap.mjs`、`scripts/verify-overlay-composer.mjs`、`scripts/verify-desktop-renderer.mjs`
 - 明确不做：跨设备同步、云端备份、协作编辑
 
 ## 4. 交付产物
 
-- **localStorage schema v3（projects + sessions）**：
+- **Projects store v3（projects + sessions）**：服务端通过 `/projects/store` 持久化到 runtime config；Overlay / Console 各自保留 localStorage 缓存作为离线兜底，但跨窗口同步以服务端 store 为准。
   ```json
   {
     "currentProjectId": "proj_default",
@@ -94,7 +94,7 @@
 
 ## 8.1 实现对齐（2026-04-11）
 
-- 实施方式（全局方案）：把 UCA-038 的单一 `conversationState` 升级为唯一的 projects/sessions 存储模型；Overlay 和 Console 都读写同一 v3 schema，迁移逻辑只在启动时执行一次，历史恢复统一调用 `renderConversationFromState()`。
+- 实施方式（全局方案）：把 UCA-038 的单一 `conversationState` 升级为唯一的 projects/sessions 存储模型；Overlay 和 Console 都读写同一 v3 schema，迁移逻辑只在启动时执行一次，历史恢复统一调用 `renderConversationFromState()`。2026-04-11 修正为服务端 `/projects/store` 做共享源，renderer localStorage 只做缓存，避免 Console 与 Overlay 不同 origin 导致项目不同步。
 - 当前代码对齐点：`src/desktop/renderer/overlay.js` 当前持久化 key 是 `uca.overlay.conversation.v1`，Console 已有 tab 布局和 Files/Schedules 等模式；需要新增 Projects tab，而不是把项目 UI 嵌进已有 History 搜索。项目颜色要与 UCA-046 的 schedule category palette 共用。
 - 可能需要生成的文件：不新增 service 文件；需要扩展 `src/desktop/renderer/overlay.html`、`src/desktop/renderer/overlay.js`、`src/desktop/renderer/console.html`、`src/desktop/renderer/console.js`，并更新 `scripts/verify-overlay-composer.mjs`、`scripts/verify-desktop-renderer.mjs`。
 
@@ -113,11 +113,17 @@
   - `MAX_CONVERSATIONS_PER_PROJECT = 50` — 超出按 updatedAt 淘汰最老
   - overlay.html — `#projectPanel`（项目下拉 + 新项目按钮 + 历史会话列表）、`#projectSelectorBtn` 工具栏按钮
   - overlay.js — `renderProjectPanel`（项目下拉 + 历史列表 + 删除按钮 + 点击切换）
+  - console.html / console.js — 新增 Projects Tab：读取同一 projects store，显示项目列表、当前项目会话列表与会话预览，并支持创建项目
+  - service/http-server.mjs — 新增 `GET/POST /projects/store`，把 `{currentProjectId,currentConversationId,projects[],conversations[]}` 持久化到 runtime config 的 `ui.projectStore`
+  - overlay.js / console.js — 增加 `syncProjectStoreFromService` / `syncConsoleProjectStoreFromService`，窗口启动、聚焦、切到 Projects tab、创建/选择项目时同步到服务端；Console 选择项目会更新 store 的 `currentProjectId`，Overlay 后续提交的会话会落到该项目下
   - UCA-038 bug fix：`refreshActiveTask` 任务终态后重置 `conversationPhase = "idle"`（修复新会话后用户气泡不显示）
-- 验证结果：全部 31 个 verify 脚本通过
+- 验证结果：`verify-overlay-composer` 覆盖 v3/project panel/`renderConversationFromState` + `/projects/store` 同步；`verify-desktop-renderer` 覆盖 Console Projects Tab + 服务端同步；额外 HTTP smoke 验证 `GET/POST /projects/store`
 - schema v3 格式已列出（§4）
 - 自动清理阈值：每项目最多 50 条会话
 - 标题生成：第一个 user turn 前 30 字 → seedCommand 前 30 字 → "新会话"
+- 2026-04-11 追加修复：
+  - 用户反馈："控制台创建了一个新项目，但是在对话框里看不到"。根因是 Console 与 Overlay renderer 的 localStorage 不是可靠共享源；已改为服务端 `/projects/store` + 本地缓存。
+  - 用户反馈："确保我如果选择了项目，相关的会话能生成在项目下"。Overlay 的 `ensureConversation` 继续以 `projectStore.currentProjectId` 建会话；Console/Overlay 项目选择现在会同步 `currentProjectId`。
 - 遗留问题（开工前已识别）：
   - 用户反馈（2026-04-11）：关闭 overlay 后看不到之前的对话（UCA-038 的 `restoreConversation()` 只恢复 state，不重新渲染气泡）—— 本任务的 `renderConversationFromState()` 负责修复
   - 用户需求（2026-04-11）："对话框还需要加项目，以及历史会话" —— 原 UCA-041 只覆盖历史，本次扩展加入项目层

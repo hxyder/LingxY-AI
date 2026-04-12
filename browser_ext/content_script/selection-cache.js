@@ -10,6 +10,14 @@ const ACTION_LABELS = {
   explain: "解释"
 };
 
+// UCA-057: Module-level request tracker for selection snapshot model.
+// Each inline action click generates a unique requestId. When the async
+// response arrives, we check whether this requestId is still the "current"
+// one. If the user clicked on a different segment in the meantime, the
+// old callback is silently discarded — preventing stale results from
+// appearing in the newly-opened frame.
+let _pendingActionRequestId = null;
+
 function showInlineResultFrame({ action, rect, previewText = "", doc = document }) {
   const host = doc.createElement("div");
   host.setAttribute("data-uca-result-frame", "true");
@@ -479,17 +487,40 @@ function createFloatingChipController(doc = document) {
           console.warn("[UCA] chrome.runtime.sendMessage not available; aborting");
           return;
         }
+
+        // UCA-057: Immutable snapshot — capture text + rect at click time, not
+        // at response time. Assign a unique requestId so that if the user clicks
+        // on a different text segment before this response arrives, the stale
+        // callback recognises the mismatch and discards itself.
+        const requestId = (typeof crypto !== "undefined" && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random()}`;
+        _pendingActionRequestId = requestId;
+
+        const snapshot = {
+          text: state.text,
+          rect: state.rect,
+          url: window.location.href,
+          requestId
+        };
+
         const frame = showInlineResultFrame({
           action,
-          rect: state.rect,
-          previewText: state.text,
+          rect: snapshot.rect,
+          previewText: snapshot.text,
           doc
         });
         sendRuntimeMessageSafely({
           type: "uca.runtime.runQuickAction",
           action,
-          selectionState
+          selectionState,
+          requestId: snapshot.requestId
         }, (response) => {
+          // UCA-057: Discard response if a newer request has superseded this one.
+          if (snapshot.requestId !== _pendingActionRequestId) {
+            console.info("[UCA] discarding stale response for requestId", snapshot.requestId);
+            return;
+          }
           if (response?.ok) {
             frame.setResult(response.text ?? "(无内容)");
           } else {

@@ -1,7 +1,51 @@
 import { routeIntent } from "./intent-router.mjs";
 import { runAgenticPlanner } from "../../executors/agentic/planner.mjs";
+import { classifyGoal, NO_DECOMPOSE_GOALS } from "../task-spec.mjs";
 
 const DEFAULT_MAX_SUBTASKS = 6;
+
+// UCA-058: Patterns that indicate a sequential compound action —
+// "open X, then do Y" = one intent with ordered steps, NOT two independent tasks.
+// Must stay as a single task so llmPlanner can execute both steps in one loop.
+const SEQUENTIAL_COMPOUND = /(?:打开|启动|open|launch|运行|run)\s*\S+\s*[，,]\s*(?:帮我|帮|写|发|查|搜|做|生成|起草|draft|write|compose|search|find|create)/i;
+
+// UCA-058: Ambiguity indicators — missing referent means we should ask first,
+// not decompose (decomposing an ambiguous request produces meaningless subtasks).
+const AMBIGUITY_PATTERNS = /(?:那个|这个|它(?!们)|上次|之前|the\s+(?:file|document|one)|that\s+one)/i;
+
+/**
+ * UCA-058: Determine whether a user command should be decomposed.
+ * Returns {decompose: false, reason} to skip decomposition entirely,
+ * or {decompose: true} to allow it.
+ *
+ * Philosophy (from LangGraph/CrewAI): decomposition is an EXCEPTION, not the default.
+ * Only split when there are 2+ genuinely independent goals.
+ */
+function shouldDecompose(userCommand) {
+  const goal = classifyGoal(userCommand);
+
+  // Rule 1: banned goal families — answer directly, never split
+  if (NO_DECOMPOSE_GOALS.has(goal)) {
+    return { decompose: false, reason: `goal_no_split:${goal}` };
+  }
+
+  // Rule 2: sequential compound — "open X, do Y" stays as one task
+  if (SEQUENTIAL_COMPOUND.test(userCommand)) {
+    return { decompose: false, reason: "sequential_compound" };
+  }
+
+  // Rule 3: ambiguous reference — needs clarification, not decomposition
+  if (AMBIGUITY_PATTERNS.test(userCommand)) {
+    return { decompose: false, reason: "needs_clarification" };
+  }
+
+  // Rule 4: very short commands (<= 10 chars) are almost always single-intent
+  if (userCommand.trim().length <= 10) {
+    return { decompose: false, reason: "too_short_to_split" };
+  }
+
+  return { decompose: true };
+}
 const HARD_SPLIT = /[。；;\n]+/g;
 const SOFT_SPLIT = /(?:\s+(?:然后|接着|再|并且|同时|and then|then|and)\s+|\s*&&\s*)/gi;
 const COMMA_SPLIT = /[，,]+/g;
@@ -74,8 +118,29 @@ function extractJsonCandidate(text) {
   return null;
 }
 
+/**
+ * UCA-056: Validate decomposer output schema before normalizing.
+ * Returns {valid, error} — invalid output is explicitly surfaced, not silently dropped.
+ */
+function validateDecomposerOutput(raw) {
+  if (!raw || typeof raw !== "object") {
+    return { valid: false, error: "decomposer output must be an object" };
+  }
+  const list = Array.isArray(raw) ? raw : raw.subtasks;
+  if (!Array.isArray(list)) {
+    return { valid: false, error: `subtasks must be an array, got ${typeof list}` };
+  }
+  for (const entry of list) {
+    const command = String(entry?.command ?? entry?.task ?? entry?.prompt ?? "").trim();
+    if (!command) {
+      return { valid: false, error: `each subtask must have a non-empty 'command' field` };
+    }
+  }
+  return { valid: true, error: null };
+}
+
 function normaliseSubtasks(raw, fallbackCommand) {
-  const list = Array.isArray(raw) ? raw : raw?.subtasks ?? [];
+  const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.subtasks) ? raw.subtasks : []);
   const normalized = [];
   for (let i = 0; i < list.length; i += 1) {
     const entry = list[i] ?? {};
@@ -111,16 +176,46 @@ function normaliseSubtasks(raw, fallbackCommand) {
   return [];
 }
 
+/**
+ * UCA-056: runLlmDecomposition now returns a structured result object so callers
+ * can distinguish "LLM returned a valid single-task" from "decomposer failed silently".
+ *
+ * Returns: { subtasks, error?, fallback? }
+ *   - subtasks: normalized array (may be single-task fallback)
+ *   - error: "decomposer_invalid_output" | "decomposer_parse_error" | null
+ *   - fallback: "single_task" | null (set when we fell back due to error)
+ */
 async function runLlmDecomposition({ userCommand, runtime, contextPacket, maxSubtasks }) {
+  if (typeof runtime?.intentDecomposer === "function") {
+    const injected = await runtime.intentDecomposer({
+      userCommand,
+      contextPacket,
+      maxSubtasks
+    });
+    const validation = validateDecomposerOutput(injected);
+    if (!validation.valid) {
+      return {
+        subtasks: normaliseSubtasks({}, userCommand),
+        error: "decomposer_invalid_output",
+        fallback: "single_task",
+        reason: validation.error
+      };
+    }
+    return { subtasks: normaliseSubtasks(injected, userCommand).slice(0, maxSubtasks), error: null };
+  }
+
   const instruction = [
     "Decompose the user's request into independent subtasks.",
     "Return JSON only, no prose, using this schema:",
     "{ \"subtasks\": [ { \"command\": string, \"suggested_executor\": string, \"suggested_formats\": string[], \"dependency_idx\": number|null } ] }",
-    "Rules:",
+    "STRICT RULES (violation = wrong answer):",
     "1) Use the user's language.",
     "2) Keep each command concise and self-contained.",
-    "3) If the request is already single-intent, return one subtask.",
-    "4) Do not call any tools."
+    "3) SINGLE-INTENT: If the request is a question, list, summary, translation, reminder, or explanation → return EXACTLY ONE subtask.",
+    "4) SEQUENTIAL COMPOUND: 'Open app X and do Y inside it' = ONE subtask (ordered steps, not independent goals).",
+    "5) Only split when there are 2+ GENUINELY INDEPENDENT goals that could run in parallel (different apps, different targets, no shared state).",
+    "6) If the command is ambiguous (refers to 'it', 'that file', 'the previous one') → return ONE subtask with the original command unchanged.",
+    "7) Do not call any tools."
   ].join("\n");
 
   const decomposerTask = {
@@ -147,14 +242,36 @@ async function runLlmDecomposition({ userCommand, runtime, contextPacket, maxSub
   });
 
   const candidate = extractJsonCandidate(result?.finalText ?? "");
-  if (!candidate) return [];
+  if (!candidate) {
+    return {
+      subtasks: normaliseSubtasks({}, userCommand),
+      error: "decomposer_no_json",
+      fallback: "single_task",
+      reason: "LLM returned no JSON candidate"
+    };
+  }
 
   try {
     const parsed = JSON.parse(candidate);
+    // UCA-056: Validate schema before normalizing (no more silent [] return)
+    const validation = validateDecomposerOutput(parsed);
+    if (!validation.valid) {
+      return {
+        subtasks: normaliseSubtasks({}, userCommand),
+        error: "decomposer_invalid_output",
+        fallback: "single_task",
+        reason: validation.error
+      };
+    }
     const normalized = normaliseSubtasks(parsed, userCommand);
-    return normalized.slice(0, maxSubtasks);
-  } catch {
-    return [];
+    return { subtasks: normalized.slice(0, maxSubtasks), error: null };
+  } catch (parseError) {
+    return {
+      subtasks: normaliseSubtasks({}, userCommand),
+      error: "decomposer_parse_error",
+      fallback: "single_task",
+      reason: parseError.message
+    };
   }
 }
 
@@ -170,29 +287,58 @@ export async function decomposeUserCommand({
     return { subtasks: fallback, usedLLM: false, reason: "empty_command" };
   }
 
-  if (mode !== "llm") {
+  // UCA-058: Guard — only applies in "auto" mode (the normal production path).
+  // "rules_only" is an explicit test/override mode that bypasses this guard.
+  // "force" is a signal to always split regardless.
+  if (mode === "auto") {
+    const guard = shouldDecompose(userCommand);
+    if (!guard.decompose) {
+      return { subtasks: fallback, usedLLM: false, reason: guard.reason };
+    }
+  }
+
+  if (mode === "rules_only") {
     const ruleResult = buildRuleSubtasks(userCommand);
     if (ruleResult.shouldUseRules) {
       return { subtasks: ruleResult.subtasks.slice(0, maxSubtasks), usedLLM: false, reason: "rule_split" };
     }
-    if (mode === "rules_only") {
-      return { subtasks: fallback, usedLLM: false, reason: "rules_only_fallback" };
-    }
+    return { subtasks: fallback, usedLLM: false, reason: "rules_only_fallback" };
   }
 
   if (!runtime) {
     return { subtasks: fallback, usedLLM: false, reason: "missing_runtime" };
   }
 
-  const llmSubtasks = await runLlmDecomposition({
-    userCommand,
-    runtime,
-    contextPacket,
-    maxSubtasks
-  });
+  let llmResult = { subtasks: fallback, error: null };
+  try {
+    llmResult = await runLlmDecomposition({
+      userCommand,
+      runtime,
+      contextPacket,
+      maxSubtasks
+    });
+  } catch (error) {
+    llmResult = {
+      subtasks: fallback,
+      error: "decomposer_exception",
+      fallback: "single_task",
+      reason: error.message
+    };
+  }
 
-  if (llmSubtasks.length > 0) {
-    return { subtasks: llmSubtasks, usedLLM: true, reason: "llm_decompose" };
+  if (llmResult.error) {
+    // UCA-056: surface the error so callers can log/monitor — but still continue with fallback
+    return {
+      subtasks: llmResult.subtasks,
+      usedLLM: false,
+      reason: llmResult.error,
+      decomposerError: llmResult.error,
+      decomposerErrorReason: llmResult.reason
+    };
+  }
+
+  if (llmResult.subtasks.length > 0) {
+    return { subtasks: llmResult.subtasks, usedLLM: true, reason: "llm_decompose" };
   }
 
   return { subtasks: fallback, usedLLM: false, reason: "llm_fallback" };

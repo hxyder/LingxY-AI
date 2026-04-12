@@ -79,7 +79,10 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     properties: {
       title: { type: "string" },
       body: { type: "string" },
-      message: { type: "string" }
+      message: { type: "string" },
+      handoff: {},
+      navigate: {},
+      notificationDir: { type: "string" }
     }
   },
   file_op: {
@@ -185,6 +188,71 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       kind: { type: "string" },       // pptx | docx | xlsx | pdf
       outline: {},                    // structured outline object; shape depends on kind
       filename: { type: "string" }    // optional; defaults to result.<ext>
+    }
+  },
+
+  // UCA-053: File Discovery & Artifact Verification tools
+  list_files: {
+    type: "object",
+    required: [],
+    properties: {
+      dir: { type: "string" },        // directory path to list
+      pattern: { type: "string" },    // optional glob pattern, e.g. "*.pptx"
+      limit: { type: "number" }       // max results (default 20)
+    }
+  },
+  glob_files: {
+    type: "object",
+    required: [],
+    properties: {
+      pattern: { type: "string" }     // glob pattern, e.g. "~/Documents/**/*.pptx"
+    }
+  },
+  find_recent_files: {
+    type: "object",
+    required: [],
+    properties: {
+      kind: { type: "string" },       // pptx | docx | xlsx | pdf | txt | md
+      limit: { type: "number" },      // max results (default 5)
+      since_hours: { type: "number" } // how far back to look (default 24)
+    }
+  },
+  get_latest_artifact: {
+    type: "object",
+    required: [],
+    properties: {
+      kind: { type: "string" },       // pptx | docx | xlsx | pdf | any
+      task_id: { type: "string" }     // optional, limit to specific task
+    }
+  },
+  stat_file: {
+    type: "object",
+    required: [],
+    properties: {
+      path: { type: "string" }
+    }
+  },
+  verify_file_exists: {
+    type: "object",
+    required: [],
+    properties: {
+      path: { type: "string" }
+    }
+  },
+  register_artifact: {
+    type: "object",
+    required: [],
+    properties: {
+      path: { type: "string" },
+      kind: { type: "string" },
+      task_id: { type: "string" }
+    }
+  },
+  resolve_output_path: {
+    type: "object",
+    required: [],
+    properties: {
+      filename: { type: "string" }    // filename to join with defaultOutputDir
     }
   }
 });
