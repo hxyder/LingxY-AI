@@ -515,6 +515,21 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, { ok: true, taskRouting: body });
       }
 
+      // UCA-048: save default output path
+      if (method === "POST" && url.pathname === "/config/output") {
+        const body = await readJsonBody(request);
+        runtime.configStore?.patch?.({ output: { defaultDir: body.defaultDir ?? "", autoCreateDirs: body.autoCreateDirs !== false } });
+        return sendJson(response, 200, { ok: true });
+      }
+
+      // UCA-048: save feature toggles
+      // body: { featureId: { enabled: bool }, ... }
+      if (method === "POST" && url.pathname === "/config/features") {
+        const body = await readJsonBody(request);
+        runtime.configStore?.patch?.({ features: body });
+        return sendJson(response, 200, { ok: true });
+      }
+
       if (method === "GET" && url.pathname === "/config/integrations") {
         const config = runtime.configStore?.load?.() ?? {};
         return sendJson(response, 200, {
@@ -737,6 +752,10 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           task_total: runtime.store.listTasks().length,
           kimi: runtime.kimiRuntimeStatus ?? null,
           email: runtime.emailMonitor?.status?.() ?? null,
+          config: {
+            output: config.output ?? {},
+            features: config.features ?? {}
+          },
           providers: await runtime.platform.aiProviders.listStatus({
             runtime,
             config

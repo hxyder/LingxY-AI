@@ -2006,6 +2006,90 @@ async function updateSecurityConfig(patch, label) {
 }
 
 /* ═══════════════════════════════════════════════
+   UCA-048: OUTPUT PATH + FEATURE TOGGLES
+   ═══════════════════════════════════════════════ */
+
+const FEATURE_DEFINITIONS = [
+  { id: "translation",                label: "翻译",             description: "免费翻译功能" },
+  { id: "voice_input",                label: "语音输入",          description: "Overlay 语音识别" },
+  { id: "email_monitoring",           label: "邮件监测",          description: "IMAP/Graph 邮件轮询" },
+  { id: "morning_digest",             label: "早晨邮件汇总",       description: "每日早晨自动汇总" },
+  { id: "inline_web_result",          label: "网页内联结果",       description: "浏览器选区内联显示" },
+  { id: "active_window_probe",        label: "活动窗口探测",       description: "热键唤起时检测当前窗口" },
+  { id: "web_search_fetch",           label: "网络搜索",          description: "AI 自动搜索" },
+  { id: "multi_intent_decomposition", label: "多意图分解",         description: "一句话拆成多子任务" },
+  { id: "schedule_reminders",         label: "定时提醒",          description: "Schedule 提前通知" },
+  { id: "projects_and_history",       label: "项目与历史",         description: "多项目 + 历史会话" }
+];
+
+function renderFeatureToggles() {
+  const list = document.getElementById("featureToggleList");
+  if (!list) return;
+  const config = state.workspace?.health?.config ?? {};
+  const features = config.features ?? {};
+
+  list.innerHTML = FEATURE_DEFINITIONS.map((def) => {
+    const enabled = features[def.id]?.enabled !== false;
+    return `
+      <label id="${escapeHtml(`features.${def.id}`)}" class="switch-row" style="display:flex;align-items:center;gap:10px;padding:6px 0;cursor:pointer;">
+        <input type="checkbox" class="switch-control" data-feature-id="${escapeHtml(def.id)}" ${enabled ? "checked" : ""}>
+        <div>
+          <strong style="font-size:13px;">${escapeHtml(def.label)}</strong>
+          <span class="muted" style="font-size:11px;margin-left:6px;">${escapeHtml(def.description)}</span>
+        </div>
+      </label>
+    `;
+  }).join("");
+}
+
+function renderOutputDir() {
+  const input = document.getElementById("outputDirInput");
+  if (!input) return;
+  const config = state.workspace?.health?.config ?? {};
+  const dir = config.output?.defaultDir ?? "";
+  if (!input.value) input.value = dir;
+}
+
+document.getElementById("outputDirDefaultBtn")?.addEventListener("click", () => {
+  const input = document.getElementById("outputDirInput");
+  if (input) input.value = "";
+});
+
+document.getElementById("saveOutputDirBtn")?.addEventListener("click", async () => {
+  const input = document.getElementById("outputDirInput");
+  const stateLabel = document.getElementById("outputDirSaveState");
+  const dir = input?.value?.trim() || "";
+  try {
+    await fetchJson("/config/output", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ defaultDir: dir, autoCreateDirs: true })
+    });
+    if (stateLabel) stateLabel.textContent = "Saved.";
+  } catch (error) {
+    if (stateLabel) stateLabel.textContent = `Failed: ${error.message}`;
+  }
+});
+
+document.getElementById("saveFeatureTogglesBtn")?.addEventListener("click", async () => {
+  const stateLabel = document.getElementById("featureTogglesSaveState");
+  const toggles = {};
+  for (const input of document.querySelectorAll("[data-feature-id]")) {
+    toggles[input.dataset.featureId] = { enabled: input.checked };
+  }
+  try {
+    await fetchJson("/config/features", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(toggles)
+    });
+    if (stateLabel) stateLabel.textContent = "Saved.";
+  } catch (error) {
+    if (stateLabel) stateLabel.textContent = `Failed: ${error.message}`;
+  }
+});
+
+/* ═══════════════════════════════════════════════
    WORKSPACE REFRESH
    ═══════════════════════════════════════════════ */
 
@@ -2076,6 +2160,8 @@ async function refreshWorkspace() {
     renderCodeCliAdapters();
     renderEmailAccounts();
     renderEmailDigestSettings();
+    renderFeatureToggles();
+    renderOutputDir();
     void loadAllArtifacts();
     await Promise.all([refreshTaskDetail(), loadTemplatePreview(state.selectedTemplateId)]);
   } catch (error) {

@@ -295,4 +295,24 @@ if (!active?.descriptor || active.descriptor.transport !== "subprocess") {
 }
 delete process.env.UCA_FORCE_BOOT_KIMI_RUNTIME;
 
+// UCA-048: feature flags module exports
+const { isFeatureEnabled, requireFeature, listFeatureStates, FEATURE_REGISTRY } = await import("../src/service/core/feature-flags.mjs");
+if (FEATURE_REGISTRY.length !== 10) {
+  throw new Error(`FEATURE_REGISTRY should have 10 entries; got ${FEATURE_REGISTRY.length}`);
+}
+if (!isFeatureEnabled("translation")) {
+  throw new Error("translation should be enabled by default (no configStore).");
+}
+if (isFeatureEnabled("email_monitoring")) {
+  throw new Error("email_monitoring should be disabled by default.");
+}
+const gate = requireFeature("email_monitoring");
+if (gate.ok !== false || !gate.redirectTabAnchor) {
+  throw new Error("requireFeature should return ok:false + anchor for a disabled feature.");
+}
+const states = listFeatureStates();
+if (states.length !== 10 || !states.every((s) => typeof s.enabled === "boolean")) {
+  throw new Error("listFeatureStates should return 10 entries with boolean enabled.");
+}
+
 console.log("Service core scaffold verification passed.");

@@ -37,6 +37,17 @@ assert.equal(consoleJs.includes("renderFilesList"), true);
 assert.equal(consoleJs.includes("selectFileArtifact"), true);
 assert.equal(consoleJs.includes("CODE_EXTENSIONS"), true);
 
+// UCA-048: console settings has output path + feature toggles
+assert.equal(consoleHtml.includes("outputDirInput"), true);
+assert.equal(consoleHtml.includes("featureToggleList"), true);
+assert.equal(consoleHtml.includes("saveFeatureTogglesBtn"), true);
+assert.equal(consoleHtml.includes("settings-output"), true);
+assert.equal(consoleHtml.includes("settings-features"), true);
+assert.equal(consoleJs.includes("renderFeatureToggles"), true);
+assert.equal(consoleJs.includes("renderOutputDir"), true);
+assert.equal(consoleJs.includes("FEATURE_DEFINITIONS"), true);
+assert.equal(consoleJs.includes("data-feature-id"), true);
+
 const overlayHtml = await read("src/desktop/renderer/overlay.html");
 assert.equal(overlayHtml.includes("commandInput"), true);
 assert.equal(overlayHtml.includes("sendBtn"), true);

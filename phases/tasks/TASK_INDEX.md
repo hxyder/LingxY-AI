@@ -52,7 +52,7 @@
 | 45 | UCA-045 | [45_morning_email_digest.md](45_morning_email_digest.md) | Morning Email Digest | UCA-044,UCA-027,UCA-049 | `task/uca-045-morning-digest` | done |
 | 46 | UCA-046 | [46_advanced_scheduler_ux.md](46_advanced_scheduler_ux.md) | Advanced Scheduler UX | UCA-010,UCA-036,UCA-024 | `task/uca-046-advanced-scheduler-ux` | done |
 | 47 | UCA-047 | [47_active_window_deep_context.md](47_active_window_deep_context.md) | Active Window Deep Context | UCA-029,UCA-023,UCA-040,UCA-049 | `task/uca-047-active-window-context` | done |
-| 48 | UCA-048 | [48_settings_v2_output_path_and_feature_toggles.md](48_settings_v2_output_path_and_feature_toggles.md) | Settings v2 (output path + feature toggles) | UCA-018,UCA-036,UCA-034~047 | `task/uca-048-settings-v2` | todo |
+| 48 | UCA-048 | [48_settings_v2_output_path_and_feature_toggles.md](48_settings_v2_output_path_and_feature_toggles.md) | Settings v2 (output path + feature toggles) | UCA-018,UCA-036,UCA-034~047 | `task/uca-048-settings-v2` | done |
 | 49 | UCA-049 | [49_provider_agnostic_agentic_runtime.md](49_provider_agnostic_agentic_runtime.md) | Provider-agnostic Agentic Runtime + Universal Tool Belt | UCA-008,UCA-017,UCA-028,UCA-039 | `task/uca-049-agentic-runtime` | done |
 
 ## 当前执行规则

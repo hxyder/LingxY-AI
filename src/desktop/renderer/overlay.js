@@ -1324,6 +1324,7 @@ clipboardBtn.addEventListener("click", async () => {
 const QUICK_ACTION_PRESETS = {
   translate: {
     needsContext: true,
+    featureId: "translation",
     contextless: { command: "请翻译我剪贴板里的内容", autoLoadClipboard: true },
     command: "请翻译这段内容"
   },
@@ -1339,9 +1340,41 @@ const QUICK_ACTION_PRESETS = {
   }
 };
 
+// UCA-048: feature gate for overlay. When a feature is disabled, show a
+// pop bubble with a "打开设置" button that navigates to Console Settings.
+async function checkFeatureGate(featureId) {
+  if (!featureId) return true;
+  try {
+    const health = await fetchJson("/health");
+    const features = health.config?.features ?? {};
+    const entry = features[featureId];
+    if (entry && entry.enabled === false) {
+      showPopBubble({
+        label: "功能已关闭",
+        body: `"${featureId}" 功能已在设置中关闭。`,
+        autoHideMs: 6000
+      });
+      addBubble("assistant", `此功能已在设置中关闭。`, {
+        optionButtons: [{
+          label: "打开设置",
+          onClick: () => {
+            window.ucaShell?.navigateConsole?.({ tabId: "settings", anchor: `features.${featureId}` });
+            window.ucaShell?.showWindow?.("console");
+          }
+        }]
+      });
+      return false;
+    }
+  } catch { /* health unavailable → fail open */ }
+  return true;
+}
+
 async function runQuickAction(action) {
   const preset = QUICK_ACTION_PRESETS[action];
   if (!preset) return;
+
+  // UCA-048: gate check before running the action
+  if (preset.featureId && !(await checkFeatureGate(preset.featureId))) return;
 
   const hasContext = Boolean(pendingCapture?.capture || pendingFileSelection?.filePaths?.length);
 

@@ -58,6 +58,15 @@ async function createOutputDirForTask({ runtime, artifactStore, task }) {
     await mkdir(desktopDir, { recursive: true });
     return desktopDir;
   }
+  // UCA-048: honour configStore.output.defaultDir when set. The user can
+  // configure a global output directory via Console → Settings so artifacts
+  // don't scatter across %APPDATA%/UCA/outputs/<taskId>/.
+  const configuredDir = runtime?.configStore?.load?.()?.output?.defaultDir;
+  if (typeof configuredDir === "string" && configuredDir.trim()) {
+    const taskDir = path.join(configuredDir.trim(), task.task_id);
+    await mkdir(taskDir, { recursive: true });
+    return taskDir;
+  }
   return artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
 }
 
