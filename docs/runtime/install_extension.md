@@ -6,7 +6,9 @@
 2. Enable developer mode.
 3. Load the `browser_ext/` folder as an unpacked extension.
 4. Copy the real unpacked extension IDs for Chrome / Edge.
-5. Run `scripts/install-native-host.ps1` and replace the placeholder `allowed_origins` with those IDs if needed.
+5. Run `scripts/install-native-host.ps1 -ChromeExtensionId <chrome-id> -EdgeExtensionId <edge-id>`.
+   - You can also set `UCA_CHROME_EXTENSION_ID` / `UCA_EDGE_EXTENSION_ID`.
+   - Pass only the browser you are testing if you loaded one extension.
 6. Reload the extension after the Native Host manifest is registered.
 
 ## Required Permissions

@@ -15,5 +15,5 @@ Current registry locations:
 Current limitations:
 
 - Explorer helper is published locally with `dotnet publish`
-- Browser extension requires updating `allowed_origins` to the real extension IDs after unpacked install
+- Browser extension requires passing the real unpacked extension IDs to `scripts/install-native-host.ps1` via `-ChromeExtensionId` / `-EdgeExtensionId` or `UCA_CHROME_EXTENSION_ID` / `UCA_EDGE_EXTENSION_ID`.
 - Office defaults to protocol fallback unless a direct runtime HTTP path is explicitly enabled

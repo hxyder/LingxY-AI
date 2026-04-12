@@ -1,5 +1,7 @@
 param(
   [switch]$InstallBrowserNativeHost,
+  [string]$ChromeExtensionId = $env:UCA_CHROME_EXTENSION_ID,
+  [string]$EdgeExtensionId = $env:UCA_EDGE_EXTENSION_ID,
   [switch]$SkipExplorerEntry,
   [switch]$SkipLaunch,
   [switch]$DryRun
@@ -64,7 +66,7 @@ if (-not $SkipExplorerEntry) {
 
 if ($InstallBrowserNativeHost) {
   Invoke-Step -Title "Install browser native host" -Action {
-    & powershell -ExecutionPolicy Bypass -File $NativeHostScript
+    & powershell -ExecutionPolicy Bypass -File $NativeHostScript -ChromeExtensionId $ChromeExtensionId -EdgeExtensionId $EdgeExtensionId
   }
 }
 
@@ -85,4 +87,6 @@ if (-not $kimiCommand) {
 }
 if (-not $InstallBrowserNativeHost) {
   Write-Host "3. If you need webpage capture later, rerun setup with -InstallBrowserNativeHost."
+} else {
+  Write-Host "3. Browser native host origins registered for the extension IDs you provided."
 }
