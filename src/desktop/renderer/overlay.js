@@ -431,13 +431,51 @@ function seedCaptureMatches(newText) {
    BUBBLE RENDERING
    ═══════════════════════════════════════════════ */
 
+function renderMarkdown(text) {
+  // Simple but safe Markdown renderer for assistant bubbles
+  // Process: bold, inline code, links, then line breaks
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  return escaped
+    // Numbered list items: "1. text" → styled list item
+    .replace(/^(\d+)\.\s+(.+)$/gm, "<div class=\"md-list-item\"><span class=\"md-list-num\">$1.</span> $2</div>")
+    // Bullet points: "- text" or "• text"
+    .replace(/^[-•]\s+(.+)$/gm, "<div class=\"md-list-item\"><span class=\"md-bullet\">•</span> $1</div>")
+    // Bold: **text**
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    // Inline code: `code`
+    .replace(/`([^`]+)`/g, "<code style=\"background:rgba(99,102,241,0.1);padding:1px 5px;border-radius:4px;font-size:0.9em;\">$1</code>")
+    // Links: [text](url)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, "<a href=\"#\" data-open-url=\"$2\" style=\"color:var(--primary);text-decoration:underline;\">$1</a>")
+    // Bare URLs
+    .replace(/(https?:\/\/[^\s<>"]+)/g, "<a href=\"#\" data-open-url=\"$1\" style=\"color:var(--primary);text-decoration:underline;\">$1</a>")
+    // Newlines → br (but avoid double-br inside list items)
+    .replace(/\n\n/g, "<br><br>")
+    .replace(/\n/g, "<br>");
+}
+
 function addBubble(role, content, options) {
   bubbleArea.hidden = false;
   const bubble = document.createElement("div");
   bubble.className = `bubble ${role}`;
 
   if (typeof content === "string") {
-    bubble.textContent = content;
+    if (role === "assistant") {
+      bubble.innerHTML = renderMarkdown(content);
+      // Wire clickable links to open_url
+      for (const anchor of bubble.querySelectorAll("[data-open-url]")) {
+        anchor.addEventListener("click", (e) => {
+          e.preventDefault();
+          const url = anchor.dataset.openUrl;
+          if (url) window.ucaShell?.openExternal?.(url) ?? window.open(url, "_blank");
+        });
+      }
+    } else {
+      bubble.textContent = content;
+    }
   } else {
     bubble.appendChild(content);
   }
@@ -1334,11 +1372,14 @@ async function submitTask() {
       };
       if (executorOverride) payload.executorOverride = executorOverride;
     } else {
+      // UCA-065: Include conversation history as context so follow-up messages
+      // ("打开你觉得合适的") can reference previous search results / assistant replies.
+      const historyText = buildHistoryBlock(true); // excludeLast=true (current turn not yet sent)
       payload = {
         sourceApp: "uca.overlay",
         captureMode: "overlay",
         sourceType: "clipboard",
-        text: "",
+        text: historyText ? `[对话历史]\n${historyText}` : "",
         userCommand: commandText,
         executionMode: "interactive"
       };
@@ -2405,6 +2446,28 @@ function showTemplateConfirmCard(userText) {
 async function handleUserSend() {
   const text = commandInput.value.trim();
   if (!text && !pendingFileSelection?.filePaths?.length && !pendingCapture?.capture) return;
+
+  // UCA-062: Check for special intents (schedule, template) BEFORE submitting
+  // so they go through the fast confirmation path instead of the AI pipeline.
+  if (text) {
+    const specialIntent = detectSpecialIntent(text);
+    if (specialIntent?.type === "schedule") {
+      addBubble("user", text);
+      appendTurn("user", text);
+      commandInput.value = "";
+      autoSizeInput();
+      showScheduleConfirmCard(text);
+      return;
+    }
+    if (specialIntent?.type === "template") {
+      addBubble("user", text);
+      appendTurn("user", text);
+      commandInput.value = "";
+      autoSizeInput();
+      showTemplateConfirmCard(text);
+      return;
+    }
+  }
 
   // normal task submission
   if (text && conversationPhase === "idle") {
