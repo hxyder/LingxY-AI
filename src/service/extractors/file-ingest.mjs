@@ -102,14 +102,14 @@ async function readTextFile(filePath) {
   return readFile(filePath, "utf8");
 }
 
-function getOfficePlaceholder(filePath, mime) {
+function getOfficeExtractionFallback(filePath, mime) {
   if (mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") {
-    return `[XLSX extraction placeholder] ${path.basename(filePath)}`;
+    return `[No extractable XLSX text found] ${path.basename(filePath)}`;
   }
   if (mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
-    return `[PPTX extraction placeholder] ${path.basename(filePath)}`;
+    return `[No extractable PPTX text found] ${path.basename(filePath)}`;
   }
-  return `[DOCX extraction placeholder] ${path.basename(filePath)}`;
+  return `[No extractable DOCX text found] ${path.basename(filePath)}`;
 }
 
 async function extractOfficeOpenXmlText(filePath, mime) {
@@ -133,9 +133,9 @@ async function extractOfficeOpenXmlText(filePath, mime) {
       }
     );
     const extracted = stdout.trim();
-    return extracted || getOfficePlaceholder(filePath, mime);
+    return extracted || getOfficeExtractionFallback(filePath, mime);
   } catch {
-    return getOfficePlaceholder(filePath, mime);
+    return getOfficeExtractionFallback(filePath, mime);
   }
 }
 

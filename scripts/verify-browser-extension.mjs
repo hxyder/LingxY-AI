@@ -22,6 +22,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const manifest = JSON.parse(await readFile(path.join(repoRoot, "browser_ext", "manifest.json"), "utf8"));
 
+function createFetchResponse(body, contentType) {
+  const bytes = Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8");
+  return {
+    ok: true,
+    status: 200,
+    headers: {
+      get(name) {
+        if (name.toLowerCase() === "content-type") return contentType;
+        if (name.toLowerCase() === "content-length") return String(bytes.length);
+        return null;
+      }
+    },
+    async arrayBuffer() {
+      return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    }
+  };
+}
+
 assert.equal(manifest.manifest_version, 3);
 assert.ok(manifest.permissions.includes("nativeMessaging"));
 assert.equal(manifest.background.service_worker, "background/service-worker.js");
@@ -34,7 +52,16 @@ const runtime = {
   eventBus: createEventBusScaffold(),
   queue: createTaskQueueScaffold(),
   artifactStore: createArtifactStore({ baseDir: path.join(repoRoot, ".tmp", "verify-browser-extension") }),
-  executors: [createFastExecutorScaffold(), createMultiModalExecutorScaffold()]
+  executors: [createFastExecutorScaffold(), createMultiModalExecutorScaffold()],
+  async fetchImpl(url) {
+    if (url.endsWith("/image.png")) {
+      return createFetchResponse(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), "image/png");
+    }
+    if (url.endsWith("/linked")) {
+      return createFetchResponse("<html><body><main>Fetched browser link content.</main></body></html>", "text/html; charset=utf-8");
+    }
+    throw new Error(`unexpected browser fetch URL ${url}`);
+  }
 };
 
 const handler = createNativeHostHandler({
@@ -115,6 +142,7 @@ const imageResponse = await handler({
 
 assert.equal(imageResponse.ok, true);
 assert.equal(imageResponse.payload.status, "success");
+assert.equal(runtime.store.taskEvents.some((event) => event.payload?.step === "browser_image_fetch"), true);
 
 const handoffRequest = buildOverlayHandoffRequest({
   actionId: "summarize",
@@ -198,6 +226,26 @@ const recentTasksResponse = await handler({
 
 assert.equal(recentTasksResponse.ok, true);
 assert.equal(recentTasksResponse.payload.tasks.length, 4);
+
+const linkResponse = await handler({
+  protocolVersion: "1.0",
+  requestId: "req-link",
+  action: "submit_capture",
+  payload: {
+    userCommand: "请总结这个链接",
+    capture: {
+      sourceType: "link",
+      browser: "chrome.exe",
+      url: "https://example.com/linked",
+      anchorText: "linked article"
+    }
+  }
+});
+
+assert.equal(linkResponse.ok, true);
+assert.equal(linkResponse.payload.status, "success");
+assert.equal(runtime.store.taskEvents.some((event) => event.payload?.step === "web_fetch"), true);
+assert.equal(runtime.store.taskEvents.some((event) => event.payload?.step === "web_fetch_placeholder"), false);
 
 // runQuickAction (inline result frame backend) — mocked fetch round-trip
 let submittedTask = null;

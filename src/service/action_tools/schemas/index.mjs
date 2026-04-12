@@ -254,5 +254,39 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     properties: {
       filename: { type: "string" }    // filename to join with defaultOutputDir
     }
+  },
+  // UCA-076: GUI automation via Windows UIAutomation
+  gui_find_element: {
+    type: "object",
+    required: [],
+    properties: {
+      window_title:    { type: "string" },  // partial title of target window
+      automation_id:   { type: "string" },  // AutomationId of the UI element
+      element_name:    { type: "string" },  // Name / accessible label of the element
+      control_type:    { type: "string" }   // Button, Edit, Text, CheckBox, etc.
+    }
+  },
+  gui_click: {
+    type: "object",
+    required: [],
+    properties: {
+      window_title:  { type: "string" },
+      automation_id: { type: "string" },
+      element_name:  { type: "string" },
+      control_type:  { type: "string" },
+      x:             { type: "number" },  // absolute screen x (skip element search)
+      y:             { type: "number" }   // absolute screen y
+    }
+  },
+  gui_type_text: {
+    type: "object",
+    required: [],
+    properties: {
+      text:          { type: "string" },  // text to type / set
+      window_title:  { type: "string" },
+      automation_id: { type: "string" },
+      element_name:  { type: "string" },
+      press_enter:   { type: "boolean" }  // send Enter after typing
+    }
   }
 });

@@ -7,7 +7,7 @@ Current built-ins:
 - `text/plain`
 - `text/markdown`
 - `application/pdf` detection with text-layer vs OCR branching
-- `application/vnd.openxmlformats-officedocument.wordprocessingml.document` detection with placeholder extraction
-- `image/png` and `image/jpeg` with OCR placeholder extraction
+- Office Open XML text extraction for DOCX / XLSX / PPTX
+- `image/png` and `image/jpeg` OCR through Windows OCR or Tesseract when available
 
-The current Phase 5 scaffold keeps the pipeline stable until dedicated runtime dependencies are introduced.
+Scanned PDFs without a text layer use `pdftoppm` when available, then run the generated page images through the image OCR pipeline. If `pdftoppm` or OCR is unavailable, the extractor reports `pdf_ocr_unavailable` instead of returning synthetic OCR text.

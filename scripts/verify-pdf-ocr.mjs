@@ -69,9 +69,15 @@ assert.equal(textExtract.page_count, 1);
 assert.match(textExtract.text, /Quarterly Revenue/);
 
 const scannedExtract = await extractFileContent(scannedPdf);
-assert.equal(scannedExtract.extraction_mode, "pdf_ocr");
-assert.equal(scannedExtract.ocr_engine, DEFAULT_OCR_ENGINE);
-assert.equal(scannedExtract.ocr_applied, true);
+assert.equal(["pdf_ocr", "pdf_ocr_unavailable"].includes(scannedExtract.extraction_mode), true);
+if (scannedExtract.extraction_mode === "pdf_ocr_unavailable") {
+  assert.equal(scannedExtract.ocr_engine, DEFAULT_OCR_ENGINE);
+  assert.equal(scannedExtract.ocr_applied, false);
+  assert.equal(scannedExtract.needs_pdf_ocr_engine, true);
+} else {
+  assert.equal(scannedExtract.ocr_applied, true);
+  assert.match(scannedExtract.ocr_engine, /^pdftoppm\+/);
+}
 
 const imageExtract = await extractFileContent(screenshotPath);
 assert.equal(imageExtract.extraction_mode, "image_ocr");
@@ -86,7 +92,7 @@ const filePacket = await buildFileContextPacket({
 assert.equal(filePacket.source_type, "file_group");
 assert.equal(filePacket.file_metadata.length, 2);
 assert.equal(filePacket.file_metadata[0].extraction_mode, "text_pdf");
-assert.equal(filePacket.file_metadata[1].extraction_mode, "pdf_ocr");
+assert.equal(["pdf_ocr", "pdf_ocr_unavailable"].includes(filePacket.file_metadata[1].extraction_mode), true);
 
 const service = createServiceBootstrap();
 service.runtime.artifactStore = {
@@ -114,7 +120,7 @@ const scannedTask = await submitFileTask({
   runtime: service.runtime
 });
 assert.equal(scannedTask.task.status, "success");
-assert.equal(scannedTask.task.context_packet.file_metadata[0].extraction_mode, "pdf_ocr");
+assert.equal(["pdf_ocr", "pdf_ocr_unavailable"].includes(scannedTask.task.context_packet.file_metadata[0].extraction_mode), true);
 
 const imageTask = await submitImageTask({
   imagePaths: [screenshotPath],

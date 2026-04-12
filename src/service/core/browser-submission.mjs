@@ -20,6 +20,9 @@ import {
   updateTask
 } from "./task-runtime.mjs";
 
+const MAX_BROWSER_FETCH_BYTES = 5 * 1024 * 1024;
+const MAX_BROWSER_CONTEXT_CHARS = 12000;
+
 function createSelectionMetadata(capture) {
   return {
     page_title: capture.pageTitle,
@@ -62,6 +65,143 @@ function normalizeCaptureText(capture) {
   }
 
   return "";
+}
+
+function getFetchImpl(runtime) {
+  return runtime.fetchImpl ?? globalThis.fetch;
+}
+
+function extensionFromUrl(url, fallback = "") {
+  try {
+    const pathname = new URL(url).pathname;
+    const ext = path.extname(pathname).toLowerCase();
+    return ext && ext.length <= 10 ? ext : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function imageExtensionFromContentType(contentType = "", url = "") {
+  const normalized = contentType.toLowerCase();
+  if (normalized.includes("image/jpeg")) return ".jpg";
+  if (normalized.includes("image/png")) return ".png";
+  if (normalized.includes("image/gif")) return ".gif";
+  if (normalized.includes("image/webp")) return ".webp";
+  return extensionFromUrl(url, ".img");
+}
+
+function isTextLikeContent(contentType = "") {
+  const normalized = contentType.toLowerCase();
+  return normalized.startsWith("text/")
+    || normalized.includes("json")
+    || normalized.includes("xml")
+    || normalized.includes("xhtml");
+}
+
+function textFromBuffer(buffer) {
+  return buffer.toString("utf8").slice(0, MAX_BROWSER_CONTEXT_CHARS);
+}
+
+async function fetchBrowserResource({ runtime, url, accept }) {
+  const fetchImpl = getFetchImpl(runtime);
+  if (typeof fetchImpl !== "function") {
+    throw new Error("No fetch implementation is available for browser resource capture.");
+  }
+  const response = await fetchImpl(url, {
+    headers: accept ? { accept } : undefined
+  });
+  if (!response?.ok) {
+    throw new Error(`Fetch failed for ${url}: HTTP ${response?.status ?? "unknown"}`);
+  }
+  const contentLength = Number(response.headers?.get?.("content-length") ?? 0);
+  if (contentLength > MAX_BROWSER_FETCH_BYTES) {
+    throw new Error(`Fetch response is too large (${contentLength} bytes).`);
+  }
+  const arrayBuffer = await response.arrayBuffer();
+  if (arrayBuffer.byteLength > MAX_BROWSER_FETCH_BYTES) {
+    throw new Error(`Fetch response is too large (${arrayBuffer.byteLength} bytes).`);
+  }
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    contentType: response.headers?.get?.("content-type") ?? "application/octet-stream"
+  };
+}
+
+async function saveBrowserImageArtifact({ capture, runtime, artifactStore, task }) {
+  const imageUrl = capture.imageUrl ?? capture.url;
+  if (!imageUrl) {
+    throw new Error("Browser image capture did not include an image URL.");
+  }
+  const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+  const fetched = await fetchBrowserResource({
+    runtime,
+    url: imageUrl,
+    accept: "image/*"
+  });
+  const ext = imageExtensionFromContentType(fetched.contentType, imageUrl);
+  const imageArtifactPath = path.join(outputDir, `browser-image${ext}`);
+  await writeFile(imageArtifactPath, fetched.buffer);
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: "step_finished",
+    payload: {
+      step: "browser_image_fetch",
+      artifact_path: imageArtifactPath,
+      content_type: fetched.contentType
+    }
+  });
+  return imageArtifactPath;
+}
+
+async function fetchBrowserLinkContext({ capture, runtime, artifactStore, task }) {
+  const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: "step_started",
+    payload: {
+      step: "web_fetch",
+      output_dir: outputDir,
+      url: capture.url
+    }
+  });
+  const fetched = await fetchBrowserResource({
+    runtime,
+    url: capture.url,
+    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5"
+  });
+  const isText = isTextLikeContent(fetched.contentType);
+  const isHtml = fetched.contentType.toLowerCase().includes("html");
+  const ext = isHtml ? ".html" : (isText ? ".txt" : extensionFromUrl(capture.url, ".bin"));
+  const artifactPath = path.join(outputDir, `web-fetch${ext}`);
+  await writeFile(artifactPath, fetched.buffer);
+
+  if (isText) {
+    const fetchedText = textFromBuffer(fetched.buffer);
+    task.context_packet = {
+      ...task.context_packet,
+      html: isHtml ? fetchedText : task.context_packet.html,
+      text: [
+        task.context_packet.text,
+        `Fetched URL: ${capture.url}`,
+        fetchedText
+      ].filter(Boolean).join("\n\n")
+    };
+    updateTask(runtime, task, { context_packet: task.context_packet });
+  }
+
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: "step_finished",
+    payload: {
+      step: "web_fetch",
+      artifact_path: artifactPath,
+      content_type: fetched.contentType,
+      attached_to_context: isText
+    }
+  });
 }
 
 export function buildBrowserContextPacket({
@@ -468,9 +608,15 @@ export async function submitBrowserTask({
   }
 
   if (capture.sourceType === "image") {
-    const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
-    const imageArtifactPath = path.join(outputDir, "browser-image.txt");
-    await writeFile(imageArtifactPath, `Browser image placeholder for ${capture.imageUrl ?? capture.url ?? "image"}`, "utf8");
+    let imageArtifactPath = null;
+    try {
+      imageArtifactPath = await saveBrowserImageArtifact({ capture, runtime, artifactStore, task });
+    } catch (error) {
+      markTaskFailed(runtime, task, {
+        message: `Browser image fetch failed: ${error.message}`
+      });
+      return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+    }
     const delegated = await submitImageTask({
       imagePaths: [imageArtifactPath],
       userCommand,
@@ -494,24 +640,14 @@ export async function submitBrowserTask({
   }
 
   if (capture.sourceType === "link" && !capture.html) {
-    const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
-    emitTaskEvent({
-      runtime,
-      taskId: task.task_id,
-      eventType: "step_started",
-      payload: {
-        step: "web_fetch_placeholder",
-        output_dir: outputDir
-      }
-    });
-    emitTaskEvent({
-      runtime,
-      taskId: task.task_id,
-      eventType: "step_finished",
-      payload: {
-        step: "web_fetch_placeholder"
-      }
-    });
+    try {
+      await fetchBrowserLinkContext({ capture, runtime, artifactStore, task });
+    } catch (error) {
+      markTaskFailed(runtime, task, {
+        message: `Browser link fetch failed: ${error.message}`
+      });
+      return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+    }
   }
 
   const executionResult = await runBrowserExecutor({ task, runtime });

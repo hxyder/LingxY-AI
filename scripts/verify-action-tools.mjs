@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readdir, readFile, rm } from "node:fs/promises";
+import { readdir, readFile, rm, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createActionToolRegistry } from "../src/service/action_tools/registry.mjs";
@@ -168,7 +168,11 @@ assert.equal(approvalRuntime.store.listPendingApprovals().length, 1);
 const screenshotResult = await registry.call("take_screenshot", { label: "capture-1" }, {
   outputDir: path.join(repoRoot, ".tmp", "verify-action-tools", "artifacts")
 });
+assert.equal(screenshotResult.success, true, `take_screenshot should succeed; got: ${screenshotResult.observation}`);
 assert.equal(screenshotResult.artifact_paths.length, 1);
+assert.ok(screenshotResult.artifact_paths[0].endsWith(".png"), "take_screenshot should return a PNG artifact");
+const screenshotInfo = await stat(screenshotResult.artifact_paths[0]);
+assert.ok(screenshotInfo.size > 0, "screenshot artifact should be non-empty");
 
 const notificationDir = path.join(notificationTestRoot, "UCA", "notifications");
 const notifyResult = await registry.call("notify", { title: "Timer", body: "Time is up", notificationDir }, {});
@@ -344,6 +348,53 @@ if (process.platform === "win32") {
   // A valid .pptx is a ZIP archive → first two bytes are "PK".
   assert.equal(header[0], 0x50, "pptx header byte 0 should be 'P' (ZIP magic)");
   assert.equal(header[1], 0x4b, "pptx header byte 1 should be 'K' (ZIP magic)");
+
+  const genDocx = await registry.call("generate_document", {
+    kind: "docx",
+    outline: {
+      title: "Document Renderer",
+      sections: [
+        { heading: "Summary", body: "DOCX renderer verification content." }
+      ]
+    },
+    filename: "renderer-check.docx"
+  }, { outputDir: toolSandbox });
+  assert.equal(genDocx.success, true, `generate_document(docx) should succeed on win32; got: ${genDocx.observation}`);
+  assert.ok(genDocx.artifact_paths?.[0]?.endsWith(".docx"));
+  const docxHeader = await readFileFs(genDocx.artifact_paths[0]);
+  assert.equal(docxHeader[0], 0x50, "docx header byte 0 should be 'P' (ZIP magic)");
+  assert.equal(docxHeader[1], 0x4b, "docx header byte 1 should be 'K' (ZIP magic)");
+
+  const genXlsx = await registry.call("generate_document", {
+    kind: "xlsx",
+    outline: {
+      rows: [
+        ["name", "score"],
+        ["alpha", "91"]
+      ]
+    },
+    filename: "renderer-check.xlsx"
+  }, { outputDir: toolSandbox });
+  assert.equal(genXlsx.success, true, `generate_document(xlsx) should succeed on win32; got: ${genXlsx.observation}`);
+  assert.ok(genXlsx.artifact_paths?.[0]?.endsWith(".xlsx"));
+  const xlsxHeader = await readFileFs(genXlsx.artifact_paths[0]);
+  assert.equal(xlsxHeader[0], 0x50, "xlsx header byte 0 should be 'P' (ZIP magic)");
+  assert.equal(xlsxHeader[1], 0x4b, "xlsx header byte 1 should be 'K' (ZIP magic)");
+
+  const genPdf = await registry.call("generate_document", {
+    kind: "pdf",
+    outline: {
+      title: "PDF Renderer",
+      body: "PDF renderer verification content."
+    },
+    filename: "renderer-check.pdf"
+  }, { outputDir: toolSandbox });
+  assert.equal(genPdf.success, true, `generate_document(pdf) should produce PDF or explicit HTML fallback; got: ${genPdf.observation}`);
+  assert.ok(genPdf.artifact_paths?.[0]?.endsWith(".pdf") || genPdf.metadata?.needs_pdf_conversion === true);
+  if (genPdf.artifact_paths?.[0]?.endsWith(".pdf")) {
+    const pdfHeader = await readFileFs(genPdf.artifact_paths[0], "utf8");
+    assert.ok(pdfHeader.startsWith("%PDF"), "pdf artifact should start with PDF magic");
+  }
 }
 
 console.log("Action tools and execution modes verification passed.");

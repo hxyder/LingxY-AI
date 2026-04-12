@@ -224,8 +224,8 @@ async function writePdfFromHtml(htmlPath, pdfPath) {
   ], { encoding: "utf8", timeout: 15000 });
 }
 
-async function resolveOoxmlFixtureScript() {
-  const scriptName = "create-ooxml-fixture.ps1";
+async function resolveDocumentRendererScript() {
+  const scriptName = "render-document.ps1";
   const candidates = [
     path.join(process.cwd(), "scripts", scriptName),
     path.resolve(__dirname, "..", "..", "..", "..", "scripts", scriptName),
@@ -245,7 +245,7 @@ async function resolveOoxmlFixtureScript() {
 }
 
 async function writeDocxArtifact(targetPath, plainText) {
-  const scriptPath = await resolveOoxmlFixtureScript();
+  const scriptPath = await resolveDocumentRendererScript();
   await execFileAsync(
     "powershell",
     [
@@ -269,7 +269,7 @@ async function writeDocxArtifact(targetPath, plainText) {
 }
 
 async function writeXlsxArtifact(targetPath, plainText) {
-  const scriptPath = await resolveOoxmlFixtureScript();
+  const scriptPath = await resolveDocumentRendererScript();
   await execFileAsync(
     "powershell",
     [
@@ -340,7 +340,7 @@ function renderPptxOutlineToPlainText(outline) {
 }
 
 async function writePptxArtifact(targetPath, plainText) {
-  const scriptPath = await resolveOoxmlFixtureScript();
+  const scriptPath = await resolveDocumentRendererScript();
   await execFileAsync(
     "powershell",
     [
