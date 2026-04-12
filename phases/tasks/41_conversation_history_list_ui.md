@@ -100,12 +100,24 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
+- 状态：done
+- 执行分支：`main`
+- 开始日期：2026-04-11
+- 完成日期：2026-04-11
 - 实际新增内容：
-- 验证结果：
+  - overlay.js — 完整 v3 storage schema（`uca.overlay.projects.v3`）：`{currentProjectId, currentConversationId, projects[], conversations[]}`
+  - v1→v3 自动迁移（`migrateV1ToV3`）：读取旧 key、包进默认项目、删旧 key
+  - `loadProjectStore / saveProjectStore / ensureDefaultProject` — 初始化 + 持久化 + 默认项目保障
+  - `switchConversation / switchProject / createProject / deleteProject / deleteConversation / listConversationsForCurrentProject` — 多项目多会话管理 API
+  - `generateConversationTitle` — 从第一个 user turn 截前 30 字自动生成
+  - `MAX_CONVERSATIONS_PER_PROJECT = 50` — 超出按 updatedAt 淘汰最老
+  - overlay.html — `#projectPanel`（项目下拉 + 新项目按钮 + 历史会话列表）、`#projectSelectorBtn` 工具栏按钮
+  - overlay.js — `renderProjectPanel`（项目下拉 + 历史列表 + 删除按钮 + 点击切换）
+  - UCA-038 bug fix：`refreshActiveTask` 任务终态后重置 `conversationPhase = "idle"`（修复新会话后用户气泡不显示）
+- 验证结果：全部 31 个 verify 脚本通过
+- schema v3 格式已列出（§4）
+- 自动清理阈值：每项目最多 50 条会话
+- 标题生成：第一个 user turn 前 30 字 → seedCommand 前 30 字 → "新会话"
 - 遗留问题（开工前已识别）：
   - 用户反馈（2026-04-11）：关闭 overlay 后看不到之前的对话（UCA-038 的 `restoreConversation()` 只恢复 state，不重新渲染气泡）—— 本任务的 `renderConversationFromState()` 负责修复
   - 用户需求（2026-04-11）："对话框还需要加项目，以及历史会话" —— 原 UCA-041 只覆盖历史，本次扩展加入项目层

@@ -42,10 +42,10 @@
 | 35 | UCA-035 | [35_voice_input_and_mic_permission.md](35_voice_input_and_mic_permission.md) | Voice Input | UCA-025,UCA-033 | `task/uca-035-voice-input` | done |
 | 36 | UCA-036 | [36_apple_overlay_rework.md](36_apple_overlay_rework.md) | Apple Overlay Rework | UCA-033,UCA-035 | `task/uca-036-apple-overlay-rework` | done |
 | 37 | UCA-037 | [37_browser_inline_result_frame.md](37_browser_inline_result_frame.md) | Browser Inline Result | UCA-011,UCA-029,UCA-034,UCA-036 | `task/uca-037-browser-inline-result` | in_progress |
-| 38 | UCA-038 | [38_conversation_memory_and_new_session.md](38_conversation_memory_and_new_session.md) | Conversation Memory | UCA-030,UCA-036,UCA-037 | `task/uca-038-conversation-memory` | in_progress |
+| 38 | UCA-038 | [38_conversation_memory_and_new_session.md](38_conversation_memory_and_new_session.md) | Conversation Memory | UCA-030,UCA-036,UCA-037 | `task/uca-038-conversation-memory` | done |
 | 39 | UCA-039 | [39_smart_launch_and_free_search.md](39_smart_launch_and_free_search.md) | Smart Launch + Free Search | UCA-008,UCA-017 | `task/uca-039-smart-launch-and-search` | in_progress |
 | 40 | UCA-040 | [40_misc_reliability_fixes.md](40_misc_reliability_fixes.md) | Misc Reliability Fixes | UCA-013,UCA-023 | `task/uca-040-misc-reliability-fixes` | done |
-| 41 | UCA-041 | [41_conversation_history_list_ui.md](41_conversation_history_list_ui.md) | Projects + History Sessions | UCA-038 | `task/uca-041-projects-and-history` | todo |
+| 41 | UCA-041 | [41_conversation_history_list_ui.md](41_conversation_history_list_ui.md) | Projects + History Sessions | UCA-038 | `task/uca-041-projects-and-history` | done |
 | 42 | UCA-042 | [42_multi_intent_decomposition.md](42_multi_intent_decomposition.md) | Multi-Intent Decomposition | UCA-007,UCA-017,UCA-039,UCA-046,UCA-049 | `task/uca-042-multi-intent-decomposition` | done |
 | 43 | UCA-043 | [43_multi_task_viewer_ui.md](43_multi_task_viewer_ui.md) | Multi-Task Viewer UI | UCA-032,UCA-031,UCA-042 | `task/uca-043-multi-task-viewer` | done |
 | 44 | UCA-044 | [44_email_monitoring_and_auto_schedule.md](44_email_monitoring_and_auto_schedule.md) | Email Monitoring + Auto-Schedule | UCA-010,UCA-017,UCA-027,UCA-046,UCA-049 | `task/uca-044-email-monitoring` | done |

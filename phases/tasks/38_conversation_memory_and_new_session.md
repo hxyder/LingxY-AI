@@ -94,9 +94,9 @@
   - `node scripts/verify-browser-extension.mjs` 通过（断言改为 conversationState 系列）
   - 手动 smoke：连续追问能保持上下文，压缩阈值触发，新会话按钮工作
 - 遗留问题：
-  - **[已知缺陷]** 用户反馈：新建会话后，发送的用户消息在 UI 上看不到（气泡不绘制）。提交链路似乎继续运行但 `addBubble("user", text)` 没触发；需要定位 `handleUserSend` 里 `conversationPhase === "idle"` 判定是否在新会话后被跳过
-  - **[已知缺陷]** 用户反馈：关闭 Overlay 后，之前的会话气泡看不到了。当前 `restoreConversation()` 只恢复内存 state，没有在 `onShellReady` 时遍历 `conversationState.turns` 重新调用 `addBubble` 绘制气泡；需要补一个 `renderConversationFromState()` 并在 init 调用
-  - **[已知限制]** 多会话列表 UI 尚未实现 —— 当前只有一个全局 conversation；见 UCA-041
+  - **[已修复]** 用户反馈：新建会话后，发送的用户消息在 UI 上看不到 → 根因：`refreshActiveTask` 任务完成后没有重置 `conversationPhase = "idle"`，导致后续 `handleUserSend` 的 `conversationPhase === "idle"` 守卫永远为 false。修复：在任务终态（success/failed/cancelled/partial_success）时重置。
+  - **[已修复]** 关闭 Overlay 后之前的气泡看不到 → 已有 `renderConversationState()` 在 init + onWindowFocused 时调用（早期 commit 已落地）。
+  - **[已移交]** 多会话列表 UI → UCA-041
 - 交接给下一个任务：
   - UCA-041 升级 storage schema 到 v3（projects + conversations + currentProjectId/currentConversationId）+ 增加侧边栏列表 UI
   - `appendTurn` / `persistConversation` 接口保持向下兼容

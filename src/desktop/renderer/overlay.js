@@ -100,35 +100,163 @@ let awaitingOptionType = null;  // "action" | "format" | null
  * When `turns` grows past COMPRESS_TURN_LIMIT, the oldest middle turns are
  * collapsed into a single summary placeholder.
  */
-const CONVERSATION_STORAGE_KEY = "uca.overlay.conversation.v1";
-const COMPRESS_TURN_LIMIT = 12;      // start compressing when more than this
-const COMPRESS_KEEP_START = 2;       // keep the first N turns verbatim
-const COMPRESS_KEEP_END = 6;         // keep the last N turns verbatim
-const MAX_CAPTURE_TEXT_CHARS = 8000; // hard cap when building the prompt
+/* ═══════════════════════════════════════════════
+   UCA-041: PROJECTS + MULTI-CONVERSATION STORAGE v3
+   ═══════════════════════════════════════════════ */
 
-let conversationState = null; // { id, seedCapture, seedCommand, turns, startedAt, updatedAt }
+const STORAGE_KEY_V3 = "uca.overlay.projects.v3";
+const LEGACY_STORAGE_KEY = "uca.overlay.conversation.v1";
+const COMPRESS_TURN_LIMIT = 12;
+const COMPRESS_KEEP_START = 2;
+const COMPRESS_KEEP_END = 6;
+const MAX_CAPTURE_TEXT_CHARS = 8000;
+const MAX_CONVERSATIONS_PER_PROJECT = 50;
+const DEFAULT_PROJECT_ID = "proj_default";
+const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899", "#14b8a6"];
+
+let projectStore = null;
+let conversationState = null;
 
 function newConversationId() {
   return `conv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function newProjectId() {
+  return `proj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function generateConversationTitle(conv) {
+  if (!conv?.turns?.length) return "新会话";
+  const first = conv.turns.find((t) => t.role === "user");
+  return (first?.content ?? conv.seedCommand ?? "").slice(0, 30).trim() || "新会话";
+}
+
+function ensureDefaultProject() {
+  if (!projectStore.projects.some((p) => p.id === DEFAULT_PROJECT_ID)) {
+    projectStore.projects.unshift({ id: DEFAULT_PROJECT_ID, name: "默认", color: PROJECT_COLORS[0], createdAt: Date.now(), metadata: {} });
+  }
+}
+
+function migrateV1ToV3() {
+  try {
+    const raw = localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || !Array.isArray(parsed.turns)) return null;
+    const conv = { ...parsed, id: parsed.id || newConversationId(), projectId: DEFAULT_PROJECT_ID, title: generateConversationTitle(parsed) };
+    localStorage.removeItem(LEGACY_STORAGE_KEY);
+    return conv;
+  } catch { return null; }
+}
+
+function loadProjectStore() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_V3);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.projects) && Array.isArray(parsed.conversations)) {
+        projectStore = parsed;
+        ensureDefaultProject();
+        conversationState = projectStore.conversations.find((c) => c.id === projectStore.currentConversationId) ?? null;
+        return;
+      }
+    }
+  } catch { /* rebuild */ }
+  projectStore = { currentProjectId: DEFAULT_PROJECT_ID, currentConversationId: null, projects: [], conversations: [] };
+  ensureDefaultProject();
+  const migrated = migrateV1ToV3();
+  if (migrated) {
+    projectStore.conversations.push(migrated);
+    projectStore.currentConversationId = migrated.id;
+    conversationState = migrated;
+  }
+}
+
+function saveProjectStore() {
+  try {
+    if (!projectStore) return;
+    for (const project of projectStore.projects) {
+      const convs = projectStore.conversations.filter((c) => c.projectId === project.id).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+      if (convs.length > MAX_CONVERSATIONS_PER_PROJECT) {
+        const drop = new Set(convs.slice(MAX_CONVERSATIONS_PER_PROJECT).map((c) => c.id));
+        projectStore.conversations = projectStore.conversations.filter((c) => !drop.has(c.id));
+      }
+    }
+    localStorage.setItem(STORAGE_KEY_V3, JSON.stringify(projectStore));
+  } catch { /* quota */ }
+}
+
+function switchConversation(convId) {
+  const conv = projectStore?.conversations?.find((c) => c.id === convId);
+  if (!conv) return;
+  conversationState = conv;
+  projectStore.currentConversationId = convId;
+  projectStore.currentProjectId = conv.projectId;
+  saveProjectStore();
+  closeActiveTaskEventStream();
+  activeTaskId = null; lastTask = null; notifiedTaskId = null;
+  lastArtifactPath = null; lastArtifactPreview = ""; lastArtifacts = [];
+  renderConversationState();
+}
+
+function switchProject(projectId) {
+  if (!projectStore) return;
+  projectStore.currentProjectId = projectId;
+  const convs = projectStore.conversations.filter((c) => c.projectId === projectId).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  if (convs.length) { switchConversation(convs[0].id); } else { conversationState = null; projectStore.currentConversationId = null; saveProjectStore(); clearBubbles(); showWelcome(); }
+}
+
+function createProject(name, color) {
+  if (!projectStore) loadProjectStore();
+  const p = { id: newProjectId(), name: name || "新项目", color: color || PROJECT_COLORS[projectStore.projects.length % PROJECT_COLORS.length], createdAt: Date.now(), metadata: {} };
+  projectStore.projects.push(p);
+  saveProjectStore();
+  return p;
+}
+
+function deleteProject(projectId) {
+  if (!projectStore || projectId === DEFAULT_PROJECT_ID) return;
+  projectStore.projects = projectStore.projects.filter((p) => p.id !== projectId);
+  projectStore.conversations = projectStore.conversations.filter((c) => c.projectId !== projectId);
+  if (projectStore.currentProjectId === projectId) switchProject(DEFAULT_PROJECT_ID);
+  saveProjectStore();
+}
+
+function deleteConversation(convId) {
+  if (!projectStore) return;
+  projectStore.conversations = projectStore.conversations.filter((c) => c.id !== convId);
+  if (projectStore.currentConversationId === convId) {
+    conversationState = null; projectStore.currentConversationId = null;
+    const fallback = projectStore.conversations.filter((c) => c.projectId === projectStore.currentProjectId).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))[0];
+    if (fallback) switchConversation(fallback.id); else { clearBubbles(); showWelcome(); }
+  }
+  saveProjectStore();
+}
+
+function listConversationsForCurrentProject() {
+  if (!projectStore) return [];
+  return projectStore.conversations.filter((c) => c.projectId === (projectStore.currentProjectId || DEFAULT_PROJECT_ID)).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+}
+
 function ensureConversation(seedCapture = null, seedCommand = null) {
+  if (!projectStore) loadProjectStore();
   if (!conversationState) {
-    conversationState = {
+    const conv = {
       id: newConversationId(),
+      projectId: projectStore.currentProjectId || DEFAULT_PROJECT_ID,
+      title: "",
       seedCapture: seedCapture ? { ...seedCapture } : null,
       seedCommand: seedCommand ?? null,
       turns: [],
       startedAt: Date.now(),
       updatedAt: Date.now()
     };
+    projectStore.conversations.push(conv);
+    projectStore.currentConversationId = conv.id;
+    conversationState = conv;
   } else {
-    if (!conversationState.seedCapture && seedCapture) {
-      conversationState.seedCapture = { ...seedCapture };
-    }
-    if (!conversationState.seedCommand && seedCommand) {
-      conversationState.seedCommand = seedCommand;
-    }
+    if (!conversationState.seedCapture && seedCapture) conversationState.seedCapture = { ...seedCapture };
+    if (!conversationState.seedCommand && seedCommand) conversationState.seedCommand = seedCommand;
   }
   return conversationState;
 }
@@ -138,6 +266,9 @@ function appendTurn(role, content) {
   ensureConversation();
   conversationState.turns.push({ role, content, ts: Date.now() });
   conversationState.updatedAt = Date.now();
+  if (!conversationState.title && role === "user") {
+    conversationState.title = content.slice(0, 30).trim() || "新会话";
+  }
   compressIfNeeded();
   persistConversation();
 }
@@ -149,66 +280,31 @@ function compressIfNeeded() {
   const keepEnd = turns.slice(-COMPRESS_KEEP_END);
   const dropped = turns.length - keepStart.length - keepEnd.length;
   if (dropped <= 0) return;
-  const placeholder = {
-    role: "system",
-    content: `[…压缩了 ${dropped} 轮早先的对话以节省上下文…]`,
-    ts: Date.now(),
-    compressed: true
-  };
-  conversationState.turns = [...keepStart, placeholder, ...keepEnd];
+  conversationState.turns = [...keepStart, { role: "system", content: `[…压缩了 ${dropped} 轮早先的对话以节省上下文…]`, ts: Date.now(), compressed: true }, ...keepEnd];
 }
 
-function persistConversation() {
-  try {
-    if (conversationState) {
-      localStorage.setItem(CONVERSATION_STORAGE_KEY, JSON.stringify(conversationState));
-    } else {
-      localStorage.removeItem(CONVERSATION_STORAGE_KEY);
-    }
-  } catch { /* quota or blocked */ }
-}
-
-function restoreConversation() {
-  try {
-    const raw = localStorage.getItem(CONVERSATION_STORAGE_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.turns)) {
-      conversationState = parsed;
-    }
-  } catch { /* ignore */ }
-}
+function persistConversation() { saveProjectStore(); }
+function restoreConversation() { loadProjectStore(); }
 
 function renderConversationState() {
   clearBubbles();
-  if (!conversationState?.turns?.length) {
-    showWelcome();
-    return;
-  }
-
+  if (!conversationState?.turns?.length) { showWelcome(); return; }
   for (const turn of conversationState.turns) {
-    const role = turn.role === "user" || turn.role === "assistant" || turn.role === "system"
-      ? turn.role
-      : "system";
+    const role = ["user", "assistant", "system"].includes(turn.role) ? turn.role : "system";
     addBubble(role, turn.content);
   }
 }
 
 function startNewConversation() {
   closeActiveTaskEventStream();
-  activeTaskId = null;
-  lastTask = null;
-  notifiedTaskId = null;
-  lastArtifactPath = null;
-  autoOpenedArtifactTaskId = null;
-  lastArtifactPreview = "";
-  lastArtifacts = [];
-  selectedOutputSuffix = "";
-  selectedFormatInstruction = "";
-  conversationPhase = "idle";
-  awaitingOptionType = null;
+  activeTaskId = null; lastTask = null; notifiedTaskId = null;
+  lastArtifactPath = null; autoOpenedArtifactTaskId = null;
+  lastArtifactPreview = ""; lastArtifacts = [];
+  selectedOutputSuffix = ""; selectedFormatInstruction = "";
+  conversationPhase = "idle"; awaitingOptionType = null;
   conversationState = null;
-  persistConversation();
+  if (projectStore) projectStore.currentConversationId = null;
+  saveProjectStore();
   clearPendingInputContext();
   clearBubbles();
   commandInput.value = "";
@@ -937,6 +1033,14 @@ async function refreshActiveTask() {
     } else if (task.status === "cancelled") {
       addSystemBubble("Task cancelled.");
     }
+
+    // UCA-038 bug fix: reset conversationPhase to "idle" once a task reaches
+    // any terminal state. Without this, the phase stays stuck at "running"
+    // and the next handleUserSend() skips addBubble("user", text) because
+    // the `conversationPhase === "idle"` guard fails.
+    if (["success", "failed", "cancelled", "partial_success"].includes(task.status)) {
+      conversationPhase = "idle";
+    }
   } catch (error) {
     addSystemBubble(`Refresh failed: ${error.message}`);
   }
@@ -1294,6 +1398,82 @@ newSessionBtn?.addEventListener("click", () => {
   addSystemBubble("已开启新会话 — 之前的上下文已清除。");
 });
 
+/* ── UCA-041: project + history panel ── */
+
+const projectPanel = document.querySelector("#projectPanel");
+const projectSelectorBtn = document.querySelector("#projectSelectorBtn");
+const projectDropdown = document.querySelector("#projectDropdown");
+const newProjectBtn = document.querySelector("#newProjectBtn");
+const historyList = document.querySelector("#historyList");
+
+function renderProjectPanel() {
+  if (!projectStore) loadProjectStore();
+  // Populate project dropdown
+  if (projectDropdown) {
+    projectDropdown.innerHTML = projectStore.projects.map((p) =>
+      `<option value="${p.id}" ${p.id === projectStore.currentProjectId ? "selected" : ""}>${p.name}</option>`
+    ).join("");
+  }
+  // Populate history list
+  if (historyList) {
+    const convs = listConversationsForCurrentProject();
+    if (convs.length === 0) {
+      historyList.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:8px 0;">暂无会话记录。</div>`;
+      return;
+    }
+    historyList.innerHTML = convs.map((c) => {
+      const title = c.title || generateConversationTitle(c);
+      const turnCount = c.turns?.length ?? 0;
+      const date = c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : "";
+      const isActive = c.id === projectStore.currentConversationId;
+      return `
+        <div data-conv-id="${c.id}" style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px;${isActive ? "background:rgba(99,102,241,0.12);" : ""}">
+          <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${isActive ? "font-weight:600;" : ""}">${title}</div>
+          <span style="font-size:10px;color:var(--muted);">${turnCount} turns · ${date}</span>
+          <button data-delete-conv="${c.id}" type="button" style="font-size:10px;padding:2px 6px;border:none;background:none;color:var(--muted);cursor:pointer;" title="删除此会话">×</button>
+        </div>
+      `;
+    }).join("");
+    for (const row of historyList.querySelectorAll("[data-conv-id]")) {
+      row.addEventListener("click", (e) => {
+        if (e.target.closest("[data-delete-conv]")) return;
+        switchConversation(row.dataset.convId);
+        setPanelOpen(projectPanel, false);
+      });
+    }
+    for (const btn of historyList.querySelectorAll("[data-delete-conv]")) {
+      btn.addEventListener("click", () => {
+        deleteConversation(btn.dataset.deleteConv);
+        renderProjectPanel();
+      });
+    }
+  }
+}
+
+projectSelectorBtn?.addEventListener("click", () => {
+  if (isPanelOpen(projectPanel)) {
+    setPanelOpen(projectPanel, false);
+  } else {
+    closeAllPanels();
+    renderProjectPanel();
+    setPanelOpen(projectPanel, true);
+  }
+});
+
+projectDropdown?.addEventListener("change", () => {
+  switchProject(projectDropdown.value);
+  renderProjectPanel();
+});
+
+newProjectBtn?.addEventListener("click", () => {
+  const name = prompt("项目名称：");
+  if (!name?.trim()) return;
+  const project = createProject(name.trim());
+  switchProject(project.id);
+  renderProjectPanel();
+  addSystemBubble(`已创建项目"${project.name}"。`);
+});
+
 clipboardBtn.addEventListener("click", async () => {
   try {
     const clipText = (await window.ucaShell.readClipboardText()).trim();
@@ -1427,6 +1607,7 @@ function isPanelOpen(panel) {
 
 function closeAllPanels() {
   setPanelOpen(schedulePanel, false);
+  setPanelOpen(document.querySelector("#projectPanel"), false);
   exitVoiceMode();
 }
 

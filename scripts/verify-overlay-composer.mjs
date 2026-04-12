@@ -81,6 +81,19 @@ assert.equal(overlayHtml.includes("scheduleCategory"), true);
 assert.equal(overlayHtml.includes("scheduleLeadTime"), true);
 assert.equal(overlayJs.includes("scheduleCategorySelect"), true);
 assert.equal(overlayJs.includes("scheduleLeadTimeSelect"), true);
+// UCA-041: projects + multi-conversation v3 schema + project panel
+assert.equal(overlayJs.includes("STORAGE_KEY_V3"), true);
+assert.equal(overlayJs.includes("projectStore"), true);
+assert.equal(overlayJs.includes("loadProjectStore"), true);
+assert.equal(overlayJs.includes("switchConversation"), true);
+assert.equal(overlayJs.includes("switchProject"), true);
+assert.equal(overlayJs.includes("createProject"), true);
+assert.equal(overlayJs.includes("listConversationsForCurrentProject"), true);
+assert.equal(overlayJs.includes("renderProjectPanel"), true);
+assert.equal(overlayHtml.includes("projectPanel"), true);
+assert.equal(overlayHtml.includes("projectDropdown"), true);
+assert.equal(overlayHtml.includes("historyList"), true);
+assert.equal(overlayHtml.includes("projectSelectorBtn"), true);
 
 const taskEventStream = await read("src/desktop/renderer/task-event-stream.js");
 assert.equal(taskEventStream.includes("formatTaskEventSummary"), true);

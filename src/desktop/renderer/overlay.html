@@ -857,6 +857,16 @@
     <!-- Bubble conversation area -->
     <div id="bubbleArea" class="bubble-area" hidden></div>
 
+    <!-- UCA-041: Project + history panel (hidden by default) -->
+    <div id="projectPanel" class="inline-panel" data-open="false">
+      <div class="panel-title">项目与历史</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <select id="projectDropdown" style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;background:rgba(255,255,255,0.06);color:inherit;border:1px solid rgba(255,255,255,0.12);"></select>
+        <button id="newProjectBtn" type="button" style="font-size:11px;padding:4px 10px;">+ 新项目</button>
+      </div>
+      <div id="historyList" style="max-height:200px;overflow-y:auto;"></div>
+    </div>
+
     <!-- Inline schedule form (hidden by default) -->
     <div id="schedulePanel" class="inline-panel" data-open="false">
       <div class="panel-title">新建定时任务</div>
@@ -925,6 +935,9 @@
     <div class="quick-toolbar">
       <button id="newSessionBtn" class="quick-btn" type="button" title="开始新会话（清空记忆）">
         <span class="quick-glyph">&#10133;</span>新会话
+      </button>
+      <button id="projectSelectorBtn" class="quick-btn" type="button" title="切换项目 / 查看历史会话">
+        <span class="quick-glyph">&#128218;</span>项目
       </button>
       <button class="quick-btn" data-quick-action="translate" type="button" title="翻译当前上下文">
         <span class="quick-glyph">&#127760;</span>翻译
