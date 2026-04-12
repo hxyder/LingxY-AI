@@ -155,6 +155,8 @@ tabButtons.forEach((btn) => {
     } else if (btn.dataset.tab === "projects") {
       renderProjectsWorkspace();
       void syncConsoleProjectStoreFromService({ rerender: true });
+    } else if (btn.dataset.tab === "connectors") {
+      void loadConnectorsTab();
     }
   });
 });
@@ -512,7 +514,7 @@ function renderMcpServers() {
     <div class="surface" style="padding:10px 12px;">
       <div class="row">
         <strong style="font-size:13px;">${escapeHtml(server.displayName ?? server.id)}</strong>
-        <span class="chip ${server.available ? "ready" : server.enabled === false ? "muted" : "warning"}">${escapeHtml(server.available ? "ready" : server.enabled === false ? "disabled" : "unavailable")}</span>
+        <span class="chip ${getMcpStatusView(server).className}">${escapeHtml(getMcpStatusView(server).label)}</span>
       </div>
       <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(server.transport ?? "stdio")} · ${escapeHtml(server.command ?? server.url ?? "n/a")}</p>
       <div class="toolbar" style="margin-top:6px;">
@@ -2754,3 +2756,303 @@ dagEditorInput.value = JSON.stringify(buildSampleDag(), null, 2);
 void refreshWorkspace();
 void refreshOfficeAddinSetupStatus();
 setInterval(() => void refreshWorkspace(), 6000);
+
+/* ═══════════════════════════════════════════════
+   UCA-070: CONNECTORS TAB
+   ═══════════════════════════════════════════════ */
+
+const connEmailList = document.querySelector("#connEmailList");
+const connEmailState = document.querySelector("#connEmailState");
+const connDigestEnabled = document.querySelector("#connDigestEnabled");
+const connDigestTestBtn = document.querySelector("#connDigestTestBtn");
+const connDigestTestState = document.querySelector("#connDigestTestState");
+const connectorsMcpList = document.querySelector("#connectorsMcpList");
+const connectorsMcpRefreshBtn = document.querySelector("#connectorsMcpRefreshBtn");
+
+function renderConnEmailAccounts(accounts) {
+  if (!connEmailList) return;
+  if (!accounts?.length) {
+    connEmailList.innerHTML = "";
+    return;
+  }
+  connEmailList.innerHTML = accounts.map((acc) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface2,#23252e);border-radius:8px;border:1px solid rgba(255,255,255,0.07);">
+      <span style="font-size:18px;">${acc.provider === "graph" ? "📧" : "✉"}</span>
+      <div style="flex:1;min-width:0;">
+        <div style="font-size:13px;font-weight:500;">${acc.displayName ?? acc.email ?? acc.id}</div>
+        <div style="font-size:11px;color:var(--muted);">${acc.provider?.toUpperCase() ?? "IMAP"} · ${acc.imapHost ?? (acc.provider === "graph" ? "Microsoft Graph" : "")}</div>
+      </div>
+      <button class="ghost" style="font-size:12px;padding:3px 8px;color:#ef4444;" data-delete-email="${acc.id}">移除</button>
+    </div>`).join("");
+  connEmailList.querySelectorAll("[data-delete-email]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.deleteEmail;
+      try {
+        await fetch(`${state.serviceBaseUrl}/config/email/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await loadConnectorsTab();
+      } catch (err) {
+        if (connEmailState) connEmailState.textContent = `Error: ${err.message}`;
+      }
+    });
+  });
+}
+
+const MCP_SERVER_META = {
+  "mcp-filesystem": { icon: "📁", desc: "读写本地文件（白名单目录）" },
+  "mcp-memory":     { icon: "🧠", desc: "跨会话 Key-Value 持久记忆" },
+  "mcp-brave-search": { icon: "🔍", desc: "Brave 网页搜索（需 API Key）", configKey: "BRAVE_API_KEY", configLabel: "Brave API Key", configPlaceholder: "BSA..." },
+  "mcp-puppeteer":  { icon: "🌐", desc: "Puppeteer 浏览器自动化（会打开 Chrome）" },
+  "local-fs":       { icon: "📂", desc: "本地文件系统（已弃用，用 mcp-filesystem 代替）" },
+  "figma":          { icon: "🎨", desc: "Figma 设计工具集成（需 Figma MCP 插件）" }
+};
+
+function getMcpStatusView(server) {
+  if (server.detail === "legacy_stub_use_mcp_filesystem") {
+    return { label: "已弃用", className: "muted" };
+  }
+  if (server.detail === "external_plugin_required") {
+    return { label: "需插件", className: "muted" };
+  }
+  if (server.available && server.enabled) {
+    return { label: "运行中", className: "ready" };
+  }
+  if (!server.available) {
+    return { label: "未安装", className: "error" };
+  }
+  return { label: "已关闭", className: "" };
+}
+
+function renderConnectorsMcpServers(servers) {
+  if (!connectorsMcpList) return;
+  if (!servers?.length) {
+    connectorsMcpList.innerHTML = "<p class='muted' style='font-size:12px;'>No MCP servers found.</p>";
+    return;
+  }
+  connectorsMcpList.innerHTML = "";
+  for (const s of servers) {
+    const meta = MCP_SERVER_META[s.id] ?? { icon: "🔌", desc: s.id };
+    const status = getMcpStatusView(s);
+    const statusLabel = status.label;
+    const statusClass = status.className;
+    const hasCfg = !!meta.configKey;
+    const cardId = `mcp-card-${s.id}`;
+
+    const card = document.createElement("div");
+    card.className = "mcp-server-card";
+    card.id = cardId;
+    card.innerHTML = `
+      <div class="mcp-server-card-header">
+        <span class="mcp-server-icon">${meta.icon}</span>
+        <div class="mcp-server-info">
+          <div class="mcp-server-name">${s.displayName ?? s.id}</div>
+          <div class="mcp-server-desc">${meta.desc}</div>
+        </div>
+        <span class="mcp-status-dot ${statusClass}" title="${statusLabel}"></span>
+        <span style="font-size:11px;color:var(--muted);margin-right:6px;">${statusLabel}</span>
+        ${hasCfg ? `<button class="ghost" style="font-size:11px;padding:3px 8px;margin-right:6px;" data-mcp-config="${s.id}">⚙ 配置</button>` : ""}
+        <label class="conn-toggle" title="${s.enabled ? '点击关闭' : '点击开启'}">
+          <input type="checkbox" ${s.enabled ? "checked" : ""} ${!s.available ? "disabled" : ""} data-mcp-toggle="${s.id}">
+          <span class="conn-toggle-track"></span>
+        </label>
+      </div>
+      ${hasCfg ? `
+      <div class="mcp-server-config" id="mcp-cfg-${s.id}">
+        <div style="margin-top:8px;">
+          <label style="font-size:12px;">${meta.configLabel}</label>
+          <div style="display:flex;gap:8px;margin-top:4px;">
+            <input type="password" id="mcp-cfg-val-${s.id}" placeholder="${meta.configPlaceholder ?? ''}" style="flex:1;">
+            <button class="secondary" style="font-size:12px;padding:5px 12px;" data-mcp-cfg-save="${s.id}">保存</button>
+          </div>
+          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mcp-cfg-state-${s.id}"></div>
+        </div>
+      </div>` : ""}
+    `;
+    connectorsMcpList.appendChild(card);
+  }
+
+  // Wire toggle switches
+  connectorsMcpList.querySelectorAll("[data-mcp-toggle]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const id = input.dataset.mcpToggle;
+      const enabled = input.checked;
+      try {
+        await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/toggle`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled })
+        });
+        await loadConnectorsTab();
+      } catch (err) {
+        input.checked = !enabled; // revert
+      }
+    });
+  });
+
+  // Wire config expand buttons
+  connectorsMcpList.querySelectorAll("[data-mcp-config]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.mcpConfig;
+      const cfgDiv = document.getElementById(`mcp-cfg-${id}`);
+      if (cfgDiv) cfgDiv.classList.toggle("open");
+    });
+  });
+
+  // Wire config save buttons
+  connectorsMcpList.querySelectorAll("[data-mcp-cfg-save]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.mcpCfgSave;
+      const val = document.getElementById(`mcp-cfg-val-${id}`)?.value?.trim();
+      const stateEl = document.getElementById(`mcp-cfg-state-${id}`);
+      if (!val) { if (stateEl) stateEl.textContent = "请输入值"; return; }
+      if (stateEl) stateEl.textContent = "保存中…";
+      try {
+        await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/config`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: MCP_SERVER_META[id]?.configKey, value: val })
+        });
+        if (stateEl) { stateEl.textContent = "已保存 ✓"; setTimeout(() => { stateEl.textContent = ""; }, 2000); }
+        // Also enable the server after saving API key
+        await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/toggle`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: true })
+        });
+        await loadConnectorsTab();
+      } catch (err) {
+        if (stateEl) stateEl.textContent = `Error: ${err.message}`;
+      }
+    });
+  });
+}
+
+async function loadConnectorsTab() {
+  try {
+    const [accountsResp, mcpResp, settingsResp] = await Promise.all([
+      fetch(`${state.serviceBaseUrl}/config/email/accounts`),
+      fetch(`${state.serviceBaseUrl}/ai/mcp`),
+      fetch(`${state.serviceBaseUrl}/config/email/settings`)
+    ]);
+    if (accountsResp.ok) {
+      const { accounts } = await accountsResp.json();
+      renderConnEmailAccounts(accounts);
+    }
+    if (mcpResp.ok) {
+      const data = await mcpResp.json();
+      renderConnectorsMcpServers(data.servers ?? []);
+    }
+    if (settingsResp.ok) {
+      const { settings } = await settingsResp.json();
+      if (connDigestEnabled) connDigestEnabled.checked = settings.enabled !== false;
+    }
+  } catch (err) {
+    if (connEmailList) connEmailList.innerHTML = `<p class='muted' style='font-size:12px;'>Could not load: ${err.message}</p>`;
+  }
+}
+
+// ── Email provider cards ──────────────────────────────────────
+const IMAP_PRESETS = {
+  gmail:   { host: "imap.gmail.com",        port: 993, passLabel: "App 专用密码", hint: "需在 Google 账户开启两步验证后生成应用专用密码" },
+  outlook: { host: "imap-mail.outlook.com", port: 993, passLabel: "密码 / App Password", hint: "" },
+  qq:      { host: "imap.qq.com",           port: 993, passLabel: "授权码", hint: "在 QQ 邮箱设置 → 账户 → IMAP → 开启 → 生成授权码" },
+  "163":   { host: "imap.163.com",          port: 993, passLabel: "授权密码", hint: "在 163 邮箱设置 → POP3/SMTP/IMAP → 开启 → 生成授权密码" },
+  other:   { host: "",                       port: 993, passLabel: "密码", hint: "" }
+};
+
+const PROVIDER_NAMES = {
+  gmail: "Gmail", outlook: "Outlook / Hotmail", qq: "QQ Mail", "163": "163 Mail", other: "IMAP 邮箱"
+};
+
+let _currentEmailProvider = null;
+
+document.querySelectorAll(".conn-provider-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const provider = btn.dataset.provider;
+    _currentEmailProvider = provider;
+    const preset = IMAP_PRESETS[provider] ?? IMAP_PRESETS.other;
+    const formTitle = document.getElementById("connEmailFormTitle");
+    const picker = document.getElementById("connEmailPicker");
+    const inlineForm = document.getElementById("connEmailInlineForm");
+    const hostRow = document.getElementById("connEmailHostRow");
+    const passLabel = document.getElementById("connEmailPasswordLabel");
+    const hint = document.getElementById("connEmailPasswordHint");
+    const hostInput = document.getElementById("connEmailImapHost");
+    const addrInput = document.getElementById("connEmailAddress");
+
+    if (formTitle) formTitle.textContent = `连接 ${PROVIDER_NAMES[provider] ?? provider}`;
+    if (passLabel) passLabel.textContent = preset.passLabel;
+    if (hint) hint.textContent = preset.hint;
+    if (hostInput) hostInput.value = preset.host;
+    if (hostRow) hostRow.style.display = provider === "other" ? "" : "none";
+    if (addrInput) { addrInput.value = ""; addrInput.placeholder = provider === "other" ? "you@example.com" : `you@${provider === "163" ? "163.com" : provider + ".com"}`; }
+    if (document.getElementById("connEmailPassword")) document.getElementById("connEmailPassword").value = "";
+    if (connEmailState) connEmailState.textContent = "";
+
+    if (picker) picker.style.display = "none";
+    if (inlineForm) inlineForm.style.display = "";
+    if (addrInput) addrInput.focus();
+  });
+});
+
+document.getElementById("connEmailCancelBtn")?.addEventListener("click", () => {
+  const picker = document.getElementById("connEmailPicker");
+  const inlineForm = document.getElementById("connEmailInlineForm");
+  if (picker) picker.style.display = "";
+  if (inlineForm) inlineForm.style.display = "none";
+  if (connEmailState) connEmailState.textContent = "";
+  _currentEmailProvider = null;
+});
+
+document.getElementById("connEmailConnectBtn")?.addEventListener("click", async () => {
+  const provider = _currentEmailProvider ?? "other";
+  const preset = IMAP_PRESETS[provider] ?? IMAP_PRESETS.other;
+  const email = document.getElementById("connEmailAddress")?.value.trim();
+  const password = document.getElementById("connEmailPassword")?.value;
+  const host = document.getElementById("connEmailImapHost")?.value.trim() || preset.host;
+  if (!email) { if (connEmailState) connEmailState.textContent = "请输入邮箱地址"; return; }
+  if (!password) { if (connEmailState) connEmailState.textContent = "请输入密码 / 授权码"; return; }
+  if (connEmailState) connEmailState.textContent = "连接中…";
+  if (document.getElementById("connEmailConnectBtn")) document.getElementById("connEmailConnectBtn").disabled = true;
+  try {
+    const id = email.replace(/[^a-z0-9]/gi, "-").toLowerCase().slice(0, 40);
+    const resp = await fetch(`${state.serviceBaseUrl}/config/email/accounts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id, email, provider: provider === "other" ? "imap" : provider === "outlook" ? "imap" : provider === "gmail" ? "imap" : provider === "qq" ? "imap" : provider === "163" ? "imap" : "imap",
+        displayName: email,
+        imapHost: host,
+        imapPort: preset.port,
+        credentials: { username: email, password }
+      })
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error ?? resp.statusText);
+    const picker = document.getElementById("connEmailPicker");
+    const inlineForm = document.getElementById("connEmailInlineForm");
+    if (picker) picker.style.display = "";
+    if (inlineForm) inlineForm.style.display = "none";
+    if (connEmailState) { connEmailState.textContent = ""; }
+    _currentEmailProvider = null;
+    await loadConnectorsTab();
+  } catch (err) {
+    if (connEmailState) connEmailState.textContent = `连接失败: ${err.message}`;
+  } finally {
+    if (document.getElementById("connEmailConnectBtn")) document.getElementById("connEmailConnectBtn").disabled = false;
+  }
+});
+
+connDigestTestBtn?.addEventListener("click", async () => {
+  if (connDigestTestState) connDigestTestState.textContent = "Sending digest…";
+  try {
+    const resp = await fetch(`${state.serviceBaseUrl}/email/digest/check`, { method: "POST" });
+    const data = await resp.json();
+    if (connDigestTestState) {
+      connDigestTestState.textContent = data.sent ? "Digest sent!" : (data.reason ?? "No digest sent.");
+      setTimeout(() => { connDigestTestState.textContent = ""; }, 4000);
+    }
+  } catch (err) {
+    if (connDigestTestState) connDigestTestState.textContent = `Error: ${err.message}`;
+  }
+});
+
+connectorsMcpRefreshBtn?.addEventListener("click", () => { void loadConnectorsTab(); });

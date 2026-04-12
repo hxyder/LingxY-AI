@@ -1,5 +1,6 @@
 const dockButton = document.querySelector("#dockButton");
 const clipBadge = document.querySelector("#clipBadge");
+const taskBadge = document.querySelector("#taskBadge");
 let dragDepth = 0;
 let clipboardReadyTimer = null;
 
@@ -30,8 +31,12 @@ async function pollTaskState() {
   try {
     const resp = await fetch("http://127.0.0.1:4310/tasks");
     const data = await resp.json();
+    const tasks = data.tasks ?? [];
     const twoMinAgo = Date.now() - 2 * 60 * 1000;
-    const hasActive = (data.tasks ?? []).some((t) => {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const todayMs = todayStart.getTime();
+
+    const hasActive = tasks.some((t) => {
       if (!isUserTask(t)) return false;
       if (t.status !== "running" && t.status !== "queued" && t.status !== "cancelling") return false;
       const created = new Date(t.created_at).getTime();
@@ -42,6 +47,24 @@ async function pollTaskState() {
       window.__orbApi?.activate();
     } else {
       window.__orbApi?.deactivate();
+    }
+
+    // UCA-069: count today's completed user tasks for badge
+    const completedToday = tasks.filter((t) => {
+      if (!isUserTask(t)) return false;
+      if (t.status !== "success" && t.status !== "partial_success") return false;
+      const updatedMs = new Date(t.updated_at ?? t.created_at).getTime();
+      return Number.isFinite(updatedMs) && updatedMs >= todayMs;
+    }).length;
+
+    if (completedToday > 0) {
+      taskBadge.textContent = completedToday > 99 ? "99+" : String(completedToday);
+      dockButton.classList.add("has-completed");
+      dockButton.title = `UCA · 今日完成 ${completedToday} 个任务`;
+    } else {
+      taskBadge.textContent = "";
+      dockButton.classList.remove("has-completed");
+      dockButton.title = "UCA";
     }
   } catch { /* runtime not ready */ }
 }

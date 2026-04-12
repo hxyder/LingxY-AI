@@ -670,6 +670,56 @@ export function createElectronShellRuntime({
     ]));
   }
 
+  // UCA-069: Generate a tray icon with optional badge number using SVG data URL.
+  function buildTrayIcon(count) {
+    const hasBadge = count > 0;
+    const label = count > 99 ? "99+" : count > 0 ? String(count) : "";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
+      <!-- orb base -->
+      <circle cx="16" cy="16" r="14" fill="url(#base)"/>
+      <defs>
+        <radialGradient id="base" cx="40%" cy="35%">
+          <stop offset="0%" stop-color="#6366f1"/>
+          <stop offset="60%" stop-color="#312e81"/>
+          <stop offset="100%" stop-color="#0f0f1a"/>
+        </radialGradient>
+      </defs>
+      <!-- glass highlight -->
+      <ellipse cx="12" cy="10" rx="5" ry="3" fill="rgba(255,255,255,0.3)" transform="rotate(-20,12,10)"/>
+      ${hasBadge ? `
+      <!-- badge circle -->
+      <circle cx="24" cy="8" r="${label.length > 1 ? 9 : 7}" fill="#22c55e"/>
+      <text x="24" y="${label.length > 1 ? 12 : 12}" text-anchor="middle"
+        font-family="system-ui,sans-serif" font-size="${label.length > 1 ? 7 : 9}"
+        font-weight="bold" fill="white">${label}</text>` : ""}
+    </svg>`;
+    const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+    return nativeImage.createFromDataURL(dataUrl);
+  }
+
+  async function updateTrayBadge() {
+    if (!tray) return;
+    try {
+      const resp = await fetch(`${resolvedServiceBaseUrl}/tasks`);
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const tasks = data.tasks ?? [];
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const todayMs = todayStart.getTime();
+      const completed = tasks.filter((t) => {
+        if (t.capture_mode === "scheduler" || t.source_app === "uca.scheduler") return false;
+        if (t.status !== "success" && t.status !== "partial_success") return false;
+        const ms = new Date(t.updated_at ?? t.created_at).getTime();
+        return Number.isFinite(ms) && ms >= todayMs;
+      }).length;
+
+      tray.setImage(buildTrayIcon(completed));
+      tray.setToolTip(completed > 0
+        ? `UCA · 今日完成 ${completed} 个任务`
+        : DESKTOP_SHELL_MANIFEST.trayTooltip);
+    } catch { /* service not ready */ }
+  }
+
   return {
     async start() {
       await app.whenReady();
@@ -709,6 +759,9 @@ export function createElectronShellRuntime({
       setTimeout(() => {
         requestMorningDigestCheck().catch(() => {});
       }, 1500);
+      // UCA-069: update tray badge after service is likely ready, then every 30s
+      setTimeout(() => { updateTrayBadge().catch(() => {}); }, 5000);
+      setInterval(() => { updateTrayBadge().catch(() => {}); }, 30_000);
       startClipboardWatcher();
       app.on("second-instance", (_event, argv) => {
         handleLaunchArgs(argv).catch((error) => {

@@ -52,12 +52,40 @@
       }
 
       #dockButton.clipboard-ready .clip-badge { opacity: 1; }
+
+      /* UCA-069: task completion badge */
+      .task-badge {
+        position: absolute;
+        top: -2px; right: -2px;
+        min-width: 16px; height: 16px;
+        padding: 0 4px;
+        border-radius: 8px;
+        background: #22c55e;
+        color: #fff;
+        font-family: system-ui, sans-serif;
+        font-size: 9px;
+        font-weight: 700;
+        line-height: 16px;
+        text-align: center;
+        opacity: 0; pointer-events: none;
+        transition: opacity 300ms;
+        z-index: 10;
+      }
+      #dockButton.has-completed .task-badge { opacity: 1; }
+
+      /* subtle green breathing ring when completed tasks are waiting */
+      @keyframes breathe-ring {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+        50%       { box-shadow: 0 0 0 5px rgba(34,197,94,0.35); }
+      }
+      #dockButton.has-completed { animation: breathe-ring 2.4s ease-in-out infinite; }
     </style>
   </head>
   <body>
     <button id="dockButton" type="button" title="UCA">
       <canvas id="orbCanvas" width="48" height="48"></canvas>
       <span id="clipBadge" class="clip-badge"></span>
+      <span id="taskBadge" class="task-badge"></span>
     </button>
 
     <script>

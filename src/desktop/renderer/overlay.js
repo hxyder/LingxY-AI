@@ -731,7 +731,10 @@ resultToast.addEventListener("mouseleave", () => {
 });
 
 toastOpenBtn.addEventListener("click", async () => {
-  if (lastArtifactPath) await window.ucaShell.openPath(lastArtifactPath);
+  if (lastArtifactPath) {
+    const err = await window.ucaShell.openPath(lastArtifactPath);
+    if (err) addSystemBubble(`无法打开文件：${err}`);
+  }
   hideToast();
 });
 
@@ -810,6 +813,7 @@ async function handleTaskEventFrame(rawEvent) {
     if (text) {
       addBubble("assistant", text);
       lastArtifactPreview = text;
+      notifiedTaskId = activeTaskId; // Bug-A fix: prevent refreshActiveTask from adding duplicate bubble
       // show the overlay so user sees the reply
       window.ucaShell.showWindow("overlay");
     }
@@ -817,6 +821,35 @@ async function handleTaskEventFrame(rawEvent) {
 
   if (frame.event === "artifact_created") {
     addBubble("assistant", `Artifact created: ${summary.body}`);
+  }
+
+  // UCA-075: Skill proposal — user can save the repeated tool sequence as a skill
+  if (frame.event === "skill_proposal") {
+    const proposal = frame.data?.proposal;
+    const text = frame.data?.text ?? "💡 检测到重复操作，是否保存为可复用技能？";
+    if (proposal) {
+      addBubble("assistant", text, {
+        optionButtons: [
+          {
+            label: "保存为技能",
+            onClick: async () => {
+              try {
+                const resp = await fetchJson("/skills/save", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(proposal)
+                });
+                addSystemBubble(`✅ 技能「${resp.suggestedName ?? proposal.suggestedName ?? resp.skillId}」已保存。`);
+              } catch (err) {
+                addSystemBubble(`保存技能失败：${err.message}`);
+              }
+            }
+          },
+          { label: "不用了", onClick: () => {} }
+        ]
+      });
+      window.ucaShell.showWindow("overlay");
+    }
   }
 
   if (["success", "partial_success", "failed", "cancelled"].includes(frame.event)) {
@@ -1163,7 +1196,10 @@ async function refreshActiveTask() {
         // Conversation bubble: clickable file link + Preview / Open / Reveal options
         const bubbleEl = document.createElement("div");
         const headline = document.createElement("div");
-        headline.textContent = `Done! 生成了文件 ${filename}`;
+        // UCA-068: show file-type icon badge for binary/non-previewable files
+        const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+        const fileIcon = { pptx: "📊", docx: "📝", xlsx: "📈", pdf: "📄", zip: "📦" }[ext] ?? "📎";
+        headline.textContent = `${isPreviewableArtifactPath(previewPath) ? "✅" : fileIcon} Done! 生成了文件 ${filename}`;
         bubbleEl.appendChild(headline);
         if (previewText) {
           const sub = document.createElement("div");
@@ -1173,7 +1209,11 @@ async function refreshActiveTask() {
         }
         addBubble("assistant", bubbleEl, {
           optionButtons: [
-            { label: "打开文件", onClick: () => window.ucaShell.openPath(previewPath) },
+            { label: "打开文件", onClick: async () => {
+                const err = await window.ucaShell.openPath(previewPath);
+                if (err) addSystemBubble(`无法打开文件：${err}`);
+              } },
+            { label: "打开文件夹", onClick: () => window.ucaShell.showItemInFolder(previewPath) },
             ...(isPreviewableArtifactPath(previewPath)
               ? [{ label: "预览", onClick: async () => {
                   try {
@@ -1495,6 +1535,7 @@ function showActiveWindowPreviewCard(activeWindow) {
     optionButtons: quickActions.map((action) => ({
       label: action.label,
       onClick: () => {
+        startNewConversation(); // Bug-C fix: clear old conversation before analyzing new context
         commandInput.value = action.command;
         autoSizeInput();
         commandInput.focus();
@@ -1983,6 +2024,7 @@ function openSchedulePanel() {
 }
 
 scheduleToggleBtn?.addEventListener("click", () => {
+  markUserEngaged(); // Bug-B fix: exit popping mode so pointer-events are restored
   if (isPanelOpen(schedulePanel)) {
     setPanelOpen(schedulePanel, false);
   } else {

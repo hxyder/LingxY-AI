@@ -20,6 +20,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   openPath(targetPath) {
     return shell.openPath(targetPath);
   },
+  openExternal(url) {
+    return shell.openExternal(url);
+  },
+  showItemInFolder(targetPath) {
+    shell.showItemInFolder(targetPath);
+  },
   async readTextFile(targetPath, maxChars = 4000) {
     const content = await fs.readFile(targetPath, "utf8");
     if (typeof maxChars !== "number" || maxChars <= 0) {
