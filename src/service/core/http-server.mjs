@@ -21,6 +21,8 @@ import { maybeRunMorningDigest } from "../email/digest.mjs";
 import { normalizeTemplateDocument } from "../templates/parser.mjs";
 import { validateTemplateDocument } from "../templates/schema.mjs";
 import { resumeDagGraph, validateDagDefinition } from "../dag/scheduler.mjs";
+import { detectAmbiguity } from "./clarifier.mjs";
+import { parseRelativeTime, formatRelativeDuration } from "../utils/time-parser.mjs";
 
 const execFileAsync = promisify(execFile);
 
@@ -110,6 +112,23 @@ async function submitTaskFromBody(runtime, body) {
   }
   // Write normalised command back so all branches below see the trimmed value
   body.userCommand = userCommand;
+
+  // UCA-059: Clarify-before-act. If the command is ambiguous (missing referent,
+  // missing recipient, etc.), return a clarification request instead of creating
+  // a task. The overlay renders this as a follow-up question bubble.
+  // Skip when the caller already supplies clarification context (previousCommand).
+  if (!body.clarificationOf) {
+    const ambiguity = detectAmbiguity(userCommand);
+    if (ambiguity.needsClarification) {
+      return {
+        ok: true,
+        type: "clarification_needed",
+        question: ambiguity.question,
+        ruleId: ambiguity.ruleId,
+        original_command: userCommand
+      };
+    }
+  }
 
   // UCA-066: Fast-path for deterministic Tier 0/1 actions.
   // Pure "open app / open URL / copy to clipboard / translate" bypass the
@@ -869,6 +888,29 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, result);
       }
 
+      // UCA-059: /task/clarify — merge original command + clarification answer
+      // and resubmit as a normal task (clarificationOf flag skips the ambiguity
+      // check so we don't re-trigger the same question in a loop).
+      if (method === "POST" && url.pathname === "/task/clarify") {
+        const body = await readJsonBody(request);
+        const originalCommand = String(body.originalCommand ?? "").trim();
+        const clarificationAnswer = String(body.clarificationAnswer ?? "").trim();
+        if (!originalCommand || !clarificationAnswer) {
+          return sendJson(response, 400, { ok: false, error: "missing_fields", message: "originalCommand and clarificationAnswer are required." });
+        }
+        // Merge: prepend original command + clarification into a single richer command
+        const mergedCommand = `${originalCommand}（补充信息：${clarificationAnswer}）`;
+        const mergedBody = {
+          ...body,
+          userCommand: mergedCommand,
+          clarificationOf: originalCommand
+        };
+        delete mergedBody.originalCommand;
+        delete mergedBody.clarificationAnswer;
+        const result = await submitTaskFromBody(runtime, mergedBody);
+        return sendJson(response, 200, result);
+      }
+
       if (method === "POST" && url.pathname === "/overlay/handoff") {
         const body = await readJsonBody(request);
         const result = await writeOverlayHandoff(body);
@@ -1047,7 +1089,25 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
               one_shot: Boolean(body.oneShot ?? body.one_shot ?? trigger.oneShot)
             }
           }, { createdBy: body.createdBy ?? "overlay" });
-          return sendJson(response, 200, { schedule });
+
+          // UCA-062: Enrich response with human-readable time info so the overlay
+          // can show a meaningful Chinese confirmation without re-parsing client-side.
+          const now = new Date();
+          let timeInfo = null;
+          const sourceText = body.userCommand ?? body.message ?? body.name ?? "";
+          if (trigger.type === "at" && trigger.run_at) {
+            const diffMs = new Date(trigger.run_at).getTime() - now.getTime();
+            timeInfo = {
+              ts: trigger.run_at,
+              display: new Date(trigger.run_at).toLocaleString("zh-CN", { hour12: false }),
+              diffMs,
+              relativeLabel: formatRelativeDuration(diffMs)
+            };
+          } else if (sourceText) {
+            timeInfo = parseRelativeTime(sourceText, now);
+          }
+
+          return sendJson(response, 200, { schedule, timeInfo });
         } catch (error) {
           return sendJson(response, 400, { error: error.message });
         }

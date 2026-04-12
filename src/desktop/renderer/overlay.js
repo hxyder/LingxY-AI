@@ -498,6 +498,75 @@ function clearBubbles() {
   bubbleArea.hidden = true;
 }
 
+// UCA-059: Show a clarification question bubble.
+// The user can type their answer and it will be merged with the original
+// command and submitted to /task/clarify.
+function showClarificationBubble(originalCommand, question, originalPayload) {
+  const cardEl = document.createElement("div");
+  cardEl.style.cssText = "display:flex;flex-direction:column;gap:8px;";
+
+  const questionEl = document.createElement("div");
+  questionEl.textContent = question;
+  questionEl.style.cssText = "font-size:13px;line-height:1.5;";
+
+  const inputEl = document.createElement("input");
+  inputEl.type = "text";
+  inputEl.placeholder = "请补充信息…";
+  inputEl.style.cssText = "padding:8px 10px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:100%;box-sizing:border-box;";
+
+  const actions = document.createElement("div");
+  actions.className = "bubble-options";
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.textContent = "确认";
+  confirmBtn.addEventListener("click", async () => {
+    const answer = inputEl.value.trim();
+    if (!answer) { inputEl.focus(); return; }
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = "发送中…";
+    try {
+      const clarifyPayload = {
+        ...originalPayload,
+        originalCommand,
+        clarificationAnswer: answer
+      };
+      delete clarifyPayload.userCommand;
+      const result = await fetchJson("/task/clarify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(clarifyPayload)
+      });
+      if (result.task?.task_id) {
+        activeTaskId = result.task.task_id;
+        lastTask = result.task;
+        ensureActiveTaskEventStream(activeTaskId);
+        clearPendingInputContext();
+        addBubble("assistant", "Processing in background...");
+        conversationPhase = "running";
+      }
+    } catch (err) {
+      addSystemBubble(`提交失败：${err.message}`);
+    }
+  });
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.textContent = "取消";
+  cancelBtn.addEventListener("click", () => {
+    conversationPhase = "idle";
+  });
+
+  inputEl.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); confirmBtn.click(); }
+  });
+
+  actions.append(confirmBtn, cancelBtn);
+  cardEl.append(questionEl, inputEl, actions);
+  addBubble("assistant", cardEl);
+  // Focus the clarification input so the user can type immediately
+  setTimeout(() => inputEl.focus(), 80);
+  conversationPhase = "awaiting_options";
+}
+
 /* ═══════════════════════════════════════════════
    CONVERSATIONAL FLOW
    ═══════════════════════════════════════════════ */
@@ -679,6 +748,23 @@ async function handleTaskEventFrame(rawEvent) {
 
   if (frame.event === "step_started" || frame.event === "step_finished") {
     addSystemBubble(summary.body);
+  }
+
+  // UCA-061: Real-time step labels forwarded from task-runtime.mjs
+  if (frame.event === "conversation_step") {
+    const label = frame.data?.step_label ?? "";
+    if (label) addSystemBubble(label);
+  }
+
+  // UCA-061: Tool call events for inline step transparency
+  if (frame.event === "tool_call_proposed") {
+    const toolId = frame.data?.tool_id ?? frame.data?.tool ?? "";
+    if (toolId) addSystemBubble(`▸ 调用 ${toolId}…`);
+  }
+  if (frame.event === "tool_call_completed") {
+    const toolId = frame.data?.tool_id ?? frame.data?.tool ?? "";
+    const ok = frame.data?.success !== false;
+    if (toolId) addSystemBubble(`${ok ? "✓" : "✗"} ${toolId}`);
   }
 
   if (frame.event === "inline_result") {
@@ -1102,10 +1188,14 @@ async function refreshActiveTask() {
           }
         } catch { /* ignore */ }
 
-        const finalText = inlineText || "Done.";
+        // UCA-064: For composite tasks, use result_summary instead of "Done."
+        const compositeSummary = (task.child_task_ids?.length > 0 && task.result_summary)
+          ? task.result_summary
+          : null;
+        const finalText = compositeSummary || inlineText || "已完成。";
         // Record the assistant turn in conversation memory so the next
         // follow-up (if any) sees it as context.
-        if (finalText && finalText !== "Done.") {
+        if (finalText && finalText !== "已完成。") {
           appendTurn("assistant", finalText);
         }
         if (popKeptOpen) {
@@ -1259,6 +1349,13 @@ async function submitTask() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
     });
+
+    // UCA-059: Server detected an ambiguous command — show clarification bubble
+    // instead of starting a background task.
+    if (result.type === "clarification_needed") {
+      showClarificationBubble(commandText, result.question, payload);
+      return;
+    }
 
     activeTaskId = result.task.task_id;
     lastTask = result.task;
@@ -2190,32 +2287,58 @@ function showScheduleConfirmCard(userText) {
 
   const info = document.createElement("div");
   info.style.cssText = "font-size:12px;color:var(--muted);line-height:1.5;";
-  info.innerHTML = `<div>Name: ${name}</div><div>Schedule: <code>${trigger.label ?? trigger.expression ?? `${trigger.seconds}s`}</code></div><div>Command: ${userText.slice(0, 80)}</div>`;
+  const triggerLabel = trigger.label ?? trigger.expression ?? (trigger.seconds ? `每 ${trigger.seconds} 秒` : trigger.run_at ? new Date(trigger.run_at).toLocaleString("zh-CN", { hour12: false }) : "自定义");
+  info.innerHTML = `<div>名称：${escapeHtml(name)}</div><div>时间：<code>${escapeHtml(triggerLabel)}</code></div><div>内容：${escapeHtml(userText.slice(0, 80))}</div>`;
 
   const actions = document.createElement("div");
   actions.className = "bubble-options";
 
   const confirmBtn = document.createElement("button");
-  confirmBtn.textContent = "Confirm";
+  confirmBtn.textContent = "确认创建";
   confirmBtn.addEventListener("click", async () => {
     confirmBtn.disabled = true;
-    confirmBtn.textContent = "Creating...";
+    confirmBtn.textContent = "创建中…";
     try {
-      const schedule = await createScheduleFromText(userText, trigger);
-      addBubble("assistant", `Schedule created: "${name}"\nNext: ${schedule?.next_run_at ?? "pending"}`);
+      const result = await fetchJson("/schedules", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          trigger,
+          action: buildScheduleActionFromText(userText).action,
+          executionMode: buildScheduleActionFromText(userText).executionMode,
+          oneShot: Boolean(trigger.oneShot),
+          title: "UCA 提醒",
+          message: userText,
+          userCommand: userText,
+          createdBy: "overlay"
+        })
+      });
+      const schedule = result.schedule;
+      const timeInfo = result.timeInfo;
+      // UCA-062: Show Chinese confirmation with resolved time + relative duration
+      let confirmMsg = `已设置提醒 ✓\n📝 ${name}`;
+      if (timeInfo?.display) {
+        confirmMsg += `\n📅 ${timeInfo.display}`;
+        if (timeInfo.relativeLabel) confirmMsg += `（${timeInfo.relativeLabel}）`;
+      } else if (schedule?.next_run_at) {
+        const nextDate = new Date(schedule.next_run_at);
+        confirmMsg += `\n📅 ${nextDate.toLocaleString("zh-CN", { hour12: false })}`;
+      }
+      addBubble("assistant", confirmMsg);
     } catch (error) {
-      addBubble("assistant", `Failed to create schedule: ${error.message}`);
+      addBubble("assistant", `创建失败：${error.message}`);
     }
   });
 
   const cancelBtn = document.createElement("button");
-  cancelBtn.textContent = "Cancel";
+  cancelBtn.textContent = "取消";
   cancelBtn.addEventListener("click", () => {
-    addSystemBubble("Schedule creation cancelled.");
+    addSystemBubble("已取消创建提醒。");
   });
 
   const asTaskBtn = document.createElement("button");
-  asTaskBtn.textContent = "Run once instead";
+  asTaskBtn.textContent = "仅执行一次";
   asTaskBtn.addEventListener("click", () => {
     commandInput.value = userText;
     void submitTask();

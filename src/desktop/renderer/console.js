@@ -1570,9 +1570,15 @@ function renderTaskDetail(detail) {
     </div>
   ` : "";
   const parentLink = task.parent_task_id ? `
-    <span>Parent:
-      <button class="ghost" data-parent-task-id="${escapeHtml(task.parent_task_id)}" style="padding:0 6px;font-size:11px;">${escapeHtml(task.parent_task_id)}</button>
+    <span>父任务：
+      <button class="ghost" data-parent-task-id="${escapeHtml(task.parent_task_id)}" style="padding:0 6px;font-size:11px;">← 返回</button>
     </span>
+  ` : "";
+  // UCA-064: show composite result summary when present
+  const resultSummaryBlock = task.result_summary ? `
+    <div style="padding:8px 10px;border-radius:8px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.14);margin-top:8px;white-space:pre-wrap;font-size:12px;line-height:1.6;">
+      ${escapeHtml(task.result_summary)}
+    </div>
   ` : "";
   taskDetailSummary.innerHTML = `
     <div class="stack" style="gap:8px;">
@@ -1593,6 +1599,7 @@ function renderTaskDetail(detail) {
     </div>
     ${renderDowngradedWarning(downgraded)}
     ${failBlock}
+    ${resultSummaryBlock}
   `;
   for (const btn of taskDetailSummary.querySelectorAll("[data-parent-task-id]")) {
     btn.addEventListener("click", () => {

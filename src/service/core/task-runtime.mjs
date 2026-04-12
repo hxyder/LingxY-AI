@@ -24,8 +24,8 @@ function buildSourceDedupeKey(contextPacket, userCommand, executor) {
   return `${contextPacket.source_type}:${contextPacket.source_app}:${executor}:${userCommand}:${sourceKey}`;
 }
 
-function buildHistoryRecord(task) {
-  const text = [
+function buildHistoryRecord(task, runtime) {
+  const parts = [
     task.user_command,
     task.intent,
     task.context_packet?.title,
@@ -33,7 +33,24 @@ function buildHistoryRecord(task) {
     task.context_packet?.url,
     task.context_packet?.file_paths?.join(" "),
     task.failure_user_message
-  ].filter(Boolean).join("\n");
+  ];
+
+  // UCA-064: For composite tasks include child task content so history search
+  // can find sub-task text and subtasks don't silently disappear from history.
+  if (Array.isArray(task.child_task_ids) && task.child_task_ids.length > 0 && runtime) {
+    const children = task.child_task_ids
+      .map((id) => runtime.store?.getTask(id))
+      .filter(Boolean);
+    for (const child of children) {
+      if (child.user_command) parts.push(child.user_command);
+      if (child.failure_user_message) parts.push(child.failure_user_message);
+    }
+  }
+
+  // Also include result_summary if the executor produced one
+  if (task.result_summary) parts.push(task.result_summary);
+
+  const text = parts.filter(Boolean).join("\n");
 
   if (!text) {
     return null;
@@ -173,6 +190,76 @@ export function refreshCompositeParentStatus(runtime, parentTaskId) {
   };
 }
 
+// UCA-061: Event types that should be forwarded to the conversation view as
+// step labels. Other events (e.g. status_changed on every tick) are too noisy.
+const CONVERSATION_VISIBLE_EVENTS = new Set([
+  "step_started",
+  "tool_call_proposed",
+  "tool_call_completed",
+  "tool_call_denied",
+  "failed",
+  "cancelled"
+]);
+
+const TOOL_STEP_LABELS = {
+  launch_app: "启动应用",
+  open_url: "打开链接",
+  web_search_fetch: "搜索网络",
+  compose_email: "撰写邮件",
+  send_email_smtp: "发送邮件",
+  open_file: "打开文件",
+  write_file: "写入文件",
+  verify_file_exists: "验证文件",
+  find_recent_files: "查找文件",
+  glob_files: "查找文件",
+  list_files: "列出文件",
+  stat_file: "检查文件",
+  register_artifact: "注册结果",
+  resolve_output_path: "确定输出路径",
+  notify: "发送通知",
+  copy_to_clipboard: "复制到剪贴板",
+  generate_document: "生成文档",
+  take_screenshot: "截图",
+  translate_text: "翻译内容",
+  run_script: "执行脚本"
+};
+
+const STEP_LABELS = {
+  tool_planner: "规划操作步骤",
+  llm_generate: "生成内容",
+  composite_running: "并行执行子任务",
+  agentic: "AI 分析规划中"
+};
+
+function buildConversationStepLabel(eventType, payload) {
+  if (eventType === "tool_call_proposed") {
+    const toolId = payload?.tool_id ?? payload?.tool ?? "";
+    const label = TOOL_STEP_LABELS[toolId] ?? toolId;
+    return label ? `▸ ${label}…` : null;
+  }
+  if (eventType === "tool_call_completed") {
+    const toolId = payload?.tool_id ?? payload?.tool ?? "";
+    const label = TOOL_STEP_LABELS[toolId] ?? toolId;
+    const ok = payload?.success !== false;
+    return label ? `${ok ? "✓" : "✗"} ${label}` : null;
+  }
+  if (eventType === "tool_call_denied") {
+    const toolId = payload?.tool_id ?? payload?.tool ?? "";
+    const label = TOOL_STEP_LABELS[toolId] ?? toolId;
+    return label ? `⊘ ${label}（已拦截）` : null;
+  }
+  if (eventType === "step_started") {
+    const step = payload?.step ?? "";
+    const label = STEP_LABELS[step] ?? step;
+    return label ? `▸ ${label}…` : null;
+  }
+  if (eventType === "failed") {
+    const msg = payload?.message ?? payload?.category ?? "未知错误";
+    return `✗ 任务失败：${String(msg).slice(0, 60)}`;
+  }
+  return null;
+}
+
 export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   const record = {
     event_id: createId("evt"),
@@ -184,6 +271,26 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
 
   runtime.store.appendEvent(record);
   runtime.eventBus.publish(record);
+
+  // UCA-061: Forward qualifying events as conversation_step so the overlay
+  // can render real-time step indicators without polling.
+  if (CONVERSATION_VISIBLE_EVENTS.has(eventType)) {
+    const stepLabel = buildConversationStepLabel(eventType, payload);
+    if (stepLabel) {
+      runtime.eventBus.publish({
+        event_id: createId("step"),
+        task_id: taskId,
+        ts: nowIso(),
+        event_type: "conversation_step",
+        payload: {
+          step_label: stepLabel,
+          source_event: eventType,
+          tool_id: payload?.tool_id ?? payload?.tool ?? null
+        }
+      });
+    }
+  }
+
   return record;
 }
 
@@ -295,7 +402,7 @@ export function markTaskFailed(runtime, task, errorLike) {
     }
   ];
   runtime.store.updateTask(task.task_id, task);
-  const historyRecord = buildHistoryRecord(task);
+  const historyRecord = buildHistoryRecord(task, runtime);
   if (historyRecord) {
     runtime.platform?.embeddingStore?.add(historyRecord);
   }
@@ -315,8 +422,29 @@ export function markTaskSucceeded(runtime, task) {
       ended_at: nowIso()
     }
   ];
+
+  // UCA-064: For composite tasks, build a result_summary listing every
+  // subtask outcome so the overlay can show "已完成 3/3 个任务" instead of "Done."
+  if (Array.isArray(task.child_task_ids) && task.child_task_ids.length > 0) {
+    const children = task.child_task_ids
+      .map((id) => runtime.store.getTask(id))
+      .filter(Boolean);
+    if (children.length > 0) {
+      const successCount = children.filter((c) => c.status === "success" || c.status === "partial_success").length;
+      const failCount = children.filter((c) => c.status === "failed" || c.status === "cancelled").length;
+      const lines = children.map((c, i) => {
+        const icon = (c.status === "success" || c.status === "partial_success") ? "✓" : "✗";
+        return `${i + 1}. ${icon} ${c.user_command ?? c.intent ?? c.task_id}`;
+      });
+      task.result_summary = [
+        `已完成 ${successCount}/${children.length} 个任务${failCount > 0 ? `（${failCount} 个失败）` : ""}`,
+        ...lines
+      ].join("\n");
+    }
+  }
+
   runtime.store.updateTask(task.task_id, task);
-  const historyRecord = buildHistoryRecord(task);
+  const historyRecord = buildHistoryRecord(task, runtime);
   if (historyRecord) {
     runtime.platform?.embeddingStore?.add(historyRecord);
   }
