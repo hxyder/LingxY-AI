@@ -7,6 +7,7 @@ import { createServiceBootstrap } from "./service-bootstrap.mjs";
 import { createSqliteStore } from "./store/sqlite-store.mjs";
 import { createExplorerSelectionPipeServer, DEFAULT_EXPLORER_PIPE_NAME } from "./windows-pipe-server.mjs";
 import { getKimiRuntimeStatus, resolveKimiRuntime } from "../ai/code_cli/kimi/runtime.mjs";
+import { createReminderWatcher } from "../scheduler/reminder-watcher.mjs";
 
 function recoverInterruptedTasks(runtime) {
   const recovered = [];
@@ -91,6 +92,7 @@ export function createPersistentRuntime({
     pipeName
   });
   let schedulePollTimer = null;
+  const reminderWatcher = createReminderWatcher({ runtime: service.runtime });
 
   recoverInterruptedTasks(service.runtime);
   service.runtime.securityBroker.recoverRedactionStateLost();
@@ -122,10 +124,12 @@ export function createPersistentRuntime({
           });
         });
       }, 5000);
+      reminderWatcher.start();
       return service.runtime.serverState;
     },
     async stop() {
       appendAuditLog(service.runtime, "runtime.stopped", {});
+      reminderWatcher.stop();
       if (schedulePollTimer) {
         clearInterval(schedulePollTimer);
         schedulePollTimer = null;

@@ -35,6 +35,9 @@ function updateScheduleAfterRun(runtime, schedule, runStatus, now) {
   schedule.last_run_at = now;
   schedule.last_run_status = runStatus;
   schedule.run_count += 1;
+  // UCA-046: reset reminder_sent_at so the next cycle's lead-time window
+  // produces a fresh reminder instead of being suppressed by a stale stamp.
+  schedule.reminder_sent_at = null;
   if (schedule.metadata?.one_shot) {
     schedule.enabled = false;
     schedule.next_run_at = null;

@@ -1526,6 +1526,10 @@ scheduleCancelBtn?.addEventListener("click", () => {
   setPanelOpen(schedulePanel, false);
 });
 
+// UCA-046: inline schedule form + category + leadTime
+const scheduleCategorySelect = document.querySelector("#scheduleCategory");
+const scheduleLeadTimeSelect = document.querySelector("#scheduleLeadTime");
+
 scheduleSaveBtn?.addEventListener("click", async () => {
   const whenValue = scheduleWhenInput.value;
   const command = scheduleCommandInput.value.trim();
@@ -1543,6 +1547,10 @@ scheduleSaveBtn?.addEventListener("click", async () => {
     addSystemBubble("无法解析时间，请重新选择。");
     return;
   }
+  const category = scheduleCategorySelect?.value || "reminder";
+  const leadTimeRaw = scheduleLeadTimeSelect?.value || "default";
+  const leadTimeMs = leadTimeRaw === "default" ? null : Number(leadTimeRaw);
+
   scheduleSaveBtn.disabled = true;
   scheduleSaveBtn.textContent = "创建中...";
   try {
@@ -1563,7 +1571,9 @@ scheduleSaveBtn?.addEventListener("click", async () => {
         message: command,
         userCommand: command,
         executionMode: "interactive",
-        createdBy: "overlay-form"
+        createdBy: "overlay-form",
+        category,
+        leadTimeMs
       })
     });
     addBubble("assistant", `定时任务已创建：${name}\n下次触发：${result.schedule?.next_run_at ?? runAt.toLocaleString()}`);

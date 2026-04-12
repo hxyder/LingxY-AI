@@ -94,11 +94,24 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
+- 状态：done
+- 执行分支：`main`
+- 开始日期：2026-04-11
+- 完成日期：2026-04-11
 - 实际新增内容：
+  - `src/service/scheduler/store.mjs`：新增 `SCHEDULE_CATEGORIES`（6 类 + 颜色）、`CATEGORY_COLOR_MAP`、`resolveScheduleColor`、`computeDefaultLeadTime` + `createScheduleRecord` 新增 category/color/lead_time_ms/user_todo/reminder_sent_at/completed_at 字段
+  - `src/service/scheduler/reminder-watcher.mjs`（新文件）：每分钟 tick 扫描 lead-time 窗口内的 schedule → 发通知 → 盖 reminder_sent_at 戳 → dispatch 后自动重置
+  - `src/service/scheduler/dispatch.mjs`：`updateScheduleAfterRun` 重置 `reminder_sent_at = null`
+  - `src/service/core/persistent-runtime.mjs`：接入 `createReminderWatcher` + start/stop 生命周期
+  - `src/desktop/renderer/console.html`：Schedule 面板加 List/Week/Month 视图切换按钮 + `#scheduleCalendar` 容器
+  - `src/desktop/renderer/console.js`：`renderScheduleCalendarGrid` 生成 7 列 CSS Grid 日历，每格显示当天 schedule（彩色左边框 + 名称），`renderSchedules` 加 category chip + color border
+  - `src/desktop/renderer/overlay.html`：inline form 加 `#scheduleCategory` 下拉（6 类）+ `#scheduleLeadTime` 下拉（默认/不提前/15分钟/1小时/1天）
+  - `src/desktop/renderer/overlay.js`：`scheduleSaveBtn` 读取 category + leadTimeMs 并传入 POST /schedules
+- 验证结果：
+  - verify-scheduler：computeDefaultLeadTime 5 条规则 + SCHEDULE_CATEGORIES 6 类 + resolveScheduleColor 覆盖 + 带 category/userTodo 的 schedule 创建 + reminder watcher tick 触发通知 + 重复抑制 + dispatch 后 reminder_sent_at 重置
+- leadTime 默认规则：≤8h→1h, ≤1d→1h, ≤1w→1d, ≤1m→3d, >1m→1w
+- category 调色板：general=#6366f1, work=#3b82f6, email=#ef4444, reminder=#f59e0b, health=#10b981, custom=#8b5cf6
+- Console 日历视图交互：List/Week/Month 三态切换，每格显示当天 schedule 彩色卡片（最多 3 条 + overflow），今天高亮
 - 验证结果：
 - 遗留问题（开工前已识别）：
   - 用户需求（2026-04-11）："当schedule是用户要做，却没做的时候，基于时间长度尺度，8小时或者一天内，提前一小时，除非和任务状态相斥。一周的话，提前一天，或者用户在自动生成schedule以后，可以设定提前多久通知。对话框创建schedule的时候，就可以选。依次类推，参考teams的calendar任务。 然后schedule在控制台可以列表或者日历的形式查看，不同类别的schedule显示不同颜色的label。可以按任务排序。"

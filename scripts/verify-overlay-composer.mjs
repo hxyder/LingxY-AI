@@ -76,6 +76,11 @@ assert.equal(overlayJs.includes("showActiveWindowPreviewCard"), true);
 assert.equal(overlayJs.includes("data-uca-active-window-card") || overlayJs.includes("dataset.ucaActiveWindowCard"), true);
 assert.equal(overlayJs.includes("分析此页面"), true);
 assert.equal(overlayJs.includes("payload.active_window"), true);
+// UCA-046: inline schedule form now has category + leadTime selects
+assert.equal(overlayHtml.includes("scheduleCategory"), true);
+assert.equal(overlayHtml.includes("scheduleLeadTime"), true);
+assert.equal(overlayJs.includes("scheduleCategorySelect"), true);
+assert.equal(overlayJs.includes("scheduleLeadTimeSelect"), true);
 
 const taskEventStream = await read("src/desktop/renderer/task-event-stream.js");
 assert.equal(taskEventStream.includes("formatTaskEventSummary"), true);

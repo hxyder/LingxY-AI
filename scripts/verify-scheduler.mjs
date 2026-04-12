@@ -281,4 +281,93 @@ const deleteResult = await runtime.actionToolRegistry.call("delete_scheduled_tas
 assert.equal(deleteResult.success, true);
 assert.equal(runtime.store.getSchedule(scheduleId), null);
 
+/* ────────────────────────────────────────────────────────────────────────── */
+/* UCA-046: computeDefaultLeadTime + category/color + reminder watcher       */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+import {
+  computeDefaultLeadTime,
+  SCHEDULE_CATEGORIES,
+  CATEGORY_COLOR_MAP,
+  resolveScheduleColor
+} from "../src/service/scheduler/store.mjs";
+import { createReminderWatcher } from "../src/service/scheduler/reminder-watcher.mjs";
+
+// computeDefaultLeadTime rules per §4
+const HOUR = 3600_000;
+const DAY = 86400_000;
+assert.equal(computeDefaultLeadTime(4 * HOUR), 1 * HOUR);      // ≤ 8h → 1h
+assert.equal(computeDefaultLeadTime(20 * HOUR), 1 * HOUR);     // ≤ 1d → 1h
+assert.equal(computeDefaultLeadTime(5 * DAY), 1 * DAY);        // ≤ 1w → 1d
+assert.equal(computeDefaultLeadTime(20 * DAY), 3 * DAY);       // ≤ 1m → 3d
+assert.equal(computeDefaultLeadTime(60 * DAY), 7 * DAY);       // > 1m → 1w
+assert.equal(computeDefaultLeadTime(0), 0);                     // already past
+
+// Category palette
+assert.equal(SCHEDULE_CATEGORIES.length, 6);
+assert.equal(CATEGORY_COLOR_MAP.email, "#ef4444");
+assert.equal(resolveScheduleColor("work"), "#3b82f6");
+assert.equal(resolveScheduleColor("nonexistent"), CATEGORY_COLOR_MAP.general);
+assert.equal(resolveScheduleColor("work", "#custom"), "#custom");
+
+// Schedule entity now carries UCA-046 fields
+const categorizedSchedule = runtime.scheduler.createSchedule({
+  name: "Morning standup",
+  trigger: { type: "at", run_at: new Date(Date.now() + 3 * HOUR).toISOString() },
+  action: { type: "action_tool", target: "notify", params: { title: "Standup", body: "Time" } },
+  category: "work",
+  userTodo: true,
+  metadata: { one_shot: true }
+});
+assert.equal(categorizedSchedule.category, "work");
+assert.equal(categorizedSchedule.color, "#3b82f6");
+assert.equal(categorizedSchedule.user_todo, true);
+assert.equal(categorizedSchedule.reminder_sent_at, null);
+assert.equal(categorizedSchedule.completed_at, null);
+// lead_time_ms defaults to null (use computeDefaultLeadTime at runtime)
+assert.equal(categorizedSchedule.lead_time_ms, null);
+
+// Reminder watcher — direct tick invocation
+let notifiedBody = null;
+const testNotifyTool = {
+  id: "notify",
+  async execute(args) {
+    notifiedBody = args.body;
+    return { success: true, observation: "ok" };
+  }
+};
+const watcherRuntime = {
+  store: runtime.store,
+  actionToolRegistry: {
+    get: (id) => id === "notify" ? testNotifyTool : null
+  }
+};
+
+// Move the schedule's next_run_at into the lead-time window
+const catSched = runtime.store.getSchedule(categorizedSchedule.schedule_id);
+const nowMs = Date.now();
+catSched.next_run_at = new Date(nowMs + 30 * 60_000).toISOString(); // 30 min from now
+catSched.lead_time_ms = 1 * HOUR; // lead = 1h → 30 min < 1h → should remind
+runtime.store.updateSchedule(catSched.schedule_id, catSched);
+
+const watcher = createReminderWatcher({ runtime: watcherRuntime });
+await watcher.tick();
+assert.ok(notifiedBody, "reminder watcher should have fired a notification");
+assert.match(notifiedBody, /待办/);   // userTodo → "你有一项待办"
+assert.match(notifiedBody, /Morning standup/);
+
+// After tick, reminder_sent_at should be stamped
+const afterReminder = runtime.store.getSchedule(categorizedSchedule.schedule_id);
+assert.ok(afterReminder.reminder_sent_at, "reminder_sent_at must be stamped after reminder fires");
+
+// Second tick should NOT fire again (duplicate suppression)
+notifiedBody = null;
+await watcher.tick();
+assert.equal(notifiedBody, null, "reminder watcher must not fire duplicate notifications");
+
+// After dispatch, reminder_sent_at should reset
+await runtime.scheduler.dispatch(categorizedSchedule.schedule_id, "manual");
+const afterDispatch = runtime.store.getSchedule(categorizedSchedule.schedule_id);
+assert.equal(afterDispatch.reminder_sent_at, null, "dispatch must reset reminder_sent_at for next cycle");
+
 console.log("Scheduler, misfire, and pending approval verification passed.");

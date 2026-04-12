@@ -1655,22 +1655,109 @@ function renderApprovals() {
   }
 }
 
+// UCA-046: schedule view mode — "list" (default) / "week" / "month"
+let scheduleViewMode = "list";
+const scheduleCalendar = document.querySelector("#scheduleCalendar");
+
+for (const btn of document.querySelectorAll("[data-schedule-view]")) {
+  btn.addEventListener("click", () => {
+    scheduleViewMode = btn.dataset.scheduleView;
+    renderSchedules();
+  });
+}
+
+function renderScheduleCalendarGrid(schedules, mode) {
+  const now = new Date();
+  const cells = [];
+
+  if (mode === "week") {
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+    for (let d = 0; d < 7; d++) {
+      const day = new Date(startOfWeek);
+      day.setDate(startOfWeek.getDate() + d);
+      cells.push(day);
+    }
+  } else {
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const startOfMonth = new Date(year, month, 1);
+    const endOfMonth = new Date(year, month + 1, 0);
+    for (let d = 1; d <= endOfMonth.getDate(); d++) {
+      cells.push(new Date(year, month, d));
+    }
+  }
+
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const header = mode === "week"
+    ? cells.map((d) => `<div class="cal-header">${dayNames[d.getDay()]} ${d.getDate()}</div>`).join("")
+    : dayNames.map((n) => `<div class="cal-header">${n}</div>`).join("");
+
+  const firstDay = cells[0]?.getDay() ?? 0;
+  const padCells = mode === "month" ? Array.from({ length: firstDay }, () => '<div class="cal-cell empty"></div>').join("") : "";
+
+  const gridCells = cells.map((day) => {
+    const dayStart = new Date(day); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(day); dayEnd.setHours(23, 59, 59, 999);
+    const daySchedules = schedules.filter((s) => {
+      if (!s.next_run_at) return false;
+      const runAt = new Date(s.next_run_at);
+      return runAt >= dayStart && runAt <= dayEnd;
+    });
+    const isToday = day.toDateString() === now.toDateString();
+    const entries = daySchedules.slice(0, 3).map((s) => {
+      const color = s.color || s.metadata?.color || "#6366f1";
+      return `<div class="cal-entry" style="border-left:3px solid ${escapeHtml(color)};padding-left:4px;font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`;
+    }).join("");
+    const overflow = daySchedules.length > 3 ? `<div style="font-size:9px;color:var(--muted);">+${daySchedules.length - 3} more</div>` : "";
+    return `<div class="cal-cell${isToday ? " today" : ""}" style="min-height:${mode === "week" ? "80" : "60"}px;padding:4px;border:1px solid rgba(255,255,255,0.06);border-radius:6px;${isToday ? "background:rgba(99,102,241,0.08);" : ""}"><div style="font-size:10px;font-weight:500;color:${isToday ? "var(--primary)" : "var(--muted)"};">${day.getDate()}</div>${entries}${overflow}</div>`;
+  }).join("");
+
+  scheduleCalendar.style.display = "block";
+  scheduleCalendar.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:11px;">
+      ${header}
+      ${padCells}
+      ${gridCells}
+    </div>
+  `;
+}
+
 function renderSchedules() {
   const schedules = state.workspace.schedules ?? [];
   scheduleCount.textContent = `${schedules.length}`;
   if (schedules.length === 0) {
     renderEmpty(scheduleList, "No scheduled tasks.");
+    if (scheduleCalendar) scheduleCalendar.style.display = "none";
     return;
   }
 
-  scheduleList.innerHTML = schedules.map((s) => `
-    <div class="schedule-item">
+  // Highlight the active view-mode button
+  for (const btn of document.querySelectorAll("[data-schedule-view]")) {
+    btn.classList.toggle("active", btn.dataset.scheduleView === scheduleViewMode);
+  }
+
+  if (scheduleViewMode === "week" || scheduleViewMode === "month") {
+    renderScheduleCalendarGrid(schedules, scheduleViewMode);
+  } else {
+    if (scheduleCalendar) scheduleCalendar.style.display = "none";
+  }
+
+  scheduleList.innerHTML = schedules.map((s) => {
+    const color = s.color || s.metadata?.color || "#6366f1";
+    const categoryLabel = s.category || s.metadata?.category || "";
+    const completedBadge = s.completed_at ? `<span class="chip ready" style="font-size:10px;">completed</span>` : "";
+    return `
+    <div class="schedule-item" style="border-left:4px solid ${escapeHtml(color)};padding-left:10px;">
       <div class="row">
         <div>
+          ${categoryLabel ? `<span style="font-size:10px;padding:1px 6px;border-radius:999px;background:${escapeHtml(color)}22;color:${escapeHtml(color)};font-weight:500;">${escapeHtml(categoryLabel)}</span>` : ""}
           <h4>${escapeHtml(s.name ?? s.schedule_id)}</h4>
           <p class="muted">${escapeHtml(s.trigger_type ?? "manual")} · ${escapeHtml(s.execution_mode ?? "interactive")}</p>
         </div>
         <span class="chip ${s.enabled ? "ready" : "warning"}">${s.enabled ? "enabled" : "paused"}</span>
+        ${completedBadge}
       </div>
       <div class="row wrap" style="margin-top:6px;">
         <span class="muted" style="font-size:11px;">Next: ${escapeHtml(formatDateTime(s.next_run_at))}</span>
@@ -1680,7 +1767,7 @@ function renderSchedules() {
         <button class="ghost" data-delete-schedule-id="${escapeHtml(s.schedule_id)}">Delete</button>
       </div>
     </div>
-  `).join("");
+  `; }).join("");
 
   for (const btn of scheduleList.querySelectorAll("[data-run-schedule-id]")) {
     btn.addEventListener("click", async () => {

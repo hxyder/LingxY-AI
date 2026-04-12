@@ -59,5 +59,12 @@ assert.equal(consoleJs.includes("extractTaskProviderInfo"), true);
 assert.equal(consoleJs.includes("renderProviderLine"), true);
 assert.equal(consoleJs.includes("renderDowngradedWarning"), true);
 assert.equal(consoleJs.includes("data-uca-downgraded"), true);
+// UCA-046: Console schedules tab calendar sub-view + category color rendering
+assert.equal(consoleJs.includes("scheduleViewMode"), true);
+assert.equal(consoleJs.includes("renderScheduleCalendarGrid"), true);
+assert.equal(consoleJs.includes("data-schedule-view"), true);
+assert.equal(consoleHtml.includes("scheduleCalendar"), true);
+assert.equal(consoleHtml.includes("data-schedule-view=\"week\""), true);
+assert.equal(consoleHtml.includes("data-schedule-view=\"month\""), true);
 
 console.log("Rendered console workspace verification passed.");

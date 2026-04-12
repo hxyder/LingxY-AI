@@ -867,6 +867,23 @@
         <input id="scheduleName" type="text" placeholder="例如：每日翻译播报">
         <label for="scheduleCommand">任务内容</label>
         <textarea id="scheduleCommand" rows="2" placeholder="例如：翻译我剪贴板里的内容并通知我"></textarea>
+        <label for="scheduleCategory">类别</label>
+        <select id="scheduleCategory">
+          <option value="general">General</option>
+          <option value="work">Work</option>
+          <option value="email">Email</option>
+          <option value="reminder" selected>Reminder</option>
+          <option value="health">Health</option>
+          <option value="custom">Custom</option>
+        </select>
+        <label for="scheduleLeadTime">提前通知</label>
+        <select id="scheduleLeadTime">
+          <option value="default">默认（按时间尺度）</option>
+          <option value="0">不提前</option>
+          <option value="900000">15 分钟</option>
+          <option value="3600000">1 小时</option>
+          <option value="86400000">1 天</option>
+        </select>
       </div>
       <div class="panel-actions">
         <button id="scheduleCancelBtn" type="button">取消</button>

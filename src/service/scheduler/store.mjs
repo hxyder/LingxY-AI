@@ -4,6 +4,47 @@ export const DEFAULT_PENDING_APPROVAL_TTL_DAYS = 7;
 export const MAX_SCHEDULE_COUNT = 50;
 export const FAILURE_DISABLE_THRESHOLD = 3;
 
+/* ────────────────────────────────────────────────────────────────────────── */
+/* UCA-046: category + color palette, shared with UCA-041 projects           */
+/* ────────────────────────────────────────────────────────────────────────── */
+
+export const SCHEDULE_CATEGORIES = Object.freeze([
+  { id: "general",  label: "General",  color: "#6366f1" },
+  { id: "work",     label: "Work",     color: "#3b82f6" },
+  { id: "email",    label: "Email",    color: "#ef4444" },
+  { id: "reminder", label: "Reminder", color: "#f59e0b" },
+  { id: "health",   label: "Health",   color: "#10b981" },
+  { id: "custom",   label: "Custom",   color: "#8b5cf6" }
+]);
+
+export const CATEGORY_COLOR_MAP = Object.freeze(
+  Object.fromEntries(SCHEDULE_CATEGORIES.map((c) => [c.id, c.color]))
+);
+
+export function resolveScheduleColor(category, explicitColor = null) {
+  if (explicitColor) return explicitColor;
+  return CATEGORY_COLOR_MAP[category] ?? CATEGORY_COLOR_MAP.general;
+}
+
+/**
+ * Default lead-time rules per UCA-046 §4.
+ * @param {number} msUntilRun — milliseconds from now to next_run_at
+ * @returns {number} lead time in ms
+ */
+export function computeDefaultLeadTime(msUntilRun) {
+  const HOUR = 3600_000;
+  const DAY = 86400_000;
+  const WEEK = 7 * DAY;
+  const MONTH = 30 * DAY;
+
+  if (msUntilRun <= 0) return 0;
+  if (msUntilRun <= 8 * HOUR) return 1 * HOUR;
+  if (msUntilRun <= 1 * DAY)  return 1 * HOUR;
+  if (msUntilRun <= 1 * WEEK) return 1 * DAY;
+  if (msUntilRun <= 1 * MONTH) return 3 * DAY;
+  return 1 * WEEK;
+}
+
 function createId(prefix) {
   return `${prefix}_${crypto.randomUUID()}`;
 }
@@ -80,6 +121,11 @@ export function createScheduleRecord({
   maxRuntimeSeconds = 600,
   enabled = true,
   metadata = {},
+  // UCA-046: category + lead time + user todo
+  category = "general",
+  color = null,
+  leadTimeMs = null,
+  userTodo = false,
   now = nowIso()
 }) {
   const normalizedTrigger = normalizeTrigger(trigger);
@@ -107,6 +153,13 @@ export function createScheduleRecord({
     run_count: 0,
     failure_count: 0,
     consecutive_failure_count: 0,
+    // UCA-046 fields
+    category: category || "general",
+    color: resolveScheduleColor(category, color),
+    lead_time_ms: leadTimeMs,
+    user_todo: Boolean(userTodo),
+    reminder_sent_at: null,
+    completed_at: null,
     metadata
   };
 }

@@ -560,10 +560,16 @@
             </div>
           </div>
         </form>
-        <div class="row" style="margin-bottom:14px;">
+        <div class="row" style="margin-bottom:14px;gap:12px;align-items:center;">
           <strong>Scheduled Tasks</strong>
           <span id="scheduleCount" class="muted" style="font-size:12px;">0</span>
+          <div class="toolbar" style="margin-left:auto;">
+            <button type="button" class="ghost" data-schedule-view="list" style="font-size:11px;">List</button>
+            <button type="button" class="ghost" data-schedule-view="week" style="font-size:11px;">Week</button>
+            <button type="button" class="ghost" data-schedule-view="month" style="font-size:11px;">Month</button>
+          </div>
         </div>
+        <div id="scheduleCalendar" style="display:none;margin-bottom:16px;"></div>
         <div id="scheduleList" class="schedule-list"></div>
 
         <div style="margin-top:24px;">
