@@ -5,6 +5,17 @@ import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import os from "node:os";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
+
+// Guard against EPIPE — stderr/stdout may be a broken pipe when the parent
+// process (Explorer shell, Windows shortcut, etc.) has already closed. Any
+// unguarded console.error/warn in an async handler would crash the main
+// process with "Error: EPIPE: broken pipe, write".
+function safeError(...args) {
+  try { if (process.stderr?.writable !== false) console.error(...args); } catch { /* swallow */ }
+}
+function safeWarn(...args) {
+  try { if (process.stderr?.writable !== false) console.warn(...args); } catch { /* swallow */ }
+}
 import {
   captureActiveWindowContext as runCaptureActiveWindowContext,
   buildShellContextPayload
@@ -221,7 +232,7 @@ export function createElectronShellRuntime({
       }
     } catch (error) {
       if (error?.code !== "ENOENT") {
-        console.error("Failed to drain explorer handoff directory", error);
+        safeError("Failed to drain explorer handoff directory", error);
       }
     }
   }
@@ -233,7 +244,7 @@ export function createElectronShellRuntime({
       handoffWatcher = watch(handoffDir);
     } catch (error) {
       if (error?.code !== "ENOENT") {
-        console.error("Failed to watch explorer handoff directory", error);
+        safeError("Failed to watch explorer handoff directory", error);
       }
       return;
     }
@@ -248,11 +259,11 @@ export function createElectronShellRuntime({
         }
       } catch (error) {
         if (!quitting && error?.name !== "AbortError") {
-          console.error("Explorer handoff watcher stopped unexpectedly", error);
+          safeError("Explorer handoff watcher stopped unexpectedly", error);
         }
       }
     })().catch((error) => {
-      console.error("Explorer handoff watcher task failed", error);
+      safeError("Explorer handoff watcher task failed", error);
     });
   }
 
@@ -298,7 +309,7 @@ export function createElectronShellRuntime({
       }
     } catch (error) {
       if (error?.code !== "ENOENT") {
-        console.error("Failed to drain notification directory", error);
+        safeError("Failed to drain notification directory", error);
       }
     }
   }
@@ -311,7 +322,7 @@ export function createElectronShellRuntime({
       notificationWatcher = watch(notificationDir);
     } catch (error) {
       if (error?.code !== "ENOENT") {
-        console.error("Failed to watch notification directory", error);
+        safeError("Failed to watch notification directory", error);
       }
       return;
     }
@@ -326,11 +337,11 @@ export function createElectronShellRuntime({
         }
       } catch (error) {
         if (!quitting && error?.name !== "AbortError") {
-          console.error("Notification watcher stopped unexpectedly", error);
+          safeError("Notification watcher stopped unexpectedly", error);
         }
       }
     })().catch((error) => {
-      console.error("Notification watcher task failed", error);
+      safeError("Notification watcher task failed", error);
     });
   }
 
@@ -341,7 +352,7 @@ export function createElectronShellRuntime({
     try {
       await fetch(`${resolvedServiceBaseUrl}/email/digest/check`, { method: "POST" });
     } catch (error) {
-      console.warn("Morning digest check failed", error?.message ?? error);
+      safeWarn("Morning digest check failed", error?.message ?? error);
     }
   }
 
@@ -654,7 +665,7 @@ export function createElectronShellRuntime({
           return isLocal && (permission === "media" || permission === "audioCapture" || permission === "microphone");
         });
       } catch (error) {
-        console.error("Failed to install permission handler", error);
+        safeError("Failed to install permission handler", error);
       }
 
       createWindows();
@@ -668,7 +679,7 @@ export function createElectronShellRuntime({
       startClipboardWatcher();
       app.on("second-instance", (_event, argv) => {
         handleLaunchArgs(argv).catch((error) => {
-          console.error("Failed to process second-instance args", error);
+          safeError("Failed to process second-instance args", error);
         });
       });
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({
