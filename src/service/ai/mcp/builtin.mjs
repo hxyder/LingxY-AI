@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 
 const _require = createRequire(import.meta.url);
@@ -79,14 +80,13 @@ export const BUILTIN_MCP_SERVERS = Object.freeze([
 
   // ── MIT-licensed MCP servers (UCA-067) ────────────────────────────────────
 
-  // filesystem: read/write local files; enabled by default, roots = home dir
+  // filesystem: read/write local files; enabled by default, roots = home dir + workspace.
   makeStdioServer({
     id: "mcp-filesystem",
     displayName: "Filesystem (MIT)",
     packageName: "@modelcontextprotocol/server-filesystem",
     binFile: "dist/index.js",
-    // no roots arg here — consumers pass allowed dirs at spawn time
-    args: [],
+    args: Array.from(new Set([process.cwd(), os.homedir()].filter(Boolean))),
     enabled: true,
     source: "builtin_mit"
   }),
