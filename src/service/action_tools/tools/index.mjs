@@ -883,9 +883,12 @@ export const PAUSE_SCHEDULED_TASK_TOOL = {
 /* ------------------------------------------------------------------------ */
 
 function resolveOutputDirForTool(ctx) {
-  return ctx?.outputDir
-    || ctx?.runtime?.artifactStore?.createTaskOutputDirSync?.(ctx?.task?.task_id)
-    || path.join(os.homedir(), "Desktop", "UCA", ctx?.task?.task_id ?? `scratch-${Date.now()}`);
+  if (ctx?.outputDir) return ctx.outputDir;
+  const configuredDir = ctx?.runtime?.configStore?.load?.()?.output?.defaultDir;
+  if (configuredDir && typeof configuredDir === "string" && configuredDir.trim()) {
+    return path.join(configuredDir.trim(), ctx?.task?.task_id ?? `scratch-${Date.now()}`);
+  }
+  return path.join(os.homedir(), "Desktop", "UCA", ctx?.task?.task_id ?? `scratch-${Date.now()}`);
 }
 
 async function ensureOutputDir(outputDir) {
@@ -1191,6 +1194,16 @@ async function writePdfFromHtmlArtifact(htmlPath, pdfPath) {
     timeout: 15000,
     maxBuffer: 4 * 1024 * 1024
   });
+
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    try {
+      const info = await stat(pdfPath);
+      if (info.size > 0) return;
+    } catch { /* wait for browser to flush the PDF */ }
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  throw new Error("PDF conversion finished but output file was not created.");
 }
 
 function coerceOutlineToPlainText(kind, outline) {
@@ -1220,38 +1233,63 @@ function coerceOutlineToPlainText(kind, outline) {
   const lines = [];
   if (outline.title) lines.push(String(outline.title));
   if (outline.subtitle) lines.push(String(outline.subtitle));
-  for (const section of Array.isArray(outline.sections) ? outline.sections : []) {
-    if (section?.heading) lines.push(`# ${section.heading}`);
-    if (section?.body) lines.push(String(section.body));
+  // Accept either `sections` (canonical) or `slides` (AI sometimes uses pptx
+  // shape for docx when the prompt example is ambiguous).
+  const sections = Array.isArray(outline.sections) ? outline.sections
+    : Array.isArray(outline.slides) ? outline.slides
+      : [];
+  for (const section of sections) {
+    const heading = section?.heading ?? section?.title ?? null;
+    if (heading) lines.push(`# ${heading}`);
+    // `body` (canonical), `content` or `bullets` array (pptx fallback)
+    if (section?.body) {
+      lines.push(String(section.body));
+    } else if (Array.isArray(section?.bullets)) {
+      for (const b of section.bullets) lines.push(`- ${b}`);
+    } else if (section?.content) {
+      lines.push(String(section.content));
+    }
   }
-  if (outline.body && !outline.sections) lines.push(String(outline.body));
+  if (outline.body && sections.length === 0) lines.push(String(outline.body));
   return lines.join("\n");
 }
 
-async function invokeDocumentRenderer({ kind, targetPath, plainText }) {
-  const scriptPath = await resolveDocumentRendererScript();
-  await execFileAsync("powershell", [
-    "-NoProfile",
-    "-ExecutionPolicy",
-    "Bypass",
-    "-File",
-    scriptPath,
-    "-TargetPath",
-    targetPath,
-    "-Kind",
-    kind,
-    "-Text",
-    plainText
-  ], {
-    encoding: "utf8",
-    maxBuffer: 4 * 1024 * 1024
-  });
+async function invokeDocumentRenderer({ kind, targetPath, outline }) {
+  // Try the Node.js renderer first (pptxgenjs / docx / exceljs — styled output).
+  try {
+    const { renderDocument } = await import("./document-renderer.mjs");
+    await renderDocument({ kind, targetPath, outline });
+    return;
+  } catch (nodeErr) {
+    // Fall back to PowerShell bare-XML renderer if the npm packages are missing.
+    try {
+      const scriptPath = await resolveDocumentRendererScript();
+      const plainText = coerceOutlineToPlainText(kind, outline);
+      await execFileAsync("powershell", [
+        "-NoProfile", "-ExecutionPolicy", "Bypass",
+        "-File", scriptPath,
+        "-TargetPath", targetPath,
+        "-Kind", kind,
+        "-Text", plainText
+      ], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+    } catch (psErr) {
+      throw new Error(`Document render failed (Node: ${nodeErr.message}; PS: ${psErr.message})`);
+    }
+  }
 }
 
 export const GENERATE_DOCUMENT_TOOL = {
   id: "generate_document",
   name: "Generate Document",
-  description: "Produce a pptx / docx / xlsx / pdf artifact from a structured outline. For pptx, outline shape is {title, subtitle?, slides:[{heading, bullets:[string]}]}.",
+  description: `Produce a professionally styled pptx / docx / xlsx / pdf artifact from a structured outline.
+
+Outline shapes:
+• pptx → { title, subtitle?, author?, date?, slides: [{ heading, bullets?: string[], body?: string, table?: { headers: string[], rows: any[][] }, layout?: "section" }] }
+• docx → { title, subtitle?, author?, date?, sections: [{ heading, level?: 1|2, body?: string, bullets?: string[], table?: { headers: string[], rows: any[][] } }] }
+• xlsx → { headers: string[], rows: any[][] }  OR  { sheets: [{ name, headers, rows }] }
+• pdf  → same shape as docx (rendered to HTML then printed)
+
+For reports with charts: include Mermaid diagram code in body text wrapped in triple-backtick mermaid blocks — they render automatically in HTML/PDF output.`,
   parameters: ACTION_TOOL_SCHEMAS.generate_document,
   risk_level: "low",
   required_capabilities: ["file_write"],
@@ -1271,60 +1309,43 @@ export const GENERATE_DOCUMENT_TOOL = {
         ? args.filename.trim()
         : `result${KIND_EXTENSIONS[kind]}`;
       const absTarget = await resolveSandboxedTarget(outputDir, filename);
-      const plainText = coerceOutlineToPlainText(kind, args.outline).trim()
-        || "UCA generated document (empty outline).";
+      const outline   = args.outline ?? {};
+
       if (kind === "pdf") {
         const htmlPath = absTarget.replace(/\.pdf$/i, ".html");
-        await writeFile(htmlPath, [
-          "<!doctype html>",
-          "<html><head><meta charset=\"utf-8\"><title>UCA Result</title></head><body>",
-          `<pre>${escapeHtmlForDocument(plainText)}</pre>`,
-          "</body></html>"
-        ].join("\n"), "utf8");
+        const htmlContent = buildPdfHtml(outline);
+        await writeFile(htmlPath, htmlContent, "utf8");
         try {
           await writePdfFromHtmlArtifact(htmlPath, absTarget);
           return createActionResult({
             success: true,
             observation: `generate_document produced PDF at ${path.relative(outputDir, absTarget) || path.basename(absTarget)}`,
             metadata: {
-              tool_id: "generate_document",
-              kind,
-              path: absTarget,
-              mime_type: KIND_MIMES[kind],
+              tool_id: "generate_document", kind,
+              path: absTarget, mime_type: KIND_MIMES[kind],
               html_source_path: htmlPath
             },
             artifactPaths: [absTarget]
           });
         } catch (error) {
-          // Keep the fallback explicit: callers can tell the user a printable
-          // HTML artifact exists even though local PDF conversion failed.
-          const htmlPath = absTarget.replace(/\.pdf$/i, ".html");
-          await writeFile(htmlPath, `<pre>${escapeHtmlForDocument(plainText)}</pre>\n`, "utf8");
           return createActionResult({
             success: true,
-            observation: `generate_document could not convert to PDF (${error.message}); produced HTML fallback at ${path.relative(outputDir, htmlPath)}.`,
+            observation: `generate_document could not convert to PDF (${error.message}); produced HTML at ${path.relative(outputDir, htmlPath)}.`,
             metadata: {
-              tool_id: "generate_document",
-              kind,
-              path: htmlPath,
-              mime_type: "text/html",
-              needs_pdf_conversion: true,
-              pdf_conversion_error: error.message
+              tool_id: "generate_document", kind,
+              path: htmlPath, mime_type: "text/html",
+              needs_pdf_conversion: true, pdf_conversion_error: error.message
             },
             artifactPaths: [htmlPath]
           });
         }
       }
-      await invokeDocumentRenderer({ kind, targetPath: absTarget, plainText });
+
+      await invokeDocumentRenderer({ kind, targetPath: absTarget, outline });
       return createActionResult({
         success: true,
         observation: `generate_document produced ${kind.toUpperCase()} at ${path.relative(outputDir, absTarget) || path.basename(absTarget)}`,
-        metadata: {
-          tool_id: "generate_document",
-          kind,
-          path: absTarget,
-          mime_type: KIND_MIMES[kind]
-        },
+        metadata: { tool_id: "generate_document", kind, path: absTarget, mime_type: KIND_MIMES[kind] },
         artifactPaths: [absTarget]
       });
     } catch (error) {
@@ -1338,14 +1359,254 @@ export const GENERATE_DOCUMENT_TOOL = {
 };
 
 /* ------------------------------------------------------------------------ */
+/* PDF HTML builder (with Mermaid support)                                   */
+/* ------------------------------------------------------------------------ */
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/**
+ * Convert a structured outline (same shape as docx) to a styled HTML document
+ * suitable for printing to PDF via headless Chrome.
+ * Mermaid code blocks in body text are automatically rendered via mermaid.js.
+ */
+function buildPdfHtml(outline) {
+  const title    = outline.title    ?? "Document";
+  const subtitle = outline.subtitle ?? "";
+  const author   = outline.author   ?? "";
+  const date     = outline.date     ?? "";
+
+  const sections = Array.isArray(outline.sections) ? outline.sections
+    : Array.isArray(outline.slides)                ? outline.slides
+    : [];
+
+  const bodyLines = [];
+
+  if (title) {
+    bodyLines.push(`<h1 class="doc-title">${escapeHtml(title)}</h1>`);
+  }
+  if (subtitle) {
+    bodyLines.push(`<p class="doc-subtitle">${escapeHtml(subtitle)}</p>`);
+  }
+  const meta = [author, date].filter(Boolean).join("   ·   ");
+  if (meta) {
+    bodyLines.push(`<p class="doc-meta">${escapeHtml(meta)}</p>`);
+  }
+  if (title) {
+    bodyLines.push(`<hr class="title-rule">`);
+  }
+
+  for (const sec of sections) {
+    const heading = sec.heading ?? sec.title;
+    if (heading) {
+      const tag = sec.level === 2 ? "h3" : "h2";
+      bodyLines.push(`<${tag}>${escapeHtml(heading)}</${tag}>`);
+    }
+
+    if (sec.body) {
+      bodyLines.push(renderBodyWithMermaid(String(sec.body)));
+    }
+
+    if (Array.isArray(sec.bullets) && sec.bullets.length > 0) {
+      bodyLines.push("<ul>");
+      for (const b of sec.bullets) {
+        bodyLines.push(`  <li>${escapeHtml(String(b))}</li>`);
+      }
+      bodyLines.push("</ul>");
+    }
+
+    if (sec.table && Array.isArray(sec.table.rows)) {
+      bodyLines.push(renderHtmlTable(sec.table));
+    }
+  }
+
+  // Plain body fallback
+  if (outline.body && sections.length === 0) {
+    bodyLines.push(renderBodyWithMermaid(String(outline.body)));
+  }
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", Calibri, Arial, sans-serif;
+    font-size: 11pt; line-height: 1.65; color: #374151;
+    max-width: 760px; margin: 0 auto; padding: 40px 48px;
+    background: #fff;
+  }
+  h1.doc-title  { font-size: 26pt; font-weight: 700; color: #1E293B; margin: 0 0 6px; }
+  p.doc-subtitle{ font-size: 14pt; color: #64748B; margin: 0 0 4px; }
+  p.doc-meta    { font-size: 9pt;  color: #94A3B8; margin: 0 0 12px; }
+  hr.title-rule { border: none; border-top: 2px solid #2563EB; margin: 16px 0 28px; }
+  h2 { font-size: 16pt; font-weight: 700; color: #1E293B;
+       border-bottom: 1px solid #E2E8F0; padding-bottom: 4px;
+       margin: 32px 0 10px; }
+  h3 { font-size: 13pt; font-weight: 600; color: #374151; margin: 24px 0 8px; }
+  p  { margin: 0 0 10px; }
+  ul, ol { margin: 6px 0 12px 24px; padding: 0; }
+  li { margin-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0 20px; font-size: 10pt; }
+  thead tr { background: #1E293B; color: #fff; }
+  thead th { padding: 7px 10px; text-align: left; font-weight: 600; }
+  tbody tr:nth-child(even) { background: #F8FAFC; }
+  tbody td { padding: 6px 10px; border: 1px solid #E2E8F0; vertical-align: top; }
+  .mermaid { margin: 16px 0; text-align: center; }
+  pre.mermaid-fallback {
+    background: #F1F5F9; border: 1px solid #E2E8F0;
+    padding: 12px; border-radius: 4px; font-size: 9pt;
+    white-space: pre-wrap; color: #475569; margin: 12px 0;
+  }
+  @media print {
+    body { padding: 0; max-width: none; }
+    h2 { page-break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+${bodyLines.join("\n")}
+<script>
+  if (typeof mermaid !== "undefined") {
+    mermaid.initialize({ startOnLoad: true, theme: "default", securityLevel: "loose" });
+  } else {
+    document.querySelectorAll(".mermaid").forEach(el => {
+      const pre = document.createElement("pre");
+      pre.className = "mermaid-fallback";
+      pre.textContent = el.textContent;
+      el.replaceWith(pre);
+    });
+  }
+</script>
+</body>
+</html>`;
+}
+
+/** Wrap ```mermaid...``` blocks; escape everything else. */
+function renderBodyWithMermaid(text) {
+  const parts = text.split(/(```mermaid[\s\S]*?```)/g);
+  return parts.map(part => {
+    const m = part.match(/^```mermaid\n?([\s\S]*?)```$/);
+    if (m) {
+      return `<div class="mermaid">${escapeHtml(m[1].trim())}</div>`;
+    }
+    // Regular text: split by double newline → paragraphs
+    return part.split(/\n\n+/).map(p => {
+      const t = p.replace(/\n/g, " ").trim();
+      return t ? `<p>${escapeHtml(t)}</p>` : "";
+    }).filter(Boolean).join("\n");
+  }).join("\n");
+}
+
+function renderHtmlTable(table) {
+  const headers = Array.isArray(table.headers) ? table.headers : [];
+  const rows    = Array.isArray(table.rows)    ? table.rows    : [];
+  const lines   = ["<table>"];
+  if (headers.length) {
+    lines.push("  <thead><tr>");
+    for (const h of headers) lines.push(`    <th>${escapeHtml(String(h ?? ""))}</th>`);
+    lines.push("  </tr></thead>");
+  }
+  lines.push("  <tbody>");
+  for (const row of rows) {
+    lines.push("  <tr>");
+    const cells = Array.isArray(row) ? row : [row];
+    for (const c of cells) lines.push(`    <td>${escapeHtml(String(c ?? ""))}</td>`);
+    lines.push("  </tr>");
+  }
+  lines.push("  </tbody></table>");
+  return lines.join("\n");
+}
+
+/* ------------------------------------------------------------------------ */
+/* RENDER_DIAGRAM_TOOL — Mermaid diagrams to standalone HTML                 */
+/* ------------------------------------------------------------------------ */
+
+export const RENDER_DIAGRAM_TOOL = {
+  id: "render_diagram",
+  name: "Render Diagram",
+  description: `Render a Mermaid diagram to a standalone interactive HTML file.
+Use for any chart or diagram in reports: flowchart, sequenceDiagram, pie, xychart-beta (bar/line), gantt, mindmap, timeline, etc.
+The output HTML can be opened in any browser or embedded in a PDF via generate_document.
+
+Example code:
+  pie title Browser Share
+    "Chrome" : 65
+    "Firefox" : 20
+    "Other" : 15`,
+  parameters: ACTION_TOOL_SCHEMAS.render_diagram,
+  risk_level: "low",
+  required_capabilities: ["file_write"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const code     = String(args.code ?? "").trim();
+    const filename = typeof args.filename === "string" && args.filename.trim()
+      ? args.filename.trim().replace(/\.(html|svg|png)$/i, "") + ".html"
+      : "diagram.html";
+    if (!code) {
+      return createActionResult({
+        success: false,
+        observation: "render_diagram: no Mermaid code provided.",
+        metadata: { tool_id: "render_diagram" }
+      });
+    }
+    try {
+      const outputDir = await ensureOutputDir(resolveOutputDirForTool(ctx));
+      const htmlPath  = await resolveSandboxedTarget(outputDir, filename);
+      const html = `<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Diagram</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+  body { margin: 0; padding: 24px; background: #fff; font-family: system-ui, sans-serif; }
+  .mermaid { max-width: 100%; }
+</style>
+</head>
+<body>
+<div class="mermaid">
+${escapeHtml(code)}
+</div>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: "default", securityLevel: "loose" });
+</script>
+</body>
+</html>`;
+      await writeFile(htmlPath, html, "utf8");
+      return createActionResult({
+        success: true,
+        observation: `render_diagram produced ${path.relative(outputDir, htmlPath) || path.basename(htmlPath)}`,
+        metadata: { tool_id: "render_diagram", path: htmlPath, mime_type: "text/html" },
+        artifactPaths: [htmlPath]
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `render_diagram failed: ${error.message}`,
+        metadata: { tool_id: "render_diagram" }
+      });
+    }
+  }
+};
+
+/* ------------------------------------------------------------------------ */
 /* UCA-053: File Discovery & Artifact Verification tools                     */
 /* ------------------------------------------------------------------------ */
 
 // Resolve the default output directory from ctx (runtime config or fallback)
 function resolveDefaultOutputDir(ctx) {
-  return ctx?.runtime?.config?.output?.defaultDir
-    ?? ctx?.outputDir
-    ?? path.join(os.homedir(), "Documents", "UCA");
+  const configuredDir = ctx?.runtime?.configStore?.load?.()?.output?.defaultDir;
+  if (configuredDir && typeof configuredDir === "string" && configuredDir.trim()) return configuredDir.trim();
+  return ctx?.outputDir ?? path.join(os.homedir(), "Documents", "UCA");
 }
 
 // The artifact manifest lives at <defaultOutputDir>/.uca-manifest.json
@@ -2039,6 +2300,7 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   WRITE_FILE_TOOL,
   RUN_SCRIPT_TOOL,
   GENERATE_DOCUMENT_TOOL,
+  RENDER_DIAGRAM_TOOL,
   // UCA-053: File Discovery & Artifact Verification
   LIST_FILES_TOOL,
   GLOB_FILES_TOOL,

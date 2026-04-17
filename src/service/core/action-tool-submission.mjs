@@ -11,6 +11,17 @@ import {
   updateTask
 } from "./task-runtime.mjs";
 import { runToolAgentLoop } from "../executors/tool_using/agent-loop.mjs";
+import { createArtifactStore } from "../store/artifact-store.mjs";
+
+function persistArtifacts(runtime, taskId, artifactPaths) {
+  if (!artifactPaths?.length) return;
+  const artifactStore = runtime.artifactStore ?? createArtifactStore();
+  for (const filePath of artifactPaths) {
+    if (!filePath) continue;
+    const record = artifactStore.registerArtifact(taskId, filePath, null);
+    runtime.store.appendArtifact(record);
+  }
+}
 
 function buildActionContextPacket({ userCommand, sourceApp = "uca.console", captureMode = "manual" }) {
   return {
@@ -110,6 +121,7 @@ export async function submitActionToolTask({
       const finalText = toolResult.observation ?? (toolResult.success ? "完成。" : "操作失败。");
       updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
       markTaskSucceeded(runtime, task);
+      persistArtifacts(runtime, task.task_id, toolResult.artifact_paths);
       return {
         task,
         taskEvents: runtime.store.getTaskEvents(task.task_id),
@@ -177,6 +189,7 @@ export async function submitActionToolTask({
       summary: loopResult.final_text
     });
     markTaskSucceeded(runtime, task);
+    persistArtifacts(runtime, task.task_id, loopResult.artifacts);
 
     return {
       task,

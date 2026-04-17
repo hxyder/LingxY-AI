@@ -194,8 +194,17 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     required: [],
     properties: {
       kind: { type: "string" },       // pptx | docx | xlsx | pdf
-      outline: {},                    // structured outline object; shape depends on kind
+      outline: {},                    // structured outline; shape depends on kind (see tool description)
       filename: { type: "string" }    // optional; defaults to result.<ext>
+    }
+  },
+
+  render_diagram: {
+    type: "object",
+    required: [],
+    properties: {
+      code: { type: "string" },       // Mermaid diagram source (graph LR, pie, sequenceDiagram, etc.)
+      filename: { type: "string" }    // optional; defaults to diagram.html
     }
   },
 
