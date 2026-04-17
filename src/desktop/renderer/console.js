@@ -1144,10 +1144,15 @@ function renderTaskRouting() {
 
     const selectedProvider = customProviders.find((p) => p.id === route.providerId);
     const modelValue = route.model ?? "";
+    // Build a proper <select> (not a datalist) so the user sees every preset
+    // the moment the dropdown opens — datalists filter by typed text which
+    // hid options when the saved value was already populated.
+    const presets = selectedProvider ? providerModelPresets(selectedProvider, task.id) : [];
+    const allModelChoices = uniqueNonEmpty([modelValue, ...presets]);
     const modelOptions = selectedProvider
-      ? uniqueNonEmpty([modelValue, ...providerModelPresets(selectedProvider, task.id)]).map((m) =>
-          `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`
-        ).join("")
+      ? allModelChoices.map((m) =>
+          `<option value="${escapeHtml(m)}" ${m === modelValue ? "selected" : ""}>${escapeHtml(m)}</option>`
+        ).join("") + `<option value="__custom__" style="font-style:italic;">✏️ 自定义…</option>`
       : "";
     const modeValue = modeForModel(selectedProvider, modelValue, route.mode ?? "");
     const modeOptions = selectedProvider
@@ -1164,9 +1169,8 @@ function renderTaskRouting() {
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${escapeHtml(task.desc)}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">
           <select data-routing-provider="${escapeHtml(task.id)}" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders ? "disabled" : ""}>${providerOptions}</select>
-          <input type="text" data-routing-model="${escapeHtml(task.id)}" list="models-${escapeHtml(task.id)}" value="${escapeHtml(modelValue)}" placeholder="Model name" style="font-size:12px;" ${noProviders ? "disabled" : ""}>
+          <select data-routing-model="${escapeHtml(task.id)}" title="Model" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders || !selectedProvider ? "disabled" : ""}>${modelOptions}</select>
           <select data-routing-mode="${escapeHtml(task.id)}" title="Mode" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders || !selectedProvider ? "disabled" : ""}>${modeOptions}</select>
-          <datalist id="models-${escapeHtml(task.id)}">${modelOptions}</datalist>
         </div>
       </div>
     `;
@@ -1193,19 +1197,28 @@ function renderTaskRouting() {
       renderTaskRouting();
     });
   }
-  for (const inp of el.querySelectorAll("[data-routing-model]")) {
-    inp.addEventListener("input", () => {
-      const taskId = inp.dataset.routingModel;
-      taskRouting[taskId] = { ...(taskRouting[taskId] ?? {}), model: inp.value };
-    });
-    inp.addEventListener("change", () => {
-      const taskId = inp.dataset.routingModel;
+  for (const sel of el.querySelectorAll("[data-routing-model]")) {
+    sel.addEventListener("change", () => {
+      const taskId = sel.dataset.routingModel;
       const route = taskRouting[taskId] ?? {};
       const provider = customProviders.find((p) => p.id === route.providerId);
+
+      let model = sel.value;
+      if (model === "__custom__") {
+        const custom = globalThis.prompt?.("输入自定义模型名称：", route.model ?? "");
+        if (custom && custom.trim()) {
+          model = custom.trim();
+        } else {
+          // Cancel — revert select to the previous saved value.
+          sel.value = route.model ?? "";
+          return;
+        }
+      }
+
       taskRouting[taskId] = {
         ...route,
-        model: inp.value,
-        mode: modeForModel(provider, inp.value, "")
+        model,
+        mode: modeForModel(provider, model, "")
       };
       renderTaskRouting();
     });
