@@ -58,7 +58,10 @@ function providerFingerprint(provider = {}) {
 export function resolveRoutedModel(provider, route, taskType) {
   const baseModel = route?.model || provider.defaultModel || getDefaultModelForKind(provider.kind, taskType);
   const mode = route?.mode ?? "";
-  if (!mode || mode === "default") return baseModel;
+  // code_cli providers use CLI-specific model names (e.g. "kimi-code/kimi-for-coding")
+  // that differ from API model names — skip mode overrides so the configured model
+  // is always passed as-is to the CLI subprocess.
+  if (!mode || mode === "default" || provider.kind === "code_cli") return baseModel;
 
   const fp = `${providerFingerprint(provider)} ${baseModel}`.toLowerCase();
   if (/deepseek/.test(fp)) {
