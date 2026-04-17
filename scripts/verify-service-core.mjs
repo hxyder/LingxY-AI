@@ -82,6 +82,42 @@ if (!latestTask.task_spec.artifact.required || latestTask.task_spec.artifact.kin
   throw new Error("TaskSpec must require artifact verification for generated PPT tasks.");
 }
 
+const iranDocCommand = "结合这周末伊朗局势的情况以及变化，给我生成一份下周美股投资策略的方案。一份word文档吧。";
+const iranDocTask = createTaskRecord({
+  route: service.routeIntent(iranDocCommand),
+  contextPacket: {
+    schema_version: "1.0",
+    source_type: "manual",
+    source_app: "verify-service-core",
+    capture_mode: "test",
+    text: ""
+  },
+  userCommand: iranDocCommand
+});
+if (iranDocTask.task_spec.goal !== "generate_document"
+    || iranDocTask.task_spec.artifact.kind !== "docx"
+    || iranDocTask.task_spec.constraints.can_split !== false
+    || iranDocTask.task_spec.needs_current_web_data !== true) {
+  throw new Error("TaskSpec must keep current-events Word document requests as one agentic artifact task.");
+}
+const iranDocDecomposition = await decomposeUserCommand({
+  userCommand: iranDocCommand,
+  runtime: {
+    ...service.runtime,
+    async intentDecomposer() {
+      return {
+        subtasks: [
+          { command: "搜索伊朗局势", suggested_executor: "web_search_fetch", suggested_formats: [], dependency_idx: null },
+          { command: "生成美股投资策略 word 文档", suggested_executor: "generate_document", suggested_formats: ["docx"], dependency_idx: 0 }
+        ]
+      };
+    }
+  }
+});
+if (iranDocDecomposition.subtasks.length !== 1 || iranDocDecomposition.usedLLM !== false) {
+  throw new Error("Decomposer must not split a single artifact-producing Word document request.");
+}
+
 // UCA-049: "分析 / generate report" now gets upgraded to the agentic
 // executor so the planner can coordinate search + generate_document. The
 // underlying matched rule is still `kimi` — verify via intent_tags.
@@ -136,11 +172,11 @@ const decomposition = await decomposeUserCommand({
     }
   }
 });
-if (decomposition.usedLLM !== true || decomposition.subtasks.length !== 1) {
-  throw new Error("Multi-intent decomposer should use AI first and preserve related artifact requests as one task.");
+if (decomposition.usedLLM !== false || decomposition.subtasks.length !== 1) {
+  throw new Error("Artifact-producing requests should bypass AI decomposition and stay as one task.");
 }
 if (decomposition.subtasks[0].suggested_executor !== "agentic" || !decomposition.subtasks[0].suggested_formats.includes("pptx")) {
-  throw new Error("AI-first decomposer did not preserve agentic pptx artifact metadata.");
+  throw new Error("Decomposer fallback did not preserve agentic pptx artifact metadata.");
 }
 
 const ruleOnlyDecomposition = await decomposeUserCommand({

@@ -202,6 +202,7 @@ export function refreshCompositeParentStatus(runtime, parentTaskId) {
 // step labels. Other events (e.g. status_changed on every tick) are too noisy.
 const CONVERSATION_VISIBLE_EVENTS = new Set([
   "step_started",
+  "tool_call_started",
   "tool_call_proposed",
   "tool_call_completed",
   "tool_call_denied",
@@ -240,7 +241,7 @@ const STEP_LABELS = {
 };
 
 function buildConversationStepLabel(eventType, payload) {
-  if (eventType === "tool_call_proposed") {
+  if (eventType === "tool_call_started" || eventType === "tool_call_proposed") {
     const toolId = payload?.tool_id ?? payload?.tool ?? "";
     const label = TOOL_STEP_LABELS[toolId] ?? toolId;
     return label ? `▸ ${label}…` : null;
@@ -268,6 +269,10 @@ function buildConversationStepLabel(eventType, payload) {
   return null;
 }
 
+// Event types that should only be published to the live bus and not persisted
+// to the store (avoids flooding the DB with thousands of delta records).
+const EPHEMERAL_EVENT_TYPES = new Set(["text_delta"]);
+
 export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   const record = {
     event_id: createId("evt"),
@@ -277,7 +282,9 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
     payload
   };
 
-  runtime.store.appendEvent(record);
+  if (!EPHEMERAL_EVENT_TYPES.has(eventType)) {
+    runtime.store.appendEvent(record);
+  }
   runtime.eventBus.publish(record);
 
   // UCA-061: Forward qualifying events as conversation_step so the overlay

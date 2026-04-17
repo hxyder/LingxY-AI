@@ -21,6 +21,9 @@ export const NO_DECOMPOSE_GOALS = new Set([
   "qa",
   "translate",
   "search_and_answer",
+  "analyze_and_report",
+  "generate_document",
+  "transform_existing_file",
   "schedule_or_notify",
   "multimodal_analyze"
 ]);
@@ -140,7 +143,8 @@ const GOAL_RULES = [
   {
     goal: "search_and_answer",
     patterns: [
-      /\b(搜索|search|最新|latest|recent|新闻|news|动态|资讯|热点|今日|today)\b/i
+      /\b(搜索|search|最新|latest|recent|新闻|news|动态|资讯|热点|今日|today|tomorrow|weather|forecast)\b/i,
+      /(天气|气温|明天|后天|明日|汇率|股价|航班|机票|酒店|价格)/i
     ]
   }
   // fallback: "qa" — handled in classifyGoal()
@@ -167,8 +171,8 @@ export function classifyGoal(text) {
 // ---------------------------------------------------------------------------
 
 const WEB_DATA_PATTERNS = [
-  /(最新|最近|今日|今天|今年|本周|本月|新闻|动态|资讯|热点|搜索)/i,
-  /\b(latest|recent|today|current|news|search)\b/i
+  /(最新|最近|今日|今天|今年|本周|这周|周末|下周|本月|明天|后天|明日|天气|气温|新闻|动态|资讯|热点|搜索|局势|行情|变化|价格|汇率|股价|航班|机票|酒店)/i,
+  /\b(latest|recent|today|tomorrow|current|news|search|weather|forecast|price|stock|flight|hotel)\b/i
 ];
 
 function needsCurrentWebData(text) {
@@ -247,7 +251,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     source,
     constraints: {
       language: "zh-CN",
-      can_split: goal !== "generate_document",   // don't split a single doc request
+      can_split: !artifactRequired && !["generate_document", "analyze_and_report", "transform_existing_file"].includes(goal),
       must_use_tools: goal !== "qa",
       must_verify_artifact: artifactRequired
     },

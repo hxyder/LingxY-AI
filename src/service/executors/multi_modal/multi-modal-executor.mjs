@@ -145,8 +145,22 @@ export function createMultiModalExecutorScaffold() {
         const taskPackage = buildKimiTaskPackage({ task, outputDir });
 
         let cliResultText = "";
+        const pendingEvents = [];
+        let resolvePending = null;
+        let cliDone = false;
+        let cliError = null;
+        let cliExec = null;
+        const pushCliEvent = (event) => {
+          pendingEvents.push(event);
+          if (event.type === "inline_result" && event.text) cliResultText = event.text;
+          if (resolvePending) {
+            const resolve = resolvePending;
+            resolvePending = null;
+            resolve();
+          }
+        };
         try {
-          const exec = await executeKimiTask({
+          const runPromise = executeKimiTask({
             command: kimiRuntime.command,
             args: kimiRuntime.args,
             env: kimiRuntime.env,
@@ -155,12 +169,36 @@ export function createMultiModalExecutorScaffold() {
             model: kimiRuntime.model,
             maxRuntimeSeconds: 600,
             abortSignal: signal,
-            onEvent(event) {
-              if (event.type === "inline_result" && event.text) cliResultText = event.text;
+            onEvent: pushCliEvent
+          }).then((exec) => {
+            cliExec = exec;
+          }).catch((error) => {
+            cliError = error;
+          }).finally(() => {
+            cliDone = true;
+            if (resolvePending) {
+              const resolve = resolvePending;
+              resolvePending = null;
+              resolve();
             }
           });
-          if (exec.status !== "success") {
-            throw new Error(`Code CLI failed (exit ${exec.exitCode ?? "?"})`);
+
+          while (!cliDone || pendingEvents.length > 0) {
+            if (pendingEvents.length > 0) {
+              const event = pendingEvents.shift();
+              yield { event_type: event.type, payload: event };
+              continue;
+            }
+            await new Promise((resolve) => { resolvePending = resolve; });
+          }
+
+          await runPromise;
+
+          if (cliError) {
+            throw cliError;
+          }
+          if (cliExec?.status !== "success") {
+            throw new Error(`Code CLI failed (exit ${cliExec?.exitCode ?? "?"})`);
           }
         } catch (error) {
           yield { event_type: "success", payload: { text: `Code CLI vision failed: ${error.message}` } };

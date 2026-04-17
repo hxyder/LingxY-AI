@@ -49,6 +49,7 @@ function shouldDecompose(userCommand) {
 const HARD_SPLIT = /[。；;\n]+/g;
 const SOFT_SPLIT = /(?:\s+(?:然后|接着|再|并且|同时|and then|then|and)\s+|\s*&&\s*)/gi;
 const COMMA_SPLIT = /[，,]+/g;
+const EXECUTOR_IDS = new Set(["fast", "general", "translate", "kimi", "code_cli", "tool_using", "agentic", "multi_modal"]);
 
 function splitAndTrim(text, pattern) {
   return String(text ?? "")
@@ -147,9 +148,13 @@ function normaliseSubtasks(raw, fallbackCommand) {
     const command = String(entry.command ?? entry.task ?? entry.prompt ?? "").trim();
     if (!command) continue;
     const route = routeIntent(command);
+    const suggestedExecutor = normalizeSuggestedExecutor(
+      entry.suggested_executor ?? entry.executor,
+      route
+    );
     normalized.push({
       command,
-      suggested_executor: entry.suggested_executor ?? entry.executor ?? route.suggested_executor ?? route.executor,
+      suggested_executor: suggestedExecutor,
       suggested_formats: Array.isArray(entry.suggested_formats)
         ? entry.suggested_formats
         : (entry.format ? [entry.format] : route.suggested_formats ?? []),
@@ -174,6 +179,12 @@ function normaliseSubtasks(raw, fallbackCommand) {
   }
 
   return [];
+}
+
+function normalizeSuggestedExecutor(candidate, route) {
+  const value = String(candidate ?? "").trim();
+  if (EXECUTOR_IDS.has(value)) return value;
+  return route.suggested_executor ?? route.executor;
 }
 
 /**

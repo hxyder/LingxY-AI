@@ -4,10 +4,12 @@ import path from "node:path";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
+import { detectRequestedOutputFormat, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
 import { submitImageTask } from "./image-submission.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import { decomposeUserCommand } from "./router/decomposer.mjs";
 import { submitCompositeTask } from "./composite-submission.mjs";
+import { createTaskSpec } from "./task-spec.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -291,8 +293,24 @@ function pickRunnableExecutor(task, runtime) {
     ?? null;
 }
 
+function canDecomposeFromTaskSpec(taskSpec) {
+  if (!taskSpec) return true;
+  if (taskSpec.constraints?.can_split === false) return false;
+  if (taskSpec.artifact?.required === true) return false;
+  if (taskSpec.success_contract?.artifact_created === true) return false;
+  return true;
+}
+
+function assertArtifactContract(task, generatedArtifacts) {
+  if (task.task_spec?.artifact?.required !== true) return;
+  if (generatedArtifacts.length > 0) return;
+  throw new Error(`Task requires a ${task.task_spec.artifact.kind ?? "file"} artifact, but no artifact was created.`);
+}
+
 async function runBrowserExecutor({ task, runtime }) {
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
+  const generatedArtifacts = [];
+  let inlineText = "";
 
   // The dedicated `translate` executor uses the free translator client and
   // must not be redirected to a Kimi/CLI provider even when chat is routed
@@ -368,11 +386,45 @@ async function runBrowserExecutor({ task, runtime }) {
           ? attachProviderFieldsToEvent(executorDescriptor, event.payload)
           : event.payload
       });
+      if (event.event_type === "inline_result" || event.event_type === "success") {
+        inlineText = event.payload?.text ?? event.payload?.summary ?? inlineText;
+      }
+      if (event.event_type === "artifact_created" && event.payload?.path) {
+        const artifactRecord = artifactStore.registerArtifact(task.task_id, event.payload.path, event.payload.mime ?? event.payload.mime_type);
+        runtime.store.appendArtifact(artifactRecord);
+        generatedArtifacts.push(artifactRecord);
+      }
       applyExecutorEvent(runtime, task, {
         type: event.event_type,
         ...event.payload
       });
     }
+
+    const requestedFormat = detectRequestedOutputFormat(task.user_command);
+    if (requestedFormat.id !== "conversational" && generatedArtifacts.length === 0) {
+      const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+      const artifacts = await writeRequestedArtifacts({
+        assistantText: inlineText || task.context_packet?.text || task.user_command,
+        outputDir,
+        requestedFormat
+      });
+      for (const artifact of artifacts) {
+        const artifactRecord = artifactStore.registerArtifact(task.task_id, artifact.path, artifact.mime_type);
+        runtime.store.appendArtifact(artifactRecord);
+        generatedArtifacts.push(artifactRecord);
+        emitTaskEvent({
+          runtime,
+          taskId: task.task_id,
+          eventType: "artifact_created",
+          payload: {
+            path: artifact.path,
+            mime: artifact.mime_type
+          }
+        });
+      }
+    }
+
+    assertArtifactContract(task, generatedArtifacts);
 
     if (task.status !== "success") {
       updateTask(runtime, task, {
@@ -382,7 +434,7 @@ async function runBrowserExecutor({ task, runtime }) {
       }, true);
     }
     markTaskSucceeded(runtime, task);
-    return { status: "success", artifacts: [] };
+    return { status: "success", artifacts: generatedArtifacts };
   } catch (error) {
     markTaskFailed(runtime, task, error);
     return { status: task.status, artifacts: [] };
@@ -474,6 +526,8 @@ async function runKimiExecutor({ task, runtime, artifactStore, cliRuntime = null
       store.appendArtifact(record);
     }
 
+    assertArtifactContract(task, artifactRecords);
+
     if (task.status !== "success") {
       updateTask(runtime, task, {
         status: "success",
@@ -516,8 +570,9 @@ export async function submitBrowserTask({
     trigger: "browser_submission"
   });
   const contextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
+  const preflightTaskSpec = createTaskSpec(userCommand, contextPacket, route);
 
-  if (inspection.allowed && !skipDecomposition && !parentTaskId) {
+  if (inspection.allowed && canDecomposeFromTaskSpec(preflightTaskSpec) && !skipDecomposition && !parentTaskId) {
     const decomposition = await decomposeUserCommand({
       userCommand,
       runtime,

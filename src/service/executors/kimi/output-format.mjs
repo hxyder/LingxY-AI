@@ -371,7 +371,8 @@ export function choosePreviewArtifactPath(artifacts = []) {
 export async function writeRequestedArtifacts({
   assistantText,
   outputDir,
-  requestedFormat
+  requestedFormat,
+  preferredFileName = null
 }) {
   const artifacts = [];
   const baseText = assistantText?.trim() || "UCA completed without returning content.";
@@ -433,7 +434,11 @@ export async function writeRequestedArtifacts({
     return artifacts;
   }
 
-  const fileName = requestedFormat.id === "markdown" ? "report.md" : `result${requestedFormat.extension}`;
+  const safePreferredName = typeof preferredFileName === "string"
+    ? path.basename(preferredFileName).replace(/[<>:"/\\|?*]/g, "_").trim()
+    : "";
+  const fileName = safePreferredName
+    || (requestedFormat.id === "markdown" ? "report.md" : `result${requestedFormat.extension}`);
   const targetPath = path.join(outputDir, fileName);
 
   let renderedText = baseText;

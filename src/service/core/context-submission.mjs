@@ -9,6 +9,7 @@ import { detectRequestedOutputFormat, writeRequestedArtifacts } from "../executo
 import { routeIntent } from "./router/intent-router.mjs";
 import { decomposeUserCommand } from "./router/decomposer.mjs";
 import { submitCompositeTask } from "./composite-submission.mjs";
+import { createTaskSpec } from "./task-spec.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -126,6 +127,20 @@ function pickRunnableExecutor(task, runtime) {
     ?? null;
 }
 
+function canDecomposeFromTaskSpec(taskSpec) {
+  if (!taskSpec) return true;
+  if (taskSpec.constraints?.can_split === false) return false;
+  if (taskSpec.artifact?.required === true) return false;
+  if (taskSpec.success_contract?.artifact_created === true) return false;
+  return true;
+}
+
+function assertArtifactContract(task, generatedArtifacts) {
+  if (task.task_spec?.artifact?.required !== true) return;
+  if (generatedArtifacts.length > 0) return;
+  throw new Error(`Task requires a ${task.task_spec.artifact.kind ?? "file"} artifact, but no artifact was created.`);
+}
+
 function attachProviderFieldsToEvent(descriptor, payload) {
   if (!descriptor) return payload ?? {};
   const base = payload ?? {};
@@ -137,6 +152,15 @@ function attachProviderFieldsToEvent(descriptor, payload) {
     model: descriptor.model ?? null,
     transport: descriptor.transport ?? null
   };
+}
+
+function isEmptyPlannerResponse(text = "") {
+  const normalized = String(text ?? "").trim();
+  return !normalized
+    || normalized === "(no response from agentic planner)"
+    || normalized === "(no result)"
+    || normalized === "(no output)"
+    || normalized === "No response.";
 }
 
 async function runKimiExecutor({ task, runtime, store, queue, artifactStore, markFailure = true, cliRuntime = null, providerDescriptor = null }) {
@@ -219,6 +243,8 @@ async function runKimiExecutor({ task, runtime, store, queue, artifactStore, mar
       store.appendArtifact(record);
     }
 
+    assertArtifactContract(task, artifactRecords);
+
     if (task.status !== "success") {
       updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
     }
@@ -296,12 +322,28 @@ async function runExecutor({ runtime, task, executor }) {
           : event.payload
       });
       if (event.event_type === "inline_result" || event.event_type === "success") {
-        inlineText = event.payload?.text ?? event.payload?.summary ?? inlineText;
+        const candidateText = event.payload?.text ?? event.payload?.summary ?? "";
+        if (!isEmptyPlannerResponse(candidateText)) {
+          inlineText = candidateText;
+        }
       }
       if (event.event_type === "artifact_created" && event.payload?.path) {
         const artifactRecord = artifactStore.registerArtifact(task.task_id, event.payload.path, event.payload.mime ?? event.payload.mime_type);
         runtime.store.appendArtifact(artifactRecord);
         generatedArtifacts.push(artifactRecord);
+      }
+      // Agentic executor yields artifact_paths on the success event (not artifact_created).
+      // Collect them here so they are visible via getArtifactsForTask.
+      if (event.event_type === "success" && Array.isArray(event.payload?.artifact_paths)) {
+        for (const filePath of event.payload.artifact_paths) {
+          if (!filePath) continue;
+          const alreadySaved = generatedArtifacts.some((a) => a.path === filePath);
+          if (!alreadySaved) {
+            const artifactRecord = artifactStore.registerArtifact(task.task_id, filePath, null);
+            runtime.store.appendArtifact(artifactRecord);
+            generatedArtifacts.push(artifactRecord);
+          }
+        }
       }
       applyExecutorEvent(runtime, task, {
         type: event.event_type,
@@ -313,9 +355,14 @@ async function runExecutor({ runtime, task, executor }) {
     if (requestedFormat.id !== "conversational" && generatedArtifacts.length === 0) {
       const outputDir = await createOutputDirForTask({ runtime, artifactStore, task });
       const artifacts = await writeRequestedArtifacts({
-        assistantText: inlineText || task.context_packet?.text || task.user_command,
+        assistantText: isEmptyPlannerResponse(inlineText)
+          ? (task.context_packet?.text || task.user_command)
+          : inlineText,
         outputDir,
-        requestedFormat
+        requestedFormat,
+        preferredFileName: task.context_packet?.source_type === "audio_note"
+          ? "录音转录结构化笔记.md"
+          : null
       });
       for (const artifact of artifacts) {
         const artifactRecord = artifactStore.registerArtifact(task.task_id, artifact.path, artifact.mime_type);
@@ -332,6 +379,8 @@ async function runExecutor({ runtime, task, executor }) {
         });
       }
     }
+
+    assertArtifactContract(task, generatedArtifacts);
 
     if (task.status !== "success") {
       updateTask(runtime, task, {
@@ -370,8 +419,9 @@ export async function submitContextTask({
     trigger: "context_submission"
   });
   const normalizedContextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
+  const preflightTaskSpec = createTaskSpec(userCommand, normalizedContextPacket, route);
 
-  if (inspection.allowed && !skipDecomposition && !parentTaskId) {
+  if (inspection.allowed && canDecomposeFromTaskSpec(preflightTaskSpec) && !skipDecomposition && !parentTaskId) {
     const decomposition = await decomposeUserCommand({
       userCommand,
       runtime,

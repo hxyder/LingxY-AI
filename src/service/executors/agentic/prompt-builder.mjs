@@ -95,6 +95,12 @@ function renderTaskContract(task) {
   ].join("\n");
 }
 
+export function isAudioNoteSingleMarkdownTask(task = null) {
+  const sourceType = task?.context_packet?.source_type ?? "";
+  const sourceApp = task?.context_packet?.source_app ?? "";
+  return sourceType === "audio_note" || sourceApp === "uca.note";
+}
+
 /**
  * Render a system prompt that tells the LLM:
  *   1. Its role and constraints
@@ -119,10 +125,15 @@ export function buildAgenticSystemPrompt({
 } = {}) {
   const toolBlocks = tools.map((tool) => renderToolBlock(tool)).join("\n\n");
   const skillBlocks = skills.slice(0, 20).map((skill) => renderSkillBlock(skill)).join("\n\n");
+  const isAudioNoteTask = isAudioNoteSingleMarkdownTask(task);
 
-  const outputFormatLine = requestedFormat && requestedFormat.id && requestedFormat.id !== "conversational"
-    ? `The user asked for a ${requestedFormat.id} artifact. Use the generate_document tool (kind=${requestedFormat.id}) or write_file to produce it. Do not refuse by claiming you cannot save files — you can.`
-    : "If the user does not explicitly ask for a file, reply conversationally.";
+  const outputFormatLine = isAudioNoteTask
+    ? "This is an audio note task. Create exactly one Markdown artifact named \"录音转录结构化笔记.md\" using `write_file`. Do not call `generate_document`; do not create docx, pdf, html, or a second file."
+    : requestedFormat?.id === "markdown"
+      ? "The user asked for a Markdown artifact. Use `write_file` to create exactly one .md file. Do not call `generate_document` for Markdown."
+      : requestedFormat && requestedFormat.id && requestedFormat.id !== "conversational"
+        ? `The user asked for a ${requestedFormat.id} artifact. Use the generate_document tool (kind=${requestedFormat.id}) or write_file to produce it. Do not refuse by claiming you cannot save files — you can.`
+        : "If the user does not explicitly ask for a file, reply conversationally.";
 
   const languageLine = language && language !== "auto"
     ? `Reply to the user in ${language}.`
@@ -146,8 +157,8 @@ export function buildAgenticSystemPrompt({
     "## Rules",
     "",
     "1. If the task contract lists required_steps or required_tools, satisfy them before claiming completion.",
-    "2. Before writing about recent, current, or time-sensitive topics, call `web_search_fetch` first and base your answer on the observation. Do not rely on training data alone.",
-    "3. When the user asks for a file artifact (pptx / docx / xlsx / pdf), call `generate_document` with the appropriate `kind`. For pptx the outline shape is `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`. For ad-hoc text files, use `write_file`.",
+    "2. Before writing about recent, current, or time-sensitive topics (weather, news, prices, flights, events, etc.), call `web_search_fetch` first. If `web_search_fetch` returns no results or fails, use `fetch_url_content` on a specific authoritative URL instead — for example: weather.gov or wttr.in for weather, en.wikipedia.org for facts, finance.yahoo.com for stock prices. Do NOT fall back to training data for time-sensitive information.",
+    "3. When the user asks for a file artifact (pptx / docx / xlsx / pdf), call `generate_document` with the appropriate `kind`. Outline shapes by kind: pptx → `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`; docx/pdf → `{ title, sections: [{ heading, body }] }` (each section's body is a paragraph of prose, may include bullet lines starting with \"- \"); xlsx → `{ rows: [[col1, col2, ...]] }`. For ad-hoc text files, use `write_file`.",
     "4. When the user asks you to run code, use `run_script` with `language` strictly in `powershell | node | python`. Do not invent other languages.",
     "5. You may call multiple tools in sequence. Each tool returns an observation you should read before deciding the next step.",
     "6. Only say something was \"done\", \"saved\", \"launched\", or \"created\" when the corresponding tool returned `success: true` in the conversation transcript. If every attempt failed, tell the user what failed and suggest next steps — do not pretend.",

@@ -128,7 +128,11 @@ async function runKimiImageFallback({ task, runtime, artifactStore, store, queue
     });
 
     if (execution.status !== "success") {
-      markTaskFailed(runtime, task, { message: `Kimi CLI failed: ${execution.exitCode ?? "unknown"}` });
+      markTaskFailed(runtime, task, {
+        exitCode: execution.exitCode,
+        stderr: execution.stderrPath,
+        message: `Kimi CLI failed with exit code ${execution.exitCode ?? "unknown"}. stderr: ${execution.stderrPath ?? "not captured"}`
+      });
       return { status: task.status, artifacts: [] };
     }
 

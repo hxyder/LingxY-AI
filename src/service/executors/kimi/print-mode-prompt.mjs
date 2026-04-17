@@ -84,6 +84,9 @@ export function buildKimiPrintPrompt({ taskPackage }) {
   const fileList = (taskPackage.context.file_paths ?? []).length > 0
     ? taskPackage.context.file_paths.map((entry) => `- ${entry}`).join("\n")
     : "- No file paths were provided.";
+  const imageList = (taskPackage.context.image_paths ?? []).length > 0
+    ? taskPackage.context.image_paths.map((entry) => `- ${entry}`).join("\n")
+    : "";
   const inlineContext = taskPackage.context.text?.trim()
     ? sanitizeUtf16(taskPackage.context.text).slice(0, 6_000)
     : "";
@@ -145,6 +148,9 @@ export function buildKimiPrintPrompt({ taskPackage }) {
       "",
       "Source files:",
       fileList,
+      imageList
+        ? `\nSource images:\n${imageList}\n\nIf the CLI supports vision, inspect these image files directly. If vision is unavailable, say so explicitly and use any OCR text only as a fallback.`
+        : "",
       sourceUrl
         ? `\nSource URL:\n${sourceUrl}`
         : "",

@@ -3,13 +3,16 @@ import { detectRequestedOutputFormat } from "./output-format.mjs";
 export function buildKimiTaskPackage({ task, outputDir }) {
   const requestedFormat = detectRequestedOutputFormat(task.user_command);
   const isConversational = requestedFormat.id === "conversational";
+  const filePaths = task.context_packet.file_paths ?? [];
+  const imagePaths = task.context_packet.image_paths ?? [];
   return {
     task_id: task.task_id,
     task_type: task.intent,
     user_command: task.user_command,
     context: {
       source_type: task.context_packet.source_type,
-      file_paths: task.context_packet.file_paths ?? [],
+      file_paths: [...filePaths, ...imagePaths],
+      image_paths: imagePaths,
       text: task.context_packet.text ?? "",
       html: task.context_packet.html ?? "",
       url: task.context_packet.url ?? "",

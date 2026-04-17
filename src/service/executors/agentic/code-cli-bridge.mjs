@@ -180,10 +180,15 @@ export function spawnCodeCliChat({
     let child;
     try {
       child = spawn(command, invocationArgs, {
-        env,
+        env: {
+          ...env,
+          PYTHONIOENCODING: "utf-8",
+          PYTHONUTF8: "1"
+        },
         stdio: ["pipe", "pipe", "pipe"],
         windowsHide: true
       });
+      child.stdin.setDefaultEncoding?.("utf8");
     } catch (error) {
       resolve({
         ok: false,

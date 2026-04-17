@@ -65,9 +65,15 @@ async function executeKimiJsonlTask({
   abortSignal
 }) {
   const child = spawn(command, args, {
-    env,
+    env: {
+      ...env,
+      PYTHONIOENCODING: "utf-8",
+      PYTHONUTF8: "1"
+    },
     stdio: ["pipe", "pipe", "pipe"]
   });
+
+  child.stdin.setDefaultEncoding?.("utf8");
 
   const events = [];
   const artifacts = [];
@@ -119,7 +125,7 @@ async function executeKimiJsonlTask({
 
   abortSignal?.addEventListener("abort", abortListener, { once: true });
 
-  child.stdin.write(`${JSON.stringify(taskPackage)}\n`);
+  child.stdin.write(Buffer.from(`${JSON.stringify(taskPackage)}\n`, "utf8"));
   child.stdin.end();
 
   const exit = await new Promise((resolve, reject) => {
@@ -203,9 +209,15 @@ async function executeKimiPrintModeTask({
   }
 
   const child = spawn(command, invocationArgs, {
-    env,
+    env: {
+      ...env,
+      PYTHONIOENCODING: "utf-8",
+      PYTHONUTF8: "1"
+    },
     stdio: ["pipe", "pipe", "pipe"]
   });
+
+  child.stdin.setDefaultEncoding?.("utf8");
 
   let aborted = abortSignal?.aborted ?? false;
   let forceKillTimer = null;
@@ -272,7 +284,7 @@ async function executeKimiPrintModeTask({
   };
 
   abortSignal?.addEventListener("abort", abortListener, { once: true });
-  child.stdin.write(prompt);
+  child.stdin.write(Buffer.from(prompt, "utf8"));
   child.stdin.end();
 
   const exit = await new Promise((resolve, reject) => {

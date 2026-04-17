@@ -29,7 +29,7 @@
  * interactive confirmation into the same path.
  */
 
-import { buildAgenticSystemPrompt } from "./prompt-builder.mjs";
+import { buildAgenticSystemPrompt, isAudioNoteSingleMarkdownTask } from "./prompt-builder.mjs";
 import { createProviderAdapter } from "./provider-adapter.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
@@ -77,6 +77,18 @@ function buildUserMessage(task) {
     parts.push(`URL: ${url}`);
   }
   return parts.join("\n");
+}
+
+function taskNeedsCurrentWebData(task) {
+  return Boolean(task?.task_spec?.needs_current_web_data)
+    || task?.task_spec?.success_contract?.required_tool_names?.includes?.("web_search_fetch");
+}
+
+function inferPreflightSearchRecency(command = "") {
+  const text = String(command ?? "");
+  if (/(今天|今日|24\s*小时|today|breaking)/i.test(text)) return "day";
+  if (/(本周|一周|近\s*7\s*天|week|最新|最近|新闻|消息|动态|资讯|latest|recent|current|news)/i.test(text)) return "week";
+  return "month";
 }
 
 /**
@@ -142,9 +154,13 @@ export async function runAgenticPlanner({
   maxIterations = DEFAULT_MAX_ITERATIONS,
   fetchImpl = null
 } = {}) {
-  const builtinTools = tools
+  const rawBuiltinTools = tools
     ?? runtime?.actionToolRegistry?.list?.()
     ?? [];
+  const noteSingleMarkdown = isAudioNoteSingleMarkdownTask(task);
+  const builtinTools = noteSingleMarkdown
+    ? rawBuiltinTools.filter((tool) => tool.id !== "generate_document")
+    : rawBuiltinTools;
 
   // UCA-067: inject MCP tools from enabled stdio servers so ALL providers
   // (including native Anthropic/OpenAI) can call them as first-class tools.
@@ -192,15 +208,66 @@ export async function runAgenticPlanner({
     requestedFormat
   });
 
+  const transcript = [];
+  const artifactPaths = [];
+  let preflightSearchText = "";
+  if (taskNeedsCurrentWebData(task)) {
+    const searchCall = {
+      name: "web_search_fetch",
+      arguments: {
+        query: task.user_command ?? "",
+        recency: inferPreflightSearchRecency(task.user_command),
+        limit: 6
+      }
+    };
+    onEvent?.({
+      event_type: "tool_call_started",
+      payload: { tool_id: searchCall.name, arguments: searchCall.arguments, preflight: true }
+    });
+    const searchResult = await executeToolCall({
+      registry: runtime?.actionToolRegistry,
+      mcpToolById,
+      toolContext: {
+        ...(runtime?.toolContext ?? {}),
+        runtime,
+        task,
+        outputDir: task?.output_dir ?? runtime?.toolContext?.outputDir ?? null
+      },
+      call: searchCall
+    });
+    onEvent?.({
+      event_type: "tool_call_completed",
+      payload: {
+        tool_id: searchCall.name,
+        success: searchResult.success,
+        observation: (searchResult.observation ?? "").slice(0, 500),
+        metadata: searchResult.metadata ?? {},
+        preflight: true
+      }
+    });
+    transcript.push({
+      role: "tool",
+      tool_call_id: "preflight_web_search_fetch",
+      name: searchCall.name,
+      success: searchResult.success,
+      observation: searchResult.observation ?? "",
+      artifact_paths: searchResult.artifact_paths ?? []
+    });
+    preflightSearchText = [
+      "Live web search preflight result:",
+      searchResult.observation || "(web_search_fetch returned no observation)",
+      "",
+      "Use the live search result above for current/latest facts. If it failed or looks insufficient, call web_search_fetch again with a better query or call fetch_url_content on an authoritative URL. Do not answer current/latest facts from memory."
+    ].join("\n");
+  }
+
   const messages = [
     { role: "system", content: systemPrompt },
-    { role: "user", content: buildUserMessage(task) }
+    { role: "user", content: [buildUserMessage(task), preflightSearchText].filter(Boolean).join("\n\n---\n\n") }
   ];
 
   const toolSchemas = effectiveTools.map(toolDescriptorForAdapter);
 
-  const transcript = [];
-  const artifactPaths = [];
   let finalText = "";
   let iterations = 0;
 
@@ -213,11 +280,19 @@ export async function runAgenticPlanner({
 
     let response;
     try {
+      // Pass onTextDelta only on the last-text iteration (no tool calls pending).
+      // We can't know in advance, so we stream for all iterations — tool-call
+      // responses typically have no text anyway. The overlay accumulates deltas
+      // into a streaming bubble and finalises it on inline_result.
+      const onTextDelta = (adapter.supportsStreaming && onEvent)
+        ? (delta) => onEvent({ event_type: "text_delta", payload: { delta } })
+        : undefined;
       response = await adapter.generate({
         messages,
         tools: toolSchemas,
         signal,
-        fetchImpl
+        fetchImpl,
+        onTextDelta
       });
     } catch (error) {
       if (error?.code === "ABORT_ERR") throw error;
