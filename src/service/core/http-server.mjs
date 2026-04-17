@@ -920,6 +920,22 @@ const KNOWN_CODE_CLIS = [
     transport: "stream_json_print",
     defaultModel: "",
     versionFlag: "--version"
+  },
+  {
+    name: "OpenCode",
+    binNames: ["opencode.exe", "opencode"],
+    args: [],
+    transport: "stream_json_print",
+    defaultModel: "anthropic/claude-sonnet-4-5",
+    versionFlag: "--version"
+  },
+  {
+    name: "Cursor Agent",
+    binNames: ["cursor-agent.exe", "cursor-agent"],
+    args: [],
+    transport: "stream_json_print",
+    defaultModel: "claude-sonnet-4-5",
+    versionFlag: "--version"
   }
 ];
 

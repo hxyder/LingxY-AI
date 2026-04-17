@@ -917,10 +917,26 @@ function providerModelPresets(provider, taskType = "chat") {
 
   if (provider.kind === "code_cli") {
     const fpCli = providerFingerprint(provider);
+    // Pick presets from the CLI's actual model family — Codex speaks GPT, not
+    // Claude, and vice versa. Fall back to Claude for generic / Claude Code.
     if (/(moonshot|kimi)/.test(fpCli)) {
-      return uniqueNonEmpty([preferred, "kimi-code/kimi-for-coding"]);
+      return uniqueNonEmpty([preferred, "kimi-code/kimi-for-coding", "kimi-k2", "moonshot-v1-128k"]);
     }
-    return uniqueNonEmpty([preferred, "claude-sonnet-4-5-20250514", "gpt-5"]);
+    if (/codex/.test(fpCli)) {
+      return uniqueNonEmpty([preferred, "gpt-5", "gpt-5-codex", "gpt-5-mini", "gpt-4o", "o3"]);
+    }
+    if (/gemini/.test(fpCli)) {
+      return uniqueNonEmpty([preferred, "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-pro"]);
+    }
+    if (/aider/.test(fpCli)) {
+      // Aider is model-agnostic — take its own shorthand strings.
+      return uniqueNonEmpty([preferred, "sonnet", "opus", "gpt-4o", "deepseek/deepseek-chat", "gemini/gemini-2.5-pro"]);
+    }
+    if (/opencode/.test(fpCli)) {
+      return uniqueNonEmpty([preferred, "anthropic/claude-sonnet-4-5", "openai/gpt-5", "google/gemini-2.5-pro"]);
+    }
+    // Default bucket = Claude Code (the most common case).
+    return uniqueNonEmpty([preferred, "claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"]);
   }
 
   if (provider.kind === "openai") {
@@ -944,10 +960,55 @@ function modeOptionsForModel(provider, model = "") {
   if (!provider) return [];
   const fp = `${providerFingerprint(provider)} ${model}`.toLowerCase();
 
-  // code_cli providers use CLI-specific model names — don't apply API-style mode aliases
+  // code_cli providers use CLI-specific model names. We still want a mode
+  // switcher per CLI family so users can flip between fast/balanced/deep
+  // tiers without typing model strings.
   if (provider.kind === "code_cli") {
-    const m = model || provider.defaultModel || "";
-    return [{ id: "default", label: m || "Default", model: m }];
+    const fpCli = providerFingerprint(provider);
+    if (/codex/.test(fpCli)) {
+      return [
+        { id: "default", label: "GPT-5", model: "gpt-5" },
+        { id: "codex", label: "GPT-5 Codex", model: "gpt-5-codex" },
+        { id: "fast", label: "Mini (fast)", model: "gpt-5-mini" },
+        { id: "balanced", label: "GPT-4o", model: "gpt-4o" },
+        { id: "reasoner", label: "o3", model: "o3" }
+      ];
+    }
+    if (/gemini/.test(fpCli)) {
+      return [
+        { id: "fast", label: "2.0 Flash", model: "gemini-2.0-flash" },
+        { id: "balanced", label: "2.0 Pro", model: "gemini-2.0-pro" },
+        { id: "deep", label: "2.5 Pro", model: "gemini-2.5-pro" }
+      ];
+    }
+    if (/(moonshot|kimi)/.test(fpCli)) {
+      return [
+        { id: "default", label: "Kimi Code", model: "kimi-code/kimi-for-coding" },
+        { id: "k2", label: "K2", model: "kimi-k2" },
+        { id: "128k", label: "128K", model: "moonshot-v1-128k" }
+      ];
+    }
+    if (/aider/.test(fpCli)) {
+      return [
+        { id: "sonnet", label: "Sonnet", model: "sonnet" },
+        { id: "opus", label: "Opus", model: "opus" },
+        { id: "gpt", label: "GPT-4o", model: "gpt-4o" },
+        { id: "deepseek", label: "DeepSeek", model: "deepseek/deepseek-chat" }
+      ];
+    }
+    if (/opencode/.test(fpCli)) {
+      return [
+        { id: "claude", label: "Claude Sonnet", model: "anthropic/claude-sonnet-4-5" },
+        { id: "gpt", label: "GPT-5", model: "openai/gpt-5" },
+        { id: "gemini", label: "Gemini 2.5 Pro", model: "google/gemini-2.5-pro" }
+      ];
+    }
+    // Default = Claude Code — most common install.
+    return [
+      { id: "balanced", label: "Sonnet (balanced)", model: "claude-sonnet-4-5" },
+      { id: "deep", label: "Opus (deep)", model: "claude-opus-4-5" },
+      { id: "fast", label: "Haiku (fast)", model: "claude-haiku-4-5" }
+    ];
   }
 
   if (/deepseek/.test(fp)) {
