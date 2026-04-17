@@ -2,16 +2,17 @@
 <OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
            xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
            xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+           xmlns:ov="http://schemas.microsoft.com/office/taskpaneappversionoverrides"
            xsi:type="TaskPaneApp">
   <Id>1d1dd5db-1b91-4e32-8fd5-0cb0f8d40002</Id>
-  <Version>0.1.1.0</Version>
+  <Version>0.1.2.0</Version>
   <ProviderName>Universal Context Agent</ProviderName>
-  <DefaultLocale>zh-CN</DefaultLocale>
+  <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="UCA for Excel"/>
   <Description DefaultValue="Capture Excel selections and send them to UCA for AI analysis."/>
   <IconUrl DefaultValue="http://127.0.0.1:4310/office/icon-32.svg"/>
   <HighResolutionIconUrl DefaultValue="http://127.0.0.1:4310/office/icon-80.svg"/>
-  <SupportUrl DefaultValue="http://127.0.0.1:4310/office/task_pane.html"/>
+  <SupportUrl DefaultValue="https://www.microsoft.com/"/>
   <Hosts>
     <Host Name="Workbook"/>
   </Hosts>
