@@ -1,6 +1,7 @@
 param(
   [switch]$Elevate,
-  [switch]$StatusOnly
+  [switch]$StatusOnly,
+  [switch]$ResetCache
 )
 
 Set-StrictMode -Version Latest
@@ -19,7 +20,10 @@ $ShareName = "UCAOfficeAddins"
 $ShareHost = $env:COMPUTERNAME
 $ShareUrl = "\\$ShareHost\$ShareName"
 $TrustedCatalogGuid = "{1d1dd5db-1b91-4e32-8fd5-0cb0f8d4ca70}"
-$TrustedCatalogKey = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\$TrustedCatalogGuid"
+$TrustedCatalogRootKey = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs"
+$TrustedCatalogKey = "$TrustedCatalogRootKey\$TrustedCatalogGuid"
+$OfficeWefCachePath = Join-Path $env:LOCALAPPDATA "Microsoft\Office\16.0\Wef"
+$OfficeHostProcesses = @("WINWORD", "EXCEL", "POWERPNT")
 
 function Test-IsAdministrator {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -41,23 +45,52 @@ function Get-OfficeAddinSetupStatus {
 
   $registryTrusted = $false
   $registryUrl = ""
+  $clearInstalledExtensions = $null
   try {
     $catalog = Get-ItemProperty -Path $TrustedCatalogKey -ErrorAction Stop
     $registryUrl = [string]$catalog.Url
     $registryTrusted = $registryUrl -eq $ShareUrl -and [int]$catalog.Flags -eq 1
   } catch {}
 
+  try {
+    $trustedCatalogRoot = Get-ItemProperty -Path $TrustedCatalogRootKey -ErrorAction Stop
+    if ($null -ne $trustedCatalogRoot.ClearInstalledExtensions) {
+      $clearInstalledExtensions = [int]$trustedCatalogRoot.ClearInstalledExtensions
+    }
+  } catch {}
+
+  $shareReadable = $false
+  try {
+    Get-ChildItem -LiteralPath $ShareUrl -ErrorAction Stop | Out-Null
+    $shareReadable = $true
+  } catch {}
+
+  $runningOfficeHosts = @(Get-Process -Name $OfficeHostProcesses -ErrorAction SilentlyContinue | ForEach-Object {
+    $_.ProcessName
+  } | Sort-Object -Unique)
+
+  $officeWefCacheItemCount = 0
+  if (Test-Path -LiteralPath $OfficeWefCachePath) {
+    $officeWefCacheItemCount = @(Get-ChildItem -LiteralPath $OfficeWefCachePath -Force -ErrorAction SilentlyContinue).Count
+  }
+
   return [ordered]@{
-    ok = ((Test-Path -LiteralPath $CatalogPath) -and $share -and $registryTrusted)
+    ok = ((Test-Path -LiteralPath $CatalogPath) -and $share -and $shareReadable -and $registryTrusted)
     repoRoot = [string]$RepoRoot
     catalogPath = $CatalogPath
     shareName = $ShareName
     shareUrl = $ShareUrl
     catalogExists = Test-Path -LiteralPath $CatalogPath
     shareExists = [bool]$share
+    shareReadable = $shareReadable
     sharePath = if ($share) { [string]$share.Path } else { "" }
     registryTrusted = $registryTrusted
     registryUrl = $registryUrl
+    clearInstalledExtensions = $clearInstalledExtensions
+    officeWefCachePath = $OfficeWefCachePath
+    officeWefCacheExists = Test-Path -LiteralPath $OfficeWefCachePath
+    officeWefCacheItemCount = $officeWefCacheItemCount
+    runningOfficeHosts = $runningOfficeHosts
     manifests = @($manifestTargets | ForEach-Object {
       [ordered]@{
         host = $_.host
@@ -91,6 +124,9 @@ if ($Elevate -and -not (Test-IsAdministrator)) {
     "-ExecutionPolicy", "Bypass",
     "-File", "`"$PSCommandPath`""
   ) -join " "
+  if ($ResetCache) {
+    $argumentList = "$argumentList -ResetCache"
+  }
   Start-Process -FilePath "powershell.exe" -ArgumentList $argumentList -Verb RunAs -Wait
   Write-StatusJson @{ elevationRequested = $true }
   exit 0
@@ -118,5 +154,23 @@ New-Item -Path $TrustedCatalogKey -Force | Out-Null
 New-ItemProperty -Path $TrustedCatalogKey -Name "Id" -Value $TrustedCatalogGuid -PropertyType String -Force | Out-Null
 New-ItemProperty -Path $TrustedCatalogKey -Name "Url" -Value $ShareUrl -PropertyType String -Force | Out-Null
 New-ItemProperty -Path $TrustedCatalogKey -Name "Flags" -Value 1 -PropertyType DWord -Force | Out-Null
+New-ItemProperty -Path $TrustedCatalogRootKey -Name "ClearInstalledExtensions" -Value 1 -PropertyType DWord -Force | Out-Null
 
-Write-StatusJson @{ configured = $true }
+$cacheReset = $false
+if ($ResetCache -and (Test-Path -LiteralPath $OfficeWefCachePath)) {
+  $runningOfficeHosts = @(Get-Process -Name $OfficeHostProcesses -ErrorAction SilentlyContinue)
+  if ($runningOfficeHosts.Count -gt 0) {
+    throw "Close Word, Excel, and PowerPoint before resetting the Office web add-in cache."
+  }
+
+  $resolvedCache = [System.IO.Path]::GetFullPath($OfficeWefCachePath)
+  $allowedRoot = [System.IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA "Microsoft\Office\16.0"))
+  if (-not $resolvedCache.StartsWith($allowedRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to clear unexpected Office cache path '$resolvedCache'."
+  }
+
+  Get-ChildItem -LiteralPath $resolvedCache -Force | Remove-Item -Recurse -Force
+  $cacheReset = $true
+}
+
+Write-StatusJson @{ configured = $true; cacheReset = $cacheReset }

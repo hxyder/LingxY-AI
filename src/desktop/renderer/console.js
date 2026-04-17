@@ -1348,7 +1348,13 @@ function renderOfficeAddinSetupStatus(status) {
     .join(" · ");
   const readyText = status.ok ? "Ready" : "Needs setup";
   const adminText = status.isAdministrator ? "admin" : "standard user";
-  officeAddinSetupState.textContent = `${readyText} · ${status.shareUrl ?? "\\\\localhost\\UCAOfficeAddins"} · share: ${status.shareExists ? "yes" : "no"} · trusted: ${status.registryTrusted ? "yes" : "no"} · ${adminText}${manifestSummary ? ` · ${manifestSummary}` : ""}`;
+  const shareUrl = status.shareUrl ?? "\\\\<computer>\\UCAOfficeAddins";
+  const refreshText = status.clearInstalledExtensions === 1 ? "refresh: queued" : "refresh: not queued";
+  const cacheText = status.cacheReset
+    ? "cache: reset"
+    : (status.officeWefCacheExists && status.officeWefCacheItemCount > 0 ? "cache: present" : "cache: clear");
+  const runningHosts = (status.runningOfficeHosts ?? []).length > 0 ? ` · close: ${status.runningOfficeHosts.join(", ")}` : "";
+  officeAddinSetupState.textContent = `${readyText} · ${shareUrl} · share: ${status.shareExists ? "yes" : "no"} · readable: ${status.shareReadable ? "yes" : "no"} · trusted: ${status.registryTrusted ? "yes" : "no"} · ${refreshText} · ${cacheText} · ${adminText}${manifestSummary ? ` · ${manifestSummary}` : ""}${runningHosts}`;
   officeAddinSetupState.className = status.ok ? "muted ready-text" : "muted";
 }
 
@@ -1378,7 +1384,8 @@ async function configureOfficeAddins() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        elevate: true
+        elevate: true,
+        resetCache: true
       })
     });
     renderOfficeAddinSetupStatus(status);

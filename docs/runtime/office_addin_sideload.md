@@ -19,16 +19,25 @@ Recommended one-click setup:
 The one-click setup performs the same steps Microsoft documents for a Windows network share catalog:
 
 - Copies all three manifests into `office_addin/catalog/`.
-- Creates or verifies the `\\localhost\UCAOfficeAddins` local share.
-- Registers `\\localhost\UCAOfficeAddins` under the current user's Office `TrustedCatalogs` registry key with `Show in Menu` enabled.
+- Creates or verifies the `\\<COMPUTERNAME>\UCAOfficeAddins` local share.
+- Registers `\\<COMPUTERNAME>\UCAOfficeAddins` under the current user's Office `TrustedCatalogs` registry key with `Show in Menu` enabled.
+- Queues an Office web add-in refresh by setting `HKCU\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\ClearInstalledExtensions` to `1`.
+- When run from the desktop console, clears the local Office WEF cache after Word, Excel, and PowerPoint are closed.
 
 Manual fallback:
 
 1. Run `powershell -ExecutionPolicy Bypass -File .\scripts\setup-office-addins.ps1`.
 2. Restart the target Office host on Windows.
 3. Choose `SHARED FOLDER` in the Office Add-ins dialog.
-4. Verify the Task Pane loads `http://127.0.0.1:4310/office/task_pane.html`.
-5. Confirm selection capture can build an `office_selection` payload.
+4. If the shared folder is empty, choose `Advanced` → `Refresh` in the Office Add-ins dialog, then close and reopen the Office host.
+5. Verify the Task Pane loads `http://127.0.0.1:4310/office/task_pane.html`.
+6. Confirm selection capture can build an `office_selection` payload.
+
+Deep reset fallback:
+
+1. Close Word, Excel, and PowerPoint.
+2. Run `powershell -ExecutionPolicy Bypass -File .\scripts\setup-office-addins.ps1 -ResetCache`.
+3. Reopen the Office host and choose `Advanced` → `Refresh` in the Office Add-ins dialog.
 
 Task pane capabilities:
 

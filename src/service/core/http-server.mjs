@@ -998,7 +998,7 @@ async function detectInstalledCodeClis() {
   return found;
 }
 
-async function runOfficeAddinSetup({ statusOnly = false, elevate = false } = {}) {
+async function runOfficeAddinSetup({ statusOnly = false, elevate = false, resetCache = false } = {}) {
   const scriptPath = path.join(process.cwd(), "scripts", "setup-office-addins.ps1");
   const args = [
     "-NoProfile",
@@ -1013,6 +1013,9 @@ async function runOfficeAddinSetup({ statusOnly = false, elevate = false } = {})
   }
   if (elevate) {
     args.push("-Elevate");
+  }
+  if (resetCache) {
+    args.push("-ResetCache");
   }
 
   const { stdout, stderr } = await execFileAsync("powershell.exe", args, {
@@ -1066,7 +1069,7 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           const filePath = path.join(officeAddinDir, fileName);
           const content = await readFile(filePath);
           const ext = path.extname(fileName).toLowerCase();
-          const mimeTypes = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml" };
+          const mimeTypes = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png" };
           response.writeHead(200, {
             "Content-Type": mimeTypes[ext] ?? "application/octet-stream",
             "Cache-Control": "no-store, max-age=0"
@@ -1674,7 +1677,8 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       if (method === "POST" && url.pathname === "/setup/office-addins") {
         const body = await readJsonBody(request);
         const result = await runOfficeAddinSetup({
-          elevate: body.elevate !== false
+          elevate: body.elevate !== false,
+          resetCache: body.resetCache === true
         });
         return sendJson(response, 200, result.status);
       }

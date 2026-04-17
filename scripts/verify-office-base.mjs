@@ -18,6 +18,8 @@ for (const [host, hostName] of [
   const manifest = await readFile(path.join(repoRoot, "office_addin", host, "manifest.xml"), "utf8");
   assert.match(manifest, new RegExp(`<Host Name="${hostName}"`));
   assert.match(manifest, /http:\/\/127\.0\.0\.1:4310\/office\/task_pane\.html/);
+  assert.match(manifest, /http:\/\/127\.0\.0\.1:4310\/office\/icon-32\.png/);
+  assert.match(manifest, /http:\/\/127\.0\.0\.1:4310\/office\/icon-80\.png/);
   assert.match(manifest, /VersionOverridesV1_0/);
   assert.match(manifest, /PrimaryCommandSurface/);
   assert.match(manifest, /OfficeTab id="TabHome"/);
@@ -28,6 +30,8 @@ for (const [host, hostName] of [
 const setupScript = await readFile(path.join(repoRoot, "scripts", "setup-office-addins.ps1"), "utf8");
 assert.match(setupScript, /UCAOfficeAddins/);
 assert.match(setupScript, /TrustedCatalogs/);
+assert.match(setupScript, /ClearInstalledExtensions/);
+assert.match(setupScript, /ResetCache/);
 assert.match(setupScript, /uca-word\.xml/);
 assert.match(setupScript, /uca-excel\.xml/);
 assert.match(setupScript, /uca-ppt\.xml/);
