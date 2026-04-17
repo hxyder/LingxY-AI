@@ -56,7 +56,7 @@ assert.equal(evaluateToolRisk(registry.get("send_email_smtp"), { to: ["a@example
   assert.equal(newsRoute.executor, "agentic");
   assert.ok(newsRoute.intent_tags?.includes("search"), "news intent must tag 'search'");
 }
-assert.equal(normalizeSearchRecency(null, "最新 AI 新闻"), "m");
+assert.equal(normalizeSearchRecency(null, "最新 AI 新闻"), "w");
 assert.equal(normalizeSearchRecency("day", "AI news"), "d");
 
 let searchRequestBody = "";
@@ -68,13 +68,13 @@ const searchResult = await searchWeb({
     return {
       ok: true,
       async text() {
-        return '<div class="result"><a class="result__a" href="https://example.com/latest">Latest</a><a class="result__snippet">Fresh snippet</a></div>';
+        return `${" ".repeat(900)}<div class="results_links"><a class="result__a" href="https://example.com/latest">Latest</a><div class="result__snippet">Fresh snippet</div></div>`;
       }
     };
   }
 });
-assert.equal(searchResult.recency, "m");
-assert.equal(new URLSearchParams(searchRequestBody).get("df"), "m");
+assert.equal(searchResult.recency, "w");
+assert.equal(new URLSearchParams(searchRequestBody).get("df"), "w");
 const formattedSearch = formatResultsForAssistant(searchResult.results, {
   query: searchResult.query,
   provider: searchResult.provider,

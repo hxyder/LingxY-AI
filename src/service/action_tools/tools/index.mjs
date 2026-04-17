@@ -529,6 +529,25 @@ export const WEB_SEARCH_FETCH_TOOL = {
     try {
       const recency = normalizeSearchRecency(args.recency, query);
       const result = await searchWeb({ query, limit, recency });
+
+      // Distinguish between a network/bot-detection failure and a genuine
+      // "no results" response. When both DDG endpoints had fetch-level errors
+      // (HTTP error, timeout, bot-detection page), mark the tool as failed so
+      // the LLM does not silently fall back to training-data answers.
+      if (result.fetchFailed) {
+        return createActionResult({
+          success: false,
+          observation: `Web search unavailable: both DDG endpoints failed to return results (possible network issue or bot-detection). Do not fall back to training data — inform the user that live search is currently unreachable and suggest they try again or check their connection.`,
+          metadata: {
+            tool_id: "web_search_fetch",
+            query,
+            provider: result.provider,
+            recency: result.recency,
+            results: []
+          }
+        });
+      }
+
       const asText = formatResultsForAssistant(result.results, {
         query,
         provider: result.provider,
@@ -536,7 +555,7 @@ export const WEB_SEARCH_FETCH_TOOL = {
         maxResults: limit
       });
       return createActionResult({
-        success: true,
+        success: result.results.length > 0,
         observation: asText,
         metadata: {
           tool_id: "web_search_fetch",
@@ -554,6 +573,104 @@ export const WEB_SEARCH_FETCH_TOOL = {
     }
   }
 };
+
+/**
+ * Fetch a URL and return its readable text content so the LLM can cite it directly.
+ * This is the fallback when web_search_fetch returns no results — the LLM can
+ * call this with a known authoritative URL (e.g. weather.gov, wikipedia.org)
+ * and get back the actual page text without opening a browser.
+ */
+export const FETCH_URL_CONTENT_TOOL = {
+  id: "fetch_url_content",
+  name: "Fetch URL Content",
+  description: "Fetch a URL and return its readable text content. Use this when web_search_fetch returns no results — call it with an authoritative URL (e.g. weather.gov for weather, en.wikipedia.org for facts) to read the actual page text. Returns up to 3000 characters of extracted text.",
+  parameters: ACTION_TOOL_SCHEMAS.fetch_url_content,
+  risk_level: "low",
+  required_capabilities: ["network"],
+  requires_confirmation: false,
+  async execute(args = {}) {
+    const url = String(args.url ?? "").trim();
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return createActionResult({ success: false, observation: "url required (must start with http:// or https://)" });
+    }
+    const maxChars = Math.max(500, Math.min(8000, Number(args.max_chars) || 3000));
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
+          "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8"
+        },
+        redirect: "follow",
+        signal: AbortSignal.timeout(12000)
+      });
+
+      if (!response.ok) {
+        return createActionResult({
+          success: false,
+          observation: `Fetch failed: HTTP ${response.status} ${response.statusText} for ${url}`
+        });
+      }
+
+      const contentType = response.headers.get("content-type") ?? "";
+      const rawBody = await response.text();
+
+      let text;
+      if (contentType.includes("text/html") || url.endsWith(".html") || url.endsWith(".htm")) {
+        text = extractTextFromHtml(rawBody);
+      } else {
+        // Plain text / JSON / XML — return as-is (trimmed)
+        text = rawBody.replace(/\s+/g, " ").trim();
+      }
+
+      const excerpt = text.slice(0, maxChars);
+      const truncated = text.length > maxChars ? `\n\n[截断：原文共 ${text.length} 字符，仅显示前 ${maxChars} 字符]` : "";
+
+      return createActionResult({
+        success: true,
+        observation: `来源：${url}\n\n${excerpt}${truncated}`,
+        metadata: { url, chars_extracted: text.length, chars_returned: excerpt.length }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `Fetch error for ${url}: ${error.message}`
+      });
+    }
+  }
+};
+
+/**
+ * Extract readable text from HTML.
+ * Removes scripts, styles, and all tags; decodes common entities.
+ */
+function extractTextFromHtml(html = "") {
+  return html
+    // Remove <script> blocks (including content)
+    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, " ")
+    // Remove <style> blocks
+    .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, " ")
+    // Remove <noscript> blocks
+    .replace(/<noscript\b[^<]*(?:(?!<\/noscript>)<[^<]*)*<\/noscript>/gi, " ")
+    // Replace block-level tags with newlines to preserve structure
+    .replace(/<\/?(p|div|h[1-6]|li|tr|br|article|section|header|footer|nav|main|aside)[^>]*>/gi, "\n")
+    // Strip all remaining HTML tags
+    .replace(/<[^>]+>/g, "")
+    // Decode common HTML entities
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/g, (_, dec) => String.fromCodePoint(parseInt(dec, 10)))
+    // Collapse excessive whitespace while preserving paragraph breaks
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 
 export const FILE_OP_TOOL = {
   id: "file_op",
@@ -1918,6 +2035,7 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   PAUSE_SCHEDULED_TASK_TOOL,
   TRANSLATE_TEXT_TOOL,
   WEB_SEARCH_FETCH_TOOL,
+  FETCH_URL_CONTENT_TOOL,
   WRITE_FILE_TOOL,
   RUN_SCRIPT_TOOL,
   GENERATE_DOCUMENT_TOOL,

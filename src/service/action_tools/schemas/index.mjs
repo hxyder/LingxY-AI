@@ -159,6 +159,14 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       recency: {}                     // optional: day/week/month/year or d/w/m/y
     }
   },
+  fetch_url_content: {
+    type: "object",
+    required: [],
+    properties: {
+      url: { type: "string" },        // full URL to fetch (https://...)
+      max_chars: { type: "number" }   // max characters of extracted text to return (default 3000)
+    }
+  },
   write_file: {
     type: "object",
     required: [],
