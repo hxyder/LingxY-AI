@@ -80,7 +80,7 @@ export function createElectronShellRuntime({
     throw new Error("Electron bindings are required to create the shell runtime.");
   }
 
-  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session } = electron;
+  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session, desktopCapturer } = electron;
   const windows = new Map();
   const readyWindows = new Set();
   const pendingWindowMessages = new Map();
@@ -95,6 +95,55 @@ export function createElectronShellRuntime({
   let resolvedServiceBaseUrl = serviceBaseUrl;
   let handoffWatcher = null;
   let notificationWatcher = null;
+  let noteRecordingState = { active: false };
+  let lastExternalWindowContext = null;
+  let activeWindowMemoryPollInFlight = false;
+
+  function wait(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  function looksLikeShellWindowContext(context) {
+    const activeWindow = context?.activeWindow;
+    const processName = `${activeWindow?.process ?? context?.processName ?? ""}`.toLowerCase();
+    const title = `${activeWindow?.title ?? context?.windowTitle ?? ""}`.toLowerCase();
+    return processName.includes("electron")
+      || processName.includes("universal-context-agent")
+      || processName === "uca"
+      || title === "uca"
+      || title.includes("uca overlay")
+      || title.includes("uca dock")
+      || title.includes("universal context agent")
+      || (processName === "node" && title.includes("uca"));
+  }
+
+  function rememberExternalWindowContext(context) {
+    if (!context?.activeWindow || context.activeWindow.blocked) return;
+    if (looksLikeShellWindowContext(context)) return;
+    lastExternalWindowContext = {
+      context,
+      updatedAt: Date.now()
+    };
+  }
+
+  function preferLastExternalWindowContext(context, options = {}) {
+    if (!options?.preferLastExternal) return context;
+    if (!looksLikeShellWindowContext(context)) return context;
+    const maxAgeMs = Number(options.maxExternalAgeMs ?? 10 * 60_000);
+    if (!lastExternalWindowContext?.context) return context;
+    if (Date.now() - lastExternalWindowContext.updatedAt > maxAgeMs) return context;
+    return lastExternalWindowContext.context;
+  }
+
+  function startActiveWindowMemoryPoll() {
+    setInterval(() => {
+      if (activeWindowMemoryPollInFlight) return;
+      activeWindowMemoryPollInFlight = true;
+      captureActiveWindowContext({ includeSelection: false })
+        .catch(() => {})
+        .finally(() => { activeWindowMemoryPollInFlight = false; });
+    }, 3000);
+  }
 
   function buildOverlayPayloadFromFiles(filePaths, sourceApp = "uca.dock", captureMode = "dock_drop") {
     return {
@@ -365,10 +414,11 @@ export function createElectronShellRuntime({
   async function runPowerShellScript({ script, args = [], timeoutMs = 3000 }) {
     const scriptPath = path.join(scriptsDir, script);
     return execFileAsync("powershell", [
-      "-NoProfile", "-ExecutionPolicy", "Bypass",
+      "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden",
+      "-ExecutionPolicy", "Bypass",
       "-File", scriptPath,
       ...args
-    ], { encoding: "utf8", timeout: timeoutMs });
+    ], { encoding: "utf8", timeout: timeoutMs, windowsHide: true });
   }
 
   async function isRemoteFeatureEnabled(featureId) {
@@ -402,6 +452,7 @@ export function createElectronShellRuntime({
       lastClipboardText = context.selectedText;
     }
 
+    rememberExternalWindowContext(context);
     return context;
   }
 
@@ -476,6 +527,9 @@ export function createElectronShellRuntime({
           route: windowDef.route,
           serviceBaseUrl: resolvedServiceBaseUrl
         });
+        if (windowDef.id === "dock") {
+          browserWindow.webContents.send("uca:note-recording-state", noteRecordingState);
+        }
         flushWindowMessages(windowDef.id);
       });
       // UCA-050: surface renderer load failures so they're not silent
@@ -517,6 +571,16 @@ export function createElectronShellRuntime({
     target.show();
     target.moveTop();
     target.focus();
+    // Keep the dock orb above all other UCA windows so it remains draggable
+    // even when the overlay is open on top.
+    if (windowId !== "dock") {
+      const dock = windows.get("dock");
+      if (dock && dock.isVisible()) {
+        dock.setAlwaysOnTop(true, "screen-saver");
+        dock.showInactive();
+        dock.moveTop();
+      }
+    }
     return true;
   }
 
@@ -587,7 +651,26 @@ export function createElectronShellRuntime({
             return;
           }
           captureInFlight = true;
+          // Snapshot clipboard synchronously right now — before any async work
+          // that might shift focus or delay the SimulateCopy execution. This
+          // lets us detect whether SimulateCopy completed late (Add-Type JIT
+          // on first run can take 500–2000ms, so the clipboard update may
+          // arrive after the PowerShell script's own read but before we show
+          // the overlay).
+          const hotKeyClipboardSnapshot = clipboard.readText() ?? "";
           captureActiveWindowContext().then((ctx) => {
+            // If the in-script clipboard read missed the SimulateCopy result
+            // (timing race on first run), check whether the clipboard changed
+            // since the hotkey fired and adopt the new value.
+            if (!ctx.selectedText) {
+              const postClipboard = clipboard.readText() ?? "";
+              const postTrimmed = postClipboard.trim();
+              const preTrimmed = hotKeyClipboardSnapshot.trim();
+              if (postTrimmed.length > 2 && postTrimmed !== preTrimmed) {
+                ctx.selectedText = postTrimmed;
+              }
+            }
+
             showWindow("overlay");
             for (const bw of windows.values()) {
               bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
@@ -625,7 +708,8 @@ export function createElectronShellRuntime({
             "-File", screenshotScriptPath,
             "-OutputPath", screenshotPath
           ], { encoding: "utf8", timeout: 8000 }).then(({ stdout }) => {
-            const result = JSON.parse(stdout.trim());
+            let result;
+            try { result = JSON.parse(stdout.trim()); } catch { result = { ok: false }; }
             if (result.ok) {
               showWindow("overlay");
               enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
@@ -635,13 +719,27 @@ export function createElectronShellRuntime({
                 file_paths: [screenshotPath]
               });
             } else {
+              safeError("[UCA] capture-screenshot: PowerShell returned ok=false", result);
               showWindow("overlay");
+              enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
+                targetWindow: "overlay",
+                source_app: "uca.screenshot",
+                capture_mode: "hotkey_capture",
+                error: result.error ?? "截图失败，未生成图片。"
+              });
             }
             for (const bw of windows.values()) {
               bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
             }
-          }).catch(() => {
+          }).catch((err) => {
+            safeError("[UCA] capture-screenshot: PowerShell failed", err?.message ?? err);
             showWindow("overlay");
+            enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
+              targetWindow: "overlay",
+              source_app: "uca.screenshot",
+              capture_mode: "hotkey_capture",
+              error: err?.message ?? "截图失败，未生成图片。"
+            });
             for (const bw of windows.values()) {
               bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
             }
@@ -751,7 +849,11 @@ export function createElectronShellRuntime({
           const isLocal = requestingUrl.startsWith("file://")
             || requestingUrl.startsWith("http://127.0.0.1")
             || requestingUrl.startsWith("http://localhost");
-          if (isLocal && (permission === "media" || permission === "audioCapture" || permission === "microphone")) {
+          const isAudioOrDisplay = permission === "media"
+            || permission === "audioCapture"
+            || permission === "microphone"
+            || permission === "displayCapture";
+          if (isLocal && isAudioOrDisplay) {
             callback(true);
             return;
           }
@@ -762,7 +864,11 @@ export function createElectronShellRuntime({
           const isLocal = url.startsWith("file://")
             || url.startsWith("http://127.0.0.1")
             || url.startsWith("http://localhost");
-          return isLocal && (permission === "media" || permission === "audioCapture" || permission === "microphone");
+          const isAudioOrDisplay = permission === "media"
+            || permission === "audioCapture"
+            || permission === "microphone"
+            || permission === "displayCapture";
+          return isLocal && isAudioOrDisplay;
         });
       } catch (error) {
         safeError("Failed to install permission handler", error);
@@ -780,11 +886,79 @@ export function createElectronShellRuntime({
       setTimeout(() => { updateTrayBadge().catch(() => {}); }, 5000);
       setInterval(() => { updateTrayBadge().catch(() => {}); }, 30_000);
       startClipboardWatcher();
+      startActiveWindowMemoryPoll();
       app.on("second-instance", (_event, argv) => {
         handleLaunchArgs(argv).catch((error) => {
           safeError("Failed to process second-instance args", error);
         });
       });
+      // Expose the primary screen's desktopCapturer source ID to renderers so
+      // they can capture system audio via getUserMedia + chromeMediaSource:
+      // 'desktop', bypassing the getDisplayMedia screen-picker dialog entirely.
+      ipcMain.handle("uca:get-desktop-audio-source", async () => {
+        try {
+          const sources = await desktopCapturer.getSources({
+            types: ["screen"],
+            thumbnailSize: { width: 0, height: 0 }
+          });
+          const primaryDisplay = screen.getPrimaryDisplay();
+          const primarySource = sources.find((source) => `${source.display_id}` === `${primaryDisplay.id}`);
+          return (primarySource ?? sources[0])?.id ?? null;
+        } catch {
+          return null;
+        }
+      });
+
+      ipcMain.handle("uca:capture-active-window-context", async (event, options = {}) => {
+        try {
+          let context = await captureActiveWindowContext({
+            includeSelection: options?.includeSelection !== false
+          });
+          if (options?.excludeShellWindow && looksLikeShellWindowContext(context)) {
+            const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+            const wasVisible = sourceWindow?.isVisible?.() ?? false;
+            if (sourceWindow && wasVisible) {
+              sourceWindow.hide();
+              try {
+                await wait(160);
+                context = await captureActiveWindowContext({
+                  includeSelection: options?.includeSelection !== false
+                });
+              } finally {
+                if (typeof sourceWindow.showInactive === "function") sourceWindow.showInactive();
+                else sourceWindow.show();
+              }
+            }
+          }
+          context = preferLastExternalWindowContext(context, options);
+          return buildShellContextPayload({
+            context,
+            sourceApp: context.processName ?? context.activeWindow?.process ?? "unknown",
+            captureMode: options?.captureMode ?? "note_recording"
+          });
+        } catch {
+          return null;
+        }
+      });
+
+      ipcMain.handle("uca:note-recording-state", (_event, payload = {}) => {
+        noteRecordingState = {
+          active: Boolean(payload.active),
+          elapsedMs: Number(payload.elapsedMs ?? 0),
+          elapsed: payload.elapsed ?? "00:00",
+          hasMicTranscript: Boolean(payload.hasMicTranscript),
+          hasSystemAudio: Boolean(payload.hasSystemAudio),
+          updatedAt: Date.now()
+        };
+        const dock = windows.get("dock");
+        if (dock && readyWindows.has("dock")) {
+          dock.webContents.send("uca:note-recording-state", noteRecordingState);
+        }
+        return noteRecordingState;
+      });
+
+      ipcMain.handle("uca:get-note-recording-state", () => noteRecordingState);
+
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({
         serviceBaseUrl: resolvedServiceBaseUrl,
         windowIds: [...windows.keys()],

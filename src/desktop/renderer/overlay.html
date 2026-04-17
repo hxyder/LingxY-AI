@@ -76,6 +76,74 @@
         display: none;
       }
 
+      /* ── empty state (shown when no bubbles yet) ── */
+      .empty-state {
+        width: 520px;
+        margin-bottom: 10px;
+        padding: 22px 22px 18px;
+        border-radius: 22px 22px 8px 8px;
+        background: rgba(255, 255, 255, 0.66);
+        backdrop-filter: blur(30px) saturate(160%);
+        -webkit-backdrop-filter: blur(30px) saturate(160%);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        text-align: center;
+        -webkit-app-region: no-drag;
+        transition: opacity 200ms ease;
+      }
+      .empty-state[aria-hidden="true"] {
+        display: none;
+      }
+      body.voice-mode .empty-state {
+        display: none !important;
+      }
+      .empty-state-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--ink);
+        margin-bottom: 4px;
+      }
+      .empty-state-hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 14px;
+      }
+      .empty-state-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        justify-content: center;
+        margin-bottom: 12px;
+      }
+      .empty-state .empty-chip {
+        font-size: 12px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.7);
+        color: var(--ink);
+        cursor: pointer;
+        transition: background 140ms ease, transform 80ms ease;
+      }
+      .empty-state .empty-chip:hover {
+        background: rgba(99, 102, 241, 0.1);
+        transform: translateY(-1px);
+      }
+      .empty-state-footnote {
+        font-size: 11px;
+        color: var(--muted);
+        opacity: 0.8;
+      }
+      body[data-theme="dark"] .empty-state {
+        background: rgba(30, 30, 36, 0.78);
+        border-color: rgba(255, 255, 255, 0.08);
+      }
+      body[data-theme="dark"] .empty-state .empty-chip {
+        background: rgba(255, 255, 255, 0.06);
+        border-color: rgba(255, 255, 255, 0.12);
+        color: #e8e8e8;
+      }
+
       /* ── bubbles ── */
       .bubble {
         max-width: 85%;
@@ -95,6 +163,16 @@
         box-shadow: var(--shadow-sm);
       }
 
+      .bubble.assistant.streaming {
+        border-color: rgba(99, 102, 241, 0.35);
+        background: rgba(245, 246, 255, 0.95);
+        animation: streamPulse 1.8s ease-in-out infinite;
+      }
+      @keyframes streamPulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0); }
+        50% { box-shadow: 0 0 0 3px rgba(99,102,241,0.12); }
+      }
+
       .bubble.user {
         align-self: flex-end;
         background: var(--accent);
@@ -111,6 +189,32 @@
         background: rgba(107, 114, 128, 0.06);
         border-radius: 8px;
         padding: 6px 12px;
+      }
+
+      .bubble.step {
+        align-self: flex-start;
+        max-width: 90%;
+        font-size: 12px;
+        color: var(--muted);
+        background: rgba(107, 114, 128, 0.05);
+        border-radius: 8px;
+        padding: 5px 10px 5px 10px;
+        border-left: 2px solid rgba(107, 114, 128, 0.2);
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        animation: none;
+      }
+      .bubble.step.pending {
+        border-left-color: rgba(99, 102, 241, 0.5);
+        color: rgba(99, 102, 241, 0.85);
+      }
+      .bubble.step.done {
+        border-left-color: rgba(34, 197, 94, 0.7);
+      }
+      .bubble.step.fail {
+        border-left-color: rgba(239, 68, 68, 0.6);
+        color: rgba(239, 68, 68, 0.8);
       }
 
       .child-badge-row {
@@ -372,6 +476,22 @@
         50%      { opacity: 0.35; }
       }
 
+      .quick-btn.sync-offline {
+        position: relative;
+      }
+      .quick-btn.sync-offline::after {
+        content: "";
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: #ef4444;
+        box-shadow: 0 0 0 2px var(--surface, #fff);
+        pointer-events: none;
+      }
+
       .quick-btn.recording {
         background: #fee2e2;
         border-color: #f87171;
@@ -456,6 +576,16 @@
         transform: none;
       }
 
+      body.send-busy .input-bar .send-btn {
+        opacity: 0.85;
+        animation: send-btn-pulse 1.2s ease-in-out infinite;
+      }
+
+      @keyframes send-btn-pulse {
+        0%, 100% { opacity: 0.55; }
+        50%      { opacity: 1;    }
+      }
+
       .input-bar .aux-btn {
         width: 30px;
         height: 30px;
@@ -478,9 +608,12 @@
       /* ── result notification toast ── */
       .result-toast {
         position: fixed;
-        bottom: 90px;
-        right: 24px;
-        max-width: 320px;
+        top: auto;
+        bottom: 70px;
+        left: 50%;
+        transform: translateX(-50%);
+        max-width: 340px;
+        width: max-content;
         padding: 12px 16px;
         border-radius: var(--radius-lg);
         background: rgba(255, 255, 255, 0.97);
@@ -534,6 +667,7 @@
         bottom: 30px;
         width: 26px;
         height: 26px;
+        padding: 0;
         border-radius: 8px;
         display: grid;
         place-items: center;
@@ -541,7 +675,13 @@
         border: 1px solid rgba(255, 255, 255, 0.6);
         box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
         cursor: pointer;
+        font: inherit;
+        color: inherit;
         z-index: 20;
+      }
+      .task-list-dock:focus-visible {
+        outline: 2px solid #6366f1;
+        outline-offset: 2px;
       }
 
       .task-list-dock .dock-badge {
@@ -652,6 +792,7 @@
          ───────────────────────────────────────────────────────────── */
       .voice-card {
         display: none;
+        position: relative;
         width: 460px;
         padding: 26px 28px 22px;
         margin-bottom: 12px;
@@ -680,6 +821,30 @@
         letter-spacing: 0.01em;
       }
 
+      .voice-card .voice-minimize {
+        position: absolute;
+        top: 14px;
+        right: 16px;
+        width: 28px;
+        height: 28px;
+        border: 1px solid rgba(0,0,0,0.08);
+        border-radius: 999px;
+        background: rgba(255,255,255,0.58);
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+        display: grid;
+        place-items: center;
+        transition: transform 120ms ease, background 120ms ease, color 120ms ease;
+      }
+
+      .voice-card .voice-minimize:hover {
+        transform: translateY(-1px);
+        background: rgba(255,255,255,0.82);
+        color: var(--ink);
+      }
+
       .voice-card .voice-subtitle {
         font-size: 11px;
         color: var(--muted);
@@ -699,7 +864,7 @@
         width: 5px;
         height: 14px;
         border-radius: 999px;
-        background: linear-gradient(180deg, #6366f1, #8b5cf6);
+        background: #000000;
         opacity: 0.85;
         transform-origin: center;
         animation: wave-pulse 1.1s ease-in-out infinite;
@@ -734,6 +899,8 @@
 
       .voice-card .voice-transcript {
         min-height: 28px;
+        max-height: 140px;
+        overflow-y: auto;
         padding: 8px 14px;
         margin: 4px auto 0;
         max-width: 380px;
@@ -743,6 +910,7 @@
         background: rgba(99, 102, 241, 0.06);
         border-radius: 14px;
         word-break: break-word;
+        scroll-behavior: smooth;
       }
 
       .voice-card .voice-hint {
@@ -782,6 +950,136 @@
       @keyframes voice-in {
         from { opacity: 0; transform: translateY(20px) scale(0.96); }
         to   { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      /* ─────────────────────────────────────────────────────────────
+         NOTE MODE — audio note recording
+         ───────────────────────────────────────────────────────────── */
+      .voice-card .note-mode-tabs {
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+        margin-bottom: 4px;
+      }
+      .voice-card .note-tab-btn {
+        font-size: 11px;
+        padding: 4px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        transition: background 120ms, color 120ms;
+      }
+      .voice-card .note-tab-btn.active {
+        background: var(--ink);
+        color: #fff;
+        border-color: transparent;
+      }
+
+      /* Note-specific elements — hidden in voice mode, shown in note mode */
+      .note-only { display: none; }
+      /* voice-only uses revert so flex/grid elements keep their natural display */
+      .voice-only { display: revert; }
+      .voice-card[data-mode="note"] .note-only { display: revert; }
+      .voice-card[data-mode="note"] .voice-only { display: none !important; }
+      .voice-card[data-mode="note"] .wave-container { display: none; }
+
+      .note-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin: 10px 0 8px;
+      }
+      .note-header .note-label {
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 500;
+      }
+      .note-timer {
+        font-size: 13px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: 0.04em;
+        color: var(--ink);
+      }
+      .note-timer.recording {
+        color: #ef4444;
+      }
+
+      .note-channels {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        margin-bottom: 10px;
+      }
+      .note-channel-tag {
+        font-size: 10px;
+        padding: 2px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        background: var(--surface-soft);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .note-channel-tag .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--muted);
+        display: inline-block;
+        transition: background 300ms;
+      }
+      .note-channel-tag.active .dot { background: #10b981; }
+      .note-channel-tag.active { color: var(--ink); border-color: rgba(16,185,129,0.3); }
+      .note-channel-tag.unavailable { opacity: 0.4; }
+
+      .note-transcript-box {
+        max-height: 180px;
+        overflow-y: auto;
+        background: rgba(99, 102, 241, 0.06);
+        border-radius: 14px;
+        padding: 10px 14px;
+        text-align: left;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--ink);
+        word-break: break-word;
+        scrollbar-width: thin;
+        margin-bottom: 4px;
+      }
+      .note-transcript-box:empty::before {
+        content: "等待录音...";
+        color: var(--muted);
+        font-style: italic;
+      }
+      .note-transcript-entry {
+        margin-bottom: 6px;
+      }
+      .note-transcript-entry .nt-time {
+        font-size: 10px;
+        color: var(--muted);
+        margin-right: 6px;
+        font-variant-numeric: tabular-nums;
+      }
+      .note-transcript-entry .nt-channel {
+        display: inline-block;
+        font-size: 10px;
+        color: #047857;
+        background: rgba(16,185,129,0.12);
+        border: 1px solid rgba(16,185,129,0.22);
+        border-radius: 999px;
+        padding: 0 6px;
+        margin-right: 6px;
+        line-height: 1.5;
+      }
+      .note-hint {
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 6px;
+        text-align: center;
       }
 
       /* ─────────────────────────────────────────────────────────────
@@ -851,11 +1149,333 @@
       .pop-bubble .pop-actions button:hover {
         background: rgba(255, 255, 255, 0.16);
       }
+
+      /* Editorial glass pass: align quick overlay with Console */
+      :root {
+        --bg-0: #f9f9f9;
+        --surface: rgba(249, 249, 249, 0.72);
+        --surface-strong: rgba(255, 255, 255, 0.78);
+        --surface-soft: rgba(243, 243, 243, 0.72);
+        --ink: #000000;
+        --ink-soft: #1f1f1f;
+        --muted: #474747;
+        --line: rgba(0, 0, 0, 0.12);
+        --accent: #000000;
+        --accent-strong: #000000;
+        --accent-soft: rgba(226, 226, 226, 0.74);
+        --shadow-sm: none;
+        --radius-lg: 8px;
+        --radius-md: 8px;
+        --radius-pill: 999px;
+      }
+
+      * {
+        letter-spacing: 0 !important;
+      }
+
+      .bubble-area,
+      .quick-toolbar,
+      .input-bar,
+      .inline-panel,
+      .voice-card,
+      .task-list-panel,
+      .result-toast {
+        border: 0;
+        border-radius: 8px;
+        background: rgba(249, 249, 249, 0.72);
+        backdrop-filter: blur(28px);
+        -webkit-backdrop-filter: blur(28px);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.82);
+      }
+
+      .bubble-area {
+        gap: 10px;
+        padding: 16px;
+      }
+
+      .bubble {
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.68);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+        border: 0;
+        box-shadow: none;
+      }
+
+      .bubble.assistant {
+        background: rgba(255, 255, 255, 0.76);
+        border: 0;
+        border-bottom-left-radius: 8px;
+      }
+
+      .bubble.user {
+        background: #000000;
+        color: #ffffff;
+        border-bottom-right-radius: 8px;
+        box-shadow: none;
+      }
+
+      .bubble.system {
+        background: rgba(226, 226, 226, 0.74);
+        color: #000000;
+      }
+
+      .quick-toolbar {
+        padding: 10px 12px;
+      }
+
+      .quick-toolbar .quick-btn,
+      .bubble-options button,
+      .inline-panel .panel-actions button,
+      .voice-card .voice-actions button,
+      .task-list-filters button {
+        border: 0;
+        border-radius: 8px;
+        background: rgba(226, 226, 226, 0.76);
+        color: #000000;
+        box-shadow: none;
+      }
+
+      .quick-toolbar .quick-btn:hover,
+      .bubble-options button:hover,
+      .inline-panel .panel-actions button:hover,
+      .voice-card .voice-actions button:hover {
+        background: rgba(255, 255, 255, 0.86);
+        color: #000000;
+      }
+
+      .quick-toolbar .quick-btn.active,
+      .bubble-options button.active,
+      .inline-panel .panel-actions button.primary,
+      .voice-card .voice-actions button.primary,
+      .task-list-filters button.active {
+        background: #000000;
+        color: #ffffff;
+      }
+
+      .input-bar {
+        padding: 13px 14px;
+      }
+
+      .input-bar .send-btn,
+      .input-bar .aux-btn {
+        border: 0;
+        box-shadow: none;
+      }
+
+      .input-bar .send-btn {
+        background: #000000;
+        color: #ffffff;
+      }
+
+      .input-bar .aux-btn {
+        background: rgba(226, 226, 226, 0.74);
+        color: #000000;
+      }
+
+      .inline-panel input[type="datetime-local"],
+      .inline-panel input[type="text"],
+      .inline-panel textarea,
+      .inline-panel select,
+      #voiceLang {
+        border: 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.22);
+        border-radius: 0;
+        background: transparent;
+      }
+
+      .voice-card .voice-transcript {
+        background: rgba(255, 255, 255, 0.64);
+        border-radius: 8px;
+      }
+
+      .wave-bar {
+        background: #000000;
+      }
+
+      .pop-bubble {
+        border: 0;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.86);
+        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.16);
+      }
+
+      .pop-bubble .pop-label {
+        letter-spacing: 0 !important;
+      }
+
+      /* ── particle-collision spinner (replaces tlspin) ── */
+      .tl-particles {
+        display: inline-flex;align-items:center;justify-content:center;
+        width:14px;height:14px;flex-shrink:0;position:relative;
+      }
+      .tl-particles .p {
+        position:absolute;width:3px;height:3px;border-radius:50%;
+        background:rgba(60,120,255,0.85);
+        animation:pcollide 1.1s ease-in-out infinite;
+      }
+      .tl-particles .p:nth-child(1){animation-delay:0s;    --px:0px;  --py:-5px;}
+      .tl-particles .p:nth-child(2){animation-delay:.01s;  --px:4px;  --py:-3px;}
+      .tl-particles .p:nth-child(3){animation-delay:.02s;  --px:5px;  --py: 2px;}
+      .tl-particles .p:nth-child(4){animation-delay:.03s;  --px:1px;  --py: 5px;}
+      .tl-particles .p:nth-child(5){animation-delay:.04s;  --px:-4px; --py: 3px;}
+      .tl-particles .p:nth-child(6){animation-delay:.05s;  --px:-5px; --py:-2px;}
+      @keyframes pcollide {
+        0%  {transform:translate(var(--px),var(--py));opacity:.3;}
+        45% {transform:translate(0,0);opacity:1;}
+        55% {transform:translate(0,0);opacity:1;}
+        85% {transform:translate(var(--px),var(--py));opacity:.3;}
+        100%{transform:translate(var(--px),var(--py));opacity:.3;}
+      }
+
+      /* ══════════════════════════════════════════════════════════
+         OVERLAY THEMES — synced from console via localStorage
+         ══════════════════════════════════════════════════════════ */
+
+      /* ── dark ── */
+      body[data-theme="dark"] {
+        --ink: #e8e8e8;
+        --ink-soft: #c4c4c4;
+        --muted: #666666;
+        --accent: #e8e8e8;
+        --accent-strong: #e8e8e8;
+        --accent-soft: rgba(232,232,232,0.1);
+        --line: rgba(255,255,255,0.1);
+        --surface-strong: rgba(35,35,40,0.9);
+        --surface-soft: rgba(22,22,26,0.7);
+      }
+      body[data-theme="dark"] .bubble-area,
+      body[data-theme="dark"] .quick-toolbar,
+      body[data-theme="dark"] .input-bar,
+      body[data-theme="dark"] .inline-panel,
+      body[data-theme="dark"] .voice-card,
+      body[data-theme="dark"] .task-list-panel,
+      body[data-theme="dark"] .result-toast {
+        background: rgba(16, 16, 20, 0.92);
+        box-shadow: 0 20px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
+      }
+      body[data-theme="dark"] .bubble {
+        background: rgba(32, 32, 38, 0.9);
+        color: #e8e8e8;
+      }
+      body[data-theme="dark"] .bubble.assistant { background: rgba(32,32,38,0.9); }
+      body[data-theme="dark"] .bubble.user { background: #e8e8e8; color: #0d0d0d; }
+      body[data-theme="dark"] .bubble.system { background: rgba(42,42,50,0.8); color: #888; }
+      body[data-theme="dark"] .input-bar textarea { color: #e8e8e8; }
+      body[data-theme="dark"] .input-bar textarea::placeholder { color: #555; }
+      body[data-theme="dark"] .input-bar .send-btn { background: #e8e8e8; color: #0d0d0d; }
+      body[data-theme="dark"] .input-bar .aux-btn { background: rgba(45,45,52,0.9); color: #888; }
+      body[data-theme="dark"] .quick-toolbar .quick-btn,
+      body[data-theme="dark"] .bubble-options button,
+      body[data-theme="dark"] .inline-panel .panel-actions button,
+      body[data-theme="dark"] .voice-card .voice-actions button,
+      body[data-theme="dark"] .task-list-filters button {
+        background: rgba(40,40,48,0.9);
+        color: #e8e8e8;
+      }
+      body[data-theme="dark"] .quick-toolbar .quick-btn:hover,
+      body[data-theme="dark"] .bubble-options button:hover { background: rgba(55,55,65,0.9); }
+      body[data-theme="dark"] .quick-toolbar .quick-btn.active,
+      body[data-theme="dark"] .bubble-options button.active,
+      body[data-theme="dark"] .inline-panel .panel-actions button.primary,
+      body[data-theme="dark"] .voice-card .voice-actions button.primary,
+      body[data-theme="dark"] .task-list-filters button.active {
+        background: #e8e8e8;
+        color: #0d0d0d;
+      }
+      body[data-theme="dark"] .wave-bar { background: #e8e8e8; }
+      body[data-theme="dark"] .voice-card .voice-transcript { background: rgba(40,40,48,0.8); color: #e8e8e8; }
+      body[data-theme="dark"] .result-toast .toast-body { color: #888; }
+
+      /* ── white (blue accent) ── */
+      body[data-theme="white"] {
+        --ink: #080808;
+        --muted: #888888;
+        --accent: #2563eb;
+        --accent-strong: #2563eb;
+        --accent-soft: rgba(37,99,235,0.1);
+        --line: rgba(0,0,0,0.1);
+        --surface-strong: rgba(255,255,255,0.96);
+        --surface-soft: rgba(244,244,244,0.82);
+      }
+      body[data-theme="white"] .bubble.user { background: #2563eb; color: #fff; }
+      body[data-theme="white"] .input-bar .send-btn { background: #2563eb; color: #fff; }
+      body[data-theme="white"] .quick-toolbar .quick-btn.active,
+      body[data-theme="white"] .bubble-options button.active,
+      body[data-theme="white"] .inline-panel .panel-actions button.primary,
+      body[data-theme="white"] .voice-card .voice-actions button.primary,
+      body[data-theme="white"] .task-list-filters button.active {
+        background: #2563eb;
+        color: #fff;
+      }
+      body[data-theme="white"] .wave-bar { background: #2563eb; }
+
+      /* ── warm (浅咖色) ── */
+      body[data-theme="warm"] {
+        --ink: #2a1a0e;
+        --muted: #8a6e55;
+        --accent: #7c5438;
+        --accent-strong: #5e3e28;
+        --accent-soft: rgba(124,84,56,0.12);
+        --line: rgba(42,26,14,0.12);
+        --surface-strong: rgba(255,252,248,0.96);
+        --surface-soft: rgba(237,229,218,0.72);
+      }
+      body[data-theme="warm"] .bubble-area,
+      body[data-theme="warm"] .quick-toolbar,
+      body[data-theme="warm"] .input-bar,
+      body[data-theme="warm"] .inline-panel,
+      body[data-theme="warm"] .voice-card,
+      body[data-theme="warm"] .task-list-panel,
+      body[data-theme="warm"] .result-toast {
+        background: rgba(245, 240, 234, 0.9);
+        box-shadow: 0 20px 40px rgba(42,26,14,0.1), inset 0 1px 0 rgba(255,250,245,0.7);
+      }
+      body[data-theme="warm"] .bubble.assistant { background: rgba(255,252,248,0.9); color: #2a1a0e; }
+      body[data-theme="warm"] .bubble.user { background: #7c5438; color: #fff; }
+      body[data-theme="warm"] .bubble.system { background: rgba(237,229,218,0.8); color: #8a6e55; }
+      body[data-theme="warm"] .input-bar textarea { color: #2a1a0e; }
+      body[data-theme="warm"] .input-bar textarea::placeholder { color: #a08060; }
+      body[data-theme="warm"] .input-bar .send-btn { background: #7c5438; color: #fff; }
+      body[data-theme="warm"] .input-bar .aux-btn { background: rgba(224,213,194,0.8); color: #8a6e55; }
+      body[data-theme="warm"] .quick-toolbar .quick-btn,
+      body[data-theme="warm"] .bubble-options button,
+      body[data-theme="warm"] .inline-panel .panel-actions button,
+      body[data-theme="warm"] .voice-card .voice-actions button,
+      body[data-theme="warm"] .task-list-filters button {
+        background: rgba(224,213,194,0.8);
+        color: #2a1a0e;
+      }
+      body[data-theme="warm"] .quick-toolbar .quick-btn.active,
+      body[data-theme="warm"] .bubble-options button.active,
+      body[data-theme="warm"] .inline-panel .panel-actions button.primary,
+      body[data-theme="warm"] .voice-card .voice-actions button.primary,
+      body[data-theme="warm"] .task-list-filters button.active {
+        background: #7c5438;
+        color: #fff;
+      }
+      body[data-theme="warm"] .wave-bar { background: #7c5438; }
+      body[data-theme="warm"] .voice-card .voice-transcript { background: rgba(237,229,218,0.7); color: #2a1a0e; }
     </style>
   </head>
   <body>
     <!-- Bubble conversation area -->
-    <div id="bubbleArea" class="bubble-area" hidden></div>
+    <div id="bubbleArea" class="bubble-area" role="log" aria-live="polite" aria-relevant="additions text" aria-label="对话记录" hidden></div>
+
+    <!-- Empty state — shown when no bubbles exist yet, to orient new users -->
+    <div id="emptyState" class="empty-state" aria-hidden="false">
+      <div class="empty-state-title">你好，有什么可以帮你？</div>
+      <div class="empty-state-hint">直接输入问题，或从下面挑一个开始：</div>
+      <div class="empty-state-chips" role="list">
+        <button type="button" class="empty-chip" data-empty-prompt="帮我总结一下剪贴板里的内容">📋 总结剪贴板</button>
+        <button type="button" class="empty-chip" data-empty-prompt="把下面这段翻译成中文：">🌐 翻译</button>
+        <button type="button" class="empty-chip" data-empty-prompt="每天早上 9 点提醒我喝水">⏰ 设置提醒</button>
+        <button type="button" class="empty-chip" data-empty-prompt="解释下面这段代码的作用：">💡 解释内容</button>
+      </div>
+      <div class="empty-state-footnote">
+        Ctrl+Shift+U 随时召出 · Enter 发送 · Shift+Enter 换行
+      </div>
+    </div>
 
     <!-- UCA-041: Project + history panel (hidden by default) -->
     <div id="projectPanel" class="inline-panel" data-open="false">
@@ -902,10 +1522,17 @@
     </div>
 
     <!-- Apple-style voice card (replaces the old inline panel) -->
-    <div id="voiceCard" class="voice-card idle">
-      <div class="voice-title">语音输入</div>
-      <div class="voice-subtitle" id="voiceStatus">点击「开始」后说话</div>
-      <div class="wave-container" aria-hidden="true">
+    <div id="voiceCard" class="voice-card idle" data-mode="voice">
+      <button id="voiceMinimizeBtn" class="voice-minimize" type="button" title="最小化">−</button>
+      <!-- Tab switcher: voice / note -->
+      <div class="note-mode-tabs">
+        <button class="note-tab-btn active" id="tabVoiceBtn" type="button">语音输入</button>
+        <button class="note-tab-btn" id="tabNoteBtn" type="button">录音笔记</button>
+      </div>
+
+      <!-- ── VOICE mode elements ── -->
+      <div class="voice-subtitle voice-only" id="voiceStatus">点击「开始」后说话</div>
+      <div class="wave-container voice-only" aria-hidden="true">
         <span class="wave-bar"></span>
         <span class="wave-bar"></span>
         <span class="wave-bar"></span>
@@ -916,18 +1543,41 @@
         <span class="wave-bar"></span>
         <span class="wave-bar"></span>
       </div>
-      <div id="voiceTranscript" class="voice-transcript">&nbsp;</div>
-      <div class="voice-hint">回车发送 · Esc 取消 · 自动停止后等待新指令</div>
-      <select id="voiceLang" style="margin-top:10px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,0.92);">
+      <div id="voiceTranscript" class="voice-transcript voice-only">&nbsp;</div>
+      <div class="voice-hint voice-only">回车发送 · Esc 取消 · 自动停止后等待新指令</div>
+      <select id="voiceLang" class="voice-only" style="margin-top:10px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,0.92);">
         <option value="zh-CN" selected>中文（普通话）</option>
         <option value="en-US">English (US)</option>
         <option value="ja-JP">日本語</option>
         <option value="ko-KR">한국어</option>
       </select>
-      <div class="voice-actions">
+      <div class="voice-actions voice-only">
         <button id="voiceCancelBtn" type="button">取消</button>
         <button id="voiceStopBtn" type="button">停止</button>
         <button id="voiceStartBtn" type="button" class="primary">开始</button>
+      </div>
+
+      <!-- ── NOTE mode elements ── -->
+      <div class="note-header note-only">
+        <span class="note-label">记录会话中</span>
+        <span class="note-timer" id="noteTimer">00:00</span>
+      </div>
+      <div class="note-channels note-only">
+        <span class="note-channel-tag" id="noteMicTag"><span class="dot"></span>输入音频（麦克风）</span>
+        <span class="note-channel-tag" id="noteSysTag"><span class="dot"></span>输出音频（系统）</span>
+      </div>
+      <div class="note-transcript-box note-only" id="noteTranscriptBox"></div>
+      <div class="note-hint note-only">输入音频实时转录 · 输出音频录制后统一处理</div>
+      <select id="noteLang" class="note-only" style="margin-top:8px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,0.92);">
+        <option value="auto" selected>自动识别语言</option>
+        <option value="zh-CN">中文（普通话）</option>
+        <option value="en-US">English (US)</option>
+        <option value="ja-JP">日本語</option>
+        <option value="ko-KR">한국어</option>
+      </select>
+      <div class="voice-actions note-only">
+        <button id="noteCancelBtn" type="button">取消</button>
+        <button id="noteFinishBtn" type="button" class="primary">完成笔记</button>
       </div>
     </div>
 
@@ -951,7 +1601,7 @@
       <button id="scheduleToggleBtn" class="quick-btn" type="button" title="新建定时任务">
         <span class="quick-glyph">&#9200;</span>定时
       </button>
-      <button id="voiceToggleBtn" class="quick-btn" type="button" title="语音输入 (Ctrl+Shift+V)">
+      <button id="voiceToggleBtn" class="quick-btn" type="button" title="语音输入 / 录音笔记 (Ctrl+Shift+V)">
         <span class="quick-glyph">&#127908;</span>语音
       </button>
       <span class="quick-spacer"></span>
@@ -961,19 +1611,19 @@
     </div>
 
     <!-- Bottom input bar -->
-    <div class="input-bar">
-      <button id="clipboardBtn" class="aux-btn" type="button" title="读取剪贴板">&#128203;</button>
-      <textarea id="commandInput" rows="1" placeholder="输入你的需求..." autofocus></textarea>
-      <button id="sendBtn" class="send-btn" type="button" title="发送 (Enter)">
+    <div class="input-bar" role="group" aria-label="指令输入栏">
+      <button id="clipboardBtn" class="aux-btn" type="button" title="读取剪贴板" aria-label="读取剪贴板内容作为上下文">&#128203;</button>
+      <textarea id="commandInput" rows="1" placeholder="输入你的需求..." aria-label="输入指令（按 Enter 发送，Shift+Enter 换行）" autofocus></textarea>
+      <button id="sendBtn" class="send-btn" type="button" title="发送 (Enter)" aria-label="发送指令">
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <path d="M3.4 20.4l17.45-8.05a.5.5 0 0 0 0-.91L3.4 3.4a.5.5 0 0 0-.7.6l2.4 7.5a.5.5 0 0 0 .42.34l9.48.9a.1.1 0 0 1 0 .2l-9.48.9a.5.5 0 0 0-.42.34L2.7 19.8a.5.5 0 0 0 .7.6z" fill="currentColor"/>
         </svg>
       </button>
-      <button id="closeBtn" class="aux-btn" type="button" title="关闭">&#10005;</button>
+      <button id="closeBtn" class="aux-btn" type="button" title="关闭" aria-label="关闭浮层">&#10005;</button>
     </div>
 
     <!-- Apple-style ephemeral pop bubble (centered) -->
-    <div id="popBubble" class="pop-bubble" data-open="false">
+    <div id="popBubble" class="pop-bubble" data-open="false" role="status" aria-live="polite">
       <div class="pop-label" id="popLabel">UCA</div>
       <div class="pop-body" id="popBody"></div>
       <div class="pop-actions">
@@ -983,7 +1633,7 @@
     </div>
 
     <!-- Result toast (bottom-right) -->
-    <div id="resultToast" class="result-toast">
+    <div id="resultToast" class="result-toast" role="status" aria-live="polite">
       <div id="toastTitle" class="toast-title"></div>
       <div id="toastBody" class="toast-body"></div>
       <div class="toast-actions">
@@ -994,21 +1644,21 @@
     </div>
 
     <!-- Task list dock (bottom-right) -->
-    <div id="taskListDock" class="task-list-dock" title="任务清单">
-      <span>📋</span>
+    <button id="taskListDock" class="task-list-dock" type="button" title="任务清单" aria-label="打开任务清单" aria-haspopup="true" aria-expanded="false">
+      <span aria-hidden="true">📋</span>
       <span id="taskListDockBadge" class="dock-badge" hidden>0</span>
-    </div>
-    <div id="taskListPanel" class="task-list-panel" data-open="false">
+    </button>
+    <div id="taskListPanel" class="task-list-panel" data-open="false" role="dialog" aria-label="任务清单">
       <div class="task-list-header">
         <strong style="font-size:12px;">任务清单</strong>
-        <button id="taskListCloseBtn" class="aux-btn" type="button" style="width:22px;height:22px;">×</button>
+        <button id="taskListCloseBtn" class="aux-btn" type="button" style="width:22px;height:22px;" aria-label="关闭任务清单">×</button>
       </div>
-      <div class="task-list-filters">
-        <button type="button" data-task-filter="all" class="active">全部</button>
-        <button type="button" data-task-filter="active">进行中</button>
-        <button type="button" data-task-filter="done">已完成</button>
+      <div class="task-list-filters" role="tablist" aria-label="任务过滤">
+        <button type="button" data-task-filter="all" class="active" role="tab" aria-selected="true">全部</button>
+        <button type="button" data-task-filter="active" role="tab" aria-selected="false">进行中</button>
+        <button type="button" data-task-filter="done" role="tab" aria-selected="false">已完成</button>
       </div>
-      <div id="taskListBody" class="task-list-body"></div>
+      <div id="taskListBody" class="task-list-body" role="list"></div>
     </div>
 
     <script type="module" src="./overlay.js"></script>

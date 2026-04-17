@@ -4,6 +4,7 @@ export const EVENT_TYPES = Object.freeze([
   "cancel_requested",
   "cancelled",
   "partial_success",
+  "tool_call_started",
   "tool_call_proposed",
   "tool_call_completed",
   "tool_call_denied",

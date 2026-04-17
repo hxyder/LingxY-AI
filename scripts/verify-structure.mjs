@@ -203,6 +203,7 @@ const requiredPaths = [
   "src/helper/explorer_selection/UcaExplorerSelectionHelper/Program.cs",
   "src/helper/Screenshot/README.md",
   "src/helper/Screenshot/capture-contract.mjs",
+  "scripts/local-whisper-transcribe.py",
   "scripts/verify-desktop-shell.mjs",
   "scripts/verify-desktop-renderer.mjs",
   "scripts/verify-overlay-composer.mjs",

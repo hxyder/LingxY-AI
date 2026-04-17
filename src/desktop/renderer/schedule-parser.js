@@ -25,7 +25,7 @@ function buildAtTrigger(date, labelPrefix = "at") {
 function stripScheduleWords(text) {
   return text
     .replace(/(?:请)?(?:在|于)?\s*(?:今天|明天|后天|下周|这周|本周)?\s*(?:周|星期|礼拜)?[一二三四五六日天]?\s*(?:上午|下午|晚上|早上|中午|凌晨)?\s*\d{1,2}\s*(?:点|[:：.])\s*(?:半|\d{1,2}\s*分?)?/g, "")
-    .replace(/\d+\s*(?:分钟|分|小时|天|minute|minutes|min|mins|hour|hours|day|days)\s*(?:以后|后|later|from now)/gi, "")
+    .replace(/(?:\d+|[零〇一二两俩三四五六七八九十]{1,3})\s*(?:分钟|分|小时|天|minute|minutes|min|mins|hour|hours|day|days)\s*(?:以后|后|later|from now)/gi, "")
     .replace(/\d{4}\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}\s*(?:日|号)?/g, "")
     .replace(/\d{1,2}\s*月\s*\d{1,2}\s*(?:日|号)?/g, "")
     .replace(/提醒我|remind me|schedule|定时/g, "")
@@ -145,14 +145,16 @@ function parseAbsoluteDateTrigger(text, now = new Date()) {
 
 function parseRelativeDateTrigger(text, now = new Date()) {
   const lower = text.toLowerCase();
-  const relativeDay = lower.match(/(\d+)\s*(天|day|days)\s*(以后|后|later|from now)/i);
+  const relativeDay = lower.match(/(\d+|[零〇一二两俩三四五六七八九十]{1,3})\s*(天|day|days)\s*(以后|后|later|from now)/i);
   if (relativeDay) {
-    const seconds = Number(relativeDay[1]) * 24 * 60 * 60;
+    const amount = parseSmallChineseNumber(relativeDay[1]);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
+    const seconds = amount * 24 * 60 * 60;
     return {
       type: "interval",
       seconds,
       oneShot: true,
-      label: `${relativeDay[1]} days from now`
+      label: `${amount} days from now`
     };
   }
 
@@ -199,25 +201,65 @@ function parseWeekdayTrigger(text, now = new Date()) {
   return buildAtTrigger(date, "once");
 }
 
+function parseSmallChineseNumber(raw = "") {
+  const text = String(raw).trim();
+  if (!text) return null;
+  if (/^\d+$/.test(text)) return Number(text);
+
+  const digits = new Map([
+    ["零", 0],
+    ["〇", 0],
+    ["一", 1],
+    ["二", 2],
+    ["两", 2],
+    ["俩", 2],
+    ["三", 3],
+    ["四", 4],
+    ["五", 5],
+    ["六", 6],
+    ["七", 7],
+    ["八", 8],
+    ["九", 9]
+  ]);
+
+  if (digits.has(text)) return digits.get(text);
+  const tenIndex = text.indexOf("十");
+  if (tenIndex >= 0) {
+    const left = text.slice(0, tenIndex);
+    const right = text.slice(tenIndex + 1);
+    const tens = left ? digits.get(left) : 1;
+    const ones = right ? digits.get(right) : 0;
+    if (Number.isFinite(tens) && Number.isFinite(ones)) {
+      return tens * 10 + ones;
+    }
+  }
+
+  return null;
+}
+
 function parseOneShotTrigger(text) {
   const lower = text.toLowerCase();
-  const relativeMinute = lower.match(/(\d+)\s*(分钟|分|minute|minutes|min|mins)\s*(以后|后|later|from now)/i);
+  const relativeMinute = lower.match(/(\d+|[零〇一二两俩三四五六七八九十]{1,3})\s*(分钟|分|minute|minutes|min|mins)\s*(以后|后|later|from now)/i);
   if (relativeMinute) {
+    const amount = parseSmallChineseNumber(relativeMinute[1]);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
     return {
       type: "interval",
-      seconds: Number(relativeMinute[1]) * 60,
+      seconds: amount * 60,
       oneShot: true,
-      label: `${relativeMinute[1]} minutes from now`
+      label: `${amount} minutes from now`
     };
   }
 
-  const relativeHour = lower.match(/(\d+)\s*(小时|hour|hours)\s*(以后|后|later|from now)/i);
+  const relativeHour = lower.match(/(\d+|[零〇一二两俩三四五六七八九十]{1,3})\s*(小时|hour|hours)\s*(以后|后|later|from now)/i);
   if (relativeHour) {
+    const amount = parseSmallChineseNumber(relativeHour[1]);
+    if (!Number.isFinite(amount) || amount <= 0) return null;
     return {
       type: "interval",
-      seconds: Number(relativeHour[1]) * 60 * 60,
+      seconds: amount * 60 * 60,
       oneShot: true,
-      label: `${relativeHour[1]} hours from now`
+      label: `${amount} hours from now`
     };
   }
 
@@ -228,7 +270,7 @@ export function isScheduleIntentText(text = "") {
   const lower = text.toLowerCase();
   const scheduleVerbPattern = /(?:提醒我|提醒|定时|安排|创建(?:一个)?(?:日程|提醒|任务)|schedule|remind\s+me|set\s+(?:a\s+)?reminder)/i;
   const clockTimePattern = /(?:上午|下午|晚上|早上|中午|凌晨)?\s*\d{1,2}\s*(?:点|[:：.])\s*(?:半|\d{1,2}\s*分?)?|(?:at\s+)?\d{1,2}[:.]\d{2}/i;
-  const relativeDelayPattern = /(\d+)\s*(分钟|分|minute|minutes|min|mins|小时|hour|hours|天|day|days)\s*(以后|后|later|from now)/i;
+  const relativeDelayPattern = /(\d+|[零〇一二两俩三四五六七八九十]{1,3})\s*(分钟|分|minute|minutes|min|mins|小时|hour|hours|天|day|days)\s*(以后|后|later|from now)/i;
   const dateOnlyPattern = /今天|明天|后天|下周|这周|本周|(?:周|星期|礼拜)[一二三四五六日天]|\d{4}\s*[-/年]\s*\d{1,2}\s*[-/月]\s*\d{1,2}|\d{1,2}\s*月\s*\d{1,2}\s*(?:日|号)?/i;
   const recurringPattern = /(?:每天|每周|每月|定时|每隔|提醒我|schedule|every\s+(?:day|week|hour|morning|evening)|remind\s+me|cron|定期|每个?(?:工作日|周[一二三四五六日天])|at\s+\d{1,2}[:.]\d{2})/i;
   return recurringPattern.test(lower)

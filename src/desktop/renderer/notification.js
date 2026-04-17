@@ -2,6 +2,7 @@ const toast = document.querySelector("#toast");
 const title = document.querySelector("#title");
 const bodyText = document.querySelector("#bodyText");
 const closeBtn = document.querySelector("#closeBtn");
+const icon = document.querySelector("#icon");
 let hideTimer = null;
 let serviceBaseUrl = "http://127.0.0.1:4310";
 let lastPayload = null;
@@ -18,12 +19,20 @@ function show(payload = {}) {
   lastPayload = payload;
   title.textContent = payload.title ?? "UCA 提醒";
   bodyText.textContent = payload.body ?? payload.message ?? "时间到了";
+  const kind = payload.kind ?? (/(提醒|reminder|schedule)/i.test(`${payload.title ?? ""} ${payload.body ?? payload.message ?? ""}`) ? "reminder" : "default");
+  toast.dataset.kind = kind;
+  if (icon) {
+    icon.textContent = kind === "reminder" ? "⏰" : "✓";
+  }
   clearTimeout(hideTimer);
   toast.classList.add("visible");
   hideTimer = setTimeout(hide, Number(payload.durationMs ?? 8000));
 }
 
-closeBtn.addEventListener("click", hide);
+closeBtn.addEventListener("click", (event) => {
+  event.stopPropagation();
+  hide();
+});
 
 toast.addEventListener("click", async () => {
   const handoff = lastPayload?.handoff;

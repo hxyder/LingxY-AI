@@ -79,6 +79,33 @@
         50%       { box-shadow: 0 0 0 5px rgba(34,197,94,0.35); }
       }
       #dockButton.has-completed { animation: breathe-ring 2.4s ease-in-out infinite; }
+
+      .recording-badge {
+        position: absolute;
+        top: -1px; right: -1px;
+        padding: 2px 5px;
+        border-radius: 999px;
+        background: #ef4444;
+        color: #fff;
+        font-family: system-ui, sans-serif;
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 12;
+        box-shadow: 0 0 0 3px rgba(239,68,68,0.18);
+      }
+
+      #dockButton.recording .recording-badge { opacity: 1; }
+      #dockButton.recording {
+        animation: recording-ring 1.2s ease-in-out infinite;
+      }
+
+      @keyframes recording-ring {
+        0%, 100% { filter: drop-shadow(0 0 0 rgba(239,68,68,0)); }
+        50% { filter: drop-shadow(0 0 8px rgba(239,68,68,0.72)); }
+      }
     </style>
   </head>
   <body>
@@ -86,208 +113,191 @@
       <canvas id="orbCanvas" width="48" height="48"></canvas>
       <span id="clipBadge" class="clip-badge"></span>
       <span id="taskBadge" class="task-badge"></span>
+      <span id="recordingBadge" class="recording-badge">REC</span>
     </button>
 
     <script>
       const canvas = document.getElementById('orbCanvas');
       const ctx = canvas.getContext('2d');
-      const S = 48, CX = S / 2, CY = S / 2;
+      const S = 48, CX = S / 2, CY = S / 2, R = 21;
+      // 3 s cycle at ~60 fps
+      const CYCLE = 180;
 
       let mode = 'idle';
       let t = 0;
-      let particles = [];
+      let pulseRings = [];
 
-      /* ═══════ IDLE: dark glass orb with subtle color hints ═══════ */
-      function drawIdle() {
-        ctx.clearRect(0, 0, S, S);
-
-        const breath = 0.92 + Math.sin(t * 0.02) * 0.08;
-
-        // dark base disc
-        const base = ctx.createRadialGradient(CX - 2, CY - 3, 2, CX, CY, 22 * breath);
-        base.addColorStop(0, 'rgba(70, 75, 92, 0.95)');
-        base.addColorStop(0.45, 'rgba(40, 44, 58, 0.9)');
-        base.addColorStop(0.85, 'rgba(22, 24, 34, 0.75)');
-        base.addColorStop(1, 'rgba(15, 17, 26, 0)');
-        ctx.fillStyle = base;
-        ctx.beginPath(); ctx.arc(CX, CY, 22, 0, Math.PI * 2); ctx.fill();
-
-        // subtle inner color tint (cool indigo + warm rose)
+      /* ─── shared: dark gradient disc matching icon.html ─── */
+      function darkDisc(glowAlpha, glowBlur) {
+        const g = ctx.createLinearGradient(CX - 14, CY - 14, CX + 14, CY + 14);
+        g.addColorStop(0, '#2a2c35');
+        g.addColorStop(1, '#18191f');
         ctx.save();
-        ctx.globalCompositeOperation = 'screen';
-        const tint1 = ctx.createRadialGradient(CX - 4, CY - 2, 0, CX - 4, CY - 2, 12);
-        tint1.addColorStop(0, 'rgba(99, 102, 241, 0.55)');
-        tint1.addColorStop(1, 'rgba(99, 102, 241, 0)');
-        ctx.fillStyle = tint1;
-        ctx.beginPath(); ctx.arc(CX - 4, CY - 2, 12, 0, Math.PI * 2); ctx.fill();
-
-        const tint2 = ctx.createRadialGradient(CX + 4, CY + 3, 0, CX + 4, CY + 3, 11);
-        tint2.addColorStop(0, 'rgba(236, 72, 153, 0.45)');
-        tint2.addColorStop(1, 'rgba(236, 72, 153, 0)');
-        ctx.fillStyle = tint2;
-        ctx.beginPath(); ctx.arc(CX + 4, CY + 3, 11, 0, Math.PI * 2); ctx.fill();
+        if (glowAlpha > 0) {
+          ctx.shadowColor = `rgba(255,112,67,${glowAlpha})`;
+          ctx.shadowBlur  = glowBlur;
+        }
+        ctx.fillStyle = g;
+        ctx.beginPath(); ctx.arc(CX, CY, R, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
-
-        // bright glass highlight
+        // hairline border
         ctx.save();
-        ctx.globalAlpha = 0.72;
-        const hi = ctx.createRadialGradient(CX - 4, CY - 6, 0, CX - 3, CY - 5, 6);
-        hi.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
-        hi.addColorStop(0.7, 'rgba(255, 255, 255, 0.15)');
-        hi.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.fillStyle = hi;
-        ctx.beginPath();
-        ctx.ellipse(CX - 3, CY - 5, 5, 3, -0.4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-
-        // crisp rim
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
-        ctx.lineWidth = 0.8;
-        ctx.beginPath();
-        ctx.arc(CX, CY, 21 * breath, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(CX, CY, R - 0.5, 0, Math.PI * 2); ctx.stroke();
         ctx.restore();
       }
 
-      /* ═══════ ACTIVE: dark glass orb with colorful orbiting lights ═══════ */
-      function drawActive() {
+      /* ═══════ shared: particle collision scene ═══════ */
+      function drawParticleBase() {
         ctx.clearRect(0, 0, S, S);
 
-        // dark base disc — same as idle
-        const breath = 0.92 + Math.sin(t * 0.04) * 0.08;
-        const base = ctx.createRadialGradient(CX - 2, CY - 3, 2, CX, CY, 22 * breath);
-        base.addColorStop(0, 'rgba(70, 75, 92, 0.95)');
-        base.addColorStop(0.45, 'rgba(40, 44, 58, 0.92)');
-        base.addColorStop(0.85, 'rgba(22, 24, 34, 0.78)');
-        base.addColorStop(1, 'rgba(15, 17, 26, 0)');
-        ctx.fillStyle = base;
-        ctx.beginPath(); ctx.arc(CX, CY, 22, 0, Math.PI * 2); ctx.fill();
+        const phase  = (t % CYCLE) / CYCLE;
+        const sine   = Math.sin(phase * Math.PI * 2);
 
-        // three orbiting colored dots
-        const sp = t * 0.09;
-        const dist = 10 + Math.sin(t * 0.05) * 2.5;
-        const colors = [
-          { h: 165, s: 85, l: 55 },  // teal
-          { h: 280, s: 75, l: 62 },  // violet
-          { h: 35,  s: 95, l: 60 }   // amber
-        ];
+        const glowA  = 0.1 + Math.max(0, sine) * 0.3;
+        const glowB  = 8   + Math.max(0, sine) * 14;
+        darkDisc(glowA, glowB);
 
-        for (let i = 0; i < 3; i++) {
-          const angle = sp + i * Math.PI * 2 / 3;
-          const x = CX + Math.cos(angle) * dist;
-          const y = CY + Math.sin(angle) * dist * 0.7;
-          const c = colors[i];
-
-          // trail
-          for (let j = 1; j <= 4; j++) {
-            const ta = angle - j * 0.14;
-            const tx = CX + Math.cos(ta) * dist;
-            const ty = CY + Math.sin(ta) * dist * 0.7;
-            ctx.save();
-            ctx.globalAlpha = (5 - j) / 5 * 0.45;
-            ctx.fillStyle = `hsl(${c.h}, ${c.s}%, ${c.l}%)`;
-            ctx.beginPath(); ctx.arc(tx, ty, 2.8 - j * 0.35, 0, Math.PI * 2); ctx.fill();
-            ctx.restore();
-          }
-
-          // bright dot with glow
-          const dg = ctx.createRadialGradient(x, y, 0, x, y, 5.5);
-          dg.addColorStop(0, `hsla(${c.h}, 95%, 88%, 1)`);
-          dg.addColorStop(0.35, `hsla(${c.h}, ${c.s}%, ${c.l}%, 0.9)`);
-          dg.addColorStop(0.7, `hsla(${c.h}, ${c.s}%, ${c.l}%, 0.3)`);
-          dg.addColorStop(1, 'transparent');
-          ctx.fillStyle = dg;
-          ctx.shadowBlur = 6;
-          ctx.shadowColor = `hsl(${c.h}, ${c.s}%, ${c.l}%)`;
-          ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
-          ctx.shadowBlur = 0;
-        }
-
-        // bright white center pulse
-        const core = ctx.createRadialGradient(CX, CY, 0, CX, CY, 5);
-        core.addColorStop(0, 'rgba(255,255,255,0.95)');
-        core.addColorStop(0.5, 'rgba(220,225,255,0.5)');
-        core.addColorStop(1, 'rgba(180,190,240,0)');
-        ctx.fillStyle = core;
-        ctx.beginPath(); ctx.arc(CX, CY, 4.5, 0, Math.PI * 2); ctx.fill();
-
-        // glass highlight (consistent with idle)
+        // Ring 2: solid coral, rotating reverse, r=19
         ctx.save();
-        ctx.globalAlpha = 0.55;
-        const hi = ctx.createRadialGradient(CX - 3, CY - 5, 0, CX - 3, CY - 5, 5);
-        hi.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
-        hi.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.fillStyle = hi;
+        ctx.translate(CX, CY);
+        ctx.rotate(-(t / 1080) * Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,112,67,0.13)';
+        ctx.lineWidth = 0.9;
+        ctx.beginPath(); ctx.arc(0, 0, 19, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+
+        // Ring 1: dashed gold, rotating forward, r=15
+        ctx.save();
+        ctx.translate(CX, CY);
+        ctx.rotate((t / 720) * Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,183,77,0.35)';
+        ctx.lineWidth = 0.9;
+        ctx.setLineDash([3, 2.5]);
+        ctx.beginPath(); ctx.arc(0, 0, 15, 0, Math.PI * 2); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.restore();
+
+        // pPhase: 0 = separated, 1 = collision
+        const pPhase = 0.5 - 0.5 * Math.cos(phase * Math.PI * 2);
+        const pSize  = 3.5 * (0.6 + pPhase * 0.6);
+        const pAlpha = 0.6 + pPhase * 0.4;
+
+        // p1: gold, left → center
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = pAlpha;
+        ctx.shadowColor = '#ffb74d'; ctx.shadowBlur = 7;
+        ctx.fillStyle   = '#ffb74d';
         ctx.beginPath();
-        ctx.ellipse(CX - 3, CY - 5, 5, 3, -0.4, 0, Math.PI * 2);
+        ctx.arc(CX + (-12 + pPhase * 15), CY + (3 - pPhase * 3), pSize, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
 
-        // particles
-        particles = particles.filter(p => {
-          p.x += p.vx; p.y += p.vy; p.vx *= 0.94; p.vy *= 0.94; p.life -= p.decay;
-          if (p.life <= 0) return false;
+        // p2: coral, right → center
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = pAlpha;
+        ctx.shadowColor = '#ff7043'; ctx.shadowBlur = 7;
+        ctx.fillStyle   = '#ff7043';
+        ctx.beginPath();
+        ctx.arc(CX + (12 - pPhase * 15), CY + (-3 + pPhase * 3), pSize, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        // Spark: white flash at collision (phase 0.45–0.60)
+        let sparkA = 0, sparkR = 0;
+        if (phase > 0.45 && phase <= 0.50) {
+          const sp = (phase - 0.45) / 0.05;
+          sparkA = sp; sparkR = 3 * sp;
+        } else if (phase > 0.50 && phase <= 0.60) {
+          const sp = (phase - 0.50) / 0.10;
+          sparkA = 1 - sp; sparkR = 3 + 4 * sp;
+        }
+        if (sparkA > 0.01) {
           ctx.save();
-          ctx.globalAlpha = p.life * 0.8;
-          ctx.fillStyle = `hsla(${p.hue}, 85%, 68%, 1)`;
-          ctx.shadowBlur = 3;
-          ctx.shadowColor = `hsla(${p.hue}, 85%, 68%, 0.6)`;
-          ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+          ctx.globalCompositeOperation = 'overlay';
+          ctx.globalAlpha = sparkA;
+          ctx.shadowColor = 'rgba(255,230,200,0.9)'; ctx.shadowBlur = sparkR * 4;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath(); ctx.arc(CX, CY, sparkR, 0, Math.PI * 2); ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      /* ═══════ IDLE ═══════ */
+      function drawIdle() {
+        drawParticleBase();
+      }
+
+      /* ═══════ ACTIVE: particle base + spinning arc overlay ═══════ */
+      function drawActive() {
+        drawParticleBase();
+
+        // rotating arc (activity indicator)
+        const arcLen   = Math.PI * 1.1 + Math.sin(t * 0.06) * 0.4;
+        const arcStart = (t * 0.055) - Math.PI / 2;
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+        ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(CX, CY, R - 2.5, arcStart, arcStart + arcLen); ctx.stroke();
+        ctx.restore();
+
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+        ctx.lineWidth = 1; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(CX, CY, R - 2.5, arcStart + Math.PI, arcStart + Math.PI + 0.7); ctx.stroke();
+        ctx.restore();
+
+        // expanding pulse rings (triggered by doPulse)
+        pulseRings = pulseRings.filter(ring => {
+          ring.r += 0.55; ring.a *= 0.88;
+          if (ring.a < 0.03) return false;
+          ctx.save();
+          ctx.globalAlpha = ring.a;
+          ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(CX, CY, ring.r, 0, Math.PI * 2); ctx.stroke();
           ctx.restore();
           return true;
         });
-
-        // sparkles
-        if (Math.random() < 0.15) {
-          const a = Math.random() * Math.PI * 2;
-          particles.push({
-            x: CX + Math.cos(a) * 13, y: CY + Math.sin(a) * 10,
-            vx: (Math.random() - 0.5) * 0.6, vy: (Math.random() - 0.5) * 0.6,
-            life: 1, decay: 0.035, hue: [165, 280, 35, 200, 340][Math.floor(Math.random() * 5)], size: 1.2 + Math.random()
-          });
-        }
       }
 
-      /* ═══════ PULSE ═══════ */
-      function doPulse() {
-        const hues = [165, 280, 35, 200, 50];
-        for (let i = 0; i < 10; i++) {
-          const a = Math.random() * Math.PI * 2;
-          const spd = 0.8 + Math.random() * 1.5;
-          particles.push({
-            x: CX, y: CY,
-            vx: Math.cos(a) * spd, vy: Math.sin(a) * spd,
-            life: 1, decay: 0.018, hue: hues[i % 5], size: 1.5 + Math.random() * 1.5
-          });
-        }
+      function doPulse() { pulseRings.push({ r: R, a: 0.5 }); }
+
+      function drawRecording() {
+        drawActive();
+
+        const beat = 0.55 + 0.45 * Math.sin(t * 0.16);
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.shadowColor = 'rgba(239,68,68,0.95)';
+        ctx.shadowBlur = 10 + beat * 8;
+        ctx.fillStyle = `rgba(239,68,68,${0.75 + beat * 0.25})`;
+        ctx.beginPath(); ctx.arc(CX, CY, 4.5 + beat * 1.3, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+
+        ctx.save();
+        ctx.strokeStyle = `rgba(239,68,68,${0.28 + beat * 0.25})`;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(CX, CY, R - 5 + beat * 2.5, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
       }
 
       function animate() {
         t++;
-        if (mode === 'active') { drawActive(); } else {
-          drawIdle();
-          if (particles.length > 0) {
-            particles = particles.filter(p => {
-              p.x += p.vx; p.y += p.vy; p.vx *= 0.94; p.vy *= 0.94; p.life -= p.decay;
-              if (p.life <= 0) return false;
-              ctx.save();
-              ctx.globalAlpha = p.life * 0.8;
-              ctx.fillStyle = `hsla(${p.hue}, 85%, 68%, 1)`;
-              ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
-              ctx.restore();
-              return true;
-            });
-          }
-        }
+        if (mode === 'recording') drawRecording();
+        else if (mode === 'active') drawActive();
+        else drawIdle();
         requestAnimationFrame(animate);
       }
 
       window.__orbApi = {
-        activate() { mode = 'active'; },
-        deactivate() { if (mode === 'active') { mode = 'idle'; particles = []; } },
-        pulse() { doPulse(); }
+        activate()   { mode = 'active'; },
+        deactivate() { if (mode === 'active') { mode = 'idle'; pulseRings = []; } },
+        recording(active) { mode = active ? 'recording' : 'idle'; if (!active) pulseRings = []; },
+        pulse()      { doPulse(); }
       };
 
       animate();

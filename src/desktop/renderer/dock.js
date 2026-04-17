@@ -1,8 +1,23 @@
 const dockButton = document.querySelector("#dockButton");
 const clipBadge = document.querySelector("#clipBadge");
 const taskBadge = document.querySelector("#taskBadge");
+const recordingBadge = document.querySelector("#recordingBadge");
 let dragDepth = 0;
 let clipboardReadyTimer = null;
+let noteRecordingActive = false;
+
+function applyNoteRecordingState(payload = {}) {
+  noteRecordingActive = Boolean(payload.active);
+  dockButton.classList.toggle("recording", noteRecordingActive);
+  if (recordingBadge) recordingBadge.textContent = noteRecordingActive ? "REC" : "";
+  dockButton.title = noteRecordingActive
+    ? `UCA · 录音中 ${payload.elapsed ?? ""}`.trim()
+    : "UCA";
+  window.__orbApi?.recording?.(noteRecordingActive);
+}
+
+window.ucaShell.onNoteRecordingState?.(applyNoteRecordingState);
+window.ucaShell.getNoteRecordingState?.().then(applyNoteRecordingState).catch(() => {});
 
 /* ── clipboard change indicator ── */
 window.ucaShell.onClipboardChanged((payload) => {
@@ -27,14 +42,27 @@ function isUserTask(task) {
   return true;
 }
 
+// Adaptive polling: fast while there's an active task (so the orb reflects
+// completion quickly), slow when idle to save CPU/battery. Errors back off
+// even further so the dock doesn't hammer a dead service.
+const POLL_FAST_MS = 1500;
+const POLL_IDLE_MS = 5000;
+const POLL_ERROR_MS = 10000;
+let pollTimer = null;
+let lastHadActive = false;
+let pollLastErrored = false;
+
+function schedulePoll(delay) {
+  if (pollTimer) clearTimeout(pollTimer);
+  pollTimer = setTimeout(pollTaskState, delay);
+}
+
 async function pollTaskState() {
   try {
     const resp = await fetch("http://127.0.0.1:4310/tasks");
     const data = await resp.json();
     const tasks = data.tasks ?? [];
     const twoMinAgo = Date.now() - 2 * 60 * 1000;
-    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-    const todayMs = todayStart.getTime();
 
     const hasActive = tasks.some((t) => {
       if (!isUserTask(t)) return false;
@@ -44,31 +72,27 @@ async function pollTaskState() {
       return Number.isFinite(created) && created > twoMinAgo;
     });
     if (hasActive) {
-      window.__orbApi?.activate();
+      if (!noteRecordingActive) window.__orbApi?.activate();
     } else {
-      window.__orbApi?.deactivate();
+      if (!noteRecordingActive) window.__orbApi?.deactivate();
     }
 
-    // UCA-069: count today's completed user tasks for badge
-    const completedToday = tasks.filter((t) => {
-      if (!isUserTask(t)) return false;
-      if (t.status !== "success" && t.status !== "partial_success") return false;
-      const updatedMs = new Date(t.updated_at ?? t.created_at).getTime();
-      return Number.isFinite(updatedMs) && updatedMs >= todayMs;
-    }).length;
+    // Task completion count badge removed per user request — orb animation
+    // already conveys active/idle state; the number badge was covering other UI.
+    taskBadge.textContent = "";
+    dockButton.classList.remove("has-completed");
+    if (!noteRecordingActive) dockButton.title = "UCA";
 
-    if (completedToday > 0) {
-      taskBadge.textContent = completedToday > 99 ? "99+" : String(completedToday);
-      dockButton.classList.add("has-completed");
-      dockButton.title = `UCA · 今日完成 ${completedToday} 个任务`;
-    } else {
-      taskBadge.textContent = "";
-      dockButton.classList.remove("has-completed");
-      dockButton.title = "UCA";
-    }
-  } catch { /* runtime not ready */ }
+    lastHadActive = hasActive;
+    pollLastErrored = false;
+    schedulePoll(hasActive ? POLL_FAST_MS : POLL_IDLE_MS);
+  } catch {
+    // Runtime not ready — back off so we don't spin the CPU retrying every
+    // 1.5s during startup or service crashes.
+    pollLastErrored = true;
+    schedulePoll(POLL_ERROR_MS);
+  }
 }
-setInterval(pollTaskState, 1500);
 pollTaskState();
 
 /* ── window drag support ── */

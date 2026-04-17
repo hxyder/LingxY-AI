@@ -10,6 +10,17 @@ import {
   parseScheduleTriggerFromText
 } from "./schedule-parser.js";
 
+/* ── Theme sync (mirrors console theme via shared localStorage) ── */
+const THEME_KEY = "uca-console-theme";
+function syncOverlayTheme() {
+  try {
+    const t = localStorage.getItem(THEME_KEY) ?? "default";
+    if (t === "default") document.body.removeAttribute("data-theme");
+    else document.body.setAttribute("data-theme", t);
+  } catch { /* ignore */ }
+}
+syncOverlayTheme();
+
 /* ── DOM refs ── */
 const bubbleArea = document.querySelector("#bubbleArea");
 const commandInput = document.querySelector("#commandInput");
@@ -38,6 +49,16 @@ const voiceStopBtn = document.querySelector("#voiceStopBtn");
 const voiceCancelBtn = document.querySelector("#voiceCancelBtn");
 const voiceStatus = document.querySelector("#voiceStatus");
 const voiceTranscript = document.querySelector("#voiceTranscript");
+const voiceMinimizeBtn = document.querySelector("#voiceMinimizeBtn");
+const tabVoiceBtn = document.querySelector("#tabVoiceBtn");
+const tabNoteBtn = document.querySelector("#tabNoteBtn");
+const noteTimer = document.querySelector("#noteTimer");
+const noteMicTag = document.querySelector("#noteMicTag");
+const noteSysTag = document.querySelector("#noteSysTag");
+const noteTranscriptBox = document.querySelector("#noteTranscriptBox");
+const noteLangSelect = document.querySelector("#noteLang");
+const noteCancelBtn = document.querySelector("#noteCancelBtn");
+const noteFinishBtn = document.querySelector("#noteFinishBtn");
 const settingsBtn = document.querySelector("#settingsBtn");
 const newSessionBtn = document.querySelector("#newSessionBtn");
 const popBubble = document.querySelector("#popBubble");
@@ -62,6 +83,7 @@ let pendingActiveWindowContext = null;
 let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
 let notifiedTaskId = null;
+let notifiedInlineResultTaskId = null;
 let notifiedCompositeTaskId = null;
 let selectedOutputSuffix = "";
 let selectedFormatInstruction = "";
@@ -71,6 +93,10 @@ let activeTaskEventStream = null;
 let activeTaskEventTaskId = null;
 let activeTaskEventBaseUrl = null;
 let handledTaskEventIds = new Set();
+let renderedTimelineEventIds = new Set();
+let streamingBubble = null;
+let streamingBubbleRawText = "";
+let pendingToolStepBubbles = {}; // { toolId: [stepEl, ...] } — updated by tool_call_completed
 let taskSummaries = [];
 let taskListFilter = "all";
 let lastTaskSummaryRefresh = 0;
@@ -88,6 +114,7 @@ function escapeHtml(value) {
 /* ── conversational state ── */
 let conversationPhase = "idle"; // idle | awaiting_options | running | done
 let awaitingOptionType = null;  // "action" | "format" | null
+let runningPhaseStart = 0;      // timestamp when phase entered "running"
 
 /* ── conversation state (unified memory) ──
  * A single ongoing conversation with:
@@ -119,6 +146,31 @@ let projectStore = null;
 let conversationState = null;
 let projectStoreRemoteReady = false;
 let projectStoreSyncInFlight = null;
+// "unknown" before first attempt, then "online" or "offline". Used to notify
+// the user exactly once when we transition into an offline state (don't spam
+// a toast on every fire-and-forget persist call).
+let projectSyncIndicatorState = "unknown";
+
+function updateProjectSyncIndicator(success) {
+  const prev = projectSyncIndicatorState;
+  const next = success ? "online" : "offline";
+  projectSyncIndicatorState = next;
+  const btn = document.querySelector("#projectSelectorBtn");
+  if (btn) {
+    btn.classList.toggle("sync-offline", !success);
+    btn.title = success
+      ? "切换项目 / 查看历史会话"
+      : "切换项目 / 查看历史会话（本地改动未同步到服务端，点击重试）";
+  }
+  if (!success && prev !== "offline") {
+    // First transition into offline — let the user know their changes are
+    // local-only. Subsequent failures stay silent until we recover and fail
+    // again.
+    try {
+      addSystemBubble("项目/会话同步到服务端失败，本地仍会保留。恢复连接后点击「项目」按钮可重新同步。");
+    } catch { /* addSystemBubble not yet initialized on early calls */ }
+  }
+}
 
 function newConversationId() {
   return `conv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -208,8 +260,10 @@ async function syncProjectStoreFromService({ render = false } = {}) {
         renderProjectPanel();
         if (conversationState?.turns?.length) renderConversationState();
       }
+      updateProjectSyncIndicator(true);
     } catch {
       projectStoreRemoteReady = false;
+      updateProjectSyncIndicator(false);
     } finally {
       projectStoreSyncInFlight = null;
     }
@@ -225,8 +279,10 @@ function persistProjectStoreToService() {
     body: JSON.stringify({ store: projectStore })
   }).then(() => {
     projectStoreRemoteReady = true;
+    updateProjectSyncIndicator(true);
   }).catch(() => {
     projectStoreRemoteReady = false;
+    updateProjectSyncIndicator(false);
   });
 }
 
@@ -288,7 +344,7 @@ function switchConversation(convId) {
   projectStore.currentProjectId = conv.projectId;
   saveProjectStore();
   closeActiveTaskEventStream();
-  activeTaskId = null; lastTask = null; notifiedTaskId = null;
+  activeTaskId = null; lastTask = null; notifiedTaskId = null; notifiedInlineResultTaskId = null;
   lastArtifactPath = null; lastArtifactPreview = ""; lastArtifacts = [];
   renderConversationState();
 }
@@ -395,7 +451,7 @@ function renderConversationFromState() {
 
 function startNewConversation() {
   closeActiveTaskEventStream();
-  activeTaskId = null; lastTask = null; notifiedTaskId = null;
+  activeTaskId = null; lastTask = null; notifiedTaskId = null; notifiedInlineResultTaskId = null;
   lastArtifactPath = null; autoOpenedArtifactTaskId = null;
   lastArtifactPreview = ""; lastArtifacts = [];
   selectedOutputSuffix = ""; selectedFormatInstruction = "";
@@ -458,10 +514,29 @@ function renderMarkdown(text) {
     .replace(/\n/g, "<br>");
 }
 
+function hideEmptyState() {
+  const el = document.getElementById("emptyState");
+  if (el && el.getAttribute("aria-hidden") !== "true") {
+    el.setAttribute("aria-hidden", "true");
+  }
+}
+
+function showEmptyState() {
+  const el = document.getElementById("emptyState");
+  if (el) el.setAttribute("aria-hidden", "false");
+}
+
 function addBubble(role, content, options) {
   bubbleArea.hidden = false;
+  hideEmptyState();
   const bubble = document.createElement("div");
   bubble.className = `bubble ${role}`;
+  // Screen readers get a clear prefix per bubble role. The aria-live region
+  // on the parent handles announcement; we just label the origin.
+  const roleLabels = { user: "你", assistant: "助手", system: "系统提示", step: "任务进展" };
+  if (roleLabels[role]) {
+    bubble.setAttribute("aria-label", `${roleLabels[role]}：`);
+  }
 
   if (typeof content === "string") {
     if (role === "assistant") {
@@ -525,7 +600,45 @@ function addBubble(role, content, options) {
 
   bubbleArea.appendChild(bubble);
   bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  trimBubbleOverflow();
   return bubble;
+}
+
+// Long sessions can accumulate hundreds of bubbles, bloating DOM + memory. Cap
+// at BUBBLE_SOFT_CAP; when exceeded, drop the oldest bubbles but never prune
+// the currently active timeline or streaming bubble (those hold live refs).
+const BUBBLE_SOFT_CAP = 120;
+const BUBBLE_TRIM_TO = 80;
+let bubbleOverflowNoticeShown = false;
+function trimBubbleOverflow() {
+  if (!bubbleArea) return;
+  const children = bubbleArea.children;
+  if (children.length <= BUBBLE_SOFT_CAP) return;
+
+  let removed = 0;
+  const toRemove = children.length - BUBBLE_TRIM_TO;
+  // Walk from the start and remove, skipping live-referenced bubbles.
+  let i = 0;
+  while (removed < toRemove && i < children.length) {
+    const node = children[i];
+    if (node === timelineBubble || node === streamingBubble) {
+      i += 1;
+      continue;
+    }
+    node.remove();
+    removed += 1;
+    // don't advance i — children shifted left
+  }
+
+  if (removed > 0 && !bubbleOverflowNoticeShown) {
+    bubbleOverflowNoticeShown = true;
+    // One-time, non-intrusive notice injected at the very top.
+    const notice = document.createElement("div");
+    notice.className = "bubble system";
+    notice.style.cssText = "opacity:0.7;font-size:11px;text-align:center;";
+    notice.textContent = "…较早的消息已隐藏以保持性能（完整历史仍保存在会话里）";
+    bubbleArea.insertBefore(notice, bubbleArea.firstChild);
+  }
 }
 
 function addSystemBubble(text) {
@@ -535,6 +648,160 @@ function addSystemBubble(text) {
 function clearBubbles() {
   bubbleArea.innerHTML = "";
   bubbleArea.hidden = true;
+  showEmptyState();
+  // timeline bubble lives inside bubbleArea, so innerHTML="" already removed it;
+  // just clear the JS references
+  timelineBubble = null;
+  timelineBodyEl = null;
+  pendingToolStepBubbles = {};
+  renderedTimelineEventIds = new Set();
+  timelineLabelEl = null;
+  timelineSpinnerEl = null;
+  timelineStepCount = 0;
+  bubbleOverflowNoticeShown = false;
+}
+
+/* ═══════════════════════════════════════════════
+   EXECUTION TIMELINE  (inline bubble inside bubbleArea)
+   ═══════════════════════════════════════════════ */
+
+let timelineBubble = null;
+let timelineBodyEl = null;
+let timelineLabelEl = null;
+let timelineSpinnerEl = null;
+let timelineStepCount = 0;
+
+function timelineEnsure() {
+  if (timelineBubble) return;
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble system";
+  bubble.style.cssText = "padding:0;overflow:hidden;";
+
+  // ── header row ──
+  const header = document.createElement("div");
+  header.style.cssText = [
+    "display:flex;align-items:center;gap:6px;padding:7px 10px;",
+    "cursor:pointer;user-select:none;font-size:11px;",
+    "color:var(--muted,rgba(0,0,0,0.45));letter-spacing:0.01em;"
+  ].join("");
+
+  const toggleIcon = document.createElement("span");
+  toggleIcon.style.cssText = "font-size:9px;transition:transform 0.18s;transform:rotate(90deg);";
+  toggleIcon.textContent = "▶";
+
+  const spinnerEl = document.createElement("span");
+  spinnerEl.className = "tl-particles";
+  for (let i = 0; i < 6; i++) {
+    const dot = document.createElement("span");
+    dot.className = "p";
+    spinnerEl.appendChild(dot);
+  }
+
+  const labelEl = document.createElement("span");
+  labelEl.textContent = "执行中…";
+
+  header.append(toggleIcon, spinnerEl, labelEl);
+
+  // ── step body ──
+  const bodyEl = document.createElement("div");
+  bodyEl.style.cssText = [
+    "max-height:160px;overflow-y:auto;",
+    "padding:2px 10px 8px 10px;",
+    "display:flex;flex-direction:column;gap:2px;"
+  ].join("");
+
+  // toggle open/close on header click
+  let tlOpen = true;
+  header.addEventListener("click", () => {
+    tlOpen = !tlOpen;
+    bodyEl.style.display = tlOpen ? "" : "none";
+    toggleIcon.style.transform = tlOpen ? "rotate(90deg)" : "";
+  });
+
+  bubble.append(header, bodyEl);
+  bubbleArea.appendChild(bubble);
+  bubbleArea.hidden = false;
+  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+
+  timelineBubble = bubble;
+  timelineBodyEl = bodyEl;
+  timelineLabelEl = labelEl;
+  timelineSpinnerEl = spinnerEl;
+}
+
+function timelineDone(summaryText) {
+  if (!timelineBubble) return;
+  if (timelineSpinnerEl) timelineSpinnerEl.style.display = "none";
+  if (timelineLabelEl) timelineLabelEl.textContent = summaryText ?? "已完成";
+}
+
+function timelineAddStep(text, kind = "active") {
+  timelineEnsure();
+  timelineStepCount += 1;
+
+  const colorMap = {
+    done: "rgba(40,160,60,0.85)",
+    fail: "rgba(200,50,40,0.85)",
+    active: "rgba(60,100,220,0.8)"
+  };
+  const row = document.createElement("div");
+  row.style.cssText = [
+    "display:flex;align-items:flex-start;gap:6px;",
+    "padding:2px 0;font-size:11px;line-height:1.4;",
+    `color:${colorMap[kind] ?? colorMap.active};`
+  ].join("");
+
+  const icon = document.createElement("span");
+  icon.style.cssText = "flex-shrink:0;width:14px;text-align:center;";
+  icon.textContent = kind === "done" ? "✓" : kind === "fail" ? "✗" : "▸";
+
+  const label = document.createElement("span");
+  label.style.cssText = "flex:1;word-break:break-word;";
+  label.textContent = text;
+
+  row.append(icon, label);
+  timelineBodyEl.appendChild(row);
+  timelineBodyEl.scrollTop = timelineBodyEl.scrollHeight;
+  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+}
+
+function getToolEventId(frame) {
+  return frame.data?.tool_id ?? frame.data?.tool ?? "";
+}
+
+function appendToolStepBubble(toolId, state = "pending", detailText = "") {
+  if (!toolId) return null;
+  const stepEl = document.createElement("div");
+  stepEl.className = `bubble step ${state}`;
+  stepEl.textContent = state === "pending" ? `${toolId}...` : toolId;
+  if (detailText) {
+    const detail = document.createElement("span");
+    detail.style.cssText = "display:block;font-size:10px;opacity:0.65;margin-top:2px;white-space:pre-wrap;";
+    detail.textContent = detailText;
+    stepEl.appendChild(detail);
+  }
+  bubbleArea.hidden = false;
+  bubbleArea.appendChild(stepEl);
+  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  return stepEl;
+}
+
+function markToolStepBubble(toolId, ok, observation = "") {
+  if (!toolId) return;
+  const queue = pendingToolStepBubbles[toolId];
+  const stepEl = queue?.length ? queue.shift() : appendToolStepBubble(toolId, ok ? "done" : "fail");
+  if (!stepEl) return;
+  stepEl.className = `bubble step ${ok ? "done" : "fail"}`;
+  stepEl.textContent = `${ok ? "✓" : "✗"} ${toolId}`;
+  const obs = String(observation ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
+  if (obs) {
+    const detail = document.createElement("span");
+    detail.style.cssText = "display:block;font-size:10px;opacity:0.65;margin-top:2px;white-space:pre-wrap;";
+    detail.textContent = obs;
+    stepEl.appendChild(detail);
+  }
+  bubbleArea.scrollTop = bubbleArea.scrollHeight;
 }
 
 // UCA-059: Show a clarification question bubble.
@@ -578,10 +845,12 @@ function showClarificationBubble(originalCommand, question, originalPayload) {
       if (result.task?.task_id) {
         activeTaskId = result.task.task_id;
         lastTask = result.task;
+        notifiedTaskId = null;
+        notifiedInlineResultTaskId = null;
         ensureActiveTaskEventStream(activeTaskId);
         clearPendingInputContext();
         addBubble("assistant", "Processing in background...");
-        conversationPhase = "running";
+        conversationPhase = "running"; runningPhaseStart = Date.now();
       }
     } catch (err) {
       addSystemBubble(`提交失败：${err.message}`);
@@ -712,10 +981,11 @@ function offerOutputFormat() {
 let toastAutoHideTimer = null;
 
 function showToast(title, body, artifactPath) {
+  lastArtifactPath = artifactPath ?? null;
+  if (popKeptOpen) return; // user has the overlay open and sees the conversation bubble already
   toastTitle.textContent = title;
   toastBody.textContent = body;
   resultToast.classList.add("visible");
-  lastArtifactPath = artifactPath ?? null;
 
   clearTimeout(toastAutoHideTimer);
   toastAutoHideTimer = setTimeout(hideToast, 8000);
@@ -775,6 +1045,87 @@ function closeActiveTaskEventStream() {
   activeTaskEventTaskId = null;
   activeTaskEventBaseUrl = null;
   handledTaskEventIds = new Set();
+  renderedTimelineEventIds = new Set();
+  streamingBubble = null;
+  streamingBubbleRawText = "";
+}
+
+function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
+  if (frame.id && renderedTimelineEventIds.has(frame.id)) return;
+  const visibleEvents = new Set([
+    "accepted",
+    "started",
+    "provider_resolved",
+    "status_changed",
+    "step_started",
+    "step_finished",
+    "conversation_step",
+    "tool_call_started",
+    "tool_call_proposed",
+    "tool_call_completed",
+    "tool_call_denied",
+    "log",
+    "artifact_created",
+    "failed",
+    "cancelled"
+  ]);
+  if (!visibleEvents.has(frame.event)) return;
+  if (frame.id) renderedTimelineEventIds.add(frame.id);
+  const summary = formatTaskEventSummary(frame);
+
+  if (frame.event === "step_started") {
+    const stepText = summary.body || frame.data?.step_label || "步骤开始";
+    timelineAddStep(stepText, "active");
+  }
+  if (frame.event === "step_finished") {
+    const stepText = summary.body || frame.data?.step_label || "步骤完成";
+    timelineAddStep(stepText, "done");
+  }
+
+  // UCA-061: Real-time step labels forwarded from task-runtime.mjs
+  if (frame.event === "conversation_step") {
+    const label = frame.data?.step_label ?? "";
+    if (label) timelineAddStep(label, "active");
+  }
+
+  if (["accepted", "started", "provider_resolved", "status_changed", "log", "artifact_created"].includes(frame.event)) {
+    timelineAddStep(`${summary.title}: ${summary.body}`, frame.event === "artifact_created" ? "done" : "active");
+  }
+
+  // UCA-061: Tool call events shown in timeline AND as step bubbles in conversation
+  if (frame.event === "tool_call_started" || frame.event === "tool_call_proposed") {
+    const toolId = getToolEventId(frame);
+    if (toolId) {
+      timelineAddStep(`调用 ${toolId}…`, "active");
+      if (showOverlay) window.ucaShell.showWindow("overlay");
+      const stepEl = appendToolStepBubble(toolId, "pending");
+      if (!pendingToolStepBubbles[toolId]) pendingToolStepBubbles[toolId] = [];
+      pendingToolStepBubbles[toolId].push(stepEl);
+    }
+  }
+  if (frame.event === "tool_call_completed") {
+    const toolId = getToolEventId(frame);
+    const ok = frame.data?.success !== false;
+    if (toolId) {
+      timelineAddStep(`${toolId}`, ok ? "done" : "fail");
+      markToolStepBubble(toolId, ok, frame.data?.observation ?? "");
+    }
+  }
+
+  if (frame.event === "tool_call_denied") {
+    const toolId = getToolEventId(frame);
+    timelineAddStep(toolId ? `${toolId} 已拦截` : summary.body, "fail");
+  }
+
+  if (frame.event === "failed" || frame.event === "cancelled") {
+    timelineAddStep(summary.body, "fail");
+  }
+}
+
+function replayTaskTimelineEvents(events = []) {
+  for (const event of events) {
+    renderTaskTimelineEvent(toTaskEventFrame(event), { showOverlay: false });
+  }
 }
 
 async function handleTaskEventFrame(rawEvent) {
@@ -788,33 +1139,45 @@ async function handleTaskEventFrame(rawEvent) {
     lastTask = applyTaskEventPatch(lastTask, frame);
   }
 
-  if (frame.event === "step_started" || frame.event === "step_finished") {
-    addSystemBubble(summary.body);
-  }
+  renderTaskTimelineEvent(frame, { showOverlay: true });
 
-  // UCA-061: Real-time step labels forwarded from task-runtime.mjs
-  if (frame.event === "conversation_step") {
-    const label = frame.data?.step_label ?? "";
-    if (label) addSystemBubble(label);
-  }
-
-  // UCA-061: Tool call events for inline step transparency
-  if (frame.event === "tool_call_proposed") {
-    const toolId = frame.data?.tool_id ?? frame.data?.tool ?? "";
-    if (toolId) addSystemBubble(`▸ 调用 ${toolId}…`);
-  }
-  if (frame.event === "tool_call_completed") {
-    const toolId = frame.data?.tool_id ?? frame.data?.tool ?? "";
-    const ok = frame.data?.success !== false;
-    if (toolId) addSystemBubble(`${ok ? "✓" : "✗"} ${toolId}`);
+  if (frame.event === "text_delta") {
+    const delta = frame.data?.delta ?? frame.data?.text ?? "";
+    if (!delta) return;
+    if (!streamingBubble) {
+      streamingBubble = document.createElement("div");
+      streamingBubble.className = "bubble assistant streaming";
+      bubbleArea.hidden = false;
+      bubbleArea.appendChild(streamingBubble);
+      streamingBubbleRawText = "";
+      window.ucaShell.showWindow("overlay");
+      markUserEngaged(); // lock overlay open for the duration of streaming
+    }
+    streamingBubbleRawText += delta;
+    streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
+    bubbleArea.scrollTop = bubbleArea.scrollHeight;
+    return;
   }
 
   if (frame.event === "inline_result") {
-    const text = frame.data?.text ?? frame.payload?.text ?? summary.body ?? "";
-    if (text) {
-      addBubble("assistant", text);
+    const text = frame.data?.text ?? summary.body ?? "";
+    const trimmedText = text.trim();
+    const isPlannerPlaceholder = trimmedText === "(no response from agentic planner)";
+    if (text && !isPlannerPlaceholder) {
+      if (streamingBubble) {
+        // finalize the streaming bubble with fully rendered markdown
+        streamingBubble.classList.remove("streaming");
+        streamingBubble.innerHTML = renderMarkdown(text);
+        streamingBubble = null;
+        streamingBubbleRawText = "";
+      } else {
+        addBubble("assistant", text);
+      }
+      appendTurn("assistant", text);
       lastArtifactPreview = text;
-      notifiedTaskId = activeTaskId; // Bug-A fix: prevent refreshActiveTask from adding duplicate bubble
+      if (lastTask?.task_spec?.artifact?.required === false) {
+        notifiedInlineResultTaskId = activeTaskId; // conversational task: prevent duplicate final text bubble
+      }
       // show the overlay so user sees the reply
       window.ucaShell.showWindow("overlay");
     }
@@ -854,6 +1217,11 @@ async function handleTaskEventFrame(rawEvent) {
   }
 
   if (["success", "partial_success", "failed", "cancelled"].includes(frame.event)) {
+    const doneLabel = frame.event === "success" ? "已完成"
+      : frame.event === "partial_success" ? "部分完成"
+        : frame.event === "failed" ? "执行失败"
+          : "已取消";
+    timelineDone(doneLabel);
     await refreshActiveTask();
   }
 }
@@ -867,7 +1235,15 @@ function ensureActiveTaskEventStream(taskId) {
   activeTaskEventBaseUrl = serviceBaseUrl;
   activeTaskEventStream = subscribeTaskEvents(serviceBaseUrl, taskId, {
     onEvent(event) { void handleTaskEventFrame(event); },
-    onError(error) { addSystemBubble(`Connection lost: ${error.message}`); }
+    onError() {
+      // Connection dropped — clear reference so the next refreshActiveTask()
+      // call will reconnect, and trigger an immediate REST poll to catch any
+      // completion events we missed while disconnected.
+      if (activeTaskEventTaskId === taskId) {
+        activeTaskEventStream = null;
+      }
+      void refreshActiveTask();
+    }
   });
 }
 
@@ -882,6 +1258,45 @@ function clearPendingInputContext() {
   pendingFileSelection = null;
   pendingCapture = null;
   pendingActiveWindowContext = null;
+}
+
+function isRetryCommand(text = "") {
+  return /^(重试一次|再试一次|重新试一次|重新生成|retry|try again|rerun)$/i.test(text.trim());
+}
+
+async function retryActiveTaskFromOverlay() {
+  const taskId = lastTask?.task_id ?? activeTaskId;
+  if (!taskId) {
+    addSystemBubble("没有可重试的任务。");
+    return false;
+  }
+
+  addSystemBubble("Retrying previous task...");
+  try {
+    const result = await fetchJson(`/task/${encodeURIComponent(taskId)}/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "retry_same" })
+    });
+    if (result.task?.task_id) {
+      activeTaskId = result.task.task_id;
+      lastTask = result.task;
+      notifiedTaskId = null;
+      notifiedInlineResultTaskId = null;
+      lastArtifactPreview = "";
+      ensureActiveTaskEventStream(activeTaskId);
+      clearPendingInputContext();
+      addBubble("assistant", "Processing in background...");
+      conversationPhase = "running"; runningPhaseStart = Date.now();
+      return true;
+    }
+    addSystemBubble("重试接口没有返回任务。");
+    return false;
+  } catch (error) {
+    addBubble("assistant", `Retry failed: ${error.message}`);
+    conversationPhase = "idle";
+    return false;
+  }
 }
 
 async function refreshTaskSummaries(force = false) {
@@ -903,6 +1318,50 @@ function taskIsActive(status) {
 
 function taskIsDone(status) {
   return ["success", "partial_success", "failed", "cancelled"].includes(status);
+}
+
+function isUserVisibleTask(task) {
+  if (!task) return false;
+  if (task.source_app === "uca.scheduler" || task.capture_mode === "scheduler") return false;
+  return true;
+}
+
+function sortTasksNewestFirst(tasks = []) {
+  return [...tasks].sort((left, right) =>
+    `${right.updated_at ?? right.created_at ?? ""}`.localeCompare(`${left.updated_at ?? left.created_at ?? ""}`)
+  );
+}
+
+function findLatestOverlayTask(tasks = taskSummaries) {
+  const visible = sortTasksNewestFirst(tasks)
+    .filter((task) => isUserVisibleTask(task) && !task.parent_task_id);
+  return visible.find((task) => taskIsActive(task.status))
+    ?? visible.find((task) => {
+      const updatedAt = new Date(task.updated_at ?? task.created_at ?? 0).getTime();
+      return Number.isFinite(updatedAt) && Date.now() - updatedAt < 15 * 60_000;
+    })
+    ?? null;
+}
+
+async function attachLatestActiveTaskToOverlay() {
+  const tasks = await refreshTaskSummaries(true);
+  const current = tasks.find((task) => task.task_id === activeTaskId);
+  if (current && isUserVisibleTask(current) && taskIsActive(current.status)) return false;
+  const latest = findLatestOverlayTask(tasks);
+  // Only auto-attach tasks that are still running. Re-attaching terminal
+  // (failed/success/cancelled) tasks on every window focus was replaying
+  // stale failure timelines into freshly-opened overlays, making users
+  // think the old failure was a new one.
+  if (!latest?.task_id || latest.task_id === activeTaskId) return false;
+  if (!taskIsActive(latest.status)) return false;
+  activeTaskId = latest.task_id;
+  lastTask = latest;
+  notifiedTaskId = null;
+  notifiedInlineResultTaskId = null;
+  pendingToolStepBubbles = {};
+  ensureActiveTaskEventStream(activeTaskId);
+  await refreshActiveTask();
+  return true;
 }
 
 function renderCompositeBreadcrumb({ parentTask, currentTask, childIndex }) {
@@ -1148,6 +1607,7 @@ async function refreshActiveTask() {
     await refreshTaskSummaries();
     ensureCompositeHeader(task);
     renderTaskListDock();
+    replayTaskTimelineEvents(payload.events ?? []);
 
     const childIds = Array.isArray(task.child_task_ids) ? task.child_task_ids : [];
     if (childIds.length > 0 && notifiedCompositeTaskId !== task.task_id) {
@@ -1167,8 +1627,8 @@ async function refreshActiveTask() {
       let previewText = "";
       if (isPreviewableArtifactPath(previewPath)) {
         try {
-          const rawText = await window.ucaShell.readTextFile(previewPath, 2400);
-          previewText = normalisePreviewText(rawText).slice(0, 600);
+          const rawText = await window.ucaShell.readTextFile(previewPath, 4000);
+          previewText = normalisePreviewText(rawText).slice(0, 1200);
           lastArtifactPreview = previewText;
         } catch { /* ignore */ }
       }
@@ -1177,12 +1637,19 @@ async function refreshActiveTask() {
         notifiedTaskId = task.task_id;
         const resultLabel = formatArtifactLabel(previewPath);
         const filename = previewPath.split(/[\\/]/).pop() || previewPath;
+        const isAudioNoteTask = task.context_packet?.source_type === "audio_note"
+          || task.context_packet?.source_app === "uca.note";
         // Record in conversation memory so later follow-ups can reference
         // "the file you generated" without the LLM losing the thread.
         const memorySnippet = previewText
           ? `生成了文件 ${filename}\n\n${previewText.slice(0, 600)}`
           : `生成了文件 ${filename}`;
         appendTurn("assistant", memorySnippet);
+        await window.ucaShell.showWindow("overlay");
+        markUserEngaged();
+        if (isAudioNoteTask && previewText) {
+          addBubble("assistant", `录音笔记整理好了：\n\n${previewText.slice(0, 1200)}`);
+        }
         // UCA-049: surface which provider actually ran this task + warn if
         // the planner had to downgrade an unsupported "已完成" claim.
         try {
@@ -1201,12 +1668,14 @@ async function refreshActiveTask() {
         // UCA-068: show file-type icon badge for binary/non-previewable files
         const ext = filename.split(".").pop()?.toLowerCase() ?? "";
         const fileIcon = { pptx: "📊", docx: "📝", xlsx: "📈", pdf: "📄", zip: "📦" }[ext] ?? "📎";
-        headline.textContent = `${isPreviewableArtifactPath(previewPath) ? "✅" : fileIcon} Done! 生成了文件 ${filename}`;
+        headline.textContent = isAudioNoteTask
+          ? `${isPreviewableArtifactPath(previewPath) ? "✅" : fileIcon} 已生成录音笔记 ${filename}`
+          : `${isPreviewableArtifactPath(previewPath) ? "✅" : fileIcon} Done! 生成了文件 ${filename}`;
         bubbleEl.appendChild(headline);
         if (previewText) {
           const sub = document.createElement("div");
-          sub.style.cssText = "margin-top:6px;font-size:12px;color:var(--muted);max-height:120px;overflow:auto;white-space:pre-wrap;";
-          sub.textContent = previewText.slice(0, 400);
+          sub.style.cssText = "margin-top:6px;font-size:12px;color:var(--muted);max-height:300px;overflow:auto;white-space:pre-wrap;";
+          sub.textContent = previewText.slice(0, 1200);
           bubbleEl.appendChild(sub);
         }
         addBubble("assistant", bubbleEl, {
@@ -1216,16 +1685,6 @@ async function refreshActiveTask() {
                 if (err) addSystemBubble(`无法打开文件：${err}`);
               } },
             { label: "打开文件夹", onClick: () => window.ucaShell.showItemInFolder(previewPath) },
-            ...(isPreviewableArtifactPath(previewPath)
-              ? [{ label: "预览", onClick: async () => {
-                  try {
-                    const raw = await window.ucaShell.readTextFile(previewPath, 6000);
-                    addBubble("assistant", normalisePreviewText(raw).slice(0, 1500) || "(empty)");
-                  } catch (err) {
-                    addSystemBubble(`Cannot preview: ${err.message}`);
-                  }
-                } }]
-              : []),
             { label: "复制路径", onClick: () => window.ucaShell.writeClipboardText(previewPath) }
           ]
         });
@@ -1240,7 +1699,7 @@ async function refreshActiveTask() {
         }
 
         await window.ucaShell.notify({
-          title: "UCA task complete",
+          title: isAudioNoteTask ? "录音笔记已完成" : "UCA task complete",
           body: filename
         });
       }
@@ -1249,7 +1708,7 @@ async function refreshActiveTask() {
       // button or the artifact in the Console Files tab.
     } else if (task.status === "success" && !task.artifacts?.length) {
       // conversational mode — no artifacts
-      if (notifiedTaskId !== task.task_id) {
+      if (notifiedTaskId !== task.task_id && notifiedInlineResultTaskId !== task.task_id) {
         notifiedTaskId = task.task_id;
 
         // try to find inline result from task events
@@ -1278,10 +1737,21 @@ async function refreshActiveTask() {
         if (finalText && finalText !== "已完成。") {
           appendTurn("assistant", finalText);
         }
-        if (popKeptOpen) {
-          addBubble("assistant", finalText);
+        // If the SSE connection dropped and left a partial streaming bubble,
+        // finalise it with the full text instead of adding a duplicate bubble.
+        if (streamingBubble) {
+          streamingBubble.classList.remove("streaming");
+          streamingBubble.innerHTML = renderMarkdown(finalText);
+          streamingBubble = null;
+          streamingBubbleRawText = "";
         } else {
-          // Apple-style: show pop bubble, auto-hide after 3s unless user clicks
+          addBubble("assistant", finalText);
+          await window.ucaShell.showWindow("overlay");
+          markUserEngaged();
+        }
+        if (!popKeptOpen) {
+          // Apple-style: show a transient pop bubble too, but keep the reply
+          // in the conversation so reopening the overlay doesn't lose it.
           showPopBubble({
             label: task.intent ?? "UCA",
             body: finalText,
@@ -1309,7 +1779,12 @@ async function refreshActiveTask() {
       conversationPhase = "idle";
     }
   } catch (error) {
-    addSystemBubble(`Refresh failed: ${error.message}`);
+    // If the task fetch fails (service restart, network) and we've been stuck
+    // in "running" for more than 90s, quietly reset so the user can try again.
+    if (conversationPhase === "running" && Date.now() - runningPhaseStart > 90_000) {
+      conversationPhase = "idle";
+      addSystemBubble("服务连接中断，任务状态未知。你可以重新提交指令。");
+    }
   }
 }
 
@@ -1319,6 +1794,21 @@ async function refreshActiveTask() {
 
 async function submitTask() {
   const rawCommand = commandInput.value.trim();
+
+  // Block new submissions while a task is actively running — prevents
+  // accidental double-submission when the SSE connection drops and the user
+  // doesn't see the result yet. The 2s refreshActiveTask poll resets the
+  // phase to "idle" once the task reaches a terminal state.
+  // Safety escape: if stuck >90s (service died / task hung), allow retrying.
+  if (conversationPhase === "running") {
+    const stuckMs = Date.now() - runningPhaseStart;
+    if (stuckMs < 90_000) {
+      addSystemBubble("上一个任务仍在运行中，请稍候…");
+      return;
+    }
+    // Treat as stale — fall through and submit new task
+    conversationPhase = "idle";
+  }
 
   // UCA-060: Strict separation of user instruction vs captured context.
   // A captured active-window context is BACKGROUND information, NOT the query.
@@ -1459,6 +1949,9 @@ async function submitTask() {
 
     activeTaskId = result.task.task_id;
     lastTask = result.task;
+    notifiedTaskId = null;
+    notifiedInlineResultTaskId = null;
+    lastArtifactPreview = "";
     ensureActiveTaskEventStream(activeTaskId);
     clearPendingInputContext();
 
@@ -1469,7 +1962,7 @@ async function submitTask() {
       body: "Task submitted. You'll be notified when it's done."
     });
 
-    conversationPhase = "running";
+    conversationPhase = "running"; runningPhaseStart = Date.now();
 
     // only auto-hide if the user explicitly requested file output
     if (selectedFormatInstruction) {
@@ -1582,13 +2075,6 @@ function compactBrowserContextText(value = "", maxLength = 4000) {
   return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
 }
 
-function timeoutWithFallback(promise, ms, fallbackValue = null) {
-  return Promise.race([
-    Promise.resolve(promise).catch(() => fallbackValue),
-    new Promise((resolve) => setTimeout(() => resolve(fallbackValue), ms))
-  ]);
-}
-
 async function fetchRecentBrowserContextForActiveWindow(activeWindow = null) {
   if (!isActiveBrowserWindow(activeWindow)) return null;
   const params = new URLSearchParams();
@@ -1656,7 +2142,16 @@ async function resolveActiveWindowBrowserCapture() {
 }
 
 function applyShellHandoff(payload) {
+  if (payload?.error) {
+    addSystemBubble(payload.error);
+    commandInput.focus();
+    return;
+  }
+
   if (payload?.file_paths?.length) {
+    if (payload.capture_mode === "hotkey_capture" || payload.captureMode === "hotkey_capture") {
+      startNewConversation();
+    }
     pendingCapture = null;
     pendingFileSelection = {
       sourceApp: payload.source_app ?? "explorer.exe",
@@ -1675,12 +2170,20 @@ function applyShellHandoff(payload) {
   // no clipboard text or file selection — render the preview card so the
   // user can click "分析此页面 / 总结 / ..." without typing anything.
   if (payload?.active_window && !payload.capture && !payload.file_paths?.length) {
+    // For hotkey captures, always start a fresh conversation so the user
+    // doesn't see stale bubbles from a previous session.
+    if (payload.capture_mode === "hotkey_capture") {
+      startNewConversation();
+    }
     showActiveWindowPreviewCard(payload.active_window);
     commandInput.focus();
     return;
   }
 
   if (payload?.capture) {
+    if (payload.capture_mode === "hotkey_capture" || payload.captureMode === "hotkey_capture") {
+      startNewConversation();
+    }
     pendingFileSelection = null;
     pendingCapture = {
       sourceApp: payload.capture.browser ?? payload.source_app ?? "chrome.exe",
@@ -1778,6 +2281,21 @@ function autoSizeInput() {
    EVENT BINDINGS
    ═══════════════════════════════════════════════ */
 
+// Empty-state suggestion chips — tapping one pre-fills the input so the user
+// can tweak or just press Enter.
+for (const chip of document.querySelectorAll(".empty-chip[data-empty-prompt]")) {
+  chip.addEventListener("click", () => {
+    const prompt = chip.getAttribute("data-empty-prompt") ?? "";
+    if (!prompt) return;
+    commandInput.value = prompt;
+    autoSizeInput();
+    commandInput.focus();
+    // Move caret to end for easy editing
+    const len = commandInput.value.length;
+    commandInput.setSelectionRange(len, len);
+  });
+}
+
 commandInput.addEventListener("input", autoSizeInput);
 
 commandInput.addEventListener("keydown", (e) => {
@@ -1856,6 +2374,12 @@ function renderProjectPanel() {
 }
 
 projectSelectorBtn?.addEventListener("click", () => {
+  // If we're offline, clicking the projects button retries sync. The user can
+  // still open the panel (local store is always usable) but the retry fires
+  // alongside panel open so the red dot clears when service is reachable.
+  if (projectSyncIndicatorState === "offline") {
+    void syncProjectStoreFromService({ render: true });
+  }
   if (isPanelOpen(projectPanel)) {
     setPanelOpen(projectPanel, false);
   } else {
@@ -2024,18 +2548,57 @@ let voiceMode = false;
 let popHideTimer = null;
 let popKeptOpen = false; // user clicked input → keep overlay until they explicitly close
 
-function enterVoiceMode() {
+function setVoiceCardMode(mode = "voice") {
+  voiceCard?.setAttribute("data-mode", mode);
+  tabVoiceBtn?.classList.toggle("active", mode === "voice");
+  tabNoteBtn?.classList.toggle("active", mode === "note");
+}
+
+function showNotePanel() {
   voiceMode = true;
   document.body.classList.add("voice-mode");
+  setVoiceCardMode("note");
+  voiceCard?.classList.remove("idle", "error");
+  cancelPopHide();
+}
+
+function enterVoiceMode() {
+  if (noteActive) {
+    showNotePanel();
+    return;
+  }
+  voiceMode = true;
+  document.body.classList.add("voice-mode");
+  setVoiceCardMode("voice");
   voiceCard?.classList.add("idle");
   voiceCard?.classList.remove("error");
-  if (voiceTranscript) voiceTranscript.textContent = "\u00a0";
+  if (voiceTranscript) {
+    voiceTranscript.textContent = "\u00a0";
+    voiceTranscript.scrollTop = 0;
+  }
+  const speechSupported = !!getSpeechRecognitionCtor();
+  if (!speechSupported) {
+    if (voiceStatus) voiceStatus.textContent = "当前环境不支持语音输入（Web Speech API 不可用）。请改用键盘输入，或切换到「录音笔记」。";
+    if (voiceStartBtn) voiceStartBtn.disabled = true;
+    if (voiceStopBtn) voiceStopBtn.disabled = true;
+    voiceCard?.classList.remove("idle");
+    voiceCard?.classList.add("error");
+  } else {
+    if (voiceStatus) voiceStatus.textContent = "点击「开始」后说话";
+    if (voiceStartBtn) voiceStartBtn.disabled = false;
+    if (voiceStopBtn) voiceStopBtn.disabled = false;
+  }
   cancelPopHide();
 }
 
 function exitVoiceMode() {
+  if (noteActive) {
+    showNotePanel();
+    return;
+  }
   voiceMode = false;
   document.body.classList.remove("voice-mode");
+  setVoiceCardMode("voice");
   if (voiceRecording) stopVoiceRecognition();
 }
 
@@ -2121,7 +2684,6 @@ popBubble?.addEventListener("pointerdown", (event) => {
 
 function openSchedulePanel() {
   exitVoiceMode();
-  setPanelOpen(voicePanel, false);
   setPanelOpen(schedulePanel, true);
   // default time = 5 minutes from now, formatted for datetime-local
   const future = new Date(Date.now() + 5 * 60_000);
@@ -2170,7 +2732,9 @@ scheduleSaveBtn?.addEventListener("click", async () => {
   }
   const category = scheduleCategorySelect?.value || "reminder";
   const leadTimeRaw = scheduleLeadTimeSelect?.value || "default";
-  const leadTimeMs = leadTimeRaw === "default" ? null : Number(leadTimeRaw);
+  const leadTimeMs = leadTimeRaw === "default"
+    ? (category === "reminder" ? 0 : null)
+    : Number(leadTimeRaw);
 
   scheduleSaveBtn.disabled = true;
   scheduleSaveBtn.textContent = "创建中...";
@@ -2194,7 +2758,8 @@ scheduleSaveBtn?.addEventListener("click", async () => {
         executionMode: "interactive",
         createdBy: "overlay-form",
         category,
-        leadTimeMs
+        leadTimeMs,
+        userTodo: category === "reminder"
       })
     });
     addBubble("assistant", `定时任务已创建：${name}\n下次触发：${result.schedule?.next_run_at ?? runAt.toLocaleString()}`);
@@ -2262,6 +2827,7 @@ function ensureVoiceRecognizer() {
     // Mirror in the voice card transcript so the user sees what they're saying
     if (voiceTranscript) {
       voiceTranscript.textContent = merged.trim() || "\u00a0";
+      voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
     }
     if (finalText) {
       commandInput.dataset.voiceBase = (commandInput.dataset.voiceBase ?? "") + finalText;
@@ -2300,13 +2866,9 @@ function ensureVoiceRecognizer() {
   return recognizer;
 }
 
-function startVoiceRecognition() {
-  const recognizer = ensureVoiceRecognizer();
-  if (!recognizer) {
-    voiceStatus.textContent = "当前 Electron/Chromium 不支持 Web Speech API。请改用键盘输入。";
-    return;
-  }
-  if (voiceRecording) return;
+// Low-level helper — starts the recognizer after mic permission is confirmed.
+function _doStartRecognizer(recognizer) {
+  if (!recognizer) return;
   recognizer.lang = voiceLangSelect?.value || "zh-CN";
   commandInput.dataset.voiceBase = commandInput.value;
   try {
@@ -2316,11 +2878,11 @@ function startVoiceRecognition() {
   } catch (error) {
     const message = (error?.message ?? "").toLowerCase();
     if (message.includes("not-allowed") || message.includes("notallowederror")) {
-      voiceStatus.textContent = "麦克风权限被拒绝。请重启 UCA 桌面端，并在系统设置中允许麦克风访问。";
+      voiceStatus.textContent = "麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。";
       voiceCard?.classList.add("error");
       voiceCard?.classList.remove("idle");
-    } else if (message.includes("invalidstate") && voiceRecognizer) {
-      // already running — just keep going
+    } else if (message.includes("invalidstate")) {
+      // already running — keep going
       setVoiceRecording(true);
       voiceStatus.textContent = "正在聆听...";
       return;
@@ -2333,6 +2895,35 @@ function startVoiceRecognition() {
   }
 }
 
+// On Windows, Web Speech API does not trigger the OS microphone permission
+// dialog by itself. We must call getUserMedia({audio:true}) first so that
+// Chromium/Electron asks Windows for permission, then start the recognizer.
+function startVoiceRecognition() {
+  const recognizer = ensureVoiceRecognizer();
+  if (!recognizer) {
+    voiceStatus.textContent = "当前 Electron/Chromium 不支持 Web Speech API。请改用键盘输入。";
+    return;
+  }
+  if (voiceRecording) return;
+
+  voiceStatus.textContent = "正在请求麦克风权限...";
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then((stream) => {
+      // Permission granted — release the test stream and start recognition
+      stream.getTracks().forEach((t) => t.stop());
+      _doStartRecognizer(recognizer);
+    })
+    .catch((err) => {
+      const denied = err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError";
+      voiceStatus.textContent = denied
+        ? "麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。"
+        : `麦克风初始化失败：${err.message}`;
+      voiceCard?.classList.add("error");
+      voiceCard?.classList.remove("idle");
+      setVoiceRecording(false);
+    });
+}
+
 function stopVoiceRecognition() {
   if (voiceRecognizer && voiceRecording) {
     try { voiceRecognizer.stop(); } catch { /* ignore */ }
@@ -2343,7 +2934,7 @@ function stopVoiceRecognition() {
 function openVoicePanel({ autoStart = false } = {}) {
   setPanelOpen(schedulePanel, false);
   enterVoiceMode();
-  if (autoStart) startVoiceRecognition();
+  if (autoStart && !noteActive) startVoiceRecognition();
 }
 
 function closeVoicePanel({ submit = false } = {}) {
@@ -2357,11 +2948,19 @@ function closeVoicePanel({ submit = false } = {}) {
 }
 
 voiceToggleBtn?.addEventListener("click", () => {
+  if (noteActive) {
+    void window.ucaShell.hideWindow("overlay");
+    return;
+  }
   if (voiceMode) {
     closeVoicePanel({ submit: false });
   } else {
     openVoicePanel({ autoStart: true });
   }
+});
+
+voiceMinimizeBtn?.addEventListener("click", () => {
+  void window.ucaShell.hideWindow("overlay");
 });
 
 voiceStartBtn?.addEventListener("click", () => startVoiceRecognition());
@@ -2376,6 +2975,13 @@ voiceCancelBtn?.addEventListener("click", () => {
 // Enter while in voice mode → submit and exit
 document.addEventListener("keydown", (event) => {
   if (!voiceMode) return;
+  if (noteActive) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      void window.ucaShell.hideWindow("overlay");
+    }
+    return;
+  }
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     closeVoicePanel({ submit: true });
@@ -2384,6 +2990,726 @@ document.addEventListener("keydown", (event) => {
     commandInput.value = commandInput.dataset.voiceBase ?? "";
     delete commandInput.dataset.voiceBase;
     exitVoiceMode();
+  }
+});
+
+/* ═══════════════════════════════════════════════
+   NOTE MODE — record mic + system audio, AI summarises
+   ═══════════════════════════════════════════════ */
+
+let noteActive = false;
+let noteStartTime = null;
+let noteTimerInterval = null;
+let noteSessionId = 0;
+let noteTranscripts = []; // {time, text}[]
+let noteMicRecognizer = null;
+let noteMediaRecorder = null;
+let noteSysAudioChunks = [];
+let noteSysStream = null;
+let noteSysCapturePromise = null;
+let noteMicStopPromise = Promise.resolve();
+let noteRecorderStopPromise = Promise.resolve();
+
+// Hard cap to prevent unbounded memory growth from MediaRecorder chunks +
+// transcript accumulation. 30 min covers most meetings; warn 5 min before.
+const NOTE_MAX_DURATION_MS = 30 * 60 * 1000;
+const NOTE_WARN_BEFORE_MS = 5 * 60 * 1000;
+let noteAutoStopTriggered = false;
+let noteWarnedNearLimit = false;
+let noteSourceContext = null;
+let noteSourceContextPromise = Promise.resolve(null);
+
+function publishNoteRecordingState(extra = {}) {
+  const elapsedMs = noteActive && noteStartTime ? Date.now() - noteStartTime : 0;
+  void window.ucaShell?.setNoteRecordingState?.({
+    active: noteActive,
+    elapsedMs,
+    elapsed: formatNoteElapsed(elapsedMs),
+    hasMicTranscript: noteTranscripts.length > 0,
+    hasSystemAudio: noteSysAudioChunks.length > 0,
+    ...extra
+  });
+}
+
+function formatNoteElapsed(ms) {
+  const totalSec = Math.floor(ms / 1000);
+  const m = Math.floor(totalSec / 60).toString().padStart(2, "0");
+  const s = (totalSec % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function getNoteLanguageSelection() {
+  return noteLangSelect?.value || "auto";
+}
+
+function getNoteMicRecognitionLanguage() {
+  const selected = getNoteLanguageSelection();
+  // Web Speech expects a concrete BCP-47 language tag; system-audio
+  // transcription can use "auto", but mic recognition should use a locale.
+  return selected === "auto" ? (navigator.language || "zh-CN") : selected;
+}
+
+function getNoteActiveWindow(sourceContext = null) {
+  const activeWindow = sourceContext?.active_window ?? sourceContext?.activeWindow ?? null;
+  if (!activeWindow) return null;
+  const process = `${activeWindow.process ?? sourceContext?.source_app ?? ""}`.toLowerCase();
+  const title = `${activeWindow.title ?? sourceContext?.title ?? ""}`.toLowerCase();
+  const isShell = process.includes("electron")
+    || process.includes("universal-context-agent")
+    || process === "uca"
+    || title === "uca"
+    || title.includes("uca overlay")
+    || title.includes("uca dock")
+    || title.includes("universal context agent");
+  return isShell ? null : activeWindow;
+}
+
+function getNoteSourceUrl(sourceContext = null) {
+  const activeWindow = getNoteActiveWindow(sourceContext);
+  return activeWindow?.url || sourceContext?.url || "";
+}
+
+function getNoteSourceTitle(sourceContext = null) {
+  const activeWindow = getNoteActiveWindow(sourceContext);
+  return activeWindow?.title || sourceContext?.title || "";
+}
+
+function formatNoteSourceContext(sourceContext = null) {
+  const activeWindow = getNoteActiveWindow(sourceContext);
+  if (!activeWindow) return "";
+
+  const lines = [];
+  const process = activeWindow.process || sourceContext?.source_app || "";
+  const title = getNoteSourceTitle(sourceContext);
+  const url = getNoteSourceUrl(sourceContext);
+  const kind = activeWindow.detected_kind || activeWindow.detectedKind || "";
+  const filePath = activeWindow.file_path || activeWindow.filePath || "";
+
+  if (process) lines.push(`- 应用：${process}`);
+  if (title) lines.push(`- 窗口标题：${title}`);
+  if (url) lines.push(`- URL：${url}`);
+  if (filePath) lines.push(`- 文件：${filePath}`);
+  if (kind) lines.push(`- 来源类型：${kind}`);
+
+  return lines.length ? lines.join("\n") : "";
+}
+
+function compactNoteContextText(value = "", maxLength = 1000) {
+  const text = `${value ?? ""}`.replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+async function fetchRecentBrowserContextForNote(sourceContext = null) {
+  const params = new URLSearchParams();
+  const sourceUrl = getNoteSourceUrl(sourceContext);
+  const sourceTitle = getNoteSourceTitle(sourceContext);
+  if (sourceUrl) params.set("url", sourceUrl);
+  if (sourceTitle) params.set("title", sourceTitle);
+  params.set("limit", "1");
+
+  try {
+    const payload = await timeoutWithFallback(
+      fetchJson(`/browser/context/recent?${params.toString()}`),
+      900,
+      null
+    );
+    return payload?.contexts?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function formatNoteBrowserContext(browserContext = null) {
+  if (!browserContext) return "";
+  const youtube = browserContext.metadata?.youtube ?? null;
+  const lines = [];
+  const url = youtube?.canonicalUrl || browserContext.url || "";
+  const title = youtube?.title || browserContext.pageTitle || "";
+  const channel = youtube?.channel || "";
+  const platform = browserContext.metadata?.platform || youtube?.platform || "";
+  const description = browserContext.metadata?.description || youtube?.description || "";
+  const captions = youtube?.visibleCaptions || "";
+  const pageText = browserContext.text || "";
+
+  if (platform) lines.push(`- 平台：${platform}`);
+  if (title) lines.push(`- 页面/视频标题：${title}`);
+  if (channel) lines.push(`- 频道/作者：${channel}`);
+  if (url) lines.push(`- URL：${url}`);
+  if (browserContext.score != null) lines.push(`- 匹配分：${browserContext.score}`);
+
+  const sections = [];
+  if (lines.length) sections.push(lines.join("\n"));
+  if (description) sections.push(`### 页面/视频描述\n${compactNoteContextText(description, 2000)}`);
+  if (captions) sections.push(`### 当前可见字幕/转录面板片段\n${compactNoteContextText(captions, 2200)}`);
+  if (pageText) sections.push(`### 页面可见文本片段\n${compactNoteContextText(pageText, 4000)}`);
+
+  return sections.length ? sections.join("\n\n") : "";
+}
+
+function timeoutWithFallback(promise, ms, fallbackValue = null) {
+  return Promise.race([
+    Promise.resolve(promise).catch(() => fallbackValue),
+    new Promise((resolve) => setTimeout(() => resolve(fallbackValue), ms))
+  ]);
+}
+
+function captureNoteSourceContext(sessionId = noteSessionId) {
+  const capturePromise = (async () => {
+    try {
+      const payload = await window.ucaShell?.getActiveWindowContext?.({
+        includeSelection: false,
+        excludeShellWindow: true,
+        preferLastExternal: true,
+        maxExternalAgeMs: 10 * 60 * 1000,
+        captureMode: "note_recording"
+      });
+      if (sessionId === noteSessionId) {
+        noteSourceContext = payload ?? null;
+      }
+      return payload ?? null;
+    } catch {
+      return null;
+    }
+  })();
+  noteSourceContextPromise = capturePromise;
+  return capturePromise;
+}
+
+function appendNoteTranscript(text) {
+  if (!text || !text.trim()) return;
+  const elapsed = noteStartTime ? Date.now() - noteStartTime : 0;
+  const time = formatNoteElapsed(elapsed);
+  noteTranscripts.push({ time, text: text.trim() });
+  publishNoteRecordingState({ active: true, hasMicTranscript: true });
+  if (!noteTranscriptBox) return;
+  const entry = document.createElement("div");
+  entry.className = "note-transcript-entry";
+  entry.innerHTML = `<span class="nt-time">${time}</span><span class="nt-channel">输入音频</span>${escapeHtml(text.trim())}`;
+  noteTranscriptBox.appendChild(entry);
+  noteTranscriptBox.scrollTop = noteTranscriptBox.scrollHeight;
+}
+
+function startNoteMicCapture(sessionId = noteSessionId) {
+  const Ctor = getSpeechRecognitionCtor();
+  if (!Ctor) return;
+
+  // Pre-warm: getUserMedia ensures Windows grants mic permission before
+  // the Speech API tries to access it.
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then((stream) => {
+      stream.getTracks().forEach((t) => t.stop());
+      if (!noteActive || sessionId !== noteSessionId) return;
+      _launchNoteMicRecognizer(Ctor, sessionId);
+    })
+    .catch(() => {
+      if (!noteActive || sessionId !== noteSessionId) return;
+      // Mic denied — note still runs, just no mic transcript
+      noteMicTag?.classList.add("unavailable");
+    });
+}
+
+function _launchNoteMicRecognizer(Ctor, sessionId = noteSessionId) {
+  const rec = new Ctor();
+  rec.continuous = true;
+  rec.interimResults = false;
+  rec.maxAlternatives = 1;
+  rec.lang = getNoteMicRecognitionLanguage();
+
+  rec.addEventListener("result", (event) => {
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        appendNoteTranscript(event.results[i][0].transcript);
+      }
+    }
+  });
+  rec.addEventListener("end", () => {
+    if (noteActive && sessionId === noteSessionId && noteMicRecognizer === rec) {
+      try { rec.start(); } catch { /* restart silently */ }
+    }
+  });
+  rec.addEventListener("error", () => {
+    if (noteActive && sessionId === noteSessionId && noteMicRecognizer === rec) {
+      setTimeout(() => {
+        if (noteActive && sessionId === noteSessionId && noteMicRecognizer === rec) {
+          try { rec.start(); } catch { /* ignore */ }
+        }
+      }, 500);
+    }
+  });
+
+  try {
+    rec.start();
+    noteMicTag?.classList.add("active");
+  } catch { /* ignore — note still captures system audio */ }
+  noteMicRecognizer = rec;
+}
+
+async function startNoteSysCapture() {
+  // Use Electron's desktopCapturer to get the primary screen source ID.
+  // This avoids the getDisplayMedia screen-picker dialog entirely and
+  // reliably captures WASAPI loopback (all system audio) on Windows.
+  const sessionId = noteSessionId;
+  const capturePromise = (async () => {
+    const sourceId = await window.ucaShell?.getDesktopAudioSource?.();
+    if (!noteActive || sessionId !== noteSessionId) return;
+    if (!sourceId) {
+      noteSysTag?.classList.add("unavailable");
+      return;
+    }
+
+    // getUserMedia with chromeMediaSource: 'desktop' requires a video track;
+    // we stop it immediately after getting the audio stream.
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        mandatory: {
+          chromeMediaSource: "desktop",
+          chromeMediaSourceId: sourceId,
+          echoCancellation: false,
+          noiseSuppression: false,
+          sampleRate: 44100
+        }
+      },
+      video: {
+        mandatory: {
+          chromeMediaSource: "desktop",
+          chromeMediaSourceId: sourceId,
+          maxWidth: 1,
+          maxHeight: 1,
+          maxFrameRate: 1
+        }
+      }
+    });
+
+    if (!noteActive || sessionId !== noteSessionId) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+
+    // Drop the video track — we only need audio
+    stream.getVideoTracks().forEach((t) => t.stop());
+
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length === 0) {
+      noteSysTag?.classList.add("unavailable");
+      return;
+    }
+
+    noteSysStream = new MediaStream(audioTracks);
+    noteSysAudioChunks = [];
+
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : "audio/webm";
+    noteMediaRecorder = new MediaRecorder(noteSysStream, { mimeType });
+    noteMediaRecorder.addEventListener("dataavailable", (e) => {
+      if (e.data?.size > 0) {
+        noteSysAudioChunks.push(e.data);
+        publishNoteRecordingState({ active: true, hasSystemAudio: true });
+      }
+    });
+    noteMediaRecorder.start(4000); // collect a chunk every 4 s
+    noteSysTag?.classList.add("active");
+
+    audioTracks[0].addEventListener("ended", () => {
+      noteSysTag?.classList.remove("active");
+      noteSysTag?.classList.add("unavailable");
+    });
+  })();
+  noteSysCapturePromise = capturePromise;
+
+  try {
+    await capturePromise;
+  } catch {
+    // System audio unavailable — note mode continues with mic-only
+    if (noteActive && sessionId === noteSessionId) noteSysTag?.classList.add("unavailable");
+  } finally {
+    if (noteSysCapturePromise === capturePromise) noteSysCapturePromise = null;
+  }
+}
+
+async function enterNoteMode() {
+  // Show the voice card in note mode
+  voiceMode = true;
+  noteActive = true;
+  noteSessionId += 1;
+  document.body.classList.add("voice-mode");
+  setVoiceCardMode("note");
+  voiceCard?.classList.remove("idle", "error");
+
+  // Reset state
+  noteTranscripts = [];
+  noteSysAudioChunks = [];
+  noteSourceContext = null;
+  noteSourceContextPromise = Promise.resolve(null);
+  if (noteTranscriptBox) noteTranscriptBox.innerHTML = "";
+  if (noteTimer) { noteTimer.textContent = "00:00"; noteTimer.classList.add("recording"); }
+  noteMicTag?.classList.remove("active", "unavailable");
+  noteSysTag?.classList.remove("active", "unavailable");
+
+  noteStartTime = Date.now();
+  noteAutoStopTriggered = false;
+  noteWarnedNearLimit = false;
+  publishNoteRecordingState({ active: true });
+
+  // Start mic transcription
+  startNoteMicCapture(noteSessionId);
+
+  // Try system audio (async, non-blocking)
+  void startNoteSysCapture();
+
+  // Capture current playback/source context without blocking recording.
+  void captureNoteSourceContext(noteSessionId);
+
+  // Start elapsed timer
+  noteTimerInterval = setInterval(() => {
+    const elapsedMs = Date.now() - noteStartTime;
+    if (noteTimer) noteTimer.textContent = formatNoteElapsed(elapsedMs);
+    publishNoteRecordingState({ active: true });
+
+    const remaining = NOTE_MAX_DURATION_MS - elapsedMs;
+    if (remaining <= 0 && !noteAutoStopTriggered) {
+      noteAutoStopTriggered = true;
+      addSystemBubble("已达到单次录音上限（30 分钟），已自动停止并进入转录。如需更长，请分多次录制。");
+      finishNote().catch((error) => {
+        console.error("[overlay] auto-stop finishNote failed:", error);
+        addSystemBubble(`自动完成笔记失败：${error?.message ?? error}`);
+      });
+    } else if (remaining <= NOTE_WARN_BEFORE_MS && !noteWarnedNearLimit) {
+      noteWarnedNearLimit = true;
+      const mins = Math.max(1, Math.ceil(remaining / 60000));
+      addSystemBubble(`录音将在约 ${mins} 分钟后自动停止（30 分钟上限）。可随时点击「完成」结束。`);
+    }
+  }, 1000);
+}
+
+function waitForRecorderStop(recorder) {
+  if (!recorder || recorder.state === "inactive") return Promise.resolve();
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      recorder.removeEventListener("stop", settle);
+      recorder.removeEventListener("error", settle);
+      clearTimeout(fallbackTimer);
+      resolve();
+    };
+    const fallbackTimer = setTimeout(settle, 2500);
+    recorder.addEventListener("stop", settle, { once: true });
+    recorder.addEventListener("error", settle, { once: true });
+
+    try { recorder.requestData(); } catch { /* ignore */ }
+    try { recorder.stop(); } catch { settle(); }
+  });
+}
+
+function waitForRecognizerStop(recognizer, { discardMic = true } = {}) {
+  if (!recognizer) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      recognizer.removeEventListener("end", settle);
+      recognizer.removeEventListener("error", settle);
+      clearTimeout(fallbackTimer);
+      resolve();
+    };
+    const fallbackTimer = setTimeout(settle, 1500);
+    recognizer.addEventListener("end", settle, { once: true });
+    recognizer.addEventListener("error", settle, { once: true });
+
+    try {
+      if (discardMic) recognizer.abort();
+      else recognizer.stop();
+    } catch { settle(); }
+  });
+}
+
+function stopNoteCapture({ discardMic = true } = {}) {
+  // Stop mic recognizer
+  const recognizer = noteMicRecognizer;
+  noteMicRecognizer = null;
+  noteMicStopPromise = waitForRecognizerStop(recognizer, { discardMic });
+  // Stop system audio recorder
+  const recorder = noteMediaRecorder;
+  noteMediaRecorder = null;
+  // Stop sys audio tracks
+  const sysStream = noteSysStream;
+  noteSysStream = null;
+  noteRecorderStopPromise = waitForRecorderStop(recorder).finally(() => {
+    sysStream?.getTracks().forEach((t) => t.stop());
+  });
+  // Stop timer
+  clearInterval(noteTimerInterval);
+  noteTimerInterval = null;
+  if (noteTimer) noteTimer.classList.remove("recording");
+  return Promise.all([noteMicStopPromise, noteRecorderStopPromise]);
+}
+
+function exitNoteMode(options = {}) {
+  noteActive = false;
+  noteSessionId += 1;
+  voiceMode = false;
+  document.body.classList.remove("voice-mode");
+  setVoiceCardMode("voice");
+  const stopped = stopNoteCapture(options);
+  publishNoteRecordingState({ active: false, elapsedMs: 0, elapsed: "00:00" });
+  return stopped;
+}
+
+async function transcribeSysAudio() {
+  if (noteSysAudioChunks.length === 0) return { transcript: "", reason: "no_audio", ok: true };
+  try {
+    const blob = new Blob(noteSysAudioChunks, { type: "audio/webm" });
+    // Convert to base64 so we can POST as JSON (no multipart dependency on server)
+    const arrayBuffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const base64 = btoa(binary);
+
+    const resp = await fetchJson("/note/transcribe", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        audio: base64,
+        mimeType: "audio/webm",
+        lang: getNoteLanguageSelection()
+      })
+    });
+    return {
+      transcript: resp.transcript ?? "",
+      reason: resp.reason ?? null,
+      ok: resp.ok !== false,
+      message: resp.message ?? "",
+      detail: resp.detail ?? "",
+      activeProvider: resp.activeProvider ?? null,
+      provider: resp.provider ?? null
+    };
+  } catch {
+    return { transcript: "", reason: "request_failed", ok: false };
+  }
+}
+
+async function submitNoteTask({ fullTranscript, duration, sourceContext }) {
+  const sourceContextText = formatNoteSourceContext(sourceContext);
+  const browserContext = await fetchRecentBrowserContextForNote(sourceContext);
+  const browserContextText = formatNoteBrowserContext(browserContext);
+  const sourceUrl = getNoteSourceUrl(sourceContext);
+  const sourceTitle = getNoteSourceTitle(sourceContext);
+  const browserUrl = browserContext?.metadata?.youtube?.canonicalUrl || browserContext?.url || "";
+  const browserTitle = browserContext?.metadata?.youtube?.title || browserContext?.pageTitle || "";
+  const activeWindow = getNoteActiveWindow(sourceContext);
+  const sourceAssistRequirement = sourceContextText || browserContextText
+    ? "- 如果“录音来源”包含网页 URL 或窗口标题，可以用它辅助判断上下文并在笔记中注明来源；不要主动联网检索，除非用户另行要求"
+    : "- 不要编造录音中没有的事实";
+  const contextText = [
+    sourceContextText ? `## 录音来源（自动检测）\n${sourceContextText}` : "",
+    browserContextText ? `## 网页/视频上下文（浏览器扩展）\n${browserContextText}` : "",
+    `## 录音时长\n${duration}`,
+    `## 录音转写\n${fullTranscript.trim()}`
+  ].filter(Boolean).join("\n\n");
+
+  const userVisibleCommand = "整理这段录音为结构化笔记（Markdown）";
+  const userCommand = `请将 context_packet.text 中的录音转写内容整理成 Markdown 笔记。
+
+格式要求：
+1. **标题**：用一行概括本次录音的核心主题
+2. **概述**：2-4 句话总结录音主要内容
+3. **要点**：提炼 3-8 个核心观点或信息，用 bullet list，保持原文语言风格
+4. **结论 / 决定**：如有明确结论或决定，单独列出
+5. **行动项**：如有待办事项或下一步行动，用 checkbox 列出（- [ ] ...）
+6. **来源**：如有 URL 或标题，注明”来源：...”
+
+规则：
+- 直接输出 Markdown 正文，不要说”已整理”或”以下是笔记”
+- 忠实于录音内容，不要添加录音中没有的信息
+- 保持原文语言（说中文就输出中文，说英文就输出英文）
+${sourceAssistRequirement}`;
+
+  addBubble("user", userVisibleCommand);
+  conversationState = null;
+  if (projectStore) projectStore.currentConversationId = null;
+  saveProjectStore();
+  ensureConversation(null, userVisibleCommand);
+  appendTurn("user", userVisibleCommand);
+  markUserEngaged();
+
+  // Show the raw transcript so the user can verify what was captured.
+  // Truncate to 1200 chars for display; the full text still goes to the AI.
+  const transcriptPreview = fullTranscript.trim();
+  if (transcriptPreview) {
+    const MAX = 1200;
+    const truncated = transcriptPreview.length > MAX
+      ? `${transcriptPreview.slice(0, MAX)}\n…（共 ${transcriptPreview.length} 字符）`
+      : transcriptPreview;
+    addSystemBubble(`📋 转录原文（供核对）\n\n${truncated}`);
+  }
+
+  // Update the existing particle spinner label (started in finishNote)
+  if (timelineLabelEl) timelineLabelEl.textContent = "正在整理录音笔记…";
+
+  const payload = {
+    contextPacket: {
+      source_type: "audio_note",
+      source_app: "uca.note",
+      capture_mode: "note_recording",
+      text: contextText,
+      url: sourceUrl || browserUrl || undefined,
+      pageTitle: sourceTitle || browserTitle || undefined,
+      selection_metadata: {
+        audio_duration: duration,
+        active_window: activeWindow ?? null,
+        browser_context: browserContext ?? null
+      }
+    },
+    userCommand,
+    executionMode: "interactive",
+    skipDecomposition: true
+  };
+
+  try {
+    const result = await fetchJson("/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (result.type === "clarification_needed") {
+      showClarificationBubble(userVisibleCommand, result.question, payload);
+      return;
+    }
+
+    activeTaskId = result.task.task_id;
+    lastTask = result.task;
+    notifiedTaskId = null;
+    notifiedInlineResultTaskId = null;
+    lastArtifactPreview = "";
+    ensureActiveTaskEventStream(activeTaskId);
+    clearPendingInputContext();
+
+    addBubble("assistant", "Processing in background...");
+    await window.ucaShell.notify({
+      title: "UCA processing",
+      body: "录音笔记正在整理。"
+    });
+    conversationPhase = "running"; runningPhaseStart = Date.now();
+  } catch (error) {
+    addBubble("assistant", `Submit failed: ${error.message}`);
+    conversationPhase = "idle";
+  }
+}
+
+async function finishNote() {
+  if (!noteActive) return;
+  const sourceContextSnapshot = noteSourceContext;
+  const sourceContextPromise = noteSourceContextPromise;
+
+  // Show the particle spinner immediately — it stays visible through the
+  // whole transcription + AI submission pipeline.
+  timelineEnsure();
+  timelineLabelEl && (timelineLabelEl.textContent = "正在转录音频…");
+
+  // Stop gracefully so pending Web Speech finals and MediaRecorder chunks flush.
+  const stopped = exitNoteMode({ discardMic: false });
+  await stopped;
+  await noteMicStopPromise;
+  await noteRecorderStopPromise;
+  publishNoteRecordingState({ active: false, elapsedMs: 0, elapsed: "00:00" });
+
+  // Build mic transcript
+  const micLines = noteTranscripts.map((t) => `[${t.time}] ${t.text}`).join("\n");
+
+  // Optionally transcribe system audio
+  let sysLines = "";
+  let sysReason = null;
+  let sysDetail = "";
+  if (noteSysAudioChunks.length > 0) {
+    addSystemBubble("正在转录输出音频（系统音频），请稍候...");
+    const sysResult = await transcribeSysAudio();
+    sysLines = sysResult.transcript ?? "";
+    sysReason = sysResult.reason ?? null;
+    sysDetail = sysResult.detail || sysResult.message || "";
+  }
+
+  const duration = noteStartTime ? formatNoteElapsed(Date.now() - noteStartTime) : "未知";
+  const sourceContext = sourceContextSnapshot
+    ?? await timeoutWithFallback(sourceContextPromise, 1200, null);
+
+  if (!micLines.trim() && !sysLines.trim()) {
+    if (noteSysAudioChunks.length > 0 && sysReason === "no_api_provider") {
+      addSystemBubble("已录到输出音频（系统音频），但当前模型提供方不支持音频转写；请配置 OpenAI 音频转写 Key，或打开输入音频（麦克风）实时转写后再完成笔记。");
+    } else if (noteSysAudioChunks.length > 0 && sysReason === "audio_provider_unsupported") {
+      addSystemBubble("已录到输出音频（系统音频），但当前聊天模型不支持音频转写。你的 YouTube/网页音频捕获是成功的；请配置 OpenAI 音频转写 Key（UCA_TRANSCRIPTION_API_KEY 或 OPENAI_API_KEY），聊天仍可继续使用 DeepSeek。");
+    } else if (noteSysAudioChunks.length > 0 && sysReason === "local_transcriber_missing") {
+      addSystemBubble("已录到输出音频（系统音频），但本地转写依赖还没安装。运行：python -m pip install faster-whisper；安装后无需 OpenAI API，YouTube/网页音频会走本地 Whisper 转写。");
+    } else if (noteSysAudioChunks.length > 0 && sysReason === "local_transcription_failed") {
+      const detail = sysDetail ? `\n原因：${sysDetail.slice(0, 180)}` : "";
+      addSystemBubble(`已录到输出音频（系统音频），但本地 Whisper 转写失败。${detail}`);
+    } else if (noteSysAudioChunks.length > 0) {
+      const detail = sysDetail ? `\n原因：${sysDetail.slice(0, 180)}` : "";
+      addSystemBubble(`已录到输出音频（系统音频），但转写失败；请检查音频转写服务配置后再试。${detail}`);
+    } else {
+      addSystemBubble("笔记内容为空，请先开始录音并说话。");
+    }
+    return;
+  }
+
+  let fullTranscript = "";
+  if (micLines.trim()) fullTranscript += `## 输入音频（麦克风 / 本机说话）\n${micLines}\n\n`;
+  if (sysLines.trim()) fullTranscript += `## 输出音频（系统音频 / 扬声器播放）\n${sysLines}\n\n`;
+
+  await submitNoteTask({ fullTranscript, duration, sourceContext });
+}
+
+// Tab buttons inside the voice card
+tabVoiceBtn?.addEventListener("click", () => {
+  if (noteActive) {
+    addSystemBubble("正在录音笔记中。请先完成或取消录音，再切换到语音输入。");
+    showNotePanel();
+    return;
+  }
+  setVoiceCardMode("voice");
+  if (!voiceMode) openVoicePanel({ autoStart: false });
+});
+
+tabNoteBtn?.addEventListener("click", () => {
+  if (noteActive) {
+    showNotePanel();
+  } else {
+    if (voiceRecording) stopVoiceRecognition();
+    enterNoteMode();
+  }
+});
+
+
+noteCancelBtn?.addEventListener("click", () => {
+  exitNoteMode();
+  commandInput.focus();
+});
+
+let noteFinishInFlight = false;
+noteFinishBtn?.addEventListener("click", async () => {
+  // Guard against double-click during the ~2s recorder-stop window. Also
+  // surface any error — previously finishNote() errors were swallowed by the
+  // async-without-catch pattern, making the click look unresponsive.
+  if (noteFinishInFlight || !noteActive) return;
+  noteFinishInFlight = true;
+  const originalLabel = noteFinishBtn.textContent;
+  noteFinishBtn.disabled = true;
+  noteFinishBtn.textContent = "结束中…";
+  try {
+    await finishNote();
+  } catch (error) {
+    console.error("[overlay] finishNote failed:", error);
+    addSystemBubble(`完成笔记失败：${error?.message ?? error}`);
+  } finally {
+    noteFinishInFlight = false;
+    noteFinishBtn.disabled = false;
+    noteFinishBtn.textContent = originalLabel || "完成笔记";
   }
 });
 
@@ -2410,20 +3736,25 @@ settingsBtn?.addEventListener("click", async () => {
 
 taskListDock?.addEventListener("click", async () => {
   const isOpen = taskListPanel?.dataset.open === "true";
-  if (taskListPanel) taskListPanel.dataset.open = isOpen ? "false" : "true";
+  const nextOpen = !isOpen;
+  if (taskListPanel) taskListPanel.dataset.open = nextOpen ? "true" : "false";
+  taskListDock?.setAttribute("aria-expanded", nextOpen ? "true" : "false");
   await refreshTaskSummaries(true);
   renderTaskListDock();
 });
 
 taskListCloseBtn?.addEventListener("click", () => {
   if (taskListPanel) taskListPanel.dataset.open = "false";
+  taskListDock?.setAttribute("aria-expanded", "false");
 });
 
 for (const btn of taskListFilterBtns) {
   btn.addEventListener("click", () => {
     taskListFilter = btn.dataset.taskFilter ?? "all";
     for (const sibling of taskListFilterBtns) {
-      sibling.classList.toggle("active", sibling === btn);
+      const isActive = sibling === btn;
+      sibling.classList.toggle("active", isActive);
+      sibling.setAttribute("aria-selected", isActive ? "true" : "false");
     }
     renderTaskListDock();
   });
@@ -2434,7 +3765,7 @@ for (const btn of taskListFilterBtns) {
    ═══════════════════════════════════════════════ */
 
 function detectSpecialIntent(text) {
-  if (isScheduleIntentText(text)) {
+  if (isDirectScheduleIntentText(text)) {
     return { type: "schedule", text };
   }
 
@@ -2445,6 +3776,20 @@ function detectSpecialIntent(text) {
   }
 
   return null;
+}
+
+function isDirectScheduleIntentText(text = "") {
+  if (!isScheduleIntentText(text)) return false;
+  const trigger = parseScheduleTriggerFromText(text, { fallback: "natural_language" });
+  const scheduledAction = buildScheduleActionFromText(text);
+
+  // Keep the overlay fast path narrow: short one-shot reminders can be written
+  // directly, while recurring/conditional/AI-work schedules stay in the
+  // agentic path where create_scheduled_task and confirmations can reason over
+  // the user's intent.
+  return trigger?.type === "interval"
+    && trigger.oneShot === true
+    && scheduledAction.kind === "notify";
 }
 
 async function createScheduleFromText(userText, trigger = parseScheduleTriggerFromText(userText)) {
@@ -2462,7 +3807,10 @@ async function createScheduleFromText(userText, trigger = parseScheduleTriggerFr
       title: "UCA 提醒",
       message: userText,
       userCommand: userText,
-      createdBy: "overlay"
+      createdBy: "overlay",
+      category: "reminder",
+      leadTimeMs: 0,
+      userTodo: true
     })
   });
   return result.schedule;
@@ -2505,7 +3853,10 @@ function showScheduleConfirmCard(userText) {
           title: "UCA 提醒",
           message: userText,
           userCommand: userText,
-          createdBy: "overlay"
+          createdBy: "overlay",
+          category: "reminder",
+          leadTimeMs: 0,
+          userTodo: true
         })
       });
       const schedule = result.schedule;
@@ -2596,46 +3947,78 @@ function showTemplateConfirmCard(userText) {
   addBubble("assistant", cardEl);
 }
 
+let userSendInFlight = false;
+
+function setSendBusy(busy) {
+  userSendInFlight = busy;
+  if (sendBtn) {
+    sendBtn.disabled = busy;
+    sendBtn.setAttribute("aria-busy", busy ? "true" : "false");
+  }
+  if (commandInput) {
+    commandInput.readOnly = busy;
+  }
+  document.body.classList.toggle("send-busy", busy);
+}
+
 async function handleUserSend() {
+  // Guard against double-click / rapid Enter re-entry during the await window
+  // before conversationPhase flips to "running". submitTask()'s own
+  // running-phase check handles the longer-lived case.
+  if (userSendInFlight) return;
+
   const text = commandInput.value.trim();
   if (!text && !pendingFileSelection?.filePaths?.length && !pendingCapture?.capture) return;
 
-  // UCA-062: Check for special intents (schedule, template) BEFORE submitting
-  // so they go through the fast confirmation path instead of the AI pipeline.
-  if (text) {
-    const specialIntent = detectSpecialIntent(text);
-    if (specialIntent?.type === "schedule") {
-      addBubble("user", text);
-      appendTurn("user", text);
-      commandInput.value = "";
-      autoSizeInput();
-      showScheduleConfirmCard(text);
-      return;
+  setSendBusy(true);
+  try {
+    // UCA-062: Check for special intents (schedule, template) BEFORE submitting
+    // so they go through the fast confirmation path instead of the AI pipeline.
+    if (text) {
+      const specialIntent = detectSpecialIntent(text);
+      if (specialIntent?.type === "schedule") {
+        addBubble("user", text);
+        appendTurn("user", text);
+        commandInput.value = "";
+        autoSizeInput();
+        showScheduleConfirmCard(text);
+        return;
+      }
+      if (specialIntent?.type === "template") {
+        addBubble("user", text);
+        appendTurn("user", text);
+        commandInput.value = "";
+        autoSizeInput();
+        showTemplateConfirmCard(text);
+        return;
+      }
+      if (isRetryCommand(text)) {
+        addBubble("user", text);
+        appendTurn("user", text);
+        commandInput.value = "";
+        autoSizeInput();
+        await retryActiveTaskFromOverlay();
+        return;
+      }
     }
-    if (specialIntent?.type === "template") {
+
+    // normal task submission
+    if (text && conversationPhase === "idle") {
       addBubble("user", text);
-      appendTurn("user", text);
-      commandInput.value = "";
-      autoSizeInput();
-      showTemplateConfirmCard(text);
-      return;
     }
-  }
 
-  // normal task submission
-  if (text && conversationPhase === "idle") {
-    addBubble("user", text);
-  }
+    // Record the user's turn in persistent conversation memory. If no seed
+    // capture has been attached yet, the current pendingCapture becomes it.
+    if (text) {
+      const seed = pendingCapture?.capture ?? conversationState?.seedCapture ?? null;
+      ensureConversation(seed, conversationState?.seedCommand ?? text);
+      appendTurn("user", text);
+    }
 
-  // Record the user's turn in persistent conversation memory. If no seed
-  // capture has been attached yet, the current pendingCapture becomes it.
-  if (text) {
-    const seed = pendingCapture?.capture ?? conversationState?.seedCapture ?? null;
-    ensureConversation(seed, conversationState?.seedCommand ?? text);
-    appendTurn("user", text);
+    await submitTask();
+  } finally {
+    setSendBusy(false);
   }
-
-  await submitTask();
 }
 
 /* ═══════════════════════════════════════════════
@@ -2644,10 +4027,20 @@ async function handleUserSend() {
 
 window.ucaShell.onShortcutTriggered((payload) => {
   if (payload.shortcutId === "toggle-overlay") {
-    showWelcome();
+    // Hotkey-summoned overlay should always open a fresh conversation so the
+    // user never sees stale bubbles / replayed failure events from a prior
+    // task. refreshActiveTask runs on a 2s timer and would otherwise replay
+    // the previous task's timeline into the new UI.
+    startNewConversation();
+  }
+  if (payload.shortcutId === "capture-and-ask") {
+    // The actual context payload owns conversation reset (applyShellHandoff
+    // calls startNewConversation for hotkey captures). Keeping this shortcut
+    // handler passive avoids a race where the window opens first and then a
+    // late shortcut event clears the captured selection.
   }
   if (payload.shortcutId === "voice-wake") {
-    showWelcome();
+    startNewConversation();
     openVoicePanel({ autoStart: true });
   }
 });
@@ -2656,7 +4049,7 @@ window.ucaShell.onShellReady((payload) => {
   if (payload.windowId === "overlay") {
     serviceBaseUrl = payload.serviceBaseUrl ?? serviceBaseUrl;
     refreshStatus();
-    void syncProjectStoreFromService({ render: true });
+    void syncProjectStoreFromService({ render: false });
     refreshTaskSummaries(true).then(renderTaskListDock);
     showWelcome();
   }
@@ -2664,17 +4057,25 @@ window.ucaShell.onShellReady((payload) => {
 
 window.ucaShell.onWindowFocused((payload) => {
   if (payload.windowId === "overlay") {
-    void syncProjectStoreFromService({ render: true });
+    syncOverlayTheme(); // pick up any theme change made in the console
+    // Sync project store but DO NOT re-render if the conversation is already
+    // visible — renderConversationState() calls clearBubbles() which would
+    // wipe the artifact file-buttons bubble (it lives in DOM only, not in turns).
+    void syncProjectStoreFromService({ render: false });
     // Each time the user re-summons the overlay, start in "ephemeral" mode.
     // The first interaction with the input box will switch it to "kept" mode.
     popKeptOpen = false;
     document.body.classList.remove("popping");
+    void attachLatestActiveTaskToOverlay();
+    if (noteActive) {
+      showNotePanel();
+      return;
+    }
     if (bubbleArea.children.length === 0) {
-      if (conversationState?.turns?.length) {
-        renderConversationState();
-      } else {
-        showWelcome();
-      }
+      // Don't auto-restore an old conversation on plain focus — a hotkey
+      // summons should feel like a fresh overlay. Only keep an in-flight
+      // task's bubbles visible (that branch lives in attachLatestActiveTaskToOverlay).
+      showWelcome();
     }
   }
 });
@@ -2687,11 +4088,11 @@ window.ucaShell.onContextReceived((payload) => {
 
 /* ── init ── */
 restoreConversation();
-if (conversationState?.turns?.length) {
-  renderConversationState();
-} else {
-  showWelcome();
-}
+// Never auto-render a stored conversation at init: the overlay is a summoned
+// ephemeral surface, and stale task-failure bubbles from a previous session
+// were making users think a new task was failing. If a task is still in-flight
+// the 2s refreshActiveTask + attachLatestActiveTaskToOverlay will surface it.
+showWelcome();
 refreshStatus();
-void syncProjectStoreFromService({ render: true });
+void syncProjectStoreFromService({ render: false });
 setInterval(refreshActiveTask, 2000);

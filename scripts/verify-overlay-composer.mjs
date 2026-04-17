@@ -53,6 +53,8 @@ assert.equal(overlayJs.includes("applyShellHandoff"), true);
 assert.equal(overlayJs.includes("subscribeTaskEvents"), true);
 assert.equal(overlayJs.includes("handleTaskEventFrame"), true);
 assert.equal(overlayJs.includes("ensureActiveTaskEventStream"), true);
+assert.equal(overlayJs.includes("tool_call_started"), true);
+assert.equal(overlayJs.includes("attachLatestActiveTaskToOverlay"), true);
 assert.equal(overlayJs.includes("childBadgeRow"), true);
 assert.equal(overlayJs.includes("renderCompositeBreadcrumb"), true);
 // Voice mode + pop-bubble + Apple-style auto-hide additions

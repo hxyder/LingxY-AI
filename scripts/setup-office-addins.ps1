@@ -9,7 +9,15 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $CatalogPath = Join-Path $RepoRoot "office_addin\catalog"
 $ShareName = "UCAOfficeAddins"
-$ShareUrl = "\\localhost\$ShareName"
+# Use the machine name rather than "localhost". SMB loopback to "localhost"
+# is blocked on many Windows configurations (the Workstation/Server services
+# resolve the NetBIOS alias differently from a real hostname), and Office's
+# Trusted Catalog code treats \\localhost\... as unreachable even when the
+# share itself is healthy. \\<COMPUTERNAME>\<share> routes through the same
+# SMB stack users actually browse with and is the form Microsoft's own Office
+# Add-in docs recommend for single-box testing.
+$ShareHost = $env:COMPUTERNAME
+$ShareUrl = "\\$ShareHost\$ShareName"
 $TrustedCatalogGuid = "{1d1dd5db-1b91-4e32-8fd5-0cb0f8d4ca70}"
 $TrustedCatalogKey = "HKCU:\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\$TrustedCatalogGuid"
 

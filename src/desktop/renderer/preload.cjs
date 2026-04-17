@@ -90,5 +90,22 @@ contextBridge.exposeInMainWorld("ucaShell", {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:shell-notification-received", listener);
     return () => ipcRenderer.removeListener("uca:shell-notification-received", listener);
+  },
+  setNoteRecordingState(payload) {
+    return ipcRenderer.invoke("uca:note-recording-state", payload ?? {});
+  },
+  getNoteRecordingState() {
+    return ipcRenderer.invoke("uca:get-note-recording-state");
+  },
+  onNoteRecordingState(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:note-recording-state", listener);
+    return () => ipcRenderer.removeListener("uca:note-recording-state", listener);
+  },
+  getDesktopAudioSource() {
+    return ipcRenderer.invoke("uca:get-desktop-audio-source");
+  },
+  getActiveWindowContext(options = {}) {
+    return ipcRenderer.invoke("uca:capture-active-window-context", options);
   }
 });

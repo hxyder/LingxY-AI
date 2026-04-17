@@ -15,11 +15,11 @@
   --muted: #6b7280;
   --line: rgba(0, 0, 0, 0.08);
   --line-strong: rgba(0, 0, 0, 0.14);
-  /* ── accent: blue-violet ── */
-  --accent: #6366f1;
-  --accent-strong: #4f46e5;
-  --accent-soft: rgba(99, 102, 241, 0.12);
-  --teal-soft: rgba(20, 184, 166, 0.10);
+  /* ── monochrome editorial accent ── */
+  --accent: #000000;
+  --accent-strong: #000000;
+  --accent-soft: rgba(226, 226, 226, 0.74);
+  --teal-soft: rgba(243, 243, 243, 0.74);
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
@@ -179,7 +179,7 @@ label {
   font-size: 22px;
   line-height: 1.15;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .subtitle {
@@ -309,7 +309,7 @@ label {
   font-family: var(--font-display);
   font-size: 24px;
   line-height: 1;
-  letter-spacing: -0.03em;
+  letter-spacing: 0;
 }
 
 .selected {

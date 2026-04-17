@@ -58,6 +58,23 @@ export function formatTaskEventSummary(rawEvent) {
         title: "开始执行",
         body: `${step}${typeof payload.progress === "number" ? ` · ${Math.round(payload.progress * 100)}%` : ""}`.trim()
       };
+    case "accepted":
+      return {
+        title: "已接收",
+        body: "执行器已接收任务。"
+      };
+    case "started":
+      return {
+        title: "已启动",
+        body: "执行器已开始处理。"
+      };
+    case "provider_resolved":
+      return {
+        title: "模型/执行器",
+        body: [payload.provider_name ?? payload.provider_id ?? payload.provider_kind, payload.model, payload.transport]
+          .filter(Boolean)
+          .join(" · ") || "已选择执行器。"
+      };
     case "step_finished":
       return {
         title: "步骤完成",
@@ -67,6 +84,22 @@ export function formatTaskEventSummary(rawEvent) {
       return {
         title: "结果已生成",
         body: payload.path ?? "已生成新的结果文件。"
+      };
+    case "tool_call_started":
+    case "tool_call_proposed":
+      return {
+        title: "工具调用",
+        body: `正在调用 ${payload.tool_id ?? payload.tool ?? "工具"}`
+      };
+    case "tool_call_completed":
+      return {
+        title: "工具完成",
+        body: `${payload.tool_id ?? payload.tool ?? "工具"} · ${payload.success === false ? "失败" : "成功"}`
+      };
+    case "tool_call_denied":
+      return {
+        title: "工具已拦截",
+        body: payload.tool_id ?? payload.tool ?? "工具调用被拦截。"
       };
     case "success":
       return {

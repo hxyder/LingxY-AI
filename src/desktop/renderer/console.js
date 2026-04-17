@@ -134,6 +134,16 @@ const emailDigestWindowEnd = document.querySelector("#emailDigestWindowEnd");
 const emailDigestSkipWeekends = document.querySelector("#emailDigestSkipWeekends");
 const emailDigestSaveBtn = document.querySelector("#emailDigestSaveBtn");
 const emailDigestState = document.querySelector("#emailDigestState");
+const consoleChatForm = document.querySelector("#consoleChatForm");
+const consoleChatInput = document.querySelector("#consoleChatInput");
+const consoleChatMessages = document.querySelector("#consoleChatMessages");
+const consoleChatState = document.querySelector("#consoleChatState");
+const skillEditModal = document.querySelector("#skillEditModal");
+const skillEditText = document.querySelector("#skillEditText");
+const skillEditPath = document.querySelector("#skillEditPath");
+const skillEditState = document.querySelector("#skillEditState");
+const skillEditSaveBtn = document.querySelector("#skillEditSaveBtn");
+const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
 
 /* ═══════════════════════════════════════════════
    TAB NAVIGATION
@@ -141,6 +151,100 @@ const emailDigestState = document.querySelector("#emailDigestState");
 
 const tabButtons = document.querySelectorAll(".tab-btn");
 const tabPanels = document.querySelectorAll(".tab-panel");
+
+const PANEL_INTROS = {
+  tasks: ["Queue", "Work in motion", "Active runs, results, and recovery actions."],
+  chat: ["Dialogue", "Console chat", "A full-size conversation surface for longer prompts and follow-up work."],
+  files: ["Artifacts", "Produced files", "Files ready to open, reveal, or reuse."],
+  schedules: ["Automation", "Scheduled work", "Reminders, recurring tasks, and pending approvals."],
+  history: ["Memory", "History search", "Past task context and retrieved results."],
+  projects: ["Threads", "Conversation memory", "Overlay projects and saved conversations."],
+  connectors: ["Integrations", "Connections", "Email, MCP, skills, Code CLI, and Office handoffs."],
+  settings: ["Policy", "Runtime settings", "AI routing, privacy, feature flags, and output paths."],
+  advanced: ["Operations", "Advanced controls", "Templates, DAG workflow, budget, and audit log."]
+};
+
+function installPanelIntros() {
+  for (const [tabId, [eyebrow, title, subtitle]] of Object.entries(PANEL_INTROS)) {
+    const panel = document.querySelector(`#panel-${tabId}`);
+    if (!panel || panel.querySelector(".console-panel-intro")) continue;
+    const intro = document.createElement("div");
+    intro.className = "console-panel-intro";
+    intro.innerHTML = `
+      <div class="eyebrow">${escapeHtml(eyebrow)}</div>
+      <h1>${escapeHtml(title)}</h1>
+      <p>${escapeHtml(subtitle)}</p>
+    `;
+    panel.prepend(intro);
+  }
+}
+
+function applyConsoleInformationArchitecture() {
+  installPanelIntros();
+  const connectorsConfigMount = document.querySelector("#connectorsConfigMount");
+  const emailAdvancedMount = document.querySelector("#emailAdvancedMount");
+  if (!connectorsConfigMount) return;
+
+  const connectorPanelIds = [
+    "integrationsStatusPanel",
+    "mcpSettingsPanel",
+    "skillsSettingsPanel",
+    "codeCliSettingsPanel",
+    "officeSetupPanel"
+  ];
+
+  for (const panelId of connectorPanelIds) {
+    const panel = document.querySelector(`#${panelId}`);
+    if (panel && panel.parentElement !== connectorsConfigMount) {
+      connectorsConfigMount.appendChild(panel);
+    }
+  }
+
+  const emailPanel = document.querySelector("#emailSettingsPanel");
+  if (emailAdvancedMount && emailPanel && emailPanel.parentElement !== emailAdvancedMount) {
+    emailPanel.classList.add("email-manual-panel", "manual-config-collapsed");
+    emailPanel.querySelector("#emailDigestEnabled")?.closest(".stack")?.setAttribute("hidden", "");
+    const title = emailPanel.querySelector(".settings-group-title");
+    if (title) title.textContent = "Manual IMAP setup";
+    if (!emailPanel.querySelector("[data-manual-config-toggle]")) {
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "secondary manual-config-toggle";
+      toggle.dataset.manualConfigToggle = "emailSettingsPanel";
+      toggle.textContent = "Show manual setup";
+      emailPanel.insertBefore(toggle, emailPanel.children[1] ?? null);
+    }
+    emailAdvancedMount.appendChild(emailPanel);
+  }
+
+  for (const panelId of ["mcpSettingsPanel", "skillsSettingsPanel"]) {
+    const panel = document.querySelector(`#${panelId}`);
+    if (!panel || panel.querySelector("[data-manual-config-toggle]")) continue;
+    panel.classList.add("manual-config-collapsed");
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "secondary manual-config-toggle";
+    toggle.dataset.manualConfigToggle = panelId;
+    toggle.textContent = panelId === "mcpSettingsPanel" ? "Manual MCP setup" : "Manual skill registry";
+    panel.insertBefore(toggle, panel.querySelector("form"));
+  }
+
+  document.querySelectorAll("[data-manual-config-toggle]").forEach((button) => {
+    if (button.dataset.bound === "true") return;
+    button.dataset.bound = "true";
+    button.addEventListener("click", () => {
+      const panel = document.querySelector(`#${button.dataset.manualConfigToggle}`);
+      if (!panel) return;
+      const open = panel.classList.toggle("manual-config-open");
+      panel.classList.toggle("manual-config-collapsed", !open);
+      if (button.dataset.manualConfigToggle === "emailSettingsPanel") {
+        button.textContent = open ? "Hide manual setup" : "Show manual setup";
+      }
+    });
+  });
+}
+
+applyConsoleInformationArchitecture();
 
 function switchTab(tabId) {
   tabButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabId));
@@ -161,6 +265,34 @@ tabButtons.forEach((btn) => {
   });
 });
 
+/* ═══════════════════════════════════════════════
+   THEME SYSTEM
+   ═══════════════════════════════════════════════ */
+
+const THEMES = ["default", "dark", "white", "warm"];
+const THEME_KEY = "uca-console-theme";
+
+function applyTheme(themeValue) {
+  const t = THEMES.includes(themeValue) ? themeValue : "default";
+  if (t === "default") {
+    document.body.removeAttribute("data-theme");
+  } else {
+    document.body.setAttribute("data-theme", t);
+  }
+  document.querySelectorAll(".theme-swatch").forEach((btn) => {
+    btn.classList.toggle("ts-active", btn.dataset.themeValue === t);
+  });
+  try { localStorage.setItem(THEME_KEY, t); } catch { /* ignore */ }
+}
+
+// Apply saved theme on load
+applyTheme((() => { try { return localStorage.getItem(THEME_KEY) ?? "default"; } catch { return "default"; } })());
+
+// Wire swatch clicks
+document.querySelectorAll(".theme-swatch").forEach((btn) => {
+  btn.addEventListener("click", () => applyTheme(btn.dataset.themeValue));
+});
+
 // External navigation request (e.g., overlay's settings shortcut button)
 if (window.ucaShell?.onNavigateConsole) {
   window.ucaShell.onNavigateConsole((payload = {}) => {
@@ -169,6 +301,8 @@ if (window.ucaShell?.onNavigateConsole) {
     if (tabId === "projects") {
       renderProjectsWorkspace();
       void syncConsoleProjectStoreFromService({ rerender: true });
+    } else if (tabId === "connectors") {
+      void loadConnectorsTab();
     }
   });
 }
@@ -217,6 +351,9 @@ let selectedTaskEventStream = null;
 let selectedTaskEventTaskId = null;
 let selectedTaskEventBaseUrl = null;
 let handledSelectedTaskEventIds = new Set();
+let consoleChatEventStream = null;
+let consoleChatResultTaskIds = new Set();
+let editingSkillPath = null;
 
 /* ═══════════════════════════════════════════════
    HELPERS
@@ -300,6 +437,72 @@ async function fetchJson(pathname, options = {}) {
   const payload = payloadText ? JSON.parse(payloadText) : {};
   if (!response.ok) throw new Error(payload.message ?? payload.error ?? pathname);
   return payload;
+}
+
+function appendConsoleChatMessage(role, text) {
+  if (!consoleChatMessages || !text) return;
+  consoleChatMessages.querySelector(".console-chat-empty")?.remove();
+  const node = document.createElement("div");
+  node.className = `console-chat-message ${role}`;
+  node.textContent = text;
+  consoleChatMessages.appendChild(node);
+  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+}
+
+function subscribeConsoleChatTask(taskId) {
+  consoleChatEventStream?.close?.();
+  consoleChatEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
+    onEvent(rawEvent) {
+      const frame = toTaskEventFrame(rawEvent);
+      const payload = frame.data ?? {};
+      if (frame.event === "inline_result") {
+        appendConsoleChatMessage("assistant", payload.text ?? payload.message ?? "");
+        consoleChatResultTaskIds.add(taskId);
+        consoleChatState.textContent = "Done.";
+      } else if (frame.event === "failed") {
+        appendConsoleChatMessage("system", payload.message ?? "Task failed.");
+        consoleChatState.textContent = "Failed.";
+      } else if (frame.event === "success" || frame.event === "partial_success") {
+        if (payload.summary && !consoleChatResultTaskIds.has(taskId)) appendConsoleChatMessage("assistant", payload.summary);
+        consoleChatState.textContent = "Done.";
+      }
+    },
+    onError(error) {
+      consoleChatState.textContent = `Stream failed: ${error.message}`;
+    }
+  });
+}
+
+async function submitConsoleChat() {
+  const text = consoleChatInput?.value?.trim() ?? "";
+  if (!text) return;
+  appendConsoleChatMessage("user", text);
+  consoleChatInput.value = "";
+  consoleChatState.textContent = "Submitting...";
+  try {
+    const result = await fetchJson("/task", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sourceApp: "uca.console.chat",
+        captureMode: "desktop_console_chat",
+        sourceType: "clipboard",
+        text: "",
+        userCommand: text,
+        executionMode: "interactive"
+      })
+    });
+    const taskId = result.task?.task_id;
+    consoleChatState.textContent = taskId ? `Running ${taskId}` : "Running...";
+    if (taskId) {
+      consoleChatResultTaskIds.delete(taskId);
+      subscribeConsoleChatTask(taskId);
+    }
+    await refreshWorkspace();
+  } catch (error) {
+    appendConsoleChatMessage("system", error.message);
+    consoleChatState.textContent = "Failed.";
+  }
 }
 
 function formatDateTime(value) {
@@ -541,12 +744,14 @@ function renderMcpServers() {
 
 function renderSkillRegistries() {
   const registries = state.workspace.skillRegistries ?? [];
-  skillRegistryCount.textContent = `${registries.length}`;
-  if (registries.length === 0) {
-    renderEmpty(skillRegistryList, "No skill registries configured.");
+  const skills = state.workspace.skills ?? [];
+  const knownSkillCount = skills.length || registries.reduce((total, registry) => total + Number(registry.skillCount ?? 0), 0);
+  skillRegistryCount.textContent = `${knownSkillCount}`;
+  if (registries.length === 0 && skills.length === 0) {
+    renderEmpty(skillRegistryList, "No skill registries or skills discovered.");
     return;
   }
-  skillRegistryList.innerHTML = registries.map((registry) => `
+  const registryCards = registries.map((registry) => `
     <div class="surface" style="padding:10px 12px;">
       <div class="row">
         <strong style="font-size:13px;">${escapeHtml(registry.displayName ?? registry.id)}</strong>
@@ -558,6 +763,26 @@ function renderSkillRegistries() {
       </div>
     </div>
   `).join("");
+  const skillCards = skills.map((skill) => `
+    <div class="surface" style="padding:10px 12px;">
+      <div class="row">
+        <strong style="font-size:13px;">${escapeHtml(skill.displayName ?? skill.name ?? skill.id ?? "Unnamed skill")}</strong>
+        <span class="chip ready">skill</span>
+      </div>
+      <p class="muted" style="margin-top:4px;font-size:12px;">
+        ${escapeHtml(skill.tags?.[0] ?? skill.registryId ?? "local")} · ${escapeHtml(skill.entryPath ?? skill.filePath ?? skill.path ?? "n/a")}
+      </p>
+      ${skill.description ? `<p style="margin-top:6px;font-size:12px;">${escapeHtml(skill.description)}</p>` : ""}
+      ${skill.entryPath ? `<div class="toolbar" style="margin-top:8px;"><button class="secondary" data-skill-edit="${escapeHtml(skill.entryPath)}" type="button">Edit</button></div>` : ""}
+    </div>
+  `).join("");
+  skillRegistryList.innerHTML = `
+    ${registryCards}
+    ${skills.length ? `
+      <div class="section-label" style="margin-top:8px;">Discovered skills · ${escapeHtml(skills.length)}</div>
+      ${skillCards}
+    ` : ""}
+  `;
 
   for (const btn of skillRegistryList.querySelectorAll("[data-skill-registry-delete]")) {
     btn.addEventListener("click", async () => {
@@ -573,6 +798,34 @@ function renderSkillRegistries() {
       }
     });
   }
+
+  for (const btn of skillRegistryList.querySelectorAll("[data-skill-edit]")) {
+    btn.addEventListener("click", () => void openSkillEditor(btn.dataset.skillEdit));
+  }
+}
+
+async function openSkillEditor(entryPath) {
+  if (!entryPath || !skillEditModal || !skillEditText) return;
+  editingSkillPath = entryPath;
+  skillEditState.textContent = "Loading...";
+  skillEditPath.textContent = entryPath;
+  skillEditModal.style.display = "flex";
+  try {
+    const payload = await fetchJson(`/skills/read?entryPath=${encodeURIComponent(entryPath)}`);
+    skillEditText.value = payload.markdown ?? "";
+    skillEditState.textContent = "Loaded.";
+    skillEditText.focus();
+  } catch (error) {
+    skillEditState.textContent = `Failed: ${error.message}`;
+  }
+}
+
+function closeSkillEditor() {
+  editingSkillPath = null;
+  if (skillEditModal) skillEditModal.style.display = "none";
+  if (skillEditText) skillEditText.value = "";
+  if (skillEditPath) skillEditPath.textContent = "";
+  if (skillEditState) skillEditState.textContent = "";
 }
 
 function renderCodeCliAdapters() {
@@ -663,7 +916,11 @@ function providerModelPresets(provider, taskType = "chat") {
   }
 
   if (provider.kind === "code_cli") {
-    return uniqueNonEmpty([preferred, "kimi-k2", "claude-sonnet-4-5-20250514", "gpt-5"]);
+    const fpCli = providerFingerprint(provider);
+    if (/(moonshot|kimi)/.test(fpCli)) {
+      return uniqueNonEmpty([preferred, "kimi-code/kimi-for-coding"]);
+    }
+    return uniqueNonEmpty([preferred, "claude-sonnet-4-5-20250514", "gpt-5"]);
   }
 
   if (provider.kind === "openai") {
@@ -686,6 +943,12 @@ function providerModelPresets(provider, taskType = "chat") {
 function modeOptionsForModel(provider, model = "") {
   if (!provider) return [];
   const fp = `${providerFingerprint(provider)} ${model}`.toLowerCase();
+
+  // code_cli providers use CLI-specific model names — don't apply API-style mode aliases
+  if (provider.kind === "code_cli") {
+    const m = model || provider.defaultModel || "";
+    return [{ id: "default", label: m || "Default", model: m }];
+  }
 
   if (/deepseek/.test(fp)) {
     return [
@@ -1961,26 +2224,41 @@ function renderHistory() {
     return;
   }
 
-  historyList.innerHTML = results.map((r) => `
-    <button class="history-item" data-history-summary="${escapeHtml(r.metadata?.summary ?? r.text ?? "")}" data-history-task-id="${escapeHtml(r.id ?? "")}" style="text-align:left;">
+  historyList.innerHTML = results.map((r) => {
+    const taskExists = r.id && state.workspace.tasks.some((t) => t.task_id === r.id);
+    return `
+    <div class="history-item" data-history-summary="${escapeHtml(r.metadata?.summary ?? r.text ?? "")}" data-history-task-id="${escapeHtml(r.id ?? "")}" role="button" tabindex="0" style="text-align:left;">
       <div class="row">
         <strong style="font-size:13px;">${escapeHtml(r.metadata?.summary ?? r.id)}</strong>
         <span class="muted" style="font-size:11px;">${escapeHtml(Number(r.score ?? 0).toFixed(4))}</span>
       </div>
       <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(r.metadata?.created_at ?? "")}</p>
-    </button>
-  `).join("");
+      ${taskExists ? `<button type="button" class="ghost" data-open-history-task="${escapeHtml(r.id)}" style="margin-top:8px;font-size:11px;padding:4px 8px;">Open task</button>` : ""}
+    </div>
+  `;
+  }).join("");
 
   for (const btn of historyList.querySelectorAll("[data-history-summary]")) {
     btn.addEventListener("click", () => {
       historyPreview.textContent = btn.dataset.historySummary || "No summary";
-      const taskId = btn.dataset.historyTaskId;
-      if (taskId && state.workspace.tasks.some((t) => t.task_id === taskId)) {
-        state.selectedTaskId = taskId;
-        switchTab("tasks");
-        renderTasks();
-        void refreshTaskDetail();
+    });
+    btn.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        historyPreview.textContent = btn.dataset.historySummary || "No summary";
       }
+    });
+  }
+
+  for (const btn of historyList.querySelectorAll("[data-open-history-task]")) {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const taskId = btn.dataset.openHistoryTask;
+      if (!taskId) return;
+      state.selectedTaskId = taskId;
+      switchTab("tasks");
+      renderTasks();
+      void refreshTaskDetail();
     });
   }
 }
@@ -2408,6 +2686,17 @@ taskComposer.addEventListener("submit", async (event) => {
 refreshButton.addEventListener("click", () => void refreshWorkspace());
 openOverlayButton.addEventListener("click", async () => await window.ucaShell.showWindow("overlay"));
 
+consoleChatForm?.addEventListener("submit", (event) => {
+  event.preventDefault();
+  void submitConsoleChat();
+});
+consoleChatInput?.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    void submitConsoleChat();
+  }
+});
+
 retryTaskButton.addEventListener("click", async () => {
   if (!state.selectedTaskId) return;
   await fetchJson(`/task/${encodeURIComponent(state.selectedTaskId)}/retry`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "retry_same" }) });
@@ -2609,6 +2898,26 @@ skillRegistryForm?.addEventListener("submit", async (event) => {
   }
 });
 
+skillEditCloseBtn?.addEventListener("click", closeSkillEditor);
+skillEditModal?.addEventListener("click", (event) => {
+  if (event.target === skillEditModal) closeSkillEditor();
+});
+skillEditSaveBtn?.addEventListener("click", async () => {
+  if (!editingSkillPath || !skillEditText) return;
+  skillEditState.textContent = "Saving...";
+  try {
+    await fetchJson("/skills/write", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ entryPath: editingSkillPath, markdown: skillEditText.value })
+    });
+    skillEditState.textContent = "Saved.";
+    await refreshWorkspace();
+  } catch (error) {
+    skillEditState.textContent = `Failed: ${error.message}`;
+  }
+});
+
 codeCliAdapterForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   const id = codeCliAdapterId.value.trim();
@@ -2776,13 +3085,12 @@ function renderConnEmailAccounts(accounts) {
     return;
   }
   connEmailList.innerHTML = accounts.map((acc) => `
-    <div style="display:flex;align-items:center;gap:10px;padding:9px 12px;background:var(--surface2,#23252e);border-radius:8px;border:1px solid rgba(255,255,255,0.07);">
-      <span style="font-size:18px;">${acc.provider === "graph" ? "📧" : "✉"}</span>
+    <div class="surface" style="display:flex;align-items:center;gap:10px;padding:12px;">
       <div style="flex:1;min-width:0;">
         <div style="font-size:13px;font-weight:500;">${acc.displayName ?? acc.email ?? acc.id}</div>
         <div style="font-size:11px;color:var(--muted);">${acc.provider?.toUpperCase() ?? "IMAP"} · ${acc.imapHost ?? (acc.provider === "graph" ? "Microsoft Graph" : "")}</div>
       </div>
-      <button class="ghost" style="font-size:12px;padding:3px 8px;color:#ef4444;" data-delete-email="${acc.id}">移除</button>
+      <button class="ghost" style="font-size:12px;padding:3px 8px;" data-delete-email="${acc.id}">移除</button>
     </div>`).join("");
   connEmailList.querySelectorAll("[data-delete-email]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -2798,13 +3106,20 @@ function renderConnEmailAccounts(accounts) {
 }
 
 const MCP_SERVER_META = {
-  "mcp-filesystem": { icon: "📁", desc: "读写本地文件（白名单目录）" },
-  "mcp-memory":     { icon: "🧠", desc: "跨会话 Key-Value 持久记忆" },
-  "mcp-brave-search": { icon: "🔍", desc: "Brave 网页搜索（需 API Key）", configKey: "BRAVE_API_KEY", configLabel: "Brave API Key", configPlaceholder: "BSA..." },
-  "mcp-puppeteer":  { icon: "🌐", desc: "Puppeteer 浏览器自动化（会打开 Chrome）" },
-  "local-fs":       { icon: "📂", desc: "本地文件系统（已弃用，用 mcp-filesystem 代替）" },
-  "figma":          { icon: "🎨", desc: "Figma 设计工具集成（需 Figma MCP 插件）" }
+  "mcp-filesystem": { title: "Filesystem", desc: "Read and write files in allowed local directories." },
+  "mcp-memory":     { title: "Memory", desc: "Persistent graph memory for agentic tasks." },
+  "mcp-brave-search": { title: "Brave Search", desc: "Web search through Brave Search API.", configKey: "BRAVE_API_KEY", configLabel: "Brave API Key", configPlaceholder: "BSA..." },
+  "mcp-puppeteer":  { title: "Browser Automation", desc: "Puppeteer-powered browser actions for agentic workflows." },
+  "local-fs":       { title: "Legacy Local FS", desc: "Deprecated. Use Filesystem instead." },
+  "figma":          { title: "Figma", desc: "Design context through an external Figma MCP plugin.", guideUrl: "https://www.figma.com/" }
 };
+
+const EXTRA_PLUGIN_OPTIONS = [
+  { title: "GitHub", desc: "Repository issues, pull requests, and code search. Plugin installer pending.", status: "Coming soon" },
+  { title: "Notion", desc: "Pages, databases, and workspace notes. Plugin installer pending.", status: "Coming soon" },
+  { title: "Slack", desc: "Channel messages and team workflow actions. Plugin installer pending.", status: "Coming soon" },
+  { title: "Google Drive", desc: "Docs and Drive file context. Plugin installer pending.", status: "Coming soon" }
+];
 
 function getMcpStatusView(server) {
   if (server.detail === "legacy_stub_use_mcp_filesystem") {
@@ -2815,6 +3130,9 @@ function getMcpStatusView(server) {
   }
   if (server.available && server.enabled) {
     return { label: "运行中", className: "ready" };
+  }
+  if (server.detail === "disabled" || (server.configured && !server.enabled)) {
+    return { label: "可安装", className: "muted" };
   }
   if (!server.available) {
     return { label: "未安装", className: "error" };
@@ -2828,32 +3146,37 @@ function renderConnectorsMcpServers(servers) {
     connectorsMcpList.innerHTML = "<p class='muted' style='font-size:12px;'>No MCP servers found.</p>";
     return;
   }
-  connectorsMcpList.innerHTML = "";
+  connectorsMcpList.innerHTML = `<div class="connector-plugin-grid"></div>`;
+  const grid = connectorsMcpList.querySelector(".connector-plugin-grid");
   for (const s of servers) {
-    const meta = MCP_SERVER_META[s.id] ?? { icon: "🔌", desc: s.id };
+    const meta = MCP_SERVER_META[s.id] ?? { title: s.displayName ?? s.id, desc: s.id };
     const status = getMcpStatusView(s);
     const statusLabel = status.label;
     const statusClass = status.className;
     const hasCfg = !!meta.configKey;
+    const needsConfig = hasCfg && !s.enabled;
+    const canInstall = Boolean(s.configured || s.available || needsConfig);
+    const installed = s.available && s.enabled;
     const cardId = `mcp-card-${s.id}`;
 
     const card = document.createElement("div");
-    card.className = "mcp-server-card";
+    card.className = `connector-plugin-card mcp-server-card ${canInstall ? "" : "unavailable"}`;
     card.id = cardId;
     card.innerHTML = `
       <div class="mcp-server-card-header">
-        <span class="mcp-server-icon">${meta.icon}</span>
         <div class="mcp-server-info">
-          <div class="mcp-server-name">${s.displayName ?? s.id}</div>
-          <div class="mcp-server-desc">${meta.desc}</div>
+          <div class="mcp-server-name">${escapeHtml(meta.title ?? s.displayName ?? s.id)}</div>
+          <div class="mcp-server-desc">${escapeHtml(meta.desc)}</div>
         </div>
         <span class="mcp-status-dot ${statusClass}" title="${statusLabel}"></span>
         <span style="font-size:11px;color:var(--muted);margin-right:6px;">${statusLabel}</span>
-        ${hasCfg ? `<button class="ghost" style="font-size:11px;padding:3px 8px;margin-right:6px;" data-mcp-config="${s.id}">⚙ 配置</button>` : ""}
-        <label class="conn-toggle" title="${s.enabled ? '点击关闭' : '点击开启'}">
-          <input type="checkbox" ${s.enabled ? "checked" : ""} ${!s.available ? "disabled" : ""} data-mcp-toggle="${s.id}">
-          <span class="conn-toggle-track"></span>
-        </label>
+      </div>
+      <div class="toolbar" style="padding:0 14px 12px;">
+        ${hasCfg ? `<button class="secondary" style="font-size:12px;" data-mcp-config="${escapeHtml(s.id)}">${needsConfig ? "Configure" : "Configure"}</button>` : ""}
+        ${meta.guideUrl ? `<button class="ghost" style="font-size:12px;" data-plugin-guide="${escapeHtml(meta.guideUrl)}">Guide</button>` : ""}
+        <button class="${installed ? "ghost" : "primary"}" style="font-size:12px;" ${canInstall ? "" : "disabled"} data-mcp-install="${escapeHtml(s.id)}" data-mcp-enabled="${installed ? "false" : "true"}">
+          ${installed ? "Disable" : needsConfig ? "Configure first" : "Install"}
+        </button>
       </div>
       ${hasCfg ? `
       <div class="mcp-server-config" id="mcp-cfg-${s.id}">
@@ -2867,14 +3190,37 @@ function renderConnectorsMcpServers(servers) {
         </div>
       </div>` : ""}
     `;
-    connectorsMcpList.appendChild(card);
+    grid?.appendChild(card);
   }
 
-  // Wire toggle switches
-  connectorsMcpList.querySelectorAll("[data-mcp-toggle]").forEach((input) => {
-    input.addEventListener("change", async () => {
-      const id = input.dataset.mcpToggle;
-      const enabled = input.checked;
+  for (const option of EXTRA_PLUGIN_OPTIONS) {
+    const card = document.createElement("div");
+    card.className = "connector-plugin-card unavailable";
+    card.innerHTML = `
+      <div class="mcp-server-card-header">
+        <div class="mcp-server-info">
+          <div class="mcp-server-name">${escapeHtml(option.title)}</div>
+          <div class="mcp-server-desc">${escapeHtml(option.desc)}</div>
+        </div>
+        <span class="chip muted">${escapeHtml(option.status)}</span>
+      </div>
+      <div class="toolbar" style="padding:0 14px 12px;">
+        <button class="secondary" disabled style="font-size:12px;">Install</button>
+      </div>
+    `;
+    grid?.appendChild(card);
+  }
+
+  connectorsMcpList.querySelectorAll("[data-mcp-install]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      const id = button.dataset.mcpInstall;
+      const enabled = button.dataset.mcpEnabled === "true";
+      const cfgDiv = document.getElementById(`mcp-cfg-${id}`);
+      if (button.textContent.includes("Configure") && cfgDiv) {
+        cfgDiv.classList.add("open");
+        return;
+      }
+      button.disabled = true;
       try {
         await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/toggle`, {
           method: "PATCH",
@@ -2883,8 +3229,15 @@ function renderConnectorsMcpServers(servers) {
         });
         await loadConnectorsTab();
       } catch (err) {
-        input.checked = !enabled; // revert
+        button.disabled = false;
       }
+    });
+  });
+
+  connectorsMcpList.querySelectorAll("[data-plugin-guide]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const url = button.dataset.pluginGuide;
+      if (url) void window.ucaShell?.openExternal?.(url);
     });
   });
 
@@ -2927,10 +3280,11 @@ function renderConnectorsMcpServers(servers) {
 
 async function loadConnectorsTab() {
   try {
-    const [accountsResp, mcpResp, settingsResp] = await Promise.all([
+    const [accountsResp, mcpResp, settingsResp, acResp] = await Promise.all([
       fetch(`${state.serviceBaseUrl}/config/email/accounts`),
       fetch(`${state.serviceBaseUrl}/ai/mcp`),
-      fetch(`${state.serviceBaseUrl}/config/email/settings`)
+      fetch(`${state.serviceBaseUrl}/config/email/settings`),
+      fetch(`${state.serviceBaseUrl}/connectors/accounts`)
     ]);
     if (accountsResp.ok) {
       const { accounts } = await accountsResp.json();
@@ -2944,18 +3298,324 @@ async function loadConnectorsTab() {
       const { settings } = await settingsResp.json();
       if (connDigestEnabled) connDigestEnabled.checked = settings.enabled !== false;
     }
+    if (acResp.ok) {
+      const { connectors } = await acResp.json();
+      renderAccountConnectors(connectors ?? []);
+    }
   } catch (err) {
     if (connEmailList) connEmailList.innerHTML = `<p class='muted' style='font-size:12px;'>Could not load: ${err.message}</p>`;
   }
 }
 
+// ── Account Connectors (Microsoft 365 / Google) ───────────────────────────────
+
+const ACCOUNT_CONNECTOR_META = {
+  microsoft: {
+    label: "Microsoft 365",
+    logo: "Ⓜ",
+    logoClass: "microsoft",
+    desc: "OneDrive 文件 · Outlook 邮件 · 日历",
+    scopes: "Files.Read、Mail.Read、Calendars.Read",
+    setupTitle: "注册 Azure AD 应用（免费）",
+    setupSteps: [
+      "打开 Azure 门户 → 应用注册 → 新建注册",
+      "受支持账户类型选\"任何组织目录中的账户和个人 Microsoft 账户\"",
+      "重定向 URI 选 Public client/native，填 http://localhost:4310/auth/callback",
+      "注册完成后，将\"应用程序(客户端) ID\"粘贴到下方",
+      "Microsoft PKCE 流无需客户端密码"
+    ],
+    setupUrl: "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
+    needsSecret: false
+  },
+  google: {
+    label: "Google",
+    logo: "G",
+    logoClass: "google",
+    desc: "Google Drive 文件 · Gmail · 日历",
+    scopes: "drive.readonly、gmail.readonly、calendar.readonly",
+    setupTitle: "创建 Google OAuth 应用（免费）",
+    setupSteps: [
+      "打开 Google Cloud Console → API 和服务 → 凭据",
+      "创建凭据 → OAuth 客户端 ID → 类型选\"桌面应用\"",
+      "将 http://localhost:4310/auth/callback 加入已授权的重定向 URI",
+      "复制客户端 ID 和客户端密码粘贴到下方",
+      "在 OAuth 同意屏幕里添加你自己的邮箱为测试用户"
+    ],
+    setupUrl: "https://console.cloud.google.com/apis/credentials",
+    needsSecret: true
+  }
+};
+
+let _acConfigOpen = {};   // { microsoft: bool, google: bool }
+let _acResourceTab = {};  // { microsoft: 'files'|'emails'|'calendar' }
+
+async function renderAccountConnectors(connectors) {
+  const list = document.getElementById("accountConnectorsList");
+  if (!list) return;
+  list.innerHTML = "";
+
+  for (const connector of connectors) {
+    const meta = ACCOUNT_CONNECTOR_META[connector.type];
+    if (!meta) continue;
+    const type = connector.type;
+
+    const card = document.createElement("div");
+    card.className = "account-connector-card";
+    card.dataset.acType = type;
+
+    // ── Main row ──
+    const dotClass = connector.connected ? "connected" : "";
+    const statusText = connector.connected
+      ? (connector.email ?? "已连接")
+      : connector.configured
+        ? "未连接 — 点击\"授权\"登录"
+        : "需要配置 Client ID";
+    const connectBtn = connector.connected
+      ? `<button class="ghost" data-ac-disconnect="${type}" style="font-size:12px;padding:5px 12px;">断开</button>`
+      : `<button class="primary" data-ac-connect="${type}" style="font-size:12px;padding:5px 12px;"${connector.configured ? "" : " disabled"}>授权登录</button>`;
+    const configToggleLabel = _acConfigOpen[type] ? "收起" : "配置";
+
+    card.innerHTML = `
+      <div class="acc-card-main">
+        <div class="acc-logo ${meta.logoClass}">${meta.logo}</div>
+        <div class="acc-info">
+          <p class="acc-name">${meta.label}</p>
+          <p class="acc-desc">${connector.connected ? escapeHtml(statusText) : meta.desc}</p>
+        </div>
+        <span class="acc-status-dot ${dotClass}" title="${escapeHtml(statusText)}"></span>
+        <div class="acc-actions">
+          ${connectBtn}
+          <button class="ghost" data-ac-config-toggle="${type}" style="font-size:12px;padding:5px 10px;">${configToggleLabel}</button>
+        </div>
+      </div>
+    `;
+
+    // ── Config panel (shown when user clicks "配置") ──
+    if (_acConfigOpen[type]) {
+      let cfgData = { clientId: "", hasClientSecret: false };
+      try {
+        const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}/config`);
+        if (r.ok) cfgData = await r.json();
+      } catch { /* ignore */ }
+
+      const configPanel = document.createElement("div");
+      configPanel.className = "acc-config-panel";
+      configPanel.innerHTML = `
+        <details style="font-size:12px;color:var(--muted);">
+          <summary style="cursor:pointer;font-weight:600;color:var(--text);">${escapeHtml(meta.setupTitle)}</summary>
+          <ol style="margin:8px 0 0 16px;padding:0;line-height:1.7;">
+            ${meta.setupSteps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
+          </ol>
+          <a href="#" data-external-url="${escapeHtml(meta.setupUrl)}" style="font-size:11px;color:var(--accent);">打开 ${meta.label} 开发者控制台 →</a>
+        </details>
+        <div>
+          <label>Client ID</label>
+          <input type="text" data-ac-field="clientId" placeholder="粘贴 Client ID…" value="${escapeHtml(cfgData.clientId)}" autocomplete="off">
+        </div>
+        ${meta.needsSecret ? `
+        <div>
+          <label>Client Secret</label>
+          <input type="password" data-ac-field="clientSecret" placeholder="${cfgData.hasClientSecret ? "（已保存）" : "粘贴 Client Secret…"}" autocomplete="new-password">
+        </div>` : `<p style="font-size:11px;color:var(--muted);margin:0;">✓ Microsoft PKCE 流无需 Client Secret</p>`}
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button class="primary" data-ac-save-config="${type}" style="font-size:12px;padding:5px 14px;">保存</button>
+          <span data-ac-config-status style="font-size:12px;color:var(--muted);"></span>
+        </div>
+      `;
+      card.appendChild(configPanel);
+    }
+
+    // ── Resource strip (shown when connected) ──
+    if (connector.connected) {
+      const tab = _acResourceTab[type] ?? "files";
+      const strip = document.createElement("div");
+      strip.className = "acc-resource-strip";
+      strip.innerHTML = `
+        <button data-ac-res="${type}" data-ac-tab="files" ${tab === "files" ? "style='border-color:rgba(255,255,255,0.35);color:var(--text);'" : ""}>📁 文件</button>
+        <button data-ac-res="${type}" data-ac-tab="emails" ${tab === "emails" ? "style='border-color:rgba(255,255,255,0.35);color:var(--text);'" : ""}>📧 邮件</button>
+        <button data-ac-res="${type}" data-ac-tab="calendar" ${tab === "calendar" ? "style='border-color:rgba(255,255,255,0.35);color:var(--text);'" : ""}>📅 日历</button>
+      `;
+      card.appendChild(strip);
+
+      const resourceBody = document.createElement("div");
+      resourceBody.style.cssText = "padding:0 16px 12px;font-size:12px;";
+      resourceBody.dataset.acResourceBody = type;
+      resourceBody.innerHTML = `<p class="muted" style="margin:6px 0;">加载中…</p>`;
+      card.appendChild(resourceBody);
+    }
+
+    list.appendChild(card);
+  }
+
+  // Wire events
+  list.querySelectorAll("[data-ac-connect]").forEach((btn) => {
+    btn.addEventListener("click", () => handleAccountConnect(btn.dataset.acConnect));
+  });
+  list.querySelectorAll("[data-ac-disconnect]").forEach((btn) => {
+    btn.addEventListener("click", () => handleAccountDisconnect(btn.dataset.acDisconnect));
+  });
+  list.querySelectorAll("[data-ac-config-toggle]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const type = btn.dataset.acConfigToggle;
+      _acConfigOpen[type] = !_acConfigOpen[type];
+      void loadConnectorsTab();
+    });
+  });
+  list.querySelectorAll("[data-ac-save-config]").forEach((btn) => {
+    btn.addEventListener("click", () => handleAccountConfigSave(btn.dataset.acSaveConfig, btn.closest(".acc-config-panel")));
+  });
+  list.querySelectorAll("[data-external-url]").forEach((a) => {
+    a.addEventListener("click", (e) => {
+      e.preventDefault();
+      window.ucaShell?.openExternal?.(a.dataset.externalUrl);
+    });
+  });
+  list.querySelectorAll("[data-ac-res]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const { acRes: type, acTab: tab } = btn.dataset;
+      _acResourceTab[type] = tab;
+      void loadAccountResourcePreview(type, tab);
+      // update button styles in-place without full re-render
+      btn.closest(".acc-resource-strip").querySelectorAll("[data-ac-res]").forEach((b) => {
+        b.removeAttribute("style");
+      });
+      btn.style.cssText = "border-color:rgba(255,255,255,0.35);color:var(--text);";
+    });
+  });
+
+  // Auto-load resource previews for connected accounts
+  for (const connector of connectors) {
+    if (connector.connected) {
+      void loadAccountResourcePreview(connector.type, _acResourceTab[connector.type] ?? "files");
+    }
+  }
+}
+
+async function handleAccountConnect(type) {
+  try {
+    const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}/auth/start`, { method: "POST" });
+    const data = await r.json();
+    if (!r.ok) {
+      alert(data.message ?? data.error ?? "启动授权失败，请先配置 Client ID。");
+      _acConfigOpen[type] = true;
+      void loadConnectorsTab();
+      return;
+    }
+    // Open the OAuth URL in the system browser
+    if (window.ucaShell?.openExternal) {
+      await window.ucaShell.openExternal(data.authUrl);
+    } else {
+      window.open(data.authUrl, "_blank");
+    }
+    // Poll for completion
+    const btn = document.querySelector(`[data-ac-connect="${type}"]`);
+    if (btn) { btn.textContent = "等待授权…"; btn.disabled = true; }
+    let tries = 0;
+    const poll = setInterval(async () => {
+      tries++;
+      if (tries > 60) { clearInterval(poll); void loadConnectorsTab(); return; }
+      try {
+        const sr = await fetch(`${state.serviceBaseUrl}/connectors/accounts`);
+        if (!sr.ok) return;
+        const { connectors } = await sr.json();
+        const c = connectors.find((x) => x.type === type);
+        if (c?.connected) { clearInterval(poll); void loadConnectorsTab(); }
+      } catch { /* retry */ }
+    }, 2000);
+  } catch (err) {
+    alert(`授权失败: ${err.message}`);
+  }
+}
+
+async function handleAccountDisconnect(type) {
+  if (!confirm(`断开 ${ACCOUNT_CONNECTOR_META[type]?.label ?? type} 连接？已缓存的 token 将被删除。`)) return;
+  await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}`, { method: "DELETE" });
+  delete _acResourceTab[type];
+  void loadConnectorsTab();
+}
+
+async function handleAccountConfigSave(type, panel) {
+  const status = panel?.querySelector("[data-ac-config-status]");
+  const clientId = panel?.querySelector("[data-ac-field='clientId']")?.value?.trim() ?? "";
+  const clientSecret = panel?.querySelector("[data-ac-field='clientSecret']")?.value?.trim() ?? "";
+  const body = { clientId };
+  if (clientSecret) body.clientSecret = clientSecret;
+  try {
+    const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}/config`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    if (r.ok) {
+      if (status) { status.textContent = "✓ 已保存"; setTimeout(() => { if (status) status.textContent = ""; }, 2000); }
+      void loadConnectorsTab();
+    } else {
+      if (status) status.textContent = "保存失败";
+    }
+  } catch (err) {
+    if (status) status.textContent = `Error: ${err.message}`;
+  }
+}
+
+async function loadAccountResourcePreview(type, tab) {
+  const body = document.querySelector(`[data-ac-resource-body="${type}"]`);
+  if (!body) return;
+  body.innerHTML = `<p class="muted" style="margin:6px 0;">加载中…</p>`;
+  try {
+    let url;
+    if (tab === "files") url = `${state.serviceBaseUrl}/connectors/accounts/${type}/files?limit=8`;
+    else if (tab === "emails") url = `${state.serviceBaseUrl}/connectors/accounts/${type}/emails?limit=6`;
+    else url = `${state.serviceBaseUrl}/connectors/accounts/${type}/calendar?limit=6`;
+
+    const r = await fetch(url);
+    if (!r.ok) { body.innerHTML = `<p class="muted" style="margin:6px 0;">加载失败</p>`; return; }
+    const data = await r.json();
+
+    if (tab === "files") {
+      const files = data.files ?? [];
+      if (!files.length) { body.innerHTML = `<p class="muted" style="margin:6px 0;">暂无文件</p>`; return; }
+      body.innerHTML = files.map((f) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <span style="font-size:14px;">${f.isFolder ? "📁" : "📄"}</span>
+          <a href="#" data-external-url="${escapeHtml(f.url ?? "")}" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);text-decoration:none;">${escapeHtml(f.name)}</a>
+          <span style="font-size:10px;color:var(--muted);white-space:nowrap;">${f.modified ? new Date(f.modified).toLocaleDateString("zh-CN") : ""}</span>
+        </div>`).join("");
+    } else if (tab === "emails") {
+      const emails = data.emails ?? [];
+      if (!emails.length) { body.innerHTML = `<p class="muted" style="margin:6px 0;">暂无邮件</p>`; return; }
+      body.innerHTML = emails.map((m) => `
+        <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <div style="font-weight:${m.isRead ? 400 : 600};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.subject ?? "(无主题)")}</div>
+          <div style="font-size:10px;color:var(--muted);">${escapeHtml(m.fromName ?? m.from ?? "")} · ${m.received ? new Date(m.received).toLocaleDateString("zh-CN") : ""}</div>
+        </div>`).join("");
+    } else {
+      const events = data.events ?? [];
+      if (!events.length) { body.innerHTML = `<p class="muted" style="margin:6px 0;">近期无日程</p>`; return; }
+      body.innerHTML = events.map((e) => `
+        <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
+          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(e.title ?? "(无标题)")}</div>
+          <div style="font-size:10px;color:var(--muted);">${e.start ? new Date(e.start).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""} ${e.location ? "· " + escapeHtml(e.location) : ""}</div>
+        </div>`).join("");
+    }
+
+    body.querySelectorAll("[data-external-url]").forEach((a) => {
+      a.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        if (a.dataset.externalUrl) window.ucaShell?.openExternal?.(a.dataset.externalUrl);
+      });
+    });
+  } catch (err) {
+    body.innerHTML = `<p class="muted" style="margin:6px 0;">Error: ${escapeHtml(err.message)}</p>`;
+  }
+}
+
 // ── Email provider cards ──────────────────────────────────────
 const IMAP_PRESETS = {
-  gmail:   { host: "imap.gmail.com",        port: 993, passLabel: "App 专用密码", hint: "需在 Google 账户开启两步验证后生成应用专用密码" },
-  outlook: { host: "imap-mail.outlook.com", port: 993, passLabel: "密码 / App Password", hint: "" },
-  qq:      { host: "imap.qq.com",           port: 993, passLabel: "授权码", hint: "在 QQ 邮箱设置 → 账户 → IMAP → 开启 → 生成授权码" },
-  "163":   { host: "imap.163.com",          port: 993, passLabel: "授权密码", hint: "在 163 邮箱设置 → POP3/SMTP/IMAP → 开启 → 生成授权密码" },
-  other:   { host: "",                       port: 993, passLabel: "密码", hint: "" }
+  gmail:   { host: "imap.gmail.com",        port: 993, passLabel: "App 专用密码", hint: "需在 Google 账户开启两步验证后生成应用专用密码", setupUrl: "https://myaccount.google.com/apppasswords", steps: ["打开 Google Account → Security。", "开启 2-Step Verification。", "进入 App passwords，创建 Mail 专用密码。", "把生成的 16 位密码粘贴到这里。"] },
+  outlook: { host: "imap-mail.outlook.com", port: 993, passLabel: "密码 / App Password", hint: "Microsoft 账户启用双重验证时，需要创建 App password。", setupUrl: "https://account.live.com/proofs/manage/additional", steps: ["打开 Microsoft account security。", "如果开启了双重验证，创建 App password。", "如果组织账号禁用了 IMAP，需要管理员在 Exchange/Graph 里开启。"] },
+  qq:      { host: "imap.qq.com",           port: 993, passLabel: "授权码", hint: "在 QQ 邮箱设置 → 账户 → IMAP → 开启 → 生成授权码", setupUrl: "https://mail.qq.com/", steps: ["登录 QQ 邮箱网页版。", "进入设置 → 账户。", "开启 IMAP/SMTP 服务。", "按提示发送短信后复制授权码。"] },
+  "163":   { host: "imap.163.com",          port: 993, passLabel: "授权密码", hint: "在 163 邮箱设置 → POP3/SMTP/IMAP → 开启 → 生成授权密码", setupUrl: "https://mail.163.com/", steps: ["登录 163 邮箱网页版。", "进入设置 → POP3/SMTP/IMAP。", "开启 IMAP 服务。", "生成并复制客户端授权密码。"] },
+  other:   { host: "",                       port: 993, passLabel: "密码 / App password", hint: "如果不确定 IMAP 信息，搜索“你的邮箱服务商 IMAP 设置”。", setupUrl: "", steps: ["找到邮箱服务商的 IMAP 设置页面。", "确认 IMAP host、端口 993、SSL/TLS 已开启。", "优先使用 App password 或授权码，不要使用网页登录密码。"] }
 };
 
 const PROVIDER_NAMES = {
@@ -2963,6 +3623,25 @@ const PROVIDER_NAMES = {
 };
 
 let _currentEmailProvider = null;
+
+function renderEmailSetupGuide(provider, preset) {
+  const guide = document.getElementById("connEmailSetupGuide");
+  if (!guide) return;
+  const setupLink = preset.setupUrl
+    ? `<button type="button" class="ghost" data-email-setup-url="${escapeHtml(preset.setupUrl)}">打开网页登录/设置页面</button>`
+    : "";
+  guide.style.display = "";
+  guide.innerHTML = `
+    <strong>${escapeHtml(PROVIDER_NAMES[provider] ?? provider)} setup</strong>
+    <p style="margin:6px 0 0;">当前版本还没有接完整 OAuth 网页登录授权流，所以这里使用 IMAP 授权码 / App password。这样比输入网页登录密码更安全，也更容易撤销。</p>
+    <ol>${(preset.steps ?? []).map((step) => `<li>${escapeHtml(step)}</li>`).join("")}</ol>
+    <div class="toolbar" style="margin-top:8px;">${setupLink}</div>
+  `;
+  guide.querySelector("[data-email-setup-url]")?.addEventListener("click", (event) => {
+    const url = event.currentTarget.dataset.emailSetupUrl;
+    if (url) void window.ucaShell?.openExternal?.(url);
+  });
+}
 
 document.querySelectorAll(".conn-provider-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -2981,6 +3660,7 @@ document.querySelectorAll(".conn-provider-btn").forEach((btn) => {
     if (formTitle) formTitle.textContent = `连接 ${PROVIDER_NAMES[provider] ?? provider}`;
     if (passLabel) passLabel.textContent = preset.passLabel;
     if (hint) hint.textContent = preset.hint;
+    renderEmailSetupGuide(provider, preset);
     if (hostInput) hostInput.value = preset.host;
     if (hostRow) hostRow.style.display = provider === "other" ? "" : "none";
     if (addrInput) { addrInput.value = ""; addrInput.placeholder = provider === "other" ? "you@example.com" : `you@${provider === "163" ? "163.com" : provider + ".com"}`; }
@@ -3052,6 +3732,23 @@ connDigestTestBtn?.addEventListener("click", async () => {
     }
   } catch (err) {
     if (connDigestTestState) connDigestTestState.textContent = `Error: ${err.message}`;
+  }
+});
+
+connDigestEnabled?.addEventListener("change", async () => {
+  try {
+    const result = await fetchJson("/config/email/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...(state.workspace.emailDigestSettings ?? {}),
+        enabled: connDigestEnabled.checked
+      })
+    });
+    state.workspace.emailDigestSettings = result.settings ?? state.workspace.emailDigestSettings;
+    renderEmailDigestSettings();
+  } catch (error) {
+    if (connDigestTestState) connDigestTestState.textContent = `Error: ${error.message}`;
   }
 });
 

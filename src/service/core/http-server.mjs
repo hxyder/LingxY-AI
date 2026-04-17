@@ -1,14 +1,16 @@
 import http from "node:http";
 import crypto from "node:crypto";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { URL } from "node:url";
 import { promisify } from "node:util";
 import { createTaskEventStream, encodeSseFrame } from "../events/sse.mjs";
 import { retryTask } from "../retry/retry-manager.mjs";
-import { cancelTask } from "./task-runtime.mjs";
+import { createArtifactStore } from "../store/artifact-store.mjs";
+import { cancelTask, emitTaskEvent } from "./task-runtime.mjs";
 import { tryFastPath } from "./router/fast-path-router.mjs";
 import { submitActionToolTask } from "./action-tool-submission.mjs";
 import { submitBrowserTask } from "./browser-submission.mjs";
@@ -17,6 +19,12 @@ import { submitFileTask } from "./file-submission.mjs";
 import { submitImageTask } from "./image-submission.mjs";
 import { submitOfficeTask } from "./office-submission.mjs";
 import { listEmailAccounts, upsertEmailAccount, deleteEmailAccount } from "../email/accounts.mjs";
+import {
+  startMicrosoftAuth, startGoogleAuth,
+  completeOAuthCallback, disconnectAccount,
+  getConnectorStatus, loadConnectorConfig, saveConnectorConfig,
+  listFiles, listEmails, listCalendarEvents
+} from "../connectors/account-connectors.mjs";
 import { maybeRunMorningDigest } from "../email/digest.mjs";
 import { saveAutoSkill } from "./skill-pattern-tracker.mjs";
 import { normalizeTemplateDocument } from "../templates/parser.mjs";
@@ -24,6 +32,7 @@ import { validateTemplateDocument } from "../templates/schema.mjs";
 import { resumeDagGraph, validateDagDefinition } from "../dag/scheduler.mjs";
 import { detectAmbiguity } from "./clarifier.mjs";
 import { parseRelativeTime, formatRelativeDuration } from "../utils/time-parser.mjs";
+import { resolveProviderForTask } from "../executors/shared/provider-resolver.mjs";
 import { extractPageContent } from "../extractors/page_source/index.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -33,6 +42,191 @@ function sendJson(response, statusCode, payload) {
     "Content-Type": "application/json; charset=utf-8"
   });
   response.end(`${JSON.stringify(payload)}\n`);
+}
+
+function sendHtml(response, statusCode, html) {
+  response.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" });
+  response.end(html);
+}
+
+function expandLocalPath(value) {
+  if (!value) return null;
+  return `${value}`
+    .replaceAll("%CODEX_HOME%", process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"))
+    .replaceAll("%USERPROFILE%", os.homedir())
+    .replace(/^~(?=$|[\\/])/, os.homedir());
+}
+
+function isPathInside(candidatePath, rootPath) {
+  const candidate = path.resolve(candidatePath).toLowerCase();
+  const root = path.resolve(rootPath).toLowerCase();
+  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
+}
+
+function resolveSkillEntryPath(runtime, entryPath) {
+  if (!entryPath || path.basename(entryPath) !== "SKILL.md") {
+    return null;
+  }
+  const config = runtime.configStore?.load?.() ?? {};
+  const roots = [
+    runtime.paths?.skillsDir,
+    path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "skills"),
+    ...(config.ai?.skills?.registries ?? []).map((registry) => expandLocalPath(registry.rootPath ?? registry.path))
+  ].filter(Boolean);
+  const resolved = path.resolve(entryPath);
+  return roots.some((root) => isPathInside(resolved, root)) ? resolved : null;
+}
+
+function readApiKey(env, ...keys) {
+  for (const key of keys) {
+    const value = env[key];
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+function isOfficialOpenAIBaseUrl(baseUrl = "") {
+  try {
+    const url = new URL(baseUrl || "https://api.openai.com/v1");
+    return url.hostname === "api.openai.com";
+  } catch {
+    return false;
+  }
+}
+
+function providerSupportsAudioTranscription(provider = {}) {
+  if (provider.kind !== "openai" || !provider.apiKey) return false;
+  if (provider.audioTranscription === true || provider.capabilities?.audioTranscription === true) return true;
+  // Avoid sending audio to chat-only OpenAI-compatible providers like DeepSeek.
+  return isOfficialOpenAIBaseUrl(provider.baseUrl);
+}
+
+function providerPublicDescriptor(provider = null) {
+  if (!provider) return null;
+  return {
+    id: provider.configId ?? provider.id ?? null,
+    kind: provider.kind ?? null,
+    name: provider.providerName ?? provider.name ?? null,
+    baseUrl: provider.baseUrl ?? null,
+    model: provider.model ?? provider.defaultModel ?? null
+  };
+}
+
+function pickAudioTranscriptionModel(provider = {}, fallback = "whisper-1") {
+  const explicit = provider.audioTranscriptionModel || provider.transcriptionModel;
+  if (explicit) return explicit;
+  const defaultModel = `${provider.defaultModel ?? ""}`.trim();
+  if (defaultModel === "whisper-1" || /transcribe/.test(defaultModel)) return defaultModel;
+  return fallback;
+}
+
+function resolveAudioTranscriptionProvider(runtime, env = process.env) {
+  const envKey = readApiKey(env, "UCA_TRANSCRIPTION_API_KEY", "OPENAI_API_KEY", "UCA_OPENAI_API_KEY");
+  if (envKey) {
+    return {
+      id: "openai",
+      configId: "audio-env",
+      kind: "openai",
+      apiKey: envKey,
+      baseUrl: env.UCA_TRANSCRIPTION_BASE_URL ?? env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
+      model: env.UCA_TRANSCRIPTION_MODEL ?? "whisper-1",
+      providerName: "OpenAI transcription (env)"
+    };
+  }
+
+  const config = runtime.configStore?.load?.() ?? {};
+  const providers = config.ai?.customProviders ?? [];
+  const audioRoute = config.ai?.taskRouting?.audio_transcription;
+  if (audioRoute?.providerId) {
+    const routed = providers.find((provider) => provider.id === audioRoute.providerId);
+    if (providerSupportsAudioTranscription(routed)) {
+      return {
+        id: "openai",
+        configId: routed.id,
+        kind: routed.kind,
+        apiKey: routed.apiKey,
+        baseUrl: routed.baseUrl,
+        model: audioRoute.model || pickAudioTranscriptionModel(routed),
+        providerName: routed.name
+      };
+    }
+  }
+
+  const provider = providers.find(providerSupportsAudioTranscription);
+  if (!provider) return null;
+  return {
+    id: "openai",
+    configId: provider.id,
+    kind: provider.kind,
+    apiKey: provider.apiKey,
+    baseUrl: provider.baseUrl,
+    model: pickAudioTranscriptionModel(provider),
+    providerName: provider.name
+  };
+}
+
+function normalizeLanguageHint(lang = "auto") {
+  if (!lang || lang === "auto") return "auto";
+  return lang.split("-")[0];
+}
+
+function getLocalTranscriptionScriptPath() {
+  return path.resolve(process.cwd(), "scripts", "local-whisper-transcribe.py");
+}
+
+function getPythonCommand() {
+  if (process.env.UCA_PYTHON_PATH) return process.env.UCA_PYTHON_PATH;
+  const venvPython = process.platform === "win32"
+    ? path.resolve(process.cwd(), ".venv", "Scripts", "python.exe")
+    : path.resolve(process.cwd(), ".venv", "bin", "python");
+  return existsSync(venvPython) ? venvPython : "python";
+}
+
+async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", lang = "auto" } = {}) {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-note-audio-"));
+  const ext = mimeType.includes("wav") ? ".wav"
+    : mimeType.includes("mp4") || mimeType.includes("m4a") ? ".m4a"
+      : mimeType.includes("mpeg") || mimeType.includes("mp3") ? ".mp3"
+        : ".webm";
+  const audioPath = path.join(tempDir, `note-recording${ext}`);
+  try {
+    await writeFile(audioPath, audioBuffer);
+    const pythonCommand = getPythonCommand();
+    const scriptPath = getLocalTranscriptionScriptPath();
+    const { stdout } = await execFileAsync(pythonCommand, [
+      scriptPath,
+      audioPath,
+      "--language",
+      normalizeLanguageHint(lang),
+      "--model",
+      process.env.UCA_LOCAL_WHISPER_MODEL || "large-v3-turbo",
+      "--device",
+      process.env.UCA_LOCAL_WHISPER_DEVICE || "cpu",
+      "--compute-type",
+      process.env.UCA_LOCAL_WHISPER_COMPUTE_TYPE || "int8"
+    ], {
+      timeout: Number(process.env.UCA_LOCAL_WHISPER_TIMEOUT_MS ?? 30 * 60_000),
+      maxBuffer: 1024 * 1024 * 8
+    });
+    const result = JSON.parse(stdout.trim() || "{}");
+    return {
+      ...result,
+      provider: {
+        id: "local-faster-whisper",
+        kind: "local",
+        name: "Local faster-whisper",
+        model: result.model ?? process.env.UCA_LOCAL_WHISPER_MODEL ?? "large-v3-turbo"
+      }
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "local_transcription_failed",
+      message: error.message
+    };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 async function writeOverlayHandoff(body) {
@@ -344,15 +538,93 @@ function listRecentBrowserContexts(recentBrowserContexts, query = {}) {
     .map((item) => ({ ...item.context, score: item.score }));
 }
 
+function audioExtensionForMime(mimeType = "") {
+  const mime = mimeType.toLowerCase();
+  if (mime.includes("wav")) return ".wav";
+  if (mime.includes("mpeg") || mime.includes("mp3")) return ".mp3";
+  if (mime.includes("mp4") || mime.includes("m4a")) return ".m4a";
+  if (mime.includes("ogg")) return ".ogg";
+  return ".webm";
+}
+
+function sanitizeFileName(value = "", fallback = "artifact") {
+  const name = path.basename(`${value ?? ""}`).replace(/[<>:"/\\|?*]/g, "_").trim();
+  return name || fallback;
+}
+
+async function resolveTaskArtifactOutputDir({ runtime, artifactStore, task }) {
+  const existingArtifact = runtime.store.getArtifactsForTask?.(task.task_id)?.[0];
+  if (existingArtifact?.path) {
+    return path.dirname(existingArtifact.path);
+  }
+  const configuredDir = runtime?.configStore?.load?.()?.output?.defaultDir;
+  if (typeof configuredDir === "string" && configuredDir.trim()) {
+    const taskDir = path.join(configuredDir.trim(), task.task_id);
+    await mkdir(taskDir, { recursive: true });
+    return taskDir;
+  }
+  return artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+}
+
+async function saveTaskAudioArtifact({ runtime, taskId, body }) {
+  const task = runtime.store.getTask(taskId);
+  if (!task) {
+    return { ok: false, statusCode: 404, error: "task_not_found" };
+  }
+
+  const mimeType = truncateString(body.mimeType ?? "audio/webm", 120) || "audio/webm";
+  const channel = truncateString(body.channel ?? "system", 80) || "system";
+  const audioBase64 = `${body.audio ?? ""}`.replace(/^data:[^;]+;base64,/, "").trim();
+  if (!audioBase64) {
+    return { ok: false, statusCode: 400, error: "missing_audio" };
+  }
+
+  const audioBuffer = Buffer.from(audioBase64, "base64");
+  if (audioBuffer.length === 0) {
+    return { ok: false, statusCode: 400, error: "empty_audio" };
+  }
+  if (audioBuffer.length > 1024 * 1024 * 200) {
+    return { ok: false, statusCode: 413, error: "audio_too_large" };
+  }
+
+  const artifactStore = runtime.artifactStore ?? createArtifactStore();
+  const outputDir = await resolveTaskArtifactOutputDir({ runtime, artifactStore, task });
+  const ext = audioExtensionForMime(mimeType);
+  const defaultName = channel === "mic" ? `输入音频${ext}` : `输出音频-系统音频${ext}`;
+  const fileName = sanitizeFileName(body.fileName ?? defaultName, defaultName);
+  const artifactPath = path.join(outputDir, fileName.endsWith(ext) ? fileName : `${fileName}${ext}`);
+  await writeFile(artifactPath, audioBuffer);
+
+  const artifactRecord = artifactStore.registerArtifact(task.task_id, artifactPath, mimeType);
+  runtime.store.appendArtifact(artifactRecord);
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: "artifact_created",
+    payload: {
+      path: artifactPath,
+      mime: mimeType,
+      kind: "audio",
+      channel,
+      byteLength: audioBuffer.length
+    }
+  });
+  return { ok: true, statusCode: 200, artifact: artifactRecord, byteLength: audioBuffer.length };
+}
+
 function listTaskSummaries(runtime) {
   return runtime.store.listTasks().map((task) => ({
     task_id: task.task_id,
     created_at: task.created_at,
+    updated_at: task.updated_at,
     status: task.status,
     sub_status: task.sub_status,
+    progress: task.progress ?? 0,
     intent: task.intent,
     executor: task.executor,
     source_type: task.context_packet?.source_type ?? null,
+    source_app: task.context_packet?.source_app ?? null,
+    capture_mode: task.context_packet?.capture_mode ?? null,
     user_command: task.user_command,
     parent_task_id: task.parent_task_id ?? null,
     child_index: task.child_index ?? null,
@@ -490,6 +762,7 @@ async function submitTaskFromBody(runtime, body) {
     userCommand: body.userCommand,
     executionMode: body.executionMode,
     executorOverride: body.executorOverride,
+    skipDecomposition: Boolean(body.skipDecomposition),
     runtime
   });
 }
@@ -613,7 +886,7 @@ const KNOWN_CODE_CLIS = [
     binNames: ["kimi.exe", "kimi"],
     args: [],
     transport: "stream_json_print",
-    defaultModel: "kimi-k2",
+    defaultModel: "kimi-code/kimi-for-coding",
     versionFlag: "--version"
   },
   {
@@ -1008,6 +1281,25 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, { ok: true, ...saved });
       }
 
+      if (method === "GET" && url.pathname === "/skills/read") {
+        const entryPath = resolveSkillEntryPath(runtime, url.searchParams.get("entryPath"));
+        if (!entryPath) {
+          return sendJson(response, 403, { error: "skill_path_not_allowed" });
+        }
+        const markdown = await readFile(entryPath, "utf8");
+        return sendJson(response, 200, { entryPath, markdown });
+      }
+
+      if (method === "POST" && url.pathname === "/skills/write") {
+        const body = await readJsonBody(request);
+        const entryPath = resolveSkillEntryPath(runtime, body.entryPath);
+        if (!entryPath) {
+          return sendJson(response, 403, { error: "skill_path_not_allowed" });
+        }
+        await writeFile(entryPath, `${body.markdown ?? ""}`, "utf8");
+        return sendJson(response, 200, { ok: true, entryPath });
+      }
+
       if (method === "POST" && url.pathname === "/config/mcp/servers") {
         const body = await readJsonBody(request);
         if (!body.id) {
@@ -1205,6 +1497,147 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, result);
       }
 
+      // ── /note/transcribe — convert a base64-encoded audio blob to text ──
+      // Used by the overlay's "录音笔记" feature to transcribe system audio.
+      // Requires an audio-capable provider. Chat-only OpenAI-compatible
+      // providers (DeepSeek, most code CLI adapters, etc.) are intentionally
+      // not used for audio transcription.
+      if (method === "POST" && url.pathname === "/note/transcribe") {
+        const body = await readJsonBody(request);
+        const audioBase64 = String(body.audio ?? "").trim();
+        const mimeType = String(body.mimeType ?? "audio/webm").trim();
+        const lang = String(body.lang ?? "auto").trim();
+
+        if (!audioBase64) {
+          return sendJson(response, 400, { ok: false, error: "missing_audio" });
+        }
+
+        const chatProvider = resolveProviderForTask("chat");
+        const provider = resolveAudioTranscriptionProvider(runtime);
+        const audioBuffer = Buffer.from(audioBase64, "base64");
+        if (!provider) {
+          const localResult = await transcribeAudioLocally(audioBuffer, { mimeType, lang });
+          if (localResult.ok) {
+            return sendJson(response, 200, {
+              ok: true,
+              transcript: localResult.transcript ?? "",
+              provider: localResult.provider,
+              local: {
+                language: localResult.language ?? null,
+                language_probability: localResult.language_probability ?? null,
+                elapsed_seconds: localResult.elapsed_seconds ?? null,
+                device: localResult.device ?? null,
+                compute_type: localResult.compute_type ?? null
+              }
+            });
+          }
+          return sendJson(response, 200, {
+            ok: false,
+            transcript: "",
+            reason: localResult.reason === "local_transcriber_missing"
+              ? "local_transcriber_missing"
+              : localResult.reason === "local_transcription_failed"
+                ? "local_transcription_failed"
+                : "audio_provider_unsupported",
+            activeProvider: providerPublicDescriptor(chatProvider),
+            detail: localResult.message ?? "",
+            message: "The active chat provider does not expose an audio transcription endpoint. Configure UCA_TRANSCRIPTION_API_KEY or add an OpenAI provider for audio transcription."
+          });
+        }
+
+        try {
+          const formData = new FormData();
+          formData.append(
+            "file",
+            new Blob([audioBuffer], { type: mimeType }),
+            "note-recording.webm"
+          );
+          formData.append("model", provider.model || "whisper-1");
+          // Language hint is optional. In "auto" mode, omit it so the
+          // transcription provider can detect English/Chinese/etc. itself.
+          if (lang && lang !== "auto") {
+            const langCode = lang.split("-")[0];
+            formData.append("language", langCode);
+          }
+
+          const baseUrl = (provider.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
+          const transcribeUrl = `${baseUrl}/audio/transcriptions`;
+          const apiResp = await fetch(transcribeUrl, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${provider.apiKey}` },
+            body: formData
+          });
+
+          if (!apiResp.ok) {
+            const errText = await apiResp.text().catch(() => "");
+            const localResult = await transcribeAudioLocally(audioBuffer, { mimeType, lang });
+            if (localResult.ok) {
+              return sendJson(response, 200, {
+                ok: true,
+                transcript: localResult.transcript ?? "",
+                provider: localResult.provider,
+                fallbackFrom: {
+                  provider: providerPublicDescriptor(provider),
+                  reason: "api_error",
+                  detail: errText.slice(0, 200)
+                },
+                local: {
+                  language: localResult.language ?? null,
+                  language_probability: localResult.language_probability ?? null,
+                  elapsed_seconds: localResult.elapsed_seconds ?? null,
+                  device: localResult.device ?? null,
+                  compute_type: localResult.compute_type ?? null
+                }
+              });
+            }
+            return sendJson(response, 200, {
+              ok: false,
+              transcript: "",
+              reason: "api_error",
+              detail: errText.slice(0, 200),
+              localReason: localResult.reason ?? null,
+              localDetail: localResult.message ?? null
+            });
+          }
+
+          const result = await apiResp.json();
+          return sendJson(response, 200, {
+            ok: true,
+            transcript: result.text ?? "",
+            provider: providerPublicDescriptor(provider)
+          });
+        } catch (err) {
+          const localResult = await transcribeAudioLocally(audioBuffer, { mimeType, lang });
+          if (localResult.ok) {
+            return sendJson(response, 200, {
+              ok: true,
+              transcript: localResult.transcript ?? "",
+              provider: localResult.provider,
+              fallbackFrom: {
+                provider: providerPublicDescriptor(provider),
+                reason: "transcription_failed",
+                detail: err.message
+              },
+              local: {
+                language: localResult.language ?? null,
+                language_probability: localResult.language_probability ?? null,
+                elapsed_seconds: localResult.elapsed_seconds ?? null,
+                device: localResult.device ?? null,
+                compute_type: localResult.compute_type ?? null
+              }
+            });
+          }
+          return sendJson(response, 200, {
+            ok: false,
+            transcript: "",
+            reason: "transcription_failed",
+            detail: err.message,
+            localReason: localResult.reason ?? null,
+            localDetail: localResult.message ?? null
+          });
+        }
+      }
+
       if (method === "POST" && url.pathname === "/overlay/handoff") {
         const body = await readJsonBody(request);
         const result = await writeOverlayHandoff(body);
@@ -1400,6 +1833,10 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
             executionMode: body.executionMode ?? "unattended_safe",
             catchupPolicy: body.catchupPolicy ?? body.catchup_policy ?? "skip",
             enabled: body.enabled !== false,
+            category: body.category ?? body.metadata?.category ?? "general",
+            color: body.color ?? body.metadata?.color ?? null,
+            leadTimeMs: body.leadTimeMs ?? body.lead_time_ms ?? null,
+            userTodo: Boolean(body.userTodo ?? body.user_todo ?? false),
             metadata: {
               ...(body.metadata ?? {}),
               one_shot: Boolean(body.oneShot ?? body.one_shot ?? trigger.oneShot)
@@ -1624,6 +2061,7 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       // PATCH /ai/mcp/:id/toggle  — enable or disable a builtin MCP server
       if (method === "PATCH" && /^\/ai\/mcp\/[^/]+\/toggle$/.test(url.pathname)) {
         const serverId = decodeURIComponent(url.pathname.replace(/^\/ai\/mcp\//, "").replace(/\/toggle$/, ""));
+        const body = await readJsonBody(request);
         const { enabled } = body ?? {};
         const currentConfig = runtime.configStore?.load?.() ?? {};
         const toggles = currentConfig.ai?.mcp?.builtinToggles ?? {};
@@ -1650,6 +2088,7 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       // PATCH /ai/mcp/:id/config  — save env-var config (e.g. Brave API Key)
       if (method === "PATCH" && /^\/ai\/mcp\/[^/]+\/config$/.test(url.pathname)) {
         const serverId = decodeURIComponent(url.pathname.replace(/^\/ai\/mcp\//, "").replace(/\/config$/, ""));
+        const body = await readJsonBody(request);
         const { key, value } = body ?? {};
         if (!key) return sendJson(response, 400, { error: "key required" });
         const currentConfig = runtime.configStore?.load?.() ?? {};
@@ -1680,6 +2119,127 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
             config: runtime.configStore?.load?.() ?? {}
           })
         });
+      }
+
+      // ── Account Connectors (Microsoft 365 / Google) ───────────────────────
+
+      // GET /connectors/accounts — list status for all account connectors
+      if (method === "GET" && url.pathname === "/connectors/accounts") {
+        const [ms, goog] = await Promise.all([
+          getConnectorStatus(runtime, "microsoft"),
+          getConnectorStatus(runtime, "google")
+        ]);
+        return sendJson(response, 200, { connectors: [ms, goog] });
+      }
+
+      // GET /connectors/accounts/:type/config — return non-secret connector config
+      if (method === "GET" && /^\/connectors\/accounts\/(microsoft|google)\/config$/.test(url.pathname)) {
+        const type = url.pathname.split("/")[3];
+        const cfg = loadConnectorConfig(runtime, type);
+        return sendJson(response, 200, {
+          clientId: cfg.clientId ?? "",
+          // never return the secret — just whether it's set
+          hasClientSecret: Boolean(cfg.clientSecret)
+        });
+      }
+
+      // PATCH /connectors/accounts/:type/config — save client_id / client_secret
+      if (method === "PATCH" && /^\/connectors\/accounts\/(microsoft|google)\/config$/.test(url.pathname)) {
+        const type = url.pathname.split("/")[3];
+        const body = await readJsonBody(request);
+        const updates = {};
+        if (typeof body.clientId === "string") updates.clientId = body.clientId.trim();
+        if (typeof body.clientSecret === "string") updates.clientSecret = body.clientSecret.trim();
+        saveConnectorConfig(runtime, type, updates);
+        return sendJson(response, 200, { ok: true });
+      }
+
+      // POST /connectors/accounts/:type/auth/start — kick off OAuth flow
+      if (method === "POST" && /^\/connectors\/accounts\/(microsoft|google)\/auth\/start$/.test(url.pathname)) {
+        const type = url.pathname.split("/")[3];
+        const cfg = loadConnectorConfig(runtime, type);
+        if (!cfg.clientId) {
+          return sendJson(response, 400, { error: "missing_client_id", message: "先在设置里填写 Client ID。" });
+        }
+        const result = type === "microsoft"
+          ? startMicrosoftAuth(cfg.clientId)
+          : startGoogleAuth(cfg.clientId);
+        return sendJson(response, 200, result);
+      }
+
+      // DELETE /connectors/accounts/:type — disconnect (revoke stored tokens)
+      if (method === "DELETE" && /^\/connectors\/accounts\/(microsoft|google)$/.test(url.pathname)) {
+        const type = url.pathname.split("/")[3];
+        await disconnectAccount(runtime, type);
+        return sendJson(response, 200, { ok: true });
+      }
+
+      // GET /connectors/accounts/:type/files — list files from OneDrive/Google Drive
+      if (method === "GET" && /^\/connectors\/accounts\/(microsoft|google)\/files$/.test(url.pathname)) {
+        const type = url.pathname.split("/")[3];
+        const q = url.searchParams.get("q") ?? "";
+        const limit = Math.min(50, Number(url.searchParams.get("limit") ?? 20));
+        const result = await listFiles(runtime, type, { limit, query: q });
+        return sendJson(response, result.ok ? 200 : 400, result);
+      }
+
+      // GET /connectors/accounts/:type/emails — list recent emails
+      if (method === "GET" && /^\/connectors\/accounts\/(microsoft|google)\/emails$/.test(url.pathname)) {
+        const type = url.pathname.split("/")[3];
+        const limit = Math.min(20, Number(url.searchParams.get("limit") ?? 10));
+        const result = await listEmails(runtime, type, { limit });
+        return sendJson(response, result.ok ? 200 : 400, result);
+      }
+
+      // GET /connectors/accounts/:type/calendar — list upcoming events
+      if (method === "GET" && /^\/connectors\/accounts\/(microsoft|google)\/calendar$/.test(url.pathname)) {
+        const type = url.pathname.split("/")[3];
+        const limit = Math.min(20, Number(url.searchParams.get("limit") ?? 10));
+        const result = await listCalendarEvents(runtime, type, { limit });
+        return sendJson(response, result.ok ? 200 : 400, result);
+      }
+
+      // GET /auth/callback — OAuth redirect URI (browser lands here after auth)
+      if (method === "GET" && url.pathname === "/auth/callback") {
+        const code = url.searchParams.get("code");
+        const state = url.searchParams.get("state");
+        const error = url.searchParams.get("error");
+        if (error) {
+          return sendHtml(response, 400,
+            `<html><body style="font-family:system-ui;padding:40px;text-align:center">
+              <h2>❌ 授权失败</h2><p>${error}: ${url.searchParams.get("error_description") ?? ""}</p>
+              <p style="color:#888">请关闭此标签页，回到 UCA。</p>
+            </body></html>`
+          );
+        }
+        if (!code || !state) {
+          return sendHtml(response, 400,
+            `<html><body style="font-family:system-ui;padding:40px;text-align:center">
+              <h2>❌ 无效回调</h2><p>缺少 code 或 state 参数。</p>
+            </body></html>`
+          );
+        }
+        const result = await completeOAuthCallback(runtime, code, state);
+        if (result.ok) {
+          return sendHtml(response, 200,
+            `<html><head><meta charset="utf-8"></head>
+            <body style="font-family:system-ui;padding:40px;text-align:center;background:#f5f5f5">
+              <div style="max-width:400px;margin:0 auto;background:#fff;padding:32px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1)">
+                <div style="font-size:48px;margin-bottom:16px">✅</div>
+                <h2 style="margin:0 0 8px">账户已连接</h2>
+                <p style="color:#666;margin:0 0 24px">你的 ${result.type === "microsoft" ? "Microsoft 365" : "Google"} 账户已成功连接到 UCA。</p>
+                <p style="color:#888;font-size:13px">可以关闭此标签页了。</p>
+              </div>
+              <script>setTimeout(()=>window.close(),3000)</script>
+            </body></html>`
+          );
+        }
+        return sendHtml(response, 400,
+          `<html><body style="font-family:system-ui;padding:40px;text-align:center">
+            <h2>❌ Token 交换失败</h2><p>${result.error}</p>
+            <p style="color:#888">请关闭此标签页，在 UCA 里重试。</p>
+          </body></html>`
+        );
       }
 
       return sendJson(response, 404, {
