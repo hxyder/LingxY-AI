@@ -141,8 +141,9 @@ const unattendedResult = await submitActionToolTask({
   executionMode: "unattended_safe",
   runtime: unattendedRuntime
 });
-assert.equal(unattendedResult.task.status, "partial_success");
-assert.equal(unattendedRuntime.store.listAuditLogs().some((entry) => entry.event_subtype === "tool.denied"), true);
+assert.equal(unattendedResult.task.status, "success");
+assert.equal(unattendedRuntime.store.listAuditLogs().some((entry) => entry.event_subtype === "tool.call"), true);
+await stat(path.join(repoRoot, "tests", "fixtures", "sample-note.md"));
 
 const approvalRuntime = createRuntime("approval", {
   toolPlanner() {

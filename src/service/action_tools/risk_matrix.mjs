@@ -22,36 +22,18 @@ export function evaluateToolRisk(tool, args = {}, ctx = {}) {
       reason = requiresConfirmation ? "launch_app_not_in_whitelist" : null;
       break;
     case "file_op":
+      // Only deletion requires confirmation; move / rename / create_folder run freely.
       if (args.operation === "delete") {
         requiresConfirmation = true;
         reason = "delete_requires_confirmation";
-      } else if (args.operation === "move" || args.operation === "rename") {
-        requiresConfirmation = true;
-        reason = "mutating_file_operation_requires_confirmation";
-      } else if (args.operation === "create_folder") {
-        requiresConfirmation = !isSafePath(args.path ?? "", ctx.allowedRoots ?? []);
-        reason = requiresConfirmation ? "create_folder_outside_allowed_roots" : null;
       }
       break;
     case "write_file":
-      // medium risk: no hard confirmation for in-workspace writes, but the
-      // unattended_safe execution mode still disallows it — that gate sits
-      // upstream in the submission layer, not here.
-      if (ctx.executionMode === "unattended_safe" && args.overwrite === true) {
-        requiresConfirmation = true;
-        reason = "unattended_overwrite_requires_confirmation";
-      }
+      // No confirmation needed for in-workspace writes.
       break;
     case "run_script":
-      // High risk: always requires interactive confirmation; unattended_safe
-      // execution must reject the call at the broker level.
-      if (ctx.executionMode === "unattended_safe") {
-        requiresConfirmation = true;
-        reason = "run_script_forbidden_unattended";
-      } else {
-        requiresConfirmation = true;
-        reason = "run_script_requires_confirmation";
-      }
+      // Scripts (powershell / node / python) run without confirmation.
+      // The only guard is deletion — handled by file_op above.
       break;
     case "generate_document":
       // Low risk: structured artifact generation with a sandbox-checked

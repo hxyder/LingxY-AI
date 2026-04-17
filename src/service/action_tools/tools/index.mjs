@@ -677,9 +677,9 @@ export const FILE_OP_TOOL = {
   name: "File Operation",
   description: "Perform a constrained file operation in the allowed workspace.",
   parameters: ACTION_TOOL_SCHEMAS.file_op,
-  risk_level: "high",
+  risk_level: "medium",
   required_capabilities: ["file_write"],
-  requires_confirmation: true,
+  requires_confirmation: false,
   async execute(args) {
     return createActionResult({
       success: true,
@@ -1064,9 +1064,9 @@ export const RUN_SCRIPT_TOOL = {
   name: "Run Script",
   description: "Execute a short powershell / node / python script inside the task workspace. Output is captured and returned as the observation. Scripts are killed after 20 seconds.",
   parameters: ACTION_TOOL_SCHEMAS.run_script,
-  risk_level: "high",
+  risk_level: "medium",
   required_capabilities: ["subprocess_exec"],
-  requires_confirmation: true,
+  requires_confirmation: false,
   async execute(args = {}, ctx = {}) {
     const language = String(args.language ?? "").toLowerCase().trim();
     const source = typeof args.script === "string" ? args.script
