@@ -58,6 +58,7 @@ let activeTaskId = null;
 let lastTask = null;
 let pendingFileSelection = null;
 let pendingCapture = null;
+let pendingActiveWindowContext = null;
 let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
 let notifiedTaskId = null;
@@ -880,6 +881,7 @@ function switchActiveTask(taskId) {
 function clearPendingInputContext() {
   pendingFileSelection = null;
   pendingCapture = null;
+  pendingActiveWindowContext = null;
 }
 
 async function refreshTaskSummaries(force = false) {
@@ -1412,17 +1414,34 @@ async function submitTask() {
       };
       if (executorOverride) payload.executorOverride = executorOverride;
     } else {
-      // UCA-065: Include conversation history as context so follow-up messages
-      // ("打开你觉得合适的") can reference previous search results / assistant replies.
-      const historyText = buildHistoryBlock(true); // excludeLast=true (current turn not yet sent)
-      payload = {
-        sourceApp: "uca.overlay",
-        captureMode: "overlay",
-        sourceType: "clipboard",
-        text: historyText ? `[对话历史]\n${historyText}` : "",
-        userCommand: commandText,
-        executionMode: "interactive"
-      };
+      const activeBrowserCapture = await resolveActiveWindowBrowserCapture();
+      if (activeBrowserCapture) {
+        const historyText = buildHistoryBlock(true); // excludeLast=true (current turn not yet sent)
+        if (historyText) {
+          activeBrowserCapture.text = [
+            activeBrowserCapture.text,
+            `[对话历史]\n${historyText}`
+          ].filter(Boolean).join("\n\n---\n\n").slice(0, MAX_CAPTURE_TEXT_CHARS);
+        }
+        ensureConversation(activeBrowserCapture, conversationState?.seedCommand ?? rawCommand ?? commandText);
+        payload = {
+          userCommand: commandText,
+          executionMode: "interactive",
+          capture: activeBrowserCapture
+        };
+      } else {
+        // UCA-065: Include conversation history as context so follow-up messages
+        // ("打开你觉得合适的") can reference previous search results / assistant replies.
+        const historyText = buildHistoryBlock(true); // excludeLast=true (current turn not yet sent)
+        payload = {
+          sourceApp: "uca.overlay",
+          captureMode: "overlay",
+          sourceType: "clipboard",
+          text: historyText ? `[对话历史]\n${historyText}` : "",
+          userCommand: commandText,
+          executionMode: "interactive"
+        };
+      }
     }
 
     const result = await fetchJson("/task", {
@@ -1473,6 +1492,7 @@ async function submitTask() {
 // input so the user can hit Enter without typing anything.
 function showActiveWindowPreviewCard(activeWindow) {
   if (!activeWindow || activeWindow.blocked) return;
+  pendingActiveWindowContext = { ...activeWindow };
   const kind = activeWindow.detected_kind ?? activeWindow.detectedKind;
   const process = activeWindow.process ?? "app";
   const title = activeWindow.title ?? "";
@@ -1535,13 +1555,104 @@ function showActiveWindowPreviewCard(activeWindow) {
     optionButtons: quickActions.map((action) => ({
       label: action.label,
       onClick: () => {
-        startNewConversation(); // Bug-C fix: clear old conversation before analyzing new context
+        startNewConversation();
+        pendingActiveWindowContext = { ...activeWindow };
         commandInput.value = action.command;
         autoSizeInput();
         commandInput.focus();
+        void handleUserSend();
       }
     }))
   });
+}
+
+function isActiveBrowserWindow(activeWindow = null) {
+  const kind = activeWindow?.detected_kind ?? activeWindow?.detectedKind;
+  return kind === "web_url" && Boolean(activeWindow?.url);
+}
+
+function browserProcessName(activeWindow = null) {
+  const process = `${activeWindow?.process ?? ""}`.trim().toLowerCase();
+  if (!process) return "chrome.exe";
+  return process.endsWith(".exe") ? process : `${process}.exe`;
+}
+
+function compactBrowserContextText(value = "", maxLength = 4000) {
+  const text = `${value ?? ""}`.replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
+}
+
+function timeoutWithFallback(promise, ms, fallbackValue = null) {
+  return Promise.race([
+    Promise.resolve(promise).catch(() => fallbackValue),
+    new Promise((resolve) => setTimeout(() => resolve(fallbackValue), ms))
+  ]);
+}
+
+async function fetchRecentBrowserContextForActiveWindow(activeWindow = null) {
+  if (!isActiveBrowserWindow(activeWindow)) return null;
+  const params = new URLSearchParams();
+  params.set("url", activeWindow.url);
+  if (activeWindow.title) params.set("title", activeWindow.title);
+  params.set("limit", "1");
+
+  try {
+    const payload = await timeoutWithFallback(
+      fetchJson(`/browser/context/recent?${params.toString()}`),
+      900,
+      null
+    );
+    return payload?.contexts?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function buildBrowserContextCapture(browserContext = null, activeWindow = null) {
+  if (!browserContext && !isActiveBrowserWindow(activeWindow)) return null;
+
+  const youtube = browserContext?.metadata?.youtube ?? null;
+  const url = youtube?.canonicalUrl || browserContext?.url || activeWindow?.url || "";
+  const title = youtube?.title || browserContext?.pageTitle || activeWindow?.title || "";
+  const channel = youtube?.channel || "";
+  const platform = browserContext?.metadata?.platform || youtube?.platform || "";
+  const description = browserContext?.metadata?.description || youtube?.description || "";
+  const captions = youtube?.visibleCaptions || "";
+  const pageText = browserContext?.text || "";
+
+  const header = [
+    platform ? `平台：${platform}` : "",
+    title ? `页面/视频标题：${title}` : "",
+    channel ? `频道/作者：${channel}` : "",
+    url ? `URL：${url}` : ""
+  ].filter(Boolean).join("\n");
+
+  const sections = [];
+  if (header) sections.push(header);
+  if (description) sections.push(`## 页面/视频描述\n${compactBrowserContextText(description, 2500)}`);
+  if (captions) sections.push(`## 当前可见字幕/转录面板片段\n${compactBrowserContextText(captions, 3000)}`);
+  if (pageText) sections.push(`## 页面可见文本\n${compactBrowserContextText(pageText, 7000)}`);
+  if (sections.length === 0 && url) sections.push(`URL：${url}`);
+
+  return {
+    sourceType: "webpage",
+    browser: browserContext?.browser ?? browserProcessName(activeWindow),
+    url,
+    pageTitle: title,
+    text: sections.join("\n\n"),
+    metadata: {
+      contentKind: youtube ? "video" : "webpage",
+      platform: platform || "generic",
+      browserContextScore: browserContext?.score ?? null,
+      hasVisibleCaptions: Boolean(captions)
+    }
+  };
+}
+
+async function resolveActiveWindowBrowserCapture() {
+  if (!isActiveBrowserWindow(pendingActiveWindowContext)) return null;
+  const browserContext = await fetchRecentBrowserContextForActiveWindow(pendingActiveWindowContext);
+  return buildBrowserContextCapture(browserContext, pendingActiveWindowContext);
 }
 
 function applyShellHandoff(payload) {

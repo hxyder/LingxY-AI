@@ -26,6 +26,9 @@ assert.equal(overlayJs.includes("onContextReceived"), true);
 assert.equal(overlayJs.includes("pendingCapture"), true);
 assert.equal(overlayJs.includes("showContextReceivedBubble"), true);
 assert.equal(overlayJs.includes("hotkey_capture"), true);
+assert.equal(overlayJs.includes("pendingActiveWindowContext"), true);
+assert.equal(overlayJs.includes("resolveActiveWindowBrowserCapture"), true);
+assert.equal(overlayJs.includes("/browser/context/recent?"), true);
 
 const preload = await read("src/desktop/renderer/preload.cjs");
 assert.equal(preload.includes("onContextReceived"), true);
@@ -43,6 +46,7 @@ assert.equal(mainProcess.includes("error?.code === \"ENOENT\""), true);
 assert.equal(mainProcess.includes("captureActiveWindowContext"), true);
 assert.equal(mainProcess.includes("capture-context.ps1"), true);
 assert.equal(mainProcess.includes("shellSubmitDroppedFiles"), true);
+assert.equal(mainProcess.includes("hotkey_preview"), true);
 
 const helperProgram = await read("src/helper/explorer_selection/UcaExplorerSelectionHelper/Program.cs");
 assert.equal(helperProgram.includes("overlay_prompt"), true);

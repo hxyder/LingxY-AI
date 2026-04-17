@@ -384,13 +384,14 @@ export function createElectronShellRuntime({
     }
   }
 
-  async function captureActiveWindowContext() {
+  async function captureActiveWindowContext({ includeSelection = true } = {}) {
     const activeWindowEnabled = await isRemoteFeatureEnabled("active_window_probe");
     const context = await runCaptureActiveWindowContext({
       runPowerShell: runPowerShellScript,
       clipboardFallback: () => clipboard.readText() ?? "",
       timeoutMs: 3000,
-      activeWindowEnabled
+      activeWindowEnabled,
+      includeSelection
     });
 
     // Keep the clipboard watcher in sync when capture-context.ps1 surfaced
@@ -539,7 +540,19 @@ export function createElectronShellRuntime({
         if (shortcut.id === "toggle-overlay") {
           // Clean open — no auto-capture. Earlier behaviour ran a PowerShell
           // selection capture that could mojibake non-ASCII text in stdout
-          // and confused users who just wanted an empty input.
+          // and confused users who just wanted an empty input. We still keep
+          // the active browser/file window as a lightweight hint so the
+          // renderer can answer "summarize this page/video" once the user asks.
+          captureActiveWindowContext({ includeSelection: false }).then((ctx) => {
+            const hasActiveWindow = Boolean(ctx.activeWindow && !ctx.activeWindow.blocked);
+            if (!hasActiveWindow) return;
+            const shellPayload = buildShellContextPayload({
+              context: ctx,
+              sourceApp: ctx.processName ?? ctx.activeWindow?.process ?? "unknown",
+              captureMode: "hotkey_preview"
+            });
+            enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
+          }).catch(() => {});
           showWindow("overlay");
           for (const bw of windows.values()) {
             bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
@@ -549,6 +562,7 @@ export function createElectronShellRuntime({
 
         if (shortcut.id === "voice-wake") {
           // Open overlay and immediately start voice input.
+          captureActiveWindowContext({ includeSelection: false }).catch(() => {});
           showWindow("overlay");
           for (const bw of windows.values()) {
             bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);

@@ -93,6 +93,17 @@ export function normalizeActiveWindowProbe(probe) {
   };
 }
 
+function buildWindowTitleFallback(result) {
+  if (!result?.processName && !result?.windowTitle) return null;
+  return {
+    process: result.processName || "unknown",
+    title: result.windowTitle ?? "",
+    detectedKind: "window_title",
+    extra: { reason: "capture_context_fallback" },
+    blocked: false
+  };
+}
+
 /**
  * Run both PowerShell probes in parallel and merge the results into a
  * single context object. See contract above for shape.
@@ -103,7 +114,8 @@ export async function captureActiveWindowContext({
   captureScriptName = CAPTURE_SCRIPT_NAME,
   probeScriptName = PROBE_SCRIPT_NAME,
   timeoutMs = 3000,
-  activeWindowEnabled = true
+  activeWindowEnabled = true,
+  includeSelection = true
 } = {}) {
   if (typeof runPowerShell !== "function") {
     throw new Error("captureActiveWindowContext requires a runPowerShell({script,args}) function.");
@@ -118,11 +130,13 @@ export async function captureActiveWindowContext({
   };
 
   const [captureResult, probeResult] = await Promise.allSettled([
-    runPowerShell({
-      script: captureScriptName,
-      args: ["-SimulateCopy"],
-      timeoutMs
-    }),
+    includeSelection
+      ? runPowerShell({
+          script: captureScriptName,
+          args: ["-SimulateCopy"],
+          timeoutMs
+        })
+      : Promise.resolve({ stdout: "" }),
     activeWindowEnabled
       ? runPowerShell({
           script: probeScriptName,
@@ -145,7 +159,9 @@ export async function captureActiveWindowContext({
         result.selectedText = clipText.trim();
       }
     }
-  } else if (typeof clipboardFallback === "function") {
+  }
+
+  if (includeSelection && !result.selectedText && result.filePaths.length === 0 && typeof clipboardFallback === "function") {
     const clipText = clipboardFallback();
     if (typeof clipText === "string" && clipText.trim().length > 2) {
       result.selectedText = clipText.trim();
@@ -155,6 +171,10 @@ export async function captureActiveWindowContext({
   if (probeResult.status === "fulfilled") {
     const probe = parseActiveWindowProbeOutput(probeResult.value?.stdout);
     result.activeWindow = normalizeActiveWindowProbe(probe);
+  }
+
+  if (!result.activeWindow) {
+    result.activeWindow = buildWindowTitleFallback(result);
   }
 
   return result;

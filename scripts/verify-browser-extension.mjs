@@ -347,5 +347,9 @@ assert.equal(overlayJs.includes("persistConversation"), true);
 assert.equal(overlayJs.includes("restoreConversation"), true);
 assert.equal(overlayJs.includes("payload.priorResult"), true);
 assert.equal(overlayJs.includes("newSessionBtn"), true);
+assert.equal(overlayJs.includes("pendingActiveWindowContext"), true);
+assert.equal(overlayJs.includes("resolveActiveWindowBrowserCapture"), true);
+assert.equal(overlayJs.includes("fetchRecentBrowserContextForActiveWindow"), true);
+assert.equal(overlayJs.includes("buildBrowserContextCapture"), true);
 
 console.log("Browser extension pipeline verification passed.");
