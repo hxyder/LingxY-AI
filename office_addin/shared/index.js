@@ -337,26 +337,48 @@ async function submit(userCommand) {
   }
 }
 
-// Stream task events via SSE — users see the reply materialise word-by-word
+// Stream task events via SSE. Users see the reply materialise word-by-word
 // instead of waiting 2s+ for the next poll. Resolves once the server emits a
 // terminal event (success / failed / cancelled / unsupported).
+//
+// IMPORTANT: the service emits SSE frames with `event: <event_type>` and
+// `data: <JSON payload>` (payload only, not the full event envelope). That
+// means EventSource.onmessage is NEVER called — we have to register listeners
+// per event type. Getting this wrong leaves the UI hanging with the streaming
+// cursor forever.
+const SSE_EVENT_TYPES = [
+  "task_created",
+  "provider_resolved",
+  "status_update",
+  "inline_result",
+  "success",
+  "partial_success",
+  "failed",
+  "cancelled",
+  "unsupported"
+];
+
 function streamTask(taskId, assistantMsg) {
   return new Promise((resolve) => {
     const url = `${RUNTIME_BASE_URL}/task/${taskId}/events`;
     // Some Office hosts use a stripped Chromium without EventSource — fall
-    // back to a minimal fetch streaming reader in that case.
+    // back to a fetch streaming reader in that case.
     if (typeof EventSource !== "function") {
       resolve(fallbackStreamTask(taskId, assistantMsg));
       return;
     }
+
     const src = new EventSource(url);
     let latestInline = "";
     let done = false;
+    let everReceived = false;
+    let pollFallbackTimer = null;
 
     const finish = (finalText, ok = true) => {
       if (done) return;
       done = true;
       try { src.close(); } catch { /* ignore */ }
+      clearTimeout(pollFallbackTimer);
       updateMessage(assistantMsg, {
         text: finalText || assistantMsg.text || (ok ? "（没有返回内容）" : ""),
         streaming: false
@@ -364,43 +386,60 @@ function streamTask(taskId, assistantMsg) {
       resolve();
     };
 
-    src.onmessage = (ev) => {
-      let event;
-      try { event = JSON.parse(ev.data); } catch { return; }
+    const handleEvent = (type, rawData) => {
+      everReceived = true;
+      let payload = {};
+      try { payload = rawData ? JSON.parse(rawData) : {}; } catch { /* ignore */ }
+      const text = payload?.text;
 
-      const type = event?.event_type;
-      const payloadText = event?.payload?.text;
-
-      if (type === "inline_result" && typeof payloadText === "string" && payloadText.length > 0) {
-        latestInline = payloadText;
-        assistantMsg.text = payloadText;
+      if (type === "inline_result" && typeof text === "string" && text.length > 0) {
+        latestInline = text;
+        assistantMsg.text = text;
         renderMessages();
         return;
       }
-
-      if (type === "status_update" && event?.payload?.sub_status) {
+      if (type === "status_update" && payload?.sub_status) {
         if (!latestInline) {
-          assistantMsg.text = `…${event.payload.sub_status}`;
+          assistantMsg.text = `…${payload.sub_status}`;
           renderMessages();
         }
         return;
       }
-
-      if (type === "success") {
-        finish(latestInline || payloadText || assistantMsg.text);
+      if (type === "success" || type === "partial_success") {
+        finish(latestInline || text || assistantMsg.text);
         return;
       }
-
       if (type === "failed" || type === "cancelled" || type === "unsupported") {
-        const why = event?.payload?.failure_user_message ?? event?.payload?.reason ?? type;
+        const why = payload?.failure_user_message ?? payload?.reason ?? type;
         finish(`⚠️ ${why}`, false);
+      }
+    };
+
+    for (const type of SSE_EVENT_TYPES) {
+      src.addEventListener(type, (ev) => handleEvent(type, ev.data));
+    }
+    // Some SSE frames come through as default messages (no `event:` line) —
+    // honour those too, defensively parsing the full envelope.
+    src.onmessage = (ev) => {
+      let envelope;
+      try { envelope = JSON.parse(ev.data); } catch { return; }
+      if (envelope?.event_type) {
+        handleEvent(envelope.event_type, JSON.stringify(envelope.payload ?? {}));
       }
     };
 
     src.onerror = () => {
       if (done) return;
-      // Server closed (end-of-stream) without a terminal event — fetch the
-      // task summary once to grab the final state.
+      // If we never received any event, EventSource silently failed (common
+      // inside Office WebView2 when the connection upgrade hiccups). Switch
+      // to polling as a backup so the user isn't staring at a frozen bubble.
+      if (!everReceived) {
+        try { src.close(); } catch { /* ignore */ }
+        pollTaskFallback(taskId, assistantMsg, latestInline).then(resolve);
+        done = true;
+        return;
+      }
+      // Server closed the stream — fetch the task summary once for final state.
       src.close();
       fetch(`${RUNTIME_BASE_URL}/task/${taskId}`).then((r) => r.json()).then((detail) => {
         const task = detail.task ?? {};
@@ -423,7 +462,45 @@ function streamTask(taskId, assistantMsg) {
   });
 }
 
+// Polling fallback — used when EventSource refuses to deliver events (Office
+// WebView2 quirks, corporate proxies that strip SSE, etc). Keeps the UI moving
+// at the cost of not being truly incremental.
+async function pollTaskFallback(taskId, assistantMsg, initialText = "") {
+  let latest = initialText;
+  for (let i = 0; i < 90; i += 1) {
+    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      const detail = await fetch(`${RUNTIME_BASE_URL}/task/${taskId}`).then((r) => r.json());
+      const task = detail.task ?? {};
+      const events = detail.events ?? [];
+      const inline = [...events].reverse().find((e) =>
+        e.event_type === "inline_result" && typeof e.payload?.text === "string" && e.payload.text.length > 0
+      );
+      if (inline?.payload?.text && inline.payload.text !== latest) {
+        latest = inline.payload.text;
+        assistantMsg.text = latest;
+        renderMessages();
+      }
+      if (task.status === "success" || task.status === "partial_success") {
+        const successEv = [...events].reverse().find((e) => e.event_type === "success");
+        const finalText = successEv?.payload?.text ?? latest ?? task.result_preview ?? "(没有返回内容)";
+        updateMessage(assistantMsg, { text: finalText, streaming: false });
+        return;
+      }
+      if (["failed", "cancelled", "unsupported"].includes(task.status)) {
+        const why = task.failure_user_message ?? task.status;
+        updateMessage(assistantMsg, { text: `⚠️ ${why}`, streaming: false });
+        return;
+      }
+    } catch {
+      /* transient — retry */
+    }
+  }
+  updateMessage(assistantMsg, { text: latest || "等待结果超时。", streaming: false });
+}
+
 // Fallback for environments without EventSource — uses fetch + text chunks.
+// Parses real SSE frames (event:/data: lines) instead of assuming data-only.
 async function fallbackStreamTask(taskId, assistantMsg) {
   try {
     const response = await fetch(`${RUNTIME_BASE_URL}/task/${taskId}/events`, {
@@ -441,20 +518,24 @@ async function fallbackStreamTask(taskId, assistantMsg) {
       const frames = buffer.split("\n\n");
       buffer = frames.pop() ?? "";
       for (const frame of frames) {
-        const line = frame.split("\n").find((l) => l.startsWith("data: "));
-        if (!line) continue;
-        let event;
-        try { event = JSON.parse(line.slice(6)); } catch { continue; }
-        const text = event?.payload?.text;
-        if (event?.event_type === "inline_result" && typeof text === "string" && text.length > 0) {
+        let eventType = "message";
+        let data = "";
+        for (const line of frame.split("\n")) {
+          if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+          else if (line.startsWith("data: ")) data += line.slice(6);
+        }
+        let payload = {};
+        try { payload = data ? JSON.parse(data) : {}; } catch { continue; }
+        const text = payload?.text;
+        if (eventType === "inline_result" && typeof text === "string" && text.length > 0) {
           latestInline = text;
           assistantMsg.text = text;
           renderMessages();
-        } else if (event?.event_type === "success") {
+        } else if (eventType === "success" || eventType === "partial_success") {
           updateMessage(assistantMsg, { text: latestInline || text || assistantMsg.text, streaming: false });
           return;
-        } else if (["failed", "cancelled", "unsupported"].includes(event?.event_type)) {
-          const why = event?.payload?.failure_user_message ?? event?.event_type;
+        } else if (["failed", "cancelled", "unsupported"].includes(eventType)) {
+          const why = payload?.failure_user_message ?? eventType;
           updateMessage(assistantMsg, { text: `⚠️ ${why}`, streaming: false });
           return;
         }
