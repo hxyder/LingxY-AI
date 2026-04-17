@@ -179,7 +179,8 @@ async function runScenario(scenario) {
 
 {
   const ctx = await runScenario("probe-failed");
-  assert.equal(ctx.activeWindow, null, "probe failures must surface as null activeWindow");
+  assert.equal(ctx.activeWindow.detectedKind, "window_title", "probe failures should fall back to captured window title");
+  assert.equal(ctx.activeWindow.extra.reason, "capture_context_fallback");
 }
 
 /* ------------------------------------------------------------------------ */

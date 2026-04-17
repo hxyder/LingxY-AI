@@ -167,7 +167,7 @@ function Get-BrowserUrl {
 }
 
 function New-BrowserResult {
-  param([string]$Process, [uint32]$Pid, [string]$Title, [IntPtr]$WindowHandle)
+  param([string]$Process, [uint32]$ProcessId, [string]$Title, [IntPtr]$WindowHandle)
 
   $url = Get-BrowserUrl -WindowHandle $WindowHandle -WindowTitle $Title
 
@@ -181,7 +181,7 @@ function New-BrowserResult {
     return @{
       ok = $true
       process = $Process
-      pid = [int]$Pid
+      pid = [int]$ProcessId
       title = $Title
       detected_kind = "web_url"
       payload = @{ url = $url }
@@ -193,7 +193,7 @@ function New-BrowserResult {
   return @{
     ok = $true
     process = $Process
-    pid = [int]$Pid
+    pid = [int]$ProcessId
     title = $Title
     detected_kind = "window_title"
     payload = @{ extra = @{ reason = "address_bar_unreadable"; raw_title = $Title } }
@@ -234,7 +234,7 @@ function Get-OfficeDocumentPath {
 }
 
 function New-OfficeResult {
-  param([string]$Process, [uint32]$Pid, [string]$Title)
+  param([string]$Process, [uint32]$ProcessId, [string]$Title)
 
   $filePath = Get-OfficeDocumentPath -Process $Process
 
@@ -242,7 +242,7 @@ function New-OfficeResult {
     return @{
       ok = $true
       process = $Process
-      pid = [int]$Pid
+      pid = [int]$ProcessId
       title = $Title
       detected_kind = "file_path"
       payload = @{ filePath = $filePath }
@@ -254,14 +254,14 @@ function New-OfficeResult {
   # back to title parsing: Word titles look like `report.docx - Word` or
   # `report.docx [Read-Only] - Word`.
   $parsedName = $null
-  if ($Title -match "^(?<name>[^-]+?)(\s+\[.*?\])?\s+[-–—]\s+(Word|Excel|PowerPoint|WPS)") {
+  if ($Title -match "^(?<name>[^-]+?)(\s+\[.*?\])?\s+-\s+(Word|Excel|PowerPoint|WPS)") {
     $parsedName = $Matches.name.Trim()
   }
 
   return @{
     ok = $true
     process = $Process
-    pid = [int]$Pid
+    pid = [int]$ProcessId
     title = $Title
     detected_kind = if ($parsedName) { "window_title" } else { "unknown" }
     payload = @{ extra = @{ reason = "com_unavailable"; parsed_filename = $parsedName; raw_title = $Title } }
@@ -272,7 +272,7 @@ function New-OfficeResult {
 # ---- IDE / editor probe ----------------------------------------------------
 
 function New-EditorResult {
-  param([string]$Process, [uint32]$Pid, [string]$Title)
+  param([string]$Process, [uint32]$ProcessId, [string]$Title)
 
   # VSCode: "filename.ext - folder - Visual Studio Code"
   # JetBrains Rider/IDEA/PyCharm: "project [path] - file.ext"
@@ -280,16 +280,16 @@ function New-EditorResult {
   $parsedFilename = $null
   $parsedFolder = $null
 
-  if ($Title -match "^(?<file>[^-]+?)\s+[-–—]\s+(?<folder>.+?)\s+[-–—]\s+Visual Studio Code\b") {
+  if ($Title -match "^(?<file>[^-]+?)\s+-\s+(?<folder>.+?)\s+-\s+Visual Studio Code\b") {
     $parsedFilename = $Matches.file.Trim()
     $parsedFolder = $Matches.folder.Trim()
   } elseif ($Title -match "^(?<project>.+?)\s+\[(?<path>[^\]]+)\]") {
     # JetBrains
     $parsedFolder = $Matches.path.Trim()
-    if ($Title -match "[-–—]\s+(?<file>[^-]+?)$") {
+    if ($Title -match "-\s+(?<file>[^-]+?)$") {
       $parsedFilename = $Matches.file.Trim()
     }
-  } elseif ($Title -match "^(?<file>.+?)\s+[-–—]\s+(Notepad\+\+|Sublime Text)") {
+  } elseif ($Title -match "^(?<file>.+?)\s+-\s+(Notepad\+\+|Sublime Text)") {
     $parsedFilename = $Matches.file.Trim()
   }
 
@@ -297,7 +297,7 @@ function New-EditorResult {
     return @{
       ok = $true
       process = $Process
-      pid = [int]$Pid
+      pid = [int]$ProcessId
       title = $Title
       detected_kind = "file_path"
       payload = @{
@@ -311,7 +311,7 @@ function New-EditorResult {
   return @{
     ok = $true
     process = $Process
-    pid = [int]$Pid
+    pid = [int]$ProcessId
     title = $Title
     detected_kind = "window_title"
     payload = @{ extra = @{ reason = "title_unparsed"; raw_title = $Title } }
@@ -355,21 +355,21 @@ try {
   $result = $null
 
   switch -Wildcard ($lowerName) {
-    "msedge"   { $result = New-BrowserResult -Process $procName -Pid $fgPid -Title $title -WindowHandle $handle; break }
-    "chrome"   { $result = New-BrowserResult -Process $procName -Pid $fgPid -Title $title -WindowHandle $handle; break }
-    "brave"    { $result = New-BrowserResult -Process $procName -Pid $fgPid -Title $title -WindowHandle $handle; break }
-    "firefox"  { $result = New-BrowserResult -Process $procName -Pid $fgPid -Title $title -WindowHandle $handle; break }
-    "winword"  { $result = New-OfficeResult -Process $procName -Pid $fgPid -Title $title; break }
-    "excel"    { $result = New-OfficeResult -Process $procName -Pid $fgPid -Title $title; break }
-    "powerpnt" { $result = New-OfficeResult -Process $procName -Pid $fgPid -Title $title; break }
-    "code"     { $result = New-EditorResult -Process $procName -Pid $fgPid -Title $title; break }
-    "notepad++" { $result = New-EditorResult -Process $procName -Pid $fgPid -Title $title; break }
-    "sublime_text" { $result = New-EditorResult -Process $procName -Pid $fgPid -Title $title; break }
-    "idea64"   { $result = New-EditorResult -Process $procName -Pid $fgPid -Title $title; break }
-    "rider64"  { $result = New-EditorResult -Process $procName -Pid $fgPid -Title $title; break }
-    "pycharm64" { $result = New-EditorResult -Process $procName -Pid $fgPid -Title $title; break }
-    "webstorm64" { $result = New-EditorResult -Process $procName -Pid $fgPid -Title $title; break }
-    "clion64"  { $result = New-EditorResult -Process $procName -Pid $fgPid -Title $title; break }
+    "msedge"   { $result = New-BrowserResult -Process $procName -ProcessId $fgPid -Title $title -WindowHandle $handle; break }
+    "chrome"   { $result = New-BrowserResult -Process $procName -ProcessId $fgPid -Title $title -WindowHandle $handle; break }
+    "brave"    { $result = New-BrowserResult -Process $procName -ProcessId $fgPid -Title $title -WindowHandle $handle; break }
+    "firefox"  { $result = New-BrowserResult -Process $procName -ProcessId $fgPid -Title $title -WindowHandle $handle; break }
+    "winword"  { $result = New-OfficeResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "excel"    { $result = New-OfficeResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "powerpnt" { $result = New-OfficeResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "code"     { $result = New-EditorResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "notepad++" { $result = New-EditorResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "sublime_text" { $result = New-EditorResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "idea64"   { $result = New-EditorResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "rider64"  { $result = New-EditorResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "pycharm64" { $result = New-EditorResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "webstorm64" { $result = New-EditorResult -Process $procName -ProcessId $fgPid -Title $title; break }
+    "clion64"  { $result = New-EditorResult -Process $procName -ProcessId $fgPid -Title $title; break }
     default {
       $result = @{
         ok = $true
