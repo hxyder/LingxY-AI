@@ -96,6 +96,25 @@ async function bootPopup(doc = document, chromeApi = chrome) {
     await openRuntimeTasks(chromeApi);
     window.close();
   });
+
+  const explainBtn = doc.getElementById("explain-page");
+  const explainStatus = doc.getElementById("explain-page-status");
+  if (explainBtn) {
+    explainBtn.addEventListener("click", async () => {
+      explainBtn.disabled = true;
+      if (explainStatus) explainStatus.textContent = "正在捕获页面内容…";
+      const response = await new Promise((resolve) => {
+        chromeApi.runtime.sendMessage({ type: "uca.page.explain" }, resolve);
+      });
+      if (response?.accepted) {
+        if (explainStatus) explainStatus.textContent = `已递交（${response.contentKind ?? "unknown"}），浮窗会打开显示讲解。`;
+        setTimeout(() => window.close(), 400);
+      } else {
+        if (explainStatus) explainStatus.textContent = `失败：${response?.error ?? response?.reason ?? "unknown"}`;
+        explainBtn.disabled = false;
+      }
+    });
+  }
 }
 
 if (typeof chrome !== "undefined" && chrome.runtime?.id) {

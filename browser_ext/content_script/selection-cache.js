@@ -325,6 +325,206 @@ function sendRuntimeMessageSafely(message, callback) {
   }
 }
 
+const BROWSER_CONTEXT_MAX_TEXT = 6000;
+const BROWSER_CONTEXT_MAX_DESCRIPTION = 2000;
+const BROWSER_CONTEXT_MAX_CAPTIONS = 1800;
+const BROWSER_CONTEXT_REPORT_INTERVAL_MS = 10_000;
+
+let browserContextTimer = null;
+let browserContextLastKey = "";
+let browserContextLastSentAt = 0;
+
+function compactText(value = "") {
+  return String(value ?? "").replace(/\s+/g, " ").trim();
+}
+
+function truncateText(value = "", maxLength = 1000) {
+  const text = compactText(value);
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function readMetaContent(doc, selector) {
+  return doc.querySelector(selector)?.getAttribute("content")?.trim() ?? "";
+}
+
+function readLinkHref(doc, selector) {
+  return doc.querySelector(selector)?.getAttribute("href")?.trim() ?? "";
+}
+
+function getFirstText(doc, selectors = []) {
+  for (const selector of selectors) {
+    const text = compactText(doc.querySelector(selector)?.textContent ?? "");
+    if (text) return text;
+  }
+  return "";
+}
+
+function getJoinedText(doc, selectors = [], maxLength = 1000) {
+  const seen = new Set();
+  const chunks = [];
+  for (const selector of selectors) {
+    for (const node of doc.querySelectorAll(selector)) {
+      const text = truncateText(node?.textContent ?? "", maxLength);
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      chunks.push(text);
+      if (chunks.join(" ").length >= maxLength) break;
+    }
+    if (chunks.join(" ").length >= maxLength) break;
+  }
+  return truncateText(chunks.join("\n"), maxLength);
+}
+
+function collectVisiblePageText(doc = document) {
+  const preferredSelectors = [
+    "article",
+    "main",
+    "[role='main']",
+    "ytd-watch-metadata",
+    "#description",
+    "#contents"
+  ];
+  const chunks = [];
+  const seen = new Set();
+  for (const selector of preferredSelectors) {
+    for (const node of doc.querySelectorAll(selector)) {
+      const rect = typeof node.getBoundingClientRect === "function" ? node.getBoundingClientRect() : null;
+      if (rect && rect.width === 0 && rect.height === 0) continue;
+      const text = truncateText(node.innerText || node.textContent || "", 2500);
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      chunks.push(text);
+      if (chunks.join("\n").length >= BROWSER_CONTEXT_MAX_TEXT) break;
+    }
+    if (chunks.join("\n").length >= BROWSER_CONTEXT_MAX_TEXT) break;
+  }
+
+  if (!chunks.length) {
+    chunks.push(truncateText(doc.body?.innerText ?? "", BROWSER_CONTEXT_MAX_TEXT));
+  }
+
+  return truncateText(chunks.filter(Boolean).join("\n\n"), BROWSER_CONTEXT_MAX_TEXT);
+}
+
+function collectYouTubeContext(doc = document, win = window) {
+  const href = win.location?.href ?? "";
+  let parsedUrl = null;
+  try { parsedUrl = new URL(href); } catch { /* ignore */ }
+  const hostname = parsedUrl?.hostname?.replace(/^www\./, "") ?? "";
+  const isYouTube = hostname === "youtube.com" || hostname.endsWith(".youtube.com") || hostname === "youtu.be";
+  if (!isYouTube) return null;
+
+  const title = getFirstText(doc, [
+    "h1.ytd-watch-metadata",
+    "ytd-watch-metadata h1",
+    "h1.title",
+    "h1"
+  ]) || readMetaContent(doc, "meta[property='og:title']") || doc.title || "";
+
+  const channel = getFirstText(doc, [
+    "#owner #channel-name a",
+    "ytd-video-owner-renderer ytd-channel-name a",
+    "ytd-channel-name a"
+  ]);
+
+  const description = getFirstText(doc, [
+    "#description-inline-expander",
+    "ytd-watch-metadata #description",
+    "#description",
+    "ytd-text-inline-expander"
+  ]) || readMetaContent(doc, "meta[name='description']");
+
+  const visibleCaptions = getJoinedText(doc, [
+    ".ytp-caption-segment",
+    "ytd-transcript-segment-renderer",
+    "yt-formatted-string.segment-text"
+  ], BROWSER_CONTEXT_MAX_CAPTIONS);
+
+  return {
+    platform: "youtube",
+    videoId: parsedUrl?.searchParams?.get("v") || (hostname === "youtu.be" ? parsedUrl?.pathname?.replace(/^\//, "") : "") || "",
+    canonicalUrl: readLinkHref(doc, "link[rel='canonical']") || href,
+    title: truncateText(title, 500),
+    channel: truncateText(channel, 300),
+    description: truncateText(description, BROWSER_CONTEXT_MAX_DESCRIPTION),
+    visibleCaptions
+  };
+}
+
+function buildBrowserContextSnapshot(doc = document, win = window) {
+  const youtube = collectYouTubeContext(doc, win);
+  const pageTitle = youtube?.title || doc.title || readMetaContent(doc, "meta[property='og:title']");
+  const url = youtube?.canonicalUrl || win.location?.href || "";
+  const text = collectVisiblePageText(doc);
+  return {
+    sourceType: "web_page",
+    browser: "chrome.exe",
+    url,
+    pageTitle: truncateText(pageTitle, 500),
+    text,
+    metadata: {
+      capturedAt: new Date().toISOString(),
+      platform: youtube?.platform ?? null,
+      youtube: youtube ?? null,
+      description: truncateText(
+        youtube?.description || readMetaContent(doc, "meta[name='description']"),
+        BROWSER_CONTEXT_MAX_DESCRIPTION
+      )
+    }
+  };
+}
+
+function publishBrowserContextSnapshot({ force = false } = {}) {
+  if (docHidden(document) && !force) return;
+  const snapshot = buildBrowserContextSnapshot(document, window);
+  if (!snapshot.url && !snapshot.pageTitle) return;
+
+  const textFingerprint = `${snapshot.text ?? ""}`.slice(0, 300);
+  const captionFingerprint = `${snapshot.metadata?.youtube?.visibleCaptions ?? ""}`.slice(-300);
+  const key = [
+    snapshot.url,
+    snapshot.pageTitle,
+    textFingerprint,
+    captionFingerprint
+  ].join("|");
+
+  const now = Date.now();
+  if (!force && key === browserContextLastKey && now - browserContextLastSentAt < BROWSER_CONTEXT_REPORT_INTERVAL_MS) {
+    return;
+  }
+
+  browserContextLastKey = key;
+  browserContextLastSentAt = now;
+  sendRuntimeMessageSafely({
+    type: "uca.browser.contextSnapshot",
+    context: snapshot
+  });
+}
+
+function scheduleBrowserContextSnapshot(delayMs = 600, options = {}) {
+  if (browserContextTimer) clearTimeout(browserContextTimer);
+  browserContextTimer = setTimeout(() => {
+    browserContextTimer = null;
+    publishBrowserContextSnapshot(options);
+  }, delayMs);
+}
+
+function docHidden(doc = document) {
+  return doc.visibilityState && doc.visibilityState !== "visible";
+}
+
+function installBrowserContextReporter(doc = document, win = window) {
+  scheduleBrowserContextSnapshot(900, { force: true });
+  win.addEventListener("load", () => scheduleBrowserContextSnapshot(500, { force: true }), { passive: true });
+  win.addEventListener("popstate", () => scheduleBrowserContextSnapshot(700, { force: true }), { passive: true });
+  win.addEventListener("hashchange", () => scheduleBrowserContextSnapshot(700, { force: true }), { passive: true });
+  win.addEventListener("yt-navigate-finish", () => scheduleBrowserContextSnapshot(900, { force: true }), { passive: true });
+  doc.addEventListener("visibilitychange", () => {
+    if (!docHidden(doc)) scheduleBrowserContextSnapshot(400, { force: true });
+  });
+  setInterval(() => scheduleBrowserContextSnapshot(500), BROWSER_CONTEXT_REPORT_INTERVAL_MS);
+}
+
 function createFloatingChipController(doc = document) {
   const host = doc.createElement("div");
   host.setAttribute("data-uca-floating-chip", "true");
@@ -994,8 +1194,10 @@ function installHoverObserver(doc) {
 if (typeof window !== "undefined" && typeof document !== "undefined") {
   window.__ucaSelectionApi = {
     captureSelectionState,
-    installSelectionObserver
+    installSelectionObserver,
+    buildBrowserContextSnapshot
   };
   installSelectionObserver(document, window);
+  installBrowserContextReporter(document, window);
   installHoverObserver(document);
 }

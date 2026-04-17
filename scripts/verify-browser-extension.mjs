@@ -6,7 +6,9 @@ import { createNativeHostHandler } from "../uca-native-host/index.mjs";
 import { encodeNativeMessage, decodeNativeMessage } from "../uca-native-host/protocol.mjs";
 import {
   buildOverlayHandoffRequest,
+  dispatchBrowserContextSnapshot,
   dispatchOverlayHandoff,
+  RUNTIME_BROWSER_CONTEXT_URL,
   RUNTIME_OVERLAY_HANDOFF_URL,
   runQuickAction
 } from "../browser_ext/background/service-worker.js";
@@ -207,6 +209,29 @@ assert.equal(fetchRequest.url, RUNTIME_OVERLAY_HANDOFF_URL);
 assert.equal(JSON.parse(fetchRequest.options.body).targetWindow, "overlay");
 assert.equal(runtimeHandoffResponse.accepted, true);
 
+let browserContextFetch = null;
+const browserContextResponse = await dispatchBrowserContextSnapshot(
+  {
+    sourceType: "web_page",
+    browser: "chrome.exe",
+    url: "https://www.youtube.com/watch?v=abc123",
+    pageTitle: "Prompt Engineering Tutorial - YouTube",
+    text: "Prompt engineering is an emerging career path."
+  },
+  async (url, options) => {
+    browserContextFetch = { url, options };
+    return {
+      ok: true,
+      async json() {
+        return { ok: true };
+      }
+    };
+  }
+);
+assert.equal(browserContextResponse.ok, true);
+assert.equal(browserContextFetch.url, RUNTIME_BROWSER_CONTEXT_URL);
+assert.equal(JSON.parse(browserContextFetch.options.body).context.pageTitle.includes("Prompt Engineering"), true);
+
 const handoffResponse = await handler({
   protocolVersion: "1.0",
   requestId: "req-handoff",
@@ -294,6 +319,9 @@ const selectionCacheJs = await readFile(path.join(repoRoot, "browser_ext", "cont
 assert.equal(selectionCacheJs.includes("showInlineResultFrame"), true);
 assert.equal(selectionCacheJs.includes("sendRuntimeMessageSafely"), true);
 assert.equal(selectionCacheJs.includes("uca.runtime.runQuickAction"), true);
+assert.equal(selectionCacheJs.includes("uca.browser.contextSnapshot"), true);
+assert.equal(selectionCacheJs.includes("buildBrowserContextSnapshot"), true);
+assert.equal(selectionCacheJs.includes("yt-navigate-finish"), true);
 assert.equal(selectionCacheJs.includes("ACTION_LABELS"), true);
 // "Open in dialog" button must carry the prior result back to the overlay
 assert.equal(selectionCacheJs.includes("uca.overlay.openWithResult"), true);
@@ -302,6 +330,11 @@ assert.equal(selectionCacheJs.includes("priorResult: resultText"), true);
 // Service worker must register the openWithResult message handler
 const serviceWorkerJs = await readFile(path.join(repoRoot, "browser_ext", "background", "service-worker.js"), "utf8");
 assert.equal(serviceWorkerJs.includes("uca.overlay.openWithResult"), true);
+assert.equal(serviceWorkerJs.includes("uca.browser.contextSnapshot"), true);
+assert.equal(serviceWorkerJs.includes("RUNTIME_BROWSER_CONTEXT_URL"), true);
+assert.equal(manifest.commands["explain-page"].suggested_key.default, "Ctrl+Shift+E");
+const popupHtml = await readFile(path.join(repoRoot, "browser_ext", "popup", "index.html"), "utf8");
+assert.equal(popupHtml.includes("快捷键 Ctrl+Shift+E"), true);
 
 // Overlay renderer must handle priorResult by rendering history + conversation state
 const overlayJs = await readFile(path.join(repoRoot, "src", "desktop", "renderer", "overlay.js"), "utf8");

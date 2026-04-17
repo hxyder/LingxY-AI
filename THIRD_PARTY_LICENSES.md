@@ -2,23 +2,29 @@
 
 Generated from `package-lock.json` and installed package metadata.
 
-- Total packages: 550
-- Production packages: 272
-- Development-only packages: 278
+- Total packages: 765
+- Production packages: 503
+- Development-only packages: 262
 
 ## License Summary
 
 | License | Count |
 |---|---:|
-| MIT | 417 |
-| ISC | 72 |
-| Apache-2.0 | 21 |
+| MIT | 564 |
+| ISC | 115 |
+| Apache-2.0 | 30 |
+| BSD-3-Clause | 16 |
 | BSD-2-Clause | 12 |
 | BlueOak-1.0.0 | 11 |
-| BSD-3-Clause | 9 |
+| MIT/X11 | 2 |
+| UNKNOWN | 2 |
+| Unlicense | 2 |
 | (BSD-2-Clause OR MIT OR Apache-2.0) | 1 |
+| (MIT AND Zlib) | 1 |
 | (MIT OR CC0-1.0) | 1 |
+| (MIT OR GPL-3.0-or-later) | 1 |
 | (MIT OR WTFPL) | 1 |
+| (MPL-2.0 OR Apache-2.0) | 1 |
 | (WTFPL OR MIT) | 1 |
 | 0BSD | 1 |
 | Python-2.0 | 1 |
@@ -29,8 +35,15 @@ Generated from `package-lock.json` and installed package metadata.
 
 | Package | Version | License | Scope | Source |
 |---|---:|---|---|---|
+| @antfu/install-pkg | 1.1.0 | MIT | prod | https://github.com/antfu/install-pkg#readme |
 | @babel/code-frame | 7.29.0 | MIT | prod | https://babel.dev/docs/en/next/babel-code-frame |
 | @babel/helper-validator-identifier | 7.28.5 | MIT | prod | https://github.com/babel/babel.git |
+| @braintree/sanitize-url | 7.1.2 | MIT | prod | https://github.com/braintree/sanitize-url#readme |
+| @chevrotain/cst-dts-gen | 12.0.0 | Apache-2.0 | prod | git://github.com/Chevrotain/chevrotain.git |
+| @chevrotain/gast | 12.0.0 | Apache-2.0 | prod | git://github.com/Chevrotain/chevrotain.git |
+| @chevrotain/regexp-to-ast | 12.0.0 | Apache-2.0 | prod | git://github.com/Chevrotain/chevrotain.git |
+| @chevrotain/types | 12.0.0 | Apache-2.0 | prod | https://chevrotain.io/documentation/ |
+| @chevrotain/utils | 12.0.0 | Apache-2.0 | prod | git://github.com/Chevrotain/chevrotain.git |
 | @develar/schema-utils | 2.6.5 | MIT | dev | https://github.com/webpack/schema-utils |
 | @electron/asar | 3.4.1 | MIT | dev | https://github.com/electron/asar |
 | @electron/fuses | 1.8.0 | MIT | dev | https://github.com/electron/fuses#readme |
@@ -41,11 +54,16 @@ Generated from `package-lock.json` and installed package metadata.
 | @electron/rebuild | 4.0.3 | MIT | dev | https://github.com/electron/rebuild |
 | @electron/universal | 2.0.3 | MIT | dev | git+https://github.com/electron/universal.git |
 | @electron/windows-sign | 1.2.2 | BSD-2-Clause | dev, optional | https://github.com/electron/windows-sign |
+| @fast-csv/format | 4.3.5 | MIT | prod | http://c2fo.github.com/fast-csv/packages/format |
+| @fast-csv/parse | 4.3.6 | MIT | prod | http://c2fo.github.com/fast-csv/packages/parse |
 | @hono/node-server | 1.19.13 | MIT | prod | https://github.com/honojs/node-server |
+| @iconify/types | 2.0.0 | MIT | prod | https://github.com/iconify/iconify |
+| @iconify/utils | 3.1.0 | MIT | prod | https://iconify.design/docs/libraries/utils/ |
 | @isaacs/cliui | 8.0.2 | ISC | prod | yargs/cliui |
 | @isaacs/fs-minipass | 4.0.1 | ISC | dev | https://github.com/npm/fs-minipass.git |
 | @malept/cross-spawn-promise | 2.0.0 | Apache-2.0 | dev | https://github.com/malept/cross-spawn-promise |
 | @malept/flatpak-bundler | 0.4.0 | MIT | dev | https://github.com/malept/flatpak-bundler#readme |
+| @mermaid-js/parser | 1.1.0 | MIT | prod | https://github.com/mermaid-js/mermaid/tree/develop/packages/mermaid/parser/#readme |
 | @modelcontextprotocol/sdk | 1.0.1 | MIT | prod | https://modelcontextprotocol.io |
 | @modelcontextprotocol/sdk | 1.29.0 | MIT | prod | https://modelcontextprotocol.io |
 | @modelcontextprotocol/sdk | 1.29.0 | MIT | prod | https://modelcontextprotocol.io |
@@ -53,6 +71,7 @@ Generated from `package-lock.json` and installed package metadata.
 | @modelcontextprotocol/server-filesystem | 2026.1.14 | MIT | prod | https://modelcontextprotocol.io |
 | @modelcontextprotocol/server-memory | 2026.1.26 | MIT | prod | https://modelcontextprotocol.io |
 | @modelcontextprotocol/server-puppeteer | 2025.5.12 | MIT | prod | https://modelcontextprotocol.io |
+| @mozilla/readability | 0.6.0 | Apache-2.0 | prod | https://github.com/mozilla/readability |
 | @npmcli/agent | 3.0.0 | ISC | dev | https://github.com/npm/agent#readme |
 | @npmcli/fs | 4.0.0 | ISC | dev | git+https://github.com/npm/fs.git |
 | @pkgjs/parseargs | 0.11.0 | MIT | prod, optional | https://github.com/pkgjs/parseargs#readme |
@@ -61,20 +80,58 @@ Generated from `package-lock.json` and installed package metadata.
 | @szmarczak/http-timer | 4.0.6 | MIT | dev | https://github.com/szmarczak/http-timer#readme |
 | @tootallnate/quickjs-emscripten | 0.23.0 | MIT | prod | https://github.com/justjake/quickjs-emscripten |
 | @types/cacheable-request | 6.0.3 | MIT | dev | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/cacheable-request |
+| @types/d3 | 7.4.3 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3 |
+| @types/d3-array | 3.2.2 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-array |
+| @types/d3-axis | 3.0.6 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-axis |
+| @types/d3-brush | 3.0.6 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-brush |
+| @types/d3-chord | 3.0.6 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-chord |
+| @types/d3-color | 3.1.3 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-color |
+| @types/d3-contour | 3.0.6 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-contour |
+| @types/d3-delaunay | 6.0.4 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-delaunay |
+| @types/d3-dispatch | 3.0.7 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-dispatch |
+| @types/d3-drag | 3.0.7 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-drag |
+| @types/d3-dsv | 3.0.7 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-dsv |
+| @types/d3-ease | 3.0.2 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-ease |
+| @types/d3-fetch | 3.0.7 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-fetch |
+| @types/d3-force | 3.0.10 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-force |
+| @types/d3-format | 3.0.4 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-format |
+| @types/d3-geo | 3.1.0 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-geo |
+| @types/d3-hierarchy | 3.1.7 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-hierarchy |
+| @types/d3-interpolate | 3.0.4 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-interpolate |
+| @types/d3-path | 3.1.1 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-path |
+| @types/d3-polygon | 3.0.2 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-polygon |
+| @types/d3-quadtree | 3.0.6 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-quadtree |
+| @types/d3-random | 3.0.3 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-random |
+| @types/d3-scale | 4.0.9 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale |
+| @types/d3-scale-chromatic | 3.1.0 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-scale-chromatic |
+| @types/d3-selection | 3.0.11 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-selection |
+| @types/d3-shape | 3.1.8 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-shape |
+| @types/d3-time | 3.0.4 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time |
+| @types/d3-time-format | 4.0.3 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-time-format |
+| @types/d3-timer | 3.0.2 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-timer |
+| @types/d3-transition | 3.0.9 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-transition |
+| @types/d3-zoom | 3.0.8 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/d3-zoom |
 | @types/debug | 4.1.13 | MIT | dev | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/debug |
 | @types/fs-extra | 9.0.13 | MIT | dev | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/fs-extra |
+| @types/geojson | 7946.0.16 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/geojson |
 | @types/http-cache-semantics | 4.2.0 | MIT | dev | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/http-cache-semantics |
 | @types/keyv | 3.1.4 | MIT | dev | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/keyv |
 | @types/ms | 2.1.0 | MIT | dev | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/ms |
+| @types/node | 14.18.63 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node |
+| @types/node | 14.18.63 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node |
 | @types/node | 22.19.17 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node |
+| @types/node | 25.6.0 | MIT | prod | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/node |
 | @types/plist | 3.0.5 | MIT | dev, optional | https://registry.npmjs.org/@types/plist/-/plist-3.0.5.tgz |
 | @types/responselike | 1.0.3 | MIT | dev | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/responselike |
+| @types/trusted-types | 2.0.7 | MIT | prod, optional | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/trusted-types |
 | @types/verror | 1.10.11 | MIT | dev, optional | https://registry.npmjs.org/@types/verror/-/verror-1.10.11.tgz |
 | @types/yauzl | 2.10.3 | MIT | prod, optional | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/yauzl |
+| @upsetjs/venn.js | 2.0.0 | MIT | prod | https://github.com/upsetjs/venn.js |
 | @xmldom/xmldom | 0.8.12 | MIT | dev | https://github.com/xmldom/xmldom |
 | 7zip-bin | 5.2.0 | MIT | dev | develar/7zip-bin |
 | abbrev | 3.0.1 | ISC | dev | git+https://github.com/npm/abbrev-js.git |
 | accepts | 2.0.0 | MIT | prod | jshttp/accepts |
+| acorn | 8.16.0 | MIT | prod | https://github.com/acornjs/acorn |
 | agent-base | 7.1.4 | MIT | prod | https://github.com/TooTallNate/proxy-agents.git |
 | ajv | 6.14.0 | MIT | dev | https://github.com/ajv-validator/ajv |
 | ajv | 8.18.0 | MIT | prod | https://github.com/ajv-validator/ajv |
@@ -93,21 +150,27 @@ Generated from `package-lock.json` and installed package metadata.
 | ansi-styles | 6.2.3 | MIT | prod | chalk/ansi-styles |
 | app-builder-bin | 5.0.0-alpha.12 | MIT | dev | develar/app-builder |
 | app-builder-lib | 26.8.1 | MIT | dev | https://github.com/electron-userland/electron-builder |
+| archiver | 5.3.2 | MIT | prod | https://github.com/archiverjs/node-archiver |
+| archiver-utils | 2.1.0 | MIT | prod | https://github.com/archiverjs/archiver-utils#readme |
+| archiver-utils | 3.0.4 | MIT | prod | https://github.com/archiverjs/archiver-utils#readme |
 | argparse | 2.0.1 | Python-2.0 | prod | nodeca/argparse |
 | assert-plus | 1.0.0 | MIT | dev, optional | https://registry.npmjs.org/assert-plus/-/assert-plus-1.0.0.tgz |
 | ast-types | 0.13.4 | MIT | prod | http://github.com/benjamn/ast-types |
 | astral-regex | 2.0.0 | MIT | dev, optional | https://registry.npmjs.org/astral-regex/-/astral-regex-2.0.0.tgz |
-| async | 3.2.6 | MIT | dev | https://caolan.github.io/async/ |
+| async | 3.2.6 | MIT | prod | https://caolan.github.io/async/ |
 | async-exit-hook | 2.0.1 | MIT | dev | https://github.com/tapppi/async-exit-hook.git |
 | asynckit | 0.4.0 | MIT | dev | https://github.com/alexindigo/asynckit#readme |
 | at-least-node | 1.0.0 | ISC | dev | https://github.com/RyanZim/at-least-node#readme |
 | b4a | 1.8.0 | Apache-2.0 | prod | https://github.com/holepunchto/b4a#readme |
 | balanced-match | 1.0.2 | MIT | dev | git://github.com/juliangruber/balanced-match.git |
 | balanced-match | 1.0.2 | MIT | dev | git://github.com/juliangruber/balanced-match.git |
+| balanced-match | 1.0.2 | MIT | prod | git://github.com/juliangruber/balanced-match.git |
 | balanced-match | 1.0.2 | MIT | dev | git://github.com/juliangruber/balanced-match.git |
 | balanced-match | 1.0.2 | MIT | dev | git://github.com/juliangruber/balanced-match.git |
 | balanced-match | 1.0.2 | MIT | prod | git://github.com/juliangruber/balanced-match.git |
-| balanced-match | 1.0.2 | MIT | dev | git://github.com/juliangruber/balanced-match.git |
+| balanced-match | 1.0.2 | MIT | prod | git://github.com/juliangruber/balanced-match.git |
+| balanced-match | 1.0.2 | MIT | prod | git://github.com/juliangruber/balanced-match.git |
+| balanced-match | 1.0.2 | MIT | prod | git://github.com/juliangruber/balanced-match.git |
 | balanced-match | 4.0.4 | MIT | prod | git://github.com/juliangruber/balanced-match.git |
 | bare-events | 2.8.2 | Apache-2.0 | prod | https://github.com/holepunchto/bare-events#readme |
 | bare-fs | 4.7.0 | Apache-2.0 | prod | https://github.com/holepunchto/bare-fs#readme |
@@ -118,20 +181,28 @@ Generated from `package-lock.json` and installed package metadata.
 | base64-js | 1.5.1 | MIT | prod | https://github.com/beatgammit/base64-js |
 | basic-ftp | 5.2.2 | MIT | prod | https://github.com/patrickjuchli/basic-ftp.git |
 | better-sqlite3 | 11.10.0 | MIT | prod | http://github.com/WiseLibs/better-sqlite3 |
+| big-integer | 1.6.52 | Unlicense | prod | git@github.com:peterolson/BigInteger.js.git |
+| binary | 0.3.0 | MIT | prod | http://github.com/substack/node-binary.git |
 | bindings | 1.5.0 | MIT | prod | https://github.com/TooTallNate/node-bindings |
 | bl | 4.1.0 | MIT | prod | https://github.com/rvagg/bl |
+| bluebird | 3.4.7 | MIT | prod | https://github.com/petkaantonov/bluebird |
 | body-parser | 2.2.2 | MIT | prod | expressjs/body-parser |
 | boolean | 3.2.0 | MIT | dev, optional | git://github.com/thenativeweb/boolean.git |
 | brace-expansion | 1.1.14 | MIT | dev | git+ssh://git@github.com/juliangruber/brace-expansion.git |
+| brace-expansion | 1.1.14 | MIT | prod | git+ssh://git@github.com/juliangruber/brace-expansion.git |
 | brace-expansion | 1.1.14 | MIT | dev | git+ssh://git@github.com/juliangruber/brace-expansion.git |
-| brace-expansion | 1.1.14 | MIT | dev | git+ssh://git@github.com/juliangruber/brace-expansion.git |
+| brace-expansion | 1.1.14 | MIT | prod | git+ssh://git@github.com/juliangruber/brace-expansion.git |
+| brace-expansion | 1.1.14 | MIT | prod | git+ssh://git@github.com/juliangruber/brace-expansion.git |
 | brace-expansion | 2.1.0 | MIT | dev | git+ssh://git@github.com/juliangruber/brace-expansion.git |
 | brace-expansion | 2.1.0 | MIT | dev | git+ssh://git@github.com/juliangruber/brace-expansion.git |
+| brace-expansion | 2.1.0 | MIT | prod | git+ssh://git@github.com/juliangruber/brace-expansion.git |
 | brace-expansion | 2.1.0 | MIT | prod | git+ssh://git@github.com/juliangruber/brace-expansion.git |
 | brace-expansion | 5.0.5 | MIT | prod | git+ssh://git@github.com/juliangruber/brace-expansion.git |
 | buffer | 5.7.1 | MIT | prod | https://github.com/feross/buffer |
 | buffer-crc32 | 0.2.13 | MIT | prod | https://github.com/brianloveswords/buffer-crc32 |
 | buffer-from | 1.1.2 | MIT | dev | LinusU/buffer-from |
+| buffer-indexof-polyfill | 1.0.2 | MIT | prod | https://github.com/sarosia/buffer-indexof-polyfill#readme |
+| buffers | 0.1.1 | UNKNOWN | prod | http://github.com/substack/node-buffers.git |
 | builder-util | 26.8.1 | MIT | dev | https://github.com/electron-userland/electron-builder |
 | builder-util-runtime | 9.5.1 | MIT | dev | https://github.com/electron-userland/electron-builder |
 | bytes | 3.1.2 | MIT | prod | visionmedia/bytes.js |
@@ -141,7 +212,10 @@ Generated from `package-lock.json` and installed package metadata.
 | call-bind-apply-helpers | 1.0.2 | MIT | prod | https://github.com/ljharb/call-bind-apply-helpers#readme |
 | call-bound | 1.0.4 | MIT | prod | https://github.com/ljharb/call-bound#readme |
 | callsites | 3.1.0 | MIT | prod | sindresorhus/callsites |
+| chainsaw | 0.1.0 | MIT/X11 | prod | http://github.com/substack/node-chainsaw.git |
 | chalk | 4.1.2 | MIT | dev | chalk/chalk |
+| chevrotain | 12.0.0 | Apache-2.0 | prod | https://chevrotain.io/docs/ |
+| chevrotain-allstar | 0.4.1 | MIT | prod | https://github.com/langium/chevrotain-allstar |
 | chownr | 1.1.4 | ISC | prod | git://github.com/isaacs/chownr.git |
 | chownr | 3.0.0 | BlueOak-1.0.0 | dev | git://github.com/isaacs/chownr.git |
 | chromium-bidi | 0.11.0 | Apache-2.0 | prod | https://github.com/GoogleChromeLabs/chromium-bidi.git |
@@ -158,20 +232,68 @@ Generated from `package-lock.json` and installed package metadata.
 | color-name | 1.1.4 | MIT | prod | https://github.com/colorjs/color-name |
 | combined-stream | 1.0.8 | MIT | dev | https://github.com/felixge/node-combined-stream |
 | commander | 5.1.0 | MIT | dev | https://github.com/tj/commander.js.git |
+| commander | 7.2.0 | MIT | prod | https://github.com/tj/commander.js.git |
+| commander | 8.3.0 | MIT | prod | https://github.com/tj/commander.js.git |
 | commander | 9.5.0 | MIT | dev, optional | https://github.com/tj/commander.js.git |
 | compare-version | 0.1.2 | MIT | dev | kevva/compare-version |
-| concat-map | 0.0.1 | MIT | dev | git://github.com/substack/node-concat-map.git |
+| compress-commons | 4.1.2 | MIT | prod | https://github.com/archiverjs/node-compress-commons |
+| concat-map | 0.0.1 | MIT | prod | git://github.com/substack/node-concat-map.git |
+| confbox | 0.1.8 | MIT | prod | unjs/confbox |
 | content-disposition | 1.1.0 | MIT | prod | jshttp/content-disposition |
 | content-type | 1.0.5 | MIT | prod | jshttp/content-type |
 | cookie | 0.7.2 | MIT | prod | jshttp/cookie |
 | cookie-signature | 1.2.2 | MIT | prod | https://github.com/visionmedia/node-cookie-signature.git |
-| core-util-is | 1.0.2 | MIT | dev, optional | https://registry.npmjs.org/core-util-is/-/core-util-is-1.0.2.tgz |
+| core-util-is | 1.0.2 | MIT | prod | git://github.com/isaacs/core-util-is |
 | cors | 2.8.6 | MIT | prod | expressjs/cors |
+| cose-base | 1.0.3 | MIT | prod | https://github.com/iVis-at-Bilkent/cose-base#readme |
+| cose-base | 2.2.0 | MIT | prod | https://github.com/iVis-at-Bilkent/cose-base#readme |
 | cosmiconfig | 9.0.1 | MIT | prod | https://github.com/cosmiconfig/cosmiconfig#readme |
 | crc | 3.8.0 | MIT | dev, optional | https://registry.npmjs.org/crc/-/crc-3.8.0.tgz |
+| crc-32 | 1.2.2 | Apache-2.0 | prod | https://sheetjs.com/ |
+| crc32-stream | 4.0.3 | MIT | prod | https://github.com/archiverjs/node-crc32-stream |
 | cross-dirname | 0.1.0 | MIT | dev, optional | https://github.com/JumpLink/cross-dirname.git |
 | cross-spawn | 7.0.6 | MIT | prod | https://github.com/moxystudio/node-cross-spawn |
+| cytoscape | 3.33.2 | MIT | prod | http://js.cytoscape.org |
+| cytoscape-cose-bilkent | 4.1.0 | MIT | prod | https://github.com/cytoscape/cytoscape.js-cose-bilkent |
+| cytoscape-fcose | 2.2.0 | MIT | prod | https://github.com/iVis-at-Bilkent/cytoscape.js-fcose |
+| d3 | 7.9.0 | ISC | prod | https://d3js.org |
+| d3-array | 2.12.1 | BSD-3-Clause | prod | https://d3js.org/d3-array/ |
+| d3-array | 3.2.4 | ISC | prod | https://d3js.org/d3-array/ |
+| d3-axis | 3.0.0 | ISC | prod | https://d3js.org/d3-axis/ |
+| d3-brush | 3.0.0 | ISC | prod | https://d3js.org/d3-brush/ |
+| d3-chord | 3.0.1 | ISC | prod | https://d3js.org/d3-chord/ |
+| d3-color | 3.1.0 | ISC | prod | https://d3js.org/d3-color/ |
+| d3-contour | 4.0.2 | ISC | prod | https://d3js.org/d3-contour/ |
+| d3-delaunay | 6.0.4 | ISC | prod | https://github.com/d3/d3-delaunay |
+| d3-dispatch | 3.0.1 | ISC | prod | https://d3js.org/d3-dispatch/ |
+| d3-drag | 3.0.0 | ISC | prod | https://d3js.org/d3-drag/ |
+| d3-dsv | 3.0.1 | ISC | prod | https://d3js.org/d3-dsv/ |
+| d3-ease | 3.0.1 | BSD-3-Clause | prod | https://d3js.org/d3-ease/ |
+| d3-fetch | 3.0.1 | ISC | prod | https://d3js.org/d3-fetch/ |
+| d3-force | 3.0.0 | ISC | prod | https://d3js.org/d3-force/ |
+| d3-format | 3.1.2 | ISC | prod | https://d3js.org/d3-format/ |
+| d3-geo | 3.1.1 | ISC | prod | https://d3js.org/d3-geo/ |
+| d3-hierarchy | 3.1.2 | ISC | prod | https://d3js.org/d3-hierarchy/ |
+| d3-interpolate | 3.0.1 | ISC | prod | https://d3js.org/d3-interpolate/ |
+| d3-path | 1.0.9 | BSD-3-Clause | prod | https://d3js.org/d3-path/ |
+| d3-path | 3.1.0 | ISC | prod | https://d3js.org/d3-path/ |
+| d3-polygon | 3.0.1 | ISC | prod | https://d3js.org/d3-polygon/ |
+| d3-quadtree | 3.0.1 | ISC | prod | https://d3js.org/d3-quadtree/ |
+| d3-random | 3.0.1 | ISC | prod | https://d3js.org/d3-random/ |
+| d3-sankey | 0.12.3 | BSD-3-Clause | prod | https://github.com/d3/d3-sankey |
+| d3-scale | 4.0.2 | ISC | prod | https://d3js.org/d3-scale/ |
+| d3-scale-chromatic | 3.1.0 | ISC | prod | https://d3js.org/d3-scale-chromatic/ |
+| d3-selection | 3.0.0 | ISC | prod | https://d3js.org/d3-selection/ |
+| d3-shape | 1.3.7 | BSD-3-Clause | prod | https://d3js.org/d3-shape/ |
+| d3-shape | 3.2.0 | ISC | prod | https://d3js.org/d3-shape/ |
+| d3-time | 3.1.0 | ISC | prod | https://d3js.org/d3-time/ |
+| d3-time-format | 4.1.0 | ISC | prod | https://d3js.org/d3-time-format/ |
+| d3-timer | 3.0.1 | ISC | prod | https://d3js.org/d3-timer/ |
+| d3-transition | 3.0.1 | ISC | prod | https://d3js.org/d3-transition/ |
+| d3-zoom | 3.0.0 | ISC | prod | https://d3js.org/d3-zoom/ |
+| dagre-d3-es | 7.0.14 | MIT | prod | git+https://github.com/tbo47/dagre-es.git |
 | data-uri-to-buffer | 6.0.2 | MIT | prod | https://github.com/TooTallNate/proxy-agents.git |
+| dayjs | 1.11.20 | MIT | prod | https://day.js.org |
 | debug | 4.4.3 | MIT | prod | git://github.com/debug-js/debug.git |
 | decompress-response | 6.0.0 | MIT | prod | sindresorhus/decompress-response |
 | deep-extend | 0.6.0 | MIT | prod | https://github.com/unclechu/node-deep-extend |
@@ -180,6 +302,7 @@ Generated from `package-lock.json` and installed package metadata.
 | define-data-property | 1.1.4 | MIT | dev, optional | https://github.com/ljharb/define-data-property#readme |
 | define-properties | 1.2.1 | MIT | dev, optional | git://github.com/ljharb/define-properties.git |
 | degenerator | 5.0.1 | MIT | prod | https://github.com/TooTallNate/proxy-agents.git |
+| delaunator | 5.1.0 | ISC | prod | https://github.com/mapbox/delaunator.git |
 | delayed-stream | 1.0.0 | MIT | dev | https://github.com/felixge/node-delayed-stream |
 | depd | 2.0.0 | MIT | prod | dougwilson/nodejs-depd |
 | detect-libc | 2.1.2 | Apache-2.0 | prod | git://github.com/lovell/detect-libc.git |
@@ -189,9 +312,12 @@ Generated from `package-lock.json` and installed package metadata.
 | dir-compare | 4.2.0 | MIT | dev | https://github.com/gliviu/dir-compare |
 | dmg-builder | 26.8.1 | MIT | dev | https://github.com/electron-userland/electron-builder |
 | dmg-license | 1.0.11 | MIT | dev, optional | https://registry.npmjs.org/dmg-license/-/dmg-license-1.0.11.tgz |
+| docx | 9.6.1 | MIT | prod | https://docx.js.org |
+| dompurify | 3.3.3 | (MPL-2.0 OR Apache-2.0) | prod | https://github.com/cure53/DOMPurify |
 | dotenv | 16.6.1 | BSD-2-Clause | dev | https://github.com/motdotla/dotenv#readme |
 | dotenv-expand | 11.0.7 | BSD-2-Clause | dev | https://github.com/motdotla/dotenv-expand |
 | dunder-proto | 1.0.1 | MIT | prod | https://github.com/es-shims/dunder-proto#readme |
+| duplexer2 | 0.1.4 | BSD-3-Clause | prod | deoxxa/duplexer2 |
 | eastasianwidth | 0.2.0 | MIT | prod | git://github.com/komagata/eastasianwidth.git |
 | ee-first | 1.1.1 | MIT | prod | jonathanong/ee-first |
 | ejs | 3.1.10 | Apache-2.0 | dev | https://github.com/mde/ejs |
@@ -225,12 +351,14 @@ Generated from `package-lock.json` and installed package metadata.
 | events-universal | 1.0.1 | Apache-2.0 | prod | https://github.com/holepunchto/events-universal#readme |
 | eventsource | 3.0.7 | MIT | prod | https://github.com/EventSource/eventsource#readme |
 | eventsource-parser | 3.0.6 | MIT | prod | https://github.com/rexxars/eventsource-parser#readme |
+| exceljs | 4.4.0 | MIT | prod | https://github.com/exceljs/exceljs.git |
 | expand-template | 2.0.3 | (MIT OR WTFPL) | prod | https://github.com/ralphtheninja/expand-template |
 | exponential-backoff | 3.1.3 | Apache-2.0 | dev | https://github.com/coveooss/exponential-backoff#readme |
 | express | 5.2.1 | MIT | prod | https://expressjs.com/ |
 | express-rate-limit | 8.3.2 | MIT | prod | https://github.com/express-rate-limit/express-rate-limit |
 | extract-zip | 2.0.1 | BSD-2-Clause | prod | maxogden/extract-zip |
 | extsprintf | 1.4.1 | MIT | dev, optional | https://registry.npmjs.org/extsprintf/-/extsprintf-1.4.1.tgz |
+| fast-csv | 4.3.6 | MIT | prod | http://c2fo.github.com/fast-csv |
 | fast-deep-equal | 3.1.3 | MIT | prod | https://github.com/epoberezkin/fast-deep-equal#readme |
 | fast-fifo | 1.3.2 | MIT | prod | https://github.com/mafintosh/fast-fifo |
 | fast-json-stable-stringify | 2.1.0 | MIT | dev | https://github.com/epoberezkin/fast-json-stable-stringify |
@@ -261,7 +389,8 @@ Generated from `package-lock.json` and installed package metadata.
 | fs-extra | 9.1.0 | MIT | dev | https://github.com/jprichardson/node-fs-extra |
 | fs-extra | 9.1.0 | MIT | dev | https://github.com/jprichardson/node-fs-extra |
 | fs-minipass | 3.0.3 | ISC | dev | https://github.com/npm/fs-minipass#readme |
-| fs.realpath | 1.0.0 | ISC | dev | git+https://github.com/isaacs/fs.realpath.git |
+| fs.realpath | 1.0.0 | ISC | prod | git+https://github.com/isaacs/fs.realpath.git |
+| fstream | 1.0.12 | ISC | prod | https://github.com/npm/fstream.git |
 | function-bind | 1.1.2 | MIT | prod | https://github.com/Raynos/function-bind |
 | get-caller-file | 2.0.5 | ISC | prod | https://github.com/stefanpenner/get-caller-file#readme |
 | get-intrinsic | 1.3.0 | MIT | prod | https://github.com/ljharb/get-intrinsic#readme |
@@ -271,16 +400,20 @@ Generated from `package-lock.json` and installed package metadata.
 | github-from-package | 0.0.0 | MIT | prod | https://github.com/substack/github-from-package |
 | glob | 10.5.0 | ISC | prod | git://github.com/isaacs/node-glob.git |
 | glob | 7.2.3 | ISC | dev | git://github.com/isaacs/node-glob.git |
-| glob | 7.2.3 | ISC | dev | git://github.com/isaacs/node-glob.git |
+| glob | 7.2.3 | ISC | prod | git://github.com/isaacs/node-glob.git |
+| glob | 7.2.3 | ISC | prod | git://github.com/isaacs/node-glob.git |
+| glob | 7.2.3 | ISC | prod | git://github.com/isaacs/node-glob.git |
 | global-agent | 3.0.0 | BSD-3-Clause | dev, optional | https://github.com/gajus/global-agent |
 | globalthis | 1.0.4 | MIT | dev, optional | git://github.com/ljharb/System.global.git |
 | gopd | 1.2.0 | MIT | prod | https://github.com/ljharb/gopd#readme |
 | got | 11.8.6 | MIT | dev | sindresorhus/got |
-| graceful-fs | 4.2.11 | ISC | dev | https://github.com/isaacs/node-graceful-fs |
+| graceful-fs | 4.2.11 | ISC | prod | https://github.com/isaacs/node-graceful-fs |
+| hachure-fill | 0.5.2 | MIT | prod | https://github.com/pshihn/hachure-fill#readme |
 | has-flag | 4.0.0 | MIT | dev | sindresorhus/has-flag |
 | has-property-descriptors | 1.0.2 | MIT | dev, optional | https://github.com/inspect-js/has-property-descriptors#readme |
 | has-symbols | 1.1.0 | MIT | prod | https://github.com/ljharb/has-symbols#readme |
 | has-tostringtag | 1.0.2 | MIT | dev | https://github.com/inspect-js/has-tostringtag#readme |
+| hash.js | 1.1.7 | MIT | prod | https://github.com/indutny/hash.js |
 | hasown | 2.0.2 | MIT | prod | https://github.com/inspect-js/hasOwn#readme |
 | hono | 4.12.12 | MIT | prod | https://hono.dev |
 | hosted-git-info | 4.1.0 | ISC | dev | https://github.com/npm/hosted-git-info |
@@ -288,17 +421,22 @@ Generated from `package-lock.json` and installed package metadata.
 | http-errors | 2.0.1 | MIT | prod | jshttp/http-errors |
 | http-proxy-agent | 7.0.2 | MIT | prod | https://github.com/TooTallNate/proxy-agents.git |
 | http2-wrapper | 1.0.3 | MIT | dev | https://github.com/szmarczak/http2-wrapper#readme |
+| https | 1.0.0 | ISC | prod | https://registry.npmjs.org/https/-/https-1.0.0.tgz |
 | https-proxy-agent | 7.0.6 | MIT | prod | https://github.com/TooTallNate/proxy-agents.git |
 | iconv-corefoundation | 1.1.7 | MIT | dev, optional | https://registry.npmjs.org/iconv-corefoundation/-/iconv-corefoundation-1.1.7.tgz |
-| iconv-lite | 0.6.3 | MIT | dev | https://github.com/ashtuchkin/iconv-lite |
+| iconv-lite | 0.6.3 | MIT | prod | https://github.com/ashtuchkin/iconv-lite |
 | iconv-lite | 0.7.2 | MIT | prod | https://github.com/ashtuchkin/iconv-lite |
 | iconv-lite | 0.7.2 | MIT | prod | https://github.com/ashtuchkin/iconv-lite |
 | ieee754 | 1.2.1 | BSD-3-Clause | prod | git://github.com/feross/ieee754.git |
+| image-size | 1.2.1 | MIT | prod | git://github.com/image-size/image-size.git |
+| immediate | 3.0.6 | MIT | prod | git://github.com/calvinmetcalf/immediate.git |
 | import-fresh | 3.3.1 | MIT | prod | sindresorhus/import-fresh |
 | imurmurhash | 0.1.4 | MIT | dev | https://github.com/jensyt/imurmurhash-js |
-| inflight | 1.0.6 | ISC | dev | https://github.com/isaacs/inflight |
+| inflight | 1.0.6 | ISC | prod | https://github.com/isaacs/inflight |
 | inherits | 2.0.4 | ISC | prod | git://github.com/isaacs/inherits |
 | ini | 1.3.8 | ISC | prod | git://github.com/isaacs/ini.git |
+| internmap | 1.0.1 | ISC | prod | https://github.com/mbostock/internmap/ |
+| internmap | 2.0.3 | ISC | prod | https://github.com/mbostock/internmap/ |
 | ip-address | 10.1.0 | MIT | prod | git://github.com/beaugunderson/ip-address.git |
 | ipaddr.js | 1.9.1 | MIT | prod | git://github.com/whitequark/ipaddr.js |
 | is-arrayish | 0.2.1 | MIT | prod | https://github.com/qix-/node-is-arrayish.git |
@@ -306,6 +444,7 @@ Generated from `package-lock.json` and installed package metadata.
 | is-interactive | 1.0.0 | MIT | dev | sindresorhus/is-interactive |
 | is-promise | 4.0.0 | MIT | prod | https://github.com/then/is-promise.git |
 | is-unicode-supported | 0.1.0 | MIT | dev | sindresorhus/is-unicode-supported |
+| isarray | 1.0.0 | MIT | prod | https://github.com/juliangruber/isarray |
 | isbinaryfile | 4.0.10 | MIT | dev | https://github.com/gjtorikian/isBinaryFile |
 | isbinaryfile | 5.0.7 | MIT | dev | https://github.com/gjtorikian/isBinaryFile |
 | isexe | 2.0.0 | ISC | prod | https://github.com/isaacs/isexe |
@@ -338,10 +477,33 @@ Generated from `package-lock.json` and installed package metadata.
 | jsonfile | 6.2.0 | MIT | dev | git@github.com:jprichardson/node-jsonfile.git |
 | jsonfile | 6.2.0 | MIT | dev | git@github.com:jprichardson/node-jsonfile.git |
 | jsonfile | 6.2.0 | MIT | dev | git@github.com:jprichardson/node-jsonfile.git |
+| jszip | 3.10.1 | (MIT OR GPL-3.0-or-later) | prod | https://github.com/Stuk/jszip.git |
+| katex | 0.16.45 | MIT | prod | https://katex.org |
 | keyv | 4.5.4 | MIT | dev | https://github.com/jaredwray/keyv |
+| khroma | 2.1.0 | UNKNOWN | prod | github:fabiospampinato/khroma |
+| langium | 4.2.2 | MIT | prod | https://langium.org |
+| layout-base | 1.0.2 | MIT | prod | https://github.com/iVis-at-Bilkent/layout-base#readme |
+| layout-base | 2.0.1 | MIT | prod | https://github.com/iVis-at-Bilkent/layout-base#readme |
 | lazy-val | 1.0.5 | MIT | dev | https://github.com/develar/lazy-val |
+| lazystream | 1.0.1 | MIT | prod | https://github.com/jpommerening/node-lazystream |
+| lie | 3.3.0 | MIT | prod | https://github.com/calvinmetcalf/lie.git |
 | lines-and-columns | 1.2.4 | MIT | prod | https://github.com/eventualbuddha/lines-and-columns#readme |
+| listenercount | 1.0.1 | ISC | prod | git@github.com:jden/node-listenercount.git |
 | lodash | 4.18.1 | MIT | dev | https://lodash.com/ |
+| lodash-es | 4.18.1 | MIT | prod | https://lodash.com/custom-builds |
+| lodash.defaults | 4.2.0 | MIT | prod | https://lodash.com/ |
+| lodash.difference | 4.5.0 | MIT | prod | https://lodash.com/ |
+| lodash.escaperegexp | 4.1.2 | MIT | prod | https://lodash.com/ |
+| lodash.flatten | 4.4.0 | MIT | prod | https://lodash.com/ |
+| lodash.groupby | 4.6.0 | MIT | prod | https://lodash.com/ |
+| lodash.isboolean | 3.0.3 | MIT | prod | https://lodash.com/ |
+| lodash.isequal | 4.5.0 | MIT | prod | https://lodash.com/ |
+| lodash.isfunction | 3.0.9 | MIT | prod | https://lodash.com/ |
+| lodash.isnil | 4.0.0 | MIT | prod | https://lodash.com/ |
+| lodash.isplainobject | 4.0.6 | MIT | prod | https://lodash.com/ |
+| lodash.isundefined | 3.0.1 | MIT | prod | https://lodash.com/ |
+| lodash.union | 4.6.0 | MIT | prod | https://lodash.com/ |
+| lodash.uniq | 4.5.0 | MIT | prod | https://lodash.com/ |
 | log-symbols | 4.1.0 | MIT | dev | sindresorhus/log-symbols |
 | lowercase-keys | 2.0.0 | MIT | dev | sindresorhus/lowercase-keys |
 | lru-cache | 10.4.3 | ISC | dev | git://github.com/isaacs/node-lru-cache.git |
@@ -350,10 +512,12 @@ Generated from `package-lock.json` and installed package metadata.
 | lru-cache | 6.0.0 | ISC | dev | git://github.com/isaacs/node-lru-cache.git |
 | lru-cache | 7.18.3 | ISC | prod | git://github.com/isaacs/node-lru-cache.git |
 | make-fetch-happen | 14.0.3 | ISC | dev | git+https://github.com/npm/make-fetch-happen.git |
+| marked | 16.4.2 | MIT | prod | https://marked.js.org |
 | matcher | 3.0.0 | MIT | dev, optional | sindresorhus/matcher |
 | math-intrinsics | 1.1.0 | MIT | prod | https://github.com/es-shims/math-intrinsics#readme |
 | media-typer | 1.1.0 | MIT | prod | jshttp/media-typer |
 | merge-descriptors | 2.0.0 | MIT | prod | sindresorhus/merge-descriptors |
+| mermaid | 11.14.0 | MIT | prod | https://github.com/mermaid-js/mermaid |
 | mime | 2.6.0 | MIT | dev | https://github.com/broofa/mime |
 | mime-db | 1.52.0 | MIT | dev | jshttp/mime-db |
 | mime-db | 1.54.0 | MIT | prod | jshttp/mime-db |
@@ -368,11 +532,15 @@ Generated from `package-lock.json` and installed package metadata.
 | mimic-fn | 2.1.0 | MIT | dev | sindresorhus/mimic-fn |
 | mimic-response | 1.0.1 | MIT | dev | sindresorhus/mimic-response |
 | mimic-response | 3.1.0 | MIT | prod | sindresorhus/mimic-response |
+| minimalistic-assert | 1.0.1 | ISC | prod | https://github.com/calvinmetcalf/minimalistic-assert |
 | minimatch | 10.2.5 | BlueOak-1.0.0 | prod | git@github.com:isaacs/minimatch |
 | minimatch | 3.1.5 | ISC | dev | git@github.com:isaacs/minimatch |
+| minimatch | 3.1.5 | ISC | prod | git@github.com:isaacs/minimatch |
 | minimatch | 3.1.5 | ISC | dev | git@github.com:isaacs/minimatch |
-| minimatch | 3.1.5 | ISC | dev | git@github.com:isaacs/minimatch |
+| minimatch | 3.1.5 | ISC | prod | git@github.com:isaacs/minimatch |
+| minimatch | 3.1.5 | ISC | prod | git@github.com:isaacs/minimatch |
 | minimatch | 5.1.9 | ISC | dev | git@github.com:isaacs/minimatch |
+| minimatch | 5.1.9 | ISC | prod | git@github.com:isaacs/minimatch |
 | minimatch | 9.0.9 | ISC | dev | git@github.com:isaacs/minimatch |
 | minimatch | 9.0.9 | ISC | prod | git@github.com:isaacs/minimatch |
 | minimist | 1.2.8 | MIT | prod | https://github.com/minimistjs/minimist |
@@ -387,9 +555,11 @@ Generated from `package-lock.json` and installed package metadata.
 | minipass-sized | 1.0.3 | ISC | dev | git+https://github.com/isaacs/minipass-sized.git |
 | minizlib | 3.1.0 | MIT | dev | git+https://github.com/isaacs/minizlib.git |
 | mitt | 3.0.1 | MIT | prod | https://github.com/developit/mitt |
-| mkdirp | 0.5.6 | MIT | dev | https://github.com/substack/node-mkdirp.git |
+| mkdirp | 0.5.6 | MIT | prod | https://github.com/substack/node-mkdirp.git |
 | mkdirp-classic | 0.5.3 | MIT | prod | https://github.com/mafintosh/mkdirp-classic |
+| mlly | 1.8.2 | MIT | prod | unjs/mlly |
 | ms | 2.1.3 | MIT | prod | vercel/ms |
+| nanoid | 5.1.7 | MIT | prod | ai/nanoid |
 | napi-build-utils | 2.0.0 | MIT | prod | https://github.com/inspiredware/napi-build-utils#readme |
 | negotiator | 1.0.0 | MIT | prod | jshttp/negotiator |
 | netmask | 2.1.1 | MIT | prod | https://github.com/rs/node-netmask |
@@ -399,6 +569,7 @@ Generated from `package-lock.json` and installed package metadata.
 | node-api-version | 0.2.1 | MIT | dev | https://github.com/timfish/node-api-version |
 | node-gyp | 11.5.0 | MIT | dev | git://github.com/nodejs/node-gyp.git |
 | nopt | 8.1.0 | ISC | dev | git+https://github.com/npm/nopt.git |
+| normalize-path | 3.0.0 | MIT | prod | https://github.com/jonschlinkert/normalize-path |
 | normalize-url | 6.1.0 | MIT | dev | sindresorhus/normalize-url |
 | object-assign | 4.1.1 | MIT | prod | sindresorhus/object-assign |
 | object-inspect | 1.13.4 | MIT | prod | https://github.com/inspect-js/object-inspect |
@@ -413,22 +584,31 @@ Generated from `package-lock.json` and installed package metadata.
 | pac-proxy-agent | 7.2.0 | MIT | prod | https://github.com/TooTallNate/proxy-agents.git |
 | pac-resolver | 7.0.1 | MIT | prod | https://github.com/TooTallNate/proxy-agents.git |
 | package-json-from-dist | 1.0.1 | BlueOak-1.0.0 | prod | git+https://github.com/isaacs/package-json-from-dist.git |
+| package-manager-detector | 1.6.0 | MIT | prod | https://github.com/antfu-collective/package-manager-detector#readme |
+| pako | 1.0.11 | (MIT AND Zlib) | prod | https://github.com/nodeca/pako |
 | parent-module | 1.0.1 | MIT | prod | sindresorhus/parent-module |
 | parse-json | 5.2.0 | MIT | prod | sindresorhus/parse-json |
 | parseurl | 1.3.3 | MIT | prod | pillarjs/parseurl |
-| path-is-absolute | 1.0.1 | MIT | dev | sindresorhus/path-is-absolute |
+| path-data-parser | 0.1.0 | MIT | prod | https://github.com/pshihn/path-data-parser#readme |
+| path-is-absolute | 1.0.1 | MIT | prod | sindresorhus/path-is-absolute |
 | path-key | 3.1.1 | MIT | prod | sindresorhus/path-key |
 | path-scurry | 1.11.1 | BlueOak-1.0.0 | prod | git+https://github.com/isaacs/path-scurry |
 | path-to-regexp | 8.4.2 | MIT | prod | https://github.com/pillarjs/path-to-regexp.git |
+| pathe | 2.0.3 | MIT | prod | unjs/pathe |
 | pe-library | 0.4.1 | MIT | dev | https://github.com/jet2jet/pe-library-js |
 | pend | 1.2.0 | MIT | prod | git://github.com/andrewrk/node-pend.git |
 | picocolors | 1.1.1 | ISC | prod | alexeyraspopov/picocolors |
 | picomatch | 4.0.4 | MIT | dev | https://github.com/micromatch/picomatch |
 | pkce-challenge | 5.0.1 | MIT | prod | https://github.com/crouchcd/pkce-challenge#readme |
+| pkg-types | 1.3.1 | MIT | prod | unjs/pkg-types |
 | plist | 3.1.0 | MIT | dev | git://github.com/TooTallNate/node-plist.git |
+| points-on-curve | 0.2.0 | MIT | prod | https://github.com/pshihn/bezier-points#readme |
+| points-on-path | 0.2.1 | MIT | prod | https://github.com/pshihn/points-on-path#readme |
 | postject | 1.0.0-alpha.6 | MIT | dev, optional | https://github.com/nodejs/postject#readme |
+| pptxgenjs | 4.0.1 | MIT | prod | https://gitbrent.github.io/PptxGenJS/ |
 | prebuild-install | 7.1.3 | MIT | prod | https://github.com/prebuild/prebuild-install |
 | proc-log | 5.0.0 | ISC | dev | git+https://github.com/npm/proc-log.git |
+| process-nextick-args | 2.0.1 | MIT | prod | https://github.com/calvinmetcalf/process-nextick-args |
 | progress | 2.0.3 | MIT | prod | git://github.com/visionmedia/node-progress |
 | promise-retry | 2.0.1 | MIT | dev | git://github.com/IndigoUnited/node-promise-retry.git |
 | proper-lockfile | 4.1.2 | MIT | dev | https://github.com/moxystudio/node-proper-lockfile |
@@ -440,12 +620,19 @@ Generated from `package-lock.json` and installed package metadata.
 | puppeteer | 23.11.1 | Apache-2.0 | prod | https://github.com/puppeteer/puppeteer/tree/main/packages/puppeteer |
 | puppeteer-core | 23.11.1 | Apache-2.0 | prod | https://github.com/puppeteer/puppeteer/tree/main/packages/puppeteer-core |
 | qs | 6.15.1 | BSD-3-Clause | prod | https://github.com/ljharb/qs |
+| queue | 6.0.2 | MIT | prod | https://github.com/jessetane/queue.git |
 | quick-lru | 5.1.1 | MIT | dev | sindresorhus/quick-lru |
 | range-parser | 1.2.1 | MIT | prod | jshttp/range-parser |
 | raw-body | 3.0.2 | MIT | prod | stream-utils/raw-body |
 | rc | 1.2.8 | (BSD-2-Clause OR MIT OR Apache-2.0) | prod | https://github.com/dominictarr/rc.git |
 | read-binary-file-arch | 1.0.6 | MIT | dev | https://github.com/samuelmaddock/read-binary-file-arch#readme |
+| readable-stream | 2.3.8 | MIT | prod | git://github.com/nodejs/readable-stream |
+| readable-stream | 2.3.8 | MIT | prod | git://github.com/nodejs/readable-stream |
+| readable-stream | 2.3.8 | MIT | prod | git://github.com/nodejs/readable-stream |
+| readable-stream | 2.3.8 | MIT | prod | git://github.com/nodejs/readable-stream |
+| readable-stream | 2.3.8 | MIT | prod | git://github.com/nodejs/readable-stream |
 | readable-stream | 3.6.2 | MIT | prod | git://github.com/nodejs/readable-stream |
+| readdir-glob | 1.1.3 | Apache-2.0 | prod | https://github.com/Yqnn/node-readdir-glob |
 | require-directory | 2.1.1 | MIT | prod | https://github.com/troygoode/node-require-directory/ |
 | require-from-string | 2.0.2 | MIT | prod | floatdrop/require-from-string |
 | resedit | 1.7.2 | MIT | dev | https://github.com/jet2jet/resedit-js |
@@ -454,13 +641,22 @@ Generated from `package-lock.json` and installed package metadata.
 | responselike | 2.0.1 | MIT | dev | https://github.com/sindresorhus/responselike.git |
 | restore-cursor | 3.1.0 | MIT | dev | sindresorhus/restore-cursor |
 | retry | 0.12.0 | MIT | dev | https://github.com/tim-kos/node-retry |
-| rimraf | 2.6.3 | ISC | dev | git://github.com/isaacs/rimraf.git |
+| rimraf | 2.6.3 | ISC | prod | git://github.com/isaacs/rimraf.git |
 | roarr | 2.15.4 | BSD-3-Clause | dev, optional | git@github.com:gajus/roarr.git |
+| robust-predicates | 3.0.3 | Unlicense | prod | https://github.com/mourner/robust-predicates.git |
+| roughjs | 4.6.6 | MIT | prod | https://roughjs.com |
 | router | 2.2.0 | MIT | prod | pillarjs/router |
+| rw | 1.3.3 | BSD-3-Clause | prod | https://github.com/mbostock/rw |
+| safe-buffer | 5.1.2 | MIT | prod | https://github.com/feross/safe-buffer |
+| safe-buffer | 5.1.2 | MIT | prod | https://github.com/feross/safe-buffer |
+| safe-buffer | 5.1.2 | MIT | prod | https://github.com/feross/safe-buffer |
+| safe-buffer | 5.1.2 | MIT | prod | https://github.com/feross/safe-buffer |
+| safe-buffer | 5.1.2 | MIT | prod | https://github.com/feross/safe-buffer |
 | safe-buffer | 5.2.1 | MIT | prod | https://github.com/feross/safe-buffer |
 | safer-buffer | 2.1.2 | MIT | prod | git+https://github.com/ChALkeR/safer-buffer.git |
 | sanitize-filename | 1.6.4 | WTFPL OR ISC | dev | git@github.com:parshap/node-sanitize-filename.git |
-| sax | 1.6.0 | BlueOak-1.0.0 | dev | git+ssh://git@github.com/isaacs/sax-js.git |
+| sax | 1.6.0 | BlueOak-1.0.0 | prod | git+ssh://git@github.com/isaacs/sax-js.git |
+| saxes | 5.0.1 | ISC | prod | https://github.com/lddubeau/saxes.git |
 | semver | 5.7.2 | ISC | dev | https://github.com/npm/node-semver.git |
 | semver | 6.3.1 | ISC | dev | https://github.com/npm/node-semver.git |
 | semver | 6.3.1 | ISC | dev | https://github.com/npm/node-semver.git |
@@ -477,6 +673,7 @@ Generated from `package-lock.json` and installed package metadata.
 | send | 1.2.1 | MIT | prod | pillarjs/send |
 | serialize-error | 7.0.1 | MIT | dev, optional | sindresorhus/serialize-error |
 | serve-static | 2.2.1 | MIT | prod | expressjs/serve-static |
+| setimmediate | 1.0.5 | MIT | prod | YuzuJS/setImmediate |
 | setprototypeof | 1.2.0 | ISC | prod | https://github.com/wesleytodd/setprototypeof |
 | shebang-command | 2.0.0 | MIT | prod | kevva/shebang-command |
 | shebang-regex | 3.0.0 | MIT | prod | sindresorhus/shebang-regex |
@@ -501,6 +698,11 @@ Generated from `package-lock.json` and installed package metadata.
 | stat-mode | 1.0.0 | MIT | dev | https://github.com/TooTallNate/stat-mode |
 | statuses | 2.0.2 | MIT | prod | jshttp/statuses |
 | streamx | 2.25.0 | MIT | prod | https://github.com/mafintosh/streamx |
+| string_decoder | 1.1.1 | MIT | prod | https://github.com/nodejs/string_decoder |
+| string_decoder | 1.1.1 | MIT | prod | https://github.com/nodejs/string_decoder |
+| string_decoder | 1.1.1 | MIT | prod | https://github.com/nodejs/string_decoder |
+| string_decoder | 1.1.1 | MIT | prod | https://github.com/nodejs/string_decoder |
+| string_decoder | 1.1.1 | MIT | prod | https://github.com/nodejs/string_decoder |
 | string_decoder | 1.3.0 | MIT | prod | https://github.com/nodejs/string_decoder |
 | string-width | 4.2.3 | MIT | prod | sindresorhus/string-width |
 | string-width | 4.2.3 | MIT | prod | sindresorhus/string-width |
@@ -514,6 +716,7 @@ Generated from `package-lock.json` and installed package metadata.
 | strip-ansi | 6.0.1 | MIT | prod | chalk/strip-ansi |
 | strip-ansi | 7.2.0 | MIT | prod | chalk/strip-ansi |
 | strip-json-comments | 2.0.1 | MIT | prod | sindresorhus/strip-json-comments |
+| stylis | 4.3.6 | MIT | prod | https://github.com/thysultan/stylis.js |
 | sumchecker | 3.0.1 | Apache-2.0 | dev | https://github.com/malept/sumchecker#readme |
 | supports-color | 7.2.0 | MIT | dev | chalk/supports-color |
 | tar | 7.5.13 | BlueOak-1.0.0 | dev | https://github.com/isaacs/node-tar.git |
@@ -527,18 +730,23 @@ Generated from `package-lock.json` and installed package metadata.
 | text-decoder | 1.2.7 | Apache-2.0 | prod | https://github.com/holepunchto/text-decoder#readme |
 | through | 2.3.8 | MIT | prod | https://github.com/dominictarr/through |
 | tiny-async-pool | 1.3.0 | MIT | dev | git@github.com:rxaviers/async-pool.git |
+| tinyexec | 1.1.1 | MIT | prod | https://github.com/tinylibs/tinyexec#readme |
 | tinyglobby | 0.2.16 | MIT | dev | https://superchupu.dev/tinyglobby |
-| tmp | 0.2.5 | MIT | dev | http://github.com/raszi/node-tmp |
+| tmp | 0.2.5 | MIT | prod | http://github.com/raszi/node-tmp |
 | tmp-promise | 3.0.3 | MIT | dev | git://github.com/benjamingr/tmp-promise.git |
 | toidentifier | 1.0.1 | MIT | prod | component/toidentifier |
+| traverse | 0.3.9 | MIT/X11 | prod | http://github.com/substack/js-traverse.git |
 | truncate-utf8-bytes | 1.0.2 | WTFPL | dev | https://github.com/parshap/truncate-utf8-bytes#readme |
+| ts-dedent | 2.2.0 | MIT | prod | https://github.com/tamino-martinius/node-ts-dedent.git |
 | tslib | 2.8.1 | 0BSD | prod | https://www.typescriptlang.org/ |
 | tunnel-agent | 0.6.0 | Apache-2.0 | prod | https://github.com/mikeal/tunnel-agent |
 | type-fest | 0.13.1 | (MIT OR CC0-1.0) | dev, optional | sindresorhus/type-fest |
 | type-is | 2.0.1 | MIT | prod | jshttp/type-is |
 | typed-query-selector | 2.12.1 | MIT | prod | g-plane/typed-query-selector |
+| ufo | 1.6.3 | MIT | prod | unjs/ufo |
 | unbzip2-stream | 1.4.3 | MIT | prod | https://github.com/regular/unbzip2-stream.git |
 | undici-types | 6.21.0 | MIT | prod | https://undici.nodejs.org |
+| undici-types | 7.19.2 | MIT | prod | https://undici.nodejs.org |
 | unique-filename | 4.0.0 | ISC | dev | https://github.com/iarna/unique-filename |
 | unique-slug | 5.0.0 | ISC | dev | git+https://github.com/npm/unique-slug.git |
 | universalify | 0.1.2 | MIT | dev | https://github.com/RyanZim/universalify#readme |
@@ -555,11 +763,20 @@ Generated from `package-lock.json` and installed package metadata.
 | universalify | 2.0.1 | MIT | dev | https://github.com/RyanZim/universalify#readme |
 | universalify | 2.0.1 | MIT | dev | https://github.com/RyanZim/universalify#readme |
 | unpipe | 1.0.0 | MIT | prod | stream-utils/unpipe |
+| unzipper | 0.10.14 | MIT | prod | https://github.com/ZJONSSON/node-unzipper.git |
 | uri-js | 4.4.1 | BSD-2-Clause | dev | https://github.com/garycourt/uri-js |
 | utf8-byte-length | 1.0.5 | (WTFPL OR MIT) | dev | https://github.com/parshap/utf8-byte-length#readme |
 | util-deprecate | 1.0.2 | MIT | prod | https://github.com/TooTallNate/util-deprecate |
+| uuid | 11.1.0 | MIT | prod | https://github.com/uuidjs/uuid.git |
+| uuid | 8.3.2 | MIT | prod | https://github.com/uuidjs/uuid.git |
 | vary | 1.1.2 | MIT | prod | jshttp/vary |
 | verror | 1.10.1 | MIT | dev, optional | https://registry.npmjs.org/verror/-/verror-1.10.1.tgz |
+| vscode-jsonrpc | 8.2.0 | MIT | prod | https://github.com/Microsoft/vscode-languageserver-node.git |
+| vscode-languageserver | 9.0.1 | MIT | prod | https://github.com/Microsoft/vscode-languageserver-node.git |
+| vscode-languageserver-protocol | 3.17.5 | MIT | prod | https://github.com/Microsoft/vscode-languageserver-node.git |
+| vscode-languageserver-textdocument | 1.0.12 | MIT | prod | https://github.com/Microsoft/vscode-languageserver-node.git |
+| vscode-languageserver-types | 3.17.5 | MIT | prod | https://github.com/Microsoft/vscode-languageserver-node.git |
+| vscode-uri | 3.1.0 | MIT | prod | https://github.com/microsoft/vscode-uri#readme |
 | wcwidth | 1.0.1 | MIT | dev | https://github.com/timoxley/wcwidth#readme |
 | which | 2.0.2 | ISC | prod | git+https://github.com/npm/node-which.git |
 | which | 5.0.0 | ISC | dev | git+https://github.com/npm/node-which.git |
@@ -568,7 +785,10 @@ Generated from `package-lock.json` and installed package metadata.
 | wrap-ansi | 8.1.0 | MIT | prod | chalk/wrap-ansi |
 | wrappy | 1.0.2 | ISC | prod | https://github.com/npm/wrappy |
 | ws | 8.20.0 | MIT | prod | https://github.com/websockets/ws |
+| xml | 1.0.1 | MIT | prod | http://github.com/dylang/node-xml |
+| xml-js | 1.6.11 | MIT | prod | https://github.com/nashwaan/xml-js#readme |
 | xmlbuilder | 15.1.1 | MIT | dev | http://github.com/oozcitak/xmlbuilder-js |
+| xmlchars | 2.2.0 | MIT | prod | https://github.com/lddubeau/xmlchars.git |
 | y18n | 5.0.8 | ISC | prod | https://github.com/yargs/y18n |
 | yallist | 4.0.0 | ISC | dev | git+https://github.com/isaacs/yallist.git |
 | yallist | 5.0.0 | BlueOak-1.0.0 | dev | git+https://github.com/isaacs/yallist.git |
@@ -576,6 +796,7 @@ Generated from `package-lock.json` and installed package metadata.
 | yargs-parser | 21.1.1 | ISC | prod | https://github.com/yargs/yargs-parser.git |
 | yauzl | 2.10.0 | MIT | prod | https://github.com/thejoshwolfe/yauzl |
 | yocto-queue | 0.1.0 | MIT | dev | sindresorhus/yocto-queue |
+| zip-stream | 4.1.1 | MIT | prod | https://github.com/archiverjs/node-zip-stream |
 | zod | 3.23.8 | MIT | prod | https://zod.dev |
 | zod | 3.25.76 | MIT | prod | https://zod.dev |
 | zod-to-json-schema | 3.25.2 | ISC | prod | https://github.com/StefanTerdell/zod-to-json-schema |

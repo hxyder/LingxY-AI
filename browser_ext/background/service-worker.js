@@ -18,11 +18,18 @@ export const CONTEXT_MENU_DEFINITIONS = Object.freeze([
     id: "uca.inspect-image",
     title: "用 UCA 分析图片",
     contexts: ["image"]
+  },
+  {
+    id: "uca.explain-page",
+    title: "用 UCA 解释此页 / 视频",
+    contexts: ["page", "video", "frame"]
   }
 ]);
 
 export const NATIVE_HOST_NAME = "com.uca.host";
 export const RUNTIME_OVERLAY_HANDOFF_URL = "http://127.0.0.1:4310/overlay/handoff";
+export const RUNTIME_BROWSER_CONTEXT_URL = "http://127.0.0.1:4310/browser/context";
+export const RUNTIME_PAGE_EXPLAIN_URL = "http://127.0.0.1:4310/page/explain";
 export const RUNTIME_TASK_URL = "http://127.0.0.1:4310/task";
 export const RUNTIME_TASK_DETAIL_URL = "http://127.0.0.1:4310/task";
 
@@ -259,6 +266,85 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
   }
 }
 
+// Capture the current tab's page source via the MAIN-world capture function
+// installed by content_script/page-source-capture.js, then forward to the
+// service's /page/explain endpoint. The endpoint writes an overlay handoff
+// file, so the desktop overlay opens with the structured explanation request
+// already queued as a task.
+export async function dispatchExplainPage({
+  tab,
+  chromeApi = chrome,
+  fetchImpl = fetch,
+  pageExplainUrl = RUNTIME_PAGE_EXPLAIN_URL
+} = {}) {
+  if (!tab?.id) {
+    return { ok: false, error: "no_active_tab" };
+  }
+
+  let payload = null;
+  try {
+    const results = await chromeApi.scripting.executeScript({
+      target: { tabId: tab.id },
+      world: "MAIN",
+      func: async () => {
+        if (typeof window.__ucaPageSourceCapture !== "function") return null;
+        return await window.__ucaPageSourceCapture();
+      }
+    });
+    payload = results?.[0]?.result ?? null;
+  } catch (error) {
+    return { ok: false, error: `capture_failed:${error?.message ?? "unknown"}` };
+  }
+
+  if (!payload) {
+    return { ok: false, error: "capture_not_available" };
+  }
+
+  // Tag the capture with the originating browser so the service handoff can
+  // attribute source_app correctly.
+  payload.browser = tab?.url?.includes("edge") ? "msedge.exe" : "chrome.exe";
+
+  try {
+    const response = await fetchImpl(pageExplainUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ capture: payload })
+    });
+    if (!response.ok) {
+      return { ok: false, error: `runtime_explain_failed_${response.status}` };
+    }
+    return response.json();
+  } catch (error) {
+    return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
+  }
+}
+
+export async function dispatchBrowserContextSnapshot(context, fetchImpl = fetch) {
+  const url = `${context?.url ?? ""}`.trim();
+  const pageTitle = `${context?.pageTitle ?? context?.title ?? ""}`.trim();
+  if (!url && !pageTitle) {
+    return { ok: false, error: "empty_context" };
+  }
+
+  try {
+    const response = await fetchImpl(RUNTIME_BROWSER_CONTEXT_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ context })
+    });
+
+    if (!response.ok) {
+      return { ok: false, error: `runtime_context_failed_${response.status}` };
+    }
+
+    return response.json();
+  } catch (error) {
+    return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
+  }
+}
+
 export function registerExtensionRuntime(chromeApi = chrome) {
   chromeApi.runtime.onInstalled.addListener(async () => {
     for (const item of createContextMenuDefinitions()) {
@@ -268,6 +354,10 @@ export function registerExtensionRuntime(chromeApi = chrome) {
   });
 
   chromeApi.contextMenus.onClicked.addListener(async (info, tab) => {
+    if (info.menuItemId === "uca.explain-page") {
+      await dispatchExplainPage({ tab, chromeApi, fetchImpl: fetch });
+      return;
+    }
     const [{ result: selectionState } = {}] = await chromeApi.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => window.__ucaSelectionState ?? null
@@ -282,6 +372,21 @@ export function registerExtensionRuntime(chromeApi = chrome) {
 
     await dispatchOverlayHandoff(request, chromeApi, fetch);
   });
+
+  // Keyboard shortcut — defaults to Ctrl+Shift+E, users can remap it from
+  // chrome://extensions/shortcuts.
+  if (chromeApi.commands?.onCommand) {
+    chromeApi.commands.onCommand.addListener(async (command, tab) => {
+      if (command !== "explain-page") return;
+      let activeTab = tab;
+      if (!activeTab) {
+        const [first] = await chromeApi.tabs.query({ active: true, currentWindow: true });
+        activeTab = first ?? null;
+      }
+      if (!activeTab) return;
+      await dispatchExplainPage({ tab: activeTab, chromeApi, fetchImpl: fetch });
+    });
+  }
 
   chromeApi.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type === "uca.overlay.captureSelection") {
@@ -300,6 +405,25 @@ export function registerExtensionRuntime(chromeApi = chrome) {
         action: message.action,
         selectionState: message.selectionState
       }).then((response) => sendResponse(response));
+      return true;
+    }
+
+    if (message?.type === "uca.browser.contextSnapshot") {
+      dispatchBrowserContextSnapshot(message.context ?? message.payload ?? {}, fetch)
+        .then((response) => sendResponse(response));
+      return true;
+    }
+
+    if (message?.type === "uca.page.explain") {
+      (async () => {
+        let tab = message.tab ?? null;
+        if (!tab) {
+          const [first] = await chromeApi.tabs.query({ active: true, currentWindow: true });
+          tab = first ?? null;
+        }
+        const result = await dispatchExplainPage({ tab, chromeApi, fetchImpl: fetch });
+        sendResponse(result);
+      })();
       return true;
     }
 

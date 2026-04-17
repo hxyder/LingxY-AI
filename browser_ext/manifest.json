@@ -29,11 +29,29 @@
         "content_script/selection-cache.js"
       ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content_script/page-source-capture.js"
+      ],
+      "run_at": "document_idle",
+      "world": "MAIN"
     }
   ],
   "action": {
     "default_title": "UCA",
     "default_popup": "popup/index.html"
+  },
+  "commands": {
+    "explain-page": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+E"
+      },
+      "description": "用 UCA 解释当前页面 / 视频"
+    }
   },
   "web_accessible_resources": [
     {

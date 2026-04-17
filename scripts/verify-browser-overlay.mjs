@@ -14,6 +14,11 @@ assert.deepEqual(manifest.content_scripts[0].js, [
   "content_script/stability-watcher.js",
   "content_script/selection-cache.js"
 ]);
+assert.deepEqual(manifest.content_scripts[1].js, [
+  "content_script/page-source-capture.js"
+]);
+assert.equal(manifest.content_scripts[1].world, "MAIN",
+  "page-source-capture must run in MAIN world to access YouTube's ytInitialPlayerResponse");
 
 const context = {
   __ucaOverlay: {},
