@@ -634,6 +634,17 @@ export function createElectronShellRuntime({
           return;
         }
 
+        if (shortcut.id === "note-wake") {
+          // Open overlay and immediately start voice-note recording (dual channel:
+          // mic + system audio). Same wiring as voice-wake; overlay decides mode.
+          captureActiveWindowContext({ includeSelection: false }).catch(() => {});
+          showWindow("overlay");
+          for (const bw of windows.values()) {
+            bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+          }
+          return;
+        }
+
         if (shortcut.id === "capture-and-ask") {
           // Explicit "grab whatever the user is looking at" hotkey. Files
           // pass through cleanly; selected text only attaches when it

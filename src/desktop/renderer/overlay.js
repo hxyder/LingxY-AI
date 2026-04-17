@@ -1258,6 +1258,9 @@ function clearPendingInputContext() {
   pendingFileSelection = null;
   pendingCapture = null;
   pendingActiveWindowContext = null;
+  // Keep the voice-card chip strip in sync when files are cleared via any
+  // path (submit success, new conversation, cancel).
+  if (typeof renderVoiceChips === "function") renderVoiceChips();
 }
 
 function isRetryCommand(text = "") {
@@ -2934,6 +2937,7 @@ function stopVoiceRecognition() {
 function openVoicePanel({ autoStart = false } = {}) {
   setPanelOpen(schedulePanel, false);
   enterVoiceMode();
+  if (typeof renderVoiceChips === "function") renderVoiceChips();
   if (autoStart && !noteActive) startVoiceRecognition();
 }
 
@@ -2962,6 +2966,100 @@ voiceToggleBtn?.addEventListener("click", () => {
 voiceMinimizeBtn?.addEventListener("click", () => {
   void window.ucaShell.hideWindow("overlay");
 });
+
+/* ─── Voice-card drag & drop ──────────────────────────────────────────────
+   Attach files/images without leaving the voice panel. Dropped paths go into
+   pendingFileSelection, which handleUserSend() already routes through the
+   file-submission pipeline alongside the spoken/typed command. */
+
+const voiceChipsEl = document.querySelector("#voiceChips");
+
+function renderVoiceChips() {
+  if (!voiceChipsEl) return;
+  const paths = pendingFileSelection?.filePaths ?? [];
+  voiceChipsEl.innerHTML = "";
+  for (const filePath of paths) {
+    const name = filePath.split(/[\\/]/).pop() ?? filePath;
+    const chip = document.createElement("span");
+    chip.className = "voice-chip";
+    chip.setAttribute("role", "listitem");
+
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "chip-name";
+    nameSpan.textContent = name;
+    nameSpan.title = filePath;
+    chip.appendChild(nameSpan);
+
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.className = "chip-dismiss";
+    dismiss.textContent = "×";
+    dismiss.setAttribute("aria-label", `移除 ${name}`);
+    dismiss.addEventListener("click", () => {
+      if (!pendingFileSelection?.filePaths) return;
+      pendingFileSelection.filePaths = pendingFileSelection.filePaths.filter((fp) => fp !== filePath);
+      if (pendingFileSelection.filePaths.length === 0) pendingFileSelection = null;
+      renderVoiceChips();
+    });
+    chip.appendChild(dismiss);
+
+    voiceChipsEl.appendChild(chip);
+  }
+}
+
+function attachDroppedFilesToVoice(filePaths) {
+  if (!Array.isArray(filePaths) || filePaths.length === 0) return;
+  const existing = new Set(pendingFileSelection?.filePaths ?? []);
+  for (const fp of filePaths) existing.add(fp);
+  pendingFileSelection = {
+    sourceApp: pendingFileSelection?.sourceApp ?? "uca.overlay",
+    captureMode: pendingFileSelection?.captureMode ?? "voice_drop",
+    filePaths: [...existing]
+  };
+  renderVoiceChips();
+}
+
+function hasFilePayload(event) {
+  return [...(event.dataTransfer?.types ?? [])].includes("Files");
+}
+
+if (voiceCard) {
+  let voiceDragDepth = 0;
+
+  const setDrag = (active) => {
+    voiceCard.classList.toggle("dragover", active);
+  };
+
+  voiceCard.addEventListener("dragenter", (event) => {
+    if (!hasFilePayload(event)) return;
+    event.preventDefault();
+    voiceDragDepth += 1;
+    setDrag(true);
+  });
+  voiceCard.addEventListener("dragover", (event) => {
+    if (!hasFilePayload(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    setDrag(true);
+  });
+  voiceCard.addEventListener("dragleave", (event) => {
+    if (!hasFilePayload(event)) return;
+    voiceDragDepth = Math.max(0, voiceDragDepth - 1);
+    if (voiceDragDepth === 0) setDrag(false);
+  });
+  voiceCard.addEventListener("drop", async (event) => {
+    if (!hasFilePayload(event)) return;
+    event.preventDefault();
+    event.stopPropagation(); // keep window-level drop handlers from also firing
+    voiceDragDepth = 0;
+    setDrag(false);
+    const files = [...(event.dataTransfer?.files ?? [])];
+    const filePaths = (window.ucaShell?.resolveDroppedFilePaths?.(files) ?? [])
+      .filter((fp) => typeof fp === "string" && fp.length > 0);
+    if (filePaths.length === 0) return;
+    attachDroppedFilesToVoice(filePaths);
+  });
+}
 
 voiceStartBtn?.addEventListener("click", () => startVoiceRecognition());
 voiceStopBtn?.addEventListener("click", () => stopVoiceRecognition());
@@ -4042,6 +4140,13 @@ window.ucaShell.onShortcutTriggered((payload) => {
   if (payload.shortcutId === "voice-wake") {
     startNewConversation();
     openVoicePanel({ autoStart: true });
+  }
+  if (payload.shortcutId === "note-wake") {
+    // Match voice-wake semantics (fresh conversation) then jump straight into
+    // dual-channel note recording — mic transcript + system audio capture.
+    startNewConversation();
+    if (voiceRecording) stopVoiceRecognition();
+    void enterNoteMode();
   }
 });
 

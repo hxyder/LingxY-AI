@@ -41,6 +41,11 @@ export const DEFAULT_SHORTCUTS = Object.freeze([
     description: "Open overlay and start voice input immediately"
   },
   {
+    id: "note-wake",
+    accelerator: "Ctrl+Shift+N",
+    description: "Open overlay and start voice-note recording (mic + system audio) immediately"
+  },
+  {
     id: "open-console",
     accelerator: "Ctrl+Shift+O",
     description: "Open the main console workspace"
