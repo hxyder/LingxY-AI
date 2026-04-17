@@ -31,6 +31,16 @@
       }
       .header-title { font-size: 13px; font-weight: 650; flex: 1; }
       .header-host { font-size: 11px; color: #7b8190; }
+      .header-action {
+        all: unset; cursor: pointer;
+        width: 26px; height: 26px;
+        display: grid; place-items: center;
+        border-radius: 7px;
+        font-size: 13px;
+        color: #7b8190;
+        transition: background 120ms, color 120ms;
+      }
+      .header-action:hover { background: rgba(47,111,94,0.1); color: #2f6f5e; }
 
       .chat {
         flex: 1;
@@ -165,6 +175,7 @@
         <div class="logo" aria-hidden="true"></div>
         <div class="header-title">UCA</div>
         <div id="headerHost" class="header-host">Office</div>
+        <button id="clearBtn" class="header-action" type="button" title="清空对话（不影响文档）">✨</button>
       </div>
 
       <div id="chat" class="chat">

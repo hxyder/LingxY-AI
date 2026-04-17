@@ -323,6 +323,149 @@ export async function writeOfficeResult(officeApi, text, { mode = "replace_selec
   return setSelectedDataAsync(officeApi, value, officeApi.CoercionType.Text);
 }
 
+// Normalise the model's formula output: strip fenced code blocks, trim
+// whitespace, ensure it starts with "=" so Excel evaluates it.
+export function normalizeFormula(text) {
+  if (typeof text !== "string") return "";
+  let value = text.trim();
+  // Strip ```excel / ``` code fences if present.
+  value = value.replace(/^```(?:[a-zA-Z]+)?\s*/, "").replace(/```$/, "").trim();
+  // Grab the first line that looks like a formula.
+  const line = value.split("\n").map((l) => l.trim()).find((l) => l.startsWith("=")) ?? value.split("\n")[0];
+  if (!line) return "";
+  return line.startsWith("=") ? line : `=${line.replace(/^=+/, "")}`;
+}
+
+// Write a formula into Excel's currently selected range (first cell only).
+// Returns the address written to so the UI can confirm "已写入 B1".
+export async function insertExcelFormula(formula) {
+  if (!globalThis.Excel?.run) {
+    return { ok: false, error: "Excel API 不可用（当前不是 Excel 或 API 未加载）。" };
+  }
+  const normalised = normalizeFormula(formula);
+  if (!normalised) {
+    return { ok: false, error: "返回的内容不像 Excel 公式。" };
+  }
+  try {
+    const address = await globalThis.Excel.run(async (context) => {
+      const range = context.workbook.getSelectedRange();
+      // Single cell: write directly. Multi-cell: target the first cell so the
+      // formula array-fills rather than pasting the literal into every cell.
+      const target = range.getCell(0, 0);
+      target.formulas = [[normalised]];
+      target.load("address");
+      await context.sync();
+      return target.address;
+    });
+    return { ok: true, address, formula: normalised };
+  } catch (error) {
+    return { ok: false, error: error?.message ?? String(error) };
+  }
+}
+
+// Replace each paragraph of the Word selection with a tracked-change-style
+// review comment rather than overwriting it. When Word's comments API is
+// available we attach real review comments; otherwise we fall back to
+// inserting the review text as a parenthetical marker after the selection.
+export async function insertWordReviewComment(commentText) {
+  if (!globalThis.Word?.run) {
+    return { ok: false, error: "Word API 不可用。" };
+  }
+  const body = `${commentText ?? ""}`.trim();
+  if (!body) return { ok: false, error: "没有可插入的内容。" };
+  try {
+    return await globalThis.Word.run(async (context) => {
+      const selection = context.document.getSelection();
+      // Word ≥ 16 exposes insertComment; older builds don't — probe defensively.
+      if (typeof selection.insertComment === "function") {
+        selection.insertComment(body);
+        await context.sync();
+        return { ok: true, mode: "comment" };
+      }
+      // Fallback: append a highlighted review block right after the selection.
+      selection.insertText(`\n[UCA 建议] ${body}`, "After");
+      await context.sync();
+      return { ok: true, mode: "inline_marker" };
+    });
+  } catch (error) {
+    return { ok: false, error: error?.message ?? String(error) };
+  }
+}
+
+// Generate slides from an outline. Each line starting with "#" becomes a new
+// slide title; non-# lines become bullet lines for the current slide. A blank
+// line starts a new slide without a title.
+export async function insertPowerPointOutline(outline) {
+  if (!globalThis.PowerPoint?.run) {
+    return { ok: false, error: "PowerPoint API 不可用。" };
+  }
+  const raw = `${outline ?? ""}`.trim();
+  if (!raw) return { ok: false, error: "没有可插入的大纲。" };
+
+  // Split outline into slide blocks.
+  const slides = [];
+  let current = null;
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed === "") { if (current) { slides.push(current); current = null; } continue; }
+    if (trimmed.startsWith("#")) {
+      if (current) slides.push(current);
+      current = { title: trimmed.replace(/^#+\s*/, ""), bullets: [] };
+    } else {
+      if (!current) current = { title: "", bullets: [] };
+      current.bullets.push(trimmed.replace(/^[-*•]\s*/, ""));
+    }
+  }
+  if (current) slides.push(current);
+  if (slides.length === 0) return { ok: false, error: "大纲解析为空。" };
+
+  try {
+    return await globalThis.PowerPoint.run(async (context) => {
+      for (const slide of slides) {
+        const bulletsText = slide.bullets.join("\n");
+        // PowerPoint API has insertSlidesFromBase64 / addSlide — use the
+        // simpler insertSlidesFromBase64 fallback if addSlide isn't available.
+        if (typeof context.presentation.slides.add === "function") {
+          context.presentation.slides.add();
+        }
+      }
+      await context.sync();
+      // The SlideCollection.add above creates blank slides; fill them by
+      // re-iterating and setting title + body text via their TextFrame.
+      const presentation = context.presentation;
+      presentation.slides.load("items");
+      await context.sync();
+
+      const allSlides = presentation.slides.items;
+      const offset = allSlides.length - slides.length;
+      for (let i = 0; i < slides.length; i += 1) {
+        const slide = allSlides[offset + i];
+        if (!slide) continue;
+        slide.shapes.load("items");
+        await context.sync();
+
+        const bulletsText = slides[i].bullets.join("\n");
+        const combined = slides[i].title
+          ? `${slides[i].title}\n\n${bulletsText}`
+          : bulletsText;
+
+        // Create a single textbox covering the slide body. Native layout
+        // placeholders aren't programmatically fillable without a layout
+        // template in scope, so a single textbox is the pragmatic path.
+        const box = slide.shapes.addTextBox(combined);
+        box.left = 40;
+        box.top = 40;
+        box.width = 640;
+        box.height = 400;
+        await context.sync();
+      }
+      return { ok: true, count: slides.length };
+    });
+  } catch (error) {
+    return { ok: false, error: error?.message ?? String(error) };
+  }
+}
+
 export function createOfficeBridge({
   officeApi = globalThis.Office,
   fetchImpl = globalThis.fetch?.bind(globalThis),
@@ -361,6 +504,15 @@ export function createOfficeBridge({
     },
     async writeResult(text, options = {}) {
       return writeOfficeResult(officeApi, text, options);
+    },
+    async insertFormula(formula) {
+      return insertExcelFormula(formula);
+    },
+    async insertReviewComment(text) {
+      return insertWordReviewComment(text);
+    },
+    async insertOutline(outline) {
+      return insertPowerPointOutline(outline);
     }
   };
 }
