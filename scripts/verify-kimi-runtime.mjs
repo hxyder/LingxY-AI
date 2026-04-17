@@ -69,6 +69,10 @@ if (result.task.status !== "success" && result.stderrPath) {
     console.log("Real Kimi runtime verification skipped: Kimi CLI account quota is exhausted.");
     process.exit(0);
   }
+  if (/invalid_authentication|API Key appears to be invalid|expired/i.test(combinedOutput)) {
+    console.log("Real Kimi runtime verification skipped: Kimi CLI credentials are invalid or expired.");
+    process.exit(0);
+  }
 }
 
 assert.equal(result.task.status, "success");

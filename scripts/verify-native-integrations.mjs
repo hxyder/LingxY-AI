@@ -44,7 +44,7 @@ function runCommand(command, args, options = {}) {
     });
     child.on("exit", (code) => {
       if (code !== 0) {
-        reject(new Error(`${command} ${args.join(" ")} failed: ${stderr}`));
+        reject(new Error(`${command} ${args.join(" ")} failed with code ${code}: ${[stderr, stdout].filter(Boolean).join("\n").trim()}`));
         return;
       }
       resolve({ stdout, stderr });
@@ -214,3 +214,4 @@ try {
 }
 
 console.log("Native integrations verification passed.");
+process.exit(0);
