@@ -1,4 +1,4 @@
-import { readFile, stat } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,6 +75,18 @@ const OFFICE_OPEN_XML_MIME_TYPES = new Set([
   "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 ]);
 
+const IGNORED_DIRECTORY_NAMES = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  "node_modules",
+  ".venv",
+  "dist",
+  "build",
+  ".tmp"
+]);
+const MAX_EXPANDED_DIRECTORY_FILES = 200;
+
 function asLatin1(buffer) {
   return Buffer.from(buffer).toString("latin1");
 }
@@ -96,6 +108,36 @@ export async function detectMimeType(filePath) {
   }
 
   return MIME_BY_EXTENSION[extension] ?? "application/octet-stream";
+}
+
+async function expandInputPath(filePath, output, { maxFiles = MAX_EXPANDED_DIRECTORY_FILES } = {}) {
+  if (output.length >= maxFiles) return;
+  const info = await stat(filePath);
+  if (!info.isDirectory()) {
+    output.push(filePath);
+    return;
+  }
+
+  const entries = await readdir(filePath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (output.length >= maxFiles) break;
+    if (entry.isDirectory() && IGNORED_DIRECTORY_NAMES.has(entry.name)) continue;
+    const childPath = path.join(filePath, entry.name);
+    if (entry.isDirectory()) {
+      await expandInputPath(childPath, output, { maxFiles });
+    } else if (entry.isFile()) {
+      output.push(childPath);
+    }
+  }
+}
+
+async function expandInputFilePaths(filePaths = []) {
+  const output = [];
+  for (const filePath of filePaths) {
+    await expandInputPath(filePath, output);
+    if (output.length >= MAX_EXPANDED_DIRECTORY_FILES) break;
+  }
+  return [...new Set(output)];
 }
 
 async function readTextFile(filePath) {
@@ -141,6 +183,17 @@ async function extractOfficeOpenXmlText(filePath, mime) {
 
 export async function extractFileContent(filePath) {
   const fileStat = await stat(filePath);
+  if (fileStat.isDirectory()) {
+    const entries = await readdir(filePath, { withFileTypes: true });
+    const names = entries.slice(0, 80).map((entry) => `${entry.isDirectory() ? "[dir]" : "[file]"} ${entry.name}`);
+    return {
+      path: filePath,
+      size: 0,
+      mime: "inode/directory",
+      extraction_mode: "directory_listing",
+      text: [`[Directory] ${filePath}`, ...names].join("\n")
+    };
+  }
   const mime = await detectMimeType(filePath);
 
   if (TEXT_BASED_MIME_TYPES.has(mime)) {
@@ -213,10 +266,19 @@ export async function buildFileContextPacket({
   contextId,
   capturedAt = new Date().toISOString()
 }) {
+  const expandedFilePaths = await expandInputFilePaths(filePaths);
+
+  // When the inputs are folders and expansion found real files, use those.
+  // When expansion is empty (empty folder, or only ignored subdirs), fall
+  // through to extracting a directory listing — BUT don't hand the folder
+  // paths to downstream CLIs as file_paths, or they'll EISDIR trying to read
+  // them as files.
+  const expansionFoundFiles = expandedFilePaths.length > 0;
+  const effectiveFilePaths = expansionFoundFiles ? expandedFilePaths : filePaths;
   const fileMetadata = [];
   const extractedTexts = [];
 
-  for (const filePath of filePaths) {
+  for (const filePath of effectiveFilePaths) {
     const extracted = await extractFileContent(filePath);
     fileMetadata.push({
       path: extracted.path,
@@ -230,16 +292,22 @@ export async function buildFileContextPacket({
     extractedTexts.push(`## ${path.basename(filePath)}\n${extracted.text}`);
   }
 
+  // Paths CLIs should try to read as files (NOT directories). If expansion
+  // yielded no files, pass an empty list — the directory listing lives in
+  // the text field and downstream tools can work off that.
+  const cliFilePaths = expansionFoundFiles ? expandedFilePaths : [];
+
   return {
     schema_version: "1.0",
     context_id: contextId,
     trace_id: traceId,
-    source_type: filePaths.length > 1 ? "file_group" : "file",
+    source_type: effectiveFilePaths.length > 1 ? "file_group" : "file",
     source_app: sourceApp,
     capture_mode: captureMode,
     security_level: "user",
     redaction_applied: false,
-    file_paths: filePaths,
+    file_paths: cliFilePaths,
+    original_file_paths: filePaths,
     file_metadata: fileMetadata,
     text: extractedTexts.join("\n\n"),
     captured_at: capturedAt

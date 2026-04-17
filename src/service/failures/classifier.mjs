@@ -70,18 +70,34 @@ export function classifyFailure(errorLike) {
     category = "model_call_error";
   } else if (message.includes("save") || message.includes("disk") || message.includes("write")) {
     category = "output_save_error";
-  } else if (errorLike?.exitCode && errorLike.exitCode !== 0) {
+  } else if ((errorLike?.exitCode != null && errorLike.exitCode !== 0) || message.includes("cli failed") || message.includes("kimi cli failed") || message.includes("code cli failed")) {
     category = "cli_execution_error";
   } else if (message.includes("capture") || message.includes("selection")) {
     category = "context_capture_error";
+  } else if (code.includes("eisdir") || message.includes("is a directory") || message.includes("illegal operation on a directory")) {
+    // Folder dropped where a file was expected — commonly hits when the user
+    // drags a directory onto the overlay. Surface it as a parse-style error
+    // with an actionable message rather than "unclassified internal error".
+    category = "parse_error";
+  }
+
+  const internalExcerpt = clip(errorLike?.message ?? errorLike?.stderr ?? errorLike?.stack ?? errorLike?.summary ?? "");
+
+  // For unclassified internal errors, appending the raw excerpt is the
+  // difference between "file a bug" and "oh, it was a missing folder". It's
+  // only 240 chars max and only shown on the unclassified path, so it won't
+  // leak noise into the known-category messages.
+  let userMessage = USER_MESSAGES[category];
+  if (category === "internal_error" && internalExcerpt) {
+    userMessage = `${userMessage}（错误详情：${internalExcerpt}）`;
   }
 
   return {
     category,
     retryable: !["permission_denied", "parse_error", "redaction_state_lost"].includes(category),
-    userMessage: USER_MESSAGES[category],
+    userMessage,
     userActions: USER_ACTIONS[category],
-    internalExcerpt: clip(errorLike?.message ?? errorLike?.stderr ?? errorLike?.stack ?? errorLike?.summary ?? "")
+    internalExcerpt
   };
 }
 

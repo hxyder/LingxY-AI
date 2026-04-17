@@ -5,9 +5,11 @@ import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import {
   resolveKimiRuntimeForTask,
+  resolveProviderForTask,
   describeCodeCliRuntime
 } from "../executors/shared/provider-resolver.mjs";
 import { appendAuditLog } from "../security/audit-log.mjs";
+import { submitContextTask } from "./context-submission.mjs";
 
 function attachProviderFieldsToEvent(descriptor, payload) {
   if (!descriptor) return payload ?? {};
@@ -50,6 +52,7 @@ export async function submitFileTask({
   const queue = runtime.queue;
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const route = routeIntent(userCommand);
+  const cliRuntime = resolveKimiRuntimeForTask("file_analysis", runtime.kimiRuntime);
   // file-submission specialises in file-backed analysis, which the Kimi CLI
   // handles natively via its task package. When the router upgrades the
   // executor to agentic (because analyze+generate_report tags trigger the
@@ -59,7 +62,7 @@ export async function submitFileTask({
   // will add an agentic file-reading branch; until then "agentic on files"
   // degrades gracefully to "kimi on files".
   const preferredExecutorOverride = executorOverride
-    ?? ((runtime.kimiRuntime && ["fast", "none", "agentic"].includes(route.executor)) ? "kimi" : null);
+    ?? ((cliRuntime && ["fast", "none", "agentic"].includes(route.executor)) ? "kimi" : null);
   const rawContextPacket = await buildFileContextPacket({
     filePaths,
     captureMode,
@@ -67,6 +70,25 @@ export async function submitFileTask({
     traceId: `trace_${crypto.randomUUID()}`,
     contextId: `ctx_${crypto.randomUUID()}`
   });
+
+  // User chose an API provider (DeepSeek / Anthropic API / OpenAI / Ollama)
+  // for file analysis — we have no Code CLI to drive, but the context packet
+  // already carries the extracted file text. Hand off to the normal context
+  // pipeline so the API provider can answer over that text.
+  const fileAnalysisProvider = resolveProviderForTask("file_analysis");
+  const apiProviderAvailable = fileAnalysisProvider && fileAnalysisProvider.kind !== "code_cli";
+  if (!cliRuntime && apiProviderAvailable) {
+    return submitContextTask({
+      contextPacket: rawContextPacket,
+      userCommand,
+      runtime,
+      executionMode,
+      parentTaskId,
+      retryCount,
+      executorOverride: executorOverride ?? null,
+      skipDecomposition: false
+    });
+  }
   const inspection = runtime.securityBroker.inspectContext(rawContextPacket, {
     trigger: "file_submission"
   });
@@ -130,9 +152,15 @@ export async function submitFileTask({
 
   // Use user-routed CLI for file_analysis if configured, else boot-time kimiRuntime.
   // Resolved per-task so provider switches in the UI apply to the next submission.
-  const cliRuntime = resolveKimiRuntimeForTask("file_analysis", runtime.kimiRuntime);
-
+  // Note: the API-provider fast path above already handles the "no CLI but has
+  // DeepSeek/OpenAI/..." case. Reaching here means neither CLI nor API are
+  // configured for file_analysis.
   if ((task.executor !== "kimi" && task.executor !== "code_cli") || !cliRuntime) {
+    markTaskFailed(runtime, task, {
+      message: cliRuntime
+        ? `No runnable file executor found for ${task.executor}.`
+        : "没有可用于文件分析的 provider。请在 Console → Settings 里给 File Analysis 分配一个 Code CLI provider（Claude Code / Cursor / Kimi），或配置一个 API provider（DeepSeek / OpenAI / Anthropic / Ollama）。"
+    });
     return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
   }
 
