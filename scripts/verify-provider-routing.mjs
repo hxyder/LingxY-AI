@@ -54,7 +54,8 @@ const {
   resolveCodeCliRuntimeForTask,
   describeResolvedProvider,
   describeCodeCliRuntime,
-  resolveActiveProviderForTask
+  resolveActiveProviderForTask,
+  buildKimiRuntimeFromProvider
 } = await import("../src/service/executors/shared/provider-resolver.mjs");
 
 const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");
@@ -381,4 +382,70 @@ await writeConfig({
   assert.equal(active.runtime.command, "kimi.exe");
 }
 
-console.log("Provider routing verification passed (DeepSeek / Kimi CLI / Claude / Ollama + hot-reload + resolveActiveProviderForTask).");
+/* ────────────────────────────────────────────────────────────────────────
+   New coverage — CLI-managed model + Codex reasoning-effort plumbing.
+   Tests that when the user picks "(CLI 自行管理)" (model=""), the resolved
+   runtime carries no model flag, and that reasoningEffort survives the
+   route → resolver → buildKimiRuntimeFromProvider pipeline for Codex only.
+   ──────────────────────────────────────────────────────────────────────── */
+
+{
+  // (a) model: "" means the CLI subprocess should not receive a --model flag.
+  await writeConfig({
+    ai: {
+      customProviders: [
+        { id: "claude-code", name: "Claude Code", kind: "code_cli", command: "claude.exe", transport: "stream_json_print", defaultModel: "" }
+      ],
+      taskRouting: { chat: { providerId: "claude-code", model: "" } }
+    }
+  });
+  const resolved = resolveProviderForTask("chat", {});
+  const runtime = buildKimiRuntimeFromProvider(resolved);
+  assert.ok(runtime, "code_cli runtime must build even with empty model");
+  assert.ok(!runtime.model, `empty-model routing must not populate runtime.model (got: ${runtime.model})`);
+}
+
+{
+  // (b) reasoningEffort: "high" on a Codex provider flows into the runtime.
+  await writeConfig({
+    ai: {
+      customProviders: [
+        { id: "codex", name: "Codex CLI", kind: "code_cli", command: "codex.exe", transport: "stream_json_print", defaultModel: "" }
+      ],
+      taskRouting: { chat: { providerId: "codex", model: "", reasoningEffort: "high" } }
+    }
+  });
+  const resolved = resolveProviderForTask("chat", {});
+  assert.equal(resolved.reasoningEffort, "high", "Codex provider must surface route.reasoningEffort on the resolved config");
+  const runtime = buildKimiRuntimeFromProvider(resolved);
+  assert.equal(runtime.reasoningEffort, "high", "buildKimiRuntimeFromProvider must forward reasoningEffort");
+}
+
+{
+  // (c) reasoningEffort on a non-Codex CLI is preserved in the runtime (server
+  //     accepts it) but the subprocess bridge won't inject the --reasoning-effort
+  //     flag. The bridge-level filter is tested via direct buildInvocationArgs
+  //     check — see code-cli-bridge's isCodexCommand guard.
+  await writeConfig({
+    ai: {
+      customProviders: [
+        { id: "kimi", name: "Kimi", kind: "code_cli", command: "kimi.exe", transport: "stream_json_print", defaultModel: "" }
+      ],
+      taskRouting: { chat: { providerId: "kimi", model: "", reasoningEffort: "high" } }
+    }
+  });
+  const resolved = resolveProviderForTask("chat", {});
+  const runtime = buildKimiRuntimeFromProvider(resolved);
+  assert.equal(runtime.reasoningEffort, "high", "reasoningEffort preserved on non-Codex runtimes (bridge is the place that filters)");
+
+  const { __testBuildInvocationArgs } = await import("../src/service/executors/agentic/code-cli-bridge.mjs");
+  if (typeof __testBuildInvocationArgs === "function") {
+    const kimiArgs = __testBuildInvocationArgs({ baseArgs: [], transport: "stream_json_print", command: "kimi.exe", reasoningEffort: "high" });
+    assert.equal(kimiArgs.includes("--reasoning-effort"), false, "Kimi invocation must NOT receive --reasoning-effort flag");
+    const codexArgs = __testBuildInvocationArgs({ baseArgs: [], transport: "stream_json_print", command: "codex.exe", reasoningEffort: "high" });
+    assert.equal(codexArgs.includes("--reasoning-effort"), true, "Codex invocation MUST receive --reasoning-effort flag");
+    assert.equal(codexArgs[codexArgs.indexOf("--reasoning-effort") + 1], "high");
+  }
+}
+
+console.log("Provider routing verification passed (DeepSeek / Kimi CLI / Claude / Ollama + hot-reload + resolveActiveProviderForTask + CLI-managed model + Codex reasoning-effort).");

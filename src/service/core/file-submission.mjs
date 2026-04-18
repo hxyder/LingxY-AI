@@ -199,6 +199,7 @@ export async function submitFileTask({
       taskPackage,
       transport: cliRuntime.transport,
       model: cliRuntime.model,
+      reasoningEffort: cliRuntime.reasoningEffort ?? "",
       configFile: cliRuntime.configFile,
       mcpConfigFiles: cliRuntime.mcpConfigFiles,
       maxRuntimeSeconds: cliRuntime.maxRuntimeSeconds ?? 600,

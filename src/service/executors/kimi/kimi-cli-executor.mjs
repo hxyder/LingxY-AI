@@ -23,6 +23,7 @@ export async function executeKimiTask({
   taskPackage,
   transport = "jsonl_task_package",
   model = null,
+  reasoningEffort = "",
   configFile = null,
   mcpConfigFiles = [],
   maxRuntimeSeconds = 600,
@@ -36,6 +37,7 @@ export async function executeKimiTask({
       env,
       taskPackage,
       model,
+      reasoningEffort,
       configFile,
       mcpConfigFiles,
       maxRuntimeSeconds,
@@ -170,6 +172,7 @@ async function executeKimiPrintModeTask({
   env = process.env,
   taskPackage,
   model = null,
+  reasoningEffort = "",
   configFile = null,
   mcpConfigFiles = [],
   maxRuntimeSeconds = 600,
@@ -200,6 +203,11 @@ async function executeKimiPrintModeTask({
   }
   if (configFile) {
     invocationArgs.push("--config-file", configFile);
+  }
+  // Reasoning effort is Codex-specific — only emit it when the binary name
+  // identifies Codex, so Claude Code / Kimi don't receive an unknown flag.
+  if (reasoningEffort && /codex(\.exe)?$/i.test(`${command ?? ""}`) && !invocationArgs.includes("--reasoning-effort")) {
+    invocationArgs.push("--reasoning-effort", reasoningEffort);
   }
   for (const extraDir of addDirs) {
     invocationArgs.push("--add-dir", extraDir);

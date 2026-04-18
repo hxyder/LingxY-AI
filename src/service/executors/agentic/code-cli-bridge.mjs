@@ -116,7 +116,14 @@ function pushFlagValue(args, flag, value) {
   args.push(flag, value);
 }
 
-function buildInvocationArgs({ baseArgs, transport, model, configFile = null, mcpConfigFiles = [] }) {
+// Detect whether the provided command path looks like Codex CLI. Reasoning
+// effort is a Codex-only flag — injecting `--reasoning-effort` into Claude
+// Code / Kimi / Gemini would make them reject the invocation.
+function isCodexCommand(command = "") {
+  return /codex(\.exe)?$/i.test(`${command ?? ""}`);
+}
+
+function buildInvocationArgs({ baseArgs, transport, model, configFile = null, mcpConfigFiles = [], reasoningEffort = "", command = "" }) {
   const args = [...(Array.isArray(baseArgs) ? baseArgs : [])];
 
   // Kimi CLI / Claude Code CLI / Codex CLI / Gemini CLI all support `--print`
@@ -131,6 +138,9 @@ function buildInvocationArgs({ baseArgs, transport, model, configFile = null, mc
     if (!args.includes("--input-format")) args.push("--input-format", "text");
     pushFlagValue(args, "--model", model);
     pushFlagValue(args, "--config-file", configFile);
+    if (reasoningEffort && isCodexCommand(command) && !args.includes("--reasoning-effort")) {
+      args.push("--reasoning-effort", reasoningEffort);
+    }
     for (const mcpConfigFile of mcpConfigFiles ?? []) {
       if (mcpConfigFile) {
         args.push("--mcp-config-file", mcpConfigFile);
@@ -154,6 +164,7 @@ export function spawnCodeCliChat({
   configFile = null,
   mcpConfigFiles = [],
   transport = "stream_json_print",
+  reasoningEffort = "",
   timeoutSeconds = 120,
   abortSignal = null
 } = {}) {
@@ -173,7 +184,9 @@ export function spawnCodeCliChat({
     transport,
     model,
     configFile,
-    mcpConfigFiles
+    mcpConfigFiles,
+    reasoningEffort,
+    command
   });
 
   return new Promise((resolve) => {
@@ -494,3 +507,8 @@ export async function runCodeCliChat({ resolved, messages, signal, timeoutSecond
     usage: { input_tokens: null, output_tokens: null }
   };
 }
+
+// Exported for verify-provider-routing.mjs so tests can assert the
+// reasoning-effort flag is injected / suppressed correctly per CLI family.
+// Not intended for production consumers — call spawnCodeCliChat instead.
+export const __testBuildInvocationArgs = buildInvocationArgs;

@@ -880,63 +880,38 @@ function saveRuntimeConfig(runtime, updater) {
 }
 
 // Known code CLI signatures: name, common executable names, default args, transport
+// The detectable code CLI registry. Binary-name + display-name data for the
+// long tail (Qwen, iFlow, CodeBuddy, Goose, Augment, Droid, Copilot, Qoder,
+// Vibe, Kiro, Hermes, Snow) is borrowed from iOfficeAI/AionUi's
+// `ACP_BACKENDS_ALL` (Apache-2.0) — see THIRD_PARTY_LICENSES.md for
+// attribution. We do NOT use their ACP protocol; only the CLI roster.
+//
+// `defaultModel` is intentionally empty for every entry so the Console's
+// task-routing UI starts with "(CLI 自行管理)" selected — users can always
+// override with a specific model via the dropdown or custom entry, but no
+// hardcoded stale model IDs leak into subprocess arg lists by default.
 const KNOWN_CODE_CLIS = [
-  {
-    name: "Kimi Code CLI",
-    binNames: ["kimi.exe", "kimi"],
-    args: [],
-    transport: "stream_json_print",
-    defaultModel: "kimi-code/kimi-for-coding",
-    versionFlag: "--version"
-  },
-  {
-    name: "Claude Code",
-    binNames: ["claude.exe", "claude"],
-    args: [],
-    transport: "stream_json_print",
-    defaultModel: "claude-sonnet-4-5",
-    versionFlag: "--version"
-  },
-  {
-    name: "Codex CLI",
-    binNames: ["codex.exe", "codex"],
-    args: [],
-    transport: "stream_json_print",
-    defaultModel: "gpt-4o",
-    versionFlag: "--version"
-  },
-  {
-    name: "Gemini CLI",
-    binNames: ["gemini.exe", "gemini"],
-    args: [],
-    transport: "stream_json_print",
-    defaultModel: "gemini-2.0-flash",
-    versionFlag: "--version"
-  },
-  {
-    name: "Aider",
-    binNames: ["aider.exe", "aider"],
-    args: [],
-    transport: "stream_json_print",
-    defaultModel: "",
-    versionFlag: "--version"
-  },
-  {
-    name: "OpenCode",
-    binNames: ["opencode.exe", "opencode"],
-    args: [],
-    transport: "stream_json_print",
-    defaultModel: "anthropic/claude-sonnet-4-5",
-    versionFlag: "--version"
-  },
-  {
-    name: "Cursor Agent",
-    binNames: ["cursor-agent.exe", "cursor-agent"],
-    args: [],
-    transport: "stream_json_print",
-    defaultModel: "claude-sonnet-4-5",
-    versionFlag: "--version"
-  }
+  // ── Blessed (curated model lists available in console UI) ────────────
+  { name: "Kimi Code CLI",  binNames: ["kimi.exe", "kimi"],                                 args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Claude Code",    binNames: ["claude.exe", "claude"],                             args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Codex CLI",      binNames: ["codex.exe", "codex"],                               args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Gemini CLI",     binNames: ["gemini.exe", "gemini"],                             args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Aider",          binNames: ["aider.exe", "aider"],                               args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "OpenCode",       binNames: ["opencode.exe", "opencode"],                         args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Cursor Agent",   binNames: ["cursor-agent.exe", "cursor-agent"],                 args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  // ── Long tail (CLI-managed model by default; roster from AionUi) ─────
+  { name: "Qwen Code",      binNames: ["qwen.exe", "qwen"],                                 args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "iFlow CLI",      binNames: ["iflow.exe", "iflow"],                               args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "CodeBuddy",      binNames: ["codebuddy.exe", "codebuddy"],                       args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Goose",          binNames: ["goose.exe", "goose"],                               args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Augment Code",   binNames: ["auggie.exe", "auggie"],                             args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Factory Droid",  binNames: ["droid.exe", "droid"],                               args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "GitHub Copilot", binNames: ["copilot.exe", "copilot"],                           args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Qoder CLI",      binNames: ["qodercli.exe", "qodercli"],                         args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Mistral Vibe",   binNames: ["vibe-acp.exe", "vibe-acp", "vibe.exe", "vibe"],     args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Kiro",           binNames: ["kiro-cli.exe", "kiro-cli"],                         args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Hermes Agent",   binNames: ["hermes.exe", "hermes"],                             args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" },
+  { name: "Snow CLI",       binNames: ["snow.exe", "snow"],                                 args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" }
 ];
 
 async function findExecutableOnPath(binName) {

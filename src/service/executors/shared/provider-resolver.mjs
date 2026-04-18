@@ -94,6 +94,9 @@ export function resolveRoutedModel(provider, route, taskType) {
 function providerToResolved(provider, route, taskType) {
   if (provider.kind === "code_cli") {
     if (!provider.command) return null;
+    const reasoningEffort = typeof route?.reasoningEffort === "string" && route.reasoningEffort.trim()
+      ? route.reasoningEffort.trim()
+      : "";
     return {
       id: "code_cli",
       configId: provider.id ?? null,
@@ -107,6 +110,7 @@ function providerToResolved(provider, route, taskType) {
       maxRuntimeSeconds: provider.maxRuntimeSeconds ?? 600,
       model: resolveRoutedModel(provider, route, taskType),
       mode: route?.mode ?? "",
+      reasoningEffort,
       providerName: provider.name
     };
   }
@@ -232,6 +236,7 @@ export function buildKimiRuntimeFromProvider(provider, fallbackRuntime = null) {
     env: provider.env ?? process.env,
     transport: provider.transport ?? "stream_json_print",
     model: provider.model || null,
+    reasoningEffort: provider.reasoningEffort ?? "",
     configFile: provider.configFile ?? null,
     mcpConfigFiles: provider.mcpConfigFiles ?? [],
     maxRuntimeSeconds: provider.maxRuntimeSeconds ?? 600,

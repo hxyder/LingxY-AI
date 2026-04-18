@@ -155,6 +155,7 @@ export function createFastExecutorScaffold() {
             taskPackage,
             transport: kimiRuntime.transport,
             model: kimiRuntime.model,
+            reasoningEffort: kimiRuntime.reasoningEffort ?? "",
             maxRuntimeSeconds: 600,
             abortSignal: signal,
             onEvent(event) {

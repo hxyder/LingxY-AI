@@ -1,5 +1,30 @@
 # Third-Party Licenses
 
+## Manual Attributions
+
+### AionUi (iOfficeAI/AionUi)
+
+- **Repository**: https://github.com/iOfficeAI/AionUi
+- **License**: Apache-2.0
+- **Borrowed**: Code CLI agent registry data (binary names + display names)
+  used to populate `KNOWN_CODE_CLIS` in
+  [src/service/core/http-server.mjs](src/service/core/http-server.mjs).
+  Specifically the 12 long-tail CLI entries (Qwen Code, iFlow CLI,
+  CodeBuddy, Goose, Augment Code, Factory Droid, GitHub Copilot, Qoder CLI,
+  Mistral Vibe, Kiro, Hermes Agent, Snow CLI) are sourced from
+  `src/common/types/acpTypes.ts` (`ACP_BACKENDS_ALL`) in the AionUi project.
+- **Scope**: Data-level borrow only. No AionUi source code is copied into
+  this repository. The ACP (Agent Client Protocol) wire format used by
+  AionUi for runtime model discovery is NOT adopted here — UCA continues
+  using its own `stream_json_print` subprocess transport.
+- **Apache-2.0 compliance**: attribution given; no `NOTICE` file from
+  upstream needs propagation since we do not redistribute AionUi binaries
+  or code.
+
+---
+
+## Auto-Generated Package Inventory
+
 Generated from `package-lock.json` and installed package metadata.
 
 - Total packages: 765

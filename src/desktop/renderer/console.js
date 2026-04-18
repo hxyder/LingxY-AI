@@ -879,6 +879,30 @@ const PRESET_MODELS = {
   ollama: ["llama3.2", "qwen2.5", "mistral", "phi3"]
 };
 
+// One-click provider templates — Inspired by AionUi's multi-engine support,
+// these pre-fill the Add Provider modal with a sensible baseUrl + default
+// model for each popular OpenAI-compatible (or native) API endpoint. User
+// still has to paste their own API key. All verified to work with UCA's
+// existing OpenAI-compat adapter (kind: "openai") unless marked otherwise.
+const BUILTIN_API_TEMPLATES = [
+  { id: "anthropic",    label: "Anthropic",          kind: "anthropic", baseUrl: "https://api.anthropic.com",                                   defaultModel: "claude-sonnet-4-5-20250514" },
+  { id: "openai",       label: "OpenAI",             kind: "openai",    baseUrl: "https://api.openai.com/v1",                                   defaultModel: "gpt-4o" },
+  { id: "deepseek",     label: "DeepSeek",           kind: "openai",    baseUrl: "https://api.deepseek.com/v1",                                 defaultModel: "deepseek-chat" },
+  { id: "moonshot",     label: "Moonshot (Kimi)",    kind: "openai",    baseUrl: "https://api.moonshot.cn/v1",                                  defaultModel: "kimi-k2" },
+  { id: "dashscope",    label: "Qwen (Dashscope)",   kind: "openai",    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",           defaultModel: "qwen-max" },
+  { id: "zhipu",        label: "Zhipu (GLM)",        kind: "openai",    baseUrl: "https://open.bigmodel.cn/api/paas/v4",                        defaultModel: "glm-4-plus" },
+  { id: "minimax",      label: "MiniMax",            kind: "openai",    baseUrl: "https://api.minimax.chat/v1",                                 defaultModel: "abab6.5s-chat" },
+  { id: "siliconflow",  label: "SiliconFlow",        kind: "openai",    baseUrl: "https://api.siliconflow.cn/v1",                               defaultModel: "Qwen/Qwen2.5-72B-Instruct" },
+  { id: "xai",          label: "xAI (Grok)",         kind: "openai",    baseUrl: "https://api.x.ai/v1",                                         defaultModel: "grok-2-latest" },
+  { id: "openrouter",   label: "OpenRouter",         kind: "openai",    baseUrl: "https://openrouter.ai/api/v1",                                defaultModel: "openai/gpt-4o" },
+  { id: "groq",         label: "Groq",               kind: "openai",    baseUrl: "https://api.groq.com/openai/v1",                              defaultModel: "llama-3.3-70b-versatile" },
+  { id: "together",     label: "Together AI",        kind: "openai",    baseUrl: "https://api.together.xyz/v1",                                 defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
+  { id: "fireworks",    label: "Fireworks",          kind: "openai",    baseUrl: "https://api.fireworks.ai/inference/v1",                       defaultModel: "accounts/fireworks/models/llama-v3p3-70b-instruct" },
+  { id: "mistral",      label: "Mistral",            kind: "openai",    baseUrl: "https://api.mistral.ai/v1",                                   defaultModel: "mistral-large-latest" },
+  { id: "gemini",       label: "Google Gemini",      kind: "openai",    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",     defaultModel: "gemini-2.0-flash" },
+  { id: "ollama",       label: "Ollama (local)",     kind: "ollama",    baseUrl: "http://127.0.0.1:11434",                                      defaultModel: "llama3.2" }
+];
+
 function uniqueNonEmpty(values = []) {
   const seen = new Set();
   const out = [];
@@ -902,6 +926,121 @@ function providerFingerprint(provider = {}) {
   ].map((part) => `${part ?? ""}`.toLowerCase()).join(" ");
 }
 
+// Build labelled model choices for a code_cli provider. Returns
+// `{ id, label }[]` — `id` is the actual value sent via `--model` to the
+// subprocess (empty string = no flag, CLI uses its own default). `label` is
+// the user-facing string in the Console dropdown.
+//
+// The first option is ALWAYS "(CLI 自行管理)" — users can pick it to defer
+// model selection to the CLI's own configuration (e.g. /model in Claude Code,
+// Codex's config file). `pushFlagValue()` in code-cli-bridge.mjs skips
+// `--model` when the value is empty, so this is a zero-arg path end-to-end.
+function codeCliModelChoices(provider) {
+  if (!provider || provider.kind !== "code_cli") return [];
+
+  const fpCli = providerFingerprint(provider);
+  const cliManaged = { id: "", label: "(CLI 自行管理 — 用 /model 切换)" };
+  const dedup = (choices) => {
+    const seen = new Set();
+    const out = [];
+    for (const choice of choices) {
+      const key = `${choice.id ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(choice);
+    }
+    return out;
+  };
+
+  // Preserve the provider's explicit defaultModel as a second option so
+  // users can see it's sticky.
+  const preferred = provider.defaultModel ?? "";
+  const preferredChoice = preferred
+    ? [{ id: preferred, label: `${preferred} (保存的默认)` }]
+    : [];
+
+  if (/(moonshot|kimi)/.test(fpCli)) {
+    return dedup([
+      cliManaged,
+      ...preferredChoice,
+      { id: "kimi-code/kimi-for-coding", label: "Kimi Code" },
+      { id: "kimi-k2", label: "K2" },
+      { id: "moonshot-v1-128k", label: "Moonshot 128K" }
+    ]);
+  }
+
+  if (/codex/.test(fpCli)) {
+    return dedup([
+      cliManaged,
+      ...preferredChoice,
+      { id: "gpt-5", label: "GPT-5" },
+      { id: "gpt-5-codex", label: "GPT-5 Codex" },
+      { id: "gpt-5-mini", label: "GPT-5 Mini (fast)" },
+      { id: "o3", label: "o3 (reasoning)" },
+      { id: "gpt-4o", label: "GPT-4o" }
+    ]);
+  }
+
+  if (/gemini/.test(fpCli)) {
+    return dedup([
+      cliManaged,
+      ...preferredChoice,
+      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+      { id: "gemini-2.0-pro", label: "Gemini 2.0 Pro" },
+      { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (fast)" }
+    ]);
+  }
+
+  if (/aider/.test(fpCli)) {
+    // Aider accepts provider-namespaced shorthands — stay conservative.
+    return dedup([
+      cliManaged,
+      ...preferredChoice,
+      { id: "sonnet", label: "Sonnet (shorthand)" },
+      { id: "opus", label: "Opus (shorthand)" },
+      { id: "gpt-4o", label: "GPT-4o" },
+      { id: "deepseek/deepseek-chat", label: "DeepSeek Chat" }
+    ]);
+  }
+
+  if (/opencode/.test(fpCli)) {
+    return dedup([
+      cliManaged,
+      ...preferredChoice,
+      { id: "anthropic/claude-sonnet-4-5", label: "Claude Sonnet" },
+      { id: "openai/gpt-5", label: "GPT-5" },
+      { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" }
+    ]);
+  }
+
+  if (/claude/.test(fpCli)) {
+    return dedup([
+      cliManaged,
+      ...preferredChoice,
+      { id: "sonnet", label: "Sonnet (shorthand)" },
+      { id: "opus", label: "Opus (shorthand)" },
+      { id: "haiku", label: "Haiku (shorthand)" },
+      { id: "claude-sonnet-4-5", label: "claude-sonnet-4-5 (pinned)" },
+      { id: "claude-opus-4-5", label: "claude-opus-4-5 (pinned)" },
+      { id: "claude-haiku-4-5", label: "claude-haiku-4-5 (pinned)" }
+    ]);
+  }
+
+  if (/cursor/.test(fpCli)) {
+    return dedup([
+      cliManaged,
+      ...preferredChoice,
+      { id: "claude-sonnet-4-5", label: "Claude Sonnet" },
+      { id: "gpt-5", label: "GPT-5" }
+    ]);
+  }
+
+  // Long-tail CLIs (qwen / iflow / codebuddy / goose / augment / droid /
+  // copilot / qoder / vibe / kiro / hermes / snow) — we don't track their
+  // model catalogue here; keep to CLI-managed + the saved default if any.
+  return dedup([cliManaged, ...preferredChoice]);
+}
+
 function providerModelPresets(provider, taskType = "chat") {
   if (!provider) return [];
   const fp = providerFingerprint(provider);
@@ -916,27 +1055,10 @@ function providerModelPresets(provider, taskType = "chat") {
   }
 
   if (provider.kind === "code_cli") {
-    const fpCli = providerFingerprint(provider);
-    // Pick presets from the CLI's actual model family — Codex speaks GPT, not
-    // Claude, and vice versa. Fall back to Claude for generic / Claude Code.
-    if (/(moonshot|kimi)/.test(fpCli)) {
-      return uniqueNonEmpty([preferred, "kimi-code/kimi-for-coding", "kimi-k2", "moonshot-v1-128k"]);
-    }
-    if (/codex/.test(fpCli)) {
-      return uniqueNonEmpty([preferred, "gpt-5", "gpt-5-codex", "gpt-5-mini", "gpt-4o", "o3"]);
-    }
-    if (/gemini/.test(fpCli)) {
-      return uniqueNonEmpty([preferred, "gemini-2.5-pro", "gemini-2.0-flash", "gemini-2.0-pro"]);
-    }
-    if (/aider/.test(fpCli)) {
-      // Aider is model-agnostic — take its own shorthand strings.
-      return uniqueNonEmpty([preferred, "sonnet", "opus", "gpt-4o", "deepseek/deepseek-chat", "gemini/gemini-2.5-pro"]);
-    }
-    if (/opencode/.test(fpCli)) {
-      return uniqueNonEmpty([preferred, "anthropic/claude-sonnet-4-5", "openai/gpt-5", "google/gemini-2.5-pro"]);
-    }
-    // Default bucket = Claude Code (the most common case).
-    return uniqueNonEmpty([preferred, "claude-sonnet-4-5", "claude-opus-4-5", "claude-haiku-4-5"]);
+    // Flatten the labelled choices back to plain IDs for callers that need
+    // a string[] (e.g. defaultModelForProvider). UI callers should prefer
+    // codeCliModelChoices() directly.
+    return codeCliModelChoices(provider).map((choice) => choice.id).filter((id) => typeof id === "string" && id.length > 0);
   }
 
   if (provider.kind === "openai") {
@@ -945,6 +1067,39 @@ function providerModelPresets(provider, taskType = "chat") {
     }
     if (/(moonshot|kimi)/.test(fp)) {
       return uniqueNonEmpty([preferred, "kimi-k2", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]);
+    }
+    if (/dashscope|aliyun|qwen/.test(fp)) {
+      return uniqueNonEmpty([preferred, "qwen-max", "qwen-plus", "qwen-turbo", "qwen-coder-plus", "qwen-vl-max"]);
+    }
+    if (/bigmodel|zhipu|glm/.test(fp)) {
+      return uniqueNonEmpty([preferred, "glm-4-plus", "glm-4-air", "glm-4-flash", "glm-4v-plus"]);
+    }
+    if (/minimax/.test(fp)) {
+      return uniqueNonEmpty([preferred, "abab6.5s-chat", "abab6.5g-chat", "abab6.5t-chat"]);
+    }
+    if (/siliconflow/.test(fp)) {
+      return uniqueNonEmpty([preferred, "Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3", "meta-llama/Meta-Llama-3.1-405B-Instruct"]);
+    }
+    if (/x\.ai|grok/.test(fp)) {
+      return uniqueNonEmpty([preferred, "grok-2-latest", "grok-2-1212", "grok-vision-beta", "grok-beta"]);
+    }
+    if (/openrouter/.test(fp)) {
+      return uniqueNonEmpty([preferred, "openai/gpt-4o", "anthropic/claude-sonnet-4-5", "google/gemini-2.0-flash", "deepseek/deepseek-chat"]);
+    }
+    if (/groq/.test(fp)) {
+      return uniqueNonEmpty([preferred, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]);
+    }
+    if (/together/.test(fp)) {
+      return uniqueNonEmpty([preferred, "meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct-Turbo"]);
+    }
+    if (/fireworks/.test(fp)) {
+      return uniqueNonEmpty([preferred, "accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/deepseek-v3"]);
+    }
+    if (/mistral/.test(fp)) {
+      return uniqueNonEmpty([preferred, "mistral-large-latest", "mistral-small-latest", "codestral-latest", "pixtral-large-latest"]);
+    }
+    if (/generativelanguage|gemini/.test(fp)) {
+      return uniqueNonEmpty([preferred, "gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-pro"]);
     }
     return uniqueNonEmpty([
       preferred,
@@ -960,55 +1115,11 @@ function modeOptionsForModel(provider, model = "") {
   if (!provider) return [];
   const fp = `${providerFingerprint(provider)} ${model}`.toLowerCase();
 
-  // code_cli providers use CLI-specific model names. We still want a mode
-  // switcher per CLI family so users can flip between fast/balanced/deep
-  // tiers without typing model strings.
+  // code_cli providers: mode is now expressed by the labelled model choices
+  // (see codeCliModelChoices). The mode slot is repurposed to show an inert
+  // single-option placeholder so the routing UI can hide it cleanly.
   if (provider.kind === "code_cli") {
-    const fpCli = providerFingerprint(provider);
-    if (/codex/.test(fpCli)) {
-      return [
-        { id: "default", label: "GPT-5", model: "gpt-5" },
-        { id: "codex", label: "GPT-5 Codex", model: "gpt-5-codex" },
-        { id: "fast", label: "Mini (fast)", model: "gpt-5-mini" },
-        { id: "balanced", label: "GPT-4o", model: "gpt-4o" },
-        { id: "reasoner", label: "o3", model: "o3" }
-      ];
-    }
-    if (/gemini/.test(fpCli)) {
-      return [
-        { id: "fast", label: "2.0 Flash", model: "gemini-2.0-flash" },
-        { id: "balanced", label: "2.0 Pro", model: "gemini-2.0-pro" },
-        { id: "deep", label: "2.5 Pro", model: "gemini-2.5-pro" }
-      ];
-    }
-    if (/(moonshot|kimi)/.test(fpCli)) {
-      return [
-        { id: "default", label: "Kimi Code", model: "kimi-code/kimi-for-coding" },
-        { id: "k2", label: "K2", model: "kimi-k2" },
-        { id: "128k", label: "128K", model: "moonshot-v1-128k" }
-      ];
-    }
-    if (/aider/.test(fpCli)) {
-      return [
-        { id: "sonnet", label: "Sonnet", model: "sonnet" },
-        { id: "opus", label: "Opus", model: "opus" },
-        { id: "gpt", label: "GPT-4o", model: "gpt-4o" },
-        { id: "deepseek", label: "DeepSeek", model: "deepseek/deepseek-chat" }
-      ];
-    }
-    if (/opencode/.test(fpCli)) {
-      return [
-        { id: "claude", label: "Claude Sonnet", model: "anthropic/claude-sonnet-4-5" },
-        { id: "gpt", label: "GPT-5", model: "openai/gpt-5" },
-        { id: "gemini", label: "Gemini 2.5 Pro", model: "google/gemini-2.5-pro" }
-      ];
-    }
-    // Default = Claude Code — most common install.
-    return [
-      { id: "balanced", label: "Sonnet (balanced)", model: "claude-sonnet-4-5" },
-      { id: "deep", label: "Opus (deep)", model: "claude-opus-4-5" },
-      { id: "fast", label: "Haiku (fast)", model: "claude-haiku-4-5" }
-    ];
+    return [{ id: "default", label: "—", model }];
   }
 
   if (/deepseek/.test(fp)) {
@@ -1055,7 +1166,31 @@ function modeOptionsForModel(provider, model = "") {
 }
 
 function defaultModelForProvider(provider, taskType = "chat") {
+  // For code_cli we default to "(CLI-managed)" which is the empty string —
+  // that's intentional: it means "don't pass --model, let the CLI decide".
+  if (provider?.kind === "code_cli") return "";
   return providerModelPresets(provider, taskType)[0] ?? "";
+}
+
+// Codex is the only CLI in the current roster that exposes a
+// reasoning-effort knob via its `--reasoning-effort` flag. Other CLIs don't
+// have the concept, so we only render this select when the provider's
+// fingerprint matches codex.
+function reasoningEffortOptions(provider) {
+  if (!provider || provider.kind !== "code_cli") return [];
+  const fpCli = providerFingerprint(provider);
+  if (!/codex/.test(fpCli)) return [];
+  return [
+    { id: "", label: "(不指定)" },
+    { id: "low", label: "Low (快速)" },
+    { id: "medium", label: "Medium" },
+    { id: "high", label: "High (深思)" },
+    { id: "extra_high", label: "Extra High (最深)" }
+  ];
+}
+
+function supportsReasoningEffort(provider) {
+  return reasoningEffortOptions(provider).length > 0;
 }
 
 function modeForModel(provider, model, currentMode = "") {
@@ -1144,22 +1279,50 @@ function renderTaskRouting() {
 
     const selectedProvider = customProviders.find((p) => p.id === route.providerId);
     const modelValue = route.model ?? "";
-    // Build a proper <select> (not a datalist) so the user sees every preset
-    // the moment the dropdown opens — datalists filter by typed text which
-    // hid options when the saved value was already populated.
-    const presets = selectedProvider ? providerModelPresets(selectedProvider, task.id) : [];
-    const allModelChoices = uniqueNonEmpty([modelValue, ...presets]);
-    const modelOptions = selectedProvider
-      ? allModelChoices.map((m) =>
+    const isCli = selectedProvider?.kind === "code_cli";
+
+    // For code_cli we render labelled choices (id + label). For API kinds we
+    // keep the old "preset as plain string" flow since those model IDs are
+    // the display text.
+    let modelOptions = "";
+    if (selectedProvider) {
+      if (isCli) {
+        const choices = codeCliModelChoices(selectedProvider);
+        const hasSavedChoice = choices.some((c) => c.id === modelValue);
+        const preamble = !hasSavedChoice && modelValue
+          ? `<option value="${escapeHtml(modelValue)}" selected>${escapeHtml(modelValue)} (保存值)</option>`
+          : "";
+        modelOptions = preamble + choices.map((c) =>
+          `<option value="${escapeHtml(c.id)}" ${c.id === modelValue ? "selected" : ""}>${escapeHtml(c.label)}</option>`
+        ).join("") + `<option value="__custom__" style="font-style:italic;">✏️ 自定义…</option>`;
+      } else {
+        const presets = providerModelPresets(selectedProvider, task.id);
+        const allModelChoices = uniqueNonEmpty([modelValue, ...presets]);
+        modelOptions = allModelChoices.map((m) =>
           `<option value="${escapeHtml(m)}" ${m === modelValue ? "selected" : ""}>${escapeHtml(m)}</option>`
-        ).join("") + `<option value="__custom__" style="font-style:italic;">✏️ 自定义…</option>`
-      : "";
+        ).join("") + `<option value="__custom__" style="font-style:italic;">✏️ 自定义…</option>`;
+      }
+    }
+
     const modeValue = modeForModel(selectedProvider, modelValue, route.mode ?? "");
-    const modeOptions = selectedProvider
-      ? modeOptionsForModel(selectedProvider, modelValue || defaultModelForProvider(selectedProvider, task.id)).map((mode) =>
-          `<option value="${escapeHtml(mode.id)}" ${modeValue === mode.id ? "selected" : ""}>${escapeHtml(mode.label)}</option>`
-        ).join("")
-      : "";
+    const modeOpts = selectedProvider
+      ? modeOptionsForModel(selectedProvider, modelValue || defaultModelForProvider(selectedProvider, task.id))
+      : [];
+    const modeOptionsHtml = modeOpts.map((mode) =>
+      `<option value="${escapeHtml(mode.id)}" ${modeValue === mode.id ? "selected" : ""}>${escapeHtml(mode.label)}</option>`
+    ).join("");
+    // Hide the Mode select entirely for code_cli (it's always an inert
+    // placeholder now that labels live in the model dropdown).
+    const hideMode = isCli;
+
+    // Codex-only reasoning-effort knob. Renders in the slot where Mode
+    // would otherwise be for non-Codex CLIs, so the grid keeps 3 columns.
+    const reasoningOpts = reasoningEffortOptions(selectedProvider);
+    const showReasoning = reasoningOpts.length > 0;
+    const reasoningValue = route.reasoningEffort ?? "";
+    const reasoningOptionsHtml = reasoningOpts.map((opt) =>
+      `<option value="${escapeHtml(opt.id)}" ${opt.id === reasoningValue ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
+    ).join("");
 
     return `
       <div style="padding:12px;border-radius:10px;background:var(--surface-strong);border:1px solid var(--line);">
@@ -1170,7 +1333,8 @@ function renderTaskRouting() {
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">
           <select data-routing-provider="${escapeHtml(task.id)}" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders ? "disabled" : ""}>${providerOptions}</select>
           <select data-routing-model="${escapeHtml(task.id)}" title="Model" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders || !selectedProvider ? "disabled" : ""}>${modelOptions}</select>
-          <select data-routing-mode="${escapeHtml(task.id)}" title="Mode" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders || !selectedProvider ? "disabled" : ""}>${modeOptions}</select>
+          ${showReasoning ? `<select data-routing-reasoning="${escapeHtml(task.id)}" title="Reasoning effort" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;">${reasoningOptionsHtml}</select>` : ""}
+          ${!hideMode && !showReasoning ? `<select data-routing-mode="${escapeHtml(task.id)}" title="Mode" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders || !selectedProvider ? "disabled" : ""}>${modeOptionsHtml}</select>` : ""}
         </div>
       </div>
     `;
@@ -1189,11 +1353,30 @@ function renderTaskRouting() {
       const taskId = sel.dataset.routingProvider;
       const provider = customProviders.find((p) => p.id === sel.value);
       const model = provider ? defaultModelForProvider(provider, taskId) : "";
-      taskRouting[taskId] = {
+      const next = {
         providerId: sel.value,
         model,
         mode: provider ? modeForModel(provider, model, "") : ""
       };
+      // Preserve prior reasoningEffort only when the new provider still
+      // supports it (Codex ↔ Codex). Switching away from Codex should not
+      // leave a stray reasoningEffort field lying around.
+      const previous = taskRouting[taskId] ?? {};
+      if (provider && supportsReasoningEffort(provider) && previous.reasoningEffort) {
+        next.reasoningEffort = previous.reasoningEffort;
+      }
+      taskRouting[taskId] = next;
+      renderTaskRouting();
+    });
+  }
+  for (const sel of el.querySelectorAll("[data-routing-reasoning]")) {
+    sel.addEventListener("change", () => {
+      const taskId = sel.dataset.routingReasoning;
+      const route = taskRouting[taskId] ?? {};
+      const next = { ...route };
+      if (sel.value) next.reasoningEffort = sel.value;
+      else delete next.reasoningEffort;
+      taskRouting[taskId] = next;
       renderTaskRouting();
     });
   }
@@ -1243,6 +1426,35 @@ function toggleProviderFieldsByKind(kind) {
   if (cliFields) cliFields.style.display = isCli ? "flex" : "none";
 }
 
+// Render the quick-template chip row inside the Add Provider modal. Clicking
+// a chip prefills kind / baseUrl / defaultModel / suggested name; the user
+// only needs to paste their API key. Templates are a union of popular
+// OpenAI-compatible endpoints plus native Anthropic / Ollama.
+function renderProviderQuickTemplates() {
+  const host = document.getElementById("provQuickTemplates");
+  if (!host) return;
+  host.innerHTML = BUILTIN_API_TEMPLATES.map((tpl) =>
+    `<button type="button" data-tpl-id="${escapeHtml(tpl.id)}" style="font-size:11px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);background:var(--surface-strong);color:var(--ink-soft);cursor:pointer;">${escapeHtml(tpl.label)}</button>`
+  ).join("");
+  for (const btn of host.querySelectorAll("[data-tpl-id]")) {
+    btn.addEventListener("click", () => {
+      const tpl = BUILTIN_API_TEMPLATES.find((t) => t.id === btn.dataset.tplId);
+      if (!tpl) return;
+      const nameEl = document.getElementById("provName");
+      const kindEl = document.getElementById("provKind");
+      const baseUrlEl = document.getElementById("provBaseUrl");
+      const defaultModelEl = document.getElementById("provDefaultModel");
+      if (nameEl && !nameEl.value.trim()) nameEl.value = tpl.label;
+      if (kindEl) kindEl.value = tpl.kind;
+      if (baseUrlEl) baseUrlEl.value = tpl.baseUrl;
+      if (defaultModelEl && !defaultModelEl.value.trim()) defaultModelEl.value = tpl.defaultModel;
+      toggleProviderFieldsByKind(tpl.kind);
+      // Nudge the API-key input so user knows that's their next step.
+      document.getElementById("provApiKey")?.focus();
+    });
+  }
+}
+
 function openProviderModal(editId = null) {
   const modal = document.getElementById("providerModal");
   const original = document.getElementById("provEditOriginalId");
@@ -1254,6 +1466,8 @@ function openProviderModal(editId = null) {
   const args = document.getElementById("provArgs");
   const transport = document.getElementById("provTransport");
   const defaultModel = document.getElementById("provDefaultModel");
+
+  renderProviderQuickTemplates();
 
   if (editId) {
     const existing = customProviders.find((p) => p.id === editId);

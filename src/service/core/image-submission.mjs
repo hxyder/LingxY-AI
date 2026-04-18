@@ -112,6 +112,7 @@ async function runKimiImageFallback({ task, runtime, artifactStore, store, queue
       taskPackage,
       transport: activeCliRuntime.transport,
       model: activeCliRuntime.model,
+      reasoningEffort: activeCliRuntime.reasoningEffort ?? "",
       configFile: activeCliRuntime.configFile,
       mcpConfigFiles: activeCliRuntime.mcpConfigFiles,
       maxRuntimeSeconds: activeCliRuntime.maxRuntimeSeconds ?? 600,

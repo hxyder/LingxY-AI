@@ -2216,6 +2216,13 @@
         <h3 style="margin:0 0 16px;font-size:16px;">Add / Edit Provider</h3>
         <form id="providerEditForm" class="stack" style="gap:12px;">
           <input type="hidden" id="provEditOriginalId" value="">
+
+          <!-- Quick templates: one-click prefill of baseUrl + kind + default model -->
+          <div>
+            <label style="font-size:12px;color:var(--muted);">快速模板（点击预填）</label>
+            <div id="provQuickTemplates" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;"></div>
+          </div>
+
           <div>
             <label for="provName">Name</label>
             <input id="provName" type="text" placeholder="e.g. My Claude, DeepSeek, Kimi CLI" required>
