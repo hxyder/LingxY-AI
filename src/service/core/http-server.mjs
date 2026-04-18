@@ -3,11 +3,12 @@ import crypto from "node:crypto";
 import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { URL } from "node:url";
 import { promisify } from "node:util";
-import { createTaskEventStream, encodeSseFrame } from "../events/sse.mjs";
+import readline from "node:readline";
+import { createTaskEventStream, encodeSseFrame, SSE_HEADERS } from "../events/sse.mjs";
 import { retryTask } from "../retry/retry-manager.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { cancelTask, emitTaskEvent } from "./task-runtime.mjs";
@@ -245,6 +246,69 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
       reason: "local_transcription_failed",
       message: details
     };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+// Streaming variant of transcribeAudioLocally: spawns the Python sidecar with
+// --stream so each decoded segment is emitted immediately, and pipes every
+// stdout line through onEvent as a parsed JSON object ({type:"segment"|"done"|
+// "error", ...}). Returns a promise that resolves when the child exits.
+// Used by the SSE branch of /note/transcribe so the client sees partial text
+// as faster-whisper decodes instead of waiting for the whole file.
+async function transcribeAudioLocallyStream(audioBuffer, { mimeType = "audio/webm", lang = "auto" } = {}, onEvent) {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-note-audio-"));
+  const ext = mimeType.includes("wav") ? ".wav"
+    : mimeType.includes("mp4") || mimeType.includes("m4a") ? ".m4a"
+      : mimeType.includes("mpeg") || mimeType.includes("mp3") ? ".mp3"
+        : ".webm";
+  const audioPath = path.join(tempDir, `note-recording${ext}`);
+  try {
+    await writeFile(audioPath, audioBuffer);
+    const pythonCommand = getPythonCommand();
+    const scriptPath = getLocalTranscriptionScriptPath();
+    const child = spawn(pythonCommand, [
+      scriptPath,
+      audioPath,
+      "--language", normalizeLanguageHint(lang),
+      "--model", process.env.UCA_LOCAL_WHISPER_MODEL || DEFAULT_LOCAL_WHISPER_MODEL,
+      "--device", process.env.UCA_LOCAL_WHISPER_DEVICE || "cpu",
+      "--compute-type", process.env.UCA_LOCAL_WHISPER_COMPUTE_TYPE || "int8",
+      "--beam-size", String(process.env.UCA_LOCAL_WHISPER_BEAM_SIZE || DEFAULT_LOCAL_WHISPER_BEAM_SIZE),
+      "--stream"
+    ], {
+      env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" }
+    });
+
+    const stderrChunks = [];
+    child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
+
+    const rl = readline.createInterface({ input: child.stdout });
+    rl.on("line", (line) => {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return;
+      try { onEvent(JSON.parse(trimmed)); }
+      catch { /* ignore unparseable lines */ }
+    });
+
+    return await new Promise((resolve) => {
+      child.on("error", (err) => {
+        onEvent({ type: "error", reason: "spawn_failed", message: err.message });
+        resolve({ ok: false, reason: "spawn_failed" });
+      });
+      child.on("close", (code) => {
+        rl.close();
+        if (code !== 0) {
+          const stderrText = Buffer.concat(stderrChunks).toString("utf8").slice(-800);
+          onEvent({ type: "error", reason: "python_exit", code, message: stderrText });
+        }
+        resolve({ ok: code === 0 });
+      });
+    });
+  } catch (error) {
+    onEvent({ type: "error", reason: "stream_setup_failed", message: error.message });
+    return { ok: false, reason: "stream_setup_failed" };
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => {});
   }
@@ -1748,6 +1812,64 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
 
         if (audioBuffer.length === 0) {
           return sendJson(response, 400, { ok: false, error: "missing_audio" });
+        }
+
+        // ── SSE streaming branch ──
+        // Used by the overlay voice card so transcribed segments appear
+        // progressively instead of the user waiting for a whole-file response.
+        // Only local faster-whisper can stream; cloud Whisper is file-in/file-out
+        // so we just skip straight to the non-streaming path if local fails.
+        if (url.searchParams.get("stream") === "1") {
+          response.writeHead(200, SSE_HEADERS);
+          response.flushHeaders?.();
+          const writeFrame = (obj) => {
+            try { response.write(`data: ${JSON.stringify(obj)}\n\n`); }
+            catch { /* client hung up */ }
+          };
+          let closed = false;
+          request.on("close", () => { closed = true; });
+          const result = await transcribeAudioLocallyStream(
+            audioBuffer,
+            { mimeType, lang },
+            (event) => { if (!closed) writeFrame(event); }
+          );
+          if (!result.ok && !closed) {
+            // Last-ditch: try the non-streaming endpoint (OpenAI Whisper etc.)
+            // and emit the full transcript as a single segment. Keeps the UX
+            // consistent even when local faster-whisper isn't available.
+            const provider = resolveAudioTranscriptionProvider(runtime);
+            if (provider) {
+              try {
+                const formData = new FormData();
+                formData.append("file", new Blob([audioBuffer], { type: mimeType }), "note-recording.webm");
+                formData.append("model", provider.model || "whisper-1");
+                if (lang && lang !== "auto") formData.append("language", lang.split("-")[0]);
+                const baseUrl = (provider.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
+                const apiResp = await fetch(`${baseUrl}/audio/transcriptions`, {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${provider.apiKey}` },
+                  body: formData
+                });
+                if (apiResp.ok) {
+                  const cloud = await apiResp.json();
+                  const text = cloud.text ?? "";
+                  if (text) writeFrame({ type: "segment", start: 0, end: 0, text });
+                  writeFrame({
+                    type: "done",
+                    ok: true,
+                    transcript: text,
+                    provider: providerPublicDescriptor(provider)
+                  });
+                } else {
+                  writeFrame({ type: "error", reason: "api_error", message: "cloud transcription failed" });
+                }
+              } catch (err) {
+                writeFrame({ type: "error", reason: "cloud_exception", message: err.message });
+              }
+            }
+          }
+          if (!closed) response.end();
+          return;
         }
 
         const chatProvider = resolveProviderForTask("chat");

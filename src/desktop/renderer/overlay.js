@@ -2700,7 +2700,8 @@ function enterVoiceMode() {
   voiceCard?.classList.add("idle");
   voiceCard?.classList.remove("error");
   if (voiceTranscript) {
-    voiceTranscript.textContent = "\u00a0";
+    voiceTranscript.textContent = "实时识别的文字会显示在这里…";
+    voiceTranscript.classList.add("placeholder");
     voiceTranscript.scrollTop = 0;
   }
   // Defensive reset — make sure a stale voiceRecording=true from a prior
@@ -2922,6 +2923,16 @@ let voiceAnalyserNode = null;
 let voiceAnalyserRafId = null;
 let voiceWaveBarsCache = null;
 
+// Live preview transcription — when Web Speech API is unavailable (fallback
+// mode on Electron+Windows), the user gets no real-time text during recording.
+// This interval takes a snapshot of the accumulated audio every few seconds
+// and sends it for a preview transcription, so voiceTranscript grows while
+// the user speaks instead of waiting for them to press stop.
+let voicePreviewTimer = null;
+let voicePreviewInFlight = false;
+let voicePreviewSessionId = 0;
+const VOICE_PREVIEW_INTERVAL_MS = 3500;
+
 function getSpeechRecognitionCtor() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
@@ -2932,12 +2943,22 @@ function setVoiceRecording(active) {
     voiceCard?.classList.remove("idle", "error");
     voiceStatus.textContent = "🎙 正在聆听...";
     voiceToggleBtn?.classList.add("recording");
-    if (voiceStartBtn) voiceStartBtn.disabled = true;
+    // Keep the Start button clickable during recording so the user has a
+    // hard-restart affordance. The click handler always resets state before
+    // re-starting, so this never produces the old "button does nothing"
+    // symptom where the state machine silently swallowed the click.
+    if (voiceStartBtn) {
+      voiceStartBtn.disabled = false;
+      voiceStartBtn.textContent = "重启";
+    }
     if (voiceStopBtn) voiceStopBtn.disabled = false;
   } else {
     voiceCard?.classList.add("idle");
     voiceToggleBtn?.classList.remove("recording");
-    if (voiceStartBtn) voiceStartBtn.disabled = false;
+    if (voiceStartBtn) {
+      voiceStartBtn.disabled = false;
+      voiceStartBtn.textContent = "开始";
+    }
     if (voiceStopBtn) voiceStopBtn.disabled = false;
     stopVoiceAudioMeter();
   }
@@ -2950,6 +2971,7 @@ function appendVoiceTranscript(text) {
   commandInput.value = base ? `${base}\n${transcript}` : transcript;
   autoSizeInput();
   if (voiceTranscript) {
+    voiceTranscript.classList.remove("placeholder");
     voiceTranscript.textContent = commandInput.value.trim() || "\u00a0";
     voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
   }
@@ -3039,6 +3061,57 @@ function stopVoiceAudioMeter() {
   }
 }
 
+// Starts (or restarts) the periodic preview-transcription loop. Every
+// VOICE_PREVIEW_INTERVAL_MS we build a blob from the current accumulated
+// MediaRecorder chunks and POST it to the non-streaming /note/transcribe
+// endpoint. The preview overwrites voiceTranscript so the user sees their
+// words appear while still speaking. Only meant for the fallback path where
+// Web Speech API interim results are unavailable.
+function startVoicePreviewLoop() {
+  stopVoicePreviewLoop();
+  voicePreviewSessionId += 1;
+  const mySession = voicePreviewSessionId;
+  voicePreviewTimer = setInterval(() => {
+    if (!voiceRecording || voicePreviewInFlight) return;
+    if (voicePreviewSessionId !== mySession) return;
+    if (voiceAudioChunks.length === 0) return;
+    // Clone chunks now so a concurrent dataavailable push doesn't mutate the
+    // blob mid-fetch.
+    const snapshot = voiceAudioChunks.slice();
+    const blob = new Blob(snapshot, { type: "audio/webm" });
+    voicePreviewInFlight = true;
+    transcribeAudioBlob(blob, { lang: voiceLangSelect?.value || "auto" })
+      .then((resp) => {
+        if (!voiceRecording || voicePreviewSessionId !== mySession) return;
+        const text = `${resp?.transcript ?? ""}`.trim();
+        if (!text || !voiceTranscript) return;
+        // Preview is overwrite-style: each tick replaces the prior preview
+        // with the fresh full-audio transcript. The authoritative streaming
+        // transcribe on stop still runs and gets the final text.
+        voiceTranscript.classList.remove("placeholder");
+        voiceTranscript.textContent = text;
+        voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
+      })
+      .catch((err) => {
+        // Preview failures are expected occasionally (codec boundaries,
+        // briefly unparseable webm prefix). Don't disrupt the user; the
+        // final transcribe is the source of truth.
+        console.debug("[voice] preview transcribe failed:", err?.message ?? err);
+      })
+      .finally(() => {
+        voicePreviewInFlight = false;
+      });
+  }, VOICE_PREVIEW_INTERVAL_MS);
+}
+
+function stopVoicePreviewLoop() {
+  if (voicePreviewTimer) {
+    clearInterval(voicePreviewTimer);
+    voicePreviewTimer = null;
+  }
+  voicePreviewSessionId += 1;
+}
+
 function stopVoiceTracks() {
   voiceMicStream?.getTracks?.().forEach((track) => track.stop());
   voiceMicStream = null;
@@ -3049,6 +3122,7 @@ function stopVoiceLocalRecorder({ transcribe = false } = {}) {
   const recorder = voiceMediaRecorder;
   voiceMediaRecorder = null;
   voiceLocalFallbackActive = false;
+  stopVoicePreviewLoop();
 
   return new Promise((resolve) => {
     const finish = async () => {
@@ -3062,6 +3136,17 @@ function stopVoiceLocalRecorder({ transcribe = false } = {}) {
       try {
         voiceStatus.textContent = "⏳ 正在转写...";
         const blob = new Blob(chunks, { type: "audio/webm" });
+        const streamed = await transcribeAudioBlobStreaming(blob, {
+          lang: voiceLangSelect?.value || "auto"
+        });
+        if (streamed.ok) {
+          const transcript = `${streamed.transcript ?? ""}`.trim();
+          voiceStatus.textContent = transcript ? "✓ 转写完成 · 按 Enter 发送" : "没有检测到语音，请再试一次。";
+          resolve({ ok: true, transcript });
+          return;
+        }
+        // Streaming failed (no partials, bad server, etc.) — fall back to the
+        // original one-shot endpoint so we still get a transcript.
         const resp = await transcribeAudioBlob(blob, {
           lang: voiceLangSelect?.value || "auto"
         });
@@ -3120,6 +3205,7 @@ function ensureVoiceRecognizer() {
     }
     // Mirror in the voice card transcript so the user sees what they're saying
     if (voiceTranscript) {
+      voiceTranscript.classList.remove("placeholder");
       voiceTranscript.textContent = merged.trim() || "\u00a0";
       voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
     }
@@ -3155,10 +3241,12 @@ function ensureVoiceRecognizer() {
     if (keepRecording) {
       voiceLocalFallbackActive = true;
       setVoiceRecording(true);
-      // Keep the status minimal — users don't need to know we've silently
-      // switched to local recording. They see the reactive waveform + timer
-      // which already says "we're listening".
-      voiceStatus.textContent = "🎙 正在聆听...";
+      // Web Speech API failed — kick in the periodic preview-transcribe loop
+      // so the user still sees their words appear during recording rather
+      // than silent "listening". Final streamed transcribe still runs on
+      // stop as the source of truth.
+      startVoicePreviewLoop();
+      voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
       voiceCard?.classList.remove("error", "idle");
       return;
     }
@@ -3195,7 +3283,8 @@ function _doStartRecognizer(recognizer) {
     if (!message.includes("invalidstate") && voiceMediaRecorder) {
       voiceLocalFallbackActive = true;
       setVoiceRecording(true);
-      voiceStatus.textContent = "🎙 正在聆听...";
+      startVoicePreviewLoop();
+      voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
       voiceCard?.classList.remove("error", "idle");
       return;
     }
@@ -3212,7 +3301,8 @@ function _doStartRecognizer(recognizer) {
       if (voiceMediaRecorder) {
         voiceLocalFallbackActive = true;
         setVoiceRecording(true);
-        voiceStatus.textContent = "🎙 正在聆听...";
+        startVoicePreviewLoop();
+        voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
         voiceCard?.classList.remove("error", "idle");
         return;
       }
@@ -3224,51 +3314,108 @@ function _doStartRecognizer(recognizer) {
   }
 }
 
+// Force-reset every voice state/handle. Used by the Start button so a stuck
+// prior session (e.g. recorder stopped mid-transcription, mic stream still
+// open, error class left on the card) never turns the button into a no-op.
+function resetVoiceState() {
+  stopVoicePreviewLoop();
+  try { voiceRecognizer?.abort?.(); } catch { /* ignore */ }
+  try { voiceMediaRecorder?.stop?.(); } catch { /* ignore */ }
+  stopVoiceTracks();
+  voiceMediaRecorder = null;
+  voiceAudioChunks = [];
+  voiceRecording = false;
+  voiceLocalFallbackActive = false;
+  voiceManualStopPending = false;
+  voiceRecognitionProducedText = false;
+  voiceCard?.classList.remove("error", "starting");
+  if (voiceTranscript) {
+    voiceTranscript.textContent = "实时识别的文字会显示在这里…";
+    voiceTranscript.classList.add("placeholder");
+  }
+}
+
 // On Windows, Web Speech API does not trigger the OS microphone permission
 // dialog by itself. We must call getUserMedia({audio:true}) first so that
 // Chromium/Electron asks Windows for permission, then start the recognizer.
-function startVoiceRecognition() {
-  // Guard against a stuck state where a previous run left voiceRecording
-  // true (e.g. the recorder stopped mid-transcription and setVoiceRecording
-  // never flipped back). The start button would just no-op silently in that
-  // case — very confusing. If we're NOT actually holding an active mic
-  // stream, treat `voiceRecording` as stale and reset.
-  if (voiceRecording && !voiceMicStream && !voiceMediaRecorder) {
-    voiceRecording = false;
-    voiceLocalFallbackActive = false;
-    voiceManualStopPending = false;
-  }
-  if (voiceRecording) return;
+async function startVoiceRecognition() {
+  // Treat every explicit "start" as a hard reset — prevents any prior stuck
+  // session (half-torn-down recorder, lingering stream, stale flags) from
+  // silently swallowing the click.
+  resetVoiceState();
 
   const recognizer = ensureVoiceRecognizer();
+  voiceCard?.classList.add("starting");
   voiceStatus.textContent = "🎙 正在启动麦克风…";
-  if (!navigator.mediaDevices?.getUserMedia) {
-    voiceStatus.textContent = "当前环境无法访问麦克风接口。";
+  if (voiceStartBtn) voiceStartBtn.disabled = true;
+
+  const finishError = (text, err) => {
+    if (err) console.error("[voice] start failed:", err);
+    voiceStatus.textContent = text;
     voiceCard?.classList.add("error");
-    voiceCard?.classList.remove("idle");
+    voiceCard?.classList.remove("idle", "starting");
+    if (voiceStartBtn) voiceStartBtn.disabled = false;
     setVoiceRecording(false);
+  };
+
+  if (!navigator.mediaDevices?.getUserMedia) {
+    finishError("当前环境无法访问麦克风接口。");
     return;
   }
-  navigator.mediaDevices.getUserMedia({ audio: true })
-    .then((stream) => {
-      startVoiceLocalRecorder(stream);
-      setVoiceRecording(true);
-      voiceStatus.textContent = "🎙 正在聆听...";
-      if (recognizer) {
-        _doStartRecognizer(recognizer);
-      } else {
-        voiceLocalFallbackActive = true;
-      }
-    })
-    .catch((err) => {
-      const denied = err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError";
-      voiceStatus.textContent = denied
-        ? "麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。"
-        : `麦克风初始化失败：${err.message}`;
-      voiceCard?.classList.add("error");
-      voiceCard?.classList.remove("idle");
-      setVoiceRecording(false);
-    });
+
+  // Pre-check mic permission where supported — if the OS has already denied,
+  // skip the getUserMedia round-trip and give an actionable message directly.
+  try {
+    const perm = await navigator.permissions?.query?.({ name: "microphone" });
+    if (perm?.state === "denied") {
+      finishError("麦克风权限已被系统拒绝。请到系统设置 → 隐私 → 麦克风 允许此应用访问后重试。");
+      return;
+    }
+  } catch { /* permissions API not available — fall through */ }
+
+  // Sentinel: if getUserMedia neither resolves nor rejects within 5s (Electron
+  // on Windows can hang when the OS mic prompt is suppressed), surface the
+  // timeout to the user instead of leaving the UI frozen.
+  const TIMEOUT_MS = 5000;
+  let timedOut = false;
+  const timeout = new Promise((_, reject) => {
+    setTimeout(() => {
+      timedOut = true;
+      reject(new Error("getUserMedia_timeout"));
+    }, TIMEOUT_MS);
+  });
+
+  try {
+    const stream = await Promise.race([
+      navigator.mediaDevices.getUserMedia({ audio: true }),
+      timeout
+    ]);
+    voiceCard?.classList.remove("starting");
+    startVoiceLocalRecorder(stream);
+    setVoiceRecording(true);
+    voiceStatus.textContent = "🎙 正在聆听...";
+    if (recognizer) {
+      _doStartRecognizer(recognizer);
+    } else {
+      voiceLocalFallbackActive = true;
+      startVoicePreviewLoop();
+      voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
+    }
+  } catch (err) {
+    if (timedOut) {
+      finishError("麦克风启动超时——请检查系统麦克风权限，或重启 UCA 后重试。", err);
+      return;
+    }
+    const denied = err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError";
+    const noDevice = err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError";
+    if (denied) {
+      finishError("麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。", err);
+    } else if (noDevice) {
+      finishError("未检测到可用的麦克风。请确认设备已连接后重试。", err);
+    } else {
+      finishError(`麦克风初始化失败：${err?.message ?? err}`, err);
+    }
+  }
 }
 
 function stopVoiceRecognition({ discard = false } = {}) {
@@ -3294,7 +3441,11 @@ function openVoicePanel({ autoStart = false } = {}) {
   setPanelOpen(schedulePanel, false);
   enterVoiceMode();
   if (typeof renderVoiceChips === "function") renderVoiceChips();
-  if (autoStart && !noteActive) startVoiceRecognition();
+  if (autoStart && !noteActive) {
+    void startVoiceRecognition().catch((err) => {
+      console.error("[voice] autoStart failed:", err);
+    });
+  }
 }
 
 function closeVoicePanel({ submit = false } = {}) {
@@ -3315,7 +3466,7 @@ voiceToggleBtn?.addEventListener("click", () => {
   if (voiceMode) {
     closeVoicePanel({ submit: false });
   } else {
-    openVoicePanel({ autoStart: false });
+    openVoicePanel({ autoStart: true });
   }
 });
 
@@ -3418,14 +3569,20 @@ if (voiceCard) {
 }
 
 voiceStartBtn?.addEventListener("click", () => {
-  try {
-    startVoiceRecognition();
-  } catch (error) {
-    voiceStatus.textContent = `启动语音失败：${error?.message ?? error}`;
-    voiceCard?.classList.add("error");
-    voiceCard?.classList.remove("idle");
-    setVoiceRecording(false);
-  }
+  // startVoiceRecognition is async and handles its own errors (including
+  // showing an actionable status message). Still wrap the .catch() here so
+  // an unexpected synchronous throw from the reset path can't leave the
+  // button disabled with no feedback.
+  Promise.resolve()
+    .then(() => startVoiceRecognition())
+    .catch((error) => {
+      console.error("[voice] unhandled start error:", error);
+      voiceStatus.textContent = `启动语音失败：${error?.message ?? error}`;
+      voiceCard?.classList.add("error");
+      voiceCard?.classList.remove("idle", "starting");
+      if (voiceStartBtn) voiceStartBtn.disabled = false;
+      setVoiceRecording(false);
+    });
 });
 voiceStopBtn?.addEventListener("click", () => stopVoiceRecognition());
 voiceCancelBtn?.addEventListener("click", () => {
@@ -3983,6 +4140,83 @@ async function transcribeAudioBlob(blob, { lang = "auto" } = {}) {
   return payload;
 }
 
+// SSE-consuming variant of transcribeAudioBlob: POSTs the audio to
+// /note/transcribe?stream=1, parses `data: {...}\n\n` frames as the backend
+// emits them, and calls appendVoiceTranscript for each decoded segment. This
+// makes text appear progressively (one segment at a time) as faster-whisper
+// decodes, instead of waiting for the whole blob to be transcribed.
+// Resolves {ok: true, transcript} on a successful `done` event, or
+// {ok: false} if no frames arrive within the first-byte timeout or the
+// server reports an error — the caller falls back to the non-streaming path.
+async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
+  const FIRST_FRAME_TIMEOUT_MS = 30_000;
+  const body = await blob.arrayBuffer();
+  const controller = new AbortController();
+  const firstFrameTimer = setTimeout(() => controller.abort(), FIRST_FRAME_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(`${serviceBaseUrl}/note/transcribe?stream=1&lang=${encodeURIComponent(lang || "auto")}`, {
+      method: "POST",
+      headers: { "Content-Type": blob.type || "audio/webm" },
+      body,
+      signal: controller.signal
+    });
+  } catch (err) {
+    clearTimeout(firstFrameTimer);
+    console.warn("[voice] stream transcribe fetch failed:", err);
+    return { ok: false };
+  }
+  if (!response.ok || !response.body) {
+    clearTimeout(firstFrameTimer);
+    return { ok: false };
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let assembled = "";
+  let finalTranscript = "";
+  let gotAnyFrame = false;
+  let sawError = false;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const dataLine = frame.split(/\r?\n/).find((line) => line.startsWith("data:"));
+        if (!dataLine) continue;
+        let event;
+        try { event = JSON.parse(dataLine.slice(5).trim()); }
+        catch { continue; }
+        if (!gotAnyFrame) {
+          gotAnyFrame = true;
+          clearTimeout(firstFrameTimer);
+        }
+        if (event.type === "segment" && event.text) {
+          assembled += (assembled ? "\n" : "") + event.text;
+          appendVoiceTranscript(event.text);
+          voiceStatus.textContent = "🎙 转写中…";
+        } else if (event.type === "done") {
+          finalTranscript = `${event.transcript ?? assembled}`.trim();
+        } else if (event.type === "error") {
+          console.warn("[voice] stream transcribe error frame:", event);
+          sawError = true;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[voice] stream transcribe reader aborted:", err);
+    return { ok: false };
+  } finally {
+    clearTimeout(firstFrameTimer);
+  }
+  if (!gotAnyFrame || sawError) return { ok: false };
+  return { ok: true, transcript: finalTranscript || assembled };
+}
+
 async function transcribeSysAudio() {
   if (noteSysAudioChunks.length === 0) return { transcript: "", reason: "no_audio", ok: true };
   try {
@@ -4218,7 +4452,7 @@ tabVoiceBtn?.addEventListener("click", () => {
     return;
   }
   setVoiceCardMode("voice");
-  if (!voiceMode) openVoicePanel({ autoStart: false });
+  if (!voiceMode) openVoicePanel({ autoStart: true });
 });
 
 tabNoteBtn?.addEventListener("click", () => {

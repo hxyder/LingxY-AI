@@ -908,19 +908,30 @@
       }
 
       .voice-card .voice-transcript {
-        min-height: 28px;
-        max-height: 140px;
+        min-height: 56px;
+        max-height: 180px;
         overflow-y: auto;
-        padding: 8px 14px;
-        margin: 4px auto 0;
-        max-width: 380px;
-        font-size: 14px;
-        line-height: 1.5;
+        padding: 12px 16px;
+        margin: 8px auto 0;
+        max-width: 420px;
+        font-size: 15px;
+        line-height: 1.55;
         color: var(--ink);
-        background: rgba(99, 102, 241, 0.06);
+        background: rgba(99, 102, 241, 0.08);
+        border: 1px solid rgba(99, 102, 241, 0.18);
         border-radius: 14px;
         word-break: break-word;
         scroll-behavior: smooth;
+        text-align: left;
+        transition: border-color 0.2s ease, background 0.2s ease;
+      }
+      .voice-card:not(.idle) .voice-transcript {
+        border-color: rgba(99, 102, 241, 0.42);
+        background: rgba(99, 102, 241, 0.12);
+      }
+      .voice-card .voice-transcript.placeholder {
+        color: var(--muted);
+        font-style: italic;
       }
 
       .voice-card .voice-hint {
@@ -1050,13 +1061,14 @@
         border-color: transparent;
       }
 
-      /* Note-specific elements — hidden in voice mode, shown in note mode */
-      .note-only { display: none; }
-      /* voice-only uses revert so flex/grid elements keep their natural display */
-      .voice-only { display: revert; }
-      .voice-card[data-mode="note"] .note-only { display: revert; }
+      /* Note-specific elements hide in voice mode, voice-specific elements
+         hide in note mode. Using :not([data-mode="note"]) (vs a plain
+         .note-only {display:none} rule) sidesteps a specificity war with the
+         individual .note-header / .note-channels / .note-transcript-box
+         display rules further down the stylesheet. */
+      .voice-card:not([data-mode="note"]) .note-only { display: none !important; }
       .voice-card[data-mode="note"] .voice-only { display: none !important; }
-      .voice-card[data-mode="note"] .wave-container { display: none; }
+      .voice-card[data-mode="note"] .wave-container { display: none !important; }
 
       .note-header {
         display: flex;
@@ -1621,7 +1633,7 @@
         <span class="wave-bar"></span>
         <span class="wave-bar"></span>
       </div>
-      <div id="voiceTranscript" class="voice-transcript voice-only">&nbsp;</div>
+      <div id="voiceTranscript" class="voice-transcript voice-only placeholder">实时识别的文字会显示在这里…</div>
       <div class="voice-hint voice-only">回车发送 · Esc 取消 · 自动停止后等待新指令</div>
       <select id="voiceLang" class="voice-only" style="margin-top:10px;padding:6px 10px;font-size:12px;border-radius:10px;border:1px solid var(--line);background:rgba(255,255,255,0.92);">
         <option value="zh-CN" selected>中文（普通话）</option>
