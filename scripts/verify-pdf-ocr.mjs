@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { deflateSync } from "node:zlib";
 import { submitFileTask } from "../src/service/core/file-submission.mjs";
 import { submitImageTask } from "../src/service/core/image-submission.mjs";
 import { submitScreenshotTask } from "../src/service/core/screenshot-submission.mjs";
@@ -16,12 +17,38 @@ const repoRoot = path.resolve(__dirname, "..");
 const runtimeDir = path.join(repoRoot, ".tmp", "verify-pdf-ocr");
 process.env.UCA_FORCE_BOOT_KIMI_RUNTIME = "1";
 const textPdf = path.join(runtimeDir, "sample-text-layer.pdf");
+const compressedTextPdf = path.join(runtimeDir, "sample-compressed-cmap.pdf");
 const scannedPdf = path.join(runtimeDir, "sample-scanned.pdf");
 const screenshotPath = path.join(runtimeDir, "capture.png");
 const mockCli = path.join(repoRoot, "tests", "fixtures", "mock-kimi-cli.mjs");
 
 await rm(runtimeDir, { recursive: true, force: true });
 await mkdir(runtimeDir, { recursive: true });
+
+function pdfBytes(text) {
+  return Buffer.from(text, "latin1");
+}
+
+function compressedStreamObject(id, body) {
+  const compressed = deflateSync(Buffer.from(body, "latin1"));
+  return Buffer.concat([
+    pdfBytes(`${id} 0 obj\n<< /Length ${compressed.length} /Filter /FlateDecode >>\nstream\n`),
+    compressed,
+    pdfBytes("\nendstream\nendobj\n")
+  ]);
+}
+
+const compressedPhrase = "Compressed Resume Body Text";
+const compressedPhraseHex = [...compressedPhrase]
+  .map((_, index) => (index + 1).toString(16).toUpperCase().padStart(4, "0"))
+  .join("");
+const compressedPhraseCMap = [...compressedPhrase]
+  .map((char, index) => {
+    const source = (index + 1).toString(16).toUpperCase().padStart(4, "0");
+    const target = char.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0");
+    return `<${source}> <${target}>`;
+  })
+  .join("\n");
 
 await writeFile(textPdf, `%PDF-1.4
 1 0 obj
@@ -47,6 +74,44 @@ trailer
 << /Root 1 0 R >>
 %%EOF`, "utf8");
 
+await writeFile(compressedTextPdf, Buffer.concat([
+  pdfBytes(`%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Count 1 /Kids [3 0 R] >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+`),
+  compressedStreamObject(4, `BT
+/F1 12 Tf
+72 120 Td
+<${compressedPhraseHex}> Tj
+ET
+`),
+  pdfBytes(`5 0 obj
+<< /Type /Font /Subtype /Type0 /BaseFont /SubsetFont /ToUnicode 6 0 R >>
+endobj
+`),
+  compressedStreamObject(6, `/CIDInit /ProcSet findresource begin
+12 dict begin
+begincmap
+${compressedPhrase.length} beginbfchar
+${compressedPhraseCMap}
+endbfchar
+endcmap
+CMapName currentdict /CMap defineresource pop
+end
+end
+`),
+  pdfBytes(`trailer
+<< /Root 1 0 R >>
+%%EOF`)
+]));
+
 await writeFile(scannedPdf, `%PDF-1.4
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
@@ -67,6 +132,11 @@ const textExtract = await extractFileContent(textPdf);
 assert.equal(textExtract.extraction_mode, "text_pdf");
 assert.equal(textExtract.page_count, 1);
 assert.match(textExtract.text, /Quarterly Revenue/);
+
+const compressedTextExtract = await extractFileContent(compressedTextPdf);
+assert.equal(compressedTextExtract.extraction_mode, "text_pdf");
+assert.equal(compressedTextExtract.page_count, 1);
+assert.match(compressedTextExtract.text, /Compressed Resume Body Text/);
 
 const scannedExtract = await extractFileContent(scannedPdf);
 assert.equal(["pdf_ocr", "pdf_ocr_unavailable"].includes(scannedExtract.extraction_mode), true);

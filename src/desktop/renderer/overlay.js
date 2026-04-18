@@ -3242,6 +3242,13 @@ function startVoiceRecognition() {
 
   const recognizer = ensureVoiceRecognizer();
   voiceStatus.textContent = "🎙 正在启动麦克风…";
+  if (!navigator.mediaDevices?.getUserMedia) {
+    voiceStatus.textContent = "当前环境无法访问麦克风接口。";
+    voiceCard?.classList.add("error");
+    voiceCard?.classList.remove("idle");
+    setVoiceRecording(false);
+    return;
+  }
   navigator.mediaDevices.getUserMedia({ audio: true })
     .then((stream) => {
       startVoiceLocalRecorder(stream);
@@ -3308,7 +3315,7 @@ voiceToggleBtn?.addEventListener("click", () => {
   if (voiceMode) {
     closeVoicePanel({ submit: false });
   } else {
-    openVoicePanel({ autoStart: true });
+    openVoicePanel({ autoStart: false });
   }
 });
 
@@ -3410,7 +3417,16 @@ if (voiceCard) {
   });
 }
 
-voiceStartBtn?.addEventListener("click", () => startVoiceRecognition());
+voiceStartBtn?.addEventListener("click", () => {
+  try {
+    startVoiceRecognition();
+  } catch (error) {
+    voiceStatus.textContent = `启动语音失败：${error?.message ?? error}`;
+    voiceCard?.classList.add("error");
+    voiceCard?.classList.remove("idle");
+    setVoiceRecording(false);
+  }
+});
 voiceStopBtn?.addEventListener("click", () => stopVoiceRecognition());
 voiceCancelBtn?.addEventListener("click", () => {
   if (voiceRecording) stopVoiceRecognition({ discard: true });

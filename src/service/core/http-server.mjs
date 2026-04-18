@@ -36,6 +36,8 @@ import { resolveProviderForTask } from "../executors/shared/provider-resolver.mj
 import { extractPageContent } from "../extractors/page_source/index.mjs";
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_LOCAL_WHISPER_MODEL = "base";
+const DEFAULT_LOCAL_WHISPER_BEAM_SIZE = "1";
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -199,14 +201,22 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
       "--language",
       normalizeLanguageHint(lang),
       "--model",
-      process.env.UCA_LOCAL_WHISPER_MODEL || "large-v3-turbo",
+      process.env.UCA_LOCAL_WHISPER_MODEL || DEFAULT_LOCAL_WHISPER_MODEL,
       "--device",
       process.env.UCA_LOCAL_WHISPER_DEVICE || "cpu",
       "--compute-type",
-      process.env.UCA_LOCAL_WHISPER_COMPUTE_TYPE || "int8"
+      process.env.UCA_LOCAL_WHISPER_COMPUTE_TYPE || "int8",
+      "--beam-size",
+      process.env.UCA_LOCAL_WHISPER_BEAM_SIZE || DEFAULT_LOCAL_WHISPER_BEAM_SIZE
     ], {
       timeout: Number(process.env.UCA_LOCAL_WHISPER_TIMEOUT_MS ?? 30 * 60_000),
-      maxBuffer: 1024 * 1024 * 8
+      maxBuffer: 1024 * 1024 * 8,
+      env: {
+        ...process.env,
+        PYTHONUTF8: "1",
+        PYTHONIOENCODING: "utf-8"
+      },
+      encoding: "utf8"
     });
     const stdoutText = stdout.trim();
     const jsonLine = stdoutText
@@ -221,7 +231,7 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
         id: "local-faster-whisper",
         kind: "local",
         name: "Local faster-whisper",
-        model: result.model ?? process.env.UCA_LOCAL_WHISPER_MODEL ?? "large-v3-turbo"
+        model: result.model ?? process.env.UCA_LOCAL_WHISPER_MODEL ?? DEFAULT_LOCAL_WHISPER_MODEL
       }
     };
   } catch (error) {

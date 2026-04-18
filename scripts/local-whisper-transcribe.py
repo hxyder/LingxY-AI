@@ -14,9 +14,16 @@ import os
 import sys
 import time
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 
 def emit(payload: dict) -> int:
-    print(json.dumps(payload, ensure_ascii=False))
+    # Keep stdout ASCII-only so Windows console code pages cannot mojibake
+    # non-English transcripts before Node parses the JSON.
+    print(json.dumps(payload, ensure_ascii=True))
     return 0
 
 
@@ -24,12 +31,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Transcribe audio locally with faster-whisper.")
     parser.add_argument("audio_path", help="Path to an audio file readable by PyAV/FFmpeg.")
     parser.add_argument("--language", default="auto", help="Language hint like en/zh, or auto.")
-    parser.add_argument("--model", default=os.environ.get("UCA_LOCAL_WHISPER_MODEL", "large-v3-turbo"))
+    parser.add_argument("--model", default=os.environ.get("UCA_LOCAL_WHISPER_MODEL", "base"))
     # Default to CPU so machines without CUDA DLLs still work reliably. Users
     # with a configured NVIDIA stack can opt in with UCA_LOCAL_WHISPER_DEVICE=cuda.
     parser.add_argument("--device", default=os.environ.get("UCA_LOCAL_WHISPER_DEVICE", "cpu"))
     parser.add_argument("--compute-type", default=os.environ.get("UCA_LOCAL_WHISPER_COMPUTE_TYPE", "int8"))
-    parser.add_argument("--beam-size", type=int, default=int(os.environ.get("UCA_LOCAL_WHISPER_BEAM_SIZE", "5")))
+    parser.add_argument("--beam-size", type=int, default=int(os.environ.get("UCA_LOCAL_WHISPER_BEAM_SIZE", "1")))
     args = parser.parse_args()
 
     try:
