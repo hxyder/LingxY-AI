@@ -880,6 +880,16 @@
       .wave-bar:nth-child(8) { animation-delay: 90ms;  }
       .wave-bar:nth-child(9) { animation-delay: 0ms;   }
 
+      /* When JS audio meter is active, it writes transform: scaleY(...) on
+         each bar directly. Suspend the CSS keyframe animation so the bars
+         respond to actual mic input instead of fighting a fixed-period
+         pulse. */
+      .voice-card.audio-reactive .wave-bar {
+        animation: none;
+        transform-origin: center;
+        transition: transform 60ms ease-out, opacity 120ms ease-out;
+      }
+
       .voice-card.idle .wave-bar {
         animation-play-state: paused;
         opacity: 0.35;

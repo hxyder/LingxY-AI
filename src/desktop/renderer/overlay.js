@@ -2703,18 +2703,17 @@ function enterVoiceMode() {
     voiceTranscript.textContent = "\u00a0";
     voiceTranscript.scrollTop = 0;
   }
-  const speechSupported = !!getSpeechRecognitionCtor();
-  if (!speechSupported) {
-    if (voiceStatus) voiceStatus.textContent = "当前环境不支持语音输入（Web Speech API 不可用）。请改用键盘输入，或切换到「录音笔记」。";
-    if (voiceStartBtn) voiceStartBtn.disabled = true;
-    if (voiceStopBtn) voiceStopBtn.disabled = true;
-    voiceCard?.classList.remove("idle");
-    voiceCard?.classList.add("error");
-  } else {
-    if (voiceStatus) voiceStatus.textContent = "点击「开始」后说话";
-    if (voiceStartBtn) voiceStartBtn.disabled = false;
-    if (voiceStopBtn) voiceStopBtn.disabled = false;
+  // Defensive reset — make sure a stale voiceRecording=true from a prior
+  // session doesn't make the Start button no-op the next time the panel
+  // opens. If there's no active stream/recorder, voiceRecording was wrong.
+  if (voiceRecording && !voiceMicStream && !voiceMediaRecorder) {
+    voiceRecording = false;
+    voiceLocalFallbackActive = false;
+    voiceManualStopPending = false;
   }
+  if (voiceStatus) voiceStatus.textContent = "点击「开始」后说话";
+  if (voiceStartBtn) voiceStartBtn.disabled = false;
+  if (voiceStopBtn) voiceStopBtn.disabled = false;
   cancelPopHide();
 }
 
@@ -2914,6 +2913,15 @@ let voiceLocalFallbackActive = false;
 let voiceRecognitionProducedText = false;
 let voiceManualStopPending = false;
 
+// Live audio-level meter — reads AnalyserNode frequency bins on every
+// requestAnimationFrame tick and maps the RMS to each wave-bar's scaleY.
+// Replaces the fixed-period CSS keyframe so the bars actually react to the
+// user's voice instead of pulsing at a constant rate.
+let voiceAudioContext = null;
+let voiceAnalyserNode = null;
+let voiceAnalyserRafId = null;
+let voiceWaveBarsCache = null;
+
 function getSpeechRecognitionCtor() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
@@ -2922,7 +2930,7 @@ function setVoiceRecording(active) {
   voiceRecording = active;
   if (active) {
     voiceCard?.classList.remove("idle", "error");
-    voiceStatus.textContent = "正在聆听...";
+    voiceStatus.textContent = "🎙 正在聆听...";
     voiceToggleBtn?.classList.add("recording");
     if (voiceStartBtn) voiceStartBtn.disabled = true;
     if (voiceStopBtn) voiceStopBtn.disabled = false;
@@ -2931,6 +2939,7 @@ function setVoiceRecording(active) {
     voiceToggleBtn?.classList.remove("recording");
     if (voiceStartBtn) voiceStartBtn.disabled = false;
     if (voiceStopBtn) voiceStopBtn.disabled = false;
+    stopVoiceAudioMeter();
   }
 }
 
@@ -2964,11 +2973,76 @@ function startVoiceLocalRecorder(stream) {
   } catch {
     voiceMediaRecorder = null;
   }
+  // Wire the same stream into an AudioContext analyser so the waveform bars
+  // react to actual mic volume. Purely cosmetic — failures silently fall back
+  // to the fixed CSS animation.
+  startVoiceAudioMeter(stream);
+}
+
+function startVoiceAudioMeter(stream) {
+  if (!stream || typeof AudioContext === "undefined") return;
+  try {
+    stopVoiceAudioMeter();
+    voiceAudioContext = new AudioContext();
+    const source = voiceAudioContext.createMediaStreamSource(stream);
+    voiceAnalyserNode = voiceAudioContext.createAnalyser();
+    voiceAnalyserNode.fftSize = 64; // 32 frequency bins — enough for 9 bars
+    voiceAnalyserNode.smoothingTimeConstant = 0.7;
+    source.connect(voiceAnalyserNode);
+    voiceCard?.classList.add("audio-reactive");
+
+    const bars = voiceWaveBarsCache ??= Array.from(voiceCard?.querySelectorAll(".wave-bar") ?? []);
+    const freqBuffer = new Uint8Array(voiceAnalyserNode.frequencyBinCount);
+
+    const tick = () => {
+      if (!voiceAnalyserNode) return;
+      voiceAnalyserNode.getByteFrequencyData(freqBuffer);
+      // Distribute bins across visible bars; middle bars get the loudest (mid
+      // voice frequency band).
+      const binCount = freqBuffer.length;
+      for (let i = 0; i < bars.length; i += 1) {
+        const bin = Math.floor((i / Math.max(1, bars.length - 1)) * (binCount - 1));
+        const amplitude = freqBuffer[bin] / 255; // 0..1
+        const scale = 0.4 + amplitude * 2.6; // matches @keyframes wave-pulse range
+        bars[i].style.transform = `scaleY(${scale.toFixed(3)})`;
+        bars[i].style.opacity = `${(0.55 + amplitude * 0.45).toFixed(3)}`;
+      }
+      voiceAnalyserRafId = requestAnimationFrame(tick);
+    };
+    voiceAnalyserRafId = requestAnimationFrame(tick);
+  } catch {
+    stopVoiceAudioMeter();
+  }
+}
+
+function stopVoiceAudioMeter() {
+  if (voiceAnalyserRafId != null) {
+    cancelAnimationFrame(voiceAnalyserRafId);
+    voiceAnalyserRafId = null;
+  }
+  if (voiceAnalyserNode) {
+    try { voiceAnalyserNode.disconnect(); } catch { /* ignore */ }
+    voiceAnalyserNode = null;
+  }
+  if (voiceAudioContext) {
+    try { voiceAudioContext.close(); } catch { /* ignore */ }
+    voiceAudioContext = null;
+  }
+  voiceCard?.classList.remove("audio-reactive");
+  // Reset any inline transforms written by the analyser so the CSS animation
+  // can take over again.
+  if (voiceWaveBarsCache) {
+    for (const bar of voiceWaveBarsCache) {
+      bar.style.transform = "";
+      bar.style.opacity = "";
+    }
+  }
 }
 
 function stopVoiceTracks() {
   voiceMicStream?.getTracks?.().forEach((track) => track.stop());
   voiceMicStream = null;
+  stopVoiceAudioMeter();
 }
 
 function stopVoiceLocalRecorder({ transcribe = false } = {}) {
@@ -2986,23 +3060,23 @@ function stopVoiceLocalRecorder({ transcribe = false } = {}) {
         return;
       }
       try {
-        voiceStatus.textContent = "正在本地转写语音...";
+        voiceStatus.textContent = "⏳ 正在转写...";
         const blob = new Blob(chunks, { type: "audio/webm" });
         const resp = await transcribeAudioBlob(blob, {
           lang: voiceLangSelect?.value || "auto"
         });
         const transcript = `${resp.transcript ?? ""}`.trim();
         if (resp.ok === false) {
-          voiceStatus.textContent = `本地转写失败：${resp.detail || resp.message || resp.reason || "unknown"}`;
+          voiceStatus.textContent = `转写失败：${resp.detail || resp.message || resp.reason || "unknown"}`;
           voiceCard?.classList.add("error");
           resolve({ ok: false, transcript: "" });
           return;
         }
         appendVoiceTranscript(transcript);
-        voiceStatus.textContent = transcript ? "本地转写完成 · 按 Enter 发送" : "没有检测到语音，请再试一次。";
+        voiceStatus.textContent = transcript ? "✓ 转写完成 · 按 Enter 发送" : "没有检测到语音，请再试一次。";
         resolve({ ok: true, transcript });
       } catch (error) {
-        voiceStatus.textContent = `本地转写失败：${error?.message ?? error}`;
+        voiceStatus.textContent = `转写失败：${error?.message ?? error}`;
         voiceCard?.classList.add("error");
         resolve({ ok: false, transcript: "" });
       }
@@ -3081,9 +3155,10 @@ function ensureVoiceRecognizer() {
     if (keepRecording) {
       voiceLocalFallbackActive = true;
       setVoiceRecording(true);
-      voiceStatus.textContent = code === "no-speech"
-        ? "暂未检测到语音，继续录音中；说完点停止转写。"
-        : "实时识别暂不可用，正在继续录音；说完后点停止转写。";
+      // Keep the status minimal — users don't need to know we've silently
+      // switched to local recording. They see the reactive waveform + timer
+      // which already says "we're listening".
+      voiceStatus.textContent = "🎙 正在聆听...";
       voiceCard?.classList.remove("error", "idle");
       return;
     }
@@ -3120,7 +3195,7 @@ function _doStartRecognizer(recognizer) {
     if (!message.includes("invalidstate") && voiceMediaRecorder) {
       voiceLocalFallbackActive = true;
       setVoiceRecording(true);
-      voiceStatus.textContent = "系统实时识别不可用，正在继续录音；说完后点停止转写。";
+      voiceStatus.textContent = "🎙 正在聆听...";
       voiceCard?.classList.remove("error", "idle");
       return;
     }
@@ -3137,7 +3212,7 @@ function _doStartRecognizer(recognizer) {
       if (voiceMediaRecorder) {
         voiceLocalFallbackActive = true;
         setVoiceRecording(true);
-        voiceStatus.textContent = "实时识别暂不可用，正在继续录音；说完后点停止转写。";
+        voiceStatus.textContent = "🎙 正在聆听...";
         voiceCard?.classList.remove("error", "idle");
         return;
       }
@@ -3153,37 +3228,30 @@ function _doStartRecognizer(recognizer) {
 // dialog by itself. We must call getUserMedia({audio:true}) first so that
 // Chromium/Electron asks Windows for permission, then start the recognizer.
 function startVoiceRecognition() {
-  const recognizer = ensureVoiceRecognizer();
-  if (!recognizer) {
-    if (voiceRecording) return;
-    voiceStatus.textContent = "正在启动本地录音...";
-    navigator.mediaDevices.getUserMedia({ audio: true })
-      .then((stream) => {
-        startVoiceLocalRecorder(stream);
-        voiceLocalFallbackActive = true;
-        setVoiceRecording(true);
-        voiceStatus.textContent = "本地录音中；说完后点停止转写。";
-      })
-      .catch((err) => {
-        const denied = err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError";
-        voiceStatus.textContent = denied
-          ? "麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。"
-          : `麦克风初始化失败：${err.message}`;
-        voiceCard?.classList.add("error");
-        voiceCard?.classList.remove("idle");
-        setVoiceRecording(false);
-      });
-    return;
+  // Guard against a stuck state where a previous run left voiceRecording
+  // true (e.g. the recorder stopped mid-transcription and setVoiceRecording
+  // never flipped back). The start button would just no-op silently in that
+  // case — very confusing. If we're NOT actually holding an active mic
+  // stream, treat `voiceRecording` as stale and reset.
+  if (voiceRecording && !voiceMicStream && !voiceMediaRecorder) {
+    voiceRecording = false;
+    voiceLocalFallbackActive = false;
+    voiceManualStopPending = false;
   }
   if (voiceRecording) return;
 
-  voiceStatus.textContent = "正在请求麦克风权限...";
+  const recognizer = ensureVoiceRecognizer();
+  voiceStatus.textContent = "🎙 正在启动麦克风…";
   navigator.mediaDevices.getUserMedia({ audio: true })
     .then((stream) => {
       startVoiceLocalRecorder(stream);
       setVoiceRecording(true);
-      voiceStatus.textContent = "正在聆听...（本地转写兜底已开启）";
-      _doStartRecognizer(recognizer);
+      voiceStatus.textContent = "🎙 正在聆听...";
+      if (recognizer) {
+        _doStartRecognizer(recognizer);
+      } else {
+        voiceLocalFallbackActive = true;
+      }
     })
     .catch((err) => {
       const denied = err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError";

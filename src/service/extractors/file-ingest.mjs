@@ -6,7 +6,12 @@ import { promisify } from "node:util";
 import { runImageOcr } from "./image_ocr.mjs";
 import { extractScannedPdfWithOcr } from "./pdf_ocr.mjs";
 import { extractPdfTablePreview } from "./pdf_table.mjs";
-import { extractTextPdf, hasUsablePdfTextLayer, countPdfPagesFromBuffer } from "./pdf_text.mjs";
+import {
+  extractTextPdf,
+  hasUsablePdfTextLayer,
+  countPdfPagesFromBuffer,
+  extractPdfTextViaPdftotext
+} from "./pdf_text.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -209,6 +214,27 @@ export async function extractFileContent(filePath) {
 
   if (mime === "application/pdf") {
     const bytes = await readFile(filePath);
+
+    // Probe poppler's pdftotext FIRST — it handles FlateDecode-compressed
+    // streams, font subsets, and ToUnicode CMaps that the naive Tj-regex
+    // can't. Only fall through to the regex / OCR path when poppler isn't
+    // installed or returns no meaningful content. This fixes the common
+    // "PDF 内部正文是压缩/二进制流，无法可靠还原正文" case for modern
+    // Word / Acrobat / Quartz PDF exports.
+    const popplerText = await extractPdfTextViaPdftotext(filePath);
+    const trimmedPoppler = popplerText?.replace(/\s+/g, " ").trim() ?? "";
+    if (trimmedPoppler.length >= 60) {
+      return {
+        path: filePath,
+        size: fileStat.size,
+        mime,
+        extraction_mode: "text_pdf_poppler",
+        text: popplerText,
+        page_count: countPdfPages(bytes),
+        table_preview: extractPdfTablePreview(popplerText)
+      };
+    }
+
     if (hasUsablePdfTextLayer(bytes)) {
       const extracted = await extractTextPdf(filePath);
       return {
