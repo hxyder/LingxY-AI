@@ -423,9 +423,9 @@ await writeConfig({
 
 {
   // (c) reasoningEffort on a non-Codex CLI is preserved in the runtime (server
-  //     accepts it) but the subprocess bridge won't inject the --reasoning-effort
-  //     flag. The bridge-level filter is tested via direct buildInvocationArgs
-  //     check — see code-cli-bridge's isCodexCommand guard.
+  //     accepts it) but the subprocess bridge won't inject Codex-specific
+  //     config. The bridge-level filter is tested via direct buildInvocationArgs
+  //     checks.
   await writeConfig({
     ai: {
       customProviders: [
@@ -442,10 +442,67 @@ await writeConfig({
   if (typeof __testBuildInvocationArgs === "function") {
     const kimiArgs = __testBuildInvocationArgs({ baseArgs: [], transport: "stream_json_print", command: "kimi.exe", reasoningEffort: "high" });
     assert.equal(kimiArgs.includes("--reasoning-effort"), false, "Kimi invocation must NOT receive --reasoning-effort flag");
+    assert.equal(kimiArgs.includes("-c"), false, "Kimi invocation must NOT receive Codex config overrides");
+    assert.equal(kimiArgs.includes("--mcp-config-file"), false, "Kimi invocation should only receive MCP files when configured");
+    const claudeArgs = __testBuildInvocationArgs({
+      baseArgs: [],
+      transport: "stream_json_print",
+      command: "claude.exe",
+      configFile: "claude-settings.json",
+      mcpConfigFiles: ["mcp.json"],
+      reasoningEffort: "high"
+    });
+    assert.equal(claudeArgs.includes("--print"), true, "Claude invocation must use print mode");
+    assert.equal(claudeArgs.includes("--mcp-config"), true, "Claude invocation must use --mcp-config");
+    assert.equal(claudeArgs.includes("--mcp-config-file"), false, "Claude invocation must not receive Kimi's --mcp-config-file");
+    assert.equal(claudeArgs.includes("--settings"), true, "Claude config files should map to --settings");
+    assert.equal(claudeArgs.includes("--reasoning-effort"), false, "Claude invocation must NOT receive Codex reasoning flags");
     const codexArgs = __testBuildInvocationArgs({ baseArgs: [], transport: "stream_json_print", command: "codex.exe", reasoningEffort: "high" });
-    assert.equal(codexArgs.includes("--reasoning-effort"), true, "Codex invocation MUST receive --reasoning-effort flag");
-    assert.equal(codexArgs[codexArgs.indexOf("--reasoning-effort") + 1], "high");
+    assert.equal(codexArgs[0], "exec", "Codex invocation must use `codex exec`");
+    assert.equal(codexArgs.includes("--json"), true, "Codex invocation must request JSONL output");
+    assert.equal(codexArgs.includes("--print"), false, "Codex invocation must not receive Kimi/Claude --print");
+    assert.equal(codexArgs.includes("--reasoning-effort"), false, "Codex CLI does not support --reasoning-effort on this install");
+    assert.equal(codexArgs.includes("-c"), true, "Codex invocation should carry reasoning effort through config override");
+    assert.equal(codexArgs[codexArgs.indexOf("-c") + 1], "model_reasoning_effort=\"high\"");
+    const codexXhighArgs = __testBuildInvocationArgs({ baseArgs: [], transport: "stream_json_print", command: "codex.exe", reasoningEffort: "extra_high" });
+    assert.equal(codexXhighArgs[codexXhighArgs.indexOf("-c") + 1], "model_reasoning_effort=\"xhigh\"");
+  }
+
+  const { __testBuildPrintInvocationArgs } = await import("../src/service/executors/kimi/kimi-cli-executor.mjs");
+  if (typeof __testBuildPrintInvocationArgs === "function") {
+    const codexFileArgs = __testBuildPrintInvocationArgs({
+      command: "codex.exe",
+      args: [],
+      reasoningEffort: "xhigh",
+      workDir: "C:\\Users\\der\\Desktop",
+      addDirs: ["C:\\Users\\der\\Documents"]
+    });
+    assert.equal(codexFileArgs[0], "exec", "Codex file executor must use `codex exec`");
+    assert.equal(codexFileArgs.includes("-w"), false, "Codex must not receive Kimi's -w worktree flag");
+    assert.equal(codexFileArgs.includes("-C"), true, "Codex should receive a working directory via -C");
+    assert.equal(codexFileArgs.includes("--add-dir"), true, "Codex should receive extra directories via --add-dir");
+    const claudeFileArgs = __testBuildPrintInvocationArgs({
+      command: "claude.exe",
+      args: [],
+      workDir: "C:\\Users\\der\\Desktop",
+      addDirs: ["C:\\Users\\der\\Documents"],
+      mcpConfigFiles: ["mcp.json"]
+    });
+    assert.equal(claudeFileArgs.includes("--print"), true, "Claude file executor must use print mode");
+    assert.equal(claudeFileArgs.includes("-w"), false, "Claude must not receive Kimi's -w/--work-dir flag because Claude treats -w as worktree");
+    assert.equal(claudeFileArgs.includes("--work-dir"), false, "Claude must not receive Kimi's --work-dir flag");
+    assert.equal(claudeFileArgs.includes("--mcp-config"), true, "Claude file executor should use --mcp-config");
+    assert.equal(claudeFileArgs.includes("--mcp-config-file"), false, "Claude file executor must not receive Kimi's MCP flag");
+    const kimiFileArgs = __testBuildPrintInvocationArgs({
+      command: "kimi.exe",
+      args: [],
+      workDir: "C:\\Users\\der\\Desktop",
+      addDirs: ["C:\\Users\\der\\Documents"],
+      mcpConfigFiles: ["mcp.json"]
+    });
+    assert.equal(kimiFileArgs.includes("-w"), true, "Kimi file executor should receive Kimi's -w work-dir flag");
+    assert.equal(kimiFileArgs.includes("--mcp-config-file"), true, "Kimi file executor should receive --mcp-config-file");
   }
 }
 
-console.log("Provider routing verification passed (DeepSeek / Kimi CLI / Claude / Ollama + hot-reload + resolveActiveProviderForTask + CLI-managed model + Codex reasoning-effort).");
+console.log("Provider routing verification passed (DeepSeek / Kimi CLI / Claude / Ollama + hot-reload + resolveActiveProviderForTask + CLI-managed model + Codex exec/reasoning).");

@@ -116,34 +116,86 @@ function pushFlagValue(args, flag, value) {
   args.push(flag, value);
 }
 
+function hasAnyFlag(args, ...flags) {
+  return args.some((arg) => flags.includes(arg));
+}
+
 // Detect whether the provided command path looks like Codex CLI. Reasoning
-// effort is a Codex-only flag — injecting `--reasoning-effort` into Claude
-// Code / Kimi / Gemini would make them reject the invocation.
+// effort is Codex-specific, and Codex has its own `exec --json` invocation
+// shape rather than Kimi/Claude-style `--print`.
 function isCodexCommand(command = "") {
   return /codex(\.exe)?$/i.test(`${command ?? ""}`);
+}
+
+function isKimiCommand(command = "") {
+  return /kimi(\.exe)?$/i.test(`${command ?? ""}`);
+}
+
+function isClaudeCommand(command = "") {
+  return /claude(\.exe)?$/i.test(`${command ?? ""}`);
+}
+
+function normalizeCodexReasoningEffort(value = "") {
+  const normalized = `${value ?? ""}`.trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "extra_high" || normalized === "extra-high") return "xhigh";
+  if (["low", "medium", "high", "xhigh"].includes(normalized)) return normalized;
+  return "";
+}
+
+function hasCodexSubcommand(args) {
+  const firstPositional = args.find((arg) => !String(arg).startsWith("-"));
+  return ["exec", "resume", "review", "help"].includes(`${firstPositional ?? ""}`);
+}
+
+function pushCodexConfig(args, key, value) {
+  if (!value) return;
+  const prefix = `${key}=`;
+  for (let index = 0; index < args.length; index += 1) {
+    if ((args[index] === "-c" || args[index] === "--config") && `${args[index + 1] ?? ""}`.startsWith(prefix)) {
+      return;
+    }
+  }
+  args.push("-c", `${key}="${value}"`);
+}
+
+function pushPrintFlags(args) {
+  if (!hasAnyFlag(args, "--print", "-p")) args.push("--print");
+  if (!args.includes("--output-format")) args.push("--output-format", "stream-json");
+  if (!args.includes("--input-format")) args.push("--input-format", "text");
 }
 
 function buildInvocationArgs({ baseArgs, transport, model, configFile = null, mcpConfigFiles = [], reasoningEffort = "", command = "" }) {
   const args = [...(Array.isArray(baseArgs) ? baseArgs : [])];
 
-  // Kimi CLI / Claude Code CLI / Codex CLI / Gemini CLI all support `--print`
-  // mode where they read prompt from stdin and emit a final response. The
-  // exact flag set differs slightly per CLI; we apply Kimi CLI's known-good
-  // shape when `transport === "stream_json_print"` and otherwise pass the
-  // user-provided args verbatim (advanced users can encode their CLI's
-  // flags directly in `provider.args`).
-  if (transport === "stream_json_print") {
-    if (!args.includes("--print")) args.push("--print");
-    if (!args.includes("--output-format")) args.push("--output-format", "stream-json");
-    if (!args.includes("--input-format")) args.push("--input-format", "text");
-    pushFlagValue(args, "--model", model);
-    pushFlagValue(args, "--config-file", configFile);
-    if (reasoningEffort && isCodexCommand(command) && !args.includes("--reasoning-effort")) {
-      args.push("--reasoning-effort", reasoningEffort);
+  // Codex CLI does not support the Kimi/Claude `--print --output-format`
+  // flags. Its non-interactive mode is `codex exec --json`, with prompt
+  // content read from stdin.
+  if (transport === "stream_json_print" && isCodexCommand(command)) {
+    if (!hasCodexSubcommand(args)) {
+      args.unshift("exec");
     }
-    for (const mcpConfigFile of mcpConfigFiles ?? []) {
-      if (mcpConfigFile) {
-        args.push("--mcp-config-file", mcpConfigFile);
+    if (!hasAnyFlag(args, "--json")) args.push("--json");
+    if (!hasAnyFlag(args, "--model", "-m")) pushFlagValue(args, "--model", model);
+    pushCodexConfig(args, "model_reasoning_effort", normalizeCodexReasoningEffort(reasoningEffort));
+    return args;
+  }
+
+  // Kimi CLI and Claude Code both support print+stream-json, but their
+  // config/MCP flags differ. Keep those families split so Kimi-only flags do
+  // not leak into Claude or other CLIs.
+  if (transport === "stream_json_print") {
+    pushPrintFlags(args);
+    pushFlagValue(args, "--model", model);
+    if (isKimiCommand(command)) {
+      pushFlagValue(args, "--config-file", configFile);
+      for (const mcpConfigFile of mcpConfigFiles ?? []) {
+        if (mcpConfigFile) args.push("--mcp-config-file", mcpConfigFile);
+      }
+    } else if (isClaudeCommand(command)) {
+      pushFlagValue(args, "--settings", configFile);
+      for (const mcpConfigFile of mcpConfigFiles ?? []) {
+        if (mcpConfigFile) args.push("--mcp-config", mcpConfigFile);
       }
     }
   }
@@ -322,35 +374,63 @@ export function extractAssistantText(stdout, transport = "stream_json_print") {
   if (!stdout) return "";
 
   if (transport === "stream_json_print") {
-    // Kimi CLI emits one JSON object per line, each containing a `role` and
-    // `content` field. The final assistant message is the most recent line
-    // with `role === "assistant"`.
     const lines = stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
     const transcript = [];
+    const plainLines = [];
     for (const line of lines) {
       try {
         transcript.push(JSON.parse(line));
       } catch {
-        // Lines that aren't JSON are kept as plain text — Kimi CLI sometimes
-        // mixes log lines into stdout.
+        plainLines.push(line);
       }
     }
     for (let i = transcript.length - 1; i >= 0; i -= 1) {
-      const msg = transcript[i];
-      if (msg?.role !== "assistant") continue;
-      const parts = Array.isArray(msg.content) ? msg.content : [];
-      const text = parts
-        .filter((part) => part?.type === "text" && typeof part.text === "string")
-        .map((part) => part.text)
-        .join("\n")
-        .trim();
+      const text = extractCliAssistantText(transcript[i]).trim();
       if (text) return text;
-      if (typeof msg.content === "string" && msg.content.trim()) return msg.content.trim();
     }
+    if (plainLines.length > 0) return plainLines.join("\n").trim();
     // No assistant turn parsed → fall through to plain-text fallback
   }
 
   return stdout.trim();
+}
+
+function extractContentText(content) {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(extractContentText).filter(Boolean).join("\n");
+  }
+  if (typeof content === "object") {
+    if (typeof content.text === "string") return content.text;
+    if (typeof content.output_text === "string") return content.output_text;
+    if (typeof content.message === "string") return content.message;
+    if (typeof content.content === "string") return content.content;
+    if (content.type === "text" || content.type === "output_text") {
+      return extractContentText(content.content ?? content.text ?? content.output_text);
+    }
+  }
+  return "";
+}
+
+function extractCliAssistantText(event) {
+  if (!event || typeof event !== "object") return "";
+  if (event.role === "assistant") {
+    return extractContentText(event.content ?? event.message ?? event.text);
+  }
+  if (event.item?.role === "assistant") {
+    return extractContentText(event.item.content ?? event.item.message ?? event.item.text);
+  }
+  if (event.message?.role === "assistant") {
+    return extractContentText(event.message.content ?? event.message.text);
+  }
+  if (event.type === "agent_message" || event.type === "assistant_message") {
+    return extractContentText(event.message ?? event.text ?? event.content);
+  }
+  if (event.type === "item.completed" || event.type === "response.output_item.done") {
+    return extractCliAssistantText(event.item ?? event.output ?? event.message);
+  }
+  return "";
 }
 
 /* JSON tool_call parser ---------------------------------------------------- */
@@ -478,6 +558,7 @@ export async function runCodeCliChat({ resolved, messages, signal, timeoutSecond
     model: resolved.model ?? null,
     configFile: resolved.configFile ?? null,
     mcpConfigFiles: resolved.mcpConfigFiles ?? [],
+    reasoningEffort: resolved.reasoningEffort ?? "",
     prompt,
     timeoutSeconds,
     abortSignal: signal

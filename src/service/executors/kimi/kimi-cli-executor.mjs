@@ -155,15 +155,155 @@ async function executeKimiJsonlTask({
 }
 
 function extractAssistantText(message) {
-  if (!message || message.role !== "assistant") {
-    return "";
+  return extractCliAssistantText(message).trim();
+}
+
+function extractContentText(content) {
+  if (!content) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map(extractContentText).filter(Boolean).join("\n");
   }
-  const parts = Array.isArray(message.content) ? message.content : [];
-  return parts
-    .filter((part) => part?.type === "text" && typeof part.text === "string")
-    .map((part) => part.text)
-    .join("\n")
-    .trim();
+  if (typeof content === "object") {
+    if (typeof content.text === "string") return content.text;
+    if (typeof content.output_text === "string") return content.output_text;
+    if (typeof content.message === "string") return content.message;
+    if (typeof content.content === "string") return content.content;
+    if (content.type === "text" || content.type === "output_text") {
+      return extractContentText(content.content ?? content.text ?? content.output_text);
+    }
+  }
+  return "";
+}
+
+function extractCliAssistantText(event) {
+  if (!event || typeof event !== "object") return "";
+  if (event.role === "assistant") {
+    return extractContentText(event.content ?? event.message ?? event.text);
+  }
+  if (event.item?.role === "assistant") {
+    return extractContentText(event.item.content ?? event.item.message ?? event.item.text);
+  }
+  if (event.message?.role === "assistant") {
+    return extractContentText(event.message.content ?? event.message.text);
+  }
+  if (event.type === "agent_message" || event.type === "assistant_message") {
+    return extractContentText(event.message ?? event.text ?? event.content);
+  }
+  if (event.type === "item.completed" || event.type === "response.output_item.done") {
+    return extractCliAssistantText(event.item ?? event.output ?? event.message);
+  }
+  return "";
+}
+
+function isCodexCommand(command = "") {
+  return /codex(\.exe)?$/i.test(`${command ?? ""}`);
+}
+
+function isKimiCommand(command = "") {
+  return /kimi(\.exe)?$/i.test(`${command ?? ""}`);
+}
+
+function isClaudeCommand(command = "") {
+  return /claude(\.exe)?$/i.test(`${command ?? ""}`);
+}
+
+function hasAnyFlag(args, ...flags) {
+  return args.some((arg) => flags.includes(arg));
+}
+
+function hasCodexSubcommand(args) {
+  const firstPositional = args.find((arg) => !String(arg).startsWith("-"));
+  return ["exec", "resume", "review", "help"].includes(`${firstPositional ?? ""}`);
+}
+
+function normalizeCodexReasoningEffort(value = "") {
+  const normalized = `${value ?? ""}`.trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "extra_high" || normalized === "extra-high") return "xhigh";
+  if (["low", "medium", "high", "xhigh"].includes(normalized)) return normalized;
+  return "";
+}
+
+function pushFlagValue(args, flag, value) {
+  if (!value || args.includes(flag)) return;
+  args.push(flag, value);
+}
+
+function pushCodexConfig(args, key, value) {
+  if (!value) return;
+  const prefix = `${key}=`;
+  for (let index = 0; index < args.length; index += 1) {
+    if ((args[index] === "-c" || args[index] === "--config") && `${args[index + 1] ?? ""}`.startsWith(prefix)) {
+      return;
+    }
+  }
+  args.push("-c", `${key}="${value}"`);
+}
+
+function pushPrintFlags(args) {
+  if (!hasAnyFlag(args, "--print", "-p")) args.push("--print");
+  if (!args.includes("--output-format")) args.push("--output-format", "stream-json");
+  if (!args.includes("--input-format")) args.push("--input-format", "text");
+}
+
+function buildPrintInvocationArgs({
+  command,
+  args = [],
+  model = null,
+  reasoningEffort = "",
+  configFile = null,
+  mcpConfigFiles = [],
+  workDir,
+  addDirs = []
+} = {}) {
+  const invocationArgs = [...args];
+
+  if (isCodexCommand(command)) {
+    if (!hasCodexSubcommand(invocationArgs)) {
+      invocationArgs.unshift("exec");
+    }
+    if (!hasAnyFlag(invocationArgs, "--json")) invocationArgs.push("--json");
+    if (!hasAnyFlag(invocationArgs, "-C", "--cd") && workDir) {
+      invocationArgs.push("-C", workDir);
+    }
+    if (!hasAnyFlag(invocationArgs, "--skip-git-repo-check")) {
+      invocationArgs.push("--skip-git-repo-check");
+    }
+    if (!hasAnyFlag(invocationArgs, "--model", "-m")) pushFlagValue(invocationArgs, "--model", model);
+    pushCodexConfig(invocationArgs, "model_reasoning_effort", normalizeCodexReasoningEffort(reasoningEffort));
+    for (const extraDir of addDirs) {
+      invocationArgs.push("--add-dir", extraDir);
+    }
+    return invocationArgs;
+  }
+
+  pushPrintFlags(invocationArgs);
+
+  if (isKimiCommand(command) && !hasAnyFlag(invocationArgs, "-w", "--work-dir") && workDir) {
+    invocationArgs.push("-w", workDir);
+  }
+
+  if (model && !hasAnyFlag(invocationArgs, "--model", "-m")) {
+    invocationArgs.push("--model", model);
+  }
+  if (configFile && isKimiCommand(command)) {
+    invocationArgs.push("--config-file", configFile);
+  } else if (configFile && isClaudeCommand(command)) {
+    invocationArgs.push("--settings", configFile);
+  }
+  for (const extraDir of addDirs) {
+    invocationArgs.push("--add-dir", extraDir);
+  }
+  for (const mcpConfigFile of mcpConfigFiles) {
+    if (isKimiCommand(command)) {
+      invocationArgs.push("--mcp-config-file", mcpConfigFile);
+    } else if (isClaudeCommand(command)) {
+      invocationArgs.push("--mcp-config", mcpConfigFile);
+    }
+  }
+
+  return invocationArgs;
 }
 
 async function executeKimiPrintModeTask({
@@ -187,34 +327,16 @@ async function executeKimiPrintModeTask({
   const stdoutPath = path.join(taskPackage.output_requirements.output_dir, "kimi.stdout.log");
   const stderrStream = createWriteStream(stderrPath, { flags: "a" });
   const stdoutStream = createWriteStream(stdoutPath, { flags: "a" });
-  const invocationArgs = [
-    ...args,
-    "--print",
-    "--output-format",
-    "stream-json",
-    "--input-format",
-    "text",
-    "-w",
-    workDir
-  ];
-
-  if (model) {
-    invocationArgs.push("--model", model);
-  }
-  if (configFile) {
-    invocationArgs.push("--config-file", configFile);
-  }
-  // Reasoning effort is Codex-specific — only emit it when the binary name
-  // identifies Codex, so Claude Code / Kimi don't receive an unknown flag.
-  if (reasoningEffort && /codex(\.exe)?$/i.test(`${command ?? ""}`) && !invocationArgs.includes("--reasoning-effort")) {
-    invocationArgs.push("--reasoning-effort", reasoningEffort);
-  }
-  for (const extraDir of addDirs) {
-    invocationArgs.push("--add-dir", extraDir);
-  }
-  for (const mcpConfigFile of mcpConfigFiles) {
-    invocationArgs.push("--mcp-config-file", mcpConfigFile);
-  }
+  const invocationArgs = buildPrintInvocationArgs({
+    command,
+    args,
+    model,
+    reasoningEffort,
+    configFile,
+    mcpConfigFiles,
+    workDir,
+    addDirs
+  });
 
   const child = spawn(command, invocationArgs, {
     env: {
@@ -222,7 +344,9 @@ async function executeKimiPrintModeTask({
       PYTHONIOENCODING: "utf-8",
       PYTHONUTF8: "1"
     },
-    stdio: ["pipe", "pipe", "pipe"]
+    stdio: ["pipe", "pipe", "pipe"],
+    cwd: workDir || process.cwd(),
+    windowsHide: true
   });
 
   child.stdin.setDefaultEncoding?.("utf8");
@@ -388,3 +512,5 @@ async function executeKimiPrintModeTask({
     stdoutPath
   };
 }
+
+export const __testBuildPrintInvocationArgs = buildPrintInvocationArgs;

@@ -208,7 +208,13 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
       timeout: Number(process.env.UCA_LOCAL_WHISPER_TIMEOUT_MS ?? 30 * 60_000),
       maxBuffer: 1024 * 1024 * 8
     });
-    const result = JSON.parse(stdout.trim() || "{}");
+    const stdoutText = stdout.trim();
+    const jsonLine = stdoutText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .reverse()
+      .find((line) => line.startsWith("{") && line.endsWith("}"));
+    const result = JSON.parse(jsonLine || stdoutText || "{}");
     return {
       ...result,
       provider: {
@@ -219,10 +225,15 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
       }
     };
   } catch (error) {
+    const details = [
+      error.message,
+      typeof error.stdout === "string" && error.stdout.trim() ? `stdout: ${error.stdout.trim().slice(-1000)}` : "",
+      typeof error.stderr === "string" && error.stderr.trim() ? `stderr: ${error.stderr.trim().slice(-1000)}` : ""
+    ].filter(Boolean).join("\n");
     return {
       ok: false,
       reason: "local_transcription_failed",
-      message: error.message
+      message: details
     };
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -418,6 +429,14 @@ async function readJsonBody(request) {
     return {};
   }
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+async function readRawBody(request) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 const RECENT_BROWSER_CONTEXT_LIMIT = 30;
@@ -1497,18 +1516,28 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       // providers (DeepSeek, most code CLI adapters, etc.) are intentionally
       // not used for audio transcription.
       if (method === "POST" && url.pathname === "/note/transcribe") {
-        const body = await readJsonBody(request);
-        const audioBase64 = String(body.audio ?? "").trim();
-        const mimeType = String(body.mimeType ?? "audio/webm").trim();
-        const lang = String(body.lang ?? "auto").trim();
+        const contentType = String(request.headers["content-type"] ?? "application/json").trim();
+        let audioBuffer = Buffer.alloc(0);
+        let mimeType = "audio/webm";
+        let lang = String(url.searchParams.get("lang") ?? "auto").trim();
 
-        if (!audioBase64) {
+        if (/^application\/json\b/i.test(contentType)) {
+          const body = await readJsonBody(request);
+          const audioBase64 = String(body.audio ?? "").trim();
+          mimeType = String(body.mimeType ?? "audio/webm").trim();
+          lang = String(body.lang ?? lang ?? "auto").trim();
+          audioBuffer = audioBase64 ? Buffer.from(audioBase64, "base64") : Buffer.alloc(0);
+        } else {
+          audioBuffer = await readRawBody(request);
+          mimeType = contentType.split(";")[0] || "audio/webm";
+        }
+
+        if (audioBuffer.length === 0) {
           return sendJson(response, 400, { ok: false, error: "missing_audio" });
         }
 
         const chatProvider = resolveProviderForTask("chat");
         const provider = resolveAudioTranscriptionProvider(runtime);
-        const audioBuffer = Buffer.from(audioBase64, "base64");
         if (!provider) {
           const localResult = await transcribeAudioLocally(audioBuffer, { mimeType, lang });
           if (localResult.ok) {

@@ -2783,6 +2783,12 @@ scheduleSaveBtn?.addEventListener("click", async () => {
 
 let voiceRecognizer = null;
 let voiceRecording = false;
+let voiceMicStream = null;
+let voiceMediaRecorder = null;
+let voiceAudioChunks = [];
+let voiceLocalFallbackActive = false;
+let voiceRecognitionProducedText = false;
+let voiceManualStopPending = false;
 
 function getSpeechRecognitionCtor() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -2802,6 +2808,90 @@ function setVoiceRecording(active) {
     if (voiceStartBtn) voiceStartBtn.disabled = false;
     if (voiceStopBtn) voiceStopBtn.disabled = false;
   }
+}
+
+function appendVoiceTranscript(text) {
+  const transcript = `${text ?? ""}`.trim();
+  if (!transcript) return;
+  const base = commandInput.value.trim();
+  commandInput.value = base ? `${base}\n${transcript}` : transcript;
+  autoSizeInput();
+  if (voiceTranscript) {
+    voiceTranscript.textContent = commandInput.value.trim() || "\u00a0";
+    voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
+  }
+}
+
+function startVoiceLocalRecorder(stream) {
+  voiceMicStream = stream;
+  voiceAudioChunks = [];
+  voiceLocalFallbackActive = false;
+  voiceRecognitionProducedText = false;
+  if (!stream || typeof MediaRecorder === "undefined") return;
+  const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus"
+    : "audio/webm";
+  try {
+    voiceMediaRecorder = new MediaRecorder(stream, { mimeType });
+    voiceMediaRecorder.addEventListener("dataavailable", (event) => {
+      if (event.data?.size > 0) voiceAudioChunks.push(event.data);
+    });
+    voiceMediaRecorder.start(1000);
+  } catch {
+    voiceMediaRecorder = null;
+  }
+}
+
+function stopVoiceTracks() {
+  voiceMicStream?.getTracks?.().forEach((track) => track.stop());
+  voiceMicStream = null;
+}
+
+function stopVoiceLocalRecorder({ transcribe = false } = {}) {
+  const recorder = voiceMediaRecorder;
+  voiceMediaRecorder = null;
+  voiceLocalFallbackActive = false;
+
+  return new Promise((resolve) => {
+    const finish = async () => {
+      stopVoiceTracks();
+      const chunks = voiceAudioChunks;
+      voiceAudioChunks = [];
+      if (!transcribe || chunks.length === 0) {
+        resolve({ ok: true, transcript: "" });
+        return;
+      }
+      try {
+        voiceStatus.textContent = "正在本地转写语音...";
+        const blob = new Blob(chunks, { type: "audio/webm" });
+        const resp = await transcribeAudioBlob(blob, {
+          lang: voiceLangSelect?.value || "auto"
+        });
+        const transcript = `${resp.transcript ?? ""}`.trim();
+        if (resp.ok === false) {
+          voiceStatus.textContent = `本地转写失败：${resp.detail || resp.message || resp.reason || "unknown"}`;
+          voiceCard?.classList.add("error");
+          resolve({ ok: false, transcript: "" });
+          return;
+        }
+        appendVoiceTranscript(transcript);
+        voiceStatus.textContent = transcript ? "本地转写完成 · 按 Enter 发送" : "没有检测到语音，请再试一次。";
+        resolve({ ok: true, transcript });
+      } catch (error) {
+        voiceStatus.textContent = `本地转写失败：${error?.message ?? error}`;
+        voiceCard?.classList.add("error");
+        resolve({ ok: false, transcript: "" });
+      }
+    };
+
+    if (!recorder || recorder.state === "inactive") {
+      void finish();
+      return;
+    }
+    recorder.addEventListener("stop", () => { void finish(); }, { once: true });
+    try { recorder.requestData(); } catch { /* ignore */ }
+    try { recorder.stop(); } catch { void finish(); }
+  });
 }
 
 function ensureVoiceRecognizer() {
@@ -2827,6 +2917,9 @@ function ensureVoiceRecognizer() {
     const merged = (commandInput.dataset.voiceBase ?? "") + finalText + interim;
     commandInput.value = merged;
     autoSizeInput();
+    if (finalText || interim) {
+      voiceRecognitionProducedText = true;
+    }
     // Mirror in the voice card transcript so the user sees what they're saying
     if (voiceTranscript) {
       voiceTranscript.textContent = merged.trim() || "\u00a0";
@@ -2841,6 +2934,10 @@ function ensureVoiceRecognizer() {
   });
 
   recognizer.addEventListener("end", () => {
+    if (voiceLocalFallbackActive || voiceManualStopPending) {
+      return;
+    }
+    void stopVoiceLocalRecorder({ transcribe: false });
     setVoiceRecording(false);
     if (!voiceStatus.textContent || voiceStatus.textContent.startsWith("正在聆听")) {
       voiceStatus.textContent = "已停止。可以再次开始或按 Enter 发送。";
@@ -2850,8 +2947,16 @@ function ensureVoiceRecognizer() {
   });
 
   recognizer.addEventListener("error", (event) => {
-    setVoiceRecording(false);
     const code = event.error ?? "unknown";
+    if (code === "network" && voiceMediaRecorder) {
+      voiceLocalFallbackActive = true;
+      setVoiceRecording(true);
+      voiceStatus.textContent = "联网识别不可用，已切到本地录音；说完后点停止。";
+      voiceCard?.classList.remove("error", "idle");
+      return;
+    }
+    void stopVoiceLocalRecorder({ transcribe: false });
+    setVoiceRecording(false);
     const friendly = {
       "not-allowed": "麦克风权限被拒绝。请重启 UCA 桌面端，并在系统设置中允许麦克风访问。",
       "service-not-allowed": "操作系统拒绝了语音识别服务。请检查系统设置 → 隐私 → 语音识别。",
@@ -2880,6 +2985,13 @@ function _doStartRecognizer(recognizer) {
     voiceStatus.textContent = "正在聆听...";
   } catch (error) {
     const message = (error?.message ?? "").toLowerCase();
+    if (!message.includes("invalidstate") && voiceMediaRecorder) {
+      voiceLocalFallbackActive = true;
+      setVoiceRecording(true);
+      voiceStatus.textContent = "系统语音识别不可用，已切到本地录音；说完后点停止。";
+      voiceCard?.classList.remove("error", "idle");
+      return;
+    }
     if (message.includes("not-allowed") || message.includes("notallowederror")) {
       voiceStatus.textContent = "麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。";
       voiceCard?.classList.add("error");
@@ -2890,6 +3002,13 @@ function _doStartRecognizer(recognizer) {
       voiceStatus.textContent = "正在聆听...";
       return;
     } else {
+      if (voiceMediaRecorder) {
+        voiceLocalFallbackActive = true;
+        setVoiceRecording(true);
+        voiceStatus.textContent = "联网识别不可用，已切到本地录音；说完后点停止。";
+        voiceCard?.classList.remove("error", "idle");
+        return;
+      }
       voiceStatus.textContent = `无法启动识别：${error.message}`;
       voiceCard?.classList.add("error");
       voiceCard?.classList.remove("idle");
@@ -2904,7 +3023,24 @@ function _doStartRecognizer(recognizer) {
 function startVoiceRecognition() {
   const recognizer = ensureVoiceRecognizer();
   if (!recognizer) {
-    voiceStatus.textContent = "当前 Electron/Chromium 不支持 Web Speech API。请改用键盘输入。";
+    if (voiceRecording) return;
+    voiceStatus.textContent = "当前 Electron 不支持实时语音识别，正在启动本地录音...";
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then((stream) => {
+        startVoiceLocalRecorder(stream);
+        voiceLocalFallbackActive = true;
+        setVoiceRecording(true);
+        voiceStatus.textContent = "本地录音中；说完后点停止，UCA 会本地转写。";
+      })
+      .catch((err) => {
+        const denied = err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError";
+        voiceStatus.textContent = denied
+          ? "麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。"
+          : `麦克风初始化失败：${err.message}`;
+        voiceCard?.classList.add("error");
+        voiceCard?.classList.remove("idle");
+        setVoiceRecording(false);
+      });
     return;
   }
   if (voiceRecording) return;
@@ -2912,8 +3048,9 @@ function startVoiceRecognition() {
   voiceStatus.textContent = "正在请求麦克风权限...";
   navigator.mediaDevices.getUserMedia({ audio: true })
     .then((stream) => {
-      // Permission granted — release the test stream and start recognition
-      stream.getTracks().forEach((t) => t.stop());
+      startVoiceLocalRecorder(stream);
+      setVoiceRecording(true);
+      voiceStatus.textContent = "正在聆听...（本地转写兜底已开启）";
       _doStartRecognizer(recognizer);
     })
     .catch((err) => {
@@ -2927,10 +3064,22 @@ function startVoiceRecognition() {
     });
 }
 
-function stopVoiceRecognition() {
+function stopVoiceRecognition({ discard = false } = {}) {
+  const shouldTranscribe = !discard && (voiceLocalFallbackActive || !voiceRecognitionProducedText);
+  voiceManualStopPending = true;
+  if (voiceLocalFallbackActive || shouldTranscribe) {
+    setVoiceRecording(false);
+    void stopVoiceLocalRecorder({ transcribe: shouldTranscribe }).finally(() => {
+      voiceManualStopPending = false;
+    });
+    return;
+  }
   if (voiceRecognizer && voiceRecording) {
     try { voiceRecognizer.stop(); } catch { /* ignore */ }
   }
+  void stopVoiceLocalRecorder({ transcribe: false }).finally(() => {
+    voiceManualStopPending = false;
+  });
   setVoiceRecording(false);
 }
 
@@ -3064,7 +3213,7 @@ if (voiceCard) {
 voiceStartBtn?.addEventListener("click", () => startVoiceRecognition());
 voiceStopBtn?.addEventListener("click", () => stopVoiceRecognition());
 voiceCancelBtn?.addEventListener("click", () => {
-  if (voiceRecording) stopVoiceRecognition();
+  if (voiceRecording) stopVoiceRecognition({ discard: true });
   commandInput.value = commandInput.dataset.voiceBase ?? "";
   delete commandInput.dataset.voiceBase;
   exitVoiceMode();
@@ -3084,7 +3233,7 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     closeVoicePanel({ submit: true });
   } else if (event.key === "Escape") {
-    if (voiceRecording) stopVoiceRecognition();
+    if (voiceRecording) stopVoiceRecognition({ discard: true });
     commandInput.value = commandInput.dataset.voiceBase ?? "";
     delete commandInput.dataset.voiceBase;
     exitVoiceMode();
@@ -3101,6 +3250,9 @@ let noteTimerInterval = null;
 let noteSessionId = 0;
 let noteTranscripts = []; // {time, text}[]
 let noteMicRecognizer = null;
+let noteMicMediaRecorder = null;
+let noteMicAudioChunks = [];
+let noteMicStream = null;
 let noteMediaRecorder = null;
 let noteSysAudioChunks = [];
 let noteSysStream = null;
@@ -3289,21 +3441,48 @@ function appendNoteTranscript(text) {
 
 function startNoteMicCapture(sessionId = noteSessionId) {
   const Ctor = getSpeechRecognitionCtor();
-  if (!Ctor) return;
 
-  // Pre-warm: getUserMedia ensures Windows grants mic permission before
-  // the Speech API tries to access it.
+  // Always keep a local mic recording. Web Speech gives live transcript when
+  // available, but Electron/Chromium can report network errors even while
+  // getUserMedia works. The local recording is the reliable fallback.
   navigator.mediaDevices.getUserMedia({ audio: true })
     .then((stream) => {
-      stream.getTracks().forEach((t) => t.stop());
-      if (!noteActive || sessionId !== noteSessionId) return;
-      _launchNoteMicRecognizer(Ctor, sessionId);
+      if (!noteActive || sessionId !== noteSessionId) {
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      startNoteMicRecorder(stream);
+      if (Ctor) {
+        _launchNoteMicRecognizer(Ctor, sessionId);
+      }
     })
     .catch(() => {
       if (!noteActive || sessionId !== noteSessionId) return;
       // Mic denied — note still runs, just no mic transcript
       noteMicTag?.classList.add("unavailable");
     });
+}
+
+function startNoteMicRecorder(stream) {
+  noteMicStream = stream;
+  noteMicAudioChunks = [];
+  if (typeof MediaRecorder === "undefined") return;
+  const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+    ? "audio/webm;codecs=opus"
+    : "audio/webm";
+  try {
+    noteMicMediaRecorder = new MediaRecorder(stream, { mimeType });
+    noteMicMediaRecorder.addEventListener("dataavailable", (event) => {
+      if (event.data?.size > 0) {
+        noteMicAudioChunks.push(event.data);
+        publishNoteRecordingState({ active: true, hasMicTranscript: noteTranscripts.length > 0 });
+      }
+    });
+    noteMicMediaRecorder.start(4000);
+    noteMicTag?.classList.add("active");
+  } catch {
+    noteMicMediaRecorder = null;
+  }
 }
 
 function _launchNoteMicRecognizer(Ctor, sessionId = noteSessionId) {
@@ -3436,6 +3615,7 @@ async function enterNoteMode() {
 
   // Reset state
   noteTranscripts = [];
+  noteMicAudioChunks = [];
   noteSysAudioChunks = [];
   noteSourceContext = null;
   noteSourceContextPromise = Promise.resolve(null);
@@ -3502,6 +3682,18 @@ function waitForRecorderStop(recorder) {
   });
 }
 
+function stopNoteMicRecorder() {
+  const recorder = noteMicMediaRecorder;
+  noteMicMediaRecorder = null;
+  const micStream = noteMicStream;
+  noteMicStream = null;
+
+  const stopped = waitForRecorderStop(recorder).finally(() => {
+    micStream?.getTracks().forEach((track) => track.stop());
+  });
+  return stopped;
+}
+
 function waitForRecognizerStop(recognizer, { discardMic = true } = {}) {
   if (!recognizer) return Promise.resolve();
 
@@ -3531,6 +3723,7 @@ function stopNoteCapture({ discardMic = true } = {}) {
   const recognizer = noteMicRecognizer;
   noteMicRecognizer = null;
   noteMicStopPromise = waitForRecognizerStop(recognizer, { discardMic });
+  const micRecorderStopPromise = stopNoteMicRecorder();
   // Stop system audio recorder
   const recorder = noteMediaRecorder;
   noteMediaRecorder = null;
@@ -3544,7 +3737,7 @@ function stopNoteCapture({ discardMic = true } = {}) {
   clearInterval(noteTimerInterval);
   noteTimerInterval = null;
   if (noteTimer) noteTimer.classList.remove("recording");
-  return Promise.all([noteMicStopPromise, noteRecorderStopPromise]);
+  return Promise.all([noteMicStopPromise, micRecorderStopPromise, noteRecorderStopPromise]);
 }
 
 function exitNoteMode(options = {}) {
@@ -3558,25 +3751,27 @@ function exitNoteMode(options = {}) {
   return stopped;
 }
 
+async function transcribeAudioBlob(blob, { lang = "auto" } = {}) {
+  const response = await fetch(`${serviceBaseUrl}/note/transcribe?lang=${encodeURIComponent(lang || "auto")}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": blob.type || "audio/webm"
+    },
+    body: blob
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.message ?? payload.error ?? "/note/transcribe");
+  }
+  return payload;
+}
+
 async function transcribeSysAudio() {
   if (noteSysAudioChunks.length === 0) return { transcript: "", reason: "no_audio", ok: true };
   try {
     const blob = new Blob(noteSysAudioChunks, { type: "audio/webm" });
-    // Convert to base64 so we can POST as JSON (no multipart dependency on server)
-    const arrayBuffer = await blob.arrayBuffer();
-    const bytes = new Uint8Array(arrayBuffer);
-    let binary = "";
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    const base64 = btoa(binary);
-
-    const resp = await fetchJson("/note/transcribe", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        audio: base64,
-        mimeType: "audio/webm",
-        lang: getNoteLanguageSelection()
-      })
+    const resp = await transcribeAudioBlob(blob, {
+      lang: getNoteLanguageSelection()
     });
     return {
       transcript: resp.transcript ?? "",
@@ -3587,8 +3782,13 @@ async function transcribeSysAudio() {
       activeProvider: resp.activeProvider ?? null,
       provider: resp.provider ?? null
     };
-  } catch {
-    return { transcript: "", reason: "request_failed", ok: false };
+  } catch (error) {
+    return {
+      transcript: "",
+      reason: "request_failed",
+      ok: false,
+      detail: error?.message ?? ""
+    };
   }
 }
 
@@ -3718,8 +3918,33 @@ async function finishNote() {
   await noteRecorderStopPromise;
   publishNoteRecordingState({ active: false, elapsedMs: 0, elapsed: "00:00" });
 
-  // Build mic transcript
-  const micLines = noteTranscripts.map((t) => `[${t.time}] ${t.text}`).join("\n");
+  // Build mic transcript. Prefer live Web Speech text when it exists; if
+  // Electron's recognition service failed, transcribe the local mic recording.
+  let micLines = noteTranscripts.map((t) => `[${t.time}] ${t.text}`).join("\n");
+  let micReason = null;
+  let micDetail = "";
+  if (!micLines.trim() && noteMicAudioChunks.length > 0) {
+    try {
+      addSystemBubble("正在本地转录输入音频（麦克风），请稍候...");
+      const micBlob = new Blob(noteMicAudioChunks, { type: "audio/webm" });
+      const micResult = await transcribeAudioBlob(micBlob, {
+        lang: getNoteLanguageSelection()
+      });
+      const micText = `${micResult.transcript ?? ""}`.trim();
+      if (micResult.ok === false) {
+        micReason = micResult.reason ?? "mic_transcription_failed";
+        micDetail = micResult.detail || micResult.message || "";
+      } else if (micText) {
+        micLines = `[00:00] ${micText}`;
+        appendNoteTranscript(micText);
+      }
+    } catch (error) {
+      micReason = "mic_transcription_failed";
+      micDetail = error?.message ?? "";
+    } finally {
+      noteMicAudioChunks = [];
+    }
+  }
 
   // Optionally transcribe system audio
   let sysLines = "";
@@ -3738,7 +3963,10 @@ async function finishNote() {
     ?? await timeoutWithFallback(sourceContextPromise, 1200, null);
 
   if (!micLines.trim() && !sysLines.trim()) {
-    if (noteSysAudioChunks.length > 0 && sysReason === "no_api_provider") {
+    if (micReason) {
+      const detail = micDetail ? `\n原因：${micDetail.slice(0, 180)}` : "";
+      addSystemBubble(`已录到输入音频（麦克风），但本地转写失败。${detail}`);
+    } else if (noteSysAudioChunks.length > 0 && sysReason === "no_api_provider") {
       addSystemBubble("已录到输出音频（系统音频），但当前模型提供方不支持音频转写；请配置 OpenAI 音频转写 Key，或打开输入音频（麦克风）实时转写后再完成笔记。");
     } else if (noteSysAudioChunks.length > 0 && sysReason === "audio_provider_unsupported") {
       addSystemBubble("已录到输出音频（系统音频），但当前聊天模型不支持音频转写。你的 YouTube/网页音频捕获是成功的；请配置 OpenAI 音频转写 Key（UCA_TRANSCRIPTION_API_KEY 或 OPENAI_API_KEY），聊天仍可继续使用 DeepSeek。");

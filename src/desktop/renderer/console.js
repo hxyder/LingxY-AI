@@ -870,7 +870,8 @@ let taskRouting = {};
 const TASK_TYPES = [
   { id: "chat", label: "Chat / Q&A", desc: "General conversation, summarize, translate, explain" },
   { id: "vision", label: "Vision / Image", desc: "Image analysis, screenshot understanding" },
-  { id: "file_analysis", label: "File Analysis", desc: "Deep file processing, report generation (uses Kimi CLI by default)" }
+  { id: "file_analysis", label: "File Analysis", desc: "Deep file processing, report generation (uses Kimi CLI by default)" },
+  { id: "audio_transcription", label: "Audio Transcription", desc: "Speech-to-text for recording notes and system audio" }
 ];
 
 const PRESET_MODELS = {
@@ -1062,6 +1063,9 @@ function providerModelPresets(provider, taskType = "chat") {
   }
 
   if (provider.kind === "openai") {
+    if (taskType === "audio_transcription") {
+      return uniqueNonEmpty(["whisper-1", preferred]);
+    }
     if (/deepseek/.test(fp)) {
       return uniqueNonEmpty([preferred, "deepseek-chat", "deepseek-reasoner"]);
     }
@@ -1103,6 +1107,7 @@ function providerModelPresets(provider, taskType = "chat") {
     }
     return uniqueNonEmpty([
       preferred,
+      taskType === "audio_transcription" ? "whisper-1" : "",
       taskType === "vision" ? "gpt-4o" : "",
       ...PRESET_MODELS.openai
     ]);
@@ -1150,7 +1155,8 @@ function modeOptionsForModel(provider, model = "") {
     return [
       { id: "balanced", label: "Balanced", model: "gpt-4o" },
       { id: "fast", label: "Fast", model: "gpt-4o-mini" },
-      { id: "latest", label: "Latest", model: "gpt-5" }
+      { id: "latest", label: "Latest", model: "gpt-5" },
+      { id: "transcribe", label: "Transcribe", model: "whisper-1" }
     ];
   }
 
@@ -1169,6 +1175,7 @@ function defaultModelForProvider(provider, taskType = "chat") {
   // For code_cli we default to "(CLI-managed)" which is the empty string —
   // that's intentional: it means "don't pass --model, let the CLI decide".
   if (provider?.kind === "code_cli") return "";
+  if (provider?.kind === "openai" && taskType === "audio_transcription") return "whisper-1";
   return providerModelPresets(provider, taskType)[0] ?? "";
 }
 
@@ -1185,7 +1192,7 @@ function reasoningEffortOptions(provider) {
     { id: "low", label: "Low (快速)" },
     { id: "medium", label: "Medium" },
     { id: "high", label: "High (深思)" },
-    { id: "extra_high", label: "Extra High (最深)" }
+    { id: "xhigh", label: "Extra High (最深)" }
   ];
 }
 
@@ -1319,7 +1326,7 @@ function renderTaskRouting() {
     // would otherwise be for non-Codex CLIs, so the grid keeps 3 columns.
     const reasoningOpts = reasoningEffortOptions(selectedProvider);
     const showReasoning = reasoningOpts.length > 0;
-    const reasoningValue = route.reasoningEffort ?? "";
+    const reasoningValue = route.reasoningEffort === "extra_high" ? "xhigh" : (route.reasoningEffort ?? "");
     const reasoningOptionsHtml = reasoningOpts.map((opt) =>
       `<option value="${escapeHtml(opt.id)}" ${opt.id === reasoningValue ? "selected" : ""}>${escapeHtml(opt.label)}</option>`
     ).join("");
@@ -1447,7 +1454,7 @@ function renderProviderQuickTemplates() {
       if (nameEl && !nameEl.value.trim()) nameEl.value = tpl.label;
       if (kindEl) kindEl.value = tpl.kind;
       if (baseUrlEl) baseUrlEl.value = tpl.baseUrl;
-      if (defaultModelEl && !defaultModelEl.value.trim()) defaultModelEl.value = tpl.defaultModel;
+      if (defaultModelEl) defaultModelEl.value = tpl.defaultModel;
       toggleProviderFieldsByKind(tpl.kind);
       // Nudge the API-key input so user knows that's their next step.
       document.getElementById("provApiKey")?.focus();

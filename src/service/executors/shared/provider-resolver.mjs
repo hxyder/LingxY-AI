@@ -55,6 +55,14 @@ function providerFingerprint(provider = {}) {
   ].map((part) => `${part ?? ""}`.toLowerCase()).join(" ");
 }
 
+function normalizeReasoningEffort(value = "") {
+  const normalized = `${value ?? ""}`.trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "extra_high" || normalized === "extra-high") return "xhigh";
+  if (["low", "medium", "high", "xhigh"].includes(normalized)) return normalized;
+  return "";
+}
+
 export function resolveRoutedModel(provider, route, taskType) {
   const baseModel = route?.model || provider.defaultModel || getDefaultModelForKind(provider.kind, taskType);
   const mode = route?.mode ?? "";
@@ -94,9 +102,7 @@ export function resolveRoutedModel(provider, route, taskType) {
 function providerToResolved(provider, route, taskType) {
   if (provider.kind === "code_cli") {
     if (!provider.command) return null;
-    const reasoningEffort = typeof route?.reasoningEffort === "string" && route.reasoningEffort.trim()
-      ? route.reasoningEffort.trim()
-      : "";
+    const reasoningEffort = normalizeReasoningEffort(route?.reasoningEffort);
     return {
       id: "code_cli",
       configId: provider.id ?? null,
@@ -129,7 +135,7 @@ function providerToResolved(provider, route, taskType) {
 
 /**
  * Resolve provider for a task type.
- * @param {"chat"|"vision"|"file_analysis"} taskType
+ * @param {"chat"|"vision"|"file_analysis"|"audio_transcription"} taskType
  * @returns provider config or null
  */
 export function resolveProviderForTask(taskType, env = process.env) {
