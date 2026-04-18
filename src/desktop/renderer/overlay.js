@@ -93,6 +93,18 @@ let activeTaskEventStream = null;
 let activeTaskEventTaskId = null;
 let activeTaskEventBaseUrl = null;
 let handledTaskEventIds = new Set();
+// Map every submitted task_id back to the conversation that owns it so task
+// events route to the originating conversation's state even when the user
+// has switched away. Without this, an async task's result lands in whichever
+// conversation is visible when the SSE event arrives — which is the bug
+// behind "两个任务跑完只剩一个结果，还跑到别的对话里".
+const taskConversationMap = new Map(); // taskId -> conversationId
+// Per-task SSE stream bookkeeping so multiple background tasks can stream
+// concurrently. The old single activeTaskEventStream is still used for the
+// conversation the user is currently looking at; we add silent streams for
+// tasks belonging to other conversations so their results still land in the
+// right place even if the user never switches back before completion.
+const backgroundTaskStreams = new Map(); // taskId -> dispose function
 let renderedTimelineEventIds = new Set();
 let streamingBubble = null;
 let streamingBubbleRawText = "";
@@ -112,9 +124,8 @@ function escapeHtml(value) {
 }
 
 /* ── conversational state ── */
-let conversationPhase = "idle"; // idle | awaiting_options | running | done
+let conversationPhase = "idle"; // idle | awaiting_options | done
 let awaitingOptionType = null;  // "action" | "format" | null
-let runningPhaseStart = 0;      // timestamp when phase entered "running"
 
 /* ── conversation state (unified memory) ──
  * A single ongoing conversation with:
@@ -339,13 +350,26 @@ function saveProjectStore() {
 function switchConversation(convId) {
   const conv = projectStore?.conversations?.find((c) => c.id === convId);
   if (!conv) return;
+
+  // Demote the outgoing conversation's live SSE stream to a silent background
+  // stream so its task events (inline_result, success, etc.) still flow and
+  // land in that conversation's turns list — even though the user is no
+  // longer looking at it. Without this, switching away from a running task
+  // drops every event after the switch point.
+  demoteActiveStreamToBackground();
+
   conversationState = conv;
   projectStore.currentConversationId = convId;
   projectStore.currentProjectId = conv.projectId;
   saveProjectStore();
-  closeActiveTaskEventStream();
-  activeTaskId = null; lastTask = null; notifiedTaskId = null; notifiedInlineResultTaskId = null;
+  activeTaskId = conv.activeTaskId ?? null;
+  lastTask = null; notifiedTaskId = null; notifiedInlineResultTaskId = null;
   lastArtifactPath = null; lastArtifactPreview = ""; lastArtifacts = [];
+  // If the conversation we're opening has a still-running task, reattach the
+  // active stream so the user sees real-time updates again.
+  if (activeTaskId) {
+    ensureActiveTaskEventStream(activeTaskId);
+  }
   renderConversationState();
 }
 
@@ -420,6 +444,46 @@ function appendTurn(role, content) {
     conversationState.title = content.slice(0, 30).trim() || "新会话";
   }
   compressIfNeeded();
+  persistConversation();
+}
+
+// Route an assistant turn to whichever conversation owns this task — not
+// necessarily the one currently visible. The visible conversation gets a
+// bubble as a side effect; other conversations only get their turns list
+// mutated (users see the reply when they switch back).
+function appendTurnForTask(taskId, role, content) {
+  if (!content || typeof content !== "string") return;
+  const ownerConvId = taskId ? taskConversationMap.get(taskId) : null;
+  if (!ownerConvId || !projectStore) {
+    // Unknown owner — fall back to current conversation semantics.
+    appendTurn(role, content);
+    return;
+  }
+  if (ownerConvId === conversationState?.id) {
+    appendTurn(role, content);
+    return;
+  }
+  const owner = projectStore.conversations.find((c) => c.id === ownerConvId);
+  if (!owner) {
+    appendTurn(role, content);
+    return;
+  }
+  owner.turns = Array.isArray(owner.turns) ? owner.turns : [];
+  owner.turns.push({ role, content, ts: Date.now() });
+  owner.updatedAt = Date.now();
+  if (!owner.title && role === "user") {
+    owner.title = content.slice(0, 30).trim() || "新会话";
+  }
+  saveProjectStore();
+  persistProjectStoreToService();
+}
+
+function bindTaskToConversation(taskId) {
+  if (!taskId) return;
+  ensureConversation();
+  taskConversationMap.set(taskId, conversationState.id);
+  conversationState.activeTaskId = taskId;
+  conversationState.updatedAt = Date.now();
   persistConversation();
 }
 
@@ -840,17 +904,18 @@ function showClarificationBubble(originalCommand, question, originalPayload) {
       const result = await fetchJson("/task/clarify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(clarifyPayload)
+        body: JSON.stringify({ ...clarifyPayload, background: true })
       });
       if (result.task?.task_id) {
         activeTaskId = result.task.task_id;
         lastTask = result.task;
         notifiedTaskId = null;
         notifiedInlineResultTaskId = null;
+        bindTaskToConversation(activeTaskId);
         ensureActiveTaskEventStream(activeTaskId);
         clearPendingInputContext();
         addBubble("assistant", "Processing in background...");
-        conversationPhase = "running"; runningPhaseStart = Date.now();
+        conversationPhase = "idle";
       }
     } catch (err) {
       addSystemBubble(`提交失败：${err.message}`);
@@ -1135,13 +1200,24 @@ async function handleTaskEventFrame(rawEvent) {
 
   const summary = formatTaskEventSummary(frame);
 
+  // Work out whether this event belongs to the conversation the user is
+  // currently looking at. Events for other conversations still need to
+  // mutate the owning conversation's turns list; we just don't render
+  // bubbles for them.
+  const frameTaskId = frame.taskId ?? frame.task_id ?? activeTaskId;
+  const ownerConvId = frameTaskId ? taskConversationMap.get(frameTaskId) : null;
+  const isForActiveConv = !ownerConvId || ownerConvId === conversationState?.id;
+
   if (lastTask?.task_id === activeTaskId) {
     lastTask = applyTaskEventPatch(lastTask, frame);
   }
 
-  renderTaskTimelineEvent(frame, { showOverlay: true });
+  if (isForActiveConv) {
+    renderTaskTimelineEvent(frame, { showOverlay: true });
+  }
 
   if (frame.event === "text_delta") {
+    if (!isForActiveConv) return; // silent streams don't build bubbles
     const delta = frame.data?.delta ?? frame.data?.text ?? "";
     if (!delta) return;
     if (!streamingBubble) {
@@ -1164,27 +1240,29 @@ async function handleTaskEventFrame(rawEvent) {
     const trimmedText = text.trim();
     const isPlannerPlaceholder = trimmedText === "(no response from agentic planner)";
     if (text && !isPlannerPlaceholder) {
-      if (streamingBubble) {
-        // finalize the streaming bubble with fully rendered markdown
-        streamingBubble.classList.remove("streaming");
-        streamingBubble.innerHTML = renderMarkdown(text);
-        streamingBubble = null;
-        streamingBubbleRawText = "";
-      } else {
-        addBubble("assistant", text);
+      if (isForActiveConv) {
+        if (streamingBubble) {
+          streamingBubble.classList.remove("streaming");
+          streamingBubble.innerHTML = renderMarkdown(text);
+          streamingBubble = null;
+          streamingBubbleRawText = "";
+        } else {
+          addBubble("assistant", text);
+        }
       }
-      appendTurn("assistant", text);
-      lastArtifactPreview = text;
-      if (lastTask?.task_spec?.artifact?.required === false) {
-        notifiedInlineResultTaskId = activeTaskId; // conversational task: prevent duplicate final text bubble
+      appendTurnForTask(frameTaskId, "assistant", text);
+      if (isForActiveConv) {
+        lastArtifactPreview = text;
+        if (lastTask?.task_spec?.artifact?.required === false) {
+          notifiedInlineResultTaskId = activeTaskId;
+        }
+        window.ucaShell.showWindow("overlay");
       }
-      // show the overlay so user sees the reply
-      window.ucaShell.showWindow("overlay");
     }
   }
 
   if (frame.event === "artifact_created") {
-    addBubble("assistant", `Artifact created: ${summary.body}`);
+    if (isForActiveConv) addBubble("assistant", `Artifact created: ${summary.body}`);
   }
 
   // UCA-075: Skill proposal — user can save the repeated tool sequence as a skill
@@ -1217,13 +1295,66 @@ async function handleTaskEventFrame(rawEvent) {
   }
 
   if (["success", "partial_success", "failed", "cancelled"].includes(frame.event)) {
-    const doneLabel = frame.event === "success" ? "已完成"
-      : frame.event === "partial_success" ? "部分完成"
-        : frame.event === "failed" ? "执行失败"
-          : "已取消";
-    timelineDone(doneLabel);
-    await refreshActiveTask();
+    if (isForActiveConv) {
+      const doneLabel = frame.event === "success" ? "已完成"
+        : frame.event === "partial_success" ? "部分完成"
+          : frame.event === "failed" ? "执行失败"
+            : "已取消";
+      timelineDone(doneLabel);
+      await refreshActiveTask();
+    }
+    // Close any background stream for this task — it's done, no more events.
+    if (frameTaskId) {
+      const dispose = backgroundTaskStreams.get(frameTaskId);
+      if (typeof dispose === "function") {
+        try { dispose(); } catch { /* ignore */ }
+        backgroundTaskStreams.delete(frameTaskId);
+      }
+      // Also clear the owning conversation's activeTaskId so future switches
+      // don't try to re-attach to a terminated task.
+      const ownerId = taskConversationMap.get(frameTaskId);
+      if (ownerId && projectStore) {
+        const owner = projectStore.conversations.find((c) => c.id === ownerId);
+        if (owner && owner.activeTaskId === frameTaskId) {
+          owner.activeTaskId = null;
+          saveProjectStore();
+        }
+      }
+      taskConversationMap.delete(frameTaskId);
+    }
   }
+}
+
+// When the user switches conversations, demote the currently-active SSE
+// stream (tied to the outgoing conversation's task) to a silent background
+// subscription. Events keep flowing through handleTaskEventFrame, which
+// routes them to the owning conversation via taskConversationMap.
+function demoteActiveStreamToBackground() {
+  if (!activeTaskEventTaskId || !activeTaskEventStream) return;
+  const taskId = activeTaskEventTaskId;
+  // Re-subscribe as a fresh background stream — same callback, just not
+  // referenced by the "active" pointers. This makes the ownership transfer
+  // explicit and lets us close the original subscription cleanly.
+  try {
+    const dispose = typeof activeTaskEventStream === "function"
+      ? activeTaskEventStream
+      : activeTaskEventStream?.close ?? activeTaskEventStream?.dispose;
+    if (typeof dispose === "function") dispose();
+  } catch { /* ignore */ }
+  const bgStream = subscribeTaskEvents(serviceBaseUrl, taskId, {
+    onEvent(event) { void handleTaskEventFrame(event); },
+    onError() {
+      // background streams reconnect silently; drop the reference so the
+      // next refresh can re-establish.
+      backgroundTaskStreams.delete(taskId);
+    }
+  });
+  backgroundTaskStreams.set(taskId, typeof bgStream === "function" ? bgStream : () => {
+    try { (bgStream?.close ?? bgStream?.dispose)?.call(bgStream); } catch { /* ignore */ }
+  });
+  activeTaskEventStream = null;
+  activeTaskEventTaskId = null;
+  activeTaskEventBaseUrl = null;
 }
 
 function ensureActiveTaskEventStream(taskId) {
@@ -1279,7 +1410,7 @@ async function retryActiveTaskFromOverlay() {
     const result = await fetchJson(`/task/${encodeURIComponent(taskId)}/retry`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "retry_same" })
+      body: JSON.stringify({ mode: "retry_same", background: true })
     });
     if (result.task?.task_id) {
       activeTaskId = result.task.task_id;
@@ -1287,10 +1418,11 @@ async function retryActiveTaskFromOverlay() {
       notifiedTaskId = null;
       notifiedInlineResultTaskId = null;
       lastArtifactPreview = "";
+      bindTaskToConversation(activeTaskId);
       ensureActiveTaskEventStream(activeTaskId);
       clearPendingInputContext();
       addBubble("assistant", "Processing in background...");
-      conversationPhase = "running"; runningPhaseStart = Date.now();
+      conversationPhase = "idle";
       return true;
     }
     addSystemBubble("重试接口没有返回任务。");
@@ -1357,6 +1489,14 @@ async function attachLatestActiveTaskToOverlay() {
   // think the old failure was a new one.
   if (!latest?.task_id || latest.task_id === activeTaskId) return false;
   if (!taskIsActive(latest.status)) return false;
+  // Don't hijack: if this task belongs to a DIFFERENT conversation than the
+  // one the user is currently looking at, leave it alone. Its results will
+  // land in the originating conversation via the background SSE stream +
+  // taskConversationMap routing. Without this guard, opening overlay while
+  // conversation B has a running task pulls its events into conversation A's
+  // bubble area — the exact "两个任务跑完只剩一个结果跑错对话框" bug.
+  const owner = taskConversationMap.get(latest.task_id);
+  if (owner && conversationState?.id && owner !== conversationState.id) return false;
   activeTaskId = latest.task_id;
   lastTask = latest;
   notifiedTaskId = null;
@@ -1782,12 +1922,8 @@ async function refreshActiveTask() {
       conversationPhase = "idle";
     }
   } catch (error) {
-    // If the task fetch fails (service restart, network) and we've been stuck
-    // in "running" for more than 90s, quietly reset so the user can try again.
-    if (conversationPhase === "running" && Date.now() - runningPhaseStart > 90_000) {
-      conversationPhase = "idle";
-      addSystemBubble("服务连接中断，任务状态未知。你可以重新提交指令。");
-    }
+    // Service restart/network hiccup: leave the composer usable. Task list
+    // polling will reattach when the runtime comes back.
   }
 }
 
@@ -1797,21 +1933,6 @@ async function refreshActiveTask() {
 
 async function submitTask() {
   const rawCommand = commandInput.value.trim();
-
-  // Block new submissions while a task is actively running — prevents
-  // accidental double-submission when the SSE connection drops and the user
-  // doesn't see the result yet. The 2s refreshActiveTask poll resets the
-  // phase to "idle" once the task reaches a terminal state.
-  // Safety escape: if stuck >90s (service died / task hung), allow retrying.
-  if (conversationPhase === "running") {
-    const stuckMs = Date.now() - runningPhaseStart;
-    if (stuckMs < 90_000) {
-      addSystemBubble("上一个任务仍在运行中，请稍候…");
-      return;
-    }
-    // Treat as stale — fall through and submit new task
-    conversationPhase = "idle";
-  }
 
   // UCA-060: Strict separation of user instruction vs captured context.
   // A captured active-window context is BACKGROUND information, NOT the query.
@@ -1940,7 +2061,7 @@ async function submitTask() {
     const result = await fetchJson("/task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ ...payload, background: true })
     });
 
     // UCA-059: Server detected an ambiguous command — show clarification bubble
@@ -1955,6 +2076,7 @@ async function submitTask() {
     notifiedTaskId = null;
     notifiedInlineResultTaskId = null;
     lastArtifactPreview = "";
+    bindTaskToConversation(activeTaskId);
     ensureActiveTaskEventStream(activeTaskId);
     clearPendingInputContext();
 
@@ -1965,7 +2087,7 @@ async function submitTask() {
       body: "Task submitted. You'll be notified when it's done."
     });
 
-    conversationPhase = "running"; runningPhaseStart = Date.now();
+    conversationPhase = "idle";
 
     // only auto-hide if the user explicitly requested file output
     if (selectedFormatInstruction) {
@@ -2152,7 +2274,9 @@ function applyShellHandoff(payload) {
   }
 
   if (payload?.file_paths?.length) {
-    if (payload.capture_mode === "hotkey_capture" || payload.captureMode === "hotkey_capture") {
+    const isHotkeyCapture = payload.capture_mode === "hotkey_capture" || payload.captureMode === "hotkey_capture";
+    const hasExistingThread = Boolean(conversationState?.turns?.length || activeTaskId);
+    if (isHotkeyCapture || hasExistingThread) {
       startNewConversation();
     }
     pendingCapture = null;
@@ -2948,10 +3072,18 @@ function ensureVoiceRecognizer() {
 
   recognizer.addEventListener("error", (event) => {
     const code = event.error ?? "unknown";
-    if (code === "network" && voiceMediaRecorder) {
+    // Whenever the online recogniser fails for an infrastructure reason
+    // (network, service-not-allowed, no-speech, or unknown/transient codes)
+    // keep the MediaRecorder running so the user's audio isn't thrown away.
+    // Only hard-stop on permission errors ("not-allowed", "audio-capture")
+    // where we genuinely can't record at all, or on explicit "aborted".
+    const keepRecording = voiceMediaRecorder && !["not-allowed", "audio-capture", "aborted"].includes(code);
+    if (keepRecording) {
       voiceLocalFallbackActive = true;
       setVoiceRecording(true);
-      voiceStatus.textContent = "联网识别不可用，已切到本地录音；说完后点停止。";
+      voiceStatus.textContent = code === "no-speech"
+        ? "暂未检测到语音，继续录音中；说完点停止转写。"
+        : "实时识别暂不可用，正在继续录音；说完后点停止转写。";
       voiceCard?.classList.remove("error", "idle");
       return;
     }
@@ -2962,7 +3094,7 @@ function ensureVoiceRecognizer() {
       "service-not-allowed": "操作系统拒绝了语音识别服务。请检查系统设置 → 隐私 → 语音识别。",
       "no-speech": "没有检测到语音，请再试一次。",
       "audio-capture": "无法读取麦克风音频。请检查麦克风是否连接或被其他程序占用。",
-      "network": "语音识别需要联网；请检查网络后重试。",
+      "network": "实时识别暂不可用；请用本地录音转写模式重试。",
       "aborted": "语音输入已取消。"
     }[code] ?? `识别错误：${code}`;
     voiceStatus.textContent = friendly;
@@ -2988,7 +3120,7 @@ function _doStartRecognizer(recognizer) {
     if (!message.includes("invalidstate") && voiceMediaRecorder) {
       voiceLocalFallbackActive = true;
       setVoiceRecording(true);
-      voiceStatus.textContent = "系统语音识别不可用，已切到本地录音；说完后点停止。";
+      voiceStatus.textContent = "系统实时识别不可用，正在继续录音；说完后点停止转写。";
       voiceCard?.classList.remove("error", "idle");
       return;
     }
@@ -3005,7 +3137,7 @@ function _doStartRecognizer(recognizer) {
       if (voiceMediaRecorder) {
         voiceLocalFallbackActive = true;
         setVoiceRecording(true);
-        voiceStatus.textContent = "联网识别不可用，已切到本地录音；说完后点停止。";
+        voiceStatus.textContent = "实时识别暂不可用，正在继续录音；说完后点停止转写。";
         voiceCard?.classList.remove("error", "idle");
         return;
       }
@@ -3024,13 +3156,13 @@ function startVoiceRecognition() {
   const recognizer = ensureVoiceRecognizer();
   if (!recognizer) {
     if (voiceRecording) return;
-    voiceStatus.textContent = "当前 Electron 不支持实时语音识别，正在启动本地录音...";
+    voiceStatus.textContent = "正在启动本地录音...";
     navigator.mediaDevices.getUserMedia({ audio: true })
       .then((stream) => {
         startVoiceLocalRecorder(stream);
         voiceLocalFallbackActive = true;
         setVoiceRecording(true);
-        voiceStatus.textContent = "本地录音中；说完后点停止，UCA 会本地转写。";
+        voiceStatus.textContent = "本地录音中；说完后点停止转写。";
       })
       .catch((err) => {
         const denied = err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError";
@@ -3867,6 +3999,7 @@ ${sourceAssistRequirement}`;
     },
     userCommand,
     executionMode: "interactive",
+    background: true,
     skipDecomposition: true
   };
 
@@ -3887,6 +4020,7 @@ ${sourceAssistRequirement}`;
     notifiedTaskId = null;
     notifiedInlineResultTaskId = null;
     lastArtifactPreview = "";
+    bindTaskToConversation(activeTaskId);
     ensureActiveTaskEventStream(activeTaskId);
     clearPendingInputContext();
 
@@ -3895,7 +4029,7 @@ ${sourceAssistRequirement}`;
       title: "UCA processing",
       body: "录音笔记正在整理。"
     });
-    conversationPhase = "running"; runningPhaseStart = Date.now();
+    conversationPhase = "idle";
   } catch (error) {
     addBubble("assistant", `Submit failed: ${error.message}`);
     conversationPhase = "idle";
@@ -4283,15 +4417,14 @@ function setSendBusy(busy) {
     sendBtn.setAttribute("aria-busy", busy ? "true" : "false");
   }
   if (commandInput) {
-    commandInput.readOnly = busy;
+    commandInput.removeAttribute("readonly");
   }
   document.body.classList.toggle("send-busy", busy);
 }
 
 async function handleUserSend() {
-  // Guard against double-click / rapid Enter re-entry during the await window
-  // before conversationPhase flips to "running". submitTask()'s own
-  // running-phase check handles the longer-lived case.
+  // Guard only the short submit handshake. The task itself runs in the
+  // runtime background so the composer stays available for another request.
   if (userSendInFlight) return;
 
   const text = commandInput.value.trim();
