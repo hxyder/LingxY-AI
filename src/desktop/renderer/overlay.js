@@ -2674,6 +2674,71 @@ function closeAllPanels() {
 let voiceMode = false;
 let popHideTimer = null;
 let popKeptOpen = false; // user clicked input → keep overlay until they explicitly close
+let echoSessionActive = false;
+let echoHudLastText = "";
+let echoHudLastAt = 0;
+let echoVoiceAutoSubmitTimer = null;
+let echoVoiceAutoSubmitInFlight = false;
+const ECHO_LOCAL_CAPTURE_MS = 8000;
+
+function showEchoHud({ text = "", kind = "info", durationMs = 1600, throttleMs = 700 } = {}) {
+  if (!echoSessionActive || !text) return;
+  const now = Date.now();
+  if (text === echoHudLastText && now - echoHudLastAt < throttleMs) return;
+  echoHudLastText = text;
+  echoHudLastAt = now;
+  void window.ucaShell?.showEchoBubble?.({ text, kind, durationMs });
+}
+
+function clearEchoVoiceAutoSubmit() {
+  if (echoVoiceAutoSubmitTimer) {
+    clearTimeout(echoVoiceAutoSubmitTimer);
+    echoVoiceAutoSubmitTimer = null;
+  }
+}
+
+function scheduleEchoVoiceAutoSubmit(delayMs = ECHO_LOCAL_CAPTURE_MS) {
+  if (!echoSessionActive || echoVoiceAutoSubmitInFlight) return;
+  clearEchoVoiceAutoSubmit();
+  showEchoHud({
+    text: "本地识别中，说完后会自动发送…",
+    kind: "info",
+    durationMs: 2400,
+    throttleMs: 0
+  });
+  echoVoiceAutoSubmitTimer = setTimeout(() => {
+    void submitEchoVoiceCommand();
+  }, delayMs);
+}
+
+async function submitEchoVoiceCommand() {
+  if (!echoSessionActive || echoVoiceAutoSubmitInFlight) return;
+  echoVoiceAutoSubmitInFlight = true;
+  clearEchoVoiceAutoSubmit();
+  try {
+    showEchoHud({ text: "正在转写…", kind: "info", durationMs: 2000, throttleMs: 0 });
+    if (voiceRecording) {
+      await stopVoiceRecognition();
+    }
+    const text = commandInput.value.trim();
+    if (!text) {
+      showEchoHud({ text: "没听清，再说一次 linxi 试试", kind: "error", durationMs: 2600, throttleMs: 0 });
+      return;
+    }
+    if (voiceMode && !noteActive) {
+      exitVoiceMode();
+    }
+    showEchoHud({ text: "收到，正在发送…", kind: "wake", durationMs: 1800, throttleMs: 0 });
+    await handleUserSend();
+  } finally {
+    echoVoiceAutoSubmitInFlight = false;
+    resetVoiceState();
+    if (voiceMode && !noteActive) {
+      exitVoiceMode();
+    }
+    await endEchoSession();
+  }
+}
 
 function setVoiceCardMode(mode = "voice") {
   voiceCard?.setAttribute("data-mode", mode);
@@ -2694,6 +2759,11 @@ function enterVoiceMode() {
     showNotePanel();
     return;
   }
+  // Defensive clear of the dock's recording indicator — a prior note session
+  // that wasn't cleanly torn down can leave the red REC ring spinning
+  // forever. Voice mode never owns note-recording state, so force it off
+  // whenever we enter voice mode.
+  void window.ucaShell?.setNoteRecordingState?.({ active: false, elapsedMs: 0, elapsed: "00:00" });
   voiceMode = true;
   document.body.classList.add("voice-mode");
   setVoiceCardMode("voice");
@@ -2952,6 +3022,7 @@ function setVoiceRecording(active) {
       voiceStartBtn.textContent = "重启";
     }
     if (voiceStopBtn) voiceStopBtn.disabled = false;
+    showEchoHud({ text: "正在聆听…", kind: "wake", durationMs: 1800, throttleMs: 0 });
   } else {
     voiceCard?.classList.add("idle");
     voiceToggleBtn?.classList.remove("recording");
@@ -2961,6 +3032,7 @@ function setVoiceRecording(active) {
     }
     if (voiceStopBtn) voiceStopBtn.disabled = false;
     stopVoiceAudioMeter();
+    showEchoHud({ text: "识别已停止", kind: "info", durationMs: 1200 });
   }
 }
 
@@ -2975,6 +3047,11 @@ function appendVoiceTranscript(text) {
     voiceTranscript.textContent = commandInput.value.trim() || "\u00a0";
     voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
   }
+  showEchoHud({
+    text: `听到：${transcript.slice(0, 48)}`,
+    kind: "info",
+    durationMs: 1800
+  });
 }
 
 function startVoiceLocalRecorder(stream) {
@@ -3091,6 +3168,11 @@ function startVoicePreviewLoop() {
         voiceTranscript.classList.remove("placeholder");
         voiceTranscript.textContent = text;
         voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
+        showEchoHud({
+          text: `听到：${text.slice(0, 48)}`,
+          kind: "info",
+          durationMs: 1800
+        });
       })
       .catch((err) => {
         // Preview failures are expected occasionally (codec boundaries,
@@ -3209,6 +3291,14 @@ function ensureVoiceRecognizer() {
       voiceTranscript.textContent = merged.trim() || "\u00a0";
       voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
     }
+    const heardText = (finalText || interim || "").trim();
+    if (heardText) {
+      showEchoHud({
+        text: `听到：${heardText.slice(0, 48)}`,
+        kind: "info",
+        durationMs: 1800
+      });
+    }
     if (finalText) {
       commandInput.dataset.voiceBase = (commandInput.dataset.voiceBase ?? "") + finalText;
       voiceStatus.textContent = "识别完成 · 按 Enter 发送";
@@ -3228,6 +3318,12 @@ function ensureVoiceRecognizer() {
     }
     delete commandInput.dataset.voiceBase;
     commandInput.focus();
+    if (echoSessionActive && commandInput.value.trim()) {
+      setTimeout(() => {
+        if (!echoSessionActive) return;
+        void submitEchoVoiceCommand();
+      }, 220);
+    }
   });
 
   recognizer.addEventListener("error", (event) => {
@@ -3246,6 +3342,7 @@ function ensureVoiceRecognizer() {
       // than silent "listening". Final streamed transcribe still runs on
       // stop as the source of truth.
       startVoicePreviewLoop();
+      scheduleEchoVoiceAutoSubmit();
       voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
       voiceCard?.classList.remove("error", "idle");
       return;
@@ -3263,6 +3360,12 @@ function ensureVoiceRecognizer() {
     voiceStatus.textContent = friendly;
     voiceCard?.classList.add("error");
     voiceCard?.classList.remove("idle");
+    showEchoHud({
+      text: friendly.slice(0, 64),
+      kind: "error",
+      durationMs: 2600,
+      throttleMs: 0
+    });
   });
 
   voiceRecognizer = recognizer;
@@ -3284,6 +3387,7 @@ function _doStartRecognizer(recognizer) {
       voiceLocalFallbackActive = true;
       setVoiceRecording(true);
       startVoicePreviewLoop();
+      scheduleEchoVoiceAutoSubmit();
       voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
       voiceCard?.classList.remove("error", "idle");
       return;
@@ -3302,6 +3406,7 @@ function _doStartRecognizer(recognizer) {
         voiceLocalFallbackActive = true;
         setVoiceRecording(true);
         startVoicePreviewLoop();
+        scheduleEchoVoiceAutoSubmit();
         voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
         voiceCard?.classList.remove("error", "idle");
         return;
@@ -3321,6 +3426,7 @@ function resetVoiceState() {
   stopVoicePreviewLoop();
   try { voiceRecognizer?.abort?.(); } catch { /* ignore */ }
   try { voiceMediaRecorder?.stop?.(); } catch { /* ignore */ }
+  voiceRecognizer = null;
   stopVoiceTracks();
   voiceMediaRecorder = null;
   voiceAudioChunks = [];
@@ -3329,6 +3435,11 @@ function resetVoiceState() {
   voiceManualStopPending = false;
   voiceRecognitionProducedText = false;
   voiceCard?.classList.remove("error", "starting");
+  // Voice reset must never leave a stale note-recording indicator on the
+  // dock. See enterVoiceMode() note above.
+  if (!noteActive) {
+    void window.ucaShell?.setNoteRecordingState?.({ active: false, elapsedMs: 0, elapsed: "00:00" });
+  }
   if (voiceTranscript) {
     voiceTranscript.textContent = "实时识别的文字会显示在这里…";
     voiceTranscript.classList.add("placeholder");
@@ -3399,6 +3510,7 @@ async function startVoiceRecognition() {
     } else {
       voiceLocalFallbackActive = true;
       startVoicePreviewLoop();
+      scheduleEchoVoiceAutoSubmit();
       voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
     }
   } catch (err) {
@@ -3423,18 +3535,19 @@ function stopVoiceRecognition({ discard = false } = {}) {
   voiceManualStopPending = true;
   if (voiceLocalFallbackActive || shouldTranscribe) {
     setVoiceRecording(false);
-    void stopVoiceLocalRecorder({ transcribe: shouldTranscribe }).finally(() => {
+    const stopped = stopVoiceLocalRecorder({ transcribe: shouldTranscribe }).finally(() => {
       voiceManualStopPending = false;
     });
-    return;
+    return stopped;
   }
   if (voiceRecognizer && voiceRecording) {
     try { voiceRecognizer.stop(); } catch { /* ignore */ }
   }
-  void stopVoiceLocalRecorder({ transcribe: false }).finally(() => {
+  const stopped = stopVoiceLocalRecorder({ transcribe: false }).finally(() => {
     voiceManualStopPending = false;
   });
   setVoiceRecording(false);
+  return stopped;
 }
 
 function openVoicePanel({ autoStart = false } = {}) {
@@ -3449,12 +3562,17 @@ function openVoicePanel({ autoStart = false } = {}) {
 }
 
 function closeVoicePanel({ submit = false } = {}) {
+  if (submit && echoSessionActive) {
+    void submitEchoVoiceCommand();
+    return;
+  }
   if (voiceRecording) stopVoiceRecognition();
   exitVoiceMode();
   if (submit) {
-    void handleUserSend();
+    void handleUserSend().finally(() => endEchoSession());
   } else {
     commandInput.focus();
+    void endEchoSession();
   }
 }
 
@@ -3590,6 +3708,7 @@ voiceCancelBtn?.addEventListener("click", () => {
   commandInput.value = commandInput.dataset.voiceBase ?? "";
   delete commandInput.dataset.voiceBase;
   exitVoiceMode();
+  void endEchoSession();
 });
 
 // Enter while in voice mode → submit and exit
@@ -3610,6 +3729,7 @@ document.addEventListener("keydown", (event) => {
     commandInput.value = commandInput.dataset.voiceBase ?? "";
     delete commandInput.dataset.voiceBase;
     exitVoiceMode();
+    void endEchoSession();
   }
 });
 
@@ -4021,10 +4141,12 @@ async function enterNoteMode() {
     if (remaining <= 0 && !noteAutoStopTriggered) {
       noteAutoStopTriggered = true;
       addSystemBubble("已达到单次录音上限（30 分钟），已自动停止并进入转录。如需更长，请分多次录制。");
-      finishNote().catch((error) => {
-        console.error("[overlay] auto-stop finishNote failed:", error);
-        addSystemBubble(`自动完成笔记失败：${error?.message ?? error}`);
-      });
+      finishNote()
+        .catch((error) => {
+          console.error("[overlay] auto-stop finishNote failed:", error);
+          addSystemBubble(`自动完成笔记失败：${error?.message ?? error}`);
+        })
+        .finally(() => endEchoSession());
     } else if (remaining <= NOTE_WARN_BEFORE_MS && !noteWarnedNearLimit) {
       noteWarnedNearLimit = true;
       const mins = Math.max(1, Math.ceil(remaining / 60000));
@@ -4468,6 +4590,7 @@ tabNoteBtn?.addEventListener("click", () => {
 noteCancelBtn?.addEventListener("click", () => {
   exitNoteMode();
   commandInput.focus();
+  void endEchoSession();
 });
 
 let noteFinishInFlight = false;
@@ -4489,6 +4612,7 @@ noteFinishBtn?.addEventListener("click", async () => {
     noteFinishInFlight = false;
     noteFinishBtn.disabled = false;
     noteFinishBtn.textContent = originalLabel || "完成笔记";
+    void endEchoSession();
   }
 });
 
@@ -4837,6 +4961,57 @@ window.ucaShell.onShellReady((payload) => {
     void syncProjectStoreFromService({ render: false });
     refreshTaskSummaries(true).then(renderTaskListDock);
     showWelcome();
+  }
+});
+
+/* ═══════════════════════════════════════════════
+   ECHO MODE handoff — dock detects wake word, overlay takes over
+   ═══════════════════════════════════════════════ */
+
+async function beginEchoSession() {
+  if (echoSessionActive) return;
+  clearEchoVoiceAutoSubmit();
+  echoSessionActive = true;
+  echoHudLastText = "";
+  echoHudLastAt = 0;
+  try { await window.ucaShell?.registerCtrlEnter?.("echo-session"); }
+  catch (err) { console.warn("[echo] register Ctrl+Enter failed:", err); }
+}
+async function endEchoSession() {
+  if (!echoSessionActive) return;
+  clearEchoVoiceAutoSubmit();
+  echoSessionActive = false;
+  echoHudLastText = "";
+  echoHudLastAt = 0;
+  try { await window.ucaShell?.unregisterCtrlEnter?.(); }
+  catch { /* ignore */ }
+}
+
+window.ucaShell?.onEchoWake?.(async (payload = {}) => {
+  const kind = payload.kind === "note" ? "note" : "voice";
+  startNewConversation();
+  await beginEchoSession();
+  if (kind === "note") {
+    showEchoHud({ text: "开始录音笔记…", kind: "wake", durationMs: 1800, throttleMs: 0 });
+    if (voiceRecording) stopVoiceRecognition();
+    void enterNoteMode();
+  } else {
+    showEchoHud({ text: "已唤醒，请说", kind: "wake", durationMs: 1800, throttleMs: 0 });
+    openVoicePanel({ autoStart: true });
+  }
+});
+
+// Session-scoped Ctrl+Enter: global shortcut in main forwards here. In voice
+// mode it runs the same submit path as Enter; in note mode it finishes the
+// note (same as clicking 完成笔记). Either way, the session ends afterward.
+window.ucaShell?.onCtrlEnter?.(() => {
+  if (!echoSessionActive) return;
+  if (noteActive) {
+    void finishNote().finally(() => endEchoSession());
+  } else if (voiceMode) {
+    void submitEchoVoiceCommand();
+  } else {
+    void endEchoSession();
   }
 });
 

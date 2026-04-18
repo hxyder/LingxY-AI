@@ -2,7 +2,8 @@ export const WINDOW_IDS = Object.freeze({
   dock: "dock",
   overlay: "overlay",
   console: "console",
-  notification: "notification"
+  notification: "notification",
+  echoBubble: "echo-bubble"
 });
 
 export const IPC_CHANNELS = Object.freeze({
@@ -101,6 +102,15 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
       startsHidden: true,
       width: 360,
       height: 132
+    },
+    {
+      id: WINDOW_IDS.echoBubble,
+      title: "UCA Echo Bubble",
+      route: "/echo-bubble",
+      singleton: true,
+      startsHidden: true,
+      width: 260,
+      height: 64
     }
   ],
   shortcuts: DEFAULT_SHORTCUTS,

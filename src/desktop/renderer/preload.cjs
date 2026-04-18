@@ -107,5 +107,54 @@ contextBridge.exposeInMainWorld("ucaShell", {
   },
   getActiveWindowContext(options = {}) {
     return ipcRenderer.invoke("uca:capture-active-window-context", options);
+  },
+  // ── Shell settings ──
+  getSettings() {
+    return ipcRenderer.invoke("uca:get-settings");
+  },
+  setEchoMode(enabled) {
+    return ipcRenderer.invoke("uca:set-echo-mode", Boolean(enabled));
+  },
+  onSettingsChanged(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:shell-settings-changed", listener);
+    return () => ipcRenderer.removeListener("uca:shell-settings-changed", listener);
+  },
+  // ── Dock context menu ──
+  showDockMenu() {
+    return ipcRenderer.invoke("uca:show-dock-menu");
+  },
+  // ── Echo mode wake / bubble HUD ──
+  sendEchoWake(payload) {
+    return ipcRenderer.invoke("uca:echo-wake", payload ?? {});
+  },
+  onEchoWake(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:echo-wake", listener);
+    return () => ipcRenderer.removeListener("uca:echo-wake", listener);
+  },
+  showEchoBubble(payload) {
+    return ipcRenderer.invoke("uca:echo-bubble-show", payload ?? {});
+  },
+  onEchoBubble(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:echo-bubble-show", listener);
+    return () => ipcRenderer.removeListener("uca:echo-bubble-show", listener);
+  },
+  registerCtrlEnter(tag) {
+    return ipcRenderer.invoke("uca:register-ctrl-enter", tag ?? "echo-session");
+  },
+  unregisterCtrlEnter() {
+    return ipcRenderer.invoke("uca:unregister-ctrl-enter");
+  },
+  onCtrlEnter(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:ctrl-enter", listener);
+    return () => ipcRenderer.removeListener("uca:ctrl-enter", listener);
+  },
+  onEchoSessionEnd(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:echo-session-end", listener);
+    return () => ipcRenderer.removeListener("uca:echo-session-end", listener);
   }
 });

@@ -106,6 +106,29 @@
         0%, 100% { filter: drop-shadow(0 0 0 rgba(239,68,68,0)); }
         50% { filter: drop-shadow(0 0 8px rgba(239,68,68,0.72)); }
       }
+
+      /* Echo mode live indicator — small green dot telling the user the
+         wake-word recognizer is actively listening. Bottom-right of orb. */
+      .echo-badge {
+        position: absolute;
+        bottom: -1px; right: -1px;
+        width: 10px; height: 10px;
+        border-radius: 50%;
+        background: #22c55e;
+        border: 2px solid #0f0f1a;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 11;
+        transition: opacity 200ms, transform 200ms;
+      }
+      #dockButton.echo-on .echo-badge { opacity: 1; }
+      #dockButton.echo-listening .echo-badge {
+        animation: echo-pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes echo-pulse {
+        0%, 100% { transform: scale(1);   box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+        50%      { transform: scale(1.3); box-shadow: 0 0 0 4px rgba(34,197,94,0.35); }
+      }
     </style>
   </head>
   <body>
@@ -114,6 +137,7 @@
       <span id="clipBadge" class="clip-badge"></span>
       <span id="taskBadge" class="task-badge"></span>
       <span id="recordingBadge" class="recording-badge">REC</span>
+      <span id="echoBadge" class="echo-badge" title="Echo 模式：正在监听"></span>
     </button>
 
     <script>
@@ -123,9 +147,12 @@
       // 3 s cycle at ~60 fps
       const CYCLE = 180;
 
-      let mode = 'idle';
+      let mode = 'idle';           // 'idle' | 'active' | 'recording' | 'echo-listening'
+      let activePhase = 'thinking'; // only when mode === 'active': 'thinking' | 'executing'
+      let activeStartT = 0;
       let t = 0;
       let pulseRings = [];
+      let completedBurst = null;   // {t0, age}
 
       /* ─── shared: dark gradient disc matching icon.html ─── */
       function darkDisc(glowAlpha, glowBlur) {
@@ -231,28 +258,72 @@
         drawParticleBase();
       }
 
-      /* ═══════ ACTIVE: particle base + spinning arc overlay ═══════ */
+      /* ═══════ ACTIVE: two-phase visualization ═══════
+         thinking  — 5 orbiting indigo dots drift toward center with a soft
+                     breathing halo (narrates "planning")
+         executing — dots expand back to an orbit, with occasional spark
+                     flashes at random angles (narrates "doing work")
+         Phase is advanced by the JS side via __orbApi.setPhase(...). */
       function drawActive() {
         drawParticleBase();
+        const phaseT = (t - activeStartT);
 
-        // rotating arc (activity indicator)
-        const arcLen   = Math.PI * 1.1 + Math.sin(t * 0.06) * 0.4;
-        const arcStart = (t * 0.055) - Math.PI / 2;
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255,255,255,0.65)';
-        ctx.lineWidth = 1.8; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.arc(CX, CY, R - 2.5, arcStart, arcStart + arcLen); ctx.stroke();
-        ctx.restore();
+        if (activePhase === 'thinking') {
+          // breathing halo
+          const b = 0.5 + 0.5 * Math.sin(phaseT * 0.08);
+          ctx.save();
+          ctx.strokeStyle = `rgba(129,140,248,${0.25 + b * 0.3})`;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.arc(CX, CY, R - 3 - b * 2, 0, Math.PI * 2); ctx.stroke();
+          ctx.restore();
+          // 5 particles oscillating radially toward/away from center
+          for (let i = 0; i < 5; i += 1) {
+            const ang = (i / 5) * Math.PI * 2 + phaseT * 0.012;
+            const rad = 5 + 8 * (0.5 + 0.5 * Math.sin(phaseT * 0.05 + i));
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            ctx.shadowColor = '#818cf8'; ctx.shadowBlur = 6;
+            ctx.fillStyle = 'rgba(165,180,252,0.9)';
+            ctx.beginPath();
+            ctx.arc(CX + Math.cos(ang) * rad, CY + Math.sin(ang) * rad, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+        } else {
+          // executing — rotating arc (fast) + orbiting dots + sparks
+          const arcLen   = Math.PI * 1.1 + Math.sin(phaseT * 0.06) * 0.4;
+          const arcStart = (phaseT * 0.075) - Math.PI / 2;
+          ctx.save();
+          ctx.strokeStyle = 'rgba(134,239,172,0.75)';
+          ctx.lineWidth = 1.8; ctx.lineCap = 'round';
+          ctx.beginPath(); ctx.arc(CX, CY, R - 2.5, arcStart, arcStart + arcLen); ctx.stroke();
+          ctx.restore();
+          // 3 orbiting dots (coral/gold/green)
+          const orbits = [
+            { r: 13, speed: 0.09,  color: '#ffb74d', phase: 0 },
+            { r: 13, speed: -0.11, color: '#86efac', phase: 2.1 },
+            { r: 13, speed: 0.13,  color: '#ff7043', phase: 4.2 }
+          ];
+          for (const o of orbits) {
+            const ang = phaseT * o.speed + o.phase;
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            ctx.shadowColor = o.color; ctx.shadowBlur = 6;
+            ctx.fillStyle = o.color;
+            ctx.beginPath();
+            ctx.arc(CX + Math.cos(ang) * o.r, CY + Math.sin(ang) * o.r, 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+          }
+          // rare spark flash
+          if ((t | 0) % 72 === 0 && Math.random() < 0.35) {
+            pulseRings.push({ r: 4, a: 0.6 });
+          }
+        }
 
-        ctx.save();
-        ctx.strokeStyle = 'rgba(255,255,255,0.2)';
-        ctx.lineWidth = 1; ctx.lineCap = 'round';
-        ctx.beginPath(); ctx.arc(CX, CY, R - 2.5, arcStart + Math.PI, arcStart + Math.PI + 0.7); ctx.stroke();
-        ctx.restore();
-
-        // expanding pulse rings (triggered by doPulse)
+        // expanding pulse rings (spark flashes + drop-file pulse)
         pulseRings = pulseRings.filter(ring => {
-          ring.r += 0.55; ring.a *= 0.88;
+          ring.r += 0.7; ring.a *= 0.9;
           if (ring.a < 0.03) return false;
           ctx.save();
           ctx.globalAlpha = ring.a;
@@ -262,6 +333,37 @@
           ctx.restore();
           return true;
         });
+      }
+
+      /* ═══════ COMPLETED: one-shot expanding green ring ═══════ */
+      function drawCompleted() {
+        drawParticleBase();
+        if (!completedBurst) return;
+        completedBurst.age = t - completedBurst.t0;
+        const dur = 36; // ~600ms @60fps
+        if (completedBurst.age > dur) {
+          completedBurst = null;
+          mode = 'idle';
+          return;
+        }
+        const p = completedBurst.age / dur;
+        ctx.save();
+        ctx.globalAlpha = 1 - p;
+        ctx.strokeStyle = 'rgba(134,239,172,1)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.arc(CX, CY, R - 2 + p * 12, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+
+      /* ═══════ ECHO-LISTENING: soft green listening ring ═══════ */
+      function drawEchoListening() {
+        drawParticleBase();
+        const b = 0.5 + 0.5 * Math.sin(t * 0.12);
+        ctx.save();
+        ctx.strokeStyle = `rgba(134,239,172,${0.55 + b * 0.35})`;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(CX, CY, R - 2 + b * 1.5, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
       }
 
       function doPulse() { pulseRings.push({ r: R, a: 0.5 }); }
@@ -289,15 +391,44 @@
         t++;
         if (mode === 'recording') drawRecording();
         else if (mode === 'active') drawActive();
+        else if (mode === 'completed') drawCompleted();
+        else if (mode === 'echo-listening') drawEchoListening();
         else drawIdle();
         requestAnimationFrame(animate);
       }
 
       window.__orbApi = {
-        activate()   { mode = 'active'; },
-        deactivate() { if (mode === 'active') { mode = 'idle'; pulseRings = []; } },
-        recording(active) { mode = active ? 'recording' : 'idle'; if (!active) pulseRings = []; },
-        pulse()      { doPulse(); }
+        activate(phase = 'thinking') {
+          if (mode !== 'active') {
+            mode = 'active';
+            activeStartT = t;
+          }
+          activePhase = phase;
+        },
+        setPhase(phase) {
+          if (mode === 'active' && phase !== activePhase) {
+            activePhase = phase;
+            activeStartT = t;
+          }
+        },
+        deactivate() {
+          if (mode === 'active') {
+            // Burst a "completed" ring before returning to idle so the user
+            // sees a finish cue instead of the orb just stopping.
+            mode = 'completed';
+            completedBurst = { t0: t, age: 0 };
+            pulseRings = [];
+          }
+        },
+        recording(active) {
+          mode = active ? 'recording' : 'idle';
+          if (!active) pulseRings = [];
+        },
+        echoListening(active) {
+          if (active) mode = 'echo-listening';
+          else if (mode === 'echo-listening') mode = 'idle';
+        },
+        pulse() { doPulse(); }
       };
 
       animate();

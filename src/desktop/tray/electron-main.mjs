@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdir, readdir, readFile, unlink, watch } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, watch, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -67,6 +67,23 @@ function resolveWindowOptions(windowDef) {
     };
   }
 
+  if (windowDef.id === "echo-bubble") {
+    return {
+      alwaysOnTop: true,
+      autoHideMenuBar: true,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      maximizable: false,
+      minimizable: false,
+      hasShadow: false,
+      focusable: false,  // never steal focus from the user's active app
+      closable: false
+    };
+  }
+
   return {
     autoHideMenuBar: true
   };
@@ -97,6 +114,41 @@ export function createElectronShellRuntime({
   let notificationWatcher = null;
   let noteRecordingState = { active: false };
   let lastExternalWindowContext = null;
+
+  // Desktop shell settings (echo mode, future flags). Persisted as JSON in
+  // AppData/Local/UCA/settings.json. Loaded lazily on first access; callers
+  // mutate via updateSettings() which also broadcasts to interested windows.
+  const settingsPath = path.join(os.homedir(), "AppData", "Local", "UCA", "settings.json");
+  let settingsCache = null;
+  async function loadSettings() {
+    if (settingsCache) return settingsCache;
+    try {
+      const text = await readFile(settingsPath, "utf8");
+      settingsCache = { echoMode: false, ...JSON.parse(text) };
+    } catch {
+      settingsCache = { echoMode: false };
+    }
+    return settingsCache;
+  }
+  async function saveSettings() {
+    try {
+      await mkdir(path.dirname(settingsPath), { recursive: true });
+      await writeFile(settingsPath, JSON.stringify(settingsCache ?? {}, null, 2), "utf8");
+    } catch (err) {
+      safeError("[UCA] failed to persist settings:", err?.message ?? err);
+    }
+  }
+  async function updateSettings(patch) {
+    const current = await loadSettings();
+    settingsCache = { ...current, ...patch };
+    await saveSettings();
+    for (const browserWindow of windows.values()) {
+      if (!browserWindow.webContents?.isDestroyed?.()) {
+        browserWindow.webContents.send("uca:shell-settings-changed", settingsCache);
+      }
+    }
+    return settingsCache;
+  }
   let activeWindowMemoryPollInFlight = false;
 
   function wait(ms) {
@@ -969,6 +1021,118 @@ export function createElectronShellRuntime({
       });
 
       ipcMain.handle("uca:get-note-recording-state", () => noteRecordingState);
+
+      ipcMain.handle("uca:get-settings", async () => loadSettings());
+      ipcMain.handle("uca:set-echo-mode", async (_event, enabled) => {
+        return updateSettings({ echoMode: Boolean(enabled) });
+      });
+
+      // Right-click on the dock orb asks the main process to show a native
+      // context menu. Done here (not in the renderer) so we get native
+      // look-and-feel, keyboard-nav, and the menu survives window-focus
+      // changes cleanly.
+      ipcMain.handle("uca:show-dock-menu", async () => {
+        const current = await loadSettings();
+        const dockWin = windows.get("dock");
+        if (!dockWin || dockWin.webContents?.isDestroyed?.()) return;
+        const menu = Menu.buildFromTemplate([
+          {
+            label: "正常模式",
+            type: "radio",
+            checked: !current.echoMode,
+            click() { void updateSettings({ echoMode: false }); }
+          },
+          {
+            label: "Echo 模式（常开唤醒）",
+            type: "radio",
+            checked: Boolean(current.echoMode),
+            click() { void updateSettings({ echoMode: true }); }
+          },
+          { type: "separator" },
+          { label: "打开主控台", click() { showWindow("console"); } },
+          { label: "打开对话框", click() { showWindow("overlay"); } },
+          { type: "separator" },
+          { label: "退出 UCA", click() { app.quit(); } }
+        ]);
+        menu.popup({ window: dockWin });
+      });
+
+      // Echo mode coordination — the dock renderer owns the wake-word
+      // recognizer and reports wake events here so we can hand them off to
+      // the overlay (which owns the existing voice/note capture state).
+      // Echo mode stays HUD-only: the dock orb and echo bubble carry state,
+      // and the overlay is only shown when the user explicitly clicks the dock.
+      ipcMain.handle("uca:echo-wake", async (_event, payload = {}) => {
+        enqueueWindowMessage("overlay", "uca:echo-wake", {
+          kind: payload.kind ?? "voice",
+          transcript: payload.transcript ?? "",
+          triggeredAt: Date.now()
+        });
+        return { accepted: true };
+      });
+
+      // Session-scoped Ctrl+Enter. Overlay registers this at the start of
+      // an echo-initiated voice/note session and unregisters on finish, so
+      // the shortcut never interferes with other apps outside the session.
+      // The accelerator is forwarded to the overlay renderer as a virtual
+      // IPC event, letting it run the same handleUserSend / finishNote
+      // paths it already uses for Enter.
+      ipcMain.handle("uca:register-ctrl-enter", (_event, tag = "echo-session") => {
+        if (globalShortcut.isRegistered("CommandOrControl+Return")) return { accepted: true };
+        const ok = globalShortcut.register("CommandOrControl+Return", () => {
+          for (const browserWindow of windows.values()) {
+            if (!browserWindow.webContents?.isDestroyed?.()) {
+              browserWindow.webContents.send("uca:ctrl-enter", { tag });
+            }
+          }
+        });
+        return { accepted: Boolean(ok) };
+      });
+      ipcMain.handle("uca:unregister-ctrl-enter", () => {
+        try { globalShortcut.unregister("CommandOrControl+Return"); } catch { /* ignore */ }
+        // Echo session has ended — tell the dock so it can resume wake-word
+        // listening immediately instead of waiting for its 20s fallback timer.
+        const dock = windows.get("dock");
+        if (dock && !dock.webContents?.isDestroyed?.()) {
+          dock.webContents.send("uca:echo-session-end", { at: Date.now() });
+        }
+        return { accepted: true };
+      });
+
+      // Show the echo-bubble HUD near the dock. Positions the bubble to the
+      // left of the dock window (or right, if there's no room on the left)
+      // and pushes the payload to the bubble renderer.
+      ipcMain.handle("uca:echo-bubble-show", async (_event, payload = {}) => {
+        const bubbleWin = windows.get("echo-bubble");
+        const dockWin = windows.get("dock");
+        if (!bubbleWin || !dockWin) return { accepted: false };
+        try {
+          const dockBounds = dockWin.getBounds();
+          const display = screen.getDisplayMatching(dockBounds);
+          const bubbleSize = bubbleWin.getSize();
+          const margin = 8;
+          let x = dockBounds.x - bubbleSize[0] - margin;
+          // If not enough room on the left, place to the right instead.
+          if (x < display.workArea.x) {
+            x = dockBounds.x + dockBounds.width + margin;
+          }
+          const y = dockBounds.y + Math.round((dockBounds.height - bubbleSize[1]) / 2);
+          bubbleWin.setBounds({ x, y, width: bubbleSize[0], height: bubbleSize[1] });
+          if (!bubbleWin.isVisible()) {
+            bubbleWin.showInactive();  // never steal focus
+          }
+          bubbleWin.setAlwaysOnTop(true, "screen-saver");
+          bubbleWin.moveTop();
+          if (readyWindows.has("echo-bubble")) {
+            bubbleWin.webContents.send("uca:echo-bubble-show", payload);
+          } else {
+            enqueueWindowMessage("echo-bubble", "uca:echo-bubble-show", payload);
+          }
+        } catch (err) {
+          safeWarn("[UCA] echo-bubble-show failed:", err?.message ?? err);
+        }
+        return { accepted: true };
+      });
 
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({
         serviceBaseUrl: resolvedServiceBaseUrl,
