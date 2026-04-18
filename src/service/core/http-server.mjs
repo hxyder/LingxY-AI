@@ -1026,6 +1026,184 @@ async function detectInstalledCodeClis() {
   return found;
 }
 
+function normalizeModelOption(option) {
+  if (typeof option === "string") {
+    const id = option.trim();
+    return id ? { id, label: id } : null;
+  }
+  const id = `${option?.id ?? ""}`.trim();
+  if (!id) return null;
+  return {
+    id,
+    label: `${option.label ?? id}`.trim() || id
+  };
+}
+
+function uniqueModelOptions(options = []) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of options) {
+    const option = normalizeModelOption(raw);
+    if (!option || seen.has(option.id)) continue;
+    seen.add(option.id);
+    out.push(option);
+  }
+  return out;
+}
+
+function providerModelFingerprint(provider = {}) {
+  return [
+    provider.id,
+    provider.name,
+    provider.kind,
+    provider.baseUrl,
+    provider.command,
+    provider.defaultModel
+  ].map((part) => `${part ?? ""}`.toLowerCase()).join(" ");
+}
+
+function codeCliCuratedModelOptions(provider = {}) {
+  const fp = providerModelFingerprint(provider);
+  const cliManaged = { id: "", label: "(CLI 自行管理)" };
+  const preferred = `${provider.defaultModel ?? ""}`.trim()
+    ? [{ id: provider.defaultModel, label: `${provider.defaultModel} (保存的默认)` }]
+    : [];
+
+  if (/codex/.test(fp)) {
+    return uniqueModelOptions([
+      cliManaged,
+      ...preferred,
+      { id: "gpt-5.4", label: "GPT-5.4" },
+      { id: "gpt-5.2-codex", label: "GPT-5.2-Codex" },
+      { id: "gpt-5.1-codex-max", label: "GPT-5.1-Codex-Max" },
+      { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
+      { id: "gpt-5.3-codex", label: "GPT-5.3-Codex" },
+      { id: "gpt-5.2", label: "GPT-5.2" },
+      { id: "gpt-5.1-codex-mini", label: "GPT-5.1-Codex-Mini" }
+    ]);
+  }
+
+  if (/claude/.test(fp)) {
+    return uniqueModelOptions([
+      cliManaged,
+      ...preferred,
+      { id: "sonnet", label: "Sonnet" },
+      { id: "opus", label: "Opus" },
+      { id: "haiku", label: "Haiku" },
+      { id: "claude-sonnet-4-5", label: "claude-sonnet-4-5" },
+      { id: "claude-opus-4-5", label: "claude-opus-4-5" },
+      { id: "claude-haiku-4-5", label: "claude-haiku-4-5" }
+    ]);
+  }
+
+  if (/(moonshot|kimi)/.test(fp)) {
+    return uniqueModelOptions([
+      cliManaged,
+      ...preferred,
+      { id: "kimi-code/kimi-for-coding", label: "Kimi Code" },
+      { id: "kimi-k2", label: "K2" },
+      { id: "moonshot-v1-128k", label: "Moonshot 128K" }
+    ]);
+  }
+
+  if (/gemini/.test(fp)) {
+    return uniqueModelOptions([
+      cliManaged,
+      ...preferred,
+      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
+      { id: "gemini-2.0-pro", label: "Gemini 2.0 Pro" },
+      { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }
+    ]);
+  }
+
+  return uniqueModelOptions([cliManaged, ...preferred]);
+}
+
+function apiCuratedModelOptions(provider = {}) {
+  const fp = providerModelFingerprint(provider);
+  const preferred = `${provider.defaultModel ?? ""}`.trim() ? [provider.defaultModel] : [];
+  if (provider.kind === "anthropic") {
+    return uniqueModelOptions([...preferred, "claude-sonnet-4-5-20250514", "claude-opus-4-5-20250514", "claude-haiku-4-5-20250514"]);
+  }
+  if (provider.kind === "ollama") {
+    return uniqueModelOptions([...preferred, "llama3.2", "qwen2.5", "mistral", "phi3"]);
+  }
+  if (/deepseek/.test(fp)) return uniqueModelOptions([...preferred, "deepseek-chat", "deepseek-reasoner"]);
+  if (/(moonshot|kimi)/.test(fp)) return uniqueModelOptions([...preferred, "kimi-k2", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]);
+  if (/generativelanguage|gemini/.test(fp)) return uniqueModelOptions([...preferred, "gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-pro"]);
+  return uniqueModelOptions([...preferred, "gpt-5.4", "gpt-5.4-mini", "gpt-5.2", "gpt-4o", "gpt-4o-mini", "whisper-1"]);
+}
+
+function codexReasoningEffortOptions(provider = {}) {
+  if (provider.kind !== "code_cli" || !/codex/.test(providerModelFingerprint(provider))) return [];
+  return [
+    { id: "", label: "(不指定)" },
+    { id: "low", label: "Low" },
+    { id: "medium", label: "Medium" },
+    { id: "high", label: "High" },
+    { id: "xhigh", label: "Extra High" }
+  ];
+}
+
+async function fetchJsonWithTimeout(url, init = {}, timeoutMs = 3500) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`${response.status} ${text.slice(0, 160)}`);
+    }
+    return text ? JSON.parse(text) : {};
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveProviderModelOptions(provider = {}) {
+  const fallback = provider.kind === "code_cli"
+    ? codeCliCuratedModelOptions(provider)
+    : apiCuratedModelOptions(provider);
+  const base = {
+    providerId: provider.id ?? null,
+    source: "curated",
+    dynamic: false,
+    models: fallback,
+    reasoningEfforts: codexReasoningEffortOptions(provider),
+    error: null,
+    fetchedAt: new Date().toISOString()
+  };
+
+  try {
+    if (provider.kind === "ollama") {
+      const baseUrl = `${provider.baseUrl ?? "http://127.0.0.1:11434"}`.replace(/\/$/, "");
+      const payload = await fetchJsonWithTimeout(`${baseUrl}/api/tags`, {}, 2500);
+      const models = uniqueModelOptions((payload.models ?? []).map((model) => model.name));
+      if (models.length > 0) {
+        return { ...base, source: "ollama_tags", dynamic: true, models: uniqueModelOptions([provider.defaultModel, ...models]) };
+      }
+    }
+
+    if (provider.kind === "openai" && provider.apiKey && provider.baseUrl) {
+      const baseUrl = `${provider.baseUrl}`.replace(/\/$/, "");
+      const payload = await fetchJsonWithTimeout(`${baseUrl}/models`, {
+        headers: { Authorization: `Bearer ${provider.apiKey}` }
+      });
+      const models = uniqueModelOptions((payload.data ?? payload.models ?? []).map((model) => model.id ?? model.name));
+      if (models.length > 0) {
+        return { ...base, source: "provider_models", dynamic: true, models: uniqueModelOptions([provider.defaultModel, ...models]) };
+      }
+    }
+  } catch (error) {
+    return {
+      ...base,
+      error: error?.name === "AbortError" ? "model_list_timeout" : `${error?.message ?? error}`.slice(0, 240)
+    };
+  }
+
+  return base;
+}
+
 async function runOfficeAddinSetup({ statusOnly = false, elevate = false, resetCache = false } = {}) {
   const scriptPath = path.join(process.cwd(), "scripts", "setup-office-addins.ps1");
   const args = [
@@ -1146,6 +1324,24 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, {
           providers: config.ai?.customProviders ?? [],
           taskRouting: config.ai?.taskRouting ?? {}
+        });
+      }
+
+      if (method === "GET" && url.pathname === "/config/provider-model-options") {
+        const config = runtime.configStore?.load?.() ?? {};
+        const providers = config.ai?.customProviders ?? [];
+        const providerId = url.searchParams.get("providerId");
+        const selected = providerId
+          ? providers.filter((provider) => provider.id === providerId)
+          : providers;
+        const options = {};
+        for (const provider of selected) {
+          options[provider.id] = await resolveProviderModelOptions(provider);
+        }
+        return sendJson(response, 200, {
+          providerId: providerId ?? null,
+          options,
+          option: providerId ? options[providerId] ?? null : null
         });
       }
 

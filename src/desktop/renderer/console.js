@@ -866,6 +866,8 @@ function renderCodeCliAdapters() {
 // ── Provider + routing state ──
 let customProviders = [];
 let taskRouting = {};
+const providerModelOptionsCache = new Map();
+const providerModelOptionsLoading = new Set();
 
 const TASK_TYPES = [
   { id: "chat", label: "Chat / Q&A", desc: "General conversation, summarize, translate, explain" },
@@ -912,6 +914,21 @@ function uniqueNonEmpty(values = []) {
     if (!value || seen.has(value)) continue;
     seen.add(value);
     out.push(value);
+  }
+  return out;
+}
+
+function uniqueModelChoices(choices = []) {
+  const seen = new Set();
+  const out = [];
+  for (const choice of choices) {
+    const id = `${choice?.id ?? choice ?? ""}`.trim();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      label: `${choice?.label ?? (id || "(CLI 自行管理)")}`.trim()
+    });
   }
   return out;
 }
@@ -974,11 +991,13 @@ function codeCliModelChoices(provider) {
     return dedup([
       cliManaged,
       ...preferredChoice,
-      { id: "gpt-5", label: "GPT-5" },
-      { id: "gpt-5-codex", label: "GPT-5 Codex" },
-      { id: "gpt-5-mini", label: "GPT-5 Mini (fast)" },
-      { id: "o3", label: "o3 (reasoning)" },
-      { id: "gpt-4o", label: "GPT-4o" }
+      { id: "gpt-5.4", label: "GPT-5.4" },
+      { id: "gpt-5.2-codex", label: "GPT-5.2-Codex" },
+      { id: "gpt-5.1-codex-max", label: "GPT-5.1-Codex-Max" },
+      { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
+      { id: "gpt-5.3-codex", label: "GPT-5.3-Codex" },
+      { id: "gpt-5.2", label: "GPT-5.2" },
+      { id: "gpt-5.1-codex-mini", label: "GPT-5.1-Codex-Mini" }
     ]);
   }
 
@@ -1116,6 +1135,50 @@ function providerModelPresets(provider, taskType = "chat") {
   return uniqueNonEmpty([preferred]);
 }
 
+function cachedModelChoicesForProvider(provider) {
+  if (!provider?.id) return null;
+  const cached = providerModelOptionsCache.get(provider.id);
+  if (!cached?.models?.length) return null;
+  return uniqueModelChoices(cached.models);
+}
+
+async function loadProviderModelOptions(providerId) {
+  if (!providerId || providerModelOptionsCache.has(providerId) || providerModelOptionsLoading.has(providerId)) return;
+  providerModelOptionsLoading.add(providerId);
+  try {
+    const data = await fetchJson(`/config/provider-model-options?providerId=${encodeURIComponent(providerId)}`);
+    if (data.option) providerModelOptionsCache.set(providerId, data.option);
+  } catch (error) {
+    providerModelOptionsCache.set(providerId, {
+      source: "unavailable",
+      models: [],
+      reasoningEfforts: [],
+      error: error.message
+    });
+  } finally {
+    providerModelOptionsLoading.delete(providerId);
+    renderTaskRouting();
+  }
+}
+
+function modelChoicesForProvider(provider, taskType = "chat") {
+  if (!provider) return [];
+  const cachedChoices = cachedModelChoicesForProvider(provider);
+  if (cachedChoices?.length) {
+    if (provider.kind === "code_cli") {
+      const hasCliManaged = cachedChoices.some((choice) => choice.id === "");
+      return uniqueModelChoices([
+        ...(hasCliManaged ? [] : [{ id: "", label: "(CLI 自行管理)" }]),
+        ...cachedChoices
+      ]);
+    }
+    return cachedChoices;
+  }
+
+  if (provider.kind === "code_cli") return codeCliModelChoices(provider);
+  return providerModelPresets(provider, taskType).map((id) => ({ id, label: id }));
+}
+
 function modeOptionsForModel(provider, model = "") {
   if (!provider) return [];
   const fp = `${providerFingerprint(provider)} ${model}`.toLowerCase();
@@ -1185,6 +1248,10 @@ function defaultModelForProvider(provider, taskType = "chat") {
 // fingerprint matches codex.
 function reasoningEffortOptions(provider) {
   if (!provider || provider.kind !== "code_cli") return [];
+  const cached = provider.id ? providerModelOptionsCache.get(provider.id) : null;
+  if (Array.isArray(cached?.reasoningEfforts) && cached.reasoningEfforts.length > 0) {
+    return cached.reasoningEfforts;
+  }
   const fpCli = providerFingerprint(provider);
   if (!/codex/.test(fpCli)) return [];
   return [
@@ -1216,6 +1283,8 @@ async function loadProvidersAndRouting() {
     const data = await fetchJson("/config/providers");
     customProviders = data.providers ?? [];
     taskRouting = data.taskRouting ?? {};
+    providerModelOptionsCache.clear();
+    providerModelOptionsLoading.clear();
     renderProvidersList();
     renderTaskRouting();
   } catch (error) {
@@ -1287,14 +1356,19 @@ function renderTaskRouting() {
     const selectedProvider = customProviders.find((p) => p.id === route.providerId);
     const modelValue = route.model ?? "";
     const isCli = selectedProvider?.kind === "code_cli";
+    if (selectedProvider?.id && !providerModelOptionsCache.has(selectedProvider.id)) {
+      void loadProviderModelOptions(selectedProvider.id);
+    }
 
     // For code_cli we render labelled choices (id + label). For API kinds we
     // keep the old "preset as plain string" flow since those model IDs are
     // the display text.
     let modelOptions = "";
+    const optionMeta = selectedProvider?.id ? providerModelOptionsCache.get(selectedProvider.id) : null;
+    const optionLoading = selectedProvider?.id ? providerModelOptionsLoading.has(selectedProvider.id) : false;
     if (selectedProvider) {
       if (isCli) {
-        const choices = codeCliModelChoices(selectedProvider);
+        const choices = modelChoicesForProvider(selectedProvider, task.id);
         const hasSavedChoice = choices.some((c) => c.id === modelValue);
         const preamble = !hasSavedChoice && modelValue
           ? `<option value="${escapeHtml(modelValue)}" selected>${escapeHtml(modelValue)} (保存值)</option>`
@@ -1303,13 +1377,22 @@ function renderTaskRouting() {
           `<option value="${escapeHtml(c.id)}" ${c.id === modelValue ? "selected" : ""}>${escapeHtml(c.label)}</option>`
         ).join("") + `<option value="__custom__" style="font-style:italic;">✏️ 自定义…</option>`;
       } else {
-        const presets = providerModelPresets(selectedProvider, task.id);
-        const allModelChoices = uniqueNonEmpty([modelValue, ...presets]);
+        const choices = modelChoicesForProvider(selectedProvider, task.id);
+        const allModelChoices = uniqueModelChoices([{ id: modelValue, label: modelValue }, ...choices]);
         modelOptions = allModelChoices.map((m) =>
-          `<option value="${escapeHtml(m)}" ${m === modelValue ? "selected" : ""}>${escapeHtml(m)}</option>`
+          `<option value="${escapeHtml(m.id)}" ${m.id === modelValue ? "selected" : ""}>${escapeHtml(m.label)}</option>`
         ).join("") + `<option value="__custom__" style="font-style:italic;">✏️ 自定义…</option>`;
       }
     }
+    const modelMeta = selectedProvider
+      ? optionLoading
+        ? "正在刷新模型列表..."
+        : optionMeta?.dynamic
+          ? `模型列表来自 ${optionMeta.source}`
+          : optionMeta?.error
+            ? `模型列表使用兜底：${optionMeta.error}`
+            : "模型列表使用内置兜底"
+      : "";
 
     const modeValue = modeForModel(selectedProvider, modelValue, route.mode ?? "");
     const modeOpts = selectedProvider
@@ -1343,6 +1426,7 @@ function renderTaskRouting() {
           ${showReasoning ? `<select data-routing-reasoning="${escapeHtml(task.id)}" title="Reasoning effort" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;">${reasoningOptionsHtml}</select>` : ""}
           ${!hideMode && !showReasoning ? `<select data-routing-mode="${escapeHtml(task.id)}" title="Mode" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders || !selectedProvider ? "disabled" : ""}>${modeOptionsHtml}</select>` : ""}
         </div>
+        ${modelMeta ? `<div style="font-size:10px;color:var(--muted);margin-top:6px;">${escapeHtml(modelMeta)}</div>` : ""}
       </div>
     `;
   }).join("") + (noProviders ? `

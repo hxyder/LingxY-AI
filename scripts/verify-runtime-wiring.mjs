@@ -78,6 +78,29 @@ assert.equal(securityPatchResponse.ok, true);
 const securityPayload = await securityPatchResponse.json();
 assert.equal(securityPayload.security.offline_mode, true);
 
+const providerCreateResponse = await fetch(`${listening.baseUrl}/config/providers`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    id: "codex-options-test",
+    name: "Codex Options Test",
+    kind: "code_cli",
+    command: "codex.exe",
+    args: [],
+    transport: "stream_json_print",
+    defaultModel: ""
+  })
+});
+assert.equal(providerCreateResponse.ok, true);
+
+const modelOptionsResponse = await fetch(`${listening.baseUrl}/config/provider-model-options?providerId=codex-options-test`);
+assert.equal(modelOptionsResponse.ok, true);
+const modelOptionsPayload = await modelOptionsResponse.json();
+assert.equal(modelOptionsPayload.option.models.some((model) => model.id === "gpt-5.4"), true);
+assert.equal(modelOptionsPayload.option.reasoningEfforts.some((effort) => effort.id === "xhigh"), true);
+
 const listResponse = await fetch(`${listening.baseUrl}/tasks`);
 assert.equal(listResponse.ok, true);
 const listPayload = await listResponse.json();
