@@ -85,7 +85,8 @@ export async function retryTask({
   taskId,
   runtime,
   mode = "retry_same",
-  overrides = {}
+  overrides = {},
+  background = false
 }) {
   const task = runtime.store.getTask(taskId);
   if (!task) {
@@ -104,6 +105,7 @@ export async function retryTask({
       parentTaskId: request.parentTaskId,
       retryCount: request.retryCount,
       executorOverride: request.executorOverride,
+      background,
       runtime
     });
   }
@@ -119,6 +121,7 @@ export async function retryTask({
       parentTaskId: request.parentTaskId,
       retryCount: request.retryCount,
       executorOverride: request.executorOverride,
+      background,
       runtime
     });
   }
@@ -132,6 +135,7 @@ export async function retryTask({
       retryCount: request.retryCount,
       executorOverride: request.executorOverride,
       skipDecomposition: true,
+      background,
       runtime
     });
   }
@@ -144,6 +148,7 @@ export async function retryTask({
     retryCount: request.retryCount,
     executorOverride: request.executorOverride,
     skipDecomposition: true,
+    background,
     runtime
   });
 }

@@ -49,7 +49,8 @@ export async function submitActionToolTask({
   // UCA-066: Tier 0 fast-path — skip the tool-agent loop entirely,
   // call the tool directly and return immediately (< 200ms).
   fastPathTool = null,
-  fastPathArgs = null
+  fastPathArgs = null,
+  background = false
 }) {
   ensureRuntimeServices(runtime);
   const contextPacket = buildActionContextPacket({
@@ -103,105 +104,114 @@ export async function submitActionToolTask({
   runtime.store.updateTask(task.task_id, task);
   runtime.securityBroker.registerTaskRedactionMap(task.task_id, inspection.redactionMap);
 
-  updateTask(runtime, task, {
-    status: "running",
-    sub_status: "tool_loop"
-  }, true);
-  runtime.queue.markRunning(task.task_id);
+  const execute = async () => {
+    updateTask(runtime, task, {
+      status: "running",
+      sub_status: "tool_loop"
+    }, true);
+    runtime.queue.markRunning(task.task_id);
 
-  try {
-    // UCA-066: Tier 0 fast path — execute single deterministic tool directly,
-    // completely bypassing the LLM planner loop. Latency target: < 200ms.
-    // Applies to: launch_app, open_url, copy_to_clipboard, notify, open_file.
-    if (fastPathTool) {
-      const registry = runtime.actionToolRegistry ?? createActionToolRegistry(BUILTIN_ACTION_TOOLS);
-      const toolContext = { ...(runtime.toolContext ?? {}), outputDir: runtime.toolOutputDir, runtime, task };
-      const toolResult = await registry.call(fastPathTool, fastPathArgs ?? {}, toolContext);
-      emitExecutorEvent("tool_call_completed", { tool_id: fastPathTool, success: toolResult.success });
-      const finalText = toolResult.observation ?? (toolResult.success ? "完成。" : "操作失败。");
-      updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
-      markTaskSucceeded(runtime, task);
-      persistArtifacts(runtime, task.task_id, toolResult.artifact_paths);
-      return {
-        task,
-        taskEvents: runtime.store.getTaskEvents(task.task_id),
-        artifacts: toolResult.artifact_paths ?? [],
-        fast_path: true,
-        final_text: finalText
-      };
-    }
-
-    const loopResult = await runToolAgentLoop({
-      task,
-      runtime: {
-        ...runtime,
-        emitTaskEvent: emitExecutorEvent
+    try {
+      // UCA-066: Tier 0 fast path — execute single deterministic tool directly,
+      // completely bypassing the LLM planner loop. Latency target: < 200ms.
+      // Applies to: launch_app, open_url, copy_to_clipboard, notify, open_file.
+      if (fastPathTool) {
+        const registry = runtime.actionToolRegistry ?? createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+        const toolContext = { ...(runtime.toolContext ?? {}), outputDir: runtime.toolOutputDir, runtime, task };
+        const toolResult = await registry.call(fastPathTool, fastPathArgs ?? {}, toolContext);
+        emitExecutorEvent("tool_call_completed", { tool_id: fastPathTool, success: toolResult.success });
+        const finalText = toolResult.observation ?? (toolResult.success ? "完成。" : "操作失败。");
+        updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
+        markTaskSucceeded(runtime, task);
+        persistArtifacts(runtime, task.task_id, toolResult.artifact_paths);
+        return {
+          task,
+          taskEvents: runtime.store.getTaskEvents(task.task_id),
+          artifacts: toolResult.artifact_paths ?? [],
+          fast_path: true,
+          final_text: finalText
+        };
       }
-    });
 
-    if (loopResult.status === "waiting_external_decision") {
-      updateTask(runtime, task, {
-        status: "partial_success",
-        sub_status: "waiting_external_decision",
-        retryable: true
-      }, true);
-      markTaskSucceeded(runtime, task);
-      return {
+      const loopResult = await runToolAgentLoop({
         task,
-        taskEvents: runtime.store.getTaskEvents(task.task_id),
-        pendingApproval: loopResult.approval
-      };
-    }
+        runtime: {
+          ...runtime,
+          emitTaskEvent: emitExecutorEvent
+        }
+      });
 
-    if (loopResult.status === "partial_success") {
+      if (loopResult.status === "waiting_external_decision") {
+        updateTask(runtime, task, {
+          status: "partial_success",
+          sub_status: "waiting_external_decision",
+          retryable: true
+        }, true);
+        markTaskSucceeded(runtime, task);
+        return {
+          task,
+          taskEvents: runtime.store.getTaskEvents(task.task_id),
+          pendingApproval: loopResult.approval
+        };
+      }
+
+      if (loopResult.status === "partial_success") {
+        updateTask(runtime, task, {
+          status: "partial_success",
+          sub_status: "tool_loop_stopped"
+        }, true);
+        emitExecutorEvent("partial_success", {
+          summary: loopResult.final_text
+        });
+        markTaskSucceeded(runtime, task);
+        return {
+          task,
+          taskEvents: runtime.store.getTaskEvents(task.task_id),
+          artifacts: loopResult.artifacts ?? []
+        };
+      }
+
+      if (loopResult.status !== "success") {
+        markTaskFailed(runtime, task, {
+          message: loopResult.error ?? "Tool loop failed."
+        });
+        return {
+          task,
+          taskEvents: runtime.store.getTaskEvents(task.task_id),
+          artifacts: []
+        };
+      }
+
       updateTask(runtime, task, {
-        status: "partial_success",
-        sub_status: "tool_loop_stopped"
+        status: "success",
+        sub_status: "completed",
+        progress: 1
       }, true);
-      emitExecutorEvent("partial_success", {
+      emitExecutorEvent("success", {
         summary: loopResult.final_text
       });
       markTaskSucceeded(runtime, task);
+      persistArtifacts(runtime, task.task_id, loopResult.artifacts);
+
       return {
         task,
         taskEvents: runtime.store.getTaskEvents(task.task_id),
         artifacts: loopResult.artifacts ?? []
       };
-    }
-
-    if (loopResult.status !== "success") {
-      markTaskFailed(runtime, task, {
-        message: loopResult.error ?? "Tool loop failed."
-      });
+    } catch (error) {
+      markTaskFailed(runtime, task, error);
       return {
         task,
         taskEvents: runtime.store.getTaskEvents(task.task_id),
         artifacts: []
       };
     }
+  };
 
-    updateTask(runtime, task, {
-      status: "success",
-      sub_status: "completed",
-      progress: 1
-    }, true);
-    emitExecutorEvent("success", {
-      summary: loopResult.final_text
-    });
-    markTaskSucceeded(runtime, task);
-    persistArtifacts(runtime, task.task_id, loopResult.artifacts);
-
-    return {
-      task,
-      taskEvents: runtime.store.getTaskEvents(task.task_id),
-      artifacts: loopResult.artifacts ?? []
-    };
-  } catch (error) {
-    markTaskFailed(runtime, task, error);
-    return {
-      task,
-      taskEvents: runtime.store.getTaskEvents(task.task_id),
-      artifacts: []
-    };
+  if (background) {
+    setTimeout(() => { void execute(); }, 0);
+    return { task, taskEvents: runtime.store.getTaskEvents(task.task_id), artifacts: [], background: true };
   }
+
+  return execute();
 }

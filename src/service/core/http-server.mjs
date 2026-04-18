@@ -677,6 +677,7 @@ async function submitTaskFromBody(runtime, body) {
   }
   // Write normalised command back so all branches below see the trimmed value
   body.userCommand = userCommand;
+  const background = body.background === true || body.returnImmediately === true;
 
   // UCA-059: Clarify-before-act. If the command is ambiguous (missing referent,
   // missing recipient, etc.), return a clarification request instead of creating
@@ -710,7 +711,8 @@ async function submitTaskFromBody(runtime, body) {
       captureMode: body.captureMode ?? "fast_path",
       runtime,
       fastPathTool: fastPath.tool,
-      fastPathArgs: fastPath.args
+      fastPathArgs: fastPath.args,
+      background
     });
   }
   // Tier 1 (translation) — handled by specialised executor (future: translation_fast)
@@ -724,6 +726,7 @@ async function submitTaskFromBody(runtime, body) {
       sourceApp: body.sourceApp,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
+      background,
       runtime
     });
   }
@@ -734,6 +737,7 @@ async function submitTaskFromBody(runtime, body) {
       userCommand: body.userCommand,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
+      background,
       runtime
     });
   }
@@ -747,6 +751,7 @@ async function submitTaskFromBody(runtime, body) {
       captureMode: body.captureMode,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride ?? "multi_modal",
+      background,
       runtime
     });
   }
@@ -757,6 +762,7 @@ async function submitTaskFromBody(runtime, body) {
       userCommand: body.userCommand,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
+      background,
       runtime
     });
   }
@@ -767,6 +773,7 @@ async function submitTaskFromBody(runtime, body) {
       executionMode: body.executionMode,
       sourceApp: body.sourceApp,
       captureMode: body.captureMode,
+      background,
       runtime
     });
   }
@@ -782,6 +789,7 @@ async function submitTaskFromBody(runtime, body) {
     executionMode: body.executionMode,
     executorOverride: body.executorOverride,
     skipDecomposition: Boolean(body.skipDecomposition),
+    background,
     runtime
   });
 }
@@ -1778,7 +1786,8 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           taskId: retryMatch[1],
           runtime,
           mode: body.mode ?? "retry_same",
-          overrides: body.overrides ?? {}
+          overrides: body.overrides ?? {},
+          background: body.background === true || body.returnImmediately === true
         });
         return sendJson(response, 200, result);
       }

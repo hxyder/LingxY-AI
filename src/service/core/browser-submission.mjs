@@ -555,7 +555,8 @@ export async function submitBrowserTask({
   childIndex = null,
   retryCount = 0,
   executorOverride = null,
-  skipDecomposition = false
+  skipDecomposition = false,
+  background = false
 }) {
   ensureRuntimeServices(runtime);
   const store = runtime.store;
@@ -663,56 +664,65 @@ export async function submitBrowserTask({
     };
   }
 
-  if (capture.sourceType === "image") {
-    let imageArtifactPath = null;
-    try {
-      imageArtifactPath = await saveBrowserImageArtifact({ capture, runtime, artifactStore, task });
-    } catch (error) {
-      markTaskFailed(runtime, task, {
-        message: `Browser image fetch failed: ${error.message}`
+  const execute = async () => {
+    if (capture.sourceType === "image") {
+      let imageArtifactPath = null;
+      try {
+        imageArtifactPath = await saveBrowserImageArtifact({ capture, runtime, artifactStore, task });
+      } catch (error) {
+        markTaskFailed(runtime, task, {
+          message: `Browser image fetch failed: ${error.message}`
+        });
+        return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+      }
+      const delegated = await submitImageTask({
+        imagePaths: [imageArtifactPath],
+        userCommand,
+        source: "browser",
+        sourceApp: capture.browser,
+        captureMode: "extension",
+        runtime,
+        parentTaskId: task.task_id
       });
-      return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+      updateTask(runtime, task, {
+        status: "success",
+        sub_status: "delegated_to_image_pipeline",
+        progress: 1
+      }, true);
+      markTaskSucceeded(runtime, task);
+      return {
+        task,
+        taskEvents: store.getTaskEvents(task.task_id),
+        artifacts: delegated.artifacts ?? []
+      };
     }
-    const delegated = await submitImageTask({
-      imagePaths: [imageArtifactPath],
-      userCommand,
-      source: "browser",
-      sourceApp: capture.browser,
-      captureMode: "extension",
-      runtime,
-      parentTaskId: task.task_id
-    });
-    updateTask(runtime, task, {
-      status: "success",
-      sub_status: "delegated_to_image_pipeline",
-      progress: 1
-    }, true);
-    markTaskSucceeded(runtime, task);
+
+    if (capture.sourceType === "link" && !capture.html) {
+      try {
+        await fetchBrowserLinkContext({ capture, runtime, artifactStore, task });
+      } catch (error) {
+        markTaskFailed(runtime, task, {
+          message: `Browser link fetch failed: ${error.message}`
+        });
+        return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+      }
+    }
+
+    const executionResult = await runBrowserExecutor({ task, runtime });
+
     return {
       task,
       taskEvents: store.getTaskEvents(task.task_id),
-      artifacts: delegated.artifacts ?? []
+      artifacts: executionResult.artifacts ?? []
     };
-  }
-
-  if (capture.sourceType === "link" && !capture.html) {
-    try {
-      await fetchBrowserLinkContext({ capture, runtime, artifactStore, task });
-    } catch (error) {
-      markTaskFailed(runtime, task, {
-        message: `Browser link fetch failed: ${error.message}`
-      });
-      return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
-    }
-  }
-
-  const executionResult = await runBrowserExecutor({ task, runtime });
-
-  return {
-    task,
-    taskEvents: store.getTaskEvents(task.task_id),
-    artifacts: executionResult.artifacts ?? []
   };
+
+  if (background) {
+    setTimeout(() => { void execute(); }, 0);
+    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [], background: true };
+  }
+
+  return execute();
 }
 
 export function listRecentTasks(store, limit = 5) {

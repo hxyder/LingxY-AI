@@ -233,7 +233,8 @@ export async function submitImageTask({
   executionMode,
   parentTaskId = null,
   retryCount = 0,
-  executorOverride = "multi_modal"
+  executorOverride = "multi_modal",
+  background = false
 }) {
   ensureRuntimeServices(runtime);
   const store = runtime.store;
@@ -309,55 +310,64 @@ export async function submitImageTask({
     return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
   }
 
-  const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
-  emitTaskEvent({
-    runtime,
-    taskId: task.task_id,
-    eventType: "step_started",
-    payload: {
-      step: "image_ocr",
-      output_dir: outputDir,
-      ocr_engine: ocrResult.ocr_engine
-    }
-  });
-  emitTaskEvent({
-    runtime,
-    taskId: task.task_id,
-    eventType: "step_finished",
-    payload: {
-      step: "image_ocr",
-      ocr_confidence: ocrResult.ocr_confidence
-    }
-  });
-
-  // if multi_modal executor has no Vision API key, fallback to code_cli
-  const visionProvider = resolveProviderForTask("vision");
-  const hasVisionApiProvider = Boolean(visionProvider && visionProvider.kind !== "code_cli");
-  const visionCliRuntime = resolveCodeCliRuntimeForTask("vision", runtime.kimiRuntime);
-
-  if (!hasVisionApiProvider && visionCliRuntime) {
-    const providerDescriptor = describeCodeCliRuntime(visionCliRuntime);
-    const kimiResult = await runKimiImageFallback({
-      task,
+  const execute = async () => {
+    const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+    emitTaskEvent({
       runtime,
-      artifactStore,
-      store,
-      queue,
-      cliRuntime: visionCliRuntime,
-      providerDescriptor
+      taskId: task.task_id,
+      eventType: "step_started",
+      payload: {
+        step: "image_ocr",
+        output_dir: outputDir,
+        ocr_engine: ocrResult.ocr_engine
+      }
     });
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "step_finished",
+      payload: {
+        step: "image_ocr",
+        ocr_confidence: ocrResult.ocr_confidence
+      }
+    });
+
+    // if multi_modal executor has no Vision API key, fallback to code_cli
+    const visionProvider = resolveProviderForTask("vision");
+    const hasVisionApiProvider = Boolean(visionProvider && visionProvider.kind !== "code_cli");
+    const visionCliRuntime = resolveCodeCliRuntimeForTask("vision", runtime.kimiRuntime);
+
+    if (!hasVisionApiProvider && visionCliRuntime) {
+      const providerDescriptor = describeCodeCliRuntime(visionCliRuntime);
+      const kimiResult = await runKimiImageFallback({
+        task,
+        runtime,
+        artifactStore,
+        store,
+        queue,
+        cliRuntime: visionCliRuntime,
+        providerDescriptor
+      });
+      return {
+        task,
+        taskEvents: store.getTaskEvents(task.task_id),
+        artifacts: kimiResult.artifacts ?? []
+      };
+    }
+
+    await runExecutor({ task, runtime });
+
     return {
       task,
       taskEvents: store.getTaskEvents(task.task_id),
-      artifacts: kimiResult.artifacts ?? []
+      artifacts: []
     };
+  };
+
+  if (background) {
+    setTimeout(() => { void execute(); }, 0);
+    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [], background: true };
   }
 
-  await runExecutor({ task, runtime });
-
-  return {
-    task,
-    taskEvents: store.getTaskEvents(task.task_id),
-    artifacts: []
-  };
+  return execute();
 }

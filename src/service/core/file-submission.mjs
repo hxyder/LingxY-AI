@@ -45,6 +45,7 @@ export async function submitFileTask({
   parentTaskId = null,
   retryCount = 0,
   executorOverride = null,
+  background = false,
   runtime
 }) {
   ensureRuntimeServices(runtime);
@@ -166,113 +167,122 @@ export async function submitFileTask({
 
   const providerDescriptor = describeCodeCliRuntime(cliRuntime);
 
-  const controller = new AbortController();
-  registerActiveExecution(runtime, task.task_id, {
-    cancel: async () => controller.abort()
-  });
-
-  try {
-    queue.markRunning(task.task_id);
-    updateTask(runtime, task, {
-      status: "running",
-      sub_status: "starting_executor"
-    }, true);
-
-    emitTaskEvent({
-      runtime,
-      taskId: task.task_id,
-      eventType: "provider_resolved",
-      payload: attachProviderFieldsToEvent(providerDescriptor, { task_type: "file_analysis" })
-    });
-    appendAuditLog(runtime, "ai.provider_resolved", {
-      task_id: task.task_id,
-      task_type: "file_analysis",
-      ...providerDescriptor
-    }, task.task_id);
-
-    const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
-    const taskPackage = buildKimiTaskPackage({ task, outputDir });
-    const execution = await executeKimiTask({
-      command: cliRuntime.command,
-      args: cliRuntime.args,
-      env: cliRuntime.env,
-      taskPackage,
-      transport: cliRuntime.transport,
-      model: cliRuntime.model,
-      reasoningEffort: cliRuntime.reasoningEffort ?? "",
-      configFile: cliRuntime.configFile,
-      mcpConfigFiles: cliRuntime.mcpConfigFiles,
-      maxRuntimeSeconds: cliRuntime.maxRuntimeSeconds ?? 600,
-      abortSignal: controller.signal,
-      onEvent(event) {
-        emitTaskEvent({
-          runtime,
-          taskId: task.task_id,
-          eventType: event.type,
-          payload: attachProviderFieldsToEvent(providerDescriptor, event)
-        });
-        applyExecutorEvent(runtime, task, event);
-      }
+  const execute = async () => {
+    const controller = new AbortController();
+    registerActiveExecution(runtime, task.task_id, {
+      cancel: async () => controller.abort()
     });
 
-    if (execution.status === "cancelled") {
-      markTaskFailed(runtime, task, {
-        code: "ABORT_ERR",
-        summary: "Kimi CLI execution cancelled by user."
-      });
-      return {
-        task,
-        taskEvents: store.getTaskEvents(task.task_id),
-        artifacts: [],
-        stderrPath: execution.stderrPath
-      };
-    }
-
-    if (execution.status !== "success") {
-      markTaskFailed(runtime, task, {
-        exitCode: execution.exitCode,
-        stderr: execution.stderrPath,
-        message: `Kimi CLI failed with exit code ${execution.exitCode ?? "unknown"}`
-      });
-      return {
-        task,
-        taskEvents: store.getTaskEvents(task.task_id),
-        artifacts: [],
-        stderrPath: execution.stderrPath
-      };
-    }
-
-    const artifactRecords = execution.artifacts.map((artifact) =>
-      artifactStore.registerArtifact(task.task_id, artifact.path, artifact.mime_type)
-    );
-
-    for (const artifactRecord of artifactRecords) {
-      store.appendArtifact(artifactRecord);
-    }
-
-    if (task.status !== "success") {
+    try {
+      queue.markRunning(task.task_id);
       updateTask(runtime, task, {
-        status: "success",
-        sub_status: "completed",
-        progress: 1
+        status: "running",
+        sub_status: "starting_executor"
       }, true);
-    }
-    markTaskSucceeded(runtime, task);
 
-    return {
-      task,
-      taskEvents: store.getTaskEvents(task.task_id),
-      artifacts: artifactRecords,
-      stderrPath: execution.stderrPath
-    };
-  } catch (error) {
-    markTaskFailed(runtime, task, error);
-    return {
-      task,
-      taskEvents: store.getTaskEvents(task.task_id),
-      artifacts: []
-    };
-  } finally {
-    unregisterActiveExecution(runtime, task.task_id);
+      emitTaskEvent({
+        runtime,
+        taskId: task.task_id,
+        eventType: "provider_resolved",
+        payload: attachProviderFieldsToEvent(providerDescriptor, { task_type: "file_analysis" })
+      });
+      appendAuditLog(runtime, "ai.provider_resolved", {
+        task_id: task.task_id,
+        task_type: "file_analysis",
+        ...providerDescriptor
+      }, task.task_id);
+
+      const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+      const taskPackage = buildKimiTaskPackage({ task, outputDir });
+      const execution = await executeKimiTask({
+        command: cliRuntime.command,
+        args: cliRuntime.args,
+        env: cliRuntime.env,
+        taskPackage,
+        transport: cliRuntime.transport,
+        model: cliRuntime.model,
+        reasoningEffort: cliRuntime.reasoningEffort ?? "",
+        configFile: cliRuntime.configFile,
+        mcpConfigFiles: cliRuntime.mcpConfigFiles,
+        maxRuntimeSeconds: cliRuntime.maxRuntimeSeconds ?? 600,
+        abortSignal: controller.signal,
+        onEvent(event) {
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: event.type,
+            payload: attachProviderFieldsToEvent(providerDescriptor, event)
+          });
+          applyExecutorEvent(runtime, task, event);
+        }
+      });
+
+      if (execution.status === "cancelled") {
+        markTaskFailed(runtime, task, {
+          code: "ABORT_ERR",
+          summary: "Kimi CLI execution cancelled by user."
+        });
+        return {
+          task,
+          taskEvents: store.getTaskEvents(task.task_id),
+          artifacts: [],
+          stderrPath: execution.stderrPath
+        };
+      }
+
+      if (execution.status !== "success") {
+        markTaskFailed(runtime, task, {
+          exitCode: execution.exitCode,
+          stderr: execution.stderrPath,
+          message: `Kimi CLI failed with exit code ${execution.exitCode ?? "unknown"}`
+        });
+        return {
+          task,
+          taskEvents: store.getTaskEvents(task.task_id),
+          artifacts: [],
+          stderrPath: execution.stderrPath
+        };
+      }
+
+      const artifactRecords = execution.artifacts.map((artifact) =>
+        artifactStore.registerArtifact(task.task_id, artifact.path, artifact.mime_type)
+      );
+
+      for (const artifactRecord of artifactRecords) {
+        store.appendArtifact(artifactRecord);
+      }
+
+      if (task.status !== "success") {
+        updateTask(runtime, task, {
+          status: "success",
+          sub_status: "completed",
+          progress: 1
+        }, true);
+      }
+      markTaskSucceeded(runtime, task);
+
+      return {
+        task,
+        taskEvents: store.getTaskEvents(task.task_id),
+        artifacts: artifactRecords,
+        stderrPath: execution.stderrPath
+      };
+    } catch (error) {
+      markTaskFailed(runtime, task, error);
+      return {
+        task,
+        taskEvents: store.getTaskEvents(task.task_id),
+        artifacts: []
+      };
+    } finally {
+      unregisterActiveExecution(runtime, task.task_id);
+    }
+  };
+
+  if (background) {
+    setTimeout(() => { void execute(); }, 0);
+    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [], background: true };
   }
+
+  return execute();
 }

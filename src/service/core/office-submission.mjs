@@ -98,7 +98,8 @@ export async function submitOfficeTask({
   executionMode,
   parentTaskId = null,
   retryCount = 0,
-  executorOverride = null
+  executorOverride = null,
+  background = false
 }) {
   ensureRuntimeServices(runtime);
   const store = runtime.store;
@@ -180,31 +181,40 @@ export async function submitOfficeTask({
     return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
   }
 
-  const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
-  emitTaskEvent({
-    runtime,
-    taskId: task.task_id,
-    eventType: "step_started",
-    payload: {
-      step: "office_selection_normalized",
-      output_dir: outputDir,
-      office_app: capture.officeApp
-    }
-  });
-  emitTaskEvent({
-    runtime,
-    taskId: task.task_id,
-    eventType: "step_finished",
-    payload: {
-      step: "office_selection_normalized"
-    }
-  });
+  const execute = async () => {
+    const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "step_started",
+      payload: {
+        step: "office_selection_normalized",
+        output_dir: outputDir,
+        office_app: capture.officeApp
+      }
+    });
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "step_finished",
+      payload: {
+        step: "office_selection_normalized"
+      }
+    });
 
-  await runFastExecutor({ task, runtime });
+    await runFastExecutor({ task, runtime });
 
-  return {
-    task,
-    taskEvents: store.getTaskEvents(task.task_id),
-    artifacts: []
+    return {
+      task,
+      taskEvents: store.getTaskEvents(task.task_id),
+      artifacts: []
+    };
   };
+
+  if (background) {
+    setTimeout(() => { void execute(); }, 0);
+    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [], background: true };
+  }
+
+  return execute();
 }
