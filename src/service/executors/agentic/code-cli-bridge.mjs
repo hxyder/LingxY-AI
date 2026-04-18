@@ -23,6 +23,7 @@
  */
 
 import { spawn } from "node:child_process";
+import { buildCodeCliInvocationArgs } from "../shared/code-cli-invocation.mjs";
 
 /* ------------------------------------------------------------------------ */
 /* 1. Prompt building                                                        */
@@ -165,42 +166,17 @@ function pushPrintFlags(args) {
   if (!args.includes("--input-format")) args.push("--input-format", "text");
 }
 
-function buildInvocationArgs({ baseArgs, transport, model, configFile = null, mcpConfigFiles = [], reasoningEffort = "", command = "" }) {
-  const args = [...(Array.isArray(baseArgs) ? baseArgs : [])];
-
-  // Codex CLI does not support the Kimi/Claude `--print --output-format`
-  // flags. Its non-interactive mode is `codex exec --json`, with prompt
-  // content read from stdin.
-  if (transport === "stream_json_print" && isCodexCommand(command)) {
-    if (!hasCodexSubcommand(args)) {
-      args.unshift("exec");
-    }
-    if (!hasAnyFlag(args, "--json")) args.push("--json");
-    if (!hasAnyFlag(args, "--model", "-m")) pushFlagValue(args, "--model", model);
-    pushCodexConfig(args, "model_reasoning_effort", normalizeCodexReasoningEffort(reasoningEffort));
-    return args;
-  }
-
-  // Kimi CLI and Claude Code both support print+stream-json, but their
-  // config/MCP flags differ. Keep those families split so Kimi-only flags do
-  // not leak into Claude or other CLIs.
-  if (transport === "stream_json_print") {
-    pushPrintFlags(args);
-    pushFlagValue(args, "--model", model);
-    if (isKimiCommand(command)) {
-      pushFlagValue(args, "--config-file", configFile);
-      for (const mcpConfigFile of mcpConfigFiles ?? []) {
-        if (mcpConfigFile) args.push("--mcp-config-file", mcpConfigFile);
-      }
-    } else if (isClaudeCommand(command)) {
-      pushFlagValue(args, "--settings", configFile);
-      for (const mcpConfigFile of mcpConfigFiles ?? []) {
-        if (mcpConfigFile) args.push("--mcp-config", mcpConfigFile);
-      }
-    }
-  }
-
-  return args;
+function buildInvocationArgs({ baseArgs, transport, model, configFile = null, mcpConfigFiles = [], reasoningEffort = "", command = "", imagePaths = [] }) {
+  return buildCodeCliInvocationArgs({
+    command,
+    args: baseArgs,
+    transport,
+    model,
+    configFile,
+    mcpConfigFiles,
+    reasoningEffort,
+    imagePaths
+  });
 }
 
 /**
@@ -215,6 +191,7 @@ export function spawnCodeCliChat({
   model = null,
   configFile = null,
   mcpConfigFiles = [],
+  imagePaths = [],
   transport = "stream_json_print",
   reasoningEffort = "",
   timeoutSeconds = 120,
@@ -237,6 +214,7 @@ export function spawnCodeCliChat({
     model,
     configFile,
     mcpConfigFiles,
+    imagePaths,
     reasoningEffort,
     command
   });
@@ -427,6 +405,9 @@ function extractCliAssistantText(event) {
   if (event.type === "agent_message" || event.type === "assistant_message") {
     return extractContentText(event.message ?? event.text ?? event.content);
   }
+  if (event.type === "content" || event.type === "message" || event.type === "result") {
+    return extractContentText(event.content ?? event.text ?? event.message ?? event.result ?? event.response);
+  }
   if (event.type === "item.completed" || event.type === "response.output_item.done") {
     return extractCliAssistantText(event.item ?? event.output ?? event.message);
   }
@@ -558,6 +539,7 @@ export async function runCodeCliChat({ resolved, messages, signal, timeoutSecond
     model: resolved.model ?? null,
     configFile: resolved.configFile ?? null,
     mcpConfigFiles: resolved.mcpConfigFiles ?? [],
+    imagePaths: resolved.imagePaths ?? resolved.image_paths ?? [],
     reasoningEffort: resolved.reasoningEffort ?? "",
     prompt,
     timeoutSeconds,

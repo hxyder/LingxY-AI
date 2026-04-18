@@ -3752,12 +3752,13 @@ function exitNoteMode(options = {}) {
 }
 
 async function transcribeAudioBlob(blob, { lang = "auto" } = {}) {
+  const body = await blob.arrayBuffer();
   const response = await fetch(`${serviceBaseUrl}/note/transcribe?lang=${encodeURIComponent(lang || "auto")}`, {
     method: "POST",
     headers: {
       "Content-Type": blob.type || "audio/webm"
     },
-    body: blob
+    body
   });
   const payload = await response.json();
   if (!response.ok) {

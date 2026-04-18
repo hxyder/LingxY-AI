@@ -173,6 +173,7 @@ const requiredPaths = [
   "src/service/failures/classifier.mjs",
   "src/service/failures/user_messages.json",
   "src/service/retry/retry-manager.mjs",
+  "src/service/executors/shared/code-cli-invocation.mjs",
   "src/service/metrics/registry.mjs",
   "src/service/security/README.md",
   "src/service/security/broker.mjs",

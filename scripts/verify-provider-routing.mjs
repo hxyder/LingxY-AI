@@ -453,6 +453,7 @@ await writeConfig({
       reasoningEffort: "high"
     });
     assert.equal(claudeArgs.includes("--print"), true, "Claude invocation must use print mode");
+    assert.equal(claudeArgs.includes("--verbose"), true, "Claude stream-json print mode must include --verbose");
     assert.equal(claudeArgs.includes("--mcp-config"), true, "Claude invocation must use --mcp-config");
     assert.equal(claudeArgs.includes("--mcp-config-file"), false, "Claude invocation must not receive Kimi's --mcp-config-file");
     assert.equal(claudeArgs.includes("--settings"), true, "Claude config files should map to --settings");
@@ -466,6 +467,8 @@ await writeConfig({
     assert.equal(codexArgs[codexArgs.indexOf("-c") + 1], "model_reasoning_effort=\"high\"");
     const codexXhighArgs = __testBuildInvocationArgs({ baseArgs: [], transport: "stream_json_print", command: "codex.exe", reasoningEffort: "extra_high" });
     assert.equal(codexXhighArgs[codexXhighArgs.indexOf("-c") + 1], "model_reasoning_effort=\"xhigh\"");
+    const codexOldModelArgs = __testBuildInvocationArgs({ baseArgs: [], transport: "stream_json_print", command: "codex.exe", model: "gpt-4o" });
+    assert.equal(codexOldModelArgs.includes("--model"), false, "Codex must not receive old saved gpt-4o model values");
   }
 
   const { __testBuildPrintInvocationArgs } = await import("../src/service/executors/kimi/kimi-cli-executor.mjs");
@@ -489,6 +492,7 @@ await writeConfig({
       mcpConfigFiles: ["mcp.json"]
     });
     assert.equal(claudeFileArgs.includes("--print"), true, "Claude file executor must use print mode");
+    assert.equal(claudeFileArgs.includes("--verbose"), true, "Claude file executor stream-json mode requires --verbose");
     assert.equal(claudeFileArgs.includes("-w"), false, "Claude must not receive Kimi's -w/--work-dir flag because Claude treats -w as worktree");
     assert.equal(claudeFileArgs.includes("--work-dir"), false, "Claude must not receive Kimi's --work-dir flag");
     assert.equal(claudeFileArgs.includes("--mcp-config"), true, "Claude file executor should use --mcp-config");

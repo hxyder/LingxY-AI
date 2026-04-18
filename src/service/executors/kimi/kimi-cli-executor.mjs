@@ -5,6 +5,7 @@ import path from "node:path";
 import { finalizeJsonLines, parseJsonLinesChunk } from "./jsonl-parser.mjs";
 import { buildKimiPrintPrompt, deriveKimiWorkspace } from "./print-mode-prompt.mjs";
 import { detectRequestedOutputFormat, writeRequestedArtifacts } from "./output-format.mjs";
+import { buildCodeCliInvocationArgs } from "../shared/code-cli-invocation.mjs";
 
 export function createKimiCliExecutorScaffold() {
   return {
@@ -190,6 +191,9 @@ function extractCliAssistantText(event) {
   if (event.type === "agent_message" || event.type === "assistant_message") {
     return extractContentText(event.message ?? event.text ?? event.content);
   }
+  if (event.type === "content" || event.type === "message" || event.type === "result") {
+    return extractContentText(event.content ?? event.text ?? event.message ?? event.result ?? event.response);
+  }
   if (event.type === "item.completed" || event.type === "response.output_item.done") {
     return extractCliAssistantText(event.item ?? event.output ?? event.message);
   }
@@ -255,55 +259,21 @@ function buildPrintInvocationArgs({
   configFile = null,
   mcpConfigFiles = [],
   workDir,
-  addDirs = []
+  addDirs = [],
+  imagePaths = []
 } = {}) {
-  const invocationArgs = [...args];
-
-  if (isCodexCommand(command)) {
-    if (!hasCodexSubcommand(invocationArgs)) {
-      invocationArgs.unshift("exec");
-    }
-    if (!hasAnyFlag(invocationArgs, "--json")) invocationArgs.push("--json");
-    if (!hasAnyFlag(invocationArgs, "-C", "--cd") && workDir) {
-      invocationArgs.push("-C", workDir);
-    }
-    if (!hasAnyFlag(invocationArgs, "--skip-git-repo-check")) {
-      invocationArgs.push("--skip-git-repo-check");
-    }
-    if (!hasAnyFlag(invocationArgs, "--model", "-m")) pushFlagValue(invocationArgs, "--model", model);
-    pushCodexConfig(invocationArgs, "model_reasoning_effort", normalizeCodexReasoningEffort(reasoningEffort));
-    for (const extraDir of addDirs) {
-      invocationArgs.push("--add-dir", extraDir);
-    }
-    return invocationArgs;
-  }
-
-  pushPrintFlags(invocationArgs);
-
-  if (isKimiCommand(command) && !hasAnyFlag(invocationArgs, "-w", "--work-dir") && workDir) {
-    invocationArgs.push("-w", workDir);
-  }
-
-  if (model && !hasAnyFlag(invocationArgs, "--model", "-m")) {
-    invocationArgs.push("--model", model);
-  }
-  if (configFile && isKimiCommand(command)) {
-    invocationArgs.push("--config-file", configFile);
-  } else if (configFile && isClaudeCommand(command)) {
-    invocationArgs.push("--settings", configFile);
-  }
-  for (const extraDir of addDirs) {
-    invocationArgs.push("--add-dir", extraDir);
-  }
-  for (const mcpConfigFile of mcpConfigFiles) {
-    if (isKimiCommand(command)) {
-      invocationArgs.push("--mcp-config-file", mcpConfigFile);
-    } else if (isClaudeCommand(command)) {
-      invocationArgs.push("--mcp-config", mcpConfigFile);
-    }
-  }
-
-  return invocationArgs;
+  return buildCodeCliInvocationArgs({
+    command,
+    args,
+    transport: "stream_json_print",
+    model,
+    reasoningEffort,
+    configFile,
+    mcpConfigFiles,
+    workDir,
+    addDirs,
+    imagePaths
+  });
 }
 
 async function executeKimiPrintModeTask({
@@ -335,7 +305,8 @@ async function executeKimiPrintModeTask({
     configFile,
     mcpConfigFiles,
     workDir,
-    addDirs
+    addDirs,
+    imagePaths: taskPackage.context?.image_paths ?? []
   });
 
   const child = spawn(command, invocationArgs, {

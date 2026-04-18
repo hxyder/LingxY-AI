@@ -7,6 +7,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { normalizeCodeCliModel } from "./code-cli-invocation.mjs";
 
 function getConfigPath() {
   // Explicit override (used by verify-provider-routing and other tests so
@@ -103,6 +104,10 @@ function providerToResolved(provider, route, taskType) {
   if (provider.kind === "code_cli") {
     if (!provider.command) return null;
     const reasoningEffort = normalizeReasoningEffort(route?.reasoningEffort);
+    const model = normalizeCodeCliModel({
+      command: provider.command,
+      model: resolveRoutedModel(provider, route, taskType)
+    });
     return {
       id: "code_cli",
       configId: provider.id ?? null,
@@ -114,7 +119,7 @@ function providerToResolved(provider, route, taskType) {
       configFile: provider.configFile ?? null,
       mcpConfigFiles: provider.mcpConfigFiles ?? [],
       maxRuntimeSeconds: provider.maxRuntimeSeconds ?? 600,
-      model: resolveRoutedModel(provider, route, taskType),
+      model,
       mode: route?.mode ?? "",
       reasoningEffort,
       providerName: provider.name
