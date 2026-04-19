@@ -39,6 +39,9 @@ def main() -> int:
     parser.add_argument("--beam-size", type=int, default=int(os.environ.get("UCA_LOCAL_WHISPER_BEAM_SIZE", "1")))
     parser.add_argument("--stream", action="store_true",
                         help="Emit one JSON line per segment as decoding progresses, plus a final 'done' summary.")
+    parser.add_argument("--no-vad", action="store_true",
+                        help="Disable Silero VAD pre-filter. Use for very short / quiet clips where VAD is "
+                             "too aggressive (e.g. Echo wake-word enrollment).")
     args = parser.parse_args()
 
     try:
@@ -68,7 +71,7 @@ def main() -> int:
             args.audio_path,
             language=language,
             beam_size=args.beam_size,
-            vad_filter=True
+            vad_filter=not args.no_vad
         )
         rendered_segments = []
         for segment in segments:

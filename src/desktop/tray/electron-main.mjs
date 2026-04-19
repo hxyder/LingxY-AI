@@ -1077,6 +1077,49 @@ export function createElectronShellRuntime({
             click() { void updateSettings({ echoMode: true }); }
           },
           { type: "separator" },
+          {
+            label: "录入我的唤醒词（3 次）...",
+            enabled: Boolean(current.echoMode),
+            click() {
+              const dock = windows.get("dock");
+              if (dock && !dock.webContents?.isDestroyed?.()) {
+                dock.webContents.send("uca:start-wake-enrollment", { at: Date.now() });
+              }
+            }
+          },
+          {
+            label: "清除个人唤醒词样本",
+            enabled: Boolean(current.echoMode),
+            async click() {
+              try {
+                const dir = path.resolve(process.cwd(), "models", "user-keywords");
+                const files = await readdir(dir).catch(() => []);
+                await Promise.all(files
+                  .filter((f) => f.endsWith(".txt") || f.endsWith(".webm") || f.endsWith(".wav"))
+                  .map((f) => unlink(path.join(dir, f)).catch(() => null)));
+                const dock = windows.get("dock");
+                if (dock && !dock.webContents?.isDestroyed?.()) {
+                  dock.webContents.send("uca:echo-bubble-show", {
+                    text: "✓ 个人唤醒词样本已清除",
+                    kind: "info", durationMs: 1800
+                  });
+                }
+              } catch (err) {
+                safeWarn("[UCA] clear-user-keywords failed:", err?.message ?? err);
+              }
+            }
+          },
+          { type: "separator" },
+          {
+            label: "打开 Dock 开发者工具（查看 Echo 日志）",
+            click() {
+              const dock = windows.get("dock");
+              if (dock && !dock.webContents?.isDestroyed?.()) {
+                try { dock.webContents.openDevTools({ mode: "detach" }); } catch { /* ignore */ }
+              }
+            }
+          },
+          { type: "separator" },
           { label: "打开主控台", click() { showWindow("console"); } },
           { label: "打开对话框", click() { showWindow("overlay"); } },
           { type: "separator" },

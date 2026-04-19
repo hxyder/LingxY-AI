@@ -103,6 +103,27 @@ let echoResumeTimer = null;
 let echoResumeAttempt = 0;
 let echoLocalKwsStatus = null;
 let echoLocalKwsStatusAt = 0;
+// Simple voice-activity tap: we piggyback an AnalyserNode on the mic stream
+// so we can RMS-gate outgoing KWS requests. Sending silence or ambient noise
+// to sherpa wastes CPU and produces false-negative "no match" responses that
+// the user can misread as "wake detection is broken".
+let echoVadContext = null;
+let echoVadAnalyser = null;
+let echoVadSource = null;
+let echoVadData = null;
+let echoLastVoiceAt = 0;
+// Adaptive noise floor — a rolling estimate of the quiet-ambient RMS so
+// VAD_RMS_THRESHOLD auto-scales with the user's actual mic/environment.
+// In a very quiet room the floor is ~0.002; in a cafe or with a fan it can
+// climb to 0.015. Without adaptation we either false-reject in noisy envs
+// (threshold too strict) or waste CPU in quiet rooms (threshold way above
+// noise). We keep the LOWER 20th-percentile of recent samples as the floor.
+let echoNoiseSamples = [];
+let echoCurrentFloor = 0.005;
+// Near-miss telemetry — how many KWS attempts have happened recently
+// without a match. Used to show a hint after a few silent tries.
+let echoKwsAttemptsSinceMatch = 0;
+let echoKwsLastHintAt = 0;
 
 // How long two identical transcripts count as "the same utterance". After
 // this window elapses, re-saying the wake word will retrigger even if the
@@ -113,8 +134,35 @@ const ECHO_DEDUPE_WINDOW_MS = 2500;
 const ECHO_MIN_REWAKE_MS = 1500;
 const ECHO_RESUME_DELAY_MS = 1200;
 const ECHO_LOCAL_KWS_STATUS_TTL_MS = 30_000;
-const ECHO_LOCAL_KWS_POLL_MS = 1200;
-const ECHO_LOCAL_KWS_WINDOW_CHUNKS = 4;
+const ECHO_LOCAL_KWS_POLL_MS = 900;
+// Slightly finer-grained chunks (500ms) with a larger rolling window (6)
+// gives a max 3s audio buffer per KWS request. Previously 700ms × 4 chunks
+// could fire with just one 0.7s chunk — way too short for sherpa to match
+// a two-syllable wake word.
+const ECHO_CHUNK_MS = 500;
+const ECHO_LOCAL_KWS_WINDOW_CHUNKS = 6;
+// Minimum accumulated audio before firing a KWS request. 1.5s is enough for
+// the "lin-xi" utterance with some framing silence; going lower made sherpa
+// flaky on the short-word edge cases.
+const ECHO_MIN_AUDIO_CHUNKS = 3;
+// Absolute floor the adaptive VAD threshold will never go below — even in
+// dead silence we shouldn't trust sub-0.004 RMS as signal, that's near the
+// ADC noise floor of consumer mics.
+const ECHO_VAD_ABS_FLOOR = 0.004;
+// Multiplier applied on top of the learned noise floor to decide
+// "speech vs ambient". 3× gives enough headroom that a steady ambient hum
+// doesn't keep tripping the gate.
+const ECHO_VAD_SPEECH_MULTIPLIER = 3;
+// How recently voice had to register for us to bother sending audio. Long
+// enough that the wake word + a bit of trailing silence always counts.
+const ECHO_VAD_WINDOW_MS = 1800;
+// Cap on rolling noise samples retained (at 60fps sampling this is ~5s).
+const ECHO_NOISE_SAMPLE_CAP = 300;
+// If the user appears to be speaking (voice energy detected) but none of
+// the recent KWS windows matched, we show a one-shot hint after this many
+// attempts so they realize they're being heard but the word isn't matching.
+const ECHO_NEAR_MISS_HINT_AFTER = 3;
+const ECHO_NEAR_MISS_HINT_COOLDOWN_MS = 15_000;
 
 function normalizeForMatch(text) {
   // Lowercase, collapse whitespace, and strip punctuation so phrases like
@@ -154,17 +202,33 @@ async function onWakeDetected(kind, transcript = "") {
   }
   echoLastWakeTime = now;
   echoPausedForSession = true;
+  echoKwsAttemptsSinceMatch = 0;  // reset near-miss counter after a good wake
   // A fresh wake replaces any pending session — reclaim the restart timer
   // so we don't have two timers racing, and force the recognizer down
   // before handing mic control to the overlay.
   if (echoRestartTimer) { clearTimeout(echoRestartTimer); echoRestartTimer = null; }
   if (echoResumeTimer) { clearTimeout(echoResumeTimer); echoResumeTimer = null; }
   stopEchoRecognizer();
+  // First bubble confirms the wake; second longer-duration bubble tells the
+  // user exactly what to do next, since overlay is hidden in echo mode and
+  // the user otherwise gets no UI cue that we're now listening for their
+  // command. We chain them so the confirmation flashes first, then the
+  // guidance stays on screen through the rest of the session window.
   window.ucaShell?.showEchoBubble?.({
-    text: kind === "note" ? "🎙 开始录音…" : "🎙 已唤醒，请说",
+    text: kind === "note" ? "🎙 开始录音…" : "🎙 已唤醒",
     kind: "wake",
-    durationMs: 1400
+    durationMs: 1200
   });
+  setTimeout(() => {
+    if (!echoPausedForSession) return;
+    window.ucaShell?.showEchoBubble?.({
+      text: kind === "note"
+        ? "🎙 正在录音… 按 Ctrl+Enter 结束并总结"
+        : "🎙 请说出指令，说完按 Ctrl+Enter 发送",
+      kind: "info",
+      durationMs: 12_000
+    });
+  }, 1100);
   window.__orbApi?.echoListening?.(true);
   try {
     await window.ucaShell?.sendEchoWake?.({ kind, transcript });
@@ -173,14 +237,20 @@ async function onWakeDetected(kind, transcript = "") {
   }
   // Fallback restart — if overlay never signals echo-session-end (user walks
   // away mid-sentence, Ctrl+Enter never pressed), reclaim the mic and resume
-  // wake-listening after 8 seconds. Short enough that re-saying "linxi" a
-  // few seconds later Just Works.
+  // wake-listening after 15 seconds. Gives the user enough time to finish a
+  // multi-sentence command; shorter than 20s so re-saying "linxi" soon after
+  // still Just Works.
   echoRestartTimer = setTimeout(() => {
     echoRestartTimer = null;
     echoPausedForSession = false;
     window.__orbApi?.echoListening?.(false);
+    window.ucaShell?.showEchoBubble?.({
+      text: "Echo 会话超时，已恢复监听。再次说「linxi」可重新唤醒",
+      kind: "info",
+      durationMs: 2400
+    });
     scheduleEchoResume({ delayMs: ECHO_RESUME_DELAY_MS, announce: false });
-  }, 8_000);
+  }, 15_000);
 }
 
 function scheduleEchoResume({ delayMs = ECHO_RESUME_DELAY_MS, announce = true } = {}) {
@@ -255,8 +325,24 @@ async function startEchoRecognizer() {
   const localKwsReady = await isEchoLocalKwsReady();
   if (!echoEnabled || echoPausedForSession) return;
   if (localKwsReady) {
+    // Announce which engine Echo is using so the user can distinguish a
+    // truly-broken wake from a noise/mic issue. Only fired on first start
+    // of a session — subsequent restarts (from session-end, watchdog, etc.)
+    // stay quiet.
+    if (echoResumeAttempt === 0) {
+      window.ucaShell?.showEchoBubble?.({
+        text: "Echo: 本地 sherpa-onnx 唤醒词引擎已就绪",
+        kind: "info", durationMs: 2200
+      });
+    }
     await startEchoFallback();
     return;
+  }
+  if (echoResumeAttempt === 0) {
+    window.ucaShell?.showEchoBubble?.({
+      text: "Echo: Web Speech 在线识别（本地 KWS 未配置）",
+      kind: "info", durationMs: 2200
+    });
   }
   startEchoWebSpeechRecognizer();
 }
@@ -378,6 +464,45 @@ async function startEchoFallback() {
       return;
     }
     echoFallbackStream = stream;
+    // Tap the raw mic stream for a cheap RMS-based VAD so we only POST to
+    // sherpa when there's actually speech in the buffer. MediaRecorder chunks
+    // are opus-encoded — decoding them client-side just for energy would be
+    // silly, so we tap the PCM stream separately via Web Audio.
+    try {
+      echoVadContext = new (window.AudioContext || window.webkitAudioContext)();
+      echoVadSource = echoVadContext.createMediaStreamSource(stream);
+      echoVadAnalyser = echoVadContext.createAnalyser();
+      echoVadAnalyser.fftSize = 512;
+      echoVadAnalyser.smoothingTimeConstant = 0.3;
+      echoVadSource.connect(echoVadAnalyser);
+      echoVadData = new Float32Array(echoVadAnalyser.fftSize);
+      echoLastVoiceAt = 0;
+      echoNoiseSamples = [];
+      echoCurrentFloor = ECHO_VAD_ABS_FLOOR;
+      const sampleVad = () => {
+        if (!echoVadAnalyser) return;
+        echoVadAnalyser.getFloatTimeDomainData(echoVadData);
+        let sumSq = 0;
+        for (let i = 0; i < echoVadData.length; i += 1) sumSq += echoVadData[i] * echoVadData[i];
+        const rms = Math.sqrt(sumSq / echoVadData.length);
+        // Keep a rolling window of RMS samples; estimate the noise floor as
+        // the 20th percentile so transient speech doesn't inflate it.
+        // Recomputed every ~0.5s to keep this cheap.
+        echoNoiseSamples.push(rms);
+        if (echoNoiseSamples.length > ECHO_NOISE_SAMPLE_CAP) echoNoiseSamples.shift();
+        if (echoNoiseSamples.length >= 30 && echoNoiseSamples.length % 30 === 0) {
+          const sorted = echoNoiseSamples.slice().sort((a, b) => a - b);
+          const p20 = sorted[Math.floor(sorted.length * 0.20)];
+          echoCurrentFloor = Math.max(ECHO_VAD_ABS_FLOOR, p20);
+        }
+        const speechThreshold = echoCurrentFloor * ECHO_VAD_SPEECH_MULTIPLIER;
+        if (rms >= speechThreshold) echoLastVoiceAt = Date.now();
+        if (echoFallbackRecorder) requestAnimationFrame(sampleVad);
+      };
+      requestAnimationFrame(sampleVad);
+    } catch (err) {
+      console.debug("[echo] VAD tap setup failed, continuing without gate:", err?.message ?? err);
+    }
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus" : "audio/webm";
     const recorder = new MediaRecorder(stream, { mimeType });
@@ -388,15 +513,20 @@ async function startEchoFallback() {
         if (echoFallbackChunks.length > ECHO_LOCAL_KWS_WINDOW_CHUNKS) echoFallbackChunks.shift();
       }
     });
-    recorder.start(700);
+    recorder.start(ECHO_CHUNK_MS);
     echoFallbackRecorder = recorder;
     console.info("[echo] local sherpa KWS enabled");
     echoFallbackInterval = setInterval(async () => {
-      if (echoFallbackChunks.length === 0) return;
-      // Skip if the previous request hasn't finished — prevents overlapping
-      // POSTs (which Chromium logs as "OnSizeReceived failed Error:-2" when
-      // one gets cancelled). Also skip if the server is clearly slow.
+      // Require a minimum accumulated audio duration — sherpa and CAM++
+      // both produce unstable results on <1s clips.
+      if (echoFallbackChunks.length < ECHO_MIN_AUDIO_CHUNKS) return;
       if (echoFallbackBusy) return;
+      // VAD gate: if nothing crossed the speech threshold recently, don't
+      // bother sending. Cuts background-noise false-negatives and noticeably
+      // lowers CPU when the user isn't speaking. When the VAD tap failed to
+      // initialize (echoVadAnalyser is null), we skip the gate so the system
+      // still works, just without the optimization.
+      if (echoVadAnalyser && Date.now() - echoLastVoiceAt > ECHO_VAD_WINDOW_MS) return;
       echoFallbackBusy = true;
       const snapshot = echoFallbackChunks.slice();
       const blob = new Blob(snapshot, { type: mimeType });
@@ -414,22 +544,67 @@ async function startEchoFallback() {
         const payload = await resp.json();
         if (payload?.ok === false) {
           const reason = payload.reason ?? payload.error ?? "transcribe_failed";
-          if (reason !== echoFallbackLastErrorReason) {
-            echoFallbackLastErrorReason = reason;
-            console.debug("[echo] local sherpa KWS unavailable; returning to Web Speech:", reason);
-          }
-          echoLocalKwsStatus = { ok: false, reason };
-          echoLocalKwsStatusAt = Date.now();
-          stopEchoFallback();
-          if (echoEnabled && !echoPausedForSession) {
-            startEchoWebSpeechRecognizer();
+          // Only fall back to Web Speech on *configuration* failures that
+          // make the local KWS fundamentally broken. Transient per-request
+          // failures ("audio_too_short" when the VAD lets through a brief
+          // burst, "kws_failed" if the python process hiccupped, etc.)
+          // should NOT invalidate the cache — doing so created a Web
+          // Speech ↔ sherpa ping-pong that flooded the console and
+          // produced no actual wakes.
+          const CONFIG_BROKEN = new Set([
+            "sherpa_onnx_missing",
+            "sherpa_onnx_import_failed",
+            "kws_model_missing",
+            "kws_model_incomplete"
+          ]);
+          if (CONFIG_BROKEN.has(reason)) {
+            if (reason !== echoFallbackLastErrorReason) {
+              echoFallbackLastErrorReason = reason;
+              console.info("[echo] local sherpa KWS unavailable; returning to Web Speech:", reason);
+            }
+            echoLocalKwsStatus = { ok: false, reason };
+            echoLocalKwsStatusAt = Date.now();
+            stopEchoFallback();
+            if (echoEnabled && !echoPausedForSession) {
+              startEchoWebSpeechRecognizer();
+            }
+          } else {
+            console.debug("[echo] local KWS transient no-match:", reason);
           }
           return;
         }
         if (payload?.matched) {
           const keyword = `${payload.keyword ?? "linxi"}`.trim();
-          console.info("[echo] local KWS matched:", keyword);
+          console.info(
+            "[echo] local KWS matched:", keyword,
+            "personalized:", Boolean(payload.personalized)
+          );
+          echoKwsAttemptsSinceMatch = 0;
           void onWakeDetected("voice", keyword);
+        } else {
+          // Near-miss accounting: we actually sent audio (VAD passed) but
+          // sherpa didn't match. Surfacing this lets the user distinguish
+          // "I'm not being heard" from "I'm being heard but mispronouncing".
+          echoKwsAttemptsSinceMatch += 1;
+          console.info(
+            `[echo] KWS no-match — attempt ${echoKwsAttemptsSinceMatch}`,
+            "floor≈", echoCurrentFloor.toFixed(4),
+            "audioSec:", payload?.audio_seconds ?? "?",
+            "personalized:", Boolean(payload?.personalized)
+          );
+          const now = Date.now();
+          if (
+            echoKwsAttemptsSinceMatch >= ECHO_NEAR_MISS_HINT_AFTER
+            && now - echoKwsLastHintAt > ECHO_NEAR_MISS_HINT_COOLDOWN_MS
+          ) {
+            echoKwsLastHintAt = now;
+            echoKwsAttemptsSinceMatch = 0;
+            window.ucaShell?.showEchoBubble?.({
+              text: "👂 听到你在说话但没匹配唤醒词，试试：linxi（林西）/ 大声点 / 靠近麦克风",
+              kind: "info",
+              durationMs: 3600
+            });
+          }
         }
       } catch (err) {
         if (err?.name !== "AbortError") {
@@ -460,6 +635,17 @@ function stopEchoFallback() {
   echoFallbackChunks = [];
   echoFallbackLastErrorReason = "";
   echoUsingFallback = false;
+  // Tear down the VAD audio graph. AudioContext.close() is async; we don't
+  // await it because dock is about to restart and a pending close doesn't
+  // block anything.
+  try { echoVadSource?.disconnect?.(); } catch { /* ignore */ }
+  try { echoVadAnalyser?.disconnect?.(); } catch { /* ignore */ }
+  try { void echoVadContext?.close?.(); } catch { /* ignore */ }
+  echoVadSource = null;
+  echoVadAnalyser = null;
+  echoVadContext = null;
+  echoVadData = null;
+  echoLastVoiceAt = 0;
 }
 
 function stopEchoRecognizer() {
@@ -504,6 +690,162 @@ function applyEchoState(enabled) {
 })();
 window.ucaShell?.onSettingsChanged?.((settings) => {
   applyEchoState(Boolean(settings?.echoMode));
+});
+
+/* ═══════════════════════════════════════════════
+   WAKE-WORD ENROLLMENT — stage 2 personalization
+   Record the user saying "linxi" three times so we capture the way
+   *their* voice transcribes (sherpa's generic keywords may miss specific
+   accents). Each sample goes through Whisper to get its text form, which
+   we append to models/user-keywords/keywords.txt — sherpa picks it up on
+   next KWS process start and adds it as an extra keyword template.
+   ═══════════════════════════════════════════════ */
+
+let wakeEnrollmentActive = false;
+
+async function recordSingleSample({ durationMs = 2500, mimeType = "audio/webm" } = {}) {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  try {
+    const type = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : mimeType;
+    const recorder = new MediaRecorder(stream, { mimeType: type });
+    const chunks = [];
+    recorder.addEventListener("dataavailable", (ev) => {
+      if (ev.data?.size > 0) chunks.push(ev.data);
+    });
+    return await new Promise((resolve, reject) => {
+      const stopTimer = setTimeout(() => {
+        try { recorder.stop(); } catch { /* ignore */ }
+      }, durationMs);
+      recorder.addEventListener("stop", () => {
+        clearTimeout(stopTimer);
+        if (chunks.length === 0) return reject(new Error("no_audio_captured"));
+        resolve(new Blob(chunks, { type }));
+      }, { once: true });
+      recorder.addEventListener("error", (err) => {
+        clearTimeout(stopTimer);
+        reject(err?.error ?? err);
+      }, { once: true });
+      recorder.start();
+    });
+  } finally {
+    stream.getTracks().forEach((track) => track.stop());
+  }
+}
+
+async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
+  if (wakeEnrollmentActive) return;
+  wakeEnrollmentActive = true;
+  // Suspend the echo listener so the mic handoff is clean.
+  const wasEnabled = echoEnabled;
+  if (wasEnabled) stopEchoRecognizer();
+  try {
+    window.ucaShell?.showEchoBubble?.({
+      text: "🎤 录入唤醒词：听到「开始」后大声清晰念「linxi」",
+      kind: "info",
+      durationMs: 3200
+    });
+    await new Promise((r) => setTimeout(r, 3000));
+
+    const saved = [];
+    for (let i = 1; i <= samples; i += 1) {
+      // Two-phase cue: "准备" → short pause → "开始！" + record. User has time
+      // to see the first bubble, take a breath, then speak when the second
+      // one lights up. Previously the single "请念" bubble appeared and
+      // recording started before the user had time to react.
+      window.ucaShell?.showEchoBubble?.({
+        text: `第 ${i}/${samples} 次 — 准备…`,
+        kind: "info",
+        durationMs: 1200
+      });
+      await new Promise((r) => setTimeout(r, countdownMs));
+      window.ucaShell?.showEchoBubble?.({
+        text: `🎙 开始！请念「linxi」`,
+        kind: "wake",
+        durationMs: 2500
+      });
+      let blob;
+      try {
+        blob = await recordSingleSample({ durationMs: 2500 });
+      } catch (err) {
+        console.warn("[echo] enrollment record failed:", err);
+        window.ucaShell?.showEchoBubble?.({
+          text: `❌ 录音失败：${err?.message ?? err}`,
+          kind: "error", durationMs: 2800
+        });
+        return;
+      }
+      let result;
+      try {
+        const resp = await fetch(`${serviceBaseUrl}/echo/enroll-keyword?sample=${i}`, {
+          method: "POST",
+          headers: { "Content-Type": blob.type || "audio/webm" },
+          body: await blob.arrayBuffer()
+        });
+        result = await resp.json();
+      } catch (err) {
+        console.warn("[echo] enrollment upload failed:", err);
+        window.ucaShell?.showEchoBubble?.({
+          text: `❌ 上传失败：${err?.message ?? err}`,
+          kind: "error", durationMs: 2800
+        });
+        return;
+      }
+      if (!result?.ok) {
+        window.ucaShell?.showEchoBubble?.({
+          text: `⚠ 第 ${i} 次保存失败（${result?.reason ?? "unknown"}），请重说`,
+          kind: "error", durationMs: 3200
+        });
+        continue;
+      }
+      // The backend always saves the raw audio. Only linxi-like transcripts
+      // are appended to keywords.txt (sherpa uses that file as extra wake
+      // templates); everything else is kept on disk but doesn't widen the
+      // keyword list.
+      saved.push({
+        transcript: result.transcript ?? "",
+        addedToKeywords: Boolean(result.transcriptAddedToKeywords)
+      });
+      console.info(
+        `[echo] enrollment sample ${i} transcribed as:`,
+        JSON.stringify(result.transcript ?? ""),
+        "addedToKeywords:", Boolean(result.transcriptAddedToKeywords)
+      );
+      const heardText = result.transcript && result.transcript.trim()
+        ? `听到「${result.transcript}」`
+        : "（未听清，跳过此样本）";
+      window.ucaShell?.showEchoBubble?.({
+        text: `✓ 第 ${i}/${samples} 次：${heardText}`,
+        kind: "info", durationMs: 1400
+      });
+      await new Promise((r) => setTimeout(r, 600));
+    }
+
+    if (saved.length > 0) {
+      const addedToKws = saved.filter((s) => s.addedToKeywords).length;
+      window.ucaShell?.showEchoBubble?.({
+        text: `✅ ${saved.length}/${samples} 次录入 · 关键词新增 ${addedToKws} 条`,
+        kind: "wake",
+        durationMs: 3600
+      });
+      // Clear the cached KWS status so the next start re-queries.
+      echoLocalKwsStatus = null;
+      echoLocalKwsStatusAt = 0;
+    } else {
+      window.ucaShell?.showEchoBubble?.({
+        text: "未采集到可用样本，请重试",
+        kind: "error", durationMs: 2400
+      });
+    }
+  } finally {
+    wakeEnrollmentActive = false;
+    if (wasEnabled) startEchoRecognizer();
+  }
+}
+
+window.ucaShell?.onStartWakeEnrollment?.(() => {
+  void runWakeEnrollment();
 });
 
 // Overlay signals the end of an echo-triggered voice/note session. Resume

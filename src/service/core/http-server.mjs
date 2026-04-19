@@ -220,7 +220,7 @@ async function getLocalKeywordSpottingStatus() {
   }
 }
 
-async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm" } = {}) {
+async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", personalized = false } = {}) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-echo-kws-"));
   const ext = mimeType.includes("wav") ? ".wav"
     : mimeType.includes("mp4") || mimeType.includes("m4a") ? ".m4a"
@@ -229,10 +229,9 @@ async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm" }
   const audioPath = path.join(tempDir, `echo-window${ext}`);
   try {
     await writeFile(audioPath, audioBuffer);
-    const { stdout } = await execFileAsync(getPythonCommand(), [
-      getLocalKeywordSpottingScriptPath(),
-      audioPath
-    ], {
+    const args = [getLocalKeywordSpottingScriptPath(), audioPath];
+    if (personalized) args.push("--personalized");
+    const { stdout } = await execFileAsync(getPythonCommand(), args, {
       timeout: Number(process.env.UCA_SHERPA_KWS_REQUEST_TIMEOUT_MS ?? 12_000),
       maxBuffer: 1024 * 1024 * 2,
       env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },
@@ -255,7 +254,38 @@ async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm" }
   }
 }
 
-async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", lang = "auto" } = {}) {
+// ═══════════════════════════════════════════════════════════════════
+// Personalized KWS gating — is the user's wake-word enrollment file on disk?
+// ═══════════════════════════════════════════════════════════════════
+//
+// When enrollment has added at least one keyword to user-keywords/keywords.txt,
+// we flip sherpa-onnx KWS into its aggressive `--personalized` threshold
+// (0.08 instead of 0.15). False positives from other speakers are acceptable
+// for a personal tool; false negatives on the user's own wake attempts are
+// the real problem we're solving.
+let cachedEnrollmentKnown = undefined;
+let cachedEnrollmentKnownAt = 0;
+const ENROLLMENT_CACHE_TTL_MS = 10_000;
+async function hasUserEnrollment() {
+  const now = Date.now();
+  if (cachedEnrollmentKnown !== undefined && now - cachedEnrollmentKnownAt < ENROLLMENT_CACHE_TTL_MS) {
+    return cachedEnrollmentKnown;
+  }
+  try {
+    const text = await readFile(path.resolve(process.cwd(), "models", "user-keywords", "keywords.txt"), "utf8");
+    cachedEnrollmentKnown = text.split(/\r?\n/).some((line) => line.trim().length > 0);
+  } catch {
+    cachedEnrollmentKnown = false;
+  }
+  cachedEnrollmentKnownAt = now;
+  return cachedEnrollmentKnown;
+}
+function invalidateEnrollmentCache() {
+  cachedEnrollmentKnown = undefined;
+  cachedEnrollmentKnownAt = 0;
+}
+
+async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", lang = "auto", noVad = false } = {}) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-note-audio-"));
   const ext = mimeType.includes("wav") ? ".wav"
     : mimeType.includes("mp4") || mimeType.includes("m4a") ? ".m4a"
@@ -266,7 +296,7 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
     await writeFile(audioPath, audioBuffer);
     const pythonCommand = getPythonCommand();
     const scriptPath = getLocalTranscriptionScriptPath();
-    const { stdout } = await execFileAsync(pythonCommand, [
+    const args = [
       scriptPath,
       audioPath,
       "--language",
@@ -279,7 +309,9 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
       process.env.UCA_LOCAL_WHISPER_COMPUTE_TYPE || "int8",
       "--beam-size",
       process.env.UCA_LOCAL_WHISPER_BEAM_SIZE || DEFAULT_LOCAL_WHISPER_BEAM_SIZE
-    ], {
+    ];
+    if (noVad) args.push("--no-vad");
+    const { stdout } = await execFileAsync(pythonCommand, args, {
       timeout: Number(process.env.UCA_LOCAL_WHISPER_TIMEOUT_MS ?? 30 * 60_000),
       maxBuffer: 1024 * 1024 * 8,
       env: {
@@ -1885,7 +1917,103 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         if (audioBuffer.length > 1024 * 1024 * 12) {
           return sendJson(response, 413, { ok: false, reason: "audio_too_large" });
         }
-        return sendJson(response, 200, await detectWakeKeywordLocally(audioBuffer, { mimeType }));
+
+        // If the user has enrolled (keywords.txt on disk), flip sherpa into
+        // the aggressive "personalized" threshold (0.08 vs 0.15). More
+        // false positives but significantly fewer missed wakes.
+        const personalized = await hasUserEnrollment();
+        const result = await detectWakeKeywordLocally(audioBuffer, { mimeType, personalized });
+        result.personalized = personalized;
+        return sendJson(response, 200, result);
+      }
+
+      // ── /echo/enroll-keyword — personalized wake-word enrollment ──
+      // The dock records the user saying "linxi" three times and POSTs each
+      // sample here. We run Whisper with a Chinese language hint to capture
+      // how *this user's* pronunciation actually surfaces as text, then
+      // append that text to models/user-keywords/keywords.txt. sherpa-onnx
+      // picks up the file automatically on next KWS process start and adds
+      // each line as an additional keyword template.
+      if (method === "POST" && url.pathname === "/echo/enroll-keyword") {
+        const contentType = String(request.headers["content-type"] ?? "application/octet-stream").trim();
+        const sampleIndex = String(url.searchParams.get("sample") ?? "").trim();
+        let audioBuffer = Buffer.alloc(0);
+        let mimeType = "audio/webm";
+        if (/^application\/json\b/i.test(contentType)) {
+          const body = await readJsonBody(request);
+          const audioBase64 = String(body.audio ?? "").replace(/^data:[^;]+;base64,/, "").trim();
+          mimeType = String(body.mimeType ?? "audio/webm").trim();
+          audioBuffer = audioBase64 ? Buffer.from(audioBase64, "base64") : Buffer.alloc(0);
+        } else {
+          audioBuffer = await readRawBody(request);
+          mimeType = contentType.split(";")[0] || "audio/webm";
+        }
+        if (audioBuffer.length === 0) {
+          return sendJson(response, 400, { ok: false, reason: "missing_audio" });
+        }
+
+        const userKwDir = path.resolve(process.cwd(), "models", "user-keywords");
+        await mkdir(userKwDir, { recursive: true });
+
+        // Disable Silero VAD for enrollment — on the short (~2s) clips the
+        // user records, VAD often pre-filters them to empty, hiding what
+        // Whisper actually heard. Stage 3 doesn't need a valid transcript
+        // (the voiceprint embedding works on raw audio) but the user-facing
+        // bubble "听到「xxx」" is much more helpful when we let Whisper
+        // produce its best guess even for borderline clips.
+        const local = await transcribeAudioLocally(audioBuffer, { mimeType, lang: "zh", noVad: true });
+        const transcript = (local.transcript ?? "").trim();
+
+        // Save the audio regardless — future tuning (or a later voiceprint
+        // stage) may want the raw recording even when Whisper mishears.
+        // The keyword-text addition below IS gated on the transcript being
+        // plausibly linxi-like; otherwise sherpa would start listening for
+        // random unrelated words.
+        const CN_LIKE = /(?:林|琳|凌|灵|邻|临|淋|领|令|陵|麟|另|零)\s*[夕西氏熙希喜溪犀席系细戏昔洗奇起其期琪琦齐七息惜稀锡晰熹袭]/;
+        const LATIN_LIKE = /\b(?:lin|ling|lyn)[\s-]*(?:xi|see|sey|sy|x)\b|\b(?:lindsay|linsey|lynx)\b/i;
+        const transcriptIsLinxiLike = Boolean(transcript)
+          && (CN_LIKE.test(transcript) || LATIN_LIKE.test(transcript));
+
+        // Save the raw recording for later tuning. Filenames are zero-padded
+        // by sample index when provided so repeated enrollment overwrites
+        // the old sample cleanly.
+        const ext = mimeType.includes("wav") ? ".wav" : ".webm";
+        const stamp = Date.now();
+        const baseName = sampleIndex
+          ? `sample-${String(sampleIndex).padStart(2, "0")}`
+          : `sample-${stamp}`;
+        await writeFile(path.join(userKwDir, `${baseName}${ext}`), audioBuffer);
+
+        // Only append to keywords.txt when the transcript is plausibly a
+        // linxi variant — otherwise sherpa would start listening for e.g.
+        // "认识" as a wake word, which is actively harmful. The audio file
+        // itself is always saved above.
+        const kwPath = path.join(userKwDir, "keywords.txt");
+        let lines;
+        if (transcriptIsLinxiLike) {
+          let existing = "";
+          try { existing = await readFile(kwPath, "utf8"); } catch { /* empty */ }
+          lines = new Set(existing.split(/\r?\n/).map((s) => s.trim()).filter(Boolean));
+          lines.add(transcript);
+          await writeFile(kwPath, Array.from(lines).join("\n") + "\n", "utf8");
+          invalidateEnrollmentCache();
+        } else {
+          try {
+            const existing = await readFile(kwPath, "utf8");
+            lines = new Set(existing.split(/\r?\n/).map((s) => s.trim()).filter(Boolean));
+          } catch {
+            lines = new Set();
+          }
+        }
+
+        return sendJson(response, 200, {
+          ok: true,
+          transcript,
+          transcriptAddedToKeywords: transcriptIsLinxiLike,
+          sample: sampleIndex,
+          totalKeywords: lines.size,
+          savedAudio: `${baseName}${ext}`
+        });
       }
 
       // ── /note/transcribe — convert a base64-encoded audio blob to text ──

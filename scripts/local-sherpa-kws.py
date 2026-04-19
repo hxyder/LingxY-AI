@@ -27,17 +27,28 @@ except Exception:
 
 
 DEFAULT_MODEL_NAME = "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
+# Keywords the spotter is primed for. Kept broad because users won't hit
+# every character exactly; the sherpa KWS internally converts each entry
+# to its pinyin tokens (via phone+ppinyin), so duplicated pronunciations
+# just give the spotter more parallel paths to match against — they do
+# not meaningfully inflate runtime. The entries below cover the four
+# most common STT renderings of "lin xi" ± nasalization ("ling"), plus
+# a handful of traditional-character variants.
 DEFAULT_KEYWORDS = [
-    "林西",
-    "林夕",
-    "林熙",
-    "林希",
-    "林溪",
-    "琳溪",
-    "灵溪",
-    "灵犀",
-    "凌西",
-    "临溪",
+    # canonical
+    "林西", "林夕", "林熙", "林希", "林溪",
+    # common STT confusions
+    "林氏", "林喜", "林犀", "林席", "林系",
+    "林戏", "林昔", "林洗", "林奇", "林琦", "林琪",
+    # lin-like prefix with xi-like suffix
+    "琳溪", "琳西", "琳熙", "琳希",
+    "灵溪", "灵犀", "灵熙", "灵希",
+    "凌西", "凌溪", "凌希",
+    "临溪", "临西",
+    # "ling xi" (many STTs prefer the nasal)
+    "领袖", "令溪", "令西",
+    # english transliteration so en-phone lexicon catches foreign-accent attempts
+    "lin xi", "ling xi", "linxi", "lingxi",
 ]
 
 
@@ -104,11 +115,46 @@ def find_model_files(model_dir: Path) -> dict[str, Path] | None:
     return None
 
 
+def load_user_keywords() -> list[str]:
+    # Stage 2: per-user wake enrollment. The user records their own "linxi"
+    # three times in the dock; the backend transcribes each with Whisper
+    # and appends the transcript lines to this file. We merge them with the
+    # baked-in DEFAULT_KEYWORDS so the spotter has explicit text entries
+    # that match *this user's* STT output, on top of the generic variants.
+    path = project_root() / "models" / "user-keywords" / "keywords.txt"
+    if not path.exists():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return []
+    return [line.strip() for line in lines if line.strip() and not line.startswith("#")]
+
+
 def parse_keywords(value: str | None) -> list[str]:
     raw = value or os.environ.get("UCA_SHERPA_KWS_KEYWORDS", "")
+    user_keywords = load_user_keywords()
     if not raw.strip():
-        return DEFAULT_KEYWORDS
-    return [item.strip() for item in raw.replace("，", ",").split(",") if item.strip()]
+        # Merge user-enrolled keywords with the defaults, deduplicating while
+        # preserving order (user entries first — they're the most important
+        # acoustic hint for this particular speaker).
+        seen: set[str] = set()
+        merged: list[str] = []
+        for keyword in user_keywords + DEFAULT_KEYWORDS:
+            if keyword and keyword not in seen:
+                seen.add(keyword)
+                merged.append(keyword)
+        return merged
+    explicit = [item.strip() for item in raw.replace("，", ",").split(",") if item.strip()]
+    # If an explicit override was provided, still append user-enrolled
+    # entries — users shouldn't lose their personal wake tuning when an ops
+    # override is in place.
+    seen = set(explicit)
+    for keyword in user_keywords:
+        if keyword not in seen:
+            seen.add(keyword)
+            explicit.append(keyword)
+    return explicit
 
 
 def build_keywords_file(model_dir: Path, tokens: Path, keywords: list[str], output_dir: Path) -> Path:
@@ -124,8 +170,12 @@ def build_keywords_file(model_dir: Path, tokens: Path, keywords: list[str], outp
 
     raw_path = output_dir / "keywords_raw.txt"
     keyword_path = output_dir / "keywords.txt"
-    score = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE", "1.5")
-    threshold = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD", "0.25")
+    # Looser defaults than sherpa-onnx's stock 0.25/1.5 — the cost of a
+    # false-positive Echo wake is tiny (the user can just say something
+    # unrelated to dismiss), but false-negatives are infuriating. Can be
+    # raised back via env if noise makes spurious triggers annoying.
+    score = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE", "2.0")
+    threshold = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD", "0.15")
     raw_path.write_text(
         "\n".join(f"{keyword} :{score} #{threshold} @{keyword}" for keyword in keywords) + "\n",
         encoding="utf-8",
@@ -271,9 +321,9 @@ def run_kws(audio_path: Path, model_dir: Path, keywords: list[str]) -> dict:
             num_threads=int(os.environ.get("UCA_SHERPA_KWS_NUM_THREADS", "2")),
             sample_rate=16000,
             feature_dim=80,
-            max_active_paths=int(os.environ.get("UCA_SHERPA_KWS_MAX_ACTIVE_PATHS", "4")),
-            keywords_score=float(os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE", "1.5")),
-            keywords_threshold=float(os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD", "0.25")),
+            max_active_paths=int(os.environ.get("UCA_SHERPA_KWS_MAX_ACTIVE_PATHS", "6")),
+            keywords_score=float(os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE", "2.0")),
+            keywords_threshold=float(os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD", "0.15")),
             num_trailing_blanks=int(os.environ.get("UCA_SHERPA_KWS_NUM_TRAILING_BLANKS", "1")),
             provider=os.environ.get("UCA_SHERPA_KWS_PROVIDER", "cpu"),
         )
@@ -315,7 +365,21 @@ def main() -> int:
     parser.add_argument("--model-dir", default="")
     parser.add_argument("--keywords", default="")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument(
+        "--personalized",
+        action="store_true",
+        help="Use aggressive thresholds — for when the caller has already verified "
+             "the audio belongs to the enrolled user via speaker embedding."
+    )
     args = parser.parse_args()
+
+    # Personalized mode overrides env so the spotter is looser. The caller
+    # is responsible for speaker verification; here we just relax the gate.
+    if args.personalized:
+        os.environ.setdefault("UCA_SHERPA_KWS_KEYWORDS_SCORE", "2.0")
+        os.environ["UCA_SHERPA_KWS_KEYWORDS_SCORE"] = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE_PERSONALIZED", "3.0")
+        os.environ["UCA_SHERPA_KWS_KEYWORDS_THRESHOLD"] = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD_PERSONALIZED", "0.08")
+        os.environ["UCA_SHERPA_KWS_MAX_ACTIVE_PATHS"] = os.environ.get("UCA_SHERPA_KWS_MAX_ACTIVE_PATHS_PERSONALIZED", "8")
 
     model_dir = resolve_model_dir(args.model_dir)
     keywords = parse_keywords(args.keywords)
