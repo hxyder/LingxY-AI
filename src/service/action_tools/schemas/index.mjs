@@ -225,6 +225,41 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     }
   },
 
+  account_list_emails: {
+    type: "object",
+    required: [],
+    properties: {
+      accountId: { type: "string" },
+      provider: { type: "string", enum: ["google", "microsoft"] },
+      query: { type: "string" },
+      unreadOnly: { type: "boolean" },
+      limit: { type: "number" }
+    }
+  },
+  account_list_files: {
+    type: "object",
+    required: [],
+    properties: {
+      accountId: { type: "string" },
+      provider: { type: "string", enum: ["google", "microsoft"] },
+      query: { type: "string" },
+      folderId: { type: "string" },
+      limit: { type: "number" }
+    }
+  },
+  account_list_events: {
+    type: "object",
+    required: [],
+    properties: {
+      accountId: { type: "string" },
+      provider: { type: "string", enum: ["google", "microsoft"] },
+      startTime: { type: "string" },
+      endTime: { type: "string" },
+      query: { type: "string" },
+      limit: { type: "number" }
+    }
+  },
+
   render_diagram: {
     type: "object",
     required: [],

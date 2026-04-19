@@ -1,6 +1,6 @@
 # Task UCA-079 — Account Router & Unified Read Tools
 
-**Status**: todo  
+**Status**: done
 **Priority**: P0  
 **Depends on**: UCA-077, UCA-078  
 **Branch**: `task/uca-079-account-router-read-tools`
@@ -78,11 +78,23 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
+- 状态：done
+- 执行分支：`task/uca-077-connector-foundation`
+- 开始日期：2026-04-19
+- 完成日期：2026-04-19
 - 实际新增内容：
+  - 新增 `account-router.mjs`：显式 accountId/provider、utterance provider 推断、默认用途、多候选冲突、缺 capability 补授权结果
+  - 新增 `reauth-manager.mjs`：基础 missing scope 推断和 `reauth_required` 结构化结果
+  - 新增 Google/Microsoft 只读 adapters：邮件、云文件、日历事件
+  - 新增 `account_list_emails`、`account_list_files`、`account_list_events` Action Tools，并注册 schema 与 builtins
+  - 扩展 `scripts/verify-unified-connectors.mjs` 覆盖 router 和 mock Gmail read tool
 - 验证结果：
+  - `npm run verify:unified-connectors`
+  - `node scripts/verify-action-tools.mjs`
+  - `node scripts/verify-runtime-wiring.mjs`
+  - `node scripts/verify-service-core.mjs`
+  - `node scripts/verify-structure.mjs`
 - 遗留问题：
-- 交接给下一个任务：
+  - provider read adapters 仍是基础 REST 实现，未做分页游标与复杂 query DSL
+  - `reauth_required` 已能返回结构化结果，但 reauth request 落库与恢复执行留给 UCA-081
+- 交接给下一个任务：UCA-080 可复用 router、read tool wrapper 和 provider adapter 结构，继续增加 send/upload/create 写操作与 confirmation 预览

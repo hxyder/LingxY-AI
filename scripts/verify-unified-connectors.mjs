@@ -21,6 +21,8 @@ import {
   getValidAccessToken,
   migrateLegacyConnectorTokens
 } from "../src/service/connectors/core/token-manager.mjs";
+import { resolveAccount } from "../src/service/connectors/core/account-router.mjs";
+import { ACCOUNT_LIST_EMAILS_TOOL } from "../src/service/connectors/tools/read-tools.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -202,6 +204,89 @@ async function runLegacyMigrationCase() {
   assert.deepEqual(runtime.store.listAuditLogs(), []);
 }
 
+function runRouterCases() {
+  const runtime = createRuntime(createInMemoryStoreScaffold());
+  const first = upsertConnectedAccount(runtime, {
+    provider: "google",
+    providerAccountId: "router-g",
+    email: "router-g@example.com",
+    scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+    capabilities: googleScopesToCapabilities(["https://www.googleapis.com/auth/gmail.readonly"]),
+    lastUsedAt: "2026-04-19T10:00:00.000Z"
+  });
+  const second = upsertConnectedAccount(runtime, {
+    provider: "microsoft",
+    providerAccountId: "router-m",
+    email: "router-m@example.com",
+    scopes: ["Mail.Read"],
+    capabilities: microsoftScopesToCapabilities(["Mail.Read"]),
+    lastUsedAt: "2026-04-19T11:00:00.000Z"
+  });
+  const accounts = listUserAccounts(runtime);
+
+  assert.equal(resolveAccount({ connectedAccounts: accounts }, { provider: "google" }, "emailRead").id, first.id);
+  assert.equal(resolveAccount({ connectedAccounts: accounts, userUtterance: "read Outlook mail" }, {}, "emailRead").id, second.id);
+  assert.equal(resolveAccount({ connectedAccounts: accounts }, { accountId: first.id }, "emailWrite").status, "reauth_required");
+  assert.equal(resolveAccount({ connectedAccounts: accounts }, {}, "emailRead").status, "account_selection_required");
+  setDefaultAccount(runtime, "email", first.id);
+  assert.equal(resolveAccount({ connectedAccounts: listUserAccounts(runtime) }, {}, "emailRead").id, first.id);
+}
+
+async function runReadToolCase() {
+  const runtime = createRuntime(createInMemoryStoreScaffold());
+  const account = upsertConnectedAccount(runtime, {
+    provider: "google",
+    providerAccountId: "tool-g",
+    email: "tool-g@example.com",
+    scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+    capabilities: googleScopesToCapabilities(["https://www.googleapis.com/auth/gmail.readonly"])
+  });
+  saveOAuthTokenRecord(runtime, {
+    accountId: account.id,
+    accessTokenEncrypted: "gmail-access",
+    refreshTokenEncrypted: "gmail-refresh",
+    expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    scopes: account.scopes
+  });
+
+  const result = await ACCOUNT_LIST_EMAILS_TOOL.execute({ accountId: account.id, limit: 1 }, {
+    runtime,
+    fetchImpl: async (url, options) => {
+      assert.equal(options.headers.Authorization, "Bearer gmail-access");
+      if (url.includes("/messages?")) {
+        return {
+          ok: true,
+          async json() {
+            return { messages: [{ id: "msg-1" }] };
+          }
+        };
+      }
+      if (url.includes("/messages/msg-1")) {
+        return {
+          ok: true,
+          async json() {
+            return {
+              labelIds: ["INBOX"],
+              payload: {
+                headers: [
+                  { name: "Subject", value: "Hello" },
+                  { name: "From", value: "sender@example.com" },
+                  { name: "Date", value: "Sun, 19 Apr 2026 10:00:00 GMT" }
+                ]
+              }
+            };
+          }
+        };
+      }
+      throw new Error(`unexpected fetch url: ${url}`);
+    }
+  });
+  assert.equal(result.success, true);
+  assert.equal(result.metadata.connector_status, "success");
+  assert.equal(result.metadata.emails[0].subject, "Hello");
+  assert.equal(getAccountById(runtime, account.id).lastUsedAt !== null, true);
+}
+
 await rm(tmpRoot, { recursive: true, force: true });
 await mkdir(tmpRoot, { recursive: true });
 
@@ -221,5 +306,7 @@ try {
 
 await runTokenRefreshCases();
 await runLegacyMigrationCase();
+runRouterCases();
+await runReadToolCase();
 
 console.log("Unified connectors verification passed.");
