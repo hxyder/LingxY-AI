@@ -11,13 +11,40 @@ import {
   createScheduleRecord
 } from "./store.mjs";
 
+// IANA timezone of the machine the scheduler is running on. Falls back to
+// UTC only when the runtime has no Intl data (shouldn't happen on modern
+// Node but guarded for safety). This is the default we inject into
+// triggers that arrive without an explicit timezone — "every day at 9am"
+// means 9am wall-clock time where the user lives, not 9am UTC.
+function getSystemTimezone() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 function ensureTrigger(trigger) {
-  if (trigger?.type) {
-    return trigger;
+  // Accept any of the field names the prompt docs / LLM training data tend
+  // to produce (type / kind / trigger_type) rather than blowing up with
+  // "trigger is required" on a semantically valid payload.
+  const typeValue = trigger?.type ?? trigger?.kind ?? trigger?.trigger_type;
+  if (typeValue) {
+    // Inject local timezone if the caller didn't specify one. LLM-produced
+    // schedules frequently omit it, which previously made cron expressions
+    // silently run on UTC wall-clock (e.g. "0 9 * * *" fires at 17:00 in
+    // UTC+8). Persisting the resolved timezone also means the UI can show
+    // the user the exact tz the schedule will fire in.
+    const timezone = trigger.timezone ?? getSystemTimezone();
+    return { ...trigger, type: typeValue, timezone };
   }
 
   if (trigger?.natural_language) {
-    const parsed = parseNaturalLanguageTrigger(trigger.natural_language, trigger.timezone);
+    const parsed = parseNaturalLanguageTrigger(
+      trigger.natural_language,
+      trigger.timezone ?? getSystemTimezone()
+    );
     if (!parsed.ok) {
       throw new Error(parsed.error);
     }

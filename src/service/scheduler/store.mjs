@@ -54,7 +54,12 @@ function nowIso() {
 }
 
 function normalizeTrigger(trigger = {}) {
-  const triggerType = trigger.type ?? trigger.trigger_type;
+  // Accept type / kind / trigger_type interchangeably — the prompt docs and
+  // several LLM training corpora use "kind" for cron/interval/file_watch,
+  // and demanding the canonical "type" surfaced as spurious
+  // "trigger type is required" failures that caused the agent to abandon
+  // scheduling and write a script instead.
+  const triggerType = trigger.type ?? trigger.kind ?? trigger.trigger_type;
   if (!triggerType) {
     throw new Error("Schedule trigger type is required.");
   }
@@ -64,20 +69,35 @@ function normalizeTrigger(trigger = {}) {
     trigger_config: {
       ...trigger,
       type: undefined,
+      kind: undefined,
       trigger_type: undefined
     }
   };
 }
 
 function normalizeAction(action = {}) {
-  if (!action.type || !action.target) {
-    throw new Error("Schedule action must include type and target.");
+  // Accept a few common LLM-synonyms so the agent doesn't trip over field
+  // naming: {tool, args} and {type, target, params} both describe the same
+  // action. If only {tool, args} is present, infer type=action_tool.
+  const actionType = action.type
+    ?? (action.tool || action.action_tool ? "action_tool" : undefined)
+    ?? (action.template_id || action.template ? "template" : undefined);
+  const actionTarget = action.target
+    ?? action.tool
+    ?? action.action_tool
+    ?? action.template_id
+    ?? action.template
+    ?? action.userCommand;
+  const actionParams = action.params ?? action.args ?? {};
+
+  if (!actionType || !actionTarget) {
+    throw new Error("Schedule action must include type and target (or tool).");
   }
 
   return {
-    action_type: action.type,
-    action_target: action.target,
-    action_params: action.params ?? {}
+    action_type: actionType,
+    action_target: actionTarget,
+    action_params: actionParams
   };
 }
 

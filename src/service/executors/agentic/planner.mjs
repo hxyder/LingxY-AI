@@ -312,6 +312,15 @@ export async function runAgenticPlanner({
       break;
     }
 
+    // Record any assistant text that arrived alongside tool calls — it's
+    // frequently the model's running commentary or a partial answer we'd
+    // otherwise throw away. If the loop hits maxIterations without a final
+    // turn, we reuse the latest non-empty intermediate text as the answer
+    // instead of returning "(no response from agentic planner)".
+    if (text && text.trim()) {
+      finalText = text;
+    }
+
     // Record the assistant turn so the transcript replay is correct on the
     // next adapter.generate() call.
     messages.push({
@@ -378,6 +387,41 @@ export async function runAgenticPlanner({
         role: "tool",
         tool_call_id: call.id ?? call.name,
         content: result.observation ?? (result.success ? "Tool returned success." : "Tool returned failure without an observation.")
+      });
+    }
+  }
+
+  // If the loop hit maxIterations without the model ever producing a
+  // tool-call-free turn, do one final synthesis call with tools disabled.
+  // Otherwise the user sees "(no response from agentic planner)" even
+  // though we've collected plenty of observations. Common for multi-step
+  // searches (weather / research queries) where the model keeps refining
+  // its search and runs out of iteration budget before synthesizing.
+  if (!finalText && iterations >= maxIterations) {
+    onEvent?.({
+      event_type: "log",
+      payload: { message: "max iterations hit — forcing final synthesis without tools" }
+    });
+    messages.push({
+      role: "user",
+      content: "You've used your tool-call budget. Synthesize a final answer for the original question using only the information already collected above. Do not request more tools."
+    });
+    try {
+      const synthesis = await adapter.generate({
+        messages,
+        tools: [],
+        signal,
+        fetchImpl,
+        onTextDelta: (adapter.supportsStreaming && onEvent)
+          ? (delta) => onEvent({ event_type: "text_delta", payload: { delta } })
+          : undefined
+      });
+      const text = synthesis?.text ?? "";
+      if (text && text.trim()) finalText = text;
+    } catch (error) {
+      onEvent?.({
+        event_type: "log",
+        payload: { message: `Final synthesis failed: ${error.message}` }
       });
     }
   }

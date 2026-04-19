@@ -109,13 +109,39 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
   create_scheduled_task: {
     type: "object",
     required: [],
+    // The trigger + action shapes below match scheduler/store.mjs. `kind` is
+    // accepted as an alias for `type` on the trigger, and `tool`/`args` are
+    // accepted as aliases for `target`/`params` on the action — but the
+    // canonical names (`type` / `target` / `params`) described here are
+    // preferred so the agent sees one unambiguous schema.
     properties: {
       name: { type: "string" },
       description: { type: "string" },
-      trigger: {},
-      action: {},
-      execution_mode: {},
-      catchup_policy: {}
+      trigger: {
+        type: "object",
+        description: "Schedule trigger. Use type=\"cron\" with an expression, type=\"interval\" with seconds/minutes/hours, or type=\"file_watch\" with a path. Alternatively pass {natural_language: \"every day at 9am\"} to let the backend parse it.",
+        properties: {
+          type: { type: "string", enum: ["cron", "interval", "file_watch"] },
+          expression: { type: "string", description: "Cron expression, required when type=cron." },
+          seconds: { type: "number" },
+          minutes: { type: "number" },
+          hours: { type: "number" },
+          path: { type: "string", description: "Watched path, required when type=file_watch." },
+          natural_language: { type: "string", description: "Optional plain-language trigger, parsed server-side." },
+          timezone: { type: "string" }
+        }
+      },
+      action: {
+        type: "object",
+        description: "What to run when the trigger fires. For a tool: {type:\"action_tool\", target:\"<tool_id>\", params:{...}}. For a template: {type:\"template\", target:\"<template_id>\", params:{...}}. For an AI task: {type:\"task\", target:\"<label>\", params:{userCommand:\"...\"}}.",
+        properties: {
+          type: { type: "string", enum: ["action_tool", "template", "task"] },
+          target: { type: "string" },
+          params: { type: "object" }
+        }
+      },
+      execution_mode: { type: "string", description: "unattended_safe | confirm | dry_run" },
+      catchup_policy: { type: "string", description: "skip | run_once | run_all" }
     }
   },
   list_scheduled_tasks: {

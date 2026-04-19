@@ -30,7 +30,7 @@ const DEFAULT_EXAMPLES = {
   copy_to_clipboard: { content: "text to copy" },
   translate_text: { text: "Hello, world", target: "zh-CN" },
   launch_app: { app: "wechat" },
-  create_scheduled_task: { name: "daily-digest", trigger: { kind: "cron", expression: "0 9 * * *" }, action: { tool: "notify", args: { title: "Digest" } } }
+  create_scheduled_task: { name: "daily-digest", trigger: { type: "cron", expression: "0 9 * * *" }, action: { type: "action_tool", target: "notify", params: { title: "Digest" } } }
 };
 
 function prettifyJson(value) {

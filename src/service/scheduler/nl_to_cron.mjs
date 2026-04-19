@@ -66,7 +66,16 @@ const PATTERNS = [
   }
 ];
 
-export function parseNaturalLanguageTrigger(text, timezone = "Asia/Shanghai") {
+function getSystemTimezone() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
+export function parseNaturalLanguageTrigger(text, timezone = getSystemTimezone()) {
   for (const pattern of PATTERNS) {
     const match = text.match(pattern.test);
     if (!match) {

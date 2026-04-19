@@ -8,6 +8,17 @@ const DAY_OF_WEEK_ALIASES = new Map([
   ["sat", 6]
 ]);
 
+// Kept here (rather than importing from engine.mjs) to avoid a circular
+// import — misfire is a low-level helper and engine.mjs depends on it.
+function getSystemTimezone() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return tz || "UTC";
+  } catch {
+    return "UTC";
+  }
+}
+
 function toDateParts(date, timezone = "UTC") {
   const formatter = new Intl.DateTimeFormat("en-CA", {
     timeZone: timezone,
@@ -116,7 +127,11 @@ export function computeNextRunAt(schedule, {
   }
 
   const expression = schedule.trigger_config.expression;
-  const timezone = schedule.trigger_config.timezone ?? "UTC";
+  // Fall back to the host's local IANA timezone (e.g. "Asia/Shanghai") rather
+  // than UTC so cron expressions without an explicit tz fire at the user's
+  // wall-clock time. UTC fallback caused "0 9 * * *" to run at 5pm local in
+  // UTC+8 environments.
+  const timezone = schedule.trigger_config.timezone ?? getSystemTimezone();
   const cursor = new Date(afterDate.getTime());
   cursor.setUTCSeconds(0, 0);
   cursor.setUTCMinutes(cursor.getUTCMinutes() + 1);
