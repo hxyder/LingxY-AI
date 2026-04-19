@@ -55,9 +55,9 @@ for (const relativePath of releaseConfig.required_assets) {
 
 const installChecklist = [
   "Keep this trial bundle inside the repository workspace; it is a repo-local sideload kit, not a standalone installer",
-  "Double-click `Check UCA Desktop Trial.cmd` first if you want a quick prerequisite check",
-  "Double-click `Setup UCA Desktop Trial.cmd` for the guided desktop-first setup path",
-  "Double-click `Launch UCA Desktop Trial.cmd` to start the desktop app and local runtime together",
+  "Double-click `Check LingxY Desktop Trial.cmd` first if you want a quick prerequisite check",
+  "Double-click `Setup LingxY Desktop Trial.cmd` for the guided desktop-first setup path",
+  "Double-click `Launch LingxY Desktop Trial.cmd` to start the desktop app and local runtime together",
   "Explorer entry is the default recommended integration for first use",
   "Install browser native host only when you need browser capture",
   "Sideload browser extension from `browser_ext/` when webpage capture is needed",
@@ -66,7 +66,7 @@ const installChecklist = [
 ];
 
 const releaseManifest = {
-  product: "Universal Context Agent",
+  product: "LingxY",
   package_version: packageJson.version,
   trial_version: releaseConfig.trial_version,
   channel: releaseConfig.channel,
@@ -94,20 +94,20 @@ writeText(
 writeText(
   path.join(bundleRoot, "INSTALL.txt"),
   [
-    `UCA trial bundle: ${releaseConfig.trial_version}`,
+    `LingxY trial bundle: ${releaseConfig.trial_version}`,
     "",
     "This bundle is intended to be used from the repository workspace that generated it.",
-    "Optional first step: Check UCA Desktop Trial.cmd",
-    "Recommended first step: Setup UCA Desktop Trial.cmd",
-    "Primary entry: Launch UCA Desktop Trial.cmd",
-    "Stop entry: Stop UCA Desktop Trial.cmd",
+    "Optional first step: Check LingxY Desktop Trial.cmd",
+    "Recommended first step: Setup LingxY Desktop Trial.cmd",
+    "Primary entry: Launch LingxY Desktop Trial.cmd",
+    "Stop entry: Stop LingxY Desktop Trial.cmd",
     "",
     ...installChecklist.map((step, index) => `${index + 1}. ${step}`)
   ].join("\n") + "\n"
 );
 
 writeText(
-  path.join(bundleRoot, "Check UCA Desktop Trial.cmd"),
+  path.join(bundleRoot, "Check LingxY Desktop Trial.cmd"),
   [
     "@echo off",
     "setlocal",
@@ -120,7 +120,7 @@ writeText(
 );
 
 writeText(
-  path.join(bundleRoot, "Setup UCA Desktop Trial.cmd"),
+  path.join(bundleRoot, "Setup LingxY Desktop Trial.cmd"),
   [
     "@echo off",
     "setlocal",
@@ -132,7 +132,7 @@ writeText(
 );
 
 writeText(
-  path.join(bundleRoot, "Launch UCA Desktop Trial.cmd"),
+  path.join(bundleRoot, "Launch LingxY Desktop Trial.cmd"),
   [
     "@echo off",
     "setlocal",
@@ -144,7 +144,7 @@ writeText(
 );
 
 writeText(
-  path.join(bundleRoot, "Stop UCA Desktop Trial.cmd"),
+  path.join(bundleRoot, "Stop LingxY Desktop Trial.cmd"),
   [
     "@echo off",
     "setlocal",

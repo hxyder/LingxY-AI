@@ -182,7 +182,7 @@ function renderEmptyState() {
   );
   const host = latestSelection?.officeApp ?? "Office";
   chatEl.appendChild(el("div", { className: "empty" }, [
-    el("h2", { textContent: `UCA for ${host}` }),
+    el("h2", { textContent: `LingxY for ${host}` }),
     el("p", { textContent: "告诉我你要做什么 —— 或从下面选一个开始。" }),
     el("div", { className: "empty-chips" }, chips)
   ]));

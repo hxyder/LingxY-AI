@@ -65,11 +65,11 @@ export const DEFAULT_SHORTCUTS = Object.freeze([
 
 export const DESKTOP_SHELL_MANIFEST = Object.freeze({
   appId: "uca.desktop",
-  trayTooltip: "Universal Context Agent",
+  trayTooltip: "LingxY",
   windows: [
     {
       id: WINDOW_IDS.dock,
-      title: "UCA Dock",
+      title: "LingxY Dock",
       route: "/dock",
       singleton: true,
       startsHidden: false,
@@ -78,7 +78,7 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
     },
     {
       id: WINDOW_IDS.overlay,
-      title: "UCA Overlay",
+      title: "LingxY Overlay",
       route: "/overlay",
       singleton: true,
       startsHidden: true,
@@ -87,7 +87,7 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
     },
     {
       id: WINDOW_IDS.console,
-      title: "UCA Console",
+      title: "LingxY Console",
       route: "/console",
       singleton: true,
       startsHidden: true,
@@ -96,7 +96,7 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
     },
     {
       id: WINDOW_IDS.notification,
-      title: "UCA Notification",
+      title: "LingxY Notification",
       route: "/notification",
       singleton: true,
       startsHidden: true,
@@ -105,7 +105,7 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
     },
     {
       id: WINDOW_IDS.echoBubble,
-      title: "UCA Echo Bubble",
+      title: "LingxY Echo Bubble",
       route: "/echo-bubble",
       singleton: true,
       startsHidden: true,

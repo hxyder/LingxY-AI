@@ -152,7 +152,7 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
     </style>
     <div class="frame">
       <div class="header">
-        <span class="badge">UCA · ${ACTION_LABELS[action] ?? action}</span>
+        <span class="badge">LingxY · ${ACTION_LABELS[action] ?? action}</span>
         <span class="source">${escapeHtmlForChip(previewSnippet)}${previewSnippet.length === 80 ? "..." : ""}</span>
         <button class="close" type="button" title="关闭">&times;</button>
       </div>
@@ -596,7 +596,7 @@ function createFloatingChipController(doc = document) {
       }
     </style>
     <div class="chip-shell">
-      <button class="chip-button" type="button" tabindex="-1">用 UCA 总结</button>
+      <button class="chip-button" type="button" tabindex="-1">用 LingxY 总结</button>
       <div class="chip-preview" data-open="false">
         <div class="chip-actions">
           <button class="chip-action" type="button" data-action="summarize">总结</button>
@@ -890,7 +890,7 @@ function installSelectionObserver(doc = document, win = window) {
     };
     chip.show({
       position,
-      label: settings.displayMode === "long_selection_only" ? "用 UCA 深入处理" : "用 UCA 总结",
+      label: settings.displayMode === "long_selection_only" ? "用 LingxY 深入处理" : "用 LingxY 总结",
       selectionKey: state.selectionKey,
       previewDelayMs: settings.previewDelayMs
     });

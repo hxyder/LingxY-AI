@@ -116,11 +116,12 @@ def find_model_files(model_dir: Path) -> dict[str, Path] | None:
 
 
 def load_user_keywords() -> list[str]:
-    # Stage 2: per-user wake enrollment. The user records their own "linxi"
-    # three times in the dock; the backend transcribes each with Whisper
-    # and appends the transcript lines to this file. We merge them with the
-    # baked-in DEFAULT_KEYWORDS so the spotter has explicit text entries
-    # that match *this user's* STT output, on top of the generic variants.
+    # Legacy escape hatch only. Enrollment no longer appends Whisper guesses
+    # to the keyword list by default: short "linxi" clips are often heard as
+    # unrelated text such as "林医师", and feeding those guesses back into KWS
+    # makes wake behavior harder to reason about.
+    if os.environ.get("UCA_SHERPA_KWS_USE_USER_KEYWORDS", "").strip().lower() not in ("1", "true", "yes"):
+        return []
     path = project_root() / "models" / "user-keywords" / "keywords.txt"
     if not path.exists():
         return []
@@ -264,7 +265,130 @@ def parse_spotter_output(stdout: str) -> list[dict]:
     return events
 
 
-def run_kws(audio_path: Path, model_dir: Path, keywords: list[str]) -> dict:
+def read_wav_samples(wav_path: Path):
+    import numpy as np
+    with wave.open(str(wav_path), "rb") as wav:
+        sample_rate = wav.getframerate()
+        pcm = wav.readframes(wav.getnframes())
+    samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    return sample_rate, samples
+
+
+def trim_silence(samples, sample_rate: int):
+    import numpy as np
+    if samples.size == 0:
+        return samples
+    frame = max(1, int(sample_rate * 0.025))
+    hop = max(1, int(sample_rate * 0.010))
+    if samples.size < frame:
+        return samples
+    rms = []
+    for start in range(0, samples.size - frame + 1, hop):
+        chunk = samples[start:start + frame]
+        rms.append(float(np.sqrt(np.mean(chunk * chunk) + 1e-9)))
+    values = np.asarray(rms, dtype=np.float32)
+    threshold = max(0.008, float(np.percentile(values, 80)) * 0.35)
+    active = np.where(values >= threshold)[0]
+    if active.size == 0:
+        return samples
+    pad = int(sample_rate * 0.18)
+    start = max(0, int(active[0] * hop) - pad)
+    end = min(samples.size, int(active[-1] * hop + frame) + pad)
+    return samples[start:end]
+
+
+def spectral_features(samples, sample_rate: int):
+    import numpy as np
+    samples = trim_silence(samples, sample_rate)
+    frame = int(sample_rate * 0.030)
+    hop = int(sample_rate * 0.015)
+    fft_size = 512
+    if samples.size < frame:
+        samples = np.pad(samples, (0, max(0, frame - samples.size)))
+    window = np.hanning(frame).astype(np.float32)
+    bands = np.array_split(np.arange(2, fft_size // 2 + 1), 24)
+    rows = []
+    for start in range(0, max(1, samples.size - frame + 1), hop):
+        chunk = samples[start:start + frame]
+        if chunk.size < frame:
+            chunk = np.pad(chunk, (0, frame - chunk.size))
+        spectrum = np.abs(np.fft.rfft(chunk * window, n=fft_size)).astype(np.float32)
+        row = [float(np.log1p(np.mean(spectrum[band]))) for band in bands]
+        rows.append(row)
+    feats = np.asarray(rows, dtype=np.float32)
+    if feats.ndim != 2 or feats.shape[0] == 0:
+        return feats
+    mean = feats.mean(axis=0, keepdims=True)
+    std = feats.std(axis=0, keepdims=True) + 1e-5
+    return (feats - mean) / std
+
+
+def dtw_distance(a, b) -> float:
+    import numpy as np
+    if a.size == 0 or b.size == 0:
+        return float("inf")
+    # Keep the comparison cheap for rolling windows; 180 frames is ~2.7s at
+    # the 15ms hop used above.
+    max_frames = 180
+    if a.shape[0] > max_frames:
+        idx = np.linspace(0, a.shape[0] - 1, max_frames).astype(np.int32)
+        a = a[idx]
+    if b.shape[0] > max_frames:
+        idx = np.linspace(0, b.shape[0] - 1, max_frames).astype(np.int32)
+        b = b[idx]
+    n, m = a.shape[0], b.shape[0]
+    prev = np.full(m + 1, np.inf, dtype=np.float32)
+    curr = np.full(m + 1, np.inf, dtype=np.float32)
+    prev[0] = 0.0
+    for i in range(1, n + 1):
+        curr[0] = np.inf
+        for j in range(1, m + 1):
+            cost = float(np.mean(np.abs(a[i - 1] - b[j - 1])))
+            curr[j] = cost + min(prev[j], curr[j - 1], prev[j - 1])
+        prev, curr = curr, prev
+    return float(prev[m] / max(n, m))
+
+
+def load_template_paths() -> list[Path]:
+    directory = project_root() / "models" / "user-keywords"
+    if not directory.exists():
+        return []
+    paths = sorted(directory.glob("sample-*.webm")) + sorted(directory.glob("sample-*.wav"))
+    return [path for path in paths if path.is_file()]
+
+
+def run_template_fallback(input_samples, sample_rate: int, tmp_dir: Path) -> dict:
+    threshold = float(os.environ.get("UCA_SHERPA_KWS_TEMPLATE_THRESHOLD", "0.82"))
+    input_features = spectral_features(input_samples, sample_rate)
+    best = {
+        "matched": False,
+        "score": None,
+        "distance": None,
+        "threshold": threshold,
+        "template": "",
+        "templatesChecked": 0,
+    }
+    for index, template_path in enumerate(load_template_paths(), start=1):
+        try:
+            wav_path = tmp_dir / f"template-{index}.wav"
+            convert_to_wav(template_path, wav_path)
+            tpl_rate, tpl_samples = read_wav_samples(wav_path)
+            distance = dtw_distance(input_features, spectral_features(tpl_samples, tpl_rate))
+        except Exception:
+            continue
+        score = 1.0 / (1.0 + distance)
+        best["templatesChecked"] += 1
+        if best["score"] is None or score > best["score"]:
+            best.update({
+                "score": round(score, 4),
+                "distance": round(distance, 4),
+                "template": template_path.name,
+            })
+    best["matched"] = best["score"] is not None and best["score"] >= threshold
+    return best
+
+
+def run_kws(audio_path: Path, model_dir: Path, keywords: list[str], template_fallback: bool = False) -> dict:
     try:
         import numpy as np
         import sherpa_onnx
@@ -307,10 +431,7 @@ def run_kws(audio_path: Path, model_dir: Path, keywords: list[str]) -> dict:
             }
         keywords_file = build_keywords_file(model_dir, files["tokens"], keywords, tmp_dir)
 
-        with wave.open(str(wav_path), "rb") as wav:
-            sample_rate = wav.getframerate()
-            pcm = wav.readframes(wav.getnframes())
-        samples = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+        sample_rate, samples = read_wav_samples(wav_path)
 
         spotter = sherpa_onnx.KeywordSpotter(
             tokens=str(files["tokens"]),
@@ -344,11 +465,23 @@ def run_kws(audio_path: Path, model_dir: Path, keywords: list[str]) -> dict:
                 spotter.reset_stream(stream)
                 break
         first = events[0] if events else None
+        template = None
+        if not first and template_fallback:
+            template = run_template_fallback(samples, sample_rate, tmp_dir)
+            if template.get("matched"):
+                first = {
+                    "keyword": "linxi-template",
+                    "engine": "local-template-fallback",
+                    "score": template.get("score"),
+                    "template": template.get("template"),
+                }
+                events.append(first)
         return {
             "ok": True,
             "matched": bool(first),
             "keyword": first.get("keyword", "") if first else "",
             "events": events[:5],
+            "template": template,
             "audio_seconds": seconds,
             "provider": {
                 "id": "local-sherpa-onnx-kws",
@@ -368,16 +501,20 @@ def main() -> int:
     parser.add_argument(
         "--personalized",
         action="store_true",
-        help="Use aggressive thresholds — for when the caller has already verified "
-             "the audio belongs to the enrolled user via speaker embedding."
+        help="Use the enrollment-tuned threshold profile after saved samples pass KWS self-check."
+    )
+    parser.add_argument(
+        "--template-fallback",
+        action="store_true",
+        help="After sherpa no-match, compare the audio against saved user wake samples."
     )
     args = parser.parse_args()
 
-    # Personalized mode overrides env so the spotter is looser. The caller
-    # is responsible for speaker verification; here we just relax the gate.
+    # Personalized mode overrides env so the spotter is looser. The backend
+    # enables this only after the saved enrollment samples pass KWS self-check.
     if args.personalized:
         os.environ.setdefault("UCA_SHERPA_KWS_KEYWORDS_SCORE", "2.0")
-        os.environ["UCA_SHERPA_KWS_KEYWORDS_SCORE"] = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE_PERSONALIZED", "3.0")
+        os.environ["UCA_SHERPA_KWS_KEYWORDS_SCORE"] = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE_PERSONALIZED", "2.0")
         os.environ["UCA_SHERPA_KWS_KEYWORDS_THRESHOLD"] = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD_PERSONALIZED", "0.08")
         os.environ["UCA_SHERPA_KWS_MAX_ACTIVE_PATHS"] = os.environ.get("UCA_SHERPA_KWS_MAX_ACTIVE_PATHS_PERSONALIZED", "8")
 
@@ -404,7 +541,12 @@ def main() -> int:
     if not args.audio_path:
         return emit({"ok": False, "reason": "missing_audio_path"})
     try:
-        return emit(run_kws(Path(args.audio_path).resolve(), model_dir, keywords))
+        return emit(run_kws(
+            Path(args.audio_path).resolve(),
+            model_dir,
+            keywords,
+            template_fallback=args.template_fallback,
+        ))
     except Exception as exc:
         return emit({
             "ok": False,

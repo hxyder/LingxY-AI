@@ -14,8 +14,8 @@ function applyNoteRecordingState(payload = {}) {
   dockButton.classList.toggle("recording", noteRecordingActive);
   if (recordingBadge) recordingBadge.textContent = noteRecordingActive ? "REC" : "";
   dockButton.title = noteRecordingActive
-    ? `UCA · 录音中 ${payload.elapsed ?? ""}`.trim()
-    : "UCA";
+    ? `LingxY · 录音中 ${payload.elapsed ?? ""}`.trim()
+    : "LingxY";
   window.__orbApi?.recording?.(noteRecordingActive);
 }
 
@@ -53,6 +53,7 @@ const WAKE_PHRASES = [
   "林夕", "林西", "林氏", "林熙", "林希", "林喜", "林溪", "林犀",
   "林席", "林系", "林细", "林戏", "林昔", "林洗", "林奇", "林起",
   "林其", "林期", "林琪", "林琦", "林齐", "林七", "林息", "林惜",
+  "林师", "林施", "林诗", "林医师", "林醫師", "林医生", "林醫生",
   "林戲", "林齊", "林錫", "林襲",
   "琳西", "琳熙", "琳溪", "琳希", "琳奇", "琳琪",
   "灵犀", "灵溪", "灵熙", "灵希", "邻西", "邻熙", "凌溪", "凌西", "凌希",
@@ -80,6 +81,9 @@ const WAKE_TRADITIONAL_NORMALIZATION = Object.freeze({
   齊: "齐",
   錫: "锡",
   領: "领",
+  醫: "医",
+  師: "师",
+  詩: "诗",
   悟: "悟"
 });
 
@@ -577,7 +581,9 @@ async function startEchoFallback() {
           const keyword = `${payload.keyword ?? "linxi"}`.trim();
           console.info(
             "[echo] local KWS matched:", keyword,
-            "personalized:", Boolean(payload.personalized)
+            "personalized:", Boolean(payload.personalized),
+            "template:", payload?.template ?? null,
+            "wakeFallback:", payload?.wakeFallback ?? null
           );
           echoKwsAttemptsSinceMatch = 0;
           void onWakeDetected("voice", keyword);
@@ -590,7 +596,9 @@ async function startEchoFallback() {
             `[echo] KWS no-match — attempt ${echoKwsAttemptsSinceMatch}`,
             "floor≈", echoCurrentFloor.toFixed(4),
             "audioSec:", payload?.audio_seconds ?? "?",
-            "personalized:", Boolean(payload?.personalized)
+            "personalized:", Boolean(payload?.personalized),
+            "template:", payload?.template ?? null,
+            "wakeFallback:", payload?.wakeFallback ?? null
           );
           const now = Date.now();
           if (
@@ -694,11 +702,9 @@ window.ucaShell?.onSettingsChanged?.((settings) => {
 
 /* ═══════════════════════════════════════════════
    WAKE-WORD ENROLLMENT — stage 2 personalization
-   Record the user saying "linxi" three times so we capture the way
-   *their* voice transcribes (sherpa's generic keywords may miss specific
-   accents). Each sample goes through Whisper to get its text form, which
-   we append to models/user-keywords/keywords.txt — sherpa picks it up on
-   next KWS process start and adds it as an extra keyword template.
+   Record the user saying "linxi" three times, then let the backend run each
+   saved sample through sherpa itself. Whisper text is shown only as debug
+   feedback; KWS self-check success is what enables personalized thresholds.
    ═══════════════════════════════════════════════ */
 
 let wakeEnrollmentActive = false;
@@ -749,6 +755,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
     await new Promise((r) => setTimeout(r, 3000));
 
     const saved = [];
+    const enrollmentSession = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     for (let i = 1; i <= samples; i += 1) {
       // Two-phase cue: "准备" → short pause → "开始！" + record. User has time
       // to see the first bubble, take a breath, then speak when the second
@@ -778,7 +785,11 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       }
       let result;
       try {
-        const resp = await fetch(`${serviceBaseUrl}/echo/enroll-keyword?sample=${i}`, {
+        const params = new URLSearchParams({
+          sample: String(i),
+          session: enrollmentSession
+        });
+        const resp = await fetch(`${serviceBaseUrl}/echo/enroll-keyword?${params}`, {
           method: "POST",
           headers: { "Content-Type": blob.type || "audio/webm" },
           body: await blob.arrayBuffer()
@@ -799,35 +810,49 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
         });
         continue;
       }
-      // The backend always saves the raw audio. Only linxi-like transcripts
-      // are appended to keywords.txt (sherpa uses that file as extra wake
-      // templates); everything else is kept on disk but doesn't widen the
-      // keyword list.
+      // The backend always saves the raw audio. Whisper is diagnostic only;
+      // the sherpa self-check below is the source of truth for whether this
+      // sample improves personalized wake behavior.
+      const kwsSelfCheck = result.kwsSelfCheck ?? {};
       saved.push({
         transcript: result.transcript ?? "",
-        addedToKeywords: Boolean(result.transcriptAddedToKeywords)
+        kwsMatched: Boolean(kwsSelfCheck.matched),
+        kwsKeyword: kwsSelfCheck.keyword ?? "",
+        enrollment: result.enrollment ?? null
       });
       console.info(
         `[echo] enrollment sample ${i} transcribed as:`,
         JSON.stringify(result.transcript ?? ""),
-        "addedToKeywords:", Boolean(result.transcriptAddedToKeywords)
+        "kwsMatched:", Boolean(kwsSelfCheck.matched),
+        "kwsKeyword:", JSON.stringify(kwsSelfCheck.keyword ?? ""),
+        "enrollment:", result.enrollment ?? null
       );
       const heardText = result.transcript && result.transcript.trim()
         ? `听到「${result.transcript}」`
         : "（未听清，跳过此样本）";
+      const kwsText = kwsSelfCheck.matched
+        ? `KWS 命中「${kwsSelfCheck.keyword || "linxi"}」`
+        : "KWS 未命中";
       window.ucaShell?.showEchoBubble?.({
-        text: `✓ 第 ${i}/${samples} 次：${heardText}`,
-        kind: "info", durationMs: 1400
+        text: `第 ${i}/${samples} 次：${heardText} · ${kwsText}`,
+        kind: kwsSelfCheck.matched ? "info" : "error",
+        durationMs: 1800
       });
       await new Promise((r) => setTimeout(r, 600));
     }
 
     if (saved.length > 0) {
-      const addedToKws = saved.filter((s) => s.addedToKeywords).length;
+      const finalEnrollment = saved.at(-1)?.enrollment ?? {};
+      const matched = finalEnrollment.matchedCount ?? saved.filter((s) => s.kwsMatched).length;
+      const total = finalEnrollment.sampleCount ?? saved.length;
+      const required = finalEnrollment.requiredMatches ?? 2;
+      const enabled = Boolean(finalEnrollment.enabled);
       window.ucaShell?.showEchoBubble?.({
-        text: `✅ ${saved.length}/${samples} 次录入 · 关键词新增 ${addedToKws} 条`,
-        kind: "wake",
-        durationMs: 3600
+        text: enabled
+          ? `✅ 录入有效 · KWS 自检命中 ${matched}/${total}`
+          : `⚠ 录入未改善唤醒（命中 ${matched}/${total}，需要 ${required}）请靠近麦克风重录`,
+        kind: enabled ? "wake" : "error",
+        durationMs: enabled ? 3600 : 5200
       });
       // Clear the cached KWS status so the next start re-queries.
       echoLocalKwsStatus = null;
@@ -967,7 +992,7 @@ async function pollTaskState() {
     // already conveys active/idle state; the number badge was covering other UI.
     taskBadge.textContent = "";
     dockButton.classList.remove("has-completed");
-    if (!noteRecordingActive) dockButton.title = "UCA";
+    if (!noteRecordingActive) dockButton.title = "LingxY";
 
     lastHadActive = hasActive;
     pollLastErrored = false;
@@ -1070,12 +1095,12 @@ async function handleDrop(event) {
   window.__orbApi?.pulse();
   const filePaths = collectFilePaths(event);
   if (filePaths.length === 0) {
-    await window.ucaShell.notify({ title: "UCA", body: "No files detected." });
+    await window.ucaShell.notify({ title: "LingxY", body: "No files detected." });
     return;
   }
   const result = await window.ucaShell.submitDroppedFiles(filePaths);
   if (result?.accepted) {
-    await window.ucaShell.notify({ title: "UCA", body: `Received ${result.fileCount} file(s).` });
+    await window.ucaShell.notify({ title: "LingxY", body: `Received ${result.fileCount} file(s).` });
   }
 }
 

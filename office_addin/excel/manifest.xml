@@ -6,10 +6,10 @@
            xsi:type="TaskPaneApp">
   <Id>1d1dd5db-1b91-4e32-8fd5-0cb0f8d40002</Id>
   <Version>0.1.2.0</Version>
-  <ProviderName>Universal Context Agent</ProviderName>
+  <ProviderName>LingxY</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
-  <DisplayName DefaultValue="UCA for Excel"/>
-  <Description DefaultValue="Capture Excel selections and send them to UCA for AI analysis."/>
+  <DisplayName DefaultValue="LingxY for Excel"/>
+  <Description DefaultValue="Capture Excel selections and send them to LingxY for AI analysis."/>
   <IconUrl DefaultValue="http://127.0.0.1:4310/office/icon-32.png"/>
   <HighResolutionIconUrl DefaultValue="http://127.0.0.1:4310/office/icon-80.png"/>
   <SupportUrl DefaultValue="https://www.microsoft.com/"/>
@@ -71,11 +71,11 @@
         <bt:Url id="UCA.Taskpane.Url.Excel" DefaultValue="http://127.0.0.1:4310/office/task_pane.html?host=excel"/>
       </bt:Urls>
       <bt:ShortStrings>
-        <bt:String id="UCA.Group.Label" DefaultValue="UCA"/>
-        <bt:String id="UCA.Button.Label" DefaultValue="Open UCA"/>
+        <bt:String id="UCA.Group.Label" DefaultValue="LingxY"/>
+        <bt:String id="UCA.Button.Label" DefaultValue="Open LingxY"/>
       </bt:ShortStrings>
       <bt:LongStrings>
-        <bt:String id="UCA.Button.Tooltip" DefaultValue="Open Universal Context Agent for this Excel workbook."/>
+        <bt:String id="UCA.Button.Tooltip" DefaultValue="Open LingxY for this Excel workbook."/>
       </bt:LongStrings>
     </Resources>
   </VersionOverrides>

@@ -2,7 +2,7 @@ export function createOfficeTaskPaneViewModel(selection, transportPlan) {
   const app = selection?.officeApp ?? "Office";
   const scope = selection?.captureScope ?? selection?.selectionMetadata?.capture_scope ?? "selection";
   return {
-    hostTitle: `UCA for ${app}`,
+    hostTitle: `LingxY for ${app}`,
     captureScope: scope,
     supportsWriteback: true,
     previewText: selection?.selectionText?.trim() || "当前未检测到选区。",

@@ -38,7 +38,7 @@ import { extractPageContent } from "../extractors/page_source/index.mjs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_LOCAL_WHISPER_MODEL = "base";
-const DEFAULT_LOCAL_WHISPER_BEAM_SIZE = "1";
+const DEFAULT_LOCAL_WHISPER_BEAM_SIZE = "5";
 
 function sendJson(response, statusCode, payload) {
   response.writeHead(statusCode, {
@@ -173,6 +173,54 @@ function normalizeLanguageHint(lang = "auto") {
   return lang.split("-")[0];
 }
 
+const WAKE_TEXT_PHRASES = [
+  "linxi", "lin xi", "lin-xi", "lingxi", "ling xi", "lynx",
+  "linsee", "lin see", "linsey", "lindsay", "linsy",
+  "林夕", "林西", "林氏", "林熙", "林希", "林喜", "林溪", "林犀",
+  "林席", "林系", "林细", "林戏", "林昔", "林洗", "林奇", "林起",
+  "林其", "林期", "林琪", "林琦", "林齐", "林七", "林息", "林惜",
+  "林师", "林施", "林诗", "林医师", "林醫師", "林醫生", "林医生",
+  "琳西", "琳熙", "琳溪", "琳希", "琳奇", "琳琪",
+  "灵犀", "灵溪", "灵熙", "灵希", "邻西", "邻熙", "凌溪", "凌西", "凌希",
+  "临溪", "临西", "淋溪", "淋西", "零西", "零息", "令西", "令希"
+];
+const WAKE_TEXT_FIRST_CHARS = "林琳凌灵邻临淋零令陵麟";
+const WAKE_TEXT_SECOND_CHARS = "夕西氏熙希喜溪犀席系细戏昔洗师施诗医醫生奇起其期琪琦齐七息惜稀锡晰熹袭";
+const WAKE_TEXT_REGEX_CN = new RegExp(`[${WAKE_TEXT_FIRST_CHARS}]\\s*[${WAKE_TEXT_SECOND_CHARS}]`);
+const WAKE_TEXT_REGEX_LATIN = /\b(?:lin|ling|lyn)[\s-]*(?:xi|see|sey|sy|x)\b|\b(?:lindsay|linsey|linsee|lynx)\b/i;
+const WAKE_TEXT_TRADITIONAL_NORMALIZATION = Object.freeze({
+  靈: "灵",
+  鄰: "邻",
+  臨: "临",
+  淩: "凌",
+  醫: "医",
+  師: "师",
+  詩: "诗",
+  戲: "戏",
+  細: "细",
+  襲: "袭",
+  齊: "齐",
+  錫: "锡"
+});
+
+function normalizeWakeText(text = "") {
+  return `${text ?? ""}`
+    .toLowerCase()
+    .replace(/[靈鄰臨淩醫師詩戲細襲齊錫]/g, (ch) => WAKE_TEXT_TRADITIONAL_NORMALIZATION[ch] ?? ch)
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchesWakeText(text = "") {
+  const norm = normalizeWakeText(text);
+  if (!norm) return false;
+  if (WAKE_TEXT_PHRASES.some((phrase) => norm.includes(normalizeWakeText(phrase)))) return true;
+  if (WAKE_TEXT_REGEX_CN.test(norm)) return true;
+  if (WAKE_TEXT_REGEX_LATIN.test(text)) return true;
+  return false;
+}
+
 function getLocalTranscriptionScriptPath() {
   return path.resolve(process.cwd(), "scripts", "local-whisper-transcribe.py");
 }
@@ -220,7 +268,7 @@ async function getLocalKeywordSpottingStatus() {
   }
 }
 
-async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", personalized = false } = {}) {
+async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", personalized = false, templateFallback = false } = {}) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-echo-kws-"));
   const ext = mimeType.includes("wav") ? ".wav"
     : mimeType.includes("mp4") || mimeType.includes("m4a") ? ".m4a"
@@ -231,6 +279,7 @@ async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", 
     await writeFile(audioPath, audioBuffer);
     const args = [getLocalKeywordSpottingScriptPath(), audioPath];
     if (personalized) args.push("--personalized");
+    if (templateFallback) args.push("--template-fallback");
     const { stdout } = await execFileAsync(getPythonCommand(), args, {
       timeout: Number(process.env.UCA_SHERPA_KWS_REQUEST_TIMEOUT_MS ?? 12_000),
       maxBuffer: 1024 * 1024 * 2,
@@ -255,25 +304,101 @@ async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", 
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Personalized KWS gating — is the user's wake-word enrollment file on disk?
+// Personalized KWS gating — did the saved wake enrollment self-check pass?
 // ═══════════════════════════════════════════════════════════════════
 //
-// When enrollment has added at least one keyword to user-keywords/keywords.txt,
-// we flip sherpa-onnx KWS into its aggressive `--personalized` threshold
-// (0.08 instead of 0.15). False positives from other speakers are acceptable
-// for a personal tool; false negatives on the user's own wake attempts are
-// the real problem we're solving.
+// Whisper's transcript for a 2s "linxi" clip is too noisy to use as the
+// source of truth. Enrollment therefore saves the audio, immediately runs it
+// through sherpa KWS with the personalized profile, and enables that profile
+// only when at least 2 of the 3 guided samples actually match.
 let cachedEnrollmentKnown = undefined;
 let cachedEnrollmentKnownAt = 0;
-const ENROLLMENT_CACHE_TTL_MS = 10_000;
+const ENROLLMENT_CACHE_TTL_MS = 0;
+const ENROLLMENT_REQUIRED_SAMPLES = 3;
+const ENROLLMENT_REQUIRED_MATCHES = 2;
+const ENROLLMENT_SAMPLE_KEYS = ["1", "2", "3"];
+
+function getUserKeywordDir() {
+  return path.resolve(process.cwd(), "models", "user-keywords");
+}
+
+function getEnrollmentManifestPath() {
+  return path.join(getUserKeywordDir(), "enrollment.json");
+}
+
+function getPersonalizedKwsProfile() {
+  return {
+    personalized: true,
+    score: process.env.UCA_SHERPA_KWS_KEYWORDS_SCORE_PERSONALIZED ?? "2.0",
+    threshold: process.env.UCA_SHERPA_KWS_KEYWORDS_THRESHOLD_PERSONALIZED ?? "0.08",
+    maxActivePaths: process.env.UCA_SHERPA_KWS_MAX_ACTIVE_PATHS_PERSONALIZED ?? "8"
+  };
+}
+
+function summarizeEnrollment(samples = {}) {
+  const entries = ENROLLMENT_SAMPLE_KEYS
+    .map((key) => samples[key])
+    .filter(Boolean);
+  const matchedCount = entries.filter((item) => item?.kwsSelfCheck?.matched).length;
+  const completed = ENROLLMENT_SAMPLE_KEYS.every((key) => Boolean(samples[key]));
+  return {
+    sampleCount: entries.length,
+    requiredSamples: ENROLLMENT_REQUIRED_SAMPLES,
+    matchedCount,
+    requiredMatches: ENROLLMENT_REQUIRED_MATCHES,
+    completed,
+    enabled: completed && matchedCount >= ENROLLMENT_REQUIRED_MATCHES
+  };
+}
+
+async function readEnrollmentManifest() {
+  try {
+    const parsed = JSON.parse(await readFile(getEnrollmentManifestPath(), "utf8"));
+    return {
+      schemaVersion: 1,
+      sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : "",
+      samples: parsed.samples && typeof parsed.samples === "object" ? parsed.samples : {}
+    };
+  } catch {
+    return { schemaVersion: 1, sessionId: "", samples: {} };
+  }
+}
+
+async function writeEnrollmentSample({ sessionId = "", sampleKey, savedAudio, transcript, kwsSelfCheck }) {
+  const manifest = await readEnrollmentManifest();
+  const resetForNewSession = sessionId && manifest.sessionId && manifest.sessionId !== sessionId;
+  const samples = resetForNewSession || (sessionId && sampleKey === "1")
+    ? {}
+    : { ...manifest.samples };
+  samples[sampleKey] = {
+    sample: sampleKey,
+    savedAudio,
+    transcript,
+    kwsSelfCheck,
+    updatedAt: new Date().toISOString()
+  };
+  const summary = summarizeEnrollment(samples);
+  const next = {
+    schemaVersion: 1,
+    sessionId: sessionId || manifest.sessionId || "",
+    updatedAt: new Date().toISOString(),
+    profile: getPersonalizedKwsProfile(),
+    ...summary,
+    samples
+  };
+  await writeFile(getEnrollmentManifestPath(), `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  invalidateEnrollmentCache();
+  return next;
+}
+
 async function hasUserEnrollment() {
   const now = Date.now();
   if (cachedEnrollmentKnown !== undefined && now - cachedEnrollmentKnownAt < ENROLLMENT_CACHE_TTL_MS) {
     return cachedEnrollmentKnown;
   }
   try {
-    const text = await readFile(path.resolve(process.cwd(), "models", "user-keywords", "keywords.txt"), "utf8");
-    cachedEnrollmentKnown = text.split(/\r?\n/).some((line) => line.trim().length > 0);
+    const parsed = JSON.parse(await readFile(getEnrollmentManifestPath(), "utf8"));
+    cachedEnrollmentKnown = Boolean(parsed?.enabled);
   } catch {
     cachedEnrollmentKnown = false;
   }
@@ -1918,25 +2043,58 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           return sendJson(response, 413, { ok: false, reason: "audio_too_large" });
         }
 
-        // If the user has enrolled (keywords.txt on disk), flip sherpa into
-        // the aggressive "personalized" threshold (0.08 vs 0.15). More
-        // false positives but significantly fewer missed wakes.
+        // If the guided enrollment self-check passed, flip sherpa into the
+        // lower-threshold personalized profile. A stale keywords.txt alone
+        // is intentionally ignored; Whisper guesses are only debug text now.
         const personalized = await hasUserEnrollment();
-        const result = await detectWakeKeywordLocally(audioBuffer, { mimeType, personalized });
+        const result = await detectWakeKeywordLocally(audioBuffer, {
+          mimeType,
+          personalized,
+          templateFallback: process.env.UCA_ECHO_TEMPLATE_WAKE_FALLBACK !== "0"
+        });
+        if (
+          result?.ok
+          && !result.matched
+          && result.audio_seconds >= Number(process.env.UCA_ECHO_WHISPER_WAKE_MIN_SECONDS ?? 1.2)
+          && process.env.UCA_ECHO_WHISPER_WAKE_FALLBACK !== "0"
+        ) {
+          const localWake = await transcribeAudioLocally(audioBuffer, { mimeType, lang: "zh", noVad: true });
+          const transcript = `${localWake.transcript ?? ""}`.trim();
+          result.wakeFallback = {
+            engine: "local-whisper-wake-fallback",
+            ok: Boolean(localWake.ok),
+            matched: matchesWakeText(transcript),
+            transcript,
+            language: localWake.language ?? null,
+            model: localWake.provider?.model ?? localWake.model ?? null,
+            reason: localWake.reason ?? null
+          };
+          if (result.wakeFallback.matched) {
+            result.matched = true;
+            result.keyword = transcript || "linxi";
+            result.events = [
+              ...(Array.isArray(result.events) ? result.events : []),
+              {
+                keyword: result.keyword,
+                engine: result.wakeFallback.engine,
+                transcript
+              }
+            ];
+          }
+        }
         result.personalized = personalized;
         return sendJson(response, 200, result);
       }
 
       // ── /echo/enroll-keyword — personalized wake-word enrollment ──
       // The dock records the user saying "linxi" three times and POSTs each
-      // sample here. We run Whisper with a Chinese language hint to capture
-      // how *this user's* pronunciation actually surfaces as text, then
-      // append that text to models/user-keywords/keywords.txt. sherpa-onnx
-      // picks up the file automatically on next KWS process start and adds
-      // each line as an additional keyword template.
+      // sample here. Whisper is kept as diagnostic text only; the decision to
+      // enable personalized KWS comes from a sherpa self-check on the saved
+      // sample audio, not from transcript strings.
       if (method === "POST" && url.pathname === "/echo/enroll-keyword") {
         const contentType = String(request.headers["content-type"] ?? "application/octet-stream").trim();
         const sampleIndex = String(url.searchParams.get("sample") ?? "").trim();
+        const sessionId = String(url.searchParams.get("session") ?? "").trim();
         let audioBuffer = Buffer.alloc(0);
         let mimeType = "audio/webm";
         if (/^application\/json\b/i.test(contentType)) {
@@ -1952,27 +2110,16 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           return sendJson(response, 400, { ok: false, reason: "missing_audio" });
         }
 
-        const userKwDir = path.resolve(process.cwd(), "models", "user-keywords");
+        const userKwDir = getUserKeywordDir();
         await mkdir(userKwDir, { recursive: true });
 
         // Disable Silero VAD for enrollment — on the short (~2s) clips the
         // user records, VAD often pre-filters them to empty, hiding what
-        // Whisper actually heard. Stage 3 doesn't need a valid transcript
-        // (the voiceprint embedding works on raw audio) but the user-facing
-        // bubble "听到「xxx」" is much more helpful when we let Whisper
-        // produce its best guess even for borderline clips.
+        // Whisper actually heard. This text is debug feedback only; the KWS
+        // self-check below decides whether the enrollment helps wake-word
+        // detection.
         const local = await transcribeAudioLocally(audioBuffer, { mimeType, lang: "zh", noVad: true });
         const transcript = (local.transcript ?? "").trim();
-
-        // Save the audio regardless — future tuning (or a later voiceprint
-        // stage) may want the raw recording even when Whisper mishears.
-        // The keyword-text addition below IS gated on the transcript being
-        // plausibly linxi-like; otherwise sherpa would start listening for
-        // random unrelated words.
-        const CN_LIKE = /(?:林|琳|凌|灵|邻|临|淋|领|令|陵|麟|另|零)\s*[夕西氏熙希喜溪犀席系细戏昔洗奇起其期琪琦齐七息惜稀锡晰熹袭]/;
-        const LATIN_LIKE = /\b(?:lin|ling|lyn)[\s-]*(?:xi|see|sey|sy|x)\b|\b(?:lindsay|linsey|lynx)\b/i;
-        const transcriptIsLinxiLike = Boolean(transcript)
-          && (CN_LIKE.test(transcript) || LATIN_LIKE.test(transcript));
 
         // Save the raw recording for later tuning. Filenames are zero-padded
         // by sample index when provided so repeated enrollment overwrites
@@ -1982,37 +2129,44 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         const baseName = sampleIndex
           ? `sample-${String(sampleIndex).padStart(2, "0")}`
           : `sample-${stamp}`;
-        await writeFile(path.join(userKwDir, `${baseName}${ext}`), audioBuffer);
+        const savedAudio = `${baseName}${ext}`;
+        await writeFile(path.join(userKwDir, savedAudio), audioBuffer);
 
-        // Only append to keywords.txt when the transcript is plausibly a
-        // linxi variant — otherwise sherpa would start listening for e.g.
-        // "认识" as a wake word, which is actively harmful. The audio file
-        // itself is always saved above.
-        const kwPath = path.join(userKwDir, "keywords.txt");
-        let lines;
-        if (transcriptIsLinxiLike) {
-          let existing = "";
-          try { existing = await readFile(kwPath, "utf8"); } catch { /* empty */ }
-          lines = new Set(existing.split(/\r?\n/).map((s) => s.trim()).filter(Boolean));
-          lines.add(transcript);
-          await writeFile(kwPath, Array.from(lines).join("\n") + "\n", "utf8");
-          invalidateEnrollmentCache();
-        } else {
-          try {
-            const existing = await readFile(kwPath, "utf8");
-            lines = new Set(existing.split(/\r?\n/).map((s) => s.trim()).filter(Boolean));
-          } catch {
-            lines = new Set();
-          }
-        }
+        const kwsResult = await detectWakeKeywordLocally(audioBuffer, { mimeType, personalized: true });
+        const kwsSelfCheck = {
+          ok: Boolean(kwsResult?.ok),
+          matched: Boolean(kwsResult?.matched),
+          keyword: kwsResult?.keyword ?? "",
+          audio_seconds: kwsResult?.audio_seconds ?? null,
+          reason: kwsResult?.reason ?? null,
+          message: kwsResult?.message ?? null,
+          profile: getPersonalizedKwsProfile()
+        };
+        const sampleKey = sampleIndex || `${stamp}`;
+        const enrollment = await writeEnrollmentSample({
+          sessionId,
+          sampleKey,
+          savedAudio,
+          transcript,
+          kwsSelfCheck
+        });
 
         return sendJson(response, 200, {
           ok: true,
           transcript,
-          transcriptAddedToKeywords: transcriptIsLinxiLike,
+          transcriptAddedToKeywords: false,
           sample: sampleIndex,
-          totalKeywords: lines.size,
-          savedAudio: `${baseName}${ext}`
+          savedAudio,
+          kwsSelfCheck,
+          enrollment: {
+            enabled: enrollment.enabled,
+            completed: enrollment.completed,
+            matchedCount: enrollment.matchedCount,
+            sampleCount: enrollment.sampleCount,
+            requiredMatches: enrollment.requiredMatches,
+            requiredSamples: enrollment.requiredSamples,
+            profile: enrollment.profile
+          }
         });
       }
 
@@ -2043,10 +2197,9 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         }
 
         // ── SSE streaming branch ──
-        // Used by the overlay voice card so transcribed segments appear
-        // progressively instead of the user waiting for a whole-file response.
-        // Only local faster-whisper can stream; cloud Whisper is file-in/file-out
-        // so we just skip straight to the non-streaming path if local fails.
+        // Used by the overlay voice card. Echo cares most about final text
+        // accuracy, so an explicit audio provider wins over local streaming;
+        // we emit the provider result as one segment + done frame.
         if (url.searchParams.get("stream") === "1") {
           response.writeHead(200, SSE_HEADERS);
           response.flushHeaders?.();
@@ -2056,44 +2209,48 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           };
           let closed = false;
           request.on("close", () => { closed = true; });
-          const result = await transcribeAudioLocallyStream(
-            audioBuffer,
-            { mimeType, lang },
-            (event) => { if (!closed) writeFrame(event); }
-          );
-          if (!result.ok && !closed) {
-            // Last-ditch: try the non-streaming endpoint (OpenAI Whisper etc.)
-            // and emit the full transcript as a single segment. Keeps the UX
-            // consistent even when local faster-whisper isn't available.
-            const provider = resolveAudioTranscriptionProvider(runtime);
-            if (provider) {
-              try {
-                const formData = new FormData();
-                formData.append("file", new Blob([audioBuffer], { type: mimeType }), "note-recording.webm");
-                formData.append("model", provider.model || "whisper-1");
-                if (lang && lang !== "auto") formData.append("language", lang.split("-")[0]);
-                const baseUrl = (provider.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
-                const apiResp = await fetch(`${baseUrl}/audio/transcriptions`, {
-                  method: "POST",
-                  headers: { Authorization: `Bearer ${provider.apiKey}` },
-                  body: formData
-                });
-                if (apiResp.ok) {
-                  const cloud = await apiResp.json();
-                  const text = cloud.text ?? "";
-                  if (text) writeFrame({ type: "segment", start: 0, end: 0, text });
+
+          let providerHandled = false;
+          const provider = resolveAudioTranscriptionProvider(runtime);
+          if (provider) {
+            try {
+              const formData = new FormData();
+              formData.append("file", new Blob([audioBuffer], { type: mimeType }), "note-recording.webm");
+              formData.append("model", provider.model || "whisper-1");
+              if (lang && lang !== "auto") formData.append("language", lang.split("-")[0]);
+              const baseUrl = (provider.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
+              const apiResp = await fetch(`${baseUrl}/audio/transcriptions`, {
+                method: "POST",
+                headers: { Authorization: `Bearer ${provider.apiKey}` },
+                body: formData
+              });
+              if (apiResp.ok) {
+                const cloud = await apiResp.json();
+                const text = cloud.text ?? "";
+                if (!closed && text) writeFrame({ type: "segment", start: 0, end: 0, text });
+                if (!closed) {
                   writeFrame({
                     type: "done",
                     ok: true,
                     transcript: text,
                     provider: providerPublicDescriptor(provider)
                   });
-                } else {
-                  writeFrame({ type: "error", reason: "api_error", message: "cloud transcription failed" });
                 }
-              } catch (err) {
-                writeFrame({ type: "error", reason: "cloud_exception", message: err.message });
+                providerHandled = true;
               }
+            } catch {
+              providerHandled = false;
+            }
+          }
+
+          if (!providerHandled && !closed) {
+            const result = await transcribeAudioLocallyStream(
+              audioBuffer,
+              { mimeType, lang },
+              (event) => { if (!closed) writeFrame(event); }
+            );
+            if (!result.ok && !closed) {
+              writeFrame({ type: "error", reason: result.reason ?? "local_stream_failed" });
             }
           }
           if (!closed) response.end();

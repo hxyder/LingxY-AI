@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "main": "index.cjs",
-  "description": "Universal Context Agent desktop runtime for Windows.",
-  "author": "UCA Contributors",
+  "description": "LingxY desktop runtime for Windows.",
+  "author": "LingxY Contributors",
   "scripts": {
     "check": "node scripts/verify-structure.mjs && node scripts/verify-desktop-shell.mjs && node scripts/verify-desktop-renderer.mjs && node scripts/verify-overlay-composer.mjs && node scripts/verify-context-handoff-ui.mjs && node scripts/verify-console-ui.mjs && node scripts/verify-console-runtime-client.mjs && node scripts/verify-console-rendered-workspace.mjs && node scripts/verify-service-core.mjs && node scripts/verify-provider-health.mjs && node scripts/verify-provider-routing.mjs && node scripts/verify-ai-integrations.mjs && node scripts/verify-agentic-planner.mjs && node scripts/verify-active-window-probe.mjs && node scripts/verify-file-kimi.mjs && node scripts/verify-kimi-runtime.mjs && node scripts/verify-browser-extension.mjs && node scripts/verify-browser-overlay.mjs && node scripts/verify-page-source-extractor.mjs && node scripts/verify-page-explain-handoff.mjs && node scripts/verify-office-base.mjs && node scripts/verify-pdf-ocr.mjs && node scripts/verify-status-metrics.mjs && node scripts/verify-action-tools.mjs && node scripts/verify-security-broker.mjs && node scripts/verify-scheduler.mjs && node scripts/verify-platform-foundation.mjs && node scripts/verify-template-dag-persistence.mjs && node scripts/verify-runtime-wiring.mjs && node scripts/verify-native-integrations.mjs && node scripts/verify-email-monitoring.mjs && node scripts/verify-email-morning-digest.mjs && node scripts/verify-release-readiness.mjs",
     "build:trial-package": "node scripts/build-trial-package.mjs",
@@ -67,7 +67,7 @@
   },
   "build": {
     "appId": "com.uca.desktop",
-    "productName": "UCA",
+    "productName": "LingxY",
     "directories": {
       "output": "dist"
     },
@@ -97,7 +97,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "UCA"
+      "shortcutName": "LingxY"
     },
     "extraResources": [
       {

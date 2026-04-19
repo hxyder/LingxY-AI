@@ -53,10 +53,10 @@ const report = {
     validation_targets: manifest.validation_targets
   },
   install_entrypoints: [
-    "Check UCA Desktop Trial.cmd",
-    "Setup UCA Desktop Trial.cmd",
-    "Launch UCA Desktop Trial.cmd",
-    "Stop UCA Desktop Trial.cmd"
+    "Check LingxY Desktop Trial.cmd",
+    "Setup LingxY Desktop Trial.cmd",
+    "Launch LingxY Desktop Trial.cmd",
+    "Stop LingxY Desktop Trial.cmd"
   ],
   manual_remaining: [
     "Fresh Windows machine install",

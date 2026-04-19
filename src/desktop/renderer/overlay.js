@@ -2787,7 +2787,17 @@ async function submitEchoVoiceCommand() {
   try {
     showEchoHud({ text: "正在转写…", kind: "info", durationMs: 2000, throttleMs: 0 });
     if (voiceRecording) {
-      await stopVoiceRecognition();
+      const finalResult = await stopVoiceRecognition({ forceTranscribe: true });
+      const finalText = `${finalResult?.transcript ?? ""}`.trim();
+      if (finalText) {
+        commandInput.value = finalText;
+        autoSizeInput();
+        if (voiceTranscript) {
+          voiceTranscript.classList.remove("placeholder");
+          voiceTranscript.textContent = finalText;
+          voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
+        }
+      }
     }
     const text = commandInput.value.trim();
     if (!text) {
@@ -3644,8 +3654,11 @@ async function startVoiceRecognition() {
   }
 }
 
-function stopVoiceRecognition({ discard = false } = {}) {
-  const shouldTranscribe = !discard && (voiceLocalFallbackActive || !voiceRecognitionProducedText);
+function stopVoiceRecognition({ discard = false, forceTranscribe = false } = {}) {
+  // In Echo sessions, Web Speech is only a low-latency preview. Always run
+  // the MediaRecorder audio through the final transcription path before
+  // sending so a bad interim transcript does not become the command.
+  const shouldTranscribe = !discard && (forceTranscribe || voiceLocalFallbackActive || !voiceRecognitionProducedText);
   voiceManualStopPending = true;
   if (voiceLocalFallbackActive || shouldTranscribe) {
     setVoiceRecording(false);

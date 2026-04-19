@@ -1,27 +1,27 @@
 export const CONTEXT_MENU_DEFINITIONS = Object.freeze([
   {
     id: "uca.summarize-selection",
-    title: "用 UCA 总结",
+    title: "用 LingxY 总结",
     contexts: ["selection"]
   },
   {
     id: "uca.translate-selection",
-    title: "用 UCA 翻译",
+    title: "用 LingxY 翻译",
     contexts: ["selection"]
   },
   {
     id: "uca.fetch-link",
-    title: "用 UCA 抓取并总结",
+    title: "用 LingxY 抓取并总结",
     contexts: ["link"]
   },
   {
     id: "uca.inspect-image",
-    title: "用 UCA 分析图片",
+    title: "用 LingxY 分析图片",
     contexts: ["image"]
   },
   {
     id: "uca.explain-page",
-    title: "用 UCA 解释此页 / 视频",
+    title: "用 LingxY 解释此页 / 视频",
     contexts: ["page", "video", "frame"]
   }
 ]);

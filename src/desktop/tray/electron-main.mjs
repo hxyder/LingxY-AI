@@ -252,7 +252,7 @@ export function createElectronShellRuntime({
     }
 
     const notification = new Notification({
-      title: payload.title ?? "UCA",
+      title: payload.title ?? "LingxY",
       body: payload.body ?? payload.message ?? "",
       silent: false
     });
@@ -921,7 +921,7 @@ export function createElectronShellRuntime({
 
       tray.setImage(buildTrayIcon(completed));
       tray.setToolTip(completed > 0
-        ? `UCA · 今日完成 ${completed} 个任务`
+        ? `LingxY · 今日完成 ${completed} 个任务`
         : DESKTOP_SHELL_MANIFEST.trayTooltip);
     } catch { /* service not ready */ }
   }
@@ -1095,7 +1095,7 @@ export function createElectronShellRuntime({
                 const dir = path.resolve(process.cwd(), "models", "user-keywords");
                 const files = await readdir(dir).catch(() => []);
                 await Promise.all(files
-                  .filter((f) => f.endsWith(".txt") || f.endsWith(".webm") || f.endsWith(".wav"))
+                  .filter((f) => f.endsWith(".txt") || f.endsWith(".webm") || f.endsWith(".wav") || f.endsWith(".json"))
                   .map((f) => unlink(path.join(dir, f)).catch(() => null)));
                 const dock = windows.get("dock");
                 if (dock && !dock.webContents?.isDestroyed?.()) {
@@ -1123,7 +1123,7 @@ export function createElectronShellRuntime({
           { label: "打开主控台", click() { showWindow("console"); } },
           { label: "打开对话框", click() { showWindow("overlay"); } },
           { type: "separator" },
-          { label: "退出 UCA", click() { app.quit(); } }
+          { label: "退出 LingxY", click() { app.quit(); } }
         ]);
         menu.popup({ window: dockWin });
       });

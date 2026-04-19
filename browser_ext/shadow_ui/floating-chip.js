@@ -28,7 +28,7 @@ export function createFloatingChipController(doc = document, theme = DEFAULT_FLO
         box-shadow: 0 12px 26px rgba(8, 47, 73, 0.22);
       }
     </style>
-    <button type="button">用 UCA 总结</button>
+    <button type="button">用 LingxY 总结</button>
   `;
 
   const button = root.querySelector("button");
