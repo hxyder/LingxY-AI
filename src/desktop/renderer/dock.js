@@ -101,6 +101,8 @@ let echoPausedForSession = false;
 let echoFallbackLastErrorReason = "";
 let echoResumeTimer = null;
 let echoResumeAttempt = 0;
+let echoLocalKwsStatus = null;
+let echoLocalKwsStatusAt = 0;
 
 // How long two identical transcripts count as "the same utterance". After
 // this window elapses, re-saying the wake word will retrigger even if the
@@ -110,6 +112,9 @@ let echoResumeAttempt = 0;
 const ECHO_DEDUPE_WINDOW_MS = 2500;
 const ECHO_MIN_REWAKE_MS = 1500;
 const ECHO_RESUME_DELAY_MS = 1200;
+const ECHO_LOCAL_KWS_STATUS_TTL_MS = 30_000;
+const ECHO_LOCAL_KWS_POLL_MS = 1200;
+const ECHO_LOCAL_KWS_WINDOW_CHUNKS = 4;
 
 function normalizeForMatch(text) {
   // Lowercase, collapse whitespace, and strip punctuation so phrases like
@@ -220,14 +225,54 @@ function handleEchoTranscript(text, { interim = false } = {}) {
   if (!interim && text.length > 1) console.debug("[echo] ignored non-wake transcript:", text);
 }
 
-function startEchoRecognizer() {
+async function isEchoLocalKwsReady({ force = false } = {}) {
+  const now = Date.now();
+  if (!force && echoLocalKwsStatus && now - echoLocalKwsStatusAt < ECHO_LOCAL_KWS_STATUS_TTL_MS) {
+    return Boolean(echoLocalKwsStatus.ok);
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  try {
+    const resp = await fetch(`${serviceBaseUrl}/echo/kws/status`, { signal: controller.signal });
+    if (!resp.ok) throw new Error(`status ${resp.status}`);
+    echoLocalKwsStatus = await resp.json();
+    echoLocalKwsStatusAt = Date.now();
+    console.info("[echo] local KWS status:", echoLocalKwsStatus);
+    return Boolean(echoLocalKwsStatus?.ok);
+  } catch (err) {
+    echoLocalKwsStatus = { ok: false, reason: err?.name === "AbortError" ? "timeout" : "unreachable" };
+    echoLocalKwsStatusAt = Date.now();
+    console.debug("[echo] local KWS status unavailable:", err?.message ?? err);
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function startEchoRecognizer() {
   stopEchoRecognizer();
   echoResultCountSinceStart = 0;
+  const localKwsReady = await isEchoLocalKwsReady();
+  if (!echoEnabled || echoPausedForSession) return;
+  if (localKwsReady) {
+    await startEchoFallback();
+    return;
+  }
+  startEchoWebSpeechRecognizer();
+}
+
+function startEchoWebSpeechRecognizer() {
   const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-  console.info("[echo] startEchoRecognizer — SpeechRecognition available?", Boolean(Ctor));
+  console.info("[echo] startEchoWebSpeechRecognizer — SpeechRecognition available?", Boolean(Ctor));
   if (!Ctor) {
-    console.info("[echo] no Web Speech, going straight to local fallback");
-    startEchoFallback();
+    console.info("[echo] no local KWS and no Web Speech; Echo cannot listen");
+    window.ucaShell?.showEchoBubble?.({
+      text: "Echo 语音引擎不可用：请安装 sherpa-onnx 或启用 Web Speech",
+      kind: "error",
+      durationMs: 3600
+    });
+    echoEnabled = false;
+    applyEchoBadge();
     return;
   }
   try {
@@ -287,8 +332,10 @@ function startEchoRecognizer() {
         echoEnabled = false;
         applyEchoBadge();
       } else {
-        console.info("[echo] switching to local fallback due to:", code);
-        startEchoFallback();
+        console.info("[echo] Web Speech failed; trying local KWS due to:", code);
+        void isEchoLocalKwsReady({ force: true }).then((ready) => {
+          if (ready) void startEchoFallback();
+        });
       }
     });
     rec.addEventListener("end", () => {
@@ -309,7 +356,9 @@ function startEchoRecognizer() {
     }, 5000);
   } catch (err) {
     console.warn("[echo] recognizer start threw:", err);
-    startEchoFallback();
+    void isEchoLocalKwsReady({ force: true }).then((ready) => {
+      if (ready) void startEchoFallback();
+    });
   }
 }
 
@@ -320,9 +369,14 @@ async function startEchoFallback() {
   // fight for the mic and neither produces usable output.
   try { echoRecognizer?.abort?.(); } catch { /* ignore */ }
   echoRecognizer = null;
-  console.info("[echo] starting local fallback (MediaRecorder + /note/transcribe rolling window)");
+  console.info("[echo] starting local sherpa KWS (MediaRecorder + /echo/kws rolling window)");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    if (!echoEnabled || echoPausedForSession) {
+      stream.getTracks().forEach((track) => track.stop());
+      echoUsingFallback = false;
+      return;
+    }
     echoFallbackStream = stream;
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
       ? "audio/webm;codecs=opus" : "audio/webm";
@@ -331,12 +385,12 @@ async function startEchoFallback() {
     recorder.addEventListener("dataavailable", (ev) => {
       if (ev.data?.size > 0) {
         echoFallbackChunks.push(ev.data);
-        if (echoFallbackChunks.length > 5) echoFallbackChunks.shift();
+        if (echoFallbackChunks.length > ECHO_LOCAL_KWS_WINDOW_CHUNKS) echoFallbackChunks.shift();
       }
     });
-    recorder.start(1000);
+    recorder.start(700);
     echoFallbackRecorder = recorder;
-    console.info("[echo] local fallback enabled");
+    console.info("[echo] local sherpa KWS enabled");
     echoFallbackInterval = setInterval(async () => {
       if (echoFallbackChunks.length === 0) return;
       // Skip if the previous request hasn't finished — prevents overlapping
@@ -347,9 +401,9 @@ async function startEchoFallback() {
       const snapshot = echoFallbackChunks.slice();
       const blob = new Blob(snapshot, { type: mimeType });
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 4000);
+      const timer = setTimeout(() => controller.abort(), 10_000);
       try {
-        const resp = await fetch(`${serviceBaseUrl}/note/transcribe?lang=zh`, {
+        const resp = await fetch(`${serviceBaseUrl}/echo/kws`, {
           method: "POST",
           headers: { "Content-Type": blob.type },
           body: await blob.arrayBuffer(),
@@ -362,28 +416,32 @@ async function startEchoFallback() {
           const reason = payload.reason ?? payload.error ?? "transcribe_failed";
           if (reason !== echoFallbackLastErrorReason) {
             echoFallbackLastErrorReason = reason;
-            console.debug("[echo] local fallback unavailable; returning to online recognizer:", reason);
+            console.debug("[echo] local sherpa KWS unavailable; returning to Web Speech:", reason);
           }
+          echoLocalKwsStatus = { ok: false, reason };
+          echoLocalKwsStatusAt = Date.now();
           stopEchoFallback();
           if (echoEnabled && !echoPausedForSession) {
-            scheduleEchoResume({ delayMs: 500, announce: false });
+            startEchoWebSpeechRecognizer();
           }
           return;
         }
-        const text = `${payload.transcript ?? ""}`.trim();
-        if (text) console.debug("[echo] fallback transcript:", JSON.stringify(text));
-        handleEchoTranscript(text);
+        if (payload?.matched) {
+          const keyword = `${payload.keyword ?? "linxi"}`.trim();
+          console.info("[echo] local KWS matched:", keyword);
+          void onWakeDetected("voice", keyword);
+        }
       } catch (err) {
         if (err?.name !== "AbortError") {
-          console.debug("[echo] fallback fetch error:", err?.message ?? err);
+          console.debug("[echo] local KWS fetch error:", err?.message ?? err);
         }
       } finally {
         clearTimeout(timer);
         echoFallbackBusy = false;
       }
-    }, 1500);
+    }, ECHO_LOCAL_KWS_POLL_MS);
   } catch (err) {
-    console.warn("[echo] fallback mic failed:", err?.name, err?.message ?? err);
+    console.warn("[echo] local KWS mic failed:", err?.name, err?.message ?? err);
     window.ucaShell?.showEchoBubble?.({
       text: `❌ 无法启动麦克风：${err?.message ?? err}`,
       kind: "error", durationMs: 3000

@@ -44,6 +44,7 @@ outputs/
 
 # Local app/runtime
 external/paddle_ocr_runtime/
+models/
 
 # Git task leftovers
 *.orig

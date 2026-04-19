@@ -177,12 +177,82 @@ function getLocalTranscriptionScriptPath() {
   return path.resolve(process.cwd(), "scripts", "local-whisper-transcribe.py");
 }
 
+function getLocalKeywordSpottingScriptPath() {
+  return path.resolve(process.cwd(), "scripts", "local-sherpa-kws.py");
+}
+
 function getPythonCommand() {
   if (process.env.UCA_PYTHON_PATH) return process.env.UCA_PYTHON_PATH;
   const venvPython = process.platform === "win32"
     ? path.resolve(process.cwd(), ".venv", "Scripts", "python.exe")
     : path.resolve(process.cwd(), ".venv", "bin", "python");
   return existsSync(venvPython) ? venvPython : "python";
+}
+
+function parseLastJsonLine(stdoutText = "") {
+  const jsonLine = `${stdoutText ?? ""}`
+    .trim()
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .reverse()
+    .find((line) => line.startsWith("{") && line.endsWith("}"));
+  return JSON.parse(jsonLine || "{}");
+}
+
+async function getLocalKeywordSpottingStatus() {
+  try {
+    const { stdout } = await execFileAsync(getPythonCommand(), [
+      getLocalKeywordSpottingScriptPath(),
+      "--check"
+    ], {
+      timeout: Number(process.env.UCA_SHERPA_KWS_CHECK_TIMEOUT_MS ?? 12_000),
+      maxBuffer: 1024 * 1024,
+      env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },
+      encoding: "utf8"
+    });
+    return parseLastJsonLine(stdout);
+  } catch (error) {
+    return {
+      ok: false,
+      reason: "kws_check_failed",
+      message: error?.message ?? String(error)
+    };
+  }
+}
+
+async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm" } = {}) {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-echo-kws-"));
+  const ext = mimeType.includes("wav") ? ".wav"
+    : mimeType.includes("mp4") || mimeType.includes("m4a") ? ".m4a"
+      : mimeType.includes("mpeg") || mimeType.includes("mp3") ? ".mp3"
+        : ".webm";
+  const audioPath = path.join(tempDir, `echo-window${ext}`);
+  try {
+    await writeFile(audioPath, audioBuffer);
+    const { stdout } = await execFileAsync(getPythonCommand(), [
+      getLocalKeywordSpottingScriptPath(),
+      audioPath
+    ], {
+      timeout: Number(process.env.UCA_SHERPA_KWS_REQUEST_TIMEOUT_MS ?? 12_000),
+      maxBuffer: 1024 * 1024 * 2,
+      env: { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" },
+      encoding: "utf8"
+    });
+    return parseLastJsonLine(stdout);
+  } catch (error) {
+    const details = [
+      error.message,
+      typeof error.stdout === "string" && error.stdout.trim() ? `stdout: ${error.stdout.trim().slice(-1000)}` : "",
+      typeof error.stderr === "string" && error.stderr.trim() ? `stderr: ${error.stderr.trim().slice(-1000)}` : ""
+    ].filter(Boolean).join("\n");
+    return {
+      ok: false,
+      reason: "kws_failed",
+      message: details
+    };
+  } finally {
+    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  }
 }
 
 async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", lang = "auto" } = {}) {
@@ -1786,6 +1856,36 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         delete mergedBody.clarificationAnswer;
         const result = await submitTaskFromBody(runtime, mergedBody);
         return sendJson(response, 200, result);
+      }
+
+      // ── /echo/kws — local wake-word detection for Echo standby ──
+      // The dock sends short rolling mic windows here. sherpa-onnx owns the
+      // wake-word decision; Web Speech remains only a fallback when this local
+      // path is not configured.
+      if (method === "GET" && url.pathname === "/echo/kws/status") {
+        return sendJson(response, 200, await getLocalKeywordSpottingStatus());
+      }
+
+      if (method === "POST" && url.pathname === "/echo/kws") {
+        const contentType = String(request.headers["content-type"] ?? "application/octet-stream").trim();
+        let audioBuffer = Buffer.alloc(0);
+        let mimeType = "audio/webm";
+        if (/^application\/json\b/i.test(contentType)) {
+          const body = await readJsonBody(request);
+          const audioBase64 = String(body.audio ?? "").replace(/^data:[^;]+;base64,/, "").trim();
+          mimeType = String(body.mimeType ?? "audio/webm").trim();
+          audioBuffer = audioBase64 ? Buffer.from(audioBase64, "base64") : Buffer.alloc(0);
+        } else {
+          audioBuffer = await readRawBody(request);
+          mimeType = contentType.split(";")[0] || "audio/webm";
+        }
+        if (audioBuffer.length === 0) {
+          return sendJson(response, 400, { ok: false, reason: "missing_audio" });
+        }
+        if (audioBuffer.length > 1024 * 1024 * 12) {
+          return sendJson(response, 413, { ok: false, reason: "audio_too_large" });
+        }
+        return sendJson(response, 200, await detectWakeKeywordLocally(audioBuffer, { mimeType }));
       }
 
       // ── /note/transcribe — convert a base64-encoded audio blob to text ──
