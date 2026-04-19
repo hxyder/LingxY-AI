@@ -19,7 +19,7 @@ const RULES = [
   { patterns: [/(解释|\bexplain\b)/i], intent: "explain", executor: "fast" },
   // Action/tool rules
   { patterns: [/(报告|\breport\b|分析|\banalyze\b|\banalyse\b)/i], intent: "generate_report", executor: "agentic", requires_confirmation: false },
-  { patterns: [/(邮件|\bemail\b)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
+  { patterns: [/(邮件|邮箱|gmail|outlook|连接账户|已连接账户|账户|账号|\bemail\b|\bmail\b|connected\s+accounts?)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
   { patterns: [/(搜索|查一下|查找|查询|帮我查|\bgoogle\b|\bbing\b|\bbaidu\b|百度一下|新闻|最新|最近|动态|资讯|热点|\blatest\b|\brecent\b|\bnews\b|\bcurrent\b|\bsearch\b)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
   { patterns: [/(机票|航班|订票|flight|ticket|hotel|酒店|天气|weather|汇率|exchange.*rate|股价|股票|price.*(?:of|for)|查.*(?:价|票|班|房))/i], intent: "act", executor: "tool_using", requires_confirmation: false },
   { patterns: [/(启动|\blaunch\b)|(打开|\bopen\b|运行|\brun\b).{0,20}(应用|\bapp\b|程序|\bsoftware\b)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
@@ -30,6 +30,7 @@ const RULES = [
 
 // UCA-051/052: import goal classification from task-spec
 import { classifyGoal } from "../task-spec.mjs";
+import { isConnectorDomainRequest } from "../../connectors/core/connector-intent.mjs";
 
 /* ------------------------------------------------------------------------ */
 /* UCA-049 commit 2: intent_tags multi-label routing                         */
@@ -56,6 +57,7 @@ const TAG_PATTERNS = [
   { tag: "describe_image", patterns: [/(图片|image|截图|screenshot|ocr)/i] },
   { tag: "generate_report", patterns: [/(报告|report)/i] },
   { tag: "search", patterns: [/(搜索|search|news|最新|最近|新闻|资讯|查一下|查询|查找|google|bing|机票|航班|天气|weather|flight|hotel|酒店)/i] },
+  { tag: "connector", patterns: [/(邮件|邮箱|gmail|outlook|连接账户|已连接账户|账户|账号|google\s*drive|onedrive|日历|calendar|\bemail\b|\bmail\b|connected\s+accounts?)/i] },
   { tag: "launch_app", patterns: [/(启动|launch|打开\s*应用|run\s+app)/i] },
   { tag: "file_action", patterns: [/(\bfile\b|文件|复制到|copy\s+to|move|rename|delete)/i] },
   { tag: "clipboard", patterns: [/(剪贴板|clipboard)/i] },
@@ -90,9 +92,11 @@ const AGENTIC_TRIGGERING_TAGS = new Set([
 ]);
 
 function deriveIntentTags(text) {
+  const connectorDomainRequest = isConnectorDomainRequest(text);
   const tags = [];
   for (const rule of TAG_PATTERNS) {
     if (rule.patterns.some((pattern) => pattern.test(text))) {
+      if (connectorDomainRequest && rule.tag === "search") continue;
       tags.push(rule.tag);
     }
   }
@@ -111,6 +115,7 @@ function deriveSuggestedFormats(text) {
 
 export function routeIntent(userCommand = "") {
   const raw = String(userCommand ?? "");
+  const connectorDomainRequest = isConnectorDomainRequest(raw);
 
   // UCA-051/052: classify goal family first (word-boundary safe, no substring traps)
   const goal = classifyGoal(raw);
@@ -128,7 +133,8 @@ export function routeIntent(userCommand = "") {
   //   3. Goal family requires multi-step execution
   const requiresFileArtifact = suggested_formats.some((format) => FILE_PRODUCING_FORMATS.has(format));
   const hasAgenticTag = intent_tags.some((tag) => AGENTIC_TRIGGERING_TAGS.has(tag));
-  const goalRequiresAgentic = ["generate_document", "analyze_and_report", "search_and_answer", "open_or_reveal_file", "transform_existing_file", "launch_and_act"].includes(goal);
+  const goalRequiresAgentic = ["generate_document", "analyze_and_report", "search_and_answer", "open_or_reveal_file", "transform_existing_file", "launch_and_act"].includes(goal)
+    && !(connectorDomainRequest && goal === "search_and_answer");
 
   if (!matched) {
     const suggested_executor = requiresFileArtifact || hasAgenticTag || goalRequiresAgentic

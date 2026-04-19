@@ -22,7 +22,10 @@ import {
   migrateLegacyConnectorTokens
 } from "../src/service/connectors/core/token-manager.mjs";
 import { resolveAccount } from "../src/service/connectors/core/account-router.mjs";
-import { ACCOUNT_LIST_EMAILS_TOOL } from "../src/service/connectors/tools/read-tools.mjs";
+import {
+  ACCOUNT_LIST_CONNECTED_ACCOUNTS_TOOL,
+  ACCOUNT_LIST_EMAILS_TOOL
+} from "../src/service/connectors/tools/read-tools.mjs";
 import {
   ACCOUNT_CREATE_EVENT_TOOL,
   ACCOUNT_SEND_EMAIL_TOOL,
@@ -290,7 +293,16 @@ async function runReadToolCase() {
   assert.equal(result.success, true);
   assert.equal(result.metadata.connector_status, "success");
   assert.equal(result.metadata.emails[0].subject, "Hello");
+  assert.equal(result.metadata.account.email, "tool-g@example.com");
+  assert.equal(result.observation.includes("Hello"), true);
+  assert.equal(result.observation.includes("tool-g@example.com"), true);
   assert.equal(getAccountById(runtime, account.id).lastUsedAt !== null, true);
+
+  const accounts = await ACCOUNT_LIST_CONNECTED_ACCOUNTS_TOOL.execute({ provider: "google" }, { runtime });
+  assert.equal(accounts.success, true);
+  assert.equal(accounts.metadata.accounts.length, 1);
+  assert.equal(accounts.metadata.accounts[0].email, "tool-g@example.com");
+  assert.equal(accounts.observation.includes("tool-g@example.com"), true);
 }
 
 async function runWriteToolCases() {

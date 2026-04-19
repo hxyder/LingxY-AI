@@ -9,6 +9,8 @@
  *       TaskSpec → (task-runtime) → ExecutionPlan → executor
  */
 
+import { isConnectorDomainRequest } from "../connectors/core/connector-intent.mjs";
+
 // ---------------------------------------------------------------------------
 // Goal families (the canonical classification of what the user wants to do)
 // ---------------------------------------------------------------------------
@@ -158,6 +160,9 @@ const GOAL_RULES = [
  */
 export function classifyGoal(text) {
   const raw = String(text ?? "");
+  if (isConnectorDomainRequest(raw)) {
+    return "search_and_answer";
+  }
   for (const rule of GOAL_RULES) {
     if (rule.patterns.some((pat) => pat.test(raw))) {
       return rule.goal;
@@ -176,6 +181,7 @@ const WEB_DATA_PATTERNS = [
 ];
 
 function needsCurrentWebData(text) {
+  if (isConnectorDomainRequest(text)) return false;
   return WEB_DATA_PATTERNS.some((p) => p.test(text));
 }
 
@@ -227,8 +233,11 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     goal === "generate_document" ||
     goal === "analyze_and_report" ||
     goal === "transform_existing_file";
-  const webDataNeeded = needsCurrentWebData(text) ||
-    goal === "search_and_answer";
+  const connectorDomainRequest = isConnectorDomainRequest(text);
+  const webDataNeeded = !connectorDomainRequest && (
+    needsCurrentWebData(text) ||
+    goal === "search_and_answer"
+  );
 
   // Infer source from context packet
   const source = {

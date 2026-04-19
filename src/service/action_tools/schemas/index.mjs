@@ -236,6 +236,14 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       limit: { type: "number" }
     }
   },
+  account_list_connected_accounts: {
+    type: "object",
+    required: [],
+    properties: {
+      provider: { type: "string", enum: ["google", "microsoft"] },
+      userId: { type: "string" }
+    }
+  },
   account_list_files: {
     type: "object",
     required: [],

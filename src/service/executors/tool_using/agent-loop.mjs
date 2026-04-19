@@ -4,6 +4,12 @@ import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { validateToolCall } from "./tool-call-validator.mjs";
 import { extractFirstTier0Action, hasCompoundIntent } from "../../core/router/fast-path-router.mjs";
 import { emitTaskEvent as _emitTaskEventFn } from "../../core/task-runtime.mjs";
+import {
+  inferConnectorLimit,
+  inferConnectorProvider,
+  isConnectorAccountIdentityRequest,
+  isConnectorDomainRequest
+} from "../../connectors/core/connector-intent.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -13,6 +19,9 @@ function defaultPlanner({ task }) {
   const text = task.user_command.toLowerCase();
   const deterministic = planDeterministicToolCall(task.user_command);
   if (deterministic) return deterministic;
+
+  const connector = planConnectorToolCall(task.user_command);
+  if (connector) return connector;
 
   if (text.includes("邮件") || text.includes("email")) {
     return {
@@ -76,6 +85,10 @@ function planDeterministicToolCall(userCommand = "") {
     };
   }
 
+  if (isConnectorDomainRequest(text)) {
+    return planConnectorToolCall(text);
+  }
+
   if (/(邮件|email)/i.test(text) || isSearchOrNewsRequest(text)) {
     return null;
   }
@@ -92,7 +105,64 @@ function planDeterministicToolCall(userCommand = "") {
   return null;
 }
 
+function planConnectorToolCall(userCommand = "") {
+  const text = String(userCommand ?? "");
+  if (!isConnectorDomainRequest(text)) return null;
+
+  const provider = inferConnectorProvider(text);
+  const withProvider = provider ? { provider } : {};
+  const limit = inferConnectorLimit(text, 10);
+
+  if (isConnectorAccountIdentityRequest(text)) {
+    return {
+      type: "tool_call",
+      tool: "account_list_connected_accounts",
+      args: withProvider
+    };
+  }
+
+  if (/(日历|\bcalendar\b|event|events|会议|日程)/i.test(text)) {
+    return {
+      type: "tool_call",
+      tool: "account_list_events",
+      args: {
+        ...withProvider,
+        limit
+      }
+    };
+  }
+
+  if (/(google\s*drive|onedrive|云端文件|网盘|drive|文件)/i.test(text)) {
+    return {
+      type: "tool_call",
+      tool: "account_list_files",
+      args: {
+        ...withProvider,
+        limit
+      }
+    };
+  }
+
+  if (/(邮件|邮箱|\bemails?\b|\bmail\b|gmail|outlook)/i.test(text)) {
+    return {
+      type: "tool_call",
+      tool: "account_list_emails",
+      args: {
+        ...withProvider,
+        limit
+      }
+    };
+  }
+
+  return {
+    type: "tool_call",
+    tool: "account_list_connected_accounts",
+    args: withProvider
+  };
+}
+
 function isSearchOrNewsRequest(value = "") {
+  if (isConnectorDomainRequest(value)) return false;
   return /(搜索|查找|查一下|查询|查看一下|帮我查|查.*(?:价格|航班|机票|酒店|天气|汇率|股价|新闻)|新闻|消息|要闻|时政|最新|最近|动态|资讯|热点|近况|机票|航班|订票|实时|当前|google|bing|百度|search|latest|recent|current|news|flight|ticket|weather|hotel)/i.test(String(value ?? ""));
 }
 
@@ -154,6 +224,82 @@ function buildHistoryString(transcript) {
   }).join("\n");
 }
 
+function hasCjk(value = "") {
+  return /[\u3400-\u9fff]/.test(String(value ?? ""));
+}
+
+function formatAccountLabel(account = {}, fallback = {}) {
+  const provider = account.provider ?? fallback.provider ?? "connector";
+  const email = account.email || fallback.accountId || "";
+  const display = account.displayName ? ` (${account.displayName})` : "";
+  return `${provider}${email ? ` ${email}` : ""}${display}`.trim();
+}
+
+function formatConnectorFinal(entry, userCommand = "") {
+  const metadata = entry?.metadata ?? {};
+  const zh = hasCjk(userCommand);
+
+  if (entry?.tool === "account_list_connected_accounts") {
+    const accounts = metadata.accounts ?? [];
+    if (accounts.length === 0) return zh ? "我查了一下，目前没有已连接的 Google/Microsoft 账户。" : "No connected Google/Microsoft accounts were found.";
+    const lines = accounts.map((account, index) => {
+      const caps = Object.entries(account.capabilities ?? {})
+        .filter(([, enabled]) => enabled)
+        .map(([name]) => name)
+        .join(", ") || "none";
+      return zh
+        ? `${index + 1}. ${formatAccountLabel(account)}，状态 ${account.tokenStatus}，能力：${caps}`
+        : `${index + 1}. ${formatAccountLabel(account)}; status=${account.tokenStatus}; capabilities=${caps}`;
+    });
+    return zh
+      ? `我查到当前已连接账户：\n${lines.join("\n")}`
+      : `Connected accounts:\n${lines.join("\n")}`;
+  }
+
+  if (entry?.tool === "account_list_emails") {
+    const emails = metadata.emails ?? [];
+    const account = metadata.account ?? { provider: metadata.provider, accountId: metadata.accountId };
+    if (emails.length === 0) return zh ? `我查看了 ${formatAccountLabel(account)}，没有找到邮件。` : `No emails were found in ${formatAccountLabel(account)}.`;
+    const lines = emails.map((email, index) => {
+      const sender = email.fromName ? `${email.fromName} <${email.from ?? ""}>` : (email.from ?? "unknown sender");
+      return `${index + 1}. ${email.received ?? "unknown date"} | ${sender} | ${email.subject ?? "(no subject)"}`;
+    });
+    return zh
+      ? `我从 ${formatAccountLabel(account)} 查到 ${emails.length} 封邮件：\n${lines.join("\n")}`
+      : `I found ${emails.length} emails in ${formatAccountLabel(account)}:\n${lines.join("\n")}`;
+  }
+
+  if (entry?.tool === "account_list_files") {
+    const files = metadata.files ?? [];
+    const account = metadata.account ?? { provider: metadata.provider, accountId: metadata.accountId };
+    if (files.length === 0) return zh ? `我查看了 ${formatAccountLabel(account)}，没有找到云端文件。` : `No cloud files were found in ${formatAccountLabel(account)}.`;
+    const lines = files.map((file, index) => `${index + 1}. ${file.name ?? "(untitled)"} | modified ${file.modified ?? "unknown"}${file.url ? ` | ${file.url}` : ""}`);
+    return zh
+      ? `我从 ${formatAccountLabel(account)} 查到 ${files.length} 个云端文件：\n${lines.join("\n")}`
+      : `I found ${files.length} cloud files in ${formatAccountLabel(account)}:\n${lines.join("\n")}`;
+  }
+
+  if (entry?.tool === "account_list_events") {
+    const events = metadata.events ?? [];
+    const account = metadata.account ?? { provider: metadata.provider, accountId: metadata.accountId };
+    if (events.length === 0) return zh ? `我查看了 ${formatAccountLabel(account)}，没有找到日历事件。` : `No calendar events were found in ${formatAccountLabel(account)}.`;
+    const lines = events.map((event, index) => `${index + 1}. ${event.start ?? "unknown time"} | ${event.title ?? "(untitled)"}${event.location ? ` | ${event.location}` : ""}`);
+    return zh
+      ? `我从 ${formatAccountLabel(account)} 查到 ${events.length} 个日历事件：\n${lines.join("\n")}`
+      : `I found ${events.length} calendar events in ${formatAccountLabel(account)}:\n${lines.join("\n")}`;
+  }
+
+  return null;
+}
+
+function latestConnectorFinal(transcript, userCommand = "") {
+  const entry = [...(transcript ?? [])].reverse().find((item) =>
+    item.type === "tool_result"
+    && ["account_list_connected_accounts", "account_list_emails", "account_list_files", "account_list_events"].includes(item.tool)
+  );
+  return entry ? formatConnectorFinal(entry, userCommand) : null;
+}
+
 /**
  * UCA-054: Build a proper multi-turn messages array that injects tool
  * observations as actual message turns (not just system-prompt text).
@@ -182,9 +328,12 @@ function buildConversationMessages(userCommand, transcript) {
       const successNote = entry.success === false
         ? "\n[IMPORTANT: This tool call FAILED. Do NOT claim success. You must handle the failure.]"
         : "";
+      const metadataNote = entry.metadata
+        ? `\n[Tool metadata JSON]\n${JSON.stringify(entry.metadata)}`
+        : "";
       messages.push({
         role: "user",
-        content: `[Tool observation: ${entry.tool}]\n${entry.observation ?? "(no result)"}${successNote}`
+        content: `[Tool observation: ${entry.tool}]\n${entry.observation ?? "(no result)"}${metadataNote}${successNote}`
       });
     } else if (entry.type === "tool_denied") {
       messages.push({
@@ -213,7 +362,8 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
 
   // UCA-054/039: Enforce web search for current-data requests before trying LLM.
   // Both explicit TaskSpec flag and heuristic text detection trigger this.
-  const needsCurrentData = task.task_spec?.needs_current_web_data === true
+  const connectorDomainRequest = isConnectorDomainRequest(task.user_command);
+  const needsCurrentData = (task.task_spec?.needs_current_web_data === true && !connectorDomainRequest)
     || isSearchOrNewsRequest(task.user_command);
   const searchAlreadyCalled = transcript.some((entry) => entry.tool === "web_search_fetch");
   if (needsCurrentData && !searchAlreadyCalled) {
@@ -252,7 +402,7 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
   } catch { /* non-fatal */ }
 
   // UCA-039: Inject a hard requirement when the task spec flags current web data as needed.
-  const needsCurrentDataInstruction = (task.task_spec?.needs_current_web_data === true)
+  const needsCurrentDataInstruction = (task.task_spec?.needs_current_web_data === true && !isConnectorDomainRequest(task.user_command))
     ? "\n\nREQUIRED: You MUST call web_search_fetch before answering. Do NOT answer from memory for current-events questions. Failure to call web_search_fetch will result in a partial_success downgrade."
     : "";
 
@@ -407,7 +557,7 @@ export function createToolUsingExecutorScaffold() {
         // spec requires current web data. If the LLM skipped the search and answered
         // from memory, downgrade to partial_success so the user knows the result
         // may not reflect the latest information.
-        const searchWasRequired = task.task_spec?.needs_current_web_data === true
+        const searchWasRequired = (task.task_spec?.needs_current_web_data === true && !isConnectorDomainRequest(task.user_command))
           || isSearchOrNewsRequest(task.user_command);
         const searchWasCalled = (result.transcript ?? []).some(
           (entry) => entry.type === "tool_result" && entry.tool === "web_search_fetch"
@@ -533,7 +683,8 @@ export async function runToolAgentLoop({
         tool: tier0.tool,
         args: tier0.args,
         success: t0result.success,
-        observation: t0result.observation ?? ""
+        observation: t0result.observation ?? "",
+        metadata: t0result.metadata
       });
       seenCalls.add(`${tier0.tool}::${JSON.stringify(tier0.args)}`);
     }
@@ -548,9 +699,10 @@ export async function runToolAgentLoop({
     });
 
     if (!decision || decision.type === "final") {
+      const connectorFinal = latestConnectorFinal(transcript, task.user_command);
       return {
         status: "success",
-        final_text: decision?.text ?? "Done.",
+        final_text: connectorFinal ?? decision?.text ?? "Done.",
         transcript
       };
     }
@@ -558,11 +710,12 @@ export async function runToolAgentLoop({
     // Dedupe: if the planner is asking for the same tool+args we already executed, treat as final
     const callKey = `${decision.tool}::${JSON.stringify(decision.args ?? {})}`;
     if (seenCalls.has(callKey)) {
+      const connectorFinal = latestConnectorFinal(transcript, task.user_command);
       return {
         status: "success",
-        final_text: transcript.length > 0
+        final_text: connectorFinal ?? (transcript.length > 0
           ? transcript.filter((e) => e.type === "tool_result").map((e) => e.observation).join("\n")
-          : "Done.",
+          : "Done."),
         transcript
       };
     }
@@ -723,14 +876,16 @@ export async function runToolAgentLoop({
       tool: tool.id,
       args: decision.args,
       success: result.success,
-      observation: result.observation
+      observation: result.observation,
+      metadata: result.metadata
     });
 
     // For the keyword planner, return after one tool call (it doesn't read history)
     if (planner === defaultPlanner) {
+      const connectorFinal = latestConnectorFinal(transcript, task.user_command);
       return {
         status: "success",
-        final_text: result.observation,
+        final_text: connectorFinal ?? result.observation,
         transcript,
         artifacts: result.artifact_paths ?? []
       };
@@ -740,10 +895,11 @@ export async function runToolAgentLoop({
   }
 
   // Reached max iterations — synthesize whatever we have
+  const connectorFinal = latestConnectorFinal(transcript, task.user_command);
   const lastObservation = [...transcript].reverse().find((e) => e.type === "tool_result")?.observation;
   return {
     status: "success",
-    final_text: lastObservation || "Done (max iterations reached).",
+    final_text: connectorFinal ?? (lastObservation || "Done (max iterations reached)."),
     transcript
   };
 }

@@ -12,6 +12,7 @@ import { createActionResult } from "../types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
 import {
+  ACCOUNT_LIST_CONNECTED_ACCOUNTS_TOOL,
   ACCOUNT_LIST_EMAILS_TOOL,
   ACCOUNT_LIST_EVENTS_TOOL,
   ACCOUNT_LIST_FILES_TOOL
@@ -2320,6 +2321,7 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   VERIFY_FILE_EXISTS_TOOL,
   REGISTER_ARTIFACT_TOOL,
   RESOLVE_OUTPUT_PATH_TOOL,
+  ACCOUNT_LIST_CONNECTED_ACCOUNTS_TOOL,
   ACCOUNT_LIST_EMAILS_TOOL,
   ACCOUNT_LIST_FILES_TOOL,
   ACCOUNT_LIST_EVENTS_TOOL,

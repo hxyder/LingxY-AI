@@ -13,6 +13,8 @@ import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs
 import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
 import { createArtifactStore } from "../src/service/store/artifact-store.mjs";
+import { googleScopesToCapabilities } from "../src/service/connectors/core/capability-mapper.mjs";
+import { upsertConnectedAccount } from "../src/service/connectors/core/account-registry.mjs";
 import { buildToolCallConfirmViewModel } from "../src/desktop/console/tool-call-confirm/view-model.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -55,6 +57,14 @@ assert.equal(evaluateToolRisk(registry.get("send_email_smtp"), { to: ["a@example
   const newsRoute = routeIntent("帮我理解 DeepSeek 最近的相关消息");
   assert.equal(newsRoute.executor, "agentic");
   assert.ok(newsRoute.intent_tags?.includes("search"), "news intent must tag 'search'");
+
+  const mailRoute = routeIntent("2026年4月最新的3个邮件");
+  assert.equal(mailRoute.executor, "tool_using");
+  assert.ok(mailRoute.intent_tags?.includes("connector"), "mail intent must tag connector");
+  assert.equal(mailRoute.intent_tags?.includes("search"), false, "mail connector intent must not be web-search tagged");
+
+  const accountRoute = routeIntent("我的邮箱账号是多少");
+  assert.equal(accountRoute.executor, "tool_using");
 }
 assert.equal(normalizeSearchRecency(null, "最新 AI 新闻"), "w");
 assert.equal(normalizeSearchRecency("day", "AI news"), "d");
@@ -264,6 +274,77 @@ const newsResult = await submitActionToolTask({
 assert.equal(newsResult.task.status, "success");
 assert.equal(searchedArgs.query, "帮我理解 DeepSeek 最近的相关消息");
 assert.equal(searchedArgs.recency, "month");
+
+function finalSummary(result) {
+  return [...(result.taskEvents ?? [])].reverse()
+    .find((event) => event.event_type === "success")?.payload?.summary ?? "";
+}
+
+const connectorAccountRuntime = createRuntime("connector-account");
+upsertConnectedAccount(connectorAccountRuntime, {
+  provider: "google",
+  providerAccountId: "real-gmail",
+  email: "real.user@example.com",
+  displayName: "Real User",
+  scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+  capabilities: googleScopesToCapabilities(["https://www.googleapis.com/auth/gmail.readonly"])
+});
+const accountResult = await submitActionToolTask({
+  userCommand: "我的 Gmail 邮箱账号是多少",
+  executionMode: "interactive",
+  runtime: connectorAccountRuntime
+});
+assert.equal(accountResult.task.status, "success");
+assert.equal(finalSummary(accountResult).includes("real.user@example.com"), true);
+assert.equal(finalSummary(accountResult).includes("example@gmail.com"), false);
+
+let connectorWebSearchCalled = false;
+let connectorEmailArgs = null;
+const fakeConnectorRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS.map((tool) =>
+  tool.id === "web_search_fetch"
+    ? {
+        ...tool,
+        async execute() {
+          connectorWebSearchCalled = true;
+          return { success: true, observation: "Should not be called for connector mail." };
+        }
+      }
+    : tool.id === "account_list_emails"
+      ? {
+          ...tool,
+          async execute(args) {
+            connectorEmailArgs = args;
+            return {
+              success: true,
+              observation: "Fake connector emails",
+              metadata: {
+                tool_id: "account_list_emails",
+                connector_status: "success",
+                provider: "google",
+                accountId: "acct_real",
+                account: { provider: "google", email: "real.user@example.com", displayName: "Real User" },
+                emails: [
+                  { subject: "Actual Gmail subject", from: "sender@example.com", received: "Sun, 19 Apr 2026 10:00:00 +0000" }
+                ]
+              }
+            };
+          }
+        }
+      : tool
+));
+const connectorMailRuntime = createRuntime("connector-mail", {
+  actionToolRegistry: fakeConnectorRegistry
+});
+const connectorMailResult = await submitActionToolTask({
+  userCommand: "2026年4月最新的1个 Gmail 邮件",
+  executionMode: "interactive",
+  runtime: connectorMailRuntime
+});
+assert.equal(connectorMailResult.task.status, "success");
+assert.equal(connectorWebSearchCalled, false);
+assert.equal(connectorEmailArgs.provider, "google");
+assert.equal(connectorEmailArgs.limit, 1);
+assert.equal(finalSummary(connectorMailResult).includes("Actual Gmail subject"), true);
 
 /* ------------------------------------------------------------------------ */
 /* UCA-049 commit 2: universal tool belt                                     */
