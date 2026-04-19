@@ -85,6 +85,49 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   task_id TEXT,
   event_subtype TEXT NOT NULL,
   payload_json TEXT NOT NULL
+);`,
+  connectedAccounts: `CREATE TABLE IF NOT EXISTS connected_accounts (
+  account_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  provider_account_id TEXT NOT NULL,
+  email TEXT NOT NULL,
+  display_name TEXT,
+  scopes_json TEXT NOT NULL,
+  capabilities_json TEXT NOT NULL,
+  token_status TEXT NOT NULL,
+  is_default_for_email INTEGER NOT NULL DEFAULT 0,
+  is_default_for_files INTEGER NOT NULL DEFAULT 0,
+  is_default_for_calendar INTEGER NOT NULL DEFAULT 0,
+  last_used_at TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  UNIQUE(provider, provider_account_id)
+);`,
+  oauthTokens: `CREATE TABLE IF NOT EXISTS oauth_tokens (
+  account_id TEXT PRIMARY KEY,
+  access_token_encrypted TEXT,
+  refresh_token_encrypted TEXT,
+  id_token_encrypted TEXT,
+  expires_at TEXT,
+  refresh_expires_at TEXT,
+  scopes_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY(account_id) REFERENCES connected_accounts(account_id) ON DELETE CASCADE
+);`,
+  reauthRequests: `CREATE TABLE IF NOT EXISTS reauth_requests (
+  request_id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  account_id TEXT NOT NULL,
+  provider TEXT NOT NULL,
+  missing_capabilities_json TEXT NOT NULL,
+  missing_scopes_json TEXT NOT NULL,
+  reason TEXT,
+  status TEXT NOT NULL,
+  original_tool_call_json TEXT,
+  created_at TEXT NOT NULL,
+  completed_at TEXT,
+  FOREIGN KEY(account_id) REFERENCES connected_accounts(account_id) ON DELETE CASCADE
 );`
 });
 

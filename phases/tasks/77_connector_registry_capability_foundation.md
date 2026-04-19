@@ -1,6 +1,6 @@
 # Task UCA-077 — Connector Registry & Capability Foundation
 
-**Status**: todo  
+**Status**: done
 **Priority**: P0  
 **Depends on**: UCA-048, UCA-049  
 **Branch**: `task/uca-077-connector-foundation`
@@ -78,11 +78,19 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
+- 状态：done
+- 执行分支：`task/uca-077-connector-foundation`
+- 开始日期：2026-04-19
+- 完成日期：2026-04-19
 - 实际新增内容：
+  - 新增 `src/service/connectors/core/`：`types.mjs`、`capability-mapper.mjs`、`account-registry.mjs`、`token-manager.mjs`
+  - 扩展 sqlite/memory store：`connected_accounts`、`oauth_tokens`、`reauth_requests`
+  - 新增 legacy `account-tokens.json` 迁移辅助：`migrateLegacyConnectorTokens`
+  - 新增 `scripts/verify-unified-connectors.mjs` 与 `npm run verify:unified-connectors`
 - 验证结果：
+  - `node scripts/verify-unified-connectors.mjs`
+  - `node scripts/verify-structure.mjs`
 - 遗留问题：
-- 交接给下一个任务：
+  - token 字段沿用现有本地 credential/fallback 风格，字段名为 `*_encrypted`，后续如要严格加密 sqlite blob，需要在 UCA-081 安全硬化中接入真正加密层
+  - 现有 `account-connectors.mjs` 仍是旧 provider preview 门面，OAuth callback 尚未落到 `ConnectedAccount`
+- 交接给下一个任务：UCA-078 可直接复用 account registry、capability mapper、token manager，把 OAuth callback 改为 accountId 维度落库

@@ -71,7 +71,7 @@
 | 64 | UCA-064 | [64_subtask_history_aggregation.md](64_subtask_history_aggregation.md) | 子任务历史聚合 + 详情页导航返回 | UCA-041,UCA-056 | `task/uca-064-subtask-history` | todo |
 | 65 | UCA-065 | [65_sequential_compound_action.md](65_sequential_compound_action.md) | 复合动作顺序执行（sequential compound mode）| UCA-058,UCA-063 | `task/uca-065-sequential-compound` | todo |
 | 66 | UCA-066 | [66_performance_fast_path.md](66_performance_fast_path.md) | 性能快速通道（Tier0确定性动作/翻译轻量API/LLM流式输出）| UCA-052,UCA-058 | `task/uca-066-performance-fast-path` | todo |
-| 77 | UCA-077 | [77_connector_registry_capability_foundation.md](77_connector_registry_capability_foundation.md) | Unified Account Connectors | UCA-048,UCA-049 | `task/uca-077-connector-foundation` | todo |
+| 77 | UCA-077 | [77_connector_registry_capability_foundation.md](77_connector_registry_capability_foundation.md) | Unified Account Connectors | UCA-048,UCA-049 | `task/uca-077-connector-foundation` | done |
 | 78 | UCA-078 | [78_multi_account_oauth_connectors_ui.md](78_multi_account_oauth_connectors_ui.md) | Unified Account Connectors | UCA-077 | `task/uca-078-multi-account-oauth-ui` | todo |
 | 79 | UCA-079 | [79_account_router_unified_read_tools.md](79_account_router_unified_read_tools.md) | Unified Account Connectors | UCA-077,UCA-078 | `task/uca-079-account-router-read-tools` | todo |
 | 80 | UCA-080 | [80_connector_write_tools_confirmation.md](80_connector_write_tools_confirmation.md) | Unified Account Connectors | UCA-079 | `task/uca-080-connector-write-tools` | todo |

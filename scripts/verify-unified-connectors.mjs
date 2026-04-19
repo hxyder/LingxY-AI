@@ -1,0 +1,225 @@
+import assert from "node:assert/strict";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
+import { createSqliteStore } from "../src/service/core/store/sqlite-store.mjs";
+import {
+  googleScopesToCapabilities,
+  microsoftScopesToCapabilities
+} from "../src/service/connectors/core/capability-mapper.mjs";
+import {
+  getAccountById,
+  getOAuthTokenRecord,
+  listUserAccounts,
+  saveOAuthTokenRecord,
+  setDefaultAccount,
+  upsertConnectedAccount,
+  upsertReauthRequest
+} from "../src/service/connectors/core/account-registry.mjs";
+import {
+  getValidAccessToken,
+  migrateLegacyConnectorTokens
+} from "../src/service/connectors/core/token-manager.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+const tmpRoot = path.join(repoRoot, ".tmp", "verify-unified-connectors");
+
+function createRuntime(store, extras = {}) {
+  return {
+    store,
+    configStore: {
+      load() {
+        return {
+          connectors: {
+            google: { clientId: "google-client", clientSecret: "google-secret" },
+            microsoft: { clientId: "ms-client" }
+          }
+        };
+      }
+    },
+    ...extras
+  };
+}
+
+async function runRegistryCases(store) {
+  const runtime = createRuntime(store);
+  const google = upsertConnectedAccount(runtime, {
+    userId: "local",
+    provider: "google",
+    providerAccountId: "g-1",
+    email: "g@example.com",
+    displayName: "Google User",
+    scopes: [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/drive.file"
+    ],
+    capabilities: googleScopesToCapabilities([
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/drive.file"
+    ])
+  });
+  const microsoft = upsertConnectedAccount(runtime, {
+    userId: "local",
+    provider: "microsoft",
+    providerAccountId: "m-1",
+    email: "m@example.com",
+    scopes: ["Mail.ReadWrite", "Files.ReadWrite", "Calendars.Read"],
+    capabilities: microsoftScopesToCapabilities(["Mail.ReadWrite", "Files.ReadWrite", "Calendars.Read"])
+  });
+
+  assert.equal(listUserAccounts(runtime).length, 2);
+  assert.equal(getAccountById(runtime, google.id).email, "g@example.com");
+  assert.equal(google.capabilities.emailRead, true);
+  assert.equal(google.capabilities.emailWrite, false);
+  assert.equal(google.capabilities.fileWrite, true);
+  assert.equal(microsoft.capabilities.emailWrite, true);
+  assert.equal(microsoft.capabilities.calendarWrite, false);
+
+  setDefaultAccount(runtime, "email", google.id);
+  assert.equal(getAccountById(runtime, google.id).isDefaultForEmail, true);
+  assert.equal(getAccountById(runtime, microsoft.id).isDefaultForEmail, false);
+  setDefaultAccount(runtime, "email", microsoft.id);
+  assert.equal(getAccountById(runtime, google.id).isDefaultForEmail, false);
+  assert.equal(getAccountById(runtime, microsoft.id).isDefaultForEmail, true);
+
+  saveOAuthTokenRecord(runtime, {
+    accountId: google.id,
+    accessTokenEncrypted: "access",
+    refreshTokenEncrypted: "refresh",
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    scopes: google.scopes
+  });
+  assert.equal(getOAuthTokenRecord(runtime, google.id).accessTokenEncrypted, "access");
+
+  const reauth = upsertReauthRequest(runtime, {
+    requestId: "reauth-1",
+    userId: "local",
+    accountId: google.id,
+    provider: "google",
+    missingCapabilities: ["emailWrite"],
+    missingScopes: ["https://www.googleapis.com/auth/gmail.send"],
+    reason: "send_email"
+  });
+  assert.equal(reauth.status, "pending");
+}
+
+async function runTokenRefreshCases() {
+  const runtime = createRuntime(createInMemoryStoreScaffold());
+  const account = upsertConnectedAccount(runtime, {
+    userId: "local",
+    provider: "google",
+    providerAccountId: "g-refresh",
+    email: "refresh@example.com",
+    scopes: ["https://www.googleapis.com/auth/gmail.readonly"],
+    capabilities: googleScopesToCapabilities(["https://www.googleapis.com/auth/gmail.readonly"])
+  });
+  saveOAuthTokenRecord(runtime, {
+    accountId: account.id,
+    accessTokenEncrypted: "old-access",
+    refreshTokenEncrypted: "refresh-token",
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    scopes: account.scopes
+  });
+
+  const refreshed = await getValidAccessToken(runtime, account.id, {
+    fetchImpl: async (url, options) => {
+      assert.equal(url, "https://oauth2.googleapis.com/token");
+      const body = new URLSearchParams(options.body);
+      assert.equal(body.get("refresh_token"), "refresh-token");
+      return {
+        ok: true,
+        async json() {
+          return {
+            access_token: "new-access",
+            expires_in: 3600,
+            scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send"
+          };
+        }
+      };
+    }
+  });
+  assert.equal(refreshed, "new-access");
+  assert.equal(getAccountById(runtime, account.id).capabilities.emailWrite, true);
+
+  const failing = upsertConnectedAccount(runtime, {
+    userId: "local",
+    provider: "microsoft",
+    providerAccountId: "m-refresh",
+    email: "fail@example.com",
+    scopes: ["Mail.Read"],
+    capabilities: microsoftScopesToCapabilities(["Mail.Read"])
+  });
+  saveOAuthTokenRecord(runtime, {
+    accountId: failing.id,
+    accessTokenEncrypted: "old",
+    refreshTokenEncrypted: "bad-refresh",
+    expiresAt: new Date(Date.now() - 60_000).toISOString(),
+    scopes: failing.scopes
+  });
+  const failed = await getValidAccessToken(runtime, failing.id, {
+    fetchImpl: async () => ({ ok: false, async json() { return {}; } })
+  });
+  assert.equal(failed, null);
+  assert.equal(getAccountById(runtime, failing.id).tokenStatus, "reauth_required");
+}
+
+async function runLegacyMigrationCase() {
+  const dataDir = path.join(tmpRoot, "legacy-data");
+  await mkdir(dataDir, { recursive: true });
+  await writeFile(path.join(dataDir, "account-tokens.json"), `${JSON.stringify({
+    "google:tokens": {
+      access_token: "legacy-google-access",
+      refresh_token: "legacy-google-refresh",
+      expires_at: Date.now() + 3600_000,
+      scope: "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/drive.readonly"
+    }
+  }, null, 2)}\n`, "utf8");
+
+  const runtime = createRuntime(createInMemoryStoreScaffold(), {
+    paths: { dataDir }
+  });
+  const migrated = await migrateLegacyConnectorTokens(runtime, {
+    fetchImpl: async (url, options) => {
+      assert.equal(url, "https://www.googleapis.com/oauth2/v2/userinfo");
+      assert.equal(options.headers.Authorization, "Bearer legacy-google-access");
+      return {
+        ok: true,
+        async json() {
+          return {
+            id: "legacy-google-id",
+            email: "legacy@example.com",
+            name: "Legacy Google"
+          };
+        }
+      };
+    }
+  });
+  assert.equal(migrated.length, 1);
+  assert.equal(migrated[0].email, "legacy@example.com");
+  assert.equal(getOAuthTokenRecord(runtime, migrated[0].id).refreshTokenEncrypted, "legacy-google-refresh");
+  assert.deepEqual(runtime.store.listAuditLogs(), []);
+}
+
+await rm(tmpRoot, { recursive: true, force: true });
+await mkdir(tmpRoot, { recursive: true });
+
+assert.equal(googleScopesToCapabilities(["https://www.googleapis.com/auth/calendar"]).calendarWrite, true);
+assert.equal(microsoftScopesToCapabilities(["Files.Read"]).fileWrite, false);
+
+await runRegistryCases(createInMemoryStoreScaffold());
+
+const sqlitePath = path.join(tmpRoot, "connectors.sqlite");
+const sqliteStore = createSqliteStore({ dbPath: sqlitePath });
+try {
+  await runRegistryCases(sqliteStore);
+} finally {
+  sqliteStore.close();
+}
+
+await runTokenRefreshCases();
+await runLegacyMigrationCase();
+
+console.log("Unified connectors verification passed.");
+

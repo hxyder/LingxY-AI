@@ -130,6 +130,65 @@ function mapAuditLog(row) {
   };
 }
 
+function mapConnectedAccount(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    id: row.account_id,
+    accountId: row.account_id,
+    userId: row.user_id,
+    provider: row.provider,
+    providerAccountId: row.provider_account_id,
+    email: row.email,
+    displayName: row.display_name ?? undefined,
+    scopes: decodeJson(row.scopes_json, []),
+    capabilities: decodeJson(row.capabilities_json, {}),
+    tokenStatus: row.token_status,
+    isDefaultForEmail: Boolean(row.is_default_for_email),
+    isDefaultForFiles: Boolean(row.is_default_for_files),
+    isDefaultForCalendar: Boolean(row.is_default_for_calendar),
+    lastUsedAt: row.last_used_at ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapOAuthToken(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    accountId: row.account_id,
+    accessTokenEncrypted: row.access_token_encrypted ?? null,
+    refreshTokenEncrypted: row.refresh_token_encrypted ?? null,
+    idTokenEncrypted: row.id_token_encrypted ?? null,
+    expiresAt: row.expires_at ?? null,
+    refreshExpiresAt: row.refresh_expires_at ?? null,
+    scopes: decodeJson(row.scopes_json, []),
+    updatedAt: row.updated_at
+  };
+}
+
+function mapReauthRequest(row) {
+  if (!row) {
+    return null;
+  }
+  return {
+    requestId: row.request_id,
+    userId: row.user_id,
+    accountId: row.account_id,
+    provider: row.provider,
+    missingCapabilities: decodeJson(row.missing_capabilities_json, []),
+    missingScopes: decodeJson(row.missing_scopes_json, []),
+    reason: row.reason ?? "",
+    status: row.status,
+    originalToolCall: decodeJson(row.original_tool_call_json, null),
+    createdAt: row.created_at,
+    completedAt: row.completed_at ?? null
+  };
+}
+
 export function createSqliteStore({ dbPath }) {
   mkdirSync(path.dirname(dbPath), { recursive: true });
   const db = new Database(dbPath);
@@ -251,7 +310,63 @@ export function createSqliteStore({ dbPath }) {
     ) VALUES (
       @audit_id, @ts, @task_id, @event_subtype, @payload_json
     )`),
-    listAuditLogs: db.prepare("SELECT * FROM audit_logs ORDER BY ts DESC")
+    listAuditLogs: db.prepare("SELECT * FROM audit_logs ORDER BY ts DESC"),
+    upsertConnectedAccount: db.prepare(`INSERT INTO connected_accounts (
+      account_id, user_id, provider, provider_account_id, email, display_name, scopes_json, capabilities_json, token_status, is_default_for_email, is_default_for_files, is_default_for_calendar, last_used_at, created_at, updated_at
+    ) VALUES (
+      @account_id, @user_id, @provider, @provider_account_id, @email, @display_name, @scopes_json, @capabilities_json, @token_status, @is_default_for_email, @is_default_for_files, @is_default_for_calendar, @last_used_at, @created_at, @updated_at
+    )
+    ON CONFLICT(account_id) DO UPDATE SET
+      user_id = excluded.user_id,
+      provider = excluded.provider,
+      provider_account_id = excluded.provider_account_id,
+      email = excluded.email,
+      display_name = excluded.display_name,
+      scopes_json = excluded.scopes_json,
+      capabilities_json = excluded.capabilities_json,
+      token_status = excluded.token_status,
+      is_default_for_email = excluded.is_default_for_email,
+      is_default_for_files = excluded.is_default_for_files,
+      is_default_for_calendar = excluded.is_default_for_calendar,
+      last_used_at = excluded.last_used_at,
+      created_at = excluded.created_at,
+      updated_at = excluded.updated_at`),
+    getConnectedAccount: db.prepare("SELECT * FROM connected_accounts WHERE account_id = ?"),
+    listConnectedAccounts: db.prepare("SELECT * FROM connected_accounts ORDER BY updated_at DESC"),
+    deleteConnectedAccount: db.prepare("DELETE FROM connected_accounts WHERE account_id = ?"),
+    upsertOAuthToken: db.prepare(`INSERT INTO oauth_tokens (
+      account_id, access_token_encrypted, refresh_token_encrypted, id_token_encrypted, expires_at, refresh_expires_at, scopes_json, updated_at
+    ) VALUES (
+      @account_id, @access_token_encrypted, @refresh_token_encrypted, @id_token_encrypted, @expires_at, @refresh_expires_at, @scopes_json, @updated_at
+    )
+    ON CONFLICT(account_id) DO UPDATE SET
+      access_token_encrypted = excluded.access_token_encrypted,
+      refresh_token_encrypted = excluded.refresh_token_encrypted,
+      id_token_encrypted = excluded.id_token_encrypted,
+      expires_at = excluded.expires_at,
+      refresh_expires_at = excluded.refresh_expires_at,
+      scopes_json = excluded.scopes_json,
+      updated_at = excluded.updated_at`),
+    getOAuthToken: db.prepare("SELECT * FROM oauth_tokens WHERE account_id = ?"),
+    deleteOAuthToken: db.prepare("DELETE FROM oauth_tokens WHERE account_id = ?"),
+    upsertReauthRequest: db.prepare(`INSERT INTO reauth_requests (
+      request_id, user_id, account_id, provider, missing_capabilities_json, missing_scopes_json, reason, status, original_tool_call_json, created_at, completed_at
+    ) VALUES (
+      @request_id, @user_id, @account_id, @provider, @missing_capabilities_json, @missing_scopes_json, @reason, @status, @original_tool_call_json, @created_at, @completed_at
+    )
+    ON CONFLICT(request_id) DO UPDATE SET
+      user_id = excluded.user_id,
+      account_id = excluded.account_id,
+      provider = excluded.provider,
+      missing_capabilities_json = excluded.missing_capabilities_json,
+      missing_scopes_json = excluded.missing_scopes_json,
+      reason = excluded.reason,
+      status = excluded.status,
+      original_tool_call_json = excluded.original_tool_call_json,
+      created_at = excluded.created_at,
+      completed_at = excluded.completed_at`),
+    getReauthRequest: db.prepare("SELECT * FROM reauth_requests WHERE request_id = ?"),
+    listReauthRequests: db.prepare("SELECT * FROM reauth_requests ORDER BY created_at DESC")
   };
 
   function upsertTask(task) {
@@ -467,6 +582,83 @@ export function createSqliteStore({ dbPath }) {
     },
     listAuditLogs() {
       return statements.listAuditLogs.all().map(mapAuditLog);
+    },
+    upsertConnectedAccount(account) {
+      statements.upsertConnectedAccount.run({
+        account_id: account.id ?? account.accountId,
+        user_id: account.userId ?? "local",
+        provider: account.provider,
+        provider_account_id: account.providerAccountId,
+        email: account.email,
+        display_name: account.displayName ?? null,
+        scopes_json: encodeJson(account.scopes ?? []),
+        capabilities_json: encodeJson(account.capabilities ?? {}),
+        token_status: account.tokenStatus ?? "active",
+        is_default_for_email: account.isDefaultForEmail ? 1 : 0,
+        is_default_for_files: account.isDefaultForFiles ? 1 : 0,
+        is_default_for_calendar: account.isDefaultForCalendar ? 1 : 0,
+        last_used_at: account.lastUsedAt ?? null,
+        created_at: account.createdAt,
+        updated_at: account.updatedAt
+      });
+      return clone(account);
+    },
+    getConnectedAccount(accountId) {
+      return mapConnectedAccount(statements.getConnectedAccount.get(accountId));
+    },
+    listConnectedAccounts() {
+      return statements.listConnectedAccounts.all().map(mapConnectedAccount);
+    },
+    deleteConnectedAccount(accountId) {
+      const existing = this.getConnectedAccount(accountId);
+      if (!existing) {
+        return null;
+      }
+      statements.deleteConnectedAccount.run(accountId);
+      return existing;
+    },
+    upsertOAuthToken(record) {
+      statements.upsertOAuthToken.run({
+        account_id: record.accountId,
+        access_token_encrypted: record.accessTokenEncrypted ?? record.accessToken ?? null,
+        refresh_token_encrypted: record.refreshTokenEncrypted ?? record.refreshToken ?? null,
+        id_token_encrypted: record.idTokenEncrypted ?? record.idToken ?? null,
+        expires_at: record.expiresAt ?? null,
+        refresh_expires_at: record.refreshExpiresAt ?? null,
+        scopes_json: encodeJson(record.scopes ?? []),
+        updated_at: record.updatedAt
+      });
+      return clone(record);
+    },
+    getOAuthToken(accountId) {
+      return mapOAuthToken(statements.getOAuthToken.get(accountId));
+    },
+    deleteOAuthToken(accountId) {
+      const existing = this.getOAuthToken(accountId);
+      statements.deleteOAuthToken.run(accountId);
+      return existing;
+    },
+    upsertReauthRequest(record) {
+      statements.upsertReauthRequest.run({
+        request_id: record.requestId,
+        user_id: record.userId,
+        account_id: record.accountId,
+        provider: record.provider,
+        missing_capabilities_json: encodeJson(record.missingCapabilities ?? []),
+        missing_scopes_json: encodeJson(record.missingScopes ?? []),
+        reason: record.reason ?? "",
+        status: record.status ?? "pending",
+        original_tool_call_json: encodeJson(record.originalToolCall ?? null),
+        created_at: record.createdAt,
+        completed_at: record.completedAt ?? null
+      });
+      return clone(record);
+    },
+    getReauthRequest(requestId) {
+      return mapReauthRequest(statements.getReauthRequest.get(requestId));
+    },
+    listReauthRequests() {
+      return statements.listReauthRequests.all().map(mapReauthRequest);
     }
   };
 }

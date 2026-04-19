@@ -7,6 +7,9 @@ export function createInMemoryStoreScaffold() {
     auditLogs: [],
     schedules: new Map(),
     scheduleRuns: [],
+    connectedAccounts: new Map(),
+    oauthTokens: new Map(),
+    reauthRequests: new Map(),
     insertTask(task) {
       this.tasks.set(task.task_id, task);
       return task;
@@ -123,6 +126,45 @@ export function createInMemoryStoreScaffold() {
     },
     listAuditLogs() {
       return [...this.auditLogs];
+    },
+    upsertConnectedAccount(account) {
+      const accountId = account.id ?? account.accountId;
+      this.connectedAccounts.set(accountId, { ...account, id: accountId, accountId });
+      return this.connectedAccounts.get(accountId);
+    },
+    getConnectedAccount(accountId) {
+      return this.connectedAccounts.get(accountId) ?? null;
+    },
+    listConnectedAccounts() {
+      return [...this.connectedAccounts.values()];
+    },
+    deleteConnectedAccount(accountId) {
+      const existing = this.getConnectedAccount(accountId);
+      this.connectedAccounts.delete(accountId);
+      this.oauthTokens.delete(accountId);
+      return existing;
+    },
+    upsertOAuthToken(record) {
+      this.oauthTokens.set(record.accountId, { ...record });
+      return this.oauthTokens.get(record.accountId);
+    },
+    getOAuthToken(accountId) {
+      return this.oauthTokens.get(accountId) ?? null;
+    },
+    deleteOAuthToken(accountId) {
+      const existing = this.getOAuthToken(accountId);
+      this.oauthTokens.delete(accountId);
+      return existing;
+    },
+    upsertReauthRequest(record) {
+      this.reauthRequests.set(record.requestId, { ...record });
+      return this.reauthRequests.get(record.requestId);
+    },
+    getReauthRequest(requestId) {
+      return this.reauthRequests.get(requestId) ?? null;
+    },
+    listReauthRequests() {
+      return [...this.reauthRequests.values()];
     }
   };
 }
