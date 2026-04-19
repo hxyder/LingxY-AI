@@ -3666,11 +3666,12 @@ function renderConnectorsMcpServers(servers) {
 
 async function loadConnectorsTab() {
   try {
-    const [accountsResp, mcpResp, settingsResp, acResp] = await Promise.all([
+    const [accountsResp, mcpResp, settingsResp, acResp, connectedResp] = await Promise.all([
       fetch(`${state.serviceBaseUrl}/config/email/accounts`),
       fetch(`${state.serviceBaseUrl}/ai/mcp`),
       fetch(`${state.serviceBaseUrl}/config/email/settings`),
-      fetch(`${state.serviceBaseUrl}/connectors/accounts`)
+      fetch(`${state.serviceBaseUrl}/connectors/accounts`),
+      fetch(`${state.serviceBaseUrl}/connectors/connected-accounts`)
     ]);
     if (accountsResp.ok) {
       const { accounts } = await accountsResp.json();
@@ -3686,7 +3687,12 @@ async function loadConnectorsTab() {
     }
     if (acResp.ok) {
       const { connectors } = await acResp.json();
-      renderAccountConnectors(connectors ?? []);
+      let connectedAccounts = [];
+      if (connectedResp.ok) {
+        const connected = await connectedResp.json();
+        connectedAccounts = connected.accounts ?? [];
+      }
+      renderAccountConnectors(connectors ?? [], connectedAccounts);
     }
   } catch (err) {
     if (connEmailList) connEmailList.innerHTML = `<p class='muted' style='font-size:12px;'>Could not load: ${err.message}</p>`;
@@ -3735,10 +3741,70 @@ const ACCOUNT_CONNECTOR_META = {
 let _acConfigOpen = {};   // { microsoft: bool, google: bool }
 let _acResourceTab = {};  // { microsoft: 'files'|'emails'|'calendar' }
 
-async function renderAccountConnectors(connectors) {
+async function renderAccountConnectors(connectors, connectedAccounts = []) {
   const list = document.getElementById("accountConnectorsList");
   if (!list) return;
   list.innerHTML = "";
+
+  if (connectedAccounts.length > 0) {
+    const accountHeader = document.createElement("div");
+    accountHeader.className = "muted";
+    accountHeader.style.cssText = "font-size:11px;margin:0 0 2px;";
+    accountHeader.textContent = "已连接账户";
+    list.appendChild(accountHeader);
+
+    for (const account of connectedAccounts) {
+      const meta = ACCOUNT_CONNECTOR_META[account.provider] ?? { label: account.provider, logo: "●", logoClass: "" };
+      const caps = account.capabilities ?? {};
+      const capLabels = [
+        ["emailRead", "邮件读"],
+        ["emailWrite", "邮件写"],
+        ["fileRead", "文件读"],
+        ["fileWrite", "文件写"],
+        ["calendarRead", "日历读"],
+        ["calendarWrite", "日历写"]
+      ].filter(([key]) => caps[key]).map(([, label]) => label);
+      const defaults = [
+        account.isDefaultForEmail ? "邮箱默认" : null,
+        account.isDefaultForFiles ? "文件默认" : null,
+        account.isDefaultForCalendar ? "日历默认" : null
+      ].filter(Boolean);
+      const card = document.createElement("div");
+      card.className = "account-connector-card";
+      card.innerHTML = `
+        <div class="acc-card-main">
+          <div class="acc-logo ${meta.logoClass}">${meta.logo}</div>
+          <div class="acc-info">
+            <p class="acc-name">${escapeHtml(account.displayName ?? account.email ?? meta.label)}</p>
+            <p class="acc-desc">${escapeHtml(meta.label)} · ${escapeHtml(account.email ?? "")} · ${escapeHtml(account.tokenStatus ?? "active")}</p>
+          </div>
+          <span class="acc-status-dot ${account.tokenStatus === "active" ? "connected" : ""}" title="${escapeHtml(account.tokenStatus ?? "")}"></span>
+          <div class="acc-actions">
+            <button class="ghost" data-connected-reauth="${escapeHtml(account.id)}" style="font-size:12px;padding:5px 10px;">重新授权</button>
+            <button class="ghost" data-connected-delete="${escapeHtml(account.id)}" style="font-size:12px;padding:5px 10px;">断开</button>
+          </div>
+        </div>
+        <div style="padding:0 16px 12px;display:flex;flex-direction:column;gap:8px;">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${capLabels.length ? capLabels.map((label) => `<span style="font-size:10px;padding:2px 7px;border:1px solid rgba(255,255,255,0.14);border-radius:999px;color:var(--muted);">${escapeHtml(label)}</span>`).join("") : `<span class="muted" style="font-size:11px;">暂无能力标签</span>`}
+            ${defaults.map((label) => `<span style="font-size:10px;padding:2px 7px;border:1px solid rgba(86,196,137,0.38);border-radius:999px;color:#86efac;">${escapeHtml(label)}</span>`).join("")}
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            <button class="ghost" data-connected-default="${escapeHtml(account.id)}" data-purpose="email" style="font-size:11px;padding:4px 8px;">设为邮箱默认</button>
+            <button class="ghost" data-connected-default="${escapeHtml(account.id)}" data-purpose="files" style="font-size:11px;padding:4px 8px;">设为文件默认</button>
+            <button class="ghost" data-connected-default="${escapeHtml(account.id)}" data-purpose="calendar" style="font-size:11px;padding:4px 8px;">设为日历默认</button>
+          </div>
+        </div>
+      `;
+      list.appendChild(card);
+    }
+
+    const providerHeader = document.createElement("div");
+    providerHeader.className = "muted";
+    providerHeader.style.cssText = "font-size:11px;margin:4px 0 2px;";
+    providerHeader.textContent = "添加 / 配置 provider";
+    list.appendChild(providerHeader);
+  }
 
   for (const connector of connectors) {
     const meta = ACCOUNT_CONNECTOR_META[connector.type];
@@ -3868,12 +3934,62 @@ async function renderAccountConnectors(connectors) {
       btn.style.cssText = "border-color:rgba(255,255,255,0.35);color:var(--text);";
     });
   });
+  list.querySelectorAll("[data-connected-default]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      void handleConnectedAccountDefault(btn.dataset.connectedDefault, btn.dataset.purpose);
+    });
+  });
+  list.querySelectorAll("[data-connected-delete]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      void handleConnectedAccountDisconnect(btn.dataset.connectedDelete);
+    });
+  });
+  list.querySelectorAll("[data-connected-reauth]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      void handleConnectedAccountReauth(btn.dataset.connectedReauth);
+    });
+  });
 
   // Auto-load resource previews for connected accounts
   for (const connector of connectors) {
     if (connector.connected) {
       void loadAccountResourcePreview(connector.type, _acResourceTab[connector.type] ?? "files");
     }
+  }
+}
+
+async function handleConnectedAccountDefault(accountId, purpose) {
+  if (!accountId || !purpose) return;
+  await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts/${encodeURIComponent(accountId)}/defaults`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ purpose })
+  });
+  void loadConnectorsTab();
+}
+
+async function handleConnectedAccountDisconnect(accountId) {
+  if (!accountId) return;
+  if (!confirm("断开这个已连接账户？已缓存的 token 将被删除。")) return;
+  await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts/${encodeURIComponent(accountId)}`, {
+    method: "DELETE"
+  });
+  void loadConnectorsTab();
+}
+
+async function handleConnectedAccountReauth(accountId) {
+  if (!accountId) return;
+  const r = await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts/${encodeURIComponent(accountId)}/reauth/start`, {
+    method: "POST"
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    alert(data.message ?? data.error ?? "启动重新授权失败。");
+    return;
+  }
+  if (data.authUrl) {
+    if (window.ucaShell?.openExternal) await window.ucaShell.openExternal(data.authUrl);
+    else window.open(data.authUrl, "_blank");
   }
 }
 

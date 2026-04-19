@@ -26,6 +26,12 @@ import {
   getConnectorStatus, loadConnectorConfig, saveConnectorConfig,
   listFiles, listEmails, listCalendarEvents
 } from "../connectors/account-connectors.mjs";
+import {
+  deleteConnectedAccount,
+  getAccountById,
+  listUserAccounts,
+  setDefaultAccount
+} from "../connectors/core/account-registry.mjs";
 import { maybeRunMorningDigest } from "../email/digest.mjs";
 import { saveAutoSkill } from "./skill-pattern-tracker.mjs";
 import { normalizeTemplateDocument } from "../templates/parser.mjs";
@@ -2868,6 +2874,69 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       }
 
       // ── Account Connectors (Microsoft 365 / Google) ───────────────────────
+
+      // GET /connectors/connected-accounts — canonical account-level registry
+      if (method === "GET" && url.pathname === "/connectors/connected-accounts") {
+        return sendJson(response, 200, {
+          accounts: listUserAccounts(runtime)
+        });
+      }
+
+      // PATCH /connectors/connected-accounts/:accountId/defaults — set default purpose
+      if (method === "PATCH" && /^\/connectors\/connected-accounts\/[^/]+\/defaults$/.test(url.pathname)) {
+        const accountId = decodeURIComponent(url.pathname.split("/")[3]);
+        const body = await readJsonBody(request);
+        const purposes = [];
+        if (body.purpose) {
+          purposes.push(body.purpose);
+        }
+        if (body.isDefaultForEmail === true) purposes.push("email");
+        if (body.isDefaultForFiles === true) purposes.push("files");
+        if (body.isDefaultForCalendar === true) purposes.push("calendar");
+        if (purposes.length === 0) {
+          return sendJson(response, 400, { error: "missing_default_purpose" });
+        }
+        try {
+          for (const purpose of purposes) {
+            setDefaultAccount(runtime, purpose, accountId);
+          }
+          return sendJson(response, 200, { ok: true, account: getAccountById(runtime, accountId) });
+        } catch (error) {
+          return sendJson(response, 400, { error: error.message });
+        }
+      }
+
+      // DELETE /connectors/connected-accounts/:accountId — disconnect one account
+      if (method === "DELETE" && /^\/connectors\/connected-accounts\/[^/]+$/.test(url.pathname)) {
+        const accountId = decodeURIComponent(url.pathname.split("/")[3]);
+        const account = deleteConnectedAccount(runtime, accountId);
+        if (!account) {
+          return sendJson(response, 404, { error: "account_not_found" });
+        }
+        return sendJson(response, 200, { ok: true, account });
+      }
+
+      // POST /connectors/connected-accounts/:accountId/reauth/start — reserved for UCA-081
+      if (method === "POST" && /^\/connectors\/connected-accounts\/[^/]+\/reauth\/start$/.test(url.pathname)) {
+        const accountId = decodeURIComponent(url.pathname.split("/")[3]);
+        const account = getAccountById(runtime, accountId);
+        if (!account) {
+          return sendJson(response, 404, { error: "account_not_found" });
+        }
+        const cfg = loadConnectorConfig(runtime, account.provider);
+        if (!cfg.clientId) {
+          return sendJson(response, 400, { error: "missing_client_id", message: "先在设置里填写 Client ID。" });
+        }
+        const result = account.provider === "microsoft"
+          ? startMicrosoftAuth(cfg.clientId)
+          : startGoogleAuth(cfg.clientId);
+        return sendJson(response, 200, {
+          ...result,
+          accountId,
+          reauth: true,
+          message: "补授权恢复将在 UCA-081 接入；当前会启动同 provider 授权流并刷新账户能力。"
+        });
+      }
 
       // GET /connectors/accounts — list status for all account connectors
       if (method === "GET" && url.pathname === "/connectors/accounts") {

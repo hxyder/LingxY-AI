@@ -17,8 +17,33 @@ import crypto from "node:crypto";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+import { scopesToCapabilities } from "./core/capability-mapper.mjs";
+import {
+  deleteConnectedAccount,
+  listUserAccounts,
+  saveOAuthTokenRecord,
+  upsertConnectedAccount
+} from "./core/account-registry.mjs";
 
 const SERVICE_NAME = "UCA.AccountConnector";
+const MICROSOFT_SCOPES = Object.freeze([
+  "openid",
+  "profile",
+  "email",
+  "User.Read",
+  "Files.Read.All",
+  "Mail.Read",
+  "Calendars.Read",
+  "offline_access"
+]);
+const GOOGLE_SCOPES = Object.freeze([
+  "openid",
+  "email",
+  "profile",
+  "https://www.googleapis.com/auth/drive.readonly",
+  "https://www.googleapis.com/auth/gmail.readonly",
+  "https://www.googleapis.com/auth/calendar.readonly"
+]);
 
 // ── In-memory pending OAuth states (keyed by random state string) ─────────────
 // Each entry: { type, verifier, clientId, clientSecret, expiresAt }
@@ -150,7 +175,7 @@ async function refreshMicrosoftTokens(tokens, clientId) {
     client_id: clientId,
     grant_type: "refresh_token",
     refresh_token: tokens.refresh_token,
-    scope: "openid profile email User.Read Files.Read.All Mail.Read Calendars.Read offline_access"
+    scope: MICROSOFT_SCOPES.join(" ")
   });
   const r = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
     method: "POST",
@@ -214,13 +239,14 @@ export function startMicrosoftAuth(clientId) {
     type: "microsoft",
     verifier,
     clientId,
+    scopes: MICROSOFT_SCOPES,
     expiresAt: Date.now() + 10 * 60_000
   });
   const url = new URL("https://login.microsoftonline.com/common/oauth2/v2.0/authorize");
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", REDIRECT_URI);
-  url.searchParams.set("scope", "openid profile email User.Read Files.Read.All Mail.Read Calendars.Read offline_access");
+  url.searchParams.set("scope", MICROSOFT_SCOPES.join(" "));
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
@@ -238,18 +264,14 @@ export function startGoogleAuth(clientId) {
     type: "google",
     verifier,
     clientId,
+    scopes: GOOGLE_SCOPES,
     expiresAt: Date.now() + 10 * 60_000
   });
   const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   url.searchParams.set("client_id", clientId);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("redirect_uri", REDIRECT_URI);
-  url.searchParams.set("scope", [
-    "openid", "email", "profile",
-    "https://www.googleapis.com/auth/drive.readonly",
-    "https://www.googleapis.com/auth/gmail.readonly",
-    "https://www.googleapis.com/auth/calendar.readonly"
-  ].join(" "));
+  url.searchParams.set("scope", GOOGLE_SCOPES.join(" "));
   url.searchParams.set("code_challenge", challenge);
   url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("state", state);
@@ -266,7 +288,7 @@ export async function completeOAuthCallback(runtime, code, state) {
   if (!pending) return { ok: false, error: "invalid_state" };
   _pendingStates.delete(state);
 
-  const { type, verifier, clientId } = pending;
+  const { type, verifier, clientId, scopes: requestedScopes = [] } = pending;
   const cfg = loadConnectorConfig(runtime, type);
 
   let tokenRes;
@@ -309,13 +331,46 @@ export async function completeOAuthCallback(runtime, code, state) {
 
   const tokens = attachExpiry(await tokenRes.json());
   await saveTokens(runtime, type, tokens);
-  return { ok: true, type };
+  const scopes = (tokens.scope ? tokens.scope.split(/\s+/).filter(Boolean) : requestedScopes);
+  let account = null;
+  try {
+    const accessToken = tokens.access_token;
+    const info = accessToken ? await getUserInfo(type, accessToken) : null;
+    if (info?.email) {
+      account = upsertConnectedAccount(runtime, {
+        userId: "local",
+        provider: type,
+        providerAccountId: info.providerAccountId ?? info.email,
+        email: info.email,
+        displayName: info.displayName,
+        scopes,
+        capabilities: scopesToCapabilities(type, scopes),
+        tokenStatus: "active"
+      });
+      saveOAuthTokenRecord(runtime, {
+        accountId: account.id,
+        accessTokenEncrypted: tokens.access_token ?? null,
+        refreshTokenEncrypted: tokens.refresh_token ?? null,
+        idTokenEncrypted: tokens.id_token ?? null,
+        expiresAt: tokens.expires_at ? new Date(tokens.expires_at).toISOString() : null,
+        scopes
+      });
+    }
+  } catch {
+    // Keep the legacy provider-level token path working even if account
+    // registration metadata cannot be fetched yet. The UI can ask the user to
+    // reauth once canonical account status becomes required.
+  }
+  return { ok: true, type, account };
 }
 
 // ── Disconnect ────────────────────────────────────────────────────────────────
 
 export async function disconnectAccount(runtime, type) {
   await deleteTokens(runtime, type);
+  for (const account of listUserAccounts(runtime).filter((item) => item.provider === type)) {
+    deleteConnectedAccount(runtime, account.id);
+  }
   return { ok: true };
 }
 
@@ -365,19 +420,19 @@ export async function getConnectorStatus(runtime, type) {
 
 async function getUserInfo(type, accessToken) {
   if (type === "microsoft") {
-    const r = await fetch("https://graph.microsoft.com/v1.0/me?$select=displayName,mail,userPrincipalName", {
+    const r = await fetch("https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName", {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     if (!r.ok) throw new Error("graph_error");
     const d = await r.json();
-    return { displayName: d.displayName, email: d.mail ?? d.userPrincipalName };
+    return { providerAccountId: d.id ?? d.userPrincipalName ?? d.mail, displayName: d.displayName, email: d.mail ?? d.userPrincipalName };
   } else {
     const r = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     if (!r.ok) throw new Error("google_userinfo_error");
     const d = await r.json();
-    return { displayName: d.name, email: d.email, photoUrl: d.picture };
+    return { providerAccountId: d.id ?? d.email, displayName: d.name, email: d.email, photoUrl: d.picture };
   }
 }
 

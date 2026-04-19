@@ -1,6 +1,6 @@
 # Task UCA-078 — Multi-Account OAuth & Connectors UI
 
-**Status**: todo  
+**Status**: done
 **Priority**: P0  
 **Depends on**: UCA-077  
 **Branch**: `task/uca-078-multi-account-oauth-ui`
@@ -75,11 +75,23 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
+- 状态：done
+- 执行分支：`task/uca-077-connector-foundation`
+- 开始日期：2026-04-19
+- 完成日期：2026-04-19
 - 实际新增内容：
+  - OAuth callback 在保留旧 provider token preview 的同时，写入 `ConnectedAccount` 与 accountId token record
+  - 新增 canonical API：`GET /connectors/connected-accounts`、`PATCH /connectors/connected-accounts/:accountId/defaults`、`DELETE /connectors/connected-accounts/:accountId`、`POST /connectors/connected-accounts/:accountId/reauth/start`
+  - Connectors Tab 增加已连接账户列表、capability 标签、默认用途按钮、重授权和断开入口
+  - 旧 `/connectors/accounts` 与 provider preview endpoint 保持兼容
 - 验证结果：
+  - `npm run verify:unified-connectors`
+  - `node scripts/verify-runtime-wiring.mjs`
+  - `node scripts/verify-console-ui.mjs`
+  - `node scripts/verify-action-tools.mjs`
+  - `node scripts/verify-service-core.mjs`
+  - `node scripts/verify-structure.mjs`
 - 遗留问题：
-- 交接给下一个任务：
+  - `reauth/start` 当前只启动同 provider OAuth 流；缺失 capability/scope 的 request 绑定和恢复执行留给 UCA-081
+  - 旧 provider preview 仍使用 `account-connectors.mjs` 的 provider-level token 兼容路径，后续 UCA-079/UCA-082 逐步迁移到 account router
+- 交接给下一个任务：UCA-079 可使用 canonical `ConnectedAccount` API 和 accountId token，为 `account_list_emails/files/events` 实现 router 与统一 read tools

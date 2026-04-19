@@ -45,8 +45,12 @@ export function microsoftScopesToCapabilities(scopes = []) {
   return createCapabilityMap({
     emailRead: hasMicrosoftScope(scopeSet, "Mail.Read") || hasMicrosoftScope(scopeSet, "Mail.ReadWrite"),
     emailWrite: hasMicrosoftScope(scopeSet, "Mail.Send") || hasMicrosoftScope(scopeSet, "Mail.ReadWrite"),
-    fileRead: hasMicrosoftScope(scopeSet, "Files.Read") || hasMicrosoftScope(scopeSet, "Files.ReadWrite"),
-    fileWrite: hasMicrosoftScope(scopeSet, "Files.ReadWrite"),
+    fileRead:
+      hasMicrosoftScope(scopeSet, "Files.Read")
+      || hasMicrosoftScope(scopeSet, "Files.Read.All")
+      || hasMicrosoftScope(scopeSet, "Files.ReadWrite")
+      || hasMicrosoftScope(scopeSet, "Files.ReadWrite.All"),
+    fileWrite: hasMicrosoftScope(scopeSet, "Files.ReadWrite") || hasMicrosoftScope(scopeSet, "Files.ReadWrite.All"),
     calendarRead: hasMicrosoftScope(scopeSet, "Calendars.Read") || hasMicrosoftScope(scopeSet, "Calendars.ReadWrite"),
     calendarWrite: hasMicrosoftScope(scopeSet, "Calendars.ReadWrite")
   });
@@ -57,4 +61,3 @@ export function scopesToCapabilities(provider, scopes = []) {
   if (provider === "microsoft") return microsoftScopesToCapabilities(scopes);
   return createCapabilityMap();
 }
-

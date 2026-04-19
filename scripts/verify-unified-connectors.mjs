@@ -207,6 +207,7 @@ await mkdir(tmpRoot, { recursive: true });
 
 assert.equal(googleScopesToCapabilities(["https://www.googleapis.com/auth/calendar"]).calendarWrite, true);
 assert.equal(microsoftScopesToCapabilities(["Files.Read"]).fileWrite, false);
+assert.equal(microsoftScopesToCapabilities(["Files.Read.All"]).fileRead, true);
 
 await runRegistryCases(createInMemoryStoreScaffold());
 
@@ -222,4 +223,3 @@ await runTokenRefreshCases();
 await runLegacyMigrationCase();
 
 console.log("Unified connectors verification passed.");
-
