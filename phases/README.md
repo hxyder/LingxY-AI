@@ -21,6 +21,7 @@
 | [Phase 1c](phase_1c_browser_extension.md) | 浏览器扩展 | W13–W15 | 待启动 | MV3 扩展 + Native Messaging Host + 网页选区/链接 |
 | [Phase 2](phase_2_status_completeness.md) | 状态与执行显示 | W16–W19 | 待启动 | 流式步骤/失败分类/重试取消/任务详情页 |
 | ⭐ [Phase Action Tools](phase_action_tools.md) | **系统动作工具层（新增）** | W18–W21 | 待启动 | mailto / 搜索 / 文件操作 / 通知 / 截屏 等 12 类工具 + Tool-Using Agent loop |
+| ⭐ [Phase Unified Account Connectors](phase_unified_account_connectors.md) | **统一账户连接器（新增）** | 3–4 周 | 待启动 | 多账户 OAuth、能力映射、账户路由、云端邮件/文件/日历工具 |
 | [Phase 2.5](phase_2_5_privacy_security.md) | 隐私与权限 | W20–W22 | 待启动 | 白/黑名单 + 脱敏 + Kill Switch + 审计 |
 | ⭐ [Phase Scheduler](phase_scheduler.md) | **定时与触发任务（新增）** | W22–W24 | 待启动 | cron + 文件监听 + LLM 自主创建定时任务 |
 | [Phase 3](phase_3_overlay_followcursor.md) | 跟随浮标（限定范围） | W?? | 评估中 | **仅在浏览器扩展内**实现，跨应用不做 |
@@ -31,6 +32,8 @@
 > **说明 1**：Phase 3 的"跨应用跟随浮标"被建议**降级**——仅在浏览器扩展内提供 Grammarly 风格浮标，不投入精力做 Win32 全局选区跟随，原因详见《主方案 §22.4》。
 >
 > **说明 2**：⭐ 标记的两个 Phase 是回应用户「发邮件/搜索/定时任务」需求新增的，原方案没有。它们与 Phase 2 / 2.5 时间上重叠，可以并行开发，详见《[需求响应](../docs/planning/requirements_response.md)》。
+>
+> **说明 3**：Phase Unified Account Connectors 是 2026-04-19 追加的账户连接器升级阶段，依赖 UCA-048 Settings v2、UCA-049 provider-agnostic agentic runtime、现有 Connectors Tab，以及 UCA-044/045 的 Email Monitoring/Digest 基础。它把当前 Google/Microsoft OAuth demo 收口为多账户、capability、account router 与统一云账户 Action Tools。
 
 ---
 

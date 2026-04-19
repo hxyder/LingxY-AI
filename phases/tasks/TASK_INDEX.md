@@ -71,6 +71,12 @@
 | 64 | UCA-064 | [64_subtask_history_aggregation.md](64_subtask_history_aggregation.md) | 子任务历史聚合 + 详情页导航返回 | UCA-041,UCA-056 | `task/uca-064-subtask-history` | todo |
 | 65 | UCA-065 | [65_sequential_compound_action.md](65_sequential_compound_action.md) | 复合动作顺序执行（sequential compound mode）| UCA-058,UCA-063 | `task/uca-065-sequential-compound` | todo |
 | 66 | UCA-066 | [66_performance_fast_path.md](66_performance_fast_path.md) | 性能快速通道（Tier0确定性动作/翻译轻量API/LLM流式输出）| UCA-052,UCA-058 | `task/uca-066-performance-fast-path` | todo |
+| 77 | UCA-077 | [77_connector_registry_capability_foundation.md](77_connector_registry_capability_foundation.md) | Unified Account Connectors | UCA-048,UCA-049 | `task/uca-077-connector-foundation` | todo |
+| 78 | UCA-078 | [78_multi_account_oauth_connectors_ui.md](78_multi_account_oauth_connectors_ui.md) | Unified Account Connectors | UCA-077 | `task/uca-078-multi-account-oauth-ui` | todo |
+| 79 | UCA-079 | [79_account_router_unified_read_tools.md](79_account_router_unified_read_tools.md) | Unified Account Connectors | UCA-077,UCA-078 | `task/uca-079-account-router-read-tools` | todo |
+| 80 | UCA-080 | [80_connector_write_tools_confirmation.md](80_connector_write_tools_confirmation.md) | Unified Account Connectors | UCA-079 | `task/uca-080-connector-write-tools` | todo |
+| 81 | UCA-081 | [81_connector_reauth_resume_audit.md](81_connector_reauth_resume_audit.md) | Unified Account Connectors | UCA-080 | `task/uca-081-connector-reauth-audit` | todo |
+| 82 | UCA-082 | [82_email_monitoring_connector_migration.md](82_email_monitoring_connector_migration.md) | Unified Account Connectors | UCA-044,UCA-045,UCA-081 | `task/uca-082-email-connector-migration` | todo |
 
 ## 当前执行规则
 
@@ -85,6 +91,7 @@
   - **Commit 3**：code_cli JSON planning mode bridge（`code-cli-bridge.mjs` —— 把 messages 序列化为 prompt + 解析 JSON tool_call 块 + spawn 子进程） → Kimi CLI / Claude Code CLI / 任何 user-installed CLI 都能驱动 agentic planner；Console 任务详情面板新增 `Provider: <name> · <model> · <transport>` 行 + 琥珀色 "AI claim downgraded" 警告框；Overlay 气泡新增同样的 system bubble + ⚠ 警告；`tests/fixtures/mock-agentic-code-cli.mjs` 模拟 Kimi 风格 stream-json + tool_call JSON block；`verify-agentic-planner.mjs` case 5 端到端跑 Node 子进程的 mock CLI 验证完整 2 轮循环。全部 27 个 verify 脚本通过
 - 每完成一个任务，必须同步更新对应任务文件和本索引
 - 若出现阻塞，先把任务状态改为 `blocked`，再由下一次计划会议决定是否拆新任务
+- UCA-077 ~ UCA-082 是 2026-04-19 追加的统一账户连接器升级任务。编号从 UCA-077 开始，是为了避开代码注释中已出现但未正式入索引的 UCA-067 ~ UCA-076，后续整理这些编号时不要复用 077 ~ 082。
 
 ## 2026-04-11 状态清理与架构对齐追加
 
