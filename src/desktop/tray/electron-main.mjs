@@ -645,6 +645,22 @@ export function createElectronShellRuntime({
     return true;
   }
 
+  function sendEchoShortcutWake(kind = "voice") {
+    const payload = {
+      kind,
+      transcript: "shortcut",
+      source: "shortcut",
+      triggeredAt: Date.now()
+    };
+    const dock = windows.get("dock");
+    if (dock && !dock.webContents?.isDestroyed?.()) {
+      dock.webContents.send("uca:echo-shortcut-wake", payload);
+      return true;
+    }
+    enqueueWindowMessage("overlay", "uca:echo-wake", payload);
+    return false;
+  }
+
   function registerShortcuts() {
     for (const shortcut of DESKTOP_SHELL_MANIFEST.shortcuts) {
       const registered = globalShortcut.register(shortcut.accelerator, () => {
@@ -677,23 +693,35 @@ export function createElectronShellRuntime({
         }
 
         if (shortcut.id === "voice-wake") {
-          // Open overlay and immediately start voice input.
           captureActiveWindowContext({ includeSelection: false }).catch(() => {});
-          showWindow("overlay");
-          for (const bw of windows.values()) {
-            bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-          }
+          void loadSettings().then((settings) => {
+            if (settings?.echoMode) {
+              sendEchoShortcutWake("voice");
+              return;
+            }
+            // Open overlay and immediately start voice input.
+            showWindow("overlay");
+            for (const bw of windows.values()) {
+              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+            }
+          });
           return;
         }
 
         if (shortcut.id === "note-wake") {
-          // Open overlay and immediately start voice-note recording (dual channel:
-          // mic + system audio). Same wiring as voice-wake; overlay decides mode.
           captureActiveWindowContext({ includeSelection: false }).catch(() => {});
-          showWindow("overlay");
-          for (const bw of windows.values()) {
-            bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-          }
+          void loadSettings().then((settings) => {
+            if (settings?.echoMode) {
+              sendEchoShortcutWake("note");
+              return;
+            }
+            // Open overlay and immediately start voice-note recording (dual channel:
+            // mic + system audio). Same wiring as voice-wake; overlay decides mode.
+            showWindow("overlay");
+            for (const bw of windows.values()) {
+              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+            }
+          });
           return;
         }
 

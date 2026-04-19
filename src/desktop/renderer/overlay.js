@@ -2679,7 +2679,33 @@ let echoHudLastText = "";
 let echoHudLastAt = 0;
 let echoVoiceAutoSubmitTimer = null;
 let echoVoiceAutoSubmitInFlight = false;
+let echoVoiceHardLimitTimer = null;
+let echoCommandStartedAt = 0;
+let echoCommandLastSpeechAt = 0;
+let echoRecognizerRestartTimer = null;
 const ECHO_LOCAL_CAPTURE_MS = 8000;
+const ECHO_COMMAND_SILENCE_MS = 2400;
+const ECHO_COMMAND_HARD_LIMIT_MS = 18000;
+const ECHO_NOTE_COMMAND_PATTERNS = [
+  /(?:开始|開始|启动|啟動|打开|開啟|开启|录|錄).{0,4}(?:录音|錄音|笔记|筆記|记录|記錄|会议|會議|note)/i,
+  /(?:录音|錄音).{0,4}(?:笔记|筆記|记录|記錄|会议|會議)/i,
+  /(?:会议|會議).{0,4}(?:记录|記錄|纪要|紀要|笔记|筆記)/i,
+  /\b(?:start|begin|open)\s+(?:a\s+)?(?:voice\s+)?(?:note|recording|meeting\s+notes?)\b/i
+];
+
+function isEchoNoteCommand(text = "") {
+  const normalized = `${text ?? ""}`
+    .trim()
+    .replaceAll("筆", "笔")
+    .replaceAll("記", "记")
+    .replaceAll("錄", "录")
+    .replaceAll("會", "会")
+    .replaceAll("開", "开")
+    .replaceAll("啟", "启")
+    .replace(/\s+/g, "");
+  if (!normalized) return false;
+  return ECHO_NOTE_COMMAND_PATTERNS.some((pattern) => pattern.test(normalized));
+}
 
 function showEchoHud({ text = "", kind = "info", durationMs = 1600, throttleMs = 700 } = {}) {
   if (!echoSessionActive || !text) return;
@@ -2695,20 +2721,58 @@ function clearEchoVoiceAutoSubmit() {
     clearTimeout(echoVoiceAutoSubmitTimer);
     echoVoiceAutoSubmitTimer = null;
   }
+  if (echoVoiceHardLimitTimer) {
+    clearTimeout(echoVoiceHardLimitTimer);
+    echoVoiceHardLimitTimer = null;
+  }
+  if (echoRecognizerRestartTimer) {
+    clearTimeout(echoRecognizerRestartTimer);
+    echoRecognizerRestartTimer = null;
+  }
 }
 
-function scheduleEchoVoiceAutoSubmit(delayMs = ECHO_LOCAL_CAPTURE_MS) {
+function scheduleEchoVoiceAutoSubmit(delayMs = ECHO_LOCAL_CAPTURE_MS, {
+  message = "等你说完，会自动发送…",
+  kind = "info",
+  durationMs = 1800
+} = {}) {
   if (!echoSessionActive || echoVoiceAutoSubmitInFlight) return;
-  clearEchoVoiceAutoSubmit();
+  if (echoVoiceAutoSubmitTimer) {
+    clearTimeout(echoVoiceAutoSubmitTimer);
+    echoVoiceAutoSubmitTimer = null;
+  }
   showEchoHud({
-    text: "本地识别中，说完后会自动发送…",
-    kind: "info",
-    durationMs: 2400,
-    throttleMs: 0
+    text: message,
+    kind,
+    durationMs,
+    throttleMs: 900
   });
   echoVoiceAutoSubmitTimer = setTimeout(() => {
     void submitEchoVoiceCommand();
   }, delayMs);
+}
+
+function armEchoCommandHardLimit() {
+  if (!echoSessionActive) return;
+  if (echoVoiceHardLimitTimer) clearTimeout(echoVoiceHardLimitTimer);
+  echoVoiceHardLimitTimer = setTimeout(() => {
+    if (!echoSessionActive || echoVoiceAutoSubmitInFlight) return;
+    if (!commandInput.value.trim()) {
+      showEchoHud({ text: "没听清，再说一次 linxi 试试", kind: "error", durationMs: 2600, throttleMs: 0 });
+      void endEchoSession();
+      return;
+    }
+    void submitEchoVoiceCommand();
+  }, ECHO_COMMAND_HARD_LIMIT_MS);
+}
+
+function noteEchoSpeechHeard(text = "") {
+  if (!echoSessionActive || !text.trim()) return;
+  echoCommandLastSpeechAt = Date.now();
+  scheduleEchoVoiceAutoSubmit(ECHO_COMMAND_SILENCE_MS, {
+    message: "继续说，停顿后我再执行…",
+    durationMs: 1700
+  });
 }
 
 async function submitEchoVoiceCommand() {
@@ -2725,6 +2789,23 @@ async function submitEchoVoiceCommand() {
       showEchoHud({ text: "没听清，再说一次 linxi 试试", kind: "error", durationMs: 2600, throttleMs: 0 });
       return;
     }
+    const heardRecently = echoCommandLastSpeechAt
+      && Date.now() - echoCommandLastSpeechAt < Math.max(900, ECHO_COMMAND_SILENCE_MS - 250);
+    if (heardRecently) {
+      scheduleEchoVoiceAutoSubmit(ECHO_COMMAND_SILENCE_MS, {
+        message: "继续听你说完…",
+        durationMs: 1500
+      });
+      return;
+    }
+    if (isEchoNoteCommand(text)) {
+      commandInput.value = "";
+      autoSizeInput();
+      resetVoiceState();
+      showEchoHud({ text: "开始录音笔记…", kind: "wake", durationMs: 2200, throttleMs: 0 });
+      await enterNoteMode();
+      return;
+    }
     if (voiceMode && !noteActive) {
       exitVoiceMode();
     }
@@ -2732,11 +2813,13 @@ async function submitEchoVoiceCommand() {
     await handleUserSend();
   } finally {
     echoVoiceAutoSubmitInFlight = false;
-    resetVoiceState();
-    if (voiceMode && !noteActive) {
-      exitVoiceMode();
+    if (!noteActive) {
+      resetVoiceState();
+      if (voiceMode) {
+        exitVoiceMode();
+      }
+      await endEchoSession();
     }
-    await endEchoSession();
   }
 }
 
@@ -3168,6 +3251,7 @@ function startVoicePreviewLoop() {
         voiceTranscript.classList.remove("placeholder");
         voiceTranscript.textContent = text;
         voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
+        noteEchoSpeechHeard(text);
         showEchoHud({
           text: `听到：${text.slice(0, 48)}`,
           kind: "info",
@@ -3264,7 +3348,7 @@ function ensureVoiceRecognizer() {
   const Ctor = getSpeechRecognitionCtor();
   if (!Ctor) return null;
   const recognizer = new Ctor();
-  recognizer.continuous = false;
+  recognizer.continuous = Boolean(echoSessionActive);
   recognizer.interimResults = true;
   recognizer.maxAlternatives = 1;
 
@@ -3293,6 +3377,7 @@ function ensureVoiceRecognizer() {
     }
     const heardText = (finalText || interim || "").trim();
     if (heardText) {
+      noteEchoSpeechHeard(heardText);
       showEchoHud({
         text: `听到：${heardText.slice(0, 48)}`,
         kind: "info",
@@ -3319,10 +3404,22 @@ function ensureVoiceRecognizer() {
     delete commandInput.dataset.voiceBase;
     commandInput.focus();
     if (echoSessionActive && commandInput.value.trim()) {
-      setTimeout(() => {
-        if (!echoSessionActive) return;
-        void submitEchoVoiceCommand();
-      }, 220);
+      scheduleEchoVoiceAutoSubmit(ECHO_COMMAND_SILENCE_MS, {
+        message: "我等一下，确认你说完再执行…",
+        durationMs: 1700
+      });
+      const withinHardLimit = !echoCommandStartedAt
+        || Date.now() - echoCommandStartedAt < ECHO_COMMAND_HARD_LIMIT_MS - 1000;
+      if (withinHardLimit && !echoRecognizerRestartTimer) {
+        echoRecognizerRestartTimer = setTimeout(() => {
+          echoRecognizerRestartTimer = null;
+          if (!echoSessionActive || echoVoiceAutoSubmitInFlight || voiceLocalFallbackActive) return;
+          try {
+            recognizer.start();
+            setVoiceRecording(true);
+          } catch { /* Web Speech may refuse immediate restart; auto-submit timer still protects us. */ }
+        }, 250);
+      }
     }
   });
 
@@ -3342,7 +3439,10 @@ function ensureVoiceRecognizer() {
       // than silent "listening". Final streamed transcribe still runs on
       // stop as the source of truth.
       startVoicePreviewLoop();
-      scheduleEchoVoiceAutoSubmit();
+      scheduleEchoVoiceAutoSubmit(ECHO_LOCAL_CAPTURE_MS, {
+        message: "本地识别中，说完后会自动发送…",
+        durationMs: 2400
+      });
       voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
       voiceCard?.classList.remove("error", "idle");
       return;
@@ -3387,7 +3487,10 @@ function _doStartRecognizer(recognizer) {
       voiceLocalFallbackActive = true;
       setVoiceRecording(true);
       startVoicePreviewLoop();
-      scheduleEchoVoiceAutoSubmit();
+      scheduleEchoVoiceAutoSubmit(ECHO_LOCAL_CAPTURE_MS, {
+        message: "本地识别中，说完后会自动发送…",
+        durationMs: 2400
+      });
       voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
       voiceCard?.classList.remove("error", "idle");
       return;
@@ -3406,7 +3509,10 @@ function _doStartRecognizer(recognizer) {
         voiceLocalFallbackActive = true;
         setVoiceRecording(true);
         startVoicePreviewLoop();
-        scheduleEchoVoiceAutoSubmit();
+        scheduleEchoVoiceAutoSubmit(ECHO_LOCAL_CAPTURE_MS, {
+          message: "本地识别中，说完后会自动发送…",
+          durationMs: 2400
+        });
         voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
         voiceCard?.classList.remove("error", "idle");
         return;
@@ -3510,7 +3616,10 @@ async function startVoiceRecognition() {
     } else {
       voiceLocalFallbackActive = true;
       startVoicePreviewLoop();
-      scheduleEchoVoiceAutoSubmit();
+      scheduleEchoVoiceAutoSubmit(ECHO_LOCAL_CAPTURE_MS, {
+        message: "本地识别中，说完后会自动发送…",
+        durationMs: 2400
+      });
       voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
     }
   } catch (err) {
@@ -3764,13 +3873,14 @@ let noteSourceContextPromise = Promise.resolve(null);
 
 function publishNoteRecordingState(extra = {}) {
   const elapsedMs = noteActive && noteStartTime ? Date.now() - noteStartTime : 0;
+  const { active: _ignoredActive, ...safeExtra } = extra ?? {};
   void window.ucaShell?.setNoteRecordingState?.({
-    active: noteActive,
     elapsedMs,
     elapsed: formatNoteElapsed(elapsedMs),
     hasMicTranscript: noteTranscripts.length > 0,
     hasSystemAudio: noteSysAudioChunks.length > 0,
-    ...extra
+    ...safeExtra,
+    active: noteActive
   });
 }
 
@@ -3923,7 +4033,7 @@ function appendNoteTranscript(text) {
   const elapsed = noteStartTime ? Date.now() - noteStartTime : 0;
   const time = formatNoteElapsed(elapsed);
   noteTranscripts.push({ time, text: text.trim() });
-  publishNoteRecordingState({ active: true, hasMicTranscript: true });
+  publishNoteRecordingState({ hasMicTranscript: true });
   if (!noteTranscriptBox) return;
   const entry = document.createElement("div");
   entry.className = "note-transcript-entry";
@@ -3944,7 +4054,7 @@ function startNoteMicCapture(sessionId = noteSessionId) {
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
-      startNoteMicRecorder(stream);
+      startNoteMicRecorder(stream, sessionId);
       if (Ctor) {
         _launchNoteMicRecognizer(Ctor, sessionId);
       }
@@ -3956,7 +4066,7 @@ function startNoteMicCapture(sessionId = noteSessionId) {
     });
 }
 
-function startNoteMicRecorder(stream) {
+function startNoteMicRecorder(stream, sessionId = noteSessionId) {
   noteMicStream = stream;
   noteMicAudioChunks = [];
   if (typeof MediaRecorder === "undefined") return;
@@ -3967,8 +4077,9 @@ function startNoteMicRecorder(stream) {
     noteMicMediaRecorder = new MediaRecorder(stream, { mimeType });
     noteMicMediaRecorder.addEventListener("dataavailable", (event) => {
       if (event.data?.size > 0) {
+        if (!noteActive || sessionId !== noteSessionId) return;
         noteMicAudioChunks.push(event.data);
-        publishNoteRecordingState({ active: true, hasMicTranscript: noteTranscripts.length > 0 });
+        publishNoteRecordingState({ hasMicTranscript: noteTranscripts.length > 0 });
       }
     });
     noteMicMediaRecorder.start(4000);
@@ -4073,8 +4184,9 @@ async function startNoteSysCapture() {
     noteMediaRecorder = new MediaRecorder(noteSysStream, { mimeType });
     noteMediaRecorder.addEventListener("dataavailable", (e) => {
       if (e.data?.size > 0) {
+        if (!noteActive || sessionId !== noteSessionId) return;
         noteSysAudioChunks.push(e.data);
-        publishNoteRecordingState({ active: true, hasSystemAudio: true });
+        publishNoteRecordingState({ hasSystemAudio: true });
       }
     });
     noteMediaRecorder.start(4000); // collect a chunk every 4 s
@@ -4120,7 +4232,7 @@ async function enterNoteMode() {
   noteStartTime = Date.now();
   noteAutoStopTriggered = false;
   noteWarnedNearLimit = false;
-  publishNoteRecordingState({ active: true });
+  publishNoteRecordingState();
 
   // Start mic transcription
   startNoteMicCapture(noteSessionId);
@@ -4135,7 +4247,7 @@ async function enterNoteMode() {
   noteTimerInterval = setInterval(() => {
     const elapsedMs = Date.now() - noteStartTime;
     if (noteTimer) noteTimer.textContent = formatNoteElapsed(elapsedMs);
-    publishNoteRecordingState({ active: true });
+    publishNoteRecordingState();
 
     const remaining = NOTE_MAX_DURATION_MS - elapsedMs;
     if (remaining <= 0 && !noteAutoStopTriggered) {
@@ -4477,93 +4589,100 @@ ${sourceAssistRequirement}`;
 }
 
 async function finishNote() {
+  if (noteFinishInFlight && !noteActive) return;
   if (!noteActive) return;
+  const ownsNoteFinishFlag = !noteFinishInFlight;
+  noteFinishInFlight = true;
   const sourceContextSnapshot = noteSourceContext;
   const sourceContextPromise = noteSourceContextPromise;
 
-  // Show the particle spinner immediately — it stays visible through the
-  // whole transcription + AI submission pipeline.
-  timelineEnsure();
-  timelineLabelEl && (timelineLabelEl.textContent = "正在转录音频…");
+  try {
+    // Show the particle spinner immediately — it stays visible through the
+    // whole transcription + AI submission pipeline.
+    timelineEnsure();
+    timelineLabelEl && (timelineLabelEl.textContent = "正在转录音频…");
 
-  // Stop gracefully so pending Web Speech finals and MediaRecorder chunks flush.
-  const stopped = exitNoteMode({ discardMic: false });
-  await stopped;
-  await noteMicStopPromise;
-  await noteRecorderStopPromise;
-  publishNoteRecordingState({ active: false, elapsedMs: 0, elapsed: "00:00" });
+    // Stop gracefully so pending Web Speech finals and MediaRecorder chunks flush.
+    const stopped = exitNoteMode({ discardMic: false });
+    await stopped;
+    await noteMicStopPromise;
+    await noteRecorderStopPromise;
+    publishNoteRecordingState({ active: false, elapsedMs: 0, elapsed: "00:00" });
 
-  // Build mic transcript. Prefer live Web Speech text when it exists; if
-  // Electron's recognition service failed, transcribe the local mic recording.
-  let micLines = noteTranscripts.map((t) => `[${t.time}] ${t.text}`).join("\n");
-  let micReason = null;
-  let micDetail = "";
-  if (!micLines.trim() && noteMicAudioChunks.length > 0) {
-    try {
-      addSystemBubble("正在本地转录输入音频（麦克风），请稍候...");
-      const micBlob = new Blob(noteMicAudioChunks, { type: "audio/webm" });
-      const micResult = await transcribeAudioBlob(micBlob, {
-        lang: getNoteLanguageSelection()
-      });
-      const micText = `${micResult.transcript ?? ""}`.trim();
-      if (micResult.ok === false) {
-        micReason = micResult.reason ?? "mic_transcription_failed";
-        micDetail = micResult.detail || micResult.message || "";
-      } else if (micText) {
-        micLines = `[00:00] ${micText}`;
-        appendNoteTranscript(micText);
+    // Build mic transcript. Prefer live Web Speech text when it exists; if
+    // Electron's recognition service failed, transcribe the local mic recording.
+    let micLines = noteTranscripts.map((t) => `[${t.time}] ${t.text}`).join("\n");
+    let micReason = null;
+    let micDetail = "";
+    if (!micLines.trim() && noteMicAudioChunks.length > 0) {
+      try {
+        addSystemBubble("正在本地转录输入音频（麦克风），请稍候...");
+        const micBlob = new Blob(noteMicAudioChunks, { type: "audio/webm" });
+        const micResult = await transcribeAudioBlob(micBlob, {
+          lang: getNoteLanguageSelection()
+        });
+        const micText = `${micResult.transcript ?? ""}`.trim();
+        if (micResult.ok === false) {
+          micReason = micResult.reason ?? "mic_transcription_failed";
+          micDetail = micResult.detail || micResult.message || "";
+        } else if (micText) {
+          micLines = `[00:00] ${micText}`;
+          appendNoteTranscript(micText);
+        }
+      } catch (error) {
+        micReason = "mic_transcription_failed";
+        micDetail = error?.message ?? "";
+      } finally {
+        noteMicAudioChunks = [];
       }
-    } catch (error) {
-      micReason = "mic_transcription_failed";
-      micDetail = error?.message ?? "";
-    } finally {
-      noteMicAudioChunks = [];
     }
-  }
 
-  // Optionally transcribe system audio
-  let sysLines = "";
-  let sysReason = null;
-  let sysDetail = "";
-  if (noteSysAudioChunks.length > 0) {
-    addSystemBubble("正在转录输出音频（系统音频），请稍候...");
-    const sysResult = await transcribeSysAudio();
-    sysLines = sysResult.transcript ?? "";
-    sysReason = sysResult.reason ?? null;
-    sysDetail = sysResult.detail || sysResult.message || "";
-  }
-
-  const duration = noteStartTime ? formatNoteElapsed(Date.now() - noteStartTime) : "未知";
-  const sourceContext = sourceContextSnapshot
-    ?? await timeoutWithFallback(sourceContextPromise, 1200, null);
-
-  if (!micLines.trim() && !sysLines.trim()) {
-    if (micReason) {
-      const detail = micDetail ? `\n原因：${micDetail.slice(0, 180)}` : "";
-      addSystemBubble(`已录到输入音频（麦克风），但本地转写失败。${detail}`);
-    } else if (noteSysAudioChunks.length > 0 && sysReason === "no_api_provider") {
-      addSystemBubble("已录到输出音频（系统音频），但当前模型提供方不支持音频转写；请配置 OpenAI 音频转写 Key，或打开输入音频（麦克风）实时转写后再完成笔记。");
-    } else if (noteSysAudioChunks.length > 0 && sysReason === "audio_provider_unsupported") {
-      addSystemBubble("已录到输出音频（系统音频），但当前聊天模型不支持音频转写。你的 YouTube/网页音频捕获是成功的；请配置 OpenAI 音频转写 Key（UCA_TRANSCRIPTION_API_KEY 或 OPENAI_API_KEY），聊天仍可继续使用 DeepSeek。");
-    } else if (noteSysAudioChunks.length > 0 && sysReason === "local_transcriber_missing") {
-      addSystemBubble("已录到输出音频（系统音频），但本地转写依赖还没安装。运行：python -m pip install faster-whisper；安装后无需 OpenAI API，YouTube/网页音频会走本地 Whisper 转写。");
-    } else if (noteSysAudioChunks.length > 0 && sysReason === "local_transcription_failed") {
-      const detail = sysDetail ? `\n原因：${sysDetail.slice(0, 180)}` : "";
-      addSystemBubble(`已录到输出音频（系统音频），但本地 Whisper 转写失败。${detail}`);
-    } else if (noteSysAudioChunks.length > 0) {
-      const detail = sysDetail ? `\n原因：${sysDetail.slice(0, 180)}` : "";
-      addSystemBubble(`已录到输出音频（系统音频），但转写失败；请检查音频转写服务配置后再试。${detail}`);
-    } else {
-      addSystemBubble("笔记内容为空，请先开始录音并说话。");
+    // Optionally transcribe system audio
+    let sysLines = "";
+    let sysReason = null;
+    let sysDetail = "";
+    if (noteSysAudioChunks.length > 0) {
+      addSystemBubble("正在转录输出音频（系统音频），请稍候...");
+      const sysResult = await transcribeSysAudio();
+      sysLines = sysResult.transcript ?? "";
+      sysReason = sysResult.reason ?? null;
+      sysDetail = sysResult.detail || sysResult.message || "";
     }
-    return;
+
+    const duration = noteStartTime ? formatNoteElapsed(Date.now() - noteStartTime) : "未知";
+    const sourceContext = sourceContextSnapshot
+      ?? await timeoutWithFallback(sourceContextPromise, 1200, null);
+
+    if (!micLines.trim() && !sysLines.trim()) {
+      if (micReason) {
+        const detail = micDetail ? `\n原因：${micDetail.slice(0, 180)}` : "";
+        addSystemBubble(`已录到输入音频（麦克风），但本地转写失败。${detail}`);
+      } else if (noteSysAudioChunks.length > 0 && sysReason === "no_api_provider") {
+        addSystemBubble("已录到输出音频（系统音频），但当前模型提供方不支持音频转写；请配置 OpenAI 音频转写 Key，或打开输入音频（麦克风）实时转写后再完成笔记。");
+      } else if (noteSysAudioChunks.length > 0 && sysReason === "audio_provider_unsupported") {
+        addSystemBubble("已录到输出音频（系统音频），但当前聊天模型不支持音频转写。你的 YouTube/网页音频捕获是成功的；请配置 OpenAI 音频转写 Key（UCA_TRANSCRIPTION_API_KEY 或 OPENAI_API_KEY），聊天仍可继续使用 DeepSeek。");
+      } else if (noteSysAudioChunks.length > 0 && sysReason === "local_transcriber_missing") {
+        addSystemBubble("已录到输出音频（系统音频），但本地转写依赖还没安装。运行：python -m pip install faster-whisper；安装后无需 OpenAI API，YouTube/网页音频会走本地 Whisper 转写。");
+      } else if (noteSysAudioChunks.length > 0 && sysReason === "local_transcription_failed") {
+        const detail = sysDetail ? `\n原因：${sysDetail.slice(0, 180)}` : "";
+        addSystemBubble(`已录到输出音频（系统音频），但本地 Whisper 转写失败。${detail}`);
+      } else if (noteSysAudioChunks.length > 0) {
+        const detail = sysDetail ? `\n原因：${sysDetail.slice(0, 180)}` : "";
+        addSystemBubble(`已录到输出音频（系统音频），但转写失败；请检查音频转写服务配置后再试。${detail}`);
+      } else {
+        addSystemBubble("笔记内容为空，请先开始录音并说话。");
+      }
+      return;
+    }
+
+    let fullTranscript = "";
+    if (micLines.trim()) fullTranscript += `## 输入音频（麦克风 / 本机说话）\n${micLines}\n\n`;
+    if (sysLines.trim()) fullTranscript += `## 输出音频（系统音频 / 扬声器播放）\n${sysLines}\n\n`;
+
+    await submitNoteTask({ fullTranscript, duration, sourceContext });
+  } finally {
+    if (ownsNoteFinishFlag) noteFinishInFlight = false;
   }
-
-  let fullTranscript = "";
-  if (micLines.trim()) fullTranscript += `## 输入音频（麦克风 / 本机说话）\n${micLines}\n\n`;
-  if (sysLines.trim()) fullTranscript += `## 输出音频（系统音频 / 扬声器播放）\n${sysLines}\n\n`;
-
-  await submitNoteTask({ fullTranscript, duration, sourceContext });
 }
 
 // Tab buttons inside the voice card
@@ -4974,6 +5093,9 @@ async function beginEchoSession() {
   echoSessionActive = true;
   echoHudLastText = "";
   echoHudLastAt = 0;
+  echoCommandStartedAt = Date.now();
+  echoCommandLastSpeechAt = 0;
+  armEchoCommandHardLimit();
   try { await window.ucaShell?.registerCtrlEnter?.("echo-session"); }
   catch (err) { console.warn("[echo] register Ctrl+Enter failed:", err); }
 }
@@ -4983,6 +5105,8 @@ async function endEchoSession() {
   echoSessionActive = false;
   echoHudLastText = "";
   echoHudLastAt = 0;
+  echoCommandStartedAt = 0;
+  echoCommandLastSpeechAt = 0;
   try { await window.ucaShell?.unregisterCtrlEnter?.(); }
   catch { /* ignore */ }
 }
@@ -5006,7 +5130,7 @@ window.ucaShell?.onEchoWake?.(async (payload = {}) => {
 // note (same as clicking 完成笔记). Either way, the session ends afterward.
 window.ucaShell?.onCtrlEnter?.(() => {
   if (!echoSessionActive) return;
-  if (noteActive) {
+  if (noteActive || noteFinishInFlight) {
     void finishNote().finally(() => endEchoSession());
   } else if (voiceMode) {
     void submitEchoVoiceCommand();

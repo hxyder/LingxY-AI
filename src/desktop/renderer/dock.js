@@ -44,21 +44,44 @@ setInterval(() => {
 // Matches wake-word "linxi" / "林夕" in live transcripts and hands off to
 // the overlay's existing voice/note pipeline via uca:echo-wake IPC.
 
-// Wake-word matching is intentionally lenient: Chinese STT is noisy and will
-// transcribe "linxi" as 林氏 / 林西 / 林夕 / 林熙 / 林希 / 灵犀 / etc. We
-// match via (a) a wide explicit Latin/Chinese phrase list, plus (b) a regex
-// that catches 林 + any common "xi"-sound character. If users mispronounce
-// we may false-positive, but that's acceptable for a voluntary wake word.
+// Wake-word matching accepts common STT variants of "linxi", but standby Echo
+// must stay quiet and must not wake from a generic command like "开始录音".
+// Keep this list close to plausible "linxi / lingxi" transcriptions.
 const WAKE_PHRASES = [
-  "linxi", "lin xi", "lin-xi", "林夕", "林西", "林氏", "林熙", "林希",
-  "林喜", "林溪", "林犀", "林席", "林系", "林细", "林戏", "林昔", "林洗",
-  "琳西", "琳熙", "琳溪", "琳希",
-  "灵犀", "邻西", "邻熙", "凌溪", "凌西", "凌希",
-  "领袖", "领悟"
+  "linxi", "lin xi", "lin-xi", "lingxi", "ling xi", "lynx",
+  "linsee", "lin see", "linsey", "lindsay", "linsy",
+  "林夕", "林西", "林氏", "林熙", "林希", "林喜", "林溪", "林犀",
+  "林席", "林系", "林细", "林戏", "林昔", "林洗", "林奇", "林起",
+  "林其", "林期", "林琪", "林琦", "林齐", "林七", "林息", "林惜",
+  "林戲", "林齊", "林錫", "林襲",
+  "琳西", "琳熙", "琳溪", "琳希", "琳奇", "琳琪",
+  "灵犀", "灵溪", "灵熙", "灵希", "邻西", "邻熙", "凌溪", "凌西", "凌希",
+  "靈犀", "靈溪", "靈熙", "靈希", "鄰西", "鄰熙", "淩溪", "淩西", "淩希",
+  "临溪", "临西", "淋溪", "淋西", "零西", "零息", "令西", "令希",
+  "臨溪", "臨西"
 ];
-const WAKE_REGEX_CN = /(?:林|琳|凌|灵|邻|临)\s*[夕西氏熙希喜溪犀席系细戏昔洗袭]/;
-const WAKE_REGEX_LATIN = /\blin[\s-]*xi\b/i;
-const NOTE_PHRASES = ["开始录音", "start recording", "开始录制", "开始记录"];
+const WAKE_FIRST_CHARS = "林琳凌淩灵靈邻鄰临臨淋零令陵麟";
+const WAKE_SECOND_CHARS = "夕西氏熙希喜溪犀席系细細戏戲昔洗袭襲奇起其期琪琦齐齊七息惜稀锡錫晰熹";
+const WAKE_REGEX_CN = new RegExp(`[${WAKE_FIRST_CHARS}]\\s*[${WAKE_SECOND_CHARS}]`);
+const WAKE_REGEX_LATIN = /\b(?:lin|ling|lyn)[\s-]*(?:xi|see|sey|sy|x)\b|\b(?:lindsay|linsey|linsee|lynx)\b/i;
+const NOTE_PHRASES = [
+  "开始录音", "開始錄音", "start recording", "开始录制", "開始錄製",
+  "开始记录", "開始記錄", "录音笔记", "錄音筆記", "会议记录", "會議記錄",
+  "会议纪要", "會議紀要", "meeting notes", "voice note"
+];
+const WAKE_TRADITIONAL_NORMALIZATION = Object.freeze({
+  靈: "灵",
+  鄰: "邻",
+  臨: "临",
+  淩: "凌",
+  戲: "戏",
+  細: "细",
+  襲: "袭",
+  齊: "齐",
+  錫: "锡",
+  領: "领",
+  悟: "悟"
+});
 
 let echoEnabled = false;
 let echoRecognizer = null;
@@ -69,8 +92,6 @@ let echoFallbackInterval = null;
 let echoRestartTimer = null;
 let echoLastSeenText = "";
 let echoLastSeenTime = 0;
-let echoLastBubbleText = "";
-let echoLastBubbleTime = 0;
 let echoLastWakeTime = 0;
 let echoResultWatchdog = null;
 let echoResultCountSinceStart = 0;
@@ -96,6 +117,7 @@ function normalizeForMatch(text) {
   // digits only — everything else becomes a space.
   return String(text ?? "")
     .toLowerCase()
+    .replace(/[靈鄰臨淩戲細襲齊錫領悟]/g, (ch) => WAKE_TRADITIONAL_NORMALIZATION[ch] ?? ch)
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -108,8 +130,9 @@ function matchesAny(text, phrases) {
 
 function matchesWake(text) {
   if (matchesAny(text, WAKE_PHRASES)) return true;
-  // Fuzzy Chinese: any 林/琳-like prefix + any 夕/西-like suffix character.
-  if (WAKE_REGEX_CN.test(text)) return true;
+  // Fuzzy Chinese remains bounded to two-character "lin/ling + xi-like"
+  // forms; generic command words never pass this gate.
+  if (WAKE_REGEX_CN.test(normalizeForMatch(text))) return true;
   if (WAKE_REGEX_LATIN.test(text)) return true;
   return false;
 }
@@ -168,11 +191,7 @@ function scheduleEchoResume({ delayMs = ECHO_RESUME_DELAY_MS, announce = true } 
     if (!echoEnabled || echoPausedForSession || attempt !== echoResumeAttempt) return;
     startEchoRecognizer();
     if (announce) {
-      window.ucaShell?.showEchoBubble?.({
-        text: "Echo 已恢复 · 可再次说 linxi",
-        kind: "info",
-        durationMs: 1800
-      });
+      console.debug("[echo] wake listener resumed");
     }
   }, delayMs);
 }
@@ -191,24 +210,14 @@ function handleEchoTranscript(text, { interim = false } = {}) {
   echoLastSeenText = text;
   echoLastSeenTime = now;
 
-  if (!isRecentDuplicate && matchesAny(text, NOTE_PHRASES)) {
-    void onWakeDetected("note", text);
+  const wakeMatched = matchesWake(text);
+  if (!isRecentDuplicate && wakeMatched) {
+    void onWakeDetected(matchesAny(text, NOTE_PHRASES) ? "note" : "voice", text);
     return;
   }
-  if (!isRecentDuplicate && matchesWake(text)) {
-    void onWakeDetected("voice", text);
-    return;
-  }
-  // Bubble feedback — throttle to 800ms so we don't spam the HUD while the
-  // recognizer is emitting interim results rapid-fire. Unique texts always
-  // get a slot (subject to the throttle).
-  if (now - echoLastBubbleTime < 800) return;
-  if (text === echoLastBubbleText) return;
-  echoLastBubbleText = text;
-  echoLastBubbleTime = now;
-  if (text.length > 1) {
-    window.ucaShell?.showEchoBubble?.({ text: `👂 ${text}`, kind: "info", durationMs: 1400 });
-  }
+  // Standby Echo is intentionally silent for non-wake speech. Showing raw
+  // transcripts here made false positives feel like the assistant had woken.
+  if (!interim && text.length > 1) console.debug("[echo] ignored non-wake transcript:", text);
 }
 
 function startEchoRecognizer() {
@@ -245,8 +254,12 @@ function startEchoRecognizer() {
         let wakeHit = null;
         for (let a = 0; a < r.length; a += 1) {
           const altText = r[a]?.transcript ?? "";
-          if (matchesAny(altText, NOTE_PHRASES)) { wakeHit = { kind: "note", text: altText }; break; }
-          if (matchesWake(altText)) { wakeHit = { kind: "voice", text: altText }; break; }
+          if (!matchesWake(altText)) continue;
+          wakeHit = {
+            kind: matchesAny(altText, NOTE_PHRASES) ? "note" : "voice",
+            text: altText
+          };
+          break;
         }
         if (wakeHit) {
           echoLastSeenText = wakeHit.text;
@@ -284,14 +297,14 @@ function startEchoRecognizer() {
     });
     rec.start();
     echoRecognizer = rec;
-    // Silent-failure watchdog: if Web Speech is "running" but never emits a
-    // single result event in 5 seconds (Chromium quietly disables speech in
-    // some Electron builds), switch to the local fallback. Without this the
-    // user just sees "nothing happens".
+    // Idle watchdog: Web Speech commonly emits no result while the room is
+    // quiet. That is healthy, not a failure. Do not switch to local fallback
+    // just because no one has spoken; otherwise Echo falls into /note/transcribe
+    // and reports "local transcription unavailable" on machines without local
+    // Whisper configured.
     echoResultWatchdog = setTimeout(() => {
       if (echoEnabled && !echoUsingFallback && echoResultCountSinceStart === 0) {
-        console.info("[echo] Web Speech silent for 5s — switching to local fallback");
-        startEchoFallback();
+        console.debug("[echo] Web Speech is idle; staying on online recognizer");
       }
     }, 5000);
   } catch (err) {
@@ -323,10 +336,7 @@ async function startEchoFallback() {
     });
     recorder.start(1000);
     echoFallbackRecorder = recorder;
-    window.ucaShell?.showEchoBubble?.({
-      text: "Echo 本地模式已启用",
-      kind: "info", durationMs: 1800
-    });
+    console.info("[echo] local fallback enabled");
     echoFallbackInterval = setInterval(async () => {
       if (echoFallbackChunks.length === 0) return;
       // Skip if the previous request hasn't finished — prevents overlapping
@@ -352,11 +362,11 @@ async function startEchoFallback() {
           const reason = payload.reason ?? payload.error ?? "transcribe_failed";
           if (reason !== echoFallbackLastErrorReason) {
             echoFallbackLastErrorReason = reason;
-            window.ucaShell?.showEchoBubble?.({
-              text: `Echo 转写不可用：${reason}`,
-              kind: "error",
-              durationMs: 3200
-            });
+            console.debug("[echo] local fallback unavailable; returning to online recognizer:", reason);
+          }
+          stopEchoFallback();
+          if (echoEnabled && !echoPausedForSession) {
+            scheduleEchoResume({ delayMs: 500, announce: false });
           }
           return;
         }
@@ -413,11 +423,6 @@ function applyEchoState(enabled) {
   console.info("[echo] applyEchoState →", enabled);
   applyEchoBadge();
   if (enabled) {
-    window.ucaShell?.showEchoBubble?.({
-      text: "Echo 已开启 · 说「linxi」唤醒",
-      kind: "info",
-      durationMs: 2400
-    });
     startEchoRecognizer();
   } else {
     echoPausedForSession = false;
@@ -450,6 +455,11 @@ window.ucaShell?.onEchoSessionEnd?.(() => {
   echoPausedForSession = false;
   window.__orbApi?.echoListening?.(false);
   scheduleEchoResume({ delayMs: ECHO_RESUME_DELAY_MS, announce: true });
+});
+
+window.ucaShell?.onEchoShortcutWake?.((payload = {}) => {
+  if (!echoEnabled) return;
+  void onWakeDetected(payload.kind === "note" ? "note" : "voice", payload.transcript || "shortcut");
 });
 
 // Last-resort self-heal: if Echo is on, not inside a handed-off session, and

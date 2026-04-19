@@ -156,5 +156,10 @@ contextBridge.exposeInMainWorld("ucaShell", {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:echo-session-end", listener);
     return () => ipcRenderer.removeListener("uca:echo-session-end", listener);
+  },
+  onEchoShortcutWake(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:echo-shortcut-wake", listener);
+    return () => ipcRenderer.removeListener("uca:echo-shortcut-wake", listener);
   }
 });
