@@ -259,6 +259,45 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       limit: { type: "number" }
     }
   },
+  account_send_email: {
+    type: "object",
+    required: [],
+    properties: {
+      accountId: { type: "string" },
+      provider: { type: "string", enum: ["google", "microsoft"] },
+      to: {},
+      cc: {},
+      bcc: {},
+      subject: { type: "string" },
+      body: { type: "string" }
+    }
+  },
+  account_upload_file: {
+    type: "object",
+    required: [],
+    properties: {
+      accountId: { type: "string" },
+      provider: { type: "string", enum: ["google", "microsoft"] },
+      localPath: { type: "string" },
+      folderId: { type: "string" },
+      newFileName: { type: "string" }
+    }
+  },
+  account_create_event: {
+    type: "object",
+    required: [],
+    properties: {
+      accountId: { type: "string" },
+      provider: { type: "string", enum: ["google", "microsoft"] },
+      title: { type: "string" },
+      startTime: { type: "string" },
+      endTime: { type: "string" },
+      attendees: {},
+      description: { type: "string" },
+      location: { type: "string" },
+      timeZone: { type: "string" }
+    }
+  },
 
   render_diagram: {
     type: "object",

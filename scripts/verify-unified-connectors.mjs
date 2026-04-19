@@ -23,6 +23,12 @@ import {
 } from "../src/service/connectors/core/token-manager.mjs";
 import { resolveAccount } from "../src/service/connectors/core/account-router.mjs";
 import { ACCOUNT_LIST_EMAILS_TOOL } from "../src/service/connectors/tools/read-tools.mjs";
+import {
+  ACCOUNT_CREATE_EVENT_TOOL,
+  ACCOUNT_SEND_EMAIL_TOOL,
+  ACCOUNT_UPLOAD_FILE_TOOL
+} from "../src/service/connectors/tools/write-tools.mjs";
+import { evaluateToolRisk } from "../src/service/action_tools/risk_matrix.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -287,6 +293,95 @@ async function runReadToolCase() {
   assert.equal(getAccountById(runtime, account.id).lastUsedAt !== null, true);
 }
 
+async function runWriteToolCases() {
+  const runtime = createRuntime(createInMemoryStoreScaffold());
+  const account = upsertConnectedAccount(runtime, {
+    provider: "microsoft",
+    providerAccountId: "write-m",
+    email: "writer@example.com",
+    scopes: ["Mail.Send", "Files.ReadWrite", "Calendars.ReadWrite"],
+    capabilities: microsoftScopesToCapabilities(["Mail.Send", "Files.ReadWrite", "Calendars.ReadWrite"])
+  });
+  saveOAuthTokenRecord(runtime, {
+    accountId: account.id,
+    accessTokenEncrypted: "write-access",
+    refreshTokenEncrypted: "write-refresh",
+    expiresAt: new Date(Date.now() + 3600_000).toISOString(),
+    scopes: account.scopes
+  });
+
+  const risk = evaluateToolRisk(ACCOUNT_SEND_EMAIL_TOOL, {
+    accountId: account.id,
+    to: ["ops@example.com"],
+    subject: "Check",
+    body: "Hello"
+  }, {});
+  assert.equal(risk.risk_level, "high");
+  assert.equal(risk.requires_confirmation, true);
+
+  const send = await ACCOUNT_SEND_EMAIL_TOOL.execute({
+    accountId: account.id,
+    to: ["ops@example.com"],
+    subject: "Check",
+    body: "Hello"
+  }, {
+    runtime,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, "https://graph.microsoft.com/v1.0/me/sendMail");
+      assert.equal(options.headers.Authorization, "Bearer write-access");
+      const payload = JSON.parse(options.body);
+      assert.equal(payload.message.subject, "Check");
+      return { ok: true, async json() { return {}; } };
+    }
+  });
+  assert.equal(send.success, true);
+
+  const uploadPath = path.join(tmpRoot, "upload.txt");
+  await writeFile(uploadPath, "upload body", "utf8");
+  const upload = await ACCOUNT_UPLOAD_FILE_TOOL.execute({
+    accountId: account.id,
+    localPath: uploadPath,
+    newFileName: "uploaded.txt"
+  }, {
+    runtime,
+    fetchImpl: async (url, options) => {
+      assert.equal(url.includes("/me/drive/root:/uploaded.txt:/content"), true);
+      assert.equal(options.method, "PUT");
+      return {
+        ok: true,
+        async json() {
+          return { id: "file-1", name: "uploaded.txt", webUrl: "https://example.com/file" };
+        }
+      };
+    }
+  });
+  assert.equal(upload.success, true);
+  assert.equal(upload.metadata.file.id, "file-1");
+
+  const event = await ACCOUNT_CREATE_EVENT_TOOL.execute({
+    accountId: account.id,
+    title: "Planning",
+    startTime: "2026-04-20T10:00:00",
+    endTime: "2026-04-20T10:30:00",
+    attendees: ["ops@example.com"]
+  }, {
+    runtime,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, "https://graph.microsoft.com/v1.0/me/events");
+      const payload = JSON.parse(options.body);
+      assert.equal(payload.subject, "Planning");
+      return {
+        ok: true,
+        async json() {
+          return { id: "event-1", subject: "Planning", webLink: "https://example.com/event" };
+        }
+      };
+    }
+  });
+  assert.equal(event.success, true);
+  assert.equal(event.metadata.event.id, "event-1");
+}
+
 await rm(tmpRoot, { recursive: true, force: true });
 await mkdir(tmpRoot, { recursive: true });
 
@@ -308,5 +403,6 @@ await runTokenRefreshCases();
 await runLegacyMigrationCase();
 runRouterCases();
 await runReadToolCase();
+await runWriteToolCases();
 
 console.log("Unified connectors verification passed.");

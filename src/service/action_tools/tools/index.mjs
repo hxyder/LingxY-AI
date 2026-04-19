@@ -16,6 +16,11 @@ import {
   ACCOUNT_LIST_EVENTS_TOOL,
   ACCOUNT_LIST_FILES_TOOL
 } from "../../connectors/tools/read-tools.mjs";
+import {
+  ACCOUNT_CREATE_EVENT_TOOL,
+  ACCOUNT_SEND_EMAIL_TOOL,
+  ACCOUNT_UPLOAD_FILE_TOOL
+} from "../../connectors/tools/write-tools.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2318,6 +2323,9 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   ACCOUNT_LIST_EMAILS_TOOL,
   ACCOUNT_LIST_FILES_TOOL,
   ACCOUNT_LIST_EVENTS_TOOL,
+  ACCOUNT_SEND_EMAIL_TOOL,
+  ACCOUNT_UPLOAD_FILE_TOOL,
+  ACCOUNT_CREATE_EVENT_TOOL,
   // UCA-076: GUI Automation
   GUI_FIND_ELEMENT_TOOL,
   GUI_CLICK_TOOL,

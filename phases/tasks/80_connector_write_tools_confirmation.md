@@ -1,6 +1,6 @@
 # Task UCA-080 — Write Tools, Confirmation & Provider Adapters
 
-**Status**: todo  
+**Status**: done
 **Priority**: P1  
 **Depends on**: UCA-079  
 **Branch**: `task/uca-080-connector-write-tools`
@@ -76,11 +76,23 @@
 
 ## 9. 执行记录
 
-- 状态：todo
-- 执行分支：
-- 开始日期：
-- 完成日期：
+- 状态：done
+- 执行分支：`task/uca-077-connector-foundation`
+- 开始日期：2026-04-19
+- 完成日期：2026-04-19
 - 实际新增内容：
+  - 扩展 Google/Microsoft provider adapters：send email、upload file、create event
+  - 新增 `write-tools.mjs`：`account_send_email`、`account_upload_file`、`account_create_event`
+  - 注册 Action Tool schemas 与 builtins
+  - `account_send_email` 标记为 `risk_level: high` 且 `requires_confirmation: true`
+  - 扩展 `scripts/verify-unified-connectors.mjs` 覆盖 Graph send/upload/create 和风险矩阵
 - 验证结果：
+  - `npm run verify:unified-connectors`
+  - `node scripts/verify-action-tools.mjs`
+  - `node scripts/verify-runtime-wiring.mjs`
+  - `node scripts/verify-service-core.mjs`
+  - `node scripts/verify-structure.mjs`
 - 遗留问题：
-- 交接给下一个任务：
+  - 发送/上传/创建事件为基础 REST 路径，未做附件、HTML 正文、大文件 upload session 或重试退避
+  - confirmation UI 复用现有 tool 参数预览，尚未做 connector 专属预览组件
+- 交接给下一个任务：UCA-081 可基于写工具返回的 `reauth_required` 和 provider errorCode 实现补授权 request 落库、恢复执行和 audit hardening

@@ -74,7 +74,7 @@
 | 77 | UCA-077 | [77_connector_registry_capability_foundation.md](77_connector_registry_capability_foundation.md) | Unified Account Connectors | UCA-048,UCA-049 | `task/uca-077-connector-foundation` | done |
 | 78 | UCA-078 | [78_multi_account_oauth_connectors_ui.md](78_multi_account_oauth_connectors_ui.md) | Unified Account Connectors | UCA-077 | `task/uca-078-multi-account-oauth-ui` | done |
 | 79 | UCA-079 | [79_account_router_unified_read_tools.md](79_account_router_unified_read_tools.md) | Unified Account Connectors | UCA-077,UCA-078 | `task/uca-079-account-router-read-tools` | done |
-| 80 | UCA-080 | [80_connector_write_tools_confirmation.md](80_connector_write_tools_confirmation.md) | Unified Account Connectors | UCA-079 | `task/uca-080-connector-write-tools` | todo |
+| 80 | UCA-080 | [80_connector_write_tools_confirmation.md](80_connector_write_tools_confirmation.md) | Unified Account Connectors | UCA-079 | `task/uca-080-connector-write-tools` | done |
 | 81 | UCA-081 | [81_connector_reauth_resume_audit.md](81_connector_reauth_resume_audit.md) | Unified Account Connectors | UCA-080 | `task/uca-081-connector-reauth-audit` | todo |
 | 82 | UCA-082 | [82_email_monitoring_connector_migration.md](82_email_monitoring_connector_migration.md) | Unified Account Connectors | UCA-044,UCA-045,UCA-081 | `task/uca-082-email-connector-migration` | todo |
 
