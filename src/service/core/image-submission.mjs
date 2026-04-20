@@ -231,6 +231,18 @@ function looksLikeConnectorFileSend(userCommand = "") {
     && /(@|邮件|邮箱|email|gmail|outlook|给.+发|sophie|接收者|收件人|to)/i.test(text);
 }
 
+// task_f8816920 regression: "打开它" (open this image) was forced into
+// multi_modal and the LLM only described the image content. The agent-loop
+// with open_file / copy / reveal / attachment tools is the right home for
+// any non-analysis action on an attached image. We still default to
+// multi_modal when the command clearly asks to analyse/describe/OCR — that
+// path actually needs the vision model.
+const VISION_ANALYSIS_RE = /(分析|识别|描述|说说.*(?:里面|内容)|看看.*(?:里面|内容|是什么)|里面.*是什么|(?:里面|内容).*(?:是什么|有什么)|什么东西|读出来|认一认|\bocr\b|\banalyze\b|\banalyse\b|\bdescribe\b|\bidentify\b|what\s+(?:is|are)\s+in|what\s+(?:does|do)\s+.*\s+show|read\s+(?:the\s+)?text)/i;
+
+function looksLikeVisionAnalysisIntent(userCommand = "") {
+  return VISION_ANALYSIS_RE.test(String(userCommand ?? ""));
+}
+
 export async function submitImageTask({
   imagePaths,
   userCommand,
@@ -244,11 +256,13 @@ export async function submitImageTask({
   executorOverride = "multi_modal",
   background = false
 }) {
-  // If the user's command is "send this file to X" rather than "analyse this
-  // image", route to the tool_using executor so connector tools are available.
-  // The image paths are surfaced to the planner via the task spec / context
-  // packet so account_send_email's attachmentPaths arg can be filled in.
-  if (executorOverride === "multi_modal" && looksLikeConnectorFileSend(userCommand)) {
+  // If the user's command is anything OTHER than a vision-analysis request
+  // ("分析/描述/识别" etc), route to tool_using so the agent-loop can reach
+  // open_file / copy / account_send_email / etc. The image paths are still
+  // surfaced in the context_packet so the planner knows the attachment
+  // exists. We only keep multi_modal for the actual vision-analysis case.
+  if (executorOverride === "multi_modal"
+      && (looksLikeConnectorFileSend(userCommand) || !looksLikeVisionAnalysisIntent(userCommand))) {
     const { submitContextTask } = await import("./context-submission.mjs");
     return submitContextTask({
       runtime,

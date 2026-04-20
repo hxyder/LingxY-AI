@@ -30,6 +30,7 @@ import { createPluginRegistry } from "../connectors/core/plugin-registry.mjs";
 // but doesn't persist to disk. Used when createServiceBootstrap() is called
 // without an explicit configStore (e.g. from verify scripts). Production code
 // passes a real disk-backed configStore from createPersistentRuntime().
+
 function createInMemoryConfigStore() {
   let state = {};
   return {
@@ -125,6 +126,17 @@ export function createServiceBootstrap({
       configStore,
       paths
     })
+  };
+  // Feature flags — toggled via environment variables so users can test
+  // experimental paths without editing code. Set before starting the
+  // desktop app:
+  //   PowerShell: $env:LINGXY_DAG_PLANNER="true"; $env:LINGXY_DAG_STREAMING="true"; npm run start:desktop
+  //   bash      : LINGXY_DAG_PLANNER=true LINGXY_DAG_STREAMING=true npm run start:desktop
+  runtime.featureFlags = {
+    dagPlanner: process.env.LINGXY_DAG_PLANNER === "true"
+      || process.env.LINGXY_DAG_PLANNER === "1",
+    dagStreaming: process.env.LINGXY_DAG_STREAMING === "true"
+      || process.env.LINGXY_DAG_STREAMING === "1"
   };
   runtime.emailMonitor = createEmailMonitor({ runtime });
   runtime.emailMonitor.start();

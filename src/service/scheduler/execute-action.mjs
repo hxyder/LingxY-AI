@@ -167,7 +167,7 @@ async function executeTaskTemplate({ runtime, actionTarget, actionParams, execut
 
 async function executeScheduledTask({ runtime, actionTarget, actionParams, executionMode, sourceLabel, sourceId }) {
   const userCommand = actionParams.userCommand ?? actionParams.command ?? sourceLabel ?? actionTarget;
-  return submitContextTask({
+  const submission = await submitContextTask({
     contextPacket: buildSchedulerContextPacket({
       title: actionParams.contextText ?? userCommand,
       sourceId,
@@ -182,6 +182,34 @@ async function executeScheduledTask({ runtime, actionTarget, actionParams, execu
     skipPlanLayer: true,
     runtime
   });
+
+  // Scheduled tasks often fire when the user isn't watching. When the task
+  // finishes, push a desktop notification with a short summary of the final
+  // answer so the user actually sees the result. Skip if the scheduled
+  // command itself already calls notify / send_email — otherwise we'd
+  // double-notify. Best-effort; never blocks task completion.
+  try {
+    if (actionParams.notifyOnComplete !== false
+        && !/(\bnotify\b|通知|发邮件|send\s+email|account_send_email)/i.test(userCommand)) {
+      const task = submission?.task;
+      const taskId = task?.task_id;
+      if (taskId && runtime?.actionToolRegistry?.call) {
+        const events = runtime.store?.getTaskEvents?.(taskId) ?? [];
+        const successEvent = [...events].reverse().find((e) => e.event_type === "success");
+        const resultText = typeof successEvent?.payload?.text === "string"
+          ? successEvent.payload.text
+          : (task?.result_summary ?? `定时任务"${actionTarget}"已完成`);
+        const title = `计划任务完成：${actionTarget ?? "schedule"}`;
+        const body = resultText.length > 240 ? resultText.slice(0, 240) + "…" : resultText;
+        // Fire and forget — a notify failure must not mark the scheduled
+        // run as failed.
+        runtime.actionToolRegistry.call("notify", { title, body }, { runtime, task })
+          .catch(() => { /* ignore */ });
+      }
+    }
+  } catch { /* silent */ }
+
+  return submission;
 }
 
 export async function executeProposedAction({
