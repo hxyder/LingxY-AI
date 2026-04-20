@@ -150,6 +150,62 @@ function extractJsonObject(text) {
  * Callers must NOT block on a successful response — all paths must have
  * a fallback to single-turn, per decision #4.
  */
+const REPLAN_SYSTEM_PROMPT = `You are the LingxY DAG REPLANNER. A previous plan was partially executed and a node failed with on_failure="replan". Emit ONE JSON object with the same schema as the planner, but the nodes you emit will REPLACE the remaining (unfinished) branch. Completed node results are available as context and you MAY reference them in placeholders just like before — their ids are given in "completed_node_ids" below and you can use {{nodeId.result.path}}.
+
+Rules:
+- Output JSON only, no prose.
+- Re-use completed node ids in your new plan's depends_on / placeholders (do NOT redefine them — they're already done).
+- Your new nodes can have new ids; they do not need to reproduce the original plan's ids.
+- Keep the replan minimal: fix or work around the failure, don't redesign what worked.
+- If you cannot see a path forward, emit a single agent_loop node whose params.userCommand reports the failure to the user and asks for guidance.`;
+
+export async function replanDag({
+  originalPlan,
+  completedResults,
+  failedNodeId,
+  failureMessage,
+  userCommand,
+  runtime,
+  contextPacket = null,
+  llm = callPlannerLLM
+}) {
+  const userMessage = [
+    summariseResources(contextPacket),
+    summariseWorkflows(runtime?.connectorCatalog),
+    `\nOriginal user command: ${userCommand}`,
+    `\nOriginal plan summary: ${originalPlan?.summary ?? "(unspecified)"}`,
+    `\nCompleted node ids (with results available via {{nodeId.path}}): ${Object.keys(completedResults ?? {}).join(", ") || "(none)"}`,
+    `\nFailed node: ${failedNodeId}`,
+    `\nFailure message: ${failureMessage?.slice?.(0, 600) ?? failureMessage}`,
+    `\nAvailable tools:\n${summariseTools(runtime?.actionToolRegistry?.list?.() ?? [])}`
+  ].filter(Boolean).join("\n");
+
+  const rawText = await llm({
+    userCommand,
+    systemMessage: REPLAN_SYSTEM_PROMPT,
+    userMessage
+  });
+  if (rawText == null) {
+    return { plan: null, reason: "no_provider" };
+  }
+
+  const parsed = extractJsonObject(rawText);
+  if (!parsed) {
+    return { plan: null, reason: "parse_failed", rawText };
+  }
+
+  // Replan plans are allowed to reference completed upstream nodes via
+  // {{nodeId.path}}. Tell validateDagPlan those ids are pre-seeded.
+  const validation = validateDagPlan(parsed, {
+    knownExternalIds: Object.keys(completedResults ?? {})
+  });
+  if (!validation.ok) {
+    return { plan: null, reason: "invalid", validation, rawText };
+  }
+
+  return { plan: parsed, validation, rawText };
+}
+
 export async function planDag({
   userCommand,
   runtime,

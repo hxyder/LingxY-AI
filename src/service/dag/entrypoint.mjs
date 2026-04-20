@@ -22,9 +22,14 @@ import {
   markTaskSucceeded,
   updateTask
 } from "../core/task-runtime.mjs";
-import { planDag } from "./planner.mjs";
+import { planDag, replanDag } from "./planner.mjs";
 import { runDagPlan } from "./executor.mjs";
 import { createNodeDispatcher } from "./dispatch.mjs";
+
+// Decision #4: cap DAG retries. After this many attempts (initial run + N
+// replans = MAX_DAG_ATTEMPTS total), the lane falls back to running the
+// original command through the single-turn agent.
+const MAX_DAG_ATTEMPTS = 3;
 
 function buildDagContextPacket({ userCommand, originalContextPacket = null }) {
   return {
@@ -100,21 +105,55 @@ export async function runDagLane({
   });
   updateTask(runtime, parentTask, { status: "running", sub_status: "dag_running", progress: 0 }, true);
 
-  // 3. Run
+  // 3. Run (with replan loop up to MAX_DAG_ATTEMPTS - 1 replans)
   const dispatcher = createNodeDispatcher({ runtime });
-  const snapshot = await runDagPlan({
-    plan: planResult.plan,
-    dispatchNode: (node, params, ctx) =>
-      dispatcher(node, params, { ...ctx, task: parentTask, parentTaskId: parentTask.task_id }),
-    onEvent(event) {
-      emitTaskEvent({
-        runtime,
-        taskId: parentTask.task_id,
-        eventType: `dag.${event.type}`,
-        payload: event
-      });
-    }
+  const emit = (event) => emitTaskEvent({
+    runtime,
+    taskId: parentTask.task_id,
+    eventType: `dag.${event.type}`,
+    payload: event
   });
+  const dispatchForRun = (node, params, ctx) =>
+    dispatcher(node, params, { ...ctx, task: parentTask, parentTaskId: parentTask.task_id });
+
+  let currentPlan = planResult.plan;
+  let snapshot = await runDagPlan({ plan: currentPlan, dispatchNode: dispatchForRun, onEvent: emit });
+  let attempts = 1;
+  const accumulatedResults = { ...snapshot.results };
+
+  while (snapshot.status === "failed"
+    && snapshot.failure?.policy === "replan"
+    && attempts < MAX_DAG_ATTEMPTS) {
+    attempts += 1;
+    emit({ type: "replan_attempt", attempt: attempts, failed_node_id: snapshot.failedNodeId });
+
+    const replan = await replanDag({
+      originalPlan: currentPlan,
+      completedResults: accumulatedResults,
+      failedNodeId: snapshot.failedNodeId,
+      failureMessage: snapshot.failure?.message,
+      userCommand,
+      runtime,
+      contextPacket
+    });
+    if (!replan.plan) {
+      emit({ type: "replan_failed", reason: replan.reason });
+      break;
+    }
+
+    // Run the replan plan with the completed results pre-seeded so its
+    // placeholders can still address upstream successes.
+    snapshot = await runDagPlan({
+      plan: replan.plan,
+      dispatchNode: dispatchForRun,
+      onEvent: emit,
+      context: { seededResults: accumulatedResults }
+    });
+    for (const [id, value] of Object.entries(snapshot.results ?? {})) {
+      accumulatedResults[id] = value;
+    }
+    currentPlan = replan.plan;
+  }
 
   // 4. Mark final status
   const replyText = summariseSnapshot(snapshot, planResult.plan);

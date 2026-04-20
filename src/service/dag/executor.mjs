@@ -73,17 +73,29 @@ export async function runDagPlan({
   plan,
   dispatchNode,
   context = {},
-  onEvent = () => {}
+  onEvent = () => {},
+  // Seeded upstream results from a previous (e.g. pre-replan) run. Their
+  // ids become available as placeholder lookups for the new plan's nodes,
+  // so a replan can say {{original_s3.result.foo}} without re-executing.
+  seededResults = null
 }) {
-  const validation = validateDagPlan(plan);
+  const seeded = { ...(seededResults ?? context?.seededResults ?? {}) };
+  const validation = validateDagPlan(plan, {
+    knownExternalIds: Object.keys(seeded)
+  });
   if (!validation.ok) {
     throw new Error(`invalid plan: ${validation.errors.join("; ")}`);
   }
 
   const layers = topoLayers(plan);
   const byId = new Map(plan.nodes.map((n) => [n.id, n]));
-  const results = {};
+  const results = { ...seeded };
   const statuses = {};
+  for (const id of Object.keys(results)) {
+    // Seeded nodes count as already-successful so downstream depends_on
+    // checks pass. They're NOT re-executed.
+    statuses[id] = "success";
+  }
   let failedNodeId = null;
   let failure = null;
 

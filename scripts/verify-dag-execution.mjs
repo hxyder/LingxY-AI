@@ -3,7 +3,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runDagPlan } from "../src/service/dag/executor.mjs";
 import { createNodeDispatcher } from "../src/service/dag/dispatch.mjs";
-import { planDag } from "../src/service/dag/planner.mjs";
+import { planDag, replanDag } from "../src/service/dag/planner.mjs";
+import { validateDagPlan } from "../src/service/dag/schema.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -214,4 +215,83 @@ const repoRoot = path.resolve(__dirname, "..");
   );
 }
 
-console.log("DAG execution layer (planner + executor + dispatch) verification passed.");
+// ── seededResults: replan can reference upstream nodes from a prior run ──
+
+{
+  const plan = {
+    nodes: [
+      {
+        id: "new1",
+        kind: "agent_loop",
+        params: { userCommand: "use {{old_s.result.text}}" }
+      }
+    ]
+  };
+  // Without seeded context the placeholder is unresolved.
+  const bad = validateDagPlan(plan);
+  assert.equal(bad.ok, false);
+
+  const good = validateDagPlan(plan, { knownExternalIds: ["old_s"] });
+  assert.equal(good.ok, true, `seeded external ids should validate: ${JSON.stringify(good.errors)}`);
+
+  const snap = await runDagPlan({
+    plan,
+    seededResults: { old_s: { result: { text: "hello" } } },
+    dispatchNode: async (node, params) => ({ echoed: params.userCommand })
+  });
+  assert.equal(snap.status, "success");
+  assert.equal(snap.results.new1.echoed, "use hello");
+}
+
+// ── replanDag: parses and validates the replan LLM output, rejects cycles
+
+{
+  const originalPlan = {
+    summary: "first",
+    nodes: [{ id: "a", kind: "action_tool", tool: "t", params: {} }]
+  };
+  const replanned = {
+    summary: "recover",
+    nodes: [
+      { id: "r1", kind: "agent_loop", params: { userCommand: "apologise to user" } }
+    ]
+  };
+  const r = await replanDag({
+    originalPlan,
+    completedResults: {},
+    failedNodeId: "a",
+    failureMessage: "boom",
+    userCommand: "original",
+    runtime: { actionToolRegistry: { list: () => [] } },
+    llm: async () => JSON.stringify(replanned)
+  });
+  assert.ok(r.plan, `replan should produce a plan, got ${JSON.stringify(r)}`);
+  assert.equal(r.plan.nodes.length, 1);
+}
+
+// replanDag accepts a plan whose placeholders point at completed upstream
+// nodes, because it validates with knownExternalIds = keys of completedResults.
+{
+  const replanned = {
+    summary: "reuse upstream",
+    nodes: [
+      {
+        id: "r1",
+        kind: "agent_loop",
+        params: { userCommand: "summarise {{src.text}}" }
+      }
+    ]
+  };
+  const r = await replanDag({
+    originalPlan: { summary: "first", nodes: [{ id: "src", kind: "action_tool", tool: "t", params: {} }] },
+    completedResults: { src: { text: "upstream data" } },
+    failedNodeId: "later_node_id",
+    failureMessage: "downstream error",
+    userCommand: "original",
+    runtime: { actionToolRegistry: { list: () => [] } },
+    llm: async () => JSON.stringify(replanned)
+  });
+  assert.ok(r.plan, `replan should accept placeholder pointing at completed node, got: ${JSON.stringify(r)}`);
+}
+
+console.log("DAG execution layer (planner + executor + dispatch + replan) verification passed.");

@@ -106,8 +106,14 @@ function detectCycle(nodeIds, edges) {
 /**
  * Validate a DAG plan. Returns {ok:true, edges} or {ok:false, errors:[]}.
  * edges is the derived adjacency list for later use by the scheduler.
+ *
+ * `knownExternalIds` lets callers declare node ids that exist in pre-seeded
+ * context (e.g. a replan with already-completed upstream nodes) — the
+ * validator treats placeholders referring to those ids as valid even
+ * though the ids aren't in plan.nodes.
  */
-export function validateDagPlan(plan) {
+export function validateDagPlan(plan, { knownExternalIds = [] } = {}) {
+  const external = new Set(knownExternalIds);
   const errors = [];
   if (!plan || typeof plan !== "object") {
     return { ok: false, errors: ["plan is not an object"] };
@@ -161,14 +167,19 @@ export function validateDagPlan(plan) {
   for (const node of nodes) {
     if (!node?.id) continue;
     for (const from of node.depends_on ?? []) {
-      if (!ids.has(from)) {
+      if (!ids.has(from) && !external.has(from)) {
         errors.push(`node ${node.id}: depends_on references unknown node "${from}"`);
         continue;
       }
-      edges.push({ from, to: node.id });
+      if (ids.has(from)) {
+        edges.push({ from, to: node.id });
+      }
+      // If `from` is external, it's already complete by assumption —
+      // no edge to add because the topological sort operates only on
+      // plan.nodes.
     }
     for (const { nodeId, raw } of iterPlaceholderRefs(node.params)) {
-      if (!ids.has(nodeId)) {
+      if (!ids.has(nodeId) && !external.has(nodeId)) {
         errors.push(`node ${node.id}: placeholder ${raw} references unknown node "${nodeId}"`);
       }
     }
