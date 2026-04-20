@@ -410,11 +410,30 @@ export async function submitContextTask({
   retryCount = 0,
   executorOverride = null,
   skipDecomposition = false,
+  skipPlanLayer = false,
   background = false
 }) {
   ensureRuntimeServices(runtime);
   const store = runtime.store;
   const queue = runtime.queue;
+
+  // TaskPlan pre-execution layer (Week 1: time-offset only). Runs BEFORE
+  // routing so a command like "5 分钟后发美股简报" becomes a one-shot schedule
+  // immediately instead of kicking off the full LLM loop with now-stale data.
+  // skipPlanLayer=true is set by the scheduler when it fires a delayed task,
+  // so we don't re-schedule what's already firing.
+  if (!skipPlanLayer && !parentTaskId) {
+    const { maybeHandleAsPlan } = await import("./intent/plan-executor.mjs");
+    const planned = await maybeHandleAsPlan({ runtime, userCommand, contextPacket, executionMode });
+    if (planned?.handled) {
+      return {
+        task: planned.task,
+        taskEvents: store.getTaskEvents(planned.task.task_id),
+        scheduledSchedule: planned.schedule
+      };
+    }
+  }
+
   const route = routeIntent(userCommand);
   const rawContextPacket = normalizeContextPacket(contextPacket);
   const inspection = runtime.securityBroker.inspectContext(rawContextPacket, {

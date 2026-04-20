@@ -11,7 +11,7 @@ import {
   updateTask
 } from "../core/task-runtime.mjs";
 
-function buildSchedulerContextPacket({ title, sourceId }) {
+function buildSchedulerContextPacket({ title, sourceId, filePaths = [], imagePaths = [] }) {
   return {
     schema_version: "1.0",
     context_id: `ctx_${crypto.randomUUID()}`,
@@ -22,6 +22,8 @@ function buildSchedulerContextPacket({ title, sourceId }) {
     security_level: "internal",
     redaction_applied: false,
     text: title,
+    file_paths: filePaths,
+    image_paths: imagePaths,
     selection_metadata: {
       source_id: sourceId
     },
@@ -168,11 +170,16 @@ async function executeScheduledTask({ runtime, actionTarget, actionParams, execu
   return submitContextTask({
     contextPacket: buildSchedulerContextPacket({
       title: actionParams.contextText ?? userCommand,
-      sourceId
+      sourceId,
+      filePaths: actionParams.file_paths ?? actionParams.filePaths ?? [],
+      imagePaths: actionParams.image_paths ?? actionParams.imagePaths ?? []
     }),
     userCommand,
     executionMode,
     executorOverride: actionParams.executorOverride ?? actionParams.executor ?? null,
+    // The plan layer already deferred this task once; skip it so the
+    // scheduled run actually executes instead of re-scheduling itself.
+    skipPlanLayer: true,
     runtime
   });
 }
