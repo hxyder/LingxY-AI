@@ -42,6 +42,12 @@
   padding: 24px;
   animation: cheatsheet-fade-in var(--duration-fast) var(--ease-standard);
 }
+/* The <div hidden> fallback rule [hidden]{display:none} is user-agent
+   level; our .cheatsheet-backdrop class defines display:grid and wins,
+   so the modal stayed visible from page load. Re-assert hidden here. */
+.cheatsheet-backdrop[hidden] {
+  display: none;
+}
 .cheatsheet-panel {
   background: var(--surface-strong);
   border: 1px solid var(--line);

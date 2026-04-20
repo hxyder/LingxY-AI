@@ -35,6 +35,16 @@ assert.ok(
   "refreshTaskDetail must render a skeleton loader while fetching"
 );
 
+// ── cheatsheet modal visibility guard (UCA-105 regression) ────────────
+// The .cheatsheet-backdrop class originally forced display:grid which
+// overrode the default [hidden]{display:none} user-agent rule, so the
+// modal was visible from page load and couldn't be closed. Enforce the
+// explicit override here.
+assert.ok(
+  /\.cheatsheet-backdrop\[hidden\]\s*\{[^}]*display:\s*none/s.test(shared),
+  "shared.css must re-assert display:none on [hidden] cheatsheet backdrop"
+);
+
 // ── cheatsheet modal ───────────────────────────────────────────────────
 const consoleHtml = read("src/desktop/renderer/console.html");
 assert.ok(
