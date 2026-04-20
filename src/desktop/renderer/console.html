@@ -1649,48 +1649,73 @@
          TAB: CHAT
          ═══════════════════════════════════════ -->
     <section id="panel-chat" class="tab-panel">
-      <div class="console-chat-shell">
-        <div id="consoleChatMessages" class="console-chat-messages">
-          <div class="console-chat-empty">Ask from the full Console when you want more room than the floating overlay.</div>
+      <section class="panel-section" aria-labelledby="consoleChatTitle" style="max-width:900px;">
+        <header class="panel-section-header">
+          <div class="panel-section-head-main">
+            <h3 id="consoleChatTitle" class="panel-section-title">Chat<span class="zh">对话</span></h3>
+            <span class="panel-section-sub">Ask from the full Console when you want more room than the floating overlay.</span>
+          </div>
+        </header>
+        <div class="console-chat-shell">
+          <div id="consoleChatMessages" class="console-chat-messages">
+            <div class="console-chat-empty">没有对话 — 开始一个吧。</div>
+          </div>
+          <form id="consoleChatForm" class="console-chat-composer">
+            <textarea id="consoleChatInput" rows="2" placeholder="Ask LingxY anything…  问我任何事"></textarea>
+            <button id="consoleChatSendBtn" type="submit" class="primary">Send<span class="zh">发送</span></button>
+            <span id="consoleChatState" class="muted" style="font-size:12px;"></span>
+          </form>
         </div>
-        <form id="consoleChatForm" class="console-chat-composer">
-          <textarea id="consoleChatInput" rows="2" placeholder="Ask UCA anything..."></textarea>
-          <button id="consoleChatSendBtn" type="submit" class="primary">Send</button>
-          <span id="consoleChatState" class="muted" style="font-size:12px;"></span>
-        </form>
-      </div>
+      </section>
     </section>
 
     <!-- ═══════════════════════════════════════
          TAB: FILES (artifact manager)
          ═══════════════════════════════════════ -->
     <section id="panel-files" class="tab-panel">
-      <div class="files-layout" style="display:grid;grid-template-columns:340px 1fr;gap:18px;height:100%;">
-        <div class="stack" style="min-height:0;">
-          <div class="row">
-            <strong style="font-size:13px;">All Generated Files</strong>
-            <div class="row" style="gap:8px;">
-              <span id="filesCount" class="muted" style="font-size:12px;">0</span>
+      <div class="files-layout">
+        <!-- ── Files list card ── -->
+        <section class="panel-section" aria-labelledby="filesListTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="filesListTitle" class="panel-section-title">All Generated Files<span class="zh">全部产物</span> <span id="filesCount" class="pill pill-neutral" style="margin-left:8px;">0</span></h3>
+              <span class="panel-section-sub">任务执行后产生的文件、图表、文档都会在这里。</span>
+            </div>
+            <div class="panel-section-actions">
               <button id="filesRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
             </div>
+          </header>
+          <div class="panel-section-body compact" style="flex:1;min-height:0;">
+            <label class="search-input" style="margin:0;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input id="filesFilterInput" type="text" placeholder="Filter by name, task, or extension…  搜索文件" aria-label="Filter files"/>
+            </label>
+            <div id="filesList" class="files-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;min-height:0;">
+              <p class="muted" style="font-size:12px;">No files yet. Generated artifacts will appear here.</p>
+            </div>
           </div>
-          <input id="filesFilterInput" type="text" placeholder="Filter by name, task, or extension..." style="margin-bottom:8px;">
-          <div id="filesList" class="files-list" style="overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:6px;min-height:0;">
-            <p class="muted" style="font-size:12px;">No files yet. Generated artifacts will appear here.</p>
-          </div>
-        </div>
-        <div class="stack" style="min-height:0;">
-          <div class="row">
-            <strong id="filesPreviewLabel" style="font-size:13px;">Preview</strong>
-            <div class="toolbar">
+        </section>
+
+        <!-- ── Preview card ── -->
+        <section class="panel-section" aria-labelledby="filesPreviewTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="filesPreviewTitle" class="panel-section-title" style="display:flex;align-items:baseline;gap:6px;">
+                <span id="filesPreviewLabel">Preview</span><span class="zh">预览</span>
+              </h3>
+              <span class="panel-section-sub">选中一个文件，预览它的内容或打开它。</span>
+            </div>
+            <div class="panel-section-actions">
               <button id="filesOpenBtn" class="secondary" type="button" hidden>Open</button>
               <button id="filesRevealBtn" class="secondary" type="button" hidden>Show in Folder</button>
               <button id="filesCopyPathBtn" class="secondary" type="button" hidden>Copy Path</button>
             </div>
+          </header>
+          <div class="panel-section-body" style="flex:1;min-height:0;">
+            <pre id="filesPreviewBody" class="artifact-preview muted" style="flex:1;min-height:0;overflow:auto;margin:0;">Select a file to preview.</pre>
+            <div id="filesPreviewMeta" class="muted" style="font-size:11px;"></div>
           </div>
-          <pre id="filesPreviewBody" class="artifact-preview muted" style="flex:1;min-height:0;overflow:auto;">Select a file to preview.</pre>
-          <div id="filesPreviewMeta" class="muted" style="font-size:11px;"></div>
-        </div>
+        </section>
       </div>
     </section>
 

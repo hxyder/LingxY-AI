@@ -266,6 +266,33 @@
   max-width: 860px;
 }
 
+/* Files tab: list on the left (narrow) + preview on the right (wide).
+   Both sides are .panel-section cards so they stack on narrow viewports. */
+.files-layout {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 18px;
+  height: calc(100vh - var(--topbar-height) - 72px);
+  min-height: 420px;
+}
+.files-layout > .panel-section {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0;
+  min-height: 0;
+}
+.files-layout > .panel-section > .panel-section-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+@media (max-width: 960px) {
+  .files-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+}
+
 /* Inline segmented-pill view-toggle (List / Week / Month and similar).
    Used in panel-section-actions; keeps each button small and neutral
    with an active accent state driven by aria-pressed. */
