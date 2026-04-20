@@ -387,6 +387,9 @@ const state = {
     dagExecutions: []
   },
   selectedTaskId: null,
+  // UCA-108: Tasks page filter/search state.
+  taskFilter: "all", // all | running | queued | success | errors
+  taskSearch: "",
   selectedTemplateId: null,
   currentHistoryQuery: "",
   detailVersion: 0,
@@ -648,18 +651,53 @@ function computeSummary(tasks, budget) {
   };
 }
 
+// UCA-108: render a 4-card stat strip. The "Today" card embeds an SVG
+// sparkline of completed tasks bucketed into the last 15 hours — a
+// rough-but-real signal of recent throughput. The other three cards are
+// plain numbers; "Spend" shows the monthly $ total and a "this month"
+// subtitle so the denominator is explicit.
+function buildTodaySparkline(tasks) {
+  const now = Date.now();
+  const bucketMs = 60 * 60 * 1000; // 1 hour per bucket
+  const buckets = new Array(15).fill(0);
+  for (const task of tasks) {
+    if (task.status !== "success") continue;
+    const when = Date.parse(task.updated_at ?? task.created_at ?? "");
+    if (Number.isNaN(when)) continue;
+    const ageH = Math.floor((now - when) / bucketMs);
+    if (ageH < 0 || ageH >= 15) continue;
+    buckets[14 - ageH] += 1;
+  }
+  const max = Math.max(1, ...buckets);
+  const W = 100;
+  const H = 28;
+  const step = W / (buckets.length - 1);
+  const pts = buckets.map((v, i) => [i * step, H - (v / max) * (H - 4) - 2]);
+  const line = pts.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const fill = `M0,${H} ${pts.map(([x, y]) => `L${x.toFixed(1)},${y.toFixed(1)}`).join(" ")} L${W},${H} Z`;
+  return `
+    <svg class="stat-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <path class="stat-spark-fill" d="${fill}"/>
+      <path class="stat-spark-line" d="${line}"/>
+    </svg>
+  `;
+}
+
 function renderSummary() {
-  const s = computeSummary(state.workspace.tasks, state.workspace.budget);
-  const items = [
-    ["Running", s.running],
-    ["Queued", s.queued],
-    ["Today", s.todaySuccess],
-    ["Spend", formatMoney(s.monthlySpend)]
+  const tasks = state.workspace.tasks ?? [];
+  const s = computeSummary(tasks, state.workspace.budget);
+  const cards = [
+    { label: "Running", value: s.running, sub: "Active right now" },
+    { label: "Queued", value: s.queued, sub: "Waiting for a worker" },
+    { label: "Today", value: s.todaySuccess, sub: "Succeeded today", spark: buildTodaySparkline(tasks) },
+    { label: "Spend", value: formatMoney(s.monthlySpend), sub: "This month" }
   ];
-  summaryGrid.innerHTML = items.map(([label, value]) => `
-    <div class="summary-tile">
-      <span class="muted" style="font-size:11px;">${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
+  summaryGrid.innerHTML = cards.map((c) => `
+    <div class="stat-card">
+      <div class="stat-card-label">${escapeHtml(c.label)}</div>
+      <div class="stat-card-value">${escapeHtml(String(c.value))}</div>
+      <div class="stat-card-sub">${escapeHtml(c.sub)}</div>
+      ${c.spark ?? ""}
     </div>
   `).join("");
 }
@@ -1829,13 +1867,63 @@ async function configureOfficeAddins() {
   }
 }
 
+// UCA-108: Which filter a task matches. The "errors" bucket covers the
+// handful of failure-ish statuses the runtime emits; "running" also
+// captures "cancelling" since the UI treats that as still in flight.
+function taskMatchesFilter(task, filter) {
+  if (filter === "all") return true;
+  if (filter === "running") return ["running", "cancelling"].includes(task.status);
+  if (filter === "queued") return task.status === "queued";
+  if (filter === "success") return task.status === "success";
+  if (filter === "errors") return ["failed", "cancelled", "partial_success"].includes(task.status);
+  return true;
+}
+
+function countTasksByFilter(tasks) {
+  return {
+    all: tasks.length,
+    running: tasks.filter((t) => taskMatchesFilter(t, "running")).length,
+    queued: tasks.filter((t) => taskMatchesFilter(t, "queued")).length,
+    success: tasks.filter((t) => taskMatchesFilter(t, "success")).length,
+    errors: tasks.filter((t) => taskMatchesFilter(t, "errors")).length
+  };
+}
+
 function renderTasks() {
-  const tasks = state.workspace.tasks ?? [];
+  const allTasks = state.workspace.tasks ?? [];
+  // Update filter chip counts from the unfiltered list so every chip
+  // always shows its real matchable set, not whatever the current
+  // filter happens to display.
+  const counts = countTasksByFilter(allTasks);
+  for (const el of document.querySelectorAll("[data-count-for]")) {
+    const bucket = el.dataset.countFor;
+    el.textContent = `${counts[bucket] ?? 0}`;
+  }
+
+  // Apply filter + search.
+  const filter = state.taskFilter ?? "all";
+  const search = (state.taskSearch ?? "").trim().toLowerCase();
+  let tasks = allTasks.filter((t) => taskMatchesFilter(t, filter));
+  if (search) {
+    tasks = tasks.filter((t) =>
+      (t.user_command ?? "").toLowerCase().includes(search)
+      || (t.intent ?? "").toLowerCase().includes(search)
+      || (t.task_id ?? "").toLowerCase().includes(search)
+    );
+  }
+
   taskCount.textContent = `${tasks.length}`;
   if (tasks.length === 0) {
-    renderEmpty(taskList, "No tasks yet.");
-    state.selectedTaskId = null;
-    renderTaskDetail(null);
+    const emptyMsg = allTasks.length === 0
+      ? "No tasks yet."
+      : `No tasks match this filter${search ? ` + search "${search}"` : ""}.`;
+    renderEmpty(taskList, emptyMsg);
+    // Don't clobber the selected detail when the only reason the list is
+    // empty is that the filter hides the selected task.
+    if (allTasks.length === 0) {
+      state.selectedTaskId = null;
+      renderTaskDetail(null);
+    }
     return;
   }
 
@@ -3281,6 +3369,22 @@ taskComposer.addEventListener("submit", async (event) => {
   } catch (error) {
     submitState.textContent = `Failed: ${error.message}`;
   }
+});
+
+// UCA-108: task filter chips + search input wire-up.
+for (const chip of document.querySelectorAll("#taskFilterChips .filter-chip")) {
+  chip.addEventListener("click", () => {
+    const nextFilter = chip.dataset.filter ?? "all";
+    state.taskFilter = nextFilter;
+    for (const other of document.querySelectorAll("#taskFilterChips .filter-chip")) {
+      other.setAttribute("aria-pressed", other === chip ? "true" : "false");
+    }
+    renderTasks();
+  });
+}
+document.querySelector("#taskSearchInput")?.addEventListener("input", (event) => {
+  state.taskSearch = event.target.value ?? "";
+  renderTasks();
 });
 
 refreshButton.addEventListener("click", () => void refreshWorkspace());

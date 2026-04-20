@@ -11,6 +11,136 @@
   letter-spacing: 0;
 }
 
+/* ── stat strip & stat card (Tasks page v2 header) ─────────── */
+.stat-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+@media (max-width: 960px) {
+  .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.stat-card {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-strong);
+  box-shadow: var(--shadow-sm);
+  position: relative;
+  min-height: 84px;
+}
+.stat-card-label {
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.stat-card-value {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+  line-height: 1;
+  margin-top: 8px;
+  letter-spacing: 0;
+}
+.stat-card-sub {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  margin-top: 4px;
+}
+.stat-spark {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 100px;
+  height: 28px;
+  pointer-events: none;
+}
+.stat-spark path.stat-spark-fill { fill: var(--accent-soft); }
+.stat-spark path.stat-spark-line { fill: none; stroke: var(--accent); stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; }
+
+/* ── filter chips row (Tasks / Schedules / etc) ───────────── */
+.filter-chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-strong);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-standard),
+    color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+.filter-chip:hover {
+  background: var(--surface-soft);
+  color: var(--ink);
+  border-color: var(--line-strong);
+  transform: none;
+}
+.filter-chip[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+.filter-chip-count {
+  font-size: var(--fs-xs);
+  padding: 1px 6px;
+  border-radius: var(--radius-pill);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-weight: var(--fw-semibold);
+}
+.filter-chip[aria-pressed="true"] .filter-chip-count {
+  background: rgba(255, 255, 255, 0.22);
+  color: var(--accent-ink);
+}
+
+/* ── task list search input (with lead icon) ─────────────── */
+.search-input {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-strong);
+  color: var(--ink);
+  transition: border-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
+}
+.search-input:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.search-input svg { color: var(--muted); flex-shrink: 0; }
+.search-input input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: var(--fs-sm);
+  color: inherit;
+  outline: none;
+  width: 100%;
+}
+.search-input input::placeholder { color: var(--muted); }
+
 /* ── pill: 7-semantic status badge (solid bg + border + text) ─ */
 .pill {
   display: inline-flex;

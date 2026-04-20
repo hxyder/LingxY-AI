@@ -1494,8 +1494,8 @@
          TAB: TASKS
          ═══════════════════════════════════════ -->
     <section id="panel-tasks" class="tab-panel active">
-      <!-- summary row -->
-      <div id="summaryGrid" class="summary-row" style="margin-bottom:16px;"></div>
+      <!-- UCA-108: stat strip (4 cards; "Today" carries a 15-bucket sparkline) -->
+      <div id="summaryGrid" class="stat-strip"></div>
 
       <!-- composer -->
       <form id="taskComposer" class="composer-bar" style="margin-bottom:16px;">
@@ -1507,6 +1507,18 @@
       <!-- tasks grid -->
       <div class="tasks-layout">
         <div class="task-sidebar">
+          <!-- UCA-108: search + filter chips above the task list -->
+          <label class="search-input" style="margin-bottom:8px;">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="taskSearchInput" type="text" placeholder="Search tasks…  搜索任务" aria-label="Search tasks" />
+          </label>
+          <div class="filter-chips" id="taskFilterChips" role="group" aria-label="Task status filter" style="margin-bottom:10px;">
+            <button type="button" class="filter-chip" data-filter="all" aria-pressed="true">All<span class="zh">全部</span><span class="filter-chip-count" data-count-for="all">0</span></button>
+            <button type="button" class="filter-chip" data-filter="running" aria-pressed="false">Running<span class="filter-chip-count" data-count-for="running">0</span></button>
+            <button type="button" class="filter-chip" data-filter="queued" aria-pressed="false">Queued<span class="filter-chip-count" data-count-for="queued">0</span></button>
+            <button type="button" class="filter-chip" data-filter="success" aria-pressed="false">Success<span class="filter-chip-count" data-count-for="success">0</span></button>
+            <button type="button" class="filter-chip" data-filter="errors" aria-pressed="false">Errors<span class="filter-chip-count" data-count-for="errors">0</span></button>
+          </div>
           <div class="row">
             <strong style="font-size:13px;">Recent Tasks</strong>
             <span id="taskCount" class="muted" style="font-size:12px;">0</span>
