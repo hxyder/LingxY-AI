@@ -119,15 +119,16 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       description: { type: "string" },
       trigger: {
         type: "object",
-        description: "Schedule trigger. Use type=\"cron\" with an expression, type=\"interval\" with seconds/minutes/hours, or type=\"file_watch\" with a path. Alternatively pass {natural_language: \"every day at 9am\"} to let the backend parse it.",
+        description: "Schedule trigger. Pick ONE form:\n- type=\"at\" + run_at=ISO8601 for a ONE-SHOT fire at a specific moment (preferred for '5 分钟后' / '明天早上 9 点' / 'in 10 minutes').\n- type=\"cron\" + expression for recurring (e.g. '0 9 * * *' daily 9am).\n- type=\"interval\" + seconds for recurring every-N-seconds.\n- type=\"file_watch\" + path for filesystem triggers.\nOr pass {natural_language: '5 分钟后' / 'tomorrow 9am' / 'every day at 9am'} and the backend parses it into one of the above.",
         properties: {
-          type: { type: "string", enum: ["cron", "interval", "file_watch"] },
+          type: { type: "string", enum: ["cron", "interval", "at", "file_watch"] },
           expression: { type: "string", description: "Cron expression, required when type=cron." },
           seconds: { type: "number" },
           minutes: { type: "number" },
           hours: { type: "number" },
+          run_at: { type: "string", description: "ISO8601 timestamp for a one-shot 'at' trigger. Example: 2026-04-20T14:45:00-04:00" },
           path: { type: "string", description: "Watched path, required when type=file_watch." },
-          natural_language: { type: "string", description: "Optional plain-language trigger, parsed server-side." },
+          natural_language: { type: "string", description: "Plain-language trigger, parsed server-side. Examples: '5 分钟后', '明天上午9点', 'in 2 hours', 'every weekday at 9am'." },
           timezone: { type: "string" }
         }
       },
