@@ -64,9 +64,11 @@ for (const filter of ["all", "running", "queued", "success", "errors"]) {
     `filter chip missing count slot for "${filter}"`
   );
 }
-// Exactly one chip is pressed at load.
+// Exactly one chip is pressed PER chip row. With UCA-121 we now have
+// three rows: #taskFilterChips (status), #taskDateFilterChips (date),
+// #taskSourceFilterChips (source). One "pressed" each is expected.
 const pressed = (consoleHtml.match(/filter-chip"[^>]*aria-pressed="true"/g) ?? []).length;
-assert.equal(pressed, 1, `expected 1 aria-pressed filter chip, found ${pressed}`);
+assert.ok(pressed >= 1 && pressed <= 3, `expected 1-3 pressed filter chips (one per row), found ${pressed}`);
 
 // ── search input ────────────────────────────────────────────────────────
 assert.ok(/id="taskSearchInput"/.test(consoleHtml), "missing #taskSearchInput");

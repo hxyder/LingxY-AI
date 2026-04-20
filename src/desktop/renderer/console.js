@@ -62,10 +62,12 @@ const budgetSummary = document.querySelector("#budgetSummary");
 const budgetForm = document.querySelector("#budgetForm");
 const monthlyBudgetInput = document.querySelector("#monthlyBudgetInput");
 const budgetState = document.querySelector("#budgetState");
-const historyForm = document.querySelector("#historyForm");
-const historyQueryInput = document.querySelector("#historyQueryInput");
-const historyList = document.querySelector("#historyList");
-const historyPreview = document.querySelector("#historyPreview");
+// UCA-121: #panel-history retired. Safe-null refs kept for any
+// remaining callers; everything below is `?.` optional-chained.
+const historyForm = null;
+const historyQueryInput = null;
+const historyList = null;
+const historyPreview = null;
 const projectCount = document.querySelector("#projectCount");
 const projectList = document.querySelector("#projectList");
 const projectConversationCount = document.querySelector("#projectConversationCount");
@@ -159,7 +161,6 @@ const PANEL_INTROS = {
   chat: ["Dialogue", "Console chat", "A full-size conversation surface for longer prompts and follow-up work."],
   files: ["Artifacts", "Produced files", "Files ready to open, reveal, or reuse."],
   schedules: ["Automation", "Scheduled work", "Reminders, recurring tasks, and pending approvals."],
-  history: ["Memory", "History search", "Past task context and retrieved results."],
   projects: ["Threads", "Conversation memory", "Overlay projects and saved conversations."],
   connectors: ["Integrations", "Connections", "Email, MCP, skills, Code CLI, and Office handoffs."],
   settings: ["Policy", "Runtime settings", "AI routing, privacy, feature flags, and output paths."],
@@ -275,9 +276,14 @@ applyConsoleInformationArchitecture();
     try { localStorage.setItem("lingxy.rail", next); } catch { /* ignore */ }
   });
 
-  // Restore the last visited view.
+  // Restore the last visited view. UCA-121: "history" was retired;
+  // if someone's localStorage still points there, silently reset.
   try {
-    const savedView = localStorage.getItem("lingxy.view");
+    let savedView = localStorage.getItem("lingxy.view");
+    if (savedView === "history") {
+      savedView = "tasks";
+      localStorage.setItem("lingxy.view", "tasks");
+    }
     if (savedView && document.querySelector(`[data-tab="${savedView}"]`)) {
       // Defer to next frame so any page-load hooks (applyConsoleInfo…
       // etc) finish their own default state first.
@@ -287,9 +293,10 @@ applyConsoleInformationArchitecture();
 })();
 
 // UCA-117: map view id → English breadcrumb label shown in the v3 topbar.
+// UCA-121: "history" dropped; Memory page retired.
 const VIEW_CRUMBS = {
   tasks: "Tasks", chat: "Chat", files: "Files", schedules: "Schedules",
-  history: "Memory", projects: "Projects",
+  projects: "Projects",
   connectors: "Connectors", settings: "Settings", advanced: "Advanced"
 };
 
@@ -412,6 +419,9 @@ const state = {
   // UCA-108: Tasks page filter/search state.
   taskFilter: "all", // all | running | queued | success | errors
   taskSearch: "",
+  // UCA-121: Memory/history absorbed into Tasks via these two filters.
+  taskDateFilter: "all", // all | today | 7d | 30d
+  taskSourceFilter: "all", // dynamic (aggregates from state.workspace.tasks)
   selectedTemplateId: null,
   currentHistoryQuery: "",
   detailVersion: 0,
@@ -1935,6 +1945,45 @@ function taskMatchesFilter(task, filter) {
   return true;
 }
 
+// UCA-121: date + source filters replace the retired Memory tab.
+// dateFilter: "all" | "today" | "7d" | "30d"
+function taskMatchesDate(task, dateFilter) {
+  if (!dateFilter || dateFilter === "all") return true;
+  const raw = task.created_at ?? task.updated_at ?? "";
+  const ts = Date.parse(raw);
+  if (Number.isNaN(ts)) return true;  // don't hide tasks with missing timestamps
+  const now = Date.now();
+  if (dateFilter === "today") {
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+    return ts >= startOfDay.getTime();
+  }
+  if (dateFilter === "7d")  return (now - ts) <= 7  * 24 * 60 * 60 * 1000;
+  if (dateFilter === "30d") return (now - ts) <= 30 * 24 * 60 * 60 * 1000;
+  return true;
+}
+
+// sourceFilter: "all" or one of the aggregated values from taskSourceCandidates().
+function taskMatchesSource(task, sourceFilter) {
+  if (!sourceFilter || sourceFilter === "all") return true;
+  const src = task.source_type ?? task.executor ?? "";
+  return src === sourceFilter;
+}
+
+// Aggregate the unique source values present in the current task set.
+// Order: overlay / chat / schedule / email / cli / mcp / api / other.
+function taskSourceCandidates(tasks) {
+  const seen = new Set();
+  for (const t of tasks) {
+    const src = t.source_type ?? t.executor ?? "";
+    if (src) seen.add(src);
+  }
+  const preferred = ["overlay", "chat", "schedule", "email", "cli", "mcp", "api"];
+  const ordered = preferred.filter((s) => seen.has(s));
+  for (const s of [...seen].sort()) if (!ordered.includes(s)) ordered.push(s);
+  return ordered;
+}
+
 function countTasksByFilter(tasks) {
   return {
     all: tasks.length,
@@ -1956,10 +2005,49 @@ function renderTasks() {
     el.textContent = `${counts[bucket] ?? 0}`;
   }
 
-  // Apply filter + search.
+  // UCA-121: rebuild the source-filter chip row from the current tasks
+  // so sources surface only when there's at least one task in that source.
+  const sourceChipRow = document.querySelector("#taskSourceFilterChips");
+  if (sourceChipRow) {
+    const sources = taskSourceCandidates(allTasks);
+    const allChip = sourceChipRow.querySelector('[data-source="all"]');
+    const existing = [...sourceChipRow.querySelectorAll('[data-source]:not([data-source="all"])')];
+    const existingSet = new Set(existing.map((b) => b.dataset.source));
+    // Add missing source chips.
+    for (const s of sources) {
+      if (existingSet.has(s)) continue;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "filter-chip";
+      btn.dataset.source = s;
+      btn.setAttribute("aria-pressed", "false");
+      btn.textContent = s;
+      btn.addEventListener("click", () => handleTaskSourceChip(btn));
+      sourceChipRow.appendChild(btn);
+    }
+    // Remove stale chips whose source no longer exists.
+    for (const b of existing) {
+      if (!sources.includes(b.dataset.source)) b.remove();
+    }
+    // If the currently-selected source no longer exists, fall back to "all".
+    if (state.taskSourceFilter !== "all" && !sources.includes(state.taskSourceFilter)) {
+      state.taskSourceFilter = "all";
+      sourceChipRow.querySelectorAll(".filter-chip").forEach((b) =>
+        b.setAttribute("aria-pressed", b.dataset.source === "all" ? "true" : "false")
+      );
+    }
+  }
+
+  // Apply filter + search + date + source (all AND'd).
   const filter = state.taskFilter ?? "all";
   const search = (state.taskSearch ?? "").trim().toLowerCase();
-  let tasks = allTasks.filter((t) => taskMatchesFilter(t, filter));
+  const dateFilter = state.taskDateFilter ?? "all";
+  const sourceFilter = state.taskSourceFilter ?? "all";
+  let tasks = allTasks.filter((t) =>
+    taskMatchesFilter(t, filter)
+    && taskMatchesDate(t, dateFilter)
+    && taskMatchesSource(t, sourceFilter)
+  );
   if (search) {
     tasks = tasks.filter((t) =>
       (t.user_command ?? "").toLowerCase().includes(search)
@@ -2787,27 +2875,31 @@ function renderSchedules() {
     if (scheduleCalendar) scheduleCalendar.style.display = "none";
   }
 
+  // UCA-121: render as v3 .sched-row — toggle + title/meta + action group.
   scheduleList.innerHTML = schedules.map((s) => {
-    const color = s.color || s.metadata?.color || "#6366f1";
+    const color = s.color || s.metadata?.color || "";
     const categoryLabel = s.category || s.metadata?.category || "";
-    const completedBadge = s.completed_at ? `<span class="chip ready" style="font-size:10px;">completed</span>` : "";
+    const completedBadge = s.completed_at ? `<span class="pill pill-ok">completed</span>` : "";
+    const enabledChecked = s.enabled ? " checked" : "";
     return `
-    <div class="schedule-item" style="border-left:4px solid ${escapeHtml(color)};padding-left:10px;">
-      <div class="row">
-        <div>
-          ${categoryLabel ? `<span style="font-size:10px;padding:1px 6px;border-radius:999px;background:${escapeHtml(color)}22;color:${escapeHtml(color)};font-weight:500;">${escapeHtml(categoryLabel)}</span>` : ""}
-          <h4>${escapeHtml(s.name ?? s.schedule_id)}</h4>
-          <p class="muted">${escapeHtml(s.trigger_type ?? "manual")} · ${escapeHtml(s.execution_mode ?? "interactive")}</p>
+    <div class="sched-row" style="${color ? `border-left:3px solid ${escapeHtml(color)};` : ""}">
+      <label class="toggle" title="${s.enabled ? "Disable" : "Enable"}">
+        <input type="checkbox"${enabledChecked} data-toggle-schedule-id="${escapeHtml(s.schedule_id)}" data-enabled="${s.enabled ? "false" : "true"}"/>
+        <span class="toggle-track"></span>
+      </label>
+      <div>
+        <div class="sched-title">${escapeHtml(s.name ?? s.schedule_id)}</div>
+        <div class="sched-meta">
+          ${categoryLabel ? `<span class="tag">${escapeHtml(categoryLabel)}</span>` : ""}
+          <span class="tag">${escapeHtml(s.trigger_type ?? "manual")}</span>
+          <span>Next: ${escapeHtml(formatDateTime(s.next_run_at))}</span>
+          <span>Last: ${escapeHtml(s.last_run_status ?? "never")}</span>
+          ${completedBadge}
         </div>
-        <span class="chip ${s.enabled ? "ready" : "warning"}">${s.enabled ? "enabled" : "paused"}</span>
-        ${completedBadge}
       </div>
-      <div class="row wrap" style="margin-top:6px;">
-        <span class="muted" style="font-size:11px;">Next: ${escapeHtml(formatDateTime(s.next_run_at))}</span>
-        <span class="muted" style="font-size:11px;">Last: ${escapeHtml(s.last_run_status ?? "never")}</span>
-        <button class="secondary" data-run-schedule-id="${escapeHtml(s.schedule_id)}">Run Now</button>
-        <button class="ghost" data-toggle-schedule-id="${escapeHtml(s.schedule_id)}" data-enabled="${s.enabled ? "false" : "true"}">${s.enabled ? "Pause" : "Resume"}</button>
-        <button class="ghost" data-delete-schedule-id="${escapeHtml(s.schedule_id)}">Delete</button>
+      <div class="sched-actions btn-group">
+        <button class="btn btn-sm" data-run-schedule-id="${escapeHtml(s.schedule_id)}">Run now</button>
+        <button class="btn btn-sm btn-ghost" data-delete-schedule-id="${escapeHtml(s.schedule_id)}">Delete</button>
       </div>
     </div>
   `; }).join("");
@@ -2961,54 +3053,10 @@ function renderBudget() {
   monthlyBudgetInput.value = `${b.limits?.monthly_usd_limit ?? ""}`;
 }
 
-function renderHistory() {
-  const results = state.workspace.history ?? [];
-  historyPreview.textContent = state.currentHistoryQuery
-    ? `Query: ${state.currentHistoryQuery}\nResults: ${results.length}`
-    : "No results yet.";
-  if (results.length === 0) {
-    renderEmpty(historyList, state.currentHistoryQuery ? "No matches." : "Enter a keyword to search.");
-    return;
-  }
-
-  historyList.innerHTML = results.map((r) => {
-    const taskExists = r.id && state.workspace.tasks.some((t) => t.task_id === r.id);
-    return `
-    <div class="history-item" data-history-summary="${escapeHtml(r.metadata?.summary ?? r.text ?? "")}" data-history-task-id="${escapeHtml(r.id ?? "")}" role="button" tabindex="0" style="text-align:left;">
-      <div class="row">
-        <strong style="font-size:13px;">${escapeHtml(r.metadata?.summary ?? r.id)}</strong>
-        <span class="muted" style="font-size:11px;">${escapeHtml(Number(r.score ?? 0).toFixed(4))}</span>
-      </div>
-      <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(r.metadata?.created_at ?? "")}</p>
-      ${taskExists ? `<button type="button" class="ghost" data-open-history-task="${escapeHtml(r.id)}" style="margin-top:8px;font-size:11px;padding:4px 8px;">Open task</button>` : ""}
-    </div>
-  `;
-  }).join("");
-
-  for (const btn of historyList.querySelectorAll("[data-history-summary]")) {
-    btn.addEventListener("click", () => {
-      historyPreview.textContent = btn.dataset.historySummary || "No summary";
-    });
-    btn.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        historyPreview.textContent = btn.dataset.historySummary || "No summary";
-      }
-    });
-  }
-
-  for (const btn of historyList.querySelectorAll("[data-open-history-task]")) {
-    btn.addEventListener("click", (event) => {
-      event.stopPropagation();
-      const taskId = btn.dataset.openHistoryTask;
-      if (!taskId) return;
-      state.selectedTaskId = taskId;
-      switchTab("tasks");
-      renderTasks();
-      void refreshTaskDetail();
-    });
-  }
-}
+// UCA-121: renderHistory retired. The "search past tasks" UX now
+// lives in the Tasks page via date + source filters (see
+// taskMatchesFilter below). state.workspace.history kept as an
+// empty array so anything that still reads it sees a no-op.
 
 function buildDefaultProjectStore() {
   return {
@@ -3329,11 +3377,8 @@ async function refreshWorkspace() {
     const shell = await window.ucaShell.getShellStatus();
     state.serviceBaseUrl = shell.serviceBaseUrl ?? state.serviceBaseUrl;
 
-    const historyPromise = state.currentHistoryQuery
-      ? fetchJson("/history/search", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ query: state.currentHistoryQuery, limit: 8 }) })
-      : Promise.resolve({ results: [] });
-
-    const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, emailP, emailSettingsP, historyP] = await Promise.all([
+    // UCA-121: /history/search call retired along with the Memory tab.
+    const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, emailP, emailSettingsP] = await Promise.all([
       fetchJson("/health"),
       fetchJson("/tasks"),
       fetchJson("/approvals"),
@@ -3348,8 +3393,7 @@ async function refreshWorkspace() {
       fetchJson("/ai/mcp"),
       fetchJson("/ai/skills"),
       fetchJson("/config/email/accounts"),
-      fetchJson("/config/email/settings"),
-      historyPromise
+      fetchJson("/config/email/settings")
     ]);
 
     state.workspace = {
@@ -3366,7 +3410,7 @@ async function refreshWorkspace() {
       skills: skillsP.skills ?? [],
       emailAccounts: emailP.accounts ?? [],
       emailDigestSettings: emailSettingsP.settings ?? {},
-      history: historyP.results ?? [],
+      history: [], // UCA-121: retired
       security: securityP.security ?? null,
       audit: auditP.entries ?? [],
       dagExecutions: dagP.executions ?? []
@@ -3384,7 +3428,7 @@ async function refreshWorkspace() {
     renderTemplates();
     renderDagExecutions();
     renderBudget();
-    renderHistory();
+    // UCA-121: renderHistory() retired
     renderProjectsWorkspace();
     void syncConsoleProjectStoreFromService({ rerender: true });
     renderPrivacy();
@@ -3446,6 +3490,28 @@ document.querySelector("#taskSearchInput")?.addEventListener("input", (event) =>
   state.taskSearch = event.target.value ?? "";
   renderTasks();
 });
+
+// UCA-121: date filter chips (All / Today / 7d / 30d).
+for (const chip of document.querySelectorAll("#taskDateFilterChips .filter-chip")) {
+  chip.addEventListener("click", () => {
+    state.taskDateFilter = chip.dataset.date ?? "all";
+    for (const other of document.querySelectorAll("#taskDateFilterChips .filter-chip")) {
+      other.setAttribute("aria-pressed", other === chip ? "true" : "false");
+    }
+    renderTasks();
+  });
+}
+// Source chips are dynamic; shared handler used for both the static "All"
+// chip and the JS-generated per-source chips.
+function handleTaskSourceChip(chip) {
+  state.taskSourceFilter = chip.dataset.source ?? "all";
+  for (const other of document.querySelectorAll("#taskSourceFilterChips .filter-chip")) {
+    other.setAttribute("aria-pressed", other === chip ? "true" : "false");
+  }
+  renderTasks();
+}
+document.querySelector('#taskSourceFilterChips .filter-chip[data-source="all"]')
+  ?.addEventListener("click", (event) => handleTaskSourceChip(event.currentTarget));
 
 refreshButton.addEventListener("click", () => void refreshWorkspace());
 openOverlayButton.addEventListener("click", async () => await window.ucaShell.showWindow("overlay"));
@@ -3745,11 +3811,7 @@ budgetForm.addEventListener("submit", async (event) => {
   }
 });
 
-historyForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  state.currentHistoryQuery = historyQueryInput.value.trim();
-  await refreshWorkspace();
-});
+// UCA-121: historyForm submit handler retired (form removed from DOM).
 
 projectCreateForm?.addEventListener("submit", (event) => {
   event.preventDefault();

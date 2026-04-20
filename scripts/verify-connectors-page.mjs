@@ -40,10 +40,11 @@ const nextPanelStart = consoleHtml.indexOf('id="panel-settings"', connStart);
 assert.ok(nextPanelStart > connStart, "panel-settings not found after connectors");
 const panelMarkup = consoleHtml.slice(connStart, nextPanelStart);
 
+// UCA-121: Morning digest moved from Connectors to Schedules. 4 cards
+// remain on the Connectors tab now.
 const expectedTitles = [
   { id: "connAccountsTitle", text: "Accounts" },
   { id: "connEmailTitle", text: "Email inbox" },
-  { id: "connDigestTitle", text: "Morning digest" },
   { id: "connMcpTitle", text: "MCP tools" },
   { id: "connWebhooksTitle", text: "Webhooks" }
 ];
@@ -62,7 +63,7 @@ for (const { id } of expectedTitles) {
 }
 
 // ── bilingual Chinese suffixes present on each section title ───────────
-for (const zh of ["账户连接", "邮箱", "晨间摘要", "工具服务器", "Webhook 集成"]) {
+for (const zh of ["账户连接", "邮箱", "工具服务器", "Webhook 集成"]) {
   assert.ok(
     panelMarkup.includes(zh),
     `connectors section missing Chinese suffix "${zh}"`
@@ -70,10 +71,11 @@ for (const zh of ["账户连接", "邮箱", "晨间摘要", "工具服务器", "
 }
 
 // ── existing IDs preserved (panel renderers depend on them) ────────────
+// UCA-121: connDigest* ids moved to the Schedules panel; verified there
+// via verify-console-rendered-workspace.
 for (const id of [
   "accountConnectorsList", "connEmailList", "connEmailPicker",
   "connEmailInlineForm", "connEmailConnectBtn", "connEmailCancelBtn",
-  "connDigestEnabled", "connDigestTestBtn", "connDigestTestState",
   "connectorsMcpList", "connectorsMcpRefreshBtn",
   "connectorsConfigMount", "emailAdvancedMount"
 ]) {

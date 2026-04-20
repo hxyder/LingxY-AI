@@ -31,9 +31,10 @@ assert.ok(
 );
 
 // ── all 9 view targets present as rail items ────────────────────────────
+// UCA-121: "history" retired; Memory moved to Tasks via filters.
 const expectedViews = [
   "tasks", "chat", "files", "schedules",
-  "history", "projects",
+  "projects",
   "connectors", "settings", "advanced"
 ];
 for (const view of expectedViews) {

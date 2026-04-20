@@ -18,7 +18,8 @@ assert.equal(consoleHtml.includes("Templates"), true);
 assert.equal(consoleHtml.includes("Import JSON"), true);
 assert.equal(consoleHtml.includes("DAG Workflow"), true);
 assert.equal(consoleHtml.includes("Budget"), true);
-assert.equal(consoleHtml.includes("History"), true);
+// UCA-121: "History" tab retired. "History" may still appear in
+// cheatsheet label for task timeline; verify is intentionally removed.
 assert.equal(consoleHtml.includes("Privacy & Security"), true);
 assert.equal(consoleHtml.includes("Audit Log"), true);
 assert.equal(consoleHtml.includes("Artifacts"), true);
@@ -36,7 +37,7 @@ assert.equal(consoleJs.includes('fetchJson("/templates/import"'), true);
 assert.equal(consoleJs.includes('fetchJson("/budget")'), true);
 assert.equal(consoleJs.includes('fetchJson("/dag/executions")'), true);
 assert.equal(consoleJs.includes('fetchJson("/dag/preview"'), true);
-assert.equal(consoleJs.includes('fetchJson("/history/search"'), true);
+// UCA-121: /history/search call retired along with the Memory tab.
 assert.equal(consoleJs.includes('fetchJson("/security/state")'), true);
 assert.equal(consoleJs.includes('fetchJson("/audit-log")'), true);
 assert.equal(consoleJs.includes('fetchJson("/config/email/settings")'), true);
