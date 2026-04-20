@@ -62,10 +62,22 @@ kbd, .kbd {
 /* =========================================================================
    BUTTONS
    ========================================================================= */
-/* UCA-120: .btn canonical spec. Three sizes (sm / base / lg), one
-   .btn-group flex wrapper, icon sizes locked to size via gap.
-   Every button defaults to base, variants compose on top. */
-.btn, button {
+/* UCA-120 / UCA-124 fix: .btn carries the "single-row pill action"
+   appearance. The bare `button` selector no longer gets fixed height
+   or white-space:nowrap — that would squash multi-line button
+   components (task-item, rail-item, palette-item, artifact-row,
+   file-row, sched-row, chat-session) to 32 px and cause the
+   overlapping-content chaos seen in the Tasks list. Bare buttons
+   get only minimal base styling; opinionated sizing lives on .btn. */
+button {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -82,11 +94,30 @@ kbd, .kbd {
   white-space: nowrap;
   line-height: 1;
 }
-.btn:hover, button:hover {
+.btn:hover {
   background: var(--panel-2);
   border-color: var(--line-2);
 }
-.btn svg, button svg { width: 16px; height: 16px; flex-shrink: 0; }
+.btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+/* Bare <button class="primary|secondary|ghost"> aliases — these carry
+   the same opinionated spec as .btn, re-applied here so legacy markup
+   that doesn't include .btn still renders correctly. */
+button.primary, button.secondary, button.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+  white-space: nowrap;
+  line-height: 1;
+  cursor: pointer;
+}
 
 /* Unified action group — all .btn inside share gap + baseline. */
 .btn-group {

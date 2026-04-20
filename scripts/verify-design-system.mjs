@@ -133,8 +133,11 @@ assert.ok(/--ink:\s*#fafafa/.test(darkBlock), "dark --ink must be #fafafa");
 
 // ── UCA-120: .btn canonical spec ──────────────────────────────────────
 // .btn base: height 32, .btn-sm: 26, .btn-lg: 38.
+// UCA-124: .btn spec split from bare `button` — the bare button
+// selector no longer forces height/white-space to avoid squashing
+// multi-line button components like .task-item.
 assert.ok(
-  /\.btn,\s*button\s*\{[\s\S]*?height:\s*32px/.test(shared),
+  /\.btn\s*\{[\s\S]*?height:\s*32px/.test(shared),
   ".btn base must declare height: 32px"
 );
 assert.ok(
