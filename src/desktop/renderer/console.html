@@ -431,17 +431,57 @@
         max-width: 800px;
       }
 
+      /* UCA-114: .settings-group upgraded to match .panel-section
+         without rewriting every Settings / Advanced panel's HTML.
+         Title row reads as a proper card header (bordered bottom);
+         body content inherits uniform horizontal padding. */
       .settings-group {
-        padding: 16px;
+        padding: 0;
         border-radius: var(--radius-lg);
         background: var(--surface-strong);
         border: 1px solid var(--line);
+        box-shadow: var(--shadow-sm);
+        overflow: hidden;
       }
-
-      .settings-group-title {
-        font-size: 14px;
-        font-weight: 700;
-        margin: 0 0 12px;
+      /* Title as a direct child — header row with divider. */
+      .settings-group > .settings-group-title {
+        padding: 14px 18px;
+        margin: 0;
+        border-bottom: 1px solid var(--line);
+        font-family: var(--font-display);
+        font-size: var(--fs-md);
+        font-weight: var(--fw-semibold);
+        color: var(--ink);
+      }
+      /* Title wrapped in a .row with an adjacent action button —
+         style the row as the header instead. */
+      .settings-group > .row:first-child {
+        padding: 14px 18px;
+        margin: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .settings-group > .row:first-child > .settings-group-title {
+        padding: 0;
+        margin: 0;
+        border-bottom: 0;
+      }
+      /* Body content area — every non-title direct child gets 18 px
+         horizontal padding. Top padding comes from the first body
+         child; bottom padding from the last. */
+      .settings-group > *:not(.settings-group-title):not(.row:first-child) {
+        padding-left: 18px;
+        padding-right: 18px;
+      }
+      .settings-group > .settings-group-title ~ *:first-of-type {
+        padding-top: 14px;
+      }
+      .settings-group > .settings-group-title + p,
+      .settings-group > .row:first-child + p {
+        margin-top: 14px;
+        padding-top: 0;
+      }
+      .settings-group > :last-child:not(.settings-group-title):not(.row:first-child) {
+        padding-bottom: 16px;
       }
 
       .switch-row {
