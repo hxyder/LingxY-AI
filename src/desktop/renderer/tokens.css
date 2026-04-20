@@ -21,15 +21,16 @@
   /* UCA-120: pure white light mode (no warm paper), pure near-black
      dark mode. Distinct from Claude's warm-ink palette. Terracotta
      accent stays as the brand color and provides the only warmth. */
+  /* UCA-123: contrast bump — #737373 felt too pale on pure white. */
   --bg: #ffffff;
   --panel: #ffffff;
-  --panel-2: #fafafa;
+  --panel-2: #f7f7f7;
   --ink: #0a0a0a;
-  --ink-2: #2a2a2a;
-  --muted: #737373;
-  --muted-2: #a3a3a3;
-  --line: #e8e8e8;
-  --line-2: #d4d4d4;
+  --ink-2: #1f1f1f;
+  --muted: #595959;
+  --muted-2: #8f8f8f;
+  --line: #e2e2e2;
+  --line-2: #c9c9c9;
 
   --accent: #b85c2a;
   --accent-ink: #ffffff;

@@ -300,11 +300,17 @@
         flex-shrink: 0;
       }
 
-      /* ── quick action toolbar (sits above the input bar) ── */
+      /* ── quick action toolbar (sits above the input bar) ──
+         UCA-123: flex-wrap so the 语音/定时 chips drop instead of
+         clipping past the right edge when content > 520 px. box-sizing
+         belt-and-suspenders in case some reset missed this. */
       .quick-toolbar {
         width: var(--overlay-width);
+        max-width: var(--overlay-width);
+        box-sizing: border-box;
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 6px;
         padding: 9px 14px;
         margin-bottom: 10px;
@@ -323,7 +329,8 @@
       .quick-toolbar .quick-btn {
         flex: 0 0 auto;
         height: 28px;
-        padding: 0 12px;
+        padding: 0 10px;
+        max-width: calc(var(--overlay-width) - 32px);
         border-radius: 999px;
         border: 1px solid var(--line);
         background: var(--surface-soft);
@@ -334,6 +341,9 @@
         align-items: center;
         gap: 5px;
         cursor: pointer;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
         transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
       }
 
@@ -502,10 +512,14 @@
       /* ── input bar ── */
       .input-bar {
         width: var(--overlay-width);
+        max-width: var(--overlay-width);
+        box-sizing: border-box;
         display: flex;
-        align-items: flex-end;
-        gap: 8px;
-        padding: 12px 16px;
+        /* UCA-123: center-align so send / close / notification buttons
+           sit at the same baseline regardless of textarea height. */
+        align-items: center;
+        gap: 6px;
+        padding: 10px 14px;
         border-radius: 22px;
         background: rgba(255, 255, 255, 0.82);
         backdrop-filter: blur(40px) saturate(180%);
@@ -543,9 +557,12 @@
         color: var(--muted);
       }
 
+      /* UCA-123: unified 32×32 size for all circular action buttons so
+         Send / Close / Notification sit in a tidy row. Previously
+         send-btn was 36 and aux-btn was 30, breaking the visual rhythm. */
       .input-bar .send-btn {
-        width: 36px;
-        height: 36px;
+        width: 32px;
+        height: 32px;
         border-radius: 50%;
         border: none;
         background: linear-gradient(135deg, var(--accent), var(--accent-strong));
@@ -587,8 +604,8 @@
       }
 
       .input-bar .aux-btn {
-        width: 30px;
-        height: 30px;
+        width: 32px;
+        height: 32px;
         border-radius: 50%;
         border: 1px solid var(--line);
         background: var(--surface-soft);
@@ -599,6 +616,7 @@
         flex-shrink: 0;
         font-size: 14px;
       }
+      .input-bar .aux-btn svg { width: 14px; height: 14px; }
 
       .input-bar .aux-btn:hover {
         background: var(--surface-strong);
