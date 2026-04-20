@@ -286,6 +286,13 @@ applyConsoleInformationArchitecture();
   } catch { /* ignore */ }
 })();
 
+// UCA-117: map view id → English breadcrumb label shown in the v3 topbar.
+const VIEW_CRUMBS = {
+  tasks: "Tasks", chat: "Chat", files: "Files", schedules: "Schedules",
+  history: "Memory", projects: "Projects",
+  connectors: "Connectors", settings: "Settings", advanced: "Advanced"
+};
+
 function switchTab(tabId) {
   tabButtons.forEach((btn) => {
     const isActive = btn.dataset.tab === tabId;
@@ -301,6 +308,9 @@ function switchTab(tabId) {
     }
   });
   tabPanels.forEach((panel) => panel.classList.toggle("active", panel.id === `panel-${tabId}`));
+  // UCA-117: reflect the current view in the topbar breadcrumb.
+  const crumb = document.querySelector("#topCrumb");
+  if (crumb) crumb.textContent = VIEW_CRUMBS[tabId] ?? tabId;
   // UCA-107: persist the selection so the app boots back to where you left.
   try { localStorage.setItem("lingxy.view", tabId); } catch { /* sandbox: ignore */ }
 }
@@ -645,8 +655,42 @@ function renderEmpty(container, message) {
 }
 
 function setRuntimeBadge(ok, message) {
-  runtimeState.textContent = message;
-  runtimeState.className = `chip ${ok ? "ready" : "danger"}`;
+  // UCA-117: runtime state is now a v3 pill (not a legacy chip), and
+  // lives hidden by default in the topbar. The rail's sys pill at the
+  // bottom is the primary "runtime ok" indicator; this one only surfaces
+  // when something is actively wrong.
+  if (runtimeState) {
+    if (!ok) {
+      runtimeState.textContent = message;
+      runtimeState.className = "pill pill-err";
+      runtimeState.hidden = false;
+    } else {
+      runtimeState.hidden = true;
+    }
+  }
+  // Rail system pill mirrors the top-level state.
+  const railSys = document.querySelector("#railSys");
+  const railSysText = document.querySelector("#railSysText");
+  if (railSys && railSysText) {
+    railSysText.textContent = ok ? "Runtime ready" : "Runtime offline";
+    railSys.style.opacity = ok ? "1" : "0.6";
+  }
+  // Update the rail endpoint line too.
+  const railEndpoint = document.querySelector("#railEndpoint");
+  if (railEndpoint && ok) {
+    try {
+      const u = new URL(state.serviceBaseUrl);
+      railEndpoint.textContent = `${u.hostname}:${u.port || 80}`;
+    } catch { /* keep default */ }
+  }
+}
+
+// UCA-117: mirror the active chat-routed model into the topbar runtime pill.
+function updateTopRuntimePill() {
+  const el = document.querySelector("#topRuntimeModel");
+  if (!el) return;
+  const route = (state.workspace?.providers ?? []).find((p) => p?.available && p?.configured);
+  el.textContent = route?.model ?? route?.provider_id ?? "runtime";
 }
 
 /* ═══════════════════════════════════════════════
@@ -3329,6 +3373,7 @@ async function refreshWorkspace() {
     };
 
     setRuntimeBadge(true, `Connected · ${state.serviceBaseUrl}`);
+    updateTopRuntimePill();
     renderSummary();
     renderOnboarding();
     renderIntegrations();
@@ -3571,6 +3616,9 @@ document.addEventListener("keydown", (event) => {
       if (template) searchInput.setSelectionRange(template.length, template.length);
     });
   }
+
+  // UCA-117: the v3 topbar's search pill is the primary palette trigger.
+  document.querySelector("#openPaletteBtn")?.addEventListener("click", () => setOpen(true));
 
   document.addEventListener("keydown", (event) => {
     if (event.ctrlKey && (event.key === "k" || event.key === "K")) {

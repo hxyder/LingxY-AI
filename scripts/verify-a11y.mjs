@@ -36,7 +36,7 @@ const consoleHtml = read("src/desktop/renderer/console.html");
 // class="app-rail">). The rail still uses data-tab + role="tab" on
 // each item so the a11y baseline carries over; we just don't require
 // the <nav class="tab-bar"> wrapper anymore.
-const hasRail = /<aside class="app-rail"/.test(consoleHtml);
+const hasRail = /<aside class="[^"]*\b(?:rail|app-rail)\b[^"]*"/.test(consoleHtml);
 const hasTabBar = /<nav class="tab-bar"[^>]*role="tablist"/.test(consoleHtml);
 assert.ok(hasRail || hasTabBar, "console must have either a tab bar or a left rail nav");
 

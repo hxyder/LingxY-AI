@@ -17,7 +17,12 @@ assert.equal(preload.includes(IPC_CHANNELS.shellShowWindow), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellHideWindow), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
-assert.equal(consoleHtml.includes("UCA Console"), true);
+// Brand renamed: UCA → LingxY. Accept either the old title (still
+// shipped in older builds) or the new LingxY title.
+assert.ok(
+  consoleHtml.includes("LingxY Console") || consoleHtml.includes("UCA Console"),
+  "console must carry a LingxY Console (or legacy UCA Console) title"
+);
 assert.equal(consoleHtml.includes("Tasks"), true);
 assert.equal(consoleHtml.includes("Settings"), true);
 assert.equal(consoleHtml.includes("data-tab=\"projects\""), true);

@@ -21,8 +21,8 @@ const consoleJs = read("src/desktop/renderer/console.js");
 
 // ── the left rail exists ────────────────────────────────────────────────
 assert.ok(
-  /<aside class="app-rail"/.test(consoleHtml),
-  "console.html must host a <aside class=\"app-rail\">"
+  /<aside class="[^"]*\b(?:rail|app-rail)\b/.test(consoleHtml),
+  "console.html must host an <aside> with class .rail or .app-rail"
 );
 // Old tab-bar <nav> is gone.
 assert.ok(

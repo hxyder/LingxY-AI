@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>UCA Console</title>
+    <title>LingxY Console</title>
     <link rel="stylesheet" href="./shared.css">
     <style>
       body {
@@ -703,732 +703,43 @@
       }
       .mcp-server-config.open { display: block; }
 
-      /* ── editorial console pass, sourced from DESIGN.md ── */
-      :root {
-        --bg-0: #f9f9f9;
-        --bg-1: #f3f3f3;
-        --bg-2: #e2e2e2;
-        --surface: #f9f9f9;
-        --surface-strong: #ffffff;
-        --surface-soft: #f3f3f3;
-        --glass: rgba(249, 249, 249, 0.78);
-        --glass-border: transparent;
-        --ink: #000000;
-        --ink-soft: #1f1f1f;
-        --muted: #474747;
-        --line: rgba(0, 0, 0, 0.14);
-        --line-strong: rgba(0, 0, 0, 0.22);
-        --accent: #000000;
-        --accent-strong: #000000;
-        --accent-soft: #e2e2e2;
-        --teal-soft: #f3f3f3;
-        --success: #000000;
-        --warning: #474747;
-        --danger: #ba1a1a;
-        --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.04);
-        --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.04);
-        --shadow-md: 0 12px 28px rgba(0, 0, 0, 0.035);
-        --shadow-sm: none;
-        --radius-xl: 8px;
-        --radius-lg: 8px;
-        --radius-md: 8px;
-        --radius-sm: 6px;
-      }
-
-      * {
-        letter-spacing: 0 !important;
-      }
-
-      body {
-        background: #f9f9f9;
-        color: #000000;
-      }
-
-      .topbar {
-        padding: 20px 32px 14px;
-        background: rgba(249, 249, 249, 0.82);
-        border-bottom: 0;
-        box-shadow: none;
-      }
-
-      .topbar-logo {
-        width: 32px;
-        height: 32px;
-        border-radius: 8px;
-        background: #000000;
-        color: #ffffff;
-      }
-
-      .topbar-title {
-        font-size: 15px;
-        font-weight: 650;
-      }
-
-      .tab-bar {
-        position: sticky;
-        top: 66px;
-        z-index: 9;
-        gap: 6px;
-        padding: 8px 32px 14px;
-        background: rgba(249, 249, 249, 0.78);
-        border-bottom: 0;
-        backdrop-filter: blur(20px);
-      }
-
-      .tab-btn {
-        min-height: 34px;
-        padding: 7px 12px;
-        border: 0;
-        border-radius: 8px;
-        color: #474747;
-        background: transparent;
-        font-size: 12px;
-      }
-
-      .tab-btn.active {
-        color: #ffffff;
-        background: #000000;
-      }
-
-      .tab-panel {
-        padding: 30px 32px 44px;
-        max-width: 1280px;
-        margin: 0 auto;
-      }
-
-      .console-panel-intro {
-        display: grid;
-        grid-template-columns: minmax(150px, 0.42fr) minmax(0, 1fr);
-        gap: 28px;
-        align-items: end;
-        margin: 8px 0 28px;
-      }
-
-      .console-panel-intro .eyebrow,
-      .section-caption,
-      .section-label {
-        color: #000000;
-        font-size: 11px;
-        font-weight: 650;
-        text-transform: uppercase;
-      }
-
-      .console-panel-intro h1 {
-        margin: 0;
-        font-family: var(--font-display);
-        font-size: 48px;
-        line-height: 0.96;
-        font-weight: 720;
-      }
-
-      .console-panel-intro p {
-        grid-column: 2;
-        margin: 8px 0 0;
-        max-width: 56ch;
-        color: #474747;
-        font-size: 14px;
-        line-height: 1.6;
-      }
-
-      .summary-row {
-        gap: 12px;
-        margin-bottom: 22px !important;
-      }
-
-      .summary-tile,
-      .task-item,
-      .approval-item,
-      .schedule-item,
-      .template-item,
-      .history-item,
-      .integration-item,
-      .timeline-item,
-      .surface,
-      .settings-group,
-      .detail-section,
-      .artifact-item,
-      .task-child-item,
-      .mcp-server-card {
-        border: 0 !important;
-        border-radius: 8px !important;
-        background: #f3f3f3 !important;
-        box-shadow: none !important;
-      }
-
-      .summary-tile {
-        padding: 18px 18px 20px;
-      }
-
-      .summary-tile strong {
-        margin-top: 10px;
-        color: #000000;
-        font-size: 32px;
-        font-weight: 720;
-      }
-
-      .tasks-layout {
-        grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-        gap: 24px;
-      }
-
-      .task-sidebar,
-      .task-main,
-      .settings-sections,
-      .stack {
-        gap: 16px;
-      }
-
-      .task-list,
-      .approval-list,
-      .schedule-list,
-      .template-list,
-      .history-list,
-      .audit-list,
-      .execution-list,
-      .artifact-list,
-      .task-child-list,
-      .integration-list,
-      .privacy-list,
-      .retention-list,
-      .files-list,
-      .item-list {
-        gap: 10px !important;
-      }
-
-      .detail-section,
-      .settings-group {
-        padding: 20px !important;
-      }
-
-      .settings-sections {
-        max-width: 1120px;
-      }
-
-      .composer-bar {
-        align-items: center;
-        padding: 18px 20px;
-        border: 0;
-        border-radius: 8px;
-        background: #f3f3f3;
-      }
-
-      .composer-bar textarea {
-        padding: 6px 0;
-      }
-
-      button {
-        border: 0 !important;
-        border-radius: 8px !important;
-        box-shadow: none !important;
-      }
-
-      button.primary {
-        color: #ffffff;
-        background: #000000;
-      }
-
-      button.secondary {
-        color: #000000;
-        background: #e2e2e2;
-        backdrop-filter: none;
-      }
-
-      button.ghost {
-        color: #000000;
-        background: transparent;
-        text-decoration: underline;
-        text-underline-offset: 3px;
-      }
-
-      button.ghost:hover {
-        background: #e2e2e2;
-      }
-
-      input:not([type="checkbox"]):not([type="radio"]),
-      textarea,
-      select {
-        border: 0 !important;
-        border-bottom: 1px solid rgba(0, 0, 0, 0.22) !important;
-        border-radius: 0 !important;
-        background: transparent !important;
-        box-shadow: none !important;
-        color: #000000;
-      }
-
-      input:not([type="checkbox"]):not([type="radio"]):focus,
-      textarea:focus,
-      select:focus {
-        outline: none;
-        border-bottom-color: #000000 !important;
-        box-shadow: inset 0 -1px 0 #000000 !important;
-      }
-
-      label {
-        color: #474747;
-        font-size: 11px;
-        font-weight: 650;
-        text-transform: uppercase;
-      }
-
-      pre,
-      .artifact-preview,
-      .history-preview,
-      .template-preview,
-      .dag-editor,
-      .dag-preview {
-        border: 0 !important;
-        border-radius: 8px !important;
-        background: #ffffff !important;
-      }
-
-      .chip {
-        border: 0;
-        background: #e2e2e2;
-        color: #000000;
-      }
-
-      .chip.ready,
-      .chip.warning,
-      .chip.muted {
-        color: #000000;
-        background: #e2e2e2;
-      }
-
-      .chip.danger {
-        color: #ba1a1a;
-        background: #f3f3f3;
-      }
-
-      .selected,
-      .artifact-item.active {
-        background: #e2e2e2 !important;
-        box-shadow: inset 0 0 0 2px #000000 !important;
-      }
-
-      .switch-row {
-        border-bottom: 0;
-        padding: 12px 0;
-      }
-
-      .conn-provider-btn,
-      .mcp-server-card,
-      #connEmailInlineForm {
-        border: 0 !important;
-        border-radius: 8px !important;
-        background: #f3f3f3 !important;
-        color: #000000 !important;
-      }
-
-      .conn-provider-icon {
-        display: none;
-      }
-
-      .conn-toggle-track {
-        background: #e2e2e2;
-      }
-
-      .conn-toggle-track::after {
-        background: #ffffff;
-      }
-
-      .conn-toggle input:checked + .conn-toggle-track {
-        background: #000000;
-      }
-
-      .mcp-server-config {
-        border-top: 0;
-        padding-top: 8px;
-      }
-
-      .mcp-status-dot.ready,
-      .mcp-status-dot.error {
-        background: #000000;
-        box-shadow: none;
-      }
-
-      #providerModal {
-        background: rgba(0, 0, 0, 0.28) !important;
-      }
-
-      #providerModal > div {
-        border-radius: 8px !important;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.04) !important;
-      }
-
-      .console-chat-shell {
-        min-height: calc(100vh - 230px);
-        display: grid;
-        grid-template-rows: minmax(320px, 1fr) auto;
-        gap: 18px;
-      }
-
-      .console-chat-messages {
-        padding: 24px;
-        border-radius: 8px;
-        background: #f3f3f3;
-        overflow-y: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-      }
-
-      .console-chat-empty {
-        color: #474747;
-        font-size: 14px;
-        line-height: 1.6;
-      }
-
-      .console-chat-message {
-        max-width: 76ch;
-        padding: 14px 16px;
-        border-radius: 8px;
-        background: rgba(255, 255, 255, 0.72);
-        backdrop-filter: blur(20px);
-        line-height: 1.6;
-        white-space: pre-wrap;
-      }
-
-      .console-chat-message.user {
-        align-self: flex-end;
-        background: #000000;
-        color: #ffffff;
-      }
-
-      .console-chat-message.system {
-        align-self: center;
-        max-width: 80ch;
-        background: #e2e2e2;
-        color: #000000;
-        font-size: 12px;
-      }
-
-      .console-chat-composer {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto;
-        gap: 12px;
-        align-items: end;
-        padding: 18px 20px;
-        border-radius: 8px;
-        background: rgba(249, 249, 249, 0.78);
-        backdrop-filter: blur(20px);
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.04);
-      }
-
-      .connector-guide,
-      .advanced-guide-grid {
-        border-radius: 8px;
-        background: #ffffff;
-      }
-
-      .connector-guide {
-        padding: 12px;
-        margin-bottom: 12px;
-        color: #000000;
-        font-size: 12px;
-        line-height: 1.6;
-      }
-
-      .connector-guide ol {
-        margin: 8px 0 0;
-        padding-left: 18px;
-      }
-
-      .connector-guide a {
-        color: #000000;
-        text-decoration: underline;
-        text-underline-offset: 3px;
-      }
-
-      .advanced-guide-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 14px;
-        padding: 16px;
-      }
-
-      .advanced-guide-grid p {
-        margin: 6px 0 0;
-        font-size: 12px;
-        line-height: 1.6;
-      }
-
-      .manual-config-toggle {
-        margin-bottom: 12px;
-      }
-
-      .manual-config-collapsed > form {
-        display: none;
-      }
-
-      .manual-config-collapsed #mcpServerList {
-        display: none;
-      }
-
-      .email-manual-panel #emailAccountList {
-        display: none;
-      }
-
-      .connector-plugin-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 12px;
-      }
-
-      .connector-plugin-card {
-        padding: 16px;
-        border-radius: 8px;
-        background: #f3f3f3;
-      }
-
-      .connector-plugin-card.unavailable {
-        opacity: 0.72;
-      }
-
-      .console-modal {
-        position: fixed;
-        inset: 0;
-        z-index: 1000;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(0, 0, 0, 0.28);
-        backdrop-filter: blur(4px);
-      }
-
-      .console-modal-body {
-        width: min(760px, 92vw);
-        max-height: 88vh;
-        overflow: auto;
-        padding: 24px;
-        border-radius: 8px;
-        background: #ffffff;
-        box-shadow: 0 20px 40px rgba(0, 0, 0, 0.04);
-      }
-
-      .skill-editor {
-        width: 100%;
-        min-height: 420px;
-        font-family: var(--font-mono);
-        font-size: 12px;
-        line-height: 1.6;
-      }
-
-      @media (max-width: 900px) {
-        .console-panel-intro {
-          grid-template-columns: 1fr;
-          gap: 10px;
-        }
-        .console-panel-intro p {
-          grid-column: 1;
-        }
-        .console-panel-intro h1 {
-          font-size: 34px;
-          line-height: 1;
-        }
-        .tab-bar,
-        .topbar {
-          padding-left: 18px;
-          padding-right: 18px;
-        }
-        .tab-panel {
-          padding-left: 18px;
-          padding-right: 18px;
-        }
-        .console-chat-composer,
-        .advanced-guide-grid,
-        .connector-plugin-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      /* ══════════════════════════════════════════════════════════
-         THEME SYSTEM
-         ══════════════════════════════════════════════════════════ */
-
-      /* ── Theme picker ── */
-      .theme-picker {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        padding: 0 2px;
-      }
-      .theme-picker-label {
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #888;
-        margin-right: 4px;
-      }
-      .theme-swatch {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        border: none !important;
-        cursor: pointer;
-        padding: 0 !important;
-        flex-shrink: 0;
-        outline: 2px solid transparent;
-        outline-offset: 2px;
-        transition: outline-color 150ms, transform 120ms;
-        box-shadow: none !important;
-      }
-      .theme-swatch:hover { transform: scale(1.18); }
-      .theme-swatch.ts-active { outline-color: #000; }
-      body[data-theme="dark"] .theme-swatch.ts-active { outline-color: #e8e8e8; }
-
-      /* ── THEME: dark (黑色) ── */
-      body[data-theme="dark"] {
-        /* CSS variable overrides — fixes any element using var(--ink) etc. */
-        --ink: #e8e8e8;
-        --ink-soft: #c4c4c4;
-        --muted: #666666;
-        --accent: #e8e8e8;
-        --accent-strong: #e8e8e8;
-        --accent-soft: rgba(232, 232, 232, 0.1);
-        --line: rgba(255, 255, 255, 0.09);
-        --line-strong: rgba(255, 255, 255, 0.16);
-        --surface: rgba(28, 28, 32, 0.82);
-        --surface-strong: rgba(35, 35, 40, 0.9);
-        --surface-soft: rgba(22, 22, 26, 0.7);
-        background: #0d0d0d;
-        color: #e8e8e8;
-      }
-      body[data-theme="dark"] .topbar {
-        background: rgba(13, 13, 13, 0.9);
-      }
-      body[data-theme="dark"] .topbar-logo {
-        background: #e8e8e8;
-        color: #0d0d0d;
-      }
-      body[data-theme="dark"] .topbar-title { color: #e8e8e8; }
-      body[data-theme="dark"] .tab-bar {
-        background: rgba(13, 13, 13, 0.85);
-      }
-      body[data-theme="dark"] .tab-btn { color: #555; background: transparent; }
-      body[data-theme="dark"] .tab-btn:hover { color: #e8e8e8; }
-      body[data-theme="dark"] .tab-btn.active { color: #0d0d0d; background: #e8e8e8; }
-      body[data-theme="dark"] .console-panel-intro .eyebrow,
-      body[data-theme="dark"] .section-caption,
-      body[data-theme="dark"] .section-label { color: #888; }
-      body[data-theme="dark"] .console-panel-intro h1 { color: #e8e8e8; }
-      body[data-theme="dark"] .console-panel-intro p { color: #666; }
-      body[data-theme="dark"] .muted { color: #666 !important; }
-      body[data-theme="dark"] label { color: #666; }
-      body[data-theme="dark"] .summary-tile strong { color: #e8e8e8; }
-      body[data-theme="dark"] .summary-tile,
-      body[data-theme="dark"] .task-item,
-      body[data-theme="dark"] .approval-item,
-      body[data-theme="dark"] .schedule-item,
-      body[data-theme="dark"] .template-item,
-      body[data-theme="dark"] .history-item,
-      body[data-theme="dark"] .integration-item,
-      body[data-theme="dark"] .timeline-item,
-      body[data-theme="dark"] .surface,
-      body[data-theme="dark"] .settings-group,
-      body[data-theme="dark"] .detail-section,
-      body[data-theme="dark"] .artifact-item,
-      body[data-theme="dark"] .task-child-item,
-      body[data-theme="dark"] .mcp-server-card { background: #191919 !important; color: #e8e8e8 !important; }
-      /* chip compound-class selectors have higher specificity than .chip alone —
-         must use body[data-theme] + compound to beat the editorial pass */
-      body[data-theme="dark"] .chip.ready,
-      body[data-theme="dark"] .chip.warning,
-      body[data-theme="dark"] .chip.muted { background: #252525 !important; color: #aaaaaa !important; }
-      /* broad text sweep: anything inside these containers */
-      body[data-theme="dark"] .task-item h4,  body[data-theme="dark"] .task-item p,
-      body[data-theme="dark"] .approval-item h4, body[data-theme="dark"] .approval-item p,
-      body[data-theme="dark"] .schedule-item h4, body[data-theme="dark"] .schedule-item p,
-      body[data-theme="dark"] .template-item h4, body[data-theme="dark"] .template-item p,
-      body[data-theme="dark"] .history-item h4,  body[data-theme="dark"] .history-item p,
-      body[data-theme="dark"] .detail-section h4, body[data-theme="dark"] .detail-section p,
-      body[data-theme="dark"] .detail-section strong,
-      body[data-theme="dark"] .settings-group-title,
-      body[data-theme="dark"] .switch-copy strong { color: #e8e8e8 !important; }
-      body[data-theme="dark"] .composer-bar { background: #191919; }
-      body[data-theme="dark"] button.primary { background: #e8e8e8; color: #0d0d0d; }
-      body[data-theme="dark"] button.secondary { background: #252525; color: #e8e8e8; }
-      body[data-theme="dark"] button.ghost { color: #e8e8e8; background: transparent; text-decoration: underline; text-underline-offset: 3px; }
-      body[data-theme="dark"] button.ghost:hover { background: #252525; }
-      body[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
-      body[data-theme="dark"] textarea,
-      body[data-theme="dark"] select {
-        color: #e8e8e8;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.18) !important;
-        border-radius: 0 !important;
-        background: transparent !important;
-      }
-      body[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]):focus,
-      body[data-theme="dark"] textarea:focus,
-      body[data-theme="dark"] select:focus {
-        border-bottom-color: #e8e8e8 !important;
-        box-shadow: inset 0 -1px 0 #e8e8e8 !important;
-      }
-      body[data-theme="dark"] pre,
-      body[data-theme="dark"] .artifact-preview,
-      body[data-theme="dark"] .history-preview,
-      body[data-theme="dark"] .template-preview,
-      body[data-theme="dark"] .dag-editor,
-      body[data-theme="dark"] .dag-preview { background: #0d0d0d !important; }
-      body[data-theme="dark"] .chip { background: #252525; color: #e8e8e8; }
-      body[data-theme="dark"] .chip.danger { background: #2a0e0e; color: #f87171; }
-      body[data-theme="dark"] .selected,
-      body[data-theme="dark"] .artifact-item.active {
-        background: #252525 !important;
-        box-shadow: inset 0 0 0 2px #e8e8e8 !important;
-      }
-      body[data-theme="dark"] .conn-provider-btn,
-      body[data-theme="dark"] .mcp-server-card,
-      body[data-theme="dark"] #connEmailInlineForm { background: #191919 !important; color: #e8e8e8 !important; }
-      body[data-theme="dark"] .conn-toggle-track { background: #333; }
-      body[data-theme="dark"] .conn-toggle-track::after { background: #0d0d0d; }
-      body[data-theme="dark"] .conn-toggle input:checked + .conn-toggle-track { background: #e8e8e8; }
-      body[data-theme="dark"] .mcp-status-dot.ready,
-      body[data-theme="dark"] .mcp-status-dot.error { background: #e8e8e8; box-shadow: none; }
-      body[data-theme="dark"] #providerModal { background: rgba(0, 0, 0, 0.7) !important; }
-      body[data-theme="dark"] #providerModal > div,
-      body[data-theme="dark"] .console-modal-body { background: #191919; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6) !important; }
-      body[data-theme="dark"] .console-chat-messages { background: #191919; }
-      body[data-theme="dark"] .console-chat-message { background: #252525; color: #e8e8e8; }
-      body[data-theme="dark"] .console-chat-message.user { background: #e8e8e8; color: #0d0d0d; }
-      body[data-theme="dark"] .console-chat-message.system { background: #1e1e1e; color: #666; }
-      body[data-theme="dark"] .console-chat-composer { background: rgba(13, 13, 13, 0.9); }
-      body[data-theme="dark"] .connector-guide,
-      body[data-theme="dark"] .advanced-guide-grid { background: #191919; }
-      body[data-theme="dark"] .connector-plugin-card { background: #191919; }
-      body[data-theme="dark"] .account-connector-card { background: #191919; border-color: rgba(255,255,255,0.07); }
-      body[data-theme="dark"] .acc-config-panel input { background: #111 !important; border-color: rgba(255,255,255,0.1); color: #e8e8e8; }
-      body[data-theme="dark"] .theme-picker-label { color: #555; }
-
     </style>
   </head>
   <body>
-    <!-- ── Top Bar ── -->
-    <header class="topbar">
-      <div class="topbar-left">
-        <span class="topbar-logo" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20">
-            <path d="M 6 20 C 10 8, 22 8, 26 20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
-            <circle cx="6" cy="20" r="2" fill="currentColor"/>
-            <circle cx="26" cy="20" r="2" fill="currentColor"/>
-          </svg>
-        </span>
-        <span class="topbar-title">LingxY Console</span>
-        <span id="runtimeState" class="chip warning">connecting...</span>
+    <!-- ── Top Bar (v3) ── -->
+    <header class="top topbar">
+      <div class="top-crumbs">
+        <span class="cur topbar-title" id="topCrumb">Tasks</span>
+        <span id="runtimeState" class="pill pill-neutral" hidden>connecting…</span>
       </div>
-      <div class="topbar-right">
-        <div class="theme-picker" role="group" aria-label="界面风格">
-          <span class="theme-picker-label">风格</span>
-          <button class="theme-swatch ts-active" data-theme-value="default" title="Light"
-            aria-label="Light theme"
-            style="background: linear-gradient(135deg, #f9f9f9 50%, #0d0d0d 50%);"></button>
-          <button class="theme-swatch" data-theme-value="dark" title="Dark"
-            aria-label="Dark theme"
-            style="background: #0d0d0d;"></button>
-        </div>
-        <button id="openOverlayButton" class="secondary">Quick Input</button>
-        <button id="refreshButton" class="ghost">Refresh</button>
-        <button id="cheatsheetButton" class="ghost" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (Ctrl+/)">?</button>
+      <div class="top-spacer"></div>
+      <button class="top-search" id="openPaletteBtn" aria-label="Quick input — Ctrl+K">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <span>Quick input or search…<span class="zh">快速输入</span></span>
+        <span class="kbd-wrap"><span class="kbd">Ctrl</span><span class="kbd">K</span></span>
+      </button>
+      <div class="top-runtime" id="topRuntimePill" title="Active model">
+        <span class="dot"></span>
+        <span id="topRuntimeModel">runtime</span>
+      </div>
+      <div class="theme-picker" role="group" aria-label="Theme">
+        <button class="theme-swatch ts-active" data-theme-value="default" title="Light"
+          aria-label="Light theme"
+          style="background: linear-gradient(135deg, #faf9f6 50%, #1a1917 50%);"></button>
+        <button class="theme-swatch" data-theme-value="dark" title="Dark"
+          aria-label="Dark theme"
+          style="background: #141310;"></button>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="refreshButton" aria-label="Refresh" title="Refresh">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+        </button>
+        <button class="icon-btn" id="cheatsheetButton" aria-label="Keyboard shortcuts" title="Shortcuts (Ctrl+/)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
+        <button class="icon-btn" id="openOverlayButton" aria-label="Open overlay" title="Overlay (Ctrl+Shift+U)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="14" height="14" x="5" y="5" rx="2"/><path d="M10 10h4v4h-4z"/></svg>
+        </button>
       </div>
     </header>
 
@@ -1496,16 +807,19 @@
          class retained for selector compat with pre-existing rules
          and helpers. aria-current="page" replaces aria-selected per
          the rail pattern; switchTab writes both for safety. -->
-    <aside class="app-rail" aria-label="Console sections">
+    <aside class="rail app-rail" aria-label="Console sections">
       <div class="rail-brand">
-        <span class="rail-brand-mark" aria-hidden="true">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="18" height="18">
-            <path d="M 6 20 C 10 8, 22 8, 26 20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
-            <circle cx="6" cy="20" r="2" fill="currentColor"/>
-            <circle cx="26" cy="20" r="2" fill="currentColor"/>
+        <span class="rail-mark rail-brand-mark" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+            <path d="M 6 21 C 10 9, 22 9, 26 21" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+            <circle cx="6" cy="21" r="2.2" fill="currentColor"/>
+            <circle cx="26" cy="21" r="2.2" fill="currentColor"/>
           </svg>
         </span>
-        <span class="rail-brand-label">LingxY</span>
+        <div class="rail-brand-text">
+          <strong class="rail-brand-label">LingxY</strong>
+          <span id="railEndpoint">127.0.0.1:4310</span>
+        </div>
       </div>
 
       <div class="rail-group">
@@ -1558,7 +872,11 @@
         </button>
       </div>
 
-      <div class="rail-footer">
+      <div class="rail-foot rail-footer">
+        <div class="rail-sys" id="railSys">
+          <span class="rail-sys-dot"></span>
+          <span class="rail-sys-text" id="railSysText">Runtime ready</span>
+        </div>
         <button class="rail-toggle" id="railToggle" aria-label="Collapse sidebar">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
           <span class="rail-toggle-label">Collapse</span>

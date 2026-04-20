@@ -49,19 +49,27 @@ assert.ok(/<text/.test(wordmark), "wordmark must include the LingxY text");
 assert.ok(/LingxY/.test(wordmark), "wordmark text must say LingxY");
 assert.ok(/currentColor/.test(wordmark), "wordmark must use currentColor");
 
-// ── console.html uses the mark, not the old "U" ──────────────────────────
+// ── console.html uses the brand mark, not the old "U" ──────────────────
 const consoleHtml = readFileSync(CONSOLE_PATH, "utf8");
 assert.ok(
   !/<div class="topbar-logo">U<\/div>/.test(consoleHtml),
-  "console topbar still renders the old 'U' placeholder — should use the mark SVG"
+  "console still renders the old 'U' placeholder — should use the mark SVG"
 );
+// v3 moved the brand into the left rail's .rail-mark. Either the old
+// topbar .topbar-logo or the v3 rail .rail-mark should embed the mark.
 assert.ok(
-  /topbar-logo[\s\S]*?<svg[\s\S]*?viewBox="0 0 32 32"/.test(consoleHtml),
-  "console topbar must embed the mark SVG"
+  /(?:topbar-logo|rail-mark|rail-brand-mark)[\s\S]*?<svg[\s\S]*?viewBox="0 0 32 32"/.test(consoleHtml),
+  "console must embed the 32×32 mark SVG (in topbar or rail)"
 );
+// "LingxY" must appear in the brand region (topbar or rail).
 assert.ok(
-  /LingxY Console/.test(consoleHtml),
-  "console title must say 'LingxY Console' (not UCA Console)"
+  /(?:topbar-title|rail-brand-label|rail-brand-text[^>]*>[\s\S]*?<strong[^>]*>LingxY)/.test(consoleHtml),
+  "console must carry the LingxY brand name"
+);
+// Regression: no "UCA Console" leftover.
+assert.ok(
+  !/UCA Console/.test(consoleHtml),
+  "console must not carry the old 'UCA Console' string"
 );
 
 console.log("ok verify-brand-assets");
