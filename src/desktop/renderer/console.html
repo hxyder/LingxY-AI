@@ -1226,16 +1226,16 @@
     </header>
 
     <!-- ── Tab Bar ── -->
-    <nav class="tab-bar">
-      <button class="tab-btn active" data-tab="tasks">Tasks</button>
-      <button class="tab-btn" data-tab="chat">Chat</button>
-      <button class="tab-btn" data-tab="files">Files</button>
-      <button class="tab-btn" data-tab="schedules">Schedules</button>
-      <button class="tab-btn" data-tab="history" title="History">Memory</button>
-      <button class="tab-btn" data-tab="projects">Projects</button>
-      <button class="tab-btn" data-tab="connectors">Connectors</button>
-      <button class="tab-btn" data-tab="settings">Settings</button>
-      <button class="tab-btn" data-tab="advanced">Advanced</button>
+    <nav class="tab-bar" role="tablist" aria-label="Console sections">
+      <button class="tab-btn active" data-tab="tasks" role="tab" aria-selected="true">Tasks</button>
+      <button class="tab-btn" data-tab="chat" role="tab" aria-selected="false">Chat</button>
+      <button class="tab-btn" data-tab="files" role="tab" aria-selected="false">Files</button>
+      <button class="tab-btn" data-tab="schedules" role="tab" aria-selected="false">Schedules</button>
+      <button class="tab-btn" data-tab="history" title="History" role="tab" aria-selected="false">Memory</button>
+      <button class="tab-btn" data-tab="projects" role="tab" aria-selected="false">Projects</button>
+      <button class="tab-btn" data-tab="connectors" role="tab" aria-selected="false">Connectors</button>
+      <button class="tab-btn" data-tab="settings" role="tab" aria-selected="false">Settings</button>
+      <button class="tab-btn" data-tab="advanced" role="tab" aria-selected="false">Advanced</button>
     </nav>
 
     <!-- ═══════════════════════════════════════

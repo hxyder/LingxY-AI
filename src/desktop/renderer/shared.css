@@ -1,5 +1,14 @@
 @import url("./tokens.css");
 
+/* ── focus rings (keyboard-visible only, not on mouse click) ───
+   Ensures every interactive surface gets a clear focus indicator
+   for keyboard users without polluting the visual for mouse users. */
+:is(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
 *,
 *::before,
 *::after {

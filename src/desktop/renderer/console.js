@@ -247,7 +247,11 @@ function applyConsoleInformationArchitecture() {
 applyConsoleInformationArchitecture();
 
 function switchTab(tabId) {
-  tabButtons.forEach((btn) => btn.classList.toggle("active", btn.dataset.tab === tabId));
+  tabButtons.forEach((btn) => {
+    const isActive = btn.dataset.tab === tabId;
+    btn.classList.toggle("active", isActive);
+    btn.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
   tabPanels.forEach((panel) => panel.classList.toggle("active", panel.id === `panel-${tabId}`));
 }
 
