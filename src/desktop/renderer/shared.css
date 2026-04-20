@@ -1722,12 +1722,16 @@ details.timeline-item[open] > summary {
 /* =========================================================================
    PALETTE (Ctrl+K) — v3 naming .pal-* + legacy .palette-*
    ========================================================================= */
+/* UCA-119: palette + cheatsheet use glass tokens so they stay
+   visually distinct from Console's terracotta. The frosted panel is
+   the interaction language for floating layers across the app. */
 .pal-back, .palette-backdrop {
   position: fixed;
   inset: 0;
   z-index: var(--z-modal);
-  background: rgba(20, 19, 16, .5);
+  background: var(--glass-backdrop);
   backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   display: grid;
   place-items: start center;
   padding: 14vh 24px 24px;
@@ -1741,10 +1745,13 @@ details.timeline-item[open] > summary {
   max-height: 68vh;
   display: flex;
   flex-direction: column;
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--glass-surface);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--glass-shadow);
+  color: var(--glass-ink);
   overflow: hidden;
   animation: lingxy-pal-pop var(--duration-base) var(--ease-standard);
 }
@@ -1757,42 +1764,42 @@ details.timeline-item[open] > summary {
   padding: 16px 22px 10px;
   font-size: 15px;
   font-weight: 600;
-  color: var(--ink);
-  border-bottom: 1px solid var(--line);
+  color: var(--glass-ink);
+  border-bottom: 1px solid var(--glass-line);
   font-family: var(--font-sans);
 }
-.pal-greet .zh { font-size: 12px; color: var(--muted); margin-left: 8px; font-weight: 400; }
+.pal-greet .zh { font-size: 12px; color: var(--glass-muted); margin-left: 8px; font-weight: 400; }
 
 .pal-search, .palette-search {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 14px 20px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--glass-line);
   transition: border-bottom-color var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
 }
 .pal-search:focus-within, .palette-search:focus-within {
-  border-bottom-color: var(--accent);
-  box-shadow: inset 0 -1px 0 var(--accent);
+  border-bottom-color: var(--glass-accent);
+  box-shadow: inset 0 -1px 0 var(--glass-accent);
 }
-.pal-search svg, .palette-search svg { width: 18px; height: 18px; color: var(--muted); flex-shrink: 0; }
+.pal-search svg, .palette-search svg { width: 18px; height: 18px; color: var(--glass-muted); flex-shrink: 0; }
 .pal-search input, .palette-search input {
   flex: 1;
   border: 0;
   outline: 0;
   background: transparent;
-  color: var(--ink);
+  color: var(--glass-ink);
   font-size: 15px;
   height: auto;
 }
-.pal-search input::placeholder { color: var(--muted); }
+.pal-search input::placeholder { color: var(--glass-muted); }
 
 .pal-chips, .palette-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   padding: 10px 18px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--glass-line);
 }
 .pal-chip, .palette-chip {
   display: inline-flex;
@@ -1800,24 +1807,29 @@ details.timeline-item[open] > summary {
   gap: 6px;
   height: 28px;
   padding: 0 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--glass-line-strong);
   border-radius: 999px;
-  background: var(--panel-2);
+  background: rgba(255, 255, 255, 0.5);
   font-size: var(--fs-sm);
   font-weight: 500;
-  color: var(--ink);
+  color: var(--glass-ink);
   transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
   cursor: pointer;
 }
 .pal-chip:hover, .palette-chip:hover {
-  background: var(--ink);
-  color: var(--bg);
-  border-color: var(--ink);
+  background: var(--glass-accent);
+  color: var(--glass-accent-ink);
+  border-color: var(--glass-accent);
+}
+[data-theme="dark"] .pal-chip, [data-theme="dark"] .palette-chip {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--glass-ink);
+  border-color: var(--glass-line-strong);
 }
 [data-theme="dark"] .pal-chip:hover, [data-theme="dark"] .palette-chip:hover {
-  background: var(--accent);
-  color: var(--accent-ink);
-  border-color: var(--accent);
+  background: var(--glass-accent);
+  color: var(--glass-accent-ink);
+  border-color: var(--glass-accent);
 }
 .pal-chip svg { width: 13px; height: 13px; }
 .pal-chip .zh { font-size: 10px; margin-left: 2px; }
@@ -1830,7 +1842,7 @@ details.timeline-item[open] > summary {
 .pal-label, .palette-list-label {
   font-size: 10px;
   font-weight: 600;
-  color: var(--muted);
+  color: var(--glass-muted);
   text-transform: uppercase;
   letter-spacing: .08em;
   padding: 10px 22px 4px;
@@ -1844,50 +1856,64 @@ details.timeline-item[open] > summary {
   cursor: pointer;
   background: transparent;
   border: 0;
-  color: var(--ink);
+  color: var(--glass-ink);
   text-align: left;
   transition: background var(--duration-fast) var(--ease-standard);
 }
 .pal-item:hover, .pal-item.focused,
-.palette-item:hover, .palette-item--active { background: var(--accent-soft); transform: none; }
+.palette-item:hover, .palette-item--active { background: var(--glass-accent-soft); transform: none; }
 .pal-icon, .palette-item-icon {
   width: 28px; height: 28px;
   border-radius: 6px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--glass-line-strong);
   display: grid; place-items: center;
-  color: var(--muted);
+  color: var(--glass-muted);
   flex-shrink: 0;
+}
+[data-theme="dark"] .pal-icon, [data-theme="dark"] .palette-item-icon {
+  background: rgba(255, 255, 255, 0.05);
 }
 .pal-icon svg, .palette-item-icon svg { width: 14px; height: 14px; color: currentColor; }
 .pal-main, .palette-item-main { flex: 1; min-width: 0; }
 .pal-title, .palette-item-title {
   font-size: var(--fs-sm);
   font-weight: 500;
-  color: var(--ink);
+  color: var(--glass-ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .pal-sub, .palette-item-sub {
   font-size: 10px;
-  color: var(--muted);
+  color: var(--glass-muted);
   margin-top: 2px;
   font-family: var(--font-mono);
 }
-.pal-arrow { color: var(--muted-2); font-size: 11px; }
+.pal-arrow { color: var(--glass-muted); font-size: 11px; }
 .pal-foot, .palette-hints {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 10px 20px;
-  border-top: 1px solid var(--line);
-  background: var(--panel-2);
+  border-top: 1px solid var(--glass-line);
+  background: rgba(255, 255, 255, 0.3);
   font-size: 10px;
-  color: var(--muted);
+  color: var(--glass-muted);
+}
+[data-theme="dark"] .pal-foot, [data-theme="dark"] .palette-hints {
+  background: rgba(0, 0, 0, 0.2);
 }
 .pal-foot .hints { display: flex; gap: 12px; align-items: center; }
-.palette-hints kbd { padding: 1px 5px; }
+.palette-hints kbd, .pal-foot kbd {
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid var(--glass-line-strong);
+  color: var(--glass-ink-soft);
+}
+[data-theme="dark"] .palette-hints kbd, [data-theme="dark"] .pal-foot kbd {
+  background: rgba(255, 255, 255, 0.08);
+}
 
 /* =========================================================================
    CHEATSHEET (Ctrl+/)
@@ -1895,7 +1921,7 @@ details.timeline-item[open] > summary {
 .cheatsheet-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(20, 19, 16, .38);
+  background: var(--glass-backdrop);
   z-index: var(--z-modal);
   display: grid;
   place-items: center;
@@ -1904,10 +1930,13 @@ details.timeline-item[open] > summary {
 }
 .cheatsheet-backdrop[hidden] { display: none; }
 .cheatsheet-panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
+  background: var(--glass-surface);
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--glass-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--glass-shadow);
+  color: var(--glass-ink);
   padding: 24px 28px;
   min-width: 420px;
   max-width: 560px;
@@ -1915,6 +1944,8 @@ details.timeline-item[open] > summary {
   overflow: auto;
   position: relative;
 }
+.cheatsheet-panel h2,
+.cheatsheet-panel .h2 { color: var(--glass-ink); }
 .cheatsheet-panel h2 {
   font-family: var(--font-sans);
   font-size: var(--fs-lg);
@@ -1928,7 +1959,16 @@ details.timeline-item[open] > summary {
   margin: 0;
 }
 .cheatsheet-panel dt { display: inline-flex; align-items: center; gap: 4px; }
-.cheatsheet-panel dd { margin: 0; font-size: var(--fs-sm); color: var(--ink-2); }
+.cheatsheet-panel dd { margin: 0; font-size: var(--fs-sm); color: var(--glass-ink-soft); }
+.cheatsheet-panel dt kbd, .cheatsheet-panel kbd {
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--glass-line-strong);
+  color: var(--glass-ink-soft);
+}
+[data-theme="dark"] .cheatsheet-panel kbd {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--glass-ink);
+}
 .cheatsheet-close { position: absolute; right: 16px; top: 16px; }
 
 /* =========================================================================

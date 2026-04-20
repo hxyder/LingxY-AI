@@ -139,6 +139,30 @@
   --app-rail-collapsed-width: 64px;
   --topbar-height: var(--top-h);
 
+  /* ── GLASS tokens (floating layers: overlay / cheatsheet / palette) ──
+     Deliberately decoupled from Console's terracotta accent so the
+     floating UI keeps its frosted-glass, high-end, neutral aesthetic
+     regardless of the Console's brand color. */
+  --glass-surface: rgba(255, 255, 255, 0.78);
+  --glass-border: rgba(255, 255, 255, 0.55);
+  --glass-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.14),
+    0 4px 16px rgba(0, 0, 0, 0.05),
+    inset 0 1px 0 rgba(255, 255, 255, 0.95);
+  --glass-backdrop: rgba(20, 19, 16, 0.38);
+  --glass-ink: #1a1d24;
+  --glass-ink-soft: #3a3f4b;
+  --glass-muted: #6b7280;
+  --glass-line: rgba(0, 0, 0, 0.08);
+  --glass-line-strong: rgba(0, 0, 0, 0.14);
+  --glass-accent: #5b6b7a;          /* cool gray-blue, neutral (not terracotta) */
+  --glass-accent-strong: #44515d;
+  --glass-accent-soft: rgba(91, 107, 122, 0.12);
+  --glass-accent-ink: #ffffff;
+  /* Glass status colors — slightly desaturated vs Console status tokens */
+  --glass-ok: #3e7a46;
+  --glass-err: #a8382f;
+
   font-family: var(--font-sans);
   font-size: var(--fs-md);
   line-height: 1.5;
@@ -178,6 +202,23 @@
   --status-error-text: #c77268;
   --status-info-bg: var(--info-soft);
   --status-info-text: #7ba8c4;
+
+  /* dark glass: inky warm surface, cooler neutrals */
+  --glass-surface: rgba(24, 24, 28, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-shadow:
+    0 30px 70px rgba(0, 0, 0, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --glass-backdrop: rgba(0, 0, 0, 0.55);
+  --glass-ink: #ece7da;
+  --glass-ink-soft: #c2beb2;
+  --glass-muted: #8a8577;
+  --glass-line: rgba(255, 255, 255, 0.08);
+  --glass-line-strong: rgba(255, 255, 255, 0.16);
+  --glass-accent: #9aa3b2;
+  --glass-accent-strong: #c7ced9;
+  --glass-accent-soft: rgba(154, 163, 178, 0.16);
+  --glass-accent-ink: #1a1d24;
 }
 
 /* ── accent families ───────────────────────────────────────────── */
