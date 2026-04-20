@@ -417,20 +417,33 @@ export async function submitContextTask({
   const store = runtime.store;
   const queue = runtime.queue;
 
-  // TaskPlan pre-execution layer (Week 1: time-offset only). Runs BEFORE
-  // routing so a command like "5 分钟后发美股简报" becomes a one-shot schedule
-  // immediately instead of kicking off the full LLM loop with now-stale data.
-  // skipPlanLayer=true is set by the scheduler when it fires a delayed task,
-  // so we don't re-schedule what's already firing.
+  // Unified Triage layer (see docs/task-runtime/FRAMEWORK_REDESIGN.md).
+  // Runs BEFORE routing. Returns one of:
+  //   fast_path   → tier-0 action, submitted via action-tool submission
+  //   schedule    → plan-executor built a scheduled-task record; return it
+  //   clarify     → plan-executor emitted a clarification question; return it
+  //   dag_planner → (Phase 2+, gated by runtime.featureFlags.dagPlanner)
+  //   single_turn → fall through, run the normal executor
+  // skipPlanLayer=true is set by the scheduler when it fires a delayed task
+  // so the scheduled residual doesn't re-enter the plan layer.
   if (!skipPlanLayer && !parentTaskId) {
-    const { maybeHandleAsPlan } = await import("./intent/plan-executor.mjs");
-    const planned = await maybeHandleAsPlan({ runtime, userCommand, contextPacket, executionMode });
-    if (planned?.handled) {
+    const { triage } = await import("./intent/triage.mjs");
+    const t = await triage({ runtime, userCommand, contextPacket, executionMode });
+    if (t.lane === "schedule" || t.lane === "clarify") {
       return {
-        task: planned.task,
-        taskEvents: store.getTaskEvents(planned.task.task_id),
-        scheduledSchedule: planned.schedule
+        task: t.task,
+        taskEvents: store.getTaskEvents(t.task.task_id),
+        scheduledSchedule: t.schedule ?? null
       };
+    }
+    if (typeof t.userCommand === "string" && t.userCommand.trim() && t.userCommand !== userCommand) {
+      userCommand = t.userCommand;
+    }
+    if (t.lane === "dag_planner" && runtime?.dagPlannerDispatch) {
+      // Reserved for Phase 2+. runtime.dagPlannerDispatch is only wired
+      // when the DAG planner ships; until then triage itself demotes to
+      // single_turn, so this branch is unreachable on the current runtime.
+      return runtime.dagPlannerDispatch({ userCommand, contextPacket, executionMode });
     }
   }
 
