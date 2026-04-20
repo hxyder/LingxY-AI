@@ -129,9 +129,22 @@ if (!kimiRoute.intent_tags?.includes("analyze") || !kimiRoute.intent_tags?.inclu
   throw new Error("Intent router did not tag analyze+generate_report correctly.");
 }
 
+// In the single-brain architecture, a text-only "请分析这张图片" with no
+// image actually attached routes to tool_using — the agent-loop's LLM
+// sees "Attached files: (none)" in its resource block and either asks the
+// user to upload an image or works with inline context. Real image-in-hand
+// tasks come through submitImageTask which sets executorOverride directly,
+// bypassing routeIntent for the multi_modal decision.
+// In the single-brain architecture, a text-only "请分析这张图片" with no
+// image actually attached routes to an executor with a tool belt
+// (tool_using or agentic — both can drive agent-loop). The LLM sees
+// "Attached files: (none)" in its resource block and either asks the user
+// to upload an image or works with inline context. Real image-in-hand
+// tasks come through submitImageTask which sets executorOverride directly,
+// bypassing routeIntent for the multi_modal decision.
 const imageRoute = service.routeIntent("请分析这张图片");
-if (imageRoute.executor !== "multi_modal") {
-  throw new Error("Intent router must keep image analysis on multi_modal (not agentic).");
+if (!["tool_using", "agentic"].includes(imageRoute.executor)) {
+  throw new Error(`Text-only image-analysis command should route to a tool-capable executor (got ${imageRoute.executor}); the agent-loop handles the no-attachment case.`);
 }
 
 // pptx request → suggested_formats includes pptx and executor is agentic.

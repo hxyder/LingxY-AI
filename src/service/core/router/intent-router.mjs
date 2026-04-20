@@ -10,14 +10,30 @@
 // NOTE on \b: JavaScript \b only works between \w ([a-zA-Z0-9_]) and \W.
 // Chinese characters are all \W, so \b never fires between two Chinese chars.
 // For Chinese-only alternatives we omit \b; for English we keep it.
+// IMPORTANT: these RULES used to be a regex classifier that decided which
+// executor a task went to — and because of that, they ate all the problems
+// the agent-loop was supposed to solve. Commands containing "图片" went to
+// multi_modal without any image attached; commands that didn't match any
+// rule defaulted to fast (no tools) and the LLM could only fake a response.
+//
+// In the single-brain architecture (see docs/task-runtime/ARCHITECTURE.md)
+// the LLM in agent-loop is the decision maker. These rules now serve as
+// HINTS that upgrade to agentic for file-producing tasks, while everything
+// else lands in tool_using — an executor with the full tool belt that can
+// ALSO handle trivial Q&A (the LLM just returns {final:"..."} if it doesn't
+// need a tool). The retired regex classifier entries live in
+// src/service/core/intent/archive/retired-intent-rules.md.
 const RULES = [
-  { patterns: [/(图片|image|截图|screenshot|\bocr\b)/i], intent: "describe_image", executor: "multi_modal", requires_confirmation: false },
-  // Content-processing verbs — MUST come before generic "act" rules
-  { patterns: [/(总结|摘要|\bsummarize\b|\bsummary\b)/i], intent: "summarize", executor: "fast" },
+  // Semantic intent labels (preserved for logging / downstream consumers)
+  // — these used to route to `fast` and broke tasks like
+  // "总结桌面上的 report.pdf" where the LLM needed file_read. They now all
+  // land in tool_using; the LLM returns {final:"..."} without a tool call
+  // when the content is inline, and can call tools when needed.
+  { patterns: [/(总结|摘要|\bsummarize\b|\bsummary\b)/i], intent: "summarize", executor: "tool_using" },
   { patterns: [/(翻译|\btranslate\b)/i], intent: "translate", executor: "translate" },
-  { patterns: [/(改写|润色|\brewrite\b|\bpolish\b)/i], intent: "rewrite", executor: "fast" },
-  { patterns: [/(解释|\bexplain\b)/i], intent: "explain", executor: "fast" },
-  // Action/tool rules
+  { patterns: [/(改写|润色|\brewrite\b|\bpolish\b)/i], intent: "rewrite", executor: "tool_using" },
+  { patterns: [/(解释|\bexplain\b)/i], intent: "explain", executor: "tool_using" },
+  // Action/tool rules — all land in tool_using (agent-loop with full belt)
   { patterns: [/(报告|\breport\b|分析|\banalyze\b|\banalyse\b)/i], intent: "generate_report", executor: "agentic", requires_confirmation: false },
   { patterns: [/(邮件|邮箱|gmail|outlook|连接账户|已连接账户|账户|账号|\bemail\b|\bmail\b|connected\s+accounts?)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
   { patterns: [/(搜索|查一下|查找|查询|帮我查|\bgoogle\b|\bbing\b|\bbaidu\b|百度一下|新闻|最新|最近|动态|资讯|热点|\blatest\b|\brecent\b|\bnews\b|\bcurrent\b|\bsearch\b)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
@@ -137,11 +153,18 @@ export function routeIntent(userCommand = "") {
     && !(connectorDomainRequest && goal === "search_and_answer");
 
   if (!matched) {
+    // Default to tool_using, not fast. The agent-loop with its full tool
+    // belt can trivially handle Q&A (just return {final:"..."}) AND has
+    // access to tools when the LLM decides the command needs one. fast has
+    // no tools, so routing action-intent commands there guarantees
+    // hallucinated "I did X" text without X ever happening. Image goals
+    // only route to multi_modal here if the submission path didn't already
+    // know about an attachment (submitImageTask sets executorOverride
+    // directly for real images).
     const suggested_executor = requiresFileArtifact || hasAgenticTag || goalRequiresAgentic
       ? "agentic"
       : goal === "translate" ? "translate"
-      : goal === "multimodal_analyze" ? "multi_modal"
-      : "fast";
+      : "tool_using";
     return {
       intent: "general",
       goal,
