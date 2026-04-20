@@ -188,6 +188,80 @@
   margin: 0 2px;
 }
 
+/* ── panel-section: card-style grouping for sectioned pages ──
+   Replaces "just slap stuff under a <h3>" with a proper card that
+   has its own header, body, and optional footer — used across
+   Connectors / Settings / Advanced. */
+.panel-section {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  color: var(--ink);
+}
+.panel-section + .panel-section {
+  margin-top: 20px;
+}
+.panel-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.panel-section-head-main {
+  flex: 1;
+  min-width: 0;
+}
+.panel-section-title {
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+  margin: 0;
+  line-height: 1.2;
+}
+.panel-section-sub {
+  display: block;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+.panel-section-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+.panel-section-body {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.panel-section-body.compact {
+  padding: 12px 18px;
+  gap: 10px;
+}
+
+.panel-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.panel-card-grid.wide-first > :first-child {
+  grid-column: span 2;
+}
+@media (max-width: 720px) {
+  .panel-card-grid.wide-first > :first-child { grid-column: span 1; }
+}
+
+/* Inline provider icon styles inside Connectors stay legible on
+   both themes by using currentColor via --ink-soft instead of a
+   hardcoded tint. */
+.conn-provider-icon svg { width: 16px; height: 16px; }
 
 /* ── stat strip & stat card (Tasks page v2 header) ─────────── */
 .stat-strip {

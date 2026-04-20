@@ -1850,21 +1850,30 @@
       <div class="settings-sections">
 
         <!-- ── Account Connectors (Microsoft 365 / Google) ── -->
-        <div class="settings-group">
-          <h3 class="settings-group-title">账户连接</h3>
-          <p class="muted" style="font-size:12px;margin:0 0 16px;">
-            连接后，AI 可访问你账户里的文件、邮件和日历，实现"帮我整理 OneDrive 里的报告"等操作。
-          </p>
-          <div id="accountConnectorsList" style="display:flex;flex-direction:column;gap:12px;"></div>
-        </div>
+        <section class="panel-section" aria-labelledby="connAccountsTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="connAccountsTitle" class="panel-section-title">Accounts<span class="zh">账户连接</span></h3>
+              <span class="panel-section-sub">连接后，AI 可访问你账户里的文件、邮件和日历，实现"帮我整理 OneDrive 里的报告"等操作。</span>
+            </div>
+          </header>
+          <div class="panel-section-body">
+            <div id="accountConnectorsList" style="display:flex;flex-direction:column;gap:12px;"></div>
+          </div>
+        </section>
 
-        <!-- ── Email ── -->
-        <div class="settings-group">
-          <h3 class="settings-group-title">Email</h3>
-          <p class="muted" style="font-size:12px;margin:0 0 14px;">连接邮箱以监控收件箱、自动创建任务、接收晨间摘要。</p>
+        <!-- ── Email inbox providers ── -->
+        <section class="panel-section" aria-labelledby="connEmailTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="connEmailTitle" class="panel-section-title">Email inbox<span class="zh">邮箱</span></h3>
+              <span class="panel-section-sub">连接邮箱以监控收件箱、自动创建任务、接收晨间摘要。</span>
+            </div>
+          </header>
+          <div class="panel-section-body">
 
           <!-- existing accounts list -->
-          <div id="connEmailList" class="stack" style="gap:8px;margin-bottom:14px;"></div>
+          <div id="connEmailList" class="stack" style="gap:8px;"></div>
 
           <!-- provider picker (shown when no form open) -->
           <div id="connEmailPicker" style="display:flex;flex-wrap:wrap;gap:8px;">
@@ -1886,7 +1895,7 @@
           </div>
 
           <!-- inline connect form (hidden until provider chosen) -->
-          <div id="connEmailInlineForm" style="display:none;margin-top:12px;padding:14px;background:var(--surface2,#1e2029);border-radius:10px;border:1px solid rgba(255,255,255,0.07);">
+          <div id="connEmailInlineForm" style="display:none;margin-top:12px;padding:14px;background:var(--surface-soft);border-radius:12px;border:1px solid var(--line);">
             <div style="font-size:13px;font-weight:600;margin-bottom:10px;" id="connEmailFormTitle">连接 Gmail</div>
             <div id="connEmailSetupGuide" class="connector-guide" style="display:none;"></div>
             <div class="stack" style="gap:8px;">
@@ -1911,42 +1920,62 @@
             </div>
           </div>
           <div id="emailAdvancedMount"></div>
-        </div>
+
+          </div>
+        </section>
 
         <!-- ── Morning Digest ── -->
-        <div class="settings-group">
-          <h3 class="settings-group-title">晨间摘要</h3>
-          <p class="muted" style="font-size:12px;margin:0 0 10px;">每天 6–10 点启动后自动推送一份邮件摘要。</p>
-          <div style="display:flex;align-items:center;gap:10px;">
-            <label style="font-size:13px;flex:1;margin:0;">开启晨间摘要</label>
-            <label class="conn-toggle">
-              <input id="connDigestEnabled" type="checkbox">
-              <span class="conn-toggle-track"></span>
-            </label>
+        <section class="panel-section" aria-labelledby="connDigestTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="connDigestTitle" class="panel-section-title">Morning digest<span class="zh">晨间摘要</span></h3>
+              <span class="panel-section-sub">每天 6–10 点启动后自动推送一份邮件摘要。</span>
+            </div>
+            <div class="panel-section-actions">
+              <label class="conn-toggle">
+                <input id="connDigestEnabled" type="checkbox">
+                <span class="conn-toggle-track"></span>
+              </label>
+            </div>
+          </header>
+          <div class="panel-section-body compact">
+            <div class="toolbar">
+              <button id="connDigestTestBtn" class="secondary" type="button">立即测试摘要</button>
+              <span id="connDigestTestState" class="muted" style="font-size:12px;"></span>
+            </div>
           </div>
-          <div class="toolbar" style="margin-top:10px;">
-            <button id="connDigestTestBtn" class="secondary" type="button">立即测试摘要</button>
-            <span id="connDigestTestState" class="muted" style="font-size:12px;"></span>
-          </div>
-        </div>
+        </section>
 
         <!-- ── MCP Tools ── -->
-        <div class="settings-group">
-          <div class="row" style="margin-bottom:10px;">
-            <h3 class="settings-group-title" style="margin:0;">MCP 工具</h3>
-            <button id="connectorsMcpRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">刷新</button>
+        <section class="panel-section" aria-labelledby="connMcpTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="connMcpTitle" class="panel-section-title">MCP tools<span class="zh">工具服务器</span></h3>
+              <span class="panel-section-sub">启用后，AI 可直接调用这些工具执行文件、搜索、浏览器等操作。</span>
+            </div>
+            <div class="panel-section-actions">
+              <button id="connectorsMcpRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+            </div>
+          </header>
+          <div class="panel-section-body">
+            <div id="connectorsMcpList" class="stack" style="gap:10px;"></div>
           </div>
-          <p class="muted" style="font-size:12px;margin:0 0 12px;">启用后，AI 可直接调用这些工具执行文件、搜索、浏览器等操作。</p>
-          <div id="connectorsMcpList" class="stack" style="gap:10px;"></div>
-        </div>
+        </section>
 
         <div id="connectorsConfigMount" class="settings-sections"></div>
 
         <!-- ── Webhooks placeholder ── -->
-        <div class="settings-group">
-          <h3 class="settings-group-title">Webhooks <span class="muted" style="font-size:11px;font-weight:400;">(即将推出)</span></h3>
-          <p class="muted" style="font-size:12px;margin:0;">Slack、Notion、GitHub 等 Webhook 集成将在此处显示。</p>
-        </div>
+        <section class="panel-section" aria-labelledby="connWebhooksTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="connWebhooksTitle" class="panel-section-title">Webhooks<span class="zh">Webhook 集成</span></h3>
+              <span class="panel-section-sub">Slack、Notion、GitHub 等 Webhook 集成将在此处显示。</span>
+            </div>
+            <div class="panel-section-actions">
+              <span class="pill pill-neutral">Coming soon</span>
+            </div>
+          </header>
+        </section>
 
       </div>
     </section>
