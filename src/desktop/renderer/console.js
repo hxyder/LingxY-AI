@@ -149,7 +149,9 @@ const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
    TAB NAVIGATION
    ═══════════════════════════════════════════════ */
 
-const tabButtons = document.querySelectorAll(".tab-btn");
+// UCA-107: Rail items + any legacy .tab-btn still use data-tab; query by
+// that attribute so rail-items and tab-btns converge into one list.
+const tabButtons = document.querySelectorAll("[data-tab]");
 const tabPanels = document.querySelectorAll(".tab-panel");
 
 const PANEL_INTROS = {
@@ -246,13 +248,61 @@ function applyConsoleInformationArchitecture() {
 
 applyConsoleInformationArchitecture();
 
+// UCA-107: Rail collapse toggle + persisted rail state + persisted
+// current view. Reads from localStorage on boot, writes on interaction.
+(() => {
+  const railToggle = document.querySelector("#railToggle");
+  const railToggleLabel = railToggle?.querySelector(".rail-toggle-label");
+  const railToggleIcon = railToggle?.querySelector("svg");
+
+  function applyRailState(state) {
+    document.body.setAttribute("data-rail", state);
+    if (railToggleLabel) railToggleLabel.textContent = state === "collapsed" ? "Expand" : "Collapse";
+    if (railToggle) railToggle.setAttribute("aria-label", state === "collapsed" ? "Expand sidebar" : "Collapse sidebar");
+    if (railToggleIcon) {
+      railToggleIcon.style.transform = state === "collapsed" ? "rotate(180deg)" : "";
+    }
+  }
+
+  try {
+    const stored = localStorage.getItem("lingxy.rail");
+    applyRailState(stored === "collapsed" ? "collapsed" : "expanded");
+  } catch { applyRailState("expanded"); }
+
+  railToggle?.addEventListener("click", () => {
+    const next = document.body.getAttribute("data-rail") === "collapsed" ? "expanded" : "collapsed";
+    applyRailState(next);
+    try { localStorage.setItem("lingxy.rail", next); } catch { /* ignore */ }
+  });
+
+  // Restore the last visited view.
+  try {
+    const savedView = localStorage.getItem("lingxy.view");
+    if (savedView && document.querySelector(`[data-tab="${savedView}"]`)) {
+      // Defer to next frame so any page-load hooks (applyConsoleInfo…
+      // etc) finish their own default state first.
+      requestAnimationFrame(() => switchTab(savedView));
+    }
+  } catch { /* ignore */ }
+})();
+
 function switchTab(tabId) {
   tabButtons.forEach((btn) => {
     const isActive = btn.dataset.tab === tabId;
     btn.classList.toggle("active", isActive);
     btn.setAttribute("aria-selected", isActive ? "true" : "false");
+    // UCA-107: the rail uses aria-current="page" as the active marker;
+    // keep both attributes in sync so styling hooks (either the old
+    // tab-btn.active ruleset or the rail's [aria-current] rule) fire.
+    if (isActive) {
+      btn.setAttribute("aria-current", "page");
+    } else {
+      btn.removeAttribute("aria-current");
+    }
   });
   tabPanels.forEach((panel) => panel.classList.toggle("active", panel.id === `panel-${tabId}`));
+  // UCA-107: persist the selection so the app boots back to where you left.
+  try { localStorage.setItem("lingxy.view", tabId); } catch { /* sandbox: ignore */ }
 }
 
 tabButtons.forEach((btn) => {

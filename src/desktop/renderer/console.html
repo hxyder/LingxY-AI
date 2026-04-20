@@ -12,6 +12,165 @@
         background: var(--bg-0);
       }
 
+      /* ── v2 app shell: left rail + topbar + main ─────────────────── */
+      body {
+        padding-left: var(--app-rail-width);
+        transition: padding-left var(--duration-base) var(--ease-standard);
+      }
+      body[data-rail="collapsed"] {
+        padding-left: var(--app-rail-collapsed-width);
+      }
+
+      /* left rail */
+      .app-rail {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: var(--app-rail-width);
+        background: var(--surface-strong);
+        border-right: 1px solid var(--line);
+        backdrop-filter: blur(20px);
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 14px 10px 12px;
+        z-index: 20;
+        overflow-y: auto;
+        transition: width var(--duration-base) var(--ease-standard);
+      }
+      body[data-rail="collapsed"] .app-rail {
+        width: var(--app-rail-collapsed-width);
+        padding: 14px 6px 12px;
+      }
+
+      .rail-brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 4px 10px 12px;
+        font-family: var(--font-display);
+        font-size: 15px;
+        font-weight: var(--fw-semibold);
+        color: var(--ink);
+        border-bottom: 1px solid var(--line);
+        margin-bottom: 4px;
+      }
+      body[data-rail="collapsed"] .rail-brand { justify-content: center; padding: 4px 0 12px; }
+      body[data-rail="collapsed"] .rail-brand .rail-brand-label { display: none; }
+      .rail-brand-mark {
+        width: 28px;
+        height: 28px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+        color: var(--accent-ink);
+        display: grid;
+        place-items: center;
+        flex-shrink: 0;
+      }
+
+      .rail-group {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      .rail-group-label {
+        font-size: var(--fs-xs);
+        font-weight: var(--fw-semibold);
+        color: var(--muted);
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 10px 12px 4px;
+      }
+      body[data-rail="collapsed"] .rail-group-label {
+        /* Keep the group as a spacer but hide the label text. */
+        visibility: hidden;
+        height: 12px;
+        padding: 4px 0;
+      }
+
+      .rail-item {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        height: 36px;
+        padding: 0 12px;
+        border: 1px solid transparent;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--ink-soft);
+        font-size: var(--fs-sm);
+        font-weight: var(--fw-medium);
+        text-align: left;
+        cursor: pointer;
+        transition:
+          background var(--duration-fast) var(--ease-standard),
+          color var(--duration-fast) var(--ease-standard);
+      }
+      .rail-item:hover {
+        background: var(--surface-soft);
+        color: var(--ink);
+        transform: none;
+      }
+      .rail-item[aria-current="page"] {
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+      }
+      .rail-item-icon {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+        color: currentColor;
+      }
+      .rail-item-label {
+        flex: 1;
+        display: flex;
+        align-items: baseline;
+        gap: 0;
+        white-space: nowrap;
+        overflow: hidden;
+      }
+      .rail-item-badge {
+        font-size: var(--fs-xs);
+        font-weight: var(--fw-semibold);
+        padding: 1px 6px;
+        border-radius: var(--radius-pill);
+        background: var(--status-queued-bg);
+        color: var(--status-queued-text);
+        min-width: 18px;
+        text-align: center;
+      }
+      .rail-item[aria-current="page"] .rail-item-badge {
+        background: var(--accent);
+        color: var(--accent-ink);
+      }
+      body[data-rail="collapsed"] .rail-item { justify-content: center; padding: 0; width: 40px; height: 40px; margin: 0 auto; }
+      body[data-rail="collapsed"] .rail-item .rail-item-label { display: none; }
+      body[data-rail="collapsed"] .rail-item .rail-item-badge { display: none; }
+
+      .rail-footer {
+        margin-top: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        padding-top: 8px;
+        border-top: 1px solid var(--line);
+      }
+      .rail-toggle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        height: 32px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--muted);
+        font-size: var(--fs-xs);
+        cursor: pointer;
+      }
+      .rail-toggle:hover { background: var(--surface-soft); color: var(--ink); transform: none; }
+
       /* ── top bar ── */
       .topbar {
         position: sticky;
@@ -22,6 +181,7 @@
         justify-content: space-between;
         gap: 16px;
         padding: 12px 24px;
+        height: var(--topbar-height);
         background: rgba(255, 255, 255, 0.78);
         backdrop-filter: blur(20px);
         border-bottom: 1px solid var(--line);
@@ -90,11 +250,13 @@
         border-bottom-color: var(--accent);
       }
 
-      /* ── tab panels ── */
+      /* ── tab panels ──
+         Tab-bar is gone (replaced by the left rail), so min-height
+         only subtracts the sticky topbar. */
       .tab-panel {
         display: none;
         padding: 20px 24px;
-        min-height: calc(100vh - 110px);
+        min-height: calc(100vh - var(--topbar-height));
       }
 
       .tab-panel.active {
@@ -1252,18 +1414,81 @@
       </div>
     </div>
 
-    <!-- ── Tab Bar ── -->
-    <nav class="tab-bar" role="tablist" aria-label="Console sections">
-      <button class="tab-btn active" data-tab="tasks" role="tab" aria-selected="true">Tasks</button>
-      <button class="tab-btn" data-tab="chat" role="tab" aria-selected="false">Chat</button>
-      <button class="tab-btn" data-tab="files" role="tab" aria-selected="false">Files</button>
-      <button class="tab-btn" data-tab="schedules" role="tab" aria-selected="false">Schedules</button>
-      <button class="tab-btn" data-tab="history" title="History" role="tab" aria-selected="false">Memory</button>
-      <button class="tab-btn" data-tab="projects" role="tab" aria-selected="false">Projects</button>
-      <button class="tab-btn" data-tab="connectors" role="tab" aria-selected="false">Connectors</button>
-      <button class="tab-btn" data-tab="settings" role="tab" aria-selected="false">Settings</button>
-      <button class="tab-btn" data-tab="advanced" role="tab" aria-selected="false">Advanced</button>
-    </nav>
+    <!-- ── Left Rail (v2 IA) ──
+         Same data-tab attributes as the old tab-bar so console.js
+         event wire-up continues to work without changes. tab-btn
+         class retained for selector compat with pre-existing rules
+         and helpers. aria-current="page" replaces aria-selected per
+         the rail pattern; switchTab writes both for safety. -->
+    <aside class="app-rail" aria-label="Console sections">
+      <div class="rail-brand">
+        <span class="rail-brand-mark" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="18" height="18">
+            <path d="M 6 20 C 10 8, 22 8, 26 20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <circle cx="6" cy="20" r="2" fill="currentColor"/>
+            <circle cx="26" cy="20" r="2" fill="currentColor"/>
+          </svg>
+        </span>
+        <span class="rail-brand-label">LingxY</span>
+      </div>
+
+      <div class="rail-group">
+        <div class="rail-group-label">Workspace<span class="zh">工作</span></div>
+        <button class="rail-item active" data-tab="tasks" role="tab" aria-current="page" aria-selected="true" title="Tasks">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="8" height="4" x="8" y="2" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+          <span class="rail-item-label">Tasks<span class="zh">任务</span></span>
+          <span class="rail-item-badge" id="railBadgeTasks" hidden></span>
+        </button>
+        <button class="rail-item" data-tab="chat" role="tab" aria-selected="false" title="Chat">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span class="rail-item-label">Chat<span class="zh">对话</span></span>
+        </button>
+        <button class="rail-item" data-tab="files" role="tab" aria-selected="false" title="Files">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span class="rail-item-label">Files<span class="zh">文件</span></span>
+        </button>
+        <button class="rail-item" data-tab="schedules" role="tab" aria-selected="false" title="Schedules">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <span class="rail-item-label">Schedules<span class="zh">计划</span></span>
+          <span class="rail-item-badge" id="railBadgeApprovals" hidden></span>
+        </button>
+      </div>
+
+      <div class="rail-group">
+        <div class="rail-group-label">Context<span class="zh">情境</span></div>
+        <button class="rail-item" data-tab="history" role="tab" aria-selected="false" title="History">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+          <span class="rail-item-label">Memory<span class="zh">记忆</span></span>
+        </button>
+        <button class="rail-item" data-tab="projects" role="tab" aria-selected="false" title="Projects">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+          <span class="rail-item-label">Projects<span class="zh">项目</span></span>
+        </button>
+      </div>
+
+      <div class="rail-group">
+        <div class="rail-group-label">System<span class="zh">系统</span></div>
+        <button class="rail-item" data-tab="connectors" role="tab" aria-selected="false" title="Connectors">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2v6"/><path d="M15 2v6"/><path d="M12 17v5"/><path d="M5 8h14a2 2 0 0 1 2 2v3a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5v-3a2 2 0 0 1 2-2Z"/></svg>
+          <span class="rail-item-label">Connectors<span class="zh">连接器</span></span>
+        </button>
+        <button class="rail-item" data-tab="settings" role="tab" aria-selected="false" title="Settings">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span class="rail-item-label">Settings<span class="zh">设置</span></span>
+        </button>
+        <button class="rail-item" data-tab="advanced" role="tab" aria-selected="false" title="Advanced">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          <span class="rail-item-label">Advanced<span class="zh">高级</span></span>
+        </button>
+      </div>
+
+      <div class="rail-footer">
+        <button class="rail-toggle" id="railToggle" aria-label="Collapse sidebar">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+          <span class="rail-toggle-label">Collapse</span>
+        </button>
+      </div>
+    </aside>
 
     <!-- ═══════════════════════════════════════
          TAB: TASKS
