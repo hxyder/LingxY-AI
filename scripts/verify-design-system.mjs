@@ -103,13 +103,18 @@ for (const variant of ["pill-success", "pill-running", "pill-queued", "pill-erro
 assert.ok(/\.tag\s*\{[^}]*font-family:\s*var\(--font-mono\)/.test(shared), ".tag utility missing or not mono");
 
 // ── html defaults on both documents ───────────────────────────────────
+// v3 defaults: data-accent="terra", data-density="regular". Legacy amber/
+// roomy still valid as fallback (accent-amber aliases to terra via
+// tokens.css, and density-roomy is still a declared level).
+const acceptAccent = /data-accent="(?:terra|amber)"/;
+const acceptDensity = /data-density="(?:regular|roomy|balanced)"/;
 assert.ok(
-  /<html[^>]*data-accent="amber"[^>]*data-density="roomy"/.test(consoleHtml),
-  "console.html <html> must declare data-accent=amber + data-density=roomy"
+  acceptAccent.test(consoleHtml) && acceptDensity.test(consoleHtml),
+  "console.html <html> must declare a recognized data-accent + data-density"
 );
 assert.ok(
-  /<html[^>]*data-accent="amber"[^>]*data-density="roomy"/.test(overlayHtml),
-  "overlay.html <html> must declare data-accent=amber + data-density=roomy"
+  acceptAccent.test(overlayHtml) && acceptDensity.test(overlayHtml),
+  "overlay.html <html> must declare a recognized data-accent + data-density"
 );
 
 // ── canonical accent names still resolve ──────────────────────────────
