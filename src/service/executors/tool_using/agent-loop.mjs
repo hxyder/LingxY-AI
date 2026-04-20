@@ -597,20 +597,34 @@ Respond ONLY with a single JSON object (no markdown, no code fences):
     let cleaned = resultText.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1").trim();
     // try to extract JSON object if there's prose around it
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-    if (jsonMatch) cleaned = jsonMatch[0];
 
-    const parsed = JSON.parse(cleaned);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]);
+        if (parsed.tool) {
+          return { type: "tool_call", tool: parsed.tool, args: parsed.args ?? {} };
+        }
+        if (parsed.final) {
+          return { type: "final", text: parsed.final };
+        }
+      } catch {
+        // Fall through to prose handling.
+      }
+    }
 
-    if (parsed.tool) {
-      return { type: "tool_call", tool: parsed.tool, args: parsed.args ?? {} };
+    // LLM wrote plain prose instead of JSON — most commonly when it wanted
+    // to ask the user a clarifying question. Treat the whole response as a
+    // final message so the user sees the question instead of "Unexpected
+    // token" errors. (task_e2c4e734 regressed here before this change.)
+    const prose = resultText.trim();
+    if (prose) {
+      return { type: "final", text: prose };
     }
-    if (parsed.final) {
-      return { type: "final", text: parsed.final };
-    }
-    return { type: "final", text: resultText };
+    return { type: "final", text: "(no response from planner)" };
   } catch (error) {
-    // LLM call failed or returned non-JSON — give up gracefully with a final message
-    return { type: "final", text: `I couldn't determine how to handle this request. (planner error: ${error.message})` };
+    // LLM transport / network failure — surface a neutral message without
+    // the internal parser trace.
+    return { type: "final", text: `抱歉，暂时无法处理这个请求（${error.message}）。请重试或换一种表达。` };
   }
 }
 
