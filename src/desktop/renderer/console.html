@@ -1708,43 +1708,64 @@
          TAB: SCHEDULES
          ═══════════════════════════════════════ -->
     <section id="panel-schedules" class="tab-panel">
-      <div style="max-width:700px;">
-        <form id="scheduleForm" class="settings-group" style="margin-bottom:16px;">
-          <h3 class="settings-group-title">Create Schedule</h3>
-          <div class="stack" style="gap:10px;">
+      <div class="schedules-layout">
+        <!-- ── Create new schedule ── -->
+        <section class="panel-section" aria-labelledby="scheduleCreateTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="scheduleCreateTitle" class="panel-section-title">New schedule<span class="zh">新建计划</span></h3>
+              <span class="panel-section-sub">自然语言时间 + 要做的事，AI 到点自动执行或提醒。</span>
+            </div>
+          </header>
+          <form id="scheduleForm" class="panel-section-body">
             <div>
-              <label for="scheduleWhenInput">When</label>
+              <label for="scheduleWhenInput">When<span class="zh">触发时间</span></label>
               <input id="scheduleWhenInput" type="text" placeholder="例如：2分钟以后 / 每天 9点 / every hour">
             </div>
             <div>
-              <label for="scheduleCommandInput">Reminder / Task</label>
+              <label for="scheduleCommandInput">Reminder / Task<span class="zh">要做的事</span></label>
               <textarea id="scheduleCommandInput" rows="3" placeholder="例如：提醒我时间到了"></textarea>
             </div>
             <div class="toolbar">
-              <button type="submit" class="primary">Create Schedule</button>
+              <button type="submit" class="primary">Create<span class="zh">创建</span></button>
               <span id="scheduleCreateState" class="muted" style="font-size:12px;"></span>
             </div>
-          </div>
-        </form>
-        <div class="row" style="margin-bottom:14px;gap:12px;align-items:center;">
-          <strong>Scheduled Tasks</strong>
-          <span id="scheduleCount" class="muted" style="font-size:12px;">0</span>
-          <div class="toolbar" style="margin-left:auto;">
-            <button type="button" class="ghost" data-schedule-view="list" style="font-size:11px;">List</button>
-            <button type="button" class="ghost" data-schedule-view="week" style="font-size:11px;">Week</button>
-            <button type="button" class="ghost" data-schedule-view="month" style="font-size:11px;">Month</button>
-          </div>
-        </div>
-        <div id="scheduleCalendar" style="display:none;margin-bottom:16px;"></div>
-        <div id="scheduleList" class="schedule-list"></div>
+          </form>
+        </section>
 
-        <div style="margin-top:24px;">
-          <div class="row" style="margin-bottom:14px;">
-            <strong>Pending Approvals</strong>
-            <span id="approvalCount" class="muted" style="font-size:12px;">0</span>
+        <!-- ── Scheduled tasks list + calendar views ── -->
+        <section class="panel-section" aria-labelledby="scheduleListTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="scheduleListTitle" class="panel-section-title">Scheduled Tasks<span class="zh">计划任务</span> <span id="scheduleCount" class="pill pill-neutral" style="margin-left:8px;">0</span></h3>
+              <span class="panel-section-sub">切换 List / Week / Month 查看不同视角。</span>
+            </div>
+            <div class="panel-section-actions">
+              <div class="view-toggle" role="group" aria-label="Schedule view mode">
+                <button type="button" data-schedule-view="list" aria-pressed="true">List</button>
+                <button type="button" data-schedule-view="week" aria-pressed="false">Week</button>
+                <button type="button" data-schedule-view="month" aria-pressed="false">Month</button>
+              </div>
+            </div>
+          </header>
+          <div class="panel-section-body">
+            <div id="scheduleCalendar" style="display:none;"></div>
+            <div id="scheduleList" class="schedule-list"></div>
           </div>
-          <div id="approvalList" class="approval-list"></div>
-        </div>
+        </section>
+
+        <!-- ── Pending approvals (folded into Schedules tab) ── -->
+        <section class="panel-section" aria-labelledby="scheduleApprovalsTitle">
+          <header class="panel-section-header">
+            <div class="panel-section-head-main">
+              <h3 id="scheduleApprovalsTitle" class="panel-section-title">Pending Approvals<span class="zh">待确认</span> <span id="approvalCount" class="pill pill-warning" style="margin-left:8px;">0</span></h3>
+              <span class="panel-section-sub">需要你拍板的计划或工具调用。可以编辑内容后再确认。</span>
+            </div>
+          </header>
+          <div class="panel-section-body">
+            <div id="approvalList" class="approval-list"></div>
+          </div>
+        </section>
       </div>
     </section>
 

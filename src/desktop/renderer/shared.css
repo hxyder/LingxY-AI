@@ -258,6 +258,41 @@
   .panel-card-grid.wide-first > :first-child { grid-column: span 1; }
 }
 
+/* Layout wrapper that keeps sectioned pages at a comfortable reading
+   width even inside a wide content area. */
+.schedules-layout {
+  display: flex;
+  flex-direction: column;
+  max-width: 860px;
+}
+
+/* Inline segmented-pill view-toggle (List / Week / Month and similar).
+   Used in panel-section-actions; keeps each button small and neutral
+   with an active accent state driven by aria-pressed. */
+.view-toggle {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-soft);
+}
+.view-toggle button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.view-toggle button:hover { color: var(--ink); background: var(--surface); transform: none; }
+.view-toggle button[aria-pressed="true"] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
 /* Inline provider icon styles inside Connectors stay legible on
    both themes by using currentColor via --ink-soft instead of a
    hardcoded tint. */

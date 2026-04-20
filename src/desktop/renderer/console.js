@@ -2729,9 +2729,12 @@ function renderSchedules() {
     return;
   }
 
-  // Highlight the active view-mode button
+  // Highlight the active view-mode button. .active is kept for
+  // legacy CSS; aria-pressed drives the new .view-toggle styling.
   for (const btn of document.querySelectorAll("[data-schedule-view]")) {
-    btn.classList.toggle("active", btn.dataset.scheduleView === scheduleViewMode);
+    const on = btn.dataset.scheduleView === scheduleViewMode;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
   }
 
   if (scheduleViewMode === "week" || scheduleViewMode === "month") {
