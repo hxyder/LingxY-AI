@@ -1404,6 +1404,8 @@
           <dd>Submit from anywhere</dd>
           <dt><kbd>Ctrl</kbd>+<kbd>/</kbd></dt>
           <dd>Show this cheatsheet</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>K</kbd></dt>
+          <dd>Quick input palette</dd>
           <dt><kbd>Esc</kbd></dt>
           <dd>Close overlay / cheatsheet / cancel voice</dd>
           <dt><kbd>Enter</kbd></dt>
@@ -1455,6 +1457,36 @@
         </div>
       </div>
     </div>
+    <!-- ── UCA-110 Command palette (Ctrl+K) ────────────────────────────
+         Console-internal quick input. Greeting + search + action
+         chips + recent-tasks list + key hints. Reuses the taskComposer
+         /task endpoint for submission so there's one code path for
+         creating tasks. -->
+    <div id="paletteBackdrop" class="palette-backdrop" role="dialog" aria-modal="true" aria-labelledby="paletteTitle" hidden>
+      <div class="palette-panel">
+        <div id="paletteGreeting" class="palette-greeting" id="paletteTitle">Hi — what can I do for you?<span class="zh">想做点什么？</span></div>
+        <label class="palette-search">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="paletteSearchInput" type="text" placeholder="Ask anything, or pick a quick action…  问我或选一个快速动作" aria-label="Palette search"/>
+        </label>
+        <div class="palette-chip-row" role="group" aria-label="Quick actions">
+          <button type="button" class="palette-chip" data-quick="new-chat">New chat<span class="zh">新对话</span></button>
+          <button type="button" class="palette-chip" data-quick="translate">Translate<span class="zh">翻译</span></button>
+          <button type="button" class="palette-chip" data-quick="summarize">Summarize<span class="zh">总结</span></button>
+          <button type="button" class="palette-chip" data-quick="explain">Explain<span class="zh">解释</span></button>
+          <button type="button" class="palette-chip" data-quick="schedule">Schedule<span class="zh">定时</span></button>
+        </div>
+        <div class="palette-list" id="paletteList">
+          <div class="palette-list-label">Recent<span class="zh">最近</span></div>
+          <div id="paletteRecent"></div>
+        </div>
+        <div class="palette-hints">
+          <span><kbd>↑↓</kbd> navigate <kbd>↵</kbd> send <kbd>esc</kbd> close</span>
+          <span id="paletteModelPill" class="tag" aria-label="Active model"></span>
+        </div>
+      </div>
+    </div>
+
     <button type="button" id="tweaksLauncher" class="tweaks-launcher" aria-label="Open tweaks" aria-expanded="false" title="Tweaks (Ctrl+,)">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6"/><path d="m4.22 4.22 4.24 4.24m7.08 7.08 4.24 4.24"/><path d="M1 12h6m10 0h6"/><path d="m4.22 19.78 4.24-4.24m7.08-7.08 4.24-4.24"/></svg>
     </button>

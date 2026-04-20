@@ -3507,6 +3507,156 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+// UCA-110 (Phase 4e): Console-internal command palette (Ctrl+K).
+// Quick-submit path for tasks, reusing the same /task endpoint the
+// taskComposer submits to. Quick-action chips prefill the input with
+// a template; ↑↓ navigate the recent-tasks list; ↵ submits.
+(() => {
+  const backdrop = document.querySelector("#paletteBackdrop");
+  const searchInput = document.querySelector("#paletteSearchInput");
+  const recentList = document.querySelector("#paletteRecent");
+  const greeting = document.querySelector("#paletteGreeting");
+  const modelPill = document.querySelector("#paletteModelPill");
+  if (!backdrop || !searchInput) return;
+
+  const QUICK_TEMPLATES = {
+    "new-chat": "",
+    translate: "Translate the following to English: ",
+    summarize: "Summarize: ",
+    explain: "Explain in simple terms: ",
+    schedule: "In 5 minutes, remind me to "
+  };
+
+  let activeIndex = -1; // -1 means "submit the search text, not a list item"
+  let items = [];
+
+  function refreshItems() {
+    const tasks = (state.workspace.tasks ?? []).slice(0, 8);
+    items = tasks.map((t) => ({
+      title: t.user_command ?? t.intent ?? "(untitled)",
+      sub: `${t.executor ?? "—"} · ${t.status ?? ""}`,
+      taskId: t.task_id
+    }));
+    recentList.innerHTML = items.length === 0
+      ? `<p class="muted" style="padding:12px 20px;font-size:12px;">No recent tasks.</p>`
+      : items.map((it, i) => `
+          <button type="button" class="palette-item${i === activeIndex ? " palette-item--active" : ""}" data-palette-idx="${i}">
+            <svg class="palette-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span class="palette-item-main">
+              <span class="palette-item-title">${escapeHtml(it.title)}</span>
+              <span class="palette-item-sub">${escapeHtml(it.sub)}</span>
+            </span>
+          </button>
+        `).join("");
+    for (const btn of recentList.querySelectorAll("[data-palette-idx]")) {
+      btn.addEventListener("click", () => {
+        const idx = Number(btn.dataset.paletteIdx);
+        if (Number.isFinite(idx) && items[idx]) {
+          state.selectedTaskId = items[idx].taskId;
+          switchTab("tasks");
+          renderTasks();
+          void refreshTaskDetail();
+          setOpen(false);
+        }
+      });
+    }
+  }
+
+  function refreshModelPill() {
+    // Best-effort: prefer the chat routing's configured model, fall
+    // back to any configured provider, otherwise hide the pill.
+    const route = state.workspace?.providers?.find?.((p) => p?.available && p?.configured);
+    const label = route?.model ?? route?.provider_id ?? null;
+    if (!label) { modelPill.textContent = ""; modelPill.style.display = "none"; return; }
+    modelPill.textContent = label;
+    modelPill.style.display = "inline-flex";
+  }
+
+  function setOpen(open) {
+    const next = open ?? backdrop.hasAttribute("hidden");
+    if (next) {
+      backdrop.removeAttribute("hidden");
+      activeIndex = -1;
+      refreshItems();
+      refreshModelPill();
+      setTimeout(() => searchInput.focus(), 0);
+    } else {
+      backdrop.setAttribute("hidden", "");
+    }
+  }
+
+  function highlight(idx) {
+    activeIndex = items.length === 0 ? -1 : Math.max(-1, Math.min(items.length - 1, idx));
+    for (const el of recentList.querySelectorAll(".palette-item")) {
+      el.classList.toggle("palette-item--active", Number(el.dataset.paletteIdx) === activeIndex);
+    }
+  }
+
+  async function submitPrompt() {
+    const text = searchInput.value.trim();
+    if (!text) return;
+    try {
+      await fetchJson("/task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_command: text, source_app: "console.palette" })
+      });
+      searchInput.value = "";
+      setOpen(false);
+      await refreshWorkspace();
+      switchTab("tasks");
+    } catch (error) {
+      // Keep the palette open on error so the user can retry without
+      // re-typing; surface the message via the greeting area.
+      greeting.textContent = `Submission failed: ${error.message}`;
+    }
+  }
+
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) setOpen(false);
+  });
+  searchInput.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); highlight(activeIndex + 1); }
+    else if (event.key === "ArrowUp") { event.preventDefault(); highlight(activeIndex - 1); }
+    else if (event.key === "Enter") {
+      event.preventDefault();
+      if (activeIndex >= 0 && items[activeIndex]) {
+        state.selectedTaskId = items[activeIndex].taskId;
+        switchTab("tasks");
+        renderTasks();
+        void refreshTaskDetail();
+        setOpen(false);
+      } else {
+        void submitPrompt();
+      }
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+    }
+  });
+
+  for (const chip of document.querySelectorAll(".palette-chip[data-quick]")) {
+    chip.addEventListener("click", () => {
+      const template = QUICK_TEMPLATES[chip.dataset.quick] ?? "";
+      searchInput.value = template;
+      searchInput.focus();
+      if (template) searchInput.setSelectionRange(template.length, template.length);
+    });
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (event.ctrlKey && (event.key === "k" || event.key === "K")) {
+      event.preventDefault();
+      setOpen();
+    } else if (event.key === "Escape" && !backdrop.hasAttribute("hidden")) {
+      // Only handle escape when we own the topmost modal (cheatsheet/
+      // tweaks handlers already guard with their own hidden checks).
+      event.preventDefault();
+      setOpen(false);
+    }
+  });
+})();
+
 consoleChatForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   void submitConsoleChat();
