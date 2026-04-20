@@ -1411,8 +1411,14 @@
     <!-- ── Top Bar ── -->
     <header class="topbar">
       <div class="topbar-left">
-        <div class="topbar-logo">U</div>
-        <span class="topbar-title">UCA Console</span>
+        <span class="topbar-logo" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20">
+            <path d="M 6 20 C 10 8, 22 8, 26 20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+            <circle cx="6" cy="20" r="2" fill="currentColor"/>
+            <circle cx="26" cy="20" r="2" fill="currentColor"/>
+          </svg>
+        </span>
+        <span class="topbar-title">LingxY Console</span>
         <span id="runtimeState" class="chip warning">connecting...</span>
       </div>
       <div class="topbar-right">

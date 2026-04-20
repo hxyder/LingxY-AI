@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="LingxY">
+  <title>LingxY — 心有灵犀一点通</title>
+  <path d="M 6 20 C 10 8, 22 8, 26 20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <circle cx="6" cy="20" r="2" fill="currentColor"/>
+  <circle cx="26" cy="20" r="2" fill="currentColor"/>
+</svg>
