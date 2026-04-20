@@ -323,14 +323,14 @@ tabButtons.forEach((btn) => {
    THEME SYSTEM
    ═══════════════════════════════════════════════ */
 
-// UCA-109 (Phase 4d): Unified Tweaks panel + theme swatches.
-// Theme (light/dark), accent (5 colors), and density (3 levels) all
-// share localStorage keys lingxy.theme, lingxy.accent, lingxy.density
-// plus the legacy uca-console-theme key for pre-v2 callers.
+// UCA-111 (Phase 4f-1): Theme switching only. Tweaks panel retired —
+// user asked for "normal theme switching" so we keep the topbar
+// swatches and drop the accent/density pickers. The underlying
+// [data-accent] / [data-density] tokens stay in tokens.css and
+// default to amber + roomy; power users can still flip them via
+// devtools but there's no dedicated UI.
 const THEMES = ["default", "dark"];
 const THEME_KEY = "uca-console-theme";
-const ACCENTS = ["amber", "indigo", "teal", "rose", "slate"];
-const DENSITIES = ["compact", "balanced", "roomy"];
 
 function applyTheme(themeValue) {
   const t = THEMES.includes(themeValue) ? themeValue : "default";
@@ -339,12 +339,8 @@ function applyTheme(themeValue) {
   } else {
     document.body.setAttribute("data-theme", t);
   }
-  // Keep topbar swatches and Tweaks segmented buttons in sync.
   document.querySelectorAll(".theme-swatch").forEach((btn) => {
     btn.classList.toggle("ts-active", btn.dataset.themeValue === t);
-  });
-  document.querySelectorAll("[data-tweak-theme]").forEach((btn) => {
-    btn.setAttribute("aria-pressed", btn.dataset.tweakTheme === t ? "true" : "false");
   });
   try {
     localStorage.setItem(THEME_KEY, t);
@@ -352,87 +348,16 @@ function applyTheme(themeValue) {
   } catch { /* ignore */ }
 }
 
-function applyAccent(accentValue) {
-  const a = ACCENTS.includes(accentValue) ? accentValue : "amber";
-  document.documentElement.setAttribute("data-accent", a);
-  document.querySelectorAll(".tweaks-accent").forEach((btn) => {
-    btn.setAttribute("aria-pressed", btn.dataset.accentValue === a ? "true" : "false");
-  });
-  try { localStorage.setItem("lingxy.accent", a); } catch { /* ignore */ }
-}
+// Apply saved theme on load.
+applyTheme((() => {
+  try { return localStorage.getItem("lingxy.theme") ?? localStorage.getItem(THEME_KEY) ?? "default"; }
+  catch { return "default"; }
+})());
 
-function applyDensity(densityValue) {
-  const d = DENSITIES.includes(densityValue) ? densityValue : "roomy";
-  document.documentElement.setAttribute("data-density", d);
-  document.querySelectorAll("[data-tweak-density]").forEach((btn) => {
-    btn.setAttribute("aria-pressed", btn.dataset.tweakDensity === d ? "true" : "false");
-  });
-  try { localStorage.setItem("lingxy.density", d); } catch { /* ignore */ }
-}
-
-// Apply saved values on load (migrate from legacy theme key if needed).
-(() => {
-  let theme = "default";
-  let accent = "amber";
-  let density = "roomy";
-  try {
-    theme = localStorage.getItem("lingxy.theme") ?? localStorage.getItem(THEME_KEY) ?? "default";
-    accent = localStorage.getItem("lingxy.accent") ?? "amber";
-    density = localStorage.getItem("lingxy.density") ?? "roomy";
-  } catch { /* defaults */ }
-  applyTheme(theme);
-  applyAccent(accent);
-  applyDensity(density);
-})();
-
-// Wire topbar swatch clicks (legacy topbar entry point).
+// Wire topbar swatch clicks.
 document.querySelectorAll(".theme-swatch").forEach((btn) => {
   btn.addEventListener("click", () => applyTheme(btn.dataset.themeValue));
 });
-
-// Tweaks panel: open/close + control handlers.
-(() => {
-  const launcher = document.querySelector("#tweaksLauncher");
-  const backdrop = document.querySelector("#tweaksBackdrop");
-  const closeBtn = document.querySelector("#tweaksCloseButton");
-  if (!launcher || !backdrop) return;
-
-  function setOpen(open) {
-    const next = open ?? backdrop.hasAttribute("hidden");
-    if (next) {
-      backdrop.removeAttribute("hidden");
-      launcher.setAttribute("aria-expanded", "true");
-    } else {
-      backdrop.setAttribute("hidden", "");
-      launcher.setAttribute("aria-expanded", "false");
-    }
-  }
-  launcher.addEventListener("click", () => setOpen());
-  closeBtn?.addEventListener("click", () => setOpen(false));
-  // Click-outside closes (only when clicking the inert backdrop region).
-  backdrop.addEventListener("click", (event) => {
-    if (event.target === backdrop) setOpen(false);
-  });
-  document.addEventListener("keydown", (event) => {
-    if (event.ctrlKey && event.key === ",") {
-      event.preventDefault();
-      setOpen();
-    } else if (event.key === "Escape" && !backdrop.hasAttribute("hidden")) {
-      setOpen(false);
-    }
-  });
-
-  // Control clicks inside the panel.
-  document.querySelectorAll("[data-tweak-theme]").forEach((btn) => {
-    btn.addEventListener("click", () => applyTheme(btn.dataset.tweakTheme));
-  });
-  document.querySelectorAll(".tweaks-accent").forEach((btn) => {
-    btn.addEventListener("click", () => applyAccent(btn.dataset.accentValue));
-  });
-  document.querySelectorAll("[data-tweak-density]").forEach((btn) => {
-    btn.addEventListener("click", () => applyDensity(btn.dataset.tweakDensity));
-  });
-})();
 
 // External navigation request (e.g., overlay's settings shortcut button)
 if (window.ucaShell?.onNavigateConsole) {
