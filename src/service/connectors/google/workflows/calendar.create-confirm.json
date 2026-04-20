@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "provider": "google",
+  "service": "google.calendar",
+  "workflows": [
+    {
+      "id": "google.calendar.create_confirm",
+      "name": "Google Calendar Create Confirm",
+      "description": "Prepare an event preview, ask for confirmation when needed, then create the Google Calendar event.",
+      "intent": "calendar.create_confirm",
+      "risk": "medium",
+      "triggerPatterns": [
+        "创建日程",
+        "添加会议",
+        "create calendar event",
+        "schedule a meeting"
+      ],
+      "steps": [
+        {
+          "id": "prepare_event",
+          "type": "preview",
+          "output": "event_preview"
+        },
+        {
+          "id": "request_confirmation",
+          "type": "user.confirm"
+        },
+        {
+          "id": "create_event",
+          "tool": "google.calendar.create_event",
+          "condition": "confirmation.approved"
+        }
+      ],
+      "resultContract": {
+        "successRequires": [
+          "event.id"
+        ]
+      },
+      "timeline": {
+        "showAllSteps": true,
+        "payloadPolicy": "summary_only"
+      }
+    }
+  ]
+}

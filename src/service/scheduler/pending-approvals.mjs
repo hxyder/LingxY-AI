@@ -95,7 +95,7 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
       }
       return approval;
     },
-    async approve(approvalId, { actor = "user", decidedAt = defaultNow() } = {}) {
+    async approve(approvalId, { actor = "user", decidedAt = defaultNow(), overrides = null } = {}) {
       const existing = runtime.store.getPendingApproval(approvalId);
       if (!existing || existing.status !== "pending") {
         return null;
@@ -109,7 +109,7 @@ export function createPendingApprovalService({ runtime, executeApprovedAction })
 
       let executionResult = null;
       if (executeApprovedAction) {
-        executionResult = await executeApprovedAction(approval);
+        executionResult = await executeApprovedAction(approval, { overrides });
         if (executionResult?.task?.task_id) {
           runtime.store.updatePendingApproval(approvalId, {
             resulting_task_id: executionResult.task.task_id

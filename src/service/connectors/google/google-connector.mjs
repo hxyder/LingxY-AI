@@ -1,5 +1,5 @@
 import { getValidAccessToken } from "../core/token-manager.mjs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 function headers(accessToken) {
@@ -108,18 +108,125 @@ function base64Url(value) {
   return Buffer.from(value, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function buildRfc822Email(input = {}) {
-  const lines = [
-    `To: ${(input.to ?? []).join(", ")}`,
-    input.cc?.length ? `Cc: ${input.cc.join(", ")}` : null,
-    input.bcc?.length ? `Bcc: ${input.bcc.join(", ")}` : null,
-    `Subject: ${input.subject ?? ""}`,
-    "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=UTF-8",
+function asList(value) {
+  if (value === undefined || value === null || value === "") return [];
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean);
+  return [String(value)];
+}
+
+function encodeHeaderRfc2047(value) {
+  const text = String(value ?? "");
+  // eslint-disable-next-line no-control-regex
+  if (!/[^\x00-\x7F]/.test(text)) {
+    return text;
+  }
+  // Base64-encode each ≤45-byte UTF-8 chunk as RFC 2047 encoded-word. Chunks
+  // must split on character boundaries, not byte boundaries, to avoid
+  // corrupting multi-byte sequences.
+  const chunks = [];
+  let currentBytes = 0;
+  let currentChars = "";
+  for (const char of text) {
+    const charBytes = Buffer.byteLength(char, "utf8");
+    if (currentBytes + charBytes > 45 && currentChars.length > 0) {
+      chunks.push(currentChars);
+      currentChars = char;
+      currentBytes = charBytes;
+    } else {
+      currentChars += char;
+      currentBytes += charBytes;
+    }
+  }
+  if (currentChars) chunks.push(currentChars);
+  return chunks
+    .map((chunk) => `=?UTF-8?B?${Buffer.from(chunk, "utf8").toString("base64")}?=`)
+    .join(" ");
+}
+
+function mimeTypeFor(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const map = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".txt": "text/plain",
+    ".html": "text/html",
+    ".htm": "text/html",
+    ".md": "text/markdown",
+    ".json": "application/json",
+    ".csv": "text/csv",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ".zip": "application/zip"
+  };
+  return map[ext] ?? "application/octet-stream";
+}
+
+function base64WrapBuffer(buffer, width = 76) {
+  const str = buffer.toString("base64");
+  const lines = [];
+  for (let i = 0; i < str.length; i += width) lines.push(str.slice(i, i + width));
+  return lines.join("\r\n");
+}
+
+async function buildRfc822EmailAsync(input = {}) {
+  const to = asList(input.to);
+  const cc = asList(input.cc);
+  const bcc = asList(input.bcc);
+  const attachmentPaths = asList(input.attachmentPaths);
+  const headers = [
+    `To: ${to.join(", ")}`,
+    cc.length ? `Cc: ${cc.join(", ")}` : null,
+    bcc.length ? `Bcc: ${bcc.join(", ")}` : null,
+    `Subject: ${encodeHeaderRfc2047(input.subject ?? "")}`,
+    "MIME-Version: 1.0"
+  ].filter((line) => line !== null);
+
+  if (attachmentPaths.length === 0) {
+    return [
+      ...headers,
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: 8bit",
+      "",
+      input.body ?? ""
+    ].join("\r\n");
+  }
+
+  const boundary = `lingxy_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+  const parts = [
+    `Content-Type: text/plain; charset=UTF-8`,
+    `Content-Transfer-Encoding: 8bit`,
     "",
     input.body ?? ""
-  ].filter((line) => line !== null);
-  return lines.join("\r\n");
+  ];
+  const bodyPart = `--${boundary}\r\n${parts.join("\r\n")}\r\n`;
+  const attachmentParts = [];
+  for (const filePath of attachmentPaths) {
+    const content = await readFile(filePath);
+    const filename = path.basename(filePath);
+    const encodedName = encodeHeaderRfc2047(filename);
+    attachmentParts.push([
+      `--${boundary}`,
+      `Content-Type: ${mimeTypeFor(filePath)}; name="${encodedName}"`,
+      `Content-Transfer-Encoding: base64`,
+      `Content-Disposition: attachment; filename="${encodedName}"`,
+      "",
+      base64WrapBuffer(content)
+    ].join("\r\n"));
+  }
+  return [
+    ...headers,
+    `Content-Type: multipart/mixed; boundary="${boundary}"`,
+    "",
+    bodyPart,
+    attachmentParts.join("\r\n"),
+    `--${boundary}--`
+  ].join("\r\n");
 }
 
 export async function sendGoogleEmail(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
@@ -131,11 +238,121 @@ export async function sendGoogleEmail(runtime, account, input = {}, { fetchImpl 
       ...headers(accessToken),
       "Content-Type": "application/json"
     },
-    body: JSON.stringify({ raw: base64Url(buildRfc822Email(input)) })
+    body: JSON.stringify({ raw: base64Url(await buildRfc822EmailAsync(input)) })
   });
   if (!response.ok) return { status: "error", errorCode: `gmail_send_error:${response.status}` };
   const payload = await response.json();
   return { status: "success", provider: "google", accountId: account.id, data: { messageId: payload.id ?? null } };
+}
+
+// Google Docs / Sheets / Slides export formats when the user wants the raw
+// content of a Workspace document instead of a Drive file download. Any
+// mimeType not listed here goes through /files/:id?alt=media which works for
+// uploaded binaries (pdf/docx/jpg/etc).
+const WORKSPACE_EXPORT_MIME_MAP = {
+  "application/vnd.google-apps.document": {
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ext: ".docx"
+  },
+  "application/vnd.google-apps.spreadsheet": {
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ext: ".xlsx"
+  },
+  "application/vnd.google-apps.presentation": {
+    mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    ext: ".pptx"
+  },
+  "application/vnd.google-apps.drawing": { mimeType: "image/png", ext: ".png" },
+  "application/vnd.google-apps.script": { mimeType: "application/vnd.google-apps.script+json", ext: ".json" }
+};
+
+function sanitiseFilename(name) {
+  return String(name ?? "").replace(/[\\/:*?"<>|]/g, "_").trim();
+}
+
+async function ensureWritableTarget(destPath, filename, overwrite) {
+  if (!destPath) throw new Error("destPath is required");
+  const resolved = path.resolve(destPath);
+  let target = resolved;
+  try {
+    const st = await stat(resolved);
+    if (st.isDirectory()) {
+      target = path.join(resolved, filename);
+    }
+  } catch {
+    // path doesn't exist. If the path ends with a separator or has no extension
+    // treat it as a directory (create + write into it); otherwise treat as file.
+    const looksLikeDir = /[\\/]$/.test(destPath) || !path.extname(destPath);
+    if (looksLikeDir) {
+      await mkdir(resolved, { recursive: true });
+      target = path.join(resolved, filename);
+    } else {
+      await mkdir(path.dirname(resolved), { recursive: true });
+    }
+  }
+  if (!overwrite) {
+    try {
+      await stat(target);
+      throw new Error(`target_exists: ${target}`);
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        if (error.message?.startsWith("target_exists")) throw error;
+      }
+    }
+  }
+  return target;
+}
+
+export async function downloadGoogleFile(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
+  const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
+  if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };
+
+  const fileId = input.fileId ?? input.id;
+  if (!fileId) return { status: "error", errorCode: "FILE_ID_REQUIRED", message: "fileId is required" };
+
+  // Look up metadata to decide export vs. media download and to pick a filename.
+  const metaResponse = await fetchImpl(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,size`,
+    { headers: headers(accessToken) }
+  );
+  if (!metaResponse.ok) {
+    return { status: "error", errorCode: `gdrive_meta_error:${metaResponse.status}` };
+  }
+  const meta = await metaResponse.json();
+
+  let downloadUrl;
+  let suggestedName = sanitiseFilename(input.newFileName ?? meta.name ?? `file-${fileId}`);
+  const workspaceExport = WORKSPACE_EXPORT_MIME_MAP[meta.mimeType];
+  if (workspaceExport) {
+    downloadUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/export?mimeType=${encodeURIComponent(workspaceExport.mimeType)}`;
+    if (!path.extname(suggestedName)) suggestedName += workspaceExport.ext;
+  } else {
+    downloadUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
+  }
+
+  const target = await ensureWritableTarget(input.destPath ?? input.localPath ?? process.cwd(), suggestedName, input.overwrite !== false);
+
+  const response = await fetchImpl(downloadUrl, { headers: headers(accessToken) });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    return { status: "error", errorCode: `gdrive_download_error:${response.status}`, message: text.slice(0, 300) };
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await writeFile(target, buffer);
+  return {
+    status: "success",
+    provider: "google",
+    accountId: account.id,
+    data: {
+      file: {
+        id: meta.id,
+        name: meta.name,
+        mimeType: meta.mimeType,
+        size: buffer.length,
+        localPath: target
+      }
+    }
+  };
 }
 
 export async function uploadGoogleFile(runtime, account, input = {}, { fetchImpl = fetch } = {}) {

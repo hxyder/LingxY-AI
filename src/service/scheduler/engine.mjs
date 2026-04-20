@@ -57,16 +57,26 @@ function ensureTrigger(trigger) {
 export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_COUNT } = {}) {
   runtime.pendingApprovals = createPendingApprovalService({
     runtime,
-    executeApprovedAction: (approval) =>
-      executeProposedAction({
+    executeApprovedAction: (approval, { overrides = null } = {}) => {
+      // User-edited field overrides (subject/body/to/...) from the approval
+      // card get merged into the stored input before the workflow resumes.
+      let actionParams = approval.proposed_params;
+      if (overrides && typeof overrides === "object" && Object.keys(overrides).length > 0) {
+        actionParams = {
+          ...actionParams,
+          input: { ...(actionParams?.input ?? {}), ...overrides }
+        };
+      }
+      return executeProposedAction({
         runtime,
         actionType: approval.proposed_action,
         actionTarget: approval.proposed_target,
-        actionParams: approval.proposed_params,
+        actionParams,
         executionMode: "interactive",
         sourceLabel: approval.preview_text || `Approved ${approval.proposed_target}`,
         sourceId: approval.source_id
-      })
+      });
+    }
   });
 
   return {

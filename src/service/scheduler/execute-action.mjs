@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { submitContextTask } from "../core/context-submission.mjs";
 import { submitActionToolTask } from "../core/action-tool-submission.mjs";
+import { submitConnectorWorkflowTask } from "../connectors/core/workflow-submission.mjs";
 import {
   createTaskRecord,
   emitTaskEvent,
@@ -185,6 +186,17 @@ export async function executeProposedAction({
   sourceLabel,
   sourceId
 }) {
+  if (actionType === "connector_workflow") {
+    return submitConnectorWorkflowTask({
+      runtime,
+      workflowId: actionTarget,
+      input: actionParams.input ?? {},
+      state: actionParams.state ?? {},
+      userCommand: sourceLabel,
+      executionMode
+    });
+  }
+
   if (actionType === "action_tool") {
     return executeActionTool({
       runtime,

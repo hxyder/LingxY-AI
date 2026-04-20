@@ -123,5 +123,34 @@ export const BUILTIN_MCP_SERVERS = Object.freeze([
     args: [],
     enabled: false,
     source: "builtin_mit"
-  })
+  }),
+
+  // lingxy-google: internal MCP server re-exporting the Google connector
+  // catalog to external MCP clients (Claude Desktop, Codex, MCP Inspector).
+  // Disabled by default; enable it from Console → Connectors → MCP and use
+  // the printed command as a stdio server config on the client side.
+  {
+    id: "lingxy-google",
+    displayName: "LingxY Google (internal)",
+    transport: "stdio",
+    command: "node",
+    args: ["scripts/start-lingxy-mcp-server.mjs", "--providers=google"],
+    env: null,
+    enabled: false,
+    source: "lingxy_internal",
+    async isAvailable() { return false; },
+    async getStatus() {
+      return {
+        id: "lingxy-google",
+        displayName: "LingxY Google (internal)",
+        transport: "stdio",
+        enabled: false,
+        available: false,
+        detail: "internal_mcp_server_descriptor",
+        command: "node",
+        args: ["scripts/start-lingxy-mcp-server.mjs", "--providers=google"]
+      };
+    },
+    async listResources() { return []; }
+  }
 ]);

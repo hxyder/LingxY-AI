@@ -5,35 +5,26 @@ import { validateToolCall } from "./tool-call-validator.mjs";
 import { extractFirstTier0Action, hasCompoundIntent } from "../../core/router/fast-path-router.mjs";
 import { emitTaskEvent as _emitTaskEventFn } from "../../core/task-runtime.mjs";
 import {
+  extractWorkflowInput,
   inferConnectorLimit,
   inferConnectorProvider,
   isConnectorAccountIdentityRequest,
-  isConnectorDomainRequest
+  isConnectorDomainRequest,
+  matchWorkflowByTrigger
 } from "../../connectors/core/connector-intent.mjs";
 
 function nowIso() {
   return new Date().toISOString();
 }
 
-function defaultPlanner({ task }) {
+function defaultPlanner({ task, runtime: plannerRuntime = null }) {
   const text = task.user_command.toLowerCase();
-  const deterministic = planDeterministicToolCall(task.user_command);
+  const catalog = plannerRuntime?.connectorCatalog ?? task.__runtime?.connectorCatalog ?? null;
+  const deterministic = planDeterministicToolCall(task.user_command, catalog);
   if (deterministic) return deterministic;
 
-  const connector = planConnectorToolCall(task.user_command);
+  const connector = planConnectorToolCall(task.user_command, catalog);
   if (connector) return connector;
-
-  if (text.includes("邮件") || text.includes("email")) {
-    return {
-      type: "tool_call",
-      tool: "compose_email",
-      args: {
-        to: ["advisor@example.com"],
-        subject: "UCA Draft",
-        body: task.context_packet.text ?? "Generated draft."
-      }
-    };
-  }
 
   if (isSearchOrNewsRequest(task.user_command)) {
     return {
@@ -74,7 +65,7 @@ function defaultPlanner({ task }) {
   };
 }
 
-function planDeterministicToolCall(userCommand = "") {
+function planDeterministicToolCall(userCommand = "", catalog = null) {
   const text = String(userCommand ?? "").trim();
   const url = extractUrl(text);
   if (url && /(打开|访问|open|visit|go to|网页|网站|链接|url)/i.test(text)) {
@@ -85,11 +76,41 @@ function planDeterministicToolCall(userCommand = "") {
     };
   }
 
-  if (isConnectorDomainRequest(text)) {
-    return planConnectorToolCall(text);
+  // Workflow dispatch is the LLM planner's job; this no-LLM fallback planner
+  // only runs when no chat provider is configured. Only short-circuit here
+  // when the user explicitly provided every required workflow input in the
+  // text (e.g. "主题：xx 正文：yy") — otherwise let the capability-based read
+  // path below take over so the user still sees something useful instead of
+  // a validation-failed workflow.
+  const workflow = catalog ? matchWorkflowByTrigger(text, catalog) : null;
+  if (workflow) {
+    const firstToolId = workflow.steps?.find((step) => step?.tool)?.tool;
+    const firstTool = firstToolId ? catalog.getTool?.(firstToolId) : null;
+    const required = firstTool?.inputSchema?.required ?? [];
+    const input = extractWorkflowInput(text, workflow);
+    const missing = required.filter((field) => {
+      const value = input?.[field];
+      if (value === undefined || value === null) return true;
+      if (typeof value === "string" && !value.trim()) return true;
+      if (Array.isArray(value) && value.length === 0) return true;
+      return false;
+    });
+    if (missing.length === 0) {
+      return {
+        type: "tool_call",
+        tool: "connector_workflow_run",
+        args: { workflowId: workflow.id, input }
+      };
+    }
   }
 
-  if (/(邮件|email)/i.test(text) || isSearchOrNewsRequest(text)) {
+  // Connector-domain guesswork (account_list_emails for anything mentioning
+  // "邮件"/"gmail") is intentionally NOT done here. It would short-circuit
+  // write-intent commands like "给 X 发一份邮件" into a read call and never
+  // let the LLM see the request. The LLM planner has catalog hints and picks
+  // connector_workflow_run itself. Only no-LLM defaultPlanner uses
+  // planConnectorToolCall (as a separate step, not from here).
+  if (/(邮件|email|gmail|outlook|日历|calendar|drive|onedrive|文件|网盘)/i.test(text) || isSearchOrNewsRequest(text)) {
     return null;
   }
 
@@ -105,9 +126,34 @@ function planDeterministicToolCall(userCommand = "") {
   return null;
 }
 
-function planConnectorToolCall(userCommand = "") {
+function planConnectorToolCall(userCommand = "", catalog = null) {
   const text = String(userCommand ?? "");
   if (!isConnectorDomainRequest(text)) return null;
+
+  // Same rule as planDeterministicToolCall: only dispatch a workflow if the
+  // user explicitly provided every required input. Otherwise drop through to
+  // the read-tool fallback so we don't hand the dispatcher empty fields.
+  const workflow = catalog ? matchWorkflowByTrigger(text, catalog) : null;
+  if (workflow) {
+    const firstToolId = workflow.steps?.find((step) => step?.tool)?.tool;
+    const firstTool = firstToolId ? catalog.getTool?.(firstToolId) : null;
+    const required = firstTool?.inputSchema?.required ?? [];
+    const input = extractWorkflowInput(text, workflow);
+    const missing = required.filter((field) => {
+      const value = input?.[field];
+      if (value === undefined || value === null) return true;
+      if (typeof value === "string" && !value.trim()) return true;
+      if (Array.isArray(value) && value.length === 0) return true;
+      return false;
+    });
+    if (missing.length === 0) {
+      return {
+        type: "tool_call",
+        tool: "connector_workflow_run",
+        args: { workflowId: workflow.id, input }
+      };
+    }
+  }
 
   const provider = inferConnectorProvider(text);
   const withProvider = provider ? { provider } : {};
@@ -121,37 +167,35 @@ function planConnectorToolCall(userCommand = "") {
     };
   }
 
-  if (/(日历|\bcalendar\b|event|events|会议|日程)/i.test(text)) {
-    return {
-      type: "tool_call",
-      tool: "account_list_events",
-      args: {
-        ...withProvider,
-        limit
+  // Capability-driven read fallback: agent-loop no longer hardcodes Gmail /
+  // Outlook strings. It asks the catalog for a read tool matching the
+  // capability implied by the user's wording, so new providers pick this up
+  // for free once they ship a contract. When the catalog is unavailable (eg
+  // minimal test runtimes) we fall back to the provider-agnostic
+  // account_list_* action tools using the same capability inference.
+  const capability = inferCapabilityFromText(text);
+  if (capability) {
+    if (catalog) {
+      const matches = catalog.listTools({ capability, provider: provider ?? undefined, risk: "low" });
+      if (matches.length > 0) {
+        const readToolId = pickReadActionToolFromCatalog(catalog, matches[0].id);
+        if (readToolId) {
+          return {
+            type: "tool_call",
+            tool: readToolId,
+            args: { ...withProvider, limit }
+          };
+        }
       }
-    };
-  }
-
-  if (/(google\s*drive|onedrive|云端文件|网盘|drive|文件)/i.test(text)) {
-    return {
-      type: "tool_call",
-      tool: "account_list_files",
-      args: {
-        ...withProvider,
-        limit
-      }
-    };
-  }
-
-  if (/(邮件|邮箱|\bemails?\b|\bmail\b|gmail|outlook)/i.test(text)) {
-    return {
-      type: "tool_call",
-      tool: "account_list_emails",
-      args: {
-        ...withProvider,
-        limit
-      }
-    };
+    }
+    const fallback = fallbackReadToolForCapability(capability);
+    if (fallback) {
+      return {
+        type: "tool_call",
+        tool: fallback,
+        args: { ...withProvider, limit }
+      };
+    }
   }
 
   return {
@@ -159,6 +203,61 @@ function planConnectorToolCall(userCommand = "") {
     tool: "account_list_connected_accounts",
     args: withProvider
   };
+}
+
+function fallbackReadToolForCapability(capability) {
+  if (capability === "calendarRead") return "account_list_events";
+  if (capability === "fileRead") return "account_list_files";
+  if (capability === "emailRead") return "account_list_emails";
+  return null;
+}
+
+function inferCapabilityFromText(text = "") {
+  if (/(日历|\bcalendar\b|event|events|会议|日程)/i.test(text)) return "calendarRead";
+  if (/(google\s*drive|onedrive|云端文件|网盘|drive|文件)/i.test(text)) return "fileRead";
+  if (/(邮件|邮箱|\bemails?\b|\bmail\b|gmail|outlook)/i.test(text)) return "emailRead";
+  return null;
+}
+
+function pickReadActionToolFromCatalog(catalog, toolId) {
+  const tool = catalog.getTool?.(toolId);
+  const actionToolId = tool?.execution?.actionTool;
+  if (actionToolId && typeof actionToolId === "string") {
+    return actionToolId;
+  }
+  // Fall back to the canonical account_list_* tools so older contracts still
+  // work until they declare execution.actionTool explicitly.
+  if (tool?.capability === "calendarRead") return "account_list_events";
+  if (tool?.capability === "fileRead") return "account_list_files";
+  if (tool?.capability === "emailRead") return "account_list_emails";
+  return null;
+}
+
+/**
+ * Render the connector catalog's workflows as a concise hint block for the
+ * LLM planner's system prompt. The LLM owns when to call
+ * connector_workflow_run and how to sequence it with other tools — this block
+ * just tells it which workflows exist, what triggers them, and what inputs
+ * they need so it doesn't have to guess.
+ */
+function formatWorkflowsForPlanner(catalog) {
+  if (!catalog || typeof catalog.listWorkflows !== "function") return "";
+  const summaries = catalog.listWorkflows();
+  if (!summaries.length) return "";
+  const lines = ["", "Connector workflows (call via connector_workflow_run):"];
+  for (const summary of summaries) {
+    const full = catalog.getWorkflow?.(summary.id) ?? summary;
+    const firstToolId = full.steps?.find((step) => step?.tool)?.tool;
+    const firstTool = firstToolId ? catalog.getTool?.(firstToolId) : null;
+    const required = firstTool?.inputSchema?.required ?? [];
+    const triggers = (full.triggerPatterns ?? []).slice(0, 5).join(" | ");
+    lines.push(`- ${full.id} — ${full.description ?? full.name ?? ""}`);
+    if (triggers) lines.push(`    trigger hints: ${triggers}`);
+    if (required.length) lines.push(`    required input: { ${required.join(", ")} }`);
+  }
+  lines.push("");
+  lines.push("When a user asks to send mail / create calendar event / upload Drive file, prefer a workflow call with a fully-filled input. If you need data to fill the input (e.g. weather forecast, search results, current context), chain the relevant read/search tool FIRST, then call connector_workflow_run with all required fields populated. Never call connector_workflow_run with empty subject/body — the workflow validator will reject it.");
+  return lines.join("\n");
 }
 
 function isSearchOrNewsRequest(value = "") {
@@ -356,8 +455,11 @@ function buildConversationMessages(userCommand, transcript) {
 }
 
 async function llmPlanner({ task, transcript, tools, iteration }) {
-  // dynamic import to avoid circular dep
-  const deterministic = planDeterministicToolCall(task.user_command);
+  const catalog = task.__runtime?.connectorCatalog ?? null;
+  // Pass the catalog so a workflow with fully-specified input (e.g. user
+  // wrote "主题:xx 正文:yy") can still short-circuit without an LLM call.
+  // Ambiguous connector commands intentionally fall through to the LLM.
+  const deterministic = planDeterministicToolCall(task.user_command, catalog);
   if (deterministic) return deterministic;
 
   // UCA-054/039: Enforce web search for current-data requests before trying LLM.
@@ -380,10 +482,18 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
   const { resolveProviderForTask } = await import("../shared/provider-resolver.mjs");
   const provider = resolveProviderForTask("chat");
   if (!provider || provider.kind === "code_cli") {
-    return defaultPlanner({ task });
+    return defaultPlanner({ task, runtime: task.__runtime ?? null });
   }
 
   const toolList = tools.map((t) => `- ${t.id}: ${t.description ?? ""}`).join("\n");
+  const workflowHint = formatWorkflowsForPlanner(task.__runtime?.connectorCatalog);
+  const attachedFilePaths = [
+    ...(task.context_packet?.file_paths ?? []),
+    ...(task.context_packet?.image_paths ?? [])
+  ].filter(Boolean);
+  const attachmentHint = attachedFilePaths.length > 0
+    ? `\n\nAttachments available for this task (absolute local paths): ${JSON.stringify(attachedFilePaths)}. When the user asks to send / forward / email one of these files, pass them to account_send_email via the \`attachmentPaths\` argument.`
+    : "";
   const maxIter = 8;
 
   // UCA-067: Append enabled MCP server capabilities to the tool list so the AI
@@ -414,7 +524,7 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
   const systemPrompt = `You are UCA, a thoughtful desktop AI assistant. You are caring, proactive, and always consider the user's real needs. You can perform actions on the user's computer using the tools below.
 
 Available tools:
-${toolList}
+${toolList}${workflowHint}${attachmentHint}
 
 Key tool schemas:
 - launch_app: { "app": "<app name>" }
@@ -432,12 +542,15 @@ Decision rules:
 2. SEARCH requests (flights, hotels, weather, news, prices, "查一下", "Google", "search for") → call web_search_fetch FIRST with a good query; NEVER answer from memory for real-time information.
 3. After web_search_fetch returns results, extract the most relevant URLs from the observations. If the user wants to open a site, pick the most relevant URL from your search results and call open_url.
 4. MISSING INFORMATION: If the user's request is under-specified (e.g. "find flights" without a departure city), ask ONE clarifying question in your final answer BEFORE calling any tool. Format: {"final": "请问您从哪个城市出发？"}
+   EXCEPTION: Do NOT ask clarifying questions for connector write workflows (send email / create calendar event / upload file). Instead, DRAFT reasonable content yourself and call connector_workflow_run immediately — the workflow's pending-approval UI is where the user edits or rejects. NEVER invent placeholder content like "邮件主题" / "邮件正文" — write a real greeting / real body text based on the user's words.
 5. After a tool succeeds, use its observation to formulate a helpful answer. Include key facts (price, time, link) from the search results.
 6. If a tool returns success:false, acknowledge the failure — do NOT claim success.
 7. Never repeat the exact same tool+args you already tried.
 8. Maximum ${maxIter} tool calls. End early when the task is clearly done.
 9. CONTEXT: If the conversation history contains previous search results or URLs, use them when the user asks to "open the appropriate one" or refers to "that website".
 10. After open_url succeeds, do NOT include that URL as a clickable markdown hyperlink in your final answer (e.g. do NOT write [site](https://...)). Write plain text instead, like "已为你打开 example.com". This prevents the user from accidentally opening the page twice.
+11. TRUTHFULNESS: NEVER claim an email was sent / a file was uploaded / an event was created unless the corresponding connector tool ACTUALLY returned success: true in this transcript. Do not invent "已发送 / 已确认发送 / sent" messages. If no send tool has succeeded yet, say what you actually did (e.g. "已为你准备好草稿，等你点击确认发送按钮") instead.
+12. CONFIRMATION UI: The connector workflow itself creates a pending-approval card in the overlay with 确认发送 / 拒绝 buttons. Do NOT write "确认发送吗？" in chat text and wait for a reply — call the workflow; the user clicks the card.
 ${needsCurrentDataInstruction}${forceToolInstruction}${mcpCapabilitiesNote}
 Respond ONLY with a single JSON object (no markdown, no code fences):
 - Call a tool:       {"tool": "tool_id", "args": { ... }}
@@ -516,6 +629,51 @@ function isRefusalText(text) {
   return REFUSAL_PATTERNS.some((p) => p.test(String(text ?? "")));
 }
 
+const EMAIL_SEND_CLAIM_RE = /(已\s*(?:确认|确认发送)?\s*发\s*送|已\s*发出|已\s*寄出|邮件已\s*发(?:送|出)|已通过\s*gmail\s*发送|sent(?:\s+successfully|\s+the\s+email)?|email\s+(?:has\s+been\s+)?sent)/i;
+const CALENDAR_CREATE_CLAIM_RE = /(已\s*创建(?:日程|会议|事件)|event\s+created|calendar\s+event\s+(?:has\s+been\s+)?created)/i;
+const FILE_UPLOAD_CLAIM_RE = /(已\s*上传|uploaded(?:\s+successfully)?|file\s+(?:has\s+been\s+)?uploaded)/i;
+const CONNECTOR_SEND_SUCCESS_TOOLS = new Set(["account_send_email", "connector_workflow_run", "google.gmail.send_email", "microsoft.outlook.send_email"]);
+const CONNECTOR_EVENT_SUCCESS_TOOLS = new Set(["account_create_event", "google.calendar.create_event", "microsoft.calendar.create_event", "connector_workflow_run"]);
+const CONNECTOR_FILE_SUCCESS_TOOLS = new Set(["account_upload_file", "google.drive.upload_file", "microsoft.onedrive.upload_file", "connector_workflow_run"]);
+
+function transcriptHasSuccessfulTool(transcript = [], allowedIds) {
+  return transcript.some((entry) => {
+    if (entry?.type !== "tool_result") return false;
+    if (entry.success === false) return false;
+    if (!allowedIds.has(entry.tool)) return false;
+    // For workflow runs, require the metadata to actually report a success
+    // connector_status (not "waiting_external_decision" / "failed").
+    if (entry.tool === "connector_workflow_run") {
+      return entry.metadata?.connector_status === "success";
+    }
+    return true;
+  });
+}
+
+/**
+ * Given the tool-loop result, return true when the final_text claims a
+ * connector write action succeeded but no transcript entry backs it up.
+ * This is the truthfulness guard for hallucinated "email sent" replies.
+ */
+function detectUnbackedConnectorClaim(result) {
+  const text = String(result?.final_text ?? "");
+  if (!text) return false;
+  const transcript = result?.transcript ?? [];
+  if (EMAIL_SEND_CLAIM_RE.test(text)
+    && !transcriptHasSuccessfulTool(transcript, CONNECTOR_SEND_SUCCESS_TOOLS)) {
+    return "email_send";
+  }
+  if (CALENDAR_CREATE_CLAIM_RE.test(text)
+    && !transcriptHasSuccessfulTool(transcript, CONNECTOR_EVENT_SUCCESS_TOOLS)) {
+    return "calendar_create";
+  }
+  if (FILE_UPLOAD_CLAIM_RE.test(text)
+    && !transcriptHasSuccessfulTool(transcript, CONNECTOR_FILE_SUCCESS_TOOLS)) {
+    return "file_upload";
+  }
+  return null;
+}
+
 export function createToolUsingExecutorScaffold() {
   return {
     id: "tool_using",
@@ -585,6 +743,21 @@ export function createToolUsingExecutorScaffold() {
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
           yield { event_type: "inline_result", payload: { text: retryText } };
           yield { event_type: retryResult.status === "success" ? "success" : "partial_success", payload: { text: retryText } };
+          return;
+        }
+
+        // Truthfulness guard (extension of UCA-039/063): if the final text
+        // claims a connector write action was performed (email sent, event
+        // created, file uploaded) but no corresponding tool actually returned
+        // success in the transcript, downgrade to partial_success. Without
+        // this, DeepSeek-class models occasionally fabricate "已发送" without
+        // calling connector_workflow_run or account_send_email.
+        const connectorClaimGuard = detectUnbackedConnectorClaim(result);
+        if (result.status === "success" && connectorClaimGuard) {
+          const warning = "\n\n[LingxY] 注意：系统没有检测到对应的连接器工具调用成功。上面的文字是模型叙述，不是真实执行结果。请重新发起操作。";
+          yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
+          yield { event_type: "inline_result", payload: { text: (result.final_text || "Done.") + warning } };
+          yield { event_type: "partial_success", payload: { text: (result.final_text || "Done.") + warning } };
           return;
         }
 
@@ -667,6 +840,12 @@ export async function runToolAgentLoop({
     ?? runtime.toolPlanner
     ?? defaultPlanner;
 
+  // NOTE: workflow dispatch is owned by the LLM planner via the
+  // connector_workflow_run tool — no regex short-circuit here. The LLM sees
+  // available workflows in its system prompt (formatWorkflowsForPlanner) and
+  // composes them with other tools (e.g. web_search_fetch → workflow) when
+  // the user's request needs multi-step reasoning. See llmPlanner below.
+
   // UCA-066: Tier 0 in-loop optimisation.
   // On the first iteration, if the command starts with a deterministic action
   // (launch app / open URL), execute it immediately without calling the LLM.
@@ -695,7 +874,8 @@ export async function runToolAgentLoop({
       task,
       transcript,
       tools: registry.list(),
-      iteration
+      iteration,
+      runtime
     });
 
     if (!decision || decision.type === "final") {

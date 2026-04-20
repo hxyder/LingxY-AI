@@ -11,17 +11,7 @@ import { createNoopTool } from "../tool-helper.mjs";
 import { createActionResult } from "../types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
-import {
-  ACCOUNT_LIST_CONNECTED_ACCOUNTS_TOOL,
-  ACCOUNT_LIST_EMAILS_TOOL,
-  ACCOUNT_LIST_EVENTS_TOOL,
-  ACCOUNT_LIST_FILES_TOOL
-} from "../../connectors/tools/read-tools.mjs";
-import {
-  ACCOUNT_CREATE_EVENT_TOOL,
-  ACCOUNT_SEND_EMAIL_TOOL,
-  ACCOUNT_UPLOAD_FILE_TOOL
-} from "../../connectors/tools/write-tools.mjs";
+import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggregator.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2321,15 +2311,10 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   VERIFY_FILE_EXISTS_TOOL,
   REGISTER_ARTIFACT_TOOL,
   RESOLVE_OUTPUT_PATH_TOOL,
-  ACCOUNT_LIST_CONNECTED_ACCOUNTS_TOOL,
-  ACCOUNT_LIST_EMAILS_TOOL,
-  ACCOUNT_LIST_FILES_TOOL,
-  ACCOUNT_LIST_EVENTS_TOOL,
-  ACCOUNT_SEND_EMAIL_TOOL,
-  ACCOUNT_UPLOAD_FILE_TOOL,
-  ACCOUNT_CREATE_EVENT_TOOL,
   // UCA-076: GUI Automation
   GUI_FIND_ELEMENT_TOOL,
   GUI_CLICK_TOOL,
-  GUI_TYPE_TEXT_TOOL
+  GUI_TYPE_TEXT_TOOL,
+  // Connector catalog + provider account tools (single aggregation point)
+  ...CONNECTOR_ACTION_TOOLS
 ]);

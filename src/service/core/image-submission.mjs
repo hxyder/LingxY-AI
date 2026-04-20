@@ -223,6 +223,14 @@ async function runExecutor({ task, runtime }) {
   }
 }
 
+const CONNECTOR_FILE_SEND_RE = /(发给|发送给|发到|forward\s+to|send\s+(?:to|this|the\s+file))|附件.*(?:发|send)|attach.*(?:send|to)/i;
+
+function looksLikeConnectorFileSend(userCommand = "") {
+  const text = String(userCommand ?? "");
+  return CONNECTOR_FILE_SEND_RE.test(text)
+    && /(@|邮件|邮箱|email|gmail|outlook|给.+发|sophie|接收者|收件人|to)/i.test(text);
+}
+
 export async function submitImageTask({
   imagePaths,
   userCommand,
@@ -236,6 +244,35 @@ export async function submitImageTask({
   executorOverride = "multi_modal",
   background = false
 }) {
+  // If the user's command is "send this file to X" rather than "analyse this
+  // image", route to the tool_using executor so connector tools are available.
+  // The image paths are surfaced to the planner via the task spec / context
+  // packet so account_send_email's attachmentPaths arg can be filled in.
+  if (executorOverride === "multi_modal" && looksLikeConnectorFileSend(userCommand)) {
+    const { submitContextTask } = await import("./context-submission.mjs");
+    return submitContextTask({
+      runtime,
+      userCommand,
+      executionMode,
+      contextPacket: {
+        schema_version: "1.0",
+        context_id: `ctx_${crypto.randomUUID()}`,
+        trace_id: `trace_${crypto.randomUUID()}`,
+        source_type: "file",
+        source_app: sourceApp,
+        capture_mode: "attachment",
+        security_level: "internal",
+        redaction_applied: false,
+        text: `File attached by user for sending: ${imagePaths.join(", ")}`,
+        file_paths: imagePaths,
+        image_paths: imagePaths,
+        captured_at: new Date().toISOString()
+      },
+      executorOverride: "tool_using",
+      parentTaskId,
+      retryCount
+    });
+  }
   ensureRuntimeServices(runtime);
   const store = runtime.store;
   const queue = runtime.queue;

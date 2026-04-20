@@ -108,6 +108,17 @@ export async function disconnectAll() {
   _clients.clear();
 }
 
+/**
+ * Ensure the server is connected and return its underlying MCP client. Used
+ * by the connector workflow dispatcher to invoke `tools/call` on external
+ * MCP servers after going through local risk/confirmation policy.
+ */
+export async function getMcpClient(serverConfig) {
+  await connectMcpServer(serverConfig);
+  const cached = _clients.get(serverConfig.id);
+  return cached?.client ?? null;
+}
+
 // ── Tool wrapping ─────────────────────────────────────────────────────────────
 
 /**

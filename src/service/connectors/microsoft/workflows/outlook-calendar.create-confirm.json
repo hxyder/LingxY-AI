@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "provider": "microsoft",
+  "service": "microsoft.calendar",
+  "workflows": [
+    {
+      "id": "microsoft.calendar.create_confirm",
+      "name": "Outlook Calendar Create Confirm",
+      "description": "Prepare an event preview, ask for confirmation when needed, then create the Outlook Calendar event.",
+      "intent": "calendar.create_confirm",
+      "risk": "medium",
+      "triggerPatterns": [
+        "创建日程",
+        "添加会议",
+        "create outlook event",
+        "schedule outlook meeting",
+        "Outlook 日程"
+      ],
+      "steps": [
+        {
+          "id": "prepare_event",
+          "type": "preview",
+          "output": "event_preview"
+        },
+        {
+          "id": "request_confirmation",
+          "type": "user.confirm"
+        },
+        {
+          "id": "create_event",
+          "tool": "microsoft.calendar.create_event",
+          "condition": "confirmation.approved"
+        }
+      ],
+      "resultContract": {
+        "successRequires": [
+          "event.id"
+        ]
+      },
+      "timeline": {
+        "showAllSteps": true,
+        "payloadPolicy": "summary_only"
+      }
+    }
+  ]
+}

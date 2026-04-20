@@ -38,3 +38,92 @@ export function inferConnectorLimit(value = "", fallback = 10) {
   if (/(十|ten)/i.test(text)) return 10;
   return fallback;
 }
+
+function triggerMatchesText(pattern = "", text = "") {
+  if (!pattern) return false;
+  const trimmed = String(pattern).trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith("/") && trimmed.endsWith("/") && trimmed.length > 2) {
+    try {
+      return new RegExp(trimmed.slice(1, -1), "i").test(text);
+    } catch {
+      return false;
+    }
+  }
+  return text.toLowerCase().includes(trimmed.toLowerCase());
+}
+
+/**
+ * Scan the connector catalog for a workflow whose triggerPatterns match the
+ * user command. Returns the highest-priority match (first defined workflow
+ * wins) or null. Preferring an explicit provider (if the text mentions one)
+ * avoids Outlook triggers stealing Gmail phrasing and vice versa.
+ */
+export function matchWorkflowByTrigger(text = "", catalog = null) {
+  if (!catalog || typeof catalog.listWorkflows !== "function") return null;
+  const haystack = String(text ?? "");
+  if (!haystack.trim()) return null;
+  const preferred = inferConnectorProvider(haystack);
+  const workflows = typeof catalog.getWorkflow === "function"
+    ? catalog.listWorkflows().map((summary) => catalog.getWorkflow(summary.id)).filter(Boolean)
+    : catalog.listWorkflows();
+  const hits = [];
+  for (const workflow of workflows) {
+    const patterns = Array.isArray(workflow?.triggerPatterns) ? workflow.triggerPatterns : [];
+    if (patterns.some((pattern) => triggerMatchesText(pattern, haystack))) {
+      hits.push(workflow);
+    }
+  }
+  if (hits.length === 0) return null;
+  if (preferred) {
+    const preferredHit = hits.find((workflow) => workflow?.provider === preferred);
+    if (preferredHit) return preferredHit;
+  }
+  return hits[0];
+}
+
+const EMAIL_ADDRESS_RE = /[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}/gi;
+
+/**
+ * Very lightweight input extractor used by agent-loop when it decides to call
+ * a connector workflow directly. We deliberately avoid hallucinating content:
+ * if we can't pull a subject/body from the text we return empty strings and
+ * let the workflow's nonempty_string validators fail loudly.
+ */
+export function extractWorkflowInput(text = "", workflow = null) {
+  const value = String(text ?? "");
+  const addresses = Array.from(new Set((value.match(EMAIL_ADDRESS_RE) ?? []).map((email) => email.toLowerCase())));
+  const input = {};
+  if (addresses.length > 0) {
+    input.to = addresses;
+  }
+
+  const subjectMatch = value.match(/(?:主题|subject)\s*[：:]\s*(.*?)(?=\s*(?:正文|内容|body|标题|title)\s*[：:]|\n|$)/i);
+  if (subjectMatch) {
+    input.subject = subjectMatch[1].trim();
+  }
+
+  const bodyMatch = value.match(/(?:正文|内容|body)\s*[：:]\s*([\s\S]{1,2000})$/i);
+  if (bodyMatch) {
+    input.body = bodyMatch[1].trim();
+  }
+
+  const titleMatch = value.match(/(?:标题|title)\s*[：:]\s*(.*?)(?=\s*(?:正文|内容|body|主题|subject)\s*[：:]|\n|$)/i);
+  if (titleMatch) {
+    input.title = titleMatch[1].trim();
+  }
+
+  const limit = inferConnectorLimit(value, 0);
+  if (limit > 0) {
+    input.limit = limit;
+  }
+
+  if (workflow?.service?.endsWith(".calendar")) {
+    const timeMatch = value.match(/(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2})/);
+    if (timeMatch) {
+      input.startTime = timeMatch[1];
+    }
+  }
+
+  return input;
+}

@@ -267,6 +267,55 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       limit: { type: "number" }
     }
   },
+  connector_catalog_search: {
+    type: "object",
+    required: [],
+    properties: {
+      query: { type: "string" },
+      provider: { type: "string" },
+      service: { type: "string" },
+      capability: { type: "string" },
+      intent: { type: "string" }
+    }
+  },
+  connector_catalog_get: {
+    type: "object",
+    required: [],
+    properties: {
+      id: { type: "string" },
+      kind: { type: "string", enum: ["tool", "workflow"] }
+    }
+  },
+  connector_workflow_run: {
+    type: "object",
+    required: [],
+    properties: {
+      workflowId: { type: "string" },
+      id: { type: "string" },
+      input: { type: "object" },
+      state: { type: "object" }
+    }
+  },
+  connector_plugin_manage: {
+    type: "object",
+    required: ["action"],
+    properties: {
+      action: { type: "string", enum: ["list", "enable", "disable", "reload"] },
+      pluginId: { type: "string" }
+    }
+  },
+  account_download_file: {
+    type: "object",
+    required: ["fileId"],
+    properties: {
+      accountId: { type: "string" },
+      provider: { type: "string", enum: ["google", "microsoft"] },
+      fileId: { type: "string" },
+      destPath: { type: "string" },
+      newFileName: { type: "string" },
+      overwrite: { type: "boolean" }
+    }
+  },
   account_send_email: {
     type: "object",
     required: [],
@@ -277,7 +326,8 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       cc: {},
       bcc: {},
       subject: { type: "string" },
-      body: { type: "string" }
+      body: { type: "string" },
+      attachmentPaths: {}
     }
   },
   account_upload_file: {

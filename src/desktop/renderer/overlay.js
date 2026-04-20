@@ -1129,6 +1129,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     "tool_call_proposed",
     "tool_call_completed",
     "tool_call_denied",
+    "pending_approval_created",
     "log",
     "artifact_created",
     "failed",
@@ -1182,9 +1183,205 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     timelineAddStep(toolId ? `${toolId} 已拦截` : summary.body, "fail");
   }
 
+  if (frame.event === "pending_approval_created") {
+    renderInlineApproval(frame);
+    timelineAddStep("等待用户确认", "active");
+    if (showOverlay) window.ucaShell.showWindow("overlay");
+  }
+
   if (frame.event === "failed" || frame.event === "cancelled") {
     timelineAddStep(summary.body, "fail");
   }
+}
+
+// Track approval bubbles so SSE duplicates don't stack cards, and so we can
+// swap the buttons for a result indicator once the user decides.
+const renderedApprovalCards = new Map(); // approval_id -> HTMLElement
+
+async function renderInlineApproval(frame) {
+  const data = frame.data ?? {};
+  const approvalId = data.approval_id ?? data.approvalId;
+  if (!approvalId) return;
+  if (renderedApprovalCards.has(approvalId)) return;
+
+  // Fetch the full record so we can show the real preview (SSE payload only
+  // carries a summary). Fall back to the payload if the call fails.
+  let approval = null;
+  try {
+    const response = await fetchJson(`/approvals`);
+    approval = (response.approvals ?? []).find((item) => item.approval_id === approvalId)
+      ?? (response.approvals ?? []).find((item) => item.approvalId === approvalId)
+      ?? null;
+  } catch { /* silent — we'll show a minimal card */ }
+
+  const card = document.createElement("div");
+  card.className = "approval-card";
+  card.style.cssText = "border:1px solid var(--accent, #4a88ff); border-radius:10px; padding:12px 14px; background:rgba(74,136,255,0.06); display:flex; flex-direction:column; gap:10px;";
+
+  const header = document.createElement("div");
+  header.style.cssText = "display:flex; align-items:center; gap:8px; font-weight:600; font-size:13px;";
+  header.textContent = approval?.proposed_target
+    ? `等待确认：${approval.proposed_target}`
+    : (data.workflow_id ? `等待确认：${data.workflow_id}` : "等待用户确认");
+  card.appendChild(header);
+
+  // The store already decodes proposed_params JSON for us. Fall back to the
+  // raw string only when an older record shape shows up.
+  let editableInput = approval?.proposed_params?.input ?? null;
+  if (!editableInput && approval?.proposed_params_json) {
+    try {
+      const params = typeof approval.proposed_params_json === "string"
+        ? JSON.parse(approval.proposed_params_json)
+        : approval.proposed_params_json;
+      editableInput = params?.input ?? null;
+    } catch { /* ignore */ }
+  }
+
+  const editFields = {};
+
+  function addLabel(text) {
+    const lbl = document.createElement("div");
+    lbl.style.cssText = "font-size:11px; color:#666; margin-bottom:2px;";
+    lbl.textContent = text;
+    return lbl;
+  }
+
+  function addTextInput(key, value, label, { multi = false } = {}) {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "display:flex; flex-direction:column; gap:2px;";
+    wrap.appendChild(addLabel(label));
+    const el = document.createElement(multi ? "textarea" : "input");
+    if (!multi) el.type = "text";
+    el.value = value ?? "";
+    el.style.cssText = "font:inherit; padding:6px 8px; border:1px solid rgba(0,0,0,0.2); border-radius:5px; background:#fff;"
+      + (multi ? " min-height:110px; resize:vertical;" : "");
+    wrap.appendChild(el);
+    card.appendChild(wrap);
+    editFields[key] = el;
+  }
+
+  if (editableInput && (editableInput.subject !== undefined || editableInput.body !== undefined || editableInput.to !== undefined)) {
+    const toValue = Array.isArray(editableInput.to) ? editableInput.to.join(", ") : (editableInput.to ?? "");
+    addTextInput("to", toValue, "收件人（多个用逗号分隔）");
+    addTextInput("subject", editableInput.subject ?? "", "主题");
+    addTextInput("body", editableInput.body ?? "", "正文", { multi: true });
+    if (Array.isArray(editableInput.attachmentPaths) && editableInput.attachmentPaths.length > 0) {
+      const note = document.createElement("div");
+      note.style.cssText = "font-size:11px; color:#666;";
+      note.textContent = `附件：${editableInput.attachmentPaths.join(", ")}`;
+      card.appendChild(note);
+    }
+  } else if (approval?.preview_text) {
+    const preview = document.createElement("pre");
+    preview.style.cssText = "margin:0; padding:8px 10px; background:rgba(0,0,0,0.06); border-radius:6px; font-family:inherit; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:260px; overflow:auto;";
+    preview.textContent = approval.preview_text;
+    card.appendChild(preview);
+  }
+
+  const actions = document.createElement("div");
+  actions.style.cssText = "display:flex; gap:8px;";
+  const approveBtn = document.createElement("button");
+  approveBtn.type = "button";
+  approveBtn.textContent = "确认发送";
+  approveBtn.className = "primary";
+  approveBtn.style.cssText = "padding:6px 14px; font-size:13px;";
+  const rejectBtn = document.createElement("button");
+  rejectBtn.type = "button";
+  rejectBtn.textContent = "拒绝";
+  rejectBtn.className = "ghost";
+  rejectBtn.style.cssText = "padding:6px 14px; font-size:13px;";
+
+  async function disableButtons() {
+    approveBtn.disabled = true;
+    rejectBtn.disabled = true;
+    for (const el of Object.values(editFields)) el.disabled = true;
+  }
+
+  function showResult(text, ok) {
+    actions.remove();
+    const result = document.createElement("div");
+    result.style.cssText = `font-size:12px; color:${ok ? "#2e7d32" : "#b71c1c"};`;
+    result.textContent = text;
+    card.appendChild(result);
+  }
+
+  function collectOverrides() {
+    if (!editFields || Object.keys(editFields).length === 0) return null;
+    const overrides = {};
+    if (editFields.to) {
+      const raw = editFields.to.value.trim();
+      if (raw) {
+        overrides.to = raw.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
+      }
+    }
+    if (editFields.subject) {
+      const raw = editFields.subject.value.trim();
+      if (raw) overrides.subject = raw;
+    }
+    if (editFields.body) {
+      const raw = editFields.body.value;
+      if (raw.trim()) overrides.body = raw;
+    }
+    return Object.keys(overrides).length > 0 ? overrides : null;
+  }
+
+  approveBtn.addEventListener("click", async () => {
+    const overrides = collectOverrides();
+    await disableButtons();
+    try {
+      const resp = await fetchJson(`/approvals/${encodeURIComponent(approvalId)}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(overrides ? { actor: "overlay", overrides } : { actor: "overlay" })
+      });
+      showResult("✓ 已确认，正在执行…", true);
+      // Subscribe to the resume task's event stream so the user sees send_email
+      // completion / failure inline in this conversation.
+      const resumeTaskId = resp?.executionResult?.task?.task_id
+        ?? resp?.approval?.resulting_task_id
+        ?? null;
+      if (resumeTaskId && conversationState?.id) {
+        taskConversationMap.set(resumeTaskId, conversationState.id);
+        const existing = backgroundTaskStreams.get(resumeTaskId);
+        if (!existing) {
+          const stream = subscribeTaskEvents(serviceBaseUrl, resumeTaskId, {
+            onEvent(event) { void handleTaskEventFrame(event); },
+            onError() { backgroundTaskStreams.delete(resumeTaskId); }
+          });
+          backgroundTaskStreams.set(
+            resumeTaskId,
+            typeof stream === "function" ? stream : () => { try { (stream?.close ?? stream?.dispose)?.call(stream); } catch { /* ignore */ } }
+          );
+        }
+      }
+    } catch (error) {
+      approveBtn.disabled = false;
+      rejectBtn.disabled = false;
+      showResult(`确认失败：${error.message}`, false);
+    }
+  });
+  rejectBtn.addEventListener("click", async () => {
+    await disableButtons();
+    try {
+      await fetchJson(`/approvals/${encodeURIComponent(approvalId)}/reject`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actor: "overlay", reason: "rejected_in_overlay" })
+      });
+      showResult("✕ 已拒绝。", false);
+    } catch (error) {
+      approveBtn.disabled = false;
+      rejectBtn.disabled = false;
+      showResult(`拒绝失败：${error.message}`, false);
+    }
+  });
+  actions.appendChild(approveBtn);
+  actions.appendChild(rejectBtn);
+  card.appendChild(actions);
+
+  addBubble("system", card);
+  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  renderedApprovalCards.set(approvalId, card);
 }
 
 function replayTaskTimelineEvents(events = []) {

@@ -20,18 +20,8 @@ import { submitFileTask } from "./file-submission.mjs";
 import { submitImageTask } from "./image-submission.mjs";
 import { submitOfficeTask } from "./office-submission.mjs";
 import { listEmailAccounts, upsertEmailAccount, deleteEmailAccount } from "../email/accounts.mjs";
-import {
-  startMicrosoftAuth, startGoogleAuth,
-  completeOAuthCallback, disconnectAccount,
-  getConnectorStatus, loadConnectorConfig, saveConnectorConfig,
-  listFiles, listEmails, listCalendarEvents
-} from "../connectors/account-connectors.mjs";
-import {
-  deleteConnectedAccount,
-  getAccountById,
-  listUserAccounts,
-  setDefaultAccount
-} from "../connectors/core/account-registry.mjs";
+import { tryHandleConnectorRoute } from "./http-routes/connector-routes.mjs";
+import { sendJson, sendHtml, readJsonBody, readRawBody } from "./http-helpers.mjs";
 import { maybeRunMorningDigest } from "../email/digest.mjs";
 import { saveAutoSkill } from "./skill-pattern-tracker.mjs";
 import { normalizeTemplateDocument } from "../templates/parser.mjs";
@@ -45,18 +35,6 @@ import { extractPageContent } from "../extractors/page_source/index.mjs";
 const execFileAsync = promisify(execFile);
 const DEFAULT_LOCAL_WHISPER_MODEL = "base";
 const DEFAULT_LOCAL_WHISPER_BEAM_SIZE = "5";
-
-function sendJson(response, statusCode, payload) {
-  response.writeHead(statusCode, {
-    "Content-Type": "application/json; charset=utf-8"
-  });
-  response.end(`${JSON.stringify(payload)}\n`);
-}
-
-function sendHtml(response, statusCode, html) {
-  response.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" });
-  response.end(html);
-}
 
 function expandLocalPath(value) {
   if (!value) return null;
@@ -725,25 +703,6 @@ export async function handlePageExplain(body) {
     handoffPath: handoffResult.handoffPath,
     reason: extraction.reason ?? null
   };
-}
-
-async function readJsonBody(request) {
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.from(chunk));
-  }
-  if (chunks.length === 0) {
-    return {};
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
-async function readRawBody(request) {
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.from(chunk));
-  }
-  return Buffer.concat(chunks);
 }
 
 const RECENT_BROWSER_CONTEXT_LIMIT = 30;
@@ -2873,188 +2832,9 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         });
       }
 
-      // ── Account Connectors (Microsoft 365 / Google) ───────────────────────
-
-      // GET /connectors/connected-accounts — canonical account-level registry
-      if (method === "GET" && url.pathname === "/connectors/connected-accounts") {
-        return sendJson(response, 200, {
-          accounts: listUserAccounts(runtime)
-        });
-      }
-
-      // PATCH /connectors/connected-accounts/:accountId/defaults — set default purpose
-      if (method === "PATCH" && /^\/connectors\/connected-accounts\/[^/]+\/defaults$/.test(url.pathname)) {
-        const accountId = decodeURIComponent(url.pathname.split("/")[3]);
-        const body = await readJsonBody(request);
-        const purposes = [];
-        if (body.purpose) {
-          purposes.push(body.purpose);
-        }
-        if (body.isDefaultForEmail === true) purposes.push("email");
-        if (body.isDefaultForFiles === true) purposes.push("files");
-        if (body.isDefaultForCalendar === true) purposes.push("calendar");
-        if (purposes.length === 0) {
-          return sendJson(response, 400, { error: "missing_default_purpose" });
-        }
-        try {
-          for (const purpose of purposes) {
-            setDefaultAccount(runtime, purpose, accountId);
-          }
-          return sendJson(response, 200, { ok: true, account: getAccountById(runtime, accountId) });
-        } catch (error) {
-          return sendJson(response, 400, { error: error.message });
-        }
-      }
-
-      // DELETE /connectors/connected-accounts/:accountId — disconnect one account
-      if (method === "DELETE" && /^\/connectors\/connected-accounts\/[^/]+$/.test(url.pathname)) {
-        const accountId = decodeURIComponent(url.pathname.split("/")[3]);
-        const account = deleteConnectedAccount(runtime, accountId);
-        if (!account) {
-          return sendJson(response, 404, { error: "account_not_found" });
-        }
-        return sendJson(response, 200, { ok: true, account });
-      }
-
-      // POST /connectors/connected-accounts/:accountId/reauth/start — reserved for UCA-081
-      if (method === "POST" && /^\/connectors\/connected-accounts\/[^/]+\/reauth\/start$/.test(url.pathname)) {
-        const accountId = decodeURIComponent(url.pathname.split("/")[3]);
-        const account = getAccountById(runtime, accountId);
-        if (!account) {
-          return sendJson(response, 404, { error: "account_not_found" });
-        }
-        const cfg = loadConnectorConfig(runtime, account.provider);
-        if (!cfg.clientId) {
-          return sendJson(response, 400, { error: "missing_client_id", message: "先在设置里填写 Client ID。" });
-        }
-        const result = account.provider === "microsoft"
-          ? startMicrosoftAuth(cfg.clientId)
-          : startGoogleAuth(cfg.clientId);
-        return sendJson(response, 200, {
-          ...result,
-          accountId,
-          reauth: true,
-          message: "补授权恢复将在 UCA-081 接入；当前会启动同 provider 授权流并刷新账户能力。"
-        });
-      }
-
-      // GET /connectors/accounts — list status for all account connectors
-      if (method === "GET" && url.pathname === "/connectors/accounts") {
-        const [ms, goog] = await Promise.all([
-          getConnectorStatus(runtime, "microsoft"),
-          getConnectorStatus(runtime, "google")
-        ]);
-        return sendJson(response, 200, { connectors: [ms, goog] });
-      }
-
-      // GET /connectors/accounts/:type/config — return non-secret connector config
-      if (method === "GET" && /^\/connectors\/accounts\/(microsoft|google)\/config$/.test(url.pathname)) {
-        const type = url.pathname.split("/")[3];
-        const cfg = loadConnectorConfig(runtime, type);
-        return sendJson(response, 200, {
-          clientId: cfg.clientId ?? "",
-          // never return the secret — just whether it's set
-          hasClientSecret: Boolean(cfg.clientSecret)
-        });
-      }
-
-      // PATCH /connectors/accounts/:type/config — save client_id / client_secret
-      if (method === "PATCH" && /^\/connectors\/accounts\/(microsoft|google)\/config$/.test(url.pathname)) {
-        const type = url.pathname.split("/")[3];
-        const body = await readJsonBody(request);
-        const updates = {};
-        if (typeof body.clientId === "string") updates.clientId = body.clientId.trim();
-        if (typeof body.clientSecret === "string") updates.clientSecret = body.clientSecret.trim();
-        saveConnectorConfig(runtime, type, updates);
-        return sendJson(response, 200, { ok: true });
-      }
-
-      // POST /connectors/accounts/:type/auth/start — kick off OAuth flow
-      if (method === "POST" && /^\/connectors\/accounts\/(microsoft|google)\/auth\/start$/.test(url.pathname)) {
-        const type = url.pathname.split("/")[3];
-        const cfg = loadConnectorConfig(runtime, type);
-        if (!cfg.clientId) {
-          return sendJson(response, 400, { error: "missing_client_id", message: "先在设置里填写 Client ID。" });
-        }
-        const result = type === "microsoft"
-          ? startMicrosoftAuth(cfg.clientId)
-          : startGoogleAuth(cfg.clientId);
-        return sendJson(response, 200, result);
-      }
-
-      // DELETE /connectors/accounts/:type — disconnect (revoke stored tokens)
-      if (method === "DELETE" && /^\/connectors\/accounts\/(microsoft|google)$/.test(url.pathname)) {
-        const type = url.pathname.split("/")[3];
-        await disconnectAccount(runtime, type);
-        return sendJson(response, 200, { ok: true });
-      }
-
-      // GET /connectors/accounts/:type/files — list files from OneDrive/Google Drive
-      if (method === "GET" && /^\/connectors\/accounts\/(microsoft|google)\/files$/.test(url.pathname)) {
-        const type = url.pathname.split("/")[3];
-        const q = url.searchParams.get("q") ?? "";
-        const limit = Math.min(50, Number(url.searchParams.get("limit") ?? 20));
-        const result = await listFiles(runtime, type, { limit, query: q });
-        return sendJson(response, result.ok ? 200 : 400, result);
-      }
-
-      // GET /connectors/accounts/:type/emails — list recent emails
-      if (method === "GET" && /^\/connectors\/accounts\/(microsoft|google)\/emails$/.test(url.pathname)) {
-        const type = url.pathname.split("/")[3];
-        const limit = Math.min(20, Number(url.searchParams.get("limit") ?? 10));
-        const result = await listEmails(runtime, type, { limit });
-        return sendJson(response, result.ok ? 200 : 400, result);
-      }
-
-      // GET /connectors/accounts/:type/calendar — list upcoming events
-      if (method === "GET" && /^\/connectors\/accounts\/(microsoft|google)\/calendar$/.test(url.pathname)) {
-        const type = url.pathname.split("/")[3];
-        const limit = Math.min(20, Number(url.searchParams.get("limit") ?? 10));
-        const result = await listCalendarEvents(runtime, type, { limit });
-        return sendJson(response, result.ok ? 200 : 400, result);
-      }
-
-      // GET /auth/callback — OAuth redirect URI (browser lands here after auth)
-      if (method === "GET" && url.pathname === "/auth/callback") {
-        const code = url.searchParams.get("code");
-        const state = url.searchParams.get("state");
-        const error = url.searchParams.get("error");
-        if (error) {
-          return sendHtml(response, 400,
-            `<html><body style="font-family:system-ui;padding:40px;text-align:center">
-              <h2>❌ 授权失败</h2><p>${error}: ${url.searchParams.get("error_description") ?? ""}</p>
-              <p style="color:#888">请关闭此标签页，回到 UCA。</p>
-            </body></html>`
-          );
-        }
-        if (!code || !state) {
-          return sendHtml(response, 400,
-            `<html><body style="font-family:system-ui;padding:40px;text-align:center">
-              <h2>❌ 无效回调</h2><p>缺少 code 或 state 参数。</p>
-            </body></html>`
-          );
-        }
-        const result = await completeOAuthCallback(runtime, code, state);
-        if (result.ok) {
-          return sendHtml(response, 200,
-            `<html><head><meta charset="utf-8"></head>
-            <body style="font-family:system-ui;padding:40px;text-align:center;background:#f5f5f5">
-              <div style="max-width:400px;margin:0 auto;background:#fff;padding:32px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.1)">
-                <div style="font-size:48px;margin-bottom:16px">✅</div>
-                <h2 style="margin:0 0 8px">账户已连接</h2>
-                <p style="color:#666;margin:0 0 24px">你的 ${result.type === "microsoft" ? "Microsoft 365" : "Google"} 账户已成功连接到 UCA。</p>
-                <p style="color:#888;font-size:13px">可以关闭此标签页了。</p>
-              </div>
-              <script>setTimeout(()=>window.close(),3000)</script>
-            </body></html>`
-          );
-        }
-        return sendHtml(response, 400,
-          `<html><body style="font-family:system-ui;padding:40px;text-align:center">
-            <h2>❌ Token 交换失败</h2><p>${result.error}</p>
-            <p style="color:#888">请关闭此标签页，在 UCA 里重试。</p>
-          </body></html>`
-        );
+      // ── Connectors, plugins, and OAuth callback — delegated to connector-routes.mjs
+      if (await tryHandleConnectorRoute({ request, response, url, method, runtime })) {
+        return;
       }
 
       return sendJson(response, 404, {

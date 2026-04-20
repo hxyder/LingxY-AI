@@ -1,0 +1,56 @@
+{
+  "schema_version": "1.0",
+  "provider": "microsoft",
+  "service": "microsoft.outlook",
+  "workflows": [
+    {
+      "id": "microsoft.outlook.draft_confirm_send",
+      "name": "Outlook Draft Confirm Send",
+      "description": "Prepare a visible non-empty Outlook draft preview, wait for user confirmation, then send through the connected Microsoft 365 account.",
+      "intent": "email.draft_confirm_send",
+      "risk": "high",
+      "triggerPatterns": [
+        "先给我草稿",
+        "确认再发",
+        "draft first",
+        "confirm before sending",
+        "Outlook draft",
+        "Outlook 草稿"
+      ],
+      "steps": [
+        {
+          "id": "prepare_draft",
+          "tool": "microsoft.outlook.create_draft_preview",
+          "output": "draft"
+        },
+        {
+          "id": "request_confirmation",
+          "type": "user.confirm",
+          "requires": [
+            "draft.subject",
+            "draft.body"
+          ]
+        },
+        {
+          "id": "send_email",
+          "tool": "microsoft.outlook.send_email",
+          "condition": "confirmation.approved"
+        }
+      ],
+      "resultContract": {
+        "successRequires": [
+          "user_visible_output"
+        ],
+        "waitingRequires": [
+          "pending_confirmation",
+          "draft.subject",
+          "draft.body"
+        ]
+      },
+      "timeline": {
+        "showAllSteps": true,
+        "payloadPolicy": "summary_only"
+      }
+    }
+  ]
+}

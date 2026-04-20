@@ -23,6 +23,8 @@ import { createEmbeddingStore } from "../embeddings/store.mjs";
 import { createAIIntegrationRuntime } from "../ai/integrations/runtime.mjs";
 import { createDagCheckpointStore } from "../dag/scheduler.mjs";
 import { createEmailMonitor } from "../email/monitor.mjs";
+import { createConnectorCatalog } from "../connectors/core/catalog.mjs";
+import { createPluginRegistry } from "../connectors/core/plugin-registry.mjs";
 
 // Minimal in-memory config store: survives within a single process lifetime
 // but doesn't persist to disk. Used when createServiceBootstrap() is called
@@ -96,6 +98,14 @@ export function createServiceBootstrap({
   });
   runtime.scheduler = createSchedulerRuntime({ runtime });
   runtime.officeHttps = createOfficeHttpsRuntime();
+  runtime.connectorCatalog = createConnectorCatalog({
+    pluginRootsProvider: () => runtime.pluginRegistry?.pluginRootsProvider?.() ?? []
+  });
+  runtime.pluginRegistry = createPluginRegistry({
+    runtime,
+    pluginsDir: paths?.pluginsDir ?? null
+  });
+  runtime.connectorCatalog.reload();
   runtime.actionToolRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
   runtime.executorRegistry = createExecutorRegistry(executors);
   runtime.platform = {
@@ -172,6 +182,7 @@ export function createServiceBootstrap({
       postMcpServerConfig: "/config/mcp/servers",
       postSkillRegistryConfig: "/config/skills/registries",
       postCodeCliAdapterConfig: "/config/code-cli/adapters",
+      getConnectorCatalog: "/connectors/catalog",
       health: "/health",
       listTasks: "/tasks",
       getTask: "/task/:id",

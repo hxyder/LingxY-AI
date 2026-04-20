@@ -41,8 +41,11 @@ const GOOGLE_SCOPES = Object.freeze([
   "email",
   "profile",
   "https://www.googleapis.com/auth/drive.readonly",
+  "https://www.googleapis.com/auth/drive.file",
   "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/calendar.readonly"
+  "https://www.googleapis.com/auth/gmail.send",
+  "https://www.googleapis.com/auth/calendar.readonly",
+  "https://www.googleapis.com/auth/calendar.events"
 ]);
 
 // ── In-memory pending OAuth states (keyed by random state string) ─────────────

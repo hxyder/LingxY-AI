@@ -1,0 +1,101 @@
+{
+  "schema_version": "1.0",
+  "kind": "tools",
+  "provider": "microsoft",
+  "service": "microsoft.onedrive",
+  "tools": [
+    {
+      "id": "microsoft.onedrive.list_files",
+      "mcpName": "onedrive_list_files",
+      "name": "OneDrive List Files",
+      "description": "List or search files from a connected OneDrive account.",
+      "capability": "fileRead",
+      "risk": "low",
+      "requiresConfirmation": false,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_list_files",
+        "provider": "microsoft"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "accountId": { "type": "string" },
+          "query": { "type": "string" },
+          "folderId": { "type": "string" },
+          "limit": { "type": "number", "minimum": 1, "maximum": 100 }
+        }
+      },
+      "timeline": {
+        "label": "OneDrive file search",
+        "payloadPolicy": "summary_only"
+      }
+    },
+    {
+      "id": "microsoft.onedrive.download_file",
+      "mcpName": "onedrive_download_file",
+      "name": "OneDrive Download File",
+      "description": "Download a OneDrive file by id to a local path.",
+      "capability": "fileRead",
+      "risk": "low",
+      "requiresConfirmation": false,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_download_file",
+        "provider": "microsoft"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["fileId"],
+        "properties": {
+          "accountId": { "type": "string" },
+          "fileId": { "type": "string" },
+          "destPath": { "type": "string" },
+          "newFileName": { "type": "string" },
+          "overwrite": { "type": "boolean" }
+        }
+      },
+      "outputValidators": [
+        { "path": "file.localPath", "kind": "nonempty_string" }
+      ],
+      "timeline": {
+        "label": "OneDrive download file",
+        "payloadPolicy": "summary_only"
+      }
+    },
+    {
+      "id": "microsoft.onedrive.upload_file",
+      "mcpName": "onedrive_upload_file",
+      "name": "OneDrive Upload File",
+      "description": "Upload a local file to a connected OneDrive account.",
+      "capability": "fileWrite",
+      "risk": "medium",
+      "requiresConfirmation": true,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_upload_file",
+        "provider": "microsoft"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "localPath"
+        ],
+        "properties": {
+          "accountId": { "type": "string" },
+          "localPath": { "type": "string" },
+          "folderId": { "type": "string" },
+          "newFileName": { "type": "string" }
+        }
+      },
+      "outputValidators": [
+        { "path": "file.id", "kind": "nonempty_string" }
+      ],
+      "timeline": {
+        "label": "OneDrive upload file",
+        "payloadPolicy": "summary_only"
+      }
+    }
+  ]
+}

@@ -1,9 +1,16 @@
 import { getValidAccessToken } from "../core/token-manager.mjs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 
 function headers(accessToken) {
   return { Authorization: `Bearer ${accessToken}` };
+}
+
+function asList(value) {
+  if (value === undefined || value === null || value === "") return [];
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean);
+  return [String(value)];
 }
 
 export async function listMicrosoftEmails(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
@@ -96,6 +103,18 @@ export async function listMicrosoftEvents(runtime, account, input = {}, { fetchI
 export async function sendMicrosoftEmail(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
   const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
   if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };
+
+  const attachmentPaths = asList(input.attachmentPaths);
+  const attachments = [];
+  for (const filePath of attachmentPaths) {
+    const content = await readFile(filePath);
+    attachments.push({
+      "@odata.type": "#microsoft.graph.fileAttachment",
+      name: path.basename(filePath),
+      contentBytes: content.toString("base64")
+    });
+  }
+
   const response = await fetchImpl("https://graph.microsoft.com/v1.0/me/sendMail", {
     method: "POST",
     headers: {
@@ -106,15 +125,74 @@ export async function sendMicrosoftEmail(runtime, account, input = {}, { fetchIm
       message: {
         subject: input.subject ?? "",
         body: { contentType: "Text", content: input.body ?? "" },
-        toRecipients: (input.to ?? []).map((address) => ({ emailAddress: { address } })),
-        ccRecipients: (input.cc ?? []).map((address) => ({ emailAddress: { address } })),
-        bccRecipients: (input.bcc ?? []).map((address) => ({ emailAddress: { address } }))
+        toRecipients: asList(input.to).map((address) => ({ emailAddress: { address } })),
+        ccRecipients: asList(input.cc).map((address) => ({ emailAddress: { address } })),
+        bccRecipients: asList(input.bcc).map((address) => ({ emailAddress: { address } })),
+        ...(attachments.length ? { attachments } : {})
       },
       saveToSentItems: true
     })
   });
   if (!response.ok) return { status: "error", errorCode: `graph_send_error:${response.status}` };
   return { status: "success", provider: "microsoft", accountId: account.id, data: { sent: true } };
+}
+
+function sanitiseFilename(name) {
+  return String(name ?? "").replace(/[\\/:*?"<>|]/g, "_").trim();
+}
+
+async function ensureWritableTarget(destPath, filename, overwrite) {
+  if (!destPath) throw new Error("destPath is required");
+  const resolved = path.resolve(destPath);
+  let target = resolved;
+  try {
+    const st = await stat(resolved);
+    if (st.isDirectory()) target = path.join(resolved, filename);
+  } catch {
+    const looksLikeDir = /[\\/]$/.test(destPath) || !path.extname(destPath);
+    if (looksLikeDir) {
+      await mkdir(resolved, { recursive: true });
+      target = path.join(resolved, filename);
+    } else {
+      await mkdir(path.dirname(resolved), { recursive: true });
+    }
+  }
+  if (!overwrite) {
+    try { await stat(target); throw new Error(`target_exists: ${target}`); }
+    catch (e) { if (e.code !== "ENOENT" && e.message?.startsWith("target_exists")) throw e; }
+  }
+  return target;
+}
+
+export async function downloadMicrosoftFile(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
+  const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
+  if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };
+  const fileId = input.fileId ?? input.id;
+  if (!fileId) return { status: "error", errorCode: "FILE_ID_REQUIRED", message: "fileId is required" };
+  const metaResponse = await fetchImpl(
+    `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(fileId)}?$select=id,name,size,file`,
+    { headers: headers(accessToken) }
+  );
+  if (!metaResponse.ok) return { status: "error", errorCode: `graph_meta_error:${metaResponse.status}` };
+  const meta = await metaResponse.json();
+  const target = await ensureWritableTarget(
+    input.destPath ?? input.localPath ?? process.cwd(),
+    sanitiseFilename(input.newFileName ?? meta.name ?? `file-${fileId}`),
+    input.overwrite !== false
+  );
+  const response = await fetchImpl(
+    `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(fileId)}/content`,
+    { headers: headers(accessToken), redirect: "follow" }
+  );
+  if (!response.ok) return { status: "error", errorCode: `graph_download_error:${response.status}` };
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await writeFile(target, buffer);
+  return {
+    status: "success",
+    provider: "microsoft",
+    accountId: account.id,
+    data: { file: { id: meta.id, name: meta.name, size: buffer.length, localPath: target } }
+  };
 }
 
 export async function uploadMicrosoftFile(runtime, account, input = {}, { fetchImpl = fetch } = {}) {

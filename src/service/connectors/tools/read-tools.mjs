@@ -1,8 +1,8 @@
 import { createActionResult } from "../../action_tools/types.mjs";
 import { listUserAccounts, updateAccountLastUsed } from "../core/account-registry.mjs";
 import { resolveAccount } from "../core/account-router.mjs";
-import { listGoogleEmails, listGoogleEvents, listGoogleFiles } from "../google/google-connector.mjs";
-import { listMicrosoftEmails, listMicrosoftEvents, listMicrosoftFiles } from "../microsoft/microsoft-connector.mjs";
+import { downloadGoogleFile, listGoogleEmails, listGoogleEvents, listGoogleFiles } from "../google/google-connector.mjs";
+import { downloadMicrosoftFile, listMicrosoftEmails, listMicrosoftEvents, listMicrosoftFiles } from "../microsoft/microsoft-connector.mjs";
 
 function formatCapabilities(capabilities = {}) {
   return Object.entries(capabilities)
@@ -213,6 +213,71 @@ export const ACCOUNT_LIST_FILES_TOOL = createReadTool({
   requiredCapability: "fileRead",
   kind: "files"
 });
+
+export const ACCOUNT_DOWNLOAD_FILE_TOOL = {
+  id: "account_download_file",
+  name: "Account Download File",
+  description: "Download a file from a connected Google Drive or OneDrive account to a local path. Google Workspace docs (Docs/Sheets/Slides) are exported to Office formats automatically.",
+  parameters: {
+    type: "object",
+    required: ["fileId"],
+    properties: {
+      accountId: { type: "string" },
+      provider: { type: "string", enum: ["google", "microsoft"] },
+      fileId: { type: "string", description: "Drive file id (from account_list_files). Not a webViewLink." },
+      destPath: { type: "string", description: "Local destination. Directory or full file path. Defaults to current working directory." },
+      newFileName: { type: "string" },
+      overwrite: { type: "boolean", default: true }
+    }
+  },
+  risk_level: "medium",
+  required_capabilities: ["network", "file_write"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const runtime = ctx.runtime;
+    if (!runtime) {
+      return createActionResult({ success: false, observation: "connector runtime missing", metadata: { tool_id: "account_download_file" } });
+    }
+    const connectedAccounts = listUserAccounts(runtime, args.userId ?? "local");
+    const resolved = resolveAccount(
+      { connectedAccounts, userUtterance: ctx.task?.user_command ?? "" },
+      args,
+      "fileRead"
+    );
+    if (resolved.status) {
+      return createActionResult({
+        success: false,
+        observation: resolved.message ?? `account_download_file needs: ${resolved.status}`,
+        metadata: { tool_id: "account_download_file", connector_status: resolved.status, ...resolved }
+      });
+    }
+    const connectorResult = resolved.provider === "google"
+      ? await downloadGoogleFile(runtime, resolved, args, { fetchImpl: ctx.fetchImpl ?? fetch })
+      : resolved.provider === "microsoft"
+        ? await downloadMicrosoftFile(runtime, resolved, args, { fetchImpl: ctx.fetchImpl ?? fetch })
+        : { status: "error", errorCode: "UNSUPPORTED_PROVIDER", message: `provider ${resolved.provider} not supported` };
+    if (connectorResult.status === "success") {
+      updateAccountLastUsed(runtime, resolved.id);
+      const file = connectorResult.data?.file ?? {};
+      return createActionResult({
+        success: true,
+        observation: `Downloaded ${file.name ?? "file"} to ${file.localPath}.`,
+        metadata: {
+          tool_id: "account_download_file",
+          connector_status: "success",
+          provider: resolved.provider,
+          accountId: resolved.id,
+          file
+        }
+      });
+    }
+    return createActionResult({
+      success: false,
+      observation: connectorResult.message ?? `download failed: ${connectorResult.status}`,
+      metadata: { tool_id: "account_download_file", connector_status: connectorResult.status, ...connectorResult }
+    });
+  }
+};
 
 export const ACCOUNT_LIST_EVENTS_TOOL = createReadTool({
   id: "account_list_events",

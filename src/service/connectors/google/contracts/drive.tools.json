@@ -1,0 +1,101 @@
+{
+  "schema_version": "1.0",
+  "kind": "tools",
+  "provider": "google",
+  "service": "google.drive",
+  "tools": [
+    {
+      "id": "google.drive.list_files",
+      "mcpName": "google_drive_list_files",
+      "name": "Google Drive List Files",
+      "description": "List or search files from a connected Google Drive account.",
+      "capability": "fileRead",
+      "risk": "low",
+      "requiresConfirmation": false,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_list_files",
+        "provider": "google"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [],
+        "properties": {
+          "accountId": { "type": "string" },
+          "query": { "type": "string" },
+          "folderId": { "type": "string" },
+          "limit": { "type": "number", "minimum": 1, "maximum": 100 }
+        }
+      },
+      "timeline": {
+        "label": "Google Drive file search",
+        "payloadPolicy": "summary_only"
+      }
+    },
+    {
+      "id": "google.drive.download_file",
+      "mcpName": "google_drive_download_file",
+      "name": "Google Drive Download File",
+      "description": "Download a Google Drive file by id to a local path. Google Docs/Sheets/Slides auto-export to Office formats; binaries download as-is.",
+      "capability": "fileRead",
+      "risk": "low",
+      "requiresConfirmation": false,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_download_file",
+        "provider": "google"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": ["fileId"],
+        "properties": {
+          "accountId": { "type": "string" },
+          "fileId": { "type": "string" },
+          "destPath": { "type": "string" },
+          "newFileName": { "type": "string" },
+          "overwrite": { "type": "boolean" }
+        }
+      },
+      "outputValidators": [
+        { "path": "file.localPath", "kind": "nonempty_string" }
+      ],
+      "timeline": {
+        "label": "Google Drive download file",
+        "payloadPolicy": "summary_only"
+      }
+    },
+    {
+      "id": "google.drive.upload_file",
+      "mcpName": "google_drive_upload_file",
+      "name": "Google Drive Upload File",
+      "description": "Upload a local file to a connected Google Drive account.",
+      "capability": "fileWrite",
+      "risk": "medium",
+      "requiresConfirmation": true,
+      "source": "internal_connector",
+      "execution": {
+        "actionTool": "account_upload_file",
+        "provider": "google"
+      },
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "localPath"
+        ],
+        "properties": {
+          "accountId": { "type": "string" },
+          "localPath": { "type": "string" },
+          "folderId": { "type": "string" },
+          "newFileName": { "type": "string" }
+        }
+      },
+      "outputValidators": [
+        { "path": "file.id", "kind": "nonempty_string" }
+      ],
+      "timeline": {
+        "label": "Google Drive upload file",
+        "payloadPolicy": "summary_only"
+      }
+    }
+  ]
+}

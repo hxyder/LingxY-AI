@@ -4,6 +4,29 @@ import { resolveAccount } from "../core/account-router.mjs";
 import { createGoogleEvent, sendGoogleEmail, uploadGoogleFile } from "../google/google-connector.mjs";
 import { createMicrosoftEvent, sendMicrosoftEmail, uploadMicrosoftFile } from "../microsoft/microsoft-connector.mjs";
 
+function splitEmailString(value) {
+  return String(value)
+    .split(/[,;\s]+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function asEmailArray(value) {
+  if (value === undefined || value === null || value === "") return [];
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof value === "string") return splitEmailString(value);
+  return [String(value)];
+}
+
+function normalizeEmailArgs(args = {}) {
+  const normalized = { ...args };
+  if (normalized.to !== undefined) normalized.to = asEmailArray(normalized.to);
+  if (normalized.cc !== undefined) normalized.cc = asEmailArray(normalized.cc);
+  if (normalized.bcc !== undefined) normalized.bcc = asEmailArray(normalized.bcc);
+  if (normalized.attendees !== undefined) normalized.attendees = asEmailArray(normalized.attendees);
+  return normalized;
+}
+
 function toActionResult(toolId, connectorResult, dataKey = null) {
   if (connectorResult.status !== "success") {
     return createActionResult({
@@ -64,15 +87,16 @@ function createWriteTool({ id, name, description, schema, requiredCapability, ki
       if (!runtime) {
         return createActionResult({ success: false, observation: "connector runtime missing", metadata: { tool_id: id } });
       }
-      const connectedAccounts = listUserAccounts(runtime, args.userId ?? "local");
+      const normalized = normalizeEmailArgs(args);
+      const connectedAccounts = listUserAccounts(runtime, normalized.userId ?? "local");
       const resolved = resolveAccount({
         connectedAccounts,
         userUtterance: ctx.task?.user_command ?? ctx.userUtterance ?? ""
-      }, args, requiredCapability);
+      }, normalized, requiredCapability);
       if (resolved.status) {
         return toActionResult(id, resolved, dataKey);
       }
-      const result = await dispatchWrite(runtime, resolved, kind, args, {
+      const result = await dispatchWrite(runtime, resolved, kind, normalized, {
         fetchImpl: ctx.fetchImpl ?? fetch
       });
       if (result.status === "success") {
@@ -97,7 +121,12 @@ export const ACCOUNT_SEND_EMAIL_TOOL = createWriteTool({
       cc: {},
       bcc: {},
       subject: { type: "string" },
-      body: { type: "string" }
+      body: { type: "string" },
+      attachmentPaths: {
+        type: "array",
+        items: { type: "string" },
+        description: "Optional absolute local file paths to attach to the email."
+      }
     }
   },
   requiredCapability: "emailWrite",
