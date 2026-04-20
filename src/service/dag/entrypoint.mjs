@@ -25,6 +25,8 @@ import {
 import { planDag, replanDag } from "./planner.mjs";
 import { runDagPlan } from "./executor.mjs";
 import { createNodeDispatcher } from "./dispatch.mjs";
+import { planDagStreaming } from "./streaming-planner.mjs";
+import { createStreamingDagRun } from "./streaming-executor.mjs";
 
 // Decision #4: cap DAG retries. After this many attempts (initial run + N
 // replans = MAX_DAG_ATTEMPTS total), the lane falls back to running the
@@ -71,7 +73,18 @@ export async function runDagLane({
 }) {
   ensureRuntimeServices(runtime);
 
-  // 1. Plan
+  // Streaming planner path (Phase 5) — gated so non-streaming stays the
+  // default until we're confident across providers. When the feature flag
+  // is on, try streaming first; any failure falls back to the batch planner.
+  if (runtime?.featureFlags?.dagStreaming === true) {
+    const streamed = await runDagLaneStreaming({
+      runtime, userCommand, contextPacket, executionMode, parentTaskId
+    });
+    if (streamed?.task) return streamed;
+    // streaming failed silently → continue with the batch path below.
+  }
+
+  // 1. Plan (batch)
   const planResult = await planDag({ userCommand, runtime, contextPacket });
 
   if (!planResult.plan) {
@@ -194,5 +207,104 @@ export async function runDagLane({
     task: parentTask,
     taskEvents: runtime.store.getTaskEvents(parentTask.task_id),
     dagSnapshot: snapshot
+  };
+}
+
+/**
+ * Streaming variant of runDagLane. The planner LLM emits JSON Lines and the
+ * streaming executor dispatches nodes the moment their dependencies are
+ * satisfied — no waiting for the whole plan to land. Returns the same
+ * submission shape as runDagLane, or null if streaming couldn't produce
+ * at least one valid node (caller falls back to batch).
+ */
+async function runDagLaneStreaming({
+  runtime,
+  userCommand,
+  contextPacket,
+  executionMode,
+  parentTaskId = null
+}) {
+  // Parent task — created before the stream so timeline events land on it.
+  const planContextPacket = buildDagContextPacket({ userCommand, originalContextPacket: contextPacket });
+  const parentTask = createTaskRecord({
+    route: { intent: "dag_plan_streaming", executor: "dag_engine", requires_confirmation: false },
+    contextPacket: planContextPacket,
+    userCommand,
+    executionMode,
+    executorOverride: "dag_engine",
+    parentTaskId
+  });
+  runtime.store.insertTask(parentTask);
+  emitTaskEvent({
+    runtime,
+    taskId: parentTask.task_id,
+    eventType: "task_created",
+    payload: { kind: "dag_plan_streaming" }
+  });
+  updateTask(runtime, parentTask, { status: "running", sub_status: "dag_streaming", progress: 0 }, true);
+
+  const dispatcher = createNodeDispatcher({ runtime });
+  const run = createStreamingDagRun({
+    dispatchNode: (node, params, ctx) =>
+      dispatcher(node, params, { ...ctx, task: parentTask, parentTaskId: parentTask.task_id }),
+    onEvent(event) {
+      emitTaskEvent({
+        runtime,
+        taskId: parentTask.task_id,
+        eventType: `dag.${event.type}`,
+        payload: event
+      });
+    }
+  });
+
+  const stream = await planDagStreaming({
+    userCommand,
+    runtime,
+    contextPacket,
+    onHeader(header) {
+      emitTaskEvent({
+        runtime,
+        taskId: parentTask.task_id,
+        eventType: "dag.plan_header",
+        payload: { summary: header.summary, expected_nodes: header.expected_nodes ?? null }
+      });
+    },
+    onNode(node) {
+      run.addNode(node);
+    }
+  });
+
+  if (!stream.ok) {
+    // Clean up the parent task record so fallback can proceed cleanly.
+    markTaskFailed(runtime, parentTask, {
+      message: `streaming planner unavailable: ${stream.reason}`,
+      category: "dag_streaming_unavailable"
+    });
+    return null;
+  }
+
+  const snapshot = await run.flush();
+  const replyText = summariseSnapshot(snapshot, { summary: stream.header?.summary ?? "计划", nodes: Array(stream.nodeCount) });
+
+  if (snapshot.status === "success") {
+    updateTask(runtime, parentTask, {
+      status: "success",
+      sub_status: "dag_streamed",
+      progress: 1,
+      result_summary: replyText
+    }, true);
+    emitTaskEvent({ runtime, taskId: parentTask.task_id, eventType: "inline_result", payload: { text: replyText } });
+    emitTaskEvent({ runtime, taskId: parentTask.task_id, eventType: "success", payload: { text: replyText } });
+    markTaskSucceeded(runtime, parentTask);
+  } else {
+    markTaskFailed(runtime, parentTask, { message: replyText, category: "dag_failure" });
+    emitTaskEvent({ runtime, taskId: parentTask.task_id, eventType: "inline_result", payload: { text: replyText } });
+  }
+
+  return {
+    task: parentTask,
+    taskEvents: runtime.store.getTaskEvents(parentTask.task_id),
+    dagSnapshot: snapshot,
+    streamed: true
   };
 }
