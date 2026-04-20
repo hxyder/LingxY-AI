@@ -1,5 +1,65 @@
 @import url("./tokens.css");
 
+/* ── bilingual label: small muted Chinese suffix after an English term.
+       e.g. <span>Tasks<span class="zh">任务</span></span>                 */
+.zh {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  font-weight: var(--fw-regular);
+  margin-left: 6px;
+  vertical-align: baseline;
+  letter-spacing: 0;
+}
+
+/* ── pill: 7-semantic status badge (solid bg + border + text) ─ */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.pill::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.85;
+}
+.pill.pill-success { background: var(--status-success-bg); border-color: var(--status-success-border); color: var(--status-success-text); }
+.pill.pill-running { background: var(--status-running-bg); border-color: var(--status-running-border); color: var(--status-running-text); }
+.pill.pill-queued  { background: var(--status-queued-bg);  border-color: var(--status-queued-border);  color: var(--status-queued-text); }
+.pill.pill-error   { background: var(--status-error-bg);   border-color: var(--status-error-border);   color: var(--status-error-text); }
+.pill.pill-info    { background: var(--status-info-bg);    border-color: var(--status-info-border);    color: var(--status-info-text); }
+.pill.pill-neutral { background: var(--status-queued-bg);  border-color: var(--status-queued-border);  color: var(--muted); }
+.pill.pill-warning { background: rgba(245,158,11,0.12);    border-color: rgba(245,158,11,0.32);        color: #b45309; }
+.pill.pill-ghost::before { opacity: 0; }
+
+/* ── tag: monospace metadata chip (no status dot) ─ */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  border: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--ink-soft);
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
 /* ── skeleton loaders (content placeholders during refresh) ── */
 .skeleton {
   --skeleton-base: var(--surface-soft);

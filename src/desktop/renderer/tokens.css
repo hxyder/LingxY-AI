@@ -7,6 +7,13 @@
  *
  * Design principles:
  *   • Two themes: light (default) and dark. White/warm retired.
+ *   • Five accent families (indigo/teal/amber/rose/slate), driven by
+ *     html[data-accent] — default amber. All accent values inherit the
+ *     same --accent / --accent-strong / --accent-soft / --accent-ink
+ *     contract so every consumer still reads those canonical names.
+ *   • Three density levels (compact/balanced/roomy), driven by
+ *     html[data-density] — default roomy. Writes --pad / --row-h that
+ *     components can pick up without per-component logic.
  *   • Colors drive by semantic role, not shade name — callers say
  *     var(--ink), not var(--gray-900).
  *   • Spacing snaps to a 4 px grid {4, 8, 12, 16, 24, 32, 48}. No
@@ -18,10 +25,11 @@
 :root {
   color-scheme: light;
 
-  /* ── neutral glass palette (light) ───────────────────────────── */
-  --bg-0: #f5f6f8;
-  --bg-1: #ebedf2;
-  --bg-2: #e0e3ea;
+  /* ── neutral surface palette (light) ─────────────────────────── */
+  /* Warm off-white base per v2 spec — softer than the cool gray of v1. */
+  --bg-0: #faf9f7;
+  --bg-1: #f3f1ec;
+  --bg-2: #eeece7;
   --surface: rgba(255, 255, 255, 0.72);
   --surface-strong: rgba(255, 255, 255, 0.88);
   --surface-soft: rgba(255, 255, 255, 0.48);
@@ -34,17 +42,43 @@
   --line: rgba(0, 0, 0, 0.08);
   --line-strong: rgba(0, 0, 0, 0.14);
 
-  /* ── monochrome editorial accent ─────────────────────────────── */
-  --accent: #000000;
-  --accent-strong: #000000;
-  --accent-soft: rgba(226, 226, 226, 0.74);
+  /* ── accent (default; overridden by html[data-accent]) ───────── */
+  /* These are the canonical names every consumer uses. The
+     [data-accent] blocks below rewrite them. An unset data-accent
+     falls through to "amber" via the explicit default at the end. */
+  --accent: #d97706;
+  --accent-strong: #b45309;
+  --accent-soft: rgba(217, 119, 6, 0.14);
+  --accent-ink: #ffffff;
+  /* teal-soft kept for backward-compat with a handful of legacy classes. */
   --teal-soft: rgba(243, 243, 243, 0.74);
 
-  /* ── status ───────────────────────────────────────────────────── */
+  /* ── status semantic triples (bg / border / text) ────────────── */
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
   --info: #3b82f6;
+
+  /* success */
+  --status-success-bg: rgba(16, 185, 129, 0.1);
+  --status-success-border: rgba(16, 185, 129, 0.28);
+  --status-success-text: #059669;
+  /* running (blue-leaning info) */
+  --status-running-bg: rgba(59, 130, 246, 0.1);
+  --status-running-border: rgba(59, 130, 246, 0.28);
+  --status-running-text: #2563eb;
+  /* queued (neutral) */
+  --status-queued-bg: rgba(107, 114, 128, 0.1);
+  --status-queued-border: rgba(107, 114, 128, 0.22);
+  --status-queued-text: #4b5563;
+  /* error */
+  --status-error-bg: rgba(239, 68, 68, 0.1);
+  --status-error-border: rgba(239, 68, 68, 0.28);
+  --status-error-text: #dc2626;
+  /* info */
+  --status-info-bg: rgba(59, 130, 246, 0.08);
+  --status-info-border: rgba(59, 130, 246, 0.2);
+  --status-info-text: #2563eb;
 
   /* ── shadows (neutral, elevation-indexed) ─────────────────────── */
   --shadow-xl: 0 25px 60px rgba(0, 0, 0, 0.12);
@@ -62,7 +96,9 @@
   /* ── typography ───────────────────────────────────────────────── */
   --font-display: "Segoe UI Variable Display", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
   --font-text: "Segoe UI Variable Text", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
-  --font-mono: "Cascadia Code", Consolas, monospace;
+  /* JetBrains Mono leads so locally installed copies win; Cascadia Code
+     is a common Windows fallback; Consolas is the baseline. */
+  --font-mono: "JetBrains Mono", "Cascadia Code", Consolas, ui-monospace, monospace;
 
   /* ── typography scale (7 rungs) ───────────────────────────────── */
   --fs-xs: 11px;
@@ -103,6 +139,13 @@
 
   /* ── container widths ─────────────────────────────────────────── */
   --overlay-width: 520px;
+  --app-rail-width: 232px;
+  --app-rail-collapsed-width: 60px;
+  --topbar-height: 52px;
+
+  /* ── density (default roomy; overridden by html[data-density]) ─ */
+  --pad: 18px;
+  --row-h: 48px;
 
   font-family: var(--font-text);
   font-size: var(--fs-base);
@@ -110,34 +153,100 @@
 }
 
 /* ── dark theme overrides ────────────────────────────────────────
-   Applies whether the theme is set on <html> or <body>, so existing
-   overlay (body[data-theme]) and future console (html[data-theme])
-   consumers both work. */
+   Applies whether the theme is set on <html> or <body>. Accent
+   values are intentionally NOT overridden here — the [data-accent]
+   blocks below are the single source of accent truth across themes. */
 :is(html, body)[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg-0: #0d0d0e;
-  --bg-1: #121214;
-  --bg-2: #1a1a1e;
-  --surface: rgba(24, 24, 28, 0.82);
-  --surface-strong: rgba(32, 32, 36, 0.92);
-  --surface-soft: rgba(18, 18, 22, 0.62);
-  --glass: rgba(32, 32, 36, 0.72);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --bg-0: #0f0e0d;
+  --bg-1: #15140f;
+  --bg-2: #1c1a14;
+  --surface: rgba(28, 26, 20, 0.82);
+  --surface-strong: rgba(34, 32, 24, 0.92);
+  --surface-soft: rgba(22, 20, 14, 0.62);
+  --glass: rgba(34, 32, 24, 0.72);
+  --glass-border: rgba(255, 236, 200, 0.08);
 
-  --ink: #e8e8e8;
-  --ink-soft: #c4c4c4;
-  --muted: #8a8a8a;
-  --line: rgba(255, 255, 255, 0.08);
-  --line-strong: rgba(255, 255, 255, 0.16);
+  --ink: #ece8e2;
+  --ink-soft: #c8c2b8;
+  --muted: #8e8880;
+  --line: rgba(255, 236, 200, 0.08);
+  --line-strong: rgba(255, 236, 200, 0.16);
 
-  --accent: #e8e8e8;
-  --accent-strong: #ffffff;
-  --accent-soft: rgba(255, 255, 255, 0.12);
+  /* status re-tuned for dark surfaces (higher alpha, less mud) */
+  --status-success-bg: rgba(16, 185, 129, 0.16);
+  --status-success-border: rgba(16, 185, 129, 0.42);
+  --status-success-text: #34d399;
+  --status-running-bg: rgba(96, 165, 250, 0.16);
+  --status-running-border: rgba(96, 165, 250, 0.4);
+  --status-running-text: #60a5fa;
+  --status-queued-bg: rgba(148, 163, 184, 0.14);
+  --status-queued-border: rgba(148, 163, 184, 0.32);
+  --status-queued-text: #cbd5e1;
+  --status-error-bg: rgba(248, 113, 113, 0.16);
+  --status-error-border: rgba(248, 113, 113, 0.4);
+  --status-error-text: #fca5a5;
+  --status-info-bg: rgba(96, 165, 250, 0.12);
+  --status-info-border: rgba(96, 165, 250, 0.32);
+  --status-info-text: #93c5fd;
 
   /* shadows stay black but ratchet up a bit to read on dark surfaces */
   --shadow-xl: 0 25px 60px rgba(0, 0, 0, 0.45);
   --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.28);
   --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+/* ── accent families ─────────────────────────────────────────────
+   html[data-accent="name"] overrides --accent / --accent-strong /
+   --accent-soft / --accent-ink. Same values apply in light and dark
+   because the accent is the brand color and the user's choice; only
+   the soft-alpha layer ratios vary slightly if needed. The :root
+   default above ("amber") is the fallback when no attribute is set. */
+html[data-accent="amber"], :root {
+  --accent: #d97706;
+  --accent-strong: #b45309;
+  --accent-soft: rgba(217, 119, 6, 0.14);
+  --accent-ink: #ffffff;
+}
+html[data-accent="indigo"] {
+  --accent: #6366f1;
+  --accent-strong: #4f46e5;
+  --accent-soft: rgba(99, 102, 241, 0.14);
+  --accent-ink: #ffffff;
+}
+html[data-accent="teal"] {
+  --accent: #0d9488;
+  --accent-strong: #0f766e;
+  --accent-soft: rgba(13, 148, 136, 0.14);
+  --accent-ink: #ffffff;
+}
+html[data-accent="rose"] {
+  --accent: #e11d48;
+  --accent-strong: #be123c;
+  --accent-soft: rgba(225, 29, 72, 0.14);
+  --accent-ink: #ffffff;
+}
+html[data-accent="slate"] {
+  --accent: #475569;
+  --accent-strong: #334155;
+  --accent-soft: rgba(71, 85, 105, 0.14);
+  --accent-ink: #ffffff;
+}
+
+/* ── density ────────────────────────────────────────────────────
+   Drives --pad and --row-h. Components read those, so opting into
+   a density level changes row heights and paddings app-wide. */
+html[data-density="compact"] {
+  --pad: 10px;
+  --row-h: 32px;
+}
+html[data-density="balanced"] {
+  --pad: 14px;
+  --row-h: 40px;
+}
+html[data-density="roomy"] {
+  --pad: 18px;
+  --row-h: 48px;
 }
