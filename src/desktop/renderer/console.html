@@ -1222,8 +1222,35 @@
         </div>
         <button id="openOverlayButton" class="secondary">Quick Input</button>
         <button id="refreshButton" class="ghost">Refresh</button>
+        <button id="cheatsheetButton" class="ghost" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (Ctrl+/)">?</button>
       </div>
     </header>
+
+    <!-- ── Keyboard shortcuts modal (toggled by Ctrl+/ or the ? button) ── -->
+    <div id="cheatsheetBackdrop" class="cheatsheet-backdrop" role="dialog" aria-modal="true" aria-labelledby="cheatsheetTitle" hidden>
+      <div class="cheatsheet-panel" style="position:relative;">
+        <button class="ghost cheatsheet-close" id="cheatsheetCloseButton" aria-label="Close">&times;</button>
+        <h2 id="cheatsheetTitle">Keyboard shortcuts</h2>
+        <dl>
+          <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd></dt>
+          <dd>Toggle overlay</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd></dt>
+          <dd>Voice input</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>N</kbd></dt>
+          <dd>Note mode</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>Enter</kbd></dt>
+          <dd>Submit from anywhere</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>/</kbd></dt>
+          <dd>Show this cheatsheet</dd>
+          <dt><kbd>Esc</kbd></dt>
+          <dd>Close overlay / cheatsheet / cancel voice</dd>
+          <dt><kbd>Enter</kbd></dt>
+          <dd>Send message in overlay</dd>
+          <dt><kbd>Shift</kbd>+<kbd>Enter</kbd></dt>
+          <dd>New line in overlay textarea</dd>
+        </dl>
+      </div>
+    </div>
 
     <!-- ── Tab Bar ── -->
     <nav class="tab-bar" role="tablist" aria-label="Console sections">

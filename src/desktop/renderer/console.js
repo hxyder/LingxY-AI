@@ -2338,7 +2338,13 @@ function renderTaskDetail(detail) {
 async function refreshTaskDetail() {
   if (!state.selectedTaskId) { renderTaskDetail(null); return; }
   const v = ++state.detailVersion;
-  taskDetailSummary.innerHTML = `<p class="muted" style="font-size:12px;">Loading...</p>`;
+  taskDetailSummary.innerHTML = `
+    <div aria-label="Loading task details" role="status">
+      <div class="skeleton skeleton-line wide"></div>
+      <div class="skeleton skeleton-line mid"></div>
+      <div class="skeleton skeleton-line narrow"></div>
+    </div>
+  `;
   try {
     const detail = await fetchJson(`/task/${encodeURIComponent(state.selectedTaskId)}`);
     if (v !== state.detailVersion) return;
@@ -3229,6 +3235,36 @@ taskComposer.addEventListener("submit", async (event) => {
 
 refreshButton.addEventListener("click", () => void refreshWorkspace());
 openOverlayButton.addEventListener("click", async () => await window.ucaShell.showWindow("overlay"));
+
+// UCA-104: keyboard-shortcut cheatsheet — open with Ctrl+/ or the ? button,
+// close with Esc / backdrop click / × button.
+const cheatsheetBackdrop = document.querySelector("#cheatsheetBackdrop");
+const cheatsheetButton = document.querySelector("#cheatsheetButton");
+const cheatsheetCloseButton = document.querySelector("#cheatsheetCloseButton");
+function toggleCheatsheet(show) {
+  if (!cheatsheetBackdrop) return;
+  const next = show ?? cheatsheetBackdrop.hasAttribute("hidden");
+  if (next) {
+    cheatsheetBackdrop.removeAttribute("hidden");
+    cheatsheetCloseButton?.focus();
+  } else {
+    cheatsheetBackdrop.setAttribute("hidden", "");
+  }
+}
+cheatsheetButton?.addEventListener("click", () => toggleCheatsheet(true));
+cheatsheetCloseButton?.addEventListener("click", () => toggleCheatsheet(false));
+cheatsheetBackdrop?.addEventListener("click", (event) => {
+  if (event.target === cheatsheetBackdrop) toggleCheatsheet(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.ctrlKey && event.key === "/") {
+    event.preventDefault();
+    toggleCheatsheet();
+  } else if (event.key === "Escape" && cheatsheetBackdrop && !cheatsheetBackdrop.hasAttribute("hidden")) {
+    event.preventDefault();
+    toggleCheatsheet(false);
+  }
+});
 
 consoleChatForm?.addEventListener("submit", (event) => {
   event.preventDefault();
