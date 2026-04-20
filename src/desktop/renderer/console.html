@@ -1410,9 +1410,54 @@
           <dd>Send message in overlay</dd>
           <dt><kbd>Shift</kbd>+<kbd>Enter</kbd></dt>
           <dd>New line in overlay textarea</dd>
+          <dt><kbd>Ctrl</kbd>+<kbd>,</kbd></dt>
+          <dd>Open tweaks (theme / accent / density)</dd>
         </dl>
       </div>
     </div>
+
+    <!-- ── UCA-109 Tweaks panel: theme / accent / density controls ──
+         Toggled via the floating launcher (bottom-right) or Ctrl+,
+         Values persist to localStorage.lingxy.{theme,accent,density}. -->
+    <div id="tweaksBackdrop" class="tweaks-backdrop" hidden>
+      <div class="tweaks-panel" role="dialog" aria-modal="false" aria-labelledby="tweaksTitle">
+        <div class="row">
+          <strong id="tweaksTitle" style="font-size:13px;">Tweaks<span class="zh">外观</span></strong>
+          <button type="button" class="ghost" id="tweaksCloseButton" aria-label="Close" style="padding:2px 6px;">&times;</button>
+        </div>
+
+        <div class="tweaks-row">
+          <span class="tweaks-row-label">Theme<span class="zh">主题</span></span>
+          <div class="tweaks-segmented" role="group" aria-label="Theme">
+            <button type="button" data-tweak-theme="default" aria-pressed="true">Light</button>
+            <button type="button" data-tweak-theme="dark" aria-pressed="false">Dark</button>
+          </div>
+        </div>
+
+        <div class="tweaks-row">
+          <span class="tweaks-row-label">Accent<span class="zh">强调色</span></span>
+          <div class="tweaks-accents" role="group" aria-label="Accent color">
+            <button type="button" class="tweaks-accent" data-accent-value="amber" aria-label="Amber" aria-pressed="true"></button>
+            <button type="button" class="tweaks-accent" data-accent-value="indigo" aria-label="Indigo" aria-pressed="false"></button>
+            <button type="button" class="tweaks-accent" data-accent-value="teal" aria-label="Teal" aria-pressed="false"></button>
+            <button type="button" class="tweaks-accent" data-accent-value="rose" aria-label="Rose" aria-pressed="false"></button>
+            <button type="button" class="tweaks-accent" data-accent-value="slate" aria-label="Slate" aria-pressed="false"></button>
+          </div>
+        </div>
+
+        <div class="tweaks-row">
+          <span class="tweaks-row-label">Density<span class="zh">密度</span></span>
+          <div class="tweaks-segmented" role="group" aria-label="Density">
+            <button type="button" data-tweak-density="compact" aria-pressed="false">Compact</button>
+            <button type="button" data-tweak-density="balanced" aria-pressed="false">Balanced</button>
+            <button type="button" data-tweak-density="roomy" aria-pressed="true">Roomy</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button type="button" id="tweaksLauncher" class="tweaks-launcher" aria-label="Open tweaks" aria-expanded="false" title="Tweaks (Ctrl+,)">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 10v6"/><path d="m4.22 4.22 4.24 4.24m7.08 7.08 4.24 4.24"/><path d="M1 12h6m10 0h6"/><path d="m4.22 19.78 4.24-4.24m7.08-7.08 4.24-4.24"/></svg>
+    </button>
 
     <!-- ── Left Rail (v2 IA) ──
          Same data-tab attributes as the old tab-bar so console.js
