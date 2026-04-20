@@ -12,11 +12,19 @@ import path from "node:path";
 const PROPOSAL_THRESHOLD = 3;   // occurrences before proposing
 const MAX_TOOLS_IN_PATTERN = 8; // avoid saving huge sequences
 
-// Tools too generic to form a meaningful skill on their own
+// Tools too generic to form a meaningful skill on their own. Also excludes
+// connector workflow internals — a connector workflow is itself a composed
+// skill, so tracking its steps as a separate pattern produces garbage like
+// "create_draft_preview → connector_workflow_run".
 const SKIP_TOOLS = new Set([
   "notify", "copy_to_clipboard", "verify_file_exists", "register_artifact",
-  "resolve_output_path"
+  "resolve_output_path",
+  // connector workflow + catalog internals
+  "connector_workflow_run", "connector_catalog_search", "connector_catalog_get",
+  "connector_plugin_manage"
 ]);
+
+const SKIP_TOOL_PREFIXES = ["google.", "microsoft.", "mcp."];
 
 // ── Persistence ────────────────────────────────────────────────────────────────
 
@@ -39,6 +47,11 @@ function saveStore(filePath, store) {
 
 // ── Pattern extraction ─────────────────────────────────────────────────────────
 
+function shouldSkipTool(toolId) {
+  if (SKIP_TOOLS.has(toolId)) return true;
+  return SKIP_TOOL_PREFIXES.some((prefix) => String(toolId).startsWith(prefix));
+}
+
 export function extractToolSequence(taskEvents = []) {
   return taskEvents
     .filter(
@@ -48,7 +61,7 @@ export function extractToolSequence(taskEvents = []) {
         e.payload?.tool_id
     )
     .map((e) => e.payload.tool_id)
-    .filter((t) => !SKIP_TOOLS.has(t))
+    .filter((t) => !shouldSkipTool(t))
     .slice(0, MAX_TOOLS_IN_PATTERN);
 }
 
@@ -90,6 +103,10 @@ function toSkillName(tools) {
  */
 export function recordToolSequence(filePath, { taskId, command, toolSequence }) {
   if (!toolSequence || toolSequence.length < 2) return null;
+  // Require 2+ distinct tools: "web_search_fetch → web_search_fetch" or
+  // similar repeats are not meaningful skills.
+  const distinct = new Set(toolSequence);
+  if (distinct.size < 2) return null;
 
   const store = loadStore(filePath);
   const key = toolSequence.join(",");
