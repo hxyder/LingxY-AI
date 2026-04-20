@@ -234,6 +234,57 @@ function pickReadActionToolFromCatalog(catalog, toolId) {
 }
 
 /**
+ * Summarise the resources the LLM can actually reach right now — attachments,
+ * selection text, connected accounts, current wall-clock time. The LLM is a
+ * single brain that decides how to act; without this block it has to guess
+ * what's available. This is the pattern mainstream agent frameworks
+ * (LangGraph / CrewAI / AutoGPT) use: give the model the raw context and
+ * the tool belt, and let it plan.
+ */
+function formatResourceContext(task) {
+  const runtime = task.__runtime ?? null;
+  const ctx = task.context_packet ?? {};
+  const lines = [];
+  lines.push("");
+  lines.push("Resources you can use right now:");
+  lines.push(`- Current local time: ${new Date().toISOString()} (interpret "明天/tomorrow/今晚" relative to this)`);
+
+  const attachments = [
+    ...(ctx.file_paths ?? []),
+    ...(ctx.image_paths ?? [])
+  ].filter(Boolean);
+  if (attachments.length > 0) {
+    lines.push(`- Attached files (absolute paths, safe to pass as tool arguments): ${JSON.stringify(attachments)}`);
+  } else {
+    lines.push(`- Attached files: (none)`);
+  }
+
+  const selectionText = typeof ctx.text === "string" ? ctx.text.trim() : "";
+  if (selectionText && selectionText.length <= 400) {
+    lines.push(`- User-selected text: ${JSON.stringify(selectionText)}`);
+  } else if (selectionText.length > 400) {
+    lines.push(`- User-selected text: ${JSON.stringify(selectionText.slice(0, 200) + "…")} (truncated, ${selectionText.length} chars total)`);
+  }
+
+  try {
+    const accounts = runtime?.store?.listConnectedAccounts?.()
+      ?? runtime?.store?.listUserAccounts?.()
+      ?? [];
+    const rows = accounts.slice(0, 6).map((account) => {
+      const caps = typeof account.capabilities === "object" && account.capabilities
+        ? Object.entries(account.capabilities).filter(([, v]) => v).map(([k]) => k).join(",")
+        : "";
+      return `${account.provider} ${account.email ?? account.id ?? ""}${caps ? ` (${caps})` : ""}`;
+    });
+    if (rows.length > 0) {
+      lines.push(`- Connected accounts: ${rows.join("; ")}`);
+    }
+  } catch { /* no-op */ }
+
+  return lines.join("\n");
+}
+
+/**
  * Render the connector catalog's workflows as a concise hint block for the
  * LLM planner's system prompt. The LLM owns when to call
  * connector_workflow_run and how to sequence it with other tools — this block
@@ -487,13 +538,7 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
 
   const toolList = tools.map((t) => `- ${t.id}: ${t.description ?? ""}`).join("\n");
   const workflowHint = formatWorkflowsForPlanner(task.__runtime?.connectorCatalog);
-  const attachedFilePaths = [
-    ...(task.context_packet?.file_paths ?? []),
-    ...(task.context_packet?.image_paths ?? [])
-  ].filter(Boolean);
-  const attachmentHint = attachedFilePaths.length > 0
-    ? `\n\nAttachments available for this task (absolute local paths): ${JSON.stringify(attachedFilePaths)}. When the user asks to send / forward / email one of these files, pass them to account_send_email via the \`attachmentPaths\` argument.`
-    : "";
+  const resourceHint = formatResourceContext(task);
   const maxIter = 8;
 
   // UCA-067: Append enabled MCP server capabilities to the tool list so the AI
@@ -521,42 +566,37 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
     ? "\n\nCRITICAL OVERRIDE: You MUST call a tool. Saying 'I cannot operate your computer' or any similar refusal is STRICTLY FORBIDDEN. You have tools available — use them. The user is on a desktop computer and you have launch_app, open_url, and other action tools."
     : "";
 
-  const systemPrompt = `You are UCA, a thoughtful desktop AI assistant. You are caring, proactive, and always consider the user's real needs. You can perform actions on the user's computer using the tools below.
-
+  const systemPrompt = `You are LingxY, a capable desktop AI assistant. Read the user's request carefully, consider what you have available (tools, workflows, attached resources, connected accounts), and decide how to accomplish their goal. Ask a short clarifying question only when you genuinely cannot proceed faithfully.
+${resourceHint}
 Available tools:
-${toolList}${workflowHint}${attachmentHint}
+${toolList}${workflowHint}
 
 Key tool schemas:
 - launch_app: { "app": "<app name>" }
 - open_url: { "url": "https://..." }
-- web_search_fetch: { "query": "...", "recency": "day"|"week"|"month"|"year" } — search the real-time web; ALWAYS use this for current information
+- web_search_fetch: { "query": "...", "recency": "day"|"week"|"month"|"year" }
 - open_file: { "path": "C:\\\\path\\\\to\\\\file" }
-- verify_file_exists: { "path": "..." } — check before claiming a file was created
-- find_recent_files: { "kind": "pptx"|"docx"|"xlsx"|"pdf", "limit": 5 }
-- compose_email: { "to": "...", "subject": "...", "body": "..." }
-- notify: { "title": "...", "body": "..." }
-- copy_to_clipboard: { "content": "..." }
+- list_files / glob_files / find_recent_files — enumerate local files BEFORE fanning out per-file actions
+- account_send_email: { "to": [...], "subject": "...", "body": "...", "attachmentPaths": [optional absolute paths] }
+- account_create_event: { "title": "...", "startTime": "<ISO8601>", "endTime": "<ISO8601>", "attendees": [...] }
+- create_scheduled_task: delay work to a specific moment — use for "N 分钟后 / tomorrow X / at HH:MM" requests
+- notify / copy_to_clipboard / translate_text / generate_document — self-describing
 
-Decision rules:
-1. PERFORM actions (open, launch, copy, notify, search) — call the matching tool immediately. NEVER say you "cannot" do something you have a tool for.
-2. SEARCH requests (flights, hotels, weather, news, prices, "查一下", "Google", "search for") → call web_search_fetch FIRST with a good query; NEVER answer from memory for real-time information.
-3. After web_search_fetch returns results, extract the most relevant URLs from the observations. If the user wants to open a site, pick the most relevant URL from your search results and call open_url.
-4. MISSING INFORMATION: If the user's request is under-specified (e.g. "find flights" without a departure city), ask ONE clarifying question in your final answer BEFORE calling any tool. Format: {"final": "请问您从哪个城市出发？"}
-   EXCEPTION: Do NOT ask clarifying questions for connector write workflows (send email / create calendar event / upload file). Instead, DRAFT reasonable content yourself and call connector_workflow_run immediately — the workflow's pending-approval UI is where the user edits or rejects. NEVER invent placeholder content like "邮件主题" / "邮件正文" — write a real greeting / real body text based on the user's words.
-5. After a tool succeeds, use its observation to formulate a helpful answer. Include key facts (price, time, link) from the search results.
-6. If a tool returns success:false, acknowledge the failure — do NOT claim success.
-7. Never repeat the exact same tool+args you already tried.
-8. Maximum ${maxIter} tool calls. End early when the task is clearly done.
-9. CONTEXT: If the conversation history contains previous search results or URLs, use them when the user asks to "open the appropriate one" or refers to "that website".
-10. After open_url succeeds, do NOT include that URL as a clickable markdown hyperlink in your final answer (e.g. do NOT write [site](https://...)). Write plain text instead, like "已为你打开 example.com". This prevents the user from accidentally opening the page twice.
-11. TRUTHFULNESS: NEVER claim an email was sent / a file was uploaded / an event was created unless the corresponding connector tool ACTUALLY returned success: true in this transcript. Do not invent "已发送 / 已确认发送 / sent" messages. If no send tool has succeeded yet, say what you actually did (e.g. "已为你准备好草稿，等你点击确认发送按钮") instead.
-12. CONFIRMATION UI: The connector workflow itself creates a pending-approval card in the overlay with 确认发送 / 拒绝 buttons. Do NOT write "确认发送吗？" in chat text and wait for a reply — call the workflow; the user clicks the card.
-13. TIME OFFSETS: When you reach this planner, any "5 分钟后/明天 9 点/in 10 minutes"-style phrase has ALREADY been stripped by the upstream TaskPlan layer. The userCommand you receive is the residual instruction to execute NOW. Do NOT try to create a scheduled task for deferred work here — just run the real action. (If a time offset IS present in the command you see, treat it as runtime data, not as scheduling instructions.)
+Guidance (not a rigid checklist — apply judgment):
+- **Execute with what you have.** If the request is concrete and you have the tool + data, just call it. Don't ask for permission the user already implicitly gave.
+- **Ask only when necessary.** If a required field (recipient email, file path, specific item) is truly missing AND you can't infer it from the resources listed above, return {"final": "<one short clarifying question in the user's language>"} and stop. Do NOT ask when the user gave enough to act.
+- **Future-time requests schedule, not execute now.** If the user says "in N minutes/hours" or "tomorrow at X" or "tonight at Y" about WHEN to run the action (as opposed to event start time being an argument), call create_scheduled_task with action.type="task" and params.userCommand carrying the full instruction. The scheduler will wake you up at trigger time to execute.
+- **Fan out enumerations.** When the user says "all / every / each <something>", start with an enumeration tool (list_files / glob_files / account_list_emails / account_list_files), read the result, then call the per-item action for each result in subsequent iterations. Do not guess counts or filenames.
+- **Connector workflows over raw tools.** Gmail/Outlook/Calendar/Drive operations should use connector_workflow_run when a matching workflow exists (see the workflow list above). The workflow shows the user a draft with 确认/拒绝 buttons; you do NOT need to ask in chat.
+- **Truthfulness.** Only claim an email was sent / event created / file uploaded when the transcript shows the corresponding tool returned success=true. If you prepared a draft and it's waiting on the user's approval, say so explicitly.
+- **Search before answering about current events.** If the user asks about news / prices / flights / weather / anything time-sensitive, call web_search_fetch first. Never answer from memory for real-time topics.
+- **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
+- **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
 ${needsCurrentDataInstruction}${forceToolInstruction}${mcpCapabilitiesNote}
 Respond ONLY with a single JSON object (no markdown, no code fences):
 - Call a tool:       {"tool": "tool_id", "args": { ... }}
-- Ask clarification: {"final": "your clarifying question"}
-- Finish with answer: {"final": "your reply in the user's language (Chinese if they wrote Chinese)"}`;
+- Ask clarification: {"final": "your short clarifying question"}
+- Finish with answer: {"final": "your reply in the user's language"}`;
 
   try {
     let resultText = "";
