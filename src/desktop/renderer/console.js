@@ -2361,26 +2361,9 @@ function renderApprovals() {
     return;
   }
 
-  approvalList.innerHTML = approvals.map((a) => `
-    <div class="approval-item">
-      <div class="row">
-        <div>
-          <h4>${escapeHtml(a.proposed_target ?? a.proposed_action ?? "Pending action")}</h4>
-          <p class="muted">${escapeHtml(a.source_type ?? "unknown")} · ${escapeHtml(a.status)}</p>
-        </div>
-        <span class="chip ${a.status === "approved" ? "ready" : a.status === "rejected" ? "danger" : "warning"}">${escapeHtml(a.status)}</span>
-      </div>
-      <p class="muted" style="margin-top:6px;">${escapeHtml(a.preview_text ?? "No preview")}</p>
-      <div class="row wrap" style="margin-top:8px;">
-        <span class="muted" style="font-size:11px;">Expires: ${escapeHtml(formatDateTime(a.expires_at))}</span>
-        <div class="toolbar">
-          <button class="secondary" data-approve-id="${escapeHtml(a.approval_id)}" ${a.status !== "pending" ? "disabled" : ""}>Approve</button>
-          <button class="ghost" data-reject-id="${escapeHtml(a.approval_id)}" ${a.status !== "pending" ? "disabled" : ""}>Reject</button>
-        </div>
-      </div>
-    </div>
-  `).join("");
+  approvalList.innerHTML = approvals.map((a) => renderApprovalItem(a)).join("");
 
+  // Plain Approve (no overrides).
   for (const btn of approvalList.querySelectorAll("[data-approve-id]")) {
     btn.addEventListener("click", async () => {
       await fetchJson(`/approvals/${encodeURIComponent(btn.dataset.approveId)}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actor: "desktop_console" }) });
@@ -2393,6 +2376,123 @@ function renderApprovals() {
       await refreshWorkspace();
     });
   }
+  // UCA-103 Save & Approve: collect edited field values and send as overrides.
+  for (const btn of approvalList.querySelectorAll("[data-save-approve-id]")) {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.saveApproveId;
+      const container = approvalList.querySelector(`[data-approval-fields="${id}"]`);
+      const overrides = {};
+      if (container) {
+        for (const input of container.querySelectorAll("[data-field-key]")) {
+          const key = input.dataset.fieldKey;
+          let value = input.value;
+          if (input.dataset.fieldKind === "list") {
+            value = value.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+          }
+          overrides[key] = value;
+        }
+      }
+      await fetchJson(`/approvals/${encodeURIComponent(id)}/approve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ actor: "desktop_console", overrides })
+      });
+      await refreshWorkspace();
+    });
+  }
+}
+
+// UCA-103: Render a single approval. When the approval's proposed_params
+// look like an editable payload (e.g. send_email with to/subject/body, or a
+// connector_workflow_run with an .input object), we expose inline form
+// fields pre-filled with current values plus a Save & Approve button.
+// Existing Approve / Reject buttons remain as the quick-path.
+function renderApprovalItem(a) {
+  const editableFields = deriveEditableApprovalFields(a);
+  const statusChip = a.status === "approved" ? "ready" : a.status === "rejected" ? "danger" : "warning";
+  const disabled = a.status !== "pending";
+  const fieldsHtml = editableFields.length > 0
+    ? `
+      <div class="approval-fields" data-approval-fields="${escapeHtml(a.approval_id)}" style="margin-top:10px;display:grid;gap:8px;">
+        ${editableFields.map((f) => `
+          <label style="display:block;font-size:11px;color:var(--muted);font-weight:600;">
+            ${escapeHtml(f.label)}
+            ${f.kind === "textarea"
+              ? `<textarea data-field-key="${escapeHtml(f.key)}" rows="4" style="margin-top:4px;font-size:12px;">${escapeHtml(f.value)}</textarea>`
+              : `<input data-field-key="${escapeHtml(f.key)}" data-field-kind="${escapeHtml(f.kind)}" type="text" value="${escapeHtml(f.value)}" style="margin-top:4px;font-size:12px;" />`}
+          </label>
+        `).join("")}
+      </div>
+    `
+    : "";
+  const saveButton = editableFields.length > 0 && !disabled
+    ? `<button class="primary" data-save-approve-id="${escapeHtml(a.approval_id)}">Save &amp; Approve</button>`
+    : "";
+  return `
+    <div class="approval-item">
+      <div class="row">
+        <div>
+          <h4>${escapeHtml(a.proposed_target ?? a.proposed_action ?? "Pending action")}</h4>
+          <p class="muted">${escapeHtml(a.source_type ?? "unknown")} · ${escapeHtml(a.status)}</p>
+        </div>
+        <span class="chip ${statusChip}">${escapeHtml(a.status)}</span>
+      </div>
+      <p class="muted" style="margin-top:6px;">${escapeHtml(a.preview_text ?? "No preview")}</p>
+      ${fieldsHtml}
+      <div class="row wrap" style="margin-top:10px;">
+        <span class="muted" style="font-size:11px;">Expires: ${escapeHtml(formatDateTime(a.expires_at))}</span>
+        <div class="toolbar">
+          ${saveButton}
+          <button class="secondary" data-approve-id="${escapeHtml(a.approval_id)}" ${disabled ? "disabled" : ""}>Approve</button>
+          <button class="ghost" data-reject-id="${escapeHtml(a.approval_id)}" ${disabled ? "disabled" : ""}>Reject</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// Inspect proposed_params and decide whether there are fields the user
+// should be able to edit before approving. Returns an array of
+// {key, label, kind, value} (kind ∈ "text"|"textarea"|"list").
+function deriveEditableApprovalFields(approval) {
+  if (!approval || approval.status !== "pending") return [];
+  const params = approval.proposed_params ?? {};
+  // connector_workflow_run packages its real input under params.input
+  const payload = (params.input && typeof params.input === "object") ? params.input : params;
+
+  const fields = [];
+  const seen = new Set();
+  const addField = (key, label, kind, raw) => {
+    if (seen.has(key)) return;
+    if (raw === undefined || raw === null) return;
+    let value = raw;
+    if (Array.isArray(raw)) {
+      if (kind !== "list") return;
+      value = raw.join(", ");
+    } else if (typeof raw === "object") {
+      return;
+    } else {
+      value = String(raw);
+    }
+    fields.push({ key, label, kind, value });
+    seen.add(key);
+  };
+
+  // Email-like payload
+  addField("to", "收件人 (逗号分隔)", "list", payload.to);
+  addField("cc", "CC", "list", payload.cc);
+  addField("bcc", "BCC", "list", payload.bcc);
+  addField("subject", "主题", "text", payload.subject);
+  addField("body", "正文", "textarea", payload.body ?? payload.text);
+
+  // Calendar-like payload
+  addField("title", "事件标题", "text", payload.title);
+  addField("startTime", "开始时间 (ISO)", "text", payload.startTime ?? payload.start_time);
+  addField("endTime", "结束时间 (ISO)", "text", payload.endTime ?? payload.end_time);
+  addField("location", "地点", "text", payload.location);
+  addField("description", "描述", "textarea", payload.description);
+
+  return fields;
 }
 
 // UCA-046: schedule view mode — "list" (default) / "week" / "month"
