@@ -1,0 +1,143 @@
+/*
+ * tokens.css — LingxY design tokens
+ *
+ * Single source of truth for colors, typography scale, spacing scale,
+ * shadows, radii, durations, and z-index layers. Both overlay.html and
+ * console.html depend on this file (via shared.css's @import).
+ *
+ * Design principles:
+ *   • Two themes: light (default) and dark. White/warm retired.
+ *   • Colors drive by semantic role, not shade name — callers say
+ *     var(--ink), not var(--gray-900).
+ *   • Spacing snaps to a 4 px grid {4, 8, 12, 16, 24, 32, 48}. No
+ *     interstitial 6/10/14 px values.
+ *   • Typography ladder is 7-rung {11, 12, 14, 15, 18, 22, 28}, with
+ *     three weights {400, 500, 600}.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ── neutral glass palette (light) ───────────────────────────── */
+  --bg-0: #f5f6f8;
+  --bg-1: #ebedf2;
+  --bg-2: #e0e3ea;
+  --surface: rgba(255, 255, 255, 0.72);
+  --surface-strong: rgba(255, 255, 255, 0.88);
+  --surface-soft: rgba(255, 255, 255, 0.48);
+  --surface-dark: rgba(22, 24, 30, 0.88);
+  --glass: rgba(255, 255, 255, 0.62);
+  --glass-border: rgba(255, 255, 255, 0.36);
+  --ink: #1a1d24;
+  --ink-soft: #3a3f4b;
+  --muted: #6b7280;
+  --line: rgba(0, 0, 0, 0.08);
+  --line-strong: rgba(0, 0, 0, 0.14);
+
+  /* ── monochrome editorial accent ─────────────────────────────── */
+  --accent: #000000;
+  --accent-strong: #000000;
+  --accent-soft: rgba(226, 226, 226, 0.74);
+  --teal-soft: rgba(243, 243, 243, 0.74);
+
+  /* ── status ───────────────────────────────────────────────────── */
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #3b82f6;
+
+  /* ── shadows (neutral, elevation-indexed) ─────────────────────── */
+  --shadow-xl: 0 25px 60px rgba(0, 0, 0, 0.12);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+
+  /* ── radii ────────────────────────────────────────────────────── */
+  --radius-xl: 24px;
+  --radius-lg: 16px;
+  --radius-md: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+
+  /* ── typography ───────────────────────────────────────────────── */
+  --font-display: "Segoe UI Variable Display", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-text: "Segoe UI Variable Text", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", Consolas, monospace;
+
+  /* ── typography scale (7 rungs) ───────────────────────────────── */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 14px;
+  --fs-md: 15px;
+  --fs-lg: 18px;
+  --fs-xl: 22px;
+  --fs-2xl: 28px;
+
+  /* ── font weights (3 rungs) ───────────────────────────────────── */
+  --fw-regular: 400;
+  --fw-medium: 500;
+  --fw-semibold: 600;
+
+  /* ── spacing scale (strict 4 px grid) ─────────────────────────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+
+  /* ── motion ───────────────────────────────────────────────────── */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 280ms;
+  --ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* ── z-index layers ───────────────────────────────────────────── */
+  --z-base: 0;
+  --z-dropdown: 10;
+  --z-overlay: 100;
+  --z-modal: 200;
+  --z-toast: 300;
+
+  /* ── container widths ─────────────────────────────────────────── */
+  --overlay-width: 520px;
+
+  font-family: var(--font-text);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+}
+
+/* ── dark theme overrides ────────────────────────────────────────
+   Applies whether the theme is set on <html> or <body>, so existing
+   overlay (body[data-theme]) and future console (html[data-theme])
+   consumers both work. */
+:is(html, body)[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-0: #0d0d0e;
+  --bg-1: #121214;
+  --bg-2: #1a1a1e;
+  --surface: rgba(24, 24, 28, 0.82);
+  --surface-strong: rgba(32, 32, 36, 0.92);
+  --surface-soft: rgba(18, 18, 22, 0.62);
+  --glass: rgba(32, 32, 36, 0.72);
+  --glass-border: rgba(255, 255, 255, 0.08);
+
+  --ink: #e8e8e8;
+  --ink-soft: #c4c4c4;
+  --muted: #8a8a8a;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+
+  --accent: #e8e8e8;
+  --accent-strong: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.12);
+
+  /* shadows stay black but ratchet up a bit to read on dark surfaces */
+  --shadow-xl: 0 25px 60px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.28);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.22);
+}

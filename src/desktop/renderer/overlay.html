@@ -47,7 +47,7 @@
 
       /* ── bubble conversation area ── */
       .bubble-area {
-        width: 520px;
+        width: var(--overlay-width);
         max-height: 420px;
         overflow-y: auto;
         overflow-x: hidden;
@@ -78,7 +78,7 @@
 
       /* ── empty state (shown when no bubbles yet) ── */
       .empty-state {
-        width: 520px;
+        width: var(--overlay-width);
         margin-bottom: 10px;
         padding: 22px 22px 18px;
         border-radius: 22px 22px 8px 8px;
@@ -302,7 +302,7 @@
 
       /* ── quick action toolbar (sits above the input bar) ── */
       .quick-toolbar {
-        width: 520px;
+        width: var(--overlay-width);
         display: flex;
         align-items: center;
         gap: 6px;
@@ -370,7 +370,7 @@
 
       /* ── inline form panel (scheduled task, voice prompt, etc.) ── */
       .inline-panel {
-        width: 520px;
+        width: var(--overlay-width);
         margin-bottom: 8px;
         padding: 14px 16px;
         border-radius: 14px;
@@ -501,7 +501,7 @@
 
       /* ── input bar ── */
       .input-bar {
-        width: 520px;
+        width: var(--overlay-width);
         display: flex;
         align-items: flex-end;
         gap: 8px;
@@ -1472,75 +1472,6 @@
       body[data-theme="dark"] .voice-card .voice-transcript { background: rgba(40,40,48,0.8); color: #e8e8e8; }
       body[data-theme="dark"] .result-toast .toast-body { color: #888; }
 
-      /* ── white (blue accent) ── */
-      body[data-theme="white"] {
-        --ink: #080808;
-        --muted: #888888;
-        --accent: #2563eb;
-        --accent-strong: #2563eb;
-        --accent-soft: rgba(37,99,235,0.1);
-        --line: rgba(0,0,0,0.1);
-        --surface-strong: rgba(255,255,255,0.96);
-        --surface-soft: rgba(244,244,244,0.82);
-      }
-      body[data-theme="white"] .bubble.user { background: #2563eb; color: #fff; }
-      body[data-theme="white"] .input-bar .send-btn { background: #2563eb; color: #fff; }
-      body[data-theme="white"] .quick-toolbar .quick-btn.active,
-      body[data-theme="white"] .bubble-options button.active,
-      body[data-theme="white"] .inline-panel .panel-actions button.primary,
-      body[data-theme="white"] .voice-card .voice-actions button.primary,
-      body[data-theme="white"] .task-list-filters button.active {
-        background: #2563eb;
-        color: #fff;
-      }
-      body[data-theme="white"] .wave-bar { background: #2563eb; }
-
-      /* ── warm (浅咖色) ── */
-      body[data-theme="warm"] {
-        --ink: #2a1a0e;
-        --muted: #8a6e55;
-        --accent: #7c5438;
-        --accent-strong: #5e3e28;
-        --accent-soft: rgba(124,84,56,0.12);
-        --line: rgba(42,26,14,0.12);
-        --surface-strong: rgba(255,252,248,0.96);
-        --surface-soft: rgba(237,229,218,0.72);
-      }
-      body[data-theme="warm"] .bubble-area,
-      body[data-theme="warm"] .quick-toolbar,
-      body[data-theme="warm"] .input-bar,
-      body[data-theme="warm"] .inline-panel,
-      body[data-theme="warm"] .voice-card,
-      body[data-theme="warm"] .task-list-panel,
-      body[data-theme="warm"] .result-toast {
-        background: rgba(245, 240, 234, 0.9);
-        box-shadow: 0 20px 40px rgba(42,26,14,0.1), inset 0 1px 0 rgba(255,250,245,0.7);
-      }
-      body[data-theme="warm"] .bubble.assistant { background: rgba(255,252,248,0.9); color: #2a1a0e; }
-      body[data-theme="warm"] .bubble.user { background: #7c5438; color: #fff; }
-      body[data-theme="warm"] .bubble.system { background: rgba(237,229,218,0.8); color: #8a6e55; }
-      body[data-theme="warm"] .input-bar textarea { color: #2a1a0e; }
-      body[data-theme="warm"] .input-bar textarea::placeholder { color: #a08060; }
-      body[data-theme="warm"] .input-bar .send-btn { background: #7c5438; color: #fff; }
-      body[data-theme="warm"] .input-bar .aux-btn { background: rgba(224,213,194,0.8); color: #8a6e55; }
-      body[data-theme="warm"] .quick-toolbar .quick-btn,
-      body[data-theme="warm"] .bubble-options button,
-      body[data-theme="warm"] .inline-panel .panel-actions button,
-      body[data-theme="warm"] .voice-card .voice-actions button,
-      body[data-theme="warm"] .task-list-filters button {
-        background: rgba(224,213,194,0.8);
-        color: #2a1a0e;
-      }
-      body[data-theme="warm"] .quick-toolbar .quick-btn.active,
-      body[data-theme="warm"] .bubble-options button.active,
-      body[data-theme="warm"] .inline-panel .panel-actions button.primary,
-      body[data-theme="warm"] .voice-card .voice-actions button.primary,
-      body[data-theme="warm"] .task-list-filters button.active {
-        background: #7c5438;
-        color: #fff;
-      }
-      body[data-theme="warm"] .wave-bar { background: #7c5438; }
-      body[data-theme="warm"] .voice-card .voice-transcript { background: rgba(237,229,218,0.7); color: #2a1a0e; }
     </style>
   </head>
   <body>
