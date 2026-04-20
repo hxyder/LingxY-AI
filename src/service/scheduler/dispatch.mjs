@@ -57,6 +57,42 @@ function updateScheduleAfterRun(runtime, schedule, runStatus, now) {
   }
 }
 
+// UCA-098: Guard against double-dispatch when the scheduler tick fires
+// again while a previous dispatch is still awaiting executeProposedAction.
+// For a task that takes 30+ seconds to run, the 5-second scheduler tick
+// would find the schedule still claiming `next_run_at <= now` and dispatch
+// it a second time — the second run's task got deduped by the queue, but
+// the auto-notify still fired, producing a duplicate "completed"
+// notification. This in-memory set locks the schedule id until dispatch
+// finishes; the first thing dispatchSchedule does synchronously is also
+// advance `next_run_at` past `now` so a fresh process (or manual
+// runDueSchedules call) still won't re-pick it.
+const IN_FLIGHT_SCHEDULES = new Set();
+
+export function isScheduleInFlight(scheduleId) {
+  return IN_FLIGHT_SCHEDULES.has(scheduleId);
+}
+
+function claimInFlight(runtime, schedule, now) {
+  IN_FLIGHT_SCHEDULES.add(schedule.schedule_id);
+  // Advance next_run_at synchronously so a concurrent tick sees the
+  // schedule as "not due right now". For one-shot at-triggers we clear
+  // it entirely; for recurring triggers we compute the next occurrence.
+  const claimed = { ...schedule };
+  if (claimed.metadata?.one_shot) {
+    claimed.next_run_at = null;
+  } else {
+    claimed.next_run_at = computeNextRunAt(claimed, { after: now });
+  }
+  claimed.updated_at = now;
+  runtime.store.updateSchedule(claimed.schedule_id, claimed);
+  return claimed;
+}
+
+function releaseInFlight(scheduleId) {
+  IN_FLIGHT_SCHEDULES.delete(scheduleId);
+}
+
 export async function dispatchSchedule({
   runtime,
   scheduleId,
@@ -68,7 +104,15 @@ export async function dispatchSchedule({
     return null;
   }
 
+  // Reject a concurrent dispatch for the same schedule. See IN_FLIGHT_SCHEDULES.
+  if (IN_FLIGHT_SCHEDULES.has(schedule.schedule_id)) {
+    return null;
+  }
+
   const now = new Date().toISOString();
+  const claimedSchedule = claimInFlight(runtime, schedule, now);
+  Object.assign(schedule, claimedSchedule);
+
   const run = createScheduleRunRecord({
     scheduleId,
     triggerReason: reason,
@@ -106,6 +150,7 @@ export async function dispatchSchedule({
       approval_id: approval.approval_id
     });
     updateScheduleAfterRun(runtime, schedule, "pending_approval", now);
+    releaseInFlight(schedule.schedule_id);
     return {
       status: "pending_approval",
       approval,
@@ -147,5 +192,7 @@ export async function dispatchSchedule({
       status: "failed",
       error
     };
+  } finally {
+    releaseInFlight(schedule.schedule_id);
   }
 }

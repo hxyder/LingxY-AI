@@ -21,6 +21,8 @@
 import assert from "node:assert/strict";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
 import { CREATE_SCHEDULED_TASK_TOOL } from "../src/service/action_tools/tools/index.mjs";
+import { buildAgenticSystemPrompt } from "../src/service/executors/agentic/prompt-builder.mjs";
+import { dispatchSchedule, isScheduleInFlight } from "../src/service/scheduler/dispatch.mjs";
 
 const service = createServiceBootstrap();
 const { runtime } = service;
@@ -110,6 +112,77 @@ const { runtime } = service;
     /Do NOT call create_scheduled_task/i.test(source),
     "guidance must explicitly forbid create_scheduled_task"
   );
+}
+
+// ── Bug B (UCA-098): agentic prompt also carries scheduled-fire banner ──
+{
+  const scheduledTask = {
+    user_command: "提醒我喝水",
+    context_packet: { source_app: "uca.scheduler", source_type: "window" }
+  };
+  const promptScheduled = buildAgenticSystemPrompt({
+    tools: [], skills: [], task: scheduledTask, requestedFormat: null, language: "auto"
+  });
+  assert.ok(
+    /Scheduled-fire context/i.test(promptScheduled),
+    "agentic prompt should include Scheduled-fire banner for uca.scheduler"
+  );
+  assert.ok(
+    /Do NOT call `?create_scheduled_task/i.test(promptScheduled),
+    "agentic banner must forbid create_scheduled_task"
+  );
+
+  const normalTask = {
+    user_command: "hello",
+    context_packet: { source_app: "uca.overlay", source_type: "window" }
+  };
+  const promptNormal = buildAgenticSystemPrompt({
+    tools: [], skills: [], task: normalTask, requestedFormat: null, language: "auto"
+  });
+  assert.ok(
+    !/Scheduled-fire context/i.test(promptNormal),
+    "non-scheduler tasks must NOT see the scheduled-fire banner"
+  );
+}
+
+// ── Bug A (UCA-098): dispatch locks the schedule in-flight ──
+{
+  const fireSvc = createServiceBootstrap();
+  const fireRuntime = fireSvc.runtime;
+  // Stub executeProposedAction inside executeScheduledTask via a fake
+  // action_tool schedule that simply resolves after a short delay. We go
+  // through scheduler.createSchedule + dispatchSchedule so the lock logic
+  // actually runs.
+  const target = fireRuntime.scheduler.createSchedule({
+    name: "test lock",
+    trigger: { type: "at", run_at: new Date(Date.now() - 1000).toISOString() },
+    action: { type: "action_tool", target: "notify", params: { title: "x", body: "y" } }
+  });
+  assert.ok(!isScheduleInFlight(target.schedule_id), "schedule should not be in-flight before dispatch");
+
+  // Kick off first dispatch (don't await yet) — should claim the lock.
+  const firstDispatch = dispatchSchedule({
+    runtime: fireRuntime,
+    scheduleId: target.schedule_id,
+    reason: "due"
+  });
+  assert.ok(isScheduleInFlight(target.schedule_id), "schedule must be in-flight while dispatch awaits");
+
+  // A concurrent second dispatch must be rejected as null.
+  const secondDispatch = await dispatchSchedule({
+    runtime: fireRuntime,
+    scheduleId: target.schedule_id,
+    reason: "due"
+  });
+  assert.equal(secondDispatch, null, "concurrent dispatch for same schedule must no-op");
+
+  await firstDispatch;
+  assert.ok(!isScheduleInFlight(target.schedule_id), "lock must release after dispatch finishes");
+
+  // next_run_at should have been advanced synchronously; for a one-shot
+  // `at` trigger with past run_at, next is null.
+  const after = fireRuntime.store.getSchedule(target.schedule_id);
+  assert.equal(after.next_run_at, null, "past at-trigger should have next_run_at cleared");
 }
 
 console.log("ok verify-scheduled-fire-safety");

@@ -185,9 +185,15 @@ async function executeScheduledTask({ runtime, actionTarget, actionParams, execu
 
   // Scheduled tasks often fire when the user isn't watching. When the task
   // finishes, push a desktop notification with a short summary of the final
-  // answer so the user actually sees the result. Skip if the scheduled
-  // command itself already calls notify / send_email — otherwise we'd
-  // double-notify. Best-effort; never blocks task completion.
+  // answer so the user actually sees the result. Skip when:
+  //   (a) the scheduled command itself mentions notify / email (regex on
+  //       userCommand) — textual pre-check to avoid obvious double-notify
+  //   (b) the task was deduped / never really ran — `success` event missing
+  //   (c) UCA-098: the task's transcript already shows a successful
+  //       `notify` tool_call — otherwise a reminder command like
+  //       "提醒我喝水" that the agent already handled by calling notify
+  //       produces a SECOND, generic "计划任务完成：提醒我喝水" toast.
+  // Best-effort; never blocks task completion.
   try {
     if (actionParams.notifyOnComplete !== false
         && !/(\bnotify\b|通知|发邮件|send\s+email|account_send_email)/i.test(userCommand)) {
@@ -196,15 +202,24 @@ async function executeScheduledTask({ runtime, actionTarget, actionParams, execu
       if (taskId && runtime?.actionToolRegistry?.call) {
         const events = runtime.store?.getTaskEvents?.(taskId) ?? [];
         const successEvent = [...events].reverse().find((e) => e.event_type === "success");
-        const resultText = typeof successEvent?.payload?.text === "string"
-          ? successEvent.payload.text
-          : (task?.result_summary ?? `定时任务"${actionTarget}"已完成`);
-        const title = `计划任务完成：${actionTarget ?? "schedule"}`;
-        const body = resultText.length > 240 ? resultText.slice(0, 240) + "…" : resultText;
-        // Fire and forget — a notify failure must not mark the scheduled
-        // run as failed.
-        runtime.actionToolRegistry.call("notify", { title, body }, { runtime, task })
-          .catch(() => { /* ignore */ });
+        const agentAlreadyNotified = events.some((e) => {
+          if (e.event_type !== "tool_call_completed") return false;
+          const payload = e.payload ?? {};
+          const toolId = payload.tool_id ?? payload.tool;
+          return toolId === "notify" && payload.success === true;
+        });
+        const taskReallyRan = Boolean(successEvent) && task?.status !== "partial_success";
+        if (taskReallyRan && !agentAlreadyNotified) {
+          const resultText = typeof successEvent?.payload?.text === "string"
+            ? successEvent.payload.text
+            : (task?.result_summary ?? `定时任务"${actionTarget}"已完成`);
+          const title = `计划任务完成：${actionTarget ?? "schedule"}`;
+          const body = resultText.length > 240 ? resultText.slice(0, 240) + "…" : resultText;
+          // Fire and forget — a notify failure must not mark the scheduled
+          // run as failed.
+          runtime.actionToolRegistry.call("notify", { title, body }, { runtime, task })
+            .catch(() => { /* ignore */ });
+        }
       }
     }
   } catch { /* silent */ }

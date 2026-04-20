@@ -139,6 +139,17 @@ export function buildAgenticSystemPrompt({
     ? `Reply to the user in ${language}.`
     : "Reply to the user in the same language they used.";
 
+  // UCA-098: When the task is the firing of an already-scheduled run, the
+  // scheduler feeds the original natural-language command back through the
+  // executor. Without this banner the LLM re-interprets e.g. "提醒我喝水"
+  // as a new scheduling request and calls create_scheduled_task again,
+  // and when the tool layer refuses it (UCA-096 guard), flounders and
+  // emits a confused "sorry I can't create a timer in this environment"
+  // reply. Same signal as tool_using/agent-loop.mjs uses.
+  const scheduledFireBanner = task?.context_packet?.source_app === "uca.scheduler"
+    ? "\n\n## Scheduled-fire context\n\nThis request is the actual firing of an already-scheduled task — the delay has ALREADY elapsed. Execute the action directly. Do NOT call `create_scheduled_task`. For a reminder, call `notify` with a concise title and body. For an email, call the send workflow. The scheduling was done earlier; your job here is to perform the action."
+    : "";
+
   return [
     "You are UCA's agentic assistant. You are running inside a desktop task runtime that can actually execute the tools listed below.",
     "",
@@ -168,6 +179,7 @@ export function buildAgenticSystemPrompt({
     "## Output format",
     "",
     outputFormatLine,
+    scheduledFireBanner,
     task?.user_command ? `\nUser's original request: ${task.user_command}` : ""
   ].join("\n");
 }
