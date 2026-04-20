@@ -2202,6 +2202,68 @@ function renderDowngradedWarning(downgraded) {
   `;
 }
 
+// UCA-102: Render a single timeline entry. Events carrying extra payload
+// detail (tool args, observations, errors) use a <details> element so the
+// user can expand only what they want to see. Failures and pending steps
+// default to open; routine success steps stay collapsed so the timeline
+// reads cleanly at a glance.
+function renderTimelineEntry(ev) {
+  const s = formatTaskEventSummary(ev);
+  const payload = ev?.data ?? ev?.payload ?? {};
+  const eventType = ev?.event ?? ev?.event_type ?? "";
+  const ts = escapeHtml(formatDateTime(ev.ts ?? ev.at));
+  const title = escapeHtml(s.title);
+  const body = escapeHtml(s.body);
+
+  // Determine whether there's rich detail worth showing behind a toggle.
+  const hasToolArgs = (eventType === "tool_call_started" || eventType === "tool_call_proposed" || eventType === "tool_call_completed")
+    && payload.args && typeof payload.args === "object" && Object.keys(payload.args).length > 0;
+  const hasObservation = eventType === "tool_call_completed"
+    && (typeof payload.observation === "string" || typeof payload.text === "string" || typeof payload.error === "string");
+  const hasError = eventType === "failed" && typeof payload.message === "string" && payload.message.length > 0;
+  const hasRichDetail = hasToolArgs || hasObservation || hasError;
+
+  if (!hasRichDetail) {
+    return `
+      <div class="timeline-item">
+        <div class="row"><strong style="font-size:12px;">${title}</strong><span class="muted" style="font-size:11px;">${ts}</span></div>
+        <p class="muted" style="margin-top:4px;font-size:12px;">${body}</p>
+      </div>
+    `;
+  }
+
+  // Success tool_calls collapse; anything that failed or is pending stays open.
+  const failed = eventType === "tool_call_completed" && payload.success === false;
+  const pending = eventType === "tool_call_started" || eventType === "tool_call_proposed";
+  const openAttr = failed || pending || hasError ? " open" : "";
+
+  const detailLines = [];
+  if (hasToolArgs) {
+    const argsJson = escapeHtml(JSON.stringify(payload.args, null, 2));
+    detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">args</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:auto;">${argsJson}</pre>`);
+  }
+  if (hasObservation) {
+    const raw = typeof payload.observation === "string" ? payload.observation
+      : typeof payload.text === "string" ? payload.text
+        : payload.error ?? "";
+    const label = payload.success === false ? "error" : "observation";
+    detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">${label}</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:auto;white-space:pre-wrap;">${escapeHtml(raw)}</pre>`);
+  }
+  if (hasError) {
+    detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">failure</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:rgba(239,68,68,0.08);border-radius:6px;overflow:auto;white-space:pre-wrap;">${escapeHtml(payload.message)}</pre>`);
+  }
+
+  return `
+    <details class="timeline-item"${openAttr}>
+      <summary style="cursor:pointer;list-style:none;">
+        <div class="row"><strong style="font-size:12px;">${title}</strong><span class="muted" style="font-size:11px;">${ts}</span></div>
+        <p class="muted" style="margin-top:4px;font-size:12px;">${body}</p>
+      </summary>
+      ${detailLines.join("")}
+    </details>
+  `;
+}
+
 function renderTaskDetail(detail) {
   if (!detail) {
     state.selectedTaskDetail = null;
@@ -2264,15 +2326,7 @@ function renderTaskDetail(detail) {
     });
   }
   taskTimeline.innerHTML = (detail.events ?? []).length > 0
-    ? detail.events.map((ev) => {
-      const s = formatTaskEventSummary(ev);
-      return `
-        <div class="timeline-item">
-          <div class="row"><strong style="font-size:12px;">${escapeHtml(s.title)}</strong><span class="muted" style="font-size:11px;">${escapeHtml(formatDateTime(ev.ts ?? ev.at))}</span></div>
-          <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(s.body)}</p>
-        </div>
-      `;
-    }).join("")
+    ? detail.events.map((ev) => renderTimelineEntry(ev)).join("")
     : `<div class="timeline-item"><p class="muted" style="font-size:12px;">No timeline.</p></div>`;
   renderTaskArtifacts(detail);
   renderTaskChildren(detail);

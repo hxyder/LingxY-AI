@@ -1,5 +1,20 @@
 @import url("./tokens.css");
 
+/* ── <details> disclosure in timeline: no default triangle ─── */
+details.timeline-item > summary {
+  list-style: none;
+  user-select: none;
+}
+details.timeline-item > summary::-webkit-details-marker {
+  display: none;
+}
+details.timeline-item[open] > summary {
+  /* subtle inset line signals expanded state */
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 6px;
+  margin-bottom: 4px;
+}
+
 /* ── focus rings (keyboard-visible only, not on mouse click) ───
    Ensures every interactive surface gets a clear focus indicator
    for keyboard users without polluting the visual for mouse users. */
