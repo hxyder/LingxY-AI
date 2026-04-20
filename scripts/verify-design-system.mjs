@@ -124,4 +124,30 @@ assert.ok(/--accent-ink:\s*#ffffff/.test(tokens), "accent family must write --ac
 // ── legacy --teal-soft kept for compat ────────────────────────────────
 assert.ok(/--teal-soft:/.test(tokens), "--teal-soft retained for legacy consumers");
 
+// ── UCA-120: neutral white/black palette in tokens.css ────────────────
+assert.ok(/--bg:\s*#ffffff/.test(tokens), "light --bg must be #ffffff (pure white)");
+assert.ok(/--ink:\s*#0a0a0a/.test(tokens), "light --ink must be #0a0a0a (near-black)");
+const darkBlock = (tokens.match(/:is\(html, body\)\[data-theme="dark"\]\s*\{[\s\S]*?\n\}/) ?? [""])[0];
+assert.ok(/--bg:\s*#0a0a0a/.test(darkBlock), "dark --bg must be #0a0a0a");
+assert.ok(/--ink:\s*#fafafa/.test(darkBlock), "dark --ink must be #fafafa");
+
+// ── UCA-120: .btn canonical spec ──────────────────────────────────────
+// .btn base: height 32, .btn-sm: 26, .btn-lg: 38.
+assert.ok(
+  /\.btn,\s*button\s*\{[\s\S]*?height:\s*32px/.test(shared),
+  ".btn base must declare height: 32px"
+);
+assert.ok(
+  /\.btn-sm\s*\{[\s\S]*?height:\s*26px/.test(shared),
+  ".btn-sm must declare height: 26px"
+);
+assert.ok(
+  /\.btn-lg\s*\{[\s\S]*?height:\s*38px/.test(shared),
+  ".btn-lg must declare height: 38px (new in UCA-120)"
+);
+assert.ok(
+  /\.btn-group\s*\{[\s\S]*?gap:\s*6px/.test(shared),
+  ".btn-group utility must declare a 6px gap"
+);
+
 console.log("ok verify-design-system");

@@ -18,15 +18,18 @@
   color-scheme: light;
 
   /* v3 CORE NAMES ------------------------------------------------ */
-  --bg: #f6f5f2;
+  /* UCA-120: pure white light mode (no warm paper), pure near-black
+     dark mode. Distinct from Claude's warm-ink palette. Terracotta
+     accent stays as the brand color and provides the only warmth. */
+  --bg: #ffffff;
   --panel: #ffffff;
-  --panel-2: #faf9f6;
-  --ink: #1a1917;
-  --ink-2: #3a3935;
-  --muted: #8a887f;
-  --muted-2: #b4b1a6;
-  --line: #e8e5dc;
-  --line-2: #d7d3c6;
+  --panel-2: #fafafa;
+  --ink: #0a0a0a;
+  --ink-2: #2a2a2a;
+  --muted: #737373;
+  --muted-2: #a3a3a3;
+  --line: #e8e8e8;
+  --line-2: #d4d4d4;
 
   --accent: #b85c2a;
   --accent-ink: #ffffff;
@@ -172,15 +175,15 @@
 :is(html, body)[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #141310;
-  --panel: #1c1b17;
-  --panel-2: #23211c;
-  --ink: #ece7da;
-  --ink-2: #c2beb2;
-  --muted: #8a8577;
-  --muted-2: #5f5c52;
-  --line: #2b2924;
-  --line-2: #3a372f;
+  --bg: #0a0a0a;
+  --panel: #141414;
+  --panel-2: #1a1a1a;
+  --ink: #fafafa;
+  --ink-2: #d4d4d4;
+  --muted: #737373;
+  --muted-2: #525252;
+  --line: #2a2a2a;
+  --line-2: #3a3a3a;
 
   --accent-soft: rgba(184, 92, 42, .18);
   --ok-soft: rgba(62, 122, 70, .18);
