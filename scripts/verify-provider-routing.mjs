@@ -142,6 +142,23 @@ await writeConfig({
   assert.equal(capturedAuth, "Bearer sk-test-deepseek");
   assert.equal(result.text, "hello from deepseek");
   assert.deepEqual(result.tool_calls, []);
+
+  // UCA-096 follow-up: task types without explicit routing must inherit the
+  // chat routing's model, NOT fall back to getDefaultModelForKind which
+  // picks "gpt-4o-mini" for every openai-compatible provider. The symptom
+  // was `resolveProviderForTask("planner")` returning `model: "gpt-4o-mini"`
+  // against DeepSeek's baseUrl, so the DAG planner got back
+  // `{"error":"Model Not Exist"}` and silently turned into parse_failed.
+  const plannerProvider = resolveProviderForTask("planner");
+  assert.ok(plannerProvider, "planner should resolve via chat inheritance");
+  assert.equal(plannerProvider.configId, "deepseek");
+  assert.equal(
+    plannerProvider.model,
+    "deepseek-chat",
+    "unrouted task types must inherit the chat routing's model"
+  );
+  const summaryProvider = resolveProviderForTask("summary");
+  assert.equal(summaryProvider?.model, "deepseek-chat");
 }
 
 /* ------------------------------------------------------------------------ */

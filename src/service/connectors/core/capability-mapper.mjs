@@ -35,8 +35,15 @@ export function googleScopesToCapabilities(scopes = []) {
       || hasScope(scopeSet, "https://www.googleapis.com/auth/drive"),
     calendarRead:
       hasScope(scopeSet, "https://www.googleapis.com/auth/calendar.readonly")
+      || hasScope(scopeSet, "https://www.googleapis.com/auth/calendar.events.readonly")
+      || hasScope(scopeSet, "https://www.googleapis.com/auth/calendar.events")
       || hasScope(scopeSet, "https://www.googleapis.com/auth/calendar"),
-    calendarWrite: hasScope(scopeSet, "https://www.googleapis.com/auth/calendar")
+    // calendar.events grants event read+write; calendar grants everything.
+    // calendar.readonly and calendar.events.readonly are read-only and do
+    // NOT imply write.
+    calendarWrite:
+      hasScope(scopeSet, "https://www.googleapis.com/auth/calendar")
+      || hasScope(scopeSet, "https://www.googleapis.com/auth/calendar.events")
   });
 }
 

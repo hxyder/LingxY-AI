@@ -158,14 +158,23 @@ export function resolveProviderForTask(taskType, env = process.env) {
     }
   }
 
-  // 2. First usable custom provider for this task type
+  // 2. First usable custom provider for this task type.
+  //
+  // If no explicit routing for `taskType` exists, borrow the "chat"
+  // routing's model. Otherwise we fall back to getDefaultModelForKind
+  // which picks "gpt-4o-mini" for every openai-compatible provider —
+  // fine for OpenAI itself, but wrong for DeepSeek / Moonshot / any
+  // third-party provider that just happens to speak the OpenAI protocol.
+  // The symptom was task types without routing (planner, etc.) getting
+  // a "Model Not Exist" 400 from DeepSeek.
+  const effectiveRoute = route ?? routing.chat ?? null;
   if (customProviders.length > 0) {
     // for vision tasks, prefer providers that support vision
     const candidates = taskType === "vision"
       ? customProviders.filter((p) => p.kind === "anthropic" || p.kind === "openai")
       : customProviders;
     for (const cand of candidates) {
-      const resolved = providerToResolved(cand, route, taskType);
+      const resolved = providerToResolved(cand, effectiveRoute, taskType);
       if (resolved) return resolved;
     }
   }

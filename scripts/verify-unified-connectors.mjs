@@ -398,6 +398,24 @@ await rm(tmpRoot, { recursive: true, force: true });
 await mkdir(tmpRoot, { recursive: true });
 
 assert.equal(googleScopesToCapabilities(["https://www.googleapis.com/auth/calendar"]).calendarWrite, true);
+// UCA-096 follow-up: calendar.events is the scope GOOGLE_SCOPES actually
+// requests; it grants event read+write. Previously this scope produced
+// calendarWrite:false because the mapper only matched the broader
+// /auth/calendar scope, which made every calendar-write request fail with
+// "缺少 calendarWrite 能力".
+assert.equal(
+  googleScopesToCapabilities(["https://www.googleapis.com/auth/calendar.events"]).calendarWrite,
+  true
+);
+assert.equal(
+  googleScopesToCapabilities(["https://www.googleapis.com/auth/calendar.events"]).calendarRead,
+  true
+);
+// calendar.readonly must NOT imply write.
+assert.equal(
+  googleScopesToCapabilities(["https://www.googleapis.com/auth/calendar.readonly"]).calendarWrite,
+  false
+);
 assert.equal(microsoftScopesToCapabilities(["Files.Read"]).fileWrite, false);
 assert.equal(microsoftScopesToCapabilities(["Files.Read.All"]).fileRead, true);
 

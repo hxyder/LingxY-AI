@@ -4,7 +4,7 @@ const GOOGLE_CAPABILITY_SCOPES = Object.freeze({
   fileRead: ["https://www.googleapis.com/auth/drive.readonly"],
   fileWrite: ["https://www.googleapis.com/auth/drive.file"],
   calendarRead: ["https://www.googleapis.com/auth/calendar.readonly"],
-  calendarWrite: ["https://www.googleapis.com/auth/calendar"]
+  calendarWrite: ["https://www.googleapis.com/auth/calendar.events"]
 });
 
 const MICROSOFT_CAPABILITY_SCOPES = Object.freeze({
