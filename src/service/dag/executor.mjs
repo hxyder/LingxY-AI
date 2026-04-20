@@ -15,7 +15,13 @@
 import { validateDagPlan } from "./schema.mjs";
 import { resolveParams, PlaceholderUnresolvedError } from "./placeholder.mjs";
 
-function topoOrder(plan) {
+/**
+ * Kahn's algorithm but grouped into LAYERS — each layer contains every
+ * node whose dependencies are all satisfied by previous layers. Nodes in
+ * the same layer can run concurrently (subject to per-node concurrency
+ * policy). Returns [[idA, idB], [idC], [idD, idE, idF]] style list.
+ */
+function topoLayers(plan) {
   const ids = plan.nodes.map((n) => n.id);
   const indeg = new Map(ids.map((id) => [id, 0]));
   const children = new Map(ids.map((id) => [id, []]));
@@ -26,17 +32,20 @@ function topoOrder(plan) {
       children.get(parent).push(node.id);
     }
   }
-  const queue = ids.filter((id) => indeg.get(id) === 0);
-  const order = [];
-  while (queue.length) {
-    const id = queue.shift();
-    order.push(id);
-    for (const child of children.get(id)) {
-      indeg.set(child, indeg.get(child) - 1);
-      if (indeg.get(child) === 0) queue.push(child);
+  const layers = [];
+  let frontier = ids.filter((id) => indeg.get(id) === 0);
+  while (frontier.length) {
+    layers.push(frontier);
+    const nextFrontier = [];
+    for (const id of frontier) {
+      for (const child of children.get(id)) {
+        indeg.set(child, indeg.get(child) - 1);
+        if (indeg.get(child) === 0) nextFrontier.push(child);
+      }
     }
+    frontier = nextFrontier;
   }
-  return order;
+  return layers;
 }
 
 function parseOnFailure(node) {
@@ -71,25 +80,32 @@ export async function runDagPlan({
     throw new Error(`invalid plan: ${validation.errors.join("; ")}`);
   }
 
-  const order = topoOrder(plan);
+  const layers = topoLayers(plan);
   const byId = new Map(plan.nodes.map((n) => [n.id, n]));
   const results = {};
   const statuses = {};
   let failedNodeId = null;
   let failure = null;
 
-  onEvent({ type: "plan_started", plan_summary: plan.summary ?? null, node_count: plan.nodes.length });
+  onEvent({
+    type: "plan_started",
+    plan_summary: plan.summary ?? null,
+    node_count: plan.nodes.length,
+    layer_count: layers.length
+  });
 
-  for (const id of order) {
+  // Executes a single node with retry + policy handling. Returns an object
+  // describing the outcome; does NOT throw. This runs inside Promise.all
+  // so siblings in the same layer are independent.
+  async function runOne(id) {
     const node = byId.get(id);
-    if (!node) continue;
+    if (!node) return { id, outcome: "unknown" };
 
-    // Any dependency failed → block this node.
     const unmet = (node.depends_on ?? []).find((dep) => statuses[dep] !== "success");
     if (unmet) {
       statuses[id] = "blocked";
       onEvent({ type: "node_blocked", node_id: id, blocked_by: unmet });
-      continue;
+      return { id, outcome: "blocked" };
     }
 
     let resolvedParams;
@@ -98,10 +114,8 @@ export async function runDagPlan({
     } catch (error) {
       if (error instanceof PlaceholderUnresolvedError) {
         statuses[id] = "failed";
-        failedNodeId = id;
-        failure = { message: error.message, policy: "placeholder_unresolved" };
         onEvent({ type: "node_failed", node_id: id, error: error.message, phase: "placeholder" });
-        break;
+        return { id, outcome: "failed", policy: "placeholder_unresolved", error };
       }
       throw error;
     }
@@ -112,8 +126,6 @@ export async function runDagPlan({
 
     let attempt = 0;
     let lastError = null;
-    let succeeded = false;
-
     while (attempt <= maxRetries) {
       attempt += 1;
       statuses[id] = "running";
@@ -123,8 +135,7 @@ export async function runDagPlan({
         results[id] = result;
         statuses[id] = "success";
         onEvent({ type: "node_succeeded", node_id: id, kind: node.kind });
-        succeeded = true;
-        break;
+        return { id, outcome: "success" };
       } catch (error) {
         lastError = error;
         onEvent({
@@ -141,29 +152,75 @@ export async function runDagPlan({
       }
     }
 
-    if (!succeeded) {
-      statuses[id] = policy === "skip" ? "skipped" : "failed";
-      onEvent({
-        type: "node_failed",
-        node_id: id,
-        kind: node.kind,
-        error: lastError?.message ?? String(lastError ?? "unknown"),
-        policy
-      });
+    // All retries exhausted.
+    statuses[id] = policy === "skip" ? "skipped" : "failed";
+    onEvent({
+      type: policy === "replan" ? "replan_requested" : "node_failed",
+      node_id: id,
+      kind: node.kind,
+      error: lastError?.message ?? String(lastError ?? "unknown"),
+      policy
+    });
+    return { id, outcome: policy === "skip" ? "skipped" : "failed", policy, error: lastError };
+  }
 
-      if (policy === "skip") {
-        continue;
+  // Within a single layer, group by concurrency policy:
+  //  - parallel_safe  → all run concurrently via Promise.all
+  //  - serial_per_session → bucket by resolved session_key, each bucket
+  //    serial internally, buckets parallel with each other
+  function bucketLayer(layer) {
+    const parallelIds = [];
+    const serialBuckets = new Map(); // sessionKey -> [ids]
+    for (const id of layer) {
+      const node = byId.get(id);
+      if (!node) continue;
+      if (node.concurrency === "serial_per_session" && typeof node.session_key === "string") {
+        // session_key may contain {{...}} placeholders — resolve now so
+        // each node's bucket reflects its actual session.
+        let key = node.session_key;
+        try {
+          const resolved = resolveParams(node.session_key, results);
+          if (typeof resolved === "string") key = resolved;
+        } catch { /* fall back to template string */ }
+        const list = serialBuckets.get(key) ?? [];
+        list.push(id);
+        serialBuckets.set(key, list);
+      } else {
+        parallelIds.push(id);
       }
-      if (policy === "replan") {
-        // Signal to the caller; Phase 4 will plug in a replan hook here.
-        failedNodeId = id;
-        failure = { message: lastError?.message ?? "replan_requested", policy };
-        onEvent({ type: "replan_requested", node_id: id });
-        break;
+    }
+    return { parallelIds, serialBuckets };
+  }
+
+  for (const layer of layers) {
+    if (failedNodeId) break;
+    const { parallelIds, serialBuckets } = bucketLayer(layer);
+
+    const parallelPromises = parallelIds.map((id) => runOne(id));
+    const serialPromises = [...serialBuckets.values()].map(async (idsInBucket) => {
+      const outs = [];
+      for (const id of idsInBucket) {
+        outs.push(await runOne(id));
       }
-      failedNodeId = id;
-      failure = { message: lastError?.message ?? "node_failed", policy };
-      break;
+      return outs;
+    });
+
+    const results_ = await Promise.all([...parallelPromises, ...serialPromises]);
+    const flat = results_.flat();
+    for (const r of flat) {
+      if (r.outcome === "failed") {
+        if (r.policy === "replan") {
+          failedNodeId = r.id;
+          failure = { message: r.error?.message ?? "replan_requested", policy: "replan" };
+        } else if (r.policy === "fail" || r.policy === "placeholder_unresolved"
+          || (!r.policy || r.policy === "retry")) {
+          failedNodeId = failedNodeId ?? r.id;
+          failure = failure ?? {
+            message: r.error?.message ?? "node_failed",
+            policy: r.policy ?? "fail"
+          };
+        }
+      }
     }
   }
 
