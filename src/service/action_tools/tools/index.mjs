@@ -779,6 +779,18 @@ export const CREATE_SCHEDULED_TASK_TOOL = {
   required_capabilities: ["schedule_manage"],
   requires_confirmation: true,
   async execute(args, ctx) {
+    // UCA-096: Block agents from creating a new schedule while they are
+    // already running inside a scheduled-task fire. Otherwise the scheduler
+    // feeds the original user command back into the LLM, which re-interprets
+    // it as a scheduling request and builds an infinite loop of clones.
+    if (ctx?.task?.context_packet?.source_app === "uca.scheduler") {
+      return createActionResult({
+        success: false,
+        observation: "Cannot create a schedule from inside a scheduled task fire. Execute the action now (notify / send_email / etc.).",
+        error: "scheduled_fire_cannot_reschedule"
+      });
+    }
+
     const scheduler = getSchedulerRuntime(ctx);
     const schedule = scheduler.createSchedule({
       name: args.name,

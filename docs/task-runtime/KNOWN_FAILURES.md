@@ -45,9 +45,30 @@ AssertionError: existsSync(checkCmdPath) === false
 
 ---
 
+## 3. `verify-pdf-ocr.mjs` — 截图默认 userCommand 不再走 multi_modal
+
+**类别**: 默认 userCommand 未触发 vision-analysis 分支
+**发现时间**: 2026-04-19，运行 UCA-096 回归时
+**触发命令**: `node scripts/verify-pdf-ocr.mjs`
+**错误**:
+```
+AssertionError: screenshotTask.task.context_packet.selection_metadata.image_source === 'screenshot'
+    at scripts/verify-pdf-ocr.mjs:210:8 (actual: undefined)
+```
+
+**根因**: UCA-095 在 `image-submission.mjs` 加了 `looksLikeVisionAnalysisIntent()`：非分析类命令从 `multi_modal` 改走 `tool_using`，context_packet 变为 `source_type:"file"` 且不再写 `selection_metadata.image_source`。而 `submitScreenshotTask` 的默认 `userCommand` 是 `"请总结这张截图"`，其中 `总结` 没在 VISION_ANALYSIS_RE 里，所以截图任务也被重路由，测试断言失效。
+
+**建议修复**: 选择下列之一：
+- (a) 在 VISION_ANALYSIS_RE 加上 `总结|summarize|summarise`（截图/图片的 "总结" 就是视觉分析）
+- (b) 改 `submitScreenshotTask` 默认 userCommand 为 `"请描述这张截图"`（触发 `描述`）
+- (c) 改 verify 脚本：当路由到 tool_using 时放宽断言
+
+---
+
 ## 追踪表
 
 | ID | 脚本 | 根因 | 建议归属 | 状态 |
 |---|---|---|---|---|
 | KF-1 | `verify-office-base.mjs` | 字面量 UCA→LingxY | release/branding cleanup | NOT_STARTED |
 | KF-2 | `verify-release-readiness.mjs` | bundle 依赖 + 字面量 | release/branding cleanup | NOT_STARTED |
+| KF-3 | `verify-pdf-ocr.mjs` | UCA-095 引入的 VISION_ANALYSIS_RE 未覆盖 `总结` | 截图 UX cleanup | NOT_STARTED |

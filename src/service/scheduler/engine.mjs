@@ -25,6 +25,35 @@ function getSystemTimezone() {
   }
 }
 
+// Derive a human-readable schedule name when the caller/LLM omits one.
+// The scheduler's DB column is NOT NULL, and the tool description doesn't
+// always lead the LLM to supply `name`, so crashing on missing name
+// surfaces a confusing SQL error instead of just working.
+function deriveScheduleName(input) {
+  const direct = typeof input?.name === "string" ? input.name.trim() : "";
+  if (direct) return direct;
+
+  const params = input?.action?.params ?? input?.action?.args ?? {};
+  const userCommand = typeof params.userCommand === "string" ? params.userCommand.trim()
+    : typeof params.command === "string" ? params.command.trim()
+      : "";
+  if (userCommand) {
+    return userCommand.length > 80 ? userCommand.slice(0, 77) + "…" : userCommand;
+  }
+
+  const target = input?.action?.target ?? input?.action?.tool;
+  if (typeof target === "string" && target.trim()) {
+    return `Scheduled ${target.trim()}`;
+  }
+
+  const nl = input?.trigger?.natural_language;
+  if (typeof nl === "string" && nl.trim()) {
+    return `Scheduled: ${nl.trim()}`;
+  }
+
+  return "Scheduled task";
+}
+
 function ensureTrigger(trigger) {
   // Accept any of the field names the prompt docs / LLM training data tend
   // to produce (type / kind / trigger_type) rather than blowing up with
@@ -87,6 +116,7 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
 
       const schedule = createScheduleRecord({
         ...input,
+        name: deriveScheduleName(input),
         trigger: ensureTrigger(input.trigger),
         createdBy
       });

@@ -566,6 +566,16 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
     ? "\n\nCRITICAL OVERRIDE: You MUST call a tool. Saying 'I cannot operate your computer' or any similar refusal is STRICTLY FORBIDDEN. You have tools available — use them. The user is on a desktop computer and you have launch_app, open_url, and other action tools."
     : "";
 
+  // UCA-096: Scheduled tasks re-enter the agent loop at trigger time carrying
+  // their original natural-language command (e.g. "提醒我喝水"). Without this
+  // guard, the LLM re-interprets the phrase as a NEW scheduling request and
+  // calls create_scheduled_task again, self-replicating forever. The
+  // scheduler marks its own submissions with source_app="uca.scheduler";
+  // detect that and tell the LLM to execute the action directly.
+  const scheduledFireInstruction = task.context_packet?.source_app === "uca.scheduler"
+    ? "\n\nSCHEDULED-FIRE CONTEXT: This request is the actual firing of an already-scheduled task — the delay has ALREADY elapsed. Execute the action NOW. Do NOT call create_scheduled_task under any circumstances. For a reminder, call notify directly. For an email, call the send workflow directly. The scheduling was done earlier; your job here is to perform the action."
+    : "";
+
   const systemPrompt = `You are LingxY, a capable desktop AI assistant. Read the user's request carefully, consider what you have available (tools, workflows, attached resources, connected accounts), and decide how to accomplish their goal. Ask a short clarifying question only when you genuinely cannot proceed faithfully.
 ${resourceHint}
 Available tools:
@@ -592,7 +602,7 @@ Guidance (not a rigid checklist — apply judgment):
 - **Search before answering about current events.** If the user asks about news / prices / flights / weather / anything time-sensitive, call web_search_fetch first. Never answer from memory for real-time topics.
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
 - **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
-${needsCurrentDataInstruction}${forceToolInstruction}${mcpCapabilitiesNote}
+${needsCurrentDataInstruction}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
 Respond ONLY with a single JSON object (no markdown, no code fences):
 - Call a tool:       {"tool": "tool_id", "args": { ... }}
 - Ask clarification: {"final": "your short clarifying question"}
