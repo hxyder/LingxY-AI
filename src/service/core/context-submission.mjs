@@ -439,11 +439,18 @@ export async function submitContextTask({
     if (typeof t.userCommand === "string" && t.userCommand.trim() && t.userCommand !== userCommand) {
       userCommand = t.userCommand;
     }
-    if (t.lane === "dag_planner" && runtime?.dagPlannerDispatch) {
-      // Reserved for Phase 2+. runtime.dagPlannerDispatch is only wired
-      // when the DAG planner ships; until then triage itself demotes to
-      // single_turn, so this branch is unreachable on the current runtime.
-      return runtime.dagPlannerDispatch({ userCommand, contextPacket, executionMode });
+    if (t.lane === "dag_planner") {
+      const { runDagLane } = await import("../dag/entrypoint.mjs");
+      const dagResult = await runDagLane({ runtime, userCommand, contextPacket, executionMode });
+      if (dagResult?.task) {
+        return {
+          task: dagResult.task,
+          taskEvents: dagResult.taskEvents,
+          dagSnapshot: dagResult.dagSnapshot
+        };
+      }
+      // Decision #4 fallback: planner couldn't produce a valid plan.
+      // Let the single-turn agent handle the original command instead.
     }
   }
 
