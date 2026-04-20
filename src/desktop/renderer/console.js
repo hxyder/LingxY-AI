@@ -616,6 +616,19 @@ const PROJECT_STORE_KEY = "uca.overlay.projects.v3";
 const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6"];
 const DEFAULT_PROJECT_ID = "proj_default";
 
+// UCA-122: map a file extension → v3 .artifact-icon variant class.
+// The CSS defines colored badges for doc/pdf/md/csv/png/txt.
+function artifactIconClass(ext = "") {
+  const e = String(ext).toLowerCase();
+  if (e === "pdf") return "pdf";
+  if (e === "md" || e === "markdown") return "md";
+  if (e === "csv" || e === "tsv") return "csv";
+  if (e === "png" || e === "jpg" || e === "jpeg" || e === "gif" || e === "webp") return "png";
+  if (e === "txt" || e === "log") return "txt";
+  if (e === "docx" || e === "doc" || e === "xlsx" || e === "xls" || e === "pptx" || e === "ppt") return "doc";
+  return "txt";
+}
+
 function formatArtifactLabel(artifactPath = "") {
   const p = `${artifactPath}`.toLowerCase();
   if (p.endsWith(".md")) return "Markdown";
@@ -2277,15 +2290,24 @@ function renderTaskArtifacts(detail) {
     state.selectedTaskArtifactPath = artifacts[0].path;
   }
 
-  taskArtifactList.innerHTML = artifacts.map((a, i) => `
-    <button class="artifact-item ${a.path === state.selectedTaskArtifactPath ? "active" : ""}" data-artifact-path="${escapeHtml(a.path)}">
-      <div class="row">
-        <strong style="font-size:12px;">${escapeHtml(formatArtifactLabel(a.path))}</strong>
-        <span class="chip ${i === 0 ? "ready" : "muted"}" style="font-size:10px;">${i === 0 ? "Primary" : "Result"}</span>
+  // UCA-122: v3 .artifact-row structure with colored artifact-icon badge
+  // by extension. Kept as <button data-artifact-path> so the selection
+  // handler is unchanged.
+  taskArtifactList.innerHTML = artifacts.map((a, i) => {
+    const label = formatArtifactLabel(a.path);
+    const ext = (a.path.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "").toLowerCase();
+    const iconClass = artifactIconClass(ext);
+    const iconText = (ext || "FILE").toUpperCase().slice(0, 3);
+    return `
+    <button class="artifact-row ${a.path === state.selectedTaskArtifactPath ? "active" : ""}" data-artifact-path="${escapeHtml(a.path)}" style="width:100%;text-align:left;">
+      <span class="artifact-icon ${iconClass}">${escapeHtml(iconText)}</span>
+      <div class="artifact-main">
+        <div class="artifact-name">${escapeHtml(label)}</div>
+        <div class="artifact-path">${escapeHtml(a.path)}</div>
       </div>
-      <p class="muted" style="margin-top:4px;font-size:11px;">${escapeHtml(a.path)}</p>
+      ${i === 0 ? `<span class="pill pill-ok">Primary</span>` : ""}
     </button>
-  `).join("");
+  `; }).join("");
 
   for (const btn of taskArtifactList.querySelectorAll("[data-artifact-path]")) {
     btn.addEventListener("click", () => void selectTaskArtifact(btn.dataset.artifactPath));
@@ -2363,19 +2385,30 @@ function renderFilesList() {
     return;
   }
 
-  filesListEl.innerHTML = visible.map((art) => `
-    <button class="artifact-item ${art.path === filesSelectedPath ? "active" : ""}" data-file-path="${escapeHtml(art.path)}" style="text-align:left;">
-      <div class="row">
-        <strong style="font-size:12px;">${escapeHtml(art.name)}</strong>
-        <span class="chip muted" style="font-size:10px;">${escapeHtml(art.label)}</span>
+  // UCA-122: v3 .file-row structure with colored artifact-icon by ext.
+  filesListEl.innerHTML = visible.map((art) => {
+    const ext = (art.path.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "").toLowerCase();
+    const iconClass = artifactIconClass(ext);
+    const iconText = (ext || "FILE").toUpperCase().slice(0, 3);
+    const active = art.path === filesSelectedPath ? " active" : "";
+    return `
+    <div class="file-row${active}" data-file-path="${escapeHtml(art.path)}" role="button" tabindex="0">
+      <span class="artifact-icon ${iconClass}">${escapeHtml(iconText)}</span>
+      <div class="file-main">
+        <div class="file-name">${escapeHtml(art.name)}</div>
+        <div class="file-sub">${escapeHtml(formatDateTime(art.createdAt))}${art.taskCommand ? " · " + escapeHtml(art.taskCommand.slice(0, 40)) : ""}</div>
       </div>
-      <p class="muted" style="margin-top:4px;font-size:11px;">${escapeHtml(art.taskCommand?.slice(0, 60) ?? "")}</p>
-      <p class="muted" style="margin-top:2px;font-size:10px;">${escapeHtml(formatDateTime(art.createdAt))}</p>
-    </button>
-  `).join("");
+    </div>
+  `; }).join("");
 
   for (const btn of filesListEl.querySelectorAll("[data-file-path]")) {
     btn.addEventListener("click", () => void selectFileArtifact(btn.dataset.filePath));
+    btn.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        void selectFileArtifact(btn.dataset.filePath);
+      }
+    });
   }
 }
 
@@ -2579,22 +2612,44 @@ function renderTaskDetail(detail) {
       ${escapeHtml(task.result_summary)}
     </div>
   ` : "";
+  // UCA-122: v3 detail-hero + KV grid. Hero shows title + status pill +
+  // task ID tag + subtitle meta. KV grid spreads the metadata that
+  // previously cramped into a single line into 8 labeled cells.
+  const statusPillClass = task.status === "success" ? "pill pill-ok"
+    : task.status === "failed" ? "pill pill-err"
+      : task.status === "queued" ? "pill pill-queue"
+        : task.status === "running" || task.status === "cancelling" ? "pill pill-run"
+          : "pill pill-neutral";
+  const provider = providerDescriptor?.provider_name ?? providerDescriptor?.provider_id ?? "—";
+  const model = providerDescriptor?.model ?? "—";
+  const transport = providerDescriptor?.transport ?? "—";
+  const source = task.context_packet?.source_type ?? task.source_app ?? "—";
+  const duration = task.elapsed_ms ? `${(task.elapsed_ms / 1000).toFixed(1)}s` : "—";
+  const tokensUsed = task.tokens_used ?? task.usage?.total_tokens ?? null;
   taskDetailSummary.innerHTML = `
-    <div class="stack" style="gap:8px;">
-      <div class="row">
-        <strong style="font-size:14px;">${escapeHtml(task.user_command ?? task.intent ?? task.task_id)}</strong>
-        <span class="chip ${task.status === "success" ? "ready" : task.status === "failed" ? "danger" : "warning"}">${escapeHtml(task.status ?? "unknown")}</span>
+    <div class="detail-hero">
+      <div class="btn-group" style="margin-bottom:8px;">
+        <span class="${statusPillClass}">${escapeHtml(task.status ?? "unknown")}</span>
+        <span class="tag">${escapeHtml(task.task_id)}</span>
+        ${parentLink ? `<span class="tag">child of ${escapeHtml(task.parent_task_id)}</span>` : ""}
       </div>
-      <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:11px;color:var(--muted);">
-        <span>ID: ${escapeHtml(task.task_id)}</span>
-        <span>Executor: ${escapeHtml(task.executor ?? "unknown")}</span>
-        <span>Source: ${escapeHtml(task.context_packet?.source_type ?? "unknown")}</span>
-        <span>Retry: ${escapeHtml(task.retry_count ?? 0)}</span>
-        <span>Cost: ${escapeHtml(formatMoney(task.cost_usd ?? 0))}</span>
-        <span>${escapeHtml(formatDateTime(task.created_at))}</span>
+      <h2>${escapeHtml(task.user_command ?? task.intent ?? task.task_id)}</h2>
+      <div class="detail-hero-meta">
+        <span>Started ${escapeHtml(formatDateTime(task.created_at))}</span>
+        ${task.retry_count ? `<span>Retry ${escapeHtml(task.retry_count)}</span>` : ""}
         ${parentLink}
       </div>
-      ${renderProviderLine(providerDescriptor)}
+      <div class="kv-grid">
+        <div class="kv-cell"><div class="kv-k">Provider</div><div class="kv-v">${escapeHtml(provider)}</div></div>
+        <div class="kv-cell"><div class="kv-k">Model</div><div class="kv-v">${escapeHtml(model)}</div></div>
+        <div class="kv-cell"><div class="kv-k">Executor</div><div class="kv-v">${escapeHtml(task.executor ?? "—")}</div></div>
+        <div class="kv-cell"><div class="kv-k">Source</div><div class="kv-v">${escapeHtml(source)}</div></div>
+        <div class="kv-cell"><div class="kv-k">Retry</div><div class="kv-v">${escapeHtml(task.retry_count ?? 0)}</div></div>
+        <div class="kv-cell"><div class="kv-k">Cost</div><div class="kv-v">${escapeHtml(formatMoney(task.cost_usd ?? 0))}</div></div>
+        <div class="kv-cell"><div class="kv-k">Duration</div><div class="kv-v">${escapeHtml(duration)}</div></div>
+        <div class="kv-cell"><div class="kv-k">Transport</div><div class="kv-v">${escapeHtml(transport)}</div></div>
+      </div>
+      ${tokensUsed ? `<div class="muted" style="font-size:11px;margin-top:10px;font-family:var(--font-mono);">tokens: ${escapeHtml(tokensUsed)}</div>` : ""}
     </div>
     ${renderDowngradedWarning(downgraded)}
     ${failBlock}
