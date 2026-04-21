@@ -475,6 +475,111 @@ label, .field-label {
 }
 .panel-body.tight,
 .panel-section-body.compact { padding: 10px; }
+
+/* =========================================================================
+   FOLDABLE PANEL-SECTION — UCA-125 Phase 7c
+   ========================================================================= */
+.panel-section[data-foldable="true"] > .panel-section-header {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+}
+.panel-section[data-foldable="true"] > .panel-section-header::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") center/contain no-repeat;
+  color: var(--muted);
+  transition: transform 160ms var(--ease-standard);
+  align-self: center;
+}
+.panel-section[data-foldable="true"][data-collapsed="true"] > .panel-section-header::after {
+  transform: rotate(-90deg);
+}
+.panel-section[data-foldable="true"][data-collapsed="true"] > .panel-section-body {
+  display: none;
+}
+.panel-section[data-foldable="true"] > .panel-section-header:hover {
+  background: var(--panel-2);
+}
+
+.settings-group[data-foldable="true"] {
+  position: relative;
+}
+.settings-group[data-foldable="true"] > .settings-group-head {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 4px 0;
+}
+.settings-group[data-foldable="true"] > .settings-group-head::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  margin-left: auto;
+  flex-shrink: 0;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") center/contain no-repeat;
+          mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>") center/contain no-repeat;
+  color: var(--muted);
+  transition: transform 160ms var(--ease-standard);
+}
+.settings-group[data-foldable="true"][data-collapsed="true"] > .settings-group-head::after {
+  transform: rotate(-90deg);
+}
+.settings-group[data-foldable="true"][data-collapsed="true"] > *:not(.settings-group-head) {
+  display: none;
+}
+
+/* =========================================================================
+   PROJECTS — UCA-125 Phase 7c: panels + sticky heads + independent scroll
+   ========================================================================= */
+.projects-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) minmax(260px, 0.8fr);
+  gap: 12px;
+  max-width: 1200px;
+  height: calc(100vh - var(--top-h) - 96px);
+  min-height: 480px;
+}
+.projects-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.projects-col-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+}
+.projects-col-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+.projects-col-body .item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.projects-col-body .history-preview {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  line-height: 1.55;
+}
 .panel-section-body.compact { padding: 12px 18px; }
 .panel-foot {
   padding: 10px 18px;
@@ -712,7 +817,14 @@ body[data-rail="collapsed"] .rail-item .rail-item-badge { display: none; }
   border-radius: 50%;
   background: var(--ok);
   box-shadow: 0 0 0 3px var(--ok-soft);
+  transition: background var(--duration-fast) var(--ease-standard), box-shadow var(--duration-fast) var(--ease-standard);
 }
+/* UCA-P0-D: runtime errors / disconnects now surface on the rail sys
+   indicator instead of the retired topbar pill next to the page title. */
+.rail-sys--err .rail-sys-dot { background: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+.rail-sys--err .rail-sys-text { color: var(--err); }
+.rail-sys--warn .rail-sys-dot { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.rail-sys--warn .rail-sys-text { color: var(--warn); }
 body[data-rail="collapsed"] .rail-sys-text { display: none; }
 
 .rail-toggle {
@@ -855,7 +967,13 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   display: none;
 }
 .page.active, .tab-panel.active { display: block; }
-.page-head { margin-bottom: 20px; display: flex; align-items: flex-start; gap: 16px; }
+.page-head {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.page-head > div:first-child { min-width: 0; flex: 1; }
 .page-head h1 {
   font-family: var(--font-sans);
   font-size: 24px;
@@ -863,9 +981,42 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   letter-spacing: -.015em;
   margin: 0;
   line-height: 1.15;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--ink);
 }
-.page-head .sub { font-size: var(--fs-md); color: var(--muted); margin-top: 4px; }
-.page-head-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.page-head h1 .zh {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  margin-left: 2px;
+}
+.page-head .sub {
+  font-size: var(--fs-md);
+  color: var(--muted);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+.page-head .sub .zh { margin-left: 6px; font-size: var(--fs-sm); }
+.page-head-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+/* =========================================================================
+   PANEL NAMING — v3 canonical
+   -------------------------------------------------------------------------
+   Three class families all render as the same card visual:
+     .panel + .panel-head + .panel-body + .panel-foot           ← v3 canonical
+     .panel-section + .panel-section-header + .panel-section-body ← alias
+     .settings-group + .settings-group-head                      ← legacy
+   For NEW markup prefer `.panel`. Existing `.panel-section` and
+   `.settings-group` continue to work (CSS selectors are combined above).
+   ========================================================================= */
 
 /* =========================================================================
    TASKS — stat strip + list-detail
@@ -877,6 +1028,100 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   margin-bottom: 20px;
 }
 @media (max-width: 960px) { .stat-strip { grid-template-columns: repeat(2, 1fr); } }
+
+/* =========================================================================
+   UCA-125 Phase 2a: tasks-toolbar — single horizontal row replacing the
+   previous 3 stacked filter-chip rows. Status chips stay visible; date +
+   source move into a popover triggered by "Advanced filter".
+   ========================================================================= */
+.tasks-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.tasks-toolbar-search { width: 260px; flex: 0 0 auto; height: 32px; }
+.tasks-toolbar-spacer { flex: 1 1 auto; }
+.tasks-toolbar .filter-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.tasks-toolbar .filter-chip { height: 28px; }
+
+.tasks-adv-filter-wrap { position: relative; }
+.tasks-adv-filter-count {
+  font-size: 10px;
+  padding: 0 5px;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+}
+.tasks-adv-filter-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  min-width: 320px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.tasks-adv-filter-panel[hidden] { display: none; }
+.tasks-adv-filter-section { display: flex; flex-direction: column; gap: 6px; }
+.tasks-adv-filter-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.tasks-adv-filter-label .zh { font-weight: 400; font-size: 10px; letter-spacing: 0; }
+
+/* UCA-P0-B: idle collapse — a single thin bar replaces the 4-card strip
+   when there's nothing in motion. Saves ~60px of vertical real estate
+   and stops zero-value cards from dominating the view. */
+.stat-strip--idle { display: block; }
+.stat-idle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  box-shadow: var(--shadow);
+}
+.stat-idle-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  flex-shrink: 0;
+}
+.stat-idle-label { font-weight: 600; color: var(--ink); }
+.stat-idle-sep {
+  width: 1px; height: 14px;
+  background: var(--line);
+  flex-shrink: 0;
+}
+.stat-idle-metric { color: var(--ink-2); }
+.stat-idle-metric strong { color: var(--ink); font-weight: 650; margin-right: 3px; }
+.stat-idle-metric--muted { color: var(--muted); }
+.stat-idle .stat-spark { margin-left: auto; width: 120px; height: 24px; flex-shrink: 0; }
 .stat-card {
   padding: 14px 16px;
   border: 1px solid var(--line);
@@ -953,10 +1198,14 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   text-align: left;
 }
 .task-row:hover, .task-item:hover { border-color: var(--line-2); background: var(--panel-2); }
+/* UCA-P0-C: selected state uses a 3px accent left-bar + subtle surface
+   lift instead of a saturated accent-soft fill that reads as "alarm" or
+   "error" at a glance. The border stays neutral so the card doesn't
+   shout; the left bar gives a clear "this one is active" cue. */
 .task-row.active, .task-row.selected, .task-item.selected, .selected {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: 0 0 0 1px var(--accent);
+  border-color: var(--line-2);
+  background: var(--panel-2);
+  box-shadow: inset 3px 0 0 0 var(--accent);
 }
 .task-row-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .task-row-title {
@@ -1025,6 +1274,10 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   margin-top: 14px;
 }
 @media (max-width: 900px) { .kv-grid { grid-template-columns: repeat(2, 1fr); } }
+/* UCA-P0-E: auto-fit variant for dynamic KV grids that may render
+   5 or 7 cells (empty cells are skipped). Prevents a widowed cell
+   from sitting alone on its row. */
+.kv-grid--auto { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
 .kv-cell { background: var(--panel); padding: 10px 14px; }
 .kv-k {
   font-size: 9px;
@@ -1117,7 +1370,78 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.artifact-actions { display: flex; gap: 4px; }
+.artifact-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+/* UCA-125 Phase 2b: task-main now stacks independent .panel cards.
+   Give them a shared vertical rhythm and tighter body padding so the
+   hero + N panels read as one column instead of one giant slab. */
+.task-main.task-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.task-detail-panel { margin: 0; }
+.task-detail-panel .panel-body { padding: 12px 16px; }
+.task-detail-panel .panel-head { padding: 10px 16px; }
+.task-detail-panel .panel-title { font-size: var(--fs-sm); }
+
+/* UCA-125 Phase 2b: hero action bar — Retry + Cancel on the left,
+   Delete pushed to the right via flex spacer so the destructive action
+   is visually quarantined from the primary recovery action. */
+.detail-hero-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* UCA-125 Phase 2c: subtask-row as a button (clickable) with circle
+   st-num + title + status pill + mono duration. Matches v3 row spec. */
+button.subtask-row {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-2); }
+
+/* UCA-125 Phase 2d: new artifact-row layout has a main clickable area
+   (for selection / preview) plus a fixed action cluster on the right
+   (Open / Reveal / Copy path). The container itself is no longer a
+   button — the `.artifact-row-main` child absorbs the row click. */
+.artifact-row[data-artifact-container] {
+  cursor: default;
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+.artifact-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  color: inherit;
+  text-align: left;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.artifact-row-main:hover { background: var(--panel-2); }
+.artifact-row[data-artifact-container] .artifact-actions {
+  padding: 8px 12px 8px 4px;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+}
+.artifact-row[data-artifact-container].active {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+.artifact-row[data-artifact-container].active .artifact-row-main { background: var(--panel-2); }
 
 /* =========================================================================
    CHAT
@@ -1275,6 +1599,130 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
 .console-chat-message.user { background: var(--accent-soft); color: var(--ink); }
 .console-chat-message.system { background: var(--panel-2); color: var(--muted); font-size: var(--fs-sm); }
 
+/* UCA-126 Phase 7d: rich message cards (user / ai / system / tool_call). */
+.chat-msg {
+  display: flex;
+  gap: 10px;
+  max-width: min(760px, 100%);
+  margin-bottom: 12px;
+}
+.chat-msg.user { margin-left: auto; flex-direction: row-reverse; }
+.chat-msg-av {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink-2);
+}
+.chat-msg-av.ai { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.chat-msg-av.user { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
+.chat-msg-body { flex: 1; min-width: 0; }
+.chat-msg-head {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.chat-msg-bubble {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  font-size: var(--fs-md);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+.chat-msg.user .chat-msg-bubble {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--ink);
+}
+.chat-msg.system .chat-msg-bubble {
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.chat-tool-card {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.chat-tool-card .tool-icon {
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.chat-tool-card .tool-name { font-weight: 600; color: var(--ink); }
+.chat-tool-card .tool-args { color: var(--muted); word-break: break-all; }
+
+/* Composer toolbar row (attach / voice / model chip / send). */
+.console-chat-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.console-chat-attachments .chip-attach {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+.console-chat-attachments .chip-attach button {
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.console-chat-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.console-chat-toolbar .model-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+  cursor: default;
+}
+
 /* =========================================================================
    FILES
    ========================================================================= */
@@ -1399,6 +1847,77 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
 }
 .sched-actions { display: flex; gap: 4px; }
 
+/* UCA-125: toolbar + group headers + state distinction */
+.sched-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.sched-toolbar .search-input {
+  flex: 1;
+  max-width: 320px;
+}
+.sched-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.sched-group:first-child { margin-top: 0; }
+.sched-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  cursor: pointer;
+  user-select: none;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+.sched-group-head .chev {
+  width: 10px; height: 10px;
+  transition: transform 160ms var(--ease-standard);
+  color: var(--muted);
+}
+.sched-group[data-collapsed="true"] .chev { transform: rotate(-90deg); }
+.sched-group[data-collapsed="true"] .sched-group-body { display: none; }
+.sched-group-head .count {
+  color: var(--muted);
+  font-weight: var(--fw-regular);
+  font-size: var(--fs-xs);
+}
+.sched-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sched-row.is-completed,
+.sched-row.is-paused {
+  opacity: .62;
+  background: var(--panel-2);
+}
+.sched-row.is-completed .sched-title,
+.sched-row.is-paused .sched-title {
+  color: var(--muted);
+}
+.sched-row.is-highlighted {
+  animation: schedHighlight 1.4s var(--ease-standard);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+@keyframes schedHighlight {
+  0%   { box-shadow: 0 0 0 2px var(--accent); background: var(--accent-soft); }
+  100% { box-shadow: 0 0 0 0 transparent; background: var(--panel); }
+}
+.cal-entry {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 120ms;
+}
+.cal-entry:hover { background: var(--accent-soft); }
+
 .seg-control, .view-toggle {
   display: inline-flex;
   padding: 2px;
@@ -1443,8 +1962,106 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   border-radius: var(--radius-sm);
   background: var(--panel);
   color: var(--ink);
+  position: relative;
 }
+
+/* Email inbox 4-col compact grid (v3 spec). Narrower minmax than the
+   default conn-grid so three or four tiles sit comfortably on wide
+   panes without the cards stretching. */
+.conn-grid--compact { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.conn-grid--compact .conn-card { padding: 12px; }
+.conn-grid--compact .conn-card-head { margin-bottom: 8px; }
+.conn-grid--compact .conn-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.conn-grid--compact .conn-foot-trailing { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.conn-card-remove {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  opacity: 0;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: opacity var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+}
+.conn-card:hover .conn-card-remove { opacity: 1; }
+.conn-card-remove:hover { background: var(--err-soft); color: var(--err); }
+
+/* Dashed "+ Add" tile. */
+.conn-card--add {
+  border-style: dashed;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  transition: border-color var(--duration-fast) var(--ease-standard), background var(--duration-fast) var(--ease-standard);
+}
+.conn-card--add:hover { border-color: var(--accent); background: var(--panel-2); }
+.conn-card--add .conn-name { color: var(--ink); }
+.conn-card--add .conn-logo { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
 .conn-card-head, .acc-card-main { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+
+/* UCA-125 follow-up: compact account card. Halves the card's vertical
+   footprint by inlining the tags+defaults into one strip and tucking
+   "set as default" actions behind a ⋯ menu. */
+.acc-card--compact { padding: 12px 14px; }
+.acc-card--compact .acc-card-main { margin-bottom: 8px; }
+.acc-card--compact .acc-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  align-items: center;
+}
+.acc-card--compact .acc-card-tags .tag { height: 18px; font-size: 10px; padding: 0 6px; }
+.acc-card--compact .acc-card-tags .pill { height: 18px; font-size: 10px; }
+.acc-more { position: relative; display: inline-flex; }
+.acc-more-btn { width: 28px; height: 28px; }
+.acc-more-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 160px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.acc-more-menu[hidden] { display: none; }
+.acc-more-item {
+  padding: 6px 10px;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  text-align: left;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.acc-more-item:hover { background: var(--panel-2); color: var(--ink); }
 .conn-logo, .acc-logo {
   width: 36px; height: 36px;
   border-radius: 8px;
@@ -1577,6 +2194,641 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   color: var(--ink);
 }
 .mcp-card-head, .mcp-server-card-header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+
+/* UCA-125 follow-up: consistent MCP card v2. Header = dot + name/desc +
+   status pill (right). Foot = Guide (left) + Configure/Install (right).
+   Same layout for every card so the primary CTA always sits in the
+   same position regardless of which buttons are present. */
+.mcp-card--v2 {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.mcp-card--v2:hover { border-color: var(--line-2); }
+.mcp-card--v2 > .mcp-server-card-header {
+  padding: 14px 14px 10px;
+  margin: 0;
+  gap: 10px;
+  align-items: flex-start;
+}
+.mcp-card--v2 .mcp-status-dot { margin-top: 6px; }
+.mcp-card--v2 .mcp-server-info { flex: 1; min-width: 0; }
+.mcp-card--v2 .mcp-status-label {
+  align-self: flex-start;
+  flex-shrink: 0;
+}
+.mcp-card--v2 .mcp-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--panel-2);
+  border-top: 1px solid var(--line);
+  gap: 8px;
+}
+.mcp-card--v2 .mcp-card-foot-left,
+.mcp-card--v2 .mcp-card-foot-right {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.mcp-card--v2 .mcp-card-foot-left:empty { min-width: 0; }
+.mcp-card--v2 .mcp-server-config {
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mcp-card--v2 .mcp-cfg-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 2px;
+}
+.mcp-card--v2 .mcp-cfg-input {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-size: var(--fs-sm);
+}
+.mcp-card--v2 .mcp-cfg-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.mcp-card--v2 .mcp-cfg-state { font-size: 11px; color: var(--muted); min-height: 14px; }
+.mcp-card--v2.unavailable { opacity: .65; }
+
+/* UCA-126: MCP card v3 — matches LingxY Console v3 reference. Toggle
+   switch replaces the Install button; transport info at the bottom;
+   Configure + Guide live in a quiet action row. */
+.mcp-card--v3 {
+  padding: 14px 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: border-color var(--duration-fast) var(--ease-standard);
+}
+.mcp-card--v3:hover { border-color: var(--line-2); }
+.mcp-card--v3 .mcp-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+.mcp-card--v3 .mcp-card-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 14px;
+}
+.mcp-card--v3 .mcp-card-logo svg { width: 18px; height: 18px; }
+.mcp-card--v3 .mcp-card-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.mcp-card--v3 .mcp-name {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.2;
+  flex: none;
+}
+.mcp-card--v3 .mcp-card-desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mcp-card--v3 .mcp-status-dot { flex-shrink: 0; margin-left: 4px; }
+.mcp-card--v3 .mcp-transport {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  word-break: break-all;
+  line-height: 1.5;
+}
+.mcp-card--v3 .mcp-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: -4px;
+}
+.mcp-card--v3 .mcp-needs-config { font-size: 10px; }
+.mcp-card--v3 .mcp-server-config {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.mcp-card--v3 .mcp-cfg-row { display: flex; gap: 8px; align-items: center; }
+.mcp-card--v3 .mcp-cfg-input {
+  flex: 1;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-size: var(--fs-sm);
+}
+.mcp-card--v3 .mcp-cfg-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.mcp-card--v3 .mcp-cfg-state { font-size: 11px; color: var(--muted); min-height: 14px; }
+.mcp-card--v3.unavailable { opacity: .65; }
+.mcp-card--v3.unavailable .mcp-card-desc { white-space: normal; }
+
+/* =========================================================================
+   UCA-126: INBOX — files/mail/calendar preview across connected accounts
+   ========================================================================= */
+.inbox-layout {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  gap: 18px;
+  min-height: calc(100vh - var(--top-h) - 120px);
+}
+@media (max-width: 960px) { .inbox-layout { grid-template-columns: 1fr; } }
+.inbox-sidebar { display: flex; flex-direction: column; min-height: 0; }
+.inbox-main { display: flex; flex-direction: column; min-height: 0; }
+.inbox-main-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+.inbox-resource-toggle { flex-shrink: 0; }
+.inbox-resource-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.inbox-resource-toggle button[disabled] {
+  opacity: .4;
+  cursor: not-allowed;
+}
+.inbox-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+.inbox-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  transition: background var(--duration-fast) var(--ease-standard), border-color var(--duration-fast) var(--ease-standard);
+  width: 100%;
+}
+.inbox-account:hover { background: var(--panel-2); border-color: var(--line); }
+.inbox-account.active {
+  background: var(--panel-2);
+  border-color: var(--line-2);
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+.inbox-account-logo {
+  width: 28px; height: 28px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 12px;
+}
+.inbox-account-logo svg { width: 14px; height: 14px; }
+.inbox-account-info { flex: 1; min-width: 0; }
+.inbox-account-name {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inbox-account-email {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inbox-account-status {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex-shrink: 0;
+}
+.inbox-account-status.offline { background: var(--muted-2); }
+
+.inbox-content-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+.inbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 0;
+}
+.inbox-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  width: 100%;
+  text-align: left;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.inbox-item:hover { background: var(--panel-2); }
+.inbox-item-icon {
+  width: 24px;
+  height: 24px;
+  font-size: 14px;
+  flex-shrink: 0;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+}
+.inbox-item-main { flex: 1; min-width: 0; }
+.inbox-item-title {
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-item-title.unread { font-weight: 650; }
+.inbox-item-meta {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inbox-item-time {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+.inbox-empty {
+  padding: 28px 18px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* UCA-126 follow-up: panel-title icons — small 14px glyph before section
+   titles (Subtasks / Artifacts / Timeline / settings groups) to give the
+   otherwise-flat text headers a quick visual hook. */
+.panel-title-icon,
+.settings-group-title-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--muted);
+  margin-right: 4px;
+  vertical-align: -2px;
+}
+.panel-title { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Richer Chat empty state — icon + title + hint with ⌃K tip. */
+.console-chat-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 40px 20px;
+  gap: 10px;
+}
+.console-chat-empty-icon {
+  width: 48px;
+  height: 48px;
+  color: var(--muted-2);
+  margin-bottom: 4px;
+}
+.console-chat-empty-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
+}
+.console-chat-empty-sub {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  line-height: 1.6;
+}
+.console-chat-empty-sub .kbd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  box-shadow: 0 1px 0 var(--line);
+  margin: 0 2px;
+}
+
+/* =========================================================================
+   UCA-127: CONNECTOR row layout — Settings-style single-line rows instead
+   of bulky cards. Inspired by Claude's connector list but with our own
+   token system (compact 12×14px padding, mono sub-meta, ⋯ menu on the
+   far right). Used by Accounts, Email inboxes, and custom MCP servers.
+   ========================================================================= */
+.conn-section-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.conn-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  padding: 8px 4px 4px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.conn-section-label .zh { font-weight: 400; font-size: 10px; letter-spacing: 0; }
+.conn-section-label .count {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: var(--muted-2);
+  font-weight: 500;
+  letter-spacing: 0;
+  margin-left: auto;
+}
+.conn-row {
+  display: grid;
+  grid-template-columns: 32px 1fr auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+.conn-row:hover { border-color: var(--line-2); background: var(--panel-2); }
+.conn-row-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.conn-row-logo svg { width: 18px; height: 18px; }
+.conn-row-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.conn-row-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.25;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.conn-row-title .pill { height: 18px; font-size: 10px; padding: 0 7px; }
+.conn-row-sub {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.conn-row-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+.conn-row-tags .tag { height: 16px; font-size: 9px; padding: 0 5px; }
+.conn-row-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.conn-row-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted-2);
+  flex-shrink: 0;
+}
+.conn-row-status-dot.on { background: var(--ok); }
+.conn-row-status-dot.warn { background: var(--warn); }
+.conn-row-status-dot.err { background: var(--err); }
+.conn-row-actions {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+/* ⋯ more-menu shared with account cards */
+.conn-row .acc-more { position: relative; }
+.conn-row .acc-more-btn { width: 28px; height: 28px; }
+
+/* Empty state for sections with 0 rows */
+.conn-empty-hint {
+  padding: 14px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  background: transparent;
+}
+
+/* =========================================================================
+   UCA-127: BROWSE CATALOG drawer — right-side slide-in with category +
+   search, 2-column grid of available connectors. Not a modal; it's a
+   secondary surface you can leave open while scanning the list behind.
+   ========================================================================= */
+.conn-browse-back {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(20, 19, 16, .4);
+  backdrop-filter: blur(2px);
+  display: none;
+  animation: fade .15s;
+}
+.conn-browse-back.open { display: block; }
+.conn-browse {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: min(720px, 96vw);
+  z-index: 91;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform var(--duration-base) var(--ease-standard);
+}
+.conn-browse-back.open .conn-browse { transform: translateX(0); }
+.conn-browse-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.conn-browse-head h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -.01em;
+}
+.conn-browse-head .conn-browse-sub {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+.conn-browse-close {
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+}
+.conn-browse-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.conn-browse-search {
+  flex: 1;
+  min-width: 240px;
+}
+.conn-browse-filters {
+  display: flex;
+  gap: 6px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+}
+.conn-browse-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px 20px;
+}
+.conn-browse-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+}
+.conn-browse-card {
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
+}
+.conn-browse-card:hover { border-color: var(--accent); background: var(--panel-2); }
+.conn-browse-card.installed { opacity: .6; pointer-events: none; }
+.conn-browse-card-logo {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-weight: 700;
+  font-size: 12px;
+}
+.conn-browse-card-logo svg { width: 18px; height: 18px; }
+.conn-browse-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.conn-browse-card-title {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.conn-browse-card-title .pill { font-size: 9px; height: 16px; padding: 0 5px; }
+.conn-browse-card-desc {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.conn-browse-card-add {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--panel);
+  align-self: center;
+}
+.conn-browse-card:hover .conn-browse-card-add {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
 .mcp-dot, .mcp-status-dot {
   width: 7px; height: 7px;
   border-radius: 50%;

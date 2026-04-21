@@ -42,6 +42,7 @@ const scheduleForm = document.querySelector("#scheduleForm");
 const scheduleWhenInput = document.querySelector("#scheduleWhenInput");
 const scheduleCommandInput = document.querySelector("#scheduleCommandInput");
 const scheduleCreateState = document.querySelector("#scheduleCreateState");
+const scheduleSearchInput = document.querySelector("#scheduleSearchInput");
 const templateCount = document.querySelector("#templateCount");
 const templateList = document.querySelector("#templateList");
 const templateForm = document.querySelector("#templateForm");
@@ -140,6 +141,12 @@ const consoleChatForm = document.querySelector("#consoleChatForm");
 const consoleChatInput = document.querySelector("#consoleChatInput");
 const consoleChatMessages = document.querySelector("#consoleChatMessages");
 const consoleChatState = document.querySelector("#consoleChatState");
+const consoleChatAttachBtn = document.querySelector("#consoleChatAttachBtn");
+const consoleChatVoiceBtn = document.querySelector("#consoleChatVoiceBtn");
+const consoleChatModelChipLabel = document.querySelector("#consoleChatModelChipLabel");
+const consoleChatAttachInput = document.querySelector("#consoleChatAttachInput");
+const consoleChatAttachments = document.querySelector("#consoleChatAttachments");
+const consoleChatAttachList = [];
 const skillEditModal = document.querySelector("#skillEditModal");
 const skillEditText = document.querySelector("#skillEditText");
 const skillEditPath = document.querySelector("#skillEditPath");
@@ -156,34 +163,13 @@ const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
 const tabButtons = document.querySelectorAll("[data-tab]");
 const tabPanels = document.querySelectorAll(".tab-panel");
 
-const PANEL_INTROS = {
-  tasks: ["Queue", "Work in motion", "Active runs, results, and recovery actions."],
-  chat: ["Dialogue", "Console chat", "A full-size conversation surface for longer prompts and follow-up work."],
-  files: ["Artifacts", "Produced files", "Files ready to open, reveal, or reuse."],
-  schedules: ["Automation", "Scheduled work", "Reminders, recurring tasks, and pending approvals."],
-  projects: ["Threads", "Conversation memory", "Overlay projects and saved conversations."],
-  connectors: ["Integrations", "Connections", "Email, MCP, skills, Code CLI, and Office handoffs."],
-  settings: ["Policy", "Runtime settings", "AI routing, privacy, feature flags, and output paths."],
-  advanced: ["Operations", "Advanced controls", "Templates, DAG workflow, budget, and audit log."]
-};
-
-function installPanelIntros() {
-  for (const [tabId, [eyebrow, title, subtitle]] of Object.entries(PANEL_INTROS)) {
-    const panel = document.querySelector(`#panel-${tabId}`);
-    if (!panel || panel.querySelector(".console-panel-intro")) continue;
-    const intro = document.createElement("div");
-    intro.className = "console-panel-intro";
-    intro.innerHTML = `
-      <div class="eyebrow">${escapeHtml(eyebrow)}</div>
-      <h1>${escapeHtml(title)}</h1>
-      <p>${escapeHtml(subtitle)}</p>
-    `;
-    panel.prepend(intro);
-  }
-}
+// UCA-125 Phase 1: PANEL_INTROS and installPanelIntros() have been retired.
+// Every tab panel now has a static <header class="page-head"> with h1 + sub
+// in console.html, matching the v3 design reference. Dynamic injection was
+// removing control from the markup and producing a three-line eyebrow /
+// title / subtitle that duplicated the topbar breadcrumb.
 
 function applyConsoleInformationArchitecture() {
-  installPanelIntros();
   const connectorsConfigMount = document.querySelector("#connectorsConfigMount");
   const emailAdvancedMount = document.querySelector("#emailAdvancedMount");
   if (!connectorsConfigMount) return;
@@ -294,13 +280,21 @@ applyConsoleInformationArchitecture();
 
 // UCA-117: map view id → English breadcrumb label shown in the v3 topbar.
 // UCA-121: "history" dropped; Memory page retired.
+// UCA-126: "advanced" retired — Templates / Budget / Audit moved into
+// Settings; DAG frontend removed (backend APIs retained). Any stale
+// localStorage pointing to "advanced" is rerouted to "settings" in
+// switchTab() below.
 const VIEW_CRUMBS = {
   tasks: "Tasks", chat: "Chat", files: "Files", schedules: "Schedules",
   projects: "Projects",
-  connectors: "Connectors", settings: "Settings", advanced: "Advanced"
+  connectors: "Connectors", inbox: "Inbox",
+  settings: "Settings"
 };
 
 function switchTab(tabId) {
+  // UCA-126: reroute retired "advanced" to settings so stale localStorage
+  // or deep links don't land on an empty panel.
+  if (tabId === "advanced") tabId = "settings";
   tabButtons.forEach((btn) => {
     const isActive = btn.dataset.tab === tabId;
     btn.classList.toggle("active", isActive);
@@ -332,6 +326,8 @@ tabButtons.forEach((btn) => {
       void syncConsoleProjectStoreFromService({ rerender: true });
     } else if (btn.dataset.tab === "connectors") {
       void loadConnectorsTab();
+    } else if (btn.dataset.tab === "inbox") {
+      void loadInboxTab();
     }
   });
 });
@@ -528,13 +524,51 @@ async function fetchJson(pathname, options = {}) {
   return payload;
 }
 
-function appendConsoleChatMessage(role, text) {
+// UCA-126 Phase 7d: rich message cards (user / ai / system / tool_call).
+function appendConsoleChatMessage(role, text, options = {}) {
   if (!consoleChatMessages || !text) return;
   consoleChatMessages.querySelector(".console-chat-empty")?.remove();
-  const node = document.createElement("div");
-  node.className = `console-chat-message ${role}`;
-  node.textContent = text;
-  consoleChatMessages.appendChild(node);
+
+  const wrapper = document.createElement("div");
+  wrapper.className = `chat-msg ${role}`;
+
+  if (role !== "system") {
+    const avatar = document.createElement("div");
+    avatar.className = `chat-msg-av ${role === "user" ? "user" : "ai"}`;
+    avatar.textContent = role === "user" ? "我" : "AI";
+    wrapper.appendChild(avatar);
+  }
+
+  const body = document.createElement("div");
+  body.className = "chat-msg-body";
+
+  if (options.header) {
+    const head = document.createElement("div");
+    head.className = "chat-msg-head";
+    head.textContent = options.header;
+    body.appendChild(head);
+  }
+
+  const bubble = document.createElement("div");
+  bubble.className = "chat-msg-bubble";
+  bubble.textContent = text;
+  body.appendChild(bubble);
+
+  wrapper.appendChild(body);
+  consoleChatMessages.appendChild(wrapper);
+  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+}
+
+function appendConsoleChatToolCall(toolName, args, outcome) {
+  if (!consoleChatMessages || !toolName) return;
+  consoleChatMessages.querySelector(".console-chat-empty")?.remove();
+  const card = document.createElement("div");
+  card.className = "chat-tool-card";
+  const icon = `<svg class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/></svg>`;
+  const argsText = typeof args === "string" ? args : JSON.stringify(args ?? {}).slice(0, 200);
+  const outcomeTag = outcome ? ` <span class="tool-args">→ ${escapeHtml(String(outcome).slice(0, 80))}</span>` : "";
+  card.innerHTML = `${icon}<div><span class="tool-name">${escapeHtml(toolName)}</span> <span class="tool-args">${escapeHtml(argsText)}</span>${outcomeTag}</div>`;
+  consoleChatMessages.appendChild(card);
   consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
 }
 
@@ -588,6 +622,9 @@ async function submitConsoleChat() {
       subscribeConsoleChatTask(taskId);
     }
     await refreshWorkspace();
+    updateChatModelChip?.();
+    consoleChatAttachList.length = 0;
+    renderChatAttachments?.();
   } catch (error) {
     appendConsoleChatMessage("system", error.message);
     consoleChatState.textContent = "Failed.";
@@ -678,25 +715,19 @@ function renderEmpty(container, message) {
 }
 
 function setRuntimeBadge(ok, message) {
-  // UCA-117: runtime state is now a v3 pill (not a legacy chip), and
-  // lives hidden by default in the topbar. The rail's sys pill at the
-  // bottom is the primary "runtime ok" indicator; this one only surfaces
-  // when something is actively wrong.
-  if (runtimeState) {
-    if (!ok) {
-      runtimeState.textContent = message;
-      runtimeState.className = "pill pill-err";
-      runtimeState.hidden = false;
-    } else {
-      runtimeState.hidden = true;
-    }
-  }
-  // Rail system pill mirrors the top-level state.
+  // UCA-P0-D: the topbar runtimeState pill has been retired. The rail's
+  // sys indicator at the bottom is now the single source of truth for
+  // runtime health — ok / offline / error all surface there instead of
+  // clinging to the "Tasks" title where they read as a page-level state.
+  // The legacy runtimeState element may still exist during hot-reloads
+  // or on older shells, so we defensively hide it when present.
+  if (runtimeState) runtimeState.hidden = true;
   const railSys = document.querySelector("#railSys");
   const railSysText = document.querySelector("#railSysText");
   if (railSys && railSysText) {
-    railSysText.textContent = ok ? "Runtime ready" : "Runtime offline";
-    railSys.style.opacity = ok ? "1" : "0.6";
+    railSysText.textContent = ok ? "Runtime ready" : (message || "Runtime offline");
+    railSys.classList.toggle("rail-sys--err", !ok);
+    railSys.style.opacity = "1";
   }
   // Update the rail endpoint line too.
   const railEndpoint = document.querySelector("#railEndpoint");
@@ -765,11 +796,34 @@ function buildTodaySparkline(tasks) {
 function renderSummary() {
   const tasks = state.workspace.tasks ?? [];
   const s = computeSummary(tasks, state.workspace.budget);
+  const running = s.running ?? 0;
+  const queued = s.queued ?? 0;
+  const spend = s.monthlySpend ?? 0;
+  // Idle mode: nothing in motion AND no money burned this month. Collapse
+  // the 4-card strip to a thin summary line so zero-value cards stop
+  // dominating the page. Today's success count + sparkline stay visible
+  // because they still carry signal even when the queue is empty.
+  const isIdle = running === 0 && queued === 0 && spend === 0;
+  if (isIdle) {
+    summaryGrid.classList.add("stat-strip--idle");
+    summaryGrid.innerHTML = `
+      <div class="stat-idle">
+        <span class="stat-idle-dot" aria-hidden="true"></span>
+        <span class="stat-idle-label">Idle — no active work</span>
+        <span class="stat-idle-sep" aria-hidden="true"></span>
+        <span class="stat-idle-metric"><strong>${escapeHtml(String(s.todaySuccess))}</strong> succeeded today</span>
+        <span class="stat-idle-sep" aria-hidden="true"></span>
+        <span class="stat-idle-metric stat-idle-metric--muted">${escapeHtml(formatMoney(spend))} this month</span>
+      </div>
+    `;
+    return;
+  }
+  summaryGrid.classList.remove("stat-strip--idle");
   const cards = [
-    { label: "Running", value: s.running, sub: "Active right now" },
-    { label: "Queued", value: s.queued, sub: "Waiting for a worker" },
+    { label: "Running", value: running, sub: "Active right now" },
+    { label: "Queued", value: queued, sub: "Waiting for a worker" },
     { label: "Today", value: s.todaySuccess, sub: "Succeeded today", spark: buildTodaySparkline(tasks) },
-    { label: "Spend", value: formatMoney(s.monthlySpend), sub: "This month" }
+    { label: "Spend", value: formatMoney(spend), sub: "This month" }
   ];
   summaryGrid.innerHTML = cards.map((c) => `
     <div class="stat-card">
@@ -847,7 +901,7 @@ function renderEmailAccounts() {
       </div>
       <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(account.email ?? "")} · ${escapeHtml(account.provider ?? "imap")}</p>
       <div class="toolbar" style="margin-top:6px;">
-        <button class="ghost" data-email-delete="${escapeHtml(account.id)}">Delete</button>
+        <button class="btn btn-sm btn-danger" data-email-delete="${escapeHtml(account.id)}">Delete</button>
       </div>
     </div>
   `).join("");
@@ -892,7 +946,7 @@ function renderMcpServers() {
       </div>
       <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(server.transport ?? "stdio")} · ${escapeHtml(server.command ?? server.url ?? "n/a")}</p>
       <div class="toolbar" style="margin-top:6px;">
-        <button class="ghost" data-mcp-delete="${escapeHtml(server.id)}">Delete</button>
+        <button class="btn btn-sm btn-danger" data-mcp-delete="${escapeHtml(server.id)}">Delete</button>
       </div>
     </div>
   `).join("");
@@ -930,7 +984,7 @@ function renderSkillRegistries() {
       </div>
       <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(registry.rootPath ?? "n/a")} · ${escapeHtml(registry.skillCount ?? 0)} skills</p>
       <div class="toolbar" style="margin-top:6px;">
-        <button class="ghost" data-skill-registry-delete="${escapeHtml(registry.id)}">Delete</button>
+        <button class="btn btn-sm btn-danger" data-skill-registry-delete="${escapeHtml(registry.id)}">Delete</button>
       </div>
     </div>
   `).join("");
@@ -944,7 +998,7 @@ function renderSkillRegistries() {
         ${escapeHtml(skill.tags?.[0] ?? skill.registryId ?? "local")} · ${escapeHtml(skill.entryPath ?? skill.filePath ?? skill.path ?? "n/a")}
       </p>
       ${skill.description ? `<p style="margin-top:6px;font-size:12px;">${escapeHtml(skill.description)}</p>` : ""}
-      ${skill.entryPath ? `<div class="toolbar" style="margin-top:8px;"><button class="secondary" data-skill-edit="${escapeHtml(skill.entryPath)}" type="button">Edit</button></div>` : ""}
+      ${skill.entryPath ? `<div class="toolbar" style="margin-top:8px;"><button class="btn" data-skill-edit="${escapeHtml(skill.entryPath)}" type="button">Edit</button></div>` : ""}
     </div>
   `).join("");
   skillRegistryList.innerHTML = `
@@ -1014,7 +1068,7 @@ function renderCodeCliAdapters() {
       </div>
       <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(adapter.executable ?? adapter.command ?? "n/a")} · ${escapeHtml(adapter.transport ?? "stream_json_print")}</p>
       <div class="toolbar" style="margin-top:6px;">
-        <button class="ghost" data-code-cli-delete="${escapeHtml(adapter.id)}">Delete</button>
+        <button class="btn btn-sm btn-danger" data-code-cli-delete="${escapeHtml(adapter.id)}">Delete</button>
       </div>
     </div>
   `).join("");
@@ -1490,8 +1544,8 @@ function renderProvidersList() {
           ${p.defaultModel ? `<div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:2px;">${escapeHtml(p.defaultModel)}</div>` : ""}
         </div>
         <div class="toolbar">
-          <button class="ghost" type="button" data-edit-provider="${escapeHtml(p.id)}">Edit</button>
-          <button class="ghost" type="button" data-delete-provider="${escapeHtml(p.id)}" style="color:var(--danger);">Delete</button>
+          <button class="btn btn-ghost" type="button" data-edit-provider="${escapeHtml(p.id)}">Edit</button>
+          <button class="btn btn-sm btn-danger" type="button" data-delete-provider="${escapeHtml(p.id)}">Delete</button>
         </div>
       </div>
     `;
@@ -1592,18 +1646,18 @@ function renderTaskRouting() {
         </div>
         <div style="font-size:11px;color:var(--muted);margin-bottom:8px;">${escapeHtml(task.desc)}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">
-          <select data-routing-provider="${escapeHtml(task.id)}" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders ? "disabled" : ""}>${providerOptions}</select>
-          <select data-routing-model="${escapeHtml(task.id)}" title="Model" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders || !selectedProvider ? "disabled" : ""}>${modelOptions}</select>
-          ${showReasoning ? `<select data-routing-reasoning="${escapeHtml(task.id)}" title="Reasoning effort" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;">${reasoningOptionsHtml}</select>` : ""}
-          ${!hideMode && !showReasoning ? `<select data-routing-mode="${escapeHtml(task.id)}" title="Mode" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:#fff;" ${noProviders || !selectedProvider ? "disabled" : ""}>${modeOptionsHtml}</select>` : ""}
+          <select data-routing-provider="${escapeHtml(task.id)}" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);" ${noProviders ? "disabled" : ""}>${providerOptions}</select>
+          <select data-routing-model="${escapeHtml(task.id)}" title="Model" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);" ${noProviders || !selectedProvider ? "disabled" : ""}>${modelOptions}</select>
+          ${showReasoning ? `<select data-routing-reasoning="${escapeHtml(task.id)}" title="Reasoning effort" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);">${reasoningOptionsHtml}</select>` : ""}
+          ${!hideMode && !showReasoning ? `<select data-routing-mode="${escapeHtml(task.id)}" title="Mode" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);" ${noProviders || !selectedProvider ? "disabled" : ""}>${modeOptionsHtml}</select>` : ""}
         </div>
         ${modelMeta ? `<div style="font-size:10px;color:var(--muted);margin-top:6px;">${escapeHtml(modelMeta)}</div>` : ""}
       </div>
     `;
   }).join("") + (noProviders ? `
-    <div style="padding:14px;border-radius:10px;background:rgba(99,102,241,0.06);border:1px dashed rgba(99,102,241,0.3);text-align:center;margin-top:4px;">
+    <div style="padding:14px;border-radius:10px;background:var(--accent-soft);border:1px dashed var(--accent);text-align:center;margin-top:4px;">
       <p style="font-size:12px;margin:0 0 8px;color:var(--ink-soft);">No providers added yet. Add one to enable routing.</p>
-      <button id="routingAddProviderBtn" type="button" class="primary" style="font-size:12px;">+ Add Provider</button>
+      <button id="routingAddProviderBtn" type="button" class="btn btn-primary" style="font-size:12px;">+ Add Provider</button>
     </div>
   ` : "");
 
@@ -2162,25 +2216,37 @@ function renderTaskChildren(detail) {
   taskChildCount.textContent = `${childIds.length}`;
 
   if (childIds.length === 0) {
-    taskChildList.innerHTML = `<p class="muted" style="font-size:12px;">No subtasks.</p>`;
+    taskChildList.innerHTML = "";
+    setTaskDetailPanelVisible("taskSubtasksPanel", false);
     return;
   }
+  setTaskDetailPanelVisible("taskSubtasksPanel", true);
 
+  // UCA-125 Phase 2c: v3 subtask-row — circle .st-num badge + title +
+  // status pill + mono duration meta. Replaces the old two-line
+  // "#N · title / executor · source_type" layout with a single scan-
+  // friendly row.
   const childEntries = childIds.map((childId, index) => {
     const child = state.workspace.tasks.find((t) => t.task_id === childId) ?? { task_id: childId };
     const label = child.user_command ?? child.intent ?? child.task_id ?? "Subtask";
     const childIndex = Number.isInteger(child.child_index) ? child.child_index + 1 : index + 1;
     const status = child.status ?? "unknown";
-    const sc = status === "success" ? "ready" : status === "failed" ? "danger" : "warning";
+    const pillClass = status === "success" ? "pill pill-ok"
+      : status === "failed" ? "pill pill-err"
+        : status === "queued" ? "pill pill-queue"
+          : status === "running" || status === "cancelling" ? "pill pill-run"
+            : "pill pill-neutral";
+    const durationText = child.elapsed_ms
+      ? child.elapsed_ms >= 1000
+        ? `${(child.elapsed_ms / 1000).toFixed(1)}s`
+        : `${child.elapsed_ms}ms`
+      : "";
     return `
-      <button class="task-child-item" data-child-task-id="${escapeHtml(childId)}">
-        <div class="row">
-          <div>
-            <strong style="font-size:12px;">#${childIndex} · ${escapeHtml(label)}</strong>
-            <p class="muted" style="margin-top:4px;">${escapeHtml(child.executor ?? "unknown")} · ${escapeHtml(child.source_type ?? "unknown")}</p>
-          </div>
-          <span class="chip ${sc}">${escapeHtml(status)}</span>
-        </div>
+      <button class="subtask-row" data-child-task-id="${escapeHtml(childId)}" type="button">
+        <span class="st-num">${childIndex}</span>
+        <span class="st-title">${escapeHtml(label)}</span>
+        <span class="${pillClass}">${escapeHtml(status)}</span>
+        ${durationText ? `<span class="st-meta">${escapeHtml(durationText)}</span>` : ""}
       </button>
     `;
   }).join("");
@@ -2240,8 +2306,12 @@ function ensureSelectedTaskEventStream(taskId) {
   selectedTaskEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
     onEvent(event) { void handleSelectedTaskEventFrame(event); },
     onError(error) {
-      runtimeState.textContent = `Stream disconnected · ${error.message}`;
-      runtimeState.className = "chip warning";
+      // UCA-P0-D: route stream errors to the rail sys indicator (below)
+      // instead of the retired topbar pill next to the page title.
+      const railSysText = document.querySelector("#railSysText");
+      const railSys = document.querySelector("#railSys");
+      if (railSysText) railSysText.textContent = `Stream disconnected · ${error.message}`;
+      if (railSys) railSys.classList.add("rail-sys--warn");
     }
   });
 }
@@ -2278,41 +2348,79 @@ function renderTaskArtifacts(detail) {
 
   if (artifacts.length === 0) {
     state.selectedTaskArtifactPath = null;
-    taskArtifactList.innerHTML = `<p class="muted" style="font-size:12px;">No artifacts yet.</p>`;
-    taskArtifactPreview.textContent = "Select an artifact to preview.";
+    taskArtifactList.innerHTML = "";
+    taskArtifactPreview.setAttribute("hidden", "");
+    taskArtifactPreview.textContent = "";
     openTaskArtifactButton.hidden = true;
     copyTaskArtifactPathButton.hidden = true;
     useTaskArtifactContextButton.hidden = true;
+    const heroActions = document.querySelector(".task-detail-artifact-actions");
+    if (heroActions) heroActions.setAttribute("hidden", "");
+    setTaskDetailPanelVisible("taskArtifactsPanel", false);
     return;
   }
+  setTaskDetailPanelVisible("taskArtifactsPanel", true);
 
   if (!state.selectedTaskArtifactPath || !artifacts.some((a) => a.path === state.selectedTaskArtifactPath)) {
     state.selectedTaskArtifactPath = artifacts[0].path;
   }
 
-  // UCA-122: v3 .artifact-row structure with colored artifact-icon badge
-  // by extension. Kept as <button data-artifact-path> so the selection
-  // handler is unchanged.
+  // UCA-125 Phase 2d: artifact rows gain per-row Open/Reveal/Copy-path
+  // buttons (v3 style) so each artifact is directly actionable without
+  // having to select it first. The shared preview below still reflects
+  // the currently focused artifact for quick inline inspection.
   taskArtifactList.innerHTML = artifacts.map((a, i) => {
     const label = formatArtifactLabel(a.path);
     const ext = (a.path.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "").toLowerCase();
     const iconClass = artifactIconClass(ext);
     const iconText = (ext || "FILE").toUpperCase().slice(0, 3);
+    const isActive = a.path === state.selectedTaskArtifactPath;
     return `
-    <button class="artifact-row ${a.path === state.selectedTaskArtifactPath ? "active" : ""}" data-artifact-path="${escapeHtml(a.path)}" style="width:100%;text-align:left;">
-      <span class="artifact-icon ${iconClass}">${escapeHtml(iconText)}</span>
-      <div class="artifact-main">
-        <div class="artifact-name">${escapeHtml(label)}</div>
-        <div class="artifact-path">${escapeHtml(a.path)}</div>
+    <div class="artifact-row ${isActive ? "active" : ""}" data-artifact-container>
+      <button type="button" class="artifact-row-main" data-artifact-select data-artifact-path="${escapeHtml(a.path)}">
+        <span class="artifact-icon ${iconClass}">${escapeHtml(iconText)}</span>
+        <div class="artifact-main">
+          <div class="artifact-name">
+            ${escapeHtml(label)}
+            ${i === 0 ? `<span class="pill pill-ok" style="margin-left:6px;">Primary</span>` : ""}
+          </div>
+          <div class="artifact-path">${escapeHtml(a.path)}</div>
+        </div>
+      </button>
+      <div class="artifact-actions btn-group">
+        <button type="button" class="btn btn-sm" data-artifact-open data-artifact-path="${escapeHtml(a.path)}">Open</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-artifact-reveal data-artifact-path="${escapeHtml(a.path)}">Reveal</button>
+        <button type="button" class="btn btn-sm btn-ghost" data-artifact-copy data-artifact-path="${escapeHtml(a.path)}">Copy path</button>
       </div>
-      ${i === 0 ? `<span class="pill pill-ok">Primary</span>` : ""}
-    </button>
+    </div>
   `; }).join("");
 
-  for (const btn of taskArtifactList.querySelectorAll("[data-artifact-path]")) {
+  for (const btn of taskArtifactList.querySelectorAll("[data-artifact-select]")) {
     btn.addEventListener("click", () => void selectTaskArtifact(btn.dataset.artifactPath));
   }
+  for (const btn of taskArtifactList.querySelectorAll("[data-artifact-open]")) {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await window.ucaShell.openPath(btn.dataset.artifactPath);
+    });
+  }
+  for (const btn of taskArtifactList.querySelectorAll("[data-artifact-reveal]")) {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      try { await window.ucaShell.revealInFolder?.(btn.dataset.artifactPath); }
+      catch { await window.ucaShell.openPath(btn.dataset.artifactPath); }
+    });
+  }
+  for (const btn of taskArtifactList.querySelectorAll("[data-artifact-copy]")) {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      await window.ucaShell.writeClipboardText(btn.dataset.artifactPath);
+    });
+  }
 
+  taskArtifactPreview.removeAttribute("hidden");
+  const heroActions = document.querySelector(".task-detail-artifact-actions");
+  if (heroActions) heroActions.removeAttribute("hidden");
   openTaskArtifactButton.hidden = !state.selectedTaskArtifactPath;
   copyTaskArtifactPathButton.hidden = !state.selectedTaskArtifactPath;
   useTaskArtifactContextButton.hidden = !state.selectedTaskArtifactPath;
@@ -2495,7 +2603,7 @@ function renderProviderLine(descriptor) {
   const transport = (descriptor.transport || "").toUpperCase() || "—";
   return `
     <div class="row" style="font-size:11px;color:var(--muted);gap:6px;align-items:center;">
-      <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:rgba(59,130,246,0.08);border:1px solid rgba(59,130,246,0.18);color:var(--primary);">
+      <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--status-info-bg);border:1px solid var(--status-info-border);color:var(--status-info-text);">
         <span style="font-weight:500;">Provider</span>
         <span>${escapeHtml(name)}</span>
         <span class="muted">·</span>
@@ -2510,8 +2618,8 @@ function renderProviderLine(descriptor) {
 function renderDowngradedWarning(downgraded) {
   if (!downgraded) return "";
   return `
-    <div data-uca-downgraded="1" style="padding:8px 10px;border-radius:8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.22);margin-top:8px;">
-      <strong style="font-size:12px;color:#b45309;">AI claim downgraded</strong>
+    <div data-uca-downgraded="1" style="padding:8px 10px;border-radius:8px;background:var(--warn-soft);border:1px solid var(--warn);margin-top:8px;">
+      <strong style="font-size:12px;color:var(--warn);">AI claim downgraded</strong>
       <p class="muted" style="margin:4px 0 0;font-size:12px;">The model claimed completion, but no tool in this run returned success:true. The task has been downgraded to partial — see the timeline below for what actually executed.</p>
     </div>
   `;
@@ -2579,11 +2687,54 @@ function renderTimelineEntry(ev) {
   `;
 }
 
+// UCA-P0-E: build the task-detail KV grid with only the cells that
+// carry real signal. Earlier the grid always rendered 8 fixed cells,
+// so an idle task (no retries, no cost, no duration captured) showed
+// a wall of "—" and "0" that made the view look like a broken form.
+// Rules:
+//   - string fields ("—" / null / empty) are skipped
+//   - retry=0 is skipped (no-retry is the normal case)
+//   - cost=0 is skipped on terminal tasks (no spend is the normal case)
+//   - CSS uses auto-fit so the remaining cells reflow cleanly into
+//     whatever column count fits (no widowed cells when 5 or 7 remain)
+function renderTaskKvGrid({ provider, model, executor, source, retry, cost, duration, transport }) {
+  const hasText = (v) => v != null && v !== "" && v !== "—";
+  const cells = [];
+  if (hasText(provider)) cells.push(["Provider", provider]);
+  if (hasText(model)) cells.push(["Model", model]);
+  if (hasText(executor)) cells.push(["Executor", executor]);
+  if (hasText(source)) cells.push(["Source", source]);
+  if (retry && Number(retry) > 0) cells.push(["Retry", String(retry)]);
+  if (cost && Number(cost) > 0) cells.push(["Cost", formatMoney(cost)]);
+  if (hasText(duration)) cells.push(["Duration", duration]);
+  if (hasText(transport)) cells.push(["Transport", transport]);
+  if (cells.length === 0) return "";
+  return `
+    <div class="kv-grid kv-grid--auto">
+      ${cells.map(([k, v]) => `<div class="kv-cell"><div class="kv-k">${escapeHtml(k)}</div><div class="kv-v">${escapeHtml(String(v))}</div></div>`).join("")}
+    </div>
+  `;
+}
+
+// UCA-125 Phase 2b: show/hide helpers for the split detail panels.
+// Each subtasks/artifacts/timeline section is its own .panel card now,
+// so empty sections just stay hidden instead of rendering a stacked
+// "No X yet." placeholder.
+function setTaskDetailPanelVisible(id, visible) {
+  const el = document.querySelector(`#${id}`);
+  if (!el) return;
+  if (visible) el.removeAttribute("hidden");
+  else el.setAttribute("hidden", "");
+}
+
 function renderTaskDetail(detail) {
   if (!detail) {
     state.selectedTaskDetail = null;
     taskDetailSummary.innerHTML = `<p class="muted" style="font-size:12px;">Select a task to view details.</p>`;
-    taskTimeline.innerHTML = `<div class="timeline-item"><p class="muted">No timeline.</p></div>`;
+    taskTimeline.innerHTML = "";
+    setTaskDetailPanelVisible("taskSubtasksPanel", false);
+    setTaskDetailPanelVisible("taskArtifactsPanel", false);
+    setTaskDetailPanelVisible("taskTimelinePanel", false);
     renderTaskArtifacts(null);
     renderTaskChildren(null);
     retryTaskButton.disabled = true;
@@ -2596,19 +2747,19 @@ function renderTaskDetail(detail) {
   const task = detail.task ?? {};
   const { descriptor: providerDescriptor, downgraded } = extractTaskProviderInfo(detail);
   const failBlock = task.failure_category ? `
-    <div style="padding:8px 10px;border-radius:8px;background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.12);margin-top:8px;">
-      <strong style="font-size:12px;color:var(--danger);">Failed</strong>
+    <div style="padding:8px 10px;border-radius:8px;background:var(--err-soft);border:1px solid var(--err);margin-top:8px;">
+      <strong style="font-size:12px;color:var(--err);">Failed</strong>
       <p class="muted" style="margin:4px 0 0;font-size:12px;">${escapeHtml(task.failure_user_message ?? task.failure_category)}</p>
     </div>
   ` : "";
   const parentLink = task.parent_task_id ? `
     <span>父任务：
-      <button class="ghost" data-parent-task-id="${escapeHtml(task.parent_task_id)}" style="padding:0 6px;font-size:11px;">← 返回</button>
+      <button class="btn btn-ghost" data-parent-task-id="${escapeHtml(task.parent_task_id)}" style="padding:0 6px;font-size:11px;">← 返回</button>
     </span>
   ` : "";
   // UCA-064: show composite result summary when present
   const resultSummaryBlock = task.result_summary ? `
-    <div style="padding:8px 10px;border-radius:8px;background:rgba(99,102,241,0.06);border:1px solid rgba(99,102,241,0.14);margin-top:8px;white-space:pre-wrap;font-size:12px;line-height:1.6;">
+    <div style="padding:8px 10px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);margin-top:8px;white-space:pre-wrap;font-size:12px;line-height:1.6;color:var(--ink);">
       ${escapeHtml(task.result_summary)}
     </div>
   ` : "";
@@ -2626,6 +2777,27 @@ function renderTaskDetail(detail) {
   const source = task.context_packet?.source_type ?? task.source_app ?? "—";
   const duration = task.elapsed_ms ? `${(task.elapsed_ms / 1000).toFixed(1)}s` : "—";
   const tokensUsed = task.tokens_used ?? task.usage?.total_tokens ?? null;
+  const canRetry = !!task.retryable;
+  const canCancel = ["queued", "running", "cancelling"].includes(task.status);
+  // UCA-125 Phase 2b: action buttons live INSIDE the hero now (v3 style)
+  // so they're visually grouped with the title/status they act on. The
+  // hidden legacy #retryTaskButton / #cancelTaskButton / #deleteTaskButton
+  // in console.html still carry the wired click handlers; the hero buttons
+  // just proxy-click them.
+  const heroActions = `
+    <div class="detail-hero-actions">
+      <button type="button" class="btn btn-sm" data-task-act="retry" ${canRetry ? "" : "disabled"}>
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Retry
+      </button>
+      <button type="button" class="btn btn-sm btn-ghost" data-task-act="cancel" ${canCancel ? "" : "disabled"}>Cancel</button>
+      <div style="flex:1"></div>
+      <button type="button" class="btn btn-sm btn-danger" data-task-act="delete">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
+        Delete
+      </button>
+    </div>
+  `;
   taskDetailSummary.innerHTML = `
     <div class="detail-hero">
       <div class="btn-group" style="margin-bottom:8px;">
@@ -2639,17 +2811,9 @@ function renderTaskDetail(detail) {
         ${task.retry_count ? `<span>Retry ${escapeHtml(task.retry_count)}</span>` : ""}
         ${parentLink}
       </div>
-      <div class="kv-grid">
-        <div class="kv-cell"><div class="kv-k">Provider</div><div class="kv-v">${escapeHtml(provider)}</div></div>
-        <div class="kv-cell"><div class="kv-k">Model</div><div class="kv-v">${escapeHtml(model)}</div></div>
-        <div class="kv-cell"><div class="kv-k">Executor</div><div class="kv-v">${escapeHtml(task.executor ?? "—")}</div></div>
-        <div class="kv-cell"><div class="kv-k">Source</div><div class="kv-v">${escapeHtml(source)}</div></div>
-        <div class="kv-cell"><div class="kv-k">Retry</div><div class="kv-v">${escapeHtml(task.retry_count ?? 0)}</div></div>
-        <div class="kv-cell"><div class="kv-k">Cost</div><div class="kv-v">${escapeHtml(formatMoney(task.cost_usd ?? 0))}</div></div>
-        <div class="kv-cell"><div class="kv-k">Duration</div><div class="kv-v">${escapeHtml(duration)}</div></div>
-        <div class="kv-cell"><div class="kv-k">Transport</div><div class="kv-v">${escapeHtml(transport)}</div></div>
-      </div>
+      ${renderTaskKvGrid({ provider, model, executor: task.executor, source, retry: task.retry_count, cost: task.cost_usd, duration, transport })}
       ${tokensUsed ? `<div class="muted" style="font-size:11px;margin-top:10px;font-family:var(--font-mono);">tokens: ${escapeHtml(tokensUsed)}</div>` : ""}
+      ${heroActions}
     </div>
     ${renderDowngradedWarning(downgraded)}
     ${failBlock}
@@ -2662,13 +2826,29 @@ function renderTaskDetail(detail) {
       void refreshTaskDetail();
     });
   }
-  taskTimeline.innerHTML = (detail.events ?? []).length > 0
-    ? detail.events.map((ev) => renderTimelineEntry(ev)).join("")
-    : `<div class="timeline-item"><p class="muted" style="font-size:12px;">No timeline.</p></div>`;
+  // Hero action proxies → trigger the existing hidden buttons that carry
+  // the real click handlers.
+  for (const btn of taskDetailSummary.querySelectorAll("[data-task-act]")) {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.taskAct === "retry" ? retryTaskButton
+        : btn.dataset.taskAct === "cancel" ? cancelTaskButton
+          : btn.dataset.taskAct === "delete" ? deleteTaskButton
+            : null;
+      if (target && !target.disabled) target.click();
+    });
+  }
+  const events = detail.events ?? [];
+  if (events.length > 0) {
+    taskTimeline.innerHTML = events.map((ev) => renderTimelineEntry(ev)).join("");
+    setTaskDetailPanelVisible("taskTimelinePanel", true);
+  } else {
+    taskTimeline.innerHTML = "";
+    setTaskDetailPanelVisible("taskTimelinePanel", false);
+  }
   renderTaskArtifacts(detail);
   renderTaskChildren(detail);
-  retryTaskButton.disabled = !task.retryable;
-  cancelTaskButton.disabled = !["queued", "running", "cancelling"].includes(task.status);
+  retryTaskButton.disabled = !canRetry;
+  cancelTaskButton.disabled = !canCancel;
   if (deleteTaskButton) deleteTaskButton.disabled = false;
 }
 
@@ -2769,7 +2949,7 @@ function renderApprovalItem(a) {
     `
     : "";
   const saveButton = editableFields.length > 0 && !disabled
-    ? `<button class="primary" data-save-approve-id="${escapeHtml(a.approval_id)}">Save &amp; Approve</button>`
+    ? `<button class="btn btn-primary" data-save-approve-id="${escapeHtml(a.approval_id)}">Save &amp; Approve</button>`
     : "";
   return `
     <div class="approval-item">
@@ -2786,8 +2966,8 @@ function renderApprovalItem(a) {
         <span class="muted" style="font-size:11px;">Expires: ${escapeHtml(formatDateTime(a.expires_at))}</span>
         <div class="toolbar">
           ${saveButton}
-          <button class="secondary" data-approve-id="${escapeHtml(a.approval_id)}" ${disabled ? "disabled" : ""}>Approve</button>
-          <button class="ghost" data-reject-id="${escapeHtml(a.approval_id)}" ${disabled ? "disabled" : ""}>Reject</button>
+          <button class="btn" data-approve-id="${escapeHtml(a.approval_id)}" ${disabled ? "disabled" : ""}>Approve</button>
+          <button class="btn btn-sm btn-danger" data-reject-id="${escapeHtml(a.approval_id)}" ${disabled ? "disabled" : ""}>Reject</button>
         </div>
       </div>
     </div>
@@ -2842,9 +3022,28 @@ function deriveEditableApprovalFields(approval) {
 let scheduleViewMode = "list";
 const scheduleCalendar = document.querySelector("#scheduleCalendar");
 
+// UCA-125 Phase 7b: search + per-group collapse state (persisted).
+let scheduleSearch = "";
+const scheduleGroupCollapsed = (() => {
+  try {
+    const raw = localStorage.getItem("lingxy.schedules.collapsed");
+    if (raw) return { active: false, paused: false, completed: true, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return { active: false, paused: false, completed: true };
+})();
+function persistScheduleGroupCollapsed() {
+  try { localStorage.setItem("lingxy.schedules.collapsed", JSON.stringify(scheduleGroupCollapsed)); } catch { /* ignore */ }
+}
+
 for (const btn of document.querySelectorAll("[data-schedule-view]")) {
   btn.addEventListener("click", () => {
     scheduleViewMode = btn.dataset.scheduleView;
+    renderSchedules();
+  });
+}
+if (scheduleSearchInput) {
+  scheduleSearchInput.addEventListener("input", () => {
+    scheduleSearch = scheduleSearchInput.value.trim().toLowerCase();
     renderSchedules();
   });
 }
@@ -2890,19 +3089,100 @@ function renderScheduleCalendarGrid(schedules, mode) {
     });
     const isToday = day.toDateString() === now.toDateString();
     const entries = daySchedules.slice(0, 3).map((s) => {
-      const color = s.color || s.metadata?.color || "#6366f1";
-      return `<div class="cal-entry" style="border-left:3px solid ${escapeHtml(color)};padding-left:4px;font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${escapeHtml(s.name)}">${escapeHtml(s.name)}</div>`;
+      const color = s.color || s.metadata?.color || "var(--accent)";
+      return `<div class="cal-entry" data-schedule-ref="${escapeHtml(s.schedule_id)}" style="border-left:3px solid ${escapeHtml(color)};padding:2px 4px;font-size:10px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink-2);" title="${escapeHtml(s.name)} — click to view">${escapeHtml(s.name)}</div>`;
     }).join("");
     const overflow = daySchedules.length > 3 ? `<div style="font-size:9px;color:var(--muted);">+${daySchedules.length - 3} more</div>` : "";
-    return `<div class="cal-cell${isToday ? " today" : ""}" style="min-height:${mode === "week" ? "80" : "60"}px;padding:4px;border:1px solid rgba(255,255,255,0.06);border-radius:6px;${isToday ? "background:rgba(99,102,241,0.08);" : ""}"><div style="font-size:10px;font-weight:500;color:${isToday ? "var(--primary)" : "var(--muted)"};">${day.getDate()}</div>${entries}${overflow}</div>`;
+    return `<div class="cal-cell${isToday ? " today" : ""}" style="min-height:${mode === "week" ? "80" : "60"}px;padding:4px;border:1px solid var(--line);border-radius:6px;${isToday ? "background:var(--accent-soft);" : ""}"><div style="font-size:10px;font-weight:500;color:${isToday ? "var(--accent)" : "var(--muted)"};">${day.getDate()}</div>${entries}${overflow}</div>`;
   }).join("");
+
+  // UCA-125: Week shows date range, Month shows year-month label.
+  const calHeaderLabel = mode === "week"
+    ? `${cells[0].toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${cells[cells.length - 1].toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
+    : now.toLocaleDateString(undefined, { year: "numeric", month: "long" });
 
   scheduleCalendar.style.display = "block";
   scheduleCalendar.innerHTML = `
+    <div class="cal-title" style="font-size:12px;font-weight:600;color:var(--ink-2);margin:0 0 8px;">${escapeHtml(calHeaderLabel)}</div>
     <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;font-size:11px;">
       ${header}
       ${padCells}
       ${gridCells}
+    </div>
+  `;
+
+  // UCA-125 Phase 7b: clicking a calendar entry switches to list mode and
+  // scrolls the matching sched-row into view with a highlight flash.
+  for (const node of scheduleCalendar.querySelectorAll("[data-schedule-ref]")) {
+    node.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      focusScheduleInList(node.dataset.scheduleRef);
+    });
+  }
+}
+
+function focusScheduleInList(scheduleId) {
+  if (!scheduleId) return;
+  // Switch to list view so the row is visible, then scroll + highlight.
+  if (scheduleViewMode !== "list") {
+    scheduleViewMode = "list";
+    renderSchedules();
+  }
+  // Expand all groups so the match is reachable.
+  Object.keys(scheduleGroupCollapsed).forEach((k) => { scheduleGroupCollapsed[k] = false; });
+  persistScheduleGroupCollapsed();
+  renderSchedules();
+  requestAnimationFrame(() => {
+    const row = scheduleList.querySelector(`[data-schedule-row="${CSS.escape(scheduleId)}"]`);
+    if (!row) return;
+    row.scrollIntoView({ behavior: "smooth", block: "center" });
+    row.classList.add("is-highlighted");
+    setTimeout(() => row.classList.remove("is-highlighted"), 1500);
+  });
+}
+
+// UCA-125 Phase 7b helpers
+function scheduleBucket(s) {
+  if (s.completed_at) return "completed";
+  if (!s.enabled) return "paused";
+  return "active";
+}
+function scheduleMatchesSearch(s, q) {
+  if (!q) return true;
+  const hay = [s.name, s.schedule_id, s.trigger_type, s.category, s.metadata?.category, s.last_run_status]
+    .filter(Boolean).join(" ").toLowerCase();
+  return hay.includes(q);
+}
+function renderScheduleRow(s) {
+  const color = s.color || s.metadata?.color || "";
+  const categoryLabel = s.category || s.metadata?.category || "";
+  const enabledChecked = s.enabled ? " checked" : "";
+  const bucket = scheduleBucket(s);
+  const stateClass = bucket === "completed" ? " is-completed" : (bucket === "paused" ? " is-paused" : "");
+  const runLabel = bucket === "completed" ? "Re-run" : "Run now";
+  const statePill = bucket === "completed"
+    ? `<span class="pill pill-neutral">completed</span>`
+    : (bucket === "paused" ? `<span class="pill pill-neutral">paused</span>` : "");
+  return `
+    <div class="sched-row${stateClass}" data-schedule-row="${escapeHtml(s.schedule_id)}" style="${color ? `border-left:3px solid ${escapeHtml(color)};` : ""}">
+      <label class="toggle" title="${s.enabled ? "Disable" : "Enable"}">
+        <input type="checkbox"${enabledChecked} data-toggle-schedule-id="${escapeHtml(s.schedule_id)}" data-enabled="${s.enabled ? "false" : "true"}"/>
+        <span class="toggle-track"></span>
+      </label>
+      <div style="flex:1;min-width:0;">
+        <div class="sched-title">${escapeHtml(s.name ?? s.schedule_id)}</div>
+        <div class="sched-meta">
+          ${categoryLabel ? `<span class="tag">${escapeHtml(categoryLabel)}</span>` : ""}
+          <span class="tag">${escapeHtml(s.trigger_type ?? "manual")}</span>
+          <span>Next: ${escapeHtml(formatDateTime(s.next_run_at))}</span>
+          <span>Last: ${escapeHtml(s.last_run_status ?? "never")}</span>
+          ${statePill}
+        </div>
+      </div>
+      <div class="sched-actions btn-group">
+        <button class="btn btn-sm" data-run-schedule-id="${escapeHtml(s.schedule_id)}">${runLabel}</button>
+        <button class="btn btn-sm btn-danger" data-delete-schedule-id="${escapeHtml(s.schedule_id)}">Delete</button>
+      </div>
     </div>
   `;
 }
@@ -2930,34 +3210,56 @@ function renderSchedules() {
     if (scheduleCalendar) scheduleCalendar.style.display = "none";
   }
 
-  // UCA-121: render as v3 .sched-row — toggle + title/meta + action group.
-  scheduleList.innerHTML = schedules.map((s) => {
-    const color = s.color || s.metadata?.color || "";
-    const categoryLabel = s.category || s.metadata?.category || "";
-    const completedBadge = s.completed_at ? `<span class="pill pill-ok">completed</span>` : "";
-    const enabledChecked = s.enabled ? " checked" : "";
-    return `
-    <div class="sched-row" style="${color ? `border-left:3px solid ${escapeHtml(color)};` : ""}">
-      <label class="toggle" title="${s.enabled ? "Disable" : "Enable"}">
-        <input type="checkbox"${enabledChecked} data-toggle-schedule-id="${escapeHtml(s.schedule_id)}" data-enabled="${s.enabled ? "false" : "true"}"/>
-        <span class="toggle-track"></span>
-      </label>
-      <div>
-        <div class="sched-title">${escapeHtml(s.name ?? s.schedule_id)}</div>
-        <div class="sched-meta">
-          ${categoryLabel ? `<span class="tag">${escapeHtml(categoryLabel)}</span>` : ""}
-          <span class="tag">${escapeHtml(s.trigger_type ?? "manual")}</span>
-          <span>Next: ${escapeHtml(formatDateTime(s.next_run_at))}</span>
-          <span>Last: ${escapeHtml(s.last_run_status ?? "never")}</span>
-          ${completedBadge}
-        </div>
-      </div>
-      <div class="sched-actions btn-group">
-        <button class="btn btn-sm" data-run-schedule-id="${escapeHtml(s.schedule_id)}">Run now</button>
-        <button class="btn btn-sm btn-ghost" data-delete-schedule-id="${escapeHtml(s.schedule_id)}">Delete</button>
-      </div>
-    </div>
-  `; }).join("");
+  // Partition into active / paused / completed, filter by search.
+  const filtered = schedules.filter((s) => scheduleMatchesSearch(s, scheduleSearch));
+  const groups = { active: [], paused: [], completed: [] };
+  for (const s of filtered) groups[scheduleBucket(s)].push(s);
+
+  const groupSpec = [
+    { key: "active",    label: "Active",    zh: "启用中" },
+    { key: "paused",    label: "Paused",    zh: "已暂停" },
+    { key: "completed", label: "Completed", zh: "已完成" }
+  ];
+
+  const showingEmpty = filtered.length === 0;
+  if (showingEmpty) {
+    scheduleList.innerHTML = `<div class="empty-state">No schedules match "${escapeHtml(scheduleSearch)}".</div>`;
+  } else {
+    scheduleList.innerHTML = groupSpec
+      .filter((g) => groups[g.key].length > 0)
+      .map((g) => {
+        const collapsed = scheduleGroupCollapsed[g.key] === true;
+        const rows = groups[g.key].map(renderScheduleRow).join("");
+        return `
+          <div class="sched-group" data-sched-group="${g.key}" data-collapsed="${collapsed ? "true" : "false"}">
+            <div class="sched-group-head" data-sched-group-toggle="${g.key}" role="button" tabindex="0" aria-expanded="${collapsed ? "false" : "true"}">
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <span>${g.label}<span class="zh">${g.zh}</span></span>
+              <span class="count">· ${groups[g.key].length}</span>
+            </div>
+            <div class="sched-group-body">${rows}</div>
+          </div>
+        `;
+      }).join("");
+  }
+
+  for (const head of scheduleList.querySelectorAll("[data-sched-group-toggle]")) {
+    const toggle = () => {
+      const key = head.dataset.schedGroupToggle;
+      scheduleGroupCollapsed[key] = !scheduleGroupCollapsed[key];
+      persistScheduleGroupCollapsed();
+      const group = head.closest(".sched-group");
+      if (group) {
+        const collapsed = scheduleGroupCollapsed[key] === true;
+        group.dataset.collapsed = collapsed ? "true" : "false";
+        head.setAttribute("aria-expanded", collapsed ? "false" : "true");
+      }
+    };
+    head.addEventListener("click", toggle);
+    head.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); }
+    });
+  }
 
   for (const btn of scheduleList.querySelectorAll("[data-run-schedule-id]")) {
     btn.addEventListener("click", async () => {
@@ -2966,12 +3268,12 @@ function renderSchedules() {
     });
   }
 
-  for (const btn of scheduleList.querySelectorAll("[data-toggle-schedule-id]")) {
-    btn.addEventListener("click", async () => {
-      await fetchJson(`/schedules/${encodeURIComponent(btn.dataset.toggleScheduleId)}`, {
+  for (const input of scheduleList.querySelectorAll("[data-toggle-schedule-id]")) {
+    input.addEventListener("click", async () => {
+      await fetchJson(`/schedules/${encodeURIComponent(input.dataset.toggleScheduleId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: btn.dataset.enabled === "true" })
+        body: JSON.stringify({ enabled: input.dataset.enabled === "true" })
       });
       await refreshWorkspace();
     });
@@ -3042,8 +3344,10 @@ function renderTemplates() {
 }
 
 function renderDagExecutions() {
+  // DAG editor UI retired — renderer stays no-op when DOM isn't present.
+  if (!dagExecutionList) return;
   const executions = state.workspace.dagExecutions ?? [];
-  dagExecutionCount.textContent = `${executions.length}`;
+  if (dagExecutionCount) dagExecutionCount.textContent = `${executions.length}`;
   if (!state.selectedDagExecutionId || !executions.some((e) => e.execution_id === state.selectedDagExecutionId)) {
     state.selectedDagExecutionId = executions[0]?.execution_id ?? null;
   }
@@ -3062,8 +3366,8 @@ function renderDagExecutions() {
         </div>
         <p class="muted" style="margin-top:4px;font-size:11px;">Nodes: ${escapeHtml(e.graph?.nodes?.length ?? 0)} · ${escapeHtml(formatDateTime(e.updated_at))}</p>
         <div class="toolbar" style="margin-top:6px;">
-          <button class="secondary" data-view-dag-id="${escapeHtml(e.execution_id)}">View</button>
-          <button class="ghost" data-resume-dag-id="${escapeHtml(e.execution_id)}" ${e.status !== "failed" ? "disabled" : ""}>Resume</button>
+          <button class="btn" data-view-dag-id="${escapeHtml(e.execution_id)}">View</button>
+          <button class="btn btn-ghost" data-resume-dag-id="${escapeHtml(e.execution_id)}" ${e.status !== "failed" ? "disabled" : ""}>Resume</button>
         </div>
       </div>
     `;
@@ -3554,6 +3858,7 @@ for (const chip of document.querySelectorAll("#taskDateFilterChips .filter-chip"
       other.setAttribute("aria-pressed", other === chip ? "true" : "false");
     }
     renderTasks();
+    updateTasksAdvFilterBadge();
   });
 }
 // Source chips are dynamic; shared handler used for both the static "All"
@@ -3564,9 +3869,53 @@ function handleTaskSourceChip(chip) {
     other.setAttribute("aria-pressed", other === chip ? "true" : "false");
   }
   renderTasks();
+  updateTasksAdvFilterBadge();
 }
 document.querySelector('#taskSourceFilterChips .filter-chip[data-source="all"]')
   ?.addEventListener("click", (event) => handleTaskSourceChip(event.currentTarget));
+
+// UCA-125 Phase 2a: Advanced filter popover — date + source chips live
+// here now. Toggle on button click, close on outside click / Esc, and
+// surface a count badge when any non-default filter is active.
+const tasksAdvFilterBtn = document.querySelector("#tasksAdvFilterBtn");
+const tasksAdvFilterPanel = document.querySelector("#tasksAdvFilter");
+const tasksAdvFilterCount = document.querySelector("#tasksAdvFilterCount");
+function setTasksAdvFilterOpen(open) {
+  if (!tasksAdvFilterBtn || !tasksAdvFilterPanel) return;
+  if (open) {
+    tasksAdvFilterPanel.removeAttribute("hidden");
+    tasksAdvFilterBtn.setAttribute("aria-expanded", "true");
+  } else {
+    tasksAdvFilterPanel.setAttribute("hidden", "");
+    tasksAdvFilterBtn.setAttribute("aria-expanded", "false");
+  }
+}
+function updateTasksAdvFilterBadge() {
+  if (!tasksAdvFilterCount) return;
+  let active = 0;
+  if (state.taskDateFilter && state.taskDateFilter !== "all") active += 1;
+  if (state.taskSourceFilter && state.taskSourceFilter !== "all") active += 1;
+  if (active > 0) {
+    tasksAdvFilterCount.textContent = String(active);
+    tasksAdvFilterCount.removeAttribute("hidden");
+  } else {
+    tasksAdvFilterCount.setAttribute("hidden", "");
+  }
+}
+tasksAdvFilterBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  setTasksAdvFilterOpen(tasksAdvFilterPanel?.hasAttribute("hidden"));
+});
+document.addEventListener("click", (event) => {
+  if (!tasksAdvFilterPanel || tasksAdvFilterPanel.hasAttribute("hidden")) return;
+  if (tasksAdvFilterPanel.contains(event.target) || tasksAdvFilterBtn?.contains(event.target)) return;
+  setTasksAdvFilterOpen(false);
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && tasksAdvFilterPanel && !tasksAdvFilterPanel.hasAttribute("hidden")) {
+    setTasksAdvFilterOpen(false);
+  }
+});
 
 refreshButton.addEventListener("click", () => void refreshWorkspace());
 openOverlayButton.addEventListener("click", async () => await window.ucaShell.showWindow("overlay"));
@@ -3740,6 +4089,10 @@ document.addEventListener("keydown", (event) => {
 
   // UCA-117: the v3 topbar's search pill is the primary palette trigger.
   document.querySelector("#openPaletteBtn")?.addEventListener("click", () => setOpen(true));
+  // UCA-125 Phase 3 follow-up: Tasks page-head "+ New task" opens the
+  // same palette — a new task starts as a command/prompt entry, not a
+  // separate form. Ctrl+K remains the canonical shortcut.
+  document.querySelector("#tasksNewBtn")?.addEventListener("click", () => setOpen(true));
 
   document.addEventListener("keydown", (event) => {
     if (event.ctrlKey && (event.key === "k" || event.key === "K")) {
@@ -3868,6 +4221,24 @@ budgetForm.addEventListener("submit", async (event) => {
 
 // UCA-121: historyForm submit handler retired (form removed from DOM).
 
+// UCA-125 Phase 3-4: page-head "+ New project" button focuses the
+// inline name input (faster than hunting for the form in the left col).
+document.querySelector("#projectNewBtn")?.addEventListener("click", () => {
+  projectNameInput?.focus();
+  projectNameInput?.select?.();
+});
+
+// UCA-125 Phase 3-5: page-head "+ New chat" clears the current thread
+// and returns focus to the composer. A proper multi-session store is
+// intentionally not introduced here — this is a UI alignment pass.
+document.querySelector("#consoleChatNewBtn")?.addEventListener("click", () => {
+  if (consoleChatMessages) {
+    consoleChatMessages.innerHTML = `<div class="console-chat-empty">没有对话 — 开始一个吧。</div>`;
+  }
+  const input = document.querySelector("#consoleChatInput");
+  if (input) { input.value = ""; input.focus(); }
+});
+
 projectCreateForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   const name = projectNameInput.value.trim();
@@ -3898,10 +4269,64 @@ scheduleForm?.addEventListener("submit", async (event) => {
   await createScheduleFromConsole();
 });
 
+// UCA-125 follow-up: page-head "+ New schedule" toggles the create
+// panel. Close on × / Esc / successful submit so the list view stays
+// uncluttered when browsing existing schedules.
+(function initScheduleCreateToggle() {
+  const newBtn = document.querySelector("#scheduleNewBtn");
+  const panel = document.querySelector("#scheduleCreatePanel");
+  const closeBtn = document.querySelector("#scheduleCreateCloseBtn");
+  if (!newBtn || !panel) return;
+  const setOpen = (open) => {
+    if (open) {
+      panel.removeAttribute("hidden");
+      newBtn.setAttribute("aria-expanded", "true");
+      document.querySelector("#scheduleWhenInput")?.focus();
+    } else {
+      panel.setAttribute("hidden", "");
+      newBtn.setAttribute("aria-expanded", "false");
+    }
+  };
+  newBtn.addEventListener("click", () => setOpen(panel.hasAttribute("hidden")));
+  closeBtn?.addEventListener("click", () => setOpen(false));
+  scheduleForm?.addEventListener("submit", () => {
+    // Small delay so the user sees the "created" state before we close.
+    setTimeout(() => setOpen(false), 400);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !panel.hasAttribute("hidden") && document.activeElement?.closest("#scheduleCreatePanel")) {
+      setOpen(false);
+    }
+  });
+})();
+
 mcpServerRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
 skillRegistryRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
 codeCliAdapterRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
 emailAccountRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
+
+// UCA-126: custom MCP server form lives in Connectors page now. Toggle
+// its visibility from the "+ Add custom server" button; close on Cancel
+// or Esc.
+(function initMcpServerAddToggle() {
+  const toggleBtn = document.querySelector("#mcpServerAddToggle");
+  const wrap = document.querySelector("#mcpServerFormWrap");
+  const cancelBtn = document.querySelector("#mcpServerCancelBtn");
+  if (!toggleBtn || !wrap) return;
+  const setOpen = (open) => {
+    if (open) {
+      wrap.removeAttribute("hidden");
+      toggleBtn.setAttribute("aria-expanded", "true");
+      document.querySelector("#mcpServerId")?.focus();
+    } else {
+      wrap.setAttribute("hidden", "");
+      toggleBtn.setAttribute("aria-expanded", "false");
+    }
+  };
+  toggleBtn.addEventListener("click", () => setOpen(wrap.hasAttribute("hidden")));
+  cancelBtn?.addEventListener("click", () => setOpen(false));
+  mcpServerForm?.addEventListener("submit", () => setTimeout(() => setOpen(false), 400));
+})();
 
 mcpServerForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -4082,22 +4507,25 @@ emailDigestSaveBtn?.addEventListener("click", async () => {
   }
 });
 
-previewDagButton.addEventListener("click", async () => {
-  const raw = dagEditorInput.value.trim();
-  if (!raw) { dagPreview.textContent = "Enter DAG JSON first."; return; }
-  dagPreview.textContent = "Validating...";
+// DAG editor retired from the UI (UCA-126); wiring stays null-safe so the
+// backend APIs (/dag/preview, /dag/execute/:id/resume) remain reachable
+// from scripts or future surfaces without crashing when the DOM is absent.
+previewDagButton?.addEventListener("click", async () => {
+  const raw = dagEditorInput?.value.trim() ?? "";
+  if (!raw) { if (dagPreview) dagPreview.textContent = "Enter DAG JSON first."; return; }
+  if (dagPreview) dagPreview.textContent = "Validating...";
   try {
     const graph = JSON.parse(raw);
     const result = await fetchJson("/dag/preview", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ graph }) });
-    dagPreview.textContent = JSON.stringify(result.validation ?? result, null, 2);
+    if (dagPreview) dagPreview.textContent = JSON.stringify(result.validation ?? result, null, 2);
   } catch (error) {
-    dagPreview.textContent = `Failed: ${error.message}`;
+    if (dagPreview) dagPreview.textContent = `Failed: ${error.message}`;
   }
 });
 
-loadSampleDagButton.addEventListener("click", () => {
-  dagEditorInput.value = JSON.stringify(buildSampleDag(), null, 2);
-  dagPreview.textContent = "Sample DAG loaded.";
+loadSampleDagButton?.addEventListener("click", () => {
+  if (dagEditorInput) dagEditorInput.value = JSON.stringify(buildSampleDag(), null, 2);
+  if (dagPreview) dagPreview.textContent = "Sample DAG loaded.";
 });
 
 killSwitchToggle.addEventListener("change", async () => await updateSecurityConfig({ global_kill_switch: killSwitchToggle.checked }, "Kill switch"));
@@ -4125,7 +4553,7 @@ setupOfficeAddinsButton?.addEventListener("click", () => {
   void configureOfficeAddins();
 });
 
-dagEditorInput.value = JSON.stringify(buildSampleDag(), null, 2);
+if (dagEditorInput) dagEditorInput.value = JSON.stringify(buildSampleDag(), null, 2);
 void refreshWorkspace();
 void refreshOfficeAddinSetupStatus();
 setInterval(() => void refreshWorkspace(), 6000);
@@ -4142,22 +4570,81 @@ const connDigestTestState = document.querySelector("#connDigestTestState");
 const connectorsMcpList = document.querySelector("#connectorsMcpList");
 const connectorsMcpRefreshBtn = document.querySelector("#connectorsMcpRefreshBtn");
 
+const EMAIL_PROVIDER_META = {
+  gmail:   { cls: "gmail",   glyph: "G",   tag: "Gmail" },
+  outlook: { cls: "outlook", glyph: "O",   tag: "Outlook" },
+  graph:   { cls: "outlook", glyph: "O",   tag: "Graph" },
+  qq:      { cls: "qq",      glyph: "Q",   tag: "QQ" },
+  "163":   { cls: "imap",    glyph: "163", tag: "163" },
+  imap:    { cls: "imap",    glyph: "✉",   tag: "IMAP" }
+};
+
 function renderConnEmailAccounts(accounts) {
   if (!connEmailList) return;
-  if (!accounts?.length) {
-    connEmailList.innerHTML = "";
-    return;
-  }
-  connEmailList.innerHTML = accounts.map((acc) => `
-    <div class="surface" style="display:flex;align-items:center;gap:10px;padding:12px;">
-      <div style="flex:1;min-width:0;">
-        <div style="font-size:13px;font-weight:500;">${acc.displayName ?? acc.email ?? acc.id}</div>
-        <div style="font-size:11px;color:var(--muted);">${acc.provider?.toUpperCase() ?? "IMAP"} · ${acc.imapHost ?? (acc.provider === "graph" ? "Microsoft Graph" : "")}</div>
+  connEmailList.className = "conn-grid conn-grid--compact";
+  // v3 spec: compact 4-column cards. Header = logo + name/email + toggle.
+  // Footer = synced pill + unread count (or auth-expired + Re-auth).
+  // The "+ Add IMAP" tile is always the trailing card so users see it
+  // as part of the grid rather than hunting for a separate button.
+  const list = accounts ?? [];
+  const cards = list.map((acc) => {
+    const meta = EMAIL_PROVIDER_META[acc.provider] ?? EMAIL_PROVIDER_META.imap;
+    const name = escapeHtml(acc.displayName ?? `${meta.tag} · ${acc.email ?? acc.id}`);
+    const email = escapeHtml(acc.email ?? "");
+    const statusOk = acc.status !== "auth_expired";
+    const statusPill = statusOk
+      ? `<span class="pill pill-ok">synced</span>`
+      : `<span class="pill pill-warn">auth expired</span>`;
+    const trailing = statusOk
+      ? (Number.isFinite(acc.unreadCount) ? `<span class="muted">${acc.unreadCount} unread</span>` : "")
+      : `<button class="btn btn-sm btn-ghost" data-email-reauth="${escapeHtml(acc.id)}">Re-auth</button>`;
+    return `
+      <div class="conn-card">
+        <div class="conn-card-head">
+          <div class="conn-logo ${meta.cls}">${meta.glyph}</div>
+          <div class="conn-info">
+            <div class="conn-name">${name}</div>
+            <div class="conn-desc">${email}</div>
+          </div>
+          <label class="toggle" title="Enable inbox">
+            <input type="checkbox" ${acc.enabled !== false ? "checked" : ""} data-email-enable="${escapeHtml(acc.id)}">
+            <span class="toggle-track"></span>
+          </label>
+        </div>
+        <div class="conn-foot">
+          ${statusPill}
+          <span class="conn-foot-trailing">${trailing || ""}</span>
+        </div>
+        <button class="conn-card-remove" type="button" data-delete-email="${escapeHtml(acc.id)}" title="Remove" aria-label="Remove account">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
       </div>
-      <button class="ghost" style="font-size:12px;padding:3px 8px;" data-delete-email="${acc.id}">移除</button>
-    </div>`).join("");
+    `;
+  });
+  // "+ Add IMAP" tile — opens the Browse catalog drawer scoped to email.
+  cards.push(`
+    <button class="conn-card conn-card--add" type="button" id="connEmailAddTile">
+      <div class="conn-card-head">
+        <div class="conn-logo imap">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+        </div>
+        <div class="conn-info">
+          <div class="conn-name">+ Add inbox</div>
+          <div class="conn-desc">Gmail · Outlook · QQ · 163 · IMAP</div>
+        </div>
+      </div>
+      <div class="conn-foot"><span class="muted">Configure…</span></div>
+    </button>
+  `);
+  connEmailList.innerHTML = cards.join("");
+  connEmailList.querySelector("#connEmailAddTile")?.addEventListener("click", () => {
+    document.querySelector("#connBrowseBtn")?.click();
+    // Preselect the "email" filter chip if present.
+    document.querySelector('[data-conn-cat="email"]')?.click();
+  });
   connEmailList.querySelectorAll("[data-delete-email]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", async (ev) => {
+      ev.stopPropagation();
       const id = btn.dataset.deleteEmail;
       try {
         await fetch(`${state.serviceBaseUrl}/config/email/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
@@ -4170,19 +4657,32 @@ function renderConnEmailAccounts(accounts) {
 }
 
 const MCP_SERVER_META = {
-  "mcp-filesystem": { title: "Filesystem", desc: "Read and write files in allowed local directories." },
-  "mcp-memory":     { title: "Memory", desc: "Persistent graph memory for agentic tasks." },
-  "mcp-brave-search": { title: "Brave Search", desc: "Web search through Brave Search API.", configKey: "BRAVE_API_KEY", configLabel: "Brave API Key", configPlaceholder: "BSA..." },
-  "mcp-puppeteer":  { title: "Browser Automation", desc: "Puppeteer-powered browser actions for agentic workflows." },
-  "local-fs":       { title: "Legacy Local FS", desc: "Deprecated. Use Filesystem instead." },
-  "figma":          { title: "Figma", desc: "Design context through an external Figma MCP plugin.", guideUrl: "https://www.figma.com/" }
+  "mcp-filesystem": { title: "Filesystem", desc: "Read and write files in allowed local directories.", logoClass: "fs" },
+  "mcp-memory":     { title: "Memory", desc: "Persistent graph memory for agentic tasks.", logoClass: "mem" },
+  "mcp-brave-search": { title: "Brave Search", desc: "Web search through Brave Search API.", configKey: "BRAVE_API_KEY", configLabel: "Brave API Key", configPlaceholder: "BSA...", logoClass: "brave" },
+  "mcp-puppeteer":  { title: "Browser Automation", desc: "Puppeteer-powered browser actions for agentic workflows.", logoClass: "browser" },
+  "local-fs":       { title: "Legacy Local FS", desc: "Deprecated. Use Filesystem instead.", logoClass: "imap" },
+  "figma":          { title: "Figma", desc: "Design context through an external Figma MCP plugin.", guideUrl: "https://www.figma.com/", logoClass: "figma" }
+};
+
+// UCA-125 follow-up: SVG badge glyphs for MCP logos (conn-logo uses a
+// square tile; these fill it with a recognisable icon instead of a blank).
+const MCP_LOGO_SVG = {
+  fs:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/></svg>`,
+  mem:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"/><path d="M12 7v5l3 2"/></svg>`,
+  brave:   `B`,
+  browser: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z"/></svg>`,
+  figma:   `F`,
+  github:  `<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12a12 12 0 0 0 8.2 11.38c.6.11.82-.26.82-.58v-2.15C5.66 21.3 5 19 5 19c-.55-1.38-1.33-1.75-1.33-1.75-1.08-.74.08-.72.08-.72 1.2.08 1.84 1.23 1.84 1.23 1.07 1.82 2.8 1.3 3.49.99.1-.77.42-1.3.76-1.6-2.67-.3-5.48-1.33-5.48-5.93 0-1.31.47-2.38 1.23-3.22-.12-.3-.53-1.52.12-3.17 0 0 1-.32 3.3 1.23a11.5 11.5 0 0 1 6 0c2.29-1.55 3.3-1.23 3.3-1.23.65 1.65.24 2.87.12 3.17.77.84 1.23 1.91 1.23 3.22 0 4.61-2.81 5.62-5.49 5.92.43.37.81 1.1.81 2.22v3.29c0 .32.22.7.82.58A12 12 0 0 0 24 12c0-6.63-5.37-12-12-12Z"/></svg>`,
+  slack:   `#`,
+  imap:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 5L2 7"/></svg>`
 };
 
 const EXTRA_PLUGIN_OPTIONS = [
-  { title: "GitHub", desc: "Repository issues, pull requests, and code search. Plugin installer pending.", status: "Coming soon" },
-  { title: "Notion", desc: "Pages, databases, and workspace notes. Plugin installer pending.", status: "Coming soon" },
-  { title: "Slack", desc: "Channel messages and team workflow actions. Plugin installer pending.", status: "Coming soon" },
-  { title: "Google Drive", desc: "Docs and Drive file context. Plugin installer pending.", status: "Coming soon" }
+  { id: "github", title: "GitHub", desc: "Repository issues, pull requests, and code search.", status: "Coming soon", logoClass: "github" },
+  { id: "notion", title: "Notion", desc: "Pages, databases, and workspace notes.", status: "Coming soon", logoClass: "mem" },
+  { id: "slack", title: "Slack", desc: "Channel messages and team workflow actions.", status: "Coming soon", logoClass: "slack" },
+  { id: "gdrive", title: "Google Drive", desc: "Docs and Drive file context.", status: "Coming soon", logoClass: "fs" }
 ];
 
 function getMcpStatusView(server) {
@@ -4206,14 +4706,20 @@ function getMcpStatusView(server) {
 
 function renderConnectorsMcpServers(servers) {
   if (!connectorsMcpList) return;
-  if (!servers?.length) {
-    connectorsMcpList.innerHTML = "<p class='muted' style='font-size:12px;'>No MCP servers found.</p>";
-    return;
-  }
-  connectorsMcpList.innerHTML = `<div class="connector-plugin-grid"></div>`;
-  const grid = connectorsMcpList.querySelector(".connector-plugin-grid");
-  for (const s of servers) {
-    const meta = MCP_SERVER_META[s.id] ?? { title: s.displayName ?? s.id, desc: s.id };
+  connectorsMcpList.innerHTML = "";
+
+  // UCA-126: v3 MCP card layout —
+  //   ┌─────────────────────────────────────────┐
+  //   │ [logo] name         ●         [toggle]  │
+  //   │ one-line description                    │
+  //   │ ─────────────────────────────────────── │
+  //   │ transport · command args  (mono)        │
+  //   └─────────────────────────────────────────┘
+  // Toggle switch replaces the Install/Disable button; transport info
+  // moves to the bottom as compact mono-font meta. Configure / Guide
+  // live in a hover-revealed action row to keep the card quiet at rest.
+  for (const s of servers ?? []) {
+    const meta = MCP_SERVER_META[s.id] ?? { title: s.displayName ?? s.id, desc: s.id, logoClass: "imap" };
     const status = getMcpStatusView(s);
     const statusLabel = status.label;
     const statusClass = status.className;
@@ -4222,78 +4728,96 @@ function renderConnectorsMcpServers(servers) {
     const canInstall = Boolean(s.configured || s.available || needsConfig);
     const installed = s.available && s.enabled;
     const cardId = `mcp-card-${s.id}`;
+    const logoClass = meta.logoClass ?? "imap";
+    const logoGlyph = MCP_LOGO_SVG[logoClass] ?? "?";
+    const transportLine = s.transport
+      ? `${s.transport}${s.command ? ` · ${s.command}` : ""}${s.url ? ` · ${s.url}` : ""}${Array.isArray(s.args) && s.args.length ? " " + s.args.join(" ") : ""}`
+      : "";
 
     const card = document.createElement("div");
-    card.className = `connector-plugin-card mcp-server-card ${canInstall ? "" : "unavailable"}`;
+    card.className = `mcp-card mcp-card--v3 ${canInstall ? "" : "unavailable"}`;
     card.id = cardId;
+    const configBtn = hasCfg ? `<button class="btn btn-sm btn-ghost" data-mcp-config="${escapeHtml(s.id)}">${needsConfig ? "Configure" : "Configure"}</button>` : "";
+    const guideBtn = meta.guideUrl ? `<button class="btn btn-sm btn-ghost" data-plugin-guide="${escapeHtml(meta.guideUrl)}">Guide</button>` : "";
+    const needsConfigBadge = needsConfig ? `<span class="pill pill-warn mcp-needs-config">需配置</span>` : "";
     card.innerHTML = `
-      <div class="mcp-server-card-header">
-        <div class="mcp-server-info">
-          <div class="mcp-server-name">${escapeHtml(meta.title ?? s.displayName ?? s.id)}</div>
-          <div class="mcp-server-desc">${escapeHtml(meta.desc)}</div>
+      <div class="mcp-card-head">
+        <div class="conn-logo ${logoClass} mcp-card-logo">${logoGlyph}</div>
+        <div class="mcp-card-info">
+          <div class="mcp-name">${escapeHtml(meta.title ?? s.displayName ?? s.id)}</div>
+          <div class="mcp-card-desc">${escapeHtml(meta.desc ?? "")}</div>
         </div>
         <span class="mcp-status-dot ${statusClass}" title="${statusLabel}"></span>
-        <span style="font-size:11px;color:var(--muted);margin-right:6px;">${statusLabel}</span>
+        <label class="toggle" title="${installed ? "Disable" : needsConfig ? "Configure first" : "Enable"}">
+          <input type="checkbox" ${installed ? "checked" : ""} ${canInstall ? "" : "disabled"} data-mcp-install="${escapeHtml(s.id)}" data-mcp-enabled="${installed ? "false" : "true"}">
+          <span class="toggle-track"></span>
+        </label>
       </div>
-      <div class="toolbar" style="padding:0 14px 12px;">
-        ${hasCfg ? `<button class="secondary" style="font-size:12px;" data-mcp-config="${escapeHtml(s.id)}">${needsConfig ? "Configure" : "Configure"}</button>` : ""}
-        ${meta.guideUrl ? `<button class="ghost" style="font-size:12px;" data-plugin-guide="${escapeHtml(meta.guideUrl)}">Guide</button>` : ""}
-        <button class="${installed ? "ghost" : "primary"}" style="font-size:12px;" ${canInstall ? "" : "disabled"} data-mcp-install="${escapeHtml(s.id)}" data-mcp-enabled="${installed ? "false" : "true"}">
-          ${installed ? "Disable" : needsConfig ? "Configure first" : "Install"}
-        </button>
-      </div>
+      ${transportLine ? `<div class="mcp-transport">${escapeHtml(transportLine)}</div>` : ""}
+      ${(hasCfg || meta.guideUrl || needsConfigBadge) ? `
+      <div class="mcp-card-actions">
+        ${needsConfigBadge}
+        <div style="flex:1;"></div>
+        ${guideBtn}${configBtn}
+      </div>` : ""}
       ${hasCfg ? `
       <div class="mcp-server-config" id="mcp-cfg-${s.id}">
-        <div style="margin-top:8px;">
-          <label style="font-size:12px;">${meta.configLabel}</label>
-          <div style="display:flex;gap:8px;margin-top:4px;">
-            <input type="password" id="mcp-cfg-val-${s.id}" placeholder="${meta.configPlaceholder ?? ''}" style="flex:1;">
-            <button class="secondary" style="font-size:12px;padding:5px 12px;" data-mcp-cfg-save="${s.id}">保存</button>
-          </div>
-          <div style="font-size:11px;color:var(--muted);margin-top:4px;" id="mcp-cfg-state-${s.id}"></div>
+        <label style="font-size:12px;font-weight:500;">${meta.configLabel}</label>
+        <div class="mcp-cfg-row">
+          <input type="password" id="mcp-cfg-val-${s.id}" placeholder="${meta.configPlaceholder ?? ''}" class="mcp-cfg-input">
+          <button class="btn btn-sm" data-mcp-cfg-save="${s.id}">保存</button>
         </div>
+        <div class="mcp-cfg-state" id="mcp-cfg-state-${s.id}"></div>
       </div>` : ""}
     `;
-    grid?.appendChild(card);
+    connectorsMcpList.appendChild(card);
   }
 
   for (const option of EXTRA_PLUGIN_OPTIONS) {
+    const logoClass = option.logoClass ?? "imap";
+    const logoGlyph = MCP_LOGO_SVG[logoClass] ?? "?";
     const card = document.createElement("div");
-    card.className = "connector-plugin-card unavailable";
+    card.className = "mcp-card mcp-card--v3 unavailable";
     card.innerHTML = `
-      <div class="mcp-server-card-header">
-        <div class="mcp-server-info">
-          <div class="mcp-server-name">${escapeHtml(option.title)}</div>
-          <div class="mcp-server-desc">${escapeHtml(option.desc)}</div>
+      <div class="mcp-card-head">
+        <div class="conn-logo ${logoClass} mcp-card-logo">${logoGlyph}</div>
+        <div class="mcp-card-info">
+          <div class="mcp-name">${escapeHtml(option.title)}</div>
+          <div class="mcp-card-desc">${escapeHtml(option.desc)}</div>
         </div>
-        <span class="chip muted">${escapeHtml(option.status)}</span>
-      </div>
-      <div class="toolbar" style="padding:0 14px 12px;">
-        <button class="secondary" disabled style="font-size:12px;">Install</button>
+        <span class="pill pill-neutral">${escapeHtml(option.status)}</span>
       </div>
     `;
-    grid?.appendChild(card);
+    connectorsMcpList.appendChild(card);
   }
 
-  connectorsMcpList.querySelectorAll("[data-mcp-install]").forEach((button) => {
-    button.addEventListener("click", async () => {
-      const id = button.dataset.mcpInstall;
-      const enabled = button.dataset.mcpEnabled === "true";
+  // UCA-126: toggle switch replaces the Install/Disable button. Clicking
+  // checkbox fires "change"; if the server needs configuration first we
+  // open the config panel instead of flipping the API.
+  connectorsMcpList.querySelectorAll("[data-mcp-install]").forEach((input) => {
+    input.addEventListener("change", async () => {
+      const id = input.dataset.mcpInstall;
+      const wantEnabled = input.checked;
+      const meta = MCP_SERVER_META[id] ?? {};
       const cfgDiv = document.getElementById(`mcp-cfg-${id}`);
-      if (button.textContent.includes("Configure") && cfgDiv) {
+      // If turning ON a server that needs config but has none, divert
+      // to the config flow and snap the toggle back off.
+      if (wantEnabled && meta.configKey && cfgDiv && input.dataset.mcpEnabled === "true") {
+        input.checked = false;
         cfgDiv.classList.add("open");
         return;
       }
-      button.disabled = true;
+      input.disabled = true;
       try {
         await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/toggle`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled })
+          body: JSON.stringify({ enabled: wantEnabled })
         });
         await loadConnectorsTab();
-      } catch (err) {
-        button.disabled = false;
+      } catch {
+        input.disabled = false;
+        input.checked = !wantEnabled;
       }
     });
   });
@@ -4417,19 +4941,23 @@ const ACCOUNT_CONNECTOR_META = {
 };
 
 let _acConfigOpen = {};   // { microsoft: bool, google: bool }
-let _acResourceTab = {};  // { microsoft: 'files'|'emails'|'calendar' }
 
 async function renderAccountConnectors(connectors, connectedAccounts = []) {
   const list = document.getElementById("accountConnectorsList");
   if (!list) return;
   list.innerHTML = "";
+  // UCA-127: connector cards collapsed into single-line .conn-row entries
+  // grouped under "Connected" / "Available providers" section labels
+  // (settings-style). Bulky cards, capability tag strips, and per-card
+  // default buttons now hide behind a ⋯ menu. Files/mail/calendar previews
+  // live in the Inbox tab; this page is only the connection ledger.
+  list.className = "conn-section-group";
 
   if (connectedAccounts.length > 0) {
-    const accountHeader = document.createElement("div");
-    accountHeader.className = "muted";
-    accountHeader.style.cssText = "font-size:11px;margin:0 0 2px;";
-    accountHeader.textContent = "已连接账户";
-    list.appendChild(accountHeader);
+    const connectedLabel = document.createElement("div");
+    connectedLabel.className = "conn-section-label";
+    connectedLabel.innerHTML = `Connected<span class="zh">已连接</span><span class="count">${connectedAccounts.length}</span>`;
+    list.appendChild(connectedLabel);
 
     for (const account of connectedAccounts) {
       const meta = ACCOUNT_CONNECTOR_META[account.provider] ?? { label: account.provider, logo: "●", logoClass: "" };
@@ -4447,76 +4975,89 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
         account.isDefaultForFiles ? "文件默认" : null,
         account.isDefaultForCalendar ? "日历默认" : null
       ].filter(Boolean);
-      const card = document.createElement("div");
-      card.className = "account-connector-card";
-      card.innerHTML = `
-        <div class="acc-card-main">
-          <div class="acc-logo ${meta.logoClass}">${meta.logo}</div>
-          <div class="acc-info">
-            <p class="acc-name">${escapeHtml(account.displayName ?? account.email ?? meta.label)}</p>
-            <p class="acc-desc">${escapeHtml(meta.label)} · ${escapeHtml(account.email ?? "")} · ${escapeHtml(account.tokenStatus ?? "active")}</p>
+      const statusOn = account.tokenStatus === "active";
+      const row = document.createElement("div");
+      row.className = "conn-row";
+      row.innerHTML = `
+        <div class="conn-row-logo acc-logo ${meta.logoClass}">${meta.logo}</div>
+        <div class="conn-row-main">
+          <div class="conn-row-title">
+            ${escapeHtml(account.displayName ?? account.email ?? meta.label)}
+            ${defaults.map((label) => `<span class="pill pill-ok">${escapeHtml(label)}</span>`).join("")}
           </div>
-          <span class="acc-status-dot ${account.tokenStatus === "active" ? "connected" : ""}" title="${escapeHtml(account.tokenStatus ?? "")}"></span>
-          <div class="acc-actions">
-            <button class="ghost" data-connected-reauth="${escapeHtml(account.id)}" style="font-size:12px;padding:5px 10px;">重新授权</button>
-            <button class="ghost" data-connected-delete="${escapeHtml(account.id)}" style="font-size:12px;padding:5px 10px;">断开</button>
-          </div>
+          <div class="conn-row-sub">${escapeHtml(meta.label)} · ${escapeHtml(account.email ?? "")}${capLabels.length ? " · " + capLabels.slice(0, 4).join("/") : ""}</div>
         </div>
-        <div style="padding:0 16px 12px;display:flex;flex-direction:column;gap:8px;">
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            ${capLabels.length ? capLabels.map((label) => `<span style="font-size:10px;padding:2px 7px;border:1px solid rgba(255,255,255,0.14);border-radius:999px;color:var(--muted);">${escapeHtml(label)}</span>`).join("") : `<span class="muted" style="font-size:11px;">暂无能力标签</span>`}
-            ${defaults.map((label) => `<span style="font-size:10px;padding:2px 7px;border:1px solid rgba(86,196,137,0.38);border-radius:999px;color:#86efac;">${escapeHtml(label)}</span>`).join("")}
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            <button class="ghost" data-connected-default="${escapeHtml(account.id)}" data-purpose="email" style="font-size:11px;padding:4px 8px;">设为邮箱默认</button>
-            <button class="ghost" data-connected-default="${escapeHtml(account.id)}" data-purpose="files" style="font-size:11px;padding:4px 8px;">设为文件默认</button>
-            <button class="ghost" data-connected-default="${escapeHtml(account.id)}" data-purpose="calendar" style="font-size:11px;padding:4px 8px;">设为日历默认</button>
+        <span class="conn-row-status">
+          <span class="conn-row-status-dot ${statusOn ? "on" : "warn"}" title="${escapeHtml(account.tokenStatus ?? "")}"></span>
+          ${statusOn ? "active" : escapeHtml(account.tokenStatus ?? "offline")}
+        </span>
+        <div class="conn-row-actions">
+          <button class="btn btn-sm btn-ghost" data-connected-reauth="${escapeHtml(account.id)}">重新授权</button>
+          <button class="btn btn-sm btn-danger" data-connected-delete="${escapeHtml(account.id)}">断开</button>
+          <div class="acc-more" data-acc-more-root>
+            <button class="icon-btn acc-more-btn" type="button" data-acc-more-toggle aria-label="更多选项" title="更多">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
+            </button>
+            <div class="acc-more-menu" hidden>
+              <button class="acc-more-item" data-connected-default="${escapeHtml(account.id)}" data-purpose="email">设为邮箱默认</button>
+              <button class="acc-more-item" data-connected-default="${escapeHtml(account.id)}" data-purpose="files">设为文件默认</button>
+              <button class="acc-more-item" data-connected-default="${escapeHtml(account.id)}" data-purpose="calendar">设为日历默认</button>
+            </div>
           </div>
         </div>
       `;
-      list.appendChild(card);
+      list.appendChild(row);
+      const moreRoot = row.querySelector("[data-acc-more-root]");
+      const moreBtn = row.querySelector("[data-acc-more-toggle]");
+      const moreMenu = row.querySelector(".acc-more-menu");
+      moreBtn?.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        moreMenu?.toggleAttribute("hidden");
+      });
+      document.addEventListener("click", (ev) => {
+        if (!moreRoot?.contains(ev.target) && moreMenu && !moreMenu.hasAttribute("hidden")) {
+          moreMenu.setAttribute("hidden", "");
+        }
+      });
     }
-
-    const providerHeader = document.createElement("div");
-    providerHeader.className = "muted";
-    providerHeader.style.cssText = "font-size:11px;margin:4px 0 2px;";
-    providerHeader.textContent = "添加 / 配置 provider";
-    list.appendChild(providerHeader);
   }
+
+  // Available providers section
+  const availLabel = document.createElement("div");
+  availLabel.className = "conn-section-label";
+  availLabel.innerHTML = `Available providers<span class="zh">可添加</span><span class="count">${connectors.filter((c) => ACCOUNT_CONNECTOR_META[c.type]).length}</span>`;
+  list.appendChild(availLabel);
 
   for (const connector of connectors) {
     const meta = ACCOUNT_CONNECTOR_META[connector.type];
     if (!meta) continue;
     const type = connector.type;
-
-    const card = document.createElement("div");
-    card.className = "account-connector-card";
-    card.dataset.acType = type;
-
-    // ── Main row ──
-    const dotClass = connector.connected ? "connected" : "";
+    const statusOn = connector.connected;
     const statusText = connector.connected
       ? (connector.email ?? "已连接")
       : connector.configured
-        ? "未连接 — 点击\"授权\"登录"
+        ? "未连接"
         : "需要配置 Client ID";
     const connectBtn = connector.connected
-      ? `<button class="ghost" data-ac-disconnect="${type}" style="font-size:12px;padding:5px 12px;">断开</button>`
-      : `<button class="primary" data-ac-connect="${type}" style="font-size:12px;padding:5px 12px;"${connector.configured ? "" : " disabled"}>授权登录</button>`;
-    const configToggleLabel = _acConfigOpen[type] ? "收起" : "配置";
+      ? `<button class="btn btn-sm btn-ghost" data-ac-disconnect="${type}">断开</button>`
+      : `<button class="btn btn-sm btn-primary" data-ac-connect="${type}" ${connector.configured ? "" : "disabled"}>授权登录</button>`;
 
-    card.innerHTML = `
-      <div class="acc-card-main">
-        <div class="acc-logo ${meta.logoClass}">${meta.logo}</div>
-        <div class="acc-info">
-          <p class="acc-name">${meta.label}</p>
-          <p class="acc-desc">${connector.connected ? escapeHtml(statusText) : meta.desc}</p>
-        </div>
-        <span class="acc-status-dot ${dotClass}" title="${escapeHtml(statusText)}"></span>
-        <div class="acc-actions">
-          ${connectBtn}
-          <button class="ghost" data-ac-config-toggle="${type}" style="font-size:12px;padding:5px 10px;">${configToggleLabel}</button>
-        </div>
+    const row = document.createElement("div");
+    row.className = "conn-row";
+    row.dataset.acType = type;
+    row.innerHTML = `
+      <div class="conn-row-logo acc-logo ${meta.logoClass}">${meta.logo}</div>
+      <div class="conn-row-main">
+        <div class="conn-row-title">${escapeHtml(meta.label)}</div>
+        <div class="conn-row-sub">${connector.connected ? escapeHtml(statusText) : escapeHtml(meta.desc)}</div>
+      </div>
+      <span class="conn-row-status">
+        <span class="conn-row-status-dot ${statusOn ? "on" : ""}" title="${escapeHtml(statusText)}"></span>
+        ${statusOn ? "connected" : "not connected"}
+      </span>
+      <div class="conn-row-actions">
+        ${connectBtn}
+        <button class="btn btn-sm btn-ghost" data-ac-config-toggle="${type}">${_acConfigOpen[type] ? "收起" : "配置"}</button>
       </div>
     `;
 
@@ -4548,33 +5089,24 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
           <input type="password" data-ac-field="clientSecret" placeholder="${cfgData.hasClientSecret ? "（已保存）" : "粘贴 Client Secret…"}" autocomplete="new-password">
         </div>` : `<p style="font-size:11px;color:var(--muted);margin:0;">✓ Microsoft PKCE 流无需 Client Secret</p>`}
         <div style="display:flex;gap:8px;align-items:center;">
-          <button class="primary" data-ac-save-config="${type}" style="font-size:12px;padding:5px 14px;">保存</button>
+          <button class="btn btn-primary" data-ac-save-config="${type}" style="font-size:12px;padding:5px 14px;">保存</button>
           <span data-ac-config-status style="font-size:12px;color:var(--muted);"></span>
         </div>
       `;
-      card.appendChild(configPanel);
+      // UCA-127: config panel attaches as a sibling row below the conn-row
+      // (full-width), so the row stays one line even when configuring.
+      configPanel.style.cssText = "padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);margin-top:-2px;display:flex;flex-direction:column;gap:10px;";
+      list.appendChild(row);
+      list.appendChild(configPanel);
+      continue;
     }
 
-    // ── Resource strip (shown when connected) ──
-    if (connector.connected) {
-      const tab = _acResourceTab[type] ?? "files";
-      const strip = document.createElement("div");
-      strip.className = "acc-resource-strip";
-      strip.innerHTML = `
-        <button data-ac-res="${type}" data-ac-tab="files" ${tab === "files" ? "style='border-color:rgba(255,255,255,0.35);color:var(--text);'" : ""}>📁 文件</button>
-        <button data-ac-res="${type}" data-ac-tab="emails" ${tab === "emails" ? "style='border-color:rgba(255,255,255,0.35);color:var(--text);'" : ""}>📧 邮件</button>
-        <button data-ac-res="${type}" data-ac-tab="calendar" ${tab === "calendar" ? "style='border-color:rgba(255,255,255,0.35);color:var(--text);'" : ""}>📅 日历</button>
-      `;
-      card.appendChild(strip);
+    // UCA-126: resource-strip (files/mail/calendar preview) retired from
+    // connector cards. Those previews now live in the dedicated Inbox tab
+    // with a sidebar account switcher — keeps Connectors cards focused on
+    // connection status alone.
 
-      const resourceBody = document.createElement("div");
-      resourceBody.style.cssText = "padding:0 16px 12px;font-size:12px;";
-      resourceBody.dataset.acResourceBody = type;
-      resourceBody.innerHTML = `<p class="muted" style="margin:6px 0;">加载中…</p>`;
-      card.appendChild(resourceBody);
-    }
-
-    list.appendChild(card);
+    list.appendChild(row);
   }
 
   // Wire events
@@ -4600,18 +5132,7 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
       window.ucaShell?.openExternal?.(a.dataset.externalUrl);
     });
   });
-  list.querySelectorAll("[data-ac-res]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const { acRes: type, acTab: tab } = btn.dataset;
-      _acResourceTab[type] = tab;
-      void loadAccountResourcePreview(type, tab);
-      // update button styles in-place without full re-render
-      btn.closest(".acc-resource-strip").querySelectorAll("[data-ac-res]").forEach((b) => {
-        b.removeAttribute("style");
-      });
-      btn.style.cssText = "border-color:rgba(255,255,255,0.35);color:var(--text);";
-    });
-  });
+  // UCA-126: [data-ac-res] wiring retired with the resource-strip.
   list.querySelectorAll("[data-connected-default]").forEach((btn) => {
     btn.addEventListener("click", () => {
       void handleConnectedAccountDefault(btn.dataset.connectedDefault, btn.dataset.purpose);
@@ -4628,12 +5149,7 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
     });
   });
 
-  // Auto-load resource previews for connected accounts
-  for (const connector of connectors) {
-    if (connector.connected) {
-      void loadAccountResourcePreview(connector.type, _acResourceTab[connector.type] ?? "files");
-    }
-  }
+  // UCA-126: Inbox tab handles its own preview loading; no auto-load here.
 }
 
 async function handleConnectedAccountDefault(accountId, purpose) {
@@ -4710,7 +5226,6 @@ async function handleAccountConnect(type) {
 async function handleAccountDisconnect(type) {
   if (!confirm(`断开 ${ACCOUNT_CONNECTOR_META[type]?.label ?? type} 连接？已缓存的 token 将被删除。`)) return;
   await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}`, { method: "DELETE" });
-  delete _acResourceTab[type];
   void loadConnectorsTab();
 }
 
@@ -4737,57 +5252,231 @@ async function handleAccountConfigSave(type, panel) {
   }
 }
 
-async function loadAccountResourcePreview(type, tab) {
-  const body = document.querySelector(`[data-ac-resource-body="${type}"]`);
-  if (!body) return;
-  body.innerHTML = `<p class="muted" style="margin:6px 0;">加载中…</p>`;
+// ═══════════════════════════════════════════════
+//   UCA-126: INBOX TAB — account switcher + files/mail/calendar
+// ═══════════════════════════════════════════════
+const _inboxState = {
+  accounts: [],          // merged: OAuth connected-accounts + IMAP email accounts
+  activeAccountId: null, // selected sidebar account
+  activeTab: "files"     // 'files' | 'emails' | 'calendar'
+};
+
+async function loadInboxTab() {
+  // UCA-128: Inbox sidebar merges TWO backends:
+  //   1) /connectors/connected-accounts — OAuth (Google Workspace /
+  //      Microsoft 365). Exposes files, mail, and calendar.
+  //   2) /config/email/accounts — IMAP mailboxes (Gmail IMAP, Outlook
+  //      IMAP, QQ, 163, custom). Mail only, no files/calendar.
+  // Before this fix the 163/QQ/IMAP accounts were silently missing
+  // because the sidebar only pulled from endpoint #1.
+  const accounts = [];
   try {
+    const r = await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts`);
+    if (r.ok) {
+      const data = await r.json();
+      for (const acc of data.accounts ?? []) {
+        accounts.push({ ...acc, _kind: "oauth" });
+      }
+    }
+  } catch { /* ignore */ }
+  try {
+    const r = await fetch(`${state.serviceBaseUrl}/config/email/accounts`);
+    if (r.ok) {
+      const data = await r.json();
+      for (const acc of data.accounts ?? []) {
+        accounts.push({
+          id: `email:${acc.id}`,
+          provider: acc.provider ?? "imap",
+          email: acc.email,
+          displayName: acc.displayName ?? acc.email ?? acc.id,
+          tokenStatus: "active",
+          imapHost: acc.imapHost,
+          _kind: "imap",
+          _rawId: acc.id
+        });
+      }
+    }
+  } catch { /* ignore */ }
+  _inboxState.accounts = accounts;
+  if (!_inboxState.activeAccountId || !accounts.some((a) => a.id === _inboxState.activeAccountId)) {
+    _inboxState.activeAccountId = accounts[0]?.id ?? null;
+  }
+  renderInboxAccounts();
+  renderInboxContent();
+}
+
+// UCA-128: per-provider logo fallback for IMAP accounts so they render
+// the same logo treatment as OAuth accounts (Gmail red, Outlook blue,
+// QQ cyan, etc).
+const IMAP_PROVIDER_LOGOS = {
+  gmail:   { cls: "gmail",   logo: "G" },
+  outlook: { cls: "outlook", logo: "O" },
+  graph:   { cls: "outlook", logo: "O" },
+  qq:      { cls: "qq",      logo: "Q" },
+  "163":   { cls: "imap",    logo: "163" },
+  imap:    { cls: "imap",    logo: "✉" }
+};
+
+function renderInboxAccounts() {
+  const list = document.querySelector("#inboxAccountList");
+  if (!list) return;
+  if (_inboxState.accounts.length === 0) {
+    list.innerHTML = `<p class="muted inbox-empty-accounts" style="padding:14px 16px;font-size:12px;">尚未连接账户 — 去 Connectors 授权后再来。</p>`;
+    return;
+  }
+  list.innerHTML = _inboxState.accounts.map((account) => {
+    const isImap = account._kind === "imap";
+    const oauthMeta = ACCOUNT_CONNECTOR_META[account.provider];
+    const imapMeta = IMAP_PROVIDER_LOGOS[account.provider] ?? IMAP_PROVIDER_LOGOS.imap;
+    const meta = oauthMeta ?? { label: account.provider, logo: imapMeta.logo, logoClass: imapMeta.cls };
+    const isActive = account.id === _inboxState.activeAccountId;
+    const statusClass = account.tokenStatus === "active" ? "" : "offline";
+    const kindLabel = isImap ? `IMAP` : (meta.label ?? account.provider);
+    return `
+      <button class="inbox-account ${isActive ? "active" : ""}" data-inbox-account="${escapeHtml(account.id)}" type="button">
+        <div class="inbox-account-logo acc-logo ${meta.logoClass}">${meta.logo}</div>
+        <div class="inbox-account-info">
+          <div class="inbox-account-name">${escapeHtml(account.displayName ?? account.email ?? meta.label)}</div>
+          <div class="inbox-account-email">${escapeHtml(account.email ?? "")}${isImap ? ` · ${escapeHtml(kindLabel)}` : ""}</div>
+        </div>
+        <span class="inbox-account-status ${statusClass}" title="${escapeHtml(account.tokenStatus ?? "")}"></span>
+      </button>
+    `;
+  }).join("");
+  list.querySelectorAll("[data-inbox-account]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      _inboxState.activeAccountId = btn.dataset.inboxAccount;
+      renderInboxAccounts();
+      renderInboxContent();
+    });
+  });
+}
+
+async function renderInboxContent() {
+  const content = document.querySelector("#inboxContent");
+  const label = document.querySelector("#inboxAccountLabel");
+  if (!content) return;
+  const account = _inboxState.accounts.find((a) => a.id === _inboxState.activeAccountId);
+  if (!account) {
+    content.innerHTML = `<p class="inbox-empty">选择一个账户开始浏览。</p>`;
+    if (label) label.textContent = "—";
+    return;
+  }
+  if (label) label.textContent = account.displayName ?? account.email ?? account.provider;
+
+  // UCA-128: IMAP accounts (163 / QQ / Gmail-IMAP / Outlook-IMAP / custom)
+  // only expose mail, and the REST preview for IMAP is not wired yet.
+  // Disable Files + Calendar tabs and force Mail; when on Mail show an
+  // honest "preview coming soon" state.
+  const isImap = account._kind === "imap";
+  document.querySelectorAll("[data-inbox-res]").forEach((btn) => {
+    const res = btn.dataset.inboxRes;
+    if (isImap && (res === "files" || res === "calendar")) {
+      btn.setAttribute("disabled", "");
+      btn.title = "IMAP 账户只支持邮件";
+    } else {
+      btn.removeAttribute("disabled");
+      btn.removeAttribute("title");
+    }
+    btn.setAttribute("aria-pressed", res === _inboxState.activeTab ? "true" : "false");
+  });
+  if (isImap && _inboxState.activeTab !== "emails") {
+    _inboxState.activeTab = "emails";
+    document.querySelectorAll("[data-inbox-res]").forEach((btn) => {
+      btn.setAttribute("aria-pressed", btn.dataset.inboxRes === "emails" ? "true" : "false");
+    });
+  }
+  if (isImap) {
+    content.innerHTML = `
+      <div class="inbox-empty" style="padding:40px 24px;">
+        <div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:6px;">
+          ${escapeHtml(account.displayName ?? account.email ?? account.provider)} · IMAP
+        </div>
+        <div style="max-width:440px;margin:0 auto;line-height:1.6;">
+          这个邮箱已成功连接，会被定时任务和晨间摘要用到。<br/>
+          <span class="muted">IMAP 邮件预览还没做完 — 只有 Google / Microsoft 账户支持在这里浏览。</span>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  content.innerHTML = `<p class="inbox-empty">加载中…</p>`;
+  try {
+    const provider = account.provider;
     let url;
-    if (tab === "files") url = `${state.serviceBaseUrl}/connectors/accounts/${type}/files?limit=8`;
-    else if (tab === "emails") url = `${state.serviceBaseUrl}/connectors/accounts/${type}/emails?limit=6`;
-    else url = `${state.serviceBaseUrl}/connectors/accounts/${type}/calendar?limit=6`;
+    if (_inboxState.activeTab === "files") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/files?limit=30`;
+    else if (_inboxState.activeTab === "emails") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/emails?limit=30`;
+    else url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/calendar?limit=30`;
 
     const r = await fetch(url);
-    if (!r.ok) { body.innerHTML = `<p class="muted" style="margin:6px 0;">加载失败</p>`; return; }
+    if (!r.ok) { content.innerHTML = `<p class="inbox-empty">加载失败 (${r.status})</p>`; return; }
     const data = await r.json();
 
-    if (tab === "files") {
+    if (_inboxState.activeTab === "files") {
       const files = data.files ?? [];
-      if (!files.length) { body.innerHTML = `<p class="muted" style="margin:6px 0;">暂无文件</p>`; return; }
-      body.innerHTML = files.map((f) => `
-        <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
-          <span style="font-size:14px;">${f.isFolder ? "📁" : "📄"}</span>
-          <a href="#" data-external-url="${escapeHtml(f.url ?? "")}" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);text-decoration:none;">${escapeHtml(f.name)}</a>
-          <span style="font-size:10px;color:var(--muted);white-space:nowrap;">${f.modified ? new Date(f.modified).toLocaleDateString("zh-CN") : ""}</span>
-        </div>`).join("");
-    } else if (tab === "emails") {
+      if (!files.length) { content.innerHTML = `<p class="inbox-empty">该账户没有可预览的文件。</p>`; return; }
+      content.innerHTML = files.map((f) => `
+        <button class="inbox-item" type="button" data-external-url="${escapeHtml(f.url ?? "")}">
+          <span class="inbox-item-icon">${f.isFolder ? "📁" : "📄"}</span>
+          <div class="inbox-item-main">
+            <div class="inbox-item-title">${escapeHtml(f.name ?? "(untitled)")}</div>
+            <div class="inbox-item-meta">${escapeHtml(f.path ?? f.url ?? "")}</div>
+          </div>
+          <span class="inbox-item-time">${f.modified ? new Date(f.modified).toLocaleDateString("zh-CN") : ""}</span>
+        </button>
+      `).join("");
+    } else if (_inboxState.activeTab === "emails") {
       const emails = data.emails ?? [];
-      if (!emails.length) { body.innerHTML = `<p class="muted" style="margin:6px 0;">暂无邮件</p>`; return; }
-      body.innerHTML = emails.map((m) => `
-        <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
-          <div style="font-weight:${m.isRead ? 400 : 600};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.subject ?? "(无主题)")}</div>
-          <div style="font-size:10px;color:var(--muted);">${escapeHtml(m.fromName ?? m.from ?? "")} · ${m.received ? new Date(m.received).toLocaleDateString("zh-CN") : ""}</div>
-        </div>`).join("");
+      if (!emails.length) { content.innerHTML = `<p class="inbox-empty">该账户暂无邮件。</p>`; return; }
+      content.innerHTML = emails.map((m) => `
+        <button class="inbox-item" type="button">
+          <span class="inbox-item-icon">${m.isRead ? "○" : "●"}</span>
+          <div class="inbox-item-main">
+            <div class="inbox-item-title ${m.isRead ? "" : "unread"}">${escapeHtml(m.subject ?? "(无主题)")}</div>
+            <div class="inbox-item-meta">${escapeHtml(m.fromName ?? m.from ?? "")}${m.preview ? " — " + escapeHtml(m.preview) : ""}</div>
+          </div>
+          <span class="inbox-item-time">${m.received ? new Date(m.received).toLocaleDateString("zh-CN") : ""}</span>
+        </button>
+      `).join("");
     } else {
       const events = data.events ?? [];
-      if (!events.length) { body.innerHTML = `<p class="muted" style="margin:6px 0;">近期无日程</p>`; return; }
-      body.innerHTML = events.map((e) => `
-        <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);">
-          <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(e.title ?? "(无标题)")}</div>
-          <div style="font-size:10px;color:var(--muted);">${e.start ? new Date(e.start).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""} ${e.location ? "· " + escapeHtml(e.location) : ""}</div>
-        </div>`).join("");
+      if (!events.length) { content.innerHTML = `<p class="inbox-empty">近期无日程。</p>`; return; }
+      content.innerHTML = events.map((e) => `
+        <button class="inbox-item" type="button">
+          <span class="inbox-item-icon">📅</span>
+          <div class="inbox-item-main">
+            <div class="inbox-item-title">${escapeHtml(e.title ?? "(无标题)")}</div>
+            <div class="inbox-item-meta">${e.location ? escapeHtml(e.location) : ""}</div>
+          </div>
+          <span class="inbox-item-time">${e.start ? new Date(e.start).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</span>
+        </button>
+      `).join("");
     }
-
-    body.querySelectorAll("[data-external-url]").forEach((a) => {
-      a.addEventListener("click", (ev) => {
+    content.querySelectorAll("[data-external-url]").forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
         ev.preventDefault();
-        if (a.dataset.externalUrl) window.ucaShell?.openExternal?.(a.dataset.externalUrl);
+        if (btn.dataset.externalUrl) window.ucaShell?.openExternal?.(btn.dataset.externalUrl);
       });
     });
   } catch (err) {
-    body.innerHTML = `<p class="muted" style="margin:6px 0;">Error: ${escapeHtml(err.message)}</p>`;
+    content.innerHTML = `<p class="inbox-empty">Error: ${escapeHtml(err.message)}</p>`;
   }
 }
+
+// Wire the resource seg-control + refresh button once.
+(function initInboxResourceToggle() {
+  document.querySelectorAll("[data-inbox-res]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      // UCA-128: respect disabled state so clicks on Files/Calendar for
+      // IMAP accounts are no-ops (the buttons are visually dimmed too).
+      if (btn.hasAttribute("disabled")) return;
+      _inboxState.activeTab = btn.dataset.inboxRes;
+      renderInboxContent();
+    });
+  });
+  document.querySelector("#inboxRefreshBtn")?.addEventListener("click", () => void loadInboxTab());
+})();
 
 // ── Email provider cards ──────────────────────────────────────
 const IMAP_PRESETS = {
@@ -4808,7 +5497,7 @@ function renderEmailSetupGuide(provider, preset) {
   const guide = document.getElementById("connEmailSetupGuide");
   if (!guide) return;
   const setupLink = preset.setupUrl
-    ? `<button type="button" class="ghost" data-email-setup-url="${escapeHtml(preset.setupUrl)}">打开网页登录/设置页面</button>`
+    ? `<button type="button" class="btn btn-ghost" data-email-setup-url="${escapeHtml(preset.setupUrl)}">打开网页登录/设置页面</button>`
     : "";
   guide.style.display = "";
   guide.innerHTML = `
@@ -4861,6 +5550,164 @@ document.getElementById("connEmailCancelBtn")?.addEventListener("click", () => {
   if (connEmailState) connEmailState.textContent = "";
   _currentEmailProvider = null;
 });
+
+// ═══════════════════════════════════════════════
+//   UCA-127: CONNECTOR CATALOG DRAWER
+// -------------------------------------------------
+//   A right-side drawer that unifies discovery across accounts, email
+//   providers, and MCP tools. Clicking a card fires the matching flow
+//   (auth start / reveal email form / open MCP install button).
+// ═══════════════════════════════════════════════
+(function initConnBrowse() {
+  const back = document.querySelector("#connBrowseBack");
+  const openBtn = document.querySelector("#connBrowseBtn");
+  const closeBtn = document.querySelector("#connBrowseCloseBtn");
+  const searchInput = document.querySelector("#connBrowseSearch");
+  const grid = document.querySelector("#connBrowseGrid");
+  const filtersEl = document.querySelector("#connBrowseFilters");
+  if (!back || !openBtn || !grid) return;
+
+  // Static catalog — sourced from the same meta tables the inline
+  // lists already use so we don't drift. Each entry carries:
+  //   id / title / desc / category / logoClass / action (callback)
+  const buildCatalog = () => {
+    const entries = [];
+    // Account providers (ACCOUNT_CONNECTOR_META — google/microsoft)
+    for (const [type, meta] of Object.entries(ACCOUNT_CONNECTOR_META ?? {})) {
+      entries.push({
+        id: `account-${type}`,
+        title: meta.label,
+        desc: meta.desc ?? "Single sign-on for files, mail, and calendar.",
+        category: "account",
+        logoClass: meta.logoClass,
+        logoText: meta.logo,
+        action: () => handleAccountConnect(type),
+        badge: "OAuth"
+      });
+    }
+    // Email providers (IMAP_PRESETS)
+    const emailMeta = [
+      { provider: "gmail",   title: "Gmail",   desc: "IMAP with App password. Ideal for inbox monitoring.", logoClass: "gmail",   logoText: "G" },
+      { provider: "outlook", title: "Outlook / Hotmail", desc: "Microsoft consumer / 365 via IMAP.",         logoClass: "outlook", logoText: "O" },
+      { provider: "qq",      title: "QQ Mail", desc: "中国腾讯邮箱 via IMAP + 授权码.",                        logoClass: "qq",      logoText: "Q" },
+      { provider: "163",     title: "163 Mail", desc: "网易邮箱 via IMAP + 授权码.",                           logoClass: "imap",    logoText: "163" },
+      { provider: "other",   title: "Custom IMAP", desc: "Any IMAP-compatible mail server.",                 logoClass: "imap",    logoText: "✉" }
+    ];
+    for (const m of emailMeta) {
+      entries.push({
+        id: `email-${m.provider}`,
+        title: m.title,
+        desc: m.desc,
+        category: "email",
+        logoClass: m.logoClass,
+        logoText: m.logoText,
+        action: () => {
+          // Programmatically click the hidden picker button so the
+          // existing form-show logic runs unchanged.
+          close();
+          const btn = document.querySelector(`.conn-provider-btn[data-provider="${m.provider}"]`);
+          btn?.click();
+          document.querySelector("#panel-connectors")?.scrollIntoView({ behavior: "smooth", block: "start" });
+          // Make the picker visible so the form appears.
+          const picker = document.querySelector("#connEmailPicker");
+          if (picker) { picker.removeAttribute("hidden"); picker.style.display = "none"; }
+        },
+        badge: "IMAP"
+      });
+    }
+    // MCP tools
+    for (const [id, meta] of Object.entries(MCP_SERVER_META ?? {})) {
+      const logoClass = meta.logoClass ?? "imap";
+      entries.push({
+        id: `mcp-${id}`,
+        title: meta.title,
+        desc: meta.desc ?? "",
+        category: "mcp",
+        logoClass,
+        logoText: MCP_LOGO_SVG[logoClass] ?? "?",
+        action: () => {
+          close();
+          // Scroll to MCP panel and focus the card.
+          const card = document.getElementById(`mcp-card-${id}`);
+          if (card) {
+            card.scrollIntoView({ behavior: "smooth", block: "center" });
+            card.style.transition = "background 600ms";
+            card.style.background = "var(--accent-soft)";
+            setTimeout(() => { card.style.background = ""; }, 1200);
+          }
+        },
+        badge: "MCP"
+      });
+    }
+    return entries;
+  };
+
+  const open = () => {
+    back.classList.add("open");
+    render();
+    setTimeout(() => searchInput?.focus(), 120);
+  };
+  const close = () => {
+    back.classList.remove("open");
+  };
+
+  let activeCategory = "all";
+  let searchText = "";
+
+  const render = () => {
+    const entries = buildCatalog()
+      .filter((e) => activeCategory === "all" || e.category === activeCategory)
+      .filter((e) => {
+        if (!searchText) return true;
+        const q = searchText.toLowerCase();
+        return e.title.toLowerCase().includes(q) || e.desc.toLowerCase().includes(q) || e.category.includes(q);
+      });
+    if (entries.length === 0) {
+      grid.innerHTML = `<p class="muted" style="padding:28px 0;text-align:center;grid-column:1/-1;">没有匹配的连接器。</p>`;
+      return;
+    }
+    grid.innerHTML = entries.map((e) => `
+      <button class="conn-browse-card" type="button" data-conn-entry="${escapeHtml(e.id)}">
+        <div class="conn-browse-card-logo acc-logo ${e.logoClass}">${e.logoText ?? ""}</div>
+        <div class="conn-browse-card-main">
+          <div class="conn-browse-card-title">
+            ${escapeHtml(e.title)}
+            ${e.badge ? `<span class="pill pill-neutral">${escapeHtml(e.badge)}</span>` : ""}
+          </div>
+          <div class="conn-browse-card-desc">${escapeHtml(e.desc)}</div>
+        </div>
+        <span class="conn-browse-card-add" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </span>
+      </button>
+    `).join("");
+    grid.querySelectorAll("[data-conn-entry]").forEach((btn) => {
+      const entry = entries.find((e) => e.id === btn.dataset.connEntry);
+      btn.addEventListener("click", () => entry?.action?.());
+    });
+  };
+
+  openBtn.addEventListener("click", open);
+  closeBtn?.addEventListener("click", close);
+  back.addEventListener("click", (ev) => {
+    // backdrop click (outside the aside) closes.
+    if (ev.target === back) close();
+  });
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape" && back.classList.contains("open")) close();
+  });
+  searchInput?.addEventListener("input", (ev) => {
+    searchText = ev.target.value ?? "";
+    render();
+  });
+  filtersEl?.querySelectorAll(".filter-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      activeCategory = chip.dataset.connCat ?? "all";
+      filtersEl.querySelectorAll(".filter-chip").forEach((c) => c.setAttribute("aria-pressed", c === chip ? "true" : "false"));
+      render();
+    });
+  });
+})();
 
 document.getElementById("connEmailConnectBtn")?.addEventListener("click", async () => {
   const provider = _currentEmailProvider ?? "other";
@@ -4933,3 +5780,156 @@ connDigestEnabled?.addEventListener("change", async () => {
 });
 
 connectorsMcpRefreshBtn?.addEventListener("click", () => { void loadConnectorsTab(); });
+
+// UCA-126 Phase 7d: chat composer richness — attachments, voice trigger,
+// model chip label. Attach is local-file-picker + chips (passed into task
+// context). Voice defers to the existing overlay voice mode via hotkey.
+function renderChatAttachments() {
+  if (!consoleChatAttachments) return;
+  if (consoleChatAttachList.length === 0) {
+    consoleChatAttachments.hidden = true;
+    consoleChatAttachments.innerHTML = "";
+    return;
+  }
+  consoleChatAttachments.hidden = false;
+  consoleChatAttachments.innerHTML = consoleChatAttachList.map((name, idx) => `
+    <span class="chip-attach">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.58 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+      <span>${escapeHtml(name)}</span>
+      <button type="button" data-remove-attach="${idx}" aria-label="Remove">×</button>
+    </span>
+  `).join("");
+  for (const btn of consoleChatAttachments.querySelectorAll("[data-remove-attach]")) {
+    btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.removeAttach);
+      if (Number.isInteger(idx)) {
+        consoleChatAttachList.splice(idx, 1);
+        renderChatAttachments();
+      }
+    });
+  }
+}
+
+consoleChatAttachBtn?.addEventListener("click", () => {
+  consoleChatAttachInput?.click();
+});
+consoleChatAttachInput?.addEventListener("change", () => {
+  const files = Array.from(consoleChatAttachInput.files ?? []);
+  for (const f of files) consoleChatAttachList.push(f.name);
+  consoleChatAttachInput.value = "";
+  renderChatAttachments();
+});
+
+consoleChatVoiceBtn?.addEventListener("click", () => {
+  // Defer to the existing overlay voice mode (Ctrl+Shift+V). The preload
+  // bridge exposes a helper when available; otherwise surface a hint.
+  if (window.ucaBridge?.openOverlayInVoiceMode) {
+    window.ucaBridge.openOverlayInVoiceMode();
+  } else if (consoleChatState) {
+    consoleChatState.textContent = "按 Ctrl+Shift+V 开启语音";
+    setTimeout(() => { if (consoleChatState.textContent === "按 Ctrl+Shift+V 开启语音") consoleChatState.textContent = ""; }, 2600);
+  }
+});
+
+function updateChatModelChip() {
+  if (!consoleChatModelChipLabel) return;
+  const routing = state.workspace?.routing ?? {};
+  const chatTask = Array.isArray(routing.tasks) ? routing.tasks.find((t) => t?.id === "chat" || t?.id === "chat.reply") : null;
+  const label = chatTask?.model || routing.default_model || "auto";
+  consoleChatModelChipLabel.textContent = String(label).slice(0, 28);
+}
+updateChatModelChip();
+
+// UCA-125 Phase 7c: generic foldable panel-section.
+// Any <section class="panel-section" data-foldable="true"> can be folded
+// by clicking its header. Collapse state is persisted in localStorage
+// under lingxy.panel-section.collapsed keyed by the section's aria-labelledby
+// id (so the same section stays collapsed between reloads).
+const FOLD_STORAGE_KEY = "lingxy.panel-section.collapsed";
+function loadFoldState() {
+  try {
+    const raw = localStorage.getItem(FOLD_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch { return {}; }
+}
+function saveFoldState(map) {
+  try { localStorage.setItem(FOLD_STORAGE_KEY, JSON.stringify(map)); } catch { /* ignore */ }
+}
+function wireFoldable(section, headerSelector) {
+  const state = loadFoldState();
+  const key = section.id || section.getAttribute("aria-labelledby") || null;
+  if (key && state[key] === true) section.setAttribute("data-collapsed", "true");
+  const header = section.querySelector(headerSelector);
+  if (!header) return;
+  header.setAttribute("role", "button");
+  header.setAttribute("tabindex", "0");
+  const toggle = (ev) => {
+    if (ev.target.closest("button, input, select, textarea, label.toggle, [data-no-fold]")) return;
+    const collapsed = section.getAttribute("data-collapsed") === "true";
+    section.setAttribute("data-collapsed", collapsed ? "false" : "true");
+    if (key) {
+      const latest = loadFoldState();
+      if (collapsed) delete latest[key]; else latest[key] = true;
+      saveFoldState(latest);
+    }
+    header.setAttribute("aria-expanded", collapsed ? "true" : "false");
+  };
+  header.addEventListener("click", toggle);
+  header.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" || ev.key === " ") {
+      if (ev.target.closest("button, input, select, textarea")) return;
+      ev.preventDefault();
+      toggle(ev);
+    }
+  });
+  header.setAttribute("aria-expanded", section.getAttribute("data-collapsed") === "true" ? "false" : "true");
+}
+function initFoldablePanelSections() {
+  for (const section of document.querySelectorAll('.panel-section[data-foldable="true"]')) {
+    wireFoldable(section, ":scope > .panel-section-header");
+  }
+  for (const group of document.querySelectorAll('.settings-group[data-foldable="true"]')) {
+    wireFoldable(group, ":scope > .settings-group-head");
+  }
+}
+initFoldablePanelSections();
+
+// UCA-125 Phase 3-3: Settings sub-nav — clicking an anchor un-collapses
+// the target foldable (if any), scrolls it into view, and moves the
+// "active" highlight to the clicked link. IntersectionObserver then
+// tracks which panel is in view during manual scrolling so the nav
+// reflects the current section without needing extra clicks.
+(function initSettingsNav() {
+  const navLinks = Array.from(document.querySelectorAll(".settings-nav [data-settings-nav]"));
+  if (navLinks.length === 0) return;
+  const setActive = (id) => {
+    for (const link of navLinks) {
+      link.classList.toggle("active", link.dataset.settingsNav === id);
+    }
+  };
+  for (const link of navLinks) {
+    link.addEventListener("click", (ev) => {
+      const id = link.dataset.settingsNav;
+      const target = document.querySelector(`#${CSS.escape(id)}`);
+      if (!target) return;
+      ev.preventDefault();
+      if (target.getAttribute("data-foldable") === "true" && target.getAttribute("data-collapsed") === "true") {
+        target.setAttribute("data-collapsed", "false");
+        const head = target.querySelector(":scope > .settings-group-head, :scope > .panel-section-header");
+        if (head) head.setAttribute("aria-expanded", "true");
+      }
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      setActive(id);
+    });
+  }
+  const panels = navLinks
+    .map((l) => document.querySelector(`#${CSS.escape(l.dataset.settingsNav)}`))
+    .filter(Boolean);
+  if (panels.length > 0 && "IntersectionObserver" in window) {
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (visible) setActive(visible.target.id);
+    }, { rootMargin: "-20% 0px -70% 0px", threshold: [0, 0.25, 0.5, 1] });
+    for (const p of panels) io.observe(p);
+  }
+})();

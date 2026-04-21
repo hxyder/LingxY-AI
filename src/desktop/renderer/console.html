@@ -710,7 +710,6 @@
     <header class="top topbar">
       <div class="top-crumbs">
         <span class="cur topbar-title" id="topCrumb">Tasks</span>
-        <span id="runtimeState" class="pill pill-neutral" hidden>connecting…</span>
       </div>
       <div class="top-spacer"></div>
       <button class="top-search" id="openPaletteBtn" aria-label="Quick input — Ctrl+K">
@@ -725,10 +724,10 @@
       <div class="theme-picker" role="group" aria-label="Theme">
         <button class="theme-swatch ts-active" data-theme-value="default" title="Light"
           aria-label="Light theme"
-          style="background: linear-gradient(135deg, #faf9f6 50%, #1a1917 50%);"></button>
+          style="background: linear-gradient(135deg, #ffffff 50%, #0a0a0a 50%);"></button>
         <button class="theme-swatch" data-theme-value="dark" title="Dark"
           aria-label="Dark theme"
-          style="background: #141310;"></button>
+          style="background: #0a0a0a;"></button>
       </div>
       <div class="top-actions">
         <button class="icon-btn" id="refreshButton" aria-label="Refresh" title="Refresh">
@@ -746,7 +745,7 @@
     <!-- ── Keyboard shortcuts modal (toggled by Ctrl+/ or the ? button) ── -->
     <div id="cheatsheetBackdrop" class="cheatsheet-backdrop" role="dialog" aria-modal="true" aria-labelledby="cheatsheetTitle" hidden>
       <div class="cheatsheet-panel" style="position:relative;">
-        <button class="ghost cheatsheet-close" id="cheatsheetCloseButton" aria-label="Close">&times;</button>
+        <button class="btn btn-ghost cheatsheet-close" id="cheatsheetCloseButton" aria-label="Close">&times;</button>
         <h2 id="cheatsheetTitle">Keyboard shortcuts</h2>
         <dl>
           <dt><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>U</kbd></dt>
@@ -848,6 +847,13 @@
         <div class="rail-group-label">Context<span class="zh">情境</span></div>
         <!-- UCA-121: Memory rail item retired. History/memory concerns
              now live in Tasks with date + source filters. -->
+        <!-- UCA-126: Inbox — files / mail / calendar preview across all
+             connected accounts. Relocated from the clutter inside each
+             Connectors card. -->
+        <button class="rail-item" data-tab="inbox" role="tab" aria-selected="false" title="Inbox">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
+          <span class="rail-item-label">Inbox<span class="zh">收件</span></span>
+        </button>
         <button class="rail-item" data-tab="projects" role="tab" aria-selected="false" title="Projects">
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
           <span class="rail-item-label">Projects<span class="zh">项目</span></span>
@@ -864,10 +870,10 @@
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
           <span class="rail-item-label">Settings<span class="zh">设置</span></span>
         </button>
-        <button class="rail-item" data-tab="advanced" role="tab" aria-selected="false" title="Advanced">
-          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-          <span class="rail-item-label">Advanced<span class="zh">高级</span></span>
-        </button>
+        <!-- UCA-126: Advanced rail item retired. Its four sub-panels were
+             redistributed: Templates + Budget + Audit Log moved into
+             Settings; DAG Workflow frontend removed (backend intact). -->
+
       </div>
 
       <div class="rail-foot rail-footer">
@@ -886,6 +892,24 @@
          TAB: TASKS
          ═══════════════════════════════════════ -->
     <section id="panel-tasks" class="tab-panel active">
+      <!-- UCA-125 Phase 1: v3-canonical .page-head replaces the retired
+           PANEL_INTROS triple-line injection. -->
+      <header class="page-head">
+        <div>
+          <h1>Tasks<span class="zh">任务</span></h1>
+          <div class="sub">All agent runs — active, queued, and recently completed.<span class="zh">代理的所有运行、队列与历史。</span></div>
+        </div>
+        <div class="page-head-actions">
+          <button id="tasksRefreshBtn" class="btn btn-sm" type="button" title="Refresh tasks">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            Refresh
+          </button>
+          <button id="tasksNewBtn" class="btn btn-sm btn-primary" type="button" title="Quick input (Ctrl+K)">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New task
+          </button>
+        </div>
+      </header>
       <!-- UCA-108: stat strip (4 cards; "Today" carries a 15-bucket sparkline) -->
       <div id="summaryGrid" class="stat-strip"></div>
 
@@ -897,85 +921,119 @@
            still work via window.ucaShell if needed. -->
       <form id="taskComposer" class="composer-bar" hidden aria-hidden="true" style="display:none;">
         <textarea id="commandInput" rows="1"></textarea>
-        <button type="submit" class="primary">Submit</button>
+        <button type="submit" class="btn btn-primary">Submit</button>
         <span id="submitState" class="muted"></span>
       </form>
+
+      <!-- UCA-125 Phase 2a: tasks-toolbar consolidates search + status
+           chips into a single horizontal row. Date + source filters
+           moved into an #advanced-filter popover (opens on button click)
+           so they don't steal ~70px of vertical space by default. -->
+      <div class="tasks-toolbar">
+        <label class="search-input tasks-toolbar-search">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input id="taskSearchInput" type="text" placeholder="Search tasks, IDs, outputs…  搜索任务" aria-label="Search tasks" />
+        </label>
+        <div class="filter-chips" id="taskFilterChips" role="group" aria-label="Task status filter">
+          <button type="button" class="filter-chip" data-filter="all" aria-pressed="true">All<span class="filter-chip-count" data-count-for="all">0</span></button>
+          <button type="button" class="filter-chip" data-filter="running" aria-pressed="false">Running<span class="filter-chip-count" data-count-for="running">0</span></button>
+          <button type="button" class="filter-chip" data-filter="queued" aria-pressed="false">Queued<span class="filter-chip-count" data-count-for="queued">0</span></button>
+          <button type="button" class="filter-chip" data-filter="success" aria-pressed="false">Success<span class="filter-chip-count" data-count-for="success">0</span></button>
+          <button type="button" class="filter-chip" data-filter="errors" aria-pressed="false">Errors<span class="filter-chip-count" data-count-for="errors">0</span></button>
+        </div>
+        <div class="tasks-toolbar-spacer"></div>
+        <div class="tasks-adv-filter-wrap">
+          <button type="button" id="tasksAdvFilterBtn" class="btn btn-sm btn-ghost" aria-haspopup="true" aria-expanded="false" aria-controls="tasksAdvFilter">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Advanced filter
+            <span id="tasksAdvFilterCount" class="tasks-adv-filter-count" hidden>0</span>
+          </button>
+          <div id="tasksAdvFilter" class="tasks-adv-filter-panel" hidden role="dialog" aria-label="Advanced filter">
+            <div class="tasks-adv-filter-section">
+              <div class="tasks-adv-filter-label">Date range<span class="zh">时间</span></div>
+              <div class="filter-chips" id="taskDateFilterChips" role="group" aria-label="Task date filter">
+                <button type="button" class="filter-chip" data-date="all" aria-pressed="true">All time</button>
+                <button type="button" class="filter-chip" data-date="today" aria-pressed="false">Today</button>
+                <button type="button" class="filter-chip" data-date="7d" aria-pressed="false">7 days</button>
+                <button type="button" class="filter-chip" data-date="30d" aria-pressed="false">30 days</button>
+              </div>
+            </div>
+            <div class="tasks-adv-filter-section">
+              <div class="tasks-adv-filter-label">Source<span class="zh">来源</span></div>
+              <div class="filter-chips" id="taskSourceFilterChips" role="group" aria-label="Task source filter">
+                <button type="button" class="filter-chip" data-source="all" aria-pressed="true">All sources</button>
+                <!-- remaining source chips are populated dynamically -->
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- tasks grid -->
       <div class="tasks-layout">
         <div class="task-sidebar">
-          <!-- UCA-108: search + filter chips above the task list -->
-          <label class="search-input" style="margin-bottom:8px;">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-            <input id="taskSearchInput" type="text" placeholder="Search tasks…  搜索任务" aria-label="Search tasks" />
-          </label>
-          <!-- UCA-123: consolidated filter rows. Three rows still, but
-               tighter gap (4px) + smaller chip font so they fit without
-               stealing half the task list vertical space. -->
-          <div class="task-filter-block" style="margin-bottom:10px;display:flex;flex-direction:column;gap:4px;">
-            <div class="filter-chips" id="taskFilterChips" role="group" aria-label="Task status filter">
-              <button type="button" class="filter-chip" data-filter="all" aria-pressed="true">All<span class="filter-chip-count" data-count-for="all">0</span></button>
-              <button type="button" class="filter-chip" data-filter="running" aria-pressed="false">Running<span class="filter-chip-count" data-count-for="running">0</span></button>
-              <button type="button" class="filter-chip" data-filter="queued" aria-pressed="false">Queued<span class="filter-chip-count" data-count-for="queued">0</span></button>
-              <button type="button" class="filter-chip" data-filter="success" aria-pressed="false">Success<span class="filter-chip-count" data-count-for="success">0</span></button>
-              <button type="button" class="filter-chip" data-filter="errors" aria-pressed="false">Errors<span class="filter-chip-count" data-count-for="errors">0</span></button>
-            </div>
-            <div class="filter-chips" id="taskDateFilterChips" role="group" aria-label="Task date filter">
-              <button type="button" class="filter-chip" data-date="all" aria-pressed="true">All time</button>
-              <button type="button" class="filter-chip" data-date="today" aria-pressed="false">Today</button>
-              <button type="button" class="filter-chip" data-date="7d" aria-pressed="false">7 days</button>
-              <button type="button" class="filter-chip" data-date="30d" aria-pressed="false">30 days</button>
-            </div>
-            <div class="filter-chips" id="taskSourceFilterChips" role="group" aria-label="Task source filter">
-              <button type="button" class="filter-chip" data-source="all" aria-pressed="true">All sources</button>
-              <!-- remaining source chips are populated dynamically -->
-            </div>
-          </div>
-          <div class="row">
-            <strong style="font-size:13px;">Recent Tasks</strong>
+          <div class="row" style="margin-bottom:8px;">
+            <strong style="font-size:13px;">Recent Tasks<span class="zh" style="font-weight:400;">最近</span></strong>
             <span id="taskCount" class="muted" style="font-size:12px;">0</span>
           </div>
           <div id="taskList" class="task-list"></div>
         </div>
-        <div class="task-main">
-          <div class="detail-section stack">
-            <div class="row">
-              <strong>Details</strong>
-              <div class="toolbar">
-                <button id="retryTaskButton" class="ghost" disabled>Retry</button>
-                <button id="cancelTaskButton" class="ghost" disabled>Cancel</button>
-                <button id="deleteTaskButton" class="ghost" disabled>Delete</button>
+        <div class="task-main task-detail">
+          <!-- UCA-125 Phase 2b: task detail split into separate .panel
+               cards (hero / subtasks / artifacts / timeline) rather than
+               one giant .detail-section. Each panel has a clear head so
+               sections can be visually scoped and collapse when empty. -->
+          <div id="taskDetailSummary" class="stack muted">Select a task to view details.</div>
+          <section class="panel task-detail-panel" id="taskSubtasksPanel" hidden>
+            <header class="panel-head">
+              <div class="panel-head-main">
+                <h3 class="panel-title">
+                  <svg class="panel-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                  Subtasks<span class="zh">子任务</span>
+                </h3>
+              </div>
+              <span id="taskChildCount" class="tag">0</span>
+            </header>
+            <div class="panel-body" id="taskChildList"></div>
+          </section>
+          <section class="panel task-detail-panel" id="taskArtifactsPanel" hidden>
+            <header class="panel-head">
+              <div class="panel-head-main">
+                <h3 class="panel-title">
+                  <svg class="panel-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  Artifacts<span class="zh">产物</span>
+                </h3>
+              </div>
+              <span id="taskArtifactCount" class="tag">0</span>
+            </header>
+            <div class="panel-body">
+              <div id="taskArtifactList" class="artifact-list"></div>
+              <pre id="taskArtifactPreview" class="artifact-preview muted" hidden>Select an artifact to preview.</pre>
+              <div class="task-detail-artifact-actions btn-group" hidden>
+                <button id="openTaskArtifactButton" class="btn btn-sm" hidden>Open</button>
+                <button id="copyTaskArtifactPathButton" class="btn btn-sm btn-ghost" hidden>Copy path</button>
+                <button id="useTaskArtifactContextButton" class="btn btn-sm btn-ghost" hidden>Use as context</button>
               </div>
             </div>
-            <div id="taskDetailSummary" class="stack muted">Select a task to view details.</div>
-            <div class="stack">
-              <div class="row">
-                <strong style="font-size:13px;">Subtasks</strong>
-                <span id="taskChildCount" class="muted" style="font-size:12px;">0</span>
+          </section>
+          <section class="panel task-detail-panel" id="taskTimelinePanel" hidden>
+            <header class="panel-head">
+              <div class="panel-head-main">
+                <h3 class="panel-title">
+                  <svg class="panel-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  Timeline<span class="zh">时间线</span>
+                </h3>
               </div>
-              <div id="taskChildList" class="task-child-list">
-                <p class="muted" style="font-size:12px;">No subtasks.</p>
-              </div>
-            </div>
-            <div class="artifact-panel">
-              <div class="row">
-                <strong style="font-size:13px;">Artifacts</strong>
-                <span id="taskArtifactCount" class="muted" style="font-size:12px;">0</span>
-              </div>
-              <div id="taskArtifactList" class="artifact-list">
-                <p class="muted" style="font-size:12px;">No artifacts yet.</p>
-              </div>
-              <pre id="taskArtifactPreview" class="artifact-preview muted">Select an artifact to preview.</pre>
-              <div class="toolbar">
-                <button id="openTaskArtifactButton" class="secondary" hidden>Open</button>
-                <button id="copyTaskArtifactPathButton" class="secondary" hidden>Copy Path</button>
-                <button id="useTaskArtifactContextButton" class="secondary" hidden>Use as Context</button>
-              </div>
-            </div>
-            <div class="stack">
-              <strong style="font-size:13px;">Timeline</strong>
-              <div id="taskTimeline" class="detail-timeline"></div>
-            </div>
+            </header>
+            <div class="panel-body" id="taskTimeline"></div>
+          </section>
+          <!-- Legacy action toolbar: retained inside Details hero (moved
+               into renderTaskDetail hero output) — these buttons stay
+               here as stable handles for the JS wiring. -->
+          <div hidden aria-hidden="true" class="task-detail-legacy-actions">
+            <button id="retryTaskButton" class="btn btn-sm" disabled>Retry</button>
+            <button id="cancelTaskButton" class="btn btn-sm btn-ghost" disabled>Cancel</button>
+            <button id="deleteTaskButton" class="btn btn-sm btn-danger" disabled>Delete</button>
           </div>
         </div>
       </div>
@@ -985,22 +1043,52 @@
          TAB: CHAT
          ═══════════════════════════════════════ -->
     <section id="panel-chat" class="tab-panel">
-      <section class="panel-section" aria-labelledby="consoleChatTitle" style="max-width:900px;">
-        <header class="panel-section-header">
-          <div class="panel-section-head-main">
-            <h3 id="consoleChatTitle" class="panel-section-title">Chat<span class="zh">对话</span></h3>
-            <span class="panel-section-sub">Ask from the full Console when you want more room than the floating overlay.</span>
-          </div>
-        </header>
+      <header class="page-head">
+        <div>
+          <h1>Chat<span class="zh">对话</span></h1>
+          <div class="sub">Conversational shell — keeps session memory, streams tool calls.<span class="zh">保留会话记忆；支持流式工具调用。</span></div>
+        </div>
+        <div class="page-head-actions">
+          <!-- UCA-125 Phase 3-5: "+ New chat" clears the current thread
+               so the surface resets to an empty conversation. A proper
+               multi-session sidebar needs backing storage and is tracked
+               for a follow-up — not added yet. -->
+          <button id="consoleChatNewBtn" class="btn btn-sm" type="button" title="Clear chat thread">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            New chat
+          </button>
+        </div>
+      </header>
+      <section class="panel" aria-labelledby="consoleChatTitle" style="max-width:900px;">
         <div class="console-chat-shell">
           <div id="consoleChatMessages" class="console-chat-messages">
-            <div class="console-chat-empty">没有对话 — 开始一个吧。</div>
+            <div class="console-chat-empty">
+              <svg class="console-chat-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              <div class="console-chat-empty-title">Start a conversation</div>
+              <div class="console-chat-empty-sub">没有对话 — 开始一个吧。<br/>Type below, or press <span class="kbd">⌃</span><span class="kbd">K</span> to pick a template.</div>
+            </div>
           </div>
+          <div id="consoleChatAttachments" class="console-chat-attachments" hidden></div>
           <form id="consoleChatForm" class="console-chat-composer">
             <textarea id="consoleChatInput" rows="2" placeholder="Ask LingxY anything…  问我任何事"></textarea>
-            <button id="consoleChatSendBtn" type="submit" class="primary">Send<span class="zh">发送</span></button>
-            <span id="consoleChatState" class="muted" style="font-size:12px;"></span>
+            <div class="console-chat-toolbar">
+              <div class="btn-group">
+                <button id="consoleChatAttachBtn" class="icon-btn" type="button" aria-label="Attach file" title="Attach file">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.58 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </button>
+                <button id="consoleChatVoiceBtn" class="icon-btn" type="button" aria-label="Voice input" title="Voice input (Ctrl+Shift+V)">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
+                </button>
+                <span id="consoleChatModelChip" class="model-chip" title="Active model — change in Settings → Task Routing">
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+                  <span id="consoleChatModelChipLabel">auto</span>
+                </span>
+              </div>
+              <span id="consoleChatState" class="muted" style="font-size:12px;flex:1;margin-left:8px;"></span>
+              <button id="consoleChatSendBtn" type="submit" class="btn">Send<span class="zh">发送</span></button>
+            </div>
           </form>
+          <input id="consoleChatAttachInput" type="file" multiple hidden>
         </div>
       </section>
     </section>
@@ -1009,16 +1097,29 @@
          TAB: FILES (artifact manager)
          ═══════════════════════════════════════ -->
     <section id="panel-files" class="tab-panel">
+      <header class="page-head">
+        <div>
+          <h1>Files<span class="zh">文件</span></h1>
+          <div class="sub">Artifacts generated by agents — notes, translations, exports.<span class="zh">代理输出的产物。</span></div>
+        </div>
+        <div class="page-head-actions">
+          <button id="filesOpenFolderBtn" class="btn btn-sm" type="button" title="Open output folder">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+            Open folder
+          </button>
+        </div>
+      </header>
       <div class="files-layout">
         <!-- ── Files list card ── -->
         <section class="panel-section" aria-labelledby="filesListTitle">
           <header class="panel-section-header">
             <div class="panel-section-head-main">
-              <h3 id="filesListTitle" class="panel-section-title">All Generated Files<span class="zh">全部产物</span> <span id="filesCount" class="pill pill-neutral" style="margin-left:8px;">0</span></h3>
-              <span class="panel-section-sub">任务执行后产生的文件、图表、文档都会在这里。</span>
+              <h3 id="filesListTitle" class="panel-section-title">Recent files<span class="zh">最近</span></h3>
+              <span class="panel-section-sub">Generated artifacts, organized by task and time.</span>
             </div>
             <div class="panel-section-actions">
-              <button id="filesRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+              <span id="filesCount" class="tag">0</span>
+              <button id="filesRefreshBtn" class="btn btn-sm btn-ghost" type="button">Refresh</button>
             </div>
           </header>
           <div class="panel-section-body compact" style="flex:1;min-height:0;">
@@ -1042,9 +1143,9 @@
               <span class="panel-section-sub">选中一个文件，预览它的内容或打开它。</span>
             </div>
             <div class="panel-section-actions">
-              <button id="filesOpenBtn" class="secondary" type="button" hidden>Open</button>
-              <button id="filesRevealBtn" class="secondary" type="button" hidden>Show in Folder</button>
-              <button id="filesCopyPathBtn" class="secondary" type="button" hidden>Copy Path</button>
+              <button id="filesOpenBtn" class="btn" type="button" hidden>Open</button>
+              <button id="filesRevealBtn" class="btn" type="button" hidden>Show in Folder</button>
+              <button id="filesCopyPathBtn" class="btn" type="button" hidden>Copy Path</button>
             </div>
           </header>
           <div class="panel-section-body" style="flex:1;min-height:0;">
@@ -1059,33 +1160,125 @@
          absorbed into Tasks via date + source filters. -->
 
     <!-- ═══════════════════════════════════════
+         TAB: INBOX (UCA-126)
+         -----------------------------------------
+         Files / Emails / Calendar preview across every connected
+         account. Pulled out of the Connectors cards so Connectors
+         stays lean and this tab can grow richer previews later.
+         ═══════════════════════════════════════ -->
+    <section id="panel-inbox" class="tab-panel">
+      <header class="page-head">
+        <div>
+          <h1>Inbox<span class="zh">收件</span></h1>
+          <div class="sub">Preview files, mail, and calendar from every connected account.<span class="zh">浏览已连接账户的文件、邮件与日历。</span></div>
+        </div>
+        <div class="page-head-actions">
+          <button id="inboxRefreshBtn" class="btn btn-sm btn-ghost" type="button">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+            Refresh
+          </button>
+        </div>
+      </header>
+      <div class="inbox-layout">
+        <aside class="inbox-sidebar panel">
+          <header class="panel-head">
+            <div class="panel-head-main">
+              <h3 class="panel-title">Accounts<span class="zh">账户</span></h3>
+              <span class="panel-sub">Pick an inbox to browse</span>
+            </div>
+          </header>
+          <div class="inbox-accounts" id="inboxAccountList">
+            <p class="muted inbox-empty-accounts" style="padding:14px 16px;font-size:12px;">尚未连接账户 — 去 Connectors 授权后再来。</p>
+          </div>
+        </aside>
+        <section class="inbox-main panel">
+          <header class="panel-head inbox-main-head">
+            <div class="seg-control inbox-resource-toggle" role="group" aria-label="Resource type">
+              <button type="button" data-inbox-res="files" aria-pressed="true">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Files
+              </button>
+              <button type="button" data-inbox-res="emails" aria-pressed="false">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+                Mail
+              </button>
+              <button type="button" data-inbox-res="calendar" aria-pressed="false">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="4" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                Calendar
+              </button>
+            </div>
+            <div style="flex:1;"></div>
+            <span id="inboxAccountLabel" class="tag">—</span>
+          </header>
+          <div class="panel-body inbox-content-body">
+            <div id="inboxContent" class="inbox-content">
+              <p class="muted" style="font-size:12px;margin:6px 0;">选择一个账户和资源类型。</p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════
          TAB: PROJECTS
          ═══════════════════════════════════════ -->
     <section id="panel-projects" class="tab-panel">
-      <div class="projects-layout" style="display:grid;grid-template-columns:280px minmax(0,1fr) minmax(260px,0.8fr);gap:16px;max-width:1100px;">
-        <div class="stack">
-          <div class="row">
-            <strong style="font-size:13px;">Projects</strong>
-            <span id="projectCount" class="muted" style="font-size:12px;">0</span>
+      <header class="page-head">
+        <div>
+          <h1>Projects<span class="zh">项目</span></h1>
+          <div class="sub">Workspaces that bundle memory, schedules, and default routing.<span class="zh">把记忆、定时与路由捆在一起的工作区。</span></div>
+        </div>
+        <div class="page-head-actions">
+          <!-- UCA-125 Phase 3-4: "+ New project" lifted from the first
+               column into the page-head per v3. The inline create form
+               is retained below for rename/quick-create flows. -->
+          <button id="projectNewBtn" class="btn btn-sm btn-primary" type="button" title="New project">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New project
+          </button>
+        </div>
+      </header>
+      <div class="projects-layout">
+        <section class="projects-col panel">
+          <header class="panel-head projects-col-head">
+            <div class="panel-head-main">
+              <h3 class="panel-title">Projects<span class="zh">项目</span></h3>
+              <span class="panel-sub">按项目分组会话</span>
+            </div>
+            <span id="projectCount" class="tag">0</span>
+          </header>
+          <div class="projects-col-body">
+            <form id="projectCreateForm" class="row" style="gap:8px;margin-bottom:10px;">
+              <input id="projectNameInput" type="text" placeholder="New project name">
+              <button type="submit" class="btn btn-sm">Create</button>
+            </form>
+            <span id="projectState" class="muted" style="font-size:12px;"></span>
+            <div id="projectList" class="item-list"></div>
           </div>
-          <form id="projectCreateForm" class="row" style="gap:8px;">
-            <input id="projectNameInput" type="text" placeholder="New project name">
-            <button type="submit" class="secondary">Create</button>
-          </form>
-          <span id="projectState" class="muted" style="font-size:12px;"></span>
-          <div id="projectList" class="item-list"></div>
-        </div>
-        <div class="stack">
-          <div class="row">
-            <strong style="font-size:13px;">Conversations</strong>
-            <span id="projectConversationCount" class="muted" style="font-size:12px;">0</span>
+        </section>
+        <section class="projects-col panel">
+          <header class="panel-head projects-col-head">
+            <div class="panel-head-main">
+              <h3 class="panel-title">Conversations<span class="zh">会话</span></h3>
+              <span class="panel-sub">来自当前项目</span>
+            </div>
+            <span id="projectConversationCount" class="pill pill-neutral">0</span>
+          </header>
+          <div class="projects-col-body">
+            <div id="projectConversationList" class="item-list"></div>
           </div>
-          <div id="projectConversationList" class="item-list"></div>
-        </div>
-        <div class="stack">
-          <strong style="font-size:13px;">Preview</strong>
-          <pre id="projectConversationPreview" class="history-preview muted">Select a conversation.</pre>
-        </div>
+        </section>
+        <section class="projects-col panel">
+          <header class="panel-head projects-col-head">
+            <div class="panel-head-main">
+              <h3 class="panel-title">Preview<span class="zh">预览</span></h3>
+              <span class="panel-sub">会话快照</span>
+            </div>
+          </header>
+          <div class="projects-col-body">
+            <pre id="projectConversationPreview" class="history-preview muted">Select a conversation.</pre>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -1093,13 +1286,42 @@
          TAB: SCHEDULES
          ═══════════════════════════════════════ -->
     <section id="panel-schedules" class="tab-panel">
+      <header class="page-head">
+        <div>
+          <h1>Schedules<span class="zh">定时</span></h1>
+          <div class="sub">Natural-language rules that run at their own time.<span class="zh">用自然语言描述的定时规则。</span></div>
+        </div>
+        <div class="page-head-actions">
+          <!-- UCA-125 Phase 3: view-mode seg-control lifted from the list
+               card's panel-section-header into the page-head — the list
+               view applies to the whole page, not just one panel. -->
+          <div class="seg-control" role="group" aria-label="Schedule view mode">
+            <button type="button" data-schedule-view="list" aria-pressed="true">List<span class="zh">列表</span></button>
+            <button type="button" data-schedule-view="week" aria-pressed="false">Week<span class="zh">周</span></button>
+            <button type="button" data-schedule-view="month" aria-pressed="false">Month<span class="zh">月</span></button>
+          </div>
+          <!-- UCA-125 follow-up: create form is now button-triggered
+               instead of always-visible. Saves ~180px when just browsing
+               existing schedules. -->
+          <button id="scheduleNewBtn" class="btn btn-sm btn-primary" type="button" aria-expanded="false" aria-controls="scheduleCreatePanel">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New schedule<span class="zh">新建</span>
+          </button>
+        </div>
+      </header>
       <div class="schedules-layout">
-        <!-- ── Create new schedule ── -->
-        <section class="panel-section" aria-labelledby="scheduleCreateTitle">
+        <!-- ── Create new schedule (hidden by default; toggled by
+             #scheduleNewBtn in the page-head) ── -->
+        <section id="scheduleCreatePanel" class="panel-section" aria-labelledby="scheduleCreateTitle" hidden>
           <header class="panel-section-header">
             <div class="panel-section-head-main">
               <h3 id="scheduleCreateTitle" class="panel-section-title">New schedule<span class="zh">新建计划</span></h3>
               <span class="panel-section-sub">自然语言时间 + 要做的事，AI 到点自动执行或提醒。</span>
+            </div>
+            <div class="panel-section-actions">
+              <button id="scheduleCreateCloseBtn" class="btn btn-sm btn-ghost" type="button" aria-label="Close">
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
             </div>
           </header>
           <form id="scheduleForm" class="panel-section-body">
@@ -1112,7 +1334,7 @@
               <textarea id="scheduleCommandInput" rows="3" placeholder="例如：提醒我时间到了"></textarea>
             </div>
             <div class="toolbar">
-              <button type="submit" class="primary">Create<span class="zh">创建</span></button>
+              <button type="submit" class="btn btn-primary">Create<span class="zh">创建</span></button>
               <span id="scheduleCreateState" class="muted" style="font-size:12px;"></span>
             </div>
           </form>
@@ -1122,15 +1344,15 @@
         <section class="panel-section" aria-labelledby="scheduleListTitle">
           <header class="panel-section-header">
             <div class="panel-section-head-main">
-              <h3 id="scheduleListTitle" class="panel-section-title">Scheduled Tasks<span class="zh">计划任务</span> <span id="scheduleCount" class="pill pill-neutral" style="margin-left:8px;">0</span></h3>
-              <span class="panel-section-sub">切换 List / Week / Month 查看不同视角。</span>
+              <h3 id="scheduleListTitle" class="panel-section-title">Active schedules<span class="zh">计划任务</span></h3>
+              <span class="panel-section-sub">Enabled rules fire on their own time.</span>
             </div>
             <div class="panel-section-actions">
-              <div class="view-toggle" role="group" aria-label="Schedule view mode">
-                <button type="button" data-schedule-view="list" aria-pressed="true">List</button>
-                <button type="button" data-schedule-view="week" aria-pressed="false">Week</button>
-                <button type="button" data-schedule-view="month" aria-pressed="false">Month</button>
-              </div>
+              <label class="search-input" style="width:200px;margin:0;">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input id="scheduleSearchInput" type="search" placeholder="Search schedules…  搜索计划" autocomplete="off"/>
+              </label>
+              <span id="scheduleCount" class="tag">0</span>
             </div>
           </header>
           <div class="panel-section-body">
@@ -1176,109 +1398,35 @@
       </div>
     </section>
 
-    <!-- ═══════════════════════════════════════
-         TAB: ADVANCED
-         ═══════════════════════════════════════ -->
-    <section id="panel-advanced" class="tab-panel">
-      <div class="stack" style="max-width:900px;">
-        <div class="settings-group advanced-guide">
-          <h3 class="settings-group-title">How to use Advanced</h3>
-          <div class="advanced-guide-grid">
-            <div><strong>Templates</strong><p class="muted">Reusable task prompts and flows. Use this when the same instruction should be saved and reused.</p></div>
-            <div><strong>DAG Workflow</strong><p class="muted">A structured multi-step workflow editor for testing task graphs before running automation.</p></div>
-            <div><strong>Budget</strong><p class="muted">Monthly spend controls and current usage summary for provider calls.</p></div>
-            <div><strong>Audit Log</strong><p class="muted">Security and runtime trace history. Use it when a tool call, approval, or connector behaves unexpectedly.</p></div>
-          </div>
-        </div>
+    <!-- UCA-126: Advanced tab retired (Templates + Budget + Audit moved
+         into Settings; DAG frontend deleted). Back-end APIs for DAG
+         preview/resume remain reachable; renderer is null-safe now. -->
 
-        <!-- Templates -->
-        <div class="settings-group">
-          <h3 class="settings-group-title">Templates</h3>
-          <span id="templateCount" class="muted" style="font-size:12px;margin-bottom:10px;display:block;">0</span>
-          <div class="advanced-grid">
-            <div class="stack">
-              <div id="templateList" class="template-list"></div>
-            </div>
-            <div class="stack">
-              <form id="templateForm" class="stack">
-                <div>
-                  <label for="templateNameInput">Template Name</label>
-                  <input id="templateNameInput" type="text" placeholder="e.g. Meeting Notes">
-                </div>
-                <div>
-                  <label for="templatePromptInput">Default Prompt</label>
-                  <textarea id="templatePromptInput" rows="4" placeholder="e.g. Extract action items and deadlines"></textarea>
-                </div>
-                <div class="toolbar">
-                  <button type="submit" class="primary">Save</button>
-                  <button type="button" id="importTemplateButton" class="secondary">Import JSON</button>
-                  <button type="button" id="deleteTemplateButton" class="secondary">Delete</button>
-                  <span id="templateState" class="muted" style="font-size:12px;"></span>
-                </div>
-              </form>
-              <div>
-                <label for="templateImportInput">Import JSON</label>
-                <textarea id="templateImportInput" rows="6" class="dag-editor" placeholder="Paste template JSON..."></textarea>
-              </div>
-              <div>
-                <strong style="font-size:12px;">Export Preview</strong>
-                <pre id="templatePreview" class="template-preview muted">Select a template.</pre>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- DAG Workflow -->
-        <div class="settings-group">
-          <h3 class="settings-group-title">DAG Workflow</h3>
-          <span id="dagExecutionCount" class="muted" style="font-size:12px;margin-bottom:10px;display:block;">0</span>
-          <div class="advanced-grid">
-            <div class="stack">
-              <div class="toolbar">
-                <button id="previewDagButton" type="button" class="secondary">Validate</button>
-                <button id="loadSampleDagButton" type="button" class="ghost">Load Sample</button>
-              </div>
-              <textarea id="dagEditorInput" rows="10" class="dag-editor" placeholder='{"nodes":[...],"edges":[...]}'></textarea>
-              <pre id="dagPreview" class="dag-preview muted">Not validated yet.</pre>
-            </div>
-            <div class="stack">
-              <strong style="font-size:12px;">Execution Snapshots</strong>
-              <div id="dagExecutionList" class="execution-list"></div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Budget -->
-        <div class="settings-group">
-          <h3 class="settings-group-title">Budget</h3>
-          <div id="budgetSummary" class="budget-grid" style="margin-bottom:12px;"></div>
-          <form id="budgetForm" class="row" style="gap:8px;">
-            <label class="muted" for="monthlyBudgetInput" style="white-space:nowrap;">Monthly Limit (USD)</label>
-            <input id="monthlyBudgetInput" class="pill-input" type="text" inputmode="decimal" placeholder="50">
-            <button type="submit" class="primary">Update</button>
-            <span id="budgetState" class="muted" style="font-size:12px;"></span>
-          </form>
-        </div>
-
-        <!-- Audit Log -->
-        <div class="settings-group">
-          <div class="row" style="margin-bottom:10px;">
-            <h3 class="settings-group-title" style="margin:0;">Audit Log</h3>
-            <span id="auditCount" class="muted" style="font-size:12px;">0</span>
-          </div>
-          <div id="auditList" class="audit-list"></div>
-        </div>
-      </div>
-    </section>
 
     <!-- ═══════════════════════════════════════
          TAB: CONNECTORS
          ═══════════════════════════════════════ -->
     <section id="panel-connectors" class="tab-panel">
+      <header class="page-head">
+        <div>
+          <h1>Connectors<span class="zh">连接器</span></h1>
+          <div class="sub">Accounts, mailboxes, and MCP tools the agent can use.<span class="zh">代理能调用的账户、邮箱与工具。</span></div>
+        </div>
+        <div class="page-head-actions">
+          <!-- UCA-127: Browse catalog button opens a right-side drawer
+               with a searchable grid of every available connector. The
+               inline "pick a provider" buttons retire in favor of this
+               unified discovery surface. -->
+          <button id="connBrowseBtn" class="btn btn-sm" type="button">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="M14 9l3 3-3 3"/></svg>
+            Browse catalog<span class="zh">浏览</span>
+          </button>
+        </div>
+      </header>
       <div class="settings-sections">
 
         <!-- ── Account Connectors (Microsoft 365 / Google) ── -->
-        <section class="panel-section" aria-labelledby="connAccountsTitle">
+        <section class="panel-section" aria-labelledby="connAccountsTitle" data-foldable="true">
           <header class="panel-section-header">
             <div class="panel-section-head-main">
               <h3 id="connAccountsTitle" class="panel-section-title">Accounts<span class="zh">账户连接</span></h3>
@@ -1286,12 +1434,15 @@
             </div>
           </header>
           <div class="panel-section-body">
-            <div id="accountConnectorsList" style="display:flex;flex-direction:column;gap:12px;"></div>
+            <!-- UCA-125 Phase 3-2: account cards arranged as .conn-grid so
+                 cards wrap naturally (2-up on wide screens) instead of a
+                 single-column vertical stack. -->
+            <div id="accountConnectorsList" class="conn-grid"></div>
           </div>
         </section>
 
         <!-- ── Email inbox providers ── -->
-        <section class="panel-section" aria-labelledby="connEmailTitle">
+        <section class="panel-section" aria-labelledby="connEmailTitle" data-foldable="true">
           <header class="panel-section-header">
             <div class="panel-section-head-main">
               <h3 id="connEmailTitle" class="panel-section-title">Email inbox<span class="zh">邮箱</span></h3>
@@ -1300,11 +1451,14 @@
           </header>
           <div class="panel-section-body">
 
-          <!-- existing accounts list -->
-          <div id="connEmailList" class="stack" style="gap:8px;"></div>
+          <!-- existing accounts list: conn-section-group for row layout -->
+          <div id="connEmailList" style="margin-bottom:14px;"></div>
 
-          <!-- provider picker (shown when no form open) -->
-          <div id="connEmailPicker" style="display:flex;flex-wrap:wrap;gap:8px;">
+          <!-- UCA-127: inline provider picker retired; discovery now
+               lives in the #connBrowseBtn → Browse catalog drawer. The
+               picker buttons are preserved hidden so legacy JS wiring
+               (pick handler) still has its DOM handles. -->
+          <div id="connEmailPicker" hidden aria-hidden="true" style="display:none;">
             <button class="conn-provider-btn" data-provider="gmail" type="button">
               <span class="conn-provider-icon"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg></span>Gmail
             </button>
@@ -1341,8 +1495,8 @@
                 <input id="connEmailImapHost" type="text" placeholder="imap.example.com">
               </div>
               <div class="toolbar" style="margin-top:4px;">
-                <button id="connEmailConnectBtn" class="primary" type="button">连接</button>
-                <button id="connEmailCancelBtn" class="ghost" type="button">取消</button>
+                <button id="connEmailConnectBtn" class="btn btn-primary" type="button">连接</button>
+                <button id="connEmailCancelBtn" class="btn btn-ghost" type="button">取消</button>
                 <span id="connEmailState" class="muted" style="font-size:12px;"></span>
               </div>
             </div>
@@ -1355,18 +1509,74 @@
         <!-- UCA-121: Morning digest moved to Schedules tab (it's a scheduled job). -->
 
         <!-- ── MCP Tools ── -->
-        <section class="panel-section" aria-labelledby="connMcpTitle">
+        <section class="panel-section" aria-labelledby="connMcpTitle" data-foldable="true">
           <header class="panel-section-header">
             <div class="panel-section-head-main">
               <h3 id="connMcpTitle" class="panel-section-title">MCP tools<span class="zh">工具服务器</span></h3>
               <span class="panel-section-sub">启用后，AI 可直接调用这些工具执行文件、搜索、浏览器等操作。</span>
             </div>
             <div class="panel-section-actions">
-              <button id="connectorsMcpRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+              <button id="connectorsMcpRefreshBtn" class="btn btn-ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
             </div>
           </header>
           <div class="panel-section-body">
-            <div id="connectorsMcpList" class="stack" style="gap:10px;"></div>
+            <!-- UCA-125 Phase 3-2: MCP servers arranged as .conn-grid so
+                 cards wrap as a responsive auto-fill grid per v3. -->
+            <div id="connectorsMcpList" class="conn-grid"></div>
+
+            <!-- UCA-126: custom MCP server form merged here from Settings.
+                 Toggled by the "+ Add custom server" button so the curated
+                 catalog stays clean for casual users. -->
+            <div class="mcp-custom-wrap" style="margin-top:18px;border-top:1px solid var(--line);padding-top:14px;">
+              <div class="row" style="gap:8px;margin-bottom:8px;">
+                <strong style="font-size:13px;">Custom MCP servers<span class="zh" style="font-weight:400;margin-left:4px;">自定义服务器</span></strong>
+                <span id="mcpServerCount" class="tag">0</span>
+                <div style="flex:1;"></div>
+                <button id="mcpServerAddToggle" class="btn btn-sm" type="button" aria-expanded="false" aria-controls="mcpServerFormWrap">
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Add custom server
+                </button>
+                <button id="mcpServerRefreshBtn" class="btn btn-sm btn-ghost" type="button">Refresh</button>
+              </div>
+              <div id="mcpServerFormWrap" hidden>
+                <form id="mcpServerForm" class="stack" style="gap:10px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);margin-bottom:10px;">
+                  <div class="row" style="gap:8px;">
+                    <div style="flex:1;">
+                      <label for="mcpServerId">Server ID</label>
+                      <input id="mcpServerId" type="text" placeholder="e.g. my-mcp" required>
+                    </div>
+                    <div style="flex:1;">
+                      <label for="mcpServerName">Display Name</label>
+                      <input id="mcpServerName" type="text" placeholder="e.g. My MCP Server">
+                    </div>
+                  </div>
+                  <div class="row" style="gap:8px;">
+                    <div style="flex:1;">
+                      <label for="mcpTransport">Transport</label>
+                      <select id="mcpTransport">
+                        <option value="stdio">stdio</option>
+                        <option value="http">http</option>
+                        <option value="ws">ws</option>
+                      </select>
+                    </div>
+                    <div style="flex:1;">
+                      <label for="mcpCommand">Command / URL</label>
+                      <input id="mcpCommand" type="text" placeholder="stdio: node ...  http: https://host">
+                    </div>
+                  </div>
+                  <div>
+                    <label for="mcpArgs">Args (space-separated, stdio only)</label>
+                    <input id="mcpArgs" type="text" placeholder="e.g. C:\\tools\\server.mjs">
+                  </div>
+                  <div class="toolbar">
+                    <button type="submit" class="btn btn-sm btn-primary">Add / Update</button>
+                    <button type="button" id="mcpServerCancelBtn" class="btn btn-sm btn-ghost">Cancel</button>
+                    <span id="mcpServerState" class="muted" style="font-size:12px;"></span>
+                  </div>
+                </form>
+              </div>
+              <div id="mcpServerList" class="stack" style="gap:8px;"></div>
+            </div>
           </div>
         </section>
 
@@ -1392,81 +1602,104 @@
          TAB: SETTINGS
          ═══════════════════════════════════════ -->
     <section id="panel-settings" class="tab-panel">
-      <div class="settings-sections">
+      <header class="page-head">
+        <div>
+          <h1>Settings<span class="zh">设置</span></h1>
+          <div class="sub">Runtime configuration — providers, routing, privacy, paths.<span class="zh">运行时配置。</span></div>
+        </div>
+        <div class="page-head-actions"></div>
+      </header>
+      <!-- UCA-125 Phase 3-3: v3 settings-grid with a sticky left sub-nav.
+           Each anchor jumps to the matching settings-group id. The
+           settings-sections wrapper keeps the foldable behaviour intact. -->
+      <div class="settings-grid">
+        <nav class="settings-nav" aria-label="Settings sections">
+          <a href="#providerSettingsPanel" data-settings-nav="providerSettingsPanel" class="active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M22 2 12 12"/></svg>
+            Providers
+          </a>
+          <a href="#routingSettingsPanel" data-settings-nav="routingSettingsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="m9 19 9-14"/></svg>
+            Routing
+          </a>
+          <!-- UCA-126: MCP Servers link retired — MCP has a single home
+               in Connectors → MCP tools now. The custom-server form was
+               moved there too. -->
+          <a href="#skillsSettingsPanel" data-settings-nav="skillsSettingsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            Skills
+          </a>
+          <a href="#codeCliSettingsPanel" data-settings-nav="codeCliSettingsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Code CLI
+          </a>
+          <a href="#emailSettingsPanel" data-settings-nav="emailSettingsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+            Email
+          </a>
+          <a href="#systemStatusPanel" data-settings-nav="systemStatusPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Status
+          </a>
+          <a href="#privacySettingsPanel" data-settings-nav="privacySettingsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            Privacy
+          </a>
+          <a href="#settings-output" data-settings-nav="settings-output">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+            Paths
+          </a>
+          <a href="#settings-features" data-settings-nav="settings-features">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16"/><path d="M4 15h16"/><circle cx="10" cy="9" r="2"/><circle cx="16" cy="15" r="2"/></svg>
+            Features
+          </a>
+          <a href="#settings-templates" data-settings-nav="settings-templates">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+            Templates
+          </a>
+          <a href="#settings-budget" data-settings-nav="settings-budget">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            Budget
+          </a>
+          <a href="#settings-audit" data-settings-nav="settings-audit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
+            Audit
+          </a>
+        </nav>
+        <div class="settings-sections settings-content">
         <!-- ── Custom Providers ── -->
-        <div id="providerSettingsPanel" class="settings-group">
-          <div class="row" style="margin-bottom:10px;">
+        <div id="providerSettingsPanel" class="settings-group" data-foldable="true">
+          <div class="settings-group-head">
             <h3 class="settings-group-title" style="margin:0;">AI Providers</h3>
-            <button id="addProviderBtn" class="secondary" type="button">+ Add Provider</button>
+            <button id="addProviderBtn" class="btn" type="button" data-no-fold>+ Add Provider</button>
           </div>
           <p class="muted" style="font-size:12px;margin:0 0 12px;">Add any OpenAI-compatible or Anthropic API. Saved instantly — no restart needed.</p>
           <div id="providersList" class="stack" style="gap:8px;"></div>
         </div>
 
         <!-- ── Task Routing ── -->
-        <div id="routingSettingsPanel" class="settings-group">
-          <h3 class="settings-group-title">Task Routing</h3>
+        <div id="routingSettingsPanel" class="settings-group" data-foldable="true">
+          <div class="settings-group-head">
+            <h3 class="settings-group-title" style="margin:0;">Task Routing</h3>
+          </div>
           <p class="muted" style="font-size:12px;margin:0 0 12px;">Choose which provider+model handles each task type.</p>
           <div id="taskRoutingForm" class="stack" style="gap:10px;"></div>
           <div class="toolbar" style="margin-top:10px;">
-            <button id="saveRoutingBtn" class="primary" type="button">Save Routing</button>
+            <button id="saveRoutingBtn" class="btn btn-primary" type="button">Save Routing</button>
             <span id="routingSaveState" class="muted" style="font-size:12px;"></span>
           </div>
         </div>
 
-        <!-- ── MCP Servers ── -->
-        <div id="mcpSettingsPanel" class="settings-group">
-          <div class="row" style="margin-bottom:10px;">
-            <h3 class="settings-group-title" style="margin:0;">MCP Servers</h3>
-            <div class="row" style="gap:8px;">
-              <span id="mcpServerCount" class="muted" style="font-size:12px;">0</span>
-              <button id="mcpServerRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
-            </div>
-          </div>
-          <form id="mcpServerForm" class="stack" style="gap:10px;margin-bottom:12px;">
-            <div class="row" style="gap:8px;">
-              <div style="flex:1;">
-                <label for="mcpServerId">Server ID</label>
-                <input id="mcpServerId" type="text" placeholder="e.g. my-mcp" required>
-              </div>
-              <div style="flex:1;">
-                <label for="mcpServerName">Display Name</label>
-                <input id="mcpServerName" type="text" placeholder="e.g. My MCP Server">
-              </div>
-            </div>
-            <div class="row" style="gap:8px;">
-              <div style="flex:1;">
-                <label for="mcpTransport">Transport</label>
-                <select id="mcpTransport">
-                  <option value="stdio">stdio</option>
-                  <option value="http">http</option>
-                  <option value="ws">ws</option>
-                </select>
-              </div>
-              <div style="flex:1;">
-                <label for="mcpCommand">Command / URL</label>
-                <input id="mcpCommand" type="text" placeholder="stdio: node ...  http: https://host">
-              </div>
-            </div>
-            <div>
-              <label for="mcpArgs">Args (space-separated, stdio only)</label>
-              <input id="mcpArgs" type="text" placeholder="e.g. C:\\tools\\server.mjs">
-            </div>
-            <div class="toolbar">
-              <button type="submit" class="primary">Add / Update MCP</button>
-              <span id="mcpServerState" class="muted" style="font-size:12px;"></span>
-            </div>
-          </form>
-          <div id="mcpServerList" class="stack" style="gap:8px;"></div>
-        </div>
+        <!-- UCA-126: MCP Servers panel moved to Connectors → MCP tools.
+             See #connectorsMcpList + #mcpServerForm there. -->
 
         <!-- ── Skills Registries ── -->
-        <div id="skillsSettingsPanel" class="settings-group">
-          <div class="row" style="margin-bottom:10px;">
+        <div id="skillsSettingsPanel" class="settings-group" data-foldable="true" data-collapsed="true">
+          <div class="settings-group-head">
             <h3 class="settings-group-title" style="margin:0;">Skills Registries</h3>
-            <div class="row" style="gap:8px;">
+            <div class="row" style="gap:8px;" data-no-fold>
               <span id="skillRegistryCount" class="muted" style="font-size:12px;">0</span>
-              <button id="skillRegistryRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+              <button id="skillRegistryRefreshBtn" class="btn btn-ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
             </div>
           </div>
           <form id="skillRegistryForm" class="stack" style="gap:10px;margin-bottom:12px;">
@@ -1485,7 +1718,7 @@
               <input id="skillRegistryPath" type="text" placeholder="e.g. C:\\skills">
             </div>
             <div class="toolbar">
-              <button type="submit" class="primary">Add / Update Registry</button>
+              <button type="submit" class="btn btn-primary">Add / Update Registry</button>
               <span id="skillRegistryState" class="muted" style="font-size:12px;"></span>
             </div>
           </form>
@@ -1493,12 +1726,12 @@
         </div>
 
         <!-- ── Code CLI Adapters ── -->
-        <div id="codeCliSettingsPanel" class="settings-group">
-          <div class="row" style="margin-bottom:10px;">
+        <div id="codeCliSettingsPanel" class="settings-group" data-foldable="true" data-collapsed="true">
+          <div class="settings-group-head">
             <h3 class="settings-group-title" style="margin:0;">Code CLI Adapters</h3>
-            <div class="row" style="gap:8px;">
+            <div class="row" style="gap:8px;" data-no-fold>
               <span id="codeCliAdapterCount" class="muted" style="font-size:12px;">0</span>
-              <button id="codeCliAdapterRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+              <button id="codeCliAdapterRefreshBtn" class="btn btn-ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
             </div>
           </div>
           <form id="codeCliAdapterForm" class="stack" style="gap:10px;margin-bottom:12px;">
@@ -1540,7 +1773,7 @@
               </div>
             </div>
             <div class="toolbar">
-              <button type="submit" class="primary">Add / Update Adapter</button>
+              <button type="submit" class="btn btn-primary">Add / Update Adapter</button>
               <span id="codeCliAdapterState" class="muted" style="font-size:12px;"></span>
             </div>
           </form>
@@ -1548,12 +1781,12 @@
         </div>
 
         <!-- ── Email Accounts ── -->
-        <div id="emailSettingsPanel" class="settings-group">
-          <div class="row" style="margin-bottom:10px;">
+        <div id="emailSettingsPanel" class="settings-group" data-foldable="true" data-collapsed="true">
+          <div class="settings-group-head">
             <h3 class="settings-group-title" style="margin:0;">Email Accounts</h3>
-            <div class="row" style="gap:8px;">
+            <div class="row" style="gap:8px;" data-no-fold>
               <span id="emailAccountCount" class="muted" style="font-size:12px;">0</span>
-              <button id="emailAccountRefreshBtn" class="ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
+              <button id="emailAccountRefreshBtn" class="btn btn-ghost" type="button" style="font-size:11px;padding:4px 10px;">Refresh</button>
             </div>
           </div>
           <form id="emailAccountForm" class="stack" style="gap:10px;margin-bottom:12px;">
@@ -1605,7 +1838,7 @@
               </div>
             </div>
             <div class="toolbar">
-              <button type="submit" class="primary">Add / Update Account</button>
+              <button type="submit" class="btn btn-primary">Add / Update Account</button>
               <span id="emailAccountState" class="muted" style="font-size:12px;"></span>
             </div>
           </form>
@@ -1629,7 +1862,7 @@
               <input id="emailDigestSkipWeekends" type="checkbox">
             </div>
             <div class="toolbar">
-              <button id="emailDigestSaveBtn" type="button" class="secondary">保存汇总设置</button>
+              <button id="emailDigestSaveBtn" type="button" class="btn">保存汇总设置</button>
               <span id="emailDigestState" class="muted" style="font-size:12px;"></span>
             </div>
           </div>
@@ -1637,8 +1870,10 @@
         </div>
 
         <!-- Status -->
-        <div id="systemStatusPanel" class="settings-group">
-          <h3 class="settings-group-title">System Status</h3>
+        <div id="systemStatusPanel" class="settings-group" data-foldable="true">
+          <div class="settings-group-head">
+            <h3 class="settings-group-title" style="margin:0;">System Status</h3>
+          </div>
           <span id="onboardingState" class="chip warning" style="margin-bottom:10px;">Checking...</span>
           <div id="wizardList" class="stack" style="gap:8px;"></div>
         </div>
@@ -1665,8 +1900,8 @@
                 <p id="officeAddinSetupState" class="muted" style="font-size:12px;margin:8px 0 0;">Not checked yet.</p>
               </div>
               <div class="toolbar">
-                <button id="checkOfficeAddinsButton" class="ghost" type="button">Check</button>
-                <button id="setupOfficeAddinsButton" class="secondary" type="button">Configure</button>
+                <button id="checkOfficeAddinsButton" class="btn btn-ghost" type="button">Check</button>
+                <button id="setupOfficeAddinsButton" class="btn" type="button">Configure</button>
               </div>
             </div>
           </div>
@@ -1718,10 +1953,10 @@
               <label for="outputDirInput">目录路径</label>
               <input id="outputDirInput" type="text" placeholder="C:\Users\...\Documents\UCA">
             </div>
-            <button id="outputDirDefaultBtn" class="ghost" type="button" style="white-space:nowrap;">使用默认</button>
+            <button id="outputDirDefaultBtn" class="btn btn-ghost" type="button" style="white-space:nowrap;">使用默认</button>
           </div>
           <div class="toolbar" style="margin-top:10px;">
-            <button id="saveOutputDirBtn" class="primary" type="button">Save Output Path</button>
+            <button id="saveOutputDirBtn" class="btn btn-primary" type="button">Save Output Path</button>
             <span id="outputDirSaveState" class="muted" style="font-size:12px;"></span>
           </div>
         </div>
@@ -1732,17 +1967,83 @@
           <p class="muted" style="font-size:12px;margin:0 0 12px;">关闭的功能会在运行时被屏蔽，用户尝试使用时会收到引导提示。</p>
           <div id="featureToggleList" class="stack" style="gap:6px;"></div>
           <div class="toolbar" style="margin-top:10px;">
-            <button id="saveFeatureTogglesBtn" class="primary" type="button">Save Feature Settings</button>
+            <button id="saveFeatureTogglesBtn" class="btn btn-primary" type="button">Save Feature Settings</button>
             <span id="featureTogglesSaveState" class="muted" style="font-size:12px;"></span>
           </div>
         </div>
 
-      </div>
+        <!-- ── UCA-126: Templates (moved from Advanced) ── -->
+        <div class="settings-group" id="settings-templates" data-foldable="true" data-collapsed="true">
+          <div class="settings-group-head">
+            <h3 class="settings-group-title" style="margin:0;">Task Templates<span class="zh">任务模板</span></h3>
+            <span id="templateCount" class="tag" data-no-fold>0</span>
+          </div>
+          <p class="muted" style="font-size:12px;margin:0 0 12px;">保存可复用的提示词模板。</p>
+          <div class="advanced-grid">
+            <div class="stack">
+              <div id="templateList" class="template-list"></div>
+            </div>
+            <div class="stack">
+              <form id="templateForm" class="stack">
+                <div>
+                  <label for="templateNameInput">Template Name</label>
+                  <input id="templateNameInput" type="text" placeholder="e.g. Meeting Notes">
+                </div>
+                <div>
+                  <label for="templatePromptInput">Default Prompt</label>
+                  <textarea id="templatePromptInput" rows="4" placeholder="e.g. Extract action items and deadlines"></textarea>
+                </div>
+                <div class="toolbar">
+                  <button type="submit" class="btn btn-primary">Save</button>
+                  <button type="button" id="importTemplateButton" class="btn">Import JSON</button>
+                  <button type="button" id="deleteTemplateButton" class="btn btn-danger">Delete</button>
+                  <span id="templateState" class="muted" style="font-size:12px;"></span>
+                </div>
+              </form>
+              <div>
+                <label for="templateImportInput">Import JSON</label>
+                <textarea id="templateImportInput" rows="6" class="dag-editor" placeholder="Paste template JSON..."></textarea>
+              </div>
+              <div>
+                <strong style="font-size:12px;">Export Preview</strong>
+                <pre id="templatePreview" class="template-preview muted">Select a template.</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── UCA-126: Budget (moved from Advanced) ── -->
+        <div class="settings-group" id="settings-budget" data-foldable="true" data-collapsed="true">
+          <div class="settings-group-head">
+            <h3 class="settings-group-title" style="margin:0;">Budget<span class="zh">预算</span></h3>
+          </div>
+          <p class="muted" style="font-size:12px;margin:0 0 12px;">月度支出上限和本月 provider 调用使用情况。</p>
+          <div id="budgetSummary" class="budget-grid" style="margin-bottom:12px;"></div>
+          <form id="budgetForm" class="row" style="gap:8px;">
+            <label class="muted" for="monthlyBudgetInput" style="white-space:nowrap;">Monthly Limit (USD)</label>
+            <input id="monthlyBudgetInput" class="pill-input" type="text" inputmode="decimal" placeholder="50">
+            <button type="submit" class="btn btn-primary">Update</button>
+            <span id="budgetState" class="muted" style="font-size:12px;"></span>
+          </form>
+        </div>
+
+        <!-- ── UCA-126: Audit Log (moved from Advanced) ── -->
+        <div class="settings-group" id="settings-audit" data-foldable="true" data-collapsed="true">
+          <div class="settings-group-head">
+            <h3 class="settings-group-title" style="margin:0;">Audit Log<span class="zh">审计日志</span></h3>
+            <span id="auditCount" class="tag" data-no-fold>0</span>
+          </div>
+          <p class="muted" style="font-size:12px;margin:0 0 12px;">工具调用、审批和连接器行为的运行时轨迹。</p>
+          <div id="auditList" class="audit-list"></div>
+        </div>
+
+        </div><!-- /.settings-sections -->
+      </div><!-- /.settings-grid -->
     </section>
 
     <!-- Provider edit modal -->
     <div id="providerModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.4);backdrop-filter:blur(4px);z-index:1000;align-items:center;justify-content:center;">
-      <div style="background:#fff;border-radius:16px;padding:24px;width:440px;max-width:90vw;box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+      <div style="background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:16px;padding:24px;width:440px;max-width:90vw;box-shadow:var(--shadow-lg);">
         <h3 style="margin:0 0 16px;font-size:16px;">Add / Edit Provider</h3>
         <form id="providerEditForm" class="stack" style="gap:12px;">
           <input type="hidden" id="provEditOriginalId" value="">
@@ -1786,7 +2087,7 @@
           <!-- Code CLI fields -->
           <div id="provCliFields" class="stack" style="gap:12px;display:none;">
             <div>
-              <button type="button" id="provDetectCliBtn" class="secondary" style="width:100%;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:6px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Auto-detect installed CLIs</button>
+              <button type="button" id="provDetectCliBtn" class="btn" style="width:100%;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:6px;"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>Auto-detect installed CLIs</button>
               <div id="provDetectResults" style="margin-top:8px;display:none;"></div>
             </div>
             <div>
@@ -1811,8 +2112,8 @@
             <input id="provDefaultModel" type="text" placeholder="e.g. claude-sonnet-4-5-20250514, kimi-k2">
           </div>
           <div class="toolbar" style="justify-content:flex-end;margin-top:8px;">
-            <button type="button" id="provCancelBtn" class="ghost">Cancel</button>
-            <button type="submit" class="primary">Save</button>
+            <button type="button" id="provCancelBtn" class="btn btn-ghost">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save</button>
           </div>
         </form>
       </div>
@@ -1826,14 +2127,47 @@
             <h3 style="margin:0;font-size:16px;">Edit Skill</h3>
             <p id="skillEditPath" class="muted" style="margin:4px 0 0;font-size:12px;"></p>
           </div>
-          <button id="skillEditCloseBtn" type="button" class="ghost">Close</button>
+          <button id="skillEditCloseBtn" type="button" class="btn btn-ghost">Close</button>
         </div>
         <textarea id="skillEditText" rows="18" class="skill-editor" spellcheck="false"></textarea>
         <div class="toolbar" style="justify-content:flex-end;margin-top:12px;">
           <span id="skillEditState" class="muted" style="font-size:12px;"></span>
-          <button id="skillEditSaveBtn" type="button" class="primary">Save Skill</button>
+          <button id="skillEditSaveBtn" type="button" class="btn btn-primary">Save Skill</button>
         </div>
       </div>
+    </div>
+
+    <!-- UCA-127: Browse catalog drawer for Connectors. Right-side slide-in
+         with category chips + search + grid of every available connector.
+         Click a card → triggers the matching Add/Connect flow (email
+         provider form, Microsoft/Google auth, or MCP catalog install). -->
+    <div id="connBrowseBack" class="conn-browse-back" role="dialog" aria-modal="true" aria-labelledby="connBrowseTitle">
+      <aside class="conn-browse">
+        <header class="conn-browse-head">
+          <div>
+            <h2 id="connBrowseTitle">Connector catalog<span class="zh" style="font-size:12px;color:var(--muted);margin-left:8px;font-weight:400;">连接器目录</span></h2>
+            <div class="conn-browse-sub">Every account, mailbox, and MCP tool LingxY can work with.</div>
+          </div>
+          <button id="connBrowseCloseBtn" class="icon-btn conn-browse-close" type="button" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </header>
+        <div class="conn-browse-toolbar">
+          <label class="search-input conn-browse-search">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="connBrowseSearch" type="text" placeholder="Search catalog…  搜索"/>
+          </label>
+        </div>
+        <div class="conn-browse-filters" id="connBrowseFilters">
+          <button type="button" class="filter-chip" data-conn-cat="all" aria-pressed="true">All</button>
+          <button type="button" class="filter-chip" data-conn-cat="account" aria-pressed="false">Accounts</button>
+          <button type="button" class="filter-chip" data-conn-cat="email" aria-pressed="false">Email</button>
+          <button type="button" class="filter-chip" data-conn-cat="mcp" aria-pressed="false">MCP tools</button>
+        </div>
+        <div class="conn-browse-body">
+          <div id="connBrowseGrid" class="conn-browse-grid"></div>
+        </div>
+      </aside>
     </div>
 
     <script type="module" src="./console.js"></script>
