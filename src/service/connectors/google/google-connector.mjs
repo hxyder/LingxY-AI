@@ -6,6 +6,49 @@ function headers(accessToken) {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
+// Gmail's message payload is a tree of MIME parts. We walk the tree
+// looking for the best text body: prefer text/plain, fall back to
+// text/html (stripped), bail with an empty string if neither is
+// present (attachment-only mail).
+function decodeGmailBase64(urlSafe = "") {
+  // Gmail returns RFC 4648 §5 base64url without padding. Pad + swap
+  // to regular base64 so the built-in Buffer decoder handles it.
+  const padded = urlSafe.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(urlSafe.length / 4) * 4, "=");
+  try { return Buffer.from(padded, "base64").toString("utf8"); } catch { return ""; }
+}
+
+function extractGmailBody(payload) {
+  if (!payload) return "";
+  const pick = (part, mime) => {
+    if (part.mimeType === mime && part.body?.data) return decodeGmailBase64(part.body.data);
+    for (const child of part.parts ?? []) {
+      const found = pick(child, mime);
+      if (found) return found;
+    }
+    return "";
+  };
+  const plain = pick(payload, "text/plain");
+  if (plain) return plain;
+  const html = pick(payload, "text/html");
+  if (html) {
+    // Strip tags + decode the handful of entities that show up most.
+    return html
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, "\"")
+      .replace(/&#39;/g, "'")
+      .replace(/\s+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+  return "";
+}
+
 export async function listGoogleEmails(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
   const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
   if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };
@@ -44,6 +87,38 @@ export async function listGoogleEmails(runtime, account, input = {}, { fetchImpl
     });
   }
   return { status: "success", provider: "google", accountId: account.id, data: { emails } };
+}
+
+// Full-body fetch for a single Gmail message — used by the Inbox tab
+// when the user expands a message. Separate from listGoogleEmails
+// because the list call uses format=metadata for speed; a real body
+// needs format=full and a MIME walk.
+export async function getGoogleMessage(runtime, account, messageId, { fetchImpl = fetch } = {}) {
+  const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
+  if (!accessToken) return { status: "reauth_required", accountId: account.id };
+  const response = await fetchImpl(
+    `https://gmail.googleapis.com/gmail/v1/users/me/messages/${encodeURIComponent(messageId)}?format=full`,
+    { headers: headers(accessToken) }
+  );
+  if (!response.ok) return { status: "error", errorCode: `gmail_get_error:${response.status}` };
+  const message = await response.json();
+  const msgHeaders = Object.fromEntries((message.payload?.headers ?? []).map((item) => [item.name, item.value]));
+  const fromRaw = msgHeaders.From ?? "";
+  const nameMatch = fromRaw.match(/^\s*"?([^"<]+?)"?\s*<([^>]+)>\s*$/);
+  return {
+    status: "success",
+    provider: "google",
+    accountId: account.id,
+    data: {
+      id: message.id,
+      subject: msgHeaders.Subject ?? "",
+      from: nameMatch ? nameMatch[2] : fromRaw,
+      fromName: nameMatch ? nameMatch[1].trim() : "",
+      received: msgHeaders.Date ?? "",
+      isRead: !(message.labelIds ?? []).includes("UNREAD"),
+      bodyText: extractGmailBody(message.payload)
+    }
+  };
 }
 
 export async function listGoogleFiles(runtime, account, input = {}, { fetchImpl = fetch } = {}) {

@@ -3,6 +3,7 @@ import {
   ACCOUNT_LIST_EVENTS_TOOL,
   ACCOUNT_LIST_FILES_TOOL
 } from "../../connectors/tools/read-tools.mjs";
+import { getGoogleMessage } from "../../connectors/google/google-connector.mjs";
 import {
   startMicrosoftAuth,
   startGoogleAuth,
@@ -306,6 +307,26 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
       provider: type,
       limit
     }, "emails", runtime);
+    return true;
+  }
+
+  // GET /connectors/accounts/google/messages/:id — fetch a single
+  // Gmail message with full MIME body walked + decoded. Used by the
+  // Inbox tab's inline-expand to swap the ~200-char snippet for the
+  // real body the moment the user clicks.
+  if (method === "GET" && /^\/connectors\/accounts\/google\/messages\/[^/]+$/.test(url.pathname)) {
+    const messageId = decodeURIComponent(url.pathname.split("/").pop());
+    const accounts = listUserAccounts(runtime).filter((a) => a.provider === "google");
+    if (accounts.length === 0) {
+      sendJson(response, 404, { error: "no_google_account" });
+      return true;
+    }
+    try {
+      const result = await getGoogleMessage(runtime, accounts[0], messageId);
+      sendJson(response, result.status === "success" ? 200 : 200, result);
+    } catch (error) {
+      sendJson(response, 200, { status: "error", errorCode: error.message });
+    }
     return true;
   }
 
