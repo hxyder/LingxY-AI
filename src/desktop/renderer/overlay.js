@@ -568,9 +568,9 @@ function renderMarkdown(text) {
     // Bold: **text**
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
     // Inline code: `code`
-    .replace(/`([^`]+)`/g, "<code style=\"background:rgba(99,102,241,0.1);padding:1px 5px;border-radius:4px;font-size:0.9em;\">$1</code>")
+    .replace(/`([^`]+)`/g, "<code style=\"background:var(--glass-accent-soft);padding:1px 5px;border-radius:4px;font-size:0.9em;\">$1</code>")
     // Links: [text](url)
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, "<a href=\"#\" data-open-url=\"$2\" style=\"color:var(--primary);text-decoration:underline;\">$1</a>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, "<a href=\"#\" data-open-url=\"$2\" style=\"color:var(--glass-accent);text-decoration:underline;\">$1</a>")
     // Bare URLs
     .replace(/(https?:\/\/[^\s<>"]+)/g, "<a href=\"#\" data-open-url=\"$1\" style=\"color:var(--primary);text-decoration:underline;\">$1</a>")
     // Newlines → br (but avoid double-br inside list items)
@@ -2679,7 +2679,7 @@ function renderProjectPanel() {
       const date = c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : "";
       const isActive = c.id === projectStore.currentConversationId;
       return `
-        <div data-conv-id="${c.id}" style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px;${isActive ? "background:rgba(99,102,241,0.12);" : ""}">
+        <div data-conv-id="${c.id}" style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px;${isActive ? "background:var(--glass-accent-soft);" : ""}">
           <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${isActive ? "font-weight:600;" : ""}">${title}</div>
           <span style="font-size:10px;color:var(--muted);">${turnCount} turns · ${date}</span>
           <button data-delete-conv="${c.id}" type="button" style="font-size:10px;padding:2px 6px;border:none;background:none;color:var(--muted);cursor:pointer;" title="删除此会话">×</button>
