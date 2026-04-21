@@ -20,6 +20,8 @@ import { submitFileTask } from "./file-submission.mjs";
 import { submitImageTask } from "./image-submission.mjs";
 import { submitOfficeTask } from "./office-submission.mjs";
 import { listEmailAccounts, upsertEmailAccount, deleteEmailAccount } from "../email/accounts.mjs";
+import { createImapClient } from "../email/imap-client.mjs";
+import { getCredential } from "../email/credential-store.mjs";
 import { tryHandleConnectorRoute } from "./http-routes/connector-routes.mjs";
 import { sendJson, sendHtml, readJsonBody, readRawBody } from "./http-helpers.mjs";
 import { maybeRunMorningDigest } from "../email/digest.mjs";
@@ -1739,6 +1741,32 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         const id = decodeURIComponent(url.pathname.replace(/^\/config\/email\/accounts\//, ""));
         const removed = await deleteEmailAccount(runtime, id);
         return sendJson(response, 200, { ok: true, deleted: id, account: removed });
+      }
+
+      // IMAP message preview for a single stored account — powers the
+      // Inbox tab for 163 / QQ / Gmail-IMAP / Outlook-IMAP / custom
+      // servers that don't have an OAuth connector. Listens on
+      //   GET /config/email/accounts/:id/messages?limit=30
+      // Returns { messages: [{ id, subject, from, fromName, received,
+      // isRead, preview }] } or { error, reason } on failure.
+      if (method === "GET" && /^\/config\/email\/accounts\/[^/]+\/messages$/.test(url.pathname)) {
+        const accountId = decodeURIComponent(url.pathname.split("/")[4]);
+        const limit = Math.max(1, Math.min(50, Number(url.searchParams.get("limit") ?? 30)));
+        const account = listEmailAccounts(runtime).find((a) => a.id === accountId);
+        if (!account) {
+          return sendJson(response, 404, { error: "account_not_found" });
+        }
+        try {
+          const credentials = await getCredential(runtime, account.credentialRef ?? account.id);
+          if (!credentials) {
+            return sendJson(response, 200, { messages: [], reason: "credentials_missing" });
+          }
+          const client = createImapClient({ account, credentials, state: { seenByAccount: new Map() } });
+          const messages = await client.listRecent(limit);
+          return sendJson(response, 200, { messages });
+        } catch (error) {
+          return sendJson(response, 200, { messages: [], reason: error.message });
+        }
       }
 
       if (method === "POST" && url.pathname === "/email/digest/check") {
