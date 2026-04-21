@@ -1747,14 +1747,27 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       // Inbox tab for 163 / QQ / Gmail-IMAP / Outlook-IMAP / custom
       // servers that don't have an OAuth connector. Listens on
       //   GET /config/email/accounts/:id/messages?limit=30
-      // Returns { messages: [{ id, subject, from, fromName, received,
-      // isRead, preview }] } or { error, reason } on failure.
+      // Returns { messages } or { messages: [], reason } on soft failure.
+      //
+      // Results are memoised per-account for 10s: switching between
+      // accounts in the Inbox sidebar was re-opening a fresh TLS IMAP
+      // session on every click (2–3s round trip on QQ/163), which made
+      // the UI feel broken. The cache is also invalidated whenever the
+      // URL's ?refresh=1 flag is set (bound to the Inbox refresh btn).
       if (method === "GET" && /^\/config\/email\/accounts\/[^/]+\/messages$/.test(url.pathname)) {
         const accountId = decodeURIComponent(url.pathname.split("/")[4]);
         const limit = Math.max(1, Math.min(50, Number(url.searchParams.get("limit") ?? 30)));
+        const forceRefresh = url.searchParams.get("refresh") === "1";
         const account = listEmailAccounts(runtime).find((a) => a.id === accountId);
         if (!account) {
           return sendJson(response, 404, { error: "account_not_found" });
+        }
+        if (!runtime._imapPreviewCache) runtime._imapPreviewCache = new Map();
+        const cacheKey = `${accountId}:${limit}`;
+        const now = Date.now();
+        const cached = runtime._imapPreviewCache.get(cacheKey);
+        if (!forceRefresh && cached && cached.expiresAt > now) {
+          return sendJson(response, 200, { messages: cached.messages, cached: true });
         }
         try {
           const credentials = await getCredential(runtime, account.credentialRef ?? account.id);
@@ -1763,6 +1776,7 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           }
           const client = createImapClient({ account, credentials, state: { seenByAccount: new Map() } });
           const messages = await client.listRecent(limit);
+          runtime._imapPreviewCache.set(cacheKey, { messages, expiresAt: now + 10_000 });
           return sendJson(response, 200, { messages });
         } catch (error) {
           return sendJson(response, 200, { messages: [], reason: error.message });

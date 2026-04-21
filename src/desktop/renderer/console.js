@@ -2317,28 +2317,23 @@ function ensureSelectedTaskEventStream(taskId) {
 }
 
 /* ── Artifact selection ── */
+async function loadArtifactPreviewText(artifactPath) {
+  if (!artifactPath) return "Select an artifact to preview.";
+  if (!isPreviewableArtifactPath(artifactPath)) return "Open externally for best results.";
+  try {
+    const raw = await window.ucaShell.readTextFile(artifactPath, 2600);
+    return normalisePreviewText(raw).slice(0, 1200) || "No text content.";
+  } catch {
+    return "Cannot preview, open file directly.";
+  }
+}
+
 async function selectTaskArtifact(artifactPath) {
   state.selectedTaskArtifactPath = artifactPath ?? null;
   openTaskArtifactButton.hidden = !state.selectedTaskArtifactPath;
   copyTaskArtifactPathButton.hidden = !state.selectedTaskArtifactPath;
   useTaskArtifactContextButton.hidden = !state.selectedTaskArtifactPath;
-
-  if (!state.selectedTaskArtifactPath) {
-    taskArtifactPreview.textContent = "Select an artifact to preview.";
-    return;
-  }
-
-  if (isPreviewableArtifactPath(state.selectedTaskArtifactPath)) {
-    try {
-      const raw = await window.ucaShell.readTextFile(state.selectedTaskArtifactPath, 2600);
-      taskArtifactPreview.textContent = normalisePreviewText(raw).slice(0, 1200) || "No text content.";
-    } catch {
-      taskArtifactPreview.textContent = "Cannot preview, open file directly.";
-    }
-  } else {
-    taskArtifactPreview.textContent = "Open externally for best results.";
-  }
-
+  taskArtifactPreview.textContent = await loadArtifactPreviewText(state.selectedTaskArtifactPath);
   renderTaskArtifacts(state.selectedTaskDetail);
 }
 
@@ -2361,8 +2356,24 @@ function renderTaskArtifacts(detail) {
   }
   setTaskDetailPanelVisible("taskArtifactsPanel", true);
 
-  if (!state.selectedTaskArtifactPath || !artifacts.some((a) => a.path === state.selectedTaskArtifactPath)) {
-    state.selectedTaskArtifactPath = artifacts[0].path;
+  // Auto-select + auto-preview the primary artifact when the user lands
+  // on this task for the first time. This is the "task report" flow —
+  // a successful task with a generated file should show that file's
+  // content without requiring a click. Subsequent switches to the same
+  // task keep whichever artifact the user had picked.
+  const primaryPath = artifacts[0].path;
+  const autoSelect = !state.selectedTaskArtifactPath || !artifacts.some((a) => a.path === state.selectedTaskArtifactPath);
+  if (autoSelect) {
+    state.selectedTaskArtifactPath = primaryPath;
+    if (state.lastAutoPreviewedPath !== primaryPath) {
+      state.lastAutoPreviewedPath = primaryPath;
+      void loadArtifactPreviewText(primaryPath).then((text) => {
+        if (state.selectedTaskArtifactPath === primaryPath) {
+          taskArtifactPreview.textContent = text;
+          taskArtifactPreview.removeAttribute("hidden");
+        }
+      });
+    }
   }
 
   // UCA-125 Phase 2d: artifact rows gain per-row Open/Reveal/Copy-path
@@ -5408,7 +5419,9 @@ async function renderInboxContent() {
       // IMAP: only mail is supported. The backend endpoint returns either
       // { messages } on success or { messages: [], reason } on a known
       // soft failure (missing credentials / connection refused).
-      url = `${state.serviceBaseUrl}/config/email/accounts/${encodeURIComponent(account._rawId)}/messages?limit=30`;
+      const refresh = _inboxState.forceNext ? "&refresh=1" : "";
+      _inboxState.forceNext = false;
+      url = `${state.serviceBaseUrl}/config/email/accounts/${encodeURIComponent(account._rawId)}/messages?limit=30${refresh}`;
     } else {
       const provider = account.provider;
       if (_inboxState.activeTab === "files") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/files?limit=30`;
@@ -5524,7 +5537,13 @@ async function renderInboxContent() {
       renderInboxContent();
     });
   });
-  document.querySelector("#inboxRefreshBtn")?.addEventListener("click", () => void loadInboxTab());
+  // Explicit refresh: pass the force flag so the 10s IMAP cache is
+  // bypassed. Ordinary account-switch / tab-switch renders keep the
+  // cached fast path.
+  document.querySelector("#inboxRefreshBtn")?.addEventListener("click", () => {
+    _inboxState.forceNext = true;
+    void loadInboxTab();
+  });
 })();
 
 // ── Email provider cards ──────────────────────────────────────
