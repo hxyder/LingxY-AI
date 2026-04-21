@@ -2,6 +2,22 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-21（第 8 轮）
+
+- **UCA-143 (5b04516)** — Outlook 全文 body 懒加载（对称 UCA-135）
+  - `getMicrosoftMessage`：Graph `$select=body` 拉完整 body，HTML contentType 走和 Gmail 一样的 strip+decode 路径
+  - 路由合并：`GET /connectors/accounts/(google|microsoft)/messages/:id` 一个 URL 两个 provider
+  - 前端 expand 懒加载同时支持两个 provider
+
+- **UCA-142 (d76610d)** — sched-row "failed" 一键跳失败任务
+  - failed 状态渲染为点状下划线的 button，点击切 Tasks + select 目标任务
+  - 没有 task_id 关联的（pending_approval / dispatcher 侧抛异常）保持普通 span
+
+- **UCA-141 (9165b7a)** — 后端持久化 `last_run_task_id`
+  - schedule 记录增加 `last_run_task_id` 字段
+  - sqlite schema + ALTER TABLE 启动迁移
+  - `updateScheduleAfterRun` 透传 taskId；dispatch.mjs 两个调用点都传
+
 ### 2026-04-21（第 7 轮）
 
 - **UCA-140 (84ad900)** — Palette 字段名 + legacy 任务 answer fallback
@@ -88,18 +104,9 @@
 
 ## 下一轮建议（按价值排序）
 
-1. **Schedules 失败任务一键查看日志**
-   - sched-row 的 "Last: ... · failed" 可以点击跳转到对应的 failed task 详情
-   - 需要 schedule → last_task_id 的字段（后端 dispatch.mjs 已写了 `last_run_status`，但没存 task_id 关联）
-
-2. **Outlook 全文 body 获取**（对称 UCA-135）
-   - 目前只有 ~255 字符 `bodyPreview`
-   - Graph `$select=body` 能拿完整 HTML body
-   - 实现 `getMicrosoftMessage(runtime, account, messageId)` + 路由
-
-3. **邮件详情 HTML 渲染**
+1. **邮件详情 HTML 渲染**
    - 目前展开是纯文本 `<pre>`
-   - Gmail html→text 在 UCA-135 做了 strip，但长 HTML 邮件效果一般
+   - Gmail / Outlook html→text 在 UCA-135/143 做了 strip，但长 HTML 邮件效果一般
    - 对有 HTML body 的邮件用 sanitizer 渲染（需要 DOMPurify）
 
 4. **Task 产物预览扩展**
