@@ -33,6 +33,26 @@ function isWeekend(date) {
   return day === 0 || day === 6;
 }
 
+// Local-date key for the dedupe guard. Using toISOString().slice(0, 10)
+// was the original bug — ISO strings are UTC, but the digest window is
+// evaluated in LOCAL time. In UTC+8 (China) the 06:00 local fire maps
+// to 22:00 UTC of the previous day, so the state file stored "yesterday"
+// and any re-fire between UTC midnight and local noon saw a different
+// todayKey → guard miss → digest fired a second time.
+function localDateKey(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
+// Belt-and-suspenders: refuse to fire more than once every MIN_FIRE_MS
+// within a single runtime, independent of the state file. If the state
+// file ever ends up unreadable or wiped mid-session, this in-memory
+// throttle still blocks an immediate repeat.
+const MIN_FIRE_MS = 4 * 60 * 60 * 1000;
+const _digestLastFiredAt = new WeakMap();
+
 function parseTimeWindow(config) {
   const windowStart = config?.windowStart ?? "06:00";
   const windowEnd = config?.windowEnd ?? "12:00";
@@ -124,6 +144,13 @@ export async function maybeRunMorningDigest({ runtime, now = new Date() } = {}) 
     return { ok: false, reason: "weekend" };
   }
 
+  // In-memory throttle — independent of the state file.
+  const lastFiredAt = _digestLastFiredAt.get(runtime);
+  if (lastFiredAt && now.getTime() - lastFiredAt < MIN_FIRE_MS) {
+    const minutesAgo = Math.round((now.getTime() - lastFiredAt) / 60_000);
+    return { ok: false, reason: "throttled_in_memory", minutesAgo };
+  }
+
   // Serialize concurrent callers — second caller waits for the first to
   // finish, then re-reads the state file and bails on "already_sent".
   const existing = _digestInFlight.get(runtime);
@@ -133,7 +160,7 @@ export async function maybeRunMorningDigest({ runtime, now = new Date() } = {}) 
 
   const work = (async () => {
     const state = await loadDigestState(runtime);
-    const todayKey = now.toISOString().slice(0, 10);
+    const todayKey = localDateKey(now);
     if (state.lastDigestDate === todayKey) {
       return { ok: false, reason: "already_sent", lastDigestDate: state.lastDigestDate };
     }
@@ -152,6 +179,7 @@ export async function maybeRunMorningDigest({ runtime, now = new Date() } = {}) 
     // "Test digest now" button if they really want another attempt.
     state.lastDigestDate = todayKey;
     await saveDigestState(runtime, state);
+    _digestLastFiredAt.set(runtime, now.getTime());
 
     const range = buildDateRange(now);
     const allMessages = [];
