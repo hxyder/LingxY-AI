@@ -28,12 +28,19 @@ export async function listGoogleEmails(runtime, account, input = {}, { fetchImpl
     if (!detail.ok) continue;
     const message = await detail.json();
     const msgHeaders = Object.fromEntries((message.payload?.headers ?? []).map((item) => [item.name, item.value]));
+    // Split "Name <email@example.com>" into name + address so the UI can
+    // render a clean "Name — subject" line instead of the raw header.
+    const fromRaw = msgHeaders.From ?? "";
+    const nameMatch = fromRaw.match(/^\s*"?([^"<]+?)"?\s*<([^>]+)>\s*$/);
     emails.push({
       id,
       subject: msgHeaders.Subject ?? "",
-      from: msgHeaders.From ?? "",
+      from: nameMatch ? nameMatch[2] : fromRaw,
+      fromName: nameMatch ? nameMatch[1].trim() : "",
       received: msgHeaders.Date ?? "",
-      isRead: !(message.labelIds ?? []).includes("UNREAD")
+      isRead: !(message.labelIds ?? []).includes("UNREAD"),
+      preview: message.snippet ?? "",
+      bodyText: message.snippet ?? ""
     });
   }
   return { status: "success", provider: "google", accountId: account.id, data: { emails } };

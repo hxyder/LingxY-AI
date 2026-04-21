@@ -37,6 +37,10 @@ export async function listMicrosoftEmails(runtime, account, input = {}, { fetchI
         fromName: message.from?.emailAddress?.name,
         received: message.receivedDateTime,
         preview: message.bodyPreview,
+        // Graph's bodyPreview maxes out around 255 chars — good enough
+        // for the Inbox inline-expand preview; full-body fetch would
+        // need a per-message $select=body.content call.
+        bodyText: message.bodyPreview,
         isRead: message.isRead
       }))
     }

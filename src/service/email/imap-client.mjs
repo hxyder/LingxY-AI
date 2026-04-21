@@ -71,6 +71,14 @@ function shortPreview(text = "", max = 120) {
   return String(text).replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+// Full-text body, normalized just enough to be readable in a preview
+// pane: collapse Windows line endings, trim leading/trailing whitespace,
+// and cap length so we don't drag 5MB marketing emails into the UI.
+function normalizeBody(text = "", max = 4000) {
+  const cleaned = String(text).replace(/\r\n/g, "\n").replace(/\r/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+  return cleaned.length > max ? cleaned.slice(0, max) + "\n…" : cleaned;
+}
+
 export function createImapClient({ account, credentials, state }) {
   if (account.provider === "mock") {
     return {
@@ -141,6 +149,7 @@ export function createImapClient({ account, credentials, state }) {
           const messages = [];
           for await (const msg of client.fetch(range, { envelope: true, flags: true, bodyParts: ["TEXT"], source: false })) {
             const fromAddr = msg.envelope?.from?.[0];
+            const bodyRaw = msg.bodyParts?.get?.("TEXT")?.toString?.() ?? "";
             messages.push({
               id: String(msg.uid),
               subject: msg.envelope?.subject ?? "(no subject)",
@@ -148,7 +157,8 @@ export function createImapClient({ account, credentials, state }) {
               fromName: fromAddr?.name ?? "",
               received: (msg.envelope?.date ?? new Date()).toISOString(),
               isRead: Array.isArray(msg.flags) ? msg.flags.includes("\\Seen") : msg.flags?.has?.("\\Seen") ?? false,
-              preview: shortPreview(msg.bodyParts?.get?.("TEXT")?.toString?.() ?? "")
+              preview: shortPreview(bodyRaw),
+              bodyText: normalizeBody(bodyRaw)
             });
           }
           // newest first

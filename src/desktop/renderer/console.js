@@ -5267,9 +5267,10 @@ async function handleAccountConfigSave(type, panel) {
 //   UCA-126: INBOX TAB — account switcher + files/mail/calendar
 // ═══════════════════════════════════════════════
 const _inboxState = {
-  accounts: [],          // merged: OAuth connected-accounts + IMAP email accounts
-  activeAccountId: null, // selected sidebar account
-  activeTab: "files"     // 'files' | 'emails' | 'calendar'
+  accounts: [],            // merged: OAuth connected-accounts + IMAP email accounts
+  activeAccountId: null,   // selected sidebar account
+  activeTab: "files",      // 'files' | 'emails' | 'calendar'
+  expandedEmailId: null    // id of the email whose body is inline-expanded
 };
 
 async function loadInboxTab() {
@@ -5356,6 +5357,10 @@ function renderInboxAccounts() {
   }).join("");
   list.querySelectorAll("[data-inbox-account]").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (_inboxState.activeAccountId !== btn.dataset.inboxAccount) {
+        // Collapse any expanded email so the new account starts clean.
+        _inboxState.expandedEmailId = null;
+      }
       _inboxState.activeAccountId = btn.dataset.inboxAccount;
       renderInboxAccounts();
       renderInboxContent();
@@ -5447,16 +5452,41 @@ async function renderInboxContent() {
       // both have the same shape after normalization.
       const emails = data.emails ?? data.messages ?? [];
       if (!emails.length) { content.innerHTML = `<p class="inbox-empty">该账户暂无邮件。</p>`; return; }
-      content.innerHTML = emails.map((m) => `
-        <button class="inbox-item" type="button">
-          <span class="inbox-item-icon">${m.isRead ? "○" : "●"}</span>
-          <div class="inbox-item-main">
-            <div class="inbox-item-title ${m.isRead ? "" : "unread"}">${escapeHtml(m.subject ?? "(无主题)")}</div>
-            <div class="inbox-item-meta">${escapeHtml(m.fromName ?? m.from ?? "")}${m.preview ? " — " + escapeHtml(m.preview) : ""}</div>
-          </div>
-          <span class="inbox-item-time">${m.received ? new Date(m.received).toLocaleDateString("zh-CN") : ""}</span>
-        </button>
-      `).join("");
+      const expandedId = _inboxState.expandedEmailId;
+      content.innerHTML = emails.map((m) => {
+        const isExpanded = expandedId === m.id;
+        const body = m.bodyText ?? m.preview ?? "";
+        const receivedLine = m.received ? new Date(m.received).toLocaleString("zh-CN", {
+          year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
+        }) : "";
+        const fromLine = [m.fromName, m.from].filter(Boolean).map(escapeHtml).join(" &lt;") + (m.fromName && m.from ? "&gt;" : "");
+        return `
+          <button class="inbox-item ${isExpanded ? "inbox-item--expanded" : ""}" type="button" data-email-id="${escapeHtml(m.id ?? "")}">
+            <span class="inbox-item-icon">${m.isRead ? "○" : "●"}</span>
+            <div class="inbox-item-main">
+              <div class="inbox-item-title ${m.isRead ? "" : "unread"}">${escapeHtml(m.subject ?? "(无主题)")}</div>
+              <div class="inbox-item-meta">${escapeHtml(m.fromName ?? m.from ?? "")}${!isExpanded && m.preview ? " — " + escapeHtml(m.preview) : ""}</div>
+            </div>
+            <span class="inbox-item-time">${m.received ? new Date(m.received).toLocaleDateString("zh-CN") : ""}</span>
+          </button>
+          ${isExpanded ? `
+            <div class="inbox-item-body">
+              <div class="inbox-item-body-head">
+                <div><strong>${escapeHtml(m.subject ?? "(无主题)")}</strong></div>
+                <div class="muted">From ${fromLine || "(unknown)"}${receivedLine ? ` · ${escapeHtml(receivedLine)}` : ""}</div>
+              </div>
+              <pre class="inbox-item-body-text">${escapeHtml(body) || "<span class=\"muted\">（此邮件没有可预览的文本正文）</span>"}</pre>
+            </div>
+          ` : ""}
+        `;
+      }).join("");
+      content.querySelectorAll("[data-email-id]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const id = btn.dataset.emailId;
+          _inboxState.expandedEmailId = _inboxState.expandedEmailId === id ? null : id;
+          renderInboxContent();
+        });
+      });
     } else {
       const events = data.events ?? [];
       if (!events.length) { content.innerHTML = `<p class="inbox-empty">近期无日程。</p>`; return; }
@@ -5486,10 +5516,11 @@ async function renderInboxContent() {
 (function initInboxResourceToggle() {
   document.querySelectorAll("[data-inbox-res]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      // UCA-128: respect disabled state so clicks on Files/Calendar for
-      // IMAP accounts are no-ops (the buttons are visually dimmed too).
+      // Respect disabled state so clicks on Files/Calendar for IMAP
+      // accounts are no-ops (the buttons are visually dimmed too).
       if (btn.hasAttribute("disabled")) return;
       _inboxState.activeTab = btn.dataset.inboxRes;
+      _inboxState.expandedEmailId = null; // collapse on tab switch
       renderInboxContent();
     });
   });
