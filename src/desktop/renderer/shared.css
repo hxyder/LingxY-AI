@@ -2624,6 +2624,36 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-style: normal;
 }
 
+/* Task answer block — surfaces result_summary for tasks that succeed
+   without producing an artifact. Sits inside the detail hero, styled
+   like a quotation so it reads as the task's actual output, not
+   chrome. */
+.task-answer {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--accent);
+  background: var(--panel-2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.task-answer-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  margin-bottom: 6px;
+}
+.task-answer-label .zh { margin-left: 4px; font-size: 10px; letter-spacing: 0; font-weight: 400; }
+.task-answer-body {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--ink);
+  max-height: 480px;
+  overflow: auto;
+}
+
 /* UCA-126 follow-up: panel-title icons — small 14px glyph before section
    titles (Subtasks / Artifacts / Timeline / settings groups) to give the
    otherwise-flat text headers a quick visual hook. */

@@ -2409,6 +2409,14 @@ function renderTaskArtifacts(detail) {
   // directly).
   renderArtifactReport(state.selectedTaskArtifactPath, artifacts);
 
+  // When the task produced exactly one artifact the report card above
+  // already shows it — rendering the same file as a list row below is
+  // pure visual duplication. Hide the list in that case.
+  if (artifacts.length < 2) {
+    taskArtifactList.innerHTML = "";
+    return;
+  }
+
   // UCA-125 Phase 2d: artifact rows gain per-row Open/Reveal/Copy-path
   // buttons (v3 style) so each artifact is directly actionable without
   // having to select it first. The shared preview below still reflects
@@ -2797,10 +2805,14 @@ function renderTaskDetail(detail) {
       <button class="btn btn-ghost" data-parent-task-id="${escapeHtml(task.parent_task_id)}" style="padding:0 6px;font-size:11px;">← 返回</button>
     </span>
   ` : "";
-  // UCA-064: show composite result summary when present
+  // Task answer block — surfaces the executor's final text for tasks
+  // that succeeded without producing a file artifact (search, chat-
+  // style Q&A, composite summaries). Lives inside the detail hero so
+  // it's the first thing the user sees, right after status + title.
   const resultSummaryBlock = task.result_summary ? `
-    <div style="padding:8px 10px;border-radius:8px;background:var(--panel-2);border:1px solid var(--line);margin-top:8px;white-space:pre-wrap;font-size:12px;line-height:1.6;color:var(--ink);">
-      ${escapeHtml(task.result_summary)}
+    <div class="task-answer">
+      <div class="task-answer-label">Result<span class="zh">结果</span></div>
+      <div class="task-answer-body">${escapeHtml(task.result_summary)}</div>
     </div>
   ` : "";
   // UCA-122: v3 detail-hero + KV grid. Hero shows title + status pill +
