@@ -2,6 +2,23 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-21（第 6 轮）
+
+- **UCA-138 (364ebba)** — 搜索失败 observation 列出实际尝试的 providers
+  - `attempts[]` 数组（UCA-130 引入）现在被格式化到 observation 里 ("Tried: duckduckgo_html, duckduckgo_lite, bing, baidu")
+  - 流到 `task.result_summary` → Tasks 详情可见
+  - 不再是笼统的 "search unavailable"
+
+- **UCA-137 (b40ae29)** — Task detail 加 .task-answer 块 + 隐藏冗余 artifact 列表
+  - `result_summary` 升级为 hero 内的专属 `.task-answer` 块（accent 左条、"Result / 结果"标签、可滚 480px）
+  - 单 artifact 任务：artifact 列表和 report 卡片完全重复 → 只保留 report 卡片
+  - 多 artifact 任务：列表作为其它文件的索引保留
+
+- **UCA-136 (9e799e5)** — 后端持久化执行器 final_text
+  - 根因：搜索 / conversational 任务的 `inlineText` 只活在事件流里，任务结束就丢
+  - 改：任务成功且没有 `result_summary` 时，把 inlineText 存进去
+  - 应用到 `context-submission` + `browser-submission` 两条路径
+
 ### 2026-04-21（第 5 轮）
 
 - **UCA-135 (0810e45)** — Gmail 全文 body 懒加载
@@ -59,25 +76,21 @@
 
 ## 下一轮建议（按价值排序）
 
-1. **搜索失败 UI 反馈优化**
-   - `attempts[]` 数组已经返回给上层，但 UI 没展示
-   - 当所有 providers 都 fetchFailed 时，显示 "网络受限 - 已尝试 4 个搜索源" 明确信息
-
-2. **Schedules 失败任务一键查看日志**
+1. **Schedules 失败任务一键查看日志**
    - sched-row 的 "Last: ... · failed" 可以点击跳转到对应的 failed task 详情
    - 需要 schedule → last_task_id 的字段（后端 dispatch.mjs 已写了 `last_run_status`，但没存 task_id 关联）
 
-3. **Outlook 全文 body 获取**（对称 UCA-135）
+2. **Outlook 全文 body 获取**（对称 UCA-135）
    - 目前只有 ~255 字符 `bodyPreview`
    - Graph `$select=body` 能拿完整 HTML body
    - 实现 `getMicrosoftMessage(runtime, account, messageId)` + 路由
 
-4. **邮件详情 HTML 渲染**
+3. **邮件详情 HTML 渲染**
    - 目前展开是纯文本 `<pre>`
    - Gmail html→text 在 UCA-135 做了 strip，但长 HTML 邮件效果一般
    - 对有 HTML body 的邮件用 sanitizer 渲染（需要 DOMPurify）
 
-5. **Task 产物预览扩展**
+4. **Task 产物预览扩展**
    - 当前只对文本型 artifact（md / txt / json / csv / html）能 inline preview
    - 图片可以直接 `<img>` 渲染，PDF 嵌 `<embed>` 或 PDF.js
    - docx / xlsx / pptx 只能靠 `shell.openPath` 外部打开
