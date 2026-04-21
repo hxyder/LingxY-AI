@@ -62,24 +62,26 @@ export async function getMicrosoftMessage(runtime, account, messageId, { fetchIm
   const message = await response.json();
   const body = message.body ?? {};
   const raw = body.content ?? "";
-  let bodyText = raw;
-  // Graph returns contentType "html" or "text". For HTML, strip tags
-  // the same way we do for Gmail (text/html fallback in extractGmailBody).
-  if ((body.contentType ?? "").toLowerCase() === "html") {
-    bodyText = raw
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, "\"")
-      .replace(/&#39;/g, "'")
-      .replace(/\s+\n/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-  }
+  const isHtml = (body.contentType ?? "").toLowerCase() === "html";
+  // bodyText — readable plain text (stripped if HTML).
+  // bodyHtml — raw HTML when available, else empty (frontend offers
+  // rich rendering when this is non-empty).
+  const bodyText = isHtml
+    ? raw
+        .replace(/<style[\s\S]*?<\/style>/gi, "")
+        .replace(/<script[\s\S]*?<\/script>/gi, "")
+        .replace(/<[^>]+>/g, "")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, "\"")
+        .replace(/&#39;/g, "'")
+        .replace(/\s+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim()
+    : raw;
+  const bodyHtml = isHtml ? raw : "";
   return {
     status: "success",
     provider: "microsoft",
@@ -91,7 +93,8 @@ export async function getMicrosoftMessage(runtime, account, messageId, { fetchIm
       fromName: message.from?.emailAddress?.name ?? "",
       received: message.receivedDateTime ?? "",
       isRead: message.isRead,
-      bodyText
+      bodyText,
+      bodyHtml
     }
   };
 }

@@ -17,8 +17,24 @@ function decodeGmailBase64(urlSafe = "") {
   try { return Buffer.from(padded, "base64").toString("utf8"); } catch { return ""; }
 }
 
+function stripHtmlToText(html = "") {
+  return String(html)
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/\s+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function extractGmailBody(payload) {
-  if (!payload) return "";
+  if (!payload) return { bodyText: "", bodyHtml: "" };
   const pick = (part, mime) => {
     if (part.mimeType === mime && part.body?.data) return decodeGmailBase64(part.body.data);
     for (const child of part.parts ?? []) {
@@ -28,25 +44,12 @@ function extractGmailBody(payload) {
     return "";
   };
   const plain = pick(payload, "text/plain");
-  if (plain) return plain;
   const html = pick(payload, "text/html");
-  if (html) {
-    // Strip tags + decode the handful of entities that show up most.
-    return html
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<[^>]+>/g, "")
-      .replace(/&nbsp;/g, " ")
-      .replace(/&amp;/g, "&")
-      .replace(/&lt;/g, "<")
-      .replace(/&gt;/g, ">")
-      .replace(/&quot;/g, "\"")
-      .replace(/&#39;/g, "'")
-      .replace(/\s+\n/g, "\n")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim();
-  }
-  return "";
+  // Prefer plain text for bodyText (native paragraph breaks). Fall
+  // back to stripped HTML. Always return the raw HTML separately so
+  // the frontend can offer a rich-rendering toggle.
+  const bodyText = plain || (html ? stripHtmlToText(html) : "");
+  return { bodyText, bodyHtml: html };
 }
 
 export async function listGoogleEmails(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
@@ -105,6 +108,7 @@ export async function getGoogleMessage(runtime, account, messageId, { fetchImpl 
   const msgHeaders = Object.fromEntries((message.payload?.headers ?? []).map((item) => [item.name, item.value]));
   const fromRaw = msgHeaders.From ?? "";
   const nameMatch = fromRaw.match(/^\s*"?([^"<]+?)"?\s*<([^>]+)>\s*$/);
+  const { bodyText, bodyHtml } = extractGmailBody(message.payload);
   return {
     status: "success",
     provider: "google",
@@ -116,7 +120,8 @@ export async function getGoogleMessage(runtime, account, messageId, { fetchImpl 
       fromName: nameMatch ? nameMatch[1].trim() : "",
       received: msgHeaders.Date ?? "",
       isRead: !(message.labelIds ?? []).includes("UNREAD"),
-      bodyText: extractGmailBody(message.payload)
+      bodyText,
+      bodyHtml
     }
   };
 }
