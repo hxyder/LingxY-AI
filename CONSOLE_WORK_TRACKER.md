@@ -2,6 +2,21 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-21（第 5 轮）
+
+- **UCA-135 (0810e45)** — Gmail 全文 body 懒加载
+  - 新增 `getGoogleMessage(runtime, account, messageId)`：`format=full` + MIME 树遍历；优先 text/plain，回退 text/html（strip tags + 解实体）
+  - 新端点 `GET /connectors/accounts/google/messages/:id`
+  - 前端 `_inboxState.fullBodyCache` 按 email id 缓存，点开时单次拉取、后续命中缓存
+  - IMAP 早就返回全文 bodyText，这轮只补 Gmail
+
+- **UCA-134 (8cf84b1)** — Task 报告自动预览 v2（提升为 Artifacts 面板焦点元素）
+  - 上一轮 (UCA-133) 虽然加了 auto-preview，但预览 `<pre>` 在 artifact list **下方**，多数人要滚过 3-8 行才看到，看起来就像没工作
+  - 重构：Artifacts 面板最上面是一张独立的 **report 卡片**（文件图标 + 名字 + 路径 + 操作按钮组 + 下方 preview），列表落在下方做"其它产物索引"
+  - preview 读取上限从 1200 → 3000 字符，mono 字体，max-height 420px 可滚
+  - 自动选择也走 `selectTaskArtifact` 了，和手动点击走同一路径——loading state 一致
+  - `loadArtifactPreviewText` 返回 `{ text, kind }`，CSS 能区分 loading / external-only / 正常态
+
 ### 2026-04-21（第 4 轮）
 
 - **UCA-133 (a3a1074)** — IMAP 预览缓存 + Task 报告自动预览
@@ -44,23 +59,28 @@
 
 ## 下一轮建议（按价值排序）
 
-1. **OAuth Gmail 全文 body 获取**
-   - 目前 Gmail snippet 最多 ~200 字符
-   - 实现 `GET /connectors/accounts/google/messages/:id?full=true` 单条全文获取
-   - Inbox UI 展开时 lazy-load
-
-2. **搜索失败 UI 反馈优化**
+1. **搜索失败 UI 反馈优化**
    - `attempts[]` 数组已经返回给上层，但 UI 没展示
    - 当所有 providers 都 fetchFailed 时，显示 "网络受限 - 已尝试 4 个搜索源" 明确信息
 
-3. **Schedules 失败任务一键查看日志**
+2. **Schedules 失败任务一键查看日志**
    - sched-row 的 "Last: ... · failed" 可以点击跳转到对应的 failed task 详情
    - 需要 schedule → last_task_id 的字段（后端 dispatch.mjs 已写了 `last_run_status`，但没存 task_id 关联）
 
+3. **Outlook 全文 body 获取**（对称 UCA-135）
+   - 目前只有 ~255 字符 `bodyPreview`
+   - Graph `$select=body` 能拿完整 HTML body
+   - 实现 `getMicrosoftMessage(runtime, account, messageId)` + 路由
+
 4. **邮件详情 HTML 渲染**
    - 目前展开是纯文本 `<pre>`
-   - 对有 HTML body 的邮件（多数营销邮件）用 sanitizer 渲染
-   - 需要 DOMPurify 依赖
+   - Gmail html→text 在 UCA-135 做了 strip，但长 HTML 邮件效果一般
+   - 对有 HTML body 的邮件用 sanitizer 渲染（需要 DOMPurify）
+
+5. **Task 产物预览扩展**
+   - 当前只对文本型 artifact（md / txt / json / csv / html）能 inline preview
+   - 图片可以直接 `<img>` 渲染，PDF 嵌 `<embed>` 或 PDF.js
+   - docx / xlsx / pptx 只能靠 `shell.openPath` 外部打开
 
 5. **Task 产物预览扩展**
    - 当前只对文本型 artifact（md / txt / json / csv）能 inline preview
