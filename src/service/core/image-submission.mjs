@@ -237,7 +237,19 @@ function looksLikeConnectorFileSend(userCommand = "") {
 // any non-analysis action on an attached image. We still default to
 // multi_modal when the command clearly asks to analyse/describe/OCR — that
 // path actually needs the vision model.
-const VISION_ANALYSIS_RE = /(分析|识别|描述|总结|说说.*(?:里面|内容)|看看.*(?:里面|内容|是什么)|里面.*是什么|(?:里面|内容).*(?:是什么|有什么)|什么东西|读出来|认一认|\bocr\b|\banalyze\b|\banalyse\b|\bdescribe\b|\bidentify\b|\bsummar(?:ize|ise)\b|what\s+(?:is|are)\s+in|what\s+(?:does|do)\s+.*\s+show|read\s+(?:the\s+)?text)/i;
+// Vision-intent detection. Anything that matches here goes to the
+// multi_modal executor; anything else goes to tool_using with the
+// file attached as context.
+//
+// Categories covered:
+//   action verbs         分析 / 识别 / 描述 / 总结 / 读出来 / 认一认 /
+//                        analyze / describe / identify / summarize / OCR
+//   "what's inside X"    里面.../ 内容.../ 图(中|里|上|里面|里的)... /
+//                        图片 / 照片 / 这张图 / 截图 asking 是什么/有什么/
+//                        叫什么/有几个
+//   short direct forms   什么东西 / 怎么回事
+//   english              what's in / shows / read the text
+const VISION_ANALYSIS_RE = /(分析|识别|描述|总结|读出来|认一认|怎么回事|什么东西|说说.*(?:里面|内容|图)|看看.*(?:里面|内容|是什么|图)|(?:里面|内容|图(?:中|里|上|里面|里的)?|图片|照片|这张图|这张照片|截图).*(?:是什么|有什么|叫什么|有几个|是谁|写了什么|写的什么)|\bocr\b|\banalyze\b|\banalyse\b|\bdescribe\b|\bidentify\b|\bsummar(?:ize|ise)\b|what\s*['']?s?\s+(?:is\s+)?in\b|what\s+(?:does|do)\s+.*\s+show|read\s+(?:the\s+)?text)/i;
 
 function looksLikeVisionAnalysisIntent(userCommand = "") {
   return VISION_ANALYSIS_RE.test(String(userCommand ?? ""));
