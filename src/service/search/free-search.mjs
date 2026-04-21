@@ -11,6 +11,13 @@
 const DEFAULT_FETCH = (typeof fetch === "function") ? fetch : null;
 const DDG_HTML_URL = "https://html.duckduckgo.com/html/";
 const DDG_LITE_URL = "https://lite.duckduckgo.com/lite/";
+const BING_URL = "https://www.bing.com/search";
+const BAIDU_URL = "https://www.baidu.com/s";
+
+// Very rough CN-query detection — any CJK character triggers the Baidu
+// fallback ahead of Bing. Latin-only queries prefer Bing first.
+const CJK_RE = /[\u3400-\u9fff]/;
+function looksChinese(query) { return CJK_RE.test(String(query ?? "")); }
 
 // Realistic Chrome User-Agent — avoids bot-detection on DDG's scrape checks.
 const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -130,6 +137,63 @@ export function parseDuckDuckGoHtml(html = "", limit = 5) {
  * DDG Lite returns a simple <table> without JavaScript.
  * Structure: alternating rows of title links and snippet cells.
  */
+/**
+ * Parse Bing search results page. Bing's modern markup wraps each
+ * organic result in an <li class="b_algo"> with <h2><a href></a></h2>
+ * for the title and a <div class="b_caption"><p> for the snippet.
+ * Older markup uses .b_tlbh etc. — we take the li-based scan which
+ * has been stable for years.
+ */
+export function parseBingHtml(html = "", limit = 5) {
+  if (!html) return [];
+  const results = [];
+  const liRe = /<li[^>]*class="[^"]*\bb_algo\b[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+  let m;
+  while ((m = liRe.exec(html)) && results.length < limit) {
+    const block = m[1];
+    const titleMatch = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/h2>/i);
+    if (!titleMatch) continue;
+    const url = titleMatch[1];
+    const title = stripTags(titleMatch[2]);
+    if (!title || !url || !/^https?:/i.test(url)) continue;
+    // Bing wraps snippets in <p> inside .b_caption. Occasionally there
+    // are multiple — grab the first non-empty one.
+    const snippetMatch = block.match(/<div[^>]*class="[^"]*\bb_caption\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
+    const snippet = snippetMatch ? stripTags(snippetMatch[1].replace(/<p[^>]*>/gi, " ").replace(/<\/p>/gi, " ")) : "";
+    results.push({ title, url, snippet });
+  }
+  return results;
+}
+
+/**
+ * Parse Baidu search results page. Baidu wraps each organic result in
+ * <div class="result c-container"> with <h3><a href>Title</a></h3> and
+ * a snippet <div class="c-abstract"> or <span class="content-right_*">.
+ * Important: Baidu wraps outbound URLs in its own redirector — decode
+ * the <a href="http://www.baidu.com/link?url=..."> target so consumers
+ * can actually cite the source URL.
+ */
+export function parseBaiduHtml(html = "", limit = 5) {
+  if (!html) return [];
+  const results = [];
+  const blockRe = /<div[^>]*class="[^"]*\bc-container\b[^"]*"[^>]*>([\s\S]*?)<\/div>\s*<\/div>/gi;
+  let m;
+  while ((m = blockRe.exec(html)) && results.length < limit) {
+    const block = m[1];
+    const titleMatch = block.match(/<h3[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!titleMatch) continue;
+    const url = titleMatch[1];
+    const title = stripTags(titleMatch[2]);
+    if (!title || !url || !/^https?:/i.test(url)) continue;
+    // Snippet can be .content-right, .c-abstract, or .c-row — try in
+    // order and fall back to any remaining text.
+    const snippetMatch = block.match(/<(?:span|div)[^>]*class="[^"]*(?:content-right_[\w-]*|c-abstract|c-row)[^"]*"[^>]*>([\s\S]*?)<\/(?:span|div)>/i);
+    const snippet = snippetMatch ? stripTags(snippetMatch[1]) : "";
+    results.push({ title, url, snippet });
+  }
+  return results;
+}
+
 export function parseDuckDuckGoLite(html = "", limit = 5) {
   if (!html) return [];
   const results = [];
@@ -251,6 +315,58 @@ async function tryDdgHtml({ q, recency, fetchImpl, signal, limit }) {
   }
 }
 
+async function tryBing({ q, recency, fetchImpl, signal, limit }) {
+  const params = new URLSearchParams({ q, setlang: "en-us", count: String(Math.max(limit, 10)) });
+  // Bing recency uses freshness= day|week|month (no year), so we drop
+  // year-level filtering rather than send something Bing will reject.
+  const fresh = { d: "day", w: "week", m: "month" }[recency];
+  if (fresh) params.set("freshness", fresh);
+  try {
+    const response = await fetchImpl(`${BING_URL}?${params.toString()}`, {
+      headers: {
+        "User-Agent": BROWSER_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.bing.com/"
+      },
+      signal
+    });
+    if (!response.ok) return { results: [], provider: "bing", ok: false, fetchFailed: true };
+    const html = await response.text();
+    if (isBotDetectionPage(html)) {
+      return { results: [], provider: "bing", ok: false, fetchFailed: true, botDetected: true };
+    }
+    const results = parseBingHtml(html, limit);
+    return { results, provider: "bing", ok: results.length > 0, fetchFailed: false };
+  } catch {
+    return { results: [], provider: "bing", ok: false, fetchFailed: true };
+  }
+}
+
+async function tryBaidu({ q, fetchImpl, signal, limit }) {
+  const params = new URLSearchParams({ wd: q, rn: String(Math.max(limit, 10)) });
+  try {
+    const response = await fetchImpl(`${BAIDU_URL}?${params.toString()}`, {
+      headers: {
+        "User-Agent": BROWSER_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.5",
+        "Referer": "https://www.baidu.com/"
+      },
+      signal
+    });
+    if (!response.ok) return { results: [], provider: "baidu", ok: false, fetchFailed: true };
+    const html = await response.text();
+    if (isBotDetectionPage(html)) {
+      return { results: [], provider: "baidu", ok: false, fetchFailed: true, botDetected: true };
+    }
+    const results = parseBaiduHtml(html, limit);
+    return { results, provider: "baidu", ok: results.length > 0, fetchFailed: false };
+  } catch {
+    return { results: [], provider: "baidu", ok: false, fetchFailed: true };
+  }
+}
+
 async function tryDdgLite({ q, recency, fetchImpl, signal, limit }) {
   const params = new URLSearchParams({ q });
   if (recency) params.set("df", recency);
@@ -297,27 +413,46 @@ export async function searchWeb({
 
   const normalizedRecency = normalizeSearchRecency(recency, q);
 
-  // Try primary DDG HTML endpoint, fall back to DDG Lite on empty results.
-  const primary = await tryDdgHtml({ q, recency: normalizedRecency, fetchImpl, signal, limit });
-  if (primary.results.length > 0) {
-    return { query: q, results: primary.results, provider: primary.provider, recency: normalizedRecency, fetchFailed: false };
+  // Cascade order. Primary is DDG because it respects recency filters
+  // and doesn't require a user-cookie dance. Chinese queries drop Baidu
+  // in ahead of Bing (Baidu handles CJK content infinitely better);
+  // Latin queries try Bing before Baidu as a sanity fallback.
+  const isChinese = looksChinese(q);
+  const cascade = [
+    (opts) => tryDdgHtml(opts),
+    (opts) => tryDdgLite(opts),
+    ...(isChinese
+      ? [(opts) => tryBaidu(opts), (opts) => tryBing(opts)]
+      : [(opts) => tryBing(opts),  (opts) => tryBaidu(opts)])
+  ];
+
+  const attempts = [];
+  for (const attempt of cascade) {
+    const result = await attempt({ q, recency: normalizedRecency, fetchImpl, signal, limit });
+    attempts.push(result);
+    if (result.results.length > 0) {
+      return {
+        query: q,
+        results: result.results,
+        provider: result.provider,
+        recency: normalizedRecency,
+        fetchFailed: false,
+        attempts: attempts.map((a) => ({ provider: a.provider, ok: a.ok, fetchFailed: a.fetchFailed }))
+      };
+    }
   }
 
-  const fallback = await tryDdgLite({ q, recency: normalizedRecency, fetchImpl, signal, limit });
-  if (fallback.results.length > 0) {
-    return { query: q, results: fallback.results, provider: fallback.provider, recency: normalizedRecency, fetchFailed: false };
-  }
-
-  // Both endpoints returned no results. Report a network failure only when
-  // at least one of them had a fetch-level error (HTTP error, timeout, or bot
-  // detection page). If both responded normally with no organic results that
-  // is a genuine "no results" case rather than a connectivity problem.
-  const fetchFailed = primary.fetchFailed || fallback.fetchFailed;
+  // Every provider yielded no organic results. If AT LEAST ONE had a
+  // fetch-level / bot-detection failure, surface that so the LLM knows
+  // the network path is compromised (UCA-039). If all responded 200 OK
+  // with empty pages, that's a genuine "no results" — report truthfully.
+  const fetchFailed = attempts.some((a) => a.fetchFailed);
   return {
     query: q,
     results: [],
-    provider: primary.provider,
+    provider: attempts[0]?.provider ?? "none",
     recency: normalizedRecency,
-    fetchFailed
+    fetchFailed,
+    attempts: attempts.map((a) => ({ provider: a.provider, ok: a.ok, fetchFailed: a.fetchFailed }))
   };
 }
