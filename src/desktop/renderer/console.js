@@ -1118,6 +1118,30 @@ const TASK_TYPES = [
   { id: "audio_transcription", label: "Audio Transcription", desc: "Speech-to-text for recording notes and system audio" }
 ];
 
+// Mirrors providerCanVision() in multi-modal-executor.mjs — used to
+// annotate the Routing → Vision dropdown so the user sees at-a-glance
+// which of their configured providers can actually handle images. If
+// they still pick a text-only one, the backend auto-switches (UCA-148)
+// but flagging it here makes the misconfiguration obvious up front.
+function providerCanVisionFrontend(provider) {
+  if (!provider) return false;
+  if (provider.supportsVision === true) return true;
+  if (provider.supportsVision === false) return false;
+  if (provider.kind === "anthropic" && provider.apiKey) return true;
+  if (provider.kind === "openai" && provider.apiKey) {
+    const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""} ${provider.name ?? ""}`.toLowerCase();
+    return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus/.test(fp);
+  }
+  if (provider.kind === "code_cli") {
+    return /(gemini|codebuddy|qwen)(\.exe)?$/i.test(`${provider.command ?? ""}`);
+  }
+  if (provider.kind === "ollama") {
+    const m = `${provider.defaultModel ?? ""}`.toLowerCase();
+    return /llava|llama-?3\.2.*vision|qwen.*vl|minicpm.*v|bakllava/.test(m);
+  }
+  return false;
+}
+
 const PRESET_MODELS = {
   anthropic: ["claude-sonnet-4-5-20250514", "claude-opus-4-5-20250514", "claude-haiku-4-5-20250514"],
   openai: ["gpt-4o", "gpt-4o-mini", "gpt-5", "deepseek-chat", "kimi-k2", "moonshot-v1-8k"],
@@ -1589,13 +1613,22 @@ function renderTaskRouting() {
 
   el.innerHTML = TASK_TYPES.map((task) => {
     const route = taskRouting[task.id] ?? {};
+    // For the Vision task, mark which providers can actually read
+    // images. The backend will auto-switch if the user picks a
+    // non-vision one (UCA-148), but flagging up front saves a round-
+    // trip for users paying attention.
+    const isVisionTask = task.id === "vision";
     const providerOptions = ['<option value="">— Select provider —</option>']
-      .concat(customProviders.map((p) =>
-        `<option value="${escapeHtml(p.id)}" ${route.providerId === p.id ? "selected" : ""}>${escapeHtml(p.name)} (${escapeHtml(p.kind)})</option>`
-      ))
+      .concat(customProviders.map((p) => {
+        const suffix = isVisionTask
+          ? providerCanVisionFrontend(p) ? " 👁" : " (text-only)"
+          : "";
+        return `<option value="${escapeHtml(p.id)}" ${route.providerId === p.id ? "selected" : ""}>${escapeHtml(p.name)} (${escapeHtml(p.kind)})${suffix}</option>`;
+      }))
       .join("");
 
     const selectedProvider = customProviders.find((p) => p.id === route.providerId);
+    const isVisionMisconfig = isVisionTask && selectedProvider && !providerCanVisionFrontend(selectedProvider);
     const modelValue = route.model ?? "";
     const isCli = selectedProvider?.kind === "code_cli";
     if (selectedProvider?.id && !providerModelOptionsCache.has(selectedProvider.id)) {
@@ -1669,6 +1702,7 @@ function renderTaskRouting() {
           ${!hideMode && !showReasoning ? `<select data-routing-mode="${escapeHtml(task.id)}" title="Mode" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);" ${noProviders || !selectedProvider ? "disabled" : ""}>${modeOptionsHtml}</select>` : ""}
         </div>
         ${modelMeta ? `<div style="font-size:10px;color:var(--muted);margin-top:6px;">${escapeHtml(modelMeta)}</div>` : ""}
+        ${isVisionMisconfig ? `<div style="font-size:11px;color:var(--warn);margin-top:6px;line-height:1.4;">⚠️ 这个 provider 不支持图片。运行时会自动切到有 vision 能力的 provider；如果你确定它实际上能读图（比如新出的 CLI），在 provider 里加 <code>supportsVision: true</code> 覆盖。</div>` : ""}
       </div>
     `;
   }).join("") + (noProviders ? `
