@@ -426,6 +426,13 @@ async function runBrowserExecutor({ task, runtime }) {
 
     assertArtifactContract(task, generatedArtifacts);
 
+    // Mirror the context-submission fix: persist the executor's final
+    // text so search-style / conversational tasks show something in
+    // the detail view.
+    if (inlineText && !task.result_summary) {
+      updateTask(runtime, task, { result_summary: inlineText.trim() });
+    }
+
     if (task.status !== "success") {
       updateTask(runtime, task, {
         status: "success",

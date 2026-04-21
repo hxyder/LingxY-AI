@@ -383,6 +383,16 @@ async function runExecutor({ runtime, task, executor }) {
 
     assertArtifactContract(task, generatedArtifacts);
 
+    // Persist the executor's final answer as result_summary so the
+    // Task detail UI has something to show for conversational /
+    // search-style tasks that don't produce a file artifact. Without
+    // this, a successful web-search task rendered as "status: success"
+    // with no visible output — the text answer was only ever in an
+    // inline_result event, never stored on the task.
+    if (inlineText && !task.result_summary) {
+      updateTask(runtime, task, { result_summary: inlineText.trim() });
+    }
+
     if (task.status !== "success") {
       updateTask(runtime, task, {
         status: "success",
