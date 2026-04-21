@@ -47,6 +47,55 @@ export async function listMicrosoftEmails(runtime, account, input = {}, { fetchI
   };
 }
 
+// Full-body fetch for a single Outlook message — symmetric to Gmail's
+// getGoogleMessage. The list call uses $select=bodyPreview for speed
+// (capped at ~255 chars); this pulls body.content (HTML or text) so
+// the Inbox expand can show the real body.
+export async function getMicrosoftMessage(runtime, account, messageId, { fetchImpl = fetch } = {}) {
+  const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
+  if (!accessToken) return { status: "reauth_required", accountId: account.id };
+  const response = await fetchImpl(
+    `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}?$select=id,subject,from,receivedDateTime,body,isRead`,
+    { headers: headers(accessToken) }
+  );
+  if (!response.ok) return { status: "error", errorCode: `graph_mail_get_error:${response.status}` };
+  const message = await response.json();
+  const body = message.body ?? {};
+  const raw = body.content ?? "";
+  let bodyText = raw;
+  // Graph returns contentType "html" or "text". For HTML, strip tags
+  // the same way we do for Gmail (text/html fallback in extractGmailBody).
+  if ((body.contentType ?? "").toLowerCase() === "html") {
+    bodyText = raw
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<script[\s\S]*?<\/script>/gi, "")
+      .replace(/<[^>]+>/g, "")
+      .replace(/&nbsp;/g, " ")
+      .replace(/&amp;/g, "&")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, "\"")
+      .replace(/&#39;/g, "'")
+      .replace(/\s+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+  return {
+    status: "success",
+    provider: "microsoft",
+    accountId: account.id,
+    data: {
+      id: message.id,
+      subject: message.subject ?? "",
+      from: message.from?.emailAddress?.address ?? "",
+      fromName: message.from?.emailAddress?.name ?? "",
+      received: message.receivedDateTime ?? "",
+      isRead: message.isRead,
+      bodyText
+    }
+  };
+}
+
 export async function listMicrosoftFiles(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
   const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
   if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };

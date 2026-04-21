@@ -4,6 +4,7 @@ import {
   ACCOUNT_LIST_FILES_TOOL
 } from "../../connectors/tools/read-tools.mjs";
 import { getGoogleMessage } from "../../connectors/google/google-connector.mjs";
+import { getMicrosoftMessage } from "../../connectors/microsoft/microsoft-connector.mjs";
 import {
   startMicrosoftAuth,
   startGoogleAuth,
@@ -310,20 +311,23 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
     return true;
   }
 
-  // GET /connectors/accounts/google/messages/:id — fetch a single
-  // Gmail message with full MIME body walked + decoded. Used by the
-  // Inbox tab's inline-expand to swap the ~200-char snippet for the
-  // real body the moment the user clicks.
-  if (method === "GET" && /^\/connectors\/accounts\/google\/messages\/[^/]+$/.test(url.pathname)) {
-    const messageId = decodeURIComponent(url.pathname.split("/").pop());
-    const accounts = listUserAccounts(runtime).filter((a) => a.provider === "google");
+  // GET /connectors/accounts/:provider/messages/:id — fetch one
+  // message's full body on demand. Same shape for both Google (MIME
+  // walk) and Microsoft (Graph body.content + optional HTML strip),
+  // so the Inbox inline-expand UI only needs one fetch helper.
+  const msgMatch = url.pathname.match(/^\/connectors\/accounts\/(google|microsoft)\/messages\/([^/]+)$/);
+  if (method === "GET" && msgMatch) {
+    const provider = msgMatch[1];
+    const messageId = decodeURIComponent(msgMatch[2]);
+    const accounts = listUserAccounts(runtime).filter((a) => a.provider === provider);
     if (accounts.length === 0) {
-      sendJson(response, 404, { error: "no_google_account" });
+      sendJson(response, 404, { error: `no_${provider}_account` });
       return true;
     }
+    const fetchMessage = provider === "google" ? getGoogleMessage : getMicrosoftMessage;
     try {
-      const result = await getGoogleMessage(runtime, accounts[0], messageId);
-      sendJson(response, result.status === "success" ? 200 : 200, result);
+      const result = await fetchMessage(runtime, accounts[0], messageId);
+      sendJson(response, 200, result);
     } catch (error) {
       sendJson(response, 200, { status: "error", errorCode: error.message });
     }

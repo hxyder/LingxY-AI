@@ -5597,9 +5597,15 @@ async function renderInboxContent() {
           // and patch the cached email in-place so the next render has
           // the full text. IMAP already returns bodyText on the list
           // so only OAuth Google needs this lazy step.
-          if (willExpand && account._kind !== "imap" && account.provider === "google" && !_inboxState.fullBodyCache.has(id)) {
+          // OAuth list endpoints return a short preview (~200ch Gmail
+          // snippet / ~255ch Graph bodyPreview). When the user expands,
+          // fetch the real body via /connectors/accounts/:provider/
+          // messages/:id. IMAP already returns full bodyText so it's
+          // skipped here. Both providers share one endpoint shape now.
+          const oauthSupportsFullBody = account._kind !== "imap" && (account.provider === "google" || account.provider === "microsoft");
+          if (willExpand && oauthSupportsFullBody && !_inboxState.fullBodyCache.has(id)) {
             try {
-              const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/google/messages/${encodeURIComponent(id)}`);
+              const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${account.provider}/messages/${encodeURIComponent(id)}`);
               if (!r.ok) return;
               const payload = await r.json();
               if (payload.status !== "success" || !payload.data?.bodyText) return;
