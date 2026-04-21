@@ -2378,6 +2378,12 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   opacity: .4;
   cursor: not-allowed;
 }
+
+/* Schedules last-run status colors. The row shows "Last: <time> · <status>"
+   where <status> is green for success, red for failed, muted otherwise. */
+.sched-last-ok    { color: var(--ok); font-weight: 600; }
+.sched-last-err   { color: var(--err); font-weight: 600; }
+.sched-last-muted { color: var(--muted); }
 .inbox-accounts {
   display: flex;
   flex-direction: column;

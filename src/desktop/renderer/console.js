@@ -3153,6 +3153,17 @@ function scheduleMatchesSearch(s, q) {
     .filter(Boolean).join(" ").toLowerCase();
   return hay.includes(q);
 }
+// "Last:" meta — show both time and status. Status gets colored by
+// outcome so a row of failed runs is immediately visible.
+function formatScheduleLastRun(s) {
+  if (!s.last_run_at) return "<span class=\"muted\">Last: never</span>";
+  const timeText = escapeHtml(formatDateTime(s.last_run_at));
+  const status = s.last_run_status;
+  if (!status) return `<span>Last: ${timeText}</span>`;
+  const cls = status === "success" ? "ok" : (status === "failed" ? "err" : "muted");
+  return `<span>Last: ${timeText} · <span class="sched-last-${cls}">${escapeHtml(status)}</span></span>`;
+}
+
 function renderScheduleRow(s) {
   const color = s.color || s.metadata?.color || "";
   const categoryLabel = s.category || s.metadata?.category || "";
@@ -3175,7 +3186,7 @@ function renderScheduleRow(s) {
           ${categoryLabel ? `<span class="tag">${escapeHtml(categoryLabel)}</span>` : ""}
           <span class="tag">${escapeHtml(s.trigger_type ?? "manual")}</span>
           <span>Next: ${escapeHtml(formatDateTime(s.next_run_at))}</span>
-          <span>Last: ${escapeHtml(s.last_run_status ?? "never")}</span>
+          ${formatScheduleLastRun(s)}
           ${statePill}
         </div>
       </div>
@@ -5364,10 +5375,8 @@ async function renderInboxContent() {
   }
   if (label) label.textContent = account.displayName ?? account.email ?? account.provider;
 
-  // UCA-128: IMAP accounts (163 / QQ / Gmail-IMAP / Outlook-IMAP / custom)
-  // only expose mail, and the REST preview for IMAP is not wired yet.
-  // Disable Files + Calendar tabs and force Mail; when on Mail show an
-  // honest "preview coming soon" state.
+  // IMAP accounts (163 / QQ / Gmail-IMAP / Outlook-IMAP / custom) only
+  // expose mail — disable Files + Calendar tabs and force Mail.
   const isImap = account._kind === "imap";
   document.querySelectorAll("[data-inbox-res]").forEach((btn) => {
     const res = btn.dataset.inboxRes;
@@ -5386,32 +5395,39 @@ async function renderInboxContent() {
       btn.setAttribute("aria-pressed", btn.dataset.inboxRes === "emails" ? "true" : "false");
     });
   }
-  if (isImap) {
-    content.innerHTML = `
-      <div class="inbox-empty" style="padding:40px 24px;">
-        <div style="font-size:14px;font-weight:600;color:var(--ink);margin-bottom:6px;">
-          ${escapeHtml(account.displayName ?? account.email ?? account.provider)} · IMAP
-        </div>
-        <div style="max-width:440px;margin:0 auto;line-height:1.6;">
-          这个邮箱已成功连接，会被定时任务和晨间摘要用到。<br/>
-          <span class="muted">IMAP 邮件预览还没做完 — 只有 Google / Microsoft 账户支持在这里浏览。</span>
-        </div>
-      </div>
-    `;
-    return;
-  }
 
   content.innerHTML = `<p class="inbox-empty">加载中…</p>`;
   try {
-    const provider = account.provider;
     let url;
-    if (_inboxState.activeTab === "files") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/files?limit=30`;
-    else if (_inboxState.activeTab === "emails") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/emails?limit=30`;
-    else url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/calendar?limit=30`;
+    if (isImap) {
+      // IMAP: only mail is supported. The backend endpoint returns either
+      // { messages } on success or { messages: [], reason } on a known
+      // soft failure (missing credentials / connection refused).
+      url = `${state.serviceBaseUrl}/config/email/accounts/${encodeURIComponent(account._rawId)}/messages?limit=30`;
+    } else {
+      const provider = account.provider;
+      if (_inboxState.activeTab === "files") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/files?limit=30`;
+      else if (_inboxState.activeTab === "emails") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/emails?limit=30`;
+      else url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/calendar?limit=30`;
+    }
 
     const r = await fetch(url);
     if (!r.ok) { content.innerHTML = `<p class="inbox-empty">加载失败 (${r.status})</p>`; return; }
     const data = await r.json();
+    if (isImap && data.reason) {
+      content.innerHTML = `
+        <div class="inbox-empty" style="padding:32px 24px;">
+          <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:6px;">
+            无法连接到邮箱服务器
+          </div>
+          <div style="max-width:440px;margin:0 auto;line-height:1.6;font-size:12px;">
+            ${escapeHtml(data.reason)}<br/>
+            <span class="muted">检查 Connectors 页的 IMAP host / 授权码，或稍后重试。</span>
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     if (_inboxState.activeTab === "files") {
       const files = data.files ?? [];
@@ -5427,7 +5443,9 @@ async function renderInboxContent() {
         </button>
       `).join("");
     } else if (_inboxState.activeTab === "emails") {
-      const emails = data.emails ?? [];
+      // OAuth returns data.emails, IMAP endpoint returns data.messages —
+      // both have the same shape after normalization.
+      const emails = data.emails ?? data.messages ?? [];
       if (!emails.length) { content.innerHTML = `<p class="inbox-empty">该账户暂无邮件。</p>`; return; }
       content.innerHTML = emails.map((m) => `
         <button class="inbox-item" type="button">
