@@ -2,6 +2,18 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-21（第 7 轮）
+
+- **UCA-140 (84ad900)** — Palette 字段名 + legacy 任务 answer fallback
+  - 根因：palette 发 `{ user_command, source_app }`（snake_case），后端要 `{ userCommand, sourceApp }`（camelCase）→ 每次 submit 都被空命令 guard 拦截 → "New task" 点了像没反应
+  - 改：改为 camelCase；服务端返回 `ok:false` 或 `clarification_needed` 时在 palette 显示原因而不是静默关闭
+  - 顺手：legacy 任务没有 `result_summary` 时，从 `detail.events` 倒序扫最近一个 `inline_result` / `success` 事件的 text payload 作为兜底
+
+- **UCA-139 (ad2f209)** — Digest 去重用本地日期键（修 UTC+8 时区 bug）
+  - 根因：`state.lastDigestDate` 存的是 `toISOString().slice(0,10)` = UTC 日期，但 window 是本地时间。中国 06:00 本地 = 22:00 UTC 前一天，摘要存"昨天"。UTC 过零点（本地上午）后重启 → `todayKey` 变成今天 → 对不上状态 → 又跑一次
+  - 改：`localDateKey(date)` 用 `getFullYear/getMonth/getDate`，跟 window 同为本地时间
+  - 加 `MIN_FIRE_MS = 4h` 内存节流，即使状态文件读不到也不重发
+
 ### 2026-04-21（第 6 轮）
 
 - **UCA-138 (364ebba)** — 搜索失败 observation 列出实际尝试的 providers
