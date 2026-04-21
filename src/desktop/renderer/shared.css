@@ -2560,6 +2560,44 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   color: var(--ink-2);
   background: transparent;
 }
+
+/* Sandboxed HTML render for emails that ship bodyHtml. Fixed-height
+   with internal scroll; background stays white regardless of theme
+   so sender-intended colors don't blend into dark mode's panel. */
+.inbox-item-body-html {
+  display: block;
+  width: 100%;
+  height: 420px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+}
+
+/* "Rich / Plain" toggle inside the expanded-email head. */
+.inbox-item-body-toggle {
+  display: inline-flex;
+  gap: 0;
+  margin-left: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  align-self: center;
+}
+.inbox-item-body-head { display: flex; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+.inbox-item-body-toggle .seg-btn {
+  padding: 4px 10px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--panel);
+  color: var(--muted);
+  border: 0;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.inbox-item-body-toggle .seg-btn:not(:last-child) { border-right: 1px solid var(--line); }
+.inbox-item-body-toggle .seg-btn:hover { color: var(--ink); }
+.inbox-item-body-toggle .seg-btn.active { background: var(--ink); color: var(--bg); }
+[data-theme="dark"] .inbox-item-body-toggle .seg-btn.active { background: var(--accent); color: var(--accent-ink); }
 @keyframes inbox-body-in {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
@@ -2635,6 +2673,28 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   color: var(--muted);
   font-family: var(--font-sans);
   font-style: normal;
+}
+
+/* Image preview: drop the mono / pre styling and center the image in
+   a neutral-bg frame so screenshots / charts / photos look the way the
+   generator intended. */
+.artifact-report .artifact-preview.image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: var(--panel-2);
+  white-space: normal;
+  max-height: 520px;
+  overflow: auto;
+}
+.artifact-report .artifact-preview.image img {
+  max-width: 100%;
+  max-height: 480px;
+  height: auto;
+  display: block;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow);
 }
 
 /* Task answer block — surfaces result_summary for tasks that succeed

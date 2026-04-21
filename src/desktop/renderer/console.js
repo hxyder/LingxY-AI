@@ -682,9 +682,26 @@ function formatArtifactLabel(artifactPath = "") {
   return "File";
 }
 
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"];
+function isImageArtifactPath(artifactPath = "") {
+  const p = `${artifactPath}`.toLowerCase();
+  return IMAGE_EXTENSIONS.some((ext) => p.endsWith(ext));
+}
+function imageMimeFor(artifactPath = "") {
+  const p = `${artifactPath}`.toLowerCase();
+  if (p.endsWith(".png")) return "image/png";
+  if (p.endsWith(".jpg") || p.endsWith(".jpeg")) return "image/jpeg";
+  if (p.endsWith(".gif")) return "image/gif";
+  if (p.endsWith(".webp")) return "image/webp";
+  if (p.endsWith(".bmp")) return "image/bmp";
+  if (p.endsWith(".svg")) return "image/svg+xml";
+  return "application/octet-stream";
+}
+
 function isPreviewableArtifactPath(artifactPath = "") {
   const p = `${artifactPath}`.toLowerCase();
   if ([".md", ".txt", ".json", ".csv", ".html", ".htm"].some((ext) => p.endsWith(ext))) return true;
+  if (isImageArtifactPath(p)) return true;
   for (const ext of CODE_EXTENSIONS) {
     if (p.endsWith(ext)) return true;
   }
@@ -2319,6 +2336,14 @@ function ensureSelectedTaskEventStream(taskId) {
 /* ── Artifact selection ── */
 async function loadArtifactPreviewText(artifactPath) {
   if (!artifactPath) return { text: "Select an artifact to preview.", kind: "empty" };
+  if (isImageArtifactPath(artifactPath)) {
+    try {
+      const dataUrl = await window.ucaShell.readFileAsDataUrl(artifactPath, imageMimeFor(artifactPath));
+      return { text: "", kind: "image", dataUrl };
+    } catch (error) {
+      return { text: `Image preview failed: ${error?.message ?? error}`, kind: "error" };
+    }
+  }
   if (!isPreviewableArtifactPath(artifactPath)) {
     return { text: "This file type can't be previewed inline — use Open to view it externally.", kind: "external" };
   }
@@ -2361,16 +2386,25 @@ async function selectTaskArtifact(artifactPath) {
   renderArtifactReport(artifactPath, state.selectedTaskDetail?.artifacts ?? []);
   // Show a loading state immediately so the user knows their click
   // registered; swap to actual content when fs read returns.
+  taskArtifactPreview.innerHTML = "";
   taskArtifactPreview.textContent = "正在加载预览…";
   taskArtifactPreview.classList.add("loading");
-  taskArtifactPreview.classList.remove("external-only");
-  const { text, kind } = await loadArtifactPreviewText(state.selectedTaskArtifactPath);
+  taskArtifactPreview.classList.remove("external-only", "image");
+  const result = await loadArtifactPreviewText(state.selectedTaskArtifactPath);
   if (state.selectedTaskArtifactPath !== artifactPath) return; // user moved on
-  taskArtifactPreview.textContent = text;
-  taskArtifactPreview.classList.toggle("loading", false);
-  taskArtifactPreview.classList.toggle("external-only", kind === "external");
+  taskArtifactPreview.classList.remove("loading", "external-only", "image");
+  if (result.kind === "image" && result.dataUrl) {
+    taskArtifactPreview.classList.add("image");
+    taskArtifactPreview.textContent = "";
+    const img = document.createElement("img");
+    img.src = result.dataUrl;
+    img.alt = artifactPath;
+    taskArtifactPreview.appendChild(img);
+  } else {
+    taskArtifactPreview.textContent = result.text;
+    if (result.kind === "external") taskArtifactPreview.classList.add("external-only");
+  }
   state.lastAutoPreviewedPath = artifactPath;
-  // Refresh the list so the active-row highlight moves with selection.
   renderTaskArtifacts(state.selectedTaskDetail);
 }
 
@@ -5365,14 +5399,16 @@ async function handleAccountConfigSave(type, panel) {
 //   UCA-126: INBOX TAB — account switcher + files/mail/calendar
 // ═══════════════════════════════════════════════
 const _inboxState = {
-  accounts: [],            // merged: OAuth connected-accounts + IMAP email accounts
-  activeAccountId: null,   // selected sidebar account
-  activeTab: "files",      // 'files' | 'emails' | 'calendar'
-  expandedEmailId: null,   // id of the email whose body is inline-expanded
+  accounts: [],              // merged: OAuth connected-accounts + IMAP email accounts
+  activeAccountId: null,     // selected sidebar account
+  activeTab: "files",        // 'files' | 'emails' | 'calendar'
+  expandedEmailId: null,     // id of the email whose body is inline-expanded
   // Cache full-body fetches keyed by email id so they survive list
   // re-fetches (Gmail list only returns snippets; a separate
   // /messages/:id call gets the real body).
-  fullBodyCache: new Map()
+  fullBodyCache: new Map(),  // id → plain text body
+  htmlBodyCache: new Map(),  // id → raw HTML body (when available)
+  bodyViewMode: new Map()    // id → "text" | "html" (user toggle; default "html" when html exists)
 };
 
 async function loadInboxTab() {
@@ -5417,6 +5453,21 @@ async function loadInboxTab() {
   }
   renderInboxAccounts();
   renderInboxContent();
+}
+
+// Render an email's raw HTML body inside a sandboxed iframe with a
+// strict CSP. The sandbox="" empty attribute blocks scripts, forms,
+// popups, navigation, and plugins; the inline CSP meta blocks all
+// external resources so tracking pixels / remote images / remote
+// CSS never fire — the user reads content without beaconing home.
+// Inline styles and data: URIs stay allowed so the email still looks
+// roughly like what the sender intended.
+function renderEmailHtmlFrame(emailId, rawHtml) {
+  const csp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;";
+  const doc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>body{margin:0;padding:14px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:13px;line-height:1.55;color:#1a1917;background:#ffffff;word-break:break-word}a{color:#b85c2a}img{max-width:100%;height:auto}table{max-width:100%!important}</style></head><body>${rawHtml}</body></html>`;
+  // srcdoc needs double-quotes escaped for the attribute value.
+  const escaped = doc.replace(/"/g, "&quot;");
+  return `<iframe class="inbox-item-body-html" data-email-html-frame="${escapeHtml(emailId)}" sandbox="" srcdoc="${escaped}" referrerpolicy="no-referrer"></iframe>`;
 }
 
 // UCA-128: per-provider logo fallback for IMAP accounts so they render
@@ -5559,13 +5610,30 @@ async function renderInboxContent() {
       const expandedId = _inboxState.expandedEmailId;
       content.innerHTML = emails.map((m) => {
         const isExpanded = expandedId === m.id;
-        // Prefer the cached full body (populated on first expand of a
-        // Gmail message) over whatever the list call returned.
         const body = _inboxState.fullBodyCache.get(m.id) ?? m.bodyText ?? m.preview ?? "";
+        const htmlBody = _inboxState.htmlBodyCache.get(m.id) ?? m.bodyHtml ?? "";
+        const hasHtml = htmlBody && htmlBody.length > 0;
+        const viewMode = _inboxState.bodyViewMode.get(m.id) ?? (hasHtml ? "html" : "text");
         const receivedLine = m.received ? new Date(m.received).toLocaleString("zh-CN", {
           year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
         }) : "";
         const fromLine = [m.fromName, m.from].filter(Boolean).map(escapeHtml).join(" &lt;") + (m.fromName && m.from ? "&gt;" : "");
+        let bodyMarkup;
+        if (!isExpanded) {
+          bodyMarkup = "";
+        } else if (viewMode === "html" && hasHtml) {
+          bodyMarkup = renderEmailHtmlFrame(m.id, htmlBody);
+        } else if (body) {
+          bodyMarkup = `<pre class="inbox-item-body-text">${escapeHtml(body)}</pre>`;
+        } else {
+          bodyMarkup = `<pre class="inbox-item-body-text"><span class="muted">（此邮件没有可预览的文本正文）</span></pre>`;
+        }
+        const toggleMarkup = isExpanded && hasHtml ? `
+          <div class="inbox-item-body-toggle">
+            <button type="button" class="seg-btn ${viewMode === "html" ? "active" : ""}" data-email-view="html" data-email-id="${escapeHtml(m.id)}">Rich</button>
+            <button type="button" class="seg-btn ${viewMode === "text" ? "active" : ""}" data-email-view="text" data-email-id="${escapeHtml(m.id)}">Plain</button>
+          </div>
+        ` : "";
         return `
           <button class="inbox-item ${isExpanded ? "inbox-item--expanded" : ""}" type="button" data-email-id="${escapeHtml(m.id ?? "")}">
             <span class="inbox-item-icon">${m.isRead ? "○" : "●"}</span>
@@ -5580,12 +5648,22 @@ async function renderInboxContent() {
               <div class="inbox-item-body-head">
                 <div><strong>${escapeHtml(m.subject ?? "(无主题)")}</strong></div>
                 <div class="muted">From ${fromLine || "(unknown)"}${receivedLine ? ` · ${escapeHtml(receivedLine)}` : ""}</div>
+                ${toggleMarkup}
               </div>
-              <pre class="inbox-item-body-text">${escapeHtml(body) || "<span class=\"muted\">（此邮件没有可预览的文本正文）</span>"}</pre>
+              ${bodyMarkup}
             </div>
           ` : ""}
         `;
       }).join("");
+      // View-mode toggle (Rich / Plain). Stop propagation so the
+      // underlying .inbox-item click doesn't toggle the expansion.
+      content.querySelectorAll("[data-email-view]").forEach((btn) => {
+        btn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          _inboxState.bodyViewMode.set(btn.dataset.emailId, btn.dataset.emailView);
+          renderInboxContent();
+        });
+      });
       content.querySelectorAll("[data-email-id]").forEach((btn) => {
         btn.addEventListener("click", async () => {
           const id = btn.dataset.emailId;
@@ -5608,8 +5686,9 @@ async function renderInboxContent() {
               const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${account.provider}/messages/${encodeURIComponent(id)}`);
               if (!r.ok) return;
               const payload = await r.json();
-              if (payload.status !== "success" || !payload.data?.bodyText) return;
-              _inboxState.fullBodyCache.set(id, payload.data.bodyText);
+              if (payload.status !== "success" || !payload.data) return;
+              if (payload.data.bodyText) _inboxState.fullBodyCache.set(id, payload.data.bodyText);
+              if (payload.data.bodyHtml) _inboxState.htmlBodyCache.set(id, payload.data.bodyHtml);
               if (_inboxState.expandedEmailId === id) renderInboxContent();
             } catch { /* silent — expansion still shows the snippet */ }
           }
