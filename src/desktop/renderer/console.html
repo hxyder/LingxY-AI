@@ -905,13 +905,29 @@
               <span id="taskArtifactCount" class="tag">0</span>
             </header>
             <div class="panel-body">
-              <div id="taskArtifactList" class="artifact-list"></div>
-              <pre id="taskArtifactPreview" class="artifact-preview muted" hidden>Select an artifact to preview.</pre>
-              <div class="task-detail-artifact-actions btn-group" hidden>
-                <button id="openTaskArtifactButton" class="btn btn-sm" hidden>Open</button>
-                <button id="copyTaskArtifactPathButton" class="btn btn-sm btn-ghost" hidden>Copy path</button>
-                <button id="useTaskArtifactContextButton" class="btn btn-sm btn-ghost" hidden>Use as context</button>
+              <!-- Task report pane — sits ABOVE the artifact list so the
+                   generated report IS the first thing you see when
+                   opening a successful task. List below is the index
+                   for tasks that produce multiple files. -->
+              <div id="taskArtifactReport" class="artifact-report" hidden>
+                <div class="artifact-report-head">
+                  <div class="artifact-report-title">
+                    <span class="artifact-icon" id="taskArtifactReportIcon">MD</span>
+                    <div class="artifact-report-main">
+                      <div class="artifact-report-name" id="taskArtifactReportName">—</div>
+                      <div class="artifact-report-path" id="taskArtifactReportPath"></div>
+                    </div>
+                  </div>
+                  <div class="artifact-report-actions btn-group">
+                    <button id="openTaskArtifactButton" class="btn btn-sm" hidden>Open</button>
+                    <button id="copyTaskArtifactPathButton" class="btn btn-sm btn-ghost" hidden>Copy path</button>
+                    <button id="useTaskArtifactContextButton" class="btn btn-sm btn-ghost" hidden>Use as context</button>
+                  </div>
+                </div>
+                <pre id="taskArtifactPreview" class="artifact-preview muted">Select an artifact to preview.</pre>
               </div>
+              <div class="task-detail-artifact-actions btn-group" hidden></div>
+              <div id="taskArtifactList" class="artifact-list"></div>
             </div>
           </section>
           <section class="panel task-detail-panel" id="taskTimelinePanel" hidden>

@@ -2552,6 +2552,78 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* Task report pane — the focal element of the Artifacts panel. When a
+   task produces output, this is what the user sees first: header with
+   file icon + name + actions, then the content preview. */
+.artifact-report {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+.artifact-report[hidden] { display: none; }
+.artifact-report-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+.artifact-report-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+.artifact-report-main { flex: 1; min-width: 0; }
+.artifact-report-name {
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.artifact-report-path {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.artifact-report-actions { flex-shrink: 0; }
+.artifact-report .artifact-preview {
+  margin: 0;
+  padding: 14px 16px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 420px;
+  overflow: auto;
+  color: var(--ink-2);
+  min-height: 80px;
+}
+.artifact-report .artifact-preview.loading { color: var(--muted); font-style: italic; }
+.artifact-report .artifact-preview.external-only {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  color: var(--muted);
+  font-family: var(--font-sans);
+  font-style: normal;
+}
+
 /* UCA-126 follow-up: panel-title icons — small 14px glyph before section
    titles (Subtasks / Artifacts / Timeline / settings groups) to give the
    otherwise-flat text headers a quick visual hook. */

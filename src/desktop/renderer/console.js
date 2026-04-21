@@ -2318,22 +2318,59 @@ function ensureSelectedTaskEventStream(taskId) {
 
 /* ── Artifact selection ── */
 async function loadArtifactPreviewText(artifactPath) {
-  if (!artifactPath) return "Select an artifact to preview.";
-  if (!isPreviewableArtifactPath(artifactPath)) return "Open externally for best results.";
-  try {
-    const raw = await window.ucaShell.readTextFile(artifactPath, 2600);
-    return normalisePreviewText(raw).slice(0, 1200) || "No text content.";
-  } catch {
-    return "Cannot preview, open file directly.";
+  if (!artifactPath) return { text: "Select an artifact to preview.", kind: "empty" };
+  if (!isPreviewableArtifactPath(artifactPath)) {
+    return { text: "This file type can't be previewed inline — use Open to view it externally.", kind: "external" };
   }
+  try {
+    const raw = await window.ucaShell.readTextFile(artifactPath, 4000);
+    const content = normalisePreviewText(raw).slice(0, 3000);
+    return { text: content || "(file is empty)", kind: "ok" };
+  } catch (error) {
+    return { text: `Preview failed: ${error?.message ?? error}`, kind: "error" };
+  }
+}
+
+function renderArtifactReport(artifactPath, artifacts) {
+  const report = document.querySelector("#taskArtifactReport");
+  const icon = document.querySelector("#taskArtifactReportIcon");
+  const name = document.querySelector("#taskArtifactReportName");
+  const pathEl = document.querySelector("#taskArtifactReportPath");
+  if (!report || !name || !pathEl || !icon) return;
+  if (!artifactPath) {
+    report.setAttribute("hidden", "");
+    return;
+  }
+  report.removeAttribute("hidden");
+  const label = formatArtifactLabel(artifactPath);
+  const ext = (artifactPath.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "").toLowerCase();
+  icon.className = `artifact-icon ${artifactIconClass(ext)}`;
+  icon.textContent = (ext || "FILE").toUpperCase().slice(0, 3);
+  name.textContent = label;
+  pathEl.textContent = artifactPath;
+  // The visible button row uses the existing IDs, so wiring from the
+  // previous placement still works.
+  const show = !!artifactPath;
+  openTaskArtifactButton.hidden = !show;
+  copyTaskArtifactPathButton.hidden = !show;
+  useTaskArtifactContextButton.hidden = !show;
 }
 
 async function selectTaskArtifact(artifactPath) {
   state.selectedTaskArtifactPath = artifactPath ?? null;
-  openTaskArtifactButton.hidden = !state.selectedTaskArtifactPath;
-  copyTaskArtifactPathButton.hidden = !state.selectedTaskArtifactPath;
-  useTaskArtifactContextButton.hidden = !state.selectedTaskArtifactPath;
-  taskArtifactPreview.textContent = await loadArtifactPreviewText(state.selectedTaskArtifactPath);
+  renderArtifactReport(artifactPath, state.selectedTaskDetail?.artifacts ?? []);
+  // Show a loading state immediately so the user knows their click
+  // registered; swap to actual content when fs read returns.
+  taskArtifactPreview.textContent = "正在加载预览…";
+  taskArtifactPreview.classList.add("loading");
+  taskArtifactPreview.classList.remove("external-only");
+  const { text, kind } = await loadArtifactPreviewText(state.selectedTaskArtifactPath);
+  if (state.selectedTaskArtifactPath !== artifactPath) return; // user moved on
+  taskArtifactPreview.textContent = text;
+  taskArtifactPreview.classList.toggle("loading", false);
+  taskArtifactPreview.classList.toggle("external-only", kind === "external");
+  state.lastAutoPreviewedPath = artifactPath;
+  // Refresh the list so the active-row highlight moves with selection.
   renderTaskArtifacts(state.selectedTaskDetail);
 }
 
@@ -2344,13 +2381,7 @@ function renderTaskArtifacts(detail) {
   if (artifacts.length === 0) {
     state.selectedTaskArtifactPath = null;
     taskArtifactList.innerHTML = "";
-    taskArtifactPreview.setAttribute("hidden", "");
-    taskArtifactPreview.textContent = "";
-    openTaskArtifactButton.hidden = true;
-    copyTaskArtifactPathButton.hidden = true;
-    useTaskArtifactContextButton.hidden = true;
-    const heroActions = document.querySelector(".task-detail-artifact-actions");
-    if (heroActions) heroActions.setAttribute("hidden", "");
+    renderArtifactReport(null, []);
     setTaskDetailPanelVisible("taskArtifactsPanel", false);
     return;
   }
@@ -2358,23 +2389,25 @@ function renderTaskArtifacts(detail) {
 
   // Auto-select + auto-preview the primary artifact when the user lands
   // on this task for the first time. This is the "task report" flow —
-  // a successful task with a generated file should show that file's
-  // content without requiring a click. Subsequent switches to the same
-  // task keep whichever artifact the user had picked.
+  // a successful task with a generated file should show its content
+  // without requiring a click. We delegate to selectTaskArtifact so the
+  // preview pane gets the same loading state + header rendering as a
+  // manual click would.
   const primaryPath = artifacts[0].path;
-  const autoSelect = !state.selectedTaskArtifactPath || !artifacts.some((a) => a.path === state.selectedTaskArtifactPath);
-  if (autoSelect) {
+  const needsAutoSelect = !state.selectedTaskArtifactPath || !artifacts.some((a) => a.path === state.selectedTaskArtifactPath);
+  if (needsAutoSelect && state.lastAutoPreviewedPath !== primaryPath) {
+    // selectTaskArtifact will also re-enter renderTaskArtifacts once
+    // the preview resolves — the re-entry falls through both guards
+    // above (selectedTaskArtifactPath set, lastAutoPreviewedPath set)
+    // so there is no loop.
+    void selectTaskArtifact(primaryPath);
+  } else if (needsAutoSelect) {
     state.selectedTaskArtifactPath = primaryPath;
-    if (state.lastAutoPreviewedPath !== primaryPath) {
-      state.lastAutoPreviewedPath = primaryPath;
-      void loadArtifactPreviewText(primaryPath).then((text) => {
-        if (state.selectedTaskArtifactPath === primaryPath) {
-          taskArtifactPreview.textContent = text;
-          taskArtifactPreview.removeAttribute("hidden");
-        }
-      });
-    }
   }
+  // Always keep the report header in sync with whichever artifact is
+  // currently selected (manual click sets selectedTaskArtifactPath
+  // directly).
+  renderArtifactReport(state.selectedTaskArtifactPath, artifacts);
 
   // UCA-125 Phase 2d: artifact rows gain per-row Open/Reveal/Copy-path
   // buttons (v3 style) so each artifact is directly actionable without
@@ -2429,12 +2462,8 @@ function renderTaskArtifacts(detail) {
     });
   }
 
-  taskArtifactPreview.removeAttribute("hidden");
-  const heroActions = document.querySelector(".task-detail-artifact-actions");
-  if (heroActions) heroActions.removeAttribute("hidden");
-  openTaskArtifactButton.hidden = !state.selectedTaskArtifactPath;
-  copyTaskArtifactPathButton.hidden = !state.selectedTaskArtifactPath;
-  useTaskArtifactContextButton.hidden = !state.selectedTaskArtifactPath;
+  // Visibility + actions are owned by renderArtifactReport() now —
+  // called above once selection is stable.
 }
 
 /* ═══════════════════════════════════════════════
@@ -5281,7 +5310,11 @@ const _inboxState = {
   accounts: [],            // merged: OAuth connected-accounts + IMAP email accounts
   activeAccountId: null,   // selected sidebar account
   activeTab: "files",      // 'files' | 'emails' | 'calendar'
-  expandedEmailId: null    // id of the email whose body is inline-expanded
+  expandedEmailId: null,   // id of the email whose body is inline-expanded
+  // Cache full-body fetches keyed by email id so they survive list
+  // re-fetches (Gmail list only returns snippets; a separate
+  // /messages/:id call gets the real body).
+  fullBodyCache: new Map()
 };
 
 async function loadInboxTab() {
@@ -5468,7 +5501,9 @@ async function renderInboxContent() {
       const expandedId = _inboxState.expandedEmailId;
       content.innerHTML = emails.map((m) => {
         const isExpanded = expandedId === m.id;
-        const body = m.bodyText ?? m.preview ?? "";
+        // Prefer the cached full body (populated on first expand of a
+        // Gmail message) over whatever the list call returned.
+        const body = _inboxState.fullBodyCache.get(m.id) ?? m.bodyText ?? m.preview ?? "";
         const receivedLine = m.received ? new Date(m.received).toLocaleString("zh-CN", {
           year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
         }) : "";
@@ -5494,10 +5529,26 @@ async function renderInboxContent() {
         `;
       }).join("");
       content.querySelectorAll("[data-email-id]").forEach((btn) => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
           const id = btn.dataset.emailId;
-          _inboxState.expandedEmailId = _inboxState.expandedEmailId === id ? null : id;
+          const willExpand = _inboxState.expandedEmailId !== id;
+          _inboxState.expandedEmailId = willExpand ? id : null;
           renderInboxContent();
+          // Gmail's list uses format=metadata → snippet is ~200 chars.
+          // When the user actually expands, fetch the full MIME body
+          // and patch the cached email in-place so the next render has
+          // the full text. IMAP already returns bodyText on the list
+          // so only OAuth Google needs this lazy step.
+          if (willExpand && account._kind !== "imap" && account.provider === "google" && !_inboxState.fullBodyCache.has(id)) {
+            try {
+              const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/google/messages/${encodeURIComponent(id)}`);
+              if (!r.ok) return;
+              const payload = await r.json();
+              if (payload.status !== "success" || !payload.data?.bodyText) return;
+              _inboxState.fullBodyCache.set(id, payload.data.bodyText);
+              if (_inboxState.expandedEmailId === id) renderInboxContent();
+            } catch { /* silent — expansion still shows the snippet */ }
+          }
         });
       });
     } else {
