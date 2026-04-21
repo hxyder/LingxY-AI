@@ -536,14 +536,20 @@ export const WEB_SEARCH_FETCH_TOOL = {
       // (HTTP error, timeout, bot-detection page), mark the tool as failed so
       // the LLM does not silently fall back to training-data answers.
       if (result.fetchFailed) {
+        // Surface which providers we actually tried so the LLM — and
+        // the user reading the task result_summary — knows this was a
+        // real network / bot-detection problem, not the model ducking
+        // the search.
+        const tried = (result.attempts ?? []).map((a) => a.provider).filter(Boolean).join(", ") || result.provider;
         return createActionResult({
           success: false,
-          observation: `Web search unavailable: both DDG endpoints failed to return results (possible network issue or bot-detection). Do not fall back to training data — inform the user that live search is currently unreachable and suggest they try again or check their connection.`,
+          observation: `Web search unavailable. Tried: ${tried}. All providers either timed out, returned HTTP errors, or served bot-detection pages. Do not fall back to training data — tell the user live search is unreachable right now and suggest retrying or checking their connection.`,
           metadata: {
             tool_id: "web_search_fetch",
             query,
             provider: result.provider,
             recency: result.recency,
+            attempts: result.attempts ?? [],
             results: []
           }
         });
