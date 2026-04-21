@@ -30,10 +30,14 @@ function updateRun(store, runId, patch) {
   return store.updateScheduleRun(runId, patch);
 }
 
-function updateScheduleAfterRun(runtime, schedule, runStatus, now) {
+function updateScheduleAfterRun(runtime, schedule, runStatus, now, taskId = null) {
   schedule.updated_at = now;
   schedule.last_run_at = now;
   schedule.last_run_status = runStatus;
+  // Carry the task id through so the UI can link "failed" schedule
+  // rows directly to the failing task detail. Null for runs that
+  // bypassed the task store (pending_approval, dispatcher-side errors).
+  schedule.last_run_task_id = taskId;
   schedule.run_count += 1;
   // UCA-046: reset reminder_sent_at so the next cycle's lead-time window
   // produces a fresh reminder instead of being suppressed by a stale stamp.
@@ -176,7 +180,7 @@ export async function dispatchSchedule({
       task_id: result.task?.task_id ?? null,
       error_message: runStatus === "failed" ? result.task?.failure_user_message ?? "Scheduled action failed." : null
     });
-    updateScheduleAfterRun(runtime, schedule, runStatus, now);
+    updateScheduleAfterRun(runtime, schedule, runStatus, now, result.task?.task_id ?? null);
     return {
       status: runStatus,
       task: result.task,
@@ -187,7 +191,7 @@ export async function dispatchSchedule({
       status: "failed",
       error_message: error.message
     });
-    updateScheduleAfterRun(runtime, schedule, "failed", now);
+    updateScheduleAfterRun(runtime, schedule, "failed", now, null);
     return {
       status: "failed",
       error

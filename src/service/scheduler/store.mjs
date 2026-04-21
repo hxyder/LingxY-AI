@@ -170,6 +170,7 @@ export function createScheduleRecord({
     next_run_at: null,
     last_run_at: null,
     last_run_status: null,
+    last_run_task_id: null,
     run_count: 0,
     failure_count: 0,
     consecutive_failure_count: 0,

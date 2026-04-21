@@ -47,6 +47,7 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   next_run_at TEXT,
   last_run_at TEXT,
   last_run_status TEXT,
+  last_run_task_id TEXT,
   run_count INTEGER NOT NULL DEFAULT 0,
   failure_count INTEGER NOT NULL DEFAULT 0,
   consecutive_failure_count INTEGER NOT NULL DEFAULT 0,

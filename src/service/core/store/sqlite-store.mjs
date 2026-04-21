@@ -93,6 +93,7 @@ function mapSchedule(row) {
     next_run_at: row.next_run_at,
     last_run_at: row.last_run_at,
     last_run_status: row.last_run_status,
+    last_run_task_id: row.last_run_task_id ?? null,
     run_count: row.run_count,
     failure_count: row.failure_count,
     consecutive_failure_count: row.consecutive_failure_count,
@@ -203,6 +204,9 @@ export function createSqliteStore({ dbPath }) {
   if (!scheduleColumns.has("metadata_json")) {
     db.exec("ALTER TABLE schedules ADD COLUMN metadata_json TEXT");
   }
+  if (!scheduleColumns.has("last_run_task_id")) {
+    db.exec("ALTER TABLE schedules ADD COLUMN last_run_task_id TEXT");
+  }
 
   const statements = {
     upsertTask: db.prepare(`INSERT INTO tasks (
@@ -259,9 +263,9 @@ export function createSqliteStore({ dbPath }) {
     getPendingApproval: db.prepare("SELECT * FROM pending_approvals WHERE approval_id = ?"),
     listPendingApprovals: db.prepare("SELECT * FROM pending_approvals ORDER BY created_at DESC"),
     upsertSchedule: db.prepare(`INSERT INTO schedules (
-      schedule_id, name, description, enabled, created_at, updated_at, created_by, trigger_type, trigger_config_json, action_type, action_target, action_params_json, execution_mode, catchup_policy, max_runtime_seconds, next_run_at, last_run_at, last_run_status, run_count, failure_count, consecutive_failure_count, metadata_json
+      schedule_id, name, description, enabled, created_at, updated_at, created_by, trigger_type, trigger_config_json, action_type, action_target, action_params_json, execution_mode, catchup_policy, max_runtime_seconds, next_run_at, last_run_at, last_run_status, last_run_task_id, run_count, failure_count, consecutive_failure_count, metadata_json
     ) VALUES (
-      @schedule_id, @name, @description, @enabled, @created_at, @updated_at, @created_by, @trigger_type, @trigger_config_json, @action_type, @action_target, @action_params_json, @execution_mode, @catchup_policy, @max_runtime_seconds, @next_run_at, @last_run_at, @last_run_status, @run_count, @failure_count, @consecutive_failure_count, @metadata_json
+      @schedule_id, @name, @description, @enabled, @created_at, @updated_at, @created_by, @trigger_type, @trigger_config_json, @action_type, @action_target, @action_params_json, @execution_mode, @catchup_policy, @max_runtime_seconds, @next_run_at, @last_run_at, @last_run_status, @last_run_task_id, @run_count, @failure_count, @consecutive_failure_count, @metadata_json
     )
     ON CONFLICT(schedule_id) DO UPDATE SET
       name = excluded.name,
@@ -281,6 +285,7 @@ export function createSqliteStore({ dbPath }) {
       next_run_at = excluded.next_run_at,
       last_run_at = excluded.last_run_at,
       last_run_status = excluded.last_run_status,
+      last_run_task_id = excluded.last_run_task_id,
       run_count = excluded.run_count,
       failure_count = excluded.failure_count,
       consecutive_failure_count = excluded.consecutive_failure_count,
@@ -428,6 +433,7 @@ export function createSqliteStore({ dbPath }) {
       next_run_at: record.next_run_at ?? null,
       last_run_at: record.last_run_at ?? null,
       last_run_status: record.last_run_status ?? null,
+      last_run_task_id: record.last_run_task_id ?? null,
       run_count: record.run_count ?? 0,
       failure_count: record.failure_count ?? 0,
       consecutive_failure_count: record.consecutive_failure_count ?? 0,
