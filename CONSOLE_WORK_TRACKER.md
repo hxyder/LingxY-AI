@@ -2,6 +2,15 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-21（第 11 轮）
+
+- **UCA-148 (1ee9ea8)** — Vision 自动切换覆盖 CLI / Ollama / supportsVision 覆盖
+  - 用户反馈"我已经选了 code_cli 作为 vision model"但还是报错 — 因为那个 CLI 是 Kimi Code（文本编程助手），旧的 fallback 只扫 API 类型
+  - 统一谓词 `providerCanVision(p)`：Anthropic / 已知 vision baseUrl 的 OpenAI / 白名单 CLI (gemini/codebuddy/qwen) / 已知 vision Ollama model / 显式 `supportsVision: true`
+  - `findFallbackVisionProvider()` 5 轮扫描 — 覆盖 → Anthropic → API → CLI → Ollama
+  - executor 日志明确报告"从 X 切到 Y"，不再默默替换
+  - Settings → Routing → Vision 下拉用 👁 / (text-only) 标记每个 provider，选错时行下方出 ⚠️ 警告
+
 ### 2026-04-21（第 10 轮）
 
 - **UCA-147 (4371358)** — 视觉意图正则补齐"图中/图里/图上"
