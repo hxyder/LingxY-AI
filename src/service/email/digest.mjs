@@ -99,6 +99,11 @@ async function sendNotification(runtime, payload) {
   return notifyTool.execute(payload, { runtime });
 }
 
+// In-memory lock so two concurrent /email/digest/check calls (manual
+// "Test" button + startup auto-check landing at the same millisecond)
+// don't both pass the dedupe guard. Keyed by runtime instance.
+const _digestInFlight = new WeakMap();
+
 export async function maybeRunMorningDigest({ runtime, now = new Date() } = {}) {
   const config = runtime.configStore?.load?.() ?? {};
   const featureGate = requireFeature("morning_digest", runtime.configStore);
@@ -112,97 +117,119 @@ export async function maybeRunMorningDigest({ runtime, now = new Date() } = {}) 
 
   const { windowStart, windowEnd } = parseTimeWindow(digestConfig);
   if (!withinWindow(now, windowStart, windowEnd)) {
-    return { ok: false, reason: "outside_window" };
+    return { ok: false, reason: "outside_window", windowStart, windowEnd };
   }
 
   if (digestConfig.skipWeekends && isWeekend(now)) {
     return { ok: false, reason: "weekend" };
   }
 
-  const state = await loadDigestState(runtime);
-  const todayKey = now.toISOString().slice(0, 10);
-  if (state.lastDigestDate === todayKey) {
-    return { ok: false, reason: "already_sent" };
+  // Serialize concurrent callers — second caller waits for the first to
+  // finish, then re-reads the state file and bails on "already_sent".
+  const existing = _digestInFlight.get(runtime);
+  if (existing) {
+    try { await existing; } catch { /* first caller's error is its own problem */ }
   }
 
-  const accounts = listEmailAccounts(runtime).filter((account) => account.enabled);
-  if (accounts.length === 0) {
-    return { ok: false, reason: "no_accounts" };
-  }
+  const work = (async () => {
+    const state = await loadDigestState(runtime);
+    const todayKey = now.toISOString().slice(0, 10);
+    if (state.lastDigestDate === todayKey) {
+      return { ok: false, reason: "already_sent", lastDigestDate: state.lastDigestDate };
+    }
 
-  const range = buildDateRange(now);
-  const allMessages = [];
-  const perAccount = [];
-  for (const account of accounts) {
-    const messages = collectMessagesForAccount(account, range);
-    allMessages.push(...messages);
-    perAccount.push({
-      id: account.id,
-      name: account.displayName ?? account.email ?? account.id,
-      count: messages.length,
-      actionRequired: 0
-    });
-  }
+    const accounts = listEmailAccounts(runtime).filter((account) => account.enabled);
+    if (accounts.length === 0) {
+      return { ok: false, reason: "no_accounts" };
+    }
 
-  if (allMessages.length === 0) {
+    // Mark today eagerly — BEFORE any outbound work. This is the key bug
+    // fix: previously we only wrote the state AFTER writeFile + notify
+    // succeeded, so a single failure (notification tool missing, disk
+    // error, summarizer throw) would re-fire the digest on every app
+    // restart within the morning window. Now a failed run still blocks
+    // retries for the day; the user can manually re-trigger via the
+    // "Test digest now" button if they really want another attempt.
     state.lastDigestDate = todayKey;
     await saveDigestState(runtime, state);
-    return { ok: true, reason: "no_messages" };
-  }
 
-  const buckets = {
-    "需要回复": [],
-    "提及我": [],
-    "通知": []
-  };
-
-  for (const message of allMessages) {
-    const summary = await summarizeEmail({ runtime, message });
-    const intent = extractEmailIntent(summary);
-    if (intent.actionRequired) {
-      buckets["需要回复"].push(message);
-    } else if (/@|提及/.test(summary)) {
-      buckets["提及我"].push(message);
-    } else {
-      buckets["通知"].push(message);
+    const range = buildDateRange(now);
+    const allMessages = [];
+    const perAccount = [];
+    for (const account of accounts) {
+      const messages = collectMessagesForAccount(account, range);
+      allMessages.push(...messages);
+      perAccount.push({
+        id: account.id,
+        name: account.displayName ?? account.email ?? account.id,
+        count: messages.length,
+        actionRequired: 0
+      });
     }
-  }
 
-  const totals = {
-    total: allMessages.length,
-    actionRequired: buckets["需要回复"].length
-  };
-
-  for (const entry of perAccount) {
-    entry.actionRequired = allMessages.filter((msg) =>
-      msg.threadId && buckets["需要回复"].some((item) => item.threadId === msg.threadId)
-    ).length;
-  }
-
-  const digestMd = buildDigestMarkdown({ totals, buckets, perAccount });
-  const outputDir = runtime.paths?.outputsDir ?? path.join(os.homedir(), "Desktop", "UCA");
-  await mkdir(outputDir, { recursive: true });
-  const digestPath = path.join(outputDir, `email-digest-${todayKey}.md`);
-  await writeFile(digestPath, digestMd, "utf8");
-
-  await sendNotification(runtime, {
-    title: "早晨邮件汇总",
-    body: `昨日 ${totals.total} 封邮件，需回复 ${totals.actionRequired} 封。点击查看详情。`,
-    handoff: {
-      file_paths: [digestPath],
-      source_app: "uca.email",
-      capture_mode: "email_digest",
-      userCommand: "请查看昨日邮件汇总"
+    if (allMessages.length === 0) {
+      return { ok: true, reason: "no_messages" };
     }
-  });
 
-  appendAuditLog(runtime, "email.digest_sent", {
-    total: totals.total,
-    action_required: totals.actionRequired,
-    digest_path: digestPath
-  });
+    const buckets = {
+      "需要回复": [],
+      "提及我": [],
+      "通知": []
+    };
 
-  state.lastDigestDate = todayKey;
-  await saveDigestState(runtime, state);
-  return { ok: true, digestPath };
+    for (const message of allMessages) {
+      const summary = await summarizeEmail({ runtime, message });
+      const intent = extractEmailIntent(summary);
+      if (intent.actionRequired) {
+        buckets["需要回复"].push(message);
+      } else if (/@|提及/.test(summary)) {
+        buckets["提及我"].push(message);
+      } else {
+        buckets["通知"].push(message);
+      }
+    }
+
+    const totals = {
+      total: allMessages.length,
+      actionRequired: buckets["需要回复"].length
+    };
+
+    for (const entry of perAccount) {
+      entry.actionRequired = allMessages.filter((msg) =>
+        msg.threadId && buckets["需要回复"].some((item) => item.threadId === msg.threadId)
+      ).length;
+    }
+
+    const digestMd = buildDigestMarkdown({ totals, buckets, perAccount });
+    const outputDir = runtime.paths?.outputsDir ?? path.join(os.homedir(), "Desktop", "UCA");
+    await mkdir(outputDir, { recursive: true });
+    const digestPath = path.join(outputDir, `email-digest-${todayKey}.md`);
+    await writeFile(digestPath, digestMd, "utf8");
+
+    await sendNotification(runtime, {
+      title: "早晨邮件汇总",
+      body: `昨日 ${totals.total} 封邮件，需回复 ${totals.actionRequired} 封。点击查看详情。`,
+      handoff: {
+        file_paths: [digestPath],
+        source_app: "uca.email",
+        capture_mode: "email_digest",
+        userCommand: "请查看昨日邮件汇总"
+      }
+    });
+
+    appendAuditLog(runtime, "email.digest_sent", {
+      total: totals.total,
+      action_required: totals.actionRequired,
+      digest_path: digestPath
+    });
+
+    return { ok: true, digestPath, sent: true };
+  })();
+
+  _digestInFlight.set(runtime, work);
+  try {
+    return await work;
+  } finally {
+    if (_digestInFlight.get(runtime) === work) _digestInFlight.delete(runtime);
+  }
 }
