@@ -2805,14 +2805,26 @@ function renderTaskDetail(detail) {
       <button class="btn btn-ghost" data-parent-task-id="${escapeHtml(task.parent_task_id)}" style="padding:0 6px;font-size:11px;">← 返回</button>
     </span>
   ` : "";
-  // Task answer block — surfaces the executor's final text for tasks
-  // that succeeded without producing a file artifact (search, chat-
-  // style Q&A, composite summaries). Lives inside the detail hero so
-  // it's the first thing the user sees, right after status + title.
-  const resultSummaryBlock = task.result_summary ? `
+  // Task answer block — surfaces the executor's final text. New tasks
+  // persist this on task.result_summary (UCA-136). For legacy tasks
+  // that pre-date that fix we fall back to scanning the event stream
+  // for the last inline_result / success payload so users opening old
+  // records still see what the agent actually produced.
+  let answerText = task.result_summary ?? "";
+  if (!answerText && Array.isArray(detail.events)) {
+    for (let i = detail.events.length - 1; i >= 0; i--) {
+      const ev = detail.events[i];
+      if ((ev?.event_type === "inline_result" || ev?.event_type === "success")
+          && typeof ev.payload?.text === "string" && ev.payload.text.trim()) {
+        answerText = ev.payload.text.trim();
+        break;
+      }
+    }
+  }
+  const resultSummaryBlock = answerText ? `
     <div class="task-answer">
       <div class="task-answer-label">Result<span class="zh">结果</span></div>
-      <div class="task-answer-body">${escapeHtml(task.result_summary)}</div>
+      <div class="task-answer-body">${escapeHtml(answerText)}</div>
     </div>
   ` : "";
   // UCA-122: v3 detail-hero + KV grid. Hero shows title + status pill +
@@ -4102,11 +4114,24 @@ document.addEventListener("keydown", (event) => {
     const text = searchInput.value.trim();
     if (!text) return;
     try {
-      await fetchJson("/task", {
+      // Backend submitTaskFromBody expects camelCase field names
+      // (userCommand / sourceApp). Prior snake_case payload silently
+      // failed the empty-command guard — server returned
+      // { ok:false, error:"missing_user_command" } and nothing reached
+      // the task store, so New task appeared to do nothing.
+      const result = await fetchJson("/task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_command: text, source_app: "console.palette" })
+        body: JSON.stringify({ userCommand: text, sourceApp: "console.palette" })
       });
+      if (result && result.ok === false) {
+        greeting.textContent = result.message || result.error || "Submission failed.";
+        return;
+      }
+      if (result && result.type === "clarification_needed") {
+        greeting.textContent = result.question || "Please clarify.";
+        return;
+      }
       searchInput.value = "";
       setOpen(false);
       await refreshWorkspace();
