@@ -33,6 +33,19 @@ contextBridge.exposeInMainWorld("ucaShell", {
     }
     return content.slice(0, maxChars);
   },
+  // Read a binary file (typically an image) as a base64 data URL so the
+  // renderer can drop it into an <img src="…"> without needing a file://
+  // protocol handler. Caller supplies the mime type (we don't sniff).
+  // 5 MB hard cap — the preview pane doesn't need to drag a 20 MB PNG
+  // through the v8 heap.
+  async readFileAsDataUrl(targetPath, mimeType) {
+    const stat = await fs.stat(targetPath);
+    if (stat.size > 5 * 1024 * 1024) {
+      throw new Error(`file too large for inline preview (${Math.round(stat.size / 1024 / 1024)}MB)`);
+    }
+    const buffer = await fs.readFile(targetPath);
+    return `data:${mimeType ?? "application/octet-stream"};base64,${buffer.toString("base64")}`;
+  },
   resolveDroppedFilePaths(files) {
     return (files ?? [])
       .map((file) => {
