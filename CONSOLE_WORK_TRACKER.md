@@ -2,6 +2,25 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-21（第 9 轮）
+
+- **UCA-146 (de3aa7c)** — Image artifact inline 预览
+  - `readFileAsDataUrl(path, mime)` preload 新 API，5MB 硬上限
+  - 支持 png / jpg / jpeg / gif / webp / bmp / svg
+  - Tasks 报告面板图片类 artifact 直接 `<img>` 渲染，中性底色框
+  - docx / xlsx / pptx / pdf 仍保持"外部打开"占位
+
+- **UCA-145 (c65cd4e)** — Inbox HTML 邮件 sandboxed 渲染 + Rich/Plain 切换
+  - 渲染在 `sandbox=""` 的 iframe 里，CSP 阻断外部资源（禁跟踪像素）
+  - `referrerpolicy="no-referrer"`
+  - 展开头部的 Rich / Plain 切换按钮，选择持会话（`_inboxState.bodyViewMode`）
+  - 有 bodyHtml 时默认 Rich，否则 Plain
+
+- **UCA-144 (53a1d52)** — Mail connectors 同时返回 bodyText + bodyHtml
+  - Gmail 和 Outlook 的 getXxxMessage 都返回两个字段
+  - 提炼 `stripHtmlToText(html)` 共用 helper
+  - 为 UCA-145 前端渲染铺数据
+
 ### 2026-04-21（第 8 轮）
 
 - **UCA-143 (5b04516)** — Outlook 全文 body 懒加载（对称 UCA-135）
@@ -104,20 +123,25 @@
 
 ## 下一轮建议（按价值排序）
 
-1. **邮件详情 HTML 渲染**
-   - 目前展开是纯文本 `<pre>`
-   - Gmail / Outlook html→text 在 UCA-135/143 做了 strip，但长 HTML 邮件效果一般
-   - 对有 HTML body 的邮件用 sanitizer 渲染（需要 DOMPurify）
+1. **PDF artifact inline 预览**
+   - UCA-146 完成了图片；PDF 还没做
+   - Electron 默认不启用 PDF viewer；可以嵌 `<embed src="data:application/pdf;..." type="application/pdf">` 或打包 PDF.js
+   - 测试后决定是否打 PDF.js 依赖
 
-4. **Task 产物预览扩展**
-   - 当前只对文本型 artifact（md / txt / json / csv / html）能 inline preview
-   - 图片可以直接 `<img>` 渲染，PDF 嵌 `<embed>` 或 PDF.js
-   - docx / xlsx / pptx 只能靠 `shell.openPath` 外部打开
+2. **Schedules failed 一键 retry**
+   - 现在从 failed 状态点进去可以看到 task 详情，但要再点 Retry
+   - 在 sched-row 的失败行上直接加 retry 图标按钮
+   - 复用 `POST /schedules/:id/runs` 端点
 
-5. **Task 产物预览扩展**
-   - 当前只对文本型 artifact（md / txt / json / csv）能 inline preview
-   - 对图片、PDF 可以：图片直接 `<img>` 渲染，PDF 嵌 `<embed>` 或 PDF.js
-   - 对 docx / xlsx / pptx 只能靠 `shell.openPath` 外部打开
+3. **数据库备份 / 恢复 UI**
+   - Settings 页加"Export data" / "Restore from backup"
+   - 导出 sqlite 文件 + email credential store + config snapshot 成 zip
+   - 恢复时校验 schema version 对得上
+
+4. **Task 详情 Run log 面板**
+   - v3 设计里有一个"实时日志流"黑底 log-frame 面板
+   - 我们只有 Timeline（结构化事件）
+   - Run log 让开发/调试场景更高效 — 但要 streaming LLM output 适配
 
 ## 未提交（Phase 7c 在途工作，保留给用户决定）
 
