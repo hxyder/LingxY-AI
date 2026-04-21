@@ -3217,15 +3217,21 @@ function scheduleMatchesSearch(s, q) {
     .filter(Boolean).join(" ").toLowerCase();
   return hay.includes(q);
 }
-// "Last:" meta — show both time and status. Status gets colored by
-// outcome so a row of failed runs is immediately visible.
+// "Last:" meta — show time and colored status. When the last run
+// failed AND we know which task it produced, wrap the status in a
+// clickable button so the user can jump straight to the task detail
+// and see the failure_user_message / timeline events.
 function formatScheduleLastRun(s) {
   if (!s.last_run_at) return "<span class=\"muted\">Last: never</span>";
   const timeText = escapeHtml(formatDateTime(s.last_run_at));
   const status = s.last_run_status;
   if (!status) return `<span>Last: ${timeText}</span>`;
   const cls = status === "success" ? "ok" : (status === "failed" ? "err" : "muted");
-  return `<span>Last: ${timeText} · <span class="sched-last-${cls}">${escapeHtml(status)}</span></span>`;
+  const statusLabel = escapeHtml(status);
+  if (status === "failed" && s.last_run_task_id) {
+    return `<span>Last: ${timeText} · <button type="button" class="sched-last-link sched-last-${cls}" data-sched-task-jump="${escapeHtml(s.last_run_task_id)}">${statusLabel}</button></span>`;
+  }
+  return `<span>Last: ${timeText} · <span class="sched-last-${cls}">${statusLabel}</span></span>`;
 }
 
 function renderScheduleRow(s) {
@@ -3358,6 +3364,21 @@ function renderSchedules() {
     btn.addEventListener("click", async () => {
       await fetchJson(`/schedules/${encodeURIComponent(btn.dataset.deleteScheduleId)}`, { method: "DELETE" });
       await refreshWorkspace();
+    });
+  }
+
+  // Clicking the colored "failed" status on a sched-row jumps to the
+  // corresponding task detail so the user can read the actual failure
+  // message + timeline without hunting through Tasks.
+  for (const btn of scheduleList.querySelectorAll("[data-sched-task-jump]")) {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const taskId = btn.dataset.schedTaskJump;
+      if (!taskId) return;
+      state.selectedTaskId = taskId;
+      switchTab("tasks");
+      renderTasks();
+      void refreshTaskDetail();
     });
   }
 }
