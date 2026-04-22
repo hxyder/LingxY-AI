@@ -183,6 +183,18 @@ body {
   border: 1px solid #e8e8e8;
   color: #0a0a0a;
 }
+.chat-msg.assistant .li {
+  display: block;
+  padding: 1px 0 1px 4px;
+}
+.chat-msg.assistant code {
+  background: #f1f1f1;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 0.9em;
+}
+.chat-msg.assistant strong { font-weight: 650; }
 .chat-msg.assistant.streaming {
   background: #fef6ef;
   border-color: #f0d9bd;

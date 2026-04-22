@@ -46,6 +46,7 @@
     "verify:file-kimi": "node scripts/verify-file-kimi.mjs",
     "verify:kimi-runtime": "node scripts/verify-kimi-runtime.mjs",
     "verify:browser-extension": "node scripts/verify-browser-extension.mjs",
+    "verify:extension-enrichment": "node scripts/verify-extension-enrichment.mjs",
     "verify:browser-overlay": "node scripts/verify-browser-overlay.mjs",
     "verify:office-base": "node scripts/verify-office-base.mjs",
     "verify:pdf-ocr": "node scripts/verify-pdf-ocr.mjs",

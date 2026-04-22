@@ -133,6 +133,27 @@ async function saveChatHistory(history, chromeApi = chrome) {
   } catch { /* best effort */ }
 }
 
+// Minimal, safe Markdown renderer for assistant replies. Escapes HTML
+// up-front, then applies a handful of Markdown patterns (bold, inline
+// code, numbered/bulleted lists, paragraph breaks). No external library
+// and no tag whitelist walk — cheaper to audit.
+function renderAssistantMarkdown(raw = "") {
+  const escaped = String(raw)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  return escaped
+    .replace(/^###\s+(.+)$/gm, "<strong>$1</strong>")
+    .replace(/^##\s+(.+)$/gm, "<strong>$1</strong>")
+    .replace(/^#\s+(.+)$/gm, "<strong>$1</strong>")
+    .replace(/^(\d+)\.\s+(.+)$/gm, "<div class=\"li\">$1. $2</div>")
+    .replace(/^[-•*]\s+(.+)$/gm, "<div class=\"li\">• $1</div>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\n\n+/g, "<br><br>")
+    .replace(/\n/g, "<br>");
+}
+
 function renderChatHistory(history, doc = document) {
   const container = doc.getElementById("chat-history");
   if (!container) return;
@@ -140,7 +161,11 @@ function renderChatHistory(history, doc = document) {
   for (const turn of history) {
     const el = doc.createElement("div");
     el.className = `chat-msg ${turn.role === "user" ? "user" : turn.role === "error" ? "error" : "assistant"}`;
-    el.textContent = turn.content;
+    if (turn.role === "assistant") {
+      el.innerHTML = renderAssistantMarkdown(turn.content ?? "");
+    } else {
+      el.textContent = turn.content ?? "";
+    }
     container.appendChild(el);
   }
   container.scrollTop = container.scrollHeight;

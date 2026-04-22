@@ -13,7 +13,11 @@ import {
 // CORS: Anthropic requires the "anthropic-dangerous-direct-browser-access"
 // header; OpenAI and Gemini allow CORS from extension origins by default.
 
-export async function loadStandaloneConfig(chromeApi = chrome) {
+export async function loadStandaloneConfig(chromeApi = (typeof chrome !== "undefined" ? chrome : null)) {
+  // Node-side verify scripts import this module without a chrome global; in
+  // that environment the standalone config is simply absent, so return null
+  // rather than throwing ReferenceError on the default parameter lookup.
+  if (!chromeApi?.storage?.local?.get) return null;
   const data = await chromeApi.storage.local.get("ucaStandaloneConfig");
   return data.ucaStandaloneConfig ? normalizeStandaloneConfig(data.ucaStandaloneConfig) : null;
 }

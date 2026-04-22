@@ -375,7 +375,7 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
   try {
     const uc = `${request?.payload?.userCommand ?? ""}`;
     const isSummarizeOrExplain = /总结|解释|summar|explain|抓取/i.test(uc);
-    if (isSummarizeOrExplain && request?.payload?.capture) {
+    if (isSummarizeOrExplain && request?.payload?.capture && chromeApi?.tabs?.query && chromeApi?.scripting?.executeScript) {
       const selectionState = {
         text: request.payload.capture.text ?? "",
         url: request.payload.capture.url ?? "",

@@ -2,6 +2,39 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-22（第 15 轮 — 扩展端对话 + 深度上下文 + SSE 流）
+
+- **UCA-162 (c244007)** — Extension SSE streaming 取代 600ms 轮询
+  - 根因：runQuickAction 里的 poll 循环 `setTimeout(600ms)` 让第一个结果至少等 600ms+，外加 /task 本身 200-400ms，用户感知>1s
+  - 改：新建 `browser_ext/background/sse-client.js`，用 fetch + ReadableStream 读 `/task/:id/events`（SSE）。首包 100-300ms 到达。失败/无终态 fallback 回轮询
+  - 保留兼容：submitResponse.taskEvents 还是先检查（快速任务提交时已完成的情况）
+
+- **UCA-161 (c244007)** — 扩展深度上下文（整页 + 选区链接 fetch）
+  - 场景：用户高亮一小段→"总结"，之前 prompt 只看到选区本身，漏掉整页上下文 + 选区里引用的外链
+  - 改：新建 `browser_ext/background/context-enricher.js`
+    - `chrome.scripting.executeScript` 抓整页 outline：title / meta description / h1-h3 / 首段
+    - 选区正则扫 URL，最多 3 条，每条 3s timeout、1500 字上限
+    - Markdown 格式化，inline 进 prompt
+  - buildPromptFor 重写：`summarize/explain/fetch-link` 明确告诉 LLM"结合整页 outline + 链接正文，并且为每条 claim 标明来源"
+  - 双路支持：standalone 走 LLM 直连；desktop 走 /task 时也把 enrichment 文本 inline 到 `capture.text`（向后兼容，无需服务端改动）
+
+- **UCA-160 (c244007)** — Popup 对话框（多轮）
+  - popup panel 新增"快速对话"：历史框 + textarea（Enter 发、Shift+Enter 换行）+ 清空按钮
+  - 历史存 `chrome.storage.session`（popup 关不丢、浏览器重启清），上限 20 轮
+  - 消息路径：优先 standalone 直连；失败/无 key 时 fallback desktop `/task` + SSE
+  - assistant 消息走自定义 markdown renderer（bold / 列表 / 代码），错误消息显示红 chip
+  - 新 verify 脚本 `scripts/verify-extension-enrichment.mjs` + `npm run verify:extension-enrichment`
+
+- **Bug fix** — `loadStandaloneConfig` 在 Node 测试环境崩溃
+  - verify-browser-extension.mjs import standalone-client 时 `chrome` 不存在 → default param 触发 ReferenceError
+  - 改 default 为 `typeof chrome !== "undefined" ? chrome : null`，storage.local.get 缺失时直接返 null
+
+### 2026-04-21（第 14 轮 — Auto-mode 批量）
+
+- **UCA-153~157 (9ce889a)** — 浮动卡片 / 对话布局 / MCP 自动装 / decompose 加速 / IMAP 连接池
+- **UCA-158 (b3bcbcc)** — 扩展 standalone 模式 + 13 provider 模板
+- **Model defaults + route-model stale bug** — Doubao route.model 被 OpenAI 的 "gpt-4o" 污染，resolver 加 stale 检测
+
 ### 2026-04-21（第 13 轮 — 根因三连）
 
 - **UCA-152 (2ab72a0)** — Overlay 显示交互式 scheduler 任务
