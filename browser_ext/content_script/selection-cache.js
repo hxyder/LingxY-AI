@@ -546,14 +546,14 @@ function createFloatingChipController(doc = document) {
         padding: 10px 14px;
         border-radius: 999px;
         background:
-          linear-gradient(135deg, rgba(13, 148, 136, 0.96), rgba(21, 94, 117, 0.96));
-        color: white;
-        font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+          linear-gradient(135deg, rgba(184, 92, 42, 0.98), rgba(154, 74, 31, 0.98));
+        color: #ffffff;
+        font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", sans-serif;
         font-size: 12px;
         font-weight: 600;
         letter-spacing: 0.02em;
         cursor: pointer;
-        box-shadow: 0 12px 26px rgba(8, 47, 73, 0.22);
+        box-shadow: 0 12px 26px rgba(10, 10, 10, 0.22);
       }
       .chip-button:hover {
         transform: translateY(-1px);
@@ -565,12 +565,12 @@ function createFloatingChipController(doc = document) {
         display: none;
         min-width: 220px;
         padding: 10px;
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.97);
-        border: 1px solid rgba(15, 118, 110, 0.16);
-        box-shadow: 0 18px 38px rgba(8, 47, 73, 0.18);
-        color: #163047;
-        font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        border-radius: 10px;
+        background: #ffffff;
+        border: 1px solid #e2e2e2;
+        box-shadow: 0 18px 38px rgba(10, 10, 10, 0.14);
+        color: #0a0a0a;
+        font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", sans-serif;
       }
       .chip-preview[data-open="true"] {
         display: grid;
@@ -583,16 +583,17 @@ function createFloatingChipController(doc = document) {
       .chip-action {
         all: initial;
         padding: 8px 10px;
-        border-radius: 12px;
-        background: rgba(236, 253, 245, 0.92);
-        color: #0f172a;
+        border-radius: 8px;
+        background: #f7f7f7;
+        color: #0a0a0a;
         cursor: pointer;
-        font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", sans-serif;
         font-size: 12px;
       }
+      .chip-action:hover { background: #f5e5d8; }
       .chip-hint {
         font-size: 11px;
-        color: #4b5563;
+        color: #595959;
       }
     </style>
     <div class="chip-shell">

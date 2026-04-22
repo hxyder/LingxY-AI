@@ -18,14 +18,15 @@ export function createFloatingChipController(doc = document, theme = DEFAULT_FLO
         all: initial;
         min-width: ${theme.chipWidth}px;
         box-sizing: border-box;
-        font-family: "Segoe UI Variable Text", "Segoe UI", sans-serif;
+        font-family: "Inter", "Segoe UI Variable Text", "Segoe UI", sans-serif;
         font-size: 12px;
+        font-weight: 600;
         padding: 10px 14px;
         border-radius: 999px;
-        background: linear-gradient(135deg, rgba(13, 148, 136, 0.96), rgba(21, 94, 117, 0.96));
-        color: white;
+        background: linear-gradient(135deg, rgba(184, 92, 42, 0.98), rgba(154, 74, 31, 0.98));
+        color: #ffffff;
         cursor: pointer;
-        box-shadow: 0 12px 26px rgba(8, 47, 73, 0.22);
+        box-shadow: 0 12px 26px rgba(10, 10, 10, 0.22);
       }
     </style>
     <button type="button">用 LingxY 总结</button>

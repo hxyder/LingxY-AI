@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LingxY · 扩展设置</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="options">
+      <header class="hero">
+        <p class="eyebrow">LingxY 扩展设置</p>
+        <h1>独立运行模式</h1>
+        <p class="hint">未启动桌面程序时，扩展会直接调用您配置的 LLM API 完成翻译 / 总结 / 解释任务。</p>
+      </header>
+
+      <section class="panel">
+        <div class="panel-head"><h2>桌面程序地址（可选）</h2></div>
+        <label class="field">
+          <span>Desktop runtime URL</span>
+          <input id="runtime-url" type="url" placeholder="http://127.0.0.1:4310" />
+        </label>
+        <p class="hint">桌面程序运行时扩展会优先调用它；没开的话会 fallback 到下方的 LLM 配置。</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>LLM 直连配置</h2></div>
+        <label class="field">
+          <span>提供商</span>
+          <select id="provider">
+            <optgroup label="国际">
+              <option value="anthropic">Anthropic (Claude)</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+              <option value="xai">xAI (Grok)</option>
+              <option value="mistral">Mistral</option>
+              <option value="groq">Groq</option>
+              <option value="perplexity">Perplexity</option>
+              <option value="openrouter">OpenRouter（聚合）</option>
+            </optgroup>
+            <optgroup label="国内">
+              <option value="deepseek">DeepSeek</option>
+              <option value="doubao">豆包（火山方舟 Ark）</option>
+              <option value="moonshot">Moonshot (Kimi)</option>
+              <option value="qwen">通义千问 (DashScope)</option>
+              <option value="zhipu">智谱 GLM</option>
+              <option value="siliconflow">硅基流动 SiliconFlow</option>
+              <option value="yi">零一万物 Yi</option>
+            </optgroup>
+            <optgroup label="本地">
+              <option value="ollama">Ollama（本地，无需 Key）</option>
+            </optgroup>
+          </select>
+        </label>
+        <label class="field">
+          <span>API Key</span>
+          <input id="api-key" type="password" autocomplete="off" placeholder="sk-ant-… / sk-… / AIza… / ollama 留空" />
+        </label>
+        <label class="field">
+          <span>模型</span>
+          <input id="model" type="text" placeholder="自动填充所选提供商的默认模型" />
+        </label>
+        <p class="hint">Key 使用 chrome.storage.local 保存，不会离开您的浏览器。Anthropic 需要 CORS header「anthropic-dangerous-direct-browser-access: true」（扩展已内置）。Ollama 需本地已启动并监听 11434。</p>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>状态</h2></div>
+        <div class="status-grid">
+          <div class="status-item"><span class="status-label">桌面程序</span><span id="status-desktop" class="status-value">检测中…</span></div>
+          <div class="status-item"><span class="status-label">API Key</span><span id="status-key" class="status-value">—</span></div>
+        </div>
+      </section>
+
+      <div class="actions">
+        <button id="save-btn" class="primary" type="button">保存</button>
+        <button id="test-btn" class="ghost" type="button">测试直连</button>
+        <span id="save-status" class="hint"></span>
+      </div>
+    </main>
+    <script src="./index.js"></script>
+  </body>
+</html>

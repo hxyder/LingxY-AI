@@ -1,3 +1,11 @@
+import {
+  loadStandaloneConfig,
+  isDesktopAvailable,
+  callLLMDirect,
+  buildPromptFor,
+  invalidateDesktopProbe
+} from "./standalone-client.js";
+
 export const CONTEXT_MENU_DEFINITIONS = Object.freeze([
   {
     id: "uca.summarize-selection",
@@ -175,10 +183,22 @@ export async function runQuickAction({ action, selectionState }, fetchImpl = fet
   }
   const userCommand = QUICK_ACTION_COMMANDS[action] ?? QUICK_ACTION_COMMANDS.summarize;
 
+  // Standalone short-circuit: if desktop isn't running AND the user has
+  // configured a direct API key, call the LLM directly from the extension.
+  const standaloneConfig = await loadStandaloneConfig();
+  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+  const desktopUp = await isDesktopAvailable(runtimeBase);
+  if (!desktopUp && standaloneConfig?.apiKey) {
+    const { prompt, systemPrompt } = buildPromptFor(action, selectionState);
+    const result = await callLLMDirect({ config: standaloneConfig, prompt, systemPrompt });
+    if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success" };
+    return { ok: false, mode: "standalone", error: result.error };
+  }
+
   // Submit the task
   let submitJson;
   try {
-    const submitResponse = await fetchImpl(RUNTIME_TASK_URL, {
+    const submitResponse = await fetchImpl(`${runtimeBase}/task`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -198,6 +218,9 @@ export async function runQuickAction({ action, selectionState }, fetchImpl = fet
     }
     submitJson = await submitResponse.json();
   } catch (error) {
+    // Network failure + no API key = no path forward. With API key we'd have
+    // taken the standalone branch above already.
+    invalidateDesktopProbe();
     return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
   }
 
@@ -245,8 +268,39 @@ function extractInlineResult(events = []) {
 }
 
 export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchImpl = fetch) {
+  // Pre-flight: if desktop is unreachable and user has standalone config,
+  // run the task directly via LLM API and surface the result as a chrome
+  // notification (+ clipboard). The overlay handoff path assumes the desktop
+  // owns the UI, so we can't render an inline reply without the desktop —
+  // standalone mode is "best effort" for context-menu actions.
+  const standaloneConfig = await loadStandaloneConfig();
+  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+  const desktopUp = await isDesktopAvailable(runtimeBase);
+  if (!desktopUp && standaloneConfig?.apiKey) {
+    const action = request?.payload?.capture?.sourceType === "image" ? "uca.inspect-image" : "summarize";
+    const selectionState = {
+      text: request?.payload?.capture?.text ?? request?.payload?.capture?.selectionText ?? "",
+      url: request?.payload?.capture?.url ?? "",
+      pageTitle: request?.payload?.capture?.pageTitle ?? "",
+      imageUrl: request?.payload?.capture?.imageUrl ?? ""
+    };
+    const { prompt, systemPrompt } = buildPromptFor(action, selectionState);
+    const result = await callLLMDirect({ config: standaloneConfig, prompt, systemPrompt });
+    try {
+      if (result.ok && chromeApi.notifications?.create) {
+        chromeApi.notifications.create(`uca-standalone-${Date.now()}`, {
+          type: "basic",
+          iconUrl: "popup/icon.png",
+          title: "LingxY · 独立模式",
+          message: (result.text ?? "").slice(0, 200)
+        });
+      }
+    } catch { /* notifications optional */ }
+    return { ok: Boolean(result.ok), mode: "standalone", text: result.text ?? "", error: result.error };
+  }
+
   try {
-    const response = await fetchImpl(RUNTIME_OVERLAY_HANDOFF_URL, {
+    const response = await fetchImpl(`${runtimeBase}/overlay/handoff`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -261,7 +315,20 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
     return response.json();
   } catch {
     return new Promise((resolve) => {
-      chromeApi.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => resolve(response));
+      try {
+        chromeApi.runtime.sendNativeMessage(NATIVE_HOST_NAME, request, (response) => {
+          const lastError = chromeApi.runtime?.lastError;
+          if (lastError) {
+            console.info("[LingxY] native host unavailable:", lastError.message);
+            resolve({ ok: false, reason: "native_host_not_installed", message: lastError.message });
+            return;
+          }
+          resolve(response);
+        });
+      } catch (err) {
+        console.info("[LingxY] native messaging threw:", err?.message ?? err);
+        resolve({ ok: false, reason: "native_host_error", message: err?.message ?? String(err) });
+      }
     });
   }
 }
@@ -460,12 +527,60 @@ export function registerExtensionRuntime(chromeApi = chrome) {
       return true;
     }
 
+    if (message?.type === "uca.standalone.test") {
+      (async () => {
+        const config = message.config ?? await loadStandaloneConfig();
+        const result = await callLLMDirect({
+          config,
+          prompt: message.prompt ?? "ping",
+          systemPrompt: "Reply with a single short sentence confirming you're online."
+        });
+        sendResponse(result);
+      })();
+      return true;
+    }
+
+    if (message?.type === "uca.standalone.status") {
+      (async () => {
+        const config = await loadStandaloneConfig();
+        const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+        invalidateDesktopProbe();
+        const desktopUp = await isDesktopAvailable(runtimeBase);
+        sendResponse({
+          desktopAvailable: desktopUp,
+          standaloneReady: Boolean(config?.apiKey),
+          provider: config?.provider ?? null,
+          runtimeUrl: runtimeBase
+        });
+      })();
+      return true;
+    }
+
     if (message?.type === "uca.runtime.openTasks") {
-      chromeApi.runtime.sendNativeMessage(NATIVE_HOST_NAME, {
-        protocolVersion: "1.0",
-        requestId: crypto.randomUUID(),
-        action: "open_runtime_tasks"
-      }, (response) => sendResponse(response));
+      try {
+        chromeApi.runtime.sendNativeMessage(NATIVE_HOST_NAME, {
+          protocolVersion: "1.0",
+          requestId: crypto.randomUUID(),
+          action: "open_runtime_tasks"
+        }, (response) => {
+          // Consume chrome.runtime.lastError so Chrome doesn't log an
+          // unchecked warning when the native host isn't installed.
+          const lastError = chromeApi.runtime?.lastError;
+          if (lastError) {
+            console.info("[LingxY] native host unavailable:", lastError.message);
+            // Fall back to opening the local runtime in a new tab so the
+            // user still reaches the Console even without the native host.
+            chromeApi.tabs?.create?.({ url: "http://127.0.0.1:4310/" });
+            sendResponse({ ok: false, reason: "native_host_not_installed", message: lastError.message });
+            return;
+          }
+          sendResponse(response);
+        });
+      } catch (err) {
+        console.info("[LingxY] native messaging threw:", err?.message ?? err);
+        chromeApi.tabs?.create?.({ url: "http://127.0.0.1:4310/" });
+        sendResponse({ ok: false, reason: "native_host_error", message: err?.message ?? String(err) });
+      }
       return true;
     }
 
