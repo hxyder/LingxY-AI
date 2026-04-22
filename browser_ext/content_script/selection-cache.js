@@ -29,7 +29,7 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
     <style>
       :host { all: initial; }
       .frame {
-        position: fixed;
+        position: absolute;
         z-index: 2147483647;
         max-width: 420px;
         min-width: 280px;
@@ -278,24 +278,31 @@ function positionFrameNear(frameEl, rect) {
   const padding = 12;
   const viewportW = window.innerWidth;
   const viewportH = window.innerHeight;
+  // Convert from viewport coords to page/document coords so the frame is
+  // pinned to the selection position and scrolls with the page. Using
+  // position:fixed made the frame cover newly-revealed content when the
+  // user scrolled after clicking a quick-action near the viewport edge.
+  const scrollX = window.scrollX || window.pageXOffset || 0;
+  const scrollY = window.scrollY || window.pageYOffset || 0;
   // hide off-screen first to measure
   frameEl.style.left = "-9999px";
   frameEl.style.top = "-9999px";
   frameEl.style.visibility = "hidden";
   requestAnimationFrame(() => {
     const frameRect = frameEl.getBoundingClientRect();
-    let left = rect ? rect.left : viewportW - frameRect.width - padding;
-    let top = rect ? rect.bottom + 8 : padding;
-    if (left + frameRect.width > viewportW - padding) {
-      left = viewportW - frameRect.width - padding;
+    // Viewport-relative candidate position first, then add scroll offset.
+    let leftVp = rect ? rect.left : viewportW - frameRect.width - padding;
+    let topVp = rect ? rect.bottom + 8 : padding;
+    if (leftVp + frameRect.width > viewportW - padding) {
+      leftVp = viewportW - frameRect.width - padding;
     }
-    if (left < padding) left = padding;
-    if (top + frameRect.height > viewportH - padding) {
-      top = (rect ? rect.top - frameRect.height - 8 : padding);
-      if (top < padding) top = padding;
+    if (leftVp < padding) leftVp = padding;
+    if (topVp + frameRect.height > viewportH - padding) {
+      topVp = (rect ? rect.top - frameRect.height - 8 : padding);
+      if (topVp < padding) topVp = padding;
     }
-    frameEl.style.left = `${Math.round(left)}px`;
-    frameEl.style.top = `${Math.round(top)}px`;
+    frameEl.style.left = `${Math.round(leftVp + scrollX)}px`;
+    frameEl.style.top = `${Math.round(topVp + scrollY)}px`;
     frameEl.style.visibility = "visible";
   });
 }
@@ -762,7 +769,29 @@ function createFloatingChipController(doc = document) {
         // UCA-167: open a streaming port so the inline frame fills in as the
         // LLM generates. Falls back to the legacy one-shot sendMessage if
         // ports are unavailable (very old Chrome, service worker gone).
+        let streamingSettled = false;
         let streamingActive = false;
+        const runLegacyFallback = () => {
+          if (streamingSettled) return;
+          streamingSettled = true;
+          sendRuntimeMessageSafely({
+            type: "uca.runtime.runQuickAction",
+            action,
+            selectionState,
+            requestId: snapshot.requestId
+          }, (response) => {
+            if (snapshot.requestId !== _pendingActionRequestId) return;
+            if (response?.ok) {
+              frame.setResult(response.text ?? "(无内容)");
+            } else {
+              const human = humanizeQuickActionError(response?.error ?? "unknown error");
+              if (response?.errorKind !== "context_invalidated") {
+                console.warn("[UCA] runQuickAction fallback failed:", response?.error);
+              }
+              frame.setError(human);
+            }
+          });
+        };
         try {
           const port = chrome.runtime.connect({ name: "uca.quickaction.stream" });
           streamingActive = true;
@@ -776,9 +805,11 @@ function createFloatingChipController(doc = document) {
             } else if (msg?.type === "chunk") {
               frame.setStreaming(msg.full ?? "");
             } else if (msg?.type === "done") {
+              streamingSettled = true;
               frame.setResult(msg.text ?? "");
               try { port.disconnect(); } catch { /* ignore */ }
             } else if (msg?.type === "error") {
+              streamingSettled = true;
               const human = humanizeQuickActionError(msg.error ?? "unknown");
               console.warn("[UCA] quick-action stream error:", msg.error);
               frame.setError(human);
@@ -786,13 +817,15 @@ function createFloatingChipController(doc = document) {
             }
           });
           port.onDisconnect.addListener(() => {
-            const runtimeError = (() => {
-              try { return chrome.runtime?.lastError ?? null; } catch { return null; }
-            })();
-            if (runtimeError && isContextInvalidatedError(runtimeError)) {
-              // Silently fall back — the main sendMessage path below already
-              // handles context-invalidated cleanly.
-              return;
+            // If the port closed before we got a terminal message, fall back
+            // to the legacy one-shot sendMessage path. Covers the case where
+            // the service worker is running an older build that doesn't
+            // register the streaming port handler (user hasn't reloaded the
+            // extension yet), which otherwise leaves the frame stuck in
+            // "loading" forever.
+            if (!streamingSettled) {
+              console.info("[UCA] stream port closed early, falling back to one-shot");
+              runLegacyFallback();
             }
           });
           port.postMessage({
@@ -802,36 +835,12 @@ function createFloatingChipController(doc = document) {
           });
         } catch {
           streamingActive = false;
+          runLegacyFallback();
         }
+        // No separate legacy path here — runLegacyFallback covers both
+        // "port never opened" (catch) and "port opened but died before
+        // settling" (onDisconnect).
 
-        // Legacy one-shot path (fallback + desktop-mode path).
-        if (!streamingActive) sendRuntimeMessageSafely({
-          type: "uca.runtime.runQuickAction",
-          action,
-          selectionState,
-          requestId: snapshot.requestId
-        }, (response) => {
-          // UCA-057: Discard response if a newer request has superseded this one.
-          if (snapshot.requestId !== _pendingActionRequestId) {
-            console.info("[UCA] discarding stale response for requestId", snapshot.requestId);
-            return;
-          }
-          if (response?.ok) {
-            frame.setResult(response.text ?? "(无内容)");
-          } else {
-            const rawMessage = response?.error ?? "unknown error";
-            const humanMessage = humanizeQuickActionError(rawMessage);
-            // Context invalidation after extension reload is expected — log
-            // at info level so it doesn't spam the page's console. Other
-            // errors are worth surfacing as warnings for debugging.
-            if (response?.errorKind === "context_invalidated") {
-              console.info("[UCA] context invalidated; user needs to refresh this page");
-            } else {
-              console.warn("[UCA] runQuickAction failed:", rawMessage);
-            }
-            frame.setError(humanMessage);
-          }
-        });
         // Hide the chip — the inline frame replaces it
         host.style.display = "none";
         host.style.pointerEvents = "none";
