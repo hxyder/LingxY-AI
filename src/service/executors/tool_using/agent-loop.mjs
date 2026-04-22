@@ -247,7 +247,13 @@ function formatResourceContext(task) {
   const lines = [];
   lines.push("");
   lines.push("Resources you can use right now:");
-  lines.push(`- Current local time: ${new Date().toISOString()} (interpret "明天/tomorrow/今晚" relative to this)`);
+  // Prefer LOCAL time in YYYY-MM-DD HH:MM:SS form over toISOString's
+  // UTC Z-suffix — "2026-04-21 12:47:05 (Asia/Shanghai)" reads cleanly
+  // to both human and model; the UTC ISO form historically confused
+  // downstream formatting and yielded off-by-one-day answers.
+  const _now = new Date();
+  const _tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+  lines.push(`- Current local date and time: ${_now.toLocaleString("sv-SE", { hour12: false })} (${_tz}) — interpret "今天/明天/tomorrow/今晚/next week" relative to this; do not emit years or dates from training memory.`);
 
   const attachments = [
     ...(ctx.file_paths ?? []),

@@ -130,11 +130,20 @@ export function buildKimiPrintPrompt({ taskPackage }) {
     return "- Produce a complete markdown report as your final answer.";
   })();
 
+  // Wall-clock context — prevents the CLI from answering with its
+  // training-cutoff year when the user asks about "今天/明天/本周".
+  // Matches the tool_using/agent-loop.mjs and agentic/prompt-builder.mjs
+  // injections so every executor path has the same grounding.
+  const nowLocal = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+  const timeBanner = `Current local date and time: ${nowLocal.toLocaleString("sv-SE", { hour12: false })} (${tz}). Interpret relative dates ("今天/明天/本周/yesterday/next week") against this moment; do not emit years from training memory.`;
+
   return sanitizeUtf16(
     [
       "You are running inside Universal Context Agent.",
       `Task ID: ${taskPackage.task_id}`,
       `Task Type: ${taskPackage.task_type}`,
+      timeBanner,
       "",
       "Primary objective:",
       sanitizeUtf16(taskPackage.user_command),

@@ -150,8 +150,19 @@ export function buildAgenticSystemPrompt({
     ? "\n\n## Scheduled-fire context\n\nThis request is the actual firing of an already-scheduled task — the delay has ALREADY elapsed. Execute the action directly. Do NOT call `create_scheduled_task`. For a reminder, call `notify` with a concise title and body. For an email, call the send workflow. The scheduling was done earlier; your job here is to perform the action."
     : "";
 
+  // Inject the wall-clock date/time so the model doesn't fall back on
+  // its training-cutoff year (2025-ish for most current models, which
+  // shows up as "2025年XX月" in answers no matter what the user is
+  // actually asking about). Mirrors the tool_using/agent-loop.mjs
+  // injection — the missing sibling was the whole bug.
+  const nowLocal = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+  const timeBanner = `Current local date and time: ${nowLocal.toLocaleString("sv-SE", { hour12: false })} (${tz}). Treat "今天/明天/昨天/this week/today/tomorrow/yesterday" as relative to this moment. Do NOT emit years or dates from training memory.`;
+
   return [
     "You are UCA's agentic assistant. You are running inside a desktop task runtime that can actually execute the tools listed below.",
+    "",
+    timeBanner,
     "",
     "## Available tools",
     "",
