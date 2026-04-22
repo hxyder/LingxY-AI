@@ -78,6 +78,12 @@ export function createEmailMonitor({ runtime, pollIntervalMs = DEFAULT_POLL_INTE
       const intent = extractEmailIntent(summary);
       await sendNotification(runtime, "新邮件摘要", summary);
 
+      // Remember we already notified about this message ID so the
+      // next poll (every ~2 min) doesn't re-surface it. The IMAP
+      // server's \Seen flag stays untouched — it's the user's
+      // mail-client responsibility to mark read.
+      await client.markSeen?.(message.id);
+
       appendAuditLog(runtime, "email.new_message", {
         account_id: account.id,
         email_id: message.id,

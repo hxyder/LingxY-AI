@@ -111,6 +111,15 @@ export function createImapClient({ account, credentials, state }) {
   }
 
   const config = resolveImapConnection(account, credentials);
+  // Ensure the shared seen-set Map has a bucket for this account so
+  // the monitor's dedup contract holds across listUnread → markSeen
+  // → next listUnread. The mock provider already uses this; the real
+  // provider previously left markSeen as a no-op, which meant the
+  // monitor re-notified every unread message on every 2-min poll —
+  // symptom: "新邮件摘要" desktop notifications looping.
+  if (state?.seenByAccount && !state.seenByAccount.has(account.id)) {
+    state.seenByAccount.set(account.id, new Set());
+  }
   return {
     async listUnread(since, limit = 20) {
       return withImapConnection(config, async (client) => {
@@ -120,9 +129,12 @@ export function createImapClient({ account, credentials, state }) {
           const uids = await client.search(criteria);
           const recent = uids.slice(-limit);
           const messages = [];
+          const seenIds = state?.seenByAccount?.get(account.id) ?? new Set();
           for await (const msg of client.fetch(recent, { envelope: true, bodyParts: ["TEXT"], source: false })) {
+            const id = String(msg.uid);
+            if (seenIds.has(id)) continue; // already notified in-memory this session
             messages.push(normalizeMessage({
-              id: String(msg.uid),
+              id,
               from: msg.envelope?.from?.[0]?.address ?? "",
               subject: msg.envelope?.subject ?? "",
               bodyText: shortPreview(msg.bodyParts?.get?.("TEXT")?.toString?.() ?? ""),
@@ -168,8 +180,15 @@ export function createImapClient({ account, credentials, state }) {
         }
       });
     },
-    async markSeen() {
-      return null;
+    // Track seen IDs in-memory so listUnread doesn't re-surface the
+    // same message to the monitor every 2-min poll. We deliberately
+    // don't set the IMAP \Seen flag on the server — the user might not
+    // have actually opened the email in their mail client yet, and
+    // flipping \Seen on their behalf would mis-render in Gmail/Outlook.
+    async markSeen(id) {
+      if (!state?.seenByAccount || id == null) return;
+      if (!state.seenByAccount.has(account.id)) state.seenByAccount.set(account.id, new Set());
+      state.seenByAccount.get(account.id).add(String(id));
     }
   };
 }
