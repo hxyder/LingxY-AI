@@ -171,6 +171,77 @@ function renderChatHistory(history, doc = document) {
   container.scrollTop = container.scrollHeight;
 }
 
+function sendChatMessageStreaming(text, doc, chromeApi, history, statusEl, sendBtn, inputEl) {
+  return new Promise((resolve) => {
+    let port;
+    try {
+      port = chromeApi.runtime.connect({ name: "uca.chat.stream" });
+    } catch {
+      resolve({ streamed: false });
+      return;
+    }
+    if (!port) { resolve({ streamed: false }); return; }
+
+    const container = doc.getElementById("chat-history");
+    let streamingEl = null;
+    let fullText = "";
+    let settled = false;
+
+    const onSettle = async (success, errorText) => {
+      if (settled) return;
+      settled = true;
+      if (success) {
+        const next = [...history, { role: "assistant", content: fullText }];
+        renderChatHistory(next, doc);
+        await saveChatHistory(next, chromeApi);
+        if (statusEl) statusEl.textContent = "";
+      } else {
+        const next = [...history, { role: "error", content: `失败：${errorText ?? "unknown"}` }];
+        renderChatHistory(next, doc);
+        await saveChatHistory(next, chromeApi);
+        if (statusEl) statusEl.textContent = `失败：${errorText ?? "unknown"}`;
+      }
+      if (sendBtn) sendBtn.disabled = false;
+      if (inputEl) { inputEl.disabled = false; inputEl.focus(); }
+      try { port.disconnect(); } catch { /* ignore */ }
+      resolve({ streamed: true });
+    };
+
+    port.onMessage.addListener((msg) => {
+      if (msg?.type === "start") {
+        // Create an empty streaming assistant bubble up front.
+        streamingEl = doc.createElement("div");
+        streamingEl.className = "chat-msg assistant streaming";
+        streamingEl.textContent = "…";
+        container.appendChild(streamingEl);
+        container.scrollTop = container.scrollHeight;
+        if (statusEl) statusEl.textContent = "流式生成中…";
+      } else if (msg?.type === "chunk") {
+        fullText = typeof msg.full === "string" ? msg.full : (fullText + (msg.delta ?? ""));
+        if (streamingEl) {
+          streamingEl.innerHTML = renderAssistantMarkdown(fullText);
+          container.scrollTop = container.scrollHeight;
+        }
+      } else if (msg?.type === "done") {
+        fullText = msg.text ?? fullText;
+        onSettle(true);
+      } else if (msg?.type === "error") {
+        onSettle(false, msg.error);
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (settled) return;
+      // Unclean disconnect — treat as failure if we have no text, otherwise
+      // accept the partial as final.
+      if (fullText) onSettle(true);
+      else onSettle(false, "stream_disconnected");
+    });
+
+    port.postMessage({ type: "chat", text, history });
+  });
+}
+
 async function sendChatMessage(text, doc = document, chromeApi = chrome) {
   const statusEl = doc.getElementById("chat-status");
   const sendBtn = doc.getElementById("chat-send");
@@ -179,9 +250,17 @@ async function sendChatMessage(text, doc = document, chromeApi = chrome) {
   history.push({ role: "user", content: text });
   renderChatHistory(history, doc);
   await saveChatHistory(history, chromeApi);
-  if (statusEl) statusEl.textContent = "思考中…";
+  if (statusEl) statusEl.textContent = "连接中…";
   if (sendBtn) sendBtn.disabled = true;
   if (inputEl) inputEl.disabled = true;
+
+  // Try streaming first. If the port can't be opened (very old Chrome, or
+  // the SW hasn't registered the listener yet) fall back to the one-shot
+  // sendMessage path so the user still gets a reply.
+  const streamResult = await sendChatMessageStreaming(text, doc, chromeApi, history.slice(0, -1), statusEl, sendBtn, inputEl);
+  if (streamResult.streamed) return;
+
+  // Non-streaming fallback (should be rare).
   try {
     const response = await new Promise((resolve) => {
       chromeApi.runtime.sendMessage({

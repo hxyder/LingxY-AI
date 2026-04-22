@@ -198,6 +198,17 @@ body {
 .chat-msg.assistant.streaming {
   background: #fef6ef;
   border-color: #f0d9bd;
+  position: relative;
+}
+.chat-msg.assistant.streaming::after {
+  content: "▋";
+  display: inline-block;
+  margin-left: 2px;
+  color: #b85c2a;
+  animation: uca-blink 900ms steps(2, start) infinite;
+}
+@keyframes uca-blink {
+  to { visibility: hidden; }
 }
 .chat-msg.error {
   align-self: flex-start;

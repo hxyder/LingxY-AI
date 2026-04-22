@@ -154,6 +154,206 @@ async function callGemini({ apiKey, model, prompt, systemPrompt, messages = null
   return { ok: true, text };
 }
 
+// ── Streaming ──────────────────────────────────────────────────────────────
+// UCA-166: SSE streaming for chat. Most providers speak the OpenAI
+// /chat/completions SSE shape (lines `data: {choices:[{delta:{content:
+// "..."}}]}`). Anthropic has its own event names; Gemini has
+// streamGenerateContent. We branch on provider.
+
+async function* parseSseStream(response) {
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.search(/\r?\n\r?\n/)) !== -1) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + (buffer[boundary] === "\r" ? 4 : 2));
+        const parsed = parseSseFrame(frame);
+        if (parsed) yield parsed;
+      }
+    }
+  } finally {
+    try { reader.releaseLock(); } catch { /* ignore */ }
+  }
+}
+
+function parseSseFrame(raw) {
+  let event = "message";
+  const dataLines = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line || line.startsWith(":")) continue;
+    if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("data:")) dataLines.push(line.slice(5).replace(/^\s/, ""));
+  }
+  if (dataLines.length === 0) return null;
+  const dataText = dataLines.join("\n");
+  if (dataText === "[DONE]") return { event: "done" };
+  let data = dataText;
+  if (dataText.startsWith("{") || dataText.startsWith("[")) {
+    try { data = JSON.parse(dataText); } catch { /* keep raw */ }
+  }
+  return { event, data };
+}
+
+async function streamOpenAICompat(config, { apiKey, model, messages, reasoningEffort = "", maxTokens = 1024, onChunk, signal }) {
+  const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
+  if (config.authStyle === "bearer" && apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const body = {
+    model: model || config.defaultModel,
+    messages,
+    max_tokens: maxTokens,
+    stream: true
+  };
+  applyReasoningSelectionToBody(body, { provider: config.id ?? "", model: body.model, reasoningEffort });
+  const response = await fetch(config.endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!response.ok) {
+    return { ok: false, error: `http_${response.status}:${await response.text().catch(() => "")}` };
+  }
+  let full = "";
+  for await (const frame of parseSseStream(response)) {
+    if (frame.event === "done") break;
+    const delta = frame.data?.choices?.[0]?.delta?.content
+      ?? frame.data?.choices?.[0]?.message?.content
+      ?? "";
+    if (delta) {
+      full += delta;
+      onChunk?.(delta, full);
+    }
+  }
+  return { ok: true, text: full };
+}
+
+async function streamAnthropic({ apiKey, model, messages, systemPrompt, maxTokens = 1024, onChunk, signal }) {
+  const effectiveMessages = Array.isArray(messages) && messages.length > 0
+    ? messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role, content: m.content ?? "" }))
+    : [];
+  const effectiveSystem = systemPrompt
+    ?? (Array.isArray(messages) ? messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n") : "");
+  const body = {
+    model: model || "claude-sonnet-4-6",
+    max_tokens: maxTokens,
+    messages: effectiveMessages,
+    stream: true
+  };
+  if (effectiveSystem) body.system = effectiveSystem;
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/event-stream",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "anthropic-dangerous-direct-browser-access": "true"
+    },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!response.ok) {
+    return { ok: false, error: `anthropic_${response.status}:${await response.text().catch(() => "")}` };
+  }
+  let full = "";
+  for await (const frame of parseSseStream(response)) {
+    if (frame.event === "content_block_delta") {
+      const delta = frame.data?.delta?.text ?? "";
+      if (delta) {
+        full += delta;
+        onChunk?.(delta, full);
+      }
+    } else if (frame.event === "message_stop" || frame.event === "done") {
+      break;
+    }
+  }
+  return { ok: true, text: full };
+}
+
+async function streamGemini({ apiKey, model, messages, systemPrompt, maxTokens = 1024, onChunk, signal }) {
+  const modelName = model || "gemini-1.5-flash";
+  let contents;
+  let systemInstruction = null;
+  if (Array.isArray(messages) && messages.length > 0) {
+    const sys = messages.filter((m) => m.role === "system").map((m) => m.content ?? "").join("\n\n");
+    if (sys) systemInstruction = { parts: [{ text: sys }] };
+    contents = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content ?? "" }] }));
+  } else {
+    if (systemPrompt) systemInstruction = { parts: [{ text: systemPrompt }] };
+    contents = [{ role: "user", parts: [{ text: "" }] }];
+  }
+  const requestBody = { contents, generationConfig: { maxOutputTokens: maxTokens } };
+  if (systemInstruction) requestBody.systemInstruction = systemInstruction;
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:streamGenerateContent?alt=sse&key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+      body: JSON.stringify(requestBody),
+      signal
+    }
+  );
+  if (!response.ok) {
+    return { ok: false, error: `gemini_${response.status}:${await response.text().catch(() => "")}` };
+  }
+  let full = "";
+  for await (const frame of parseSseStream(response)) {
+    const delta = frame.data?.candidates?.[0]?.content?.parts?.map?.((p) => p.text ?? "").join("") ?? "";
+    if (delta) {
+      full += delta;
+      onChunk?.(delta, full);
+    }
+  }
+  return { ok: true, text: full };
+}
+
+export async function callLLMDirectStream({ config, messages, systemPrompt, maxTokens, onChunk, signal }) {
+  const normalizedConfig = normalizeStandaloneConfig(config);
+  const provider = normalizedConfig?.provider;
+  try {
+    if (provider === "anthropic") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      return await streamAnthropic({
+        apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
+        messages, systemPrompt, maxTokens, onChunk, signal
+      });
+    }
+    if (provider === "gemini") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      return await streamGemini({
+        apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
+        messages, systemPrompt, maxTokens, onChunk, signal
+      });
+    }
+    const entry = PROVIDER_CONFIGS[provider];
+    if (!entry) return { ok: false, error: `unknown_provider:${provider}` };
+    if (entry.authStyle !== "none" && !normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+    // Prepend system prompt into messages for OpenAI-compat stream.
+    const effectiveMessages = Array.isArray(messages) && messages.length > 0
+      ? messages
+      : [{ role: "system", content: systemPrompt ?? "" }, { role: "user", content: "" }];
+    return await streamOpenAICompat(
+      { ...entry, id: provider },
+      {
+        apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
+        messages: effectiveMessages,
+        reasoningEffort: normalizedConfig.reasoningEffort,
+        maxTokens, onChunk, signal
+      }
+    );
+  } catch (error) {
+    return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
+  }
+}
+
 // ── Vision: Anthropic / Gemini have custom shapes; a subset of OpenAI-
 // compatible providers (OpenAI, Doubao Ark, GLM, Qwen, OpenRouter, etc.)
 // can read `image_url` content over their chat-completions endpoints.

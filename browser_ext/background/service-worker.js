@@ -2,6 +2,7 @@ import {
   loadStandaloneConfig,
   isDesktopAvailable,
   callLLMDirect,
+  callLLMDirectStream,
   callLLMDirectVision,
   buildPromptFor,
   invalidateDesktopProbe
@@ -801,6 +802,66 @@ export function registerExtensionRuntime(chromeApi = chrome) {
   });
 }
 
+// UCA-166: Port-based streaming chat channel. The popup opens
+// chrome.runtime.connect({ name: "uca.chat.stream" }) and posts
+// { text, history }. We stream LLM chunks back via port.postMessage so the
+// user sees text as it arrives. The port keeps the MV3 service worker alive
+// for the duration of the streaming call (workers die within ~30 s idle
+// otherwise).
+function registerChatStreamPort(chromeApi = chrome) {
+  if (!chromeApi.runtime?.onConnect) return;
+  chromeApi.runtime.onConnect.addListener((port) => {
+    if (port.name !== "uca.chat.stream") return;
+    let aborted = false;
+    const controller = new AbortController();
+    port.onDisconnect.addListener(() => {
+      aborted = true;
+      try { controller.abort(); } catch { /* ignore */ }
+    });
+    port.onMessage.addListener(async (message) => {
+      if (message?.type !== "chat") return;
+      const userText = `${message.text ?? ""}`.trim();
+      if (!userText) {
+        port.postMessage({ type: "error", error: "empty_input" });
+        return;
+      }
+      const history = Array.isArray(message.history)
+        ? message.history.filter((turn) => turn?.role === "user" || turn?.role === "assistant").slice(-6)
+        : [];
+      const conversation = [...history, { role: "user", content: userText }];
+      const config = await loadStandaloneConfig();
+      if (!config?.apiKey) {
+        port.postMessage({ type: "error", error: "no_api_key" });
+        return;
+      }
+      const systemPrompt = "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
+      const messages = [{ role: "system", content: systemPrompt }, ...conversation];
+      port.postMessage({ type: "start" });
+      const result = await callLLMDirectStream({
+        config,
+        messages,
+        maxTokens: 512,
+        signal: controller.signal,
+        onChunk: (delta, full) => {
+          if (aborted) return;
+          try { port.postMessage({ type: "chunk", delta, full }); } catch { /* port closed */ }
+        }
+      });
+      if (aborted) return;
+      if (result.ok) {
+        port.postMessage({
+          type: "done",
+          text: result.text,
+          history: [...conversation, { role: "assistant", content: result.text }]
+        });
+      } else {
+        port.postMessage({ type: "error", error: result.error });
+      }
+    });
+  });
+}
+
 if (typeof chrome !== "undefined" && chrome.runtime?.id) {
   registerExtensionRuntime(chrome);
+  registerChatStreamPort(chrome);
 }
