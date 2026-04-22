@@ -192,10 +192,19 @@ export async function runQuickAction({ action, selectionState, tab = null }, fet
 
   // Standalone short-circuit: if desktop isn't running AND the user has
   // configured a direct API key, call the LLM directly from the extension.
+  //
+  // UCA-162 follow-up: translate has no reason to go through the full
+  // task-submission pipeline — no decomposition, no tool calls, no
+  // artifact, no routing. If standalone is configured, prefer it for
+  // translate even when desktop is up. ~800 ms vs 2-3 s for a one-shot
+  // translation. summarize / explain still go through desktop when it's up
+  // because the task-history trail is useful there.
   const standaloneConfig = await loadStandaloneConfig();
   const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
   const desktopUp = await isDesktopAvailable(runtimeBase);
-  if (!desktopUp && standaloneConfig?.apiKey) {
+  const preferStandalone = (!desktopUp || action === "translate" || action === "uca.translate-selection")
+    && standaloneConfig?.apiKey;
+  if (preferStandalone) {
     // UCA-161: summarize / explain get the full page outline + any in-selection
     // links fetched and inlined so the LLM has real material to ground on.
     let enrichmentMarkdown = "";
