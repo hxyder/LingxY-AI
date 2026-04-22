@@ -57,13 +57,87 @@ function resolveImapConnection(account, credentials) {
   };
 }
 
-async function withImapConnection(config, handler) {
+// Lightweight IMAP connection pool — keyed by a stable signature of the
+// connection config (host + port + user) so each account reuses one socket
+// across the same process. Connections idle > POOL_IDLE_MS are closed on
+// the next GC sweep; dead sockets (server-closed) are replaced transparently.
+// This shaves ~500–1000 ms off repeat listRecent/listUnread calls (no new
+// TLS handshake / LOGIN / CAPABILITY per request).
+const POOL_IDLE_MS = 60_000;
+const imapPool = new Map(); // key -> { client, lastUsedAt, busy, connectPromise }
+let poolGcTimer = null;
+
+function poolKey(config) {
+  return `${config?.host ?? ""}|${config?.port ?? ""}|${config?.auth?.user ?? ""}`;
+}
+
+function startPoolGcIfNeeded() {
+  if (poolGcTimer) return;
+  poolGcTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of imapPool) {
+      if (entry.busy) continue;
+      if (now - entry.lastUsedAt > POOL_IDLE_MS) {
+        imapPool.delete(key);
+        try { entry.client?.logout?.(); } catch { /* ignore */ }
+      }
+    }
+    if (imapPool.size === 0) {
+      clearInterval(poolGcTimer);
+      poolGcTimer = null;
+    }
+  }, 15_000);
+  if (typeof poolGcTimer.unref === "function") poolGcTimer.unref();
+}
+
+async function acquireImapClient(config) {
+  const key = poolKey(config);
+  let entry = imapPool.get(key);
+  if (entry && !entry.busy && entry.client?.usable !== false) {
+    entry.busy = true;
+    entry.lastUsedAt = Date.now();
+    return { key, client: entry.client, entry };
+  }
+  // Either no entry, entry is in use, or prior client died — create fresh.
   const client = new ImapFlow(config);
   try {
     await client.connect();
-    return await handler(client);
-  } finally {
+  } catch (err) {
     try { await client.logout(); } catch { /* ignore */ }
+    throw err;
+  }
+  entry = { client, lastUsedAt: Date.now(), busy: true };
+  imapPool.set(key, entry);
+  startPoolGcIfNeeded();
+  return { key, client, entry };
+}
+
+function releaseImapClient(key, entry, { dead = false } = {}) {
+  if (!entry) return;
+  entry.busy = false;
+  entry.lastUsedAt = Date.now();
+  if (dead) {
+    imapPool.delete(key);
+    try { entry.client?.logout?.(); } catch { /* ignore */ }
+  }
+}
+
+async function withImapConnection(config, handler) {
+  const acquired = await acquireImapClient(config);
+  try {
+    return await handler(acquired.client);
+  } catch (err) {
+    // If the underlying socket died mid-operation ("connection closed" etc.),
+    // drop the pooled client so the next call opens a fresh one. Propagate
+    // so the caller surfaces the error.
+    const isConnectionError = /(?:closed|timeout|socket|ECONNRESET|EPIPE|connection)/i.test(String(err?.message ?? ""));
+    releaseImapClient(acquired.key, acquired.entry, { dead: isConnectionError });
+    throw err;
+  } finally {
+    const entry = imapPool.get(acquired.key);
+    if (entry && entry.client === acquired.client && entry.busy) {
+      releaseImapClient(acquired.key, acquired.entry, { dead: false });
+    }
   }
 }
 

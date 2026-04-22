@@ -3,7 +3,8 @@ export const WINDOW_IDS = Object.freeze({
   overlay: "overlay",
   console: "console",
   notification: "notification",
-  echoBubble: "echo-bubble"
+  echoBubble: "echo-bubble",
+  popupCard: "popup-card"
 });
 
 export const IPC_CHANNELS = Object.freeze({
@@ -22,7 +23,13 @@ export const IPC_CHANNELS = Object.freeze({
   overlayToggle: "uca:overlay-toggle",
   consoleOpen: "uca:console-open",
   shortcutTriggered: "uca:shortcut-triggered",
-  contextPreviewRequested: "uca:context-preview-requested"
+  contextPreviewRequested: "uca:context-preview-requested",
+  popupCardShow: "uca:popup-card-show",
+  popupCardClose: "uca:popup-card-close",
+  popupCardResolve: "uca:popup-card-resolve",
+  popupCardInit: "uca:popup-card-init",
+  popupCardTogglePin: "uca:popup-card-toggle-pin",
+  popupCardResolved: "uca:popup-card-resolved"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

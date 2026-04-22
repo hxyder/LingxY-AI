@@ -344,6 +344,20 @@ async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fe
   const oaTools = buildOpenAITools(tools);
   if (oaTools) body.tools = oaTools;
 
+  // Reasoning / thinking parameters (Console → Task Routing dropdown). The
+  // Console stores a single `reasoningEffort` string; we parse it here so
+  // Doubao's `thinking.type` and OpenAI's `reasoning_effort` are written to
+  // their real request-body slots without the UI layer knowing both shapes.
+  const re = String(resolved.reasoningEffort ?? "").trim();
+  if (re) {
+    if (re.startsWith("thinking:")) {
+      const typeValue = re.slice("thinking:".length);
+      if (typeValue) body.thinking = { type: typeValue };
+    } else if (["low", "medium", "high", "minimal"].includes(re)) {
+      body.reasoning_effort = re;
+    }
+  }
+
   const response = await fetchFn(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {

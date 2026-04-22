@@ -21,6 +21,7 @@ import { createBuiltinTemplateRegistry, createPersistentTemplateRegistry } from 
 import { createBudgetManager } from "../cost/budget.mjs";
 import { createEmbeddingStore } from "../embeddings/store.mjs";
 import { createAIIntegrationRuntime } from "../ai/integrations/runtime.mjs";
+import { runMcpAutoInstall } from "../ai/mcp/auto-install.mjs";
 import { createDagCheckpointStore } from "../dag/scheduler.mjs";
 import { createEmailMonitor } from "../email/monitor.mjs";
 import { createConnectorCatalog } from "../connectors/core/catalog.mjs";
@@ -138,6 +139,9 @@ export function createServiceBootstrap({
     dagStreaming: process.env.LINGXY_DAG_STREAMING === "true"
       || process.env.LINGXY_DAG_STREAMING === "1"
   };
+  // First-run MCP auto-install — pins mcp-filesystem + mcp-memory as enabled
+  // so users don't have to hunt for the Connectors toggle on a clean install.
+  try { runMcpAutoInstall({ runtime }); } catch { /* non-fatal */ }
   runtime.emailMonitor = createEmailMonitor({ runtime });
   runtime.emailMonitor.start();
   runtime.persistSecurityConfig = (patch) => {

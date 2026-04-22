@@ -1156,6 +1156,7 @@ const BUILTIN_API_TEMPLATES = [
   { id: "anthropic",    label: "Anthropic",          kind: "anthropic", baseUrl: "https://api.anthropic.com",                                   defaultModel: "claude-sonnet-4-5-20250514" },
   { id: "openai",       label: "OpenAI",             kind: "openai",    baseUrl: "https://api.openai.com/v1",                                   defaultModel: "gpt-4o" },
   { id: "deepseek",     label: "DeepSeek",           kind: "openai",    baseUrl: "https://api.deepseek.com/v1",                                 defaultModel: "deepseek-chat" },
+  { id: "doubao",       label: "豆包 (火山方舟 Ark)", kind: "openai",    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",                    defaultModel: "doubao-seed-2-0-lite-260215" },
   { id: "moonshot",     label: "Moonshot (Kimi)",    kind: "openai",    baseUrl: "https://api.moonshot.cn/v1",                                  defaultModel: "kimi-k2" },
   { id: "dashscope",    label: "Qwen (Dashscope)",   kind: "openai",    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",           defaultModel: "qwen-max" },
   { id: "zhipu",        label: "Zhipu (GLM)",        kind: "openai",    baseUrl: "https://open.bigmodel.cn/api/paas/v4",                        defaultModel: "glm-4-plus" },
@@ -1507,29 +1508,62 @@ function defaultModelForProvider(provider, taskType = "chat") {
   return providerModelPresets(provider, taskType)[0] ?? "";
 }
 
-// Codex is the only CLI in the current roster that exposes a
-// reasoning-effort knob via its `--reasoning-effort` flag. Other CLIs don't
-// have the concept, so we only render this select when the provider's
-// fingerprint matches codex.
-function reasoningEffortOptions(provider) {
-  if (!provider || provider.kind !== "code_cli") return [];
+// Reasoning / thinking knob. Different providers expose this under
+// different parameter names:
+//   - OpenAI o-series & GPT-5: request body field `reasoning_effort`
+//       (values: low / medium / high / minimal)
+//   - Doubao 1.6 / seed-2 family: request body field `thinking.type`
+//       (values: enabled / disabled)
+//   - Codex CLI: `--reasoning-effort` flag (low / medium / high / xhigh)
+// We render a single dropdown labelled per the model's real parameter so the
+// user sees "enabled/disabled" for Doubao and "low/medium/high/minimal" for
+// GPT-5, rather than a generic abstraction. The backend picks which body
+// field to write based on the same detection (see provider-resolver /
+// provider-adapter).
+function reasoningEffortOptions(provider, model = "") {
+  if (!provider) return [];
   const cached = provider.id ? providerModelOptionsCache.get(provider.id) : null;
   if (Array.isArray(cached?.reasoningEfforts) && cached.reasoningEfforts.length > 0) {
     return cached.reasoningEfforts;
   }
-  const fpCli = providerFingerprint(provider);
-  if (!/codex/.test(fpCli)) return [];
-  return [
-    { id: "", label: "(不指定)" },
-    { id: "low", label: "Low (快速)" },
-    { id: "medium", label: "Medium" },
-    { id: "high", label: "High (深思)" },
-    { id: "xhigh", label: "Extra High (最深)" }
-  ];
+  const fp = `${providerFingerprint(provider)} ${model}`.toLowerCase();
+
+  if (provider.kind === "code_cli") {
+    if (!/codex/.test(fp)) return [];
+    return [
+      { id: "", label: "(不指定)" },
+      { id: "low", label: "Low (快速)" },
+      { id: "medium", label: "Medium" },
+      { id: "high", label: "High (深思)" },
+      { id: "xhigh", label: "Extra High (最深)" }
+    ];
+  }
+
+  // Doubao (火山方舟) — "thinking.type" toggle on the seed-2 / 1.6 family.
+  if (/doubao/.test(fp) || /volces/.test(fp)) {
+    return [
+      { id: "", label: "(不指定)" },
+      { id: "thinking:enabled", label: "深度思考：enabled" },
+      { id: "thinking:disabled", label: "深度思考：disabled" }
+    ];
+  }
+
+  // OpenAI o-series / GPT-5 — reasoning_effort with 4 tiers.
+  if (provider.kind === "openai" && /(gpt-5|^o[1-9]|\bo\d+-|reasoning)/.test(fp)) {
+    return [
+      { id: "", label: "(不指定)" },
+      { id: "minimal", label: "Minimal (最省)" },
+      { id: "low", label: "Low (快速)" },
+      { id: "medium", label: "Medium" },
+      { id: "high", label: "High (深思)" }
+    ];
+  }
+
+  return [];
 }
 
-function supportsReasoningEffort(provider) {
-  return reasoningEffortOptions(provider).length > 0;
+function supportsReasoningEffort(provider, model = "") {
+  return reasoningEffortOptions(provider, model).length > 0;
 }
 
 function modeForModel(provider, model, currentMode = "") {
@@ -1679,9 +1713,9 @@ function renderTaskRouting() {
     // placeholder now that labels live in the model dropdown).
     const hideMode = isCli;
 
-    // Codex-only reasoning-effort knob. Renders in the slot where Mode
-    // would otherwise be for non-Codex CLIs, so the grid keeps 3 columns.
-    const reasoningOpts = reasoningEffortOptions(selectedProvider);
+    // Reasoning / thinking knob (Codex, Doubao, GPT-5/o-series). Renders in
+    // the slot where Mode would otherwise be, so the grid keeps 3 columns.
+    const reasoningOpts = reasoningEffortOptions(selectedProvider, modelValue);
     const showReasoning = reasoningOpts.length > 0;
     const reasoningValue = route.reasoningEffort === "extra_high" ? "xhigh" : (route.reasoningEffort ?? "");
     const reasoningOptionsHtml = reasoningOpts.map((opt) =>
@@ -1725,10 +1759,10 @@ function renderTaskRouting() {
         mode: provider ? modeForModel(provider, model, "") : ""
       };
       // Preserve prior reasoningEffort only when the new provider still
-      // supports it (Codex ↔ Codex). Switching away from Codex should not
-      // leave a stray reasoningEffort field lying around.
+      // supports it with the same model (Codex↔Codex, Doubao↔Doubao,
+      // GPT-5↔GPT-5). Otherwise drop it so stale params don't leak across.
       const previous = taskRouting[taskId] ?? {};
-      if (provider && supportsReasoningEffort(provider) && previous.reasoningEffort) {
+      if (provider && supportsReasoningEffort(provider, model) && previous.reasoningEffort) {
         next.reasoningEffort = previous.reasoningEffort;
       }
       taskRouting[taskId] = next;

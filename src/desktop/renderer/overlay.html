@@ -163,6 +163,105 @@
         box-shadow: var(--shadow-sm);
       }
 
+      /* Structured/long assistant answer: accent left bar, tighter type scale,
+         more space between list items and headings. Short chatty replies keep
+         the plain .bubble.assistant layout. */
+      .bubble.assistant.bubble--answer {
+        max-width: 92%;
+        padding: 12px 16px 12px 18px;
+        border-left: 2px solid rgba(91, 107, 122, 0.55);
+        border-bottom-left-radius: 10px;
+      }
+      .bubble.assistant.bubble--answer .md-h1,
+      .bubble.assistant .md-h1 {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--ink);
+        margin: 6px 0 4px;
+      }
+      .bubble.assistant.bubble--answer .md-h2,
+      .bubble.assistant .md-h2 {
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--ink);
+        margin: 6px 0 3px;
+      }
+      .bubble.assistant.bubble--answer .md-h3,
+      .bubble.assistant .md-h3 {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--ink);
+        margin: 5px 0 2px;
+      }
+      .bubble.assistant .md-list-item {
+        padding: 2px 0;
+        display: flex;
+        gap: 6px;
+        align-items: baseline;
+      }
+      .bubble.assistant .md-list-item .md-list-num,
+      .bubble.assistant .md-list-item .md-bullet {
+        color: var(--muted);
+        flex-shrink: 0;
+      }
+      .bubble.assistant .md-gap {
+        height: 6px;
+      }
+      .bubble.assistant .md-inline-code {
+        background: rgba(91, 107, 122, 0.10);
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 0.9em;
+        font-family: "SF Mono", "Consolas", monospace;
+      }
+      .bubble.assistant .md-link {
+        color: var(--accent, #5b6b7a);
+        text-decoration: underline;
+      }
+      .bubble.assistant .md-code {
+        position: relative;
+        margin: 8px 0;
+        border-radius: 8px;
+        background: rgba(17, 24, 39, 0.92);
+        color: #f1f5f9;
+        overflow: hidden;
+      }
+      .bubble.assistant .md-code pre {
+        margin: 0;
+        padding: 10px 12px;
+        font-family: "SF Mono", "Consolas", monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        overflow-x: auto;
+        max-height: 260px;
+      }
+      .bubble.assistant .md-code pre code {
+        background: transparent;
+        padding: 0;
+        color: inherit;
+        font: inherit;
+      }
+      .bubble.assistant .md-code-copy {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        padding: 3px 8px;
+        border-radius: 5px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.08);
+        color: #e2e8f0;
+        font-size: 11px;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 120ms ease, background-color 120ms ease;
+      }
+      .bubble.assistant .md-code:hover .md-code-copy {
+        opacity: 1;
+      }
+      .bubble.assistant .md-code-copy:hover {
+        background: rgba(255, 255, 255, 0.18);
+      }
+
       .bubble.assistant.streaming {
         border-color: rgba(91, 107, 122, 0.35);
         background: rgba(245, 246, 255, 0.95);

@@ -134,6 +134,7 @@ function providerToResolved(provider, route, taskType) {
     baseUrl: provider.baseUrl,
     model: resolveRoutedModel(provider, route, taskType),
     mode: route?.mode ?? "",
+    reasoningEffort: route?.reasoningEffort ?? "",
     providerName: provider.name
   };
 }

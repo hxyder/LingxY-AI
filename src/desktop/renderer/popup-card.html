@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src http://127.0.0.1:*; img-src data:;">
+    <title>LingxY Popup Card</title>
+    <link rel="stylesheet" href="./popup-card.css">
+  </head>
+  <body class="pc-body">
+    <div class="pc-card" id="pc-card" data-kind="info">
+      <header class="pc-head" id="pc-head">
+        <div class="pc-head-left">
+          <span class="pc-dot" aria-hidden="true"></span>
+          <span class="pc-title" id="pc-title">LingxY</span>
+        </div>
+        <div class="pc-head-right">
+          <button class="pc-icon-btn" id="pc-pin" title="置顶" aria-label="pin">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1V4H8v2h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"/></svg>
+          </button>
+          <button class="pc-icon-btn" id="pc-close" title="关闭" aria-label="close">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </header>
+      <section class="pc-body-text" id="pc-body"></section>
+      <footer class="pc-actions" id="pc-actions"></footer>
+    </div>
+    <script src="./popup-card.js"></script>
+  </body>
+</html>

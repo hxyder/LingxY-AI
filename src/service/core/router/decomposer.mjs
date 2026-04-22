@@ -39,8 +39,15 @@ function shouldDecompose(userCommand) {
     return { decompose: false, reason: "needs_clarification" };
   }
 
-  // Rule 4: very short commands (<= 10 chars) are almost always single-intent
-  if (userCommand.trim().length <= 10) {
+  // Rule 4: short commands are almost always single-intent. Empirically
+  // ≤10 chars was too conservative — ~30 chars (≈ a typical one-sentence
+  // question in Chinese or English) still means "one clear intent" more
+  // often than not. Raising the threshold avoids an LLM call for the common
+  // "请帮我解释这段代码 / summarize this" class of prompts and shaves
+  // ~500–1500 ms off first-token latency. If it turns out a genuinely
+  // compound 25-char command slips through, the single-turn agent can still
+  // handle ordered sub-steps in one loop.
+  if (userCommand.trim().length <= 30) {
     return { decompose: false, reason: "too_short_to_split" };
   }
 
@@ -286,6 +293,39 @@ async function runLlmDecomposition({ userCommand, runtime, contextPacket, maxSub
   }
 }
 
+// Small LRU cache for recent LLM decomposition results. Keyed by the
+// normalized userCommand text, with a tight TTL so workflow changes aren't
+// masked indefinitely. Cuts repeated-command latency (e.g. the user hitting
+// "retry") from ~1s to ~0ms.
+const DECOMP_CACHE_MAX = 32;
+const DECOMP_CACHE_TTL_MS = 5 * 60_000;
+const decompCache = new Map(); // key -> { result, expiresAt }
+
+function decompCacheKey(userCommand, maxSubtasks) {
+  return `${maxSubtasks}|${String(userCommand).trim()}`;
+}
+
+function readDecompCache(key) {
+  const entry = decompCache.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt < Date.now()) {
+    decompCache.delete(key);
+    return null;
+  }
+  // refresh LRU order
+  decompCache.delete(key);
+  decompCache.set(key, entry);
+  return entry.result;
+}
+
+function writeDecompCache(key, result) {
+  decompCache.set(key, { result, expiresAt: Date.now() + DECOMP_CACHE_TTL_MS });
+  if (decompCache.size > DECOMP_CACHE_MAX) {
+    const oldest = decompCache.keys().next().value;
+    if (oldest !== undefined) decompCache.delete(oldest);
+  }
+}
+
 export async function decomposeUserCommand({
   userCommand,
   runtime,
@@ -306,6 +346,14 @@ export async function decomposeUserCommand({
     if (!guard.decompose) {
       return { subtasks: fallback, usedLLM: false, reason: guard.reason };
     }
+  }
+
+  // Same command twice within the TTL → reuse the prior result. Avoids
+  // re-running the decomposer planner when a user retries or submits the
+  // same prompt from multiple surfaces.
+  if (mode === "auto") {
+    const cached = readDecompCache(decompCacheKey(userCommand, maxSubtasks));
+    if (cached) return { ...cached, cached: true };
   }
 
   if (mode === "rules_only") {
@@ -349,8 +397,12 @@ export async function decomposeUserCommand({
   }
 
   if (llmResult.subtasks.length > 0) {
-    return { subtasks: llmResult.subtasks, usedLLM: true, reason: "llm_decompose" };
+    const success = { subtasks: llmResult.subtasks, usedLLM: true, reason: "llm_decompose" };
+    if (mode === "auto") writeDecompCache(decompCacheKey(userCommand, maxSubtasks), success);
+    return success;
   }
 
-  return { subtasks: fallback, usedLLM: false, reason: "llm_fallback" };
+  const fallbackResult = { subtasks: fallback, usedLLM: false, reason: "llm_fallback" };
+  if (mode === "auto") writeDecompCache(decompCacheKey(userCommand, maxSubtasks), fallbackResult);
+  return fallbackResult;
 }

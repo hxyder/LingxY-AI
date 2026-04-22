@@ -84,6 +84,27 @@ let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
 let notifiedTaskId = null;
 let notifiedInlineResultTaskId = null;
+// Separate dedupe flag for the floating popup success card. The old
+// notifiedTaskId guard runs AFTER the inline-result event has already
+// flipped notifiedInlineResultTaskId, so success-card emission was being
+// skipped for streaming conversational replies ("你好" style). This flag
+// is set by whichever path actually shows the card first (inline_result
+// or status_changed=success) and cleared per new task.
+let popupSuccessCardTaskId = null;
+
+function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000 } = {}) {
+  if (!taskId || popupSuccessCardTaskId === taskId) return;
+  popupSuccessCardTaskId = taskId;
+  try {
+    window.ucaShell?.showPopupCard?.({
+      kind: "success",
+      taskId,
+      title: title || "任务完成",
+      lines: Array.isArray(body) ? body.filter(Boolean) : [String(body ?? "").slice(0, 160)].filter(Boolean),
+      autoHideMs
+    });
+  } catch { /* optional */ }
+}
 let notifiedCompositeTaskId = null;
 let selectedOutputSuffix = "";
 let selectedFormatInstruction = "";
@@ -364,6 +385,7 @@ function switchConversation(convId) {
   saveProjectStore();
   activeTaskId = conv.activeTaskId ?? null;
   lastTask = null; notifiedTaskId = null; notifiedInlineResultTaskId = null;
+  popupSuccessCardTaskId = null;
   lastArtifactPath = null; lastArtifactPreview = ""; lastArtifacts = [];
   // If the conversation we're opening has a still-running task, reattach the
   // active stream so the user sees real-time updates again.
@@ -516,6 +538,7 @@ function renderConversationFromState() {
 function startNewConversation() {
   closeActiveTaskEventStream();
   activeTaskId = null; lastTask = null; notifiedTaskId = null; notifiedInlineResultTaskId = null;
+  popupSuccessCardTaskId = null;
   lastArtifactPath = null; autoOpenedArtifactTaskId = null;
   lastArtifactPreview = ""; lastArtifacts = [];
   selectedOutputSuffix = ""; selectedFormatInstruction = "";
@@ -553,29 +576,61 @@ function seedCaptureMatches(newText) {
    ═══════════════════════════════════════════════ */
 
 function renderMarkdown(text) {
-  // Simple but safe Markdown renderer for assistant bubbles
-  // Process: bold, inline code, links, then line breaks
-  const escaped = text
+  // Safer, slightly-richer Markdown renderer for assistant bubbles.
+  // Supports: fenced code blocks, h1-h3 headings, bold, inline code,
+  // ordered/unordered lists, links, bare URLs. Kept intentionally small —
+  // we pull in no library so the escaping boundary is easy to audit.
+  const escape = (s) => s
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
 
-  return escaped
-    // Numbered list items: "1. text" → styled list item
+  // First pass: extract fenced code blocks so their interior isn't touched
+  // by the rest of the Markdown transforms.
+  const codeBlocks = [];
+  let working = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, body) => {
+    const idx = codeBlocks.length;
+    codeBlocks.push({ lang: (lang || "").trim(), body: body.replace(/\n$/, "") });
+    return `\u0000CODEBLOCK_${idx}\u0000`;
+  });
+
+  working = escape(working);
+
+  working = working
+    // Headings (must be line-anchored). h1/h2/h3 only.
+    .replace(/^###\s+(.+)$/gm, "<div class=\"md-h3\">$1</div>")
+    .replace(/^##\s+(.+)$/gm, "<div class=\"md-h2\">$1</div>")
+    .replace(/^#\s+(.+)$/gm, "<div class=\"md-h1\">$1</div>")
+    // Numbered list items: "1. text"
     .replace(/^(\d+)\.\s+(.+)$/gm, "<div class=\"md-list-item\"><span class=\"md-list-num\">$1.</span> $2</div>")
-    // Bullet points: "- text" or "• text"
-    .replace(/^[-•]\s+(.+)$/gm, "<div class=\"md-list-item\"><span class=\"md-bullet\">•</span> $1</div>")
+    // Bullet points: "- text" or "• text" or "* text"
+    .replace(/^[-•*]\s+(.+)$/gm, "<div class=\"md-list-item\"><span class=\"md-bullet\">•</span> $1</div>")
     // Bold: **text**
     .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    // Italic: *text* (non-greedy, avoid matching across newlines to stop it
+    // from eating list markers)
+    .replace(/(^|[^\*])\*([^\*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
     // Inline code: `code`
-    .replace(/`([^`]+)`/g, "<code style=\"background:var(--glass-accent-soft);padding:1px 5px;border-radius:4px;font-size:0.9em;\">$1</code>")
+    .replace(/`([^`]+)`/g, "<code class=\"md-inline-code\">$1</code>")
     // Links: [text](url)
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, "<a href=\"#\" data-open-url=\"$2\" style=\"color:var(--glass-accent);text-decoration:underline;\">$1</a>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, "<a href=\"#\" data-open-url=\"$2\" class=\"md-link\">$1</a>")
     // Bare URLs
-    .replace(/(https?:\/\/[^\s<>"]+)/g, "<a href=\"#\" data-open-url=\"$1\" style=\"color:var(--primary);text-decoration:underline;\">$1</a>")
-    // Newlines → br (but avoid double-br inside list items)
-    .replace(/\n\n/g, "<br><br>")
+    .replace(/(https?:\/\/[^\s<>"]+)/g, "<a href=\"#\" data-open-url=\"$1\" class=\"md-link\">$1</a>");
+
+  // Convert blank lines to paragraph breaks, remaining newlines to <br>.
+  working = working
+    .replace(/\n\n+/g, "<div class=\"md-gap\"></div>")
     .replace(/\n/g, "<br>");
+
+  // Restore code blocks (they carry their own structure + a copy button).
+  working = working.replace(/\u0000CODEBLOCK_(\d+)\u0000/g, (_, i) => {
+    const block = codeBlocks[Number(i)];
+    if (!block) return "";
+    const langAttr = block.lang ? ` data-lang="${escape(block.lang)}"` : "";
+    return `<div class="md-code"${langAttr}><pre><code>${escape(block.body)}</code></pre><button type="button" class="md-code-copy" data-md-copy>复制</button></div>`;
+  });
+
+  return working;
 }
 
 function hideEmptyState() {
@@ -605,12 +660,40 @@ function addBubble(role, content, options) {
   if (typeof content === "string") {
     if (role === "assistant") {
       bubble.innerHTML = renderMarkdown(content);
+      // Apply the "answer" layout (accent bar + richer typography) whenever
+      // the reply is either structured (has headings / code / lists) or just
+      // long enough to benefit from the extra spacing. Empirically the old
+      // 240-char threshold was too aggressive — most helpful replies (explain
+      // a concept, list 3-5 steps) landed at 80–220 chars and still looked
+      // cramped in the plain bubble. Drop to 80 + include bullet/numbered
+      // list detection.
+      const rendered = bubble.innerHTML;
+      const hasMarkdownStructure =
+        rendered.includes("md-h") ||
+        rendered.includes("md-code") ||
+        rendered.includes("md-list-item") ||
+        rendered.includes("md-gap");
+      const isStructured = hasMarkdownStructure || content.length > 80;
+      if (isStructured) bubble.classList.add("bubble--answer");
       // Wire clickable links to open_url
       for (const anchor of bubble.querySelectorAll("[data-open-url]")) {
         anchor.addEventListener("click", (e) => {
           e.preventDefault();
           const url = anchor.dataset.openUrl;
           if (url) window.ucaShell?.openExternal?.(url) ?? window.open(url, "_blank");
+        });
+      }
+      // Copy-to-clipboard for fenced code blocks
+      for (const btn of bubble.querySelectorAll("[data-md-copy]")) {
+        btn.addEventListener("click", async () => {
+          const codeEl = btn.parentElement?.querySelector("pre code");
+          if (!codeEl) return;
+          const code = codeEl.textContent ?? "";
+          try {
+            await window.ucaShell?.writeClipboardText?.(code);
+            btn.textContent = "已复制";
+            setTimeout(() => { btn.textContent = "复制"; }, 1400);
+          } catch { /* ignore */ }
         });
       }
     } else {
@@ -1187,6 +1270,22 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     renderInlineApproval(frame);
     timelineAddStep("等待用户确认", "active");
     if (showOverlay) window.ucaShell.showWindow("overlay");
+    // Floating popup card (non-blocking, stackable). The inline overlay UI
+    // stays authoritative; the popup is a convenience surface so the user
+    // doesn't miss approvals when the overlay isn't in view.
+    try {
+      const data = frame.data ?? {};
+      window.ucaShell?.showPopupCard?.({
+        kind: "approval",
+        approvalId: data.approval_id ?? data.approvalId,
+        taskId: frame.task_id ?? data.task_id,
+        title: data.proposed_target ? `等待确认：${data.proposed_target}` : "等待用户确认",
+        lines: [
+          data.summary ?? data.workflow_id ?? "工具调用需要您的确认",
+          data.preview ?? null
+        ].filter(Boolean)
+      });
+    } catch { /* popup card is optional */ }
   }
 
   if (frame.event === "failed" || frame.event === "cancelled") {
@@ -1459,6 +1558,14 @@ async function handleTaskEventFrame(rawEvent) {
           notifiedInlineResultTaskId = activeTaskId;
         }
         window.ucaShell.showWindow("overlay");
+        // Fire success popup card from the inline-result path as well —
+        // the downstream status_changed=success block is guarded by
+        // notifiedInlineResultTaskId and otherwise wouldn't trigger the
+        // card for streaming conversational replies.
+        fireSuccessPopupCardOnce(frameTaskId, {
+          title: lastTask?.intent ?? "任务完成",
+          body: text
+        });
       }
     }
   }
@@ -2056,6 +2163,11 @@ async function refreshActiveTask() {
           title: isAudioNoteTask ? "录音笔记已完成" : "UCA task complete",
           body: filename
         });
+        fireSuccessPopupCardOnce(task.task_id, {
+          title: task.intent ?? "任务完成",
+          body: [filename, previewText ? previewText.slice(0, 140) : null].filter(Boolean),
+          autoHideMs: 10000
+        });
       }
       // Auto-open removed: previously the host file viewer would steal focus
       // every time a task finished. Users explicitly click the "打开文件"
@@ -2118,9 +2230,22 @@ async function refreshActiveTask() {
           title: "UCA",
           body: finalText.slice(0, 100)
         });
+        fireSuccessPopupCardOnce(task.task_id, {
+          title: task.intent ?? "任务完成",
+          body: finalText
+        });
       }
     } else if (task.status === "failed") {
       addBubble("assistant", `Task failed: ${task.failure_user_message ?? "Unknown error."}`);
+      try {
+        window.ucaShell?.showPopupCard?.({
+          kind: "error",
+          taskId: task.task_id,
+          title: "任务失败",
+          lines: [task.failure_user_message ?? "Unknown error."],
+          autoHideMs: 12000
+        });
+      } catch { /* optional */ }
     } else if (task.status === "cancelled") {
       addSystemBubble("Task cancelled.");
     }
@@ -5305,6 +5430,34 @@ window.ucaShell.onShellReady((payload) => {
     refreshTaskSummaries(true).then(renderTaskListDock);
     showWelcome();
   }
+});
+
+// When an approval is resolved from the floating popup card, the overlay's
+// inline twin (if any) is stale — mark it handled so the user doesn't
+// double-approve. We disable its buttons and overlay a status chip.
+window.ucaShell?.onPopupCardResolved?.((payload) => {
+  if (!payload || payload.kind !== "approval") return;
+  const approvalId = payload.approvalId;
+  if (!approvalId) return;
+  const inline = renderedApprovalCards.get(approvalId);
+  if (!inline) return;
+  inline.querySelectorAll("button").forEach((btn) => {
+    btn.disabled = true;
+    btn.style.opacity = "0.55";
+    btn.style.cursor = "default";
+  });
+  let chip = inline.querySelector(".popup-resolved-chip");
+  if (!chip) {
+    chip = document.createElement("div");
+    chip.className = "popup-resolved-chip";
+    chip.style.cssText = "margin-top:8px;font-size:12px;color:#166534;background:rgba(16,185,129,0.10);padding:4px 10px;border-radius:6px;display:inline-block;";
+    inline.appendChild(chip);
+  }
+  chip.textContent = payload.action === "approve"
+    ? "已通过（悬浮卡片处理）"
+    : payload.action === "reject"
+      ? "已拒绝（悬浮卡片处理）"
+      : "已处理（悬浮卡片）";
 });
 
 /* ═══════════════════════════════════════════════

@@ -5,6 +5,7 @@ import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import os from "node:os";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
+import { createPopupCardManager } from "./popup-card-manager.mjs";
 
 // Guard against EPIPE — stderr/stdout may be a broken pipe when the parent
 // process (Explorer shell, Windows shortcut, etc.) has already closed. Any
@@ -114,6 +115,7 @@ export function createElectronShellRuntime({
   let notificationWatcher = null;
   let noteRecordingState = { active: false };
   let lastExternalWindowContext = null;
+  let registeredPopupCardManager = null;
 
   // Desktop shell settings (echo mode, future flags). Persisted as JSON in
   // AppData/Local/UCA/settings.json. Loaded lazily on first access; callers
@@ -1205,6 +1207,50 @@ export function createElectronShellRuntime({
         return { accepted: true };
       });
 
+      // ── Popup cards (approval + task completion) ──
+      const popupCardManager = createPopupCardManager({
+        BrowserWindow,
+        screen,
+        ipcMain,
+        resolveServiceBaseUrl: () => resolvedServiceBaseUrl
+      });
+      popupCardManager.registerIpcHandlers({
+        onResolve: async (card) => {
+          try {
+            if (card.kind === "approval" && card.payload?.approvalId) {
+              const approvalId = card.payload.approvalId;
+              const action = card.action === "approve" ? "approve" : card.action === "reject" ? "reject" : null;
+              if (!action) return;
+              const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+              await fetch(`${base}/approvals/${approvalId}/${action}`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ actor: "popup-card" })
+              }).catch((err) => safeWarn("[UCA] approval resolve failed:", err?.message ?? err));
+            }
+          } catch (err) {
+            safeWarn("[UCA] popup-card onResolve failed:", err?.message ?? err);
+          }
+          // Broadcast the resolution so the overlay (which may be showing an
+          // inline twin of the same approval) can mark its copy as handled.
+          try {
+            const overlayWin = windows.get("overlay");
+            if (overlayWin && !overlayWin.webContents?.isDestroyed?.()) {
+              overlayWin.webContents.send(IPC_CHANNELS.popupCardResolved, {
+                cardId: card.cardId,
+                kind: card.kind,
+                action: card.action,
+                approvalId: card.payload?.approvalId ?? null,
+                taskId: card.payload?.taskId ?? null
+              });
+            }
+          } catch (err) {
+            safeWarn("[UCA] popup-card resolved-broadcast failed:", err?.message ?? err);
+          }
+        }
+      });
+      registeredPopupCardManager = popupCardManager;
+
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({
         serviceBaseUrl: resolvedServiceBaseUrl,
         windowIds: [...windows.keys()],
@@ -1265,6 +1311,7 @@ export function createElectronShellRuntime({
         stopClipboardWatcher();
         handoffWatcher?.return?.().catch?.(() => {});
         notificationWatcher?.return?.().catch?.(() => {});
+        registeredPopupCardManager?.shutdown?.();
       });
       await handleLaunchArgs(process.argv);
       return {

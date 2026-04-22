@@ -179,5 +179,27 @@ contextBridge.exposeInMainWorld("ucaShell", {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:start-wake-enrollment", listener);
     return () => ipcRenderer.removeListener("uca:start-wake-enrollment", listener);
+  },
+  showPopupCard(payload) {
+    return ipcRenderer.invoke("uca:popup-card-show", payload ?? {});
+  },
+  closePopupCard(cardId, options) {
+    return ipcRenderer.invoke("uca:popup-card-close", cardId, options ?? {});
+  },
+  resolvePopupCard(cardId, meta) {
+    return ipcRenderer.invoke("uca:popup-card-resolve", cardId, meta ?? {});
+  },
+  togglePopupCardPin(cardId, pinned) {
+    return ipcRenderer.invoke("uca:popup-card-toggle-pin", cardId, Boolean(pinned));
+  },
+  onPopupCardInit(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:popup-card-init", listener);
+    return () => ipcRenderer.removeListener("uca:popup-card-init", listener);
+  },
+  onPopupCardResolved(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:popup-card-resolved", listener);
+    return () => ipcRenderer.removeListener("uca:popup-card-resolved", listener);
   }
 });
