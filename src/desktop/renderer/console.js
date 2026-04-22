@@ -9,6 +9,13 @@ import {
   buildScheduleActionFromText,
   parseScheduleTriggerFromText
 } from "./schedule-parser.js";
+import {
+  BUILTIN_API_TEMPLATES,
+  codeCliModelChoices,
+  modeOptionsForProvider as catalogModeOptionsForProvider,
+  providerFingerprint,
+  providerModelPresets
+} from "../../shared/provider-catalog.mjs";
 
 const runtimeState = document.querySelector("#runtimeState");
 const summaryGrid = document.querySelector("#summaryGrid");
@@ -1141,49 +1148,6 @@ function providerCanVisionFrontend(provider) {
   return false;
 }
 
-const PRESET_MODELS = {
-  anthropic: ["claude-sonnet-4-5-20250514", "claude-opus-4-5-20250514", "claude-haiku-4-5-20250514"],
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-5", "deepseek-chat", "kimi-k2", "moonshot-v1-8k"],
-  ollama: ["llama3.2", "qwen2.5", "mistral", "phi3"]
-};
-
-// One-click provider templates — Inspired by AionUi's multi-engine support,
-// these pre-fill the Add Provider modal with a sensible baseUrl + default
-// model for each popular OpenAI-compatible (or native) API endpoint. User
-// still has to paste their own API key. All verified to work with UCA's
-// existing OpenAI-compat adapter (kind: "openai") unless marked otherwise.
-const BUILTIN_API_TEMPLATES = [
-  { id: "anthropic",    label: "Anthropic",          kind: "anthropic", baseUrl: "https://api.anthropic.com",                                   defaultModel: "claude-sonnet-4-5-20250514" },
-  { id: "openai",       label: "OpenAI",             kind: "openai",    baseUrl: "https://api.openai.com/v1",                                   defaultModel: "gpt-4o" },
-  { id: "deepseek",     label: "DeepSeek",           kind: "openai",    baseUrl: "https://api.deepseek.com/v1",                                 defaultModel: "deepseek-chat" },
-  { id: "doubao",       label: "豆包 (火山方舟 Ark)", kind: "openai",    baseUrl: "https://ark.cn-beijing.volces.com/api/v3",                    defaultModel: "doubao-seed-2-0-lite-260215" },
-  { id: "moonshot",     label: "Moonshot (Kimi)",    kind: "openai",    baseUrl: "https://api.moonshot.cn/v1",                                  defaultModel: "kimi-k2" },
-  { id: "dashscope",    label: "Qwen (Dashscope)",   kind: "openai",    baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",           defaultModel: "qwen-max" },
-  { id: "zhipu",        label: "Zhipu (GLM)",        kind: "openai",    baseUrl: "https://open.bigmodel.cn/api/paas/v4",                        defaultModel: "glm-4-plus" },
-  { id: "minimax",      label: "MiniMax",            kind: "openai",    baseUrl: "https://api.minimax.chat/v1",                                 defaultModel: "abab6.5s-chat" },
-  { id: "siliconflow",  label: "SiliconFlow",        kind: "openai",    baseUrl: "https://api.siliconflow.cn/v1",                               defaultModel: "Qwen/Qwen2.5-72B-Instruct" },
-  { id: "xai",          label: "xAI (Grok)",         kind: "openai",    baseUrl: "https://api.x.ai/v1",                                         defaultModel: "grok-2-latest" },
-  { id: "openrouter",   label: "OpenRouter",         kind: "openai",    baseUrl: "https://openrouter.ai/api/v1",                                defaultModel: "openai/gpt-4o" },
-  { id: "groq",         label: "Groq",               kind: "openai",    baseUrl: "https://api.groq.com/openai/v1",                              defaultModel: "llama-3.3-70b-versatile" },
-  { id: "together",     label: "Together AI",        kind: "openai",    baseUrl: "https://api.together.xyz/v1",                                 defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
-  { id: "fireworks",    label: "Fireworks",          kind: "openai",    baseUrl: "https://api.fireworks.ai/inference/v1",                       defaultModel: "accounts/fireworks/models/llama-v3p3-70b-instruct" },
-  { id: "mistral",      label: "Mistral",            kind: "openai",    baseUrl: "https://api.mistral.ai/v1",                                   defaultModel: "mistral-large-latest" },
-  { id: "gemini",       label: "Google Gemini",      kind: "openai",    baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",     defaultModel: "gemini-2.0-flash" },
-  { id: "ollama",       label: "Ollama (local)",     kind: "ollama",    baseUrl: "http://127.0.0.1:11434",                                      defaultModel: "llama3.2" }
-];
-
-function uniqueNonEmpty(values = []) {
-  const seen = new Set();
-  const out = [];
-  for (const raw of values) {
-    const value = `${raw ?? ""}`.trim();
-    if (!value || seen.has(value)) continue;
-    seen.add(value);
-    out.push(value);
-  }
-  return out;
-}
-
 function uniqueModelChoices(choices = []) {
   const seen = new Set();
   const out = [];
@@ -1197,208 +1161,6 @@ function uniqueModelChoices(choices = []) {
     });
   }
   return out;
-}
-
-function providerFingerprint(provider = {}) {
-  return [
-    provider.id,
-    provider.name,
-    provider.kind,
-    provider.baseUrl,
-    provider.command,
-    provider.defaultModel
-  ].map((part) => `${part ?? ""}`.toLowerCase()).join(" ");
-}
-
-// Build labelled model choices for a code_cli provider. Returns
-// `{ id, label }[]` — `id` is the actual value sent via `--model` to the
-// subprocess (empty string = no flag, CLI uses its own default). `label` is
-// the user-facing string in the Console dropdown.
-//
-// The first option is ALWAYS "(CLI 自行管理)" — users can pick it to defer
-// model selection to the CLI's own configuration (e.g. /model in Claude Code,
-// Codex's config file). `pushFlagValue()` in code-cli-bridge.mjs skips
-// `--model` when the value is empty, so this is a zero-arg path end-to-end.
-function codeCliModelChoices(provider) {
-  if (!provider || provider.kind !== "code_cli") return [];
-
-  const fpCli = providerFingerprint(provider);
-  const cliManaged = { id: "", label: "(CLI 自行管理 — 用 /model 切换)" };
-  const dedup = (choices) => {
-    const seen = new Set();
-    const out = [];
-    for (const choice of choices) {
-      const key = `${choice.id ?? ""}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(choice);
-    }
-    return out;
-  };
-
-  // Preserve the provider's explicit defaultModel as a second option so
-  // users can see it's sticky.
-  const preferred = provider.defaultModel ?? "";
-  const preferredChoice = preferred
-    ? [{ id: preferred, label: `${preferred} (保存的默认)` }]
-    : [];
-
-  if (/(moonshot|kimi)/.test(fpCli)) {
-    return dedup([
-      cliManaged,
-      ...preferredChoice,
-      { id: "kimi-code/kimi-for-coding", label: "Kimi Code" },
-      { id: "kimi-k2", label: "K2" },
-      { id: "moonshot-v1-128k", label: "Moonshot 128K" }
-    ]);
-  }
-
-  if (/codex/.test(fpCli)) {
-    return dedup([
-      cliManaged,
-      ...preferredChoice,
-      { id: "gpt-5.4", label: "GPT-5.4" },
-      { id: "gpt-5.2-codex", label: "GPT-5.2-Codex" },
-      { id: "gpt-5.1-codex-max", label: "GPT-5.1-Codex-Max" },
-      { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
-      { id: "gpt-5.3-codex", label: "GPT-5.3-Codex" },
-      { id: "gpt-5.2", label: "GPT-5.2" },
-      { id: "gpt-5.1-codex-mini", label: "GPT-5.1-Codex-Mini" }
-    ]);
-  }
-
-  if (/gemini/.test(fpCli)) {
-    return dedup([
-      cliManaged,
-      ...preferredChoice,
-      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-      { id: "gemini-2.0-pro", label: "Gemini 2.0 Pro" },
-      { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash (fast)" }
-    ]);
-  }
-
-  if (/aider/.test(fpCli)) {
-    // Aider accepts provider-namespaced shorthands — stay conservative.
-    return dedup([
-      cliManaged,
-      ...preferredChoice,
-      { id: "sonnet", label: "Sonnet (shorthand)" },
-      { id: "opus", label: "Opus (shorthand)" },
-      { id: "gpt-4o", label: "GPT-4o" },
-      { id: "deepseek/deepseek-chat", label: "DeepSeek Chat" }
-    ]);
-  }
-
-  if (/opencode/.test(fpCli)) {
-    return dedup([
-      cliManaged,
-      ...preferredChoice,
-      { id: "anthropic/claude-sonnet-4-5", label: "Claude Sonnet" },
-      { id: "openai/gpt-5", label: "GPT-5" },
-      { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" }
-    ]);
-  }
-
-  if (/claude/.test(fpCli)) {
-    return dedup([
-      cliManaged,
-      ...preferredChoice,
-      { id: "sonnet", label: "Sonnet (shorthand)" },
-      { id: "opus", label: "Opus (shorthand)" },
-      { id: "haiku", label: "Haiku (shorthand)" },
-      { id: "claude-sonnet-4-5", label: "claude-sonnet-4-5 (pinned)" },
-      { id: "claude-opus-4-5", label: "claude-opus-4-5 (pinned)" },
-      { id: "claude-haiku-4-5", label: "claude-haiku-4-5 (pinned)" }
-    ]);
-  }
-
-  if (/cursor/.test(fpCli)) {
-    return dedup([
-      cliManaged,
-      ...preferredChoice,
-      { id: "claude-sonnet-4-5", label: "Claude Sonnet" },
-      { id: "gpt-5", label: "GPT-5" }
-    ]);
-  }
-
-  // Long-tail CLIs (qwen / iflow / codebuddy / goose / augment / droid /
-  // copilot / qoder / vibe / kiro / hermes / snow) — we don't track their
-  // model catalogue here; keep to CLI-managed + the saved default if any.
-  return dedup([cliManaged, ...preferredChoice]);
-}
-
-function providerModelPresets(provider, taskType = "chat") {
-  if (!provider) return [];
-  const fp = providerFingerprint(provider);
-  const preferred = provider.defaultModel ?? "";
-
-  if (provider.kind === "anthropic") {
-    return uniqueNonEmpty([preferred, ...PRESET_MODELS.anthropic]);
-  }
-
-  if (provider.kind === "ollama") {
-    return uniqueNonEmpty([preferred, ...PRESET_MODELS.ollama]);
-  }
-
-  if (provider.kind === "code_cli") {
-    // Flatten the labelled choices back to plain IDs for callers that need
-    // a string[] (e.g. defaultModelForProvider). UI callers should prefer
-    // codeCliModelChoices() directly.
-    return codeCliModelChoices(provider).map((choice) => choice.id).filter((id) => typeof id === "string" && id.length > 0);
-  }
-
-  if (provider.kind === "openai") {
-    if (taskType === "audio_transcription") {
-      return uniqueNonEmpty(["whisper-1", preferred]);
-    }
-    if (/deepseek/.test(fp)) {
-      return uniqueNonEmpty([preferred, "deepseek-chat", "deepseek-reasoner"]);
-    }
-    if (/(moonshot|kimi)/.test(fp)) {
-      return uniqueNonEmpty([preferred, "kimi-k2", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]);
-    }
-    if (/dashscope|aliyun|qwen/.test(fp)) {
-      return uniqueNonEmpty([preferred, "qwen-max", "qwen-plus", "qwen-turbo", "qwen-coder-plus", "qwen-vl-max"]);
-    }
-    if (/bigmodel|zhipu|glm/.test(fp)) {
-      return uniqueNonEmpty([preferred, "glm-4-plus", "glm-4-air", "glm-4-flash", "glm-4v-plus"]);
-    }
-    if (/minimax/.test(fp)) {
-      return uniqueNonEmpty([preferred, "abab6.5s-chat", "abab6.5g-chat", "abab6.5t-chat"]);
-    }
-    if (/siliconflow/.test(fp)) {
-      return uniqueNonEmpty([preferred, "Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3", "meta-llama/Meta-Llama-3.1-405B-Instruct"]);
-    }
-    if (/x\.ai|grok/.test(fp)) {
-      return uniqueNonEmpty([preferred, "grok-2-latest", "grok-2-1212", "grok-vision-beta", "grok-beta"]);
-    }
-    if (/openrouter/.test(fp)) {
-      return uniqueNonEmpty([preferred, "openai/gpt-4o", "anthropic/claude-sonnet-4-5", "google/gemini-2.0-flash", "deepseek/deepseek-chat"]);
-    }
-    if (/groq/.test(fp)) {
-      return uniqueNonEmpty([preferred, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]);
-    }
-    if (/together/.test(fp)) {
-      return uniqueNonEmpty([preferred, "meta-llama/Llama-3.3-70B-Instruct-Turbo", "deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct-Turbo"]);
-    }
-    if (/fireworks/.test(fp)) {
-      return uniqueNonEmpty([preferred, "accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/deepseek-v3"]);
-    }
-    if (/mistral/.test(fp)) {
-      return uniqueNonEmpty([preferred, "mistral-large-latest", "mistral-small-latest", "codestral-latest", "pixtral-large-latest"]);
-    }
-    if (/generativelanguage|gemini/.test(fp)) {
-      return uniqueNonEmpty([preferred, "gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-pro"]);
-    }
-    return uniqueNonEmpty([
-      preferred,
-      taskType === "audio_transcription" ? "whisper-1" : "",
-      taskType === "vision" ? "gpt-4o" : "",
-      ...PRESET_MODELS.openai
-    ]);
-  }
-
-  return uniqueNonEmpty([preferred]);
 }
 
 function cachedModelChoicesForProvider(provider) {
@@ -1446,58 +1208,7 @@ function modelChoicesForProvider(provider, taskType = "chat") {
 }
 
 function modeOptionsForModel(provider, model = "") {
-  if (!provider) return [];
-  const fp = `${providerFingerprint(provider)} ${model}`.toLowerCase();
-
-  // code_cli providers: mode is now expressed by the labelled model choices
-  // (see codeCliModelChoices). The mode slot is repurposed to show an inert
-  // single-option placeholder so the routing UI can hide it cleanly.
-  if (provider.kind === "code_cli") {
-    return [{ id: "default", label: "—", model }];
-  }
-
-  if (/deepseek/.test(fp)) {
-    return [
-      { id: "chat", label: "Chat", model: "deepseek-chat" },
-      { id: "reasoner", label: "Reasoner", model: "deepseek-reasoner" }
-    ];
-  }
-
-  if (provider.kind === "anthropic" || /claude/.test(fp)) {
-    return [
-      { id: "balanced", label: "Balanced", model: "claude-sonnet-4-5-20250514" },
-      { id: "deep", label: "Deep", model: "claude-opus-4-5-20250514" },
-      { id: "fast", label: "Fast", model: "claude-haiku-4-5-20250514" }
-    ];
-  }
-
-  if (/(moonshot|kimi)/.test(fp)) {
-    return [
-      { id: "k2", label: "K2", model: "kimi-k2" },
-      { id: "8k", label: "8K", model: "moonshot-v1-8k" },
-      { id: "32k", label: "32K", model: "moonshot-v1-32k" },
-      { id: "128k", label: "128K", model: "moonshot-v1-128k" }
-    ];
-  }
-
-  if (provider.kind === "openai") {
-    return [
-      { id: "balanced", label: "Balanced", model: "gpt-4o" },
-      { id: "fast", label: "Fast", model: "gpt-4o-mini" },
-      { id: "latest", label: "Latest", model: "gpt-5" },
-      { id: "transcribe", label: "Transcribe", model: "whisper-1" }
-    ];
-  }
-
-  if (provider.kind === "ollama") {
-    return providerModelPresets(provider).map((preset) => ({
-      id: preset,
-      label: preset,
-      model: preset
-    }));
-  }
-
-  return [{ id: "default", label: "Default", model }];
+  return catalogModeOptionsForProvider(provider, model);
 }
 
 function defaultModelForProvider(provider, taskType = "chat") {
@@ -1569,7 +1280,7 @@ function supportsReasoningEffort(provider, model = "") {
 function modeForModel(provider, model, currentMode = "") {
   const options = modeOptionsForModel(provider, model);
   if (options.some((option) => option.id === currentMode)) return currentMode;
-  return options.find((option) => option.model === model)?.id ?? options[0]?.id ?? "";
+  return options.find((option) => option.model === model)?.id ?? "default";
 }
 
 function modelForMode(provider, currentModel, mode) {
@@ -1711,7 +1422,7 @@ function renderTaskRouting() {
     ).join("");
     // Hide the Mode select entirely for code_cli (it's always an inert
     // placeholder now that labels live in the model dropdown).
-    const hideMode = isCli;
+    const hideMode = isCli || modeOpts.length <= 1;
 
     // Reasoning / thinking knob (Codex, Doubao, GPT-5/o-series). Renders in
     // the slot where Mode would otherwise be, so the grid keeps 3 columns.

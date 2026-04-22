@@ -31,8 +31,17 @@ import { validateTemplateDocument } from "../templates/schema.mjs";
 import { resumeDagGraph, validateDagDefinition } from "../dag/scheduler.mjs";
 import { detectAmbiguity } from "./clarifier.mjs";
 import { parseRelativeTime, formatRelativeDuration } from "../utils/time-parser.mjs";
-import { resolveProviderForTask } from "../executors/shared/provider-resolver.mjs";
+import {
+  resolveProviderForTask,
+  sanitizeTaskRouteForProvider
+} from "../executors/shared/provider-resolver.mjs";
 import { extractPageContent } from "../extractors/page_source/index.mjs";
+import {
+  codeCliModelChoices,
+  providerFingerprint,
+  providerModelPresets,
+  sanitizeProviderConfig
+} from "../../shared/provider-catalog.mjs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_LOCAL_WHISPER_MODEL = "base";
@@ -1174,6 +1183,22 @@ function saveRuntimeConfig(runtime, updater) {
   return nextConfig;
 }
 
+function sanitizeTaskRouting(taskRouting = {}, providers = []) {
+  const providerById = new Map((providers ?? []).map((provider) => [provider.id, provider]));
+  const next = {};
+  for (const [taskType, route] of Object.entries(taskRouting ?? {})) {
+    const provider = route?.providerId ? providerById.get(route.providerId) : null;
+    next[taskType] = sanitizeTaskRouteForProvider(provider, route, taskType) ?? route;
+  }
+  return next;
+}
+
+function sanitizeProviderState(ai = {}) {
+  const customProviders = (ai.customProviders ?? []).map((provider) => sanitizeProviderConfig(provider));
+  const taskRouting = sanitizeTaskRouting(ai.taskRouting ?? {}, customProviders);
+  return { customProviders, taskRouting };
+}
+
 // Known code CLI signatures: name, common executable names, default args, transport
 // The detectable code CLI registry. Binary-name + display-name data for the
 // long tail (Qwen, iFlow, CodeBuddy, Goose, Augment, Droid, Copilot, Qoder,
@@ -1309,91 +1334,16 @@ function uniqueModelOptions(options = []) {
   return out;
 }
 
-function providerModelFingerprint(provider = {}) {
-  return [
-    provider.id,
-    provider.name,
-    provider.kind,
-    provider.baseUrl,
-    provider.command,
-    provider.defaultModel
-  ].map((part) => `${part ?? ""}`.toLowerCase()).join(" ");
-}
-
 function codeCliCuratedModelOptions(provider = {}) {
-  const fp = providerModelFingerprint(provider);
-  const cliManaged = { id: "", label: "(CLI 自行管理)" };
-  const preferred = `${provider.defaultModel ?? ""}`.trim()
-    ? [{ id: provider.defaultModel, label: `${provider.defaultModel} (保存的默认)` }]
-    : [];
-
-  if (/codex/.test(fp)) {
-    return uniqueModelOptions([
-      cliManaged,
-      ...preferred,
-      { id: "gpt-5.4", label: "GPT-5.4" },
-      { id: "gpt-5.2-codex", label: "GPT-5.2-Codex" },
-      { id: "gpt-5.1-codex-max", label: "GPT-5.1-Codex-Max" },
-      { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
-      { id: "gpt-5.3-codex", label: "GPT-5.3-Codex" },
-      { id: "gpt-5.2", label: "GPT-5.2" },
-      { id: "gpt-5.1-codex-mini", label: "GPT-5.1-Codex-Mini" }
-    ]);
-  }
-
-  if (/claude/.test(fp)) {
-    return uniqueModelOptions([
-      cliManaged,
-      ...preferred,
-      { id: "sonnet", label: "Sonnet" },
-      { id: "opus", label: "Opus" },
-      { id: "haiku", label: "Haiku" },
-      { id: "claude-sonnet-4-5", label: "claude-sonnet-4-5" },
-      { id: "claude-opus-4-5", label: "claude-opus-4-5" },
-      { id: "claude-haiku-4-5", label: "claude-haiku-4-5" }
-    ]);
-  }
-
-  if (/(moonshot|kimi)/.test(fp)) {
-    return uniqueModelOptions([
-      cliManaged,
-      ...preferred,
-      { id: "kimi-code/kimi-for-coding", label: "Kimi Code" },
-      { id: "kimi-k2", label: "K2" },
-      { id: "moonshot-v1-128k", label: "Moonshot 128K" }
-    ]);
-  }
-
-  if (/gemini/.test(fp)) {
-    return uniqueModelOptions([
-      cliManaged,
-      ...preferred,
-      { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-      { id: "gemini-2.0-pro", label: "Gemini 2.0 Pro" },
-      { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" }
-    ]);
-  }
-
-  return uniqueModelOptions([cliManaged, ...preferred]);
+  return uniqueModelOptions(codeCliModelChoices(provider));
 }
 
 function apiCuratedModelOptions(provider = {}) {
-  const fp = providerModelFingerprint(provider);
-  const preferred = `${provider.defaultModel ?? ""}`.trim() ? [provider.defaultModel] : [];
-  if (provider.kind === "anthropic") {
-    return uniqueModelOptions([...preferred, "claude-sonnet-4-5-20250514", "claude-opus-4-5-20250514", "claude-haiku-4-5-20250514"]);
-  }
-  if (provider.kind === "ollama") {
-    return uniqueModelOptions([...preferred, "llama3.2", "qwen2.5", "mistral", "phi3"]);
-  }
-  if (/deepseek/.test(fp)) return uniqueModelOptions([...preferred, "deepseek-chat", "deepseek-reasoner"]);
-  if (/(moonshot|kimi)/.test(fp)) return uniqueModelOptions([...preferred, "kimi-k2", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]);
-  if (/generativelanguage|gemini/.test(fp)) return uniqueModelOptions([...preferred, "gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-pro"]);
-  return uniqueModelOptions([...preferred, "gpt-5.4", "gpt-5.4-mini", "gpt-5.2", "gpt-4o", "gpt-4o-mini", "whisper-1"]);
+  return uniqueModelOptions(providerModelPresets(provider));
 }
 
 function codexReasoningEffortOptions(provider = {}) {
-  if (provider.kind !== "code_cli" || !/codex/.test(providerModelFingerprint(provider))) return [];
+  if (provider.kind !== "code_cli" || !/codex/.test(providerFingerprint(provider))) return [];
   return [
     { id: "", label: "(不指定)" },
     { id: "low", label: "Low" },
@@ -1579,9 +1529,17 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       // List all custom providers
       if (method === "GET" && url.pathname === "/config/providers") {
         const config = runtime.configStore?.load?.() ?? {};
-        return sendJson(response, 200, {
-          providers: config.ai?.customProviders ?? [],
+        const sanitized = sanitizeProviderState(config.ai ?? {});
+        const providers = sanitized.customProviders;
+        if (JSON.stringify(sanitized) !== JSON.stringify({
+          customProviders: config.ai?.customProviders ?? [],
           taskRouting: config.ai?.taskRouting ?? {}
+        })) {
+          runtime.configStore?.patch?.({ ai: sanitized });
+        }
+        return sendJson(response, 200, {
+          providers,
+          taskRouting: sanitized.taskRouting
         });
       }
 
@@ -1611,9 +1569,10 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           return sendJson(response, 400, { error: "id and kind required" });
         }
         const config = runtime.configStore?.load?.() ?? {};
-        const list = config.ai?.customProviders ?? [];
+        const currentState = sanitizeProviderState(config.ai ?? {});
+        const list = currentState.customProviders;
         const idx = list.findIndex((p) => p.id === body.id);
-        const entry = {
+        let entry = {
           id: body.id,
           name: body.name ?? body.id,
           kind: body.kind,
@@ -1627,15 +1586,22 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           entry.baseUrl = body.baseUrl ?? "";
           entry.apiKey = body.apiKey ?? "";
         }
+        entry = sanitizeProviderConfig(entry);
         // configStore.patch deep-merges arrays, so we need to replace the whole list
         // by saving customProviders directly
         const currentConfig = runtime.configStore?.load?.() ?? {};
         const nextList = idx >= 0 ? list.map((p, i) => i === idx ? entry : p) : [...list, entry];
+        const sanitizedAi = sanitizeProviderState({
+          ...(currentConfig.ai ?? {}),
+          customProviders: nextList,
+          taskRouting: currentState.taskRouting
+        });
         const nextConfig = {
           ...currentConfig,
           ai: {
             ...(currentConfig.ai ?? {}),
-            customProviders: nextList
+            customProviders: sanitizedAi.customProviders,
+            taskRouting: sanitizedAi.taskRouting
           }
         };
         runtime.configStore?.save?.(nextConfig);
@@ -1646,9 +1612,9 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       if (method === "DELETE" && url.pathname.startsWith("/config/providers/")) {
         const id = decodeURIComponent(url.pathname.replace(/^\/config\/providers\//, ""));
         const config = runtime.configStore?.load?.() ?? {};
-        const list = config.ai?.customProviders ?? [];
-        const nextList = list.filter((p) => p.id !== id);
-        runtime.configStore?.patch?.({ ai: { customProviders: nextList } });
+        const currentState = sanitizeProviderState(config.ai ?? {});
+        const nextList = currentState.customProviders.filter((p) => p.id !== id);
+        runtime.configStore?.patch?.({ ai: sanitizeProviderState({ ...currentState, customProviders: nextList }) });
         return sendJson(response, 200, { ok: true, deleted: id });
       }
 
@@ -1656,8 +1622,11 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       // body: { chat: {providerId, model, mode}, vision: {providerId, model, mode}, file_analysis: {providerId, model, mode} }
       if (method === "POST" && url.pathname === "/config/routing") {
         const body = await readJsonBody(request);
-        runtime.configStore?.patch?.({ ai: { taskRouting: body } });
-        return sendJson(response, 200, { ok: true, taskRouting: body });
+        const config = runtime.configStore?.load?.() ?? {};
+        const currentState = sanitizeProviderState(config.ai ?? {});
+        const sanitized = sanitizeTaskRouting(body, currentState.customProviders);
+        runtime.configStore?.patch?.({ ai: { customProviders: currentState.customProviders, taskRouting: sanitized } });
+        return sendJson(response, 200, { ok: true, taskRouting: sanitized });
       }
 
       // UCA-048: save default output path

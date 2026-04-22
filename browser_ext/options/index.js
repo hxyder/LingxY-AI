@@ -1,26 +1,13 @@
+import {
+  DEFAULT_RUNTIME_URL,
+  PROVIDER_DEFAULT_MODELS,
+  PROVIDER_GROUPS,
+  normalizeStandaloneConfig
+} from "../shared/provider-catalog.js";
+
 // Extension options page — persists user's LLM config + desktop URL so the
 // service worker can fall back to a direct API call when the desktop runtime
 // isn't available. Key is stored in chrome.storage.local only; no telemetry.
-
-const DEFAULT_RUNTIME_URL = "http://127.0.0.1:4310";
-const PROVIDER_DEFAULT_MODELS = {
-  anthropic: "claude-sonnet-4-6",
-  openai: "gpt-4o",
-  gemini: "gemini-1.5-flash",
-  deepseek: "deepseek-chat",
-  doubao: "doubao-seed-2-0-lite-260215",
-  moonshot: "moonshot-v1-8k",
-  qwen: "qwen-turbo",
-  zhipu: "glm-4-flash",
-  siliconflow: "deepseek-ai/DeepSeek-V2.5",
-  yi: "yi-large",
-  groq: "llama-3.1-70b-versatile",
-  mistral: "mistral-large-latest",
-  xai: "grok-2-latest",
-  perplexity: "sonar",
-  openrouter: "anthropic/claude-3.5-sonnet",
-  ollama: "llama3.1"
-};
 
 const runtimeInput = document.getElementById("runtime-url");
 const providerSelect = document.getElementById("provider");
@@ -32,18 +19,26 @@ const saveStatus = document.getElementById("save-status");
 const statusDesktop = document.getElementById("status-desktop");
 const statusKey = document.getElementById("status-key");
 
+function renderProviderOptions() {
+  providerSelect.innerHTML = PROVIDER_GROUPS.map((group) => `
+    <optgroup label="${group.label}">
+      ${group.providers.map((provider) => `<option value="${provider.id}">${provider.label}</option>`).join("")}
+    </optgroup>
+  `).join("");
+}
+
 async function loadConfig() {
   const data = await chrome.storage.local.get("ucaStandaloneConfig");
-  return data.ucaStandaloneConfig ?? {
+  return normalizeStandaloneConfig(data.ucaStandaloneConfig ?? {
     runtimeUrl: DEFAULT_RUNTIME_URL,
     provider: "anthropic",
     apiKey: "",
     model: PROVIDER_DEFAULT_MODELS.anthropic
-  };
+  });
 }
 
 async function saveConfig(config) {
-  await chrome.storage.local.set({ ucaStandaloneConfig: config });
+  await chrome.storage.local.set({ ucaStandaloneConfig: normalizeStandaloneConfig(config) });
 }
 
 function renderConfig(config) {
@@ -97,12 +92,13 @@ providerSelect.addEventListener("change", () => {
 });
 
 saveBtn.addEventListener("click", async () => {
-  const config = {
+  const config = normalizeStandaloneConfig({
     runtimeUrl: runtimeInput.value.trim() || DEFAULT_RUNTIME_URL,
     provider: providerSelect.value,
     apiKey: apiKeyInput.value.trim(),
     model: modelInput.value.trim() || PROVIDER_DEFAULT_MODELS[providerSelect.value]
-  };
+  });
+  renderConfig(config);
   await saveConfig(config);
   saveStatus.textContent = "已保存";
   renderStatus(config);
@@ -111,12 +107,13 @@ saveBtn.addEventListener("click", async () => {
 });
 
 testBtn.addEventListener("click", async () => {
-  const config = {
+  const config = normalizeStandaloneConfig({
     runtimeUrl: runtimeInput.value.trim() || DEFAULT_RUNTIME_URL,
     provider: providerSelect.value,
     apiKey: apiKeyInput.value.trim(),
     model: modelInput.value.trim() || PROVIDER_DEFAULT_MODELS[providerSelect.value]
-  };
+  });
+  renderConfig(config);
   if (!config.apiKey) {
     saveStatus.textContent = "先填 API Key";
     return;
@@ -142,7 +139,9 @@ testBtn.addEventListener("click", async () => {
 });
 
 (async () => {
+  renderProviderOptions();
   const config = await loadConfig();
+  await saveConfig(config);
   renderConfig(config);
   probeDesktop(config.runtimeUrl);
 })();

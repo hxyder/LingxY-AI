@@ -27,30 +27,7 @@
         <div class="panel-head"><h2>LLM 直连配置</h2></div>
         <label class="field">
           <span>提供商</span>
-          <select id="provider">
-            <optgroup label="国际">
-              <option value="anthropic">Anthropic (Claude)</option>
-              <option value="openai">OpenAI</option>
-              <option value="gemini">Google Gemini</option>
-              <option value="xai">xAI (Grok)</option>
-              <option value="mistral">Mistral</option>
-              <option value="groq">Groq</option>
-              <option value="perplexity">Perplexity</option>
-              <option value="openrouter">OpenRouter（聚合）</option>
-            </optgroup>
-            <optgroup label="国内">
-              <option value="deepseek">DeepSeek</option>
-              <option value="doubao">豆包（火山方舟 Ark）</option>
-              <option value="moonshot">Moonshot (Kimi)</option>
-              <option value="qwen">通义千问 (DashScope)</option>
-              <option value="zhipu">智谱 GLM</option>
-              <option value="siliconflow">硅基流动 SiliconFlow</option>
-              <option value="yi">零一万物 Yi</option>
-            </optgroup>
-            <optgroup label="本地">
-              <option value="ollama">Ollama（本地，无需 Key）</option>
-            </optgroup>
-          </select>
+          <select id="provider"></select>
         </label>
         <label class="field">
           <span>API Key</span>
@@ -77,6 +54,6 @@
         <span id="save-status" class="hint"></span>
       </div>
     </main>
-    <script src="./index.js"></script>
+    <script type="module" src="./index.js"></script>
   </body>
 </html>

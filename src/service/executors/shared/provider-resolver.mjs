@@ -8,6 +8,14 @@ import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { normalizeCodeCliModel } from "./code-cli-invocation.mjs";
+import {
+  catalogDefaultModelForProvider,
+  resolveModeModel,
+  sanitizeProviderConfig,
+  sanitizeTaskRouteForProvider
+} from "../../../shared/provider-catalog.mjs";
+
+export { sanitizeTaskRouteForProvider } from "../../../shared/provider-catalog.mjs";
 
 function getConfigPath() {
   // Explicit override (used by verify-provider-routing and other tests so
@@ -45,17 +53,6 @@ function readApiKey(env, ...keys) {
   return null;
 }
 
-function providerFingerprint(provider = {}) {
-  return [
-    provider.id,
-    provider.name,
-    provider.kind,
-    provider.baseUrl,
-    provider.command,
-    provider.defaultModel
-  ].map((part) => `${part ?? ""}`.toLowerCase()).join(" ");
-}
-
 function normalizeReasoningEffort(value = "") {
   const normalized = `${value ?? ""}`.trim().toLowerCase();
   if (!normalized) return "";
@@ -65,39 +62,23 @@ function normalizeReasoningEffort(value = "") {
 }
 
 export function resolveRoutedModel(provider, route, taskType) {
-  const baseModel = route?.model || provider.defaultModel || getDefaultModelForKind(provider.kind, taskType);
-  const mode = route?.mode ?? "";
+  const sanitizedProvider = sanitizeProviderConfig(provider, taskType);
+  const sanitizedRoute = sanitizeTaskRouteForProvider(sanitizedProvider, route, taskType);
+  // Order: explicit route.model (if not stale) → provider's own saved model
+  // (Console form writes `model`, presets sometimes use `defaultModel`) →
+  // hard-coded per-kind default.
+  const baseModel = sanitizedRoute?.model
+    || sanitizedProvider.model
+    || sanitizedProvider.defaultModel
+    || catalogDefaultModelForProvider(sanitizedProvider, taskType)
+    || getDefaultModelForKind(sanitizedProvider.kind, taskType);
+  const mode = sanitizedRoute?.mode ?? "";
   // code_cli providers use CLI-specific model names (e.g. "kimi-code/kimi-for-coding")
   // that differ from API model names — skip mode overrides so the configured model
   // is always passed as-is to the CLI subprocess.
-  if (!mode || mode === "default" || provider.kind === "code_cli") return baseModel;
+  if (!mode || mode === "default" || sanitizedProvider.kind === "code_cli") return baseModel;
 
-  const fp = `${providerFingerprint(provider)} ${baseModel}`.toLowerCase();
-  if (/deepseek/.test(fp)) {
-    if (mode === "reasoner") return "deepseek-reasoner";
-    if (mode === "chat") return "deepseek-chat";
-  }
-
-  if (provider.kind === "anthropic" || /claude/.test(fp)) {
-    if (mode === "deep") return "claude-opus-4-5-20250514";
-    if (mode === "fast") return "claude-haiku-4-5-20250514";
-    if (mode === "balanced") return "claude-sonnet-4-5-20250514";
-  }
-
-  if (/(moonshot|kimi)/.test(fp)) {
-    if (mode === "k2") return "kimi-k2";
-    if (mode === "8k") return "moonshot-v1-8k";
-    if (mode === "32k") return "moonshot-v1-32k";
-    if (mode === "128k") return "moonshot-v1-128k";
-  }
-
-  if (provider.kind === "openai") {
-    if (mode === "fast") return "gpt-4o-mini";
-    if (mode === "balanced") return "gpt-4o";
-    if (mode === "latest") return "gpt-5";
-  }
-
-  return baseModel;
+  return resolveModeModel(sanitizedProvider, baseModel, mode);
 }
 
 function providerToResolved(provider, route, taskType) {
@@ -146,8 +127,15 @@ function providerToResolved(provider, route, taskType) {
  */
 export function resolveProviderForTask(taskType, env = process.env) {
   const config = loadConfig();
-  const customProviders = config.ai?.customProviders ?? [];
-  const routing = config.ai?.taskRouting ?? {};
+  const customProviders = (config.ai?.customProviders ?? []).map((provider) => sanitizeProviderConfig(provider, taskType));
+  const routing = Object.fromEntries(
+    Object.entries(config.ai?.taskRouting ?? {}).map(([routeTaskType, route]) => {
+      const provider = route?.providerId
+        ? customProviders.find((candidate) => candidate.id === route.providerId)
+        : null;
+      return [routeTaskType, sanitizeTaskRouteForProvider(provider, route, routeTaskType)];
+    })
+  );
 
   // 1. Check explicit task routing
   const route = routing[taskType];
@@ -161,21 +149,23 @@ export function resolveProviderForTask(taskType, env = process.env) {
 
   // 2. First usable custom provider for this task type.
   //
-  // If no explicit routing for `taskType` exists, borrow the "chat"
-  // routing's model. Otherwise we fall back to getDefaultModelForKind
-  // which picks "gpt-4o-mini" for every openai-compatible provider —
-  // fine for OpenAI itself, but wrong for DeepSeek / Moonshot / any
-  // third-party provider that just happens to speak the OpenAI protocol.
-  // The symptom was task types without routing (planner, etc.) getting
-  // a "Model Not Exist" 400 from DeepSeek.
-  const effectiveRoute = route ?? routing.chat ?? null;
+  // When the route points to a provider that no longer exists (user deleted
+  // it, typo, or never configured a key), we fall back to "first usable
+  // custom provider" — but the borrowed `route.model` must be cleared if
+  // the candidate isn't the original route's target. Otherwise we send the
+  // old provider's model name (e.g. "gpt-4o") to a different endpoint
+  // (e.g. Doubao Ark) and get a 404 InvalidEndpointOrModel.NotFound.
+  const baseRoute = route ?? routing.chat ?? null;
   if (customProviders.length > 0) {
     // for vision tasks, prefer providers that support vision
     const candidates = taskType === "vision"
       ? customProviders.filter((p) => p.kind === "anthropic" || p.kind === "openai")
       : customProviders;
     for (const cand of candidates) {
-      const resolved = providerToResolved(cand, effectiveRoute, taskType);
+      const routeForCandidate = (baseRoute && baseRoute.providerId && baseRoute.providerId === cand.id)
+        ? baseRoute
+        : (baseRoute ? { ...baseRoute, model: undefined, providerId: cand.id } : null);
+      const resolved = providerToResolved(cand, routeForCandidate, taskType);
       if (resolved) return resolved;
     }
   }
