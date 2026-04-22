@@ -290,9 +290,14 @@ function escapeHtmlForChip(value = "") {
     .replace(/'/g, "&#39;");
 }
 
+function isContextInvalidatedError(error) {
+  const msg = `${error?.message ?? error ?? ""}`;
+  return /Extension context invalidated|Receiving end does not exist|message port closed/i.test(msg);
+}
+
 function sendRuntimeMessageSafely(message, callback) {
   if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) {
-    callback?.({ ok: false, error: "chrome.runtime.sendMessage not available" });
+    callback?.({ ok: false, error: "chrome.runtime.sendMessage not available", errorKind: "no_runtime" });
     return false;
   }
 
@@ -306,9 +311,13 @@ function sendRuntimeMessageSafely(message, callback) {
       }
 
       if (runtimeError) {
+        const invalidated = isContextInvalidatedError(runtimeError);
         callback?.({
           ok: false,
-          error: runtimeError.message ?? "Extension context invalidated. Refresh this page and try again."
+          error: invalidated
+            ? "扩展刚更新过，请刷新此页面"
+            : (runtimeError.message ?? "runtime_error"),
+          errorKind: invalidated ? "context_invalidated" : "runtime_error"
         });
         return;
       }
@@ -317,12 +326,31 @@ function sendRuntimeMessageSafely(message, callback) {
     });
     return true;
   } catch (error) {
+    const invalidated = isContextInvalidatedError(error);
     callback?.({
       ok: false,
-      error: error.message ?? "Extension context invalidated. Refresh this page and try again."
+      error: invalidated ? "扩展刚更新过，请刷新此页面" : (error.message ?? "runtime_error"),
+      errorKind: invalidated ? "context_invalidated" : "runtime_error"
     });
     return false;
   }
+}
+
+// Map technical service-worker error codes to something a user can act on.
+function humanizeQuickActionError(rawError = "") {
+  const msg = `${rawError ?? ""}`;
+  if (/^empty_selection$/i.test(msg)) return "请先选中要处理的文本，然后再点此按钮。";
+  if (/^no_api_key$/i.test(msg)) return "还没配置 LLM API Key。右键扩展图标 → 选项 → 填一个 provider 的 key。";
+  if (/^(unknown_provider|vision_unsupported_provider)/i.test(msg)) return "当前 provider 不支持这个操作，换一个 provider 再试。";
+  if (/^network_error/i.test(msg)) return `网络错误，请检查代理 / 网络连接。\n（${msg}）`;
+  if (/^(http|anthropic|openai|gemini|deepseek)_(4\d\d|5\d\d)/i.test(msg)) {
+    return `LLM 接口返回错误：\n${msg.slice(0, 600)}\n请检查 API Key、model 名称、剩余额度。`;
+  }
+  if (/^stream_ended_without_terminal$/i.test(msg)) return "流式响应中断，请重试。";
+  if (/^desktop_/i.test(msg)) return `桌面程序响应异常：${msg}。请确认桌面程序已启动，或在扩展设置改为 standalone 模式。`;
+  if (/^timeout$/i.test(msg)) return "超时（30s 内未收到结果）。若使用 thinking 模式或大模型，请在扩展设置换更快的 model。";
+  if (/扩展刚更新过/.test(msg)) return msg;
+  return msg || "unknown error";
 }
 
 const BROWSER_CONTEXT_MAX_TEXT = 6000;
@@ -725,9 +753,17 @@ function createFloatingChipController(doc = document) {
           if (response?.ok) {
             frame.setResult(response.text ?? "(无内容)");
           } else {
-            const message = response?.error ?? "unknown error";
-            console.warn("[UCA] runQuickAction sendMessage failed:", message);
-            frame.setError(`${message}\n\n请刷新此页面；如果刚重新加载过扩展，也请刷新页面后再试。`);
+            const rawMessage = response?.error ?? "unknown error";
+            const humanMessage = humanizeQuickActionError(rawMessage);
+            // Context invalidation after extension reload is expected — log
+            // at info level so it doesn't spam the page's console. Other
+            // errors are worth surfacing as warnings for debugging.
+            if (response?.errorKind === "context_invalidated") {
+              console.info("[UCA] context invalidated; user needs to refresh this page");
+            } else {
+              console.warn("[UCA] runQuickAction failed:", rawMessage);
+            }
+            frame.setError(humanMessage);
           }
         });
         // Hide the chip — the inline frame replaces it
