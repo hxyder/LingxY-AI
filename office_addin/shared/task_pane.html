@@ -27,7 +27,7 @@
       }
       .logo {
         width: 22px; height: 22px; border-radius: 7px;
-        background: linear-gradient(135deg, #2f6f5e, #d68a2d);
+        background: linear-gradient(135deg, #b85c2a, #9a4a1f);
       }
       .header-title { font-size: 13px; font-weight: 650; flex: 1; }
       .header-host { font-size: 11px; color: #7b8190; }
@@ -40,7 +40,7 @@
         color: #7b8190;
         transition: background 120ms, color 120ms;
       }
-      .header-action:hover { background: rgba(47,111,94,0.1); color: #2f6f5e; }
+      .header-action:hover { background: rgba(184,92,42,0.1); color: #b85c2a; }
 
       .chat {
         flex: 1;
@@ -67,13 +67,13 @@
         all: unset; cursor: pointer;
         padding: 7px 14px;
         font-size: 12px; font-weight: 550;
-        color: #2f6f5e;
-        background: rgba(47,111,94,0.09);
-        border: 1px solid rgba(47,111,94,0.18);
+        color: #b85c2a;
+        background: rgba(184,92,42,0.09);
+        border: 1px solid rgba(184,92,42,0.18);
         border-radius: 999px;
         transition: background 120ms, transform 80ms;
       }
-      .empty-chip:hover { background: rgba(47,111,94,0.16); transform: translateY(-1px); }
+      .empty-chip:hover { background: rgba(184,92,42,0.16); transform: translateY(-1px); }
 
       /* ───── bubbles ───── */
       .msg { display: flex; flex-direction: column; max-width: 92%; animation: fade-in 160ms ease; }
@@ -87,10 +87,10 @@
         word-wrap: break-word;
         font-size: 13px;
       }
-      .msg.user .msg-body { background: #2f6f5e; color: #fff; border-bottom-right-radius: 4px; }
+      .msg.user .msg-body { background: #b85c2a; color: #fff; border-bottom-right-radius: 4px; }
       .msg.assistant .msg-body { background: #f1f3f6; color: #1f2430; border-bottom-left-radius: 4px; }
       .msg.system .msg-body { background: transparent; color: #7b8190; font-size: 11px; padding: 0 4px; }
-      .msg.assistant.streaming .msg-body::after { content: "▍"; color: #2f6f5e; margin-left: 2px; animation: blink 1s steps(2) infinite; }
+      .msg.assistant.streaming .msg-body::after { content: "▍"; color: #b85c2a; margin-left: 2px; animation: blink 1s steps(2) infinite; }
 
       .msg-actions {
         display: flex; gap: 2px; margin-top: 4px;
@@ -106,7 +106,7 @@
         background: transparent;
         transition: background 120ms;
       }
-      .icon-btn:hover { background: rgba(47,111,94,0.1); color: #2f6f5e; }
+      .icon-btn:hover { background: rgba(184,92,42,0.1); color: #b85c2a; }
       .icon-btn:disabled { opacity: 0.4; cursor: default; }
 
       @keyframes fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; } }
@@ -129,9 +129,9 @@
         cursor: pointer;
         transition: background 120ms;
       }
-      .scope-chip:hover { background: rgba(47,111,94,0.1); color: #2f6f5e; }
-      .scope-chip .scope-dot { width: 6px; height: 6px; border-radius: 50%; background: #2f6f5e; }
-      .scope-chip.document .scope-dot { background: #d68a2d; }
+      .scope-chip:hover { background: rgba(184,92,42,0.1); color: #b85c2a; }
+      .scope-chip .scope-dot { width: 6px; height: 6px; border-radius: 50%; background: #b85c2a; }
+      .scope-chip.document .scope-dot { background: #9a4a1f; }
       .scope-chip .scope-caret { font-size: 9px; opacity: 0.6; }
 
       .input-box {
@@ -142,7 +142,7 @@
         border-radius: 14px;
         transition: border-color 120ms, box-shadow 120ms;
       }
-      .input-box:focus-within { border-color: #2f6f5e; box-shadow: 0 0 0 3px rgba(47,111,94,0.1); }
+      .input-box:focus-within { border-color: #b85c2a; box-shadow: 0 0 0 3px rgba(184,92,42,0.1); }
       textarea#inputArea {
         flex: 1;
         border: none; outline: none; background: transparent;
@@ -156,10 +156,10 @@
         width: 28px; height: 28px; flex-shrink: 0;
         display: grid; place-items: center;
         border-radius: 8px;
-        background: #2f6f5e; color: #fff;
+        background: #b85c2a; color: #fff;
         transition: background 120ms, transform 120ms, opacity 120ms;
       }
-      .send-btn:hover:not(:disabled) { background: #255b4d; transform: scale(1.05); }
+      .send-btn:hover:not(:disabled) { background: #9a4a1f; transform: scale(1.05); }
       .send-btn:disabled { opacity: 0.35; cursor: default; background: #9aa3b0; }
       .send-btn svg { width: 14px; height: 14px; fill: currentColor; }
 

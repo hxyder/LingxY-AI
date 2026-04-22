@@ -154,7 +154,7 @@ vm.runInContext(runtimeSource.replace(/export /g, ""), bridgeContext, { filename
 const bridge = bridgeContext.createOfficeBridge();
 const selection = await bridge.captureSelection();
 const viewModel = bridgeContext.createOfficeTaskPaneViewModel(selection, bridge.getTransportPlan());
-assert.equal(viewModel.hostTitle, "UCA for Word");
+assert.equal(viewModel.hostTitle, "LingxY for Word");
 assert.equal(viewModel.supportsWriteback, true);
 assert.match(viewModel.transportStatus, /127\.0\.0\.1:4310/);
 

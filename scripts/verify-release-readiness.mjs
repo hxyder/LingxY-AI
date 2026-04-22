@@ -60,10 +60,10 @@ const checksumsPath = path.join(bundleRoot, "checksums.sha256");
 const installPath = path.join(bundleRoot, "INSTALL.txt");
 const readinessReportMdPath = path.join(bundleRoot, "TRIAL_READINESS_REPORT.md");
 const readinessReportJsonPath = path.join(bundleRoot, "TRIAL_READINESS_REPORT.json");
-const checkCmdPath = path.join(bundleRoot, "Check UCA Desktop Trial.cmd");
-const setupCmdPath = path.join(bundleRoot, "Setup UCA Desktop Trial.cmd");
-const launchCmdPath = path.join(bundleRoot, "Launch UCA Desktop Trial.cmd");
-const stopCmdPath = path.join(bundleRoot, "Stop UCA Desktop Trial.cmd");
+const checkCmdPath = path.join(bundleRoot, "Check LingxY Desktop Trial.cmd");
+const setupCmdPath = path.join(bundleRoot, "Setup LingxY Desktop Trial.cmd");
+const launchCmdPath = path.join(bundleRoot, "Launch LingxY Desktop Trial.cmd");
+const stopCmdPath = path.join(bundleRoot, "Stop LingxY Desktop Trial.cmd");
 
 assert.equal(existsSync(manifestPath), true);
 assert.equal(existsSync(checksumsPath), true);
@@ -86,9 +86,9 @@ const checksums = readFileSync(checksumsPath, "utf8");
 assert.equal(checksums.includes("docs/release/e2e_matrix.md"), true);
 
 const installText = readFileSync(installPath, "utf8");
-assert.equal(installText.includes("Check UCA Desktop Trial.cmd"), true);
-assert.equal(installText.includes("Setup UCA Desktop Trial.cmd"), true);
-assert.equal(installText.includes("Launch UCA Desktop Trial.cmd"), true);
+assert.equal(installText.includes("Check LingxY Desktop Trial.cmd"), true);
+assert.equal(installText.includes("Setup LingxY Desktop Trial.cmd"), true);
+assert.equal(installText.includes("Launch LingxY Desktop Trial.cmd"), true);
 assert.equal(installText.includes("repo-local sideload kit"), true);
 
 const readinessReportText = readFileSync(readinessReportMdPath, "utf8");
