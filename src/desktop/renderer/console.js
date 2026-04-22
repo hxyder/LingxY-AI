@@ -1222,15 +1222,16 @@ function defaultModelForProvider(provider, taskType = "chat") {
 // Reasoning / thinking knob. Different providers expose this under
 // different parameter names:
 //   - OpenAI o-series & GPT-5: request body field `reasoning_effort`
-//       (values: low / medium / high / minimal)
+//       (official values include `none`, `minimal`, `low`, `medium`,
+//        `high`, `xhigh`; exact support varies by model)
 //   - Doubao 1.6 / seed-2 family: request body field `thinking.type`
 //       (values: enabled / disabled)
 //   - Codex CLI: `--reasoning-effort` flag (low / medium / high / xhigh)
 // We render a single dropdown labelled per the model's real parameter so the
-// user sees "enabled/disabled" for Doubao and "low/medium/high/minimal" for
-// GPT-5, rather than a generic abstraction. The backend picks which body
-// field to write based on the same detection (see provider-resolver /
-// provider-adapter).
+// user sees "enabled/disabled" for Doubao and the official OpenAI effort
+// levels for GPT-5/o-series, rather than a generic abstraction. The backend
+// picks which body field to write based on the same detection (see
+// provider-resolver / provider-adapter).
 function reasoningEffortOptions(provider, model = "") {
   if (!provider) return [];
   const cached = provider.id ? providerModelOptionsCache.get(provider.id) : null;
@@ -1259,14 +1260,16 @@ function reasoningEffortOptions(provider, model = "") {
     ];
   }
 
-  // OpenAI o-series / GPT-5 — reasoning_effort with 4 tiers.
+  // OpenAI o-series / GPT-5 — official reasoning_effort values.
   if (provider.kind === "openai" && /(gpt-5|^o[1-9]|\bo\d+-|reasoning)/.test(fp)) {
     return [
       { id: "", label: "(不指定)" },
+      { id: "none", label: "None (普通 / 不思考)" },
       { id: "minimal", label: "Minimal (最省)" },
       { id: "low", label: "Low (快速)" },
       { id: "medium", label: "Medium" },
-      { id: "high", label: "High (深思)" }
+      { id: "high", label: "High (深思)" },
+      { id: "xhigh", label: "Extra High (最深)" }
     ];
   }
 

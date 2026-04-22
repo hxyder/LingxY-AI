@@ -633,17 +633,27 @@ Respond ONLY with a single JSON object (no markdown, no code fences):
       const data = await r.json();
       resultText = data.content?.find((b) => b.type === "text")?.text ?? "";
     } else {
+      const body = {
+        model: provider.model,
+        max_tokens: 1024,
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...conversationMessages
+        ]
+      };
+      const re = String(provider.reasoningEffort ?? "").trim();
+      if (re) {
+        if (re.startsWith("thinking:")) {
+          const typeValue = re.slice("thinking:".length);
+          if (typeValue) body.thinking = { type: typeValue };
+        } else if (["none", "minimal", "low", "medium", "high", "xhigh"].includes(re)) {
+          body.reasoning_effort = re;
+        }
+      }
       const r = await fetch(`${provider.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.apiKey}` },
-        body: JSON.stringify({
-          model: provider.model,
-          max_tokens: 1024,
-          messages: [
-            { role: "system", content: systemPrompt },
-            ...conversationMessages
-          ]
-        })
+        body: JSON.stringify(body)
       });
       const data = await r.json();
       resultText = data.choices?.[0]?.message?.content ?? "";

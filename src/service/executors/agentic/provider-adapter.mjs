@@ -353,7 +353,7 @@ async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fe
     if (re.startsWith("thinking:")) {
       const typeValue = re.slice("thinking:".length);
       if (typeValue) body.thinking = { type: typeValue };
-    } else if (["low", "medium", "high", "minimal"].includes(re)) {
+    } else if (["none", "minimal", "low", "medium", "high", "xhigh"].includes(re)) {
       body.reasoning_effort = re;
     }
   }
