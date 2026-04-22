@@ -2,6 +2,23 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-21（第 13 轮 — 根因三连）
+
+- **UCA-152 (2ab72a0)** — Overlay 显示交互式 scheduler 任务
+  - 根因：`isUserVisibleTask` 一刀切过滤 `source_app === "uca.scheduler"` → "Run now" 触发的任务和 interactive-mode schedule 都不出现在浮窗
+  - 改：只隐藏 `execution_mode !== "interactive"` 的 scheduler 任务
+  - 顺带修好 #3（浮窗图标不显示运行进度）
+
+- **UCA-151 (8e0bf23)** — IMAP monitor 不再循环通知同一封未读邮件
+  - 根因：真实 IMAP 客户端的 `markSeen()` 是 no-op；`state.seenByAccount` 永远不填；monitor 每 2 分钟轮询所有未读邮件，对每封重发"新邮件摘要"
+  - 改：`markSeen` 写入 `state.seenByAccount`；`listUnread` 过滤已标记 ID；monitor 每次发通知后立即 `markSeen(message.id)`
+  - 不碰 IMAP `\Seen` 标志——用户在 Gmail / Outlook / iOS Mail 里自己读就好
+
+- **UCA-150 (929a68a)** — 每个执行器 prompt 都注入当前日期
+  - 根因：只有 `tool_using/agent-loop.mjs` 有日期注入，`agentic/prompt-builder.mjs` 和 `kimi/print-mode-prompt.mjs` 都没有；用户 task_139fac63 走的是 agentic → 模型用训练截止（2025）猜
+  - 改：三个 executor prompt 统一一条 "Current local date and time: 2026-04-21 12:47:05 (Asia/Shanghai) ..." 行
+  - tool_using 从 `toISOString()` (UTC Z) 改为 `toLocaleString("sv-SE")`（YYYY-MM-DD HH:MM:SS 本地）
+
 ### 2026-04-21（第 12 轮）
 
 - **UCA-149 (f79e0b2)** — 修回 code_cli 图片路径（撤掉 UCA-148 的错误假设）
@@ -149,17 +166,26 @@
 
 ## 下一轮建议（按价值排序）
 
-1. **PDF artifact inline 预览**
+1. **任务需要用户确认时 / 任务执行完，主动弹浮窗** (issues #4 + #5 deferred from round 13)
+   - 当前：approval 只出现在 Schedules → Pending Approvals 区；任务完成只更新 overlay dock（需要用户已打开 overlay）
+   - 用户期望：approval 和 completion 都能直接弹出一个可点击的小窗/通知，点击可看详情或关闭
+   - 现成基础：`runtime.actionToolRegistry.get("notify")` 已能发 Windows 原生通知；console 里 `switchTab("tasks") + selectedTaskId` 已能定位详情
+   - 拟议方案：
+     - 服务端检测 `pending_approval_created` 和任务 success/failed 事件 → 调 notify tool，通知里 body 带 taskId / approvalId
+     - Electron shell 接收 notification 点击 → `ipcRenderer.send("shell-navigate-console")` 打开 console 并 select task
+     - 无需新窗口；重用已有 ipcMain handler 和 console 的导航入口
+
+2. **PDF artifact inline 预览**
    - UCA-146 完成了图片；PDF 还没做
    - Electron 默认不启用 PDF viewer；可以嵌 `<embed src="data:application/pdf;..." type="application/pdf">` 或打包 PDF.js
    - 测试后决定是否打 PDF.js 依赖
 
-2. **Schedules failed 一键 retry**
+3. **Schedules failed 一键 retry**
    - 现在从 failed 状态点进去可以看到 task 详情，但要再点 Retry
    - 在 sched-row 的失败行上直接加 retry 图标按钮
    - 复用 `POST /schedules/:id/runs` 端点
 
-3. **数据库备份 / 恢复 UI**
+4. **数据库备份 / 恢复 UI**
    - Settings 页加"Export data" / "Restore from backup"
    - 导出 sqlite 文件 + email credential store + config snapshot 成 zip
    - 恢复时校验 schema version 对得上
