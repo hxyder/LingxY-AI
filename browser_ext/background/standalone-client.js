@@ -176,7 +176,7 @@ async function callOpenAICompatVision(config, { apiKey, model, prompt, imageUrl,
     messages: [{
       role: "user",
       content: [
-        { type: "image_url", image_url: { url: imageUrl } },
+        { type: "image_url", image_url: { url: imageUrl, detail: "high" } },
         { type: "text", text: prompt }
       ]
     }]

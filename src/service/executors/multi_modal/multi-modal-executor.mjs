@@ -159,7 +159,10 @@ async function callOpenAIVision({ apiKey, baseUrl, model, userCommand, images, s
   for (const img of images) {
     content.push({
       type: "image_url",
-      image_url: { url: `data:${img.mimeType};base64,${img.base64}` }
+      image_url: {
+        url: `data:${img.mimeType};base64,${img.base64}`,
+        detail: "high"
+      }
     });
   }
 
