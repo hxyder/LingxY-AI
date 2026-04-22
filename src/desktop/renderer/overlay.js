@@ -1659,7 +1659,16 @@ function taskIsDone(status) {
 
 function isUserVisibleTask(task) {
   if (!task) return false;
-  if (task.source_app === "uca.scheduler" || task.capture_mode === "scheduler") return false;
+  // Scheduler-originated tasks were blanket-hidden from the overlay
+  // because most fire silently in the background. That left two gaps:
+  //   1. "Run now" on a schedule never reached the overlay dock / chip
+  //      (the task does exist; the user just can't see progress).
+  //   2. interactive-mode schedules that need a floating indicator for
+  //      a model call silently run without any surface reaction.
+  // Only hide UNATTENDED-safe scheduler fires; interactive-mode ones
+  // (including manual Run now triggers) surface like any normal task.
+  const isSchedulerTask = task.source_app === "uca.scheduler" || task.capture_mode === "scheduler";
+  if (isSchedulerTask && task.execution_mode !== "interactive") return false;
   return true;
 }
 
