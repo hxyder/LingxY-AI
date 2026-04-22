@@ -13,6 +13,7 @@ import {
   BUILTIN_API_TEMPLATES,
   codeCliModelChoices,
   modeOptionsForProvider as catalogModeOptionsForProvider,
+  reasoningOptionsForProvider as catalogReasoningOptionsForProvider,
   providerFingerprint,
   providerModelPresets
 } from "../../shared/provider-catalog.mjs";
@@ -1138,7 +1139,7 @@ function providerCanVisionFrontend(provider) {
   if (provider.kind === "anthropic" && provider.apiKey) return true;
   if (provider.kind === "openai" && provider.apiKey) {
     const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""} ${provider.name ?? ""}`.toLowerCase();
-    return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus/.test(fp);
+    return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus|doubao|ark|volces/.test(fp);
   }
   if (provider.kind === "code_cli") return true;
   if (provider.kind === "ollama") {
@@ -1219,61 +1220,12 @@ function defaultModelForProvider(provider, taskType = "chat") {
   return providerModelPresets(provider, taskType)[0] ?? "";
 }
 
-// Reasoning / thinking knob. Different providers expose this under
-// different parameter names:
-//   - OpenAI o-series & GPT-5: request body field `reasoning_effort`
-//       (official values include `none`, `minimal`, `low`, `medium`,
-//        `high`, `xhigh`; exact support varies by model)
-//   - Doubao 1.6 / seed-2 family: request body field `thinking.type`
-//       (values: enabled / disabled)
-//   - Codex CLI: `--reasoning-effort` flag (low / medium / high / xhigh)
-// We render a single dropdown labelled per the model's real parameter so the
-// user sees "enabled/disabled" for Doubao and the official OpenAI effort
-// levels for GPT-5/o-series, rather than a generic abstraction. The backend
-// picks which body field to write based on the same detection (see
-// provider-resolver / provider-adapter).
+// Reasoning / thinking knob. The shared provider catalog owns the canonical
+// option set so the renderer, config sanitiser, and request builders all stay
+// in sync for OpenAI, Doubao, and Codex.
 function reasoningEffortOptions(provider, model = "") {
   if (!provider) return [];
-  const cached = provider.id ? providerModelOptionsCache.get(provider.id) : null;
-  if (Array.isArray(cached?.reasoningEfforts) && cached.reasoningEfforts.length > 0) {
-    return cached.reasoningEfforts;
-  }
-  const fp = `${providerFingerprint(provider)} ${model}`.toLowerCase();
-
-  if (provider.kind === "code_cli") {
-    if (!/codex/.test(fp)) return [];
-    return [
-      { id: "", label: "(不指定)" },
-      { id: "low", label: "Low (快速)" },
-      { id: "medium", label: "Medium" },
-      { id: "high", label: "High (深思)" },
-      { id: "xhigh", label: "Extra High (最深)" }
-    ];
-  }
-
-  // Doubao (火山方舟) — "thinking.type" toggle on the seed-2 / 1.6 family.
-  if (/doubao/.test(fp) || /volces/.test(fp)) {
-    return [
-      { id: "", label: "(不指定)" },
-      { id: "thinking:enabled", label: "深度思考：enabled" },
-      { id: "thinking:disabled", label: "深度思考：disabled" }
-    ];
-  }
-
-  // OpenAI o-series / GPT-5 — official reasoning_effort values.
-  if (provider.kind === "openai" && /(gpt-5|^o[1-9]|\bo\d+-|reasoning)/.test(fp)) {
-    return [
-      { id: "", label: "(不指定)" },
-      { id: "none", label: "None (普通 / 不思考)" },
-      { id: "minimal", label: "Minimal (最省)" },
-      { id: "low", label: "Low (快速)" },
-      { id: "medium", label: "Medium" },
-      { id: "high", label: "High (深思)" },
-      { id: "xhigh", label: "Extra High (最深)" }
-    ];
-  }
-
-  return [];
+  return catalogReasoningOptionsForProvider(provider, model);
 }
 
 function supportsReasoningEffort(provider, model = "") {

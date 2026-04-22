@@ -40,6 +40,7 @@ import {
   codeCliModelChoices,
   providerFingerprint,
   providerModelPresets,
+  reasoningOptionsForProvider,
   sanitizeProviderConfig
 } from "../../shared/provider-catalog.mjs";
 
@@ -1342,17 +1343,6 @@ function apiCuratedModelOptions(provider = {}) {
   return uniqueModelOptions(providerModelPresets(provider));
 }
 
-function codexReasoningEffortOptions(provider = {}) {
-  if (provider.kind !== "code_cli" || !/codex/.test(providerFingerprint(provider))) return [];
-  return [
-    { id: "", label: "(不指定)" },
-    { id: "low", label: "Low" },
-    { id: "medium", label: "Medium" },
-    { id: "high", label: "High" },
-    { id: "xhigh", label: "Extra High" }
-  ];
-}
-
 async function fetchJsonWithTimeout(url, init = {}, timeoutMs = 3500) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -1377,7 +1367,7 @@ async function resolveProviderModelOptions(provider = {}) {
     source: "curated",
     dynamic: false,
     models: fallback,
-    reasoningEfforts: codexReasoningEffortOptions(provider),
+    reasoningEfforts: reasoningOptionsForProvider(provider, provider.defaultModel ?? provider.model ?? ""),
     error: null,
     fetchedAt: new Date().toISOString()
   };

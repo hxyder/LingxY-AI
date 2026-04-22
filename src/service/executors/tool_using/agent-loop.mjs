@@ -12,6 +12,7 @@ import {
   isConnectorDomainRequest,
   matchWorkflowByTrigger
 } from "../../connectors/core/connector-intent.mjs";
+import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -641,15 +642,7 @@ Respond ONLY with a single JSON object (no markdown, no code fences):
           ...conversationMessages
         ]
       };
-      const re = String(provider.reasoningEffort ?? "").trim();
-      if (re) {
-        if (re.startsWith("thinking:")) {
-          const typeValue = re.slice("thinking:".length);
-          if (typeValue) body.thinking = { type: typeValue };
-        } else if (["none", "minimal", "low", "medium", "high", "xhigh"].includes(re)) {
-          body.reasoning_effort = re;
-        }
-      }
+      applyReasoningSelectionToBody(body, provider, provider.model, provider.reasoningEffort);
       const r = await fetch(`${provider.baseUrl}/chat/completions`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.apiKey}` },

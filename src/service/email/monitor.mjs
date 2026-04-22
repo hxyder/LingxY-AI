@@ -76,7 +76,14 @@ export function createEmailMonitor({ runtime, pollIntervalMs = DEFAULT_POLL_INTE
     for (const message of messages) {
       const summary = await summarizeEmail({ runtime, message });
       const intent = extractEmailIntent(summary);
-      await sendNotification(runtime, "新邮件摘要", summary);
+
+      // New-mail summaries are recorded for audits and automation, but they
+      // should not pop a desktop toast on every poll. The only allowed mail
+      // notifications here are:
+      //   1. a concrete scheduled reminder we created from the email
+      //   2. the separate morning digest flow
+      // This keeps inbox polling quiet unless the user explicitly opted into
+      // scheduled follow-up or enabled the digest feature.
 
       // Remember we already notified about this message ID so the
       // next poll (every ~2 min) doesn't re-surface it. The IMAP

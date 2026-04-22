@@ -28,7 +28,7 @@ export function providerCanVision(provider) {
   if (provider.kind === "anthropic" && provider.apiKey) return true;
   if (provider.kind === "openai" && provider.apiKey) {
     const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""} ${provider.name ?? ""}`.toLowerCase();
-    return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus/.test(fp);
+    return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus|doubao|ark|volces/.test(fp);
   }
   // All code_cli providers go through the agent-loop with a Read
   // tool. Trust them — if the CLI genuinely can't (e.g. a stripped-
@@ -60,7 +60,7 @@ function findFallbackVisionProvider() {
     const visionOpenai = providers.find((p) => {
       if (p.kind !== "openai" || !p.apiKey) return false;
       const fp = `${p.baseUrl ?? ""} ${p.defaultModel ?? ""} ${p.name ?? ""}`.toLowerCase();
-      return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision/.test(fp);
+      return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|doubao|ark|volces/.test(fp);
     });
     if (visionOpenai) return visionOpenai;
     const cli = providers.find((p) => p.kind === "code_cli");
@@ -82,6 +82,7 @@ function defaultVisionModelForProvider(provider) {
   if (/generativelanguage|gemini/.test(fp)) return provider.defaultModel || "gemini-2.0-flash";
   if (/glm|bigmodel|zhipu/.test(fp)) return provider.defaultModel || "glm-4v-plus";
   if (/qwen|dashscope/.test(fp)) return provider.defaultModel || "qwen-vl-max";
+  if (/doubao|ark|volces/.test(fp)) return provider.defaultModel || "doubao-seed-2-0-lite-260215";
   if (/mistral/.test(fp)) return provider.defaultModel || "pixtral-large-latest";
   if (/openrouter/.test(fp)) return provider.defaultModel || "openai/gpt-4o";
   return provider.defaultModel || "gpt-4o";

@@ -113,10 +113,9 @@ async function callGemini({ apiKey, model, prompt, systemPrompt }) {
   return { ok: true, text };
 }
 
-// ── Vision: for Anthropic / OpenAI / Gemini we can send an image + prompt.
-// Everything else (DeepSeek, Doubao-text, most openai-compat providers)
-// doesn't support vision, so we reject with a specific error the caller
-// can surface to the user.
+// ── Vision: Anthropic / Gemini have custom shapes; a subset of OpenAI-
+// compatible providers (OpenAI, Doubao Ark, GLM, Qwen, OpenRouter, etc.)
+// can read `image_url` content over their chat-completions endpoints.
 
 async function fetchImageAsBase64(imageUrl) {
   const response = await fetch(imageUrl);
@@ -161,12 +160,14 @@ async function callAnthropicVision({ apiKey, model, prompt, imageUrl }) {
   return { ok: true, text: payload?.content?.find?.((b) => b.type === "text")?.text ?? "" };
 }
 
-async function callOpenAIVision({ apiKey, model, prompt, imageUrl }) {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+async function callOpenAICompatVision(config, { apiKey, model, prompt, imageUrl }) {
+  const headers = { "Content-Type": "application/json" };
+  if (config.authStyle === "bearer" && apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const response = await fetch(config.endpoint, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+    headers,
     body: JSON.stringify({
-      model: model || "gpt-4o",
+      model: model || config.defaultModel,
       max_tokens: 1024,
       messages: [{
         role: "user",
@@ -177,9 +178,23 @@ async function callOpenAIVision({ apiKey, model, prompt, imageUrl }) {
       }]
     })
   });
-  if (!response.ok) return { ok: false, error: `openai_vision_${response.status}:${await response.text().catch(() => "")}` };
+  if (!response.ok) return { ok: false, error: `openai_compat_vision_${response.status}:${await response.text().catch(() => "")}` };
   const payload = await response.json();
   return { ok: true, text: payload?.choices?.[0]?.message?.content ?? "" };
+}
+
+function providerSupportsDirectVision(provider = "") {
+  return new Set([
+    "openai",
+    "doubao",
+    "gemini",
+    "qwen",
+    "zhipu",
+    "mistral",
+    "siliconflow",
+    "openrouter",
+    "xai"
+  ]).has(`${provider ?? ""}`.trim());
 }
 
 async function callGeminiVision({ apiKey, model, prompt, imageUrl }) {
@@ -209,8 +224,11 @@ export async function callLLMDirectVision({ config, prompt, imageUrl }) {
   if (!imageUrl) return { ok: false, error: "no_image_url" };
   try {
     if (normalizedConfig.provider === "anthropic") return await callAnthropicVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
-    if (normalizedConfig.provider === "openai") return await callOpenAIVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
     if (normalizedConfig.provider === "gemini") return await callGeminiVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
+    const entry = PROVIDER_CONFIGS[normalizedConfig.provider];
+    if (entry && providerSupportsDirectVision(normalizedConfig.provider)) {
+      return await callOpenAICompatVision(entry, { apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
+    }
     return { ok: false, error: `vision_unsupported_provider:${normalizedConfig.provider}` };
   } catch (error) {
     return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
@@ -255,7 +273,7 @@ export function buildPromptFor(action, selectionState = {}) {
     case "uca.fetch-link":
       return { prompt: `请帮我总结链接内容。已知标题/URL：${contextLine}\n内容片段：${body}`, systemPrompt: "You are a concise summarizer." };
     case "uca.inspect-image":
-      return { prompt: `请分析图片 URL：${selectionState.imageUrl ?? ""}（本独立模式无法直接识图，请基于 URL/上下文推测或告知无法分析）`, systemPrompt: "You describe images concisely." };
+      return { prompt: `请分析这张图片，并直接回答图里有什么、关键文字是什么、是否需要进一步注意细节。图片 URL：${selectionState.imageUrl ?? ""}`, systemPrompt: "You describe images concisely." };
     case "uca.explain-page":
     case "explain":
       return { prompt: `请解释下面网页内容的要点，并说明为什么它值得关注。\n\n标题/URL：${contextLine}\n\n内容：${body}`, systemPrompt: "You explain webpages to a curious reader." };

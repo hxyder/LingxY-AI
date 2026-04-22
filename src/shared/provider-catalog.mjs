@@ -30,6 +30,10 @@ export function uniqueNonEmpty(values = []) {
   return out;
 }
 
+function cloneOptionList(options = []) {
+  return options.map((option) => ({ ...option }));
+}
+
 export function providerFingerprint(provider = {}) {
   return [
     provider.id,
@@ -253,7 +257,13 @@ export function providerModelPresets(provider = {}, taskType = "chat") {
     case "deepseek":
       return uniqueNonEmpty([preferred, "deepseek-chat", "deepseek-reasoner"]);
     case "doubao":
-      return uniqueNonEmpty([preferred, "doubao-seed-2-0-lite-260215", "doubao-seed-2-0-thinking-1216"]);
+      return uniqueNonEmpty([
+        preferred,
+        "doubao-seed-2-0-lite-260215",
+        taskType === "vision" ? "doubao-seed-2-0-pro-260215" : "",
+        taskType === "vision" ? "doubao-seed-2-0-mini-260215" : "",
+        "doubao-seed-2-0-thinking-1216"
+      ]);
     case "moonshot":
       return uniqueNonEmpty([preferred, "kimi-latest", "kimi-k2-0711-preview", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]);
     case "dashscope":
@@ -314,6 +324,104 @@ export function resolveModeModel(provider = {}, baseModel = "", mode = "") {
   return modeOptionsForProvider(provider, baseModel).find((option) => option.id === normalizedMode)?.model ?? baseModel;
 }
 
+const CODEX_REASONING_OPTIONS = Object.freeze([
+  { id: "", label: "(不指定)" },
+  { id: "low", label: "Low (快速)" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High (深思)" },
+  { id: "xhigh", label: "Extra High (最深)" }
+]);
+
+const OPENAI_REASONING_OPTIONS = Object.freeze([
+  { id: "", label: "(不指定)" },
+  { id: "none", label: "None (普通 / 不思考)" },
+  { id: "minimal", label: "Minimal (最省)" },
+  { id: "low", label: "Low (快速)" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High (深思)" },
+  { id: "xhigh", label: "Extra High (最深)" }
+]);
+
+const DOUBAO_REASONING_OPTIONS = Object.freeze([
+  { id: "", label: "(不指定)" },
+  { id: "thinking:disabled|minimal", label: "关闭思考 (disabled / minimal)" },
+  { id: "thinking:enabled|low", label: "轻量思考 (enabled / low)" },
+  { id: "thinking:enabled|medium", label: "均衡思考 (enabled / medium)" },
+  { id: "thinking:enabled|high", label: "深度思考 (enabled / high)" }
+]);
+
+const OPENAI_REASONING_IDS = new Set(OPENAI_REASONING_OPTIONS.map((option) => option.id).filter(Boolean));
+const DOUBAO_REASONING_IDS = new Set(DOUBAO_REASONING_OPTIONS.map((option) => option.id).filter(Boolean));
+
+export function reasoningOptionsForProvider(provider = {}, model = "") {
+  if (!provider) return [];
+  const fp = `${providerFingerprint(provider)} ${model}`.toLowerCase();
+  const family = detectProviderFamily(provider);
+
+  if (provider.kind === "code_cli") {
+    return /codex/.test(fp) ? cloneOptionList(CODEX_REASONING_OPTIONS) : [];
+  }
+
+  if (family === "doubao" || /doubao|volces|ark/.test(fp)) {
+    return cloneOptionList(DOUBAO_REASONING_OPTIONS);
+  }
+
+  if (provider.kind === "openai" && /(gpt-5|^o[1-9]|\bo\d+-|reasoning)/.test(fp)) {
+    return cloneOptionList(OPENAI_REASONING_OPTIONS);
+  }
+
+  return [];
+}
+
+export function normalizeReasoningSelection(provider = {}, model = "", value = "") {
+  const family = detectProviderFamily(provider);
+  const normalized = `${value ?? ""}`.trim().toLowerCase();
+  if (!normalized) return "";
+
+  if (normalized === "extra_high" || normalized === "extra-high") {
+    return normalizeReasoningSelection(provider, model, "xhigh");
+  }
+
+  if (family === "doubao") {
+    if (normalized === "thinking:enabled") return "thinking:enabled|medium";
+    if (normalized === "thinking:disabled") return "thinking:disabled|minimal";
+    if (normalized.startsWith("thinking:")) {
+      const [thinkingPart, effortPart = ""] = normalized.split("|");
+      const thinkingType = thinkingPart.slice("thinking:".length).trim();
+      const effort = effortPart.trim();
+      if (thinkingType === "disabled") return "thinking:disabled|minimal";
+      if (thinkingType === "enabled") {
+        if (!effort) return "thinking:enabled|medium";
+        if (effort === "minimal") return "thinking:disabled|minimal";
+        if (["low", "medium", "high"].includes(effort)) return `thinking:enabled|${effort}`;
+      }
+    }
+    return DOUBAO_REASONING_IDS.has(normalized) ? normalized : "";
+  }
+
+  if (provider.kind === "code_cli") {
+    return ["low", "medium", "high", "xhigh"].includes(normalized) ? normalized : "";
+  }
+
+  return OPENAI_REASONING_IDS.has(normalized) ? normalized : "";
+}
+
+export function applyReasoningSelectionToBody(body = {}, provider = {}, model = "", value = "") {
+  const normalized = normalizeReasoningSelection(provider, model, value);
+  if (!normalized || !body || typeof body !== "object") return body;
+
+  if (normalized.startsWith("thinking:")) {
+    const [thinkingPart, effortPart = ""] = normalized.split("|");
+    const thinkingType = thinkingPart.slice("thinking:".length);
+    if (thinkingType) body.thinking = { type: thinkingType };
+    if (effortPart) body.reasoning_effort = effortPart;
+    return body;
+  }
+
+  body.reasoning_effort = normalized;
+  return body;
+}
+
 function sanitizeRouteMode(provider = {}, model = "", mode = "") {
   const normalizedMode = `${mode ?? ""}`.trim();
   const options = modeOptionsForProvider(provider, model);
@@ -335,9 +443,13 @@ export function sanitizeTaskRouteForProvider(provider = {}, route = null, taskTy
   }
   const mode = sanitizeRouteMode(sanitizedProvider, model, route.mode);
   model = resolveModeModel(sanitizedProvider, model, mode);
-  return {
+  const reasoningEffort = normalizeReasoningSelection(sanitizedProvider, model, route.reasoningEffort);
+  const nextRoute = {
     ...route,
     model,
     mode
   };
+  if (reasoningEffort) nextRoute.reasoningEffort = reasoningEffort;
+  else delete nextRoute.reasoningEffort;
+  return nextRoute;
 }
