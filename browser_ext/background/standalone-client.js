@@ -285,26 +285,36 @@ export async function callLLMDirect({ config, prompt, systemPrompt }) {
 
 // ── Prompt builders for each quick-action kind ─────────────────────────────
 
-export function buildPromptFor(action, selectionState = {}) {
+export function buildPromptFor(action, selectionState = {}, enrichmentMarkdown = "") {
   const text = (selectionState.text ?? selectionState.selectionText ?? "").trim();
   const url = selectionState.url ?? "";
   const title = selectionState.pageTitle ?? "";
   const contextLine = [title, url].filter(Boolean).join(" · ");
   const body = text || title || url || "";
+  const enrichmentBlock = enrichmentMarkdown ? `\n\n---\n${enrichmentMarkdown}\n---\n` : "";
   switch (action) {
     case "uca.translate-selection":
     case "translate":
       return { prompt: `请把下面这段文字翻译成中文（若本身是中文，则译为英文），只输出翻译结果：\n\n${body}`, systemPrompt: "You are a precise translator." };
     case "uca.fetch-link":
-      return { prompt: `请帮我总结链接内容。已知标题/URL：${contextLine}\n内容片段：${body}`, systemPrompt: "You are a concise summarizer." };
+      return {
+        prompt: `请总结以下链接内容，结合抓取到的正文得出结论。若无法判断请说明。\n\n标题/URL：${contextLine}\n锚文本：${body}${enrichmentBlock}`,
+        systemPrompt: "You are a concise summarizer. Ground every claim on the provided page / link excerpts; never invent facts."
+      };
     case "uca.inspect-image":
       return { prompt: `请分析这张图片，并直接回答图里有什么、关键文字是什么、是否需要进一步注意细节。图片 URL：${selectionState.imageUrl ?? ""}`, systemPrompt: "You describe images concisely." };
     case "uca.explain-page":
     case "explain":
-      return { prompt: `请解释下面网页内容的要点，并说明为什么它值得关注。\n\n标题/URL：${contextLine}\n\n内容：${body}`, systemPrompt: "You explain webpages to a curious reader." };
+      return {
+        prompt: `请解释下面的网页内容，说明它的要点、背景和为什么值得关注。请结合完整页面概况与选区中的链接正文，输出结构化 Markdown（先总述 → 关键要点 → 具体证据 → 结论）。\n\n标题/URL：${contextLine}\n\n用户高亮的片段：${body}${enrichmentBlock}`,
+        systemPrompt: "You explain webpages to a curious reader. Combine the highlighted snippet with the full-page outline and any fetched link excerpts; cite which source each claim comes from."
+      };
     case "uca.summarize-selection":
     case "summarize":
     default:
-      return { prompt: `请总结以下内容并列出关键点（使用 Markdown 的编号列表）：\n\n${body}`, systemPrompt: "You write clear bullet-point summaries." };
+      return {
+        prompt: `请基于以下内容产出 Markdown 总结：先一段整体概述 → 再用编号列表列出 3-7 条关键要点 → 最后一条简短的"值得注意的延伸"。结合整页概况与选区链接正文，但不要脱离高亮片段的核心议题。\n\n标题/URL：${contextLine}\n\n用户高亮的片段：${body}${enrichmentBlock}`,
+        systemPrompt: "You write clear bullet-point summaries. Ground every bullet on the provided page / link material; if enrichment contradicts the selection, flag it explicitly."
+      };
   }
 }

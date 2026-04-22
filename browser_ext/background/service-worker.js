@@ -6,6 +6,12 @@ import {
   buildPromptFor,
   invalidateDesktopProbe
 } from "./standalone-client.js";
+import {
+  enrichContextForAction,
+  formatEnrichmentAsMarkdown,
+  shouldEnrichForAction
+} from "./context-enricher.js";
+import { runTaskWithStream } from "./sse-client.js";
 
 export const CONTEXT_MENU_DEFINITIONS = Object.freeze([
   {
@@ -177,7 +183,7 @@ export function buildOverlayHandoffRequest({ actionId, info = {}, tab, selection
   };
 }
 
-export async function runQuickAction({ action, selectionState }, fetchImpl = fetch) {
+export async function runQuickAction({ action, selectionState, tab = null }, fetchImpl = fetch) {
   const text = (selectionState?.text ?? "").trim();
   if (!text) {
     return { ok: false, error: "empty_selection" };
@@ -190,10 +196,36 @@ export async function runQuickAction({ action, selectionState }, fetchImpl = fet
   const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
   const desktopUp = await isDesktopAvailable(runtimeBase);
   if (!desktopUp && standaloneConfig?.apiKey) {
-    const { prompt, systemPrompt } = buildPromptFor(action, selectionState);
+    // UCA-161: summarize / explain get the full page outline + any in-selection
+    // links fetched and inlined so the LLM has real material to ground on.
+    let enrichmentMarkdown = "";
+    if (shouldEnrichForAction(action)) {
+      try {
+        const enrichment = await enrichContextForAction({ action, selectionState, tab });
+        enrichmentMarkdown = formatEnrichmentAsMarkdown(enrichment);
+      } catch { /* enrichment is best-effort */ }
+    }
+    const { prompt, systemPrompt } = buildPromptFor(action, selectionState, enrichmentMarkdown);
     const result = await callLLMDirect({ config: standaloneConfig, prompt, systemPrompt });
     if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success" };
     return { ok: false, mode: "standalone", error: result.error };
+  }
+
+  // UCA-161: also enrich the desktop-path payload so the server-side executor
+  // sees the same deep context the standalone path uses. Passed as both a
+  // structured `capture.enrichment` field (for future server-side use) and
+  // inlined into capture.text so today's executors pick it up without any
+  // server-side change.
+  let enrichedText = text;
+  let enrichment = null;
+  if (shouldEnrichForAction(action)) {
+    try {
+      enrichment = await enrichContextForAction({ action, selectionState, tab });
+      const enrichmentMarkdown = formatEnrichmentAsMarkdown(enrichment);
+      if (enrichmentMarkdown) {
+        enrichedText = `${text}\n\n---\n【补充上下文（自动抓取）】\n${enrichmentMarkdown}`;
+      }
+    } catch { /* best-effort */ }
   }
 
   // Submit the task
@@ -207,10 +239,13 @@ export async function runQuickAction({ action, selectionState }, fetchImpl = fet
         executionMode: "interactive",
         capture: {
           sourceType: "text_selection",
-          text,
+          text: enrichedText,
           url: selectionState?.url ?? "",
           pageTitle: selectionState?.pageTitle ?? "",
-          browser: "chrome.exe"
+          browser: "chrome.exe",
+          enrichment: enrichment
+            ? { pageOutline: enrichment.pageOutline, linkResults: enrichment.linkResults }
+            : null
         }
       })
     });
@@ -237,7 +272,29 @@ export async function runQuickAction({ action, selectionState }, fetchImpl = fet
     return { ok: true, taskId, text: inlineFromSubmit, status: "success" };
   }
 
-  // Otherwise poll /task/:id every 600ms (capped at ~30s)
+  // UCA-162: subscribe to the task's SSE stream (/task/:id/events). First
+  // token typically arrives in 100-300 ms; the 600 ms polling loop was
+  // costing the popup ~1 s before anything appeared. If the stream fails or
+  // closes without a terminal event we fall back to the old poll loop so
+  // slow proxies / local-host quirks still work.
+  const controller = new AbortController();
+  const streamDeadline = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const streamed = await runTaskWithStream(`${runtimeBase}/task/${taskId}`, { signal: controller.signal });
+    if (streamed?.ok) {
+      clearTimeout(streamDeadline);
+      return { ok: true, taskId, text: streamed.text, status: streamed.status };
+    }
+    if (streamed && !streamed.ok && streamed.error && streamed.error !== "stream_ended_without_terminal") {
+      // Surface non-terminal stream errors when we have one — the user is
+      // better off seeing "connection dropped" than a silent timeout.
+      clearTimeout(streamDeadline);
+      return { ok: false, taskId, error: streamed.error };
+    }
+  } catch { /* fall through to polling */ }
+  clearTimeout(streamDeadline);
+
+  // Fallback polling (legacy path)
   const deadline = Date.now() + 30_000;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 600));
@@ -285,7 +342,17 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
       pageTitle: request?.payload?.capture?.pageTitle ?? "",
       imageUrl: request?.payload?.capture?.imageUrl ?? ""
     };
-    const { prompt, systemPrompt } = buildPromptFor(action, selectionState);
+    // UCA-161: enrich summarize / explain with page outline + in-selection links.
+    // For images we skip — vision models get the image bytes directly.
+    let enrichmentMarkdown = "";
+    if (shouldEnrichForAction(action)) {
+      try {
+        const [activeTab] = await chromeApi.tabs.query({ active: true, currentWindow: true });
+        const enrichment = await enrichContextForAction({ action, selectionState, tab: activeTab, chromeApi });
+        enrichmentMarkdown = formatEnrichmentAsMarkdown(enrichment);
+      } catch { /* best-effort */ }
+    }
+    const { prompt, systemPrompt } = buildPromptFor(action, selectionState, enrichmentMarkdown);
     const result = action === "uca.inspect-image"
       ? await callLLMDirectVision({ config: standaloneConfig, prompt, imageUrl: selectionState.imageUrl })
       : await callLLMDirect({ config: standaloneConfig, prompt, systemPrompt });
@@ -301,6 +368,33 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
     } catch { /* notifications optional */ }
     return { ok: Boolean(result.ok), mode: "standalone", text: result.text ?? "", error: result.error };
   }
+
+  // UCA-161: also enrich the desktop path. We infer action from the user
+  // command text (the payload doesn't carry it directly) and only enrich for
+  // summarize / explain families — right-click "抓取链接" / "解释此页" alike.
+  try {
+    const uc = `${request?.payload?.userCommand ?? ""}`;
+    const isSummarizeOrExplain = /总结|解释|summar|explain|抓取/i.test(uc);
+    if (isSummarizeOrExplain && request?.payload?.capture) {
+      const selectionState = {
+        text: request.payload.capture.text ?? "",
+        url: request.payload.capture.url ?? "",
+        pageTitle: request.payload.capture.pageTitle ?? ""
+      };
+      const [activeTab] = await chromeApi.tabs.query({ active: true, currentWindow: true });
+      const enrichment = await enrichContextForAction({
+        action: "summarize", selectionState, tab: activeTab, chromeApi
+      });
+      const enrichmentMarkdown = formatEnrichmentAsMarkdown(enrichment);
+      if (enrichmentMarkdown) {
+        request.payload.capture.text = `${selectionState.text}\n\n---\n【补充上下文（自动抓取）】\n${enrichmentMarkdown}`;
+        request.payload.capture.enrichment = {
+          pageOutline: enrichment?.pageOutline ?? null,
+          linkResults: enrichment?.linkResults ?? []
+        };
+      }
+    }
+  } catch { /* enrichment is best-effort */ }
 
   try {
     const response = await fetchImpl(`${runtimeBase}/overlay/handoff`, {
@@ -539,6 +633,94 @@ export function registerExtensionRuntime(chromeApi = chrome) {
           systemPrompt: "Reply with a single short sentence confirming you're online."
         });
         sendResponse(result);
+      })();
+      return true;
+    }
+
+    // UCA-160: multi-turn chat from popup. Keeps a short history in memory
+    // inside the service worker (not persisted) and returns the assistant's
+    // reply plus the updated history so popup can render without round-tripping
+    // storage. If desktop is running we still prefer standalone direct-call
+    // for chat — the desktop runtime's /task endpoint is optimised for
+    // structured-task execution, not free-form chat.
+    if (message?.type === "uca.standalone.chat") {
+      (async () => {
+        const userText = `${message.text ?? ""}`.trim();
+        if (!userText) {
+          sendResponse({ ok: false, error: "empty_input" });
+          return;
+        }
+        const history = Array.isArray(message.history) ? message.history.slice(-10) : [];
+        const conversation = [...history, { role: "user", content: userText }];
+        const config = await loadStandaloneConfig();
+
+        // Path A: standalone direct-call (preferred — no desktop round-trip).
+        if (config?.apiKey) {
+          const systemPrompt = "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
+          const rendered = conversation.map((turn) => {
+            if (turn.role === "user") return `用户: ${turn.content}`;
+            if (turn.role === "assistant") return `助手: ${turn.content}`;
+            return turn.content;
+          }).join("\n\n");
+          const result = await callLLMDirect({ config, prompt: rendered, systemPrompt });
+          if (result.ok) {
+            sendResponse({ ok: true, mode: "standalone", text: result.text, history: [...conversation, { role: "assistant", content: result.text }] });
+            return;
+          }
+          // Fall through to desktop path if standalone call fails (e.g., bad key)
+          // so the user still has a way to chat when desktop is up.
+        }
+
+        // Path B: desktop runtime via /task + SSE stream.
+        const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+        if (await isDesktopAvailable(runtimeBase)) {
+          try {
+            const submitResponse = await fetch(`${runtimeBase}/task`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                userCommand: userText,
+                executionMode: "interactive",
+                capture: {
+                  sourceType: "chat",
+                  text: userText,
+                  history: conversation.slice(0, -1),
+                  browser: "chrome.exe"
+                }
+              })
+            });
+            if (!submitResponse.ok) {
+              sendResponse({ ok: false, error: `desktop_submit_${submitResponse.status}` });
+              return;
+            }
+            const submitJson = await submitResponse.json();
+            const taskId = submitJson?.task?.task_id;
+            const inlineFromSubmit = extractInlineResult(submitJson?.taskEvents ?? []);
+            if (inlineFromSubmit && submitJson?.task?.status === "success") {
+              sendResponse({ ok: true, mode: "desktop", text: inlineFromSubmit, history: [...conversation, { role: "assistant", content: inlineFromSubmit }] });
+              return;
+            }
+            if (!taskId) {
+              sendResponse({ ok: false, error: "desktop_no_task_id" });
+              return;
+            }
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 30_000);
+            const streamed = await runTaskWithStream(`${runtimeBase}/task/${taskId}`, { signal: controller.signal });
+            clearTimeout(timer);
+            if (streamed?.ok) {
+              sendResponse({ ok: true, mode: "desktop", text: streamed.text, history: [...conversation, { role: "assistant", content: streamed.text }] });
+              return;
+            }
+            sendResponse({ ok: false, error: streamed?.error ?? "desktop_stream_failed" });
+            return;
+          } catch (error) {
+            sendResponse({ ok: false, error: `desktop_error:${error?.message ?? error}` });
+            return;
+          }
+        }
+
+        sendResponse({ ok: false, error: config?.apiKey ? "standalone_failed" : "no_provider_configured" });
       })();
       return true;
     }
