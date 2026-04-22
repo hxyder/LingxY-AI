@@ -16,11 +16,17 @@
 //      a short excerpt so the LLM can ground its summary on the linked
 //      pages rather than hallucinate from the anchor text alone.
 
-const MAX_LINKS = 3;
-const LINK_TIMEOUT_MS = 3_000;
+// UCA-168: tightened budgets. The old defaults (3 links × 3 s timeout, 6 s
+// total) added up to 4-6 s of wall time when a page had several slow-to-
+// respond inlined URLs, which the user felt as "summarize is slow". Most
+// pages yield a useful outline + 0-2 fetched links well under 2 s, so a
+// 2 s link timeout + 3 s total budget covers the common case without
+// dragging the worst case.
+const MAX_LINKS = 2;
+const LINK_TIMEOUT_MS = 2_000;
 const LINK_MAX_CHARS = 1500;
 const PAGE_OUTLINE_MAX_CHARS = 800;
-const TOTAL_ENRICH_BUDGET_MS = 6_000;
+const TOTAL_ENRICH_BUDGET_MS = 3_000;
 
 const ENRICH_ACTIONS = new Set([
   "summarize",

@@ -30,10 +30,12 @@ async function main() {
     "context-enricher.js exports enrichContextForAction");
   assert(/export function formatEnrichmentAsMarkdown\b/.test(contextEnricher),
     "context-enricher.js exports formatEnrichmentAsMarkdown");
-  assert(/MAX_LINKS\s*=\s*3/.test(contextEnricher),
-    "context-enricher caps link fetches at 3");
-  assert(/LINK_TIMEOUT_MS\s*=\s*3_?000/.test(contextEnricher),
-    "context-enricher link fetch timeout is 3s");
+  assert(/MAX_LINKS\s*=\s*2/.test(contextEnricher),
+    "context-enricher caps link fetches at 2 (UCA-168)");
+  assert(/LINK_TIMEOUT_MS\s*=\s*2_?000/.test(contextEnricher),
+    "context-enricher link fetch timeout is 2s (UCA-168)");
+  assert(/TOTAL_ENRICH_BUDGET_MS\s*=\s*3_?000/.test(contextEnricher),
+    "context-enricher total budget 3s (UCA-168)");
 
   const sseClient = await read("browser_ext/background/sse-client.js");
   assert(/export async function\* readSseFrames\b/.test(sseClient),
