@@ -49,13 +49,21 @@ export function invalidateDesktopProbe() {
 
 // ── Provider-specific call wrappers. Each returns { ok, text, error }. ─────
 
-async function callAnthropic({ apiKey, model, prompt, systemPrompt }) {
+async function callAnthropic({ apiKey, model, prompt, systemPrompt, messages = null, maxTokens = 1024 }) {
+  // When `messages` is provided we use it directly (multi-turn chat). The
+  // `role: "system"` entries are lifted to Anthropic's top-level `system`
+  // field because Anthropic doesn't accept system as a message role.
+  const effectiveMessages = Array.isArray(messages) && messages.length > 0
+    ? messages.filter((m) => m.role !== "system").map((m) => ({ role: m.role, content: m.content ?? "" }))
+    : [{ role: "user", content: prompt }];
+  const effectiveSystem = systemPrompt
+    ?? (Array.isArray(messages) ? messages.filter((m) => m.role === "system").map((m) => m.content).join("\n\n") : "");
   const body = {
     model: model || "claude-sonnet-4-6",
-    max_tokens: 1024,
-    messages: [{ role: "user", content: prompt }]
+    max_tokens: maxTokens,
+    messages: effectiveMessages
   };
-  if (systemPrompt) body.system = systemPrompt;
+  if (effectiveSystem) body.system = effectiveSystem;
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -74,16 +82,20 @@ async function callAnthropic({ apiKey, model, prompt, systemPrompt }) {
   return { ok: true, text };
 }
 
-async function callOpenAICompat(config, { apiKey, model, prompt, systemPrompt, reasoningEffort = "" }) {
+async function callOpenAICompat(config, { apiKey, model, prompt, systemPrompt, messages: providedMessages = null, reasoningEffort = "", maxTokens = 1024 }) {
   const messages = [];
-  if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-  messages.push({ role: "user", content: prompt });
+  if (Array.isArray(providedMessages) && providedMessages.length > 0) {
+    messages.push(...providedMessages);
+  } else {
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
+  }
   const headers = { "Content-Type": "application/json" };
   if (config.authStyle === "bearer" && apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   const body = {
     model: model || config.defaultModel,
     messages,
-    max_tokens: 1024
+    max_tokens: maxTokens
   };
   applyReasoningSelectionToBody(body, {
     provider: config.id ?? "",
@@ -103,17 +115,35 @@ async function callOpenAICompat(config, { apiKey, model, prompt, systemPrompt, r
   return { ok: true, text };
 }
 
-async function callGemini({ apiKey, model, prompt, systemPrompt }) {
+async function callGemini({ apiKey, model, prompt, systemPrompt, messages = null, maxTokens = 1024 }) {
   const modelName = model || "gemini-1.5-flash";
-  const parts = [];
-  if (systemPrompt) parts.push({ text: `${systemPrompt}\n\n` });
-  parts.push({ text: prompt });
+  // Convert OpenAI-style messages to Gemini's contents[] shape. The system
+  // prompt becomes the `systemInstruction` top-level field (supported by
+  // v1beta generateContent); fall back to prepending as text for older
+  // models that don't accept systemInstruction.
+  let contents;
+  let systemInstruction = null;
+  if (Array.isArray(messages) && messages.length > 0) {
+    const sys = messages.filter((m) => m.role === "system").map((m) => m.content ?? "").join("\n\n");
+    if (sys) systemInstruction = { parts: [{ text: sys }] };
+    contents = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => ({
+        role: m.role === "assistant" ? "model" : "user",
+        parts: [{ text: m.content ?? "" }]
+      }));
+  } else {
+    if (systemPrompt) systemInstruction = { parts: [{ text: systemPrompt }] };
+    contents = [{ role: "user", parts: [{ text: prompt }] }];
+  }
+  const requestBody = { contents, generationConfig: { maxOutputTokens: maxTokens } };
+  if (systemInstruction) requestBody.systemInstruction = systemInstruction;
   const response = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(modelName)}:generateContent?key=${encodeURIComponent(apiKey)}`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ parts }] })
+      body: JSON.stringify(requestBody)
     }
   );
   if (!response.ok) {
@@ -258,7 +288,7 @@ export async function callLLMDirectVision({ config, prompt, imageUrl }) {
   }
 }
 
-export async function callLLMDirect({ config, prompt, systemPrompt }) {
+export async function callLLMDirect({ config, prompt, systemPrompt, messages = null, maxTokens }) {
   const normalizedConfig = normalizeStandaloneConfig(config);
   const provider = normalizedConfig?.provider;
   // Anthropic and Gemini have their own request/response shapes. Everything
@@ -266,11 +296,11 @@ export async function callLLMDirect({ config, prompt, systemPrompt }) {
   try {
     if (provider === "anthropic") {
       if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
-      return await callAnthropic({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, systemPrompt });
+      return await callAnthropic({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, systemPrompt, messages, maxTokens });
     }
     if (provider === "gemini") {
       if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
-      return await callGemini({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, systemPrompt });
+      return await callGemini({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, systemPrompt, messages, maxTokens });
     }
     const entry = PROVIDER_CONFIGS[provider];
     if (!entry) return { ok: false, error: `unknown_provider:${provider}` };
@@ -280,7 +310,9 @@ export async function callLLMDirect({ config, prompt, systemPrompt }) {
       model: normalizedConfig.model,
       prompt,
       systemPrompt,
-      reasoningEffort: normalizedConfig.reasoningEffort
+      messages,
+      reasoningEffort: normalizedConfig.reasoningEffort,
+      maxTokens
     });
   } catch (error) {
     return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };

@@ -131,6 +131,14 @@ function buildCapturePayload({ actionId, info = {}, tab, selectionState, overrid
 
   return {
     userCommand: selected.userCommand,
+    // Carry the original action id through so downstream handlers (standalone
+    // fallback in dispatchOverlayHandoff, desktop /overlay/handoff, etc.)
+    // can branch on the real intent. Without this the standalone fallback
+    // collapsed every context-menu action to "summarize", which made right-
+    // click "translate" trigger the summarize enrichment path (page + 3
+    // link fetches) and added 2-3 s of wasted wall time on top of the LLM
+    // call — symptom: 10 s translates.
+    actionId,
     capture: {
       sourceType: overrideSourceType ?? selected.sourceType,
       browser: "chrome.exe",
@@ -344,7 +352,12 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
   const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
   const desktopUp = await isDesktopAvailable(runtimeBase);
   if (!desktopUp && standaloneConfig?.apiKey) {
-    const action = request?.payload?.capture?.sourceType === "image" ? "uca.inspect-image" : "summarize";
+    // UCA-164: use the action the user actually picked from the context menu,
+    // not a hardcoded "summarize". Right-click translate used to fall into
+    // the summarize enrichment path (page outline + link fetches), adding
+    // 2-3 s of wasted wall time on top of the LLM call.
+    const action = request?.payload?.actionId
+      ?? (request?.payload?.capture?.sourceType === "image" ? "uca.inspect-image" : "summarize");
     const selectionState = {
       text: request?.payload?.capture?.text ?? request?.payload?.capture?.selectionText ?? "",
       url: request?.payload?.capture?.url ?? "",
@@ -659,19 +672,25 @@ export function registerExtensionRuntime(chromeApi = chrome) {
           sendResponse({ ok: false, error: "empty_input" });
           return;
         }
-        const history = Array.isArray(message.history) ? message.history.slice(-10) : [];
+        // Cap history at 6 turns — more than that bloats the prompt without
+        // adding much value in a casual popup chat, and it hurts latency.
+        const history = Array.isArray(message.history)
+          ? message.history.filter((turn) => turn?.role === "user" || turn?.role === "assistant").slice(-6)
+          : [];
         const conversation = [...history, { role: "user", content: userText }];
         const config = await loadStandaloneConfig();
 
         // Path A: standalone direct-call (preferred — no desktop round-trip).
+        // Uses proper `messages` array so providers track turn roles natively
+        // (saves ~50 tokens/turn versus the prior "用户:/助手:" concat) and
+        // a tighter max_tokens cap (512) to keep worst-case wall time down.
         if (config?.apiKey) {
           const systemPrompt = "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
-          const rendered = conversation.map((turn) => {
-            if (turn.role === "user") return `用户: ${turn.content}`;
-            if (turn.role === "assistant") return `助手: ${turn.content}`;
-            return turn.content;
-          }).join("\n\n");
-          const result = await callLLMDirect({ config, prompt: rendered, systemPrompt });
+          const messages = [
+            { role: "system", content: systemPrompt },
+            ...conversation
+          ];
+          const result = await callLLMDirect({ config, messages, maxTokens: 512 });
           if (result.ok) {
             sendResponse({ ok: true, mode: "standalone", text: result.text, history: [...conversation, { role: "assistant", content: result.text }] });
             return;
