@@ -104,6 +104,14 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
       .body.error {
         color: #b91c1c;
       }
+      .body.streaming::after {
+        content: "▋";
+        display: inline-block;
+        margin-left: 2px;
+        color: #6366f1;
+        animation: uca-blink 900ms steps(2, start) infinite;
+      }
+      @keyframes uca-blink { to { visibility: hidden; } }
       .spinner {
         width: 14px;
         height: 14px;
@@ -183,11 +191,22 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
       resultText = text ?? "";
       bodyEl.classList.remove("loading");
       bodyEl.classList.remove("error");
+      bodyEl.classList.remove("streaming");
       bodyEl.textContent = resultText || "(无内容)";
       actionsEl.classList.add("visible");
     },
+    // Progressive update while streaming — keeps the loading class so the
+    // spinner stays visible; once setResult fires the frame finalises.
+    setStreaming(text) {
+      resultText = text ?? "";
+      bodyEl.classList.remove("error");
+      bodyEl.classList.remove("loading");
+      bodyEl.classList.add("streaming");
+      bodyEl.textContent = resultText;
+    },
     setError(message) {
       bodyEl.classList.remove("loading");
+      bodyEl.classList.remove("streaming");
       bodyEl.classList.add("error");
       bodyEl.textContent = `处理失败：${message}`;
       actionsEl.classList.add("visible");
@@ -739,7 +758,54 @@ function createFloatingChipController(doc = document) {
           previewText: snapshot.text,
           doc
         });
-        sendRuntimeMessageSafely({
+
+        // UCA-167: open a streaming port so the inline frame fills in as the
+        // LLM generates. Falls back to the legacy one-shot sendMessage if
+        // ports are unavailable (very old Chrome, service worker gone).
+        let streamingActive = false;
+        try {
+          const port = chrome.runtime.connect({ name: "uca.quickaction.stream" });
+          streamingActive = true;
+          port.onMessage.addListener((msg) => {
+            if (snapshot.requestId !== _pendingActionRequestId) {
+              try { port.disconnect(); } catch { /* ignore */ }
+              return;
+            }
+            if (msg?.type === "start") {
+              frame.setStreaming("");
+            } else if (msg?.type === "chunk") {
+              frame.setStreaming(msg.full ?? "");
+            } else if (msg?.type === "done") {
+              frame.setResult(msg.text ?? "");
+              try { port.disconnect(); } catch { /* ignore */ }
+            } else if (msg?.type === "error") {
+              const human = humanizeQuickActionError(msg.error ?? "unknown");
+              console.warn("[UCA] quick-action stream error:", msg.error);
+              frame.setError(human);
+              try { port.disconnect(); } catch { /* ignore */ }
+            }
+          });
+          port.onDisconnect.addListener(() => {
+            const runtimeError = (() => {
+              try { return chrome.runtime?.lastError ?? null; } catch { return null; }
+            })();
+            if (runtimeError && isContextInvalidatedError(runtimeError)) {
+              // Silently fall back — the main sendMessage path below already
+              // handles context-invalidated cleanly.
+              return;
+            }
+          });
+          port.postMessage({
+            type: "quickaction",
+            action,
+            selectionState
+          });
+        } catch {
+          streamingActive = false;
+        }
+
+        // Legacy one-shot path (fallback + desktop-mode path).
+        if (!streamingActive) sendRuntimeMessageSafely({
           type: "uca.runtime.runQuickAction",
           action,
           selectionState,

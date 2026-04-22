@@ -861,7 +861,66 @@ function registerChatStreamPort(chromeApi = chrome) {
   });
 }
 
+// UCA-167: Streaming port for the inline-frame quick actions (translate /
+// summarize / explain). Uses the same standalone direct-call path as the
+// one-shot runQuickAction, but pipes chunks back so the content-script
+// frame can render text as it arrives.
+function registerQuickActionStreamPort(chromeApi = chrome) {
+  if (!chromeApi.runtime?.onConnect) return;
+  chromeApi.runtime.onConnect.addListener((port) => {
+    if (port.name !== "uca.quickaction.stream") return;
+    let aborted = false;
+    const controller = new AbortController();
+    port.onDisconnect.addListener(() => {
+      aborted = true;
+      try { controller.abort(); } catch { /* ignore */ }
+    });
+    port.onMessage.addListener(async (message) => {
+      if (message?.type !== "quickaction") return;
+      const { action, selectionState } = message;
+      const config = await loadStandaloneConfig();
+      if (!config?.apiKey) {
+        port.postMessage({ type: "error", error: "no_api_key" });
+        return;
+      }
+      // Enrichment for summarize / explain. Translate goes direct — that was
+      // the whole point of UCA-164a. Enrichment uses the same fire-and-
+      // forget pattern as the non-streaming path and the LLM waits for it
+      // before starting; future follow-up could race them.
+      let enrichmentMarkdown = "";
+      if (shouldEnrichForAction(action)) {
+        try {
+          const enrichment = await enrichContextForAction({ action, selectionState, tab: message.tab ?? null });
+          enrichmentMarkdown = formatEnrichmentAsMarkdown(enrichment);
+        } catch { /* best effort */ }
+      }
+      const { prompt, systemPrompt } = buildPromptFor(action, selectionState, enrichmentMarkdown);
+      port.postMessage({ type: "start" });
+      const result = await callLLMDirectStream({
+        config,
+        messages: [
+          { role: "system", content: systemPrompt ?? "" },
+          { role: "user", content: prompt }
+        ],
+        maxTokens: 1024,
+        signal: controller.signal,
+        onChunk: (delta, full) => {
+          if (aborted) return;
+          try { port.postMessage({ type: "chunk", delta, full }); } catch { /* closed */ }
+        }
+      });
+      if (aborted) return;
+      if (result.ok) {
+        port.postMessage({ type: "done", text: result.text });
+      } else {
+        port.postMessage({ type: "error", error: result.error });
+      }
+    });
+  });
+}
+
 if (typeof chrome !== "undefined" && chrome.runtime?.id) {
   registerExtensionRuntime(chrome);
   registerChatStreamPort(chrome);
+  registerQuickActionStreamPort(chrome);
 }
