@@ -29,7 +29,7 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
     <style>
       :host { all: initial; }
       .frame {
-        position: absolute;
+        position: fixed;
         z-index: 2147483647;
         max-width: 420px;
         min-width: 280px;
@@ -212,6 +212,7 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
       actionsEl.classList.add("visible");
     },
     close() {
+      try { host.__ucaDetachScroll?.(); } catch { /* ignore */ }
       host.remove();
     }
   };
@@ -274,23 +275,23 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
   return api;
 }
 
+// Position the frame near a selection rect and keep it anchored to the
+// document (scrolls with the page) even though the .frame uses
+// position:fixed. Pure CSS position:absolute didn't work reliably on
+// pages with exotic layout / transform ancestors (and shadow-DOM
+// interactions made it worse), so we keep fixed and re-apply the delta
+// on every scroll tick — tiny cost, robust everywhere.
 function positionFrameNear(frameEl, rect) {
   const padding = 12;
   const viewportW = window.innerWidth;
   const viewportH = window.innerHeight;
-  // Convert from viewport coords to page/document coords so the frame is
-  // pinned to the selection position and scrolls with the page. Using
-  // position:fixed made the frame cover newly-revealed content when the
-  // user scrolled after clicking a quick-action near the viewport edge.
-  const scrollX = window.scrollX || window.pageXOffset || 0;
-  const scrollY = window.scrollY || window.pageYOffset || 0;
-  // hide off-screen first to measure
+  const scrollXAt = window.scrollX || window.pageXOffset || 0;
+  const scrollYAt = window.scrollY || window.pageYOffset || 0;
   frameEl.style.left = "-9999px";
   frameEl.style.top = "-9999px";
   frameEl.style.visibility = "hidden";
   requestAnimationFrame(() => {
     const frameRect = frameEl.getBoundingClientRect();
-    // Viewport-relative candidate position first, then add scroll offset.
     let leftVp = rect ? rect.left : viewportW - frameRect.width - padding;
     let topVp = rect ? rect.bottom + 8 : padding;
     if (leftVp + frameRect.width > viewportW - padding) {
@@ -301,9 +302,42 @@ function positionFrameNear(frameEl, rect) {
       topVp = (rect ? rect.top - frameRect.height - 8 : padding);
       if (topVp < padding) topVp = padding;
     }
-    frameEl.style.left = `${Math.round(leftVp + scrollX)}px`;
-    frameEl.style.top = `${Math.round(topVp + scrollY)}px`;
+
+    // Anchor in page coords (viewport + current scroll at positioning time).
+    const anchorPageLeft = leftVp + scrollXAt;
+    const anchorPageTop = topVp + scrollYAt;
+
+    const applyFixedFromAnchor = () => {
+      const curScrollX = window.scrollX || window.pageXOffset || 0;
+      const curScrollY = window.scrollY || window.pageYOffset || 0;
+      frameEl.style.left = `${Math.round(anchorPageLeft - curScrollX)}px`;
+      frameEl.style.top = `${Math.round(anchorPageTop - curScrollY)}px`;
+    };
+    applyFixedFromAnchor();
     frameEl.style.visibility = "visible";
+
+    // Follow scroll. Uses passive listener + rAF coalescing so it doesn't
+    // slow the page's own scroll.
+    let ticking = false;
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        applyFixedFromAnchor();
+        ticking = false;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll, { passive: true });
+
+    // Stash the cleanup on the host so whoever closes the frame can detach.
+    const host = frameEl.getRootNode().host;
+    if (host) {
+      host.__ucaDetachScroll = () => {
+        window.removeEventListener("scroll", onScroll);
+        window.removeEventListener("resize", onScroll);
+      };
+    }
   });
 }
 
@@ -1303,6 +1337,74 @@ function installHoverObserver(doc) {
   window.addEventListener("scroll", removeActiveChip, { passive: true });
 }
 
+// UCA-173: when the service worker asks us to show a result frame for a
+// right-click action (fetch-link, inspect-image, summarize-selection,
+// translate-selection), render it inline on the page with the streaming
+// port. The frame appears near the top-right of the viewport when there's
+// no usable selection rect (right-click on link/image has no selection).
+function handleShowActionFrame(message, sendResponse) {
+  try {
+    const { action, selectionState = {}, tabInfo = {} } = message;
+
+    // Prefer the live selection rect when we have actual selection text.
+    let rect = null;
+    try {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) {
+        const range = sel.getRangeAt(0);
+        const r = range.getBoundingClientRect();
+        if (r && (r.width || r.height)) rect = r;
+      }
+    } catch { /* ignore */ }
+
+    const frame = showInlineResultFrame({
+      action,
+      rect,
+      previewText: action === "uca.inspect-image"
+        ? `图片：${selectionState.imageUrl?.slice(0, 80) ?? ""}`
+        : action === "uca.fetch-link"
+          ? `链接：${selectionState.url?.slice(0, 80) ?? ""}`
+          : (selectionState.text ?? "").slice(0, 80),
+      doc: document
+    });
+
+    // Open a streaming port and pipe chunks to the frame.
+    let streamingSettled = false;
+    try {
+      const port = chrome.runtime.connect({ name: "uca.quickaction.stream" });
+      port.onMessage.addListener((msg) => {
+        if (msg?.type === "start") {
+          frame.setStreaming("");
+        } else if (msg?.type === "chunk") {
+          frame.setStreaming(msg.full ?? "");
+        } else if (msg?.type === "done") {
+          streamingSettled = true;
+          frame.setResult(msg.text ?? "");
+          try { port.disconnect(); } catch { /* ignore */ }
+        } else if (msg?.type === "error") {
+          streamingSettled = true;
+          const human = humanizeQuickActionError(msg.error ?? "unknown");
+          frame.setError(human);
+          try { port.disconnect(); } catch { /* ignore */ }
+        }
+      });
+      port.onDisconnect.addListener(() => {
+        if (!streamingSettled) {
+          frame.setError("连接意外断开，请重试");
+        }
+      });
+      port.postMessage({ type: "quickaction", action, selectionState });
+    } catch (error) {
+      frame.setError(`连接失败：${error?.message ?? error}`);
+    }
+
+    sendResponse?.({ ok: true });
+  } catch (error) {
+    console.warn("[UCA] showActionFrame failed:", error?.message ?? error);
+    sendResponse?.({ ok: false, error: error?.message ?? String(error) });
+  }
+}
+
 if (typeof window !== "undefined" && typeof document !== "undefined") {
   window.__ucaSelectionApi = {
     captureSelectionState,
@@ -1312,4 +1414,14 @@ if (typeof window !== "undefined" && typeof document !== "undefined") {
   installSelectionObserver(document, window);
   installBrowserContextReporter(document, window);
   installHoverObserver(document);
+
+  if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (message?.type === "uca.content.showActionFrame") {
+        handleShowActionFrame(message, sendResponse);
+        return true; // async response
+      }
+      return false;
+    });
+  }
 }

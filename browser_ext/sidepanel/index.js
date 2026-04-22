@@ -8,7 +8,13 @@
 
 const HISTORY_KEY = "ucaSidePanelHistory";
 const HISTORY_MAX = 40;
-const SYSTEM_PROMPT = "You are LingxY, a helpful assistant in a browser side panel. The user is actively browsing the web. Reply in the user's language (Chinese by default). Use Markdown lists / headings / code blocks when structure helps. Be concise but thorough when the user asks you to analyze a whole page or video.";
+const SYSTEM_PROMPT = [
+  "You are LingxY, a helpful assistant in a browser side panel.",
+  "The user is actively browsing the web and opens this panel to analyze pages, videos, and selections, then ask follow-up questions.",
+  "Conversation continuity matters: when the user asks a short follow-up (e.g. '第 3 点展开', '反驳观点', '更短一点', '为什么'), assume they are referring to the most recent page/video/selection the user shared and your last answer. Reference that material concretely by name or section.",
+  "Reply in the user's language (Chinese by default) and use Markdown lists / headings / code blocks when structure helps.",
+  "Be concise by default; be thorough when the user explicitly asks you to analyze a whole page or video."
+].join(" ");
 
 const historyEl = document.getElementById("sp-history");
 const inputEl = document.getElementById("sp-input");
@@ -25,6 +31,10 @@ const actionSelectionBtn = document.getElementById("sp-action-selection");
 let conversation = [];
 let activeStreamPort = null;
 let isBusy = false;
+// Timeline meta counter — assistant turns track their own sequence number
+// so the UI can show "第 N 轮" and providers can see how many turns the
+// conversation has been through.
+let turnCounter = 0;
 
 /* ── Markdown renderer (safe escape then minimal Markdown) ───────────── */
 function renderMd(raw = "") {
@@ -77,6 +87,33 @@ function renderHistory() {
   historyEl.scrollTop = historyEl.scrollHeight;
 }
 function appendTurnEl(turn) {
+  // UCA-174: user turns that carry bulky auxiliary content (a full page body,
+  // a transcript, a long selection) store the heavy text under
+  // `turn.attached` and render just a compact "📄 分析此页：<title>" chip
+  // in the dialog. The attached content is still sent to the LLM — it's
+  // the VISUAL noise we're cutting. Click the chip to expand/collapse the
+  // full attached text inline.
+  if (turn.role === "user" && turn.attached && turn.displayLabel) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "sp-msg user user-compact";
+    const chip = document.createElement("div");
+    chip.className = "sp-user-chip";
+    chip.textContent = turn.displayLabel;
+    const details = document.createElement("details");
+    details.className = "sp-user-attached";
+    const summary = document.createElement("summary");
+    summary.textContent = `展开（${turn.attached.length.toLocaleString()} 字符）`;
+    const pre = document.createElement("pre");
+    pre.textContent = turn.attached.slice(0, 10_000);
+    details.appendChild(summary);
+    details.appendChild(pre);
+    wrapper.appendChild(chip);
+    wrapper.appendChild(details);
+    historyEl.appendChild(wrapper);
+    historyEl.scrollTop = historyEl.scrollHeight;
+    return wrapper;
+  }
+
   const el = document.createElement("div");
   el.className = `sp-msg ${turn.role === "user" ? "user"
     : turn.role === "error" ? "error"
@@ -84,6 +121,14 @@ function appendTurnEl(turn) {
     : "assistant"}`;
   if (turn.role === "assistant") {
     el.innerHTML = renderMd(turn.content ?? "");
+    // UCA-175: timeline meta strip — shows provider/tokens/turn so user
+    // can see what context the model had without inspecting the DOM.
+    if (turn.meta) {
+      const meta = document.createElement("div");
+      meta.className = "sp-turn-meta";
+      meta.textContent = turn.meta;
+      el.appendChild(meta);
+    }
   } else {
     el.textContent = turn.content ?? "";
   }
@@ -116,7 +161,7 @@ async function refreshMode() {
 }
 
 /* ── Chat send (port-based streaming) ────────────────────────────────── */
-function sendTurn({ userContent, systemContent = null, assistantPrefix = null } = {}) {
+function sendTurn({ userContent, systemContent = null, assistantPrefix = null, displayLabel = null, attached = null } = {}) {
   return new Promise((resolve) => {
     if (isBusy) { resolve({ ok: false, error: "busy" }); return; }
     isBusy = true;
@@ -124,16 +169,29 @@ function sendTurn({ userContent, systemContent = null, assistantPrefix = null } 
     inputEl.disabled = true;
     actionPageBtn.disabled = actionVideoBtn.disabled = actionSelectionBtn.disabled = true;
     statusEl.textContent = "连接中…";
+    const startedAt = Date.now();
 
     if (systemContent) {
       conversation.push({ role: "system", content: systemContent });
       appendTurnEl({ role: "system", content: systemContent });
     }
-    conversation.push({ role: "user", content: userContent });
-    appendTurnEl({ role: "user", content: userContent });
+    // Compact user turn: what LLM sees (`content` = userContent incl. attached)
+    // vs what UI shows (`displayLabel` + collapsible `attached`).
+    const userTurn = displayLabel
+      ? { role: "user", content: userContent, displayLabel, attached: attached ?? "" }
+      : { role: "user", content: userContent };
+    conversation.push(userTurn);
+    appendTurnEl(userTurn);
 
-    // Create streaming bubble up front with optional prefix.
+    // Create streaming bubble up front with optional prefix. CRITICAL:
+    // push the streaming turn to `conversation` BEFORE settling so the
+    // later `conversation[length-1] = ...` overwrites THIS placeholder,
+    // not the user turn above. Without this, every assistant reply
+    // clobbered the user's question and the next follow-up saw a history
+    // of assistant-only turns — which is why follow-up understanding
+    // felt unreliable.
     const streamingTurn = { role: "assistant", content: assistantPrefix ?? "" };
+    conversation.push(streamingTurn);
     const streamingEl = appendTurnEl(streamingTurn);
     streamingEl.classList.add("streaming");
 
@@ -149,7 +207,7 @@ function sendTurn({ userContent, systemContent = null, assistantPrefix = null } 
     let settled = false;
     let acc = "";
 
-    const settle = async (role, content) => {
+    const settle = async (role, content, responseMeta = null) => {
       if (settled) return;
       settled = true;
       activeStreamPort = null;
@@ -160,8 +218,26 @@ function sendTurn({ userContent, systemContent = null, assistantPrefix = null } 
         streamingEl.textContent = content;
         conversation[conversation.length - 1] = { role: "error", content };
       } else {
+        // UCA-175: compute timeline meta — turn number, elapsed time,
+        // approximate token count (content length ÷ 4 as a rough proxy),
+        // the prior-turn context size.
+        turnCounter += 1;
+        const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+        const approxTokens = Math.max(1, Math.round((content ?? "").length / 3.5));
+        const priorTurns = conversation.filter((t) => t.role === "user" || t.role === "assistant").length;
+        const metaPieces = [
+          `第 ${turnCounter} 轮`,
+          `${elapsedSec}s`,
+          `~${approxTokens.toLocaleString()} tokens`
+        ];
+        if (priorTurns > 2) metaPieces.push(`基于前 ${priorTurns - 1} 轮对话`);
+        const metaText = metaPieces.join(" · ");
         streamingEl.innerHTML = renderMd(content);
-        conversation[conversation.length - 1] = { role: "assistant", content };
+        const metaEl = document.createElement("div");
+        metaEl.className = "sp-turn-meta";
+        metaEl.textContent = metaText;
+        streamingEl.appendChild(metaEl);
+        conversation[conversation.length - 1] = { role: "assistant", content, meta: metaText };
       }
       await saveHistory();
       sendBtn.disabled = false;
@@ -194,14 +270,19 @@ function sendTurn({ userContent, systemContent = null, assistantPrefix = null } 
       }
     });
 
-    // Exclude system prompts + error turns from what we send to the LLM.
+    // Send prior turns only (exclude the just-added user turn — SW
+    // re-appends it — AND the empty streaming assistant placeholder).
+    // Map each turn to { role, content } so we don't leak displayLabel /
+    // attached / meta / turn-counter side fields into the LLM request.
     const sendableHistory = conversation
-      .slice(0, -1) // exclude the just-added empty assistant placeholder
-      .filter((t) => t.role === "user" || t.role === "assistant");
+      .slice(0, -2) // drop user turn + streaming placeholder we just pushed
+      .filter((t) => t.role === "user" || t.role === "assistant")
+      .map((t) => ({ role: t.role, content: String(t.content ?? "") }));
     port.postMessage({
       type: "chat",
       text: userContent,
-      history: sendableHistory.slice(0, -1) // exclude the just-added user turn (SW re-appends)
+      history: sendableHistory,
+      systemPrompt: SYSTEM_PROMPT
     });
   });
 }
@@ -259,47 +340,6 @@ async function extractPagePlainText(tabId) {
   }
 }
 
-async function onAnalyzePage() {
-  if (isBusy) return;
-  const tab = await getActiveTab();
-  if (!tab?.id) {
-    appendTurnEl({ role: "error", content: "当前没有可分析的标签页" });
-    return;
-  }
-  statusEl.textContent = "抓取页面…";
-  const [captured, plain] = await Promise.all([
-    capturePageViaContentScript(tab.id),
-    extractPagePlainText(tab.id)
-  ]);
-  let body = "";
-  if (captured?.kind === "video" && captured.youtube?.transcriptBody) {
-    body = `【YouTube 视频】\n标题：${captured.youtube.title ?? tab.title}\n作者：${captured.youtube.author ?? "未知"}\nURL：${tab.url}\n\n字幕：\n${captured.youtube.transcriptBody.slice(0, 16_000)}`;
-  } else if (plain?.text) {
-    body = `【网页】\n标题：${plain.title ?? tab.title}\nURL：${tab.url}\n描述：${plain.metaDesc ?? ""}\n\n正文：\n${plain.text}`;
-  } else {
-    appendTurnEl({ role: "error", content: "未能抓到页面文本，可能页面还没加载完。" });
-    statusEl.textContent = "";
-    return;
-  }
-  statusEl.textContent = "";
-  const systemContent = `已抓取当前页面（${tab.url}）`;
-  await sendTurn({
-    userContent: "请完整分析这份页面内容：先一段总体概述，然后列出 5-8 个关键要点，最后给出值得延伸的问题。结合用户在侧边栏继续追问。",
-    systemContent,
-    assistantPrefix: ""
-  });
-  // Inject the captured body as additional context in the user turn. The SW
-  // uses sendable history, so we embed it into the user's turn content:
-  // we need to send the body before the user's request. Approach: send the
-  // request with the body embedded directly. Re-issue:
-  // Simpler: above call already included a user turn that told the model
-  // what to do, but the model didn't see the body. So do it explicitly:
-  // Instead of the preceding send, we issue a combined user turn here:
-  // (revised below)
-}
-
-// The above onAnalyzePage has a flow issue — model doesn't see the body.
-// Reimplement cleanly:
 async function onAnalyzePageV2() {
   if (isBusy) return;
   const tab = await getActiveTab();
@@ -314,12 +354,15 @@ async function onAnalyzePageV2() {
   ]);
   let bodyBlock = "";
   let kindLabel = "";
+  let chipTitle = tab.title ?? tab.url ?? "当前页面";
   if (captured?.kind === "video" && captured.youtube?.transcriptBody) {
     kindLabel = "YouTube 视频";
     bodyBlock = `标题：${captured.youtube.title ?? tab.title ?? ""}\n作者：${captured.youtube.author ?? "未知"}\nURL：${tab.url ?? ""}\n\n字幕：\n${captured.youtube.transcriptBody.slice(0, 16_000)}`;
+    chipTitle = captured.youtube.title ?? chipTitle;
   } else if (plain?.text) {
     kindLabel = "网页";
     bodyBlock = `标题：${plain.title ?? tab.title ?? ""}\nURL：${tab.url ?? ""}\n描述：${plain.metaDesc ?? ""}\n\n正文：\n${plain.text}`;
+    chipTitle = plain.title ?? chipTitle;
   } else {
     appendTurnEl({ role: "error", content: "未能抓到页面文本，可能页面还没加载完。" });
     statusEl.textContent = "";
@@ -327,7 +370,12 @@ async function onAnalyzePageV2() {
   }
   statusEl.textContent = "";
   const userText = `请分析以下${kindLabel}：先一段总体概述，再用编号列表给出 5-8 个关键要点，最后给出 3 个值得延伸的问题。我可能会基于这份分析继续追问。\n\n---\n${bodyBlock}\n---`;
-  await sendTurn({ userContent: userText });
+  const displayLabel = `📄 分析${kindLabel === "YouTube 视频" ? "视频" : "此页"}：${chipTitle.slice(0, 80)}`;
+  await sendTurn({
+    userContent: userText,
+    displayLabel,
+    attached: bodyBlock
+  });
 }
 
 async function onAnalyzeSelection() {
@@ -352,7 +400,12 @@ async function onAnalyzeSelection() {
       return;
     }
     const userText = `请分析以下网页选区内容，给出要点和我可能感兴趣的延伸问题：\n\n标题：${payload.title}\nURL：${payload.url}\n\n选区：\n${payload.text}`;
-    await sendTurn({ userContent: userText });
+    const preview = payload.text.slice(0, 40) + (payload.text.length > 40 ? "…" : "");
+    await sendTurn({
+      userContent: userText,
+      displayLabel: `✂️ 分析选区：${preview}`,
+      attached: payload.text
+    });
   } catch {
     appendTurnEl({ role: "error", content: "无法读取页面选区（这个页面可能禁止注入脚本）" });
   }

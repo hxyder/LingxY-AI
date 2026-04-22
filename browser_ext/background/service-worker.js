@@ -550,6 +550,47 @@ export function registerExtensionRuntime(chromeApi = chrome) {
       func: () => window.__ucaSelectionState ?? null
     });
 
+    // UCA-173: for link / image actions, render a visible streaming frame
+    // inside the page instead of silently firing a chrome.notifications
+    // toast. The frame gives the user direct feedback + lets them copy the
+    // result. We tell the active tab's content script to show a frame;
+    // it'll open its own streaming port. Falls back to dispatchOverlayHandoff
+    // when the content-script message fails (e.g., chrome:// pages).
+    const visibleFrameActions = new Set([
+      "uca.fetch-link",
+      "uca.inspect-image",
+      "uca.summarize-selection",
+      "uca.translate-selection"
+    ]);
+    if (visibleFrameActions.has(info.menuItemId) && tab?.id != null) {
+      const payload = {
+        type: "uca.content.showActionFrame",
+        action: info.menuItemId,
+        selectionState: {
+          text: selectionState?.text ?? info.selectionText ?? "",
+          url: info.linkUrl ?? info.pageUrl ?? tab?.url ?? "",
+          pageTitle: tab?.title ?? "",
+          imageUrl: info.srcUrl ?? "",
+          anchorText: info.linkText ?? ""
+        },
+        tabInfo: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" }
+      };
+      try {
+        const reply = await new Promise((resolve) => {
+          chromeApi.tabs.sendMessage(tab.id, payload, (response) => {
+            const lastError = chromeApi.runtime?.lastError;
+            if (lastError) resolve({ ok: false, error: lastError.message });
+            else resolve(response ?? { ok: false, error: "no_response" });
+          });
+        });
+        if (reply?.ok) return;
+        // Content-script couldn't show the frame (chrome:// page, PDF
+        // viewer, etc.) — fall through to legacy dispatchOverlayHandoff so
+        // the user still gets a chrome.notifications reply in standalone
+        // mode / a desktop handoff when the desktop app is running.
+      } catch { /* fall through */ }
+    }
+
     const request = buildOverlayHandoffRequest({
       actionId: info.menuItemId,
       info,
@@ -834,7 +875,13 @@ function registerChatStreamPort(chromeApi = chrome) {
         port.postMessage({ type: "error", error: "no_api_key" });
         return;
       }
-      const systemPrompt = "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
+      // Caller (popup / sidepanel) can override the system prompt — the
+      // side panel sends a richer prompt that emphasizes continuity with
+      // previously-analyzed pages / videos so follow-ups ("展开第 3 点")
+      // get anchored correctly.
+      const systemPrompt = typeof message.systemPrompt === "string" && message.systemPrompt.trim()
+        ? message.systemPrompt
+        : "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
       const messages = [{ role: "system", content: systemPrompt }, ...conversation];
       port.postMessage({ type: "start" });
       const result = await callLLMDirectStream({
@@ -883,10 +930,32 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
         port.postMessage({ type: "error", error: "no_api_key" });
         return;
       }
-      // Enrichment for summarize / explain. Translate goes direct — that was
-      // the whole point of UCA-164a. Enrichment uses the same fire-and-
-      // forget pattern as the non-streaming path and the LLM waits for it
-      // before starting; future follow-up could race them.
+
+      // UCA-173: image analysis takes its own path (vision API, base64
+      // image). Vision responses aren't streamed by most providers, so we
+      // emit a single done frame. The content-script frame handles both
+      // shapes identically.
+      if (action === "uca.inspect-image") {
+        const imageUrl = selectionState?.imageUrl ?? "";
+        if (!imageUrl) {
+          port.postMessage({ type: "error", error: "no_image_url" });
+          return;
+        }
+        port.postMessage({ type: "start" });
+        const prompt = "请分析这张图片：简述里面有什么、关键文字（如有）、是否需要注意的细节。用中文回答。";
+        const { callLLMDirectVision } = await import("./standalone-client.js");
+        const visionResult = await callLLMDirectVision({ config, prompt, imageUrl });
+        if (aborted) return;
+        if (visionResult.ok) {
+          port.postMessage({ type: "done", text: visionResult.text });
+        } else {
+          port.postMessage({ type: "error", error: visionResult.error });
+        }
+        return;
+      }
+
+      // Enrichment for summarize / explain / fetch-link. Translate goes
+      // direct — that was the whole point of UCA-164a.
       let enrichmentMarkdown = "";
       if (shouldEnrichForAction(action)) {
         try {
