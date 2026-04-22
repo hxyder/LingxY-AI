@@ -1118,11 +1118,12 @@ const TASK_TYPES = [
   { id: "audio_transcription", label: "Audio Transcription", desc: "Speech-to-text for recording notes and system audio" }
 ];
 
-// Mirrors providerCanVision() in multi-modal-executor.mjs — used to
-// annotate the Routing → Vision dropdown so the user sees at-a-glance
-// which of their configured providers can actually handle images. If
-// they still pick a text-only one, the backend auto-switches (UCA-148)
-// but flagging it here makes the misconfiguration obvious up front.
+// Mirrors providerCanVision() in multi-modal-executor.mjs. Modern
+// agentic code CLIs (Claude Code / Codex / Kimi Code / Gemini CLI /
+// etc) all have a Read tool so they handle images via file paths in
+// the prompt — we trust them by default. Only kind:"ollama" with a
+// text-only model is flagged as "can't see images", because those
+// models genuinely lack a vision layer.
 function providerCanVisionFrontend(provider) {
   if (!provider) return false;
   if (provider.supportsVision === true) return true;
@@ -1132,9 +1133,7 @@ function providerCanVisionFrontend(provider) {
     const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""} ${provider.name ?? ""}`.toLowerCase();
     return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus/.test(fp);
   }
-  if (provider.kind === "code_cli") {
-    return /(gemini|codebuddy|qwen)(\.exe)?$/i.test(`${provider.command ?? ""}`);
-  }
+  if (provider.kind === "code_cli") return true;
   if (provider.kind === "ollama") {
     const m = `${provider.defaultModel ?? ""}`.toLowerCase();
     return /llava|llama-?3\.2.*vision|qwen.*vl|minicpm.*v|bakllava/.test(m);
@@ -1702,7 +1701,7 @@ function renderTaskRouting() {
           ${!hideMode && !showReasoning ? `<select data-routing-mode="${escapeHtml(task.id)}" title="Mode" style="font-size:12px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--ink);" ${noProviders || !selectedProvider ? "disabled" : ""}>${modeOptionsHtml}</select>` : ""}
         </div>
         ${modelMeta ? `<div style="font-size:10px;color:var(--muted);margin-top:6px;">${escapeHtml(modelMeta)}</div>` : ""}
-        ${isVisionMisconfig ? `<div style="font-size:11px;color:var(--warn);margin-top:6px;line-height:1.4;">⚠️ 这个 provider 不支持图片。运行时会自动切到有 vision 能力的 provider；如果你确定它实际上能读图（比如新出的 CLI），在 provider 里加 <code>supportsVision: true</code> 覆盖。</div>` : ""}
+        ${isVisionMisconfig ? `<div style="font-size:11px;color:var(--warn);margin-top:6px;line-height:1.4;">⚠️ 这个 provider 可能不支持图片（例如 Ollama 用的是纯文本模型）。如果它实际能读图，加 <code>supportsVision: true</code> 覆盖。</div>` : ""}
       </div>
     `;
   }).join("") + (noProviders ? `

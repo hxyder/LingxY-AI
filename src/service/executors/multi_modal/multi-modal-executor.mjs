@@ -13,22 +13,16 @@ import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
 import { mkdir } from "node:fs/promises";
 import os from "node:os";
 
-// CLIs that don't actually process image bytes. Claude Code / Codex / Kimi
-// Code / OpenCode / Cursor Agent / Aider are text-only coding assistants.
-// Gemini CLI + CodeBuddy + Qwen CLI DO have vision, so we whitelist those.
-function isVisionCapableCli(command = "") {
-  return /(gemini|codebuddy|qwen)(\.exe)?$/i.test(`${command ?? ""}`);
-}
-
 // True when the configured provider can plausibly handle image bytes.
-// Used both by the fallback scan and by the Settings routing UI to
-// pre-filter the "Vision" dropdown so the user can't pick a text-only
-// CLI in the first place.
+// Used only for the UI hint in Settings → Routing → Vision — the
+// backend does NOT pre-empt based on this, because modern agentic
+// CLIs (Claude Code / Codex / Kimi Code / Gemini CLI / etc) all have
+// a Read tool that inspects image file paths supplied in the prompt.
+// The task package builder threads image_paths into both file_paths
+// and the prompt (see print-mode-prompt.mjs:152), so CLIs just
+// "open and look" through their normal file-reading flow.
 export function providerCanVision(provider) {
   if (!provider) return false;
-  // Explicit opt-in wins over every heuristic — gives the user a
-  // dependable override when a new CLI / model isn't yet on the
-  // built-in whitelist.
   if (provider.supportsVision === true) return true;
   if (provider.supportsVision === false) return false;
   if (provider.kind === "anthropic" && provider.apiKey) return true;
@@ -36,9 +30,10 @@ export function providerCanVision(provider) {
     const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""} ${provider.name ?? ""}`.toLowerCase();
     return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus/.test(fp);
   }
-  if (provider.kind === "code_cli") {
-    return isVisionCapableCli(provider.command ?? "");
-  }
+  // All code_cli providers go through the agent-loop with a Read
+  // tool. Trust them — if the CLI genuinely can't (e.g. a stripped-
+  // down legacy CLI) the user can set supportsVision: false.
+  if (provider.kind === "code_cli") return true;
   if (provider.kind === "ollama") {
     const m = `${provider.defaultModel ?? ""}`.toLowerCase();
     return /llava|llama-?3\.2.*vision|qwen.*vl|minicpm.*v|bakllava/.test(m);
@@ -46,13 +41,11 @@ export function providerCanVision(provider) {
   return false;
 }
 
-// Auto-select a vision-capable fallback when the user's routed Vision
-// provider can't actually see images. Order of preference:
-//   1. Anything flagged supportsVision: true (explicit user override)
-//   2. Native Anthropic (every Claude model does vision)
-//   3. Vision-capable OpenAI-kind API (OpenAI / Gemini / GLM-4V / Qwen-VL / etc)
-//   4. Vision-capable code_cli (gemini / codebuddy / qwen)
-//   5. Ollama with a known vision model (llava / llama3.2-vision / etc)
+// Fallback used only when the routed provider is an API that
+// demonstrably has no vision (e.g. a kind:"ollama" with a text-only
+// model) OR when the user explicitly sets supportsVision:false. For
+// kind:"code_cli" we never force a switch — the CLI's own Read tool
+// handles file-based vision.
 function findFallbackVisionProvider() {
   try {
     const configPath = process.env.UCA_CONFIG_PATH
@@ -60,23 +53,18 @@ function findFallbackVisionProvider() {
     if (!existsSync(configPath)) return null;
     const config = JSON.parse(readFileSync(configPath, "utf8"));
     const providers = config.ai?.customProviders ?? [];
-    // Pass 1: explicit override.
     const override = providers.find((p) => p.supportsVision === true);
     if (override) return override;
-    // Pass 2: native Anthropic.
     const anthropic = providers.find((p) => p.kind === "anthropic" && p.apiKey);
     if (anthropic) return anthropic;
-    // Pass 3: vision-capable OpenAI-kind.
     const visionOpenai = providers.find((p) => {
       if (p.kind !== "openai" || !p.apiKey) return false;
       const fp = `${p.baseUrl ?? ""} ${p.defaultModel ?? ""} ${p.name ?? ""}`.toLowerCase();
       return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision/.test(fp);
     });
     if (visionOpenai) return visionOpenai;
-    // Pass 4: vision-capable code_cli.
-    const visionCli = providers.find((p) => p.kind === "code_cli" && isVisionCapableCli(p.command ?? ""));
-    if (visionCli) return visionCli;
-    // Pass 5: Ollama with vision model.
+    const cli = providers.find((p) => p.kind === "code_cli");
+    if (cli) return cli;
     const visionOllama = providers.find((p) => {
       if (p.kind !== "ollama") return false;
       const m = `${p.defaultModel ?? ""}`.toLowerCase();
@@ -223,24 +211,22 @@ export function createMultiModalExecutorScaffold() {
         return;
       }
 
-      // If the routed provider can't see images, auto-pick a vision-
-      // capable fallback from ANY kind (API / vision CLI / vision
-      // Ollama) — the user shouldn't have to know which of their
-      // configured providers supports vision.
-      const routedCanVision = providerCanVision({
-        kind: provider.kind,
-        apiKey: provider.apiKey,
-        command: provider.command,
-        baseUrl: provider.baseUrl,
-        defaultModel: provider.model ?? provider.defaultModel,
-        name: provider.providerName ?? provider.name,
-        supportsVision: provider.supportsVision
-      });
-      if (!routedCanVision) {
+      // Pre-empt ONLY when we can prove the provider can't see images
+      // AND the user hasn't opted in with supportsVision:true. The
+      // explicit-false opt-out triggers a fallback; everything else —
+      // especially code_cli — goes through as configured, because the
+      // task package + print-mode prompt give the CLI the image paths
+      // and instruct its Read tool to inspect them.
+      const mustSwitch = provider.supportsVision === false
+        || (provider.kind === "ollama" && !providerCanVision({
+          kind: provider.kind,
+          defaultModel: provider.model ?? provider.defaultModel
+        }));
+      if (mustSwitch) {
         const fallback = findFallbackVisionProvider();
         if (fallback) {
           const fromName = provider.providerName ?? provider.command ?? "当前 provider";
-          yield { event_type: "log", payload: { message: `${fromName} 不支持图片 — 自动切到 ${fallback.name ?? fallback.kind}。` } };
+          yield { event_type: "log", payload: { message: `${fromName} 标记为不支持图片 — 切到 ${fallback.name ?? fallback.kind}。` } };
           provider = {
             id: fallback.kind,
             configId: fallback.id ?? fallback.kind,
@@ -257,14 +243,8 @@ export function createMultiModalExecutorScaffold() {
           yield {
             event_type: "success",
             payload: {
-              text: `⚠️ ${provider.providerName ?? "当前 provider"} 不支持图片理解，而且在你已配置的其它 providers 里也没找到能读图的。\n\n` +
-                    `可以在 Console → Settings → Providers 里加一个：\n` +
-                    `• Anthropic（Claude API，每个模型都支持图片）\n` +
-                    `• OpenAI（gpt-4o）\n` +
-                    `• Google Gemini（gemini-2.0-flash 等）\n` +
-                    `• 智谱 GLM-4V / 阿里 Qwen-VL / Mistral Pixtral\n` +
-                    `• 或把 Gemini CLI / CodeBuddy / Qwen CLI 之一加进来（都支持图片）\n\n` +
-                    `如果你的某个 provider 实际上能读图但没自动识别，在 provider 记录里加 supportsVision: true 标志。`
+              text: `⚠️ ${provider.providerName ?? "当前 provider"} 标记为不支持图片，且没找到能读图的备选 provider。\n\n` +
+                    `在 Console → Settings → Providers 里加一个有视觉能力的 provider，或把 supportsVision:false 标志去掉。`
             }
           };
           return;
