@@ -2,6 +2,32 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-22（第 16 轮 — 扩展端速度/错误修复一波）
+
+- **UCA-164a (89a70fe)** — 右键翻译 10s bug
+  - 根因：`dispatchOverlayHandoff` 把所有非图片 action 硬编码成 "summarize"，翻译被送去跑整页 outline + 3 链接 fetch（~3s）
+  - 改：`buildCapturePayload` 在 payload 带 `actionId`；fallback 用真 action，翻译跳过 enrichment
+
+- **UCA-164b (89a70fe)** — 对话 prompt 拼接浪费 tokens
+  - 根因：history 被 flatten 成 `"用户:/助手:"` 文本塞进单 prompt，max_tokens=1024
+  - 改：`callAnthropic/OpenAICompat/Gemini` 统一支持 `messages[]` 数组；chat cap 至 `max_tokens=512`，history 限 6 轮
+
+- **UCA-165 (711e40e)** — 内联 frame 错误文案可读性
+  - 根因：直接展示技术错误码 + 模糊 "refresh this page"
+  - 改：`humanizeQuickActionError` 映射常见错误码到中文 actionable；context-invalidation 单独识别
+
+- **UCA-166 (b0ba663)** — Popup 流式对话
+  - 添 `callLLMDirectStream` (OpenAI-compat / Anthropic / Gemini 各自 SSE 格式)
+  - 通过 `chrome.runtime.connect` port 保 SW alive；popup 边收边渲；blink ▋ 光标动画
+
+- **UCA-167 (33d09bd)** — 内联 frame 流式（总结/翻译/解释）
+  - Mirror popup 的 port-based streaming；inline frame 加 `setStreaming()` 方法
+  - 和 UCA-166 共用 `callLLMDirectStream` 基础设施
+
+- **UCA-168 (0b35f5c)** — Enrichment budget 缩减
+  - `MAX_LINKS` 3→2、`LINK_TIMEOUT_MS` 3s→2s、`TOTAL_ENRICH_BUDGET_MS` 6s→3s
+  - 总结/解释第一 token 前等待从最多 6s 降到最多 3s
+
 ### 2026-04-22（第 15 轮 — 扩展端对话 + 深度上下文 + SSE 流）
 
 - **UCA-162 (c244007)** — Extension SSE streaming 取代 600ms 轮询
