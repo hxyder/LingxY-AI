@@ -2,6 +2,15 @@
 
 ## 完成记录（按 commit 时间倒序）
 
+### 2026-04-21（第 12 轮）
+
+- **UCA-149 (f79e0b2)** — 修回 code_cli 图片路径（撤掉 UCA-148 的错误假设）
+  - UCA-148 把 Claude Code / Codex / Kimi Code 一刀切判成"不支持图片" → 拦截了正常的调用流
+  - 实际情况：`task-package-builder.mjs` 早就把 image_paths 塞进 context.file_paths 和 image_paths 两处；`print-mode-prompt.mjs:152` 明确告诉 CLI "inspect these image files directly"；每个现代 agentic CLI 都有 Read 工具能打开图片
+  - 修法：`providerCanVision()` 对所有 `code_cli` 返 true；auto-switch 只在**显式 supportsVision:false** 或 **Ollama 模型确实没有 vision 层**时才触发
+  - UI label 也改：所有 code_cli 显示 👁，(text-only) 标签只留给真正没法看图的
+  - 参考历史 commit c7fd2bd（原始实现已走这条路，UCA-148 不小心回退了）
+
 ### 2026-04-21（第 11 轮）
 
 - **UCA-148 (1ee9ea8)** — Vision 自动切换覆盖 CLI / Ollama / supportsVision 覆盖
