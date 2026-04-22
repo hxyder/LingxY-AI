@@ -2,17 +2,21 @@ import {
   DEFAULT_RUNTIME_URL,
   PROVIDER_DEFAULT_MODELS,
   PROVIDER_GROUPS,
-  normalizeStandaloneConfig
+  modelOptionsForProvider,
+  normalizeStandaloneConfig,
+  providerSupportsVision,
+  reasoningOptionsForProvider
 } from "../shared/provider-catalog.js";
-
-// Extension options page — persists user's LLM config + desktop URL so the
-// service worker can fall back to a direct API call when the desktop runtime
-// isn't available. Key is stored in chrome.storage.local only; no telemetry.
 
 const runtimeInput = document.getElementById("runtime-url");
 const providerSelect = document.getElementById("provider");
 const apiKeyInput = document.getElementById("api-key");
-const modelInput = document.getElementById("model");
+const modelSelect = document.getElementById("model");
+const customModelField = document.getElementById("custom-model-field");
+const customModelInput = document.getElementById("custom-model");
+const reasoningField = document.getElementById("reasoning-field");
+const reasoningSelect = document.getElementById("reasoning");
+const providerHint = document.getElementById("provider-hint");
 const saveBtn = document.getElementById("save-btn");
 const testBtn = document.getElementById("test-btn");
 const saveStatus = document.getElementById("save-status");
@@ -27,13 +31,38 @@ function renderProviderOptions() {
   `).join("");
 }
 
+function renderModelOptions(provider, currentModel = "") {
+  const options = modelOptionsForProvider(provider);
+  const selectedModel = currentModel && !options.includes(currentModel) ? "__custom__" : (currentModel || options[0] || "");
+  modelSelect.innerHTML = [
+    ...options.map((model) => `<option value="${model}">${model}</option>`),
+    `<option value="__custom__">自定义…</option>`
+  ].join("");
+  modelSelect.value = selectedModel;
+  customModelField.hidden = selectedModel !== "__custom__";
+  customModelInput.value = selectedModel === "__custom__" ? currentModel : "";
+}
+
+function renderReasoningOptions(provider, model, currentReasoning = "") {
+  const options = reasoningOptionsForProvider(provider, model);
+  reasoningField.hidden = options.length === 0;
+  reasoningSelect.innerHTML = options.map((option) => `<option value="${option.id}">${option.label}</option>`).join("");
+  reasoningSelect.value = options.some((option) => option.id === currentReasoning) ? currentReasoning : (options[0]?.id ?? "");
+}
+
+function updateProviderHint(provider, model) {
+  const vision = providerSupportsVision(provider, model) ? "支持图片直连" : "图片直连可能不可用";
+  providerHint.textContent = `${vision}。Key 使用 chrome.storage.local 保存，不会离开您的浏览器。Anthropic 需要 CORS header「anthropic-dangerous-direct-browser-access: true」（扩展已内置）。Ollama 需本地已启动并监听 11434。`;
+}
+
 async function loadConfig() {
   const data = await chrome.storage.local.get("ucaStandaloneConfig");
   return normalizeStandaloneConfig(data.ucaStandaloneConfig ?? {
     runtimeUrl: DEFAULT_RUNTIME_URL,
     provider: "anthropic",
     apiKey: "",
-    model: PROVIDER_DEFAULT_MODELS.anthropic
+    model: PROVIDER_DEFAULT_MODELS.anthropic,
+    reasoningEffort: ""
   });
 }
 
@@ -41,17 +70,38 @@ async function saveConfig(config) {
   await chrome.storage.local.set({ ucaStandaloneConfig: normalizeStandaloneConfig(config) });
 }
 
+function selectedModelValue() {
+  return modelSelect.value === "__custom__"
+    ? customModelInput.value.trim()
+    : modelSelect.value.trim();
+}
+
+function readFormConfig() {
+  return normalizeStandaloneConfig({
+    runtimeUrl: runtimeInput.value.trim() || DEFAULT_RUNTIME_URL,
+    provider: providerSelect.value,
+    apiKey: apiKeyInput.value.trim(),
+    model: selectedModelValue() || PROVIDER_DEFAULT_MODELS[providerSelect.value],
+    reasoningEffort: reasoningField.hidden ? "" : reasoningSelect.value
+  });
+}
+
+function renderStatus(config) {
+  const extras = [];
+  if (config.model) extras.push(config.model);
+  if (config.reasoningEffort) extras.push(config.reasoningEffort);
+  statusKey.textContent = config.apiKey ? `${config.provider} · ${extras.join(" · ")}` : "未配置";
+  statusKey.className = `status-value ${config.apiKey ? "ok" : "warn"}`;
+}
+
 function renderConfig(config) {
   runtimeInput.value = config.runtimeUrl ?? DEFAULT_RUNTIME_URL;
   providerSelect.value = config.provider ?? "anthropic";
   apiKeyInput.value = config.apiKey ?? "";
-  modelInput.value = config.model ?? PROVIDER_DEFAULT_MODELS[providerSelect.value];
+  renderModelOptions(providerSelect.value, config.model ?? PROVIDER_DEFAULT_MODELS[providerSelect.value]);
+  renderReasoningOptions(providerSelect.value, config.model ?? "", config.reasoningEffort ?? "");
+  updateProviderHint(providerSelect.value, config.model ?? "");
   renderStatus(config);
-}
-
-function renderStatus(config) {
-  statusKey.textContent = config.apiKey ? `${config.provider} · 已配置` : "未配置";
-  statusKey.className = `status-value ${config.apiKey ? "ok" : "warn"}`;
 }
 
 async function probeDesktop(url) {
@@ -81,38 +131,36 @@ async function probeDesktop(url) {
   }
 }
 
-const DEFAULT_MODEL_SET = new Set(Object.values(PROVIDER_DEFAULT_MODELS));
+function syncModelAndReasoning() {
+  const model = selectedModelValue() || PROVIDER_DEFAULT_MODELS[providerSelect.value] || "";
+  renderReasoningOptions(providerSelect.value, model, reasoningSelect.value);
+  updateProviderHint(providerSelect.value, model);
+}
+
 providerSelect.addEventListener("change", () => {
-  // Auto-swap the model hint when the user hasn't typed a custom one (empty
-  // or currently showing another provider's default). If they typed something
-  // hand-picked we leave it alone.
-  if (!modelInput.value || DEFAULT_MODEL_SET.has(modelInput.value)) {
-    modelInput.value = PROVIDER_DEFAULT_MODELS[providerSelect.value] ?? "";
-  }
+  renderModelOptions(providerSelect.value, PROVIDER_DEFAULT_MODELS[providerSelect.value] ?? "");
+  syncModelAndReasoning();
 });
 
+modelSelect.addEventListener("change", () => {
+  customModelField.hidden = modelSelect.value !== "__custom__";
+  if (modelSelect.value !== "__custom__") customModelInput.value = "";
+  syncModelAndReasoning();
+});
+
+customModelInput.addEventListener("input", syncModelAndReasoning);
+
 saveBtn.addEventListener("click", async () => {
-  const config = normalizeStandaloneConfig({
-    runtimeUrl: runtimeInput.value.trim() || DEFAULT_RUNTIME_URL,
-    provider: providerSelect.value,
-    apiKey: apiKeyInput.value.trim(),
-    model: modelInput.value.trim() || PROVIDER_DEFAULT_MODELS[providerSelect.value]
-  });
+  const config = readFormConfig();
   renderConfig(config);
   await saveConfig(config);
   saveStatus.textContent = "已保存";
-  renderStatus(config);
   setTimeout(() => { saveStatus.textContent = ""; }, 2000);
   probeDesktop(config.runtimeUrl);
 });
 
 testBtn.addEventListener("click", async () => {
-  const config = normalizeStandaloneConfig({
-    runtimeUrl: runtimeInput.value.trim() || DEFAULT_RUNTIME_URL,
-    provider: providerSelect.value,
-    apiKey: apiKeyInput.value.trim(),
-    model: modelInput.value.trim() || PROVIDER_DEFAULT_MODELS[providerSelect.value]
-  });
+  const config = readFormConfig();
   renderConfig(config);
   if (!config.apiKey) {
     saveStatus.textContent = "先填 API Key";

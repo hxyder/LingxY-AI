@@ -61,6 +61,7 @@ body {
   font-family: inherit;
   font-size: 13px;
 }
+.field[hidden] { display: none; }
 .field input:focus,
 .field select:focus {
   outline: none;

@@ -1,6 +1,7 @@
 import {
   DEFAULT_RUNTIME_URL,
   PROVIDER_CONFIGS,
+  applyReasoningSelectionToBody,
   normalizeStandaloneConfig
 } from "../shared/provider-catalog.js";
 
@@ -69,20 +70,26 @@ async function callAnthropic({ apiKey, model, prompt, systemPrompt }) {
   return { ok: true, text };
 }
 
-async function callOpenAICompat(config, { apiKey, model, prompt, systemPrompt }) {
+async function callOpenAICompat(config, { apiKey, model, prompt, systemPrompt, reasoningEffort = "" }) {
   const messages = [];
   if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
   messages.push({ role: "user", content: prompt });
   const headers = { "Content-Type": "application/json" };
   if (config.authStyle === "bearer" && apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  const body = {
+    model: model || config.defaultModel,
+    messages,
+    max_tokens: 1024
+  };
+  applyReasoningSelectionToBody(body, {
+    provider: config.id ?? "",
+    model: body.model,
+    reasoningEffort
+  });
   const response = await fetch(config.endpoint, {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      model: model || config.defaultModel,
-      messages,
-      max_tokens: 1024
-    })
+    body: JSON.stringify(body)
   });
   if (!response.ok) {
     return { ok: false, error: `http_${response.status}:${await response.text().catch(() => "")}` };
@@ -160,23 +167,29 @@ async function callAnthropicVision({ apiKey, model, prompt, imageUrl }) {
   return { ok: true, text: payload?.content?.find?.((b) => b.type === "text")?.text ?? "" };
 }
 
-async function callOpenAICompatVision(config, { apiKey, model, prompt, imageUrl }) {
+async function callOpenAICompatVision(config, { apiKey, model, prompt, imageUrl, reasoningEffort = "" }) {
   const headers = { "Content-Type": "application/json" };
   if (config.authStyle === "bearer" && apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const body = {
+    model: model || config.defaultModel,
+    max_tokens: 1024,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "image_url", image_url: { url: imageUrl } },
+        { type: "text", text: prompt }
+      ]
+    }]
+  };
+  applyReasoningSelectionToBody(body, {
+    provider: config.id ?? "",
+    model: body.model,
+    reasoningEffort
+  });
   const response = await fetch(config.endpoint, {
     method: "POST",
     headers,
-    body: JSON.stringify({
-      model: model || config.defaultModel,
-      max_tokens: 1024,
-      messages: [{
-        role: "user",
-        content: [
-          { type: "image_url", image_url: { url: imageUrl } },
-          { type: "text", text: prompt }
-        ]
-      }]
-    })
+    body: JSON.stringify(body)
   });
   if (!response.ok) return { ok: false, error: `openai_compat_vision_${response.status}:${await response.text().catch(() => "")}` };
   const payload = await response.json();
@@ -227,7 +240,13 @@ export async function callLLMDirectVision({ config, prompt, imageUrl }) {
     if (normalizedConfig.provider === "gemini") return await callGeminiVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
     const entry = PROVIDER_CONFIGS[normalizedConfig.provider];
     if (entry && providerSupportsDirectVision(normalizedConfig.provider)) {
-      return await callOpenAICompatVision(entry, { apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
+      return await callOpenAICompatVision({ ...entry, id: normalizedConfig.provider }, {
+        apiKey: normalizedConfig.apiKey,
+        model: normalizedConfig.model,
+        prompt,
+        imageUrl,
+        reasoningEffort: normalizedConfig.reasoningEffort
+      });
     }
     return { ok: false, error: `vision_unsupported_provider:${normalizedConfig.provider}` };
   } catch (error) {
@@ -252,7 +271,13 @@ export async function callLLMDirect({ config, prompt, systemPrompt }) {
     const entry = PROVIDER_CONFIGS[provider];
     if (!entry) return { ok: false, error: `unknown_provider:${provider}` };
     if (entry.authStyle !== "none" && !normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
-    return await callOpenAICompat(entry, { apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, systemPrompt });
+    return await callOpenAICompat({ ...entry, id: provider }, {
+      apiKey: normalizedConfig.apiKey,
+      model: normalizedConfig.model,
+      prompt,
+      systemPrompt,
+      reasoningEffort: normalizedConfig.reasoningEffort
+    });
   } catch (error) {
     return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
   }

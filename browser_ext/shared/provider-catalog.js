@@ -57,6 +57,55 @@ export const PROVIDER_CONFIGS = Object.freeze({
   ollama: { label: "Ollama (本地)", endpoint: "http://127.0.0.1:11434/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.ollama, authStyle: "none" }
 });
 
+export const PROVIDER_MODEL_PRESETS = Object.freeze({
+  anthropic: ["claude-sonnet-4-6", "claude-opus-4-5-20250514", "claude-haiku-4-5-20250514"],
+  openai: ["gpt-4o", "gpt-4o-mini", "gpt-5"],
+  gemini: ["gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-flash"],
+  xai: ["grok-2-latest", "grok-vision-beta"],
+  mistral: ["mistral-large-latest", "pixtral-large-latest"],
+  groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
+  perplexity: ["sonar", "sonar-pro"],
+  openrouter: ["openai/gpt-4o", "anthropic/claude-sonnet-4-5", "google/gemini-2.0-flash"],
+  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  doubao: ["doubao-seed-2-0-lite-260215", "doubao-seed-2-0-pro-260215", "doubao-seed-2-0-mini-260215"],
+  moonshot: ["moonshot-v1-8k", "moonshot-v1-32k", "kimi-k2-0711-preview"],
+  qwen: ["qwen-turbo", "qwen-plus", "qwen-vl-max"],
+  zhipu: ["glm-4-flash", "glm-4-plus", "glm-4v-plus"],
+  siliconflow: ["deepseek-ai/DeepSeek-V2.5", "Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3"],
+  yi: ["yi-large", "yi-medium"],
+  ollama: ["llama3.1", "llama3.2", "qwen2.5", "llava"]
+});
+
+const OPENAI_REASONING_OPTIONS = Object.freeze([
+  { id: "", label: "(不指定)" },
+  { id: "none", label: "None (普通 / 不思考)" },
+  { id: "minimal", label: "Minimal (最省)" },
+  { id: "low", label: "Low (快速)" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High (深思)" },
+  { id: "xhigh", label: "Extra High (最深)" }
+]);
+
+const DOUBAO_REASONING_OPTIONS = Object.freeze([
+  { id: "", label: "(不指定)" },
+  { id: "thinking:disabled|minimal", label: "关闭思考 (disabled / minimal)" },
+  { id: "thinking:enabled|low", label: "轻量思考 (enabled / low)" },
+  { id: "thinking:enabled|medium", label: "均衡思考 (enabled / medium)" },
+  { id: "thinking:enabled|high", label: "深度思考 (enabled / high)" }
+]);
+
+function uniqueNonEmpty(values = []) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of values) {
+    const value = `${raw ?? ""}`.trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    out.push(value);
+  }
+  return out;
+}
+
 function detectModelFamily(model = "") {
   const normalized = `${model ?? ""}`.trim().toLowerCase();
   if (!normalized) return "empty";
@@ -91,15 +140,78 @@ function providerSupportsModel(provider = "", model = "") {
   }
 }
 
+export function modelOptionsForProvider(provider = "") {
+  const normalizedProvider = `${provider ?? ""}`.trim();
+  return uniqueNonEmpty([
+    PROVIDER_DEFAULT_MODELS[normalizedProvider] ?? "",
+    ...(PROVIDER_MODEL_PRESETS[normalizedProvider] ?? [])
+  ]);
+}
+
+export function reasoningOptionsForProvider(provider = "", model = "") {
+  const normalizedProvider = `${provider ?? ""}`.trim();
+  const normalizedModel = `${model ?? ""}`.trim().toLowerCase();
+  if (normalizedProvider === "doubao") return DOUBAO_REASONING_OPTIONS.map((option) => ({ ...option }));
+  if (normalizedProvider === "openai" && /^(gpt-5|o[1-9](-|$))/.test(normalizedModel)) {
+    return OPENAI_REASONING_OPTIONS.map((option) => ({ ...option }));
+  }
+  return [];
+}
+
+export function normalizeReasoningSelection(provider = "", model = "", value = "") {
+  const normalizedProvider = `${provider ?? ""}`.trim();
+  const normalizedValue = `${value ?? ""}`.trim().toLowerCase();
+  if (!normalizedValue) return "";
+  if (normalizedValue === "extra_high" || normalizedValue === "extra-high") return "xhigh";
+  if (normalizedProvider === "doubao") {
+    if (normalizedValue === "thinking:enabled") return "thinking:enabled|medium";
+    if (normalizedValue === "thinking:disabled") return "thinking:disabled|minimal";
+    if (normalizedValue === "thinking:enabled|minimal") return "thinking:disabled|minimal";
+    if (/^thinking:enabled\|(low|medium|high)$/.test(normalizedValue)) return normalizedValue;
+    if (normalizedValue === "thinking:disabled|minimal") return normalizedValue;
+    return "";
+  }
+  return reasoningOptionsForProvider(normalizedProvider, model).some((option) => option.id === normalizedValue)
+    ? normalizedValue
+    : "";
+}
+
+export function applyReasoningSelectionToBody(body = {}, { provider = "", model = "", reasoningEffort = "" } = {}) {
+  const normalized = normalizeReasoningSelection(provider, model, reasoningEffort);
+  if (!normalized) return body;
+  if (normalized.startsWith("thinking:")) {
+    const [thinkingPart, effortPart = ""] = normalized.split("|");
+    const thinkingType = thinkingPart.slice("thinking:".length);
+    if (thinkingType) body.thinking = { type: thinkingType };
+    if (effortPart) body.reasoning_effort = effortPart;
+    return body;
+  }
+  body.reasoning_effort = normalized;
+  return body;
+}
+
+export function providerSupportsVision(provider = "", model = "") {
+  const normalizedProvider = `${provider ?? ""}`.trim();
+  const normalizedModel = `${model ?? ""}`.trim().toLowerCase();
+  if (["openai", "gemini", "doubao", "qwen", "zhipu", "mistral", "openrouter", "xai", "anthropic", "siliconflow"].includes(normalizedProvider)) return true;
+  if (normalizedProvider === "ollama") {
+    return /llava|llama-?3\.2.*vision|qwen.*vl|minicpm.*v|bakllava/.test(normalizedModel);
+  }
+  return false;
+}
+
 export function normalizeStandaloneConfig(config = {}) {
   const provider = `${config?.provider ?? "anthropic"}`.trim() || "anthropic";
   const model = `${config?.model ?? ""}`.trim();
+  const resolvedModel = !model || !providerSupportsModel(provider, model)
+    ? (PROVIDER_DEFAULT_MODELS[provider] ?? "")
+    : model;
+  const reasoningEffort = normalizeReasoningSelection(provider, resolvedModel, config?.reasoningEffort ?? "");
   return {
     runtimeUrl: `${config?.runtimeUrl ?? DEFAULT_RUNTIME_URL}`.trim() || DEFAULT_RUNTIME_URL,
     provider,
     apiKey: `${config?.apiKey ?? ""}`,
-    model: !model || !providerSupportsModel(provider, model)
-      ? (PROVIDER_DEFAULT_MODELS[provider] ?? "")
-      : model
+    model: resolvedModel,
+    reasoningEffort
   };
 }

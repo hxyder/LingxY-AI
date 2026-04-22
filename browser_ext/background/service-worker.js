@@ -2,6 +2,7 @@ import {
   loadStandaloneConfig,
   isDesktopAvailable,
   callLLMDirect,
+  callLLMDirectVision,
   buildPromptFor,
   invalidateDesktopProbe
 } from "./standalone-client.js";
@@ -285,7 +286,9 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
       imageUrl: request?.payload?.capture?.imageUrl ?? ""
     };
     const { prompt, systemPrompt } = buildPromptFor(action, selectionState);
-    const result = await callLLMDirect({ config: standaloneConfig, prompt, systemPrompt });
+    const result = action === "uca.inspect-image"
+      ? await callLLMDirectVision({ config: standaloneConfig, prompt, imageUrl: selectionState.imageUrl })
+      : await callLLMDirect({ config: standaloneConfig, prompt, systemPrompt });
     try {
       if (result.ok && chromeApi.notifications?.create) {
         chromeApi.notifications.create(`uca-standalone-${Date.now()}`, {

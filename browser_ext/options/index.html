@@ -35,9 +35,17 @@
         </label>
         <label class="field">
           <span>模型</span>
-          <input id="model" type="text" placeholder="自动填充所选提供商的默认模型" />
+          <select id="model"></select>
         </label>
-        <p class="hint">Key 使用 chrome.storage.local 保存，不会离开您的浏览器。Anthropic 需要 CORS header「anthropic-dangerous-direct-browser-access: true」（扩展已内置）。Ollama 需本地已启动并监听 11434。</p>
+        <label id="custom-model-field" class="field" hidden>
+          <span>自定义模型</span>
+          <input id="custom-model" type="text" placeholder="输入 provider 支持的模型 ID" />
+        </label>
+        <label id="reasoning-field" class="field" hidden>
+          <span>思考强度</span>
+          <select id="reasoning"></select>
+        </label>
+        <p id="provider-hint" class="hint">Key 使用 chrome.storage.local 保存，不会离开您的浏览器。Anthropic 需要 CORS header「anthropic-dangerous-direct-browser-access: true」（扩展已内置）。Ollama 需本地已启动并监听 11434。</p>
       </section>
 
       <section class="panel">
