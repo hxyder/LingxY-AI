@@ -9,6 +9,7 @@
     "nativeMessaging",
     "notifications",
     "scripting",
+    "sidePanel",
     "storage"
   ],
   "host_permissions": [
@@ -32,6 +33,9 @@
     "http://localhost/*"
   ],
   "options_page": "options/index.html",
+  "side_panel": {
+    "default_path": "sidepanel/index.html"
+  },
   "background": {
     "service_worker": "background/service-worker.js",
     "type": "module"

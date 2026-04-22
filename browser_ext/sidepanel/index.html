@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LingxY · 侧边栏</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="sp-root">
+      <header class="sp-header">
+        <div class="sp-title">
+          <span class="sp-eyebrow">LingxY</span>
+          <h1 class="sp-h1">侧边栏助手</h1>
+        </div>
+        <div class="sp-header-right">
+          <span id="sp-mode-pill" class="sp-pill">检测中</span>
+          <button id="sp-options-btn" class="sp-icon-btn" title="设置" aria-label="options">⚙️</button>
+        </div>
+      </header>
+
+      <section class="sp-actions-row">
+        <button id="sp-action-page" class="sp-chip" type="button">📄 分析此页</button>
+        <button id="sp-action-video" class="sp-chip" type="button">🎬 分析视频</button>
+        <button id="sp-action-selection" class="sp-chip" type="button">✂️ 分析选区</button>
+        <button id="sp-action-clear" class="sp-chip sp-chip-ghost" type="button" title="清空对话">🗑️ 清空</button>
+      </section>
+
+      <div id="sp-history" class="sp-history" aria-live="polite"></div>
+
+      <form id="sp-form" class="sp-form">
+        <textarea id="sp-input" class="sp-input" rows="3" placeholder="提问（Enter 发送，Shift+Enter 换行）。可以基于上面的分析继续追问。"></textarea>
+        <div class="sp-form-row">
+          <button id="sp-send" class="sp-btn sp-btn-primary" type="submit">发送</button>
+          <span id="sp-status" class="sp-status"></span>
+        </div>
+      </form>
+    </main>
+    <script type="module" src="./index.js"></script>
+  </body>
+</html>

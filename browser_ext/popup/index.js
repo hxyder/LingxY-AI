@@ -334,6 +334,29 @@ async function bootPopup(doc = document, chromeApi = chrome) {
     });
   }
 
+  const openSidePanelBtn = doc.getElementById("open-sidepanel");
+  if (openSidePanelBtn) {
+    openSidePanelBtn.addEventListener("click", async () => {
+      // chrome.sidePanel.open requires a user gesture. The button click
+      // counts as one; route through the service worker (via runtime
+      // message) so the same handler powers both popup + future callers.
+      try {
+        const windows = await chromeApi.windows?.getCurrent?.();
+        const windowId = windows?.id;
+        if (chromeApi.sidePanel?.open && windowId != null) {
+          await chromeApi.sidePanel.open({ windowId });
+        } else {
+          await new Promise((resolve) => {
+            chromeApi.runtime.sendMessage({ type: "uca.sidepanel.open", windowId }, resolve);
+          });
+        }
+        window.close();
+      } catch (error) {
+        console.warn("[LingxY] open side panel failed:", error?.message ?? error);
+      }
+    });
+  }
+
   doc.getElementById("display-mode").addEventListener("change", async (event) => {
     const response = await updateOverlaySettings({
       displayMode: event.target.value

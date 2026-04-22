@@ -919,8 +919,60 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
   });
 }
 
+// UCA-171: clicking the extension toolbar icon opens the side panel in
+// addition to the popup. (Strictly "instead of" when sidePanel is enabled
+// — per Chrome's behavior, the popup in manifest.action takes precedence,
+// so we set the panel to open *beside* the popup via setPanelBehavior,
+// and also expose a context menu + popup button so the user can
+// deliberately open it.)
+function registerSidePanel(chromeApi = chrome) {
+  if (!chromeApi.sidePanel?.setPanelBehavior) return;
+  try {
+    chromeApi.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
+  } catch { /* ignore */ }
+  // Context menu entry — works regardless of popup focus.
+  if (chromeApi.contextMenus?.create) {
+    try {
+      chromeApi.contextMenus.create({
+        id: "uca.open-sidepanel",
+        title: "打开 LingxY 侧边栏",
+        contexts: ["action", "page"]
+      });
+    } catch { /* already created across SW restarts */ }
+  }
+  chromeApi.contextMenus?.onClicked?.addListener((info, tab) => {
+    if (info.menuItemId !== "uca.open-sidepanel") return;
+    if (tab?.windowId && chromeApi.sidePanel?.open) {
+      chromeApi.sidePanel.open({ windowId: tab.windowId }).catch(() => { /* older Chrome */ });
+    }
+  });
+  // Expose a message handler so popup can ask us to open it programmatically.
+  chromeApi.runtime?.onMessage?.addListener((message, sender, sendResponse) => {
+    if (message?.type !== "uca.sidepanel.open") return false;
+    const windowId = sender?.tab?.windowId ?? message.windowId ?? null;
+    const doOpen = (wid) => {
+      if (!chromeApi.sidePanel?.open) {
+        sendResponse({ ok: false, error: "side_panel_api_unavailable" });
+        return;
+      }
+      chromeApi.sidePanel.open({ windowId: wid })
+        .then(() => sendResponse({ ok: true }))
+        .catch((err) => sendResponse({ ok: false, error: err?.message ?? String(err) }));
+    };
+    if (windowId != null) {
+      doOpen(windowId);
+    } else {
+      chromeApi.windows?.getCurrent?.()
+        ?.then((w) => doOpen(w?.id))
+        ?.catch((err) => sendResponse({ ok: false, error: err?.message ?? String(err) }));
+    }
+    return true;
+  });
+}
+
 if (typeof chrome !== "undefined" && chrome.runtime?.id) {
   registerExtensionRuntime(chrome);
   registerChatStreamPort(chrome);
   registerQuickActionStreamPort(chrome);
+  registerSidePanel(chrome);
 }
