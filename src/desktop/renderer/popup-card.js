@@ -14,7 +14,8 @@ const state = {
   kind: "info",
   pinned: false,
   resolved: false,
-  autoHideTimer: null
+  autoHideTimer: null,
+  lastReportedHeight: 0
 };
 
 const THEME_KEY = "uca-console-theme";
@@ -38,6 +39,30 @@ syncPopupTheme();
 window.addEventListener("storage", (event) => {
   if (event.key === "lingxy.theme" || event.key === THEME_KEY) syncPopupTheme();
 });
+
+function measureAndResize() {
+  if (!state.cardId || !cardEl) return;
+  // The card fills the window (height: 100%), so the real required height is
+  // the sum of its internal parts. Use scrollHeight of the root card + a
+  // small buffer for the drop shadow / body padding.
+  const headH = document.getElementById("pc-head")?.offsetHeight ?? 40;
+  const bodyH = bodyEl?.scrollHeight ?? 0;
+  const actionsH = actionsEl?.offsetHeight ?? 40;
+  const needed = Math.ceil(headH + bodyH + actionsH + 20); // +20 = body top/bottom padding + breathing
+  if (Math.abs(needed - state.lastReportedHeight) < 4) return;
+  state.lastReportedHeight = needed;
+  try { window.ucaShell?.resizePopupCard?.(state.cardId, needed); } catch { /* ignore */ }
+}
+
+// Observe size changes for dynamic content (e.g. approval cards whose
+// title/body updates after init).
+if (typeof ResizeObserver !== "undefined") {
+  const ro = new ResizeObserver(() => measureAndResize());
+  queueMicrotask(() => {
+    if (bodyEl) ro.observe(bodyEl);
+    if (actionsEl) ro.observe(actionsEl);
+  });
+}
 
 function resolveCardId() {
   try {
@@ -153,7 +178,12 @@ function applyInit(payload) {
     scheduleAutoHide(payload?.autoHideMs ?? 6000);
   }
 
-  requestAnimationFrame(() => cardEl.classList.add("show"));
+  requestAnimationFrame(() => {
+    cardEl.classList.add("show");
+    measureAndResize();
+    // one more pass after the transition so button metrics settle
+    setTimeout(measureAndResize, 260);
+  });
 }
 
 function defaultTitleFor(kind) {

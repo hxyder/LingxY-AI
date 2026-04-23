@@ -12,7 +12,7 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
   background: color-mix(in srgb, var(--panel) 94%, transparent);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
-  border-radius: 12px;
+  border-radius: 8px;
   border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
   box-shadow: var(--shadow-lg);
   display: flex;
@@ -107,7 +107,7 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
   color: var(--ink);
 }
 .pc-body-text .pc-body-sub {
-  color: #64748b;
+  color: var(--muted);
   font-size: 11.5px;
 }
 .pc-body-text code {
@@ -123,9 +123,12 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
   flex: 0 0 auto;
   padding: 8px 12px 10px;
   display: flex;
+  flex-wrap: wrap;
+  row-gap: 6px;
   gap: 6px;
   justify-content: flex-end;
 }
+.pc-btn { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pc-btn {
   height: 28px;
   padding: 0 12px;
@@ -137,7 +140,11 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.pc-btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pc-btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
 .pc-btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 .pc-btn-ghost { background: transparent; color: var(--ink-2); border-color: var(--line); }
 .pc-btn-ghost:hover { background: var(--panel-2); color: var(--ink); }

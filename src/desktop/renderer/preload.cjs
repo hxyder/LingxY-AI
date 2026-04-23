@@ -192,6 +192,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   togglePopupCardPin(cardId, pinned) {
     return ipcRenderer.invoke("uca:popup-card-toggle-pin", cardId, Boolean(pinned));
   },
+  resizePopupCard(cardId, height) {
+    return ipcRenderer.invoke("uca:popup-card-resize", cardId, Math.max(0, Number(height) || 0));
+  },
   onPopupCardInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:popup-card-init", listener);

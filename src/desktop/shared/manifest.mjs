@@ -29,7 +29,8 @@ export const IPC_CHANNELS = Object.freeze({
   popupCardResolve: "uca:popup-card-resolve",
   popupCardInit: "uca:popup-card-init",
   popupCardTogglePin: "uca:popup-card-toggle-pin",
-  popupCardResolved: "uca:popup-card-resolved"
+  popupCardResolved: "uca:popup-card-resolved",
+  popupCardResize: "uca:popup-card-resize"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

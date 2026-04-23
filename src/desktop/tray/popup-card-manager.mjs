@@ -15,19 +15,30 @@ const PRELOAD_PATH = path.join(RENDERER_DIR, "preload.cjs");
 
 const CARD_WIDTH = 380;
 const CARD_HEIGHT_MIN = 150;
-const CARD_HEIGHT_MAX = 360;
+const CARD_HEIGHT_MAX = 480;
 const CARD_GAP = 8;
 const MAX_CARDS = 5;
 
-// Rough height estimate from payload so longer content doesn't get clipped
-// behind the action row. Caller can always scroll (body has overflow-y:auto)
-// but we'd rather make the card tall enough to show 3-4 lines without it.
+// Initial height estimate for the window before the renderer measures its
+// real content. The renderer sends a popupCardResize IPC with the actual
+// scrollHeight once paint settles, so this is only used for the first frame.
+// CJK chars are ~2× wider than ASCII, so we assume ~16 chars per wrapped
+// line at 356px content width.
 function estimateCardHeight(payload) {
   const lines = Array.isArray(payload?.lines) ? payload.lines : [payload?.body].filter(Boolean);
-  const charCount = lines.reduce((acc, line) => acc + String(line ?? "").length, 0);
-  // chrome, header + actions = ~88px; each wrapped line ~20px at 380px width
-  const bodyRows = Math.max(2, Math.ceil(charCount / 42));
-  const estimated = 88 + bodyRows * 20;
+  let logicalLines = 0;
+  for (const line of lines) {
+    const s = String(line ?? "");
+    if (!s) { logicalLines += 1; continue; }
+    // explicit newlines + wrapping at ~18 chars (CJK-safe avg)
+    for (const segment of s.split(/\r?\n/)) {
+      logicalLines += Math.max(1, Math.ceil(segment.length / 18));
+    }
+  }
+  const bodyRows = Math.max(2, logicalLines);
+  // chrome: 40 header + 48 actions (with possible wrap margin) = ~92px.
+  // each wrapped line ~20px at 13px font / line-height 1.5.
+  const estimated = 92 + bodyRows * 20;
   return Math.min(CARD_HEIGHT_MAX, Math.max(CARD_HEIGHT_MIN, estimated));
 }
 
@@ -190,6 +201,19 @@ export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolve
     return true;
   }
 
+  function resizeCard(cardId, requestedHeight) {
+    const entry = cards.get(cardId);
+    if (!entry || entry.window.isDestroyed()) return false;
+    const height = Math.min(
+      CARD_HEIGHT_MAX,
+      Math.max(CARD_HEIGHT_MIN, Math.ceil(Number(requestedHeight) || CARD_HEIGHT_MIN))
+    );
+    if (height === entry.height) return true;
+    entry.height = height;
+    reflowStack();
+    return true;
+  }
+
   function resolveCard(cardId, payload) {
     const entry = cards.get(cardId);
     if (!entry) return { ok: false };
@@ -205,6 +229,7 @@ export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolve
       return closeCard(cardId, options?.reason ?? "user");
     });
     ipcMain.handle(IPC_CHANNELS.popupCardTogglePin, (_event, cardId, pinned) => togglePin(cardId, pinned));
+    ipcMain.handle(IPC_CHANNELS.popupCardResize, (_event, cardId, height) => resizeCard(cardId, height));
     ipcMain.handle(IPC_CHANNELS.popupCardResolve, async (_event, cardId, meta = {}) => {
       const info = resolveCard(cardId, meta);
       if (!info.ok) return { ok: false };
