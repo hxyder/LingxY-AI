@@ -356,6 +356,71 @@ function extractLaunchAppName(value = "") {
   return null;
 }
 
+function extractLaunchAppCandidates(value = "") {
+  const text = String(value ?? "");
+  const patterns = [
+    /(?:启动|打开|运行)\s*(?:一下|下)?\s*(?:应用|软件|程序|app)?\s*([^，,。.!?]+)/gi,
+    /\b(?:launch|open|start|run)\s+(?:the\s+)?(?:app\s+|application\s+)?([^,.!?]+)/gi
+  ];
+  const candidates = [];
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const candidate = match?.[1]?.trim()
+        ?.replace(/^(一个|某个|这个|那个|应用|软件|程序|app|application)\s*/i, "")
+        ?.trim();
+      if (candidate
+        && !/^(一个)?(应用|软件|程序|app|application)$/i.test(candidate)
+        && !extractUrl(candidate)
+        && !/(网页|网站|链接|网址|url|web\s*page|website)$/i.test(candidate)) {
+        candidates.push(candidate);
+      }
+    }
+  }
+  return [...new Set(candidates)];
+}
+
+function normalizeLaunchAppArg(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item ?? "").trim()).find(Boolean) ?? "";
+  }
+  return String(value ?? "").trim();
+}
+
+function normalizeLaunchAppKey(value = "") {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\.exe$/i, "")
+    .replace(/\s+/g, "");
+}
+
+function repairToolArgs(decision, task, transcript = []) {
+  if (!decision || decision.tool !== "launch_app") return decision?.args ?? {};
+  const args = { ...(decision.args ?? {}) };
+  const explicit = normalizeLaunchAppArg(args.app ?? args.name ?? args.appName);
+  if (explicit) {
+    args.app = explicit;
+    delete args.name;
+    delete args.appName;
+    return args;
+  }
+
+  const candidates = extractLaunchAppCandidates(task?.user_command ?? "");
+  if (candidates.length === 0) return args;
+
+  const alreadyUsed = new Set(
+    transcript
+      .filter((entry) => entry?.type === "tool_result" && entry.tool === "launch_app")
+      .map((entry) => normalizeLaunchAppKey(entry.args?.app))
+      .filter(Boolean)
+  );
+  const next = candidates.find((candidate) => !alreadyUsed.has(normalizeLaunchAppKey(candidate)))
+    ?? candidates[0];
+  args.app = next;
+  delete args.name;
+  delete args.appName;
+  return args;
+}
+
 function extractUrl(value = "") {
   const text = String(value ?? "");
   const match = text.match(/\bhttps?:\/\/[^\s，。]+/i)
@@ -959,6 +1024,10 @@ export async function runToolAgentLoop({
         final_text: connectorFinal ?? decision?.text ?? "Done.",
         transcript
       };
+    }
+
+    if (decision?.type === "tool_call") {
+      decision.args = repairToolArgs(decision, task, transcript);
     }
 
     // Dedupe: if the planner is asking for the same tool+args we already executed, treat as final

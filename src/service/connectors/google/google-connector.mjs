@@ -490,7 +490,22 @@ export async function createGoogleEvent(runtime, account, input = {}, { fetchImp
     },
     body: JSON.stringify(body)
   });
-  if (!response.ok) return { status: "error", errorCode: `gcal_create_error:${response.status}` };
+  if (!response.ok) {
+    let detail = "";
+    try {
+      const payload = await response.json();
+      detail = payload?.error?.message ?? payload?.error_description ?? "";
+    } catch {
+      try { detail = await response.text(); } catch { /* ignore */ }
+    }
+    return {
+      status: response.status === 401 ? "reauth_required" : "error",
+      errorCode: `gcal_create_error:${response.status}`,
+      message: detail ? `Google Calendar API 返回 ${response.status}：${detail}` : undefined,
+      accountId: account.id,
+      provider: account.provider
+    };
+  }
   const payload = await response.json();
   return { status: "success", provider: "google", accountId: account.id, data: { event: { id: payload.id, title: payload.summary, url: payload.htmlLink } } };
 }

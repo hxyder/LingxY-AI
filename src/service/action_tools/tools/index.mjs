@@ -358,7 +358,10 @@ export const REVEAL_IN_EXPLORER_TOOL = {
 export const LAUNCH_APP_TOOL = {
   ...TOOL_DEFINITIONS.find((t) => t.id === "launch_app"),
   async execute(args = {}) {
-    const appArg = args.app ?? args.name ?? args.appName;
+    const rawAppArg = args.app ?? args.name ?? args.appName;
+    const appArg = Array.isArray(rawAppArg)
+      ? rawAppArg.map((item) => String(item ?? "").trim()).find(Boolean)
+      : rawAppArg;
     if (!appArg) return createActionResult({ success: false, observation: "app name required" });
     const command = resolveAppCommand(appArg);
 

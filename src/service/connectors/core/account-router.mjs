@@ -30,6 +30,19 @@ function candidateView(account) {
   };
 }
 
+function sameText(left, right) {
+  return String(left ?? "").trim().toLowerCase() === String(right ?? "").trim().toLowerCase();
+}
+
+function matchesAccountIdentity(account, value) {
+  if (!value) return false;
+  return sameText(account.id, value)
+    || sameText(account.accountId, value)
+    || sameText(account.email, value)
+    || sameText(account.providerAccountId, value)
+    || sameText(account.displayName, value);
+}
+
 export function resolveAccount(ctx, input = {}, requiredCapability) {
   const accounts = (ctx.connectedAccounts ?? [])
     .map((account) => ({
@@ -39,7 +52,7 @@ export function resolveAccount(ctx, input = {}, requiredCapability) {
     .filter((account) => account.tokenStatus === "active");
 
   if (input.accountId) {
-    const exact = accounts.find((account) => account.id === input.accountId || account.accountId === input.accountId);
+    const exact = accounts.find((account) => matchesAccountIdentity(account, input.accountId));
     if (!exact) {
       return {
         status: "error",
@@ -97,4 +110,3 @@ export function resolveAccount(ctx, input = {}, requiredCapability) {
     message: `没有具备 ${requiredCapability} 能力的已连接账户。`
   };
 }
-

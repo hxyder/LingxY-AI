@@ -446,6 +446,8 @@ let selectedTaskEventBaseUrl = null;
 let handledSelectedTaskEventIds = new Set();
 let consoleChatEventStream = null;
 let consoleChatResultTaskIds = new Set();
+const scheduleRunTaskWatchers = new Map();
+const completedScheduleRunTaskIds = new Set();
 let editingSkillPath = null;
 
 /* ═══════════════════════════════════════════════
@@ -602,6 +604,128 @@ function subscribeConsoleChatTask(taskId) {
       consoleChatState.textContent = `Stream failed: ${error.message}`;
     }
   });
+}
+
+function closeScheduleRunTaskWatcher(taskId) {
+  scheduleRunTaskWatchers.get(taskId)?.close?.();
+  scheduleRunTaskWatchers.delete(taskId);
+}
+
+function buildScheduleRunCompletionCopy(task = {}) {
+  const status = task.status ?? "unknown";
+  const artifacts = Array.isArray(task.artifacts) ? task.artifacts : [];
+  const primaryArtifact = artifacts[0]?.path ?? null;
+  const primaryLabel = primaryArtifact ? formatArtifactLabel(primaryArtifact) : "";
+  const summary = String(
+    task.result_summary
+    ?? task.inline_result
+    ?? task.failure_user_message
+    ?? task.intent
+    ?? task.user_command
+    ?? ""
+  ).trim();
+
+  if (status === "failed") {
+    return {
+      kind: "error",
+      title: "定时任务失败",
+      body: summary || "任务执行失败。",
+      lines: [summary || "任务执行失败。"]
+    };
+  }
+
+  if (status === "cancelled") {
+    return {
+      kind: "error",
+      title: "定时任务已取消",
+      body: summary || "任务已取消。",
+      lines: [summary || "任务已取消。"]
+    };
+  }
+
+  if (artifacts.length > 0) {
+    const suffix = artifacts.length > 1 ? `，共 ${artifacts.length} 个文件` : "";
+    const body = primaryLabel
+      ? `已生成 ${primaryLabel}${suffix}`
+      : `已生成 ${artifacts.length} 个文件`;
+    return {
+      kind: "success",
+      title: status === "partial_success" ? "定时任务部分完成" : "定时任务已完成",
+      body,
+      lines: [body, summary].filter(Boolean)
+    };
+  }
+
+  const body = summary || (status === "partial_success" ? "任务已部分完成。" : "任务已完成。");
+  return {
+    kind: "success",
+    title: status === "partial_success" ? "定时任务部分完成" : "定时任务已完成",
+    body,
+    lines: [body]
+  };
+}
+
+function fireScheduleRunCompletionNotice(task = {}) {
+  const taskId = task.task_id;
+  if (!taskId || completedScheduleRunTaskIds.has(taskId)) return;
+  completedScheduleRunTaskIds.add(taskId);
+  const copy = buildScheduleRunCompletionCopy(task);
+  try {
+    window.ucaShell?.notify?.({
+      title: "LingxY",
+      body: copy.body,
+      openWindow: "console"
+    });
+  } catch { /* optional */ }
+  try {
+    window.ucaShell?.showPopupCard?.({
+      kind: copy.kind,
+      taskId,
+      title: copy.title,
+      lines: copy.lines,
+      autoHideMs: copy.kind === "error" ? 12000 : 9000
+    });
+  } catch { /* optional */ }
+}
+
+async function settleScheduleRunTask(taskId) {
+  if (!taskId) return;
+  closeScheduleRunTaskWatcher(taskId);
+  try {
+    const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
+    const task = detail?.task ?? detail ?? null;
+    if (!task) return;
+    if (!["success", "partial_success", "failed", "cancelled"].includes(task.status)) return;
+    fireScheduleRunCompletionNotice(task);
+  } catch {
+    /* optional */
+  } finally {
+    await refreshWorkspace();
+  }
+}
+
+function watchScheduleRunTask(task = {}) {
+  const taskId = task?.task_id;
+  if (!taskId) return;
+  if (["success", "partial_success", "failed", "cancelled"].includes(task.status)) {
+    fireScheduleRunCompletionNotice(task);
+    void refreshWorkspace();
+    return;
+  }
+  if (scheduleRunTaskWatchers.has(taskId)) return;
+  const stream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
+    onEvent(rawEvent) {
+      const frame = toTaskEventFrame(rawEvent);
+      if (["success", "partial_success", "failed", "cancelled"].includes(frame.event)) {
+        void settleScheduleRunTask(taskId);
+      }
+    },
+    onError() {
+      closeScheduleRunTaskWatcher(taskId);
+      setTimeout(() => void settleScheduleRunTask(taskId), 1500);
+    }
+  });
+  scheduleRunTaskWatchers.set(taskId, stream);
 }
 
 async function submitConsoleChat() {
@@ -3115,11 +3239,24 @@ function renderSchedules() {
       btn.disabled = true;
       btn.textContent = "Running...";
       try {
-        await fetchJson(`/schedules/${encodeURIComponent(btn.dataset.runScheduleId)}/runs`, {
+        const result = await fetchJson(`/schedules/${encodeURIComponent(btn.dataset.runScheduleId)}/runs`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ triggerPayload: { source: "desktop_console", bypassDedupe: true } })
         });
+        watchScheduleRunTask(result?.task ?? null);
+        if (result?.status === "pending_approval") {
+          try {
+            window.ucaShell?.showPopupCard?.({
+              kind: "approval",
+              approvalId: result?.approval?.approval_id ?? result?.approval?.approvalId ?? null,
+              taskId: result?.task?.task_id ?? null,
+              title: "定时任务等待审批",
+              lines: [result?.approval?.preview_text ?? "请先审批后再执行。"],
+              autoHideMs: 9000
+            });
+          } catch { /* optional */ }
+        }
         await refreshWorkspace();
       } finally {
         btn.disabled = false;
@@ -5148,6 +5285,10 @@ const _inboxState = {
   activeAccountId: null,     // selected sidebar account
   activeTab: "files",        // 'files' | 'emails' | 'calendar'
   expandedEmailId: null,     // id of the email whose body is inline-expanded
+  accountsLoadedAt: 0,
+  accountsPromise: null,
+  resourceCache: new Map(),
+  forceNext: false,
   // Cache full-body fetches keyed by email id so they survive list
   // re-fetches (Gmail list only returns snippets; a separate
   // /messages/:id call gets the real body).
@@ -5155,8 +5296,10 @@ const _inboxState = {
   htmlBodyCache: new Map(),  // id → raw HTML body (when available)
   bodyViewMode: new Map()    // id → "text" | "html" (user toggle; default "html" when html exists)
 };
+const INBOX_ACCOUNTS_TTL_MS = 30_000;
+const INBOX_RESOURCE_TTL_MS = 20_000;
 
-async function loadInboxTab() {
+async function loadInboxTab({ force = false } = {}) {
   // UCA-128: Inbox sidebar merges TWO backends:
   //   1) /connectors/connected-accounts — OAuth (Google Workspace /
   //      Microsoft 365). Exposes files, mail, and calendar.
@@ -5164,37 +5307,52 @@ async function loadInboxTab() {
   //      IMAP, QQ, 163, custom). Mail only, no files/calendar.
   // Before this fix the 163/QQ/IMAP accounts were silently missing
   // because the sidebar only pulled from endpoint #1.
-  const accounts = [];
-  try {
-    const r = await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts`);
-    if (r.ok) {
-      const data = await r.json();
-      for (const acc of data.accounts ?? []) {
-        accounts.push({ ...acc, _kind: "oauth" });
-      }
+  if (force) {
+    _inboxState.forceNext = true;
+    _inboxState.resourceCache.clear();
+  }
+  const freshEnough = !force
+    && _inboxState.accounts.length > 0
+    && (Date.now() - _inboxState.accountsLoadedAt) < INBOX_ACCOUNTS_TTL_MS;
+  if (!freshEnough) {
+    if (!_inboxState.accountsPromise) {
+      _inboxState.accountsPromise = (async () => {
+        const accounts = [];
+        const [oauthResult, imapResult] = await Promise.allSettled([
+          fetch(`${state.serviceBaseUrl}/connectors/connected-accounts`),
+          fetch(`${state.serviceBaseUrl}/config/email/accounts`)
+        ]);
+        if (oauthResult.status === "fulfilled" && oauthResult.value.ok) {
+          const data = await oauthResult.value.json();
+          for (const acc of data.accounts ?? []) {
+            accounts.push({ ...acc, _kind: "oauth" });
+          }
+        }
+        if (imapResult.status === "fulfilled" && imapResult.value.ok) {
+          const data = await imapResult.value.json();
+          for (const acc of data.accounts ?? []) {
+            accounts.push({
+              id: `email:${acc.id}`,
+              provider: acc.provider ?? "imap",
+              email: acc.email,
+              displayName: acc.displayName ?? acc.email ?? acc.id,
+              tokenStatus: "active",
+              imapHost: acc.imapHost,
+              _kind: "imap",
+              _rawId: acc.id
+            });
+          }
+        }
+        _inboxState.accounts = accounts;
+        _inboxState.accountsLoadedAt = Date.now();
+      })().finally(() => {
+        _inboxState.accountsPromise = null;
+      });
     }
-  } catch { /* ignore */ }
-  try {
-    const r = await fetch(`${state.serviceBaseUrl}/config/email/accounts`);
-    if (r.ok) {
-      const data = await r.json();
-      for (const acc of data.accounts ?? []) {
-        accounts.push({
-          id: `email:${acc.id}`,
-          provider: acc.provider ?? "imap",
-          email: acc.email,
-          displayName: acc.displayName ?? acc.email ?? acc.id,
-          tokenStatus: "active",
-          imapHost: acc.imapHost,
-          _kind: "imap",
-          _rawId: acc.id
-        });
-      }
-    }
-  } catch { /* ignore */ }
-  _inboxState.accounts = accounts;
-  if (!_inboxState.activeAccountId || !accounts.some((a) => a.id === _inboxState.activeAccountId)) {
-    _inboxState.activeAccountId = accounts[0]?.id ?? null;
+    await _inboxState.accountsPromise;
+  }
+  if (!_inboxState.activeAccountId || !_inboxState.accounts.some((a) => a.id === _inboxState.activeAccountId)) {
+    _inboxState.activeAccountId = _inboxState.accounts[0]?.id ?? null;
   }
   renderInboxAccounts();
   renderInboxContent();
@@ -5299,26 +5457,7 @@ async function renderInboxContent() {
     });
   }
 
-  content.innerHTML = `<p class="inbox-empty">加载中…</p>`;
-  try {
-    let url;
-    if (isImap) {
-      // IMAP: only mail is supported. The backend endpoint returns either
-      // { messages } on success or { messages: [], reason } on a known
-      // soft failure (missing credentials / connection refused).
-      const refresh = _inboxState.forceNext ? "&refresh=1" : "";
-      _inboxState.forceNext = false;
-      url = `${state.serviceBaseUrl}/config/email/accounts/${encodeURIComponent(account._rawId)}/messages?limit=30${refresh}`;
-    } else {
-      const provider = account.provider;
-      if (_inboxState.activeTab === "files") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/files?limit=30`;
-      else if (_inboxState.activeTab === "emails") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/emails?limit=30`;
-      else url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/calendar?limit=30`;
-    }
-
-    const r = await fetch(url);
-    if (!r.ok) { content.innerHTML = `<p class="inbox-empty">加载失败 (${r.status})</p>`; return; }
-    const data = await r.json();
+  function renderInboxPayload(data) {
     if (isImap && data.reason) {
       content.innerHTML = `
         <div class="inbox-empty" style="padding:32px 24px;">
@@ -5348,8 +5487,6 @@ async function renderInboxContent() {
         </button>
       `).join("");
     } else if (_inboxState.activeTab === "emails") {
-      // OAuth returns data.emails, IMAP endpoint returns data.messages —
-      // both have the same shape after normalization.
       const emails = data.emails ?? data.messages ?? [];
       if (!emails.length) { content.innerHTML = `<p class="inbox-empty">该账户暂无邮件。</p>`; return; }
       const expandedId = _inboxState.expandedEmailId;
@@ -5400,8 +5537,6 @@ async function renderInboxContent() {
           ` : ""}
         `;
       }).join("");
-      // View-mode toggle (Rich / Plain). Stop propagation so the
-      // underlying .inbox-item click doesn't toggle the expansion.
       content.querySelectorAll("[data-email-view]").forEach((btn) => {
         btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
@@ -5415,16 +5550,6 @@ async function renderInboxContent() {
           const willExpand = _inboxState.expandedEmailId !== id;
           _inboxState.expandedEmailId = willExpand ? id : null;
           renderInboxContent();
-          // Gmail's list uses format=metadata → snippet is ~200 chars.
-          // When the user actually expands, fetch the full MIME body
-          // and patch the cached email in-place so the next render has
-          // the full text. IMAP already returns bodyText on the list
-          // so only OAuth Google needs this lazy step.
-          // OAuth list endpoints return a short preview (~200ch Gmail
-          // snippet / ~255ch Graph bodyPreview). When the user expands,
-          // fetch the real body via /connectors/accounts/:provider/
-          // messages/:id. IMAP already returns full bodyText so it's
-          // skipped here. Both providers share one endpoint shape now.
           const oauthSupportsFullBody = account._kind !== "imap" && (account.provider === "google" || account.provider === "microsoft");
           if (willExpand && oauthSupportsFullBody && !_inboxState.fullBodyCache.has(id)) {
             try {
@@ -5435,7 +5560,7 @@ async function renderInboxContent() {
               if (payload.data.bodyText) _inboxState.fullBodyCache.set(id, payload.data.bodyText);
               if (payload.data.bodyHtml) _inboxState.htmlBodyCache.set(id, payload.data.bodyHtml);
               if (_inboxState.expandedEmailId === id) renderInboxContent();
-            } catch { /* silent — expansion still shows the snippet */ }
+            } catch { /* silent */ }
           }
         });
       });
@@ -5459,6 +5584,37 @@ async function renderInboxContent() {
         if (btn.dataset.externalUrl) window.ucaShell?.openExternal?.(btn.dataset.externalUrl);
       });
     });
+  }
+
+  content.innerHTML = `<p class="inbox-empty">加载中…</p>`;
+  try {
+    let url;
+    if (isImap) {
+      // IMAP: only mail is supported. The backend endpoint returns either
+      // { messages } on success or { messages: [], reason } on a known
+      // soft failure (missing credentials / connection refused).
+      const refresh = _inboxState.forceNext ? "&refresh=1" : "";
+      _inboxState.forceNext = false;
+      url = `${state.serviceBaseUrl}/config/email/accounts/${encodeURIComponent(account._rawId)}/messages?limit=30${refresh}`;
+    } else {
+      const provider = account.provider;
+      if (_inboxState.activeTab === "files") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/files?limit=30`;
+      else if (_inboxState.activeTab === "emails") url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/emails?limit=30`;
+      else url = `${state.serviceBaseUrl}/connectors/accounts/${provider}/calendar?limit=30`;
+    }
+
+    const cacheKey = `${account.id}:${_inboxState.activeTab}:${url}`;
+    const cached = _inboxState.forceNext ? null : _inboxState.resourceCache.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) < INBOX_RESOURCE_TTL_MS) {
+      renderInboxPayload(cached.data);
+      return;
+    }
+
+    const r = await fetch(url);
+    if (!r.ok) { content.innerHTML = `<p class="inbox-empty">加载失败 (${r.status})</p>`; return; }
+    const data = await r.json();
+    _inboxState.resourceCache.set(cacheKey, { ts: Date.now(), data });
+    renderInboxPayload(data);
   } catch (err) {
     content.innerHTML = `<p class="inbox-empty">Error: ${escapeHtml(err.message)}</p>`;
   }
@@ -5476,12 +5632,11 @@ async function renderInboxContent() {
       renderInboxContent();
     });
   });
-  // Explicit refresh: pass the force flag so the 10s IMAP cache is
+  // Explicit refresh: pass the force flag so the short-lived inbox caches are
   // bypassed. Ordinary account-switch / tab-switch renders keep the
   // cached fast path.
   document.querySelector("#inboxRefreshBtn")?.addEventListener("click", () => {
-    _inboxState.forceNext = true;
-    void loadInboxTab();
+    void loadInboxTab({ force: true });
   });
 })();
 
