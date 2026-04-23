@@ -260,10 +260,14 @@ function formatResourceContext(task) {
     ...(ctx.file_paths ?? []),
     ...(ctx.image_paths ?? [])
   ].filter(Boolean);
+  const contextualAbsolutePaths = extractAbsoluteLocalPathsFromText(ctx.text ?? "");
   if (attachments.length > 0) {
     lines.push(`- Attached files (absolute paths, safe to pass as tool arguments): ${JSON.stringify(attachments)}`);
   } else {
     lines.push(`- Attached files: (none)`);
+  }
+  if (contextualAbsolutePaths.length > 0) {
+    lines.push(`- Absolute local file paths already mentioned in the request/history (safe to pass directly to attachmentPaths / localPath / file args without re-discovering them): ${JSON.stringify(contextualAbsolutePaths)}`);
   }
 
   const selectionText = typeof ctx.text === "string" ? ctx.text.trim() : "";
@@ -450,6 +454,20 @@ function hasCjk(value = "") {
   return /[\u3400-\u9fff]/.test(String(value ?? ""));
 }
 
+function extractAbsoluteLocalPathsFromText(text = "") {
+  const matches = String(text ?? "").match(/[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+/g) ?? [];
+  const seen = new Set();
+  const paths = [];
+  for (const raw of matches) {
+    const candidate = raw.trim().replace(/[),.;:!?]+$/g, "");
+    const key = candidate.toLowerCase();
+    if (!candidate || seen.has(key)) continue;
+    seen.add(key);
+    paths.push(candidate);
+  }
+  return paths;
+}
+
 function formatAccountLabel(account = {}, fallback = {}) {
   const provider = account.provider ?? fallback.provider ?? "connector";
   const email = account.email || fallback.accountId || "";
@@ -536,8 +554,17 @@ function latestConnectorFinal(transcript, userCommand = "") {
  * The LLM genuinely sees each observation before it decides the next step,
  * eliminating the "LLM answers from memory without calling tools" failure mode.
  */
-function buildConversationMessages(userCommand, transcript) {
+function buildConversationMessages(userCommand, transcript, initialFilePaths = []) {
   const messages = [{ role: "user", content: userCommand }];
+
+  // UCA-179: roll up every artifact_paths seen so far so a later tool call
+  // (e.g. send_email, account_upload_file) always sees the full list. We
+  // append this as a short addendum to each tool observation.
+  // Seed with the user-attached files from the context packet — a user who
+  // says "send this file to x@y.com" expects it to land as an attachment.
+  const seenArtifacts = Array.isArray(initialFilePaths)
+    ? initialFilePaths.filter(Boolean).slice()
+    : [];
 
   for (const entry of transcript) {
     if (entry.type === "tool_result") {
@@ -553,9 +580,15 @@ function buildConversationMessages(userCommand, transcript) {
       const metadataNote = entry.metadata
         ? `\n[Tool metadata JSON]\n${JSON.stringify(entry.metadata)}`
         : "";
+      for (const p of entry.artifact_paths ?? []) {
+        if (p && !seenArtifacts.includes(p)) seenArtifacts.push(p);
+      }
+      const artifactNote = seenArtifacts.length > 0
+        ? `\n[Artifacts available so far — pass any of these verbatim to attachmentPaths / localPath / file arguments if the user asks to attach / send / upload]:\n${seenArtifacts.map((p) => `- ${p}`).join("\n")}`
+        : "";
       messages.push({
         role: "user",
-        content: `[Tool observation: ${entry.tool}]\n${entry.observation ?? "(no result)"}${metadataNote}${successNote}`
+        content: `[Tool observation: ${entry.tool}]\n${entry.observation ?? "(no result)"}${metadataNote}${artifactNote}${successNote}`
       });
     } else if (entry.type === "tool_denied") {
       messages.push({
@@ -667,6 +700,7 @@ Key tool schemas:
 Guidance (not a rigid checklist — apply judgment):
 - **Execute with what you have.** If the request is concrete and you have the tool + data, just call it. Don't ask for permission the user already implicitly gave.
 - **Ask only when necessary.** If a required field (recipient email, file path, specific item) is truly missing AND you can't infer it from the resources listed above, return {"final": "<one short clarifying question in the user's language>"} and stop. Do NOT ask when the user gave enough to act.
+- **Use known absolute paths directly.** If the resources / history already include absolute local file paths, pass them verbatim to attachmentPaths / localPath / file tool arguments. Do NOT call list_files / glob_files / find_recent_files just to rediscover a path you already have.
 - **Future-time requests schedule, not execute now.** If the user says "in N minutes/hours" or "tomorrow at X" or "tonight at Y" about WHEN to run the action (as opposed to event start time being an argument), call create_scheduled_task with action.type="task" and params.userCommand carrying the full instruction. The scheduler will wake you up at trigger time to execute.
 - **Fan out enumerations.** When the user says "all / every / each <something>", start with an enumeration tool (list_files / glob_files / account_list_emails / account_list_files), read the result, then call the per-item action for each result in subsequent iterations. Do not guess counts or filenames.
 - **Connector workflows over raw tools.** Gmail/Outlook/Calendar/Drive operations should use connector_workflow_run when a matching workflow exists (see the workflow list above). The workflow shows the user a draft with 确认/拒绝 buttons; you do NOT need to ask in chat.
@@ -683,7 +717,15 @@ Respond ONLY with a single JSON object (no markdown, no code fences):
   try {
     let resultText = "";
     // UCA-054: Use proper multi-turn messages with observations injected as turns
-    const conversationMessages = buildConversationMessages(task.user_command, transcript);
+    const conversationMessages = buildConversationMessages(
+      task.user_command,
+      transcript,
+      [
+        ...(task.context_packet?.file_paths ?? []),
+        ...(task.context_packet?.image_paths ?? []),
+        ...extractAbsoluteLocalPathsFromText(task.context_packet?.text ?? "")
+      ]
+    );
 
     if (provider.kind === "anthropic") {
       const r = await fetch(`${provider.baseUrl}/v1/messages`, {
@@ -1193,14 +1235,19 @@ export async function runToolAgentLoop({
       observation: result.observation
     });
     // UCA-054: Record args and success so buildConversationMessages can inject
-    // proper observations into the next LLM turn (ReAct pattern)
+    // proper observations into the next LLM turn (ReAct pattern).
+    // UCA-179: also record artifact_paths so a later send_email /
+    // account_send_email / account_upload_file turn can pick them up as
+    // absolute paths — otherwise the model drops the attachment because it
+    // never saw a structural path, only prose in the observation.
     transcript.push({
       type: "tool_result",
       tool: tool.id,
       args: decision.args,
       success: result.success,
       observation: result.observation,
-      metadata: result.metadata
+      metadata: result.metadata,
+      artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
     });
 
     // For the keyword planner, return after one tool call (it doesn't read history)

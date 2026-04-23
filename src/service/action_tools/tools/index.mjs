@@ -1648,10 +1648,20 @@ async function writeManifest(outputDir, entries) {
   await writeFile(manifestPath, JSON.stringify(entries, null, 2) + "\n", "utf8");
 }
 
-// Simple glob-to-regex converter (supports * and ** only)
+// Simple glob-to-regex converter (supports * and ** only).
+// `**/foo` should match both `foo` in the base dir and `a/b/foo` deeper down,
+// so we treat a leading `**/` as an optional recursive prefix instead of a
+// mandatory path segment. This keeps agent-loop file enumeration prompts from
+// exploding on common patterns like `**/*6236605264*`.
 function globToRegex(pattern) {
-  const escaped = pattern.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  const converted = escaped.replace(/\\\*\\\*/g, ".*").replace(/\\\*/g, "[^/\\\\]*");
+  const normalized = String(pattern ?? "").replace(/\\/g, "/");
+  const escaped = normalized.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const converted = escaped
+    .replace(/\*\*\//g, "__GLOBSTAR_DIR__")
+    .replace(/\*\*/g, "__GLOBSTAR__")
+    .replace(/\*/g, "[^/\\\\]*")
+    .replace(/__GLOBSTAR_DIR__/g, "(?:.*[/\\\\])?")
+    .replace(/__GLOBSTAR__/g, ".*");
   return new RegExp(`^${converted}$`, "i");
 }
 
