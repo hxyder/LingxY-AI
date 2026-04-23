@@ -11,27 +11,45 @@ import {
   updateTask
 } from "../core/task-runtime.mjs";
 
-function buildSchedulerContextPacket({ title, sourceId, filePaths = [], imagePaths = [] }) {
+function buildSchedulerContextPacket({
+  title,
+  sourceId,
+  filePaths = [],
+  imagePaths = [],
+  sourceApp = "uca.scheduler",
+  captureMode = "event",
+  triggerReason = "scheduled"
+}) {
   return {
     schema_version: "1.0",
     context_id: `ctx_${crypto.randomUUID()}`,
     trace_id: `trace_${crypto.randomUUID()}`,
     source_type: "window",
-    source_app: "uca.scheduler",
-    capture_mode: "event",
+    source_app: sourceApp,
+    capture_mode: captureMode,
     security_level: "internal",
     redaction_applied: false,
     text: title,
     file_paths: filePaths,
     image_paths: imagePaths,
     selection_metadata: {
-      source_id: sourceId
+      source_id: sourceId,
+      trigger_reason: triggerReason
     },
     captured_at: new Date().toISOString()
   };
 }
 
-async function executeActionTool({ runtime, actionTarget, actionParams, executionMode, sourceLabel }) {
+async function executeActionTool({
+  runtime,
+  actionTarget,
+  actionParams,
+  executionMode,
+  sourceLabel,
+  sourceApp = "uca.scheduler",
+  captureMode = "event",
+  bypassDedupe = false
+}) {
   const previousPlanner = runtime.toolPlanner;
   const previousConfirmationHandler = runtime.confirmationHandler;
   let emitted = false;
@@ -59,8 +77,9 @@ async function executeActionTool({ runtime, actionTarget, actionParams, executio
     return await submitActionToolTask({
       userCommand: sourceLabel,
       executionMode,
-      sourceApp: "uca.scheduler",
-      captureMode: "event",
+      sourceApp,
+      captureMode,
+      bypassDedupe,
       runtime
     });
   } finally {
@@ -69,12 +88,26 @@ async function executeActionTool({ runtime, actionTarget, actionParams, executio
   }
 }
 
-async function executeTaskTemplate({ runtime, actionTarget, actionParams, executionMode, sourceLabel, sourceId }) {
+async function executeTaskTemplate({
+  runtime,
+  actionTarget,
+  actionParams,
+  executionMode,
+  sourceLabel,
+  sourceId,
+  sourceApp = "uca.scheduler",
+  captureMode = "event",
+  triggerReason = "scheduled",
+  bypassDedupe = false
+}) {
   ensureRuntimeServices(runtime);
 
   const inspection = runtime.securityBroker.inspectContext(buildSchedulerContextPacket({
     title: sourceLabel,
-    sourceId
+    sourceId,
+    sourceApp,
+    captureMode,
+    triggerReason
   }), {
     trigger: "schedule_dispatch"
   });
@@ -89,10 +122,14 @@ async function executeTaskTemplate({ runtime, actionTarget, actionParams, execut
     route,
     contextPacket: inspection.allowed ? inspection.contextPacket : buildSchedulerContextPacket({
       title: sourceLabel,
-      sourceId
+      sourceId,
+      sourceApp,
+      captureMode,
+      triggerReason
     }),
     userCommand: sourceLabel,
     executionMode,
+    bypassDedupe,
     executorOverride: "fast"
   });
 
@@ -165,17 +202,32 @@ async function executeTaskTemplate({ runtime, actionTarget, actionParams, execut
   };
 }
 
-async function executeScheduledTask({ runtime, actionTarget, actionParams, executionMode, sourceLabel, sourceId }) {
+async function executeScheduledTask({
+  runtime,
+  actionTarget,
+  actionParams,
+  executionMode,
+  sourceLabel,
+  sourceId,
+  sourceApp = "uca.scheduler",
+  captureMode = "event",
+  triggerReason = "scheduled",
+  bypassDedupe = false
+}) {
   const userCommand = actionParams.userCommand ?? actionParams.command ?? sourceLabel ?? actionTarget;
   const submission = await submitContextTask({
     contextPacket: buildSchedulerContextPacket({
       title: actionParams.contextText ?? userCommand,
       sourceId,
       filePaths: actionParams.file_paths ?? actionParams.filePaths ?? [],
-      imagePaths: actionParams.image_paths ?? actionParams.imagePaths ?? []
+      imagePaths: actionParams.image_paths ?? actionParams.imagePaths ?? [],
+      sourceApp,
+      captureMode,
+      triggerReason
     }),
     userCommand,
     executionMode,
+    bypassDedupe,
     executorOverride: actionParams.executorOverride ?? actionParams.executor ?? null,
     // The plan layer already deferred this task once; skip it so the
     // scheduled run actually executes instead of re-scheduling itself.
@@ -196,6 +248,8 @@ async function executeScheduledTask({ runtime, actionTarget, actionParams, execu
   // Best-effort; never blocks task completion.
   try {
     if (actionParams.notifyOnComplete !== false
+        && sourceApp === "uca.scheduler"
+        && captureMode === "event"
         && !/(\bnotify\b|通知|发邮件|send\s+email|account_send_email)/i.test(userCommand)) {
       const task = submission?.task;
       const taskId = task?.task_id;
@@ -234,7 +288,11 @@ export async function executeProposedAction({
   actionParams = {},
   executionMode = "interactive",
   sourceLabel,
-  sourceId
+  sourceId,
+  sourceApp = "uca.scheduler",
+  captureMode = "event",
+  triggerReason = "scheduled",
+  bypassDedupe = false
 }) {
   if (actionType === "connector_workflow") {
     return submitConnectorWorkflowTask({
@@ -243,7 +301,8 @@ export async function executeProposedAction({
       input: actionParams.input ?? {},
       state: actionParams.state ?? {},
       userCommand: sourceLabel,
-      executionMode
+      executionMode,
+      bypassDedupe
     });
   }
 
@@ -253,7 +312,10 @@ export async function executeProposedAction({
       actionTarget,
       actionParams,
       executionMode,
-      sourceLabel
+      sourceLabel,
+      sourceApp,
+      captureMode,
+      bypassDedupe
     });
   }
 
@@ -264,7 +326,11 @@ export async function executeProposedAction({
       actionParams,
       executionMode,
       sourceLabel,
-      sourceId
+      sourceId,
+      sourceApp,
+      captureMode,
+      triggerReason,
+      bypassDedupe
     });
   }
 
@@ -274,6 +340,10 @@ export async function executeProposedAction({
     actionParams,
     executionMode,
     sourceLabel,
-    sourceId
+    sourceId,
+    sourceApp,
+    captureMode,
+    triggerReason,
+    bypassDedupe
   });
 }

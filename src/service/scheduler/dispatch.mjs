@@ -163,14 +163,19 @@ export async function dispatchSchedule({
   }
 
   try {
+    const isManualForeground = reason === "manual" && triggerPayload?.source === "desktop_console";
     const result = await executeProposedAction({
       runtime,
       actionType: schedule.action_type,
       actionTarget: schedule.action_target,
       actionParams: schedule.action_params,
-      executionMode: schedule.execution_mode,
+      executionMode: isManualForeground ? "interactive" : schedule.execution_mode,
       sourceLabel: `Scheduled run: ${schedule.name}`,
-      sourceId: schedule.schedule_id
+      sourceId: schedule.schedule_id,
+      sourceApp: isManualForeground ? "uca.console.desktop" : "uca.scheduler",
+      captureMode: isManualForeground ? "desktop_console" : "event",
+      triggerReason: reason,
+      bypassDedupe: isManualForeground || triggerPayload?.bypassDedupe === true
     });
 
     const taskStatus = result.task?.status ?? "failed";

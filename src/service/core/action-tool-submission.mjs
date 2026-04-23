@@ -45,6 +45,7 @@ export async function submitActionToolTask({
   captureMode = "manual",
   parentTaskId = null,
   retryCount = 0,
+  bypassDedupe = false,
   runtime,
   // UCA-066: Tier 0 fast-path — skip the tool-agent loop entirely,
   // call the tool directly and return immediately (< 200ms).
@@ -66,6 +67,7 @@ export async function submitActionToolTask({
     executionMode,
     parentTaskId,
     retryCount,
+    bypassDedupe,
     executorOverride: "tool_using"
   });
 

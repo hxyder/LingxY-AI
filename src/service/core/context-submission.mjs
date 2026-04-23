@@ -418,6 +418,7 @@ export async function submitContextTask({
   parentTaskId = null,
   childIndex = null,
   retryCount = 0,
+  bypassDedupe = false,
   executorOverride = null,
   skipDecomposition = false,
   skipPlanLayer = false,
@@ -508,6 +509,7 @@ export async function submitContextTask({
     parentTaskId,
     childIndex,
     retryCount,
+    bypassDedupe,
     executorOverride
   });
 

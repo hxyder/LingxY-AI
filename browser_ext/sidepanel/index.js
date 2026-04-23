@@ -8,6 +8,7 @@
 
 const HISTORY_KEY = "ucaSidePanelHistory";
 const HISTORY_MAX = 40;
+const PENDING_ANALYSIS_KEY = "ucaSidePanelPendingAnalysis";
 const SYSTEM_PROMPT = [
   "You are LingxY, a helpful assistant in a browser side panel.",
   "The user is actively browsing the web and opens this panel to analyze pages, videos, and selections, then ask follow-up questions.",
@@ -31,6 +32,7 @@ const actionSelectionBtn = document.getElementById("sp-action-selection");
 let conversation = [];
 let activeStreamPort = null;
 let isBusy = false;
+let lastPendingRequestId = "";
 // Timeline meta counter — assistant turns track their own sequence number
 // so the UI can show "第 N 轮" and providers can see how many turns the
 // conversation has been through.
@@ -161,7 +163,7 @@ async function refreshMode() {
 }
 
 /* ── Chat send (port-based streaming) ────────────────────────────────── */
-function sendTurn({ userContent, systemContent = null, assistantPrefix = null, displayLabel = null, attached = null } = {}) {
+function sendTurn({ userContent, systemContent = null, assistantPrefix = null, displayLabel = null, attached = null, maxTokens = null } = {}) {
   return new Promise((resolve) => {
     if (isBusy) { resolve({ ok: false, error: "busy" }); return; }
     isBusy = true;
@@ -282,7 +284,8 @@ function sendTurn({ userContent, systemContent = null, assistantPrefix = null, d
       type: "chat",
       text: userContent,
       history: sendableHistory,
-      systemPrompt: SYSTEM_PROMPT
+      systemPrompt: SYSTEM_PROMPT,
+      maxTokens
     });
   });
 }
@@ -296,6 +299,107 @@ function finishWithError(el, msg) {
   inputEl.disabled = false;
   actionPageBtn.disabled = actionVideoBtn.disabled = actionSelectionBtn.disabled = false;
   statusEl.textContent = "";
+}
+
+function createCompactUserTurn({ displayLabel, attached = "" }) {
+  return displayLabel
+    ? { role: "user", content: displayLabel, displayLabel, attached }
+    : { role: "user", content: attached || displayLabel || "" };
+}
+
+async function runQuickActionTurn({ action, selectionState = {}, displayLabel = "", attached = "" } = {}) {
+  return new Promise((resolve) => {
+    if (isBusy) { resolve({ ok: false, error: "busy" }); return; }
+    isBusy = true;
+    sendBtn.disabled = true;
+    inputEl.disabled = true;
+    actionPageBtn.disabled = actionVideoBtn.disabled = actionSelectionBtn.disabled = true;
+    statusEl.textContent = "连接中…";
+    const startedAt = Date.now();
+
+    const userTurn = createCompactUserTurn({
+      displayLabel,
+      attached
+    });
+    conversation.push(userTurn);
+    appendTurnEl(userTurn);
+
+    const streamingTurn = { role: "assistant", content: "" };
+    conversation.push(streamingTurn);
+    const streamingEl = appendTurnEl(streamingTurn);
+    streamingEl.classList.add("streaming");
+
+    let port;
+    try {
+      port = chrome.runtime.connect({ name: "uca.quickaction.stream" });
+    } catch (error) {
+      finishWithError(streamingEl, `连接失败：${error?.message ?? error}`);
+      resolve({ ok: false });
+      return;
+    }
+
+    activeStreamPort = port;
+    let settled = false;
+    let acc = "";
+    const settle = async (role, content) => {
+      if (settled) return;
+      settled = true;
+      activeStreamPort = null;
+      streamingEl.classList.remove("streaming");
+      if (role === "error") {
+        streamingEl.classList.remove("assistant");
+        streamingEl.classList.add("error");
+        streamingEl.textContent = content;
+        conversation[conversation.length - 1] = { role: "error", content };
+      } else {
+        turnCounter += 1;
+        const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+        const approxTokens = Math.max(1, Math.round((content ?? "").length / 3.5));
+        const metaText = [`第 ${turnCounter} 轮`, `${elapsedSec}s`, `~${approxTokens.toLocaleString()} tokens`].join(" · ");
+        streamingEl.innerHTML = renderMd(content);
+        const metaEl = document.createElement("div");
+        metaEl.className = "sp-turn-meta";
+        metaEl.textContent = metaText;
+        streamingEl.appendChild(metaEl);
+        conversation[conversation.length - 1] = { role: "assistant", content, meta: metaText };
+      }
+      await saveHistory();
+      sendBtn.disabled = false;
+      inputEl.disabled = false;
+      actionPageBtn.disabled = actionVideoBtn.disabled = actionSelectionBtn.disabled = false;
+      statusEl.textContent = "";
+      isBusy = false;
+      try { port.disconnect(); } catch { /* ignore */ }
+      resolve({ ok: role !== "error" });
+    };
+
+    port.onMessage.addListener((msg) => {
+      if (msg?.type === "start") {
+        statusEl.textContent = "分析中…";
+      } else if (msg?.type === "chunk") {
+        acc = typeof msg.full === "string" ? msg.full : (acc + (msg.delta ?? ""));
+        streamingEl.innerHTML = renderMd(acc);
+        historyEl.scrollTop = historyEl.scrollHeight;
+      } else if (msg?.type === "done") {
+        settle("assistant", msg.text ?? acc);
+      } else if (msg?.type === "error") {
+        settle("error", `失败：${msg.error ?? "unknown"}`);
+      }
+    });
+
+    port.onDisconnect.addListener(() => {
+      if (!settled) {
+        if (acc) settle("assistant", acc);
+        else settle("error", "连接意外断开");
+      }
+    });
+
+    port.postMessage({
+      type: "quickaction",
+      action,
+      selectionState
+    });
+  });
 }
 
 /* ── Page / video / selection analyzers ─────────────────────────────── */
@@ -340,7 +444,7 @@ async function extractPagePlainText(tabId) {
   }
 }
 
-async function onAnalyzePageV2() {
+async function onAnalyzePageV2({ mode = "analyze" } = {}) {
   if (isBusy) return;
   const tab = await getActiveTab();
   if (!tab?.id) {
@@ -369,12 +473,16 @@ async function onAnalyzePageV2() {
     return;
   }
   statusEl.textContent = "";
-  const userText = `请分析以下${kindLabel}：先一段总体概述，再用编号列表给出 5-8 个关键要点，最后给出 3 个值得延伸的问题。我可能会基于这份分析继续追问。\n\n---\n${bodyBlock}\n---`;
-  const displayLabel = `📄 分析${kindLabel === "YouTube 视频" ? "视频" : "此页"}：${chipTitle.slice(0, 80)}`;
+  const isExplain = mode === "explain";
+  const userText = isExplain
+    ? `请解释以下${kindLabel}：先给一段清楚的总述，再列出 5-8 个关键点，说明背景、核心结论和需要注意的不确定性。我可能会继续追问。\n\n---\n${bodyBlock}\n---`
+    : `请分析以下${kindLabel}：先一段总体概述，再用编号列表给出 5-8 个关键要点，最后给出 3 个值得延伸的问题。我可能会基于这份分析继续追问。\n\n---\n${bodyBlock}\n---`;
+  const displayLabel = `${isExplain ? "📖 解释" : "📄 分析"}${kindLabel === "YouTube 视频" ? "视频" : "此页"}：${chipTitle.slice(0, 80)}`;
   await sendTurn({
     userContent: userText,
     displayLabel,
-    attached: bodyBlock
+    attached: bodyBlock,
+    maxTokens: 1536
   });
 }
 
@@ -404,7 +512,8 @@ async function onAnalyzeSelection() {
     await sendTurn({
       userContent: userText,
       displayLabel: `✂️ 分析选区：${preview}`,
-      attached: payload.text
+      attached: payload.text,
+      maxTokens: 1024
     });
   } catch {
     appendTurnEl({ role: "error", content: "无法读取页面选区（这个页面可能禁止注入脚本）" });
@@ -420,6 +529,79 @@ async function onAnalyzeVideo() {
     appendTurnEl({ role: "system", content: "(提示：当前不是 YouTube 页面。点 [分析此页] 也一样能用；视频支持正在逐步扩展到其他平台。)" });
   }
   await onAnalyzePageV2();
+}
+
+function buildQuickActionDisplayLabel(action, selectionState = {}) {
+  if (action === "uca.fetch-link") {
+    const title = `${selectionState.anchorText ?? selectionState.url ?? ""}`.trim();
+    return `🔗 分析链接：${title.slice(0, 80) || "当前链接"}`;
+  }
+  if (action === "uca.inspect-image") {
+    const title = `${selectionState.text ?? selectionState.imageUrl ?? ""}`.trim();
+    return `🖼️ 分析图片：${title.slice(0, 80) || "当前图片"}`;
+  }
+  return "开始分析";
+}
+
+function buildQuickActionAttached(action, selectionState = {}) {
+  if (action === "uca.fetch-link") {
+    return [`URL：${selectionState.url ?? ""}`, `锚文本：${selectionState.anchorText ?? selectionState.text ?? ""}`]
+      .filter(Boolean)
+      .join("\n");
+  }
+  if (action === "uca.inspect-image") {
+    return [`图片：${selectionState.imageUrl ?? ""}`, `说明：${selectionState.text ?? ""}`]
+      .filter(Boolean)
+      .join("\n");
+  }
+  return "";
+}
+
+async function runPendingAnalysis(request = null) {
+  if (!request?.id || request.id === lastPendingRequestId) return;
+  lastPendingRequestId = request.id;
+  try {
+    await chrome.storage.local.remove(PENDING_ANALYSIS_KEY);
+  } catch { /* ignore */ }
+  if (request.kind === "carry_result") {
+    const userTurn = createCompactUserTurn({
+      displayLabel: request.displayLabel ?? "💬 打开对话框追问",
+      attached: request.attached ?? ""
+    });
+    conversation.push(userTurn);
+    appendTurnEl(userTurn);
+    if (request.priorResult) {
+      turnCounter += 1;
+      const approxTokens = Math.max(1, Math.round((request.priorResult ?? "").length / 3.5));
+      const metaText = [`第 ${turnCounter} 轮`, "已带入现有结果", `~${approxTokens.toLocaleString()} tokens`].join(" · ");
+      const assistantTurn = { role: "assistant", content: request.priorResult, meta: metaText };
+      conversation.push(assistantTurn);
+      appendTurnEl(assistantTurn);
+      await saveHistory();
+    }
+    return;
+  }
+  if (request.kind === "page_explain") {
+    await onAnalyzePageV2({ mode: "explain" });
+    return;
+  }
+  if (request.kind === "quickaction") {
+    await runQuickActionTurn({
+      action: request.action,
+      selectionState: request.selectionState ?? {},
+      displayLabel: request.displayLabel ?? buildQuickActionDisplayLabel(request.action, request.selectionState),
+      attached: request.attached ?? buildQuickActionAttached(request.action, request.selectionState)
+    });
+  }
+}
+
+async function consumePendingAnalysis() {
+  try {
+    const data = await chrome.storage.local.get(PENDING_ANALYSIS_KEY);
+    if (data?.[PENDING_ANALYSIS_KEY]) {
+      await runPendingAnalysis(data[PENDING_ANALYSIS_KEY]);
+    }
+  } catch { /* ignore */ }
 }
 
 async function onClear() {
@@ -457,4 +639,10 @@ optionsBtn.addEventListener("click", () => {
   await loadHistory();
   renderHistory();
   void refreshMode();
+  await consumePendingAnalysis();
+  chrome.storage.onChanged?.addListener((changes, area) => {
+    if (area !== "local") return;
+    const next = changes?.[PENDING_ANALYSIS_KEY]?.newValue ?? null;
+    if (next) void runPendingAnalysis(next);
+  });
 })();

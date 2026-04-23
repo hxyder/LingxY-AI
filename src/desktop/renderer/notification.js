@@ -46,6 +46,12 @@ toast.addEventListener("click", async () => {
     } catch {
       // ignore
     }
+  } else if (lastPayload?.openWindow) {
+    try {
+      await window.ucaShell.showWindow(lastPayload.openWindow);
+    } catch {
+      // ignore
+    }
   } else if (lastPayload?.navigate) {
     try {
       await window.ucaShell.navigateConsole(lastPayload.navigate);

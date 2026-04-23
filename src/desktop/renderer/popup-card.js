@@ -105,23 +105,24 @@ function applyInit(payload) {
   cardEl.setAttribute("data-kind", kind);
   setText(titleEl, payload?.title ?? defaultTitleFor(kind));
   renderBody(payload?.lines ?? payload?.body ?? []);
+  const detailLabel = payload?.openWindow === "overlay" ? "打开对话框" : "查看详情";
 
   if (kind === "approval") {
     renderActions([
       { label: "拒绝", variant: "danger", onClick: () => resolveCard("reject") },
-      { label: "查看详情", variant: "ghost", onClick: () => openTaskDetail(payload?.taskId) },
+      { label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) },
       { label: "通过", variant: "primary", onClick: () => resolveCard("approve") }
     ]);
   } else if (kind === "success") {
     renderActions([
-      { label: "查看详情", variant: "ghost", onClick: () => openTaskDetail(payload?.taskId) },
+      { label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) },
       { label: "好", variant: "primary", onClick: () => closeCard("dismissed") }
     ]);
     // success cards auto-hide unless pinned
     scheduleAutoHide(payload?.autoHideMs ?? 8000);
   } else if (kind === "error") {
     renderActions([
-      { label: "查看详情", variant: "ghost", onClick: () => openTaskDetail(payload?.taskId) },
+      { label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) },
       { label: "关闭", variant: "primary", onClick: () => closeCard("dismissed") }
     ]);
     scheduleAutoHide(payload?.autoHideMs ?? 12000);
@@ -140,7 +141,12 @@ function defaultTitleFor(kind) {
   return "LingxY";
 }
 
-async function openTaskDetail(taskId) {
+async function openTaskDetail(taskId, payload = null) {
+  if (payload?.openWindow) {
+    await window.ucaShell?.showWindow?.(payload.openWindow);
+    closeCard("opened_detail");
+    return;
+  }
   if (!taskId) {
     await window.ucaShell?.showWindow?.("console");
     return;

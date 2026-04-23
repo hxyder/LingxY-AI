@@ -30,7 +30,8 @@ export async function submitConnectorWorkflowTask({
   input = {},
   state = {},
   userCommand = "",
-  executionMode = "interactive"
+  executionMode = "interactive",
+  bypassDedupe = false
 }) {
   ensureRuntimeServices(runtime);
   const route = {
@@ -43,6 +44,7 @@ export async function submitConnectorWorkflowTask({
     contextPacket: buildContextPacket({ workflowId, userCommand }),
     userCommand: userCommand || `Run connector workflow ${workflowId}`,
     executionMode,
+    bypassDedupe,
     executorOverride: "connector_workflow"
   });
 

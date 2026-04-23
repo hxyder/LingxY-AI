@@ -48,6 +48,7 @@ export const RUNTIME_BROWSER_CONTEXT_URL = "http://127.0.0.1:4310/browser/contex
 export const RUNTIME_PAGE_EXPLAIN_URL = "http://127.0.0.1:4310/page/explain";
 export const RUNTIME_TASK_URL = "http://127.0.0.1:4310/task";
 export const RUNTIME_TASK_DETAIL_URL = "http://127.0.0.1:4310/task";
+export const SIDEPANEL_PENDING_ANALYSIS_KEY = "ucaSidePanelPendingAnalysis";
 
 const QUICK_ACTION_COMMANDS = Object.freeze({
   translate: "请翻译这段网页内容",
@@ -192,28 +193,140 @@ export function buildOverlayHandoffRequest({ actionId, info = {}, tab, selection
   };
 }
 
+function buildDesktopCaptureForAction(action, selectionState = {}, enrichment = null) {
+  const text = `${selectionState?.text ?? selectionState?.selectionText ?? ""}`.trim();
+  const url = selectionState?.url ?? "";
+  const pageTitle = selectionState?.pageTitle ?? "";
+  const base = {
+    url,
+    pageTitle,
+    browser: "chrome.exe"
+  };
+
+  if (action === "uca.fetch-link") {
+    return {
+      ...base,
+      sourceType: "link",
+      text,
+      anchorText: selectionState?.anchorText ?? text,
+      selectionText: text,
+      enrichment: enrichment
+        ? { pageOutline: enrichment.pageOutline, linkResults: enrichment.linkResults }
+        : null
+    };
+  }
+
+  if (action === "uca.inspect-image") {
+    return {
+      ...base,
+      sourceType: "image",
+      text,
+      imageUrl: selectionState?.imageUrl ?? ""
+    };
+  }
+
+  const enrichedText = enrichment
+    ? `${text}\n\n---\n【补充上下文（自动抓取）】\n${formatEnrichmentAsMarkdown(enrichment)}`
+    : text;
+
+  return {
+    ...base,
+    sourceType: selectionState?.sourceType ?? "text_selection",
+    text: enrichedText,
+    selectionText: text,
+    contextBefore: selectionState?.contextBefore ?? "",
+    contextAfter: selectionState?.contextAfter ?? "",
+    enrichment: enrichment
+      ? { pageOutline: enrichment.pageOutline, linkResults: enrichment.linkResults }
+      : null
+  };
+}
+
+async function runDesktopTask({
+  runtimeBase,
+  userCommand,
+  capture,
+  fetchImpl = fetch
+}) {
+  let submitJson;
+  try {
+    const submitResponse = await fetchImpl(`${runtimeBase}/task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userCommand,
+        executionMode: "interactive",
+        capture
+      })
+    });
+    if (!submitResponse.ok) {
+      return { ok: false, error: `submit_failed_${submitResponse.status}` };
+    }
+    submitJson = await submitResponse.json();
+  } catch (error) {
+    invalidateDesktopProbe();
+    return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
+  }
+
+  const taskId = submitJson?.task?.task_id;
+  if (!taskId) {
+    return { ok: false, error: "no_task_id" };
+  }
+
+  const inlineFromSubmit = extractInlineResult(submitJson?.taskEvents ?? []);
+  if (inlineFromSubmit && submitJson?.task?.status === "success") {
+    return { ok: true, taskId, text: inlineFromSubmit, status: "success", mode: "desktop" };
+  }
+
+  const controller = new AbortController();
+  const streamDeadline = setTimeout(() => controller.abort(), 30_000);
+  try {
+    const streamed = await runTaskWithStream(`${runtimeBase}/task/${taskId}`, { signal: controller.signal });
+    if (streamed?.ok) {
+      clearTimeout(streamDeadline);
+      return { ok: true, taskId, text: streamed.text, status: streamed.status, mode: "desktop" };
+    }
+    if (streamed && !streamed.ok && streamed.error && streamed.error !== "stream_ended_without_terminal") {
+      clearTimeout(streamDeadline);
+      return { ok: false, taskId, error: streamed.error, mode: "desktop" };
+    }
+  } catch { /* fall through to polling */ }
+  clearTimeout(streamDeadline);
+
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    try {
+      const detailResponse = await fetchImpl(`${RUNTIME_TASK_DETAIL_URL}/${taskId}`);
+      if (!detailResponse.ok) continue;
+      const detail = await detailResponse.json();
+      const status = detail?.task?.status;
+      if (status === "success" || status === "partial_success") {
+        const inline = extractInlineResult(detail?.events ?? []);
+        return { ok: true, taskId, text: inline ?? "(无内容)", status, mode: "desktop" };
+      }
+      if (status === "failed" || status === "cancelled") {
+        return { ok: false, taskId, error: detail?.task?.failure_user_message ?? status, mode: "desktop" };
+      }
+    } catch { /* keep polling */ }
+  }
+  return { ok: false, taskId, error: "timeout", mode: "desktop" };
+}
+
 export async function runQuickAction({ action, selectionState, tab = null }, fetchImpl = fetch) {
   const text = (selectionState?.text ?? "").trim();
-  if (!text) {
+  const requiresSelectionText = !["uca.fetch-link", "uca.inspect-image"].includes(action);
+  if (requiresSelectionText && !text) {
     return { ok: false, error: "empty_selection" };
   }
-  const userCommand = QUICK_ACTION_COMMANDS[action] ?? QUICK_ACTION_COMMANDS.summarize;
+  const userCommand = CAPTURE_ACTIONS[action]?.userCommand ?? QUICK_ACTION_COMMANDS[action] ?? QUICK_ACTION_COMMANDS.summarize;
 
   // Standalone short-circuit: if desktop isn't running AND the user has
   // configured a direct API key, call the LLM directly from the extension.
-  //
-  // UCA-162 follow-up: translate has no reason to go through the full
-  // task-submission pipeline — no decomposition, no tool calls, no
-  // artifact, no routing. If standalone is configured, prefer it for
-  // translate even when desktop is up. ~800 ms vs 2-3 s for a one-shot
-  // translation. summarize / explain still go through desktop when it's up
-  // because the task-history trail is useful there.
   const standaloneConfig = await loadStandaloneConfig();
   const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
   const desktopUp = await isDesktopAvailable(runtimeBase);
-  const preferStandalone = (!desktopUp || action === "translate" || action === "uca.translate-selection")
-    && standaloneConfig?.apiKey;
-  if (preferStandalone) {
+  if (!desktopUp && standaloneConfig?.apiKey) {
     // UCA-161: summarize / explain get the full page outline + any in-selection
     // links fetched and inlined so the LLM has real material to ground on.
     let enrichmentMarkdown = "";
@@ -229,108 +342,19 @@ export async function runQuickAction({ action, selectionState, tab = null }, fet
     return { ok: false, mode: "standalone", error: result.error };
   }
 
-  // UCA-161: also enrich the desktop-path payload so the server-side executor
-  // sees the same deep context the standalone path uses. Passed as both a
-  // structured `capture.enrichment` field (for future server-side use) and
-  // inlined into capture.text so today's executors pick it up without any
-  // server-side change.
-  let enrichedText = text;
   let enrichment = null;
   if (shouldEnrichForAction(action)) {
     try {
       enrichment = await enrichContextForAction({ action, selectionState, tab });
-      const enrichmentMarkdown = formatEnrichmentAsMarkdown(enrichment);
-      if (enrichmentMarkdown) {
-        enrichedText = `${text}\n\n---\n【补充上下文（自动抓取）】\n${enrichmentMarkdown}`;
-      }
     } catch { /* best-effort */ }
   }
 
-  // Submit the task
-  let submitJson;
-  try {
-    const submitResponse = await fetchImpl(`${runtimeBase}/task`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        userCommand,
-        executionMode: "interactive",
-        capture: {
-          sourceType: "text_selection",
-          text: enrichedText,
-          url: selectionState?.url ?? "",
-          pageTitle: selectionState?.pageTitle ?? "",
-          browser: "chrome.exe",
-          enrichment: enrichment
-            ? { pageOutline: enrichment.pageOutline, linkResults: enrichment.linkResults }
-            : null
-        }
-      })
-    });
-    if (!submitResponse.ok) {
-      return { ok: false, error: `submit_failed_${submitResponse.status}` };
-    }
-    submitJson = await submitResponse.json();
-  } catch (error) {
-    // Network failure + no API key = no path forward. With API key we'd have
-    // taken the standalone branch above already.
-    invalidateDesktopProbe();
-    return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
-  }
-
-  const taskId = submitJson?.task?.task_id;
-  if (!taskId) {
-    return { ok: false, error: "no_task_id" };
-  }
-
-  // Some tasks return inline result events synchronously inside the submit
-  // response (translate executor finishes during /task POST) — try those first.
-  const inlineFromSubmit = extractInlineResult(submitJson?.taskEvents ?? []);
-  if (inlineFromSubmit && submitJson?.task?.status === "success") {
-    return { ok: true, taskId, text: inlineFromSubmit, status: "success" };
-  }
-
-  // UCA-162: subscribe to the task's SSE stream (/task/:id/events). First
-  // token typically arrives in 100-300 ms; the 600 ms polling loop was
-  // costing the popup ~1 s before anything appeared. If the stream fails or
-  // closes without a terminal event we fall back to the old poll loop so
-  // slow proxies / local-host quirks still work.
-  const controller = new AbortController();
-  const streamDeadline = setTimeout(() => controller.abort(), 30_000);
-  try {
-    const streamed = await runTaskWithStream(`${runtimeBase}/task/${taskId}`, { signal: controller.signal });
-    if (streamed?.ok) {
-      clearTimeout(streamDeadline);
-      return { ok: true, taskId, text: streamed.text, status: streamed.status };
-    }
-    if (streamed && !streamed.ok && streamed.error && streamed.error !== "stream_ended_without_terminal") {
-      // Surface non-terminal stream errors when we have one — the user is
-      // better off seeing "connection dropped" than a silent timeout.
-      clearTimeout(streamDeadline);
-      return { ok: false, taskId, error: streamed.error };
-    }
-  } catch { /* fall through to polling */ }
-  clearTimeout(streamDeadline);
-
-  // Fallback polling (legacy path)
-  const deadline = Date.now() + 30_000;
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 600));
-    try {
-      const detailResponse = await fetchImpl(`${RUNTIME_TASK_DETAIL_URL}/${taskId}`);
-      if (!detailResponse.ok) continue;
-      const detail = await detailResponse.json();
-      const status = detail?.task?.status;
-      if (status === "success" || status === "partial_success") {
-        const inline = extractInlineResult(detail?.events ?? []);
-        return { ok: true, taskId, text: inline ?? "(无内容)", status };
-      }
-      if (status === "failed" || status === "cancelled") {
-        return { ok: false, taskId, error: detail?.task?.failure_user_message ?? status };
-      }
-    } catch { /* keep polling */ }
-  }
-  return { ok: false, taskId, error: "timeout" };
+  return runDesktopTask({
+    runtimeBase,
+    userCommand,
+    capture: buildDesktopCaptureForAction(action, selectionState, enrichment),
+    fetchImpl
+  });
 }
 
 function extractInlineResult(events = []) {
@@ -341,6 +365,81 @@ function extractInlineResult(events = []) {
     }
   }
   return null;
+}
+
+async function queueSidePanelAnalysis(request, { chromeApi = chrome, windowId = null, openPanel = true } = {}) {
+  const payload = {
+    id: crypto.randomUUID(),
+    queuedAt: Date.now(),
+    ...request
+  };
+  await chromeApi.storage.local.set({
+    [SIDEPANEL_PENDING_ANALYSIS_KEY]: payload
+  });
+  let resolvedWindowId = windowId;
+  if (resolvedWindowId == null && chromeApi.windows?.getCurrent) {
+    try {
+      const currentWindow = await chromeApi.windows.getCurrent();
+      resolvedWindowId = currentWindow?.id ?? null;
+    } catch { /* ignore */ }
+  }
+  if (openPanel && resolvedWindowId != null && chromeApi.sidePanel?.open) {
+    try {
+      await chromeApi.sidePanel.open({ windowId: resolvedWindowId });
+    } catch (error) {
+      return {
+        ok: false,
+        queued: true,
+        error: `sidepanel_open_failed:${error?.message ?? error}`
+      };
+    }
+  }
+  return { ok: true, requestId: payload.id };
+}
+
+async function openExtensionDialog(chromeApi = chrome, pagePath = "sidepanel/index.html") {
+  const url = chromeApi.runtime.getURL(pagePath);
+  const created = await chromeApi.tabs?.create?.({ url });
+  return {
+    ok: true,
+    url,
+    tabId: created?.id ?? null
+  };
+}
+
+async function openFollowupDialog({
+  action,
+  selectionState,
+  displayLabel = "",
+  attached = "",
+  priorResult = ""
+} = {}, chromeApi = chrome, fetchImpl = fetch) {
+  const standaloneConfig = await loadStandaloneConfig();
+  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+  const desktopUp = await isDesktopAvailable(runtimeBase);
+
+  if (desktopUp) {
+    const request = buildOverlayHandoffRequest({
+      actionId: action ?? "summarize",
+      selectionState,
+      priorResult
+    });
+    return dispatchOverlayHandoff(request, chromeApi, fetchImpl);
+  }
+
+  const queued = await queueSidePanelAnalysis({
+    kind: "carry_result",
+    action,
+    selectionState,
+    displayLabel,
+    attached,
+    priorResult
+  }, {
+    chromeApi,
+    openPanel: false
+  });
+  if (!queued?.ok) return queued;
+  return openExtensionDialog(chromeApi, "sidepanel/index.html");
 }
 
 export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchImpl = fetch) {
@@ -453,6 +552,70 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
   }
 }
 
+function stripHtmlForPrompt(html = "", maxLength = 18_000) {
+  const text = String(html ?? "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function buildStandaloneExplainPagePrompt(capture = {}) {
+  const title = `${capture?.title ?? ""}`.trim();
+  const url = `${capture?.url ?? ""}`.trim();
+  if (capture?.kind === "video" && capture?.youtube) {
+    const youtube = capture.youtube;
+    const transcript = `${youtube?.transcriptBody ?? ""}`.trim();
+    const transcriptBlock = transcript
+      ? `\n\n字幕 / 转录：\n${transcript.slice(0, 18_000)}`
+      : `\n\n当前未抓到字幕，已知信息：\n作者：${youtube?.author ?? "未知"}\n时长：${youtube?.lengthSeconds ?? 0} 秒`;
+    return {
+      contentKind: "video",
+      systemPrompt: "You explain webpages and videos to a curious reader. Reply in Chinese with structured Markdown.",
+      prompt: `请解释这个视频的内容、背景、关键观点和值得关注的地方。输出结构：1）一句话总述 2）5-8 条关键点 3）哪些地方需要保留不确定性。\n\n标题：${youtube?.title ?? title}\n作者：${youtube?.author ?? "未知"}\nURL：${url}${transcriptBlock}`
+    };
+  }
+
+  const pageText = stripHtmlForPrompt(capture?.html ?? "");
+  return {
+    contentKind: "article",
+    systemPrompt: "You explain webpages to a curious reader. Reply in Chinese with structured Markdown and stay grounded in the provided page text.",
+    prompt: `请解释这个网页的内容、背景、关键观点和值得关注的地方。输出结构：1）一句话总述 2）5-8 条关键点 3）哪些地方需要保留不确定性。\n\n标题：${title}\nURL：${url}\n\n页面正文：\n${pageText || "(未抓到正文)"}`
+  };
+}
+
+async function runStandaloneExplainPage({ capture, standaloneConfig, chromeApi = chrome }) {
+  if (!standaloneConfig?.apiKey) {
+    return { ok: false, error: "desktop_unavailable" };
+  }
+  const { prompt, systemPrompt, contentKind } = buildStandaloneExplainPagePrompt(capture);
+  const result = await callLLMDirect({
+    config: standaloneConfig,
+    prompt,
+    systemPrompt,
+    maxTokens: 1536
+  });
+  if (result.ok) {
+    try {
+      chromeApi.notifications?.create?.(`uca-explain-${Date.now()}`, {
+        type: "basic",
+        iconUrl: "popup/icon.png",
+        title: `LingxY · ${contentKind === "video" ? "视频解释" : "网页解释"}`,
+        message: (result.text ?? "").slice(0, 200) || "已生成讲解"
+      });
+    } catch { /* notifications optional */ }
+  }
+  return {
+    ok: Boolean(result.ok),
+    mode: "standalone",
+    contentKind,
+    text: result.text ?? "",
+    error: result.error
+  };
+}
+
 // Capture the current tab's page source via the MAIN-world capture function
 // installed by content_script/page-source-capture.js, then forward to the
 // service's /page/explain endpoint. The endpoint writes an overlay handoff
@@ -462,7 +625,7 @@ export async function dispatchExplainPage({
   tab,
   chromeApi = chrome,
   fetchImpl = fetch,
-  pageExplainUrl = RUNTIME_PAGE_EXPLAIN_URL
+  pageExplainUrl = null
 } = {}) {
   if (!tab?.id) {
     return { ok: false, error: "no_active_tab" };
@@ -491,8 +654,16 @@ export async function dispatchExplainPage({
   // attribute source_app correctly.
   payload.browser = tab?.url?.includes("edge") ? "msedge.exe" : "chrome.exe";
 
+  const standaloneConfig = await loadStandaloneConfig();
+  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+  const resolvedExplainUrl = pageExplainUrl ?? `${runtimeBase}/page/explain`;
+  const desktopUp = await isDesktopAvailable(runtimeBase);
+  if (!desktopUp && standaloneConfig?.apiKey) {
+    return runStandaloneExplainPage({ capture: payload, standaloneConfig, chromeApi });
+  }
+
   try {
-    const response = await fetchImpl(pageExplainUrl, {
+    const response = await fetchImpl(resolvedExplainUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ capture: payload })
@@ -502,6 +673,10 @@ export async function dispatchExplainPage({
     }
     return response.json();
   } catch (error) {
+    invalidateDesktopProbe();
+    if (standaloneConfig?.apiKey) {
+      return runStandaloneExplainPage({ capture: payload, standaloneConfig, chromeApi });
+    }
     return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
   }
 }
@@ -542,13 +717,36 @@ export function registerExtensionRuntime(chromeApi = chrome) {
 
   chromeApi.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === "uca.explain-page") {
-      await dispatchExplainPage({ tab, chromeApi, fetchImpl: fetch });
+      await queueSidePanelAnalysis({
+        kind: "page_explain"
+      }, {
+        chromeApi,
+        windowId: tab?.windowId ?? null
+      });
       return;
     }
     const [{ result: selectionState } = {}] = await chromeApi.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => window.__ucaSelectionState ?? null
     });
+
+    if ((info.menuItemId === "uca.fetch-link" || info.menuItemId === "uca.inspect-image") && tab?.windowId != null) {
+      await queueSidePanelAnalysis({
+        kind: "quickaction",
+        action: info.menuItemId,
+        selectionState: {
+          text: selectionState?.text ?? info.selectionText ?? "",
+          url: info.linkUrl ?? info.pageUrl ?? tab?.url ?? "",
+          pageTitle: tab?.title ?? "",
+          imageUrl: info.srcUrl ?? "",
+          anchorText: info.linkText ?? ""
+        }
+      }, {
+        chromeApi,
+        windowId: tab.windowId
+      });
+      return;
+    }
 
     // UCA-173: for link / image actions, render a visible streaming frame
     // inside the page instead of silently firing a chrome.notifications
@@ -644,14 +842,54 @@ export function registerExtensionRuntime(chromeApi = chrome) {
 
     if (message?.type === "uca.page.explain") {
       (async () => {
-        let tab = message.tab ?? null;
-        if (!tab) {
-          const [first] = await chromeApi.tabs.query({ active: true, currentWindow: true });
-          tab = first ?? null;
-        }
-        const result = await dispatchExplainPage({ tab, chromeApi, fetchImpl: fetch });
+        const explicitWindowId = message.windowId ?? null;
+        const senderWindowId = _sender?.tab?.windowId ?? null;
+        const result = await queueSidePanelAnalysis({
+          kind: "page_explain"
+        }, {
+          chromeApi,
+          windowId: explicitWindowId ?? senderWindowId,
+          openPanel: message.openPanel !== false
+        });
         sendResponse(result);
       })();
+      return true;
+    }
+
+    if (message?.type === "uca.sidepanel.startAnalysis") {
+      (async () => {
+        const explicitWindowId = message.windowId ?? null;
+        const senderWindowId = _sender?.tab?.windowId ?? null;
+        const result = await queueSidePanelAnalysis(message.request ?? {}, {
+          chromeApi,
+          windowId: explicitWindowId ?? senderWindowId,
+          openPanel: message.openPanel !== false
+        });
+        sendResponse(result);
+      })();
+      return true;
+    }
+
+    if (message?.type === "uca.dialog.open") {
+      (async () => {
+        try {
+          const result = await openExtensionDialog(chromeApi, message.pagePath ?? "sidepanel/index.html");
+          sendResponse(result);
+        } catch (error) {
+          sendResponse({ ok: false, error: error?.message ?? String(error) });
+        }
+      })();
+      return true;
+    }
+
+    if (message?.type === "uca.result.openFollowup") {
+      openFollowupDialog({
+        action: message.action,
+        selectionState: message.selectionState ?? null,
+        displayLabel: message.displayLabel ?? "",
+        attached: message.attached ?? "",
+        priorResult: message.priorResult ?? ""
+      }, chromeApi, fetch).then((response) => sendResponse(response));
       return true;
     }
 
@@ -722,10 +960,31 @@ export function registerExtensionRuntime(chromeApi = chrome) {
         const conversation = [...history, { role: "user", content: userText }];
         const config = await loadStandaloneConfig();
 
-        // Path A: standalone direct-call (preferred — no desktop round-trip).
-        // Uses proper `messages` array so providers track turn roles natively
-        // (saves ~50 tokens/turn versus the prior "用户:/助手:" concat) and
-        // a tighter max_tokens cap (512) to keep worst-case wall time down.
+        const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+        if (await isDesktopAvailable(runtimeBase)) {
+          const desktopResult = await runDesktopTask({
+            runtimeBase,
+            userCommand: userText,
+            capture: {
+              sourceType: "chat",
+              text: userText,
+              history: conversation.slice(0, -1),
+              browser: "chrome.exe"
+            }
+          });
+          if (desktopResult.ok) {
+            sendResponse({
+              ok: true,
+              mode: "desktop",
+              text: desktopResult.text,
+              history: [...conversation, { role: "assistant", content: desktopResult.text }]
+            });
+            return;
+          }
+          sendResponse({ ok: false, error: desktopResult.error ?? "desktop_stream_failed" });
+          return;
+        }
+
         if (config?.apiKey) {
           const systemPrompt = "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
           const messages = [
@@ -737,60 +996,11 @@ export function registerExtensionRuntime(chromeApi = chrome) {
             sendResponse({ ok: true, mode: "standalone", text: result.text, history: [...conversation, { role: "assistant", content: result.text }] });
             return;
           }
-          // Fall through to desktop path if standalone call fails (e.g., bad key)
-          // so the user still has a way to chat when desktop is up.
+          sendResponse({ ok: false, error: result.error ?? "standalone_failed" });
+          return;
         }
 
-        // Path B: desktop runtime via /task + SSE stream.
-        const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
-        if (await isDesktopAvailable(runtimeBase)) {
-          try {
-            const submitResponse = await fetch(`${runtimeBase}/task`, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                userCommand: userText,
-                executionMode: "interactive",
-                capture: {
-                  sourceType: "chat",
-                  text: userText,
-                  history: conversation.slice(0, -1),
-                  browser: "chrome.exe"
-                }
-              })
-            });
-            if (!submitResponse.ok) {
-              sendResponse({ ok: false, error: `desktop_submit_${submitResponse.status}` });
-              return;
-            }
-            const submitJson = await submitResponse.json();
-            const taskId = submitJson?.task?.task_id;
-            const inlineFromSubmit = extractInlineResult(submitJson?.taskEvents ?? []);
-            if (inlineFromSubmit && submitJson?.task?.status === "success") {
-              sendResponse({ ok: true, mode: "desktop", text: inlineFromSubmit, history: [...conversation, { role: "assistant", content: inlineFromSubmit }] });
-              return;
-            }
-            if (!taskId) {
-              sendResponse({ ok: false, error: "desktop_no_task_id" });
-              return;
-            }
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 30_000);
-            const streamed = await runTaskWithStream(`${runtimeBase}/task/${taskId}`, { signal: controller.signal });
-            clearTimeout(timer);
-            if (streamed?.ok) {
-              sendResponse({ ok: true, mode: "desktop", text: streamed.text, history: [...conversation, { role: "assistant", content: streamed.text }] });
-              return;
-            }
-            sendResponse({ ok: false, error: streamed?.error ?? "desktop_stream_failed" });
-            return;
-          } catch (error) {
-            sendResponse({ ok: false, error: `desktop_error:${error?.message ?? error}` });
-            return;
-          }
-        }
-
-        sendResponse({ ok: false, error: config?.apiKey ? "standalone_failed" : "no_provider_configured" });
+        sendResponse({ ok: false, error: "no_provider_configured" });
       })();
       return true;
     }
@@ -871,10 +1081,6 @@ function registerChatStreamPort(chromeApi = chrome) {
         : [];
       const conversation = [...history, { role: "user", content: userText }];
       const config = await loadStandaloneConfig();
-      if (!config?.apiKey) {
-        port.postMessage({ type: "error", error: "no_api_key" });
-        return;
-      }
       // Caller (popup / sidepanel) can override the system prompt — the
       // side panel sends a richer prompt that emphasizes continuity with
       // previously-analyzed pages / videos so follow-ups ("展开第 3 点")
@@ -883,17 +1089,39 @@ function registerChatStreamPort(chromeApi = chrome) {
         ? message.systemPrompt
         : "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
       const messages = [{ role: "system", content: systemPrompt }, ...conversation];
+      const requestedMaxTokens = Number.isFinite(message?.maxTokens)
+        ? Math.min(2048, Math.max(256, Math.round(message.maxTokens)))
+        : 512;
       port.postMessage({ type: "start" });
-      const result = await callLLMDirectStream({
-        config,
-        messages,
-        maxTokens: 512,
-        signal: controller.signal,
-        onChunk: (delta, full) => {
-          if (aborted) return;
-          try { port.postMessage({ type: "chunk", delta, full }); } catch { /* port closed */ }
+      const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+      let result;
+      if (await isDesktopAvailable(runtimeBase)) {
+        result = await runDesktopTask({
+          runtimeBase,
+          userCommand: userText,
+          capture: {
+            sourceType: "chat",
+            text: userText,
+            history: conversation.slice(0, -1),
+            browser: "chrome.exe"
+          }
+        });
+      } else {
+        if (!config?.apiKey) {
+          port.postMessage({ type: "error", error: "no_api_key" });
+          return;
         }
-      });
+        result = await callLLMDirectStream({
+          config,
+          messages,
+          maxTokens: requestedMaxTokens,
+          signal: controller.signal,
+          onChunk: (delta, full) => {
+            if (aborted) return;
+            try { port.postMessage({ type: "chunk", delta, full }); } catch { /* port closed */ }
+          }
+        });
+      }
       if (aborted) return;
       if (result.ok) {
         port.postMessage({
@@ -926,8 +1154,49 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
       if (message?.type !== "quickaction") return;
       const { action, selectionState } = message;
       const config = await loadStandaloneConfig();
+      const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+      const desktopUp = await isDesktopAvailable(runtimeBase);
+
+      // Webpage-origin quick actions should stay webpage-first. When the
+      // extension has direct provider config, prefer it even if desktop is
+      // running, so we don't produce duplicate overlay / notification UI.
       if (!config?.apiKey) {
-        port.postMessage({ type: "error", error: "no_api_key" });
+        if (!desktopUp) {
+          port.postMessage({ type: "error", error: "no_api_key" });
+          return;
+        }
+        port.postMessage({ type: "start" });
+        const desktopResult = await runQuickAction({ action, selectionState }, fetch);
+        if (aborted) return;
+        if (desktopResult.ok) {
+          port.postMessage({ type: "done", text: desktopResult.text });
+        } else {
+          port.postMessage({ type: "error", error: desktopResult.error });
+        }
+        return;
+      }
+
+      if (action === "uca.translate-selection" || action === "translate") {
+        const text = `${selectionState?.text ?? selectionState?.selectionText ?? ""}`.trim();
+        if (!text) {
+          port.postMessage({ type: "error", error: "empty_selection" });
+          return;
+        }
+        port.postMessage({ type: "start" });
+        const { prompt, systemPrompt } = buildPromptFor(action, selectionState, "");
+        const translateMaxTokens = Math.min(256, Math.max(96, Math.round(text.length * 1.4)));
+        const translateResult = await callLLMDirect({
+          config,
+          prompt,
+          systemPrompt,
+          maxTokens: translateMaxTokens
+        });
+        if (aborted) return;
+        if (translateResult.ok) {
+          port.postMessage({ type: "done", text: translateResult.text });
+        } else {
+          port.postMessage({ type: "error", error: translateResult.error });
+        }
         return;
       }
 

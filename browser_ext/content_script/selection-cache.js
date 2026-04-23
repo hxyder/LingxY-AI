@@ -7,7 +7,9 @@
 const ACTION_LABELS = {
   translate: "翻译",
   summarize: "总结",
-  explain: "解释"
+  explain: "解释",
+  "uca.fetch-link": "链接分析",
+  "uca.inspect-image": "图片分析"
 };
 
 // UCA-057: Module-level request tracker for selection snapshot model.
@@ -22,19 +24,28 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
   const host = doc.createElement("div");
   host.setAttribute("data-uca-result-frame", "true");
   const root = host.attachShadow({ mode: "open" });
+  const isLargeDialog = action === "uca.fetch-link" || action === "uca.inspect-image";
 
   const previewSnippet = (previewText ?? "").trim().slice(0, 80);
 
   root.innerHTML = `
     <style>
       :host { all: initial; }
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        background: ${isLargeDialog ? "rgba(15, 23, 42, 0.22)" : "transparent"};
+        z-index: 2147483646;
+        pointer-events: ${isLargeDialog ? "auto" : "none"};
+      }
       .frame {
         position: fixed;
         z-index: 2147483647;
-        max-width: 420px;
-        min-width: 280px;
+        max-width: ${isLargeDialog ? "min(820px, calc(100vw - 32px))" : "420px"};
+        width: ${isLargeDialog ? "min(820px, calc(100vw - 32px))" : "auto"};
+        min-width: ${isLargeDialog ? "min(620px, calc(100vw - 32px))" : "280px"};
         padding: 14px 16px;
-        border-radius: 18px;
+        border-radius: ${isLargeDialog ? "12px" : "18px"};
         background: rgba(255, 255, 255, 0.92);
         backdrop-filter: blur(28px) saturate(180%);
         -webkit-backdrop-filter: blur(28px) saturate(180%);
@@ -90,7 +101,7 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
       .body {
         font-size: 13px;
         line-height: 1.6;
-        max-height: 280px;
+        max-height: ${isLargeDialog ? "min(70vh, 720px)" : "280px"};
         overflow-y: auto;
         white-space: pre-wrap;
         word-break: break-word;
@@ -158,6 +169,7 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
         to   { transform: rotate(360deg); }
       }
     </style>
+    <div class="backdrop"></div>
     <div class="frame">
       <div class="header">
         <span class="badge">LingxY · ${ACTION_LABELS[action] ?? action}</span>
@@ -176,15 +188,35 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
 
   // Position near the selection rect (fall back to top-right of the viewport)
   const frame = root.querySelector(".frame");
-  positionFrameNear(frame, rect);
+  if (isLargeDialog) {
+    positionLargeDialog(frame);
+  } else {
+    positionFrameNear(frame, rect);
+  }
 
   const bodyEl = root.querySelector(".body");
   const actionsEl = root.querySelector(".actions");
   const copyBtn = root.querySelector('[data-action="copy"]');
   const openOverlayBtn = root.querySelector('[data-action="open-overlay"]');
   const closeBtn = root.querySelector(".close");
+  const backdropEl = root.querySelector(".backdrop");
 
   let resultText = "";
+  let dismissTimer = null;
+
+  function clearDismissTimer() {
+    if (dismissTimer) {
+      clearTimeout(dismissTimer);
+      dismissTimer = null;
+    }
+  }
+
+  function scheduleDismiss(ms = 180_000) {
+    clearDismissTimer();
+    dismissTimer = setTimeout(() => {
+      if (host.parentNode) api.close();
+    }, ms);
+  }
 
   const api = {
     setResult(text) {
@@ -194,6 +226,7 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
       bodyEl.classList.remove("streaming");
       bodyEl.textContent = resultText || "(无内容)";
       actionsEl.classList.add("visible");
+      scheduleDismiss();
     },
     // Progressive update while streaming — keeps the loading class so the
     // spinner stays visible; once setResult fires the frame finalises.
@@ -210,14 +243,17 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
       bodyEl.classList.add("error");
       bodyEl.textContent = `处理失败：${message}`;
       actionsEl.classList.add("visible");
+      scheduleDismiss();
     },
     close() {
+      clearDismissTimer();
       try { host.__ucaDetachScroll?.(); } catch { /* ignore */ }
       host.remove();
     }
   };
 
   closeBtn.addEventListener("click", () => api.close());
+  backdropEl?.addEventListener("click", () => api.close());
 
   copyBtn.addEventListener("click", async () => {
     if (!resultText) return;
@@ -238,24 +274,42 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
       pageTitle: doc.title,
       sourceType: "text_selection"
     };
-    if (resultText) {
-      // Carry the already-generated result into the desktop overlay so the
-      // user can ask follow-up questions without re-running the task.
-      sendRuntimeMessageSafely({
-        type: "uca.overlay.openWithResult",
-        action,
-        selectionState,
-        priorResult: resultText
-      });
-    } else {
-      // Result not ready yet — fall back to plain capture handoff
-      sendRuntimeMessageSafely({
-        type: "uca.overlay.captureSelection",
-        action,
-        selectionState
-      });
+    sendRuntimeMessageSafely({
+      type: "uca.result.openFollowup",
+      action,
+      selectionState,
+      displayLabel: `💬 ${ACTION_LABELS[action] ?? "结果"}：${previewText.slice(0, 80)}`,
+      attached: previewText,
+      priorResult: resultText || ""
+    }, (response) => {
+      if (response?.ok) {
+        api.close();
+        return;
+      }
+      api.setError(`无法打开对话框：${response?.error ?? response?.reason ?? "unknown"}`);
+    });
+  });
+
+  // Auto-dismiss only after a completed result / error, not while loading.
+  closeBtn.addEventListener("mouseenter", clearDismissTimer);
+  closeBtn.addEventListener("mouseleave", () => {
+    if (!bodyEl.classList.contains("loading") && !bodyEl.classList.contains("streaming")) {
+      scheduleDismiss();
     }
-    api.close();
+  });
+
+  bodyEl.addEventListener("mouseenter", clearDismissTimer);
+  bodyEl.addEventListener("mouseleave", () => {
+    if (!bodyEl.classList.contains("loading") && !bodyEl.classList.contains("streaming")) {
+      scheduleDismiss();
+    }
+  });
+
+  actionsEl.addEventListener("mouseenter", clearDismissTimer);
+  actionsEl.addEventListener("mouseleave", () => {
+    if (!bodyEl.classList.contains("loading") && !bodyEl.classList.contains("streaming")) {
+      scheduleDismiss();
+    }
   });
 
   // Auto-dismiss on Escape
@@ -263,16 +317,25 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
     if (event.key === "Escape") {
       api.close();
       doc.removeEventListener("keydown", onKey);
+      return;
+    }
+    if ((event.key === "Enter" || event.key === " ") && event.target === openOverlayBtn) {
+      event.preventDefault();
     }
   };
   doc.addEventListener("keydown", onKey);
 
-  // Auto-dismiss after 30 seconds of being idle
-  setTimeout(() => {
-    if (host.parentNode) api.close();
-  }, 60_000);
-
   return api;
+}
+
+function openInlineQuickActionFrame(action, selectionState = {}) {
+  return handleShowActionFrame({ action, selectionState }, () => {});
+}
+
+function positionLargeDialog(frameEl) {
+  frameEl.style.left = "50%";
+  frameEl.style.top = "50%";
+  frameEl.style.transform = "translate(-50%, -50%)";
 }
 
 // Position the frame near a selection rect and keep it anchored to the
@@ -403,6 +466,7 @@ function humanizeQuickActionError(rawError = "") {
   if (/^no_api_key$/i.test(msg)) return "还没配置 LLM API Key。右键扩展图标 → 选项 → 填一个 provider 的 key。";
   if (/^(unknown_provider|vision_unsupported_provider)/i.test(msg)) return "当前 provider 不支持这个操作，换一个 provider 再试。";
   if (/^network_error/i.test(msg)) return `网络错误，请检查代理 / 网络连接。\n（${msg}）`;
+  if (/^empty_response$/i.test(msg)) return "模型返回了空结果。通常是当前 provider 的流式响应不稳定，重试一次或换个模型就会恢复。";
   if (/^(http|anthropic|openai|gemini|deepseek)_(4\d\d|5\d\d)/i.test(msg)) {
     return `LLM 接口返回错误：\n${msg.slice(0, 600)}\n请检查 API Key、model 名称、剩余额度。`;
   }
@@ -1290,11 +1354,7 @@ function installHoverObserver(doc) {
       e.preventDefault();
       e.stopPropagation();
       removeActiveChip();
-      sendRuntimeMessageSafely({
-        type: "uca.overlay.captureSelection",
-        action: action,
-        selectionState: state
-      });
+      openInlineQuickActionFrame(action, state);
     });
 
     doc.body.appendChild(host);

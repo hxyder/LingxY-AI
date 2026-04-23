@@ -287,6 +287,30 @@ async function sendChatMessage(text, doc = document, chromeApi = chrome) {
   }
 }
 
+async function openSidePanelWithGesture(chromeApi = chrome) {
+  const currentWindow = await chromeApi.windows?.getCurrent?.();
+  const windowId = currentWindow?.id ?? null;
+  const [activeTab] = await (chromeApi.tabs?.query?.({ active: true, currentWindow: true }) ?? Promise.resolve([]));
+  if (chromeApi.sidePanel?.setOptions && activeTab?.id != null) {
+    await chromeApi.sidePanel.setOptions({
+      tabId: activeTab.id,
+      path: "sidepanel/index.html",
+      enabled: true
+    });
+  }
+  if (chromeApi.sidePanel?.open && windowId != null) {
+    await chromeApi.sidePanel.open({ windowId });
+    return windowId;
+  }
+  const response = await new Promise((resolve) => {
+    chromeApi.runtime.sendMessage({ type: "uca.sidepanel.open", windowId }, resolve);
+  });
+  if (!response?.ok) {
+    throw new Error(response?.error ?? "side_panel_open_failed");
+  }
+  return windowId;
+}
+
 async function bootPopup(doc = document, chromeApi = chrome) {
   const [tasks, overlayModel, modeStatus, chatHistory] = await Promise.all([
     requestRecentTasks(chromeApi),
@@ -337,19 +361,8 @@ async function bootPopup(doc = document, chromeApi = chrome) {
   const openSidePanelBtn = doc.getElementById("open-sidepanel");
   if (openSidePanelBtn) {
     openSidePanelBtn.addEventListener("click", async () => {
-      // chrome.sidePanel.open requires a user gesture. The button click
-      // counts as one; route through the service worker (via runtime
-      // message) so the same handler powers both popup + future callers.
       try {
-        const windows = await chromeApi.windows?.getCurrent?.();
-        const windowId = windows?.id;
-        if (chromeApi.sidePanel?.open && windowId != null) {
-          await chromeApi.sidePanel.open({ windowId });
-        } else {
-          await new Promise((resolve) => {
-            chromeApi.runtime.sendMessage({ type: "uca.sidepanel.open", windowId }, resolve);
-          });
-        }
+        await openSidePanelWithGesture(chromeApi);
         window.close();
       } catch (error) {
         console.warn("[LingxY] open side panel failed:", error?.message ?? error);
@@ -387,15 +400,20 @@ async function bootPopup(doc = document, chromeApi = chrome) {
   if (explainBtn) {
     explainBtn.addEventListener("click", async () => {
       explainBtn.disabled = true;
-      if (explainStatus) explainStatus.textContent = "正在捕获页面内容…";
-      const response = await new Promise((resolve) => {
-        chromeApi.runtime.sendMessage({ type: "uca.page.explain" }, resolve);
-      });
-      if (response?.accepted) {
-        if (explainStatus) explainStatus.textContent = `已递交（${response.contentKind ?? "unknown"}），浮窗会打开显示讲解。`;
+      if (explainStatus) explainStatus.textContent = "正在准备分析…";
+      try {
+        const response = await new Promise((resolve) => {
+          chromeApi.runtime.sendMessage({ type: "uca.page.explain", openPanel: false }, resolve);
+        });
+        if (!response?.ok) {
+          throw new Error(response?.error ?? response?.reason ?? "unknown");
+        }
+        if (explainStatus) explainStatus.textContent = "正在打开侧边栏…";
+        await openSidePanelWithGesture(chromeApi);
+        if (explainStatus) explainStatus.textContent = "已在侧边栏开始加载。";
         setTimeout(() => window.close(), 400);
-      } else {
-        if (explainStatus) explainStatus.textContent = `失败：${response?.error ?? response?.reason ?? "unknown"}`;
+      } catch (error) {
+        if (explainStatus) explainStatus.textContent = `失败：${error?.message ?? error}`;
         explainBtn.disabled = false;
       }
     });

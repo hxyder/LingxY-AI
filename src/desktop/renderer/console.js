@@ -3111,8 +3111,20 @@ function renderSchedules() {
 
   for (const btn of scheduleList.querySelectorAll("[data-run-schedule-id]")) {
     btn.addEventListener("click", async () => {
-      await fetchJson(`/schedules/${encodeURIComponent(btn.dataset.runScheduleId)}/runs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ triggerPayload: { source: "desktop_console" } }) });
-      await refreshWorkspace();
+      const originalLabel = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Running...";
+      try {
+        await fetchJson(`/schedules/${encodeURIComponent(btn.dataset.runScheduleId)}/runs`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ triggerPayload: { source: "desktop_console", bypassDedupe: true } })
+        });
+        await refreshWorkspace();
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
     });
   }
 

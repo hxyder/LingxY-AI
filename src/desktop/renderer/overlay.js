@@ -91,8 +91,9 @@ let notifiedInlineResultTaskId = null;
 // is set by whichever path actually shows the card first (inline_result
 // or status_changed=success) and cleared per new task.
 let popupSuccessCardTaskId = null;
+let suppressOverlayAutoReveal = false;
 
-function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000 } = {}) {
+function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, openWindow = null } = {}) {
   if (!taskId || popupSuccessCardTaskId === taskId) return;
   popupSuccessCardTaskId = taskId;
   try {
@@ -101,9 +102,17 @@ function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000 } = {
       taskId,
       title: title || "任务完成",
       lines: Array.isArray(body) ? body.filter(Boolean) : [String(body ?? "").slice(0, 160)].filter(Boolean),
-      autoHideMs
+      autoHideMs,
+      openWindow
     });
   } catch { /* optional */ }
+}
+
+async function maybeRevealOverlay({ markEngaged = false } = {}) {
+  if (suppressOverlayAutoReveal) return false;
+  await window.ucaShell?.showWindow?.("overlay");
+  if (markEngaged) markUserEngaged();
+  return true;
 }
 let notifiedCompositeTaskId = null;
 let selectedOutputSuffix = "";
@@ -1172,7 +1181,7 @@ toastContinueBtn.addEventListener("click", async () => {
     commandInput.value = "";
     addBubble("assistant", `Previous result loaded as context. What next?`);
     commandInput.focus();
-    await window.ucaShell.showWindow("overlay");
+    await maybeRevealOverlay();
   }
 });
 
@@ -1246,7 +1255,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     const toolId = getToolEventId(frame);
     if (toolId) {
       timelineAddStep(`调用 ${toolId}…`, "active");
-      if (showOverlay) window.ucaShell.showWindow("overlay");
+      if (showOverlay) void maybeRevealOverlay();
       const stepEl = appendToolStepBubble(toolId, "pending");
       if (!pendingToolStepBubbles[toolId]) pendingToolStepBubbles[toolId] = [];
       pendingToolStepBubbles[toolId].push(stepEl);
@@ -1269,7 +1278,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
   if (frame.event === "pending_approval_created") {
     renderInlineApproval(frame);
     timelineAddStep("等待用户确认", "active");
-    if (showOverlay) window.ucaShell.showWindow("overlay");
+    if (showOverlay) void maybeRevealOverlay();
     // Floating popup card (non-blocking, stackable). The inline overlay UI
     // stays authoritative; the popup is a convenience surface so the user
     // doesn't miss approvals when the overlay isn't in view.
@@ -1522,8 +1531,7 @@ async function handleTaskEventFrame(rawEvent) {
       bubbleArea.hidden = false;
       bubbleArea.appendChild(streamingBubble);
       streamingBubbleRawText = "";
-      window.ucaShell.showWindow("overlay");
-      markUserEngaged(); // lock overlay open for the duration of streaming
+      void maybeRevealOverlay({ markEngaged: true }); // lock overlay open unless user explicitly closed it
     }
     streamingBubbleRawText += delta;
     streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
@@ -1557,14 +1565,15 @@ async function handleTaskEventFrame(rawEvent) {
         if (lastTask?.task_spec?.artifact?.required === false) {
           notifiedInlineResultTaskId = activeTaskId;
         }
-        window.ucaShell.showWindow("overlay");
+        void maybeRevealOverlay();
         // Fire success popup card from the inline-result path as well —
         // the downstream status_changed=success block is guarded by
         // notifiedInlineResultTaskId and otherwise wouldn't trigger the
         // card for streaming conversational replies.
         fireSuccessPopupCardOnce(frameTaskId, {
           title: lastTask?.intent ?? "任务完成",
-          body: text
+          body: text,
+          openWindow: "overlay"
         });
       }
     }
@@ -1599,7 +1608,7 @@ async function handleTaskEventFrame(rawEvent) {
           { label: "不用了", onClick: () => {} }
         ]
       });
-      window.ucaShell.showWindow("overlay");
+      void maybeRevealOverlay();
     }
   }
 
@@ -2106,8 +2115,7 @@ async function refreshActiveTask() {
           ? `生成了文件 ${filename}\n\n${previewText.slice(0, 600)}`
           : `生成了文件 ${filename}`;
         appendTurn("assistant", memorySnippet);
-        await window.ucaShell.showWindow("overlay");
-        markUserEngaged();
+        await maybeRevealOverlay({ markEngaged: true });
         if (isAudioNoteTask && previewText) {
           addBubble("assistant", `录音笔记整理好了：\n\n${previewText.slice(0, 1200)}`);
         }
@@ -2212,8 +2220,7 @@ async function refreshActiveTask() {
           streamingBubbleRawText = "";
         } else {
           addBubble("assistant", finalText);
-          await window.ucaShell.showWindow("overlay");
-          markUserEngaged();
+          await maybeRevealOverlay({ markEngaged: true });
         }
         if (!popKeptOpen) {
           // Apple-style: show a transient pop bubble too, but keep the reply
@@ -2228,11 +2235,13 @@ async function refreshActiveTask() {
         appendProviderFooterBubble(providerInfo);
         await window.ucaShell.notify({
           title: "UCA",
-          body: finalText.slice(0, 100)
+          body: finalText.slice(0, 100),
+          openWindow: "overlay"
         });
         fireSuccessPopupCardOnce(task.task_id, {
           title: task.intent ?? "任务完成",
-          body: finalText
+          body: finalText,
+          openWindow: "overlay"
         });
       }
     } else if (task.status === "failed") {
@@ -2776,6 +2785,7 @@ closeBtn.addEventListener("click", () => {
   // Keep the visible transcript, pending context, and conversationState intact
   // so reopening resumes the same thread instead of showing an empty overlay.
   conversationPhase = "idle";
+  suppressOverlayAutoReveal = true;
   window.ucaShell.hideWindow("overlay");
 });
 
@@ -3268,6 +3278,7 @@ function schedulePopHide(ms = 3000) {
 }
 
 function markUserEngaged() {
+  suppressOverlayAutoReveal = false;
   popKeptOpen = true;
   document.body.classList.remove("popping");
   cancelPopHide();
@@ -5518,6 +5529,7 @@ window.ucaShell?.onCtrlEnter?.(() => {
 
 window.ucaShell.onWindowFocused((payload) => {
   if (payload.windowId === "overlay") {
+    suppressOverlayAutoReveal = false;
     syncOverlayTheme(); // pick up any theme change made in the console
     // Sync project store but DO NOT re-render if the conversation is already
     // visible — renderConversationState() calls clearBubbles() which would

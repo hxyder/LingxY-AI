@@ -93,6 +93,7 @@ export function createTaskRecord({
   childTaskIds = null,
   childIndex = null,
   retryCount = 0,
+  bypassDedupe = false,
   executorOverride = null
 }) {
   const taskSpec = createTaskSpec(userCommand, contextPacket, route);
@@ -116,7 +117,7 @@ export function createTaskRecord({
     child_task_ids: Array.isArray(childTaskIds) ? childTaskIds : null,
     child_index: Number.isInteger(childIndex) ? childIndex : null,
     retry_count: retryCount,
-    bypass_dedupe: retryCount > 0,
+    bypass_dedupe: Boolean(bypassDedupe || retryCount > 0),
     executor_history: [],
     intent: route.intent,
     executor: executorOverride ?? route.executor,

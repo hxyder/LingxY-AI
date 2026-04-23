@@ -49,6 +49,43 @@ export function invalidateDesktopProbe() {
 
 // ── Provider-specific call wrappers. Each returns { ok, text, error }. ─────
 
+function flattenTextContent(content) {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === "string") return part;
+      if (typeof part?.text === "string") return part.text;
+      if (typeof part?.content === "string") return part.content;
+      if (typeof part?.value === "string") return part.value;
+      return "";
+    }).join("");
+  }
+  if (typeof content?.text === "string") return content.text;
+  if (typeof content?.content === "string") return content.content;
+  if (typeof content?.value === "string") return content.value;
+  return "";
+}
+
+function extractResponsesApiText(payload = {}) {
+  if (typeof payload?.output_text === "string") return payload.output_text;
+  const output = Array.isArray(payload?.output) ? payload.output : [];
+  return output
+    .flatMap((item) => Array.isArray(item?.content) ? item.content : [])
+    .map((part) => flattenTextContent(part))
+    .join("");
+}
+
+function extractOpenAICompatText(payload = {}) {
+  return flattenTextContent(payload?.choices?.[0]?.message?.content)
+    || flattenTextContent(payload?.choices?.[0]?.delta?.content)
+    || flattenTextContent(payload?.choices?.[0]?.text)
+    || extractResponsesApiText(payload);
+}
+
+function hasMeaningfulText(text = "") {
+  return typeof text === "string" && text.trim().length > 0;
+}
+
 async function callAnthropic({ apiKey, model, prompt, systemPrompt, messages = null, maxTokens = 1024 }) {
   // When `messages` is provided we use it directly (multi-turn chat). The
   // `role: "system"` entries are lifted to Anthropic's top-level `system`
@@ -111,7 +148,7 @@ async function callOpenAICompat(config, { apiKey, model, prompt, systemPrompt, m
     return { ok: false, error: `http_${response.status}:${await response.text().catch(() => "")}` };
   }
   const payload = await response.json();
-  const text = payload?.choices?.[0]?.message?.content ?? "";
+  const text = extractOpenAICompatText(payload);
   return { ok: true, text };
 }
 
@@ -222,9 +259,7 @@ async function streamOpenAICompat(config, { apiKey, model, messages, reasoningEf
   let full = "";
   for await (const frame of parseSseStream(response)) {
     if (frame.event === "done") break;
-    const delta = frame.data?.choices?.[0]?.delta?.content
-      ?? frame.data?.choices?.[0]?.message?.content
-      ?? "";
+    const delta = extractOpenAICompatText(frame.data ?? {});
     if (delta) {
       full += delta;
       onChunk?.(delta, full);
@@ -319,38 +354,67 @@ export async function callLLMDirectStream({ config, messages, systemPrompt, maxT
   const normalizedConfig = normalizeStandaloneConfig(config);
   const provider = normalizedConfig?.provider;
   try {
+    let streamed = null;
     if (provider === "anthropic") {
       if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
-      return await streamAnthropic({
+      streamed = await streamAnthropic({
         apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
         messages, systemPrompt, maxTokens, onChunk, signal
       });
-    }
-    if (provider === "gemini") {
+    } else if (provider === "gemini") {
       if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
-      return await streamGemini({
+      streamed = await streamGemini({
         apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
         messages, systemPrompt, maxTokens, onChunk, signal
       });
+    } else {
+      const entry = PROVIDER_CONFIGS[provider];
+      if (!entry) return { ok: false, error: `unknown_provider:${provider}` };
+      if (entry.authStyle !== "none" && !normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      // Prepend system prompt into messages for OpenAI-compat stream.
+      const effectiveMessages = Array.isArray(messages) && messages.length > 0
+        ? messages
+        : [{ role: "system", content: systemPrompt ?? "" }, { role: "user", content: "" }];
+      streamed = await streamOpenAICompat(
+        { ...entry, id: provider },
+        {
+          apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
+          messages: effectiveMessages,
+          reasoningEffort: normalizedConfig.reasoningEffort,
+          maxTokens, onChunk, signal
+        }
+      );
     }
-    const entry = PROVIDER_CONFIGS[provider];
-    if (!entry) return { ok: false, error: `unknown_provider:${provider}` };
-    if (entry.authStyle !== "none" && !normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
-    // Prepend system prompt into messages for OpenAI-compat stream.
-    const effectiveMessages = Array.isArray(messages) && messages.length > 0
-      ? messages
-      : [{ role: "system", content: systemPrompt ?? "" }, { role: "user", content: "" }];
-    return await streamOpenAICompat(
-      { ...entry, id: provider },
-      {
-        apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
-        messages: effectiveMessages,
-        reasoningEffort: normalizedConfig.reasoningEffort,
-        maxTokens, onChunk, signal
-      }
-    );
+    if (!streamed?.ok) return streamed ?? { ok: false, error: "stream_failed" };
+    if (hasMeaningfulText(streamed.text)) return streamed;
+
+    const fallback = await callLLMDirect({
+      config: normalizedConfig,
+      messages,
+      prompt: Array.isArray(messages) ? "" : (messages?.[messages.length - 1]?.content ?? ""),
+      systemPrompt,
+      maxTokens
+    });
+    if (!fallback.ok) return fallback;
+    if (!hasMeaningfulText(fallback.text)) return { ok: false, error: "empty_response" };
+    return fallback;
   } catch (error) {
     return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
+  }
+}
+
+function buildDataUrl(mediaType, base64) {
+  return `data:${mediaType};base64,${base64}`;
+}
+
+async function resolveVisionImageUrl(imageUrl) {
+  if (typeof imageUrl !== "string" || !imageUrl) return imageUrl;
+  if (imageUrl.startsWith("data:")) return imageUrl;
+  try {
+    const { base64, mediaType } = await fetchImageAsBase64(imageUrl);
+    return buildDataUrl(mediaType, base64);
+  } catch {
+    return imageUrl;
   }
 }
 
@@ -404,13 +468,14 @@ async function callAnthropicVision({ apiKey, model, prompt, imageUrl }) {
 async function callOpenAICompatVision(config, { apiKey, model, prompt, imageUrl, reasoningEffort = "" }) {
   const headers = { "Content-Type": "application/json" };
   if (config.authStyle === "bearer" && apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const resolvedImageUrl = await resolveVisionImageUrl(imageUrl);
   const body = {
     model: model || config.defaultModel,
     max_tokens: 1024,
     messages: [{
       role: "user",
       content: [
-        { type: "image_url", image_url: { url: imageUrl, detail: "high" } },
+        { type: "image_url", image_url: { url: resolvedImageUrl, detail: "high" } },
         { type: "text", text: prompt }
       ]
     }]
@@ -427,7 +492,7 @@ async function callOpenAICompatVision(config, { apiKey, model, prompt, imageUrl,
   });
   if (!response.ok) return { ok: false, error: `openai_compat_vision_${response.status}:${await response.text().catch(() => "")}` };
   const payload = await response.json();
-  return { ok: true, text: payload?.choices?.[0]?.message?.content ?? "" };
+  return { ok: true, text: extractOpenAICompatText(payload) };
 }
 
 function providerSupportsDirectVision(provider = "") {
