@@ -124,12 +124,15 @@ assert.ok(/--accent-ink:\s*#ffffff/.test(tokens), "accent family must write --ac
 // ── legacy --teal-soft kept for compat ────────────────────────────────
 assert.ok(/--teal-soft:/.test(tokens), "--teal-soft retained for legacy consumers");
 
-// ── UCA-120: neutral white/black palette in tokens.css ────────────────
+// ── UCA-120 / UCA-180: neutral white/black palette in tokens.css ──────
+// UCA-180 retuned ink to #0d0d0d (still near-black, crisper on pure
+// white) and dark --bg to #0f0f0f so the rail (#0b0b0b) can recess
+// behind the content canvas (#1a1a1a panels) in a clean 3-layer stack.
 assert.ok(/--bg:\s*#ffffff/.test(tokens), "light --bg must be #ffffff (pure white)");
-assert.ok(/--ink:\s*#0a0a0a/.test(tokens), "light --ink must be #0a0a0a (near-black)");
+assert.ok(/--ink:\s*#0d0d0d/.test(tokens), "light --ink must be #0d0d0d (near-black)");
 const darkBlock = (tokens.match(/:is\(html, body\)\[data-theme="dark"\]\s*\{[\s\S]*?\n\}/) ?? [""])[0];
-assert.ok(/--bg:\s*#0a0a0a/.test(darkBlock), "dark --bg must be #0a0a0a");
-assert.ok(/--ink:\s*#fafafa/.test(darkBlock), "dark --ink must be #fafafa");
+assert.ok(/--bg:\s*#0f0f0f/.test(darkBlock), "dark --bg must be #0f0f0f");
+assert.ok(/--ink:\s*#f2f2f2/.test(darkBlock), "dark --ink must be #f2f2f2");
 
 // ── UCA-120: .btn canonical spec ──────────────────────────────────────
 // .btn base: height 32, .btn-sm: 26, .btn-lg: 38.

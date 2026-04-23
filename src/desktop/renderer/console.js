@@ -294,7 +294,7 @@ applyConsoleInformationArchitecture();
 // switchTab() below.
 const VIEW_CRUMBS = {
   tasks: "Tasks", chat: "Chat", files: "Files", schedules: "Schedules",
-  projects: "Projects",
+  projects: "Projects", notes: "Notes",
   connectors: "Connectors", inbox: "Inbox",
   settings: "Settings"
 };
@@ -320,6 +320,9 @@ function switchTab(tabId) {
   // UCA-117: reflect the current view in the topbar breadcrumb.
   const crumb = document.querySelector("#topCrumb");
   if (crumb) crumb.textContent = VIEW_CRUMBS[tabId] ?? tabId;
+  // UCA-178: boot the Notes module when its tab becomes active (handles
+  // both rail clicks and saved-view restore on startup).
+  if (tabId === "notes" && typeof initNotesIfNeeded === "function") initNotesIfNeeded();
   // UCA-107: persist the selection so the app boots back to where you left.
   try { localStorage.setItem("lingxy.view", tabId); } catch { /* sandbox: ignore */ }
 }
@@ -336,6 +339,8 @@ tabButtons.forEach((btn) => {
       void loadConnectorsTab();
     } else if (btn.dataset.tab === "inbox") {
       void loadInboxTab();
+    } else if (btn.dataset.tab === "notes") {
+      initNotesIfNeeded();
     }
   });
 });
@@ -6254,3 +6259,658 @@ initFoldablePanelSections();
     for (const p of panels) io.observe(p);
   }
 })();
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   UCA-178: QUICK NOTES
+   A lightweight notepad with formatting, tables/images/links, timestamps
+   (light gray), chat-to-note adoption, voice input, and share/export.
+   Persists locally via localStorage so it works offline and does not
+   depend on the service being up.
+   ═══════════════════════════════════════════════════════════════════════════ */
+let notesReady = false;
+function initNotesIfNeeded() {
+  if (notesReady) return;
+  notesReady = true;
+  initQuickNotes();
+}
+
+function initQuickNotes() {
+  const LS_KEY = "lingxy.notes.v1";
+  const LS_SELECTED = "lingxy.notes.selected";
+  const LS_FONT_FAMILY = "lingxy.notes.fontFamily";
+  const LS_FONT_SIZE = "lingxy.notes.fontSize";
+
+  const panel = document.getElementById("panel-notes");
+  if (!panel) return;
+  const listEl = panel.querySelector("#notesList");
+  const emptyEl = panel.querySelector("#notesEmpty");
+  const countLabel = panel.querySelector("#notesCountLabel");
+  const searchInput = panel.querySelector("#notesSearchInput");
+  const titleInput = panel.querySelector("#noteTitleInput");
+  const createdTs = panel.querySelector("#noteCreatedTs");
+  const updatedTs = panel.querySelector("#noteUpdatedTs");
+  const bodyEl = panel.querySelector("#noteBody");
+  const toolbar = panel.querySelector(".notes-toolbar");
+  const fontSizeSel = panel.querySelector("#noteFontSize");
+  const fontFamilySel = panel.querySelector("#noteFontFamily");
+  const newBtn = panel.querySelector("#notesNewBtn");
+  const deleteBtn = panel.querySelector("#noteDeleteBtn");
+  const shareBtn = panel.querySelector("#noteShareBtn");
+  const adoptFromChatBtn = panel.querySelector("#noteAdoptFromChatBtn");
+  const voiceBtn = panel.querySelector("#noteVoiceBtn");
+  const chatInput = panel.querySelector("#noteChatInput");
+  const chatSendBtn = panel.querySelector("#noteChatSendBtn");
+  const chatLog = panel.querySelector("#noteChatLog");
+
+  if (!listEl || !bodyEl) return;
+  bodyEl.setAttribute("data-placeholder", "Start typing, or paste an image, or say something into the mic…");
+
+  // Capture the global runtime base URL before shadowing with our local state.
+  const runtimeBaseUrl = (() => {
+    try { return (window.__lingxyRuntimeBaseUrl) || document.querySelector("html")?.dataset?.runtimeUrl || null; }
+    catch { return null; }
+  })() ?? "http://127.0.0.1:4310";
+
+  // ── Storage ────────────────────────────────────────────────────────────
+  const notesState = {
+    notes: loadNotes(),
+    selectedId: (() => { try { return localStorage.getItem(LS_SELECTED); } catch { return null; } })(),
+    searchQuery: "",
+    saveTimer: null,
+    pendingChatAdoption: null
+  };
+
+  function loadNotes() {
+    try {
+      const raw = localStorage.getItem(LS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  }
+  function saveNotes() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(notesState.notes)); } catch { /* ignore */ }
+  }
+  function rememberSelection(id) {
+    try { localStorage.setItem(LS_SELECTED, id ?? ""); } catch { /* ignore */ }
+  }
+
+  function nowIso() { return new Date().toISOString(); }
+  function fmtRel(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const now = new Date();
+    const diff = (now - d) / 1000;
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    const sameYear = d.getFullYear() === now.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    const hh = String(d.getHours()).padStart(2, "0");
+    const mi = String(d.getMinutes()).padStart(2, "0");
+    return sameYear ? `${mm}-${dd} ${hh}:${mi}` : `${d.getFullYear()}-${mm}-${dd}`;
+  }
+  function fmtAbsolute(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function makeNote() {
+    const ts = nowIso();
+    return {
+      id: `n-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      title: "",
+      body_html: "",
+      created_at: ts,
+      updated_at: ts,
+      history: [] // [{ts, bytes}] rough edit log for future UI; not rendered yet
+    };
+  }
+
+  function currentNote() {
+    return notesState.notes.find((n) => n.id === notesState.selectedId) ?? null;
+  }
+
+  function ensureSelection() {
+    if (!currentNote()) {
+      if (notesState.notes.length > 0) {
+        notesState.selectedId = notesState.notes[0].id;
+      } else {
+        const fresh = makeNote();
+        notesState.notes.unshift(fresh);
+        notesState.selectedId = fresh.id;
+        saveNotes();
+      }
+      rememberSelection(notesState.selectedId);
+    }
+  }
+
+  // ── List render ────────────────────────────────────────────────────────
+  function sortedFiltered() {
+    const q = notesState.searchQuery.trim().toLowerCase();
+    const matches = (n) => !q
+      || (n.title || "").toLowerCase().includes(q)
+      || stripHtml(n.body_html || "").toLowerCase().includes(q);
+    return [...notesState.notes].filter(matches)
+      .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
+  }
+
+  function stripHtml(html) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html;
+    return (tmp.textContent || "").replace(/\s+/g, " ").trim();
+  }
+
+  function renderList() {
+    const items = sortedFiltered();
+    countLabel.textContent = `${items.length}`;
+    listEl.innerHTML = "";
+    if (items.length === 0) {
+      listEl.hidden = true;
+      emptyEl.hidden = false;
+      return;
+    }
+    listEl.hidden = false;
+    emptyEl.hidden = true;
+    for (const n of items) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "note-item" + (n.id === notesState.selectedId ? " is-active" : "");
+      btn.dataset.noteId = n.id;
+      btn.innerHTML = `
+        <div class="note-item-title">${escapeHtml(n.title || "Untitled note")}</div>
+        <div class="note-item-snippet">${escapeHtml(stripHtml(n.body_html).slice(0, 110) || "Empty note")}</div>
+        <div class="note-item-ts">${escapeHtml(fmtRel(n.updated_at))}</div>
+      `;
+      btn.addEventListener("click", () => selectNote(n.id));
+      listEl.appendChild(btn);
+    }
+    updateRailBadge();
+  }
+
+  function updateRailBadge() {
+    const badge = document.getElementById("railBadgeNotes");
+    if (!badge) return;
+    const n = notesState.notes.length;
+    if (n > 0) { badge.textContent = String(n); badge.hidden = false; }
+    else { badge.hidden = true; }
+  }
+
+  // ── Editor render ──────────────────────────────────────────────────────
+  function renderEditor() {
+    const note = currentNote();
+    if (!note) return;
+    titleInput.value = note.title || "";
+    bodyEl.innerHTML = note.body_html || "";
+    createdTs.textContent = `Created ${fmtAbsolute(note.created_at)}`;
+    updatedTs.textContent = `Edited ${fmtRel(note.updated_at)}`;
+    applyFontFamily(readFontFamily());
+    applyFontSize(readFontSize());
+  }
+
+  function readFontFamily() {
+    try { return localStorage.getItem(LS_FONT_FAMILY) || "sans"; } catch { return "sans"; }
+  }
+  function readFontSize() {
+    try { return Number(localStorage.getItem(LS_FONT_SIZE)) || 14; } catch { return 14; }
+  }
+  function applyFontFamily(fam) {
+    bodyEl.setAttribute("data-font-family", fam);
+    if (fontFamilySel) fontFamilySel.value = fam;
+    try { localStorage.setItem(LS_FONT_FAMILY, fam); } catch { /* ignore */ }
+  }
+  function applyFontSize(size) {
+    bodyEl.style.fontSize = `${size}px`;
+    if (fontSizeSel) fontSizeSel.value = String(size);
+    try { localStorage.setItem(LS_FONT_SIZE, String(size)); } catch { /* ignore */ }
+  }
+
+  function selectNote(id) {
+    notesState.selectedId = id;
+    rememberSelection(id);
+    renderList();
+    renderEditor();
+  }
+
+  // ── Save (debounced) ──────────────────────────────────────────────────
+  function scheduleSave() {
+    if (notesState.saveTimer) clearTimeout(notesState.saveTimer);
+    notesState.saveTimer = setTimeout(() => {
+      const note = currentNote();
+      if (!note) return;
+      const prevLen = (note.body_html || "").length;
+      note.title = titleInput.value;
+      note.body_html = bodyEl.innerHTML;
+      note.updated_at = nowIso();
+      // keep a light edit log (capped at 50) so future UI can show activity
+      note.history = note.history || [];
+      note.history.push({ ts: note.updated_at, bytes: note.body_html.length - prevLen });
+      if (note.history.length > 50) note.history = note.history.slice(-50);
+      saveNotes();
+      updatedTs.textContent = `Edited ${fmtRel(note.updated_at)}`;
+      renderList();
+    }, 350);
+  }
+
+  titleInput.addEventListener("input", scheduleSave);
+  bodyEl.addEventListener("input", scheduleSave);
+
+  // ── Toolbar ───────────────────────────────────────────────────────────
+  toolbar?.addEventListener("click", (ev) => {
+    const btn = ev.target.closest("[data-cmd]");
+    if (!btn) return;
+    const cmd = btn.dataset.cmd;
+    bodyEl.focus();
+    runFormatCommand(cmd);
+    scheduleSave();
+  });
+
+  function runFormatCommand(cmd) {
+    if (!cmd) return;
+    if (cmd.startsWith("formatBlock:")) {
+      const tag = cmd.split(":")[1];
+      document.execCommand("formatBlock", false, tag);
+      return;
+    }
+    if (cmd === "link") {
+      const url = prompt("Link URL:");
+      if (!url) return;
+      document.execCommand("createLink", false, url);
+      return;
+    }
+    if (cmd === "image") {
+      const url = prompt("Image URL (or leave blank to pick a file):");
+      if (url) { document.execCommand("insertImage", false, url); return; }
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.addEventListener("change", () => {
+        const file = input.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          document.execCommand("insertImage", false, reader.result);
+          scheduleSave();
+        };
+        reader.readAsDataURL(file);
+      });
+      input.click();
+      return;
+    }
+    if (cmd === "table") {
+      const rows = 3, cols = 3;
+      const cells = Array.from({ length: rows }, (_, r) =>
+        Array.from({ length: cols }, () => r === 0 ? "<th>&nbsp;</th>" : "<td>&nbsp;</td>").join("")
+      ).map((r) => `<tr>${r}</tr>`).join("");
+      document.execCommand("insertHTML", false, `<table>${cells}</table><p><br></p>`);
+      return;
+    }
+    if (cmd === "stamp") {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const stamp = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      document.execCommand("insertHTML", false, `<span class="note-stamp" contenteditable="false">${escapeHtml(stamp)}</span>&nbsp;`);
+      return;
+    }
+    document.execCommand(cmd, false, null);
+  }
+
+  fontSizeSel?.addEventListener("change", () => applyFontSize(Number(fontSizeSel.value) || 14));
+  fontFamilySel?.addEventListener("change", () => applyFontFamily(fontFamilySel.value));
+
+  // Paste image (image + clipboard data as image blob).
+  bodyEl.addEventListener("paste", (ev) => {
+    const items = ev.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.kind === "file" && item.type.startsWith("image/")) {
+        ev.preventDefault();
+        const reader = new FileReader();
+        reader.onload = () => {
+          document.execCommand("insertImage", false, reader.result);
+          scheduleSave();
+        };
+        reader.readAsDataURL(item.getAsFile());
+        return;
+      }
+    }
+  });
+
+  // ── New / delete ──────────────────────────────────────────────────────
+  newBtn?.addEventListener("click", () => {
+    const fresh = makeNote();
+    notesState.notes.unshift(fresh);
+    notesState.selectedId = fresh.id;
+    saveNotes();
+    rememberSelection(fresh.id);
+    renderList();
+    renderEditor();
+    titleInput.focus();
+  });
+
+  deleteBtn?.addEventListener("click", () => {
+    const note = currentNote();
+    if (!note) return;
+    if (!confirm(`Delete "${note.title || "Untitled note"}"?`)) return;
+    notesState.notes = notesState.notes.filter((n) => n.id !== note.id);
+    saveNotes();
+    ensureSelection();
+    renderList();
+    renderEditor();
+  });
+
+  // ── Search ────────────────────────────────────────────────────────────
+  searchInput?.addEventListener("input", () => {
+    notesState.searchQuery = searchInput.value || "";
+    renderList();
+  });
+
+  // ── Share / export ────────────────────────────────────────────────────
+  shareBtn?.addEventListener("click", () => openShareDialog());
+
+  function openShareDialog() {
+    const note = currentNote();
+    if (!note) return;
+    const backdrop = document.createElement("div");
+    backdrop.className = "notes-share-backdrop";
+    backdrop.innerHTML = `
+      <div class="notes-share-dialog" role="dialog" aria-modal="true" aria-label="Share note">
+        <h2>Share note</h2>
+        <div class="notes-share-sub">${escapeHtml(note.title || "Untitled note")}</div>
+        <label class="notes-share-row">
+          <input type="checkbox" id="shareWithTs" checked>
+          <span>Include timestamps (created + last edited)</span>
+        </label>
+        <label class="notes-share-row">
+          <input type="checkbox" id="shareInline">
+          <span>Inline timestamp stamps inserted in body</span>
+        </label>
+        <div class="notes-share-actions">
+          <button class="btn btn-sm btn-ghost" data-share="cancel">Cancel</button>
+          <button class="btn btn-sm btn-ghost" data-share="copy-md">Copy as Markdown</button>
+          <button class="btn btn-sm btn-ghost" data-share="copy-text">Copy as text</button>
+          <button class="btn btn-sm btn-ghost" data-share="download-md">Download .md</button>
+          <button class="btn btn-sm btn-primary" data-share="download-html">Download .html</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(backdrop);
+    const close = () => backdrop.remove();
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+    const cb = backdrop.querySelector("#shareWithTs");
+    const cbInline = backdrop.querySelector("#shareInline");
+
+    backdrop.querySelectorAll("[data-share]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const action = b.dataset.share;
+        if (action === "cancel") { close(); return; }
+        const opts = { withTimestamps: cb.checked, keepInlineStamps: cbInline.checked };
+        if (action === "copy-md") copyToClipboard(exportAsMarkdown(note, opts));
+        else if (action === "copy-text") copyToClipboard(exportAsText(note, opts));
+        else if (action === "download-md") downloadFile(exportAsMarkdown(note, opts), noteFilename(note, "md"), "text/markdown");
+        else if (action === "download-html") downloadFile(exportAsHtml(note, opts), noteFilename(note, "html"), "text/html");
+        close();
+      });
+    });
+  }
+
+  function noteFilename(note, ext) {
+    const base = (note.title || "note").replace(/[\\/:*?"<>|]/g, "_").trim() || "note";
+    return `${base}.${ext}`;
+  }
+
+  function copyToClipboard(text) {
+    try {
+      navigator.clipboard?.writeText?.(text);
+    } catch { /* ignore */ }
+  }
+  function downloadFile(content, name, mime) {
+    const blob = new Blob([content], { type: mime });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  function exportAsText(note, opts) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = opts.keepInlineStamps ? note.body_html : stripInlineStamps(note.body_html);
+    const body = (tmp.textContent || "").trim();
+    const header = [];
+    header.push(note.title || "Untitled note");
+    if (opts.withTimestamps) {
+      header.push(`Created: ${fmtAbsolute(note.created_at)}`);
+      header.push(`Last edited: ${fmtAbsolute(note.updated_at)}`);
+    }
+    return `${header.join("\n")}\n\n${body}\n`;
+  }
+
+  function exportAsMarkdown(note, opts) {
+    const md = htmlToMarkdown(opts.keepInlineStamps ? note.body_html : stripInlineStamps(note.body_html));
+    const header = [`# ${note.title || "Untitled note"}`];
+    if (opts.withTimestamps) {
+      header.push("");
+      header.push(`> Created: ${fmtAbsolute(note.created_at)}  `);
+      header.push(`> Last edited: ${fmtAbsolute(note.updated_at)}`);
+    }
+    return `${header.join("\n")}\n\n${md}\n`;
+  }
+
+  function exportAsHtml(note, opts) {
+    const body = opts.keepInlineStamps ? note.body_html : stripInlineStamps(note.body_html);
+    const tsBlock = opts.withTimestamps
+      ? `<p style="color:#94a3b8;font-size:12px;margin-top:0">Created: ${escapeHtml(fmtAbsolute(note.created_at))} · Last edited: ${escapeHtml(fmtAbsolute(note.updated_at))}</p>`
+      : "";
+    return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(note.title || "Note")}</title>
+<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#0f172a;line-height:1.7}h1{font-size:22px}img{max-width:100%;border-radius:6px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #e5e7eb;padding:6px 10px}.note-stamp{color:#94a3b8;font-family:ui-monospace,monospace;font-size:11.5px;padding:0 4px;background:rgba(0,0,0,.04);border-radius:3px}</style>
+</head><body><h1>${escapeHtml(note.title || "Untitled note")}</h1>${tsBlock}${body}</body></html>`;
+  }
+
+  function stripInlineStamps(html) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html || "";
+    tmp.querySelectorAll(".note-stamp").forEach((el) => el.remove());
+    return tmp.innerHTML;
+  }
+
+  function htmlToMarkdown(html) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = html || "";
+    const walk = (node) => {
+      if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+      if (node.nodeType !== Node.ELEMENT_NODE) return "";
+      const tag = node.tagName.toLowerCase();
+      const inner = Array.from(node.childNodes).map(walk).join("");
+      switch (tag) {
+        case "h1": return `\n# ${inner}\n\n`;
+        case "h2": return `\n## ${inner}\n\n`;
+        case "h3": return `\n### ${inner}\n\n`;
+        case "p": case "div": return `${inner}\n\n`;
+        case "br": return "\n";
+        case "strong": case "b": return `**${inner}**`;
+        case "em": case "i": return `*${inner}*`;
+        case "u": return inner;
+        case "a": return `[${inner}](${node.getAttribute("href") || ""})`;
+        case "img": {
+          const src = node.getAttribute("src") || "";
+          const alt = node.getAttribute("alt") || "";
+          return `![${alt}](${src})`;
+        }
+        case "code": return `\`${inner}\``;
+        case "blockquote": return inner.split("\n").map((l) => `> ${l}`).join("\n") + "\n\n";
+        case "hr": return `\n---\n\n`;
+        case "li": {
+          const parent = node.parentElement?.tagName?.toLowerCase();
+          return parent === "ol" ? `1. ${inner}\n` : `- ${inner}\n`;
+        }
+        case "ul": case "ol": return `${inner}\n`;
+        case "table": return tableToMd(node) + "\n";
+        default: return inner;
+      }
+    };
+    return Array.from(tmp.childNodes).map(walk).join("").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  function tableToMd(table) {
+    const rows = Array.from(table.querySelectorAll("tr"));
+    if (rows.length === 0) return "";
+    const render = (tr) => Array.from(tr.children).map((c) => (c.textContent || "").trim().replace(/\|/g, "\\|")).join(" | ");
+    const head = render(rows[0]);
+    const cols = rows[0].children.length;
+    const sep = Array.from({ length: cols }, () => "---").join(" | ");
+    const body = rows.slice(1).map(render).join("\n");
+    return `| ${head} |\n| ${sep} |${body ? `\n| ${body.split("\n").map(r => r + " |").join("\n| ")}` : ""}`;
+  }
+
+  // ── Adopt from chat ───────────────────────────────────────────────────
+  adoptFromChatBtn?.addEventListener("click", () => adoptLastChatReply());
+
+  function adoptLastChatReply() {
+    // Pull the last assistant bubble out of #consoleChatMessages if present.
+    const feed = document.querySelector("#consoleChatMessages");
+    if (!feed) { toastNote("No chat to adopt from"); return; }
+    const msgs = feed.querySelectorAll(".chat-msg.assistant .chat-msg-bubble, .chat-msg.ai .chat-msg-bubble");
+    const last = msgs[msgs.length - 1];
+    if (!last) { toastNote("No assistant reply yet"); return; }
+    appendAdoptedChip(last.textContent || "");
+  }
+
+  function appendAdoptedChip(text) {
+    const note = currentNote();
+    if (!note) return;
+    const chip = document.createElement("div");
+    chip.className = "note-chat-chip";
+    chip.textContent = text.trim();
+    bodyEl.appendChild(chip);
+    bodyEl.appendChild(document.createElement("p"));
+    scheduleSave();
+    bodyEl.focus();
+  }
+
+  function toastNote(msg) {
+    // Reuse the global shell notification if available, otherwise fall
+    // back to an inline chat log line.
+    if (window.ucaShell?.notify) {
+      try { window.ucaShell.notify({ title: "Notes", body: msg, kind: "info", autoHideMs: 2500 }); return; } catch { /* ignore */ }
+    }
+    console.info("[notes]", msg);
+  }
+
+  // ── In-note chat (local-only) ─────────────────────────────────────────
+  chatSendBtn?.addEventListener("click", () => sendNoteChat());
+  chatInput?.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); sendNoteChat(); } });
+
+  async function sendNoteChat() {
+    const text = (chatInput.value || "").trim();
+    if (!text) return;
+    chatInput.value = "";
+    chatLog.hidden = false;
+
+    appendChatLogRow("You", text);
+
+    const note = currentNote();
+    const body = stripHtml(note?.body_html || "").slice(0, 3500);
+    const prompt = `Note title: ${note?.title || "Untitled"}\nNote body:\n${body}\n\nUser: ${text}\n\nReply concisely. If helpful, suggest text to add to the note.`;
+
+    // Try talking to the local runtime's chat endpoint if available.
+    let reply = "";
+    try {
+      reply = await tryRuntimeChat(prompt);
+    } catch {
+      // Fall back to echoing a useful hint so the UI is never broken.
+      reply = "(offline) No response. Try again when the runtime is up.";
+    }
+    const row = appendChatLogRow("AI", reply);
+
+    // Offer "Add to note" for every AI reply — the user either approves
+    // explicitly or dismisses. This is the "用户同意…直接加入 note" flow.
+    const actions = document.createElement("div");
+    actions.className = "note-chat-actions";
+    const addBtn = document.createElement("button");
+    addBtn.className = "note-chat-btn";
+    addBtn.textContent = "Add to note";
+    addBtn.addEventListener("click", () => {
+      appendAdoptedChip(reply);
+      addBtn.disabled = true;
+      addBtn.textContent = "Added ✓";
+    });
+    const dismissBtn = document.createElement("button");
+    dismissBtn.className = "note-chat-btn";
+    dismissBtn.textContent = "Dismiss";
+    dismissBtn.addEventListener("click", () => { row.remove(); });
+    actions.appendChild(addBtn);
+    actions.appendChild(dismissBtn);
+    row.appendChild(actions);
+  }
+
+  function appendChatLogRow(role, text) {
+    const row = document.createElement("div");
+    row.className = "note-chat-row";
+    row.innerHTML = `<div class="note-chat-role">${escapeHtml(role)}</div><div class="note-chat-text"></div>`;
+    row.querySelector(".note-chat-text").textContent = text;
+    chatLog.appendChild(row);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return row;
+  }
+
+  async function tryRuntimeChat(prompt) {
+    // state.serviceBaseUrl is the outer console.js global (captured via
+    // closure); runtimeBaseUrl is the pre-shadow fallback we stored above.
+    const baseUrl = (typeof state === "object" && state?.serviceBaseUrl) || runtimeBaseUrl;
+    const url = baseUrl ? `${baseUrl}/chat/complete` : "/chat/complete";
+    const resp = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: prompt }] })
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    return data.text ?? data.message ?? data.content ?? JSON.stringify(data).slice(0, 400);
+  }
+
+  // ── Voice input (SpeechRecognition with MediaRecorder fallback) ───────
+  voiceBtn?.addEventListener("click", () => toggleVoiceInput());
+  let voiceRec = null;
+  function toggleVoiceInput() {
+    if (voiceRec) { try { voiceRec.stop(); } catch {} voiceRec = null; voiceBtn.classList.remove("is-active"); return; }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) {
+      toastNote("Voice dictation not available in this window; use the global Ctrl+Shift+N voice-note shortcut.");
+      return;
+    }
+    const rec = new SR();
+    rec.lang = "zh-CN";
+    rec.interimResults = true;
+    rec.continuous = true;
+    rec.onresult = (ev) => {
+      let finalText = "";
+      for (let i = ev.resultIndex; i < ev.results.length; i++) {
+        if (ev.results[i].isFinal) finalText += ev.results[i][0].transcript;
+      }
+      if (finalText) {
+        document.execCommand("insertText", false, finalText + " ");
+        scheduleSave();
+      }
+    };
+    rec.onerror = () => { voiceRec = null; voiceBtn.classList.remove("is-active"); };
+    rec.onend = () => { voiceRec = null; voiceBtn.classList.remove("is-active"); };
+    voiceRec = rec;
+    voiceBtn.classList.add("is-active");
+    try { rec.start(); } catch { voiceRec = null; voiceBtn.classList.remove("is-active"); }
+  }
+
+  // ── Boot ──────────────────────────────────────────────────────────────
+  ensureSelection();
+  renderList();
+  renderEditor();
+  updateRailBadge();
+}

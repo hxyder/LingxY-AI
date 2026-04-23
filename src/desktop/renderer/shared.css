@@ -668,6 +668,14 @@ body[data-rail="collapsed"] { padding-left: 64px; }
   z-index: 20;
   transition: width var(--duration-base) var(--ease-standard), padding var(--duration-base) var(--ease-standard);
 }
+/* UCA-180: in dark mode pull the rail a step darker than the canvas so it
+   reads as a recessed side channel (Linear / Claude.ai pattern) instead
+   of floating on top. The body canvas (#0f0f0f) stays the deepest layer. */
+[data-theme="dark"] .rail,
+[data-theme="dark"] .app-rail {
+  background: #0b0b0b;
+  border-right-color: #1f1f1f;
+}
 body[data-rail="collapsed"] .rail,
 body[data-rail="collapsed"] .app-rail { width: 64px; padding: 14px 6px; }
 
@@ -1661,6 +1669,33 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   background: var(--panel);
   box-shadow: var(--shadow);
 }
+/* UCA-179: the composer inside .console-chat-panel is the primary input.
+   Make it bigger (like ChatGPT/Claude.ai), stick it to the bottom of
+   the reading column, and give it a subtle elevated shell so it reads
+   as a distinct surface from the message stream. */
+.console-chat-panel .console-chat-composer {
+  max-width: 820px;
+  width: calc(100% - 48px);
+  margin: 0 auto 18px;
+  padding: 12px 14px 10px;
+  border-radius: 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--elev-2, var(--shadow));
+}
+.console-chat-panel .console-chat-composer:focus-within {
+  border-color: var(--line-2);
+  box-shadow: var(--elev-3, var(--shadow-lg));
+}
+/* Dark mode: the composer rests on the deep #0f0f0f canvas as a slightly
+   lifted #1a1a1a sheet, same shape as Claude.ai / ChatGPT. */
+[data-theme="dark"] .console-chat-panel .console-chat-composer {
+  background: var(--panel);
+  border-color: var(--line);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.03) inset,
+    0 12px 32px rgba(0, 0, 0, 0.45);
+}
 .chat-composer textarea, .console-chat-composer textarea {
   width: 100%;
   border: 0;
@@ -1668,11 +1703,19 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   resize: none;
   background: transparent;
   color: var(--ink);
-  font-size: var(--fs-md);
-  line-height: 1.55;
-  min-height: 40px;
-  max-height: 180px;
+  font-size: 15px;
+  line-height: 1.65;
+  min-height: 64px;
+  max-height: 260px;
   font-family: inherit;
+}
+.console-chat-panel .console-chat-composer textarea {
+  min-height: 72px;
+  padding: 4px 2px;
+}
+.console-chat-panel .console-chat-composer textarea::placeholder {
+  color: var(--muted-2);
+  font-size: 15px;
 }
 .chat-composer-foot {
   display: flex;
@@ -1700,47 +1743,100 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .model-chip:hover { border-color: var(--line-2); color: var(--ink-2); }
 
 /* Legacy chat messages */
-.console-chat-shell { display: flex; flex-direction: column; min-height: 0; }
-.console-chat-messages {
+/* UCA-179: Console chat is the primary conversation surface. Match the
+   scale of ChatGPT / Claude.ai — fill the viewport, give the reading
+   column ~820px so lines don't stretch across the whole window, and use
+   15px body text with 1.72 line-height so CJK + Latin both breathe.
+   Must be .active-scoped; otherwise the id-specificity wins over
+   .tab-panel { display: none } and the chat panel leaks onto every tab. */
+#panel-chat.active {
+  display: flex;
+  flex-direction: column;
+}
+.console-chat-panel {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  padding: 16px 18px;
-  background: var(--panel);
-  border-radius: var(--radius);
-  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  max-width: none;
 }
-.console-chat-empty { color: var(--muted); padding: 30px 0; text-align: center; font-size: var(--fs-sm); }
+.console-chat-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  height: 100%;
+}
+.console-chat-messages {
+  flex: 1;
+  min-height: 280px;
+  overflow-y: auto;
+  padding: 28px 24px 24px;
+  /* Use the same surface as the page canvas so the reading column reads
+     as one continuous sheet (ChatGPT / Claude.ai feel). In light this is
+     pure white; in dark this is the deep #0f0f0f bg with the composer
+     floating as a slightly lifted #1a1a1a surface below. */
+  background: var(--bg);
+  color: var(--ink);
+  border-radius: 0;
+  border: 0;
+  scroll-behavior: smooth;
+}
+/* Outer panel shell around the chat — drop its own border / shadow so
+   the chat region doesn't look like a floating card on top of the page.
+   Background matches the page canvas in both themes. */
+.console-chat-panel {
+  background: var(--bg);
+  border: 0;
+  box-shadow: none;
+}
+.console-chat-messages > * {
+  max-width: 820px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.console-chat-empty {
+  color: var(--muted);
+  padding: 60px 0;
+  text-align: center;
+  font-size: var(--fs-md);
+}
 .console-chat-message {
   background: var(--panel-2);
   color: var(--ink);
-  padding: 10px 12px;
+  padding: 12px 16px;
   border-radius: var(--radius-sm);
-  margin-bottom: 8px;
-  font-size: var(--fs-md);
-  line-height: 1.55;
+  margin-bottom: 12px;
+  font-size: 15px;
+  line-height: 1.72;
   white-space: pre-wrap;
 }
 .console-chat-message.user { background: var(--accent-soft); color: var(--ink); }
 .console-chat-message.system { background: var(--panel-2); color: var(--muted); font-size: var(--fs-sm); }
 
-/* UCA-126 Phase 7d: rich message cards (user / ai / system / tool_call). */
+/* UCA-126 Phase 7d + UCA-179: rich message cards (user / ai / system / tool_call).
+   Sized like ChatGPT / Claude.ai — bubbles span the full reading column
+   (820px), avatar + body align to a 36px column, body text is 15px with
+   1.72 line-height so long paragraphs read well. */
 .chat-msg {
   display: flex;
-  gap: 10px;
-  max-width: min(760px, 100%);
-  margin-bottom: 12px;
+  gap: 14px;
+  max-width: 820px;
+  width: 100%;
+  margin-bottom: 18px;
 }
 .chat-msg.user { margin-left: auto; flex-direction: row-reverse; }
 .chat-msg-av {
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   border: 1px solid var(--line);
   background: var(--panel-2);
@@ -1755,49 +1851,189 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   display: flex;
   gap: 8px;
   align-items: baseline;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
 }
 .chat-msg-bubble {
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
+  padding: 14px 16px;
+  border-radius: 10px;
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
-  font-size: var(--fs-md);
-  line-height: 1.55;
+  font-size: 15px;
+  line-height: 1.72;
   white-space: pre-wrap;
   word-wrap: break-word;
+}
+/* AI side is the primary reading surface — remove the border so it reads
+   more like prose than a card. User side keeps a softer accent tint. */
+.chat-msg.assistant .chat-msg-bubble,
+.chat-msg.ai .chat-msg-bubble {
+  background: transparent;
+  border-color: transparent;
+  padding-left: 0;
+  padding-right: 0;
 }
 .chat-msg.user .chat-msg-bubble {
   background: var(--accent-soft);
   border-color: transparent;
   color: var(--ink);
+  max-width: 620px;
+  margin-left: auto;
+}
+/* UCA-179: in dark mode the terracotta accent-soft read as an orange
+   smear that clashed with the neutral chrome. ChatGPT/Claude.ai use a
+   neutral gray for user bubbles in dark mode — match that. */
+[data-theme="dark"] .chat-msg.user .chat-msg-bubble {
+  background: var(--panel-2);
+  color: var(--ink);
 }
 .chat-msg.system .chat-msg-bubble {
   background: var(--panel-2);
   color: var(--muted);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-md);
+  border-color: var(--line);
 }
+/* Markdown-friendly rhythm inside bubbles. */
+.chat-msg-bubble p { margin: 0 0 10px; }
+.chat-msg-bubble p:last-child { margin-bottom: 0; }
+.chat-msg-bubble h1, .chat-msg-bubble h2, .chat-msg-bubble h3 { margin: 14px 0 8px; font-weight: var(--fw-semibold); letter-spacing: -0.01em; }
+.chat-msg-bubble h2 { font-size: 18px; }
+.chat-msg-bubble h3 { font-size: 16px; }
+.chat-msg-bubble ul, .chat-msg-bubble ol { padding-left: 22px; margin: 8px 0; }
+.chat-msg-bubble li { margin: 3px 0; }
+.chat-msg-bubble code {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.chat-msg-bubble pre {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 10px 0;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.6;
+}
+/* UCA-177: premium timeline card for tool calls in chat.
+   Two-row layout (head + args) with optional outcome pill and a thin
+   left rail that colors by state. Hairline border + subtle shadow so it
+   reads as elevated surface without competing with the chat bubble. */
 .chat-tool-card {
-  margin: 6px 0;
-  padding: 8px 10px;
+  position: relative;
+  margin: 8px 0;
+  padding: 10px 12px 10px 16px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
-  background: var(--panel-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-xs);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--panel) 94%, var(--panel-2) 6%),
+    var(--panel-2));
   color: var(--ink-2);
   display: flex;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02), 0 0 0 0.5px color-mix(in srgb, var(--ink) 4%, transparent);
+  font-size: var(--fs-sm);
+  transition: box-shadow var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+.chat-tool-card:hover {
+  border-color: var(--line-2);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+.chat-tool-card::before {
+  content: "";
+  position: absolute;
+  top: 10px; bottom: 10px; left: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--muted-2);
+  opacity: 0.55;
+}
+.chat-tool-card.is-running::before { background: var(--info); opacity: 1; animation: ttcPulse 1.4s ease-in-out infinite; }
+.chat-tool-card.is-ok::before { background: var(--ok); opacity: 1; }
+.chat-tool-card.is-err::before { background: var(--err); opacity: 1; }
+
+@keyframes ttcPulse { 0%,100% { opacity: 0.45 } 50% { opacity: 1 } }
+
+.chat-tool-card .ttc-head {
+  display: flex;
+  align-items: center;
   gap: 8px;
+  min-width: 0;
 }
-.chat-tool-card .tool-icon {
-  color: var(--accent);
+.chat-tool-card .ttc-icon {
+  width: 14px; height: 14px;
   flex-shrink: 0;
-  margin-top: 1px;
+  color: var(--accent);
 }
-.chat-tool-card .tool-name { font-weight: 600; color: var(--ink); }
-.chat-tool-card .tool-args { color: var(--muted); word-break: break-all; }
+.chat-tool-card.is-ok .ttc-icon { color: var(--ok); }
+.chat-tool-card.is-err .ttc-icon { color: var(--err); }
+.chat-tool-card.is-running .ttc-icon { color: var(--info); }
+
+.chat-tool-card .ttc-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+  letter-spacing: -0.01em;
+}
+.chat-tool-card .ttc-status {
+  font-size: 10.5px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--line);
+  color: var(--muted);
+}
+.chat-tool-card.is-running .ttc-status { background: var(--info-soft); color: var(--info); }
+.chat-tool-card.is-ok .ttc-status { background: var(--ok-soft); color: var(--ok); }
+.chat-tool-card.is-err .ttc-status { background: var(--err-soft); color: var(--err); }
+
+.chat-tool-card .ttc-time {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  flex-shrink: 0;
+}
+.chat-tool-card .ttc-args {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  padding: 5px 8px;
+  border-radius: 5px;
+  word-break: break-all;
+  white-space: pre-wrap;
+  max-height: 96px;
+  overflow: hidden;
+  position: relative;
+}
+.chat-tool-card .ttc-args.is-empty { display: none; }
+.chat-tool-card .ttc-outcome {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--ink-2);
+}
+.chat-tool-card.is-ok .ttc-outcome { color: var(--ok); }
+.chat-tool-card.is-err .ttc-outcome { color: var(--err); }
+.chat-tool-card .ttc-outcome-arrow { color: var(--muted-2); }
+.chat-tool-card .ttc-outcome-text { color: var(--ink-2); font-family: var(--font-mono); }
+
+/* Legacy class aliases kept so older callers still render something
+   reasonable (pre-UCA-177 inline HTML used .tool-icon/.tool-name/.tool-args). */
+.chat-tool-card .tool-icon { color: var(--accent); flex-shrink: 0; margin-top: 1px; width: 14px; height: 14px; }
+.chat-tool-card .tool-name { font-family: var(--font-mono); font-weight: var(--fw-semibold); color: var(--ink); }
+.chat-tool-card .tool-args { color: var(--muted); word-break: break-all; font-family: var(--font-mono); font-size: var(--fs-xs); }
 
 /* Composer toolbar row (attach / voice / model chip / send). */
 .console-chat-attachments {
@@ -3627,9 +3863,13 @@ details.timeline-item[open] > summary {
 /* =========================================================================
    SKELETONS
    ========================================================================= */
+/* UCA-180: skeleton tokens were picking up the wrong values in dark
+   mode (rendered as bright bars because the gradient endpoints didn't
+   resolve against the theme-scoped --panel-2 / --line consistently).
+   Pin explicit values per theme. */
 .skeleton {
-  --sk-base: var(--panel-2);
-  --sk-shine: var(--line);
+  --sk-base: #ececec;
+  --sk-shine: #f7f7f7;
   background: linear-gradient(90deg, var(--sk-base) 0%, var(--sk-shine) 50%, var(--sk-base) 100%);
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.6s ease-in-out infinite;
@@ -3641,6 +3881,10 @@ details.timeline-item[open] > summary {
 .skeleton-line.wide   { width: 100%; }
 .skeleton-line.mid    { width: 70%; }
 .skeleton-line.narrow { width: 40%; }
+[data-theme="dark"] .skeleton {
+  --sk-base: #1f1f1f;
+  --sk-shine: #2a2a2a;
+}
 @keyframes skeleton-shimmer {
   0%   { background-position: 200% 0; }
   100% { background-position: -200% 0; }
@@ -3654,6 +3898,439 @@ details.timeline-item[open] > summary {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--line-2); border-radius: 10px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted-2); }
+
+/* =========================================================================
+   UCA-178: QUICK NOTES — two-column layout (list + editor), a compact
+   formatting toolbar, light-gray timestamps, and a collapsible chat
+   strip along the bottom. Every color / radius pulls from the
+   existing design tokens so notes inherit theme + accent + density.
+   ========================================================================= */
+.notes-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 16px;
+  height: calc(100vh - var(--topbar-height) - 90px);
+  min-height: 520px;
+}
+.notes-list-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.notes-list-col .panel-head { padding: 14px 14px 8px; border-bottom: 1px solid var(--line); }
+
+.notes-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted-2);
+}
+.notes-search-row input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: inherit;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  min-width: 0;
+}
+.notes-search-row input::placeholder { color: var(--muted-2); }
+
+.notes-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.note-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+  color: var(--ink);
+  transition: background var(--duration-fast) var(--ease-standard),
+              border-color var(--duration-fast) var(--ease-standard);
+}
+.note-item:hover { background: var(--panel-2); border-color: var(--line); }
+.note-item.is-active {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+.note-item.is-active .note-item-title { color: var(--accent-strong); }
+.note-item-title {
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 3px;
+}
+.note-item-snippet {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.4;
+  margin-bottom: 4px;
+}
+.note-item-ts {
+  font-size: 10.5px;
+  color: var(--muted-2);
+  font-variant-numeric: tabular-nums;
+}
+.notes-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--muted-2);
+}
+.notes-empty kbd {
+  display: inline-block;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--panel-2);
+}
+
+.notes-editor-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.notes-editor-head {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 16px 18px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.notes-editor-title {
+  grid-column: 1;
+  grid-row: 1;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: inherit;
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  min-width: 0;
+}
+.notes-editor-title::placeholder { color: var(--muted-2); font-weight: var(--fw-regular); }
+.notes-editor-meta {
+  grid-column: 1;
+  grid-row: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-2);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.notes-ts { color: var(--muted-2); }
+.notes-ts-sep { opacity: 0.6; }
+.notes-editor-head-actions {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.notes-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+  align-items: center;
+}
+.notes-tool {
+  height: 28px;
+  min-width: 28px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
+}
+.notes-tool:hover { background: var(--panel); color: var(--ink); border-color: var(--line); }
+.notes-tool.is-active { background: var(--accent-soft); color: var(--accent-strong); }
+.notes-tool-sep {
+  width: 1px;
+  height: 16px;
+  background: var(--line);
+  margin: 0 4px;
+}
+.notes-font {
+  display: inline-flex;
+  align-items: center;
+}
+.notes-font select {
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-xs);
+  padding: 0 6px;
+}
+
+.notes-editor-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 20px 26px 24px;
+  outline: none;
+  color: var(--ink);
+  font-size: 14px;
+  line-height: 1.7;
+  font-family: var(--font-text);
+  caret-color: var(--accent);
+}
+.notes-editor-body[data-font-family="serif"] { font-family: "Charter", "Iowan Old Style", "Noto Serif SC", Georgia, serif; }
+.notes-editor-body[data-font-family="mono"] { font-family: var(--font-mono); }
+.notes-editor-body:empty::before {
+  content: attr(data-placeholder);
+  color: var(--muted-2);
+  pointer-events: none;
+}
+.notes-editor-body h2 { font-size: 17px; font-weight: var(--fw-semibold); margin: 18px 0 8px; letter-spacing: -0.01em; }
+.notes-editor-body h3 { font-size: 15px; font-weight: var(--fw-semibold); margin: 14px 0 6px; }
+.notes-editor-body p { margin: 0 0 10px; }
+.notes-editor-body blockquote {
+  border-left: 3px solid var(--accent-soft);
+  padding: 2px 12px;
+  color: var(--ink-2);
+  margin: 8px 0;
+}
+.notes-editor-body ul, .notes-editor-body ol { padding-left: 22px; margin: 8px 0; }
+.notes-editor-body li { margin: 3px 0; }
+.notes-editor-body a { color: var(--accent-strong); text-decoration: underline; text-underline-offset: 2px; }
+.notes-editor-body hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0; }
+.notes-editor-body img {
+  max-width: 100%;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  margin: 8px 0;
+}
+.notes-editor-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: var(--fs-sm);
+}
+.notes-editor-body th, .notes-editor-body td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.notes-editor-body th { background: var(--panel-2); font-weight: var(--fw-semibold); }
+.notes-editor-body code {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  background: var(--panel-2);
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+.notes-editor-body .note-stamp {
+  display: inline-block;
+  color: var(--muted-2);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  user-select: none;
+}
+.notes-editor-body .note-chat-chip {
+  display: block;
+  margin: 8px 0;
+  padding: 8px 10px 8px 14px;
+  border-left: 3px solid var(--accent-soft);
+  background: var(--panel-2);
+  border-radius: 0 6px 6px 0;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+.notes-editor-body .note-chat-chip::before {
+  content: "From chat";
+  display: block;
+  font-size: 10.5px;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: var(--fw-semibold);
+  margin-bottom: 3px;
+}
+
+.notes-editor-foot {
+  border-top: 1px solid var(--line);
+  padding: 10px 18px 12px;
+  background: var(--panel);
+}
+.notes-chat {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px 4px 12px;
+}
+.notes-chat:focus-within { border-color: var(--accent); box-shadow: var(--ring-focus); }
+.notes-chat input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: inherit;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  padding: 6px 0;
+  min-width: 0;
+}
+.notes-chat input::placeholder { color: var(--muted-2); }
+.notes-chat-log {
+  margin-top: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  background: var(--panel-2);
+  font-size: var(--fs-sm);
+}
+.notes-chat-log .note-chat-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 4px 0;
+}
+.notes-chat-log .note-chat-role {
+  font-size: 10.5px;
+  color: var(--muted-2);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: var(--fw-semibold);
+  min-width: 28px;
+}
+.notes-chat-log .note-chat-row + .note-chat-row { border-top: 1px dashed var(--line); }
+.notes-chat-log .note-chat-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+.notes-chat-log .note-chat-btn {
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.notes-chat-log .note-chat-btn:hover { background: var(--accent-soft); color: var(--accent-strong); border-color: transparent; }
+
+/* Share / export dialog */
+.notes-share-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.28);
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+.notes-share-dialog {
+  width: min(440px, 92vw);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--elev-3);
+  padding: 20px 22px 16px;
+  color: var(--ink);
+}
+.notes-share-dialog h2 {
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  margin: 0 0 4px;
+}
+.notes-share-dialog .notes-share-sub {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  margin-bottom: 14px;
+}
+.notes-share-dialog .notes-share-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: var(--fs-sm);
+}
+.notes-share-dialog .notes-share-row + .notes-share-row { border-top: 1px solid var(--line); }
+.notes-share-dialog .notes-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 14px;
+  justify-content: flex-end;
+}
+
+/* Rail badge count (reused for notes) */
+#railBadgeNotes {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+@media (max-width: 980px) {
+  .notes-layout { grid-template-columns: 1fr; }
+  .notes-list-col { max-height: 220px; }
+}
 
 /* =========================================================================
    PREFERS REDUCED MOTION

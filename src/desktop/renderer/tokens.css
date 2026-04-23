@@ -22,15 +22,19 @@
      dark mode. Distinct from Claude's warm-ink palette. Terracotta
      accent stays as the brand color and provides the only warmth. */
   /* UCA-123: contrast bump — #737373 felt too pale on pure white. */
+  /* UCA-179: retuned for ChatGPT/Claude.ai/Linear-style crispness. Panel-2
+     nudged slightly darker (#f4f4f5) so input/hover states read as a real
+     surface against pure white. Lines softened so tables + dividers don't
+     over-weight the page. */
   --bg: #ffffff;
   --panel: #ffffff;
-  --panel-2: #f7f7f7;
-  --ink: #0a0a0a;
-  --ink-2: #1f1f1f;
-  --muted: #595959;
-  --muted-2: #8f8f8f;
-  --line: #e2e2e2;
-  --line-2: #c9c9c9;
+  --panel-2: #f4f4f5;
+  --ink: #0d0d0d;
+  --ink-2: #262626;
+  --muted: #525252;
+  --muted-2: #8a8a8a;
+  --line: #ececec;
+  --line-2: #d4d4d4;
 
   --accent: #b85c2a;
   --accent-ink: #ffffff;
@@ -53,6 +57,23 @@
   --radius-lg: 14px;
   --shadow: 0 1px 2px rgba(26, 25, 23, .03), 0 4px 12px rgba(26, 25, 23, .04);
   --shadow-lg: 0 8px 28px rgba(26, 25, 23, .08);
+
+  /* UCA-177 polish: elevation tokens for modern card depth (hairline +
+     subtle drop), and a focus ring that adapts to the current accent. */
+  --elev-hairline: inset 0 0 0 0.5px color-mix(in srgb, var(--ink) 5%, transparent);
+  --elev-1: 0 1px 1px rgba(15, 23, 42, 0.04), 0 0 0 0.5px rgba(15, 23, 42, 0.04);
+  --elev-2: 0 2px 6px rgba(15, 23, 42, 0.06), 0 0 0 0.5px rgba(15, 23, 42, 0.05);
+  --elev-3: 0 10px 28px rgba(15, 23, 42, 0.10), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --ring-accent: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+  --ring-focus: 0 0 0 3px color-mix(in srgb, var(--accent) 32%, transparent);
+
+  /* UCA-180: theme-aware translucent surfaces for the topbar + tab-bar.
+     Previously these were hardcoded rgba(255,255,255,...) which
+     whitewashed the top of the window in dark mode — the rail looked
+     inky but the whole header glowed bright. Now they follow theme. */
+  --canvas-blur: rgba(255, 255, 255, 0.78);
+  --canvas-blur-soft: rgba(255, 255, 255, 0.48);
+  --canvas-overlay: rgba(15, 15, 15, 0.04);
 
   /* TYPOGRAPHY -------------------------------------------------- */
   --font-sans: 'Inter', 'Noto Sans SC', -apple-system, 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
@@ -173,24 +194,34 @@
 }
 
 /* ── dark theme ────────────────────────────────────────────────── */
+/* UCA-179: Claude.ai-dark / ChatGPT-dark inspired palette.
+   bg (#0f0f0f) → panel (#1a1a1a) → panel-2 (#262626) forms a clean
+   3-step surface stack so chat backgrounds, bubbles, and inputs
+   actually look layered instead of bleeding together. Muted nudged
+   brighter for AA contrast against deep black. */
 :is(html, body)[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg: #0a0a0a;
-  --panel: #141414;
-  --panel-2: #1a1a1a;
-  --ink: #fafafa;
-  --ink-2: #d4d4d4;
-  --muted: #737373;
-  --muted-2: #525252;
-  --line: #2a2a2a;
-  --line-2: #3a3a3a;
+  --bg: #0f0f0f;
+  --panel: #1a1a1a;
+  --panel-2: #262626;
+  --ink: #f2f2f2;
+  --ink-2: #cfcfcf;
+  --muted: #a3a3a3;
+  --muted-2: #737373;
+  --line: #2e2e2e;
+  --line-2: #3d3d3d;
 
   --accent-soft: rgba(184, 92, 42, .18);
   --ok-soft: rgba(62, 122, 70, .18);
   --warn-soft: rgba(180, 120, 32, .18);
   --err-soft: rgba(168, 56, 47, .18);
   --info-soft: rgba(58, 109, 143, .18);
+
+  /* Dark-mode translucent canvas surfaces (UCA-180). */
+  --canvas-blur: rgba(15, 15, 15, 0.72);
+  --canvas-blur-soft: rgba(15, 15, 15, 0.48);
+  --canvas-overlay: rgba(255, 255, 255, 0.04);
 
   --shadow: none;
   --shadow-lg: 0 8px 28px rgba(0, 0, 0, .4);

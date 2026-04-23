@@ -172,6 +172,8 @@
       .rail-toggle:hover { background: var(--surface-soft); color: var(--ink); transform: none; }
 
       /* ── top bar ── */
+      /* UCA-180: theme-aware blur surface — pulls from tokens so dark
+         mode doesn't whitewash the header region. */
       .topbar {
         position: sticky;
         top: 0;
@@ -772,6 +774,13 @@
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>
           <span class="rail-item-label">Inbox<span class="zh">收件</span></span>
         </button>
+        <!-- UCA-178: Quick notes — a lightweight notepad with formatted body,
+             chat-to-note adoption, and optional timestamp export. -->
+        <button class="rail-item" data-tab="notes" role="tab" aria-selected="false" title="Notes">
+          <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+          <span class="rail-item-label">Notes<span class="zh">笔记</span></span>
+          <span class="rail-item-badge" id="railBadgeNotes" hidden></span>
+        </button>
         <button class="rail-item" data-tab="projects" role="tab" aria-selected="false" title="Projects">
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
           <span class="rail-item-label">Projects<span class="zh">项目</span></span>
@@ -993,7 +1002,7 @@
           </button>
         </div>
       </header>
-      <section class="panel" aria-labelledby="consoleChatTitle" style="max-width:900px;">
+      <section class="panel console-chat-panel" aria-labelledby="consoleChatTitle">
         <div class="console-chat-shell">
           <div id="consoleChatMessages" class="console-chat-messages">
             <div class="console-chat-empty">
@@ -1004,7 +1013,7 @@
           </div>
           <div id="consoleChatAttachments" class="console-chat-attachments" hidden></div>
           <form id="consoleChatForm" class="console-chat-composer">
-            <textarea id="consoleChatInput" rows="2" placeholder="Ask LingxY anything…  问我任何事"></textarea>
+            <textarea id="consoleChatInput" rows="3" placeholder="Ask LingxY anything…  问我任何事"></textarea>
             <div class="console-chat-toolbar">
               <div class="btn-group">
                 <button id="consoleChatAttachBtn" class="icon-btn" type="button" aria-label="Attach file" title="Attach file">
@@ -1156,6 +1165,127 @@
     <!-- ═══════════════════════════════════════
          TAB: PROJECTS
          ═══════════════════════════════════════ -->
+    <!-- ═══════════════════════════════════════
+         TAB: NOTES — quick formatted notes, chat-to-note adoption,
+         optional timestamp export (UCA-178).
+         ═══════════════════════════════════════ -->
+    <section id="panel-notes" class="tab-panel">
+      <header class="page-head">
+        <div>
+          <h1>Notes<span class="zh">笔记</span></h1>
+          <div class="sub">Lightweight notepad — format a paragraph, drop a table, paste a link, share with one click.<span class="zh">轻量笔记 — 排版、表格、链接、分享，一气呵成。</span></div>
+        </div>
+        <div class="page-head-actions">
+          <button id="notesNewBtn" class="btn btn-sm btn-primary" type="button" title="New note">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New note<span class="zh">新建</span>
+          </button>
+        </div>
+      </header>
+
+      <div class="notes-layout">
+        <aside class="notes-list-col panel">
+          <header class="panel-head">
+            <div class="panel-head-main">
+              <h3 class="panel-title">Notes<span class="zh">笔记</span></h3>
+              <span class="panel-sub" id="notesCountLabel">0</span>
+            </div>
+          </header>
+          <div class="notes-search-row">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="notesSearchInput" type="search" placeholder="Search notes..." autocomplete="off">
+          </div>
+          <div id="notesList" class="notes-list" role="list"></div>
+          <div id="notesEmpty" class="notes-empty muted" hidden>
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+            <div>No notes yet. Press <kbd>N</kbd> to create one.</div>
+          </div>
+        </aside>
+
+        <section class="notes-editor-col panel">
+          <header class="notes-editor-head">
+            <input id="noteTitleInput" class="notes-editor-title" type="text" placeholder="Untitled note" autocomplete="off">
+            <div class="notes-editor-meta">
+              <span id="noteCreatedTs" class="notes-ts" title="Created"></span>
+              <span class="notes-ts-sep" aria-hidden="true">·</span>
+              <span id="noteUpdatedTs" class="notes-ts" title="Last edited"></span>
+            </div>
+            <div class="notes-editor-head-actions">
+              <button id="noteAdoptFromChatBtn" class="btn btn-sm btn-ghost" type="button" title="Append last chat reply to this note">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                From chat
+              </button>
+              <button id="noteShareBtn" class="btn btn-sm btn-ghost" type="button" title="Share / export">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>
+                Share
+              </button>
+              <button id="noteDeleteBtn" class="btn btn-sm btn-ghost" type="button" title="Delete">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </button>
+            </div>
+          </header>
+
+          <div class="notes-toolbar" role="toolbar" aria-label="Format">
+            <button class="notes-tool" data-cmd="bold" title="Bold"><b>B</b></button>
+            <button class="notes-tool" data-cmd="italic" title="Italic"><i>I</i></button>
+            <button class="notes-tool" data-cmd="underline" title="Underline"><u>U</u></button>
+            <span class="notes-tool-sep" aria-hidden="true"></span>
+            <button class="notes-tool" data-cmd="formatBlock:H2" title="Heading">H</button>
+            <button class="notes-tool" data-cmd="formatBlock:blockquote" title="Quote">❝</button>
+            <button class="notes-tool" data-cmd="insertUnorderedList" title="List">•</button>
+            <button class="notes-tool" data-cmd="insertOrderedList" title="Numbered">1.</button>
+            <span class="notes-tool-sep" aria-hidden="true"></span>
+            <button class="notes-tool" data-cmd="link" title="Link">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            </button>
+            <button class="notes-tool" data-cmd="image" title="Image">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </button>
+            <button class="notes-tool" data-cmd="table" title="Table">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+            </button>
+            <button class="notes-tool" data-cmd="insertHorizontalRule" title="Divider">—</button>
+            <button class="notes-tool" data-cmd="stamp" title="Insert timestamp">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </button>
+            <span class="notes-tool-sep" aria-hidden="true"></span>
+            <label class="notes-font" title="Font size">
+              <select id="noteFontSize">
+                <option value="13">13</option>
+                <option value="14" selected>14</option>
+                <option value="15">15</option>
+                <option value="16">16</option>
+                <option value="18">18</option>
+              </select>
+            </label>
+            <label class="notes-font" title="Font family">
+              <select id="noteFontFamily">
+                <option value="sans">Sans</option>
+                <option value="serif">Serif</option>
+                <option value="mono">Mono</option>
+              </select>
+            </label>
+            <span class="notes-tool-sep" aria-hidden="true"></span>
+            <button id="noteVoiceBtn" class="notes-tool" title="Voice dictation">
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="6" height="12" x="9" y="2" rx="3"/><path d="M19 10v1a7 7 0 0 1-14 0v-1"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
+            </button>
+          </div>
+
+          <div id="noteBody" class="notes-editor-body" contenteditable="true" spellcheck="false" role="textbox" aria-multiline="true" aria-label="Note body"></div>
+
+          <footer class="notes-editor-foot">
+            <div class="notes-chat">
+              <input id="noteChatInput" type="text" placeholder="Ask the agent about this note..." autocomplete="off">
+              <button id="noteChatSendBtn" class="btn btn-sm btn-ghost" type="button" title="Send">
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </button>
+            </div>
+            <div id="noteChatLog" class="notes-chat-log" hidden></div>
+          </footer>
+        </section>
+      </div>
+    </section>
+
     <section id="panel-projects" class="tab-panel">
       <header class="page-head">
         <div>
@@ -1281,13 +1411,15 @@
               <h3 id="scheduleListTitle" class="panel-section-title">Active schedules<span class="zh">计划任务</span></h3>
               <span class="panel-section-sub">Enabled rules fire on their own time.</span>
             </div>
-            <div class="panel-section-actions">
-              <label class="search-input" style="width:200px;margin:0;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input id="scheduleSearchInput" type="search" placeholder="Search schedules…  搜索计划" autocomplete="off"/>
-              </label>
-              <span id="scheduleCount" class="tag">0</span>
-            </div>
+              <div class="panel-section-actions">
+                <div class="sched-toolbar">
+                  <label class="search-input" style="width:200px;margin:0;">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input id="scheduleSearchInput" type="search" placeholder="Search schedules…  搜索计划" autocomplete="off"/>
+                  </label>
+                  <span id="scheduleCount" class="tag">0</span>
+                </div>
+              </div>
           </header>
           <div class="panel-section-body">
             <div id="scheduleCalendar" style="display:none;"></div>
