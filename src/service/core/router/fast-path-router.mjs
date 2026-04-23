@@ -31,7 +31,7 @@ const CLIPBOARD_REQUEST = /\b(复制|copy)\b/i;
 const NOTIFY_REQUEST = /\b(提醒我|notify me|通知我)\b.*(?:[\d一二三四五六七八九十百千]|now|现在|立即)/i;
 
 // Known app names — generic enough to cover any common desktop app
-const APP_NAME_PATTERN = /(?:打开|启动|运行|launch|open|start|run)\s+([^\s，,。.!?！？\n]{2,30}?)(?:\s*$|[，,。.!?！？\n])/i;
+const APP_NAME_PATTERN = /(?:打开|启动|运行|launch|open|start|run)\s*([^\s，,。.!?！？\n]{2,30}?)(?:\s*$|[，,。.!?！？\n])/i;
 
 // URL pattern
 const URL_PATTERN = /\bhttps?:\/\/[^\s，。]+/i;
@@ -62,7 +62,7 @@ function extractUrl(text) {
  * @param {string} text
  * @returns {string|null}
  */
-function extractPureLaunchApp(text) {
+export function extractPureLaunchApp(text) {
   // First, reject compound patterns
   if (SEQUENTIAL_COMPOUND.test(text)) return null;
 
@@ -75,6 +75,9 @@ function extractPureLaunchApp(text) {
 
   // Reject empty or generic words
   if (!candidate || /^(应用|软件|程序|app|application|文件|something)$/i.test(candidate)) {
+    return null;
+  }
+  if (/(文档|文件|格式|\.docx|\.pptx|\.xlsx|\.pdf|^docx$|^pptx$|^xlsx$|^pdf$)/i.test(candidate)) {
     return null;
   }
   // Reject if candidate looks like a URL
@@ -159,7 +162,7 @@ export function extractFirstTier0Action(userCommand) {
   if (url) return { tool: "open_url", args: { url } };
 
   // For compound commands, still extract the launch step for first execution
-  const launchMatch = cmd.match(/(?:打开|启动|运行|launch|open|start|run)\s+([^\s，,。.!?！？\n]{2,30})/i);
+  const launchMatch = cmd.match(/(?:打开|启动|运行|launch|open|start|run)\s*([^\s，,。.!?！？\n]{2,30})/i);
   if (launchMatch) {
     const appCandidate = launchMatch[1].trim()
       .replace(/^(一个|某个|这个|那个|应用|软件|程序|app|application)\s*/i, "")

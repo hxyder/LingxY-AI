@@ -10,6 +10,7 @@
  */
 
 import { isConnectorDomainRequest } from "../connectors/core/connector-intent.mjs";
+import { extractPureLaunchApp } from "./router/fast-path-router.mjs";
 
 // ---------------------------------------------------------------------------
 // Goal families (the canonical classification of what the user wants to do)
@@ -160,6 +161,9 @@ const GOAL_RULES = [
  */
 export function classifyGoal(text) {
   const raw = String(text ?? "");
+  if (extractPureLaunchApp(raw)) {
+    return "launch_and_act";
+  }
   if (isConnectorDomainRequest(raw)) {
     return "search_and_answer";
   }
@@ -204,6 +208,9 @@ const FORMAT_PATTERNS = [
 const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf"]);
 
 function detectFormats(text) {
+  if (extractPureLaunchApp(text)) {
+    return [];
+  }
   return FORMAT_PATTERNS
     .filter(({ pattern }) => pattern.test(text))
     .map(({ format }) => format);

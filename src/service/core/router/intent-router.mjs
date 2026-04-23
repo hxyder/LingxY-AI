@@ -47,6 +47,7 @@ const RULES = [
 // UCA-051/052: import goal classification from task-spec
 import { classifyGoal } from "../task-spec.mjs";
 import { isConnectorDomainRequest } from "../../connectors/core/connector-intent.mjs";
+import { extractPureLaunchApp } from "./fast-path-router.mjs";
 
 /* ------------------------------------------------------------------------ */
 /* UCA-049 commit 2: intent_tags multi-label routing                         */
@@ -110,6 +111,9 @@ const AGENTIC_TRIGGERING_TAGS = new Set([
 function deriveIntentTags(text) {
   const connectorDomainRequest = isConnectorDomainRequest(text);
   const tags = [];
+  if (extractPureLaunchApp(text)) {
+    return connectorDomainRequest ? ["act"] : ["launch_app", "act"];
+  }
   for (const rule of TAG_PATTERNS) {
     if (rule.patterns.some((pattern) => pattern.test(text))) {
       if (connectorDomainRequest && rule.tag === "search") continue;
@@ -120,6 +124,9 @@ function deriveIntentTags(text) {
 }
 
 function deriveSuggestedFormats(text) {
+  if (extractPureLaunchApp(text)) {
+    return [];
+  }
   const formats = [];
   for (const rule of FORMAT_PATTERNS) {
     if (rule.patterns.some((pattern) => pattern.test(text))) {
