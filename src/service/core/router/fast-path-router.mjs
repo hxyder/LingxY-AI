@@ -167,9 +167,13 @@ export function extractFirstTier0Action(userCommand) {
     const appCandidate = launchMatch[1].trim()
       .replace(/^(一个|某个|这个|那个|应用|软件|程序|app|application)\s*/i, "")
       .trim();
-    if (appCandidate && !/^(应用|软件|程序|app)$/i.test(appCandidate) && !URL_PATTERN.test(appCandidate)) {
-      return { tool: "launch_app", args: { app: appCandidate } };
-    }
+    // Match the guard in extractPureLaunchApp so "打开word文档" doesn't try
+    // to launch an app called "word文档" inside the tool loop either.
+    if (!appCandidate) return null;
+    if (/^(应用|软件|程序|app|application)$/i.test(appCandidate)) return null;
+    if (URL_PATTERN.test(appCandidate)) return null;
+    if (/(文档|文件|格式|\.docx|\.pptx|\.xlsx|\.pdf|^docx$|^pptx$|^xlsx$|^pdf$)/i.test(appCandidate)) return null;
+    return { tool: "launch_app", args: { app: appCandidate } };
   }
 
   return null;

@@ -1,5 +1,13 @@
 const CONNECTOR_RESOURCE_PATTERN = /(邮件|邮箱|\bemails?\b|\bmail\b|gmail|outlook|日历|\bcalendar\b|google\s*calendar|google\s*drive|onedrive|云端文件|网盘|连接账户|连接的账户|已连接账户|账户|账号|connected\s+accounts?)/i;
-const CONNECTOR_CONTEXT_PATTERN = /(我的|我连接|连接的|已连接|账户|账号|邮箱|邮件|日历|\bcalendar\b|gmail|outlook|google\s*drive|onedrive|云端文件|网盘|最近|最新|列出|查看|读取|具体|多少|哪个|\blist\b|\bshow\b|\bread\b|\brecent\b|\blatest\b|\bconnected\b)/i;
+// UCA-179: the CONTEXT pattern previously only matched read-side verbs
+// (list / recent / latest). A user saying "把这两个附件发给 alice@gmail.com"
+// has "gmail" from the address (so RESOURCE matches) but no
+// 我的/连接/列出/查看, so CONTEXT missed and the task collapsed into "qa"
+// → fast executor → no tools → LLM drafts a fallback reply. Add the
+// send/share/upload verb family so connector-write intents are kept in
+// the connector domain and routed to the tool_using executor, where
+// account_send_email + account_upload_file live.
+const CONNECTOR_CONTEXT_PATTERN = /(我的|我连接|连接的|已连接|账户|账号|邮箱|邮件|日历|\bcalendar\b|gmail|outlook|google\s*drive|onedrive|云端文件|网盘|最近|最新|列出|查看|读取|具体|多少|哪个|发送|发给|寄|转发|分享|上传|\blist\b|\bshow\b|\bread\b|\brecent\b|\blatest\b|\bconnected\b|\bsend\b|\bmail\b|\bemail\b|\bforward\b|\bshare\b|\bupload\b)/i;
 const CONNECTOR_IDENTITY_PATTERN = /(邮箱|邮件|gmail|outlook|google|microsoft|连接|已连接|connected).{0,20}(账户|账号|帐号|邮箱地址)|(?:账户|账号|帐号).{0,20}(邮箱|邮件|gmail|outlook|google|microsoft|连接|已连接|connected)|我的邮箱账号|我的邮箱账户|具体账户/i;
 const CONNECTOR_SEARCH_TOPIC_PATTERN = /(新闻|资讯|动态|价格|股价|汇率|天气|航班|机票|酒店|\bnews\b|\bprice\b|\bstock\b|\bweather\b|\bflight\b|\bhotel\b)/i;
 

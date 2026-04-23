@@ -209,7 +209,14 @@ export async function runAgenticPlanner({
   });
 
   const transcript = [];
-  const artifactPaths = [];
+  // UCA-179: seed with any files the user attached through the context
+  // packet. "Send this file to alice@…" only works if the agent can see
+  // the path on the tool-observation turn, not just in the original user
+  // message (which gets lost once a few tools have run).
+  const artifactPaths = [
+    ...(task?.context_packet?.file_paths ?? []),
+    ...(task?.context_packet?.image_paths ?? [])
+  ].filter(Boolean);
   let preflightSearchText = "";
   if (taskNeedsCurrentWebData(task)) {
     const searchCall = {
@@ -383,11 +390,38 @@ export async function runAgenticPlanner({
         }
       }
 
+      // UCA-179: surface artifact_paths INSIDE the tool message so the model
+      // sees them structurally on the next turn. Before this, the only hint
+      // was whatever the tool hand-wrote into its observation string, so a
+      // subsequent send_email / account_send_email call would drop the
+      // attachment because the model couldn't recall the absolute path.
+      const baseContent = result.observation ?? (result.success ? "Tool returned success." : "Tool returned failure without an observation.");
+      const pathsForTurn = Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : [];
+      const toolContent = pathsForTurn.length > 0
+        ? `${baseContent}\n\nartifact_paths (absolute local paths — pass verbatim to attachmentPaths / localPath / file arguments of the next tool if the user asked to send / upload / share):\n${pathsForTurn.map((p) => `- ${p}`).join("\n")}`
+        : baseContent;
       messages.push({
         role: "tool",
         tool_call_id: call.id ?? call.name,
-        content: result.observation ?? (result.success ? "Tool returned success." : "Tool returned failure without an observation.")
+        content: toolContent
       });
+    }
+
+    // UCA-179: once the run has accumulated any artifacts, keep a short
+    // running reminder in the conversation so the model doesn't forget
+    // them after many turns. Injected as a system-style user note so it
+    // refreshes every iteration; we only push when the set actually grew
+    // to keep the conversation from ballooning.
+    if (artifactPaths.length > 0) {
+      const prev = messages.__lastArtifactPathsHash ?? "";
+      const next = artifactPaths.join("|");
+      if (next !== prev) {
+        messages.push({
+          role: "user",
+          content: `(system note) Artifacts produced so far in this run — pass these as absolute paths if the user asks to attach / send / upload them:\n${artifactPaths.map((p) => `- ${p}`).join("\n")}`
+        });
+        messages.__lastArtifactPathsHash = next;
+      }
     }
   }
 
