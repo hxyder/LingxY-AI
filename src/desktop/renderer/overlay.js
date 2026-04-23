@@ -2335,8 +2335,7 @@ async function submitTask() {
         captureMode: pendingFileSelection.captureMode ?? "shell_menu",
         filePaths: pendingFileSelection.filePaths,
         userCommand: commandText,
-        executionMode: "interactive",
-        executorOverride: "code_cli"
+        executionMode: "interactive"
       };
     } else if (pendingCapture?.capture || conversationState?.seedCapture) {
       // Re-attach the conversation seed on every turn so multi-turn chats
@@ -2361,11 +2360,11 @@ async function submitTask() {
         capture.text = body.slice(0, MAX_CAPTURE_TEXT_CHARS);
       }
 
-      // only force code_cli for file-heavy tasks; let router decide for text
-      const needsKimi = capture.sourceType === "file" || (capture.filePath && !capture.text);
-      const executorOverride = capture.sourceType === "image" ? "multi_modal"
-        : needsKimi ? "code_cli"
-        : undefined; // let intent router decide (fast for simple, code_cli for reports)
+      // Let the shared router decide all non-image work so every provider
+      // (Qwen / DeepSeek / OpenAI / etc.) stays on the same tool-capable path.
+      // Images still pin to multi_modal because that surface has explicit
+      // image payload handling.
+      const executorOverride = capture.sourceType === "image" ? "multi_modal" : undefined;
       payload = {
         userCommand: commandText,
         executionMode: "interactive",
