@@ -6,6 +6,27 @@ const icon = document.querySelector("#icon");
 let hideTimer = null;
 let serviceBaseUrl = "http://127.0.0.1:4310";
 let lastPayload = null;
+const THEME_KEY = "uca-console-theme";
+
+function syncNotificationTheme() {
+  try {
+    const theme = localStorage.getItem("lingxy.theme") ?? localStorage.getItem(THEME_KEY) ?? "default";
+    if (theme === "default") {
+      document.documentElement.removeAttribute("data-theme");
+      document.body.removeAttribute("data-theme");
+    } else {
+      document.documentElement.setAttribute("data-theme", theme);
+      document.body.setAttribute("data-theme", theme);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+syncNotificationTheme();
+window.addEventListener("storage", (event) => {
+  if (event.key === "lingxy.theme" || event.key === THEME_KEY) syncNotificationTheme();
+});
 
 function hide() {
   toast.classList.remove("visible");

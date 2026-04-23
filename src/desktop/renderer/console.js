@@ -356,8 +356,10 @@ const THEME_KEY = "uca-console-theme";
 function applyTheme(themeValue) {
   const t = THEMES.includes(themeValue) ? themeValue : "default";
   if (t === "default") {
+    document.documentElement.removeAttribute("data-theme");
     document.body.removeAttribute("data-theme");
   } else {
+    document.documentElement.setAttribute("data-theme", t);
     document.body.setAttribute("data-theme", t);
   }
   document.querySelectorAll(".theme-swatch").forEach((btn) => {

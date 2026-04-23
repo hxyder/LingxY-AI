@@ -17,6 +17,28 @@ const state = {
   autoHideTimer: null
 };
 
+const THEME_KEY = "uca-console-theme";
+
+function syncPopupTheme() {
+  try {
+    const theme = localStorage.getItem("lingxy.theme") ?? localStorage.getItem(THEME_KEY) ?? "default";
+    if (theme === "default") {
+      document.documentElement.removeAttribute("data-theme");
+      document.body.removeAttribute("data-theme");
+    } else {
+      document.documentElement.setAttribute("data-theme", theme);
+      document.body.setAttribute("data-theme", theme);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+syncPopupTheme();
+window.addEventListener("storage", (event) => {
+  if (event.key === "lingxy.theme" || event.key === THEME_KEY) syncPopupTheme();
+});
+
 function resolveCardId() {
   try {
     const params = new URLSearchParams(window.location.search);

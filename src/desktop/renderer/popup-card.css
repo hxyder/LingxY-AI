@@ -1,17 +1,20 @@
+@import url("./tokens.css");
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: transparent; overflow: hidden; user-select: none; }
 .pc-body {
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif;
+  font-family: var(--font-sans);
   font-size: 13px;
-  color: #0f172a;
+  color: var(--ink);
   padding: 8px;
 }
 .pc-card {
-  background: rgba(255, 255, 255, 0.96);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border-radius: 12px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.06);
+  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
+  box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -49,7 +52,7 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
 .pc-title {
   font-weight: 600;
   font-size: 13px;
-  color: #0f172a;
+  color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -59,7 +62,7 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #64748b;
+  color: var(--muted);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -67,12 +70,12 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
   transition: background-color 120ms ease, color 120ms ease;
 }
 .pc-icon-btn:hover {
-  background: rgba(15, 23, 42, 0.06);
-  color: #0f172a;
+  background: var(--panel-2);
+  color: var(--ink);
 }
 .pc-icon-btn.is-active {
-  background: rgba(245, 158, 11, 0.18);
-  color: #b45309;
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 
 .pc-body-text {
@@ -81,17 +84,17 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
   padding: 2px 12px 8px;
   overflow-y: auto;
   line-height: 1.5;
-  color: #1e293b;
+  color: var(--ink-2);
   font-size: 12.5px;
   word-break: break-word;
   scrollbar-width: thin;
-  scrollbar-color: rgba(15, 23, 42, 0.25) transparent;
+  scrollbar-color: color-mix(in srgb, var(--line-2) 88%, transparent) transparent;
 }
 .pc-body-text::-webkit-scrollbar {
   width: 6px;
 }
 .pc-body-text::-webkit-scrollbar-thumb {
-  background: rgba(15, 23, 42, 0.22);
+  background: color-mix(in srgb, var(--line-2) 82%, transparent);
   border-radius: 3px;
 }
 .pc-body-text::-webkit-scrollbar-track {
@@ -101,7 +104,7 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
   font-size: 13px;
   font-weight: 500;
   margin-bottom: 4px;
-  color: #0f172a;
+  color: var(--ink);
 }
 .pc-body-text .pc-body-sub {
   color: #64748b;
@@ -110,9 +113,10 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
 .pc-body-text code {
   font-family: "SF Mono", "Consolas", monospace;
   font-size: 11.5px;
-  background: rgba(15, 23, 42, 0.06);
+  background: var(--panel-2);
   padding: 1px 5px;
   border-radius: 4px;
+  color: var(--ink);
 }
 
 .pc-actions {
@@ -133,10 +137,10 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
   cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.pc-btn-primary { background: #0f172a; color: #fff; }
-.pc-btn-primary:hover { background: #1e293b; }
-.pc-btn-ghost { background: transparent; color: #475569; border-color: rgba(15, 23, 42, 0.14); }
-.pc-btn-ghost:hover { background: rgba(15, 23, 42, 0.04); color: #0f172a; }
-.pc-btn-danger { background: #fff; color: #b91c1c; border-color: rgba(185, 28, 28, 0.22); }
-.pc-btn-danger:hover { background: rgba(185, 28, 28, 0.06); }
+.pc-btn-primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pc-btn-primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.pc-btn-ghost { background: transparent; color: var(--ink-2); border-color: var(--line); }
+.pc-btn-ghost:hover { background: var(--panel-2); color: var(--ink); }
+.pc-btn-danger { background: var(--panel); color: var(--err); border-color: color-mix(in srgb, var(--err) 24%, var(--line)); }
+.pc-btn-danger:hover { background: var(--err-soft); }
 .pc-btn[disabled] { opacity: 0.5; cursor: default; pointer-events: none; }
