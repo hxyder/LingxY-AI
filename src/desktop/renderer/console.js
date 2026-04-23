@@ -6128,10 +6128,11 @@ consoleChatAttachBtn?.addEventListener("click", () => {
 });
 consoleChatAttachInput?.addEventListener("change", () => {
   const files = Array.from(consoleChatAttachInput.files ?? []);
-  for (const f of files) {
+  const resolvedPaths = window.ucaShell?.resolveDroppedFilePaths?.(files) ?? [];
+  for (const [index, f] of files.entries()) {
     consoleChatAttachList.push({
       name: f.name,
-      path: f.path || ""
+      path: resolvedPaths[index] || f.path || ""
     });
   }
   consoleChatAttachInput.value = "";
