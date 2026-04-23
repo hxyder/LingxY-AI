@@ -20,7 +20,7 @@ export const PROVIDER_GROUPS = Object.freeze([
       { id: "deepseek", label: "DeepSeek", defaultModel: "deepseek-chat" },
       { id: "doubao", label: "豆包（火山方舟 Ark）", defaultModel: "doubao-seed-2-0-lite-260215" },
       { id: "moonshot", label: "Moonshot (Kimi)", defaultModel: "moonshot-v1-8k" },
-      { id: "qwen", label: "通义千问 (DashScope)", defaultModel: "qwen-turbo" },
+      { id: "qwen", label: "通义千问 (DashScope)", defaultModel: "qwen3.6-plus" },
       { id: "zhipu", label: "智谱 GLM", defaultModel: "glm-4-flash" },
       { id: "siliconflow", label: "硅基流动 SiliconFlow", defaultModel: "deepseek-ai/DeepSeek-V2.5" },
       { id: "yi", label: "零一万物 Yi", defaultModel: "yi-large" }
@@ -45,7 +45,7 @@ export const PROVIDER_CONFIGS = Object.freeze({
   deepseek: { label: "DeepSeek", endpoint: "https://api.deepseek.com/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.deepseek, authStyle: "bearer" },
   doubao: { label: "豆包 (火山方舟 Ark)", endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.doubao, authStyle: "bearer" },
   moonshot: { label: "Moonshot (Kimi)", endpoint: "https://api.moonshot.cn/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.moonshot, authStyle: "bearer" },
-  qwen: { label: "通义千问 (DashScope)", endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.qwen, authStyle: "bearer" },
+  qwen: { label: "通义千问 (DashScope)", endpoint: "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.qwen, authStyle: "bearer" },
   zhipu: { label: "智谱 GLM", endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.zhipu, authStyle: "bearer" },
   siliconflow: { label: "硅基流动 SiliconFlow", endpoint: "https://api.siliconflow.cn/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.siliconflow, authStyle: "bearer" },
   yi: { label: "零一万物 Yi", endpoint: "https://api.lingyiwanwu.com/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.yi, authStyle: "bearer" },
@@ -69,7 +69,7 @@ export const PROVIDER_MODEL_PRESETS = Object.freeze({
   deepseek: ["deepseek-chat", "deepseek-reasoner"],
   doubao: ["doubao-seed-2-0-lite-260215", "doubao-seed-2-0-pro-260215", "doubao-seed-2-0-mini-260215"],
   moonshot: ["moonshot-v1-8k", "moonshot-v1-32k", "kimi-k2-0711-preview"],
-  qwen: ["qwen-turbo", "qwen-plus", "qwen-vl-max"],
+  qwen: ["qwen3.6-plus", "qwen-plus", "qwen-turbo", "qwen-vl-max"],
   zhipu: ["glm-4-flash", "glm-4-plus", "glm-4v-plus"],
   siliconflow: ["deepseek-ai/DeepSeek-V2.5", "Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3"],
   yi: ["yi-large", "yi-medium"],
@@ -94,6 +94,12 @@ const DOUBAO_REASONING_OPTIONS = Object.freeze([
   { id: "thinking:enabled|high", label: "深度思考 (enabled / high)" }
 ]);
 
+const QWEN_REASONING_OPTIONS = Object.freeze([
+  { id: "", label: "(不指定)" },
+  { id: "enable_thinking:false", label: "关闭思考" },
+  { id: "enable_thinking:true", label: "开启思考" }
+]);
+
 function uniqueNonEmpty(values = []) {
   const seen = new Set();
   const out = [];
@@ -115,7 +121,7 @@ function detectModelFamily(model = "") {
   if (/^deepseek-/.test(normalized)) return "deepseek";
   if (/^(doubao-|ep-)/.test(normalized)) return "doubao";
   if (/^(kimi-|moonshot-)/.test(normalized)) return "moonshot";
-  if (/^qwen-/.test(normalized)) return "qwen";
+  if (/^qwen/i.test(normalized)) return "qwen";
   if (/^glm-/.test(normalized)) return "zhipu";
   return "unknown";
 }
@@ -133,7 +139,7 @@ function providerSupportsModel(provider = "", model = "") {
     case "deepseek": return /^deepseek-/.test(normalizedModel);
     case "doubao": return /^(doubao-|ep-)/.test(normalizedModel);
     case "moonshot": return /^(kimi-|moonshot-)/.test(normalizedModel);
-    case "qwen": return /^qwen-/.test(normalizedModel);
+    case "qwen": return /^qwen/i.test(normalizedModel);
     case "zhipu": return /^glm-/.test(normalizedModel);
     case "siliconflow": return !["openai", "anthropic", "gemini", "doubao", "moonshot"].includes(detectModelFamily(normalizedModel));
     default: return detectModelFamily(normalizedModel) !== "openai";
@@ -152,6 +158,9 @@ export function reasoningOptionsForProvider(provider = "", model = "") {
   const normalizedProvider = `${provider ?? ""}`.trim();
   const normalizedModel = `${model ?? ""}`.trim().toLowerCase();
   if (normalizedProvider === "doubao") return DOUBAO_REASONING_OPTIONS.map((option) => ({ ...option }));
+  if (normalizedProvider === "qwen" && /^qwen3/i.test(normalizedModel)) {
+    return QWEN_REASONING_OPTIONS.map((option) => ({ ...option }));
+  }
   if (normalizedProvider === "openai" && /^(gpt-5|o[1-9](-|$))/.test(normalizedModel)) {
     return OPENAI_REASONING_OPTIONS.map((option) => ({ ...option }));
   }
@@ -171,6 +180,17 @@ export function normalizeReasoningSelection(provider = "", model = "", value = "
     if (normalizedValue === "thinking:disabled|minimal") return normalizedValue;
     return "";
   }
+  if (normalizedProvider === "qwen") {
+    if (["enable_thinking:true", "thinking:on", "thinking:enabled", "enabled", "true", "on"].includes(normalizedValue)) {
+      return "enable_thinking:true";
+    }
+    if (["enable_thinking:false", "thinking:off", "thinking:disabled", "disabled", "false", "off"].includes(normalizedValue)) {
+      return "enable_thinking:false";
+    }
+    return reasoningOptionsForProvider(normalizedProvider, model).some((option) => option.id === normalizedValue)
+      ? normalizedValue
+      : "";
+  }
   return reasoningOptionsForProvider(normalizedProvider, model).some((option) => option.id === normalizedValue)
     ? normalizedValue
     : "";
@@ -179,6 +199,10 @@ export function normalizeReasoningSelection(provider = "", model = "", value = "
 export function applyReasoningSelectionToBody(body = {}, { provider = "", model = "", reasoningEffort = "" } = {}) {
   const normalized = normalizeReasoningSelection(provider, model, reasoningEffort);
   if (!normalized) return body;
+  if (normalized.startsWith("enable_thinking:")) {
+    body.enable_thinking = normalized.endsWith(":true");
+    return body;
+  }
   if (normalized.startsWith("thinking:")) {
     const [thinkingPart, effortPart = ""] = normalized.split("|");
     const thinkingType = thinkingPart.slice("thinking:".length);

@@ -4,7 +4,7 @@ export const BUILTIN_API_TEMPLATES = Object.freeze([
   { id: "deepseek", label: "DeepSeek", kind: "openai", baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek-chat" },
   { id: "doubao", label: "豆包 (火山方舟 Ark)", kind: "openai", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", defaultModel: "doubao-seed-2-0-lite-260215" },
   { id: "moonshot", label: "Moonshot (Kimi)", kind: "openai", baseUrl: "https://api.moonshot.cn/v1", defaultModel: "moonshot-v1-8k" },
-  { id: "dashscope", label: "Qwen (Dashscope)", kind: "openai", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", defaultModel: "qwen-max" },
+  { id: "dashscope", label: "Qwen (DashScope)", kind: "openai", baseUrl: "https://dashscope-us.aliyuncs.com/compatible-mode/v1", defaultModel: "qwen3.6-plus" },
   { id: "zhipu", label: "Zhipu (GLM)", kind: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4", defaultModel: "glm-4-plus" },
   { id: "minimax", label: "MiniMax", kind: "openai", baseUrl: "https://api.minimax.chat/v1", defaultModel: "abab6.5s-chat" },
   { id: "siliconflow", label: "SiliconFlow", kind: "openai", baseUrl: "https://api.siliconflow.cn/v1", defaultModel: "Qwen/Qwen2.5-72B-Instruct" },
@@ -91,7 +91,7 @@ function detectModelFamily(model = "") {
   if (/^deepseek-/.test(normalized)) return "deepseek";
   if (/^(doubao-|ep-)/.test(normalized)) return "doubao";
   if (/^(kimi-|moonshot-)/.test(normalized)) return "moonshot";
-  if (/^qwen-/.test(normalized)) return "dashscope";
+  if (/^qwen/i.test(normalized)) return "dashscope";
   if (/^glm-/.test(normalized)) return "zhipu";
   if (/^abab/.test(normalized)) return "minimax";
   return "unknown";
@@ -120,7 +120,7 @@ function providerSupportsModel(providerFamily, model = "") {
     case "kimi_cli":
       return /^(kimi-code\/kimi-for-coding|kimi-|moonshot-)/.test(normalized);
     case "dashscope":
-      return /^qwen-/.test(normalized);
+      return /^qwen/i.test(normalized);
     case "zhipu":
       return /^glm-/.test(normalized);
     case "minimax":
@@ -163,7 +163,7 @@ export function catalogDefaultModelForProvider(provider = {}, taskType = "chat")
     case "deepseek": return "deepseek-chat";
     case "doubao": return "doubao-seed-2-0-lite-260215";
     case "moonshot": return "moonshot-v1-8k";
-    case "dashscope": return "qwen-max";
+    case "dashscope": return "qwen3.6-plus";
     case "zhipu": return "glm-4-plus";
     case "minimax": return "abab6.5s-chat";
     case "siliconflow": return "Qwen/Qwen2.5-72B-Instruct";
@@ -267,7 +267,7 @@ export function providerModelPresets(provider = {}, taskType = "chat") {
     case "moonshot":
       return uniqueNonEmpty([preferred, "kimi-latest", "kimi-k2-0711-preview", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]);
     case "dashscope":
-      return uniqueNonEmpty([preferred, "qwen-max", "qwen-plus", "qwen-turbo", "qwen-coder-plus", "qwen-vl-max"]);
+      return uniqueNonEmpty([preferred, "qwen3.6-plus", "qwen-plus", "qwen-turbo", "qwen-coder-plus", "qwen-vl-max"]);
     case "zhipu":
       return uniqueNonEmpty([preferred, "glm-4-plus", "glm-4-air", "glm-4-flash", "glm-4v-plus"]);
     case "minimax":
@@ -350,8 +350,15 @@ const DOUBAO_REASONING_OPTIONS = Object.freeze([
   { id: "thinking:enabled|high", label: "深度思考 (enabled / high)" }
 ]);
 
+const QWEN_REASONING_OPTIONS = Object.freeze([
+  { id: "", label: "(不指定)" },
+  { id: "enable_thinking:false", label: "关闭思考" },
+  { id: "enable_thinking:true", label: "开启思考" }
+]);
+
 const OPENAI_REASONING_IDS = new Set(OPENAI_REASONING_OPTIONS.map((option) => option.id).filter(Boolean));
 const DOUBAO_REASONING_IDS = new Set(DOUBAO_REASONING_OPTIONS.map((option) => option.id).filter(Boolean));
+const QWEN_REASONING_IDS = new Set(QWEN_REASONING_OPTIONS.map((option) => option.id).filter(Boolean));
 
 export function reasoningOptionsForProvider(provider = {}, model = "") {
   if (!provider) return [];
@@ -364,6 +371,10 @@ export function reasoningOptionsForProvider(provider = {}, model = "") {
 
   if (family === "doubao" || /doubao|volces|ark/.test(fp)) {
     return cloneOptionList(DOUBAO_REASONING_OPTIONS);
+  }
+
+  if (family === "dashscope" && /^qwen3/i.test(`${model ?? ""}`.trim())) {
+    return cloneOptionList(QWEN_REASONING_OPTIONS);
   }
 
   if (provider.kind === "openai" && /(gpt-5|^o[1-9]|\bo\d+-|reasoning)/.test(fp)) {
@@ -399,6 +410,16 @@ export function normalizeReasoningSelection(provider = {}, model = "", value = "
     return DOUBAO_REASONING_IDS.has(normalized) ? normalized : "";
   }
 
+  if (family === "dashscope") {
+    if (["enable_thinking:true", "thinking:on", "thinking:enabled", "enabled", "true", "on"].includes(normalized)) {
+      return "enable_thinking:true";
+    }
+    if (["enable_thinking:false", "thinking:off", "thinking:disabled", "disabled", "false", "off"].includes(normalized)) {
+      return "enable_thinking:false";
+    }
+    return QWEN_REASONING_IDS.has(normalized) ? normalized : "";
+  }
+
   if (provider.kind === "code_cli") {
     return ["low", "medium", "high", "xhigh"].includes(normalized) ? normalized : "";
   }
@@ -409,6 +430,11 @@ export function normalizeReasoningSelection(provider = {}, model = "", value = "
 export function applyReasoningSelectionToBody(body = {}, provider = {}, model = "", value = "") {
   const normalized = normalizeReasoningSelection(provider, model, value);
   if (!normalized || !body || typeof body !== "object") return body;
+
+  if (normalized.startsWith("enable_thinking:")) {
+    body.enable_thinking = normalized.endsWith(":true");
+    return body;
+  }
 
   if (normalized.startsWith("thinking:")) {
     const [thinkingPart, effortPart = ""] = normalized.split("|");
