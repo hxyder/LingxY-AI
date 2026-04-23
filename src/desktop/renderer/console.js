@@ -446,6 +446,8 @@ let selectedTaskEventBaseUrl = null;
 let handledSelectedTaskEventIds = new Set();
 let consoleChatEventStream = null;
 let consoleChatResultTaskIds = new Set();
+let consoleChatToolCardCounter = 0;
+let consoleChatToolCards = new Map();
 const scheduleRunTaskWatchers = new Map();
 const completedScheduleRunTaskIds = new Set();
 let editingSkillPath = null;
@@ -569,35 +571,177 @@ function appendConsoleChatMessage(role, text, options = {}) {
   consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
 }
 
-function appendConsoleChatToolCall(toolName, args, outcome) {
+// UCA-177: premium two-row timeline card for tool invocations.
+//   state — "running" | "ok" | "err" (default "ok" when outcome present,
+//   else "running" when no outcome, else neutral).
+function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
   if (!consoleChatMessages || !toolName) return;
   consoleChatMessages.querySelector(".console-chat-empty")?.remove();
+
+  const inferredState = options.state
+    ?? (options.error ? "err"
+      : outcome != null ? "ok"
+      : "running");
+  const stateLabel = inferredState === "running" ? "RUNNING"
+    : inferredState === "err" ? "FAILED"
+    : "DONE";
+
   const card = document.createElement("div");
-  card.className = "chat-tool-card";
-  const icon = `<svg class="tool-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/></svg>`;
-  const argsText = typeof args === "string" ? args : JSON.stringify(args ?? {}).slice(0, 200);
-  const outcomeTag = outcome ? ` <span class="tool-args">→ ${escapeHtml(String(outcome).slice(0, 80))}</span>` : "";
-  card.innerHTML = `${icon}<div><span class="tool-name">${escapeHtml(toolName)}</span> <span class="tool-args">${escapeHtml(argsText)}</span>${outcomeTag}</div>`;
+  card.className = `chat-tool-card is-${inferredState}`;
+  card.setAttribute("role", "group");
+  card.setAttribute("aria-label", `tool call ${toolName}`);
+
+  const argsText = typeof args === "string"
+    ? args
+    : (args == null ? "" : JSON.stringify(args, null, 0));
+  const argsPreview = argsText.length > 240 ? `${argsText.slice(0, 240)}…` : argsText;
+  const outcomeText = outcome == null ? "" : String(outcome).slice(0, 140);
+  const time = new Date();
+  const timeText = `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}:${String(time.getSeconds()).padStart(2, "0")}`;
+
+  const ICON = `<svg class="ttc-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76Z"/></svg>`;
+
+  card.innerHTML = `
+    <div class="ttc-head">
+      ${ICON}
+      <span class="ttc-name">${escapeHtml(toolName)}</span>
+      <span class="ttc-status">${stateLabel}</span>
+      <time class="ttc-time" datetime="${time.toISOString()}">${timeText}</time>
+    </div>
+    <div class="ttc-args ${argsPreview ? "" : "is-empty"}">${escapeHtml(argsPreview)}</div>
+    ${outcomeText
+      ? `<div class="ttc-outcome"><span class="ttc-outcome-arrow">→</span><span class="ttc-outcome-text">${escapeHtml(outcomeText)}</span></div>`
+      : ""}
+  `;
   consoleChatMessages.appendChild(card);
   consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  return card;
+}
+
+function createConsoleChatToolCard(toolName, args, options = {}) {
+  const id = `tool-${++consoleChatToolCardCounter}`;
+  const card = appendConsoleChatToolCall(toolName, args, null, { ...options, state: options.state ?? "running" });
+  if (card) {
+    card.dataset.toolCardId = id;
+    consoleChatToolCards.set(id, card);
+  }
+  return id;
+}
+
+function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) {
+  const card = consoleChatToolCards.get(id);
+  if (!card) {
+    return appendConsoleChatToolCall(toolName, args, outcome, options);
+  }
+  const inferredState = options.state
+    ?? (options.error ? "err"
+      : outcome != null ? "ok"
+      : "running");
+  card.classList.remove("is-running", "is-ok", "is-err");
+  card.classList.add(`is-${inferredState}`);
+
+  const stateLabel = inferredState === "running" ? "RUNNING"
+    : inferredState === "err" ? "FAILED"
+    : "DONE";
+  const argsText = typeof args === "string"
+    ? args
+    : (args == null ? "" : JSON.stringify(args, null, 0));
+  const argsPreview = argsText.length > 240 ? `${argsText.slice(0, 240)}…` : argsText;
+  const outcomeText = outcome == null ? "" : String(outcome).slice(0, 140);
+
+  const nameEl = card.querySelector(".ttc-name");
+  const statusEl = card.querySelector(".ttc-status");
+  const argsEl = card.querySelector(".ttc-args");
+  const outcomeEl = card.querySelector(".ttc-outcome");
+  const outcomeTextEl = card.querySelector(".ttc-outcome-text");
+  if (nameEl) nameEl.textContent = toolName;
+  if (statusEl) statusEl.textContent = stateLabel;
+  if (argsEl) {
+    argsEl.textContent = argsPreview;
+    argsEl.classList.toggle("is-empty", !argsPreview);
+  }
+  if (outcomeText) {
+    if (outcomeTextEl) {
+      outcomeTextEl.textContent = outcomeText;
+    } else {
+      const el = document.createElement("div");
+      el.className = "ttc-outcome";
+      el.innerHTML = `<span class="ttc-outcome-arrow">→</span><span class="ttc-outcome-text">${escapeHtml(outcomeText)}</span>`;
+      card.appendChild(el);
+    }
+  } else if (outcomeEl) {
+    outcomeEl.remove();
+  }
+  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  return card;
+}
+
+async function appendConsoleChatFinalResult(taskId, payload = {}) {
+  if (!taskId || consoleChatResultTaskIds.has(taskId)) return;
+  const directText = String(
+    payload.text
+    ?? payload.summary
+    ?? payload.message
+    ?? ""
+  ).trim();
+  if (directText) {
+    appendConsoleChatMessage("assistant", directText);
+    consoleChatResultTaskIds.add(taskId);
+    return;
+  }
+  try {
+    const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
+    const task = detail?.task ?? detail ?? null;
+    const settledText = String(
+      task?.result_summary
+      ?? task?.inline_result
+      ?? task?.failure_user_message
+      ?? ""
+    ).trim();
+    if (!settledText) return;
+    appendConsoleChatMessage(task?.status === "failed" ? "system" : "assistant", settledText);
+    consoleChatResultTaskIds.add(taskId);
+  } catch {
+    /* optional */
+  }
 }
 
 function subscribeConsoleChatTask(taskId) {
   consoleChatEventStream?.close?.();
+  consoleChatToolCards = new Map();
   consoleChatEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
     onEvent(rawEvent) {
       const frame = toTaskEventFrame(rawEvent);
       const payload = frame.data ?? {};
-      if (frame.event === "inline_result") {
+      if (frame.event === "tool_call_proposed" || frame.event === "tool_call_started") {
+        const toolName = payload.tool_id ?? payload.tool ?? "tool";
+        const args = payload.args ?? {};
+        const id = createConsoleChatToolCard(toolName, args, { state: "running" });
+        if (!payload.__consoleToolCardId) payload.__consoleToolCardId = id;
+        consoleChatState.textContent = `Running ${toolName}...`;
+      } else if (frame.event === "tool_call_completed") {
+        const toolName = payload.tool_id ?? payload.tool ?? "tool";
+        const outcome = payload.observation ?? payload.text ?? payload.error ?? "";
+        const candidate = [...consoleChatToolCards.entries()].reverse().find(([, card]) => {
+          return card.querySelector(".ttc-name")?.textContent === toolName
+            && card.querySelector(".ttc-status")?.textContent === "RUNNING";
+        })?.[0] ?? null;
+        completeConsoleChatToolCard(candidate, toolName, payload.args ?? {}, outcome, {
+          state: payload.success === false ? "err" : "ok",
+          error: payload.success === false
+        });
+        consoleChatState.textContent = payload.success === false ? `${toolName} failed` : `${toolName} done`;
+      } else if (frame.event === "inline_result") {
         appendConsoleChatMessage("assistant", payload.text ?? payload.message ?? "");
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Done.";
       } else if (frame.event === "failed") {
         appendConsoleChatMessage("system", payload.message ?? "Task failed.");
+        consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Failed.";
       } else if (frame.event === "success" || frame.event === "partial_success") {
-        if (payload.summary && !consoleChatResultTaskIds.has(taskId)) appendConsoleChatMessage("assistant", payload.summary);
-        consoleChatState.textContent = "Done.";
+        void appendConsoleChatFinalResult(taskId, payload);
+        consoleChatState.textContent = frame.event === "partial_success" ? "Partially done." : "Done.";
       }
     },
     onError(error) {
@@ -731,6 +875,7 @@ function watchScheduleRunTask(task = {}) {
 async function submitConsoleChat() {
   const text = consoleChatInput?.value?.trim() ?? "";
   if (!text) return;
+  const attachedFilePaths = consoleChatAttachList.map((entry) => `${entry?.path ?? ""}`.trim()).filter(Boolean);
   appendConsoleChatMessage("user", text);
   consoleChatInput.value = "";
   consoleChatState.textContent = "Submitting...";
@@ -744,7 +889,8 @@ async function submitConsoleChat() {
         sourceType: "clipboard",
         text: "",
         userCommand: text,
-        executionMode: "interactive"
+        executionMode: "interactive",
+        ...(attachedFilePaths.length > 0 ? { filePaths: attachedFilePaths } : {})
       })
     });
     const taskId = result.task?.task_id;
@@ -1246,7 +1392,7 @@ const providerModelOptionsLoading = new Set();
 const TASK_TYPES = [
   { id: "chat", label: "Chat / Q&A", desc: "General conversation, summarize, translate, explain" },
   { id: "vision", label: "Vision / Image", desc: "Image analysis, screenshot understanding" },
-  { id: "file_analysis", label: "File Analysis", desc: "Deep file processing, report generation (uses Kimi CLI by default)" },
+  { id: "file_analysis", label: "File Analysis", desc: "Deep file processing, report generation (uses the routed provider)" },
   { id: "audio_transcription", label: "Audio Transcription", desc: "Speech-to-text for recording notes and system audio" }
 ];
 
@@ -4257,11 +4403,16 @@ document.querySelector("#projectNewBtn")?.addEventListener("click", () => {
 // and returns focus to the composer. A proper multi-session store is
 // intentionally not introduced here — this is a UI alignment pass.
 document.querySelector("#consoleChatNewBtn")?.addEventListener("click", () => {
+  consoleChatEventStream?.close?.();
+  consoleChatEventStream = null;
+  consoleChatToolCards = new Map();
+  consoleChatResultTaskIds = new Set();
   if (consoleChatMessages) {
     consoleChatMessages.innerHTML = `<div class="console-chat-empty">没有对话 — 开始一个吧。</div>`;
   }
   const input = document.querySelector("#consoleChatInput");
   if (input) { input.value = ""; input.focus(); }
+  if (consoleChatState) consoleChatState.textContent = "";
 });
 
 projectCreateForm?.addEventListener("submit", (event) => {
@@ -5954,10 +6105,10 @@ function renderChatAttachments() {
     return;
   }
   consoleChatAttachments.hidden = false;
-  consoleChatAttachments.innerHTML = consoleChatAttachList.map((name, idx) => `
+  consoleChatAttachments.innerHTML = consoleChatAttachList.map((entry, idx) => `
     <span class="chip-attach">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.58 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-      <span>${escapeHtml(name)}</span>
+      <span>${escapeHtml(entry?.name ?? "")}</span>
       <button type="button" data-remove-attach="${idx}" aria-label="Remove">×</button>
     </span>
   `).join("");
@@ -5977,7 +6128,12 @@ consoleChatAttachBtn?.addEventListener("click", () => {
 });
 consoleChatAttachInput?.addEventListener("change", () => {
   const files = Array.from(consoleChatAttachInput.files ?? []);
-  for (const f of files) consoleChatAttachList.push(f.name);
+  for (const f of files) {
+    consoleChatAttachList.push({
+      name: f.name,
+      path: f.path || ""
+    });
+  }
   consoleChatAttachInput.value = "";
   renderChatAttachments();
 });

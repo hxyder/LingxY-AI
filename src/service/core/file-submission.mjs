@@ -24,6 +24,7 @@ function attachProviderFieldsToEvent(descriptor, payload) {
   };
 }
 import { routeIntent } from "./router/intent-router.mjs";
+import { createTaskSpec } from "./task-spec.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -53,17 +54,23 @@ export async function submitFileTask({
   const queue = runtime.queue;
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const route = routeIntent(userCommand);
+  const preflightTaskSpec = createTaskSpec(userCommand, {
+    source_type: "file",
+    source_app: sourceApp,
+    capture_mode: captureMode,
+    file_paths: Array.isArray(filePaths) ? filePaths : []
+  }, route);
   const cliRuntime = resolveKimiRuntimeForTask("file_analysis", runtime.kimiRuntime);
-  // file-submission specialises in file-backed analysis, which the Kimi CLI
-  // handles natively via its task package. When the router upgrades the
+  // file-submission specialises in file-backed analysis, which the code_cli
+  // runtime handles natively via its task package. When the router upgrades the
   // executor to agentic (because analyze+generate_report tags trigger the
-  // new planner), we still prefer kimi here IF a kimi runtime is available —
+  // new planner), we still prefer the CLI runtime here IF one is available —
   // the agentic planner doesn't currently read attached files, and the
-  // existing kimi path is the authoritative file-analysis flow. Commit 3
+  // existing CLI path is the authoritative file-analysis flow. Commit 3
   // will add an agentic file-reading branch; until then "agentic on files"
-  // degrades gracefully to "kimi on files".
+  // degrades gracefully to "code_cli on files".
   const preferredExecutorOverride = executorOverride
-    ?? ((cliRuntime && ["fast", "none", "agentic"].includes(route.executor)) ? "kimi" : null);
+    ?? ((cliRuntime && ["fast", "none", "agentic"].includes(route.executor)) ? "code_cli" : null);
   const rawContextPacket = await buildFileContextPacket({
     filePaths,
     captureMode,
@@ -71,6 +78,36 @@ export async function submitFileTask({
     traceId: `trace_${crypto.randomUUID()}`,
     contextId: `ctx_${crypto.randomUUID()}`
   });
+
+  const fileFocusedGoals = new Set([
+    "generate_document",
+    "analyze_and_report",
+    "transform_existing_file",
+    "open_or_reveal_file"
+  ]);
+  const fileFocusedIntentTags = new Set([
+    "analyze",
+    "summarize",
+    "rewrite",
+    "explain",
+    "generate_report",
+    "file_action"
+  ]);
+  const shouldPreferContextPipeline = !fileFocusedGoals.has(preflightTaskSpec.goal)
+    && !((route.intent_tags ?? []).some((tag) => fileFocusedIntentTags.has(tag)));
+
+  if (shouldPreferContextPipeline) {
+    return submitContextTask({
+      contextPacket: rawContextPacket,
+      userCommand,
+      runtime,
+      executionMode,
+      parentTaskId,
+      retryCount,
+      executorOverride: executorOverride ?? null,
+      skipDecomposition: false
+    });
+  }
 
   // User chose an API provider (DeepSeek / Anthropic API / OpenAI / Ollama)
   // for file analysis — we have no Code CLI to drive, but the context packet
