@@ -30,6 +30,7 @@ export function resolveRuntimePaths({ baseDir = null } = {}) {
     historyStorePath: path.join(resolvedBaseDir, "data", "history", "embeddings.json"),
     skillPatternsPath: path.join(resolvedBaseDir, "data", "skill-patterns.json"),
     notesPath: path.join(resolvedBaseDir, "data", "notes.json"),
+    previewCacheDir: path.join(resolvedBaseDir, "data", "preview-cache"),
     dagDir: path.join(resolvedBaseDir, "data", "dag"),
     dagRunsDir: path.join(resolvedBaseDir, "data", "dag", "runs"),
     budgetStatePath: path.join(resolvedBaseDir, "data", "budget.json"),
@@ -52,7 +53,8 @@ export function ensureRuntimePaths(paths) {
     paths.dagDir,
     paths.dagRunsDir,
     paths.logsDir,
-    paths.outputsDir
+    paths.outputsDir,
+    paths.previewCacheDir
   ]) {
     mkdirSync(directory, { recursive: true });
   }

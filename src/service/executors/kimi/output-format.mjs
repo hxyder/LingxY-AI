@@ -33,6 +33,43 @@ function escapeHtml(text) {
     .replace(/"/g, "&quot;");
 }
 
+function previewSidecarPath(outputPath) {
+  const parsed = path.parse(outputPath);
+  return path.join(parsed.dir, `${parsed.name}-preview.html`);
+}
+
+async function writeStructuredPreviewHtml({ kind, outputPath, outline = null, plainText = "" }) {
+  const previewPath = previewSidecarPath(outputPath);
+  let html = "";
+  if (outline) {
+    const { renderDocumentPreviewHtml } = await import("../../action_tools/tools/document-renderer.mjs");
+    html = renderDocumentPreviewHtml({ kind, outline, title: path.basename(outputPath) });
+  } else {
+    html = `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(path.basename(outputPath))}</title>
+    <style>
+      body { margin: 0; padding: 24px; background: #f5f7fb; color: #1e293b; font: 14px/1.6 "Segoe UI", Calibri, Arial, sans-serif; }
+      article { max-width: 1080px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 28px; box-shadow: 0 16px 40px rgba(15,23,42,.08); }
+      h1 { margin: 0 0 12px; font-size: 28px; }
+      pre { white-space: pre-wrap; word-break: break-word; margin: 0; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    </style>
+  </head>
+  <body>
+    <article>
+      <h1>${escapeHtml(path.basename(outputPath))}</h1>
+      <pre>${escapeHtml(plainText || "(empty)")}</pre>
+    </article>
+  </body>
+</html>`;
+  }
+  await writeFile(previewPath, `${html}\n`, "utf8");
+  return previewPath;
+}
+
 function escapeCsvCell(text) {
   return `"${`${text}`.replace(/"/g, "\"\"")}"`;
 }
@@ -401,6 +438,7 @@ export async function writeRequestedArtifacts({
     const previewText = stripMarkdownSyntax(baseText) || "UCA completed without returning content.";
     await writeDocxArtifact(docxPath, previewText);
     await writeFile(previewPath, `${previewText}\n`, "utf8");
+    await writeStructuredPreviewHtml({ kind: "docx", outputPath: docxPath, plainText: previewText });
     artifacts.push(
       { path: docxPath, mime_type: requestedFormat.mimeType },
       { path: previewPath, mime_type: "text/plain" }
@@ -414,6 +452,7 @@ export async function writeRequestedArtifacts({
     const htmlPath = path.join(outputDir, "result.html");
     const pdfPath = path.join(outputDir, "result.pdf");
     await writeFile(htmlPath, `${htmlContent}\n`, "utf8");
+    await writeStructuredPreviewHtml({ kind: "pdf", outputPath: pdfPath, plainText: stripMarkdownSyntax(baseText) });
 
     try {
       await writePdfFromHtml(htmlPath, pdfPath);
@@ -431,6 +470,7 @@ export async function writeRequestedArtifacts({
     const previewText = stripMarkdownSyntax(baseText) || "UCA completed without returning content.";
     await writeXlsxArtifact(xlsxPath, previewText);
     await writeFile(previewPath, `${previewText}\n`, "utf8");
+    await writeStructuredPreviewHtml({ kind: "xlsx", outputPath: xlsxPath, plainText: previewText });
     artifacts.push(
       { path: xlsxPath, mime_type: requestedFormat.mimeType },
       { path: previewPath, mime_type: "text/plain" }
@@ -445,6 +485,7 @@ export async function writeRequestedArtifacts({
     const plainText = renderPptxOutlineToPlainText(outline);
     await writePptxArtifact(pptxPath, plainText);
     await writeFile(previewPath, `${plainText}\n`, "utf8");
+    await writeStructuredPreviewHtml({ kind: "pptx", outputPath: pptxPath, outline, plainText });
     artifacts.push(
       { path: pptxPath, mime_type: requestedFormat.mimeType },
       { path: previewPath, mime_type: "text/plain" }

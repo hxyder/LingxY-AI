@@ -493,6 +493,145 @@ function colLetter(n) {
   return result || "A";
 }
 
+function escapeHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderPreviewStyles() {
+  return `
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --ink: #1e293b;
+      --muted: #64748b;
+      --line: #e2e8f0;
+      --accent: #2563eb;
+      --soft: #eff6ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--ink);
+      font: 14px/1.6 "Segoe UI", Calibri, Arial, sans-serif;
+    }
+    .doc {
+      max-width: 1080px;
+      margin: 0 auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 28px;
+      box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08);
+    }
+    .doc-head { margin-bottom: 20px; }
+    .doc-kicker { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; }
+    .doc-title { margin: 8px 0 4px; font-size: 30px; line-height: 1.2; }
+    .doc-sub { color: var(--muted); margin: 0 0 8px; }
+    .slide { border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-top: 14px; background: linear-gradient(180deg, #fff 0%, #fbfdff 100%); }
+    .slide-head { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+    .slide-body, .section-body { white-space: pre-wrap; }
+    .slide ul, .section ul { margin: 10px 0 0 18px; padding: 0; }
+    .section { padding: 18px 0; border-top: 1px solid var(--line); }
+    .section:first-of-type { border-top: 0; padding-top: 4px; }
+    .section h2 { margin: 0 0 8px; font-size: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+    th { background: #1e293b; color: #fff; }
+    tr:nth-child(even) td { background: #f8fafc; }
+    .sheet { margin-top: 18px; }
+    .sheet-name { font-weight: 700; margin-bottom: 8px; }
+  `;
+}
+
+function wrapPreviewHtml(title, body, kindLabel = "") {
+  return `<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(title || "Preview")}</title>
+    <style>${renderPreviewStyles()}</style>
+  </head>
+  <body>
+    <article class="doc">
+      <header class="doc-head">
+        ${kindLabel ? `<div class="doc-kicker">${escapeHtml(kindLabel)}</div>` : ""}
+        ${title ? `<h1 class="doc-title">${escapeHtml(title)}</h1>` : ""}
+      </header>
+      ${body}
+    </article>
+  </body>
+</html>`;
+}
+
+function renderBullets(items = []) {
+  if (!Array.isArray(items) || items.length === 0) return "";
+  return `<ul>${items.filter(Boolean).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+export function renderDocumentPreviewHtml({ kind, outline = {}, title = "" } = {}) {
+  const resolvedTitle = title || outline.title || "Preview";
+  if (kind === "pptx") {
+    const slides = Array.isArray(outline.slides) ? outline.slides : [];
+    const body = `
+      ${outline.subtitle ? `<p class="doc-sub">${escapeHtml(outline.subtitle)}</p>` : ""}
+      ${slides.map((slide, index) => `
+        <section class="slide">
+          <div class="slide-head">幻灯片 ${index + 1}${slide?.heading ? ` · ${escapeHtml(slide.heading)}` : ""}</div>
+          ${slide?.body ? `<div class="slide-body">${escapeHtml(slide.body)}</div>` : ""}
+          ${renderBullets(slide?.bullets)}
+        </section>
+      `).join("")}
+    `;
+    return wrapPreviewHtml(resolvedTitle, body, "PowerPoint Preview");
+  }
+
+  if (kind === "xlsx") {
+    const sheets = Array.isArray(outline.sheets)
+      ? outline.sheets
+      : [{ name: outline.sheetName ?? "Sheet1", headers: outline.headers ?? [], rows: outline.rows ?? [] }];
+    const body = sheets.map((sheet) => {
+      const headers = Array.isArray(sheet.headers) ? sheet.headers : [];
+      const rows = Array.isArray(sheet.rows) ? sheet.rows : [];
+      return `
+        <section class="sheet">
+          <div class="sheet-name">${escapeHtml(sheet.name ?? "Sheet")}</div>
+          <table>
+            ${headers.length > 0 ? `<thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead>` : ""}
+            <tbody>
+              ${rows.map((row) => `<tr>${(Array.isArray(row) ? row : [row]).map((cell) => `<td>${escapeHtml(cell)}</td>`).join("")}</tr>`).join("")}
+            </tbody>
+          </table>
+        </section>
+      `;
+    }).join("");
+    return wrapPreviewHtml(resolvedTitle, body, "Excel Preview");
+  }
+
+  const sections = Array.isArray(outline.sections) ? outline.sections
+    : Array.isArray(outline.slides) ? outline.slides
+      : [];
+  const body = `
+    ${outline.subtitle ? `<p class="doc-sub">${escapeHtml(outline.subtitle)}</p>` : ""}
+    ${sections.map((section) => `
+      <section class="section">
+        ${section?.heading ? `<h2>${escapeHtml(section.heading)}</h2>` : ""}
+        ${section?.body ? `<div class="section-body">${escapeHtml(section.body)}</div>` : ""}
+        ${renderBullets(section?.bullets)}
+      </section>
+    `).join("")}
+  `;
+  return wrapPreviewHtml(resolvedTitle, body, kind === "pdf" ? "PDF Preview" : "Word Preview");
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 /**

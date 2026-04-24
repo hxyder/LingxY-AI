@@ -195,6 +195,63 @@ const NOTE_INTENT_PATTERNS = [
   /\b(?:note|notes|minutes)\b/i
 ];
 
+const EDITABLE_ARTIFACT_EXTENSIONS = new Set([
+  ".pptx",
+  ".docx",
+  ".xlsx",
+  ".pdf",
+  ".md",
+  ".txt",
+  ".html",
+  ".htm",
+  ".csv",
+  ".json"
+]);
+
+const ARTIFACT_REFINEMENT_PATTERNS = [
+  /(加上|加一些|加入|补上|补充|插入|替换|换成|删掉|删除|修改|更新|调整|优化|完善|美化|精美|润色|改一下|改得|重做|重写|重排)/i,
+  /\b(add|include|insert|replace|remove|delete|modify|edit|update|revise|refine|polish|improve|beautify|restyle)\b/i
+];
+
+const ARTIFACT_REFERENCE_PATTERNS = [
+  /(pptx?|powerpoint|幻灯片|演示文稿|slides?|slideshow|docx?|word\s*文档|word\s*文件|\bword\b|xlsx?|excel|电子表格|表格|pdf|文件|文档)/i
+];
+
+function artifactKindFromPath(filePath = "") {
+  const normalized = String(filePath ?? "").toLowerCase();
+  if (normalized.endsWith(".pptx")) return "pptx";
+  if (normalized.endsWith(".docx")) return "docx";
+  if (normalized.endsWith(".xlsx")) return "xlsx";
+  if (normalized.endsWith(".pdf")) return "pdf";
+  if (normalized.endsWith(".html") || normalized.endsWith(".htm")) return "html";
+  if (normalized.endsWith(".csv")) return "csv";
+  if (normalized.endsWith(".md")) return "md";
+  if (normalized.endsWith(".txt")) return "txt";
+  return null;
+}
+
+function hasEditableArtifactContext(contextPacket = {}) {
+  return (contextPacket?.file_paths ?? []).some((filePath) => {
+    const normalized = String(filePath ?? "").toLowerCase();
+    return [...EDITABLE_ARTIFACT_EXTENSIONS].some((ext) => normalized.endsWith(ext));
+  });
+}
+
+function hasArtifactRefinementIntent(text, contextPacket = {}) {
+  if (!hasEditableArtifactContext(contextPacket)) return false;
+  const normalized = String(text ?? "");
+  return ARTIFACT_REFINEMENT_PATTERNS.some((pattern) => pattern.test(normalized))
+    || ARTIFACT_REFERENCE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function detectArtifactKindFromContext(contextPacket = {}) {
+  for (const filePath of contextPacket?.file_paths ?? []) {
+    const kind = artifactKindFromPath(filePath);
+    if (kind) return kind;
+  }
+  return null;
+}
+
 function hasContentForNote(contextPacket = {}) {
   return Boolean(
     String(contextPacket?.text ?? "").trim()
@@ -254,18 +311,22 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   const text = String(userText ?? "");
   const noteIntent = hasNoteTakingIntent(text, contextPacket);
   const imageDriven = Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0;
+  const artifactEditIntent = hasArtifactRefinementIntent(text, contextPacket);
   let goal = classifyGoal(text);
   if (noteIntent) {
     goal = imageDriven ? "multimodal_analyze" : "analyze_and_report";
+  } else if (artifactEditIntent) {
+    goal = "transform_existing_file";
   }
   const suggestedFormats = detectFormats(text);
+  const contextArtifactKind = detectArtifactKindFromContext(contextPacket);
   const explicitFileArtifactKind = noteIntent
     ? (suggestedFormats.includes("md") ? "md" : null)
-    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? null);
+    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? contextArtifactKind);
   const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file", "multimodal_analyze"].includes(goal)
     ? (noteIntent ? "md" : "docx")
     : null;
-  const fileArtifactKind = explicitFileArtifactKind ?? inferredFileArtifactKind;
+  const fileArtifactKind = explicitFileArtifactKind ?? contextArtifactKind ?? inferredFileArtifactKind;
   const artifactRequired = noteIntent ||
     FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
     goal === "generate_document" ||
@@ -391,6 +452,14 @@ export function applyHardenedRules(spec) {
     spec.success_contract.tool_called = true;
     if (!spec.success_contract.required_tool_names.includes("launch_app")) {
       spec.success_contract.required_tool_names.push("launch_app");
+    }
+  }
+
+  // Rule 4b: transform_existing_file → must actually edit the existing file,
+  // not silently fall back to synthesizing a brand-new artifact.
+  if (spec.goal === "transform_existing_file") {
+    if (!spec.success_contract.required_tool_names.includes("edit_file")) {
+      spec.success_contract.required_tool_names.push("edit_file");
     }
   }
 
