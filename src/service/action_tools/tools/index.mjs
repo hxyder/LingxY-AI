@@ -1276,6 +1276,82 @@ function coerceOutlineToPlainText(kind, outline) {
   return lines.join("\n");
 }
 
+function stripCodeFences(text) {
+  return String(text ?? "")
+    .replace(/```[a-z0-9_-]*\r?\n?/gi, "")
+    .replace(/```/g, "")
+    .trim();
+}
+
+function tryParseOutlineJson(value) {
+  if (value && typeof value === "object") return value;
+  if (typeof value !== "string" || !value.trim()) return null;
+  const candidates = [value, stripCodeFences(value)];
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
+function heuristicPptxOutlineFromText(text) {
+  const lines = stripCodeFences(text).split(/\r?\n/);
+  const slides = [];
+  let current = null;
+  for (const raw of lines) {
+    const line = String(raw ?? "").trim();
+    if (!line) {
+      if (current && (current.heading || current.bullets.length > 0)) {
+        slides.push(current);
+        current = null;
+      }
+      continue;
+    }
+    if (!current) {
+      current = { heading: line.replace(/^#+\s*/, ""), bullets: [] };
+      continue;
+    }
+    current.bullets.push(line.replace(/^[-*]\s*/, ""));
+  }
+  if (current && (current.heading || current.bullets.length > 0)) slides.push(current);
+  return {
+    title: slides[0]?.heading ?? "Presentation",
+    slides: slides.length > 0 ? slides : [{ heading: "Presentation", bullets: [stripCodeFences(text).slice(0, 200)] }]
+  };
+}
+
+function heuristicSectionOutlineFromText(text) {
+  const cleaned = stripCodeFences(text);
+  const lines = cleaned.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) return { title: "Document", sections: [] };
+  return {
+    title: lines[0].replace(/^#+\s*/, ""),
+    sections: [{ heading: lines[0].replace(/^#+\s*/, ""), body: lines.slice(1).join("\n") || cleaned }]
+  };
+}
+
+function heuristicXlsxOutlineFromText(text) {
+  const rows = stripCodeFences(text)
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.split(/\t|,|\|/).map((cell) => cell.trim()).filter(Boolean));
+  return { rows };
+}
+
+function normalizeDocumentOutline(kind, outline) {
+  if (outline && typeof outline === "object") return outline;
+  const parsed = tryParseOutlineJson(outline);
+  if (parsed) return parsed;
+  const raw = String(outline ?? "").trim();
+  if (!raw) return {};
+  if (kind === "pptx") return heuristicPptxOutlineFromText(raw);
+  if (kind === "xlsx") return heuristicXlsxOutlineFromText(raw);
+  return heuristicSectionOutlineFromText(raw);
+}
+
 async function invokeDocumentRenderer({ kind, targetPath, outline }) {
   // Try the Node.js renderer first (pptxgenjs / docx / exceljs — styled output).
   try {
@@ -1331,7 +1407,7 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
         ? args.filename.trim()
         : `result${KIND_EXTENSIONS[kind]}`;
       const absTarget = await resolveSandboxedTarget(outputDir, filename);
-      const outline   = args.outline ?? {};
+      const outline   = normalizeDocumentOutline(kind, args.outline ?? {});
 
       if (kind === "pdf") {
         const htmlPath = absTarget.replace(/\.pdf$/i, ".html");
