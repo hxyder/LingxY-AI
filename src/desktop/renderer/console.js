@@ -2639,7 +2639,12 @@ function renderTaskArtifacts(detail) {
   for (const btn of taskArtifactList.querySelectorAll("[data-artifact-open]")) {
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      await window.ucaShell.openPath(btn.dataset.artifactPath);
+      // UCA-182 Phase 7: prefer the in-app preview panel. If the
+      // format has no handler the panel returns false and we fall
+      // through to a native "open with" call.
+      const p = btn.dataset.artifactPath;
+      if (window.livePreview?.openForFile?.({ filePath: p })) return;
+      await window.ucaShell.openPath(p);
     });
   }
   for (const btn of taskArtifactList.querySelectorAll("[data-artifact-reveal]")) {

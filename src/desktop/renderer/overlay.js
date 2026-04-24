@@ -1174,8 +1174,12 @@ resultToast.addEventListener("mouseleave", () => {
 
 toastOpenBtn.addEventListener("click", async () => {
   if (lastArtifactPath) {
-    const err = await window.ucaShell.openPath(lastArtifactPath);
-    if (err) addSystemBubble(`无法打开文件：${err}`);
+    // UCA-182 Phase 7: prefer the in-app preview panel for known
+    // formats. Fall back to OS "open" when the panel can't handle it.
+    if (!window.livePreview?.openForFile?.({ filePath: lastArtifactPath })) {
+      const err = await window.ucaShell.openPath(lastArtifactPath);
+      if (err) addSystemBubble(`无法打开文件：${err}`);
+    }
   }
   hideToast();
 });
@@ -2250,6 +2254,15 @@ async function refreshActiveTask() {
         }
         addBubble("assistant", bubbleEl, {
           optionButtons: [
+            { label: "预览", onClick: () => {
+                // UCA-182 Phase 7: always try the in-panel preview first.
+                // Binary Office formats, pdf, markdown, etc. all have
+                // handlers registered on window.livePreviewClient.
+                if (window.livePreview?.openForFile?.({ filePath: previewPath })) return;
+                // Fallback: open externally if the preview module is
+                // somehow missing (script load race).
+                void window.ucaShell?.openPath?.(previewPath);
+              } },
             { label: "打开文件", onClick: async () => {
                 const err = await window.ucaShell.openPath(previewPath);
                 if (err) addSystemBubble(`无法打开文件：${err}`);

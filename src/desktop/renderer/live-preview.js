@@ -270,9 +270,37 @@
     }[c]));
   }
 
+  // Open the panel for an already-existing file (artifact click, file
+  // chip, history entry). Unlike openForTool this bypasses the
+  // streaming path and paints the final artefact immediately via the
+  // client registry.
+  function openForFile({ filePath, mime } = {}) {
+    if (!filePath) return false;
+    state.open = true;
+    state.minimized = false;
+    state.toolName = "__open__";
+    state.toolPath = filePath;
+    state.toolKind = inferKind(filePath, "__open__");
+    state.rawJson = "";
+    if (state.autoCollapseTimer) { clearTimeout(state.autoCollapseTimer); state.autoCollapseTimer = null; }
+    root.hidden = false;
+    root.dataset.pinned = state.pinned ? "1" : "0";
+    root.dataset.state = "ok";
+    root.querySelector("[data-lp-chip]").hidden = true;
+    root.querySelector(".lp-panel").hidden = false;
+    syncActiveSizeBtn();
+    $("[data-lp-title]").textContent = basename(filePath);
+    $("[data-lp-sub]").textContent = "打开预览";
+    $("[data-lp-meta]").textContent = "";
+    $("[data-lp-body]").innerHTML = `<div class="lp-loading">加载中…</div>`;
+    void renderFinalArtifact(filePath, mime);
+    return true;
+  }
+
   window.livePreview = {
     isFileGenTool: (toolName) => FILE_GEN_TOOLS.has(toolName),
     openForTool,
+    openForFile,
     appendDelta,
     commit,
     close
