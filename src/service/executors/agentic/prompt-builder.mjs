@@ -132,7 +132,7 @@ export function buildAgenticSystemPrompt({
     : requestedFormat?.id === "markdown"
       ? "The user asked for a Markdown artifact. Use `write_file` to create exactly one .md file. Do not call `generate_document` for Markdown."
       : requestedFormat && requestedFormat.id && requestedFormat.id !== "conversational"
-        ? `The user asked for a ${requestedFormat.id} artifact. Use the generate_document tool (kind=${requestedFormat.id}) or write_file to produce it. Do not refuse by claiming you cannot save files — you can.`
+        ? `The user asked for a ${requestedFormat.id} artifact. Use the generate_document tool (kind=${requestedFormat.id}) or write_file to produce it. Pass generate_document.outline as a native JSON object, not a stringified JSON blob. Do not refuse by claiming you cannot save files — you can.`
         : "If the user does not explicitly ask for a file, reply conversationally.";
 
   const languageLine = language && language !== "auto"

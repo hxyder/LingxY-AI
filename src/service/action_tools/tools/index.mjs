@@ -1387,6 +1387,10 @@ Outline shapes:
 • xlsx → { headers: string[], rows: any[][] }  OR  { sheets: [{ name, headers, rows }] }
 • pdf  → same shape as docx (rendered to HTML then printed)
 
+Preferred calling convention:
+• Pass \`outline\` as a native object, not a stringified JSON string.
+• The tool will still normalize stringified JSON or plain-text outlines as a fallback, but object input is more reliable across models.
+
 For reports with charts: include Mermaid diagram code in body text wrapped in triple-backtick mermaid blocks — they render automatically in HTML/PDF output.`,
   parameters: ACTION_TOOL_SCHEMAS.generate_document,
   risk_level: "low",

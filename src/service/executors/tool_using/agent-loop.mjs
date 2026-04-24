@@ -703,7 +703,8 @@ Key tool schemas:
 - account_send_email: { "to": [...], "subject": "...", "body": "...", "attachmentPaths": [optional absolute paths] }
 - account_create_event: { "title": "...", "startTime": "<ISO8601>", "endTime": "<ISO8601>", "attendees": [...] }
 - create_scheduled_task: delay work to a specific moment — use for "N 分钟后 / tomorrow X / at HH:MM" requests
-- notify / copy_to_clipboard / translate_text / generate_document — self-describing
+- generate_document: { "kind": "pptx"|"docx"|"xlsx"|"pdf", "filename": "...", "outline": { ... } } — pass outline as a native object, not a stringified JSON string. For pptx use { title, subtitle?, slides:[{ heading, bullets?: string[] }] }; for docx/pdf use { title, sections:[{ heading, body|bullets }] }; for xlsx use { rows:[[...]] }.
+- notify / copy_to_clipboard / translate_text — self-describing
 
 Guidance (not a rigid checklist — apply judgment):
 - **Execute with what you have.** If the request is concrete and you have the tool + data, just call it. Don't ask for permission the user already implicitly gave.
