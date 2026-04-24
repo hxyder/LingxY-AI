@@ -292,7 +292,11 @@ function convertMessagesForOpenAI(messages) {
       continue;
     }
     if (msg.role === "assistant" && Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
-      converted.push({
+      // UCA-182 Phase 22: forward reasoning_content when present —
+      // DeepSeek v4 in thinking mode rejects the turn with a 400 if
+      // the assistant's prior reasoning isn't included alongside the
+      // replayed tool_calls.
+      const assistantFrame = {
         role: "assistant",
         content: typeof msg.content === "string" ? msg.content : "",
         tool_calls: msg.tool_calls.map((call) => ({
@@ -305,6 +309,19 @@ function convertMessagesForOpenAI(messages) {
               : JSON.stringify(call.arguments ?? call.function?.arguments ?? {})
           }
         }))
+      };
+      if (typeof msg.reasoning_content === "string" && msg.reasoning_content) {
+        assistantFrame.reasoning_content = msg.reasoning_content;
+      }
+      converted.push(assistantFrame);
+      continue;
+    }
+    // Also preserve reasoning_content on plain-text assistant turns.
+    if (msg.role === "assistant" && typeof msg.reasoning_content === "string" && msg.reasoning_content) {
+      converted.push({
+        role: "assistant",
+        content: msg.content ?? "",
+        reasoning_content: msg.reasoning_content
       });
       continue;
     }
@@ -324,8 +341,19 @@ function parseOpenAIResponse(data) {
       ? safeJsonParse(call.function.arguments)
       : (call.function?.arguments ?? call.arguments ?? {})
   }));
+  // UCA-182 Phase 22: DeepSeek v4 in thinking mode returns a
+  // `reasoning_content` field alongside `content`. The API then
+  // REQUIRES that reasoning_content be echoed back on the next turn
+  // when we replay the assistant message (400:
+  // "The reasoning_content in the thinking mode must be passed back
+  // to the API."). We capture it here and the planner attaches it
+  // to the assistant message it pushes onto the transcript; the
+  // outgoing-message converter downstream forwards it verbatim.
   return {
     text: message.content ?? "",
+    reasoning_content: typeof message.reasoning_content === "string"
+      ? message.reasoning_content
+      : null,
     tool_calls: toolCalls,
     usage: {
       input_tokens: data?.usage?.prompt_tokens ?? null,
@@ -383,6 +411,11 @@ async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fe
   const decoder = new TextDecoder();
   let sseBuffer = "";
   let fullText = "";
+  // UCA-182 Phase 22: accumulate reasoning_content deltas alongside
+  // content deltas so DeepSeek v4 thinking mode streams work end-to-
+  // end. The assembled blob is returned and then echoed back on the
+  // next turn's assistant message (see parseOpenAIResponse comment).
+  let fullReasoning = "";
   const toolCallBuilders = {};
 
   try {
@@ -407,6 +440,9 @@ async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fe
         if (typeof delta.content === "string" && delta.content) {
           fullText += delta.content;
           onTextDelta(delta.content);
+        }
+        if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+          fullReasoning += delta.reasoning_content;
         }
         if (Array.isArray(delta.tool_calls)) {
           for (const tc of delta.tool_calls) {
@@ -436,7 +472,12 @@ async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fe
     arguments: safeJsonParse(tc.arguments)
   }));
 
-  return { text: fullText, tool_calls: toolCalls, usage: {} };
+  return {
+    text: fullText,
+    reasoning_content: fullReasoning || null,
+    tool_calls: toolCalls,
+    usage: {}
+  };
 }
 
 /* ------------------------------------------------------------------------ */

@@ -403,6 +403,14 @@ export async function runAgenticPlanner({
 
     const text = response?.text ?? "";
     const toolCalls = Array.isArray(response?.tool_calls) ? response.tool_calls : [];
+    // UCA-182 Phase 22: capture DeepSeek v4's thinking-mode
+    // reasoning_content so we can echo it back on the next turn.
+    // Providers that don't return this field yield null; null is
+    // dropped when the message is pushed so only DeepSeek ends up
+    // sending it across the wire.
+    const reasoningContent = typeof response?.reasoning_content === "string"
+      ? response.reasoning_content
+      : null;
 
     if (toolCalls.length === 0) {
       finalText = text;
@@ -420,11 +428,13 @@ export async function runAgenticPlanner({
 
     // Record the assistant turn so the transcript replay is correct on the
     // next adapter.generate() call.
-    messages.push({
+    const assistantMessage = {
       role: "assistant",
       content: text,
       tool_calls: toolCalls
-    });
+    };
+    if (reasoningContent) assistantMessage.reasoning_content = reasoningContent;
+    messages.push(assistantMessage);
     transcript.push({ role: "assistant", text, tool_calls: toolCalls });
 
     for (const call of toolCalls) {
