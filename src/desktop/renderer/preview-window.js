@@ -44,7 +44,12 @@
     pinned: false
   };
 
-  function setStatus(s) { status.dataset.state = s; }
+  const root = document.getElementById("pvRoot");
+  function setStatus(s) {
+    status.dataset.state = s;
+    // Phase 17: top-of-body progress bar tracks the running state.
+    if (root) root.dataset.streaming = (s === "running") ? "1" : "0";
+  }
   function setTitle(t) { title.textContent = t || "预览"; }
   function setSub(s) { sub.textContent = s || ""; }
   function setMeta(m) { meta.textContent = m || ""; }
