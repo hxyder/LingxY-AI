@@ -161,14 +161,33 @@ function applyInit(payload) {
       { label: "通过", variant: "primary", onClick: () => resolveCard("approve") }
     ]);
   } else if (kind === "success") {
-    renderActions([
-      { label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) },
-      { label: "好", variant: "primary", onClick: () => closeCard("dismissed") }
-    ]);
-    // success cards auto-hide unless pinned
-    scheduleAutoHide(payload?.autoHideMs ?? 8000);
+    // UCA-182 Phase 8: success cards now carry artifact actions. When
+    // payload.artifactPath is present we expose 预览 / 打开文件夹 /
+    // 复制 alongside the usual "继续追问" handoff. This is the sole
+    // replacement for the retired result-toast (overlay bottom-center).
+    const hasArtifact = Boolean(payload?.artifactPath);
+    const hasInline = Boolean(payload?.inlinePreview || payload?.artifactPath);
+    const buttons = [];
+    if (hasArtifact) {
+      buttons.push({ label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });
+      buttons.push({ label: "打开文件夹", variant: "ghost", onClick: () => resolveCard("reveal", { artifactPath: payload.artifactPath }) });
+    } else {
+      buttons.push({ label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) });
+    }
+    if (hasInline) {
+      buttons.push({ label: "复制", variant: "ghost", onClick: () => resolveCard("copy", { artifactPath: payload?.artifactPath ?? null, inlinePreview: payload?.inlinePreview ?? null }) });
+    }
+    if (payload?.allowContinue !== false) {
+      buttons.push({ label: "继续追问", variant: "ghost", onClick: () => resolveCard("continue", { taskId: payload?.taskId ?? null }) });
+    }
+    if (buttons.length === 0) {
+      buttons.push({ label: "好", variant: "primary", onClick: () => closeCard("dismissed") });
+    }
+    renderActions(buttons);
+    scheduleAutoHide(payload?.autoHideMs ?? 10000);
   } else if (kind === "error") {
     renderActions([
+      { label: "查看日志", variant: "ghost", onClick: () => resolveCard("view_log", { taskId: payload?.taskId ?? null }) },
       { label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) },
       { label: "关闭", variant: "primary", onClick: () => closeCard("dismissed") }
     ]);

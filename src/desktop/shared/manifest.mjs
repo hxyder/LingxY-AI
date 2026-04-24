@@ -102,15 +102,11 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
       width: 1280,
       height: 820
     },
-    {
-      id: WINDOW_IDS.notification,
-      title: "LingxY Notification",
-      route: "/notification",
-      singleton: true,
-      startsHidden: true,
-      width: 360,
-      height: 132
-    },
+    // UCA-182 Phase 8: notification window retired. All in-app toasts
+    // now go through the popup-card stack (see popup-card-manager.mjs).
+    // The WINDOW_IDS.notification constant is retained for backward
+    // compatibility with any remaining references; nothing registers
+    // or shows a window with that id anymore.
     {
       id: WINDOW_IDS.echoBubble,
       title: "LingxY Echo Bubble",

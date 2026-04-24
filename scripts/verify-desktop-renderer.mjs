@@ -69,8 +69,11 @@ assert.equal(overlayHtml.includes("sendBtn"), true);
 const dockHtml = await read("src/desktop/renderer/dock.html");
 assert.equal(dockHtml.includes("dockButton"), true);
 
-const notificationHtml = await read("src/desktop/renderer/notification.html");
-assert.equal(notificationHtml.includes("UCA Notification"), true);
+// UCA-182 Phase 8: notification.html retired. In-app toasts now render
+// inside the popup-card window (popup-card.html); assert that file
+// is still present instead.
+const popupCardHtml = await read("src/desktop/renderer/popup-card.html");
+assert.equal(popupCardHtml.includes("pc-card"), true);
 
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
 assert.equal(mainProcess.includes("preload: PRELOAD_PATH"), true);

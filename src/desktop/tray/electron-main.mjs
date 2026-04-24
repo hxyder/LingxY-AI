@@ -53,7 +53,7 @@ function resolveWindowOptions(windowDef) {
     };
   }
 
-  if (windowDef.id === "overlay" || windowDef.id === "notification") {
+  if (windowDef.id === "overlay") {
     return {
       alwaysOnTop: true,
       autoHideMenuBar: true,
@@ -234,19 +234,28 @@ export function createElectronShellRuntime({
   }
 
   function showDesktopNotification(payload = {}) {
-    const target = windows.get("notification");
-    if (target) {
-      const { workArea } = screen.getPrimaryDisplay();
-      const [width, height] = target.getSize();
-      target.setPosition(
-        Math.max(workArea.x, Math.round(workArea.x + workArea.width - width - 18)),
-        Math.max(workArea.y, Math.round(workArea.y + workArea.height - height - 18))
-      );
-      target.setAlwaysOnTop(true, "screen-saver");
-      target.showInactive();
-      target.moveTop();
-      enqueueWindowMessage("notification", IPC_CHANNELS.shellNotificationReceived, payload);
-      return { shown: true, delivery: "bottom_toast" };
+    // UCA-182 Phase 8: all in-app notifications now route through the
+    // popup-card stack (top-right). The legacy "notification" bottom
+    // window and the native OS toast are gone; users consistently see
+    // a single style of card that they can pin, dismiss or click to
+    // act on. Native OS notification remains a last-resort fallback
+    // for scenarios where the popup-card manager hasn't been wired up
+    // yet (e.g. during early startup).
+    if (registeredPopupCardManager) {
+      try {
+        const body = payload.body ?? payload.message ?? "";
+        registeredPopupCardManager.showCard({
+          kind: "info",
+          title: payload.title ?? "LingxY",
+          lines: body ? String(body).split(/\n+/).slice(0, 4) : [],
+          taskId: payload.taskId ?? null,
+          autoHideMs: payload.autoHideMs ?? 8000,
+          dedupeKey: payload.dedupeKey ?? (payload.taskId ? `notify:${payload.taskId}` : undefined)
+        });
+        return { shown: true, delivery: "popup_card" };
+      } catch (err) {
+        safeWarn("[UCA] popup-card notify failed, falling back:", err?.message ?? err);
+      }
     }
 
     if (!Notification?.isSupported?.()) {
@@ -1269,7 +1278,12 @@ export function createElectronShellRuntime({
                 kind: card.kind,
                 action: card.action,
                 approvalId: card.payload?.approvalId ?? null,
-                taskId: card.payload?.taskId ?? null
+                taskId: card.payload?.taskId ?? null,
+                // UCA-182 Phase 8: forward arbitrary meta (artifactPath,
+                // inlinePreview, mime, ...) so the overlay's resolve
+                // listener can wire success-kind buttons to the right
+                // file / clipboard actions without another IPC hop.
+                meta: card.meta ?? null
               });
             }
           } catch (err) {

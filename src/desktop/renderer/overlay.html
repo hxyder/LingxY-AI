@@ -808,60 +808,9 @@
         color: var(--ink);
       }
 
-      /* ── result notification toast ── */
-      .result-toast {
-        position: fixed;
-        top: auto;
-        bottom: 70px;
-        left: 50%;
-        transform: translateX(-50%);
-        max-width: 340px;
-        width: max-content;
-        padding: 12px 16px;
-        border-radius: var(--radius-lg);
-        background: rgba(255, 255, 255, 0.97);
-        backdrop-filter: blur(24px) saturate(1.2);
-        -webkit-backdrop-filter: blur(24px) saturate(1.2);
-        border: 1px solid rgba(255, 255, 255, 0.75);
-        box-shadow:
-          0 12px 36px rgba(0, 0, 0, 0.12),
-          inset 0 1px 0 rgba(255, 255, 255, 0.9);
-        cursor: pointer;
-        animation: toast-in 240ms ease;
-        -webkit-app-region: no-drag;
-        display: none;
-      }
-
-      .result-toast.visible {
-        display: block;
-      }
-
-      .result-toast .toast-title {
-        font-size: 13px;
-        font-weight: 600;
-        margin-bottom: 4px;
-      }
-
-      .result-toast .toast-body {
-        font-size: 12px;
-        color: var(--muted);
-        line-height: 1.45;
-        display: -webkit-box;
-        -webkit-line-clamp: 3;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-
-      .result-toast .toast-actions {
-        display: flex;
-        gap: 6px;
-        margin-top: 8px;
-      }
-
-      .result-toast .toast-actions button {
-        font-size: 11px;
-        padding: 4px 10px;
-      }
+      /* UCA-182 Phase 8: .result-toast styles retired.
+         Artifact notifications now render in the shared popup-card
+         window (top-right). See popup-card.css for card styling. */
 
       /* ── task list dock ── */
       .task-list-dock {
@@ -1466,8 +1415,7 @@
       .input-bar,
       .inline-panel,
       .voice-card,
-      .task-list-panel,
-      .result-toast {
+      .task-list-panel {
         border: 0;
         border-radius: 8px;
         background: rgba(249, 249, 249, 0.72);
@@ -1637,8 +1585,7 @@
       body[data-theme="dark"] .input-bar,
       body[data-theme="dark"] .inline-panel,
       body[data-theme="dark"] .voice-card,
-      body[data-theme="dark"] .task-list-panel,
-      body[data-theme="dark"] .result-toast {
+      body[data-theme="dark"] .task-list-panel {
         background: rgba(16, 16, 20, 0.92);
         box-shadow: 0 20px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.06);
       }
@@ -1673,7 +1620,6 @@
       }
       body[data-theme="dark"] .wave-bar { background: #e8e8e8; }
       body[data-theme="dark"] .voice-card .voice-transcript { background: rgba(40,40,48,0.8); color: #e8e8e8; }
-      body[data-theme="dark"] .result-toast .toast-body { color: #888; }
 
     </style>
   </head>
@@ -1856,16 +1802,9 @@
       </div>
     </div>
 
-    <!-- Result toast (bottom-right) -->
-    <div id="resultToast" class="result-toast" role="status" aria-live="polite">
-      <div id="toastTitle" class="toast-title"></div>
-      <div id="toastBody" class="toast-body"></div>
-      <div class="toast-actions">
-        <button id="toastOpenBtn" class="primary" type="button">打开结果</button>
-        <button id="toastCopyBtn" class="secondary" type="button">复制</button>
-        <button id="toastContinueBtn" class="ghost" type="button">继续追问</button>
-      </div>
-    </div>
+    <!-- UCA-182 Phase 8: result-toast retired. Artifact notifications
+         now go through the top-right popup-card stack (see
+         popup-card-manager.mjs / popup-card.js). -->
 
     <!-- Task list dock (bottom-right) -->
     <button id="taskListDock" class="task-list-dock" type="button" title="任务清单" aria-label="打开任务清单" aria-haspopup="true" aria-expanded="false">

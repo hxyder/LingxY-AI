@@ -27,12 +27,11 @@ const commandInput = document.querySelector("#commandInput");
 const sendBtn = document.querySelector("#sendBtn");
 const closeBtn = document.querySelector("#closeBtn");
 const clipboardBtn = document.querySelector("#clipboardBtn");
-const resultToast = document.querySelector("#resultToast");
-const toastTitle = document.querySelector("#toastTitle");
-const toastBody = document.querySelector("#toastBody");
-const toastOpenBtn = document.querySelector("#toastOpenBtn");
-const toastCopyBtn = document.querySelector("#toastCopyBtn");
-const toastContinueBtn = document.querySelector("#toastContinueBtn");
+// UCA-182 Phase 8: retired result-toast DOM. showToast() now routes
+// every artifact notification through the top-right popup-card stack
+// (see popup-card.js / popup-card-manager.mjs). Query refs intentionally
+// removed so any accidental late use would surface as an undefined
+// instead of silently painting into dead DOM.
 const quickButtons = document.querySelectorAll("[data-quick-action]");
 const scheduleToggleBtn = document.querySelector("#scheduleToggleBtn");
 const schedulePanel = document.querySelector("#schedulePanel");
@@ -1149,59 +1148,33 @@ function offerOutputFormat() {
    TOAST (result notification)
    ═══════════════════════════════════════════════ */
 
-let toastAutoHideTimer = null;
-
+// UCA-182 Phase 8: result-toast DOM is retired. `showToast` now routes
+// through the shared popup-card (top-right stack), giving artifact
+// notifications the same styling, stacking, pin and dedupe behaviour
+// as approvals and LibreOffice prompts. Button actions are handled by
+// the popup-card-resolved listener further down.
 function showToast(title, body, artifactPath) {
   lastArtifactPath = artifactPath ?? null;
-  if (popKeptOpen) return; // user has the overlay open and sees the conversation bubble already
-  toastTitle.textContent = title;
-  toastBody.textContent = body;
-  resultToast.classList.add("visible");
-
-  clearTimeout(toastAutoHideTimer);
-  toastAutoHideTimer = setTimeout(hideToast, 8000);
+  if (popKeptOpen) return; // overlay already open; the conversation bubble is enough.
+  try {
+    window.ucaShell?.showPopupCard?.({
+      kind: "success",
+      title,
+      lines: body ? [body] : [],
+      artifactPath: artifactPath ?? null,
+      inlinePreview: lastArtifactPreview ?? null,
+      taskId: activeTaskId ?? null,
+      dedupeKey: artifactPath ? `artifact:${artifactPath}` : undefined,
+      autoHideMs: 10000
+    });
+  } catch { /* best effort */ }
 }
 
 function hideToast() {
-  resultToast.classList.remove("visible");
-  clearTimeout(toastAutoHideTimer);
+  // Kept as a no-op so existing callers continue to compile. Popup-card
+  // controls its own lifecycle (dedupe + reflow + auto-hide).
 }
 
-resultToast.addEventListener("mouseenter", () => clearTimeout(toastAutoHideTimer));
-resultToast.addEventListener("mouseleave", () => {
-  toastAutoHideTimer = setTimeout(hideToast, 4000);
-});
-
-toastOpenBtn.addEventListener("click", async () => {
-  if (lastArtifactPath) {
-    // UCA-182 Phase 7: prefer the in-app preview panel for known
-    // formats. Fall back to OS "open" when the panel can't handle it.
-    if (!window.livePreview?.openForFile?.({ filePath: lastArtifactPath })) {
-      const err = await window.ucaShell.openPath(lastArtifactPath);
-      if (err) addSystemBubble(`无法打开文件：${err}`);
-    }
-  }
-  hideToast();
-});
-
-toastCopyBtn.addEventListener("click", async () => {
-  if (lastArtifactPreview) {
-    await window.ucaShell.writeClipboardText(lastArtifactPreview);
-  } else if (lastArtifactPath) {
-    await window.ucaShell.writeClipboardText(lastArtifactPath);
-  }
-  hideToast();
-});
-
-toastContinueBtn.addEventListener("click", async () => {
-  hideToast();
-  if (lastArtifactPreview) {
-    commandInput.value = "";
-    addBubble("assistant", `Previous result loaded as context. What next?`);
-    commandInput.focus();
-    await maybeRevealOverlay();
-  }
-});
 
 /* ═══════════════════════════════════════════════
    CORE TASK LOGIC (preserved from original)
@@ -5590,7 +5563,38 @@ window.ucaShell.onShellReady((payload) => {
 // inline twin (if any) is stale — mark it handled so the user doesn't
 // double-approve. We disable its buttons and overlay a status chip.
 window.ucaShell?.onPopupCardResolved?.((payload) => {
-  if (!payload || payload.kind !== "approval") return;
+  if (!payload) return;
+
+  // UCA-182 Phase 8: success-kind cards carry artifact actions. These
+  // replace the old result-toast buttons.
+  if (payload.kind === "success") {
+    const meta = payload.meta ?? {};
+    const action = payload.action;
+    if (action === "preview" && meta.artifactPath) {
+      if (!window.livePreview?.openForFile?.({ filePath: meta.artifactPath, mime: meta.mime })) {
+        void window.ucaShell?.openPath?.(meta.artifactPath);
+      }
+    } else if (action === "reveal" && meta.artifactPath) {
+      try { window.ucaShell?.showItemInFolder?.(meta.artifactPath); } catch { /* ignore */ }
+    } else if (action === "copy") {
+      const text = meta.inlinePreview || meta.artifactPath || "";
+      if (text) void window.ucaShell?.writeClipboardText?.(text);
+    } else if (action === "continue") {
+      commandInput?.focus?.();
+      void maybeRevealOverlay?.();
+    }
+    return;
+  }
+
+  if (payload.kind === "error" && payload.action === "view_log") {
+    const tid = payload.meta?.taskId ?? payload.taskId;
+    if (tid) {
+      void window.ucaShell?.navigateConsole?.({ tab: "tasks", taskId: tid });
+    }
+    return;
+  }
+
+  if (payload.kind !== "approval") return;
   const approvalId = payload.approvalId;
   if (!approvalId) return;
   const inline = renderedApprovalCards.get(approvalId);
