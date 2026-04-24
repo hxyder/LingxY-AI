@@ -1609,6 +1609,50 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         }
       }
 
+      // UCA-182 Phase 6: aggregated preview status — used by the console
+      // Settings → 预览 panel. Returns the full provider roster, the
+      // registry metrics snapshot, cache directory size, and the
+      // LibreOffice capability record in one roundtrip.
+      if (method === "GET" && url.pathname === "/preview/status") {
+        const list = runtime.previewRegistry?.list?.() ?? [];
+        const metrics = runtime.previewRegistry?.metricsSnapshot?.() ?? {};
+        const cap = runtime.capabilities?.libreoffice ?? null;
+        const cacheDir = runtime.paths?.previewCacheDir ?? null;
+        let cache = { dir: cacheDir, files: 0, bytes: 0 };
+        if (cacheDir) {
+          try {
+            const { readdir, stat } = await import("node:fs/promises");
+            const files = await readdir(cacheDir).catch(() => []);
+            let bytes = 0;
+            for (const name of files) {
+              try { bytes += (await stat(path.join(cacheDir, name))).size; } catch { /* ignore */ }
+            }
+            cache = { dir: cacheDir, files: files.length, bytes };
+          } catch { /* cache dir missing — fine */ }
+        }
+        return sendJson(response, 200, {
+          providers: list,
+          metrics,
+          capability: { libreoffice: cap },
+          cache
+        });
+      }
+      if (method === "POST" && url.pathname === "/preview/cache/clear") {
+        const cacheDir = runtime.paths?.previewCacheDir;
+        if (!cacheDir) return sendJson(response, 400, { error: "previewCacheDir not configured" });
+        try {
+          const { readdir, unlink } = await import("node:fs/promises");
+          const files = await readdir(cacheDir).catch(() => []);
+          let removed = 0;
+          for (const name of files) {
+            try { await unlink(path.join(cacheDir, name)); removed += 1; } catch { /* skip */ }
+          }
+          return sendJson(response, 200, { ok: true, removed });
+        } catch (error) {
+          return sendJson(response, 500, { error: error.message });
+        }
+      }
+
       // UCA-182 Phase 5: LibreOffice capability status + winget-based
       // auto-install. The status endpoint is cheap (just reads the cached
       // capability record attached at bootstrap); the install endpoint

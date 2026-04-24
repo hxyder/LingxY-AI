@@ -1746,6 +1746,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><path d="M9 13h6"/><path d="M9 17h6"/></svg>
             Audit
           </a>
+          <a href="#previewSettingsPanel" data-settings-nav="previewSettingsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            预览
+          </a>
         </nav>
         <div class="settings-sections settings-content">
         <!-- ── Custom Providers ── -->
@@ -2116,6 +2120,25 @@
           </div>
           <p class="muted" style="font-size:12px;margin:0 0 12px;">工具调用、审批和连接器行为的运行时轨迹。</p>
           <div id="auditList" class="audit-list"></div>
+        </div>
+
+        <!-- UCA-182 Phase 6: preview registry inspector. Populated by
+             console.js on tab activation (loadPreviewSettings). -->
+        <div class="settings-group" id="previewSettingsPanel" data-foldable="true" data-collapsed="true">
+          <div class="settings-group-head">
+            <h3 class="settings-group-title" style="margin:0;">预览 Preview<span class="zh">文件预览引擎</span></h3>
+            <button id="previewRefreshBtn" type="button" class="btn" data-no-fold>刷新</button>
+          </div>
+          <p class="muted" style="font-size:12px;margin:0 0 12px;">当前支持的格式、渲染指标和 LibreOffice 探测结果。</p>
+          <div id="previewFormatsList" class="stack" style="gap:4px;"></div>
+          <h4 style="margin:16px 0 6px;font-size:12.5px;">LibreOffice</h4>
+          <div id="previewLibreofficeStatus" class="muted" style="font-size:12px;"></div>
+          <button id="previewInstallLibreofficeBtn" type="button" class="btn" style="margin-top:6px;">安装 LibreOffice（winget）</button>
+          <h4 style="margin:16px 0 6px;font-size:12.5px;">Metrics</h4>
+          <div id="previewMetrics" class="muted" style="font-size:12px;"></div>
+          <h4 style="margin:16px 0 6px;font-size:12.5px;">缓存</h4>
+          <div id="previewCacheInfo" class="muted" style="font-size:12px;"></div>
+          <button id="previewCacheClearBtn" type="button" class="btn" style="margin-top:6px;">清空缓存</button>
         </div>
 
         </div><!-- /.settings-sections -->

@@ -125,6 +125,17 @@ export function createServiceBootstrap({
   // capability flag to consult. Detection takes ~200ms cold; we do
   // not block bootstrap on it.
   void attachLibreOfficeCapability(runtime);
+
+  // UCA-182 Phase 6 — warm-start the heavy preview deps. `marked`
+  // + `mammoth` have cold-start costs (~15ms and ~80ms respectively
+  // on first call). Pre-loading here keeps the first preview the
+  // user opens snappy without paying for extra ram we wouldn't
+  // need otherwise. Async + unhandled errors swallowed: if a module
+  // is missing the provider itself will fall through to native-open.
+  void Promise.all([
+    import("marked").catch(() => null),
+    import("mammoth").catch(() => null)
+  ]);
   runtime.platform = {
     templateRegistry: paths?.templatesDir
       ? createPersistentTemplateRegistry({ templatesDir: paths.templatesDir })
