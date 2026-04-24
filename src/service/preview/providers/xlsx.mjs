@@ -27,7 +27,7 @@ export const XLSX_PROVIDER = {
   extensions: [".xlsx"],
   mimePrefixes: ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
   priority: 10,
-  version: "1",
+  version: "2",
   async render(ctx) {
     const ExcelJS = (await import("exceljs")).default;
     const workbook = new ExcelJS.Workbook();
@@ -55,6 +55,7 @@ export const XLSX_PROVIDER = {
         title: parsed.base,
         mime: "xlsx",
         subtitle: `${sheetNames.length} 个工作表`,
+        extraHead: XLSX_GRID_CSS,
         bodyHtml: `<section class="preview-surface preview-content">
 ${tabs}
 ${sheetsHtml.map((h, i) => `<div id="sheet-${i}" class="preview-sheet"${i === 0 ? "" : ' hidden'}>${h}</div>`).join("\n")}
@@ -87,6 +88,25 @@ function renderSheet(sheet) {
   }
   const mergeLookup = new Map(merges.map((m) => [`${m.top},${m.left}`, m]));
 
+  // UCA-182 Phase 10b: preserve Excel column widths via a <colgroup>
+  // so columns match what the user drew in the spreadsheet. exceljs
+  // column.width is in "characters"; empirically ~7.5px per char at
+  // Calibri 11pt matches Excel's rendering.
+  const colWidths = [];
+  for (let c = 1; c <= colLimit; c++) {
+    const col = sheet.getColumn(c);
+    const charWidth = Number(col?.width) || 10;
+    colWidths.push(Math.round(charWidth * 7.5));
+  }
+  const colgroupHtml = `<colgroup>${colWidths.map((w) => `<col style="width:${w}px">`).join("")}</colgroup>`;
+
+  // Freeze-pane detection: sheet.views[0].state === "frozen" and
+  // ySplit is the number of rows locked at the top. We flag <thead>
+  // as sticky whenever a freeze exists; covers the common "freeze
+  // header row" use case without per-row complexity.
+  const view = sheet.views?.[0] ?? {};
+  const hasFrozen = view.state === "frozen" && (view.ySplit ?? 0) >= 1;
+
   const rowsHtml = [];
   for (let r = 1; r <= rowLimit; r++) {
     const row = sheet.getRow(r);
@@ -103,16 +123,49 @@ function renderSheet(sheet) {
         if (cs > 1) attrs.push(`colspan="${cs}"`);
       }
       const { text, isNumber } = cellText(cell);
-      if (isNumber) attrs.push('class="num"');
+      const style = cellInlineStyle(cell);
+      const classes = [];
+      if (isNumber) classes.push("num");
+      if (classes.length) attrs.push(`class="${classes.join(" ")}"`);
+      if (style) attrs.push(`style="${style}"`);
       const tag = r === 1 ? "th" : "td";
       cellsHtml.push(`<${tag}${attrs.length ? " " + attrs.join(" ") : ""}>${escapeHtml(text)}</${tag}>`);
     }
     if (cellsHtml.length === 0) continue;
     rowsHtml.push(`<tr>${cellsHtml.join("")}</tr>`);
   }
-  const head = rowsHtml.length ? `<thead>${rowsHtml.shift()}</thead>` : "";
+  const head = rowsHtml.length ? `<thead${hasFrozen ? ' class="sticky"' : ""}>${rowsHtml.shift()}</thead>` : "";
   const body = rowsHtml.length ? `<tbody>${rowsHtml.join("")}</tbody>` : "";
-  return `<table class="preview-table">${head}${body}</table>`;
+  return `<table class="preview-xlsx">${colgroupHtml}${head}${body}</table>`;
+}
+
+/** Translate an exceljs cell's fill / font / alignment into inline CSS. */
+function cellInlineStyle(cell) {
+  const parts = [];
+  // Fill (background)
+  const argb = cell?.fill?.fgColor?.argb || cell?.fill?.fgColor?.rgb;
+  if (typeof argb === "string" && /^[0-9A-Fa-f]{6,8}$/.test(argb)) {
+    const hex = argb.length === 8 ? argb.slice(2) : argb;
+    parts.push(`background-color:#${hex}`);
+  }
+  // Font color
+  const fontArgb = cell?.font?.color?.argb;
+  if (typeof fontArgb === "string" && /^[0-9A-Fa-f]{6,8}$/.test(fontArgb)) {
+    const hex = fontArgb.length === 8 ? fontArgb.slice(2) : fontArgb;
+    parts.push(`color:#${hex}`);
+  }
+  if (cell?.font?.bold) parts.push("font-weight:700");
+  if (cell?.font?.italic) parts.push("font-style:italic");
+  if (cell?.font?.underline) parts.push("text-decoration:underline");
+  const h = cell?.alignment?.horizontal;
+  if (h === "left" || h === "center" || h === "right" || h === "justify") {
+    parts.push(`text-align:${h}`);
+  }
+  const v = cell?.alignment?.vertical;
+  if (v === "top" || v === "middle" || v === "bottom") {
+    parts.push(`vertical-align:${v === "middle" ? "middle" : v}`);
+  }
+  return parts.join(";");
 }
 
 function sheetDimensions(sheet) {
@@ -157,6 +210,51 @@ function colToNumber(col) {
   for (const ch of col) n = n * 26 + (ch.charCodeAt(0) - 64);
   return n;
 }
+
+// UCA-182 Phase 10b: Excel-like grid styling. Sticky thead honours
+// the workbook's freeze pane; alternating row tint mirrors default
+// Excel table style; col widths come from the <colgroup> emitted by
+// renderSheet so the columns actually match what the user drew.
+const XLSX_GRID_CSS = `<style>
+.preview-xlsx {
+  border-collapse: separate;
+  border-spacing: 0;
+  font-family: "Calibri", "PingFang SC", "Microsoft YaHei", sans-serif;
+  font-size: 11pt;
+  color: #2c2c2c;
+  background: #ffffff;
+  width: auto;
+}
+.preview-xlsx th,
+.preview-xlsx td {
+  border: 1px solid #d4d4d4;
+  padding: 2px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+}
+.preview-xlsx thead th {
+  background: #4472c4;
+  color: #ffffff;
+  font-weight: 600;
+  text-align: center;
+  padding: 4px 8px;
+}
+.preview-xlsx thead.sticky th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  box-shadow: 0 2px 0 rgba(0,0,0,0.05);
+}
+.preview-xlsx tbody tr:nth-child(even) td { background: #f7f9fc; }
+.preview-xlsx td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.preview-xlsx tbody tr:hover td { background: #d9e1f2 !important; }
+.preview-sheet { overflow: auto; max-height: 80vh; }
+@media (prefers-color-scheme: dark) {
+  .preview-xlsx { background: #ffffff; color: #2c2c2c; }
+}
+</style>`;
 
 const TAB_SWITCH_SCRIPT = `
 <script>

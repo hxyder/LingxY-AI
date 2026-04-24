@@ -38,7 +38,7 @@ export const PPTX_PROVIDER = {
   extensions: [".pptx"],
   mimePrefixes: ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
   priority: 10,
-  version: "1",
+  version: "2",
   async render(ctx) {
     const capability = ctx.runtime?.capabilities?.libreoffice;
     if (capability?.present) {
@@ -85,7 +85,18 @@ async function convertPptxToPdf(filePath, capability) {
   }
 }
 
-// --- Tier 2: jszip + linkedom text structure ---------------------------
+// --- Tier 2: jszip + linkedom coordinate layout ------------------------
+//
+// UCA-182 Phase 10c: we parse <p:sp> / <p:pic> shapes with their OOXML
+// position (<a:off>) and extent (<a:ext>), convert EMU → px (÷ 9525 at
+// 96dpi), and render each slide as a 16:9 page with absolutely-
+// positioned children. This mirrors how real presentation software
+// lays slides out, without needing LibreOffice installed. Font sizes
+// honour <a:rPr sz=""> when present (sz is hundredths of a point).
+
+const EMU_PER_PX = 9525;
+const DEFAULT_SLIDE_W_EMU = 9144000;  // 10in at 914400 EMU/in
+const DEFAULT_SLIDE_H_EMU = 6858000;  // 7.5in (4:3); widescreen overrides
 
 async function renderTier2(ctx, { warning }) {
   try {
@@ -95,39 +106,41 @@ async function renderTier2(ctx, { warning }) {
     const bytes = await readFile(ctx.filePath);
     const zip = await JSZip.loadAsync(bytes);
 
+    const slideSize = await readSlideSize(zip, parseHTML);
+    const slideWPx = Math.round(slideSize.wEmu / EMU_PER_PX);
+    const slideHPx = Math.round(slideSize.hEmu / EMU_PER_PX);
+
     const slideEntries = collectSlideEntries(zip);
     const mediaMap = await loadMediaMap(zip);
     const slides = [];
     for (const entry of slideEntries) {
       const xml = await zip.file(entry.path).async("string");
       const relsXml = entry.relsPath ? await zip.file(entry.relsPath).async("string").catch(() => "") : "";
-      const parsed = parseSlide(xml, relsXml, mediaMap, parseHTML);
+      const parsed = parseSlideCoords(xml, relsXml, mediaMap, parseHTML);
       slides.push({ index: entry.index, ...parsed });
     }
 
     const banner = warning
       ? warning
-      : "⚠️ 文本结构预览 · 原始布局请用 PowerPoint 或安装 LibreOffice 查看";
+      : null; // Phase 10c: coordinate layout is close enough that a
+              //   scary banner would be more misleading than helpful.
 
-    const body = `<section class="preview-surface preview-content">
-${slides.map((s) => `<article class="preview-pptx-slide" style="border:1px solid var(--preview-border);border-radius:10px;padding:18px;margin-bottom:12px;background:var(--preview-surface);">
-  <header style="color:var(--preview-muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px;">幻灯片 ${s.index}</header>
-  ${s.title ? `<h2 style="margin:0 0 8px;font-size:18px;">${escapeHtml(s.title)}</h2>` : ""}
-  ${s.paragraphs.length ? `<ul style="padding-left:20px;margin:0;">${s.paragraphs.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul>` : ""}
-  ${s.images.map((src) => `<img src="${escapeHtml(src)}" alt="" style="max-width:100%;margin-top:10px;border-radius:6px;">`).join("")}
-</article>`).join("\n")}
+    const body = `<section class="preview-surface preview-content" style="background:var(--preview-bg);">
+${slides.map((s) => renderSlideHtml(s, slideWPx, slideHPx)).join("\n")}
 </section>`;
 
     return {
       kind: "html",
-      cacheable: false,
+      cacheable: true,
       html: buildHtmlShell({
         title: path.basename(ctx.filePath),
         mime: "pptx",
+        subtitle: `${slides.length} 张幻灯片 · ${slideWPx}×${slideHPx}`,
         banner,
+        extraHead: PPTX_SLIDE_CSS,
         bodyHtml: body
       }),
-      meta: { tier: 2, slideCount: slides.length, via: "jszip" }
+      meta: { tier: 2, slideCount: slides.length, via: "jszip-coords", slideWPx, slideHPx }
     };
   } catch (error) {
     return {
@@ -137,6 +150,175 @@ ${slides.map((s) => `<article class="preview-pptx-slide" style="border:1px solid
     };
   }
 }
+
+async function readSlideSize(zip, parseHTML) {
+  const presentationXml = await zip.file("ppt/presentation.xml")?.async("string").catch(() => "");
+  if (!presentationXml) return { wEmu: DEFAULT_SLIDE_W_EMU, hEmu: DEFAULT_SLIDE_H_EMU };
+  const m = /<p:sldSz\s+[^>]*cx="(\d+)"[^>]*cy="(\d+)"/.exec(presentationXml);
+  if (!m) return { wEmu: DEFAULT_SLIDE_W_EMU, hEmu: DEFAULT_SLIDE_H_EMU };
+  return { wEmu: Number(m[1]), hEmu: Number(m[2]) };
+}
+
+function renderSlideHtml(slide, widthPx, heightPx) {
+  const shapes = slide.shapes.map((shape) => {
+    const style = [
+      `position:absolute`,
+      `left:${shape.x}px`,
+      `top:${shape.y}px`,
+      `width:${shape.w}px`,
+      `height:${shape.h}px`
+    ];
+    if (shape.kind === "text") {
+      if (shape.placeholder === "title" || shape.placeholder === "ctrTitle") {
+        style.push("display:flex", "align-items:center");
+      }
+      const text = shape.paragraphs.map((p) => renderParagraphHtml(p, shape.placeholder)).join("");
+      return `<div class="pptx-shape pptx-text" style="${style.join(";")}">${text}</div>`;
+    }
+    if (shape.kind === "image") {
+      return `<img class="pptx-shape pptx-image" src="${escapeHtml(shape.src)}" alt="" style="${style.join(";")};object-fit:contain;">`;
+    }
+    return "";
+  }).join("");
+  return `<div class="pptx-slide-wrap">
+  <div class="pptx-slide-index">幻灯片 ${slide.index}</div>
+  <div class="pptx-slide" style="width:${widthPx}px;height:${heightPx}px;">${shapes}</div>
+</div>`;
+}
+
+function renderParagraphHtml(paragraph, placeholder) {
+  const align = paragraph.align || (placeholder === "title" || placeholder === "ctrTitle" ? "center" : "left");
+  const runs = paragraph.runs.map((run) => {
+    const s = [];
+    if (run.sizePt) s.push(`font-size:${run.sizePt}pt`);
+    if (run.bold) s.push("font-weight:700");
+    if (run.italic) s.push("font-style:italic");
+    if (run.color) s.push(`color:${run.color}`);
+    const content = escapeHtml(run.text).replace(/\n/g, "<br>");
+    return s.length ? `<span style="${s.join(";")}">${content}</span>` : content;
+  }).join("");
+  const pStyle = `margin:0;text-align:${align};line-height:1.2;`;
+  const bullet = paragraph.bullet ? `<span style="display:inline-block;width:1em;margin-right:4px;color:#666;">•</span>` : "";
+  return `<p style="${pStyle}">${bullet}${runs}</p>`;
+}
+
+function parseSlideCoords(xml, relsXml, mediaMap, parseHTML) {
+  const { document } = parseHTML(xml);
+  const relMap = new Map();
+  if (relsXml) {
+    const { document: relsDoc } = parseHTML(relsXml);
+    relsDoc.querySelectorAll("Relationship").forEach((rel) => {
+      const id = rel.getAttribute("Id");
+      const target = rel.getAttribute("Target");
+      if (id && target) relMap.set(id, target);
+    });
+  }
+
+  const shapes = [];
+  // Text shapes: <p:sp> with <p:txBody>
+  document.querySelectorAll("sp, p\\:sp").forEach((sp) => {
+    const box = extractShapeBox(sp);
+    if (!box) return;
+    const placeholder = sp.querySelector("ph, p\\:ph")?.getAttribute("type") ?? null;
+    const paragraphs = [];
+    sp.querySelectorAll("txBody p, p\\:txBody a\\:p").forEach((p) => {
+      const alignAttr = p.querySelector("pPr, a\\:pPr")?.getAttribute("algn");
+      const align = alignAttr === "ctr" ? "center" : alignAttr === "r" ? "right" : alignAttr === "just" ? "justify" : "left";
+      const bullet = Boolean(p.querySelector("pPr buChar, a\\:pPr a\\:buChar, pPr buAutoNum, a\\:pPr a\\:buAutoNum"));
+      const runs = [];
+      p.querySelectorAll("r, a\\:r").forEach((r) => {
+        const rPr = r.querySelector("rPr, a\\:rPr");
+        const szAttr = rPr?.getAttribute("sz");
+        const sizePt = szAttr ? Number(szAttr) / 100 : null;
+        const bold = rPr?.getAttribute("b") === "1";
+        const italic = rPr?.getAttribute("i") === "1";
+        const colorHex = rPr?.querySelector("solidFill srgbClr, a\\:solidFill a\\:srgbClr")?.getAttribute("val") ?? null;
+        const color = colorHex ? `#${colorHex}` : null;
+        const text = String(r.querySelector("t, a\\:t")?.textContent ?? "");
+        if (text) runs.push({ text, sizePt, bold, italic, color });
+      });
+      if (runs.length) paragraphs.push({ runs, align, bullet });
+    });
+    if (paragraphs.length === 0) return;
+    shapes.push({
+      kind: "text",
+      placeholder,
+      x: box.x, y: box.y, w: box.w, h: box.h,
+      paragraphs
+    });
+  });
+
+  // Image shapes: <p:pic>
+  document.querySelectorAll("pic, p\\:pic").forEach((pic) => {
+    const box = extractShapeBox(pic);
+    if (!box) return;
+    const embedId = pic.querySelector("blip, a\\:blip")?.getAttribute("r:embed")
+                 || pic.querySelector("blip, a\\:blip")?.getAttribute("embed");
+    if (!embedId) return;
+    const target = relMap.get(embedId);
+    if (!target) return;
+    const normalized = path.posix.normalize(path.posix.join("ppt/slides/", target)).replace(/^(?:\.\.\/)+/, "");
+    const src = mediaMap.get(normalized);
+    if (!src) return;
+    shapes.push({ kind: "image", x: box.x, y: box.y, w: box.w, h: box.h, src });
+  });
+
+  return { shapes };
+}
+
+function extractShapeBox(node) {
+  const xfrm = node.querySelector("spPr xfrm, p\\:spPr a\\:xfrm");
+  if (!xfrm) return null;
+  const off = xfrm.querySelector("off, a\\:off");
+  const ext = xfrm.querySelector("ext, a\\:ext");
+  if (!off || !ext) return null;
+  const x = Math.round(Number(off.getAttribute("x") || 0) / EMU_PER_PX);
+  const y = Math.round(Number(off.getAttribute("y") || 0) / EMU_PER_PX);
+  const w = Math.round(Number(ext.getAttribute("cx") || 0) / EMU_PER_PX);
+  const h = Math.round(Number(ext.getAttribute("cy") || 0) / EMU_PER_PX);
+  if (w <= 0 || h <= 0) return null;
+  return { x, y, w, h };
+}
+
+const PPTX_SLIDE_CSS = `<style>
+.pptx-slide-wrap {
+  margin: 0 auto 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.pptx-slide-index {
+  align-self: flex-start;
+  font-size: 11px;
+  color: var(--preview-muted);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin: 8px 0 4px;
+}
+.pptx-slide {
+  position: relative;
+  background: #ffffff;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.18);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  font-family: "Calibri", "PingFang SC", "Microsoft YaHei", sans-serif;
+  color: #1f2937;
+  transform-origin: top left;
+}
+@media (max-width: 1020px) {
+  .pptx-slide { transform: scale(0.75); }
+  .pptx-slide-wrap { margin-bottom: -120px; }
+}
+.pptx-shape { box-sizing: border-box; }
+.pptx-text {
+  padding: 4px;
+  font-size: 18pt;
+  line-height: 1.2;
+  overflow: hidden;
+}
+.pptx-text p { margin: 0; }
+.pptx-image { display: block; }
+</style>`;
 
 function collectSlideEntries(zip) {
   const entries = [];
@@ -175,54 +357,5 @@ async function loadMediaMap(zip) {
   return map;
 }
 
-function parseSlide(xml, relsXml, mediaMap, parseHTML) {
-  // linkedom's XML mode is good enough for <a:t> text extraction;
-  // PPTX namespaces are preserved as local prefixes.
-  const { document } = parseHTML(xml);
-  const textNodes = document.querySelectorAll("a\\:t, t");
-  const paragraphs = [];
-  let title = "";
-  textNodes.forEach((node) => {
-    const text = String(node.textContent ?? "").trim();
-    if (!text) return;
-    if (!title && looksLikeTitle(node)) title = text;
-    else paragraphs.push(text);
-  });
-
-  // Map rels → media paths. Images appear as <p:blipFill><a:blip r:embed="rId3"/>.
-  const relMap = new Map();
-  if (relsXml) {
-    const { document: relsDoc } = parseHTML(relsXml);
-    relsDoc.querySelectorAll("Relationship").forEach((rel) => {
-      const id = rel.getAttribute("Id");
-      const target = rel.getAttribute("Target");
-      if (id && target) relMap.set(id, target);
-    });
-  }
-  const images = [];
-  document.querySelectorAll("blip, a\\:blip").forEach((blip) => {
-    const embedId = blip.getAttribute("r:embed") || blip.getAttribute("embed");
-    if (!embedId) return;
-    const relTarget = relMap.get(embedId);
-    if (!relTarget) return;
-    // slideXml.rels Target is relative to ppt/slides/; resolve up.
-    const normalized = path.posix.normalize(path.posix.join("ppt/slides/", relTarget)).replace(/^(?:\.\.\/)+/, "");
-    if (mediaMap.has(normalized)) images.push(mediaMap.get(normalized));
-  });
-
-  return { title, paragraphs, images };
-}
-
-function looksLikeTitle(node) {
-  // Walk up; slide title placeholders have <p:nvSpPr><p:nvPr><p:ph type="title|ctrTitle"/>.
-  let el = node;
-  for (let i = 0; i < 10 && el; i += 1) {
-    if (el.localName === "sp" || el.nodeName === "p:sp") {
-      const ph = el.querySelector("ph, p\\:ph");
-      const type = ph?.getAttribute("type") || "";
-      return type === "title" || type === "ctrTitle";
-    }
-    el = el.parentNode;
-  }
-  return false;
-}
+// Phase 10c obsoletes the old parseSlide/looksLikeTitle helpers —
+// coordinate layout lives in parseSlideCoords above.

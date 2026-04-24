@@ -68,14 +68,17 @@ const pptxPath = await buildFixture();
   const ctx = { filePath: pptxPath, ext: ".pptx", mime: null, runtime, cacheDir: path.join(tmpRoot, "cache") };
   const result = await PPTX_PROVIDER.render(ctx);
   assert.equal(result.kind, "html", "tier 2 must produce html");
-  assert.ok(result.html.includes("文本结构预览"), "tier-2 must carry the honesty banner");
-  // At least some slide articles must have been emitted.
-  const slideMatches = result.html.match(/preview-pptx-slide/g) ?? [];
-  assert.ok(slideMatches.length >= 2, `expected ≥2 slides, got ${slideMatches.length}`);
+  // Phase 10c: coordinate layout — each slide is a sized <div.pptx-slide>
+  // with absolutely positioned children. The old "文本结构预览" banner
+  // is intentionally gone because the layout is close enough to real.
+  const slideMatches = result.html.match(/class="pptx-slide"/g) ?? [];
+  assert.ok(slideMatches.length >= 2, `expected ≥2 .pptx-slide divs, got ${slideMatches.length}`);
   assert.ok(result.html.includes("Hello PPTX") || result.html.includes("Second slide"),
     "slide text should be extracted into the html");
+  // Shapes should be absolutely positioned.
+  assert.ok(/position:absolute/.test(result.html), "shapes must be absolutely positioned");
   assert.equal(result.meta?.tier, 2);
-  assert.equal(result.cacheable, false, "tier-2 output should not be cached");
+  assert.equal(result.meta?.via, "jszip-coords");
 }
 
 // --- 4. Tier 1 path via a mocked soffice stub ------------------------

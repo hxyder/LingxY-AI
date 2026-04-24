@@ -79,9 +79,10 @@ const registry = createPreviewRegistry({
 
   const result = await registry.render(out);
   assert.equal(result.kind, "html", "xlsx → html");
-  assert.ok(/<table class="preview-table">/.test(result.html), "table rendered");
+  assert.ok(/<table class="preview-xlsx">/.test(result.html), "table rendered");
   assert.ok(/Alpha/.test(result.html), "sheet data present");
   assert.ok(/nav class="preview-tabs"/.test(result.html), "multi-sheet tabs rendered");
+  assert.ok(/<colgroup>/.test(result.html), "colgroup must carry column widths");
   assert.deepEqual(result.meta?.sheets, ["Q1", "Notes"]);
 }
 
