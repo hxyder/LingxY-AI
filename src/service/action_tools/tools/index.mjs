@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { mkdir, writeFile, readFile, lstat, stat, readdir, access } from "node:fs/promises";
+import { mkdir, writeFile, readFile, lstat, stat, readdir, access, unlink } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -970,6 +970,35 @@ async function resolveSandboxedTarget(outputDir, relativePath) {
   return absTarget;
 }
 
+async function resolveEditableTargetForEdit(ctx, targetArg) {
+  const outputDir = await ensureOutputDir(resolveOutputDirForTool(ctx));
+  if (!path.isAbsolute(targetArg)) {
+    return resolveSandboxedTarget(outputDir, targetArg);
+  }
+
+  const absTarget = path.resolve(targetArg);
+  const allowedRoots = [
+    ctx?.runtime?.paths?.outputsDir,
+    ctx?.runtime?.configStore?.load?.()?.output?.defaultDir,
+    path.join(os.homedir(), "Desktop", "UCA"),
+    outputDir
+  ]
+    .filter(Boolean)
+    .map((candidate) => path.resolve(candidate));
+
+  const withinAllowedRoot = allowedRoots.some((root) =>
+    absTarget === root || absTarget.startsWith(root + path.sep)
+  );
+  if (!withinAllowedRoot) {
+    throw new Error(`path escapes editable artifact roots: ${targetArg}`);
+  }
+  const info = await lstat(absTarget);
+  if (info.isSymbolicLink()) {
+    throw new Error(`target path is a symlink: ${targetArg}`);
+  }
+  return absTarget;
+}
+
 function decodeWriteFileContent({ content, text, encoding }) {
   const raw = typeof content === "string" ? content
     : typeof text === "string" ? text
@@ -1175,6 +1204,20 @@ const KIND_MIMES = {
   pdf: "application/pdf"
 };
 
+function artifactKindFromTarget(targetPath = "") {
+  const ext = path.extname(String(targetPath ?? "")).toLowerCase();
+  if (ext === ".pptx") return "pptx";
+  if (ext === ".docx") return "docx";
+  if (ext === ".xlsx") return "xlsx";
+  if (ext === ".pdf") return "pdf";
+  if (ext === ".md") return "md";
+  if (ext === ".txt") return "txt";
+  if (ext === ".html" || ext === ".htm") return "html";
+  if (ext === ".csv") return "csv";
+  if (ext === ".json") return "json";
+  return null;
+}
+
 function escapeHtmlForDocument(text) {
   return `${text}`
     .replace(/&/g, "&amp;")
@@ -1352,6 +1395,30 @@ function normalizeDocumentOutline(kind, outline) {
   return heuristicSectionOutlineFromText(raw);
 }
 
+function previewSidecarPathForArtifact(targetPath) {
+  const parsed = path.parse(targetPath);
+  return path.join(parsed.dir, `${parsed.name}-preview.html`);
+}
+
+async function buildDocumentPreviewHtml(kind, outline, targetPath = "") {
+  if (kind === "pdf") {
+    return buildPdfHtml(outline);
+  }
+  const { renderDocumentPreviewHtml } = await import("./document-renderer.mjs");
+  return renderDocumentPreviewHtml({
+    kind,
+    outline,
+    title: outline?.title || path.basename(targetPath || `result.${kind}`)
+  });
+}
+
+async function writeDocumentPreviewSidecar({ kind, targetPath, outline }) {
+  const previewPath = previewSidecarPathForArtifact(targetPath);
+  const html = await buildDocumentPreviewHtml(kind, outline, targetPath);
+  await writeFile(previewPath, html, "utf8");
+  return previewPath;
+}
+
 async function invokeDocumentRenderer({ kind, targetPath, outline }) {
   // Try the Node.js renderer first (pptxgenjs / docx / exceljs — styled output).
   try {
@@ -1359,19 +1426,30 @@ async function invokeDocumentRenderer({ kind, targetPath, outline }) {
     await renderDocument({ kind, targetPath, outline });
     return;
   } catch (nodeErr) {
-    // Fall back to PowerShell bare-XML renderer if the npm packages are missing.
+    // Fall back to PowerShell bare-XML renderer if the npm packages are missing
+    // or if the outline shape confused the Node renderer. We pass the outline
+    // text through a UTF-8 temp file rather than a CLI argument: Windows caps
+    // command-line length at 8191 chars, and a single long bullet or body
+    // paragraph trivially exceeds that. The temp file is deleted in finally.
+    const tempFile = path.join(
+      os.tmpdir(),
+      `lingxy-doc-${crypto.randomBytes(8).toString("hex")}.txt`
+    );
     try {
       const scriptPath = await resolveDocumentRendererScript();
       const plainText = coerceOutlineToPlainText(kind, outline);
+      await writeFile(tempFile, plainText, "utf8");
       await execFileAsync("powershell", [
         "-NoProfile", "-ExecutionPolicy", "Bypass",
         "-File", scriptPath,
         "-TargetPath", targetPath,
         "-Kind", kind,
-        "-Text", plainText
+        "-TextFile", tempFile
       ], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
     } catch (psErr) {
       throw new Error(`Document render failed (Node: ${nodeErr.message}; PS: ${psErr.message})`);
+    } finally {
+      await unlink(tempFile).catch(() => { /* best-effort cleanup */ });
     }
   }
 }
@@ -1407,10 +1485,12 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
     }
     try {
       const outputDir = await ensureOutputDir(resolveOutputDirForTool(ctx));
-      const filename = typeof args.filename === "string" && args.filename.trim()
-        ? args.filename.trim()
-        : `result${KIND_EXTENSIONS[kind]}`;
-      const absTarget = await resolveSandboxedTarget(outputDir, filename);
+      const targetArg = typeof args.path === "string" && args.path.trim()
+        ? args.path.trim()
+        : (typeof args.filename === "string" && args.filename.trim()
+          ? args.filename.trim()
+          : `result${KIND_EXTENSIONS[kind]}`);
+      const absTarget = await resolveSandboxedTarget(outputDir, targetArg);
       const outline   = normalizeDocumentOutline(kind, args.outline ?? {});
 
       if (kind === "pdf") {
@@ -1419,13 +1499,15 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
         await writeFile(htmlPath, htmlContent, "utf8");
         try {
           await writePdfFromHtmlArtifact(htmlPath, absTarget);
+          const previewPath = await writeDocumentPreviewSidecar({ kind, targetPath: absTarget, outline });
           return createActionResult({
             success: true,
             observation: `generate_document produced PDF at ${path.relative(outputDir, absTarget) || path.basename(absTarget)}`,
             metadata: {
               tool_id: "generate_document", kind,
               path: absTarget, mime_type: KIND_MIMES[kind],
-              html_source_path: htmlPath
+              html_source_path: htmlPath,
+              preview_html_path: previewPath
             },
             artifactPaths: [absTarget]
           });
@@ -1444,10 +1526,17 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
       }
 
       await invokeDocumentRenderer({ kind, targetPath: absTarget, outline });
+      const previewPath = await writeDocumentPreviewSidecar({ kind, targetPath: absTarget, outline });
       return createActionResult({
         success: true,
         observation: `generate_document produced ${kind.toUpperCase()} at ${path.relative(outputDir, absTarget) || path.basename(absTarget)}`,
-        metadata: { tool_id: "generate_document", kind, path: absTarget, mime_type: KIND_MIMES[kind] },
+        metadata: {
+          tool_id: "generate_document",
+          kind,
+          path: absTarget,
+          mime_type: KIND_MIMES[kind],
+          preview_html_path: previewPath
+        },
         artifactPaths: [absTarget]
       });
     } catch (error) {
@@ -1455,6 +1544,95 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
         success: false,
         observation: `generate_document failed: ${error.message}`,
         metadata: { tool_id: "generate_document", kind }
+      });
+    }
+  }
+};
+
+export const EDIT_FILE_TOOL = {
+  id: "edit_file",
+  name: "Edit File",
+  description: "Update an existing file in place. For pptx/docx/xlsx/pdf pass a full updated outline and the existing absolute path; for text-like files pass the full replacement content.",
+  parameters: ACTION_TOOL_SCHEMAS.edit_file,
+  risk_level: "medium",
+  required_capabilities: ["file_write"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const targetArg = String(args.path ?? "").trim();
+    if (!targetArg) {
+      return createActionResult({
+        success: false,
+        observation: "edit_file rejected: path is required.",
+        metadata: { tool_id: "edit_file" }
+      });
+    }
+    try {
+      const absTarget = await resolveEditableTargetForEdit(ctx, targetArg);
+      const ext = path.extname(absTarget).toLowerCase();
+      const kind = String(args.kind ?? artifactKindFromTarget(absTarget) ?? "").toLowerCase().trim();
+      if (OUTLINE_KINDS.has(kind)) {
+        const outline = normalizeDocumentOutline(kind, args.outline ?? args.content ?? args.text ?? {});
+        if (!outline || (typeof outline === "object" && Object.keys(outline).length === 0)) {
+          return createActionResult({
+            success: false,
+            observation: `edit_file rejected: ${kind} edits require a full updated outline/content.`,
+            metadata: { tool_id: "edit_file", path: absTarget, kind }
+          });
+        }
+        if (kind === "pdf") {
+          const htmlPath = absTarget.replace(/\.pdf$/i, ".html");
+          const htmlContent = buildPdfHtml(outline);
+          await writeFile(htmlPath, htmlContent, "utf8");
+          await writePdfFromHtmlArtifact(htmlPath, absTarget);
+        } else {
+          await invokeDocumentRenderer({ kind, targetPath: absTarget, outline });
+        }
+        const previewPath = await writeDocumentPreviewSidecar({ kind, targetPath: absTarget, outline });
+        return createActionResult({
+          success: true,
+          observation: `edit_file updated ${path.basename(absTarget)} in place.`,
+          metadata: {
+            tool_id: "edit_file",
+            path: absTarget,
+            kind,
+            mime_type: KIND_MIMES[kind] ?? null,
+            preview_html_path: previewPath
+          },
+          artifactPaths: [absTarget]
+        });
+      }
+
+      const rawContent = typeof args.content === "string" ? args.content
+        : typeof args.text === "string" ? args.text
+          : "";
+      if (!rawContent) {
+        return createActionResult({
+          success: false,
+          observation: `edit_file rejected: ${ext || "text"} edits require replacement content in content/text.`,
+          metadata: { tool_id: "edit_file", path: absTarget }
+        });
+      }
+      const buffer = decodeWriteFileContent({
+        content: rawContent,
+        encoding: args.encoding
+      });
+      await writeFile(absTarget, buffer);
+      return createActionResult({
+        success: true,
+        observation: `edit_file updated ${path.basename(absTarget)} in place.`,
+        metadata: {
+          tool_id: "edit_file",
+          path: absTarget,
+          bytes: buffer.length,
+          kind: kind || artifactKindFromTarget(absTarget) || "text"
+        },
+        artifactPaths: [absTarget]
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `edit_file failed: ${error.message}`,
+        metadata: { tool_id: "edit_file", attempted_path: targetArg }
       });
     }
   }
@@ -2410,6 +2588,7 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   WEB_SEARCH_FETCH_TOOL,
   FETCH_URL_CONTENT_TOOL,
   WRITE_FILE_TOOL,
+  EDIT_FILE_TOOL,
   RUN_SCRIPT_TOOL,
   GENERATE_DOCUMENT_TOOL,
   RENDER_DIAGRAM_TOOL,

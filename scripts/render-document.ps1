@@ -6,14 +6,32 @@ param(
   [ValidateSet("docx", "xlsx", "pptx")]
   [string]$Kind,
 
-  [Parameter(Mandatory = $true)]
-  [string]$Text
+  # Inline body — convenient for short payloads, but Windows command-lines
+  # cap at ~8191 chars so long outlines must go through -TextFile instead.
+  [Parameter(Mandatory = $false)]
+  [string]$Text = "",
+
+  # Path to a UTF-8 file containing the body. Preferred for anything
+  # longer than a paragraph; the Node-side fallback always writes a
+  # temp file and passes this flag.
+  [Parameter(Mandatory = $false)]
+  [string]$TextFile = ""
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+if ($TextFile) {
+  if (-not (Test-Path -LiteralPath $TextFile)) {
+    throw "render-document.ps1: TextFile not found: $TextFile"
+  }
+  $Text = [System.IO.File]::ReadAllText($TextFile, [System.Text.UTF8Encoding]::new($false))
+}
+if ([string]::IsNullOrWhiteSpace($Text)) {
+  throw "render-document.ps1: no text provided (both -Text and -TextFile are empty)"
+}
 
 $utf8 = [System.Text.UTF8Encoding]::new($false)
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) ([System.Guid]::NewGuid().ToString())
