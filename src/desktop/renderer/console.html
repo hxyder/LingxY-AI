@@ -1750,6 +1750,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
             预览
           </a>
+          <a href="#failedTasksPanel" data-settings-nav="failedTasksPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            任务日志
+          </a>
         </nav>
         <div class="settings-sections settings-content">
         <!-- ── Custom Providers ── -->
@@ -2120,6 +2124,19 @@
           </div>
           <p class="muted" style="font-size:12px;margin:0 0 12px;">工具调用、审批和连接器行为的运行时轨迹。</p>
           <div id="auditList" class="audit-list"></div>
+        </div>
+
+        <!-- UCA-182 Phase 11: recent failed tasks + per-task event log
+             viewer. Populated by console.js renderFailedTasks() from
+             /tasks/failed; clicking a row fetches /task/<id>/log. -->
+        <div class="settings-group" id="failedTasksPanel" data-foldable="true" data-collapsed="true">
+          <div class="settings-group-head">
+            <h3 class="settings-group-title" style="margin:0;">最近失败任务<span class="zh">Failed Tasks</span></h3>
+            <button id="failedTasksRefreshBtn" type="button" class="btn" data-no-fold>刷新</button>
+          </div>
+          <p class="muted" style="font-size:12px;margin:0 0 10px;">最近 20 条失败任务。点击展开查看完整事件流。</p>
+          <div id="failedTasksList" class="stack" style="gap:6px;"></div>
+          <div id="failedTaskLogViewer" class="surface" style="margin-top:12px;padding:10px;font-size:11.5px;max-height:260px;overflow:auto;display:none;"></div>
         </div>
 
         <!-- UCA-182 Phase 6: preview registry inspector. Populated by

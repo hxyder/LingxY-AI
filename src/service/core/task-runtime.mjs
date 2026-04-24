@@ -1,4 +1,6 @@
 import crypto from "node:crypto";
+import { appendFile, mkdir, readdir, readFile, stat, unlink } from "node:fs/promises";
+import path from "node:path";
 import { classifyFailure } from "../failures/classifier.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
@@ -274,6 +276,103 @@ function buildConversationStepLabel(eventType, payload) {
 // to the store (avoids flooding the DB with thousands of delta records).
 const EPHEMERAL_EVENT_TYPES = new Set(["text_delta", "tool_input_delta"]);
 
+// UCA-182 Phase 11: also skip writing streaming deltas to the per-task
+// jsonl log. The log is meant for post-mortem inspection, not as a
+// byte-level transcript. Anything the debugger cares about (tool_call,
+// artifact_created, status_changed, failure*) is still captured.
+const JSONL_SKIP_EVENT_TYPES = new Set([
+  "text_delta",
+  "tool_input_delta",
+  "conversation_step",
+  "heartbeat"
+]);
+
+const TASK_LOG_MAX_FILES = 500; // evict oldest when this many per-task files accumulate
+const TASK_LOG_ROTATE_EVERY = 128; // check every N writes to amortise dir scans
+
+let taskLogWriteCounter = 0;
+// Per-task write queues so events in the same task serialise while
+// different tasks remain independent. Without this, concurrent
+// emitTaskEvent calls race at the fs layer and lines can interleave
+// or appear out of order.
+const taskLogTails = new Map();
+
+function enqueueTaskLogWrite(taskId, work) {
+  const prev = taskLogTails.get(taskId) ?? Promise.resolve();
+  const next = prev.then(work, work).catch(() => { /* swallow; log is best-effort */ });
+  taskLogTails.set(taskId, next);
+  // Keep the map from growing unbounded: once the tail settles, drop it
+  // unless a newer write has replaced it.
+  next.finally(() => {
+    if (taskLogTails.get(taskId) === next) taskLogTails.delete(taskId);
+  });
+  return next;
+}
+
+function persistTaskEvent(runtime, record) {
+  if (JSONL_SKIP_EVENT_TYPES.has(record.event_type)) return Promise.resolve();
+  const logsDir = runtime.paths?.logsDir;
+  if (!logsDir || !record.task_id) return Promise.resolve();
+  return enqueueTaskLogWrite(record.task_id, async () => {
+    const dir = path.join(logsDir, "tasks");
+    await mkdir(dir, { recursive: true });
+    const file = path.join(dir, `${record.task_id}.jsonl`);
+    await appendFile(file, JSON.stringify(record) + "\n", "utf8");
+
+    taskLogWriteCounter += 1;
+    if (taskLogWriteCounter % TASK_LOG_ROTATE_EVERY === 0) {
+      void rotateTaskLogs(dir).catch(() => { /* best-effort */ });
+    }
+  });
+}
+
+async function rotateTaskLogs(dir) {
+  const entries = await readdir(dir).catch(() => []);
+  if (entries.length <= TASK_LOG_MAX_FILES) return;
+  const stats = await Promise.all(entries.map(async (name) => {
+    try {
+      const info = await stat(path.join(dir, name));
+      return { name, mtime: info.mtimeMs };
+    } catch { return null; }
+  }));
+  const sorted = stats.filter(Boolean).sort((a, b) => a.mtime - b.mtime);
+  const toDelete = sorted.slice(0, sorted.length - TASK_LOG_MAX_FILES);
+  for (const entry of toDelete) {
+    try { await unlink(path.join(dir, entry.name)); } catch { /* ignore */ }
+  }
+}
+
+/**
+ * Wait for all in-flight per-task log writes to settle. Intended for
+ * tests and graceful shutdown; normal runtime code doesn't need it
+ * because each queue drains on its own.
+ */
+export async function flushTaskLogs() {
+  const pending = [...taskLogTails.values()];
+  if (pending.length === 0) return;
+  await Promise.allSettled(pending);
+}
+
+/**
+ * Read back all persisted events for a task. Returns an empty array if
+ * the jsonl file is missing (either never written, rotated, or the
+ * task pre-dates Phase 11). Used by GET /task/:id/log.
+ */
+export async function readTaskEventLog(runtime, taskId) {
+  if (!runtime?.paths?.logsDir || !taskId) return [];
+  const file = path.join(runtime.paths.logsDir, "tasks", `${taskId}.jsonl`);
+  try {
+    const text = await readFile(file, "utf8");
+    return text
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => { try { return JSON.parse(line); } catch { return null; } })
+      .filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   const record = {
     event_id: createId("evt"),
@@ -287,6 +386,11 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
     runtime.store.appendEvent(record);
   }
   runtime.eventBus.publish(record);
+  // UCA-182 Phase 11: best-effort durable per-task event log under
+  // <logsDir>/tasks/<taskId>.jsonl. Writing is fire-and-forget so
+  // nothing on the task hot path waits on disk IO; it is strictly an
+  // observability aid (see /task/:id/log endpoint).
+  void persistTaskEvent(runtime, record);
 
   // UCA-061: Forward qualifying events as conversation_step so the overlay
   // can render real-time step indicators without polling.

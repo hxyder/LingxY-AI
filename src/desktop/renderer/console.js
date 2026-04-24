@@ -3995,6 +3995,63 @@ function formatBytesSimple(n) {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
+// UCA-182 Phase 11: populate the 最近失败任务 settings panel.
+// Fetches /tasks/failed (recent 20) and lets the user click a row to
+// stream the full per-task jsonl log from /task/<id>/log.
+async function renderFailedTasks() {
+  const listEl = document.getElementById("failedTasksList");
+  const viewerEl = document.getElementById("failedTaskLogViewer");
+  if (!listEl) return;
+  listEl.innerHTML = `<div class="muted" style="font-size:12px;">Loading…</div>`;
+  try {
+    const resp = await fetchJson("/tasks/failed");
+    const items = resp.failed ?? [];
+    if (items.length === 0) {
+      listEl.innerHTML = `<div class="muted" style="font-size:12px;">最近没有失败任务。</div>`;
+      return;
+    }
+    listEl.innerHTML = items.map((t) => `
+      <div class="surface" style="padding:8px 10px;cursor:pointer;" data-failed-task="${escapeHtml(t.task_id)}">
+        <div class="row" style="justify-content:space-between;gap:8px;">
+          <strong style="font-size:12px;">${escapeHtml(t.task_id.slice(0, 28))}</strong>
+          <span class="muted" style="font-size:11px;">${escapeHtml(formatDateTime(t.updated_at ?? t.created_at))}</span>
+        </div>
+        <div class="muted" style="font-size:11.5px;margin-top:3px;">${escapeHtml((t.user_command ?? "").slice(0, 140))}</div>
+        ${t.failure_user_message ? `<div style="font-size:11px;margin-top:4px;color:#b45309;">${escapeHtml(String(t.failure_user_message).slice(0, 240))}</div>` : ""}
+      </div>`).join("");
+    for (const row of listEl.querySelectorAll("[data-failed-task]")) {
+      row.addEventListener("click", async () => {
+        const taskId = row.dataset.failedTask;
+        if (!taskId || !viewerEl) return;
+        viewerEl.style.display = "block";
+        viewerEl.textContent = `加载 ${taskId} 事件流…`;
+        try {
+          const log = await fetchJson(`/task/${encodeURIComponent(taskId)}/log`);
+          const events = log.events ?? [];
+          if (events.length === 0) {
+            viewerEl.textContent = `任务 ${taskId} 无持久化事件（早于 Phase 11 或事件已清理）。`;
+            return;
+          }
+          viewerEl.innerHTML = events.map((e) => `
+            <div style="border-bottom:1px solid var(--line);padding:4px 0;">
+              <span style="color:var(--muted);">[${escapeHtml(formatDateTime(e.ts))}]</span>
+              <strong>${escapeHtml(e.event_type)}</strong>
+              <pre style="margin:4px 0 0;white-space:pre-wrap;word-break:break-word;font-size:10.5px;color:var(--muted);">${escapeHtml(JSON.stringify(e.payload ?? {}, null, 0).slice(0, 600))}</pre>
+            </div>`).join("");
+        } catch (error) {
+          viewerEl.textContent = `加载失败：${error.message}`;
+        }
+      });
+    }
+  } catch (error) {
+    listEl.innerHTML = `<div class="muted" style="font-size:12px;color:#b45309;">加载失败：${escapeHtml(error.message)}</div>`;
+  }
+}
+
+document.getElementById("failedTasksRefreshBtn")?.addEventListener("click", () => {
+  void renderFailedTasks();
+});
+
 async function updateSecurityConfig(patch, label) {
   privacyState.textContent = `Updating ${label}...`;
   state.updatingSecurity = true;
@@ -4163,6 +4220,7 @@ async function refreshWorkspace() {
     renderPrivacy();
     renderAudit();
     void renderPreviewSettings();
+    void renderFailedTasks();
     renderMcpServers();
     renderSkillRegistries();
     renderCodeCliAdapters();

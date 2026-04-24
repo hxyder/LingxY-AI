@@ -11,7 +11,7 @@ import readline from "node:readline";
 import { createTaskEventStream, encodeSseFrame, SSE_HEADERS } from "../events/sse.mjs";
 import { retryTask } from "../retry/retry-manager.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
-import { cancelTask, emitTaskEvent } from "./task-runtime.mjs";
+import { cancelTask, emitTaskEvent, readTaskEventLog } from "./task-runtime.mjs";
 import { tryFastPath } from "./router/fast-path-router.mjs";
 import { submitActionToolTask } from "./action-tool-submission.mjs";
 import { submitBrowserTask } from "./browser-submission.mjs";
@@ -1612,6 +1612,45 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           });
           createReadStream(target).pipe(response);
           return;
+        } catch (error) {
+          return sendJson(response, 500, { error: error.message });
+        }
+      }
+
+      // UCA-182 Phase 11: per-task event log — reads the jsonl log
+      // persist_ed by task-runtime.emitTaskEvent. Used by the console
+      // Settings "最近失败任务" view and for post-mortem debugging of
+      // task IDs reported by users (see task_75ddc38b in the plan).
+      {
+        const match = /^\/task\/([^/]+)\/log$/.exec(url.pathname);
+        if (method === "GET" && match) {
+          const taskId = decodeURIComponent(match[1]);
+          const events = await readTaskEventLog(runtime, taskId);
+          return sendJson(response, 200, { taskId, events });
+        }
+      }
+
+      // UCA-182 Phase 11: recent failed tasks (Settings panel).
+      if (method === "GET" && url.pathname === "/tasks/failed") {
+        const limitParam = Number(url.searchParams.get("limit") ?? 20);
+        const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 100) : 20;
+        try {
+          const all = runtime.store?.listTasks?.() ?? [];
+          const failed = all
+            .filter((t) => t && (t.status === "failed" || t.sub_status === "internal_error"))
+            .sort((a, b) => String(b.updated_at ?? b.created_at ?? "").localeCompare(String(a.updated_at ?? a.created_at ?? "")))
+            .slice(0, limit)
+            .map((t) => ({
+              task_id: t.task_id,
+              created_at: t.created_at,
+              updated_at: t.updated_at,
+              status: t.status,
+              sub_status: t.sub_status,
+              user_command: String(t.user_command ?? "").slice(0, 200),
+              failure_user_message: t.failure_user_message ?? null,
+              failure_category: t.failure_category ?? null
+            }));
+          return sendJson(response, 200, { failed });
         } catch (error) {
           return sendJson(response, 500, { error: error.message });
         }
