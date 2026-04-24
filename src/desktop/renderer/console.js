@@ -6392,9 +6392,11 @@ connDigestTestBtn?.addEventListener("click", async () => {
     });
     const data = await resp.json();
     if (connDigestTestState) {
-      connDigestTestState.textContent = data.sent
-        ? (data.forced ? "Digest sent (manual test)." : "Digest sent!")
-        : (data.reason ?? "No digest sent.");
+      connDigestTestState.textContent = resp.ok
+        ? (data.sent
+            ? (data.forced ? "Digest sent (manual test)." : "Digest sent!")
+            : (data.reason ?? "No digest sent."))
+        : (data.message ?? data.error ?? "Digest test failed.");
       setTimeout(() => { connDigestTestState.textContent = ""; }, 4000);
     }
   } catch (err) {

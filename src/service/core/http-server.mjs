@@ -1946,9 +1946,10 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       if (method === "POST" && url.pathname === "/email/digest/check") {
         const rawBody = await readRawBody(request);
         let body = {};
-        if (rawBody?.trim()) {
+        const rawText = Buffer.isBuffer(rawBody) ? rawBody.toString("utf8") : `${rawBody ?? ""}`;
+        if (rawText.trim()) {
           try {
-            body = JSON.parse(rawBody);
+            body = JSON.parse(rawText);
           } catch {
             return sendJson(response, 400, { error: "invalid_json" });
           }
