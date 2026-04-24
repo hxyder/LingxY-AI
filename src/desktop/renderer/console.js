@@ -1538,6 +1538,12 @@ let taskRouting = {};
 const providerModelOptionsCache = new Map();
 const providerModelOptionsLoading = new Set();
 
+function providerModelOptionsExpired(meta = null) {
+  if (!meta?.expiresAt) return false;
+  const expiresAt = Date.parse(meta.expiresAt);
+  return Number.isFinite(expiresAt) && expiresAt <= Date.now();
+}
+
 const TASK_TYPES = [
   { id: "chat", label: "Chat / Q&A", desc: "General conversation, summarize, translate, explain" },
   { id: "vision", label: "Vision / Image", desc: "Image analysis, screenshot understanding" },
@@ -1586,25 +1592,53 @@ function uniqueModelChoices(choices = []) {
 function cachedModelChoicesForProvider(provider) {
   if (!provider?.id) return null;
   const cached = providerModelOptionsCache.get(provider.id);
+  if (providerModelOptionsExpired(cached)) return null;
   if (!cached?.models?.length) return null;
   return uniqueModelChoices(cached.models);
 }
 
 async function loadProviderModelOptions(providerId) {
-  if (!providerId || providerModelOptionsCache.has(providerId) || providerModelOptionsLoading.has(providerId)) return;
+  const cached = providerModelOptionsCache.get(providerId);
+  if (!providerId || (!providerModelOptionsExpired(cached) && providerModelOptionsCache.has(providerId)) || providerModelOptionsLoading.has(providerId)) return;
   providerModelOptionsLoading.add(providerId);
   try {
-    const data = await fetchJson(`/config/provider-model-options?providerId=${encodeURIComponent(providerId)}`);
+    const refresh = providerModelOptionsExpired(cached) ? "&refresh=1" : "";
+    const data = await fetchJson(`/config/provider-model-options?providerId=${encodeURIComponent(providerId)}${refresh}`);
     if (data.option) providerModelOptionsCache.set(providerId, data.option);
   } catch (error) {
+    const fetchedAt = new Date().toISOString();
     providerModelOptionsCache.set(providerId, {
       source: "unavailable",
       models: [],
       reasoningEfforts: [],
-      error: error.message
+      error: error.message,
+      fetchedAt,
+      expiresAt: new Date(Date.parse(fetchedAt) + 60_000).toISOString()
     });
   } finally {
     providerModelOptionsLoading.delete(providerId);
+    renderTaskRouting();
+  }
+}
+
+async function prefetchProviderModelOptions({ refresh = false } = {}) {
+  if (!customProviders.length) return;
+  const query = refresh ? "?refresh=1" : "";
+  for (const provider of customProviders) {
+    providerModelOptionsLoading.add(provider.id);
+  }
+  try {
+    const data = await fetchJson(`/config/provider-model-options${query}`);
+    for (const provider of customProviders) {
+      const option = data.options?.[provider.id];
+      if (option) providerModelOptionsCache.set(provider.id, option);
+    }
+  } catch (error) {
+    console.warn("Failed to prefetch provider model options", error);
+  } finally {
+    for (const provider of customProviders) {
+      providerModelOptionsLoading.delete(provider.id);
+    }
     renderTaskRouting();
   }
 }
@@ -1620,7 +1654,10 @@ function modelChoicesForProvider(provider, taskType = "chat") {
         ...cachedChoices
       ]);
     }
-    return cachedChoices;
+    return uniqueModelChoices([
+      ...cachedChoices,
+      ...providerModelPresets(provider, taskType).map((id) => ({ id, label: id }))
+    ]);
   }
 
   if (provider.kind === "code_cli") return codeCliModelChoices(provider);
@@ -1671,6 +1708,7 @@ async function loadProvidersAndRouting() {
     providerModelOptionsLoading.clear();
     renderProvidersList();
     renderTaskRouting();
+    void prefetchProviderModelOptions();
   } catch (error) {
     console.error("Failed to load providers", error);
   }
@@ -1751,13 +1789,16 @@ function renderTaskRouting() {
     const isCli = selectedProvider?.kind === "code_cli";
     if (selectedProvider?.id && !providerModelOptionsCache.has(selectedProvider.id)) {
       void loadProviderModelOptions(selectedProvider.id);
+    } else if (selectedProvider?.id && providerModelOptionsExpired(providerModelOptionsCache.get(selectedProvider.id))) {
+      void loadProviderModelOptions(selectedProvider.id);
     }
 
     // For code_cli we render labelled choices (id + label). For API kinds we
     // keep the old "preset as plain string" flow since those model IDs are
     // the display text.
     let modelOptions = "";
-    const optionMeta = selectedProvider?.id ? providerModelOptionsCache.get(selectedProvider.id) : null;
+    const rawOptionMeta = selectedProvider?.id ? providerModelOptionsCache.get(selectedProvider.id) : null;
+    const optionMeta = providerModelOptionsExpired(rawOptionMeta) ? null : rawOptionMeta;
     const optionLoading = selectedProvider?.id ? providerModelOptionsLoading.has(selectedProvider.id) : false;
     if (selectedProvider) {
       if (isCli) {
@@ -1781,7 +1822,7 @@ function renderTaskRouting() {
       ? optionLoading
         ? "正在刷新模型列表..."
         : optionMeta?.dynamic
-          ? `模型列表来自 ${optionMeta.source}`
+          ? `模型列表来自 ${optionMeta.source}${optionMeta.stale ? "（缓存回退）" : ""}${optionMeta.truncated ? "（已截断）" : ""}`
           : optionMeta?.error
             ? `模型列表使用兜底：${optionMeta.error}`
             : "模型列表使用内置兜底"

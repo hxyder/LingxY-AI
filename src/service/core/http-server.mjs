@@ -37,11 +37,8 @@ import {
 } from "../executors/shared/provider-resolver.mjs";
 import { extractPageContent } from "../extractors/page_source/index.mjs";
 import { extractFileContent } from "../extractors/file-ingest.mjs";
+import { createProviderModelDiscovery } from "../ai/providers/model-discovery.mjs";
 import {
-  codeCliModelChoices,
-  providerFingerprint,
-  providerModelPresets,
-  reasoningOptionsForProvider,
   sanitizeProviderConfig
 } from "../../shared/provider-catalog.mjs";
 
@@ -1319,98 +1316,6 @@ async function detectInstalledCodeClis() {
   return found;
 }
 
-function normalizeModelOption(option) {
-  if (typeof option === "string") {
-    const id = option.trim();
-    return id ? { id, label: id } : null;
-  }
-  const id = `${option?.id ?? ""}`.trim();
-  if (!id) return null;
-  return {
-    id,
-    label: `${option.label ?? id}`.trim() || id
-  };
-}
-
-function uniqueModelOptions(options = []) {
-  const seen = new Set();
-  const out = [];
-  for (const raw of options) {
-    const option = normalizeModelOption(raw);
-    if (!option || seen.has(option.id)) continue;
-    seen.add(option.id);
-    out.push(option);
-  }
-  return out;
-}
-
-function codeCliCuratedModelOptions(provider = {}) {
-  return uniqueModelOptions(codeCliModelChoices(provider));
-}
-
-function apiCuratedModelOptions(provider = {}) {
-  return uniqueModelOptions(providerModelPresets(provider));
-}
-
-async function fetchJsonWithTimeout(url, init = {}, timeoutMs = 3500) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    const text = await response.text();
-    if (!response.ok) {
-      throw new Error(`${response.status} ${text.slice(0, 160)}`);
-    }
-    return text ? JSON.parse(text) : {};
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function resolveProviderModelOptions(provider = {}) {
-  const fallback = provider.kind === "code_cli"
-    ? codeCliCuratedModelOptions(provider)
-    : apiCuratedModelOptions(provider);
-  const base = {
-    providerId: provider.id ?? null,
-    source: "curated",
-    dynamic: false,
-    models: fallback,
-    reasoningEfforts: reasoningOptionsForProvider(provider, provider.defaultModel ?? provider.model ?? ""),
-    error: null,
-    fetchedAt: new Date().toISOString()
-  };
-
-  try {
-    if (provider.kind === "ollama") {
-      const baseUrl = `${provider.baseUrl ?? "http://127.0.0.1:11434"}`.replace(/\/$/, "");
-      const payload = await fetchJsonWithTimeout(`${baseUrl}/api/tags`, {}, 2500);
-      const models = uniqueModelOptions((payload.models ?? []).map((model) => model.name));
-      if (models.length > 0) {
-        return { ...base, source: "ollama_tags", dynamic: true, models: uniqueModelOptions([provider.defaultModel, ...models]) };
-      }
-    }
-
-    if (provider.kind === "openai" && provider.apiKey && provider.baseUrl) {
-      const baseUrl = `${provider.baseUrl}`.replace(/\/$/, "");
-      const payload = await fetchJsonWithTimeout(`${baseUrl}/models`, {
-        headers: { Authorization: `Bearer ${provider.apiKey}` }
-      });
-      const models = uniqueModelOptions((payload.data ?? payload.models ?? []).map((model) => model.id ?? model.name));
-      if (models.length > 0) {
-        return { ...base, source: "provider_models", dynamic: true, models: uniqueModelOptions([provider.defaultModel, ...models]) };
-      }
-    }
-  } catch (error) {
-    return {
-      ...base,
-      error: error?.name === "AbortError" ? "model_list_timeout" : `${error?.message ?? error}`.slice(0, 240)
-    };
-  }
-
-  return base;
-}
-
 async function runOfficeAddinSetup({ statusOnly = false, elevate = false, resetCache = false } = {}) {
   const scriptPath = path.join(process.cwd(), "scripts", "setup-office-addins.ps1");
   const args = [
@@ -1446,6 +1351,8 @@ async function runOfficeAddinSetup({ statusOnly = false, elevate = false, resetC
 
 export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.0.0.1" }) {
   const recentBrowserContexts = [];
+  const providerModelDiscovery = runtime.providerModelDiscovery ?? createProviderModelDiscovery();
+  runtime.providerModelDiscovery = providerModelDiscovery;
 
   const server = http.createServer(async (request, response) => {
     response.setHeader("Access-Control-Allow-Origin", "*");
@@ -1822,17 +1729,22 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
 
       if (method === "GET" && url.pathname === "/config/provider-model-options") {
         const config = runtime.configStore?.load?.() ?? {};
-        const providers = config.ai?.customProviders ?? [];
+        const providers = sanitizeProviderState(config.ai ?? {}).customProviders;
         const providerId = url.searchParams.get("providerId");
+        const forceRefresh = ["1", "true", "yes"].includes(`${url.searchParams.get("refresh") ?? ""}`.toLowerCase());
         const selected = providerId
           ? providers.filter((provider) => provider.id === providerId)
           : providers;
-        const options = {};
-        for (const provider of selected) {
-          options[provider.id] = await resolveProviderModelOptions(provider);
-        }
+        const resolved = await Promise.all(selected.map(async (provider) => ([
+          provider.id,
+          await providerModelDiscovery.getProviderModelOptions(provider, {
+            forceRefresh
+          })
+        ])));
+        const options = Object.fromEntries(resolved);
         return sendJson(response, 200, {
           providerId: providerId ?? null,
+          refreshed: forceRefresh,
           options,
           option: providerId ? options[providerId] ?? null : null
         });
@@ -1882,6 +1794,7 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           }
         };
         runtime.configStore?.save?.(nextConfig);
+        providerModelDiscovery.invalidate(entry);
         return sendJson(response, 200, { ok: true, provider: entry });
       }
 
@@ -1892,6 +1805,7 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         const currentState = sanitizeProviderState(config.ai ?? {});
         const nextList = currentState.customProviders.filter((p) => p.id !== id);
         runtime.configStore?.patch?.({ ai: sanitizeProviderState({ ...currentState, customProviders: nextList }) });
+        providerModelDiscovery.invalidate({ id });
         return sendJson(response, 200, { ok: true, deleted: id });
       }
 
