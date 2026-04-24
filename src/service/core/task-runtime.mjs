@@ -121,7 +121,40 @@ export function ensureRuntimeServices(runtime) {
     queue: runtime.queue
   });
   runtime.securityBroker ??= createSecurityBroker({ runtime });
-  runtime.pendingApprovals ??= createPendingApprovalService({ runtime });
+  // UCA-182 Phase 20: wire executeApprovedAction so approving a
+  // source_type="agent_tool_call" record actually runs the tool the
+  // agent had proposed. Previously the hook was unset, so users
+  // could approve an "account_send_email" card all day and nothing
+  // happened. Keeps other source_types (schedule / manual) as they
+  // were — only agent_tool_call is newly handled here.
+  runtime.pendingApprovals ??= createPendingApprovalService({
+    runtime,
+    executeApprovedAction: async (approval) => {
+      if (approval.source_type !== "agent_tool_call") return null;
+      const toolId = approval.proposed_target || approval.metadata?.tool_id;
+      if (!toolId) return null;
+      const tool = runtime.actionToolRegistry?.get?.(toolId);
+      if (!tool || typeof tool.execute !== "function") {
+        return { executed: false, reason: "tool_not_found", tool_id: toolId };
+      }
+      try {
+        const result = await tool.execute(approval.proposed_params ?? {}, {
+          ...(runtime.toolContext ?? {}),
+          runtime,
+          task: approval.metadata?.task_id ? runtime.store?.getTask?.(approval.metadata.task_id) : null,
+          outputDir: runtime.toolContext?.outputDir ?? null
+        });
+        return {
+          executed: true,
+          tool_id: toolId,
+          success: Boolean(result?.success),
+          observation: result?.observation ?? null
+        };
+      } catch (error) {
+        return { executed: true, tool_id: toolId, success: false, error: error.message };
+      }
+    }
+  });
   return runtime;
 }
 

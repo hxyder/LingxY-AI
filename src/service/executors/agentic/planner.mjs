@@ -103,7 +103,7 @@ function inferPreflightSearchRecency(command = "") {
  * The caller is expected to pass the runtime's registry + toolContext;
  * no risk-matrix gating happens here — that's the executor's job.
  */
-async function executeToolCall({ registry, mcpToolById, toolContext, call }) {
+async function executeToolCall({ registry, mcpToolById, toolContext, call, runtime, task }) {
   const tool = registry?.get?.(call.name) ?? mcpToolById?.get?.(call.name);
   if (!tool) {
     return {
@@ -112,6 +112,60 @@ async function executeToolCall({ registry, mcpToolById, toolContext, call }) {
       metadata: { tool_id: call.name }
     };
   }
+
+  // UCA-182 Phase 20: risk-matrix gate. Before this change the
+  // agentic planner called tool.execute() unconditionally, which
+  // meant account_send_email / delete / any tool flagged with
+  // requires_confirmation=true ran silently even in interactive
+  // mode. Now every call passes through evaluateToolRisk: if
+  // confirmation is required we create a pending_approval, surface
+  // it to the caller via the runtime's pendingApprovals service,
+  // and return a tool-level failure so the agent stops the chain.
+  // The UI popup-card (kind="approval") drives the actual approve
+  // / reject; on approve the pendingApprovals service re-runs the
+  // tool via executeApprovedAction (see task-runtime.mjs).
+  try {
+    const { evaluateToolRisk } = await import("../../action_tools/risk_matrix.mjs");
+    const risk = evaluateToolRisk(tool, call.arguments ?? {}, toolContext ?? {});
+    if (risk.requires_confirmation && runtime?.pendingApprovals?.create) {
+      const approval = runtime.pendingApprovals.create({
+        sourceType: "agent_tool_call",
+        sourceId: task?.task_id ?? call.id ?? call.name,
+        proposedAction: "action_tool",
+        proposedTarget: tool.id,
+        proposedParams: call.arguments ?? {},
+        previewText: buildApprovalPreview(tool, call.arguments ?? {}),
+        metadata: {
+          tool_id: tool.id,
+          risk_level: risk.risk_level ?? tool.risk_level ?? "high",
+          reason: risk.reason ?? "requires_confirmation",
+          tool_call_id: call.id ?? null,
+          task_id: task?.task_id ?? null
+        }
+      });
+      return {
+        success: false,
+        observation: `🔒 Tool ${tool.id} requires user approval before running. An approval card has been surfaced to the user (approval_id=${approval.approval_id}). Stop chaining further tools — the system will re-run ${tool.id} automatically once the user approves.`,
+        metadata: {
+          tool_id: tool.id,
+          waiting_approval: true,
+          approval_id: approval.approval_id,
+          risk_level: risk.risk_level ?? tool.risk_level ?? "high"
+        },
+        artifact_paths: [],
+        error: null
+      };
+    }
+  } catch (gateError) {
+    // If the risk matrix itself throws, don't silently bypass — fail
+    // closed: surface as a tool error so the agent stops.
+    return {
+      success: false,
+      observation: `Risk gate failed for ${tool.id}: ${gateError.message}`,
+      metadata: { tool_id: tool.id, gate_error: true }
+    };
+  }
+
   try {
     const result = await tool.execute(call.arguments ?? {}, toolContext ?? {});
     // Normalise shape: action_tools/types createActionResult returns
@@ -130,6 +184,24 @@ async function executeToolCall({ registry, mcpToolById, toolContext, call }) {
       metadata: { tool_id: call.name }
     };
   }
+}
+
+/** Short human-readable preview shown inside the approval popup card. */
+function buildApprovalPreview(tool, args = {}) {
+  if (tool.id === "account_send_email" || tool.id === "send_email_smtp") {
+    const to = Array.isArray(args.to) ? args.to.join(", ") : String(args.to ?? "");
+    const subject = String(args.subject ?? "").slice(0, 80);
+    const bodyPreview = String(args.body ?? "").replace(/\s+/g, " ").slice(0, 160);
+    return `发送邮件 → ${to || "(未指定收件人)"}\n主题: ${subject || "(无主题)"}\n${bodyPreview}`;
+  }
+  if (tool.id === "file_op" && args.operation === "delete") {
+    return `删除文件: ${args.path ?? "(未指定)"}`;
+  }
+  if (tool.id === "launch_app") {
+    return `启动应用: ${args.app ?? "(未指定)"}`;
+  }
+  const argsPreview = JSON.stringify(args).slice(0, 180);
+  return `${tool.name ?? tool.id}\n${argsPreview}`;
 }
 
 /**
@@ -246,7 +318,9 @@ export async function runAgenticPlanner({
         task,
         outputDir: task?.output_dir ?? runtime?.toolContext?.outputDir ?? null
       },
-      call: searchCall
+      call: searchCall,
+      runtime,
+      task
     });
     onEvent?.({
       event_type: "tool_call_completed",
@@ -374,8 +448,24 @@ export async function runAgenticPlanner({
           task,
           outputDir: task?.output_dir ?? runtime?.toolContext?.outputDir ?? null
         },
-        call
+        call,
+        runtime,
+        task
       });
+      // Phase 20: if the gate created an approval, emit a visible
+      // event so the overlay popup-card can surface the approval
+      // card. The agent sees the tool failure in its transcript and
+      // is told to stop chaining further tools.
+      if (result?.metadata?.waiting_approval) {
+        onEvent?.({
+          event_type: "pending_approval_created",
+          payload: {
+            approval_id: result.metadata.approval_id,
+            tool_id: result.metadata.tool_id,
+            risk_level: result.metadata.risk_level
+          }
+        });
+      }
 
       onEvent?.({
         event_type: "tool_call_completed",
