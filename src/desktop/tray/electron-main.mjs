@@ -1052,6 +1052,34 @@ export function createElectronShellRuntime({
 
       ipcMain.handle("uca:get-note-recording-state", () => noteRecordingState);
 
+      // UCA-182 Phase 4: resolve the pdfjs-dist worker's on-disk path
+      // to a file:// URL so the renderer can spin up the worker without
+      // having to fetch it from the runtime server or bundle it. The
+      // legacy build ships an ESM worker that Electron can import
+      // directly via GlobalWorkerOptions.workerSrc.
+      ipcMain.handle("uca:get-pdf-worker-url", async () => {
+        const workerPath = path.join(
+          app.getAppPath(),
+          "node_modules",
+          "pdfjs-dist",
+          "legacy",
+          "build",
+          "pdf.worker.mjs"
+        );
+        const mainPath = path.join(
+          app.getAppPath(),
+          "node_modules",
+          "pdfjs-dist",
+          "legacy",
+          "build",
+          "pdf.mjs"
+        );
+        return {
+          workerUrl: pathToFileURL(workerPath).toString(),
+          mainUrl: pathToFileURL(mainPath).toString()
+        };
+      });
+
       ipcMain.handle("uca:get-settings", async () => loadSettings());
       ipcMain.handle("uca:set-echo-mode", async (_event, enabled) => {
         return updateSettings({ echoMode: Boolean(enabled) });

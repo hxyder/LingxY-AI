@@ -1,10 +1,10 @@
 import http from "node:http";
 import crypto from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, createReadStream } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFile, spawn } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { URL } from "node:url";
 import { promisify } from "node:util";
 import readline from "node:readline";
@@ -1560,6 +1560,50 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
             reason: result?.meta?.reason ?? "unknown",
             ext: path.extname(target).toLowerCase()
           });
+        } catch (error) {
+          return sendJson(response, 500, { error: error.message });
+        }
+      }
+
+      // UCA-182 Phase 4: stream raw PDF bytes to pdfjs on the renderer
+      // side. Redirected into from /file/render-preview-html when the
+      // registry returns a "pdf-redirect" envelope. Headers expose the
+      // exact Content-Length so pdfjs can request byte ranges, which is
+      // how it renders pages without loading the whole file at once.
+      if (method === "GET" && url.pathname === "/file/pdf") {
+        const target = url.searchParams.get("path");
+        if (!target) return sendJson(response, 400, { error: "missing path" });
+        try {
+          const info = await stat(target);
+          if (!info.isFile()) return sendJson(response, 404, { error: "not a file" });
+          const range = request.headers["range"];
+          if (range && range.startsWith("bytes=")) {
+            const match = /bytes=(\d*)-(\d*)/.exec(range);
+            const start = match?.[1] ? Number(match[1]) : 0;
+            const end = match?.[2] ? Number(match[2]) : info.size - 1;
+            if (start >= info.size || end >= info.size || start > end) {
+              response.writeHead(416, { "Content-Range": `bytes */${info.size}` });
+              response.end();
+              return;
+            }
+            response.writeHead(206, {
+              "Content-Type": "application/pdf",
+              "Content-Length": String(end - start + 1),
+              "Content-Range": `bytes ${start}-${end}/${info.size}`,
+              "Accept-Ranges": "bytes",
+              "Cache-Control": "private, max-age=0"
+            });
+            createReadStream(target, { start, end }).pipe(response);
+            return;
+          }
+          response.writeHead(200, {
+            "Content-Type": "application/pdf",
+            "Content-Length": String(info.size),
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private, max-age=0"
+          });
+          createReadStream(target).pipe(response);
+          return;
         } catch (error) {
           return sendJson(response, 500, { error: error.message });
         }

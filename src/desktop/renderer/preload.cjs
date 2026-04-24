@@ -46,6 +46,13 @@ contextBridge.exposeInMainWorld("ucaShell", {
     const buffer = await fs.readFile(targetPath);
     return `data:${mimeType ?? "application/octet-stream"};base64,${buffer.toString("base64")}`;
   },
+  // UCA-182 Phase 4: pdfjs-dist ships its worker as a .mjs file inside
+  // node_modules. The renderer cannot import it directly (CSP / module
+  // graph), so the main process resolves the on-disk path and hands
+  // back a file:// URL the worker boot script can fetch.
+  getPdfWorkerUrl() {
+    return ipcRenderer.invoke("uca:get-pdf-worker-url");
+  },
   resolveDroppedFilePaths(files) {
     return (files ?? [])
       .map((file) => {

@@ -13,6 +13,7 @@ import { TEXT_PROVIDER } from "./text.mjs";
 import { CSV_PROVIDER } from "./csv.mjs";
 import { IMAGE_PROVIDER } from "./image.mjs";
 import { HTML_PASSTHROUGH_PROVIDER } from "./html-passthrough.mjs";
+import { PDF_PROVIDER } from "./pdf.mjs";
 
 export const BUILTIN_PREVIEW_PROVIDERS = [
   SIDECAR_PROVIDER,
@@ -22,7 +23,7 @@ export const BUILTIN_PREVIEW_PROVIDERS = [
   CSV_PROVIDER,
   IMAGE_PROVIDER,
   HTML_PASSTHROUGH_PROVIDER,
+  PDF_PROVIDER,
   TEXT_PROVIDER
-  // Phase 4: PDF_PROVIDER
   // Phase 5: PPTX_PROVIDER
 ];
