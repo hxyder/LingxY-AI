@@ -127,16 +127,6 @@ async function collectMessagesForImapAccount(runtime, account, range) {
   }
 }
 
-async function collectMessagesForEmailAccount(runtime, account, range) {
-  if (account.provider !== "mock") {
-    return collectMessagesForImapAccount(runtime, account, range);
-  }
-  const messages = account.mockMessages ?? [];
-  return messages
-    .map(normalizeDigestMessage)
-    .filter((message) => messageInRange(message, range));
-}
-
 async function collectMessagesForConnectedAccount(runtime, account, range) {
   try {
     let result = null;
@@ -190,7 +180,20 @@ async function sendNotification(runtime, payload) {
 // don't both pass the dedupe guard. Keyed by runtime instance.
 const _digestInFlight = new WeakMap();
 
-export async function maybeRunMorningDigest({ runtime, now = new Date(), force = false } = {}) {
+export async function maybeRunMorningDigest({
+  runtime,
+  now = new Date(),
+  force = false,
+  dependencies = {}
+} = {}) {
+  const {
+    getEmailAccounts = (currentRuntime) => listEmailAccounts(currentRuntime).filter((account) => account.enabled),
+    getConnectorAccounts = (currentRuntime) => listUserAccounts(currentRuntime).filter((account) =>
+      account.tokenStatus === "active" && account.capabilities?.emailRead
+    ),
+    collectConfiguredAccountMessages = collectMessagesForImapAccount,
+    collectConnectedAccountMessages = collectMessagesForConnectedAccount
+  } = dependencies;
   const config = runtime.configStore?.load?.() ?? {};
   const featureGate = requireFeature("morning_digest", runtime.configStore);
   if (!featureGate.ok) {
@@ -231,10 +234,8 @@ export async function maybeRunMorningDigest({ runtime, now = new Date(), force =
       return { ok: false, reason: "already_sent", lastDigestDate: state.lastDigestDate };
     }
 
-    const emailAccounts = listEmailAccounts(runtime).filter((account) => account.enabled);
-    const connectorAccounts = listUserAccounts(runtime).filter((account) =>
-      account.tokenStatus === "active" && account.capabilities?.emailRead
-    );
+    const emailAccounts = getEmailAccounts(runtime);
+    const connectorAccounts = getConnectorAccounts(runtime);
     if (emailAccounts.length === 0 && connectorAccounts.length === 0) {
       return { ok: false, reason: "no_accounts" };
     }
@@ -255,7 +256,7 @@ export async function maybeRunMorningDigest({ runtime, now = new Date(), force =
     const allMessages = [];
     const perAccount = [];
     for (const account of emailAccounts) {
-      const messages = await collectMessagesForEmailAccount(runtime, account, primaryRange);
+      const messages = await collectConfiguredAccountMessages(runtime, account, primaryRange);
       allMessages.push(...messages);
       perAccount.push({
         id: account.id,
@@ -265,7 +266,7 @@ export async function maybeRunMorningDigest({ runtime, now = new Date(), force =
       });
     }
     for (const account of connectorAccounts) {
-      const messages = await collectMessagesForConnectedAccount(runtime, account, primaryRange);
+      const messages = await collectConnectedAccountMessages(runtime, account, primaryRange);
       allMessages.push(...messages);
       perAccount.push({
         id: account.id,
@@ -283,13 +284,13 @@ export async function maybeRunMorningDigest({ runtime, now = new Date(), force =
         entry.actionRequired = 0;
       }
       for (const account of emailAccounts) {
-        const messages = await collectMessagesForEmailAccount(runtime, account, fallbackRange);
+        const messages = await collectConfiguredAccountMessages(runtime, account, fallbackRange);
         allMessages.push(...messages);
         const target = perAccount.find((entry) => entry.id === account.id);
         if (target) target.count = messages.length;
       }
       for (const account of connectorAccounts) {
-        const messages = await collectMessagesForConnectedAccount(runtime, account, fallbackRange);
+        const messages = await collectConnectedAccountMessages(runtime, account, fallbackRange);
         allMessages.push(...messages);
         const target = perAccount.find((entry) => entry.id === account.id);
         if (target) target.count = messages.length;

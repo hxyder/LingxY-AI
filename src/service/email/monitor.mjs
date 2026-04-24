@@ -55,7 +55,11 @@ function messageIndicatesReply(message, accountEmail) {
   return String(message.from ?? "").toLowerCase().includes(String(accountEmail).toLowerCase());
 }
 
-export function createEmailMonitor({ runtime, pollIntervalMs = DEFAULT_POLL_INTERVAL_MS } = {}) {
+export function createEmailMonitor({
+  runtime,
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+  clientFactory = buildClient
+} = {}) {
   const state = {
     running: false,
     timer: null,
@@ -65,7 +69,7 @@ export function createEmailMonitor({ runtime, pollIntervalMs = DEFAULT_POLL_INTE
 
   async function pollAccount(account) {
     const credentials = await resolveAccountCredentials(runtime, account);
-    const client = buildClient({ account, credentials, state });
+    const client = clientFactory({ account, credentials, state, runtime });
     const since = account.lastSyncAt ?? null;
     const messages = await client.listUnread(since, MAX_MESSAGES_PER_ACCOUNT);
     if (!Array.isArray(messages) || messages.length === 0) {

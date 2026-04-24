@@ -10,7 +10,7 @@ function saveConfig(runtime, nextConfig) {
 }
 
 function normalizeAccount(entry) {
-  const normalized = {
+  return {
     id: entry.id,
     provider: entry.provider ?? "imap",
     displayName: entry.displayName ?? entry.email ?? entry.id,
@@ -23,13 +23,6 @@ function normalizeAccount(entry) {
     metadata: entry.metadata ?? {},
     credentialRef: entry.credentialRef ?? entry.id
   };
-  // Preserve mock-specific fields so verify-email-monitoring can round-trip
-  // accounts through upsert → listAccounts → pollAccount with in-line test
-  // messages (production IMAP/Graph accounts never set mockMessages).
-  if (Array.isArray(entry.mockMessages)) {
-    normalized.mockMessages = entry.mockMessages;
-  }
-  return normalized;
 }
 
 export function listEmailAccounts(runtime) {

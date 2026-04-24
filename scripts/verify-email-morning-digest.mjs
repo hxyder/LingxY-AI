@@ -3,7 +3,6 @@ import os from "node:os";
 import path from "node:path";
 import { mkdir, mkdtemp, readFile, readdir, stat } from "node:fs/promises";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
-import { upsertEmailAccount } from "../src/service/email/accounts.mjs";
 import { maybeRunMorningDigest } from "../src/service/email/digest.mjs";
 
 const tempRoot = await mkdtemp(path.join(os.tmpdir(), "uca-email-digest-"));
@@ -43,33 +42,48 @@ const yesterday = new Date(now);
 yesterday.setDate(now.getDate() - 1);
 yesterday.setHours(9, 0, 0, 0);
 
-await upsertEmailAccount(runtime, {
-  id: "mock-digest",
-  provider: "mock",
-  displayName: "Mock Inbox",
-  email: "me@example.com",
-  enabled: true,
-  mockMessages: [
-    {
-      id: "m1",
-      threadId: "t1",
-      from: "boss@example.com",
-      subject: "请在明天 10 点前回复",
-      bodyText: "请在明天10点前回复这封邮件。",
-      receivedAt: yesterday.toISOString()
-    },
-    {
-      id: "m2",
-      threadId: "t2",
-      from: "hr@example.com",
-      subject: "周会通知",
-      bodyText: "周会时间调整。",
-      receivedAt: yesterday.toISOString()
-    }
-  ]
-}, { secret: "placeholder" });
+const testAccounts = [
+  {
+    id: "imap-digest",
+    provider: "imap",
+    displayName: "Inbox",
+    email: "me@example.com",
+    enabled: true
+  }
+];
 
-const result = await maybeRunMorningDigest({ runtime, now });
+const testMessages = [
+  {
+    id: "m1",
+    threadId: "t1",
+    from: "boss@example.com",
+    subject: "请在明天 10 点前回复",
+    bodyText: "请在明天10点前回复这封邮件。",
+    receivedAt: yesterday.toISOString()
+  },
+  {
+    id: "m2",
+    threadId: "t2",
+    from: "hr@example.com",
+    subject: "周会通知",
+    bodyText: "周会时间调整。",
+    receivedAt: yesterday.toISOString()
+  }
+];
+
+const result = await maybeRunMorningDigest({
+  runtime,
+  now,
+  dependencies: {
+    getEmailAccounts: () => testAccounts,
+    getConnectorAccounts: () => [],
+    collectConfiguredAccountMessages: async (_runtime, _account, range) =>
+      testMessages.filter((message) => {
+        const receivedAt = new Date(message.receivedAt);
+        return receivedAt >= range.start && receivedAt < range.end;
+      })
+  }
+});
 assert.equal(result.ok, true);
 assert.ok(result.digestPath?.includes("email-digest"));
 
@@ -95,7 +109,12 @@ assert.equal(payload.handoff.file_paths.includes(result.digestPath), true);
 const forced = await maybeRunMorningDigest({
   runtime,
   now: new Date("2026-04-11T15:30:00"),
-  force: true
+  force: true,
+  dependencies: {
+    getEmailAccounts: () => testAccounts,
+    getConnectorAccounts: () => [],
+    collectConfiguredAccountMessages: async () => testMessages
+  }
 });
 assert.equal(forced.ok, true);
 assert.equal(forced.forced, true);

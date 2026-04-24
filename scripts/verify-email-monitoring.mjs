@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
 import { upsertEmailAccount } from "../src/service/email/accounts.mjs";
+import { createEmailMonitor } from "../src/service/email/monitor.mjs";
 
 const service = createServiceBootstrap();
 const runtime = service.runtime;
@@ -19,33 +20,44 @@ runtime.configStore?.save?.({
 });
 
 await upsertEmailAccount(runtime, {
-  id: "mock-account",
-  provider: "mock",
-  displayName: "Mock Inbox",
+  id: "imap-account",
+  provider: "imap",
+  displayName: "Inbox",
   email: "me@example.com",
-  enabled: true,
-  mockMessages: [
-    {
-      id: "m1",
-      threadId: "t1",
-      from: "boss@example.com",
-      subject: "请在明天 10 点前回复",
-      bodyText: "请在明天10点前回复这封邮件。",
-      receivedAt: new Date(Date.now() - 1000).toISOString()
-    },
-    {
-      id: "m2",
-      threadId: "t1",
-      from: "me@example.com",
-      subject: "Re: 请在明天 10 点前回复",
-      bodyText: "已回复。",
-      receivedAt: new Date(Date.now()).toISOString(),
-      direction: "out"
-    }
-  ]
+  enabled: true
 }, { secret: "placeholder" });
 
-const results = await runtime.emailMonitor.pollAllAccounts();
+const monitor = createEmailMonitor({
+  runtime,
+  clientFactory() {
+    return {
+      async listUnread() {
+        return [
+          {
+            id: "m1",
+            threadId: "t1",
+            from: "boss@example.com",
+            subject: "请在明天 10 点前回复",
+            bodyText: "请在明天10点前回复这封邮件。",
+            receivedAt: new Date(Date.now() - 1000).toISOString()
+          },
+          {
+            id: "m2",
+            threadId: "t1",
+            from: "me@example.com",
+            subject: "Re: 请在明天 10 点前回复",
+            bodyText: "已回复。",
+            receivedAt: new Date(Date.now()).toISOString(),
+            direction: "out"
+          }
+        ];
+      },
+      async markSeen() {}
+    };
+  }
+});
+
+const results = await monitor.pollAllAccounts();
 assert.equal(results.length >= 1, true);
 const schedules = runtime.store.listSchedules();
 assert.equal(schedules.length >= 1, true);

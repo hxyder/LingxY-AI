@@ -1,24 +1,4 @@
-import fs from "node:fs/promises";
 import { ImapFlow } from "imapflow";
-
-function normalizeMessage(message) {
-  return {
-    id: message.id,
-    threadId: message.threadId ?? message.thread_id ?? message.id,
-    from: message.from ?? "",
-    subject: message.subject ?? "",
-    bodyText: message.bodyText ?? message.body_text ?? "",
-    receivedAt: message.receivedAt ?? message.received_at ?? new Date().toISOString(),
-    direction: message.direction ?? "in"
-  };
-}
-
-async function readMockInbox(path) {
-  const raw = await fs.readFile(path, "utf8");
-  const payload = JSON.parse(raw);
-  const list = Array.isArray(payload) ? payload : payload.messages ?? [];
-  return list.map(normalizeMessage);
-}
 
 // Real IMAP uses ImapFlow. The client is created per call — IMAP connections
 // are cheap to open for a single fetch pass and avoiding a long-lived pool
@@ -154,42 +134,11 @@ function normalizeBody(text = "", max = 4000) {
 }
 
 export function createImapClient({ account, credentials, state }) {
-  if (account.provider === "mock") {
-    return {
-      async listUnread(since, limit = 20) {
-        const seen = state.seenByAccount.get(account.id) ?? new Set();
-        const messages = account.mockMessages
-          ? account.mockMessages.map(normalizeMessage)
-          : account.mockInboxPath
-            ? await readMockInbox(account.mockInboxPath)
-            : [];
-        return messages
-          .filter((msg) => !seen.has(msg.id))
-          .filter((msg) => !since || msg.receivedAt > since)
-          .slice(0, limit);
-      },
-      async listRecent(limit = 30) {
-        const messages = account.mockMessages
-          ? account.mockMessages.map(normalizeMessage)
-          : account.mockInboxPath
-            ? await readMockInbox(account.mockInboxPath)
-            : [];
-        return messages.slice(0, limit);
-      },
-      async markSeen(id) {
-        const seen = state.seenByAccount.get(account.id) ?? new Set();
-        seen.add(id);
-        state.seenByAccount.set(account.id, seen);
-      }
-    };
-  }
-
   const config = resolveImapConnection(account, credentials);
   // Ensure the shared seen-set Map has a bucket for this account so
   // the monitor's dedup contract holds across listUnread → markSeen
-  // → next listUnread. The mock provider already uses this; the real
-  // provider previously left markSeen as a no-op, which meant the
-  // monitor re-notified every unread message on every 2-min poll —
+  // → next listUnread. Without this, markSeen becomes a no-op and the
+  // monitor re-notifies every unread message on every 2-min poll —
   // symptom: "新邮件摘要" desktop notifications looping.
   if (state?.seenByAccount && !state.seenByAccount.has(account.id)) {
     state.seenByAccount.set(account.id, new Set());
