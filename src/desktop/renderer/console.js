@@ -3978,16 +3978,14 @@ function renderAudit() {
   `).join("");
 }
 
-// UCA-182 Phase 6: populate the "预览 Preview" settings section with
-// the live provider roster, registry metrics, LibreOffice status and
-// cache stats. Fetches both /preview/status and /preview/libreoffice/
-// status; degrades gracefully if the runtime is offline.
+// Populate the "预览 Preview" settings section with the live provider
+// roster, preview strategy, registry metrics and cache stats.
 async function renderPreviewSettings() {
   const formatsEl = document.getElementById("previewFormatsList");
-  const libreEl = document.getElementById("previewLibreofficeStatus");
+  const strategyEl = document.getElementById("previewStrategyInfo");
   const metricsEl = document.getElementById("previewMetrics");
   const cacheEl = document.getElementById("previewCacheInfo");
-  if (!formatsEl || !libreEl || !metricsEl || !cacheEl) return;
+  if (!formatsEl || !strategyEl || !metricsEl || !cacheEl) return;
   formatsEl.innerHTML = `<div class="muted" style="font-size:12px;">Loading…</div>`;
   try {
     const status = await fetchJson("/preview/status");
@@ -4000,12 +3998,9 @@ async function renderPreviewSettings() {
         </div>`).join("")
       : `<div class="muted" style="font-size:12px;">无已注册的 Provider。</div>`;
 
-    const cap = status.capability?.libreoffice;
-    if (cap?.present) {
-      libreEl.innerHTML = `<span style="color:#15803d;">✓ 已检测</span> · ${escapeHtml(cap.path ?? cap.command ?? "?")}`;
-    } else {
-      libreEl.innerHTML = `<span style="color:#b45309;">未安装</span> · pptx 预览使用文本结构模式。`;
-    }
+    strategyEl.innerHTML = `
+      <div>生成的 Office 文件优先使用 sidecar HTML 预览。</div>
+      <div>外部 docx / xlsx / pdf 使用各自 provider；外部 pptx 使用坐标解析预览。</div>`;
 
     const m = status.metrics ?? {};
     const hitRate = m.renders > 0 ? ((m.cacheHits / m.renders) * 100).toFixed(1) : "—";
@@ -4023,7 +4018,7 @@ async function renderPreviewSettings() {
       <div>${cache.files ?? 0} 个缓存文件 · ${formatBytesSimple(cache.bytes ?? 0)}</div>`;
   } catch (error) {
     formatsEl.innerHTML = `<div class="muted" style="font-size:12px;color:#b45309;">运行时未就绪: ${escapeHtml(error.message)}</div>`;
-    libreEl.textContent = "";
+    strategyEl.textContent = "";
     metricsEl.textContent = "";
     cacheEl.textContent = "";
   }
@@ -7746,20 +7741,4 @@ document.getElementById("previewCacheClearBtn")?.addEventListener("click", async
     console.warn("preview cache clear failed", error);
   }
   void renderPreviewSettings();
-});
-document.getElementById("previewInstallLibreofficeBtn")?.addEventListener("click", async () => {
-  // Delegate to the popup-card system so the install progress is
-  // visible even if the user navigates away from Settings.
-  try {
-    await window.ucaShell?.showPopupCard?.({
-      kind: "libreoffice",
-      title: "安装 LibreOffice",
-      lines: [
-        "用于 pptx 的真实像素预览（可选）。",
-        "未安装时，pptx 会回退到文本结构预览。"
-      ]
-    });
-  } catch (error) {
-    console.warn("libreoffice popup failed", error);
-  }
 });

@@ -1,104 +1,31 @@
-// PPTX preview provider (UCA-182 Phase 5).
+// PPTX preview provider.
 //
-// Two tiers:
-//
-//   Tier 1 — LibreOffice (pixel-perfect):
-//     When `soffice` is on PATH (detected at startup and cached on
-//     runtime.capabilities.libreoffice), run
-//       soffice --headless --convert-to pdf --outdir <tmp> <file.pptx>
-//     Cache the resulting PDF as a sibling `<name>-preview.pdf`, then
-//     return a pdf-redirect envelope so the renderer shows the real
-//     slide layout.
-//
-//   Tier 2 — jszip text structure (no soffice):
-//     Read ppt/slides/slide*.xml via jszip, parse the XML with linkedom,
-//     pull every <a:t> text node and every <p:pic> image reference, and
-//     render one card per slide in document order. A prominent yellow
-//     banner tells the user this is a text/structure view, not the real
-//     layout, and offers a link back to the install flow. The design
-//     rule from the task spec: "宁可无法预览也不要假渲染" — the banner
-//     is what makes this renderer honest.
-//
-// The provider always refuses to cache Tier 2 output against a file's
-// mtime — the sidecar pdf (Tier 1) uses the generic registry cache
-// keyed off provider version, which is enough.
+// Generated artifacts already ship with a sidecar HTML preview and are
+// picked up by the higher-priority sidecar provider. This module is the
+// fallback for arbitrary existing `.pptx` files: it parses slide
+// coordinates from OOXML and renders a browser-native preview with no
+// external office dependency.
 
-import { readFile, writeFile, stat, mkdtemp, rm } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import { tmpdir } from "node:os";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { buildHtmlShell, escapeHtml } from "../preview-shell.mjs";
-
-const execFileP = promisify(execFile);
-const SOFFICE_TIMEOUT_MS = 45000;
 
 export const PPTX_PROVIDER = {
   id: "pptx",
   extensions: [".pptx"],
   mimePrefixes: ["application/vnd.openxmlformats-officedocument.presentationml.presentation"],
   priority: 10,
-  version: "2",
+  version: "3",
   async render(ctx) {
-    const capability = ctx.runtime?.capabilities?.libreoffice;
-    if (capability?.present) {
-      try {
-        const pdfPath = await convertPptxToPdf(ctx.filePath, capability);
-        return {
-          kind: "pdf-redirect",
-          pdfPath,
-          cacheable: false,
-          meta: { tier: 1, via: "libreoffice" }
-        };
-      } catch (error) {
-        // Fall through to tier 2 if soffice invocation fails.
-        return renderTier2(ctx, { warning: `LibreOffice 渲染失败（${error.message}），已回退到文本结构预览。` });
-      }
-    }
-    return renderTier2(ctx, { warning: null });
+    return renderCoordinatePreview(ctx);
   }
 };
-
-async function convertPptxToPdf(filePath, capability) {
-  const parsed = path.parse(filePath);
-  const sidecar = path.join(parsed.dir, `${parsed.name}-preview.pdf`);
-  // Reuse cached sidecar if it's newer than the source pptx.
-  try {
-    const [src, cached] = await Promise.all([stat(filePath), stat(sidecar)]);
-    if (cached.mtimeMs >= src.mtimeMs) return sidecar;
-  } catch { /* cached sidecar missing — generate */ }
-
-  const outDir = await mkdtemp(path.join(tmpdir(), "lingxy-pptx-"));
-  try {
-    await execFileP(
-      capability.path || capability.command || "soffice",
-      ["--headless", "--convert-to", "pdf", "--outdir", outDir, filePath],
-      { timeout: SOFFICE_TIMEOUT_MS }
-    );
-    const generated = path.join(outDir, `${parsed.name}.pdf`);
-    // Copy to sidecar location so subsequent opens skip the soffice spawn.
-    const pdfBytes = await readFile(generated);
-    await writeFile(sidecar, pdfBytes);
-    return sidecar;
-  } finally {
-    rm(outDir, { recursive: true, force: true }).catch(() => { /* best-effort */ });
-  }
-}
-
-// --- Tier 2: jszip + linkedom coordinate layout ------------------------
-//
-// UCA-182 Phase 10c: we parse <p:sp> / <p:pic> shapes with their OOXML
-// position (<a:off>) and extent (<a:ext>), convert EMU → px (÷ 9525 at
-// 96dpi), and render each slide as a 16:9 page with absolutely-
-// positioned children. This mirrors how real presentation software
-// lays slides out, without needing LibreOffice installed. Font sizes
-// honour <a:rPr sz=""> when present (sz is hundredths of a point).
 
 const EMU_PER_PX = 9525;
 const DEFAULT_SLIDE_W_EMU = 9144000;  // 10in at 914400 EMU/in
 const DEFAULT_SLIDE_H_EMU = 6858000;  // 7.5in (4:3); widescreen overrides
 
-async function renderTier2(ctx, { warning }) {
+async function renderCoordinatePreview(ctx) {
   try {
     const JSZipMod = await import("jszip");
     const JSZip = JSZipMod.default ?? JSZipMod;
@@ -120,11 +47,6 @@ async function renderTier2(ctx, { warning }) {
       slides.push({ index: entry.index, ...parsed });
     }
 
-    const banner = warning
-      ? warning
-      : null; // Phase 10c: coordinate layout is close enough that a
-              //   scary banner would be more misleading than helpful.
-
     const body = `<section class="preview-surface preview-content" style="background:var(--preview-bg);">
 ${slides.map((s) => renderSlideHtml(s, slideWPx, slideHPx)).join("\n")}
 </section>`;
@@ -136,17 +58,16 @@ ${slides.map((s) => renderSlideHtml(s, slideWPx, slideHPx)).join("\n")}
         title: path.basename(ctx.filePath),
         mime: "pptx",
         subtitle: `${slides.length} 张幻灯片 · ${slideWPx}×${slideHPx}`,
-        banner,
         extraHead: PPTX_SLIDE_CSS,
         bodyHtml: body
       }),
-      meta: { tier: 2, slideCount: slides.length, via: "jszip-coords", slideWPx, slideHPx }
+      meta: { slideCount: slides.length, via: "jszip-coords", slideWPx, slideHPx }
     };
   } catch (error) {
     return {
       kind: "native-open",
       cacheable: false,
-      meta: { tier: 2, error: error.message }
+      meta: { error: error.message }
     };
   }
 }

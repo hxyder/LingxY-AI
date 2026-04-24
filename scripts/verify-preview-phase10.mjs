@@ -1,5 +1,5 @@
 // Phase 10 verifier (UCA-182) — docx Word-like CSS / xlsx cell styles
-// / pptx coordinate layout (the LibreOffice-free path).
+// / pptx coordinate layout.
 //
 // Goal: each of the three binary office providers produces output
 // that is visually "Office-like" rather than generic HTML. We don't
@@ -77,7 +77,7 @@ const tmpRoot = mkdtempSync(path.join(tmpdir(), "lingxy-preview-p10-"));
   assert.equal(XLSX_PROVIDER.version, "2", "xlsx version bump invalidates old cache");
 }
 
-// --- 10c pptx: coordinate layout (no LibreOffice needed) ------------
+// --- 10c pptx: coordinate layout ------------------------------------
 {
   const pptxgenMod = await import("pptxgenjs");
   const PptxGen = pptxgenMod.default ?? pptxgenMod;
@@ -90,7 +90,7 @@ const tmpRoot = mkdtempSync(path.join(tmpdir(), "lingxy-preview-p10-"));
   const out = path.join(tmpRoot, "coords.pptx");
   await pres.writeFile({ fileName: out });
 
-  const runtime = { capabilities: { libreoffice: { present: false } } };
+  const runtime = {};
   const result = await PPTX_PROVIDER.render({ filePath: out, ext: ".pptx", mime: null, runtime });
   assert.equal(result.kind, "html");
   const slideMatches = result.html.match(/class="pptx-slide"/g) ?? [];
@@ -108,7 +108,7 @@ const tmpRoot = mkdtempSync(path.join(tmpdir(), "lingxy-preview-p10-"));
   assert.ok(/font-size:36pt/.test(result.html) || /font-size:32pt/.test(result.html),
     "run font sizes must survive the coordinate pipeline");
   assert.equal(result.meta?.via, "jszip-coords");
-  assert.equal(PPTX_PROVIDER.version, "2");
+  assert.equal(PPTX_PROVIDER.version, "3");
 }
 
 rmSync(tmpRoot, { recursive: true, force: true });

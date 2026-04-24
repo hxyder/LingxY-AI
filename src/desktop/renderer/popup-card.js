@@ -192,16 +192,6 @@ function applyInit(payload) {
       { label: "关闭", variant: "primary", onClick: () => closeCard("dismissed") }
     ]);
     scheduleAutoHide(payload?.autoHideMs ?? 12000);
-  } else if (kind === "libreoffice") {
-    // Install nudge for the pptx Tier 1 renderer. Three explicit paths:
-    // auto-install via winget (streams progress inline), manual download,
-    // or dismiss and continue with the text-structure preview (Tier 2).
-    renderActions([
-      { label: "用文本预览", variant: "ghost", onClick: () => resolveCard("use_text") },
-      { label: "手动安装", variant: "ghost", onClick: () => resolveCard("manual_install") },
-      { label: "自动安装 (winget)", variant: "primary", onClick: () => startWingetInstall(payload) }
-    ]);
-    // Never auto-hide: user needs to read + choose.
   } else {
     renderActions([{ label: "好", variant: "primary", onClick: () => closeCard("dismissed") }]);
     scheduleAutoHide(payload?.autoHideMs ?? 6000);
@@ -219,86 +209,7 @@ function defaultTitleFor(kind) {
   if (kind === "approval") return "等待确认";
   if (kind === "success") return "已完成";
   if (kind === "error") return "任务失败";
-  if (kind === "libreoffice") return "安装 LibreOffice";
   return "LingxY";
-}
-
-// Stream winget install progress into the body area. The runtime
-// exposes /preview/libreoffice/install as an SSE endpoint; we consume
-// it here and append each line. The popup stays open until the user
-// dismisses it (ResizeObserver keeps the window height in sync).
-async function startWingetInstall(payload) {
-  setButtonsDisabled(true);
-  const runtimeBaseUrl = payload?.runtimeBaseUrl
-    || window.__lingxyRuntimeBaseUrl
-    || "http://127.0.0.1:4310";
-  bodyEl.innerHTML = "";
-  const status = document.createElement("div");
-  status.className = "pc-body-primary";
-  status.textContent = "正在调用 winget…";
-  bodyEl.appendChild(status);
-  const logEl = document.createElement("pre");
-  logEl.style.cssText = "margin:10px 0 0;max-height:160px;overflow:auto;background:rgba(0,0,0,.06);padding:8px 10px;border-radius:6px;font:12px/1.4 ui-monospace,Consolas,monospace;";
-  bodyEl.appendChild(logEl);
-
-  let response;
-  try {
-    response = await fetch(`${runtimeBaseUrl}/preview/libreoffice/install`, { method: "POST" });
-  } catch (error) {
-    status.textContent = `无法连接到运行时：${error.message}`;
-    renderActions([{ label: "关闭", variant: "primary", onClick: () => closeCard("install_failed") }]);
-    setButtonsDisabled(false);
-    return;
-  }
-  if (!response.ok || !response.body) {
-    status.textContent = `winget 启动失败（HTTP ${response.status}）`;
-    renderActions([{ label: "关闭", variant: "primary", onClick: () => closeCard("install_failed") }]);
-    setButtonsDisabled(false);
-    return;
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let currentEvent = "message";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const chunks = buffer.split("\n\n");
-    buffer = chunks.pop();
-    for (const chunk of chunks) {
-      let event = "message";
-      let dataLine = "";
-      chunk.split("\n").forEach((line) => {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        else if (line.startsWith("data:")) dataLine += line.slice(5).trim();
-      });
-      currentEvent = event;
-      const parsed = safeJsonParse(dataLine);
-      if (event === "start") status.textContent = "安装中…请稍候";
-      else if (event === "stdout" || event === "stderr") {
-        const line = parsed?.line ?? dataLine;
-        logEl.textContent += line + "\n";
-        logEl.scrollTop = logEl.scrollHeight;
-      } else if (event === "error") {
-        status.textContent = `失败：${parsed?.message ?? dataLine}`;
-      } else if (event === "done") {
-        const present = parsed?.capability?.present;
-        status.textContent = present
-          ? "安装完成。下次打开 pptx 将使用真实渲染。"
-          : `winget 退出 (code=${parsed?.exitCode ?? "?"})。可能需要手动重试。`;
-      }
-    }
-  }
-  renderActions([
-    { label: "关闭", variant: "primary", onClick: () => resolveCard(currentEvent === "done" ? "installed" : "install_failed") }
-  ]);
-  setButtonsDisabled(false);
-}
-
-function safeJsonParse(text) {
-  try { return JSON.parse(text); } catch { return null; }
 }
 
 async function openTaskDetail(taskId, payload = null) {

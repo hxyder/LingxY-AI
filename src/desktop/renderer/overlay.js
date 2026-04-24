@@ -1151,7 +1151,7 @@ function offerOutputFormat() {
 // UCA-182 Phase 8: result-toast DOM is retired. `showToast` now routes
 // through the shared popup-card (top-right stack), giving artifact
 // notifications the same styling, stacking, pin and dedupe behaviour
-// as approvals and LibreOffice prompts. Button actions are handled by
+// as approvals. Button actions are handled by
 // the popup-card-resolved listener further down.
 function showToast(title, body, artifactPath) {
   lastArtifactPath = artifactPath ?? null;

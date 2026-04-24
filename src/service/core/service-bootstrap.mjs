@@ -15,7 +15,6 @@ import { createArtifactStore } from "../store/artifact-store.mjs";
 import { createNotesStore } from "../store/notes-store.mjs";
 import { createPreviewRegistry } from "../preview/registry.mjs";
 import { BUILTIN_PREVIEW_PROVIDERS } from "../preview/providers/index.mjs";
-import { attachLibreOfficeCapability } from "../preview/detect-libreoffice.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createActionToolRegistry } from "../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
@@ -122,10 +121,6 @@ export function createServiceBootstrap({
     cacheDir: paths?.previewCacheDir ?? null,
     runtime
   });
-  // Fire-and-forget LibreOffice probe so the pptx provider has a
-  // capability flag to consult. Detection takes ~200ms cold; we do
-  // not block bootstrap on it.
-  void attachLibreOfficeCapability(runtime);
 
   // UCA-182 Phase 6 — warm-start the heavy preview deps. `marked`
   // + `mammoth` have cold-start costs (~15ms and ~80ms respectively

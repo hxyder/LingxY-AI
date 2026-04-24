@@ -32,13 +32,11 @@ html, body { background: transparent; overflow: hidden; user-select: none; }
 .pc-card[data-kind="success"] .pc-dot { background: #10b981; }
 .pc-card[data-kind="error"] .pc-dot { background: #ef4444; }
 .pc-card[data-kind="info"] .pc-dot { background: #6366f1; }
-.pc-card[data-kind="libreoffice"] .pc-dot { background: #2563eb; }
 /* UCA-182 Phase 8: thin tint strip across the top of each card so the
    kind is readable at a glance even when multiple cards stack. */
 .pc-card[data-kind="success"] { border-top: 2px solid #10b981; }
 .pc-card[data-kind="error"] { border-top: 2px solid #ef4444; }
 .pc-card[data-kind="approval"] { border-top: 2px solid #f59e0b; }
-.pc-card[data-kind="libreoffice"] { border-top: 2px solid #2563eb; }
 
 .pc-head {
   flex: 0 0 auto;

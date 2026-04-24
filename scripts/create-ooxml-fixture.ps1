@@ -60,7 +60,7 @@ try {
       # UCA-049: minimal-but-valid pptx package. The outline text is split
       # into slides on a blank line. Each slide gets its own slideN.xml +
       # relationships. We keep it intentionally simple (no theme / images)
-      # so PowerPoint/LibreOffice can open it without warnings, while still
+      # so Office-compatible apps can open it without warnings, while still
       # producing a real, readable .pptx that downstream tooling (UCA-042
       # multi-intent / UCA-044 email digest) can later enrich.
 
