@@ -1531,6 +1531,40 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, result);
       }
 
+      // UCA-182: preview routing goes through runtime.previewRegistry.
+      // Format-specific logic lives in src/service/preview/providers/*;
+      // this handler only dispatches and translates the provider's
+      // normalised result into an HTTP response.
+      if (method === "GET" && url.pathname === "/file/render-preview-html") {
+        const target = url.searchParams.get("path");
+        if (!target) return sendJson(response, 400, { error: "missing path" });
+        try {
+          const result = await runtime.previewRegistry?.render(target);
+          if (result?.kind === "html" && result.html) {
+            const headers = { "Content-Type": "text/html; charset=utf-8" };
+            if (result.etag) headers.ETag = `"${result.etag}"`;
+            response.writeHead(200, headers);
+            response.end(result.html);
+            return;
+          }
+          if (result?.kind === "pdf-redirect" && result.pdfPath) {
+            response.writeHead(302, { Location: `/file/pdf?path=${encodeURIComponent(result.pdfPath)}` });
+            response.end();
+            return;
+          }
+          // No provider matched → 404. The renderer-side client
+          // registry shows a "native-open" placeholder for this path
+          // instead of pretending we can render the file.
+          return sendJson(response, 404, {
+            error: "no preview provider",
+            reason: result?.meta?.reason ?? "unknown",
+            ext: path.extname(target).toLowerCase()
+          });
+        } catch (error) {
+          return sendJson(response, 500, { error: error.message });
+        }
+      }
+
       // UCA-181: extract preview-friendly text from binary office docs
       // (docx / xlsx / pptx) so the live-preview panel can show their
       // content instead of "无法预览". Reuses the same OOXML extractor
