@@ -3173,8 +3173,8 @@ async function refreshTaskDetail() {
 }
 
 function renderApprovals() {
-  const approvals = state.workspace.approvals ?? [];
-  approvalCount.textContent = `${approvals.filter((a) => a.status === "pending").length}`;
+  const approvals = (state.workspace.approvals ?? []).filter((approval) => approval.status === "pending");
+  approvalCount.textContent = `${approvals.length}`;
   if (approvals.length === 0) {
     renderEmpty(approvalList, "No pending approvals.");
     return;
