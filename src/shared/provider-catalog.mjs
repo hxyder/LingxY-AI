@@ -1,7 +1,7 @@
 export const BUILTIN_API_TEMPLATES = Object.freeze([
   { id: "anthropic", label: "Anthropic", kind: "anthropic", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6" },
   { id: "openai", label: "OpenAI", kind: "openai", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-4o" },
-  { id: "deepseek", label: "DeepSeek", kind: "openai", baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek-chat" },
+  { id: "deepseek", label: "DeepSeek", kind: "openai", baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek-v4-flash" },
   { id: "doubao", label: "豆包 (火山方舟 Ark)", kind: "openai", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", defaultModel: "doubao-seed-2-0-lite-260215" },
   { id: "moonshot", label: "Moonshot (Kimi)", kind: "openai", baseUrl: "https://api.moonshot.cn/v1", defaultModel: "moonshot-v1-8k" },
   { id: "dashscope", label: "Qwen (DashScope)", kind: "openai", baseUrl: "https://dashscope-us.aliyuncs.com/compatible-mode/v1", defaultModel: "qwen3.6-plus" },
@@ -160,7 +160,7 @@ export function catalogDefaultModelForProvider(provider = {}, taskType = "chat")
   switch (family) {
     case "anthropic": return "claude-sonnet-4-6";
     case "openai": return "gpt-4o";
-    case "deepseek": return "deepseek-chat";
+    case "deepseek": return "deepseek-v4-flash";
     case "doubao": return "doubao-seed-2-0-lite-260215";
     case "moonshot": return "moonshot-v1-8k";
     case "dashscope": return "qwen3.6-plus";
@@ -255,7 +255,13 @@ export function providerModelPresets(provider = {}, taskType = "chat") {
     case "openai":
       return uniqueNonEmpty([preferred, taskType === "vision" ? "gpt-4o" : "", "gpt-4o", "gpt-4o-mini", "gpt-5"]);
     case "deepseek":
-      return uniqueNonEmpty([preferred, "deepseek-chat", "deepseek-reasoner"]);
+      // UCA-182 Phase 19: DeepSeek v4 lineup (api-docs.deepseek.com,
+      // 2026-04-24). v4-flash is fast & default; v4-pro is the deep-
+      // reasoning option. Thinking toggle is per-call, see
+      // reasoningOptionsForProvider() below. deepseek-chat /
+      // deepseek-reasoner are legacy — kept here for users who
+      // already pinned them; slated for removal in 2026-07-24.
+      return uniqueNonEmpty([preferred, "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"]);
     case "doubao":
       return uniqueNonEmpty([
         preferred,
@@ -304,7 +310,17 @@ export function modeOptionsForProvider(provider = {}, model = "") {
     return [{ id: "default", label: "-", model: baseModel }];
   }
   if (family === "deepseek") {
-    return [...defaultOption, { id: "chat", label: "Chat", model: "deepseek-chat" }, { id: "reasoner", label: "Reasoner", model: "deepseek-reasoner" }];
+    // DeepSeek v4: "flash" is the fast default (replaces deepseek-chat),
+    // "pro" is the heavier model for deeper reasoning. The thinking
+    // toggle is independent (see reasoningOptionsForProvider) so users
+    // can run flash-thinking or pro-thinking from the same menu.
+    return [
+      ...defaultOption,
+      { id: "flash", label: "Flash (默认 · 快速)", model: "deepseek-v4-flash" },
+      { id: "pro", label: "Pro (深度)", model: "deepseek-v4-pro" },
+      { id: "chat-legacy", label: "Chat (legacy · 2026-07 下线)", model: "deepseek-chat" },
+      { id: "reasoner-legacy", label: "Reasoner (legacy · 2026-07 下线)", model: "deepseek-reasoner" }
+    ];
   }
   if (family === "anthropic") {
     return [...defaultOption, { id: "balanced", label: "Balanced", model: "claude-sonnet-4-6" }, { id: "deep", label: "Deep", model: "claude-opus-4-5-20250514" }, { id: "fast", label: "Fast", model: "claude-haiku-4-5-20250514" }];
@@ -321,7 +337,12 @@ export function modeOptionsForProvider(provider = {}, model = "") {
 export function resolveModeModel(provider = {}, baseModel = "", mode = "") {
   const normalizedMode = `${mode ?? ""}`.trim();
   if (!normalizedMode || normalizedMode === "default") return baseModel;
-  return modeOptionsForProvider(provider, baseModel).find((option) => option.id === normalizedMode)?.model ?? baseModel;
+  // UCA-182 Phase 19: back-compat aliases for DeepSeek users whose
+  // saved taskRouting carries the pre-v4 mode ids ("chat" / "reasoner").
+  const aliased = normalizedMode === "chat" ? "chat-legacy"
+    : normalizedMode === "reasoner" ? "reasoner-legacy"
+    : normalizedMode;
+  return modeOptionsForProvider(provider, baseModel).find((option) => option.id === aliased)?.model ?? baseModel;
 }
 
 const CODEX_REASONING_OPTIONS = Object.freeze([
@@ -356,9 +377,24 @@ const QWEN_REASONING_OPTIONS = Object.freeze([
   { id: "enable_thinking:true", label: "开启思考" }
 ]);
 
+// UCA-182 Phase 19: DeepSeek v4 thinking toggle + reasoning strength.
+// The v4 models accept `thinking: { type: "enabled" | "disabled" }`
+// on the request body and optional `reasoning_effort` to set depth.
+// `deepseek-chat` (legacy) maps to flash+disabled, `deepseek-reasoner`
+// (legacy) maps to flash+enabled — so users get consistent toggling
+// regardless of which model id they pinned.
+const DEEPSEEK_REASONING_OPTIONS = Object.freeze([
+  { id: "", label: "(不指定 · 跟随模型默认)" },
+  { id: "thinking:disabled", label: "关闭思考 (快速)" },
+  { id: "thinking:enabled|low", label: "轻量思考" },
+  { id: "thinking:enabled|medium", label: "均衡思考" },
+  { id: "thinking:enabled|high", label: "深度思考" }
+]);
+
 const OPENAI_REASONING_IDS = new Set(OPENAI_REASONING_OPTIONS.map((option) => option.id).filter(Boolean));
 const DOUBAO_REASONING_IDS = new Set(DOUBAO_REASONING_OPTIONS.map((option) => option.id).filter(Boolean));
 const QWEN_REASONING_IDS = new Set(QWEN_REASONING_OPTIONS.map((option) => option.id).filter(Boolean));
+const DEEPSEEK_REASONING_IDS = new Set(DEEPSEEK_REASONING_OPTIONS.map((option) => option.id).filter(Boolean));
 
 export function reasoningOptionsForProvider(provider = {}, model = "") {
   if (!provider) return [];
@@ -371,6 +407,13 @@ export function reasoningOptionsForProvider(provider = {}, model = "") {
 
   if (family === "doubao" || /doubao|volces|ark/.test(fp)) {
     return cloneOptionList(DOUBAO_REASONING_OPTIONS);
+  }
+
+  // UCA-182 Phase 19: v4 flash & pro accept the same thinking toggle.
+  // Legacy deepseek-chat / deepseek-reasoner don't honour it, so only
+  // surface the switch for v4+ model ids.
+  if (family === "deepseek" && /^deepseek-v[4-9]/.test(`${model ?? ""}`.trim().toLowerCase())) {
+    return cloneOptionList(DEEPSEEK_REASONING_OPTIONS);
   }
 
   if (family === "dashscope" && /^qwen3/i.test(`${model ?? ""}`.trim())) {
@@ -408,6 +451,26 @@ export function normalizeReasoningSelection(provider = {}, model = "", value = "
       }
     }
     return DOUBAO_REASONING_IDS.has(normalized) ? normalized : "";
+  }
+
+  // UCA-182 Phase 19: DeepSeek v4 uses the same thinking schema as
+  // Doubao on the wire, but with a narrower option set (no minimal,
+  // no plain "enabled" without effort). Accept both shapes and
+  // canonicalise to DEEPSEEK_REASONING_IDS.
+  if (family === "deepseek") {
+    if (normalized === "thinking:enabled") return "thinking:enabled|medium";
+    if (normalized === "thinking:disabled") return "thinking:disabled";
+    if (normalized.startsWith("thinking:")) {
+      const [thinkingPart, effortPart = ""] = normalized.split("|");
+      const thinkingType = thinkingPart.slice("thinking:".length).trim();
+      const effort = effortPart.trim();
+      if (thinkingType === "disabled") return "thinking:disabled";
+      if (thinkingType === "enabled") {
+        if (!effort) return "thinking:enabled|medium";
+        if (["low", "medium", "high"].includes(effort)) return `thinking:enabled|${effort}`;
+      }
+    }
+    return DEEPSEEK_REASONING_IDS.has(normalized) ? normalized : "";
   }
 
   if (family === "dashscope") {
@@ -449,7 +512,13 @@ export function applyReasoningSelectionToBody(body = {}, provider = {}, model = 
 }
 
 function sanitizeRouteMode(provider = {}, model = "", mode = "") {
-  const normalizedMode = `${mode ?? ""}`.trim();
+  const raw = `${mode ?? ""}`.trim();
+  // UCA-182 Phase 19: map DeepSeek pre-v4 mode ids onto the new
+  // lineup so saved taskRouting keeps working without manual edits.
+  const family = detectProviderFamily(provider);
+  const normalizedMode = (family === "deepseek" && raw === "chat") ? "chat-legacy"
+    : (family === "deepseek" && raw === "reasoner") ? "reasoner-legacy"
+    : raw;
   const options = modeOptionsForProvider(provider, model);
   if (options.some((option) => option.id === normalizedMode)) return normalizedMode;
   const matched = options.find((option) => option.model === model);
