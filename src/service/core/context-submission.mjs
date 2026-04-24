@@ -141,6 +141,63 @@ function findRecentArtifactPath(runtime, preferredKind = null) {
   return null;
 }
 
+// UCA-182 Phase 18: semantic recall across conversations. embeddingStore
+// has been accumulating task-completion records in task-runtime.
+// markTaskSucceeded for a long time but no one read them. Now we pull
+// top-k relevant past tasks at submit time and prepend a compact
+// "[跨对话相关任务]" digest so the planner has cross-conversation
+// memory without the user needing to explicitly recall what they
+// asked before. Strict timeout + small k to keep submit latency flat.
+const MEMORY_RECALL_TIMEOUT_MS = 400;
+const MEMORY_RECALL_K = 3;
+
+export async function seedSemanticMemories({ runtime, userCommand, parentTaskId, contextPacket }) {
+  const store = runtime?.platform?.embeddingStore;
+  if (!store?.search || !userCommand) return contextPacket;
+  let results;
+  try {
+    // Race the search against a short timeout — RAG must never
+    // make submit slower than the user's typing cadence.
+    results = await Promise.race([
+      store.search(userCommand, MEMORY_RECALL_K + 2),
+      new Promise((resolve) => setTimeout(() => resolve([]), MEMORY_RECALL_TIMEOUT_MS))
+    ]);
+  } catch {
+    return contextPacket;
+  }
+  if (!Array.isArray(results) || results.length === 0) return contextPacket;
+  const hits = results
+    // drop exact parent match — seedParentTaskContext already covers it
+    .filter((r) => r?.id && r.id !== parentTaskId)
+    // drop no-signal hits (TF-IDF noise)
+    .filter((r) => (r.score ?? 0) > 0.05)
+    .slice(0, MEMORY_RECALL_K);
+  if (hits.length === 0) return contextPacket;
+  const lines = ["[跨对话相关任务（语义召回 · 可作为背景）]"];
+  for (const hit of hits) {
+    const meta = hit.metadata ?? {};
+    const summary = String(meta.summary ?? hit.text.slice(0, 100)).slice(0, 120);
+    lines.push(`- ${summary}  (task=${String(hit.id).slice(0, 12)} · score=${(hit.score ?? 0).toFixed(2)})`);
+    if (meta.answer_excerpt) {
+      lines.push("  " + String(meta.answer_excerpt).slice(0, 240).replace(/\n+/g, " "));
+    }
+    if (Array.isArray(meta.artifact_paths) && meta.artifact_paths.length) {
+      lines.push("  产物: " + meta.artifact_paths.slice(0, 3).join(" · "));
+    }
+  }
+  const digest = lines.join("\n");
+  const mergedText = [digest, contextPacket?.text ?? ""].filter(Boolean).join("\n\n---\n\n").trim();
+  return {
+    ...contextPacket,
+    text: mergedText,
+    selection_metadata: {
+      ...(contextPacket?.selection_metadata ?? {}),
+      semantic_recall_ids: hits.map((h) => h.id),
+      semantic_recall_scores: hits.map((h) => Number((h.score ?? 0).toFixed(3)))
+    }
+  };
+}
+
 // UCA-182 Phase 16: when a follow-up turn carries parent_task_id,
 // pull the parent task's user_command + final inline_result + any
 // artifacts it produced, and prepend a compact digest to the child's
@@ -626,10 +683,21 @@ export async function submitContextTask({
     parentTaskId,
     contextPacket: inspectedContextPacket
   });
+  // UCA-182 Phase 18: cross-conversation memory via semantic recall.
+  // Independently of parent_task_id, pull a handful of previously
+  // completed tasks whose embeddings resemble the current command and
+  // prepend a short digest. Budgeted to ≤400ms so it never dominates
+  // submit latency.
+  const withMemoryRecall = await seedSemanticMemories({
+    runtime,
+    userCommand,
+    parentTaskId,
+    contextPacket: withParentContext
+  });
   const normalizedContextPacket = await maybeSeedRecentArtifactContext({
     runtime,
     userCommand,
-    contextPacket: withParentContext
+    contextPacket: withMemoryRecall
   });
   const preflightTaskSpec = createTaskSpec(userCommand, normalizedContextPacket, route);
 

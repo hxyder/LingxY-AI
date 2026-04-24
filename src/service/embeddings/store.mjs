@@ -118,28 +118,33 @@ export function createEmbeddingStore({ filePath = null } = {}) {
 
   return {
     /**
-     * Add or update a record. Immediately persists with TF-IDF embedding,
-     * then asynchronously upgrades to semantic vector in the background.
-     * Call sites do NOT need to await — fire-and-forget is safe.
+     * Add or update a record. Always persists TF-IDF so search has a
+     * deterministic fallback; asynchronously upgrades to a semantic
+     * vector on top (kept alongside the TF-IDF so mixed-type queries
+     * never silently score zero). Call sites do NOT need to await —
+     * fire-and-forget is safe.
      */
     add({ id, text, metadata = {} }) {
       const tfidfMap = embedTextLocal(text);
+      const tfidf = [...tfidfMap.entries()];
       const record = {
         id,
         text,
         metadata,
-        embedding: { type: "tfidf", data: [...tfidfMap.entries()] }
+        embedding: { type: "tfidf", data: tfidf },
+        tfidf  // UCA-182 Phase 18: always retain TF-IDF even after vector upgrade
       };
       upsert(id, record);
       persist();
 
-      // Background semantic upgrade — non-blocking
+      // Background semantic upgrade — non-blocking. Preserves tfidf.
       embedTextSemantic(text)
         .then((vec) => {
           if (!vec) return;
           const target = records.find((r) => r.id === id);
           if (!target) return;
           target.embedding = { type: "vector", data: vec };
+          // tfidf stays on the record so mixed queries can still match.
           persist();
         })
         .catch(() => {/* non-fatal */});
@@ -149,23 +154,35 @@ export function createEmbeddingStore({ filePath = null } = {}) {
 
     /**
      * Semantic search. Returns records sorted by similarity descending.
-     * Async because the query itself may be embedded via LLM.
+     * Uses the vector path when both query and record have vectors;
+     * otherwise falls back to TF-IDF (which records always retain
+     * post-Phase-18). Never returns an all-zero result set when the
+     * records contain matching terms.
      */
     async search(text, limit = 5) {
-      // Try semantic embedding for the query
+      const tfidfQueryEntries = [...embedTextLocal(text).entries()];
       const vec = await embedTextSemantic(text);
-      const queryEmbedding = vec
-        ? { type: "vector", data: vec }
-        : { type: "tfidf", data: [...embedTextLocal(text).entries()] };
 
       return records
-        .map((record) => ({
-          id: record.id,
-          text: record.text,
-          metadata: record.metadata,
-          embeddingType: record.embedding?.type ?? "tfidf",
-          score: computeSimilarity(queryEmbedding, record.embedding)
-        }))
+        .map((record) => {
+          let score = 0;
+          if (vec && record.embedding?.type === "vector") {
+            score = cosineSimilarity(vec, record.embedding.data);
+          } else if (record.embedding?.type === "tfidf") {
+            score = jaccardSimilarity(tfidfQueryEntries, record.embedding.data);
+          } else if (record.tfidf) {
+            // Vector-only record (pre-Phase-18 data) — still try the
+            // retained tfidf side; zero otherwise.
+            score = jaccardSimilarity(tfidfQueryEntries, record.tfidf);
+          }
+          return {
+            id: record.id,
+            text: record.text,
+            metadata: record.metadata,
+            embeddingType: record.embedding?.type ?? "tfidf",
+            score
+          };
+        })
         .sort((a, b) => b.score - a.score)
         .slice(0, limit);
     },

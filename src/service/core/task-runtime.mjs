@@ -28,12 +28,22 @@ function buildSourceDedupeKey(contextPacket, userCommand, executor) {
   return `${contextPacket.source_type}:${contextPacket.source_app}:${executor}:${userCommand}:${sourceKey}`;
 }
 
+// UCA-182 Phase 18: compact cap on record text so the embedding store
+// doesn't bloat with entire clipped web pages. 2KB of Unicode is more
+// than enough for TF-IDF term importance and stays well under any
+// semantic model's token window. context_packet.text is truncated
+// individually because a huge page-dump can single-handedly drown out
+// the rest of the signal.
+const HISTORY_TEXT_CAP = 2000;
+const HISTORY_CTX_TEXT_CAP = 600;
+const HISTORY_ANSWER_CAP = 800;
+
 function buildHistoryRecord(task, runtime) {
   const parts = [
     task.user_command,
     task.intent,
     task.context_packet?.title,
-    task.context_packet?.text,
+    String(task.context_packet?.text ?? "").slice(0, HISTORY_CTX_TEXT_CAP),
     task.context_packet?.url,
     task.context_packet?.file_paths?.join(" "),
     task.failure_user_message
@@ -54,7 +64,31 @@ function buildHistoryRecord(task, runtime) {
   // Also include result_summary if the executor produced one
   if (task.result_summary) parts.push(task.result_summary);
 
-  const text = parts.filter(Boolean).join("\n");
+  // UCA-182 Phase 18: include the assistant's final reply so the
+  // embedding store indexes "what was generated", not just "what was
+  // asked". Without this, a RAG recall keyed on "ppt" finds the user
+  // command (which might just say "ppt") but nothing about the actual
+  // subject matter of the earlier report.
+  let answerText = "";
+  let artifactPaths = [];
+  if (runtime?.store?.getTaskEvents) {
+    try {
+      const events = runtime.store.getTaskEvents(task.task_id) ?? [];
+      const finalEvent = [...events].reverse().find((e) =>
+        e.event_type === "success" || e.event_type === "inline_result"
+      );
+      answerText = String(finalEvent?.payload?.text ?? "").slice(0, HISTORY_ANSWER_CAP);
+      artifactPaths = events
+        .filter((e) => e.event_type === "artifact_created")
+        .map((e) => String(e.payload?.path ?? ""))
+        .filter((p) => p && !p.endsWith("-preview.html") && !p.endsWith("-preview.txt"))
+        .slice(0, 6);
+    } catch { /* best-effort; history is not load-bearing */ }
+  }
+  if (answerText) parts.push(answerText);
+  if (artifactPaths.length) parts.push(artifactPaths.join(" "));
+
+  const text = parts.filter(Boolean).join("\n").slice(0, HISTORY_TEXT_CAP);
 
   if (!text) {
     return null;
@@ -70,7 +104,12 @@ function buildHistoryRecord(task, runtime) {
       status: task.status,
       source_type: task.context_packet?.source_type ?? "unknown",
       intent: task.intent,
-      executor: task.executor
+      executor: task.executor,
+      // Phase 18: carry the distilled answer + artifact list so
+      // semantic-recall can cite the assistant's prior reply without
+      // re-fetching task events.
+      answer_excerpt: answerText || null,
+      artifact_paths: artifactPaths
     }
   };
 }
