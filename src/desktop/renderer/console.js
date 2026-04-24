@@ -6074,8 +6074,17 @@ async function renderInboxContent() {
     }
 
     const r = await fetch(url);
-    if (!r.ok) { content.innerHTML = `<p class="inbox-empty">加载失败 (${r.status})</p>`; return; }
-    const data = await r.json();
+    let data = null;
+    try {
+      data = await r.json();
+    } catch {
+      data = null;
+    }
+    if (!r.ok) {
+      const detail = data?.message || data?.error || data?.reason || `加载失败 (${r.status})`;
+      content.innerHTML = `<p class="inbox-empty">${escapeHtml(detail)}</p>`;
+      return;
+    }
     _inboxState.resourceCache.set(cacheKey, { ts: Date.now(), data });
     renderInboxPayload(data);
   } catch (err) {
@@ -6376,10 +6385,16 @@ document.getElementById("connEmailConnectBtn")?.addEventListener("click", async 
 connDigestTestBtn?.addEventListener("click", async () => {
   if (connDigestTestState) connDigestTestState.textContent = "Sending digest…";
   try {
-    const resp = await fetch(`${state.serviceBaseUrl}/email/digest/check`, { method: "POST" });
+    const resp = await fetch(`${state.serviceBaseUrl}/email/digest/check`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force: true })
+    });
     const data = await resp.json();
     if (connDigestTestState) {
-      connDigestTestState.textContent = data.sent ? "Digest sent!" : (data.reason ?? "No digest sent.");
+      connDigestTestState.textContent = data.sent
+        ? (data.forced ? "Digest sent (manual test)." : "Digest sent!")
+        : (data.reason ?? "No digest sent.");
       setTimeout(() => { connDigestTestState.textContent = ""; }, 4000);
     }
   } catch (err) {

@@ -92,4 +92,13 @@ assert.equal(payload.title, "早晨邮件汇总");
 assert.equal(Array.isArray(payload.handoff?.file_paths), true);
 assert.equal(payload.handoff.file_paths.includes(result.digestPath), true);
 
+const forced = await maybeRunMorningDigest({
+  runtime,
+  now: new Date("2026-04-11T15:30:00"),
+  force: true
+});
+assert.equal(forced.ok, true);
+assert.equal(forced.forced, true);
+assert.ok(forced.digestPath?.includes("email-digest"));
+
 console.log("Morning email digest verification passed.");

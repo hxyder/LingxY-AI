@@ -1944,7 +1944,19 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       }
 
       if (method === "POST" && url.pathname === "/email/digest/check") {
-        const result = await maybeRunMorningDigest({ runtime });
+        const rawBody = await readRawBody(request);
+        let body = {};
+        if (rawBody?.trim()) {
+          try {
+            body = JSON.parse(rawBody);
+          } catch {
+            return sendJson(response, 400, { error: "invalid_json" });
+          }
+        }
+        const result = await maybeRunMorningDigest({
+          runtime,
+          force: body.force === true
+        });
         return sendJson(response, 200, result);
       }
 

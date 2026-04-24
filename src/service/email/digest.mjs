@@ -124,29 +124,29 @@ async function sendNotification(runtime, payload) {
 // don't both pass the dedupe guard. Keyed by runtime instance.
 const _digestInFlight = new WeakMap();
 
-export async function maybeRunMorningDigest({ runtime, now = new Date() } = {}) {
+export async function maybeRunMorningDigest({ runtime, now = new Date(), force = false } = {}) {
   const config = runtime.configStore?.load?.() ?? {};
   const featureGate = requireFeature("morning_digest", runtime.configStore);
   if (!featureGate.ok) {
     return { ok: false, reason: "feature_disabled", gate: featureGate };
   }
   const digestConfig = config.email?.digest ?? {};
-  if (digestConfig.enabled === false) {
+  if (!force && digestConfig.enabled === false) {
     return { ok: false, reason: "disabled" };
   }
 
   const { windowStart, windowEnd } = parseTimeWindow(digestConfig);
-  if (!withinWindow(now, windowStart, windowEnd)) {
+  if (!force && !withinWindow(now, windowStart, windowEnd)) {
     return { ok: false, reason: "outside_window", windowStart, windowEnd };
   }
 
-  if (digestConfig.skipWeekends && isWeekend(now)) {
+  if (!force && digestConfig.skipWeekends && isWeekend(now)) {
     return { ok: false, reason: "weekend" };
   }
 
   // In-memory throttle — independent of the state file.
   const lastFiredAt = _digestLastFiredAt.get(runtime);
-  if (lastFiredAt && now.getTime() - lastFiredAt < MIN_FIRE_MS) {
+  if (!force && lastFiredAt && now.getTime() - lastFiredAt < MIN_FIRE_MS) {
     const minutesAgo = Math.round((now.getTime() - lastFiredAt) / 60_000);
     return { ok: false, reason: "throttled_in_memory", minutesAgo };
   }
@@ -161,7 +161,7 @@ export async function maybeRunMorningDigest({ runtime, now = new Date() } = {}) 
   const work = (async () => {
     const state = await loadDigestState(runtime);
     const todayKey = localDateKey(now);
-    if (state.lastDigestDate === todayKey) {
+    if (!force && state.lastDigestDate === todayKey) {
       return { ok: false, reason: "already_sent", lastDigestDate: state.lastDigestDate };
     }
 
@@ -251,7 +251,7 @@ export async function maybeRunMorningDigest({ runtime, now = new Date() } = {}) 
       digest_path: digestPath
     });
 
-    return { ok: true, digestPath, sent: true };
+    return { ok: true, digestPath, sent: true, forced: force };
   })();
 
   _digestInFlight.set(runtime, work);

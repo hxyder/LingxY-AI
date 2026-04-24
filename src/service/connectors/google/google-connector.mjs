@@ -6,6 +6,17 @@ function headers(accessToken) {
   return { Authorization: `Bearer ${accessToken}` };
 }
 
+async function readGoogleApiError(response) {
+  let detail = "";
+  try {
+    const payload = await response.json();
+    detail = payload?.error?.message ?? payload?.error_description ?? "";
+  } catch {
+    try { detail = await response.text(); } catch { /* ignore */ }
+  }
+  return detail;
+}
+
 // Gmail's message payload is a tree of MIME parts. We walk the tree
 // looking for the best text body: prefer text/plain, fall back to
 // text/html (stripped), bail with an empty string if neither is
@@ -172,7 +183,16 @@ export async function listGoogleEvents(runtime, account, input = {}, { fetchImpl
   const response = await fetchImpl(`https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`, {
     headers: headers(accessToken)
   });
-  if (!response.ok) return { status: "error", errorCode: `gcal_error:${response.status}` };
+  if (!response.ok) {
+    const detail = await readGoogleApiError(response);
+    return {
+      status: response.status === 401 ? "reauth_required" : "error",
+      errorCode: `gcal_error:${response.status}`,
+      message: detail ? `Google Calendar API 返回 ${response.status}：${detail}` : undefined,
+      accountId: account.id,
+      provider: account.provider
+    };
+  }
   const payload = await response.json();
   return {
     status: "success",
@@ -491,13 +511,7 @@ export async function createGoogleEvent(runtime, account, input = {}, { fetchImp
     body: JSON.stringify(body)
   });
   if (!response.ok) {
-    let detail = "";
-    try {
-      const payload = await response.json();
-      detail = payload?.error?.message ?? payload?.error_description ?? "";
-    } catch {
-      try { detail = await response.text(); } catch { /* ignore */ }
-    }
+    const detail = await readGoogleApiError(response);
     return {
       status: response.status === 401 ? "reauth_required" : "error",
       errorCode: `gcal_create_error:${response.status}`,
