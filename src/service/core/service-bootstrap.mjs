@@ -1,3 +1,4 @@
+import { sanitizeProviderConfig, sanitizeTaskRouteForProvider } from "../../shared/provider-catalog.mjs";
 import { buildStoreManifest } from "./store/sqlite-schema.mjs";
 import { createInMemoryStoreScaffold } from "./store/memory-store.mjs";
 import { createEventBusScaffold } from "./events/event-bus.mjs";
@@ -168,6 +169,38 @@ export function createServiceBootstrap({
   // First-run MCP auto-install — pins mcp-filesystem + mcp-memory as enabled
   // so users don't have to hunt for the Connectors toggle on a clean install.
   try { runMcpAutoInstall({ runtime }); } catch { /* non-fatal */ }
+
+  // UCA-182 Phase 22b: scrub stale AI config at boot. Earlier
+  // versions wrote provider.defaultModel="deepseek-chat" (now
+  // deprecated, auto-upgraded to deepseek-v4-flash) and sometimes
+  // leaked a reasoningEffort in the wrong format (e.g. Qwen's
+  // "enable_thinking:true" on a DeepSeek route). Without this pass,
+  // a user's runtime.json kept feeding stale settings into the
+  // resolver every launch; the only fix was manual edit or reset.
+  try {
+    const cfg = runtime.configStore?.load?.() ?? {};
+    const providersRaw = cfg.ai?.customProviders ?? [];
+    const cleanedProviders = providersRaw.map((p) => sanitizeProviderConfig(p, "chat"));
+    const byId = new Map(cleanedProviders.map((p) => [p.id, p]));
+    const cleanedRouting = {};
+    for (const [routeTaskType, route] of Object.entries(cfg.ai?.taskRouting ?? {})) {
+      const provider = byId.get(route?.providerId);
+      cleanedRouting[routeTaskType] = provider
+        ? sanitizeTaskRouteForProvider(provider, route, routeTaskType)
+        : route;
+    }
+    const before = JSON.stringify({ p: providersRaw, r: cfg.ai?.taskRouting ?? {} });
+    const after = JSON.stringify({ p: cleanedProviders, r: cleanedRouting });
+    if (before !== after) {
+      runtime.configStore?.patch?.({
+        ai: {
+          ...(cfg.ai ?? {}),
+          customProviders: cleanedProviders,
+          taskRouting: cleanedRouting
+        }
+      });
+    }
+  } catch { /* non-fatal — resolve-time sanitize still protects */ }
   runtime.emailMonitor = createEmailMonitor({ runtime });
   runtime.emailMonitor.start();
   runtime.persistSecurityConfig = (patch) => {

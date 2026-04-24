@@ -113,9 +113,15 @@ assert.equal(catalogDefaultModelForProvider(provider, "chat"), "deepseek-v4-flas
   assert.deepEqual(body3.thinking, { type: "enabled" });
   assert.equal(body3.reasoning_effort, "low");
 
-  // Empty selection → untouched body
+  // UCA-182 Phase 22b: when the user hasn't picked anything, the v4
+  // path now emits thinking:{type:"disabled"} explicitly so the
+  // upstream default can't turn thinking back on. Legacy models
+  // (e.g. deepseek-chat) keep the "untouched body" behaviour since
+  // they don't accept the thinking field.
   const body4 = applyReasoningSelectionToBody({ temperature: 0.3 }, provider, "deepseek-v4-flash", "");
-  assert.deepEqual(body4, { temperature: 0.3 });
+  assert.deepEqual(body4, { temperature: 0.3, thinking: { type: "disabled" } });
+  const body4b = applyReasoningSelectionToBody({ temperature: 0.3 }, provider, "deepseek-chat", "");
+  assert.deepEqual(body4b, { temperature: 0.3 });
 }
 
 console.log("ok verify-deepseek-v4");

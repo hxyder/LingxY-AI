@@ -91,7 +91,11 @@ await writeConfig({
   assert.ok(provider, "DeepSeek provider should resolve for chat.");
   assert.equal(provider.kind, "openai");
   assert.equal(provider.configId, "deepseek");
-  assert.equal(provider.model, "deepseek-chat");
+  // UCA-182 Phase 22b: saved "deepseek-chat" is now stale and the
+  // resolver auto-upgrades to the v4-flash default. Users who want
+  // the legacy chat endpoint must pick the "chat-legacy" mode
+  // explicitly (sanitizeRouteMode alias keeps that working).
+  assert.equal(provider.model, "deepseek-v4-flash");
   assert.equal(provider.baseUrl, "https://api.deepseek.com/v1");
 
   const descriptor = describeResolvedProvider(provider);
@@ -99,7 +103,7 @@ await writeConfig({
     provider_id: "deepseek",
     provider_kind: "openai",
     provider_name: "DeepSeek",
-    model: "deepseek-chat",
+    model: "deepseek-v4-flash",
     transport: "https"
   });
 
@@ -137,7 +141,8 @@ await writeConfig({
     fetchImpl: fakeFetch
   });
   assert.equal(capturedUrl, "https://api.deepseek.com/v1/chat/completions");
-  assert.equal(capturedBody.model, "deepseek-chat");
+  // UCA-182 Phase 22b: saved legacy deepseek-chat is now auto-upgraded.
+  assert.equal(capturedBody.model, "deepseek-v4-flash");
   assert.equal(capturedBody.messages[0].content, "hi");
   assert.equal(capturedAuth, "Bearer sk-test-deepseek");
   assert.equal(result.text, "hello from deepseek");
@@ -154,11 +159,11 @@ await writeConfig({
   assert.equal(plannerProvider.configId, "deepseek");
   assert.equal(
     plannerProvider.model,
-    "deepseek-chat",
-    "unrouted task types must inherit the chat routing's model"
+    "deepseek-v4-flash",
+    "unrouted task types must inherit the chat routing's model (auto-upgraded)"
   );
   const summaryProvider = resolveProviderForTask("summary");
-  assert.equal(summaryProvider?.model, "deepseek-chat");
+  assert.equal(summaryProvider?.model, "deepseek-v4-flash");
 }
 
 /* ------------------------------------------------------------------------ */

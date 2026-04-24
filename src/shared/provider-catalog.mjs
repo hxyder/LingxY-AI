@@ -113,6 +113,13 @@ function providerSupportsModel(providerFamily, model = "") {
     case "openai":
       return /^(gpt-|o[1-9](-|$)|text-davinci|whisper-)/.test(normalized);
     case "deepseek":
+      // UCA-182 Phase 22b: deepseek-chat / deepseek-reasoner are the
+      // legacy pair slated for 2026-07 retirement; they also carry
+      // different thinking semantics (reasoner always returns
+      // reasoning_content) which bit us in the field. Flag them as
+      // stale so sanitizeProviderConfig auto-upgrades saved configs
+      // to v4-flash / v4-pro on read.
+      if (normalized === "deepseek-chat" || normalized === "deepseek-reasoner") return false;
       return /^deepseek-/.test(normalized);
     case "doubao":
       return /^(doubao-|ep-)/.test(normalized);
@@ -492,6 +499,21 @@ export function normalizeReasoningSelection(provider = {}, model = "", value = "
 
 export function applyReasoningSelectionToBody(body = {}, provider = {}, model = "", value = "") {
   const normalized = normalizeReasoningSelection(provider, model, value);
+  const family = detectProviderFamily(provider);
+  const modelLc = `${model ?? ""}`.trim().toLowerCase();
+
+  // UCA-182 Phase 22b: DeepSeek v4 models require an explicit
+  // thinking:{type} to lock the mode — otherwise a stray upstream
+  // default (and/or forgotten Qwen-style "enable_thinking" leftover
+  // on the wire) can silently switch thinking on, producing a
+  // reasoning_content the caller then must echo back. When the user
+  // hasn't picked anything, emit thinking.disabled so "off by default,
+  // only on when explicitly chosen" holds at the API layer too.
+  if (!normalized && family === "deepseek" && /^deepseek-v[4-9]/.test(modelLc) && body && typeof body === "object") {
+    body.thinking = { type: "disabled" };
+    return body;
+  }
+
   if (!normalized || !body || typeof body !== "object") return body;
 
   if (normalized.startsWith("enable_thinking:")) {

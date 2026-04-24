@@ -82,41 +82,52 @@ export function resolveRoutedModel(provider, route, taskType) {
 }
 
 function providerToResolved(provider, route, taskType) {
-  if (provider.kind === "code_cli") {
-    if (!provider.command) return null;
-    const reasoningEffort = normalizeReasoningEffort(route?.reasoningEffort);
+  // UCA-182 Phase 22b: sanitize the provider + route at resolve time
+  // too. Without this, stale taskRouting (e.g. a reasoningEffort in
+  // Qwen's "enable_thinking:true" format leaking onto a DeepSeek
+  // route) flows straight into applyReasoningSelectionToBody and
+  // turns thinking on when the user never asked for it — which in
+  // turn makes DeepSeek v4 return reasoning_content that must be
+  // echoed back to avoid the 400 "must be passed back" error.
+  const sanitizedProvider = sanitizeProviderConfig(provider, taskType);
+  const sanitizedRoute = sanitizeTaskRouteForProvider(sanitizedProvider, route ?? null, taskType) ?? {};
+  const cleanReasoning = `${sanitizedRoute.reasoningEffort ?? ""}`;
+
+  if (sanitizedProvider.kind === "code_cli") {
+    if (!sanitizedProvider.command) return null;
+    const reasoningEffort = normalizeReasoningEffort(cleanReasoning);
     const model = normalizeCodeCliModel({
-      command: provider.command,
-      model: resolveRoutedModel(provider, route, taskType)
+      command: sanitizedProvider.command,
+      model: resolveRoutedModel(sanitizedProvider, sanitizedRoute, taskType)
     });
     return {
       id: "code_cli",
-      configId: provider.id ?? null,
+      configId: sanitizedProvider.id ?? null,
       kind: "code_cli",
-      command: provider.command,
-      args: provider.args ?? [],
-      env: provider.env ?? null,
-      transport: provider.transport ?? "stream_json_print",
-      configFile: provider.configFile ?? null,
-      mcpConfigFiles: provider.mcpConfigFiles ?? [],
-      maxRuntimeSeconds: provider.maxRuntimeSeconds ?? 600,
+      command: sanitizedProvider.command,
+      args: sanitizedProvider.args ?? [],
+      env: sanitizedProvider.env ?? null,
+      transport: sanitizedProvider.transport ?? "stream_json_print",
+      configFile: sanitizedProvider.configFile ?? null,
+      mcpConfigFiles: sanitizedProvider.mcpConfigFiles ?? [],
+      maxRuntimeSeconds: sanitizedProvider.maxRuntimeSeconds ?? 600,
       model,
-      mode: route?.mode ?? "",
+      mode: sanitizedRoute.mode ?? "",
       reasoningEffort,
-      providerName: provider.name
+      providerName: sanitizedProvider.name
     };
   }
-  if (!provider.apiKey && provider.kind !== "ollama") return null;
+  if (!sanitizedProvider.apiKey && sanitizedProvider.kind !== "ollama") return null;
   return {
-    id: provider.kind,
-    configId: provider.id ?? provider.kind,
-    kind: provider.kind,
-    apiKey: provider.apiKey,
-    baseUrl: provider.baseUrl,
-    model: resolveRoutedModel(provider, route, taskType),
-    mode: route?.mode ?? "",
-    reasoningEffort: route?.reasoningEffort ?? "",
-    providerName: provider.name
+    id: sanitizedProvider.kind,
+    configId: sanitizedProvider.id ?? sanitizedProvider.kind,
+    kind: sanitizedProvider.kind,
+    apiKey: sanitizedProvider.apiKey,
+    baseUrl: sanitizedProvider.baseUrl,
+    model: resolveRoutedModel(sanitizedProvider, sanitizedRoute, taskType),
+    mode: sanitizedRoute.mode ?? "",
+    reasoningEffort: cleanReasoning,
+    providerName: sanitizedProvider.name
   };
 }
 
