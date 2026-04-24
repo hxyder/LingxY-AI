@@ -12,6 +12,9 @@ import { createAgenticExecutorScaffold } from "../executors/agentic/executor.mjs
 import { createExecutorRegistry } from "../executors/registry.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { createNotesStore } from "../store/notes-store.mjs";
+import { createPreviewRegistry } from "../preview/registry.mjs";
+import { BUILTIN_PREVIEW_PROVIDERS } from "../preview/providers/index.mjs";
+import { attachLibreOfficeCapability } from "../preview/detect-libreoffice.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createActionToolRegistry } from "../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
@@ -87,6 +90,7 @@ export function createServiceBootstrap({
     queue,
     artifactStore,
     notesStore: paths?.notesPath ? createNotesStore({ filePath: paths.notesPath }) : null,
+    previewRegistry: null, // attached below once the runtime is built
     executors,
     kimiRuntime,
     configStore,
@@ -112,6 +116,15 @@ export function createServiceBootstrap({
   runtime.connectorCatalog.reload();
   runtime.actionToolRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
   runtime.executorRegistry = createExecutorRegistry(executors);
+  runtime.previewRegistry = createPreviewRegistry({
+    providers: BUILTIN_PREVIEW_PROVIDERS,
+    cacheDir: paths?.previewCacheDir ?? null,
+    runtime
+  });
+  // Fire-and-forget LibreOffice probe so the pptx provider has a
+  // capability flag to consult. Detection takes ~200ms cold; we do
+  // not block bootstrap on it.
+  void attachLibreOfficeCapability(runtime);
   runtime.platform = {
     templateRegistry: paths?.templatesDir
       ? createPersistentTemplateRegistry({ templatesDir: paths.templatesDir })

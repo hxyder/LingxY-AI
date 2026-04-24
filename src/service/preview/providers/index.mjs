@@ -14,6 +14,7 @@ import { CSV_PROVIDER } from "./csv.mjs";
 import { IMAGE_PROVIDER } from "./image.mjs";
 import { HTML_PASSTHROUGH_PROVIDER } from "./html-passthrough.mjs";
 import { PDF_PROVIDER } from "./pdf.mjs";
+import { PPTX_PROVIDER } from "./pptx.mjs";
 
 export const BUILTIN_PREVIEW_PROVIDERS = [
   SIDECAR_PROVIDER,
@@ -24,6 +25,6 @@ export const BUILTIN_PREVIEW_PROVIDERS = [
   IMAGE_PROVIDER,
   HTML_PASSTHROUGH_PROVIDER,
   PDF_PROVIDER,
+  PPTX_PROVIDER,
   TEXT_PROVIDER
-  // Phase 5: PPTX_PROVIDER
 ];

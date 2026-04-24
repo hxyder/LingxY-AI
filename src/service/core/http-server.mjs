@@ -1609,6 +1609,65 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         }
       }
 
+      // UCA-182 Phase 5: LibreOffice capability status + winget-based
+      // auto-install. The status endpoint is cheap (just reads the cached
+      // capability record attached at bootstrap); the install endpoint
+      // spawns `winget install` in a detached process and streams its
+      // stdout/stderr to the caller as SSE so the popup card can show
+      // progress lines as they happen.
+      if (method === "GET" && url.pathname === "/preview/libreoffice/status") {
+        const cap = runtime.capabilities?.libreoffice ?? null;
+        return sendJson(response, 200, {
+          present: Boolean(cap?.present),
+          detected: cap,
+          platform: process.platform
+        });
+      }
+      if (method === "POST" && url.pathname === "/preview/libreoffice/install") {
+        if (process.platform !== "win32") {
+          return sendJson(response, 400, { error: "auto-install only supported on win32; use manual install" });
+        }
+        response.writeHead(200, SSE_HEADERS);
+        const emit = (event, data) => {
+          response.write(encodeSseFrame(event, data));
+        };
+        emit("start", { via: "winget" });
+        const child = spawn("winget", [
+          "install", "--id", "TheDocumentFoundation.LibreOffice",
+          "--silent",
+          "--accept-package-agreements",
+          "--accept-source-agreements"
+        ], { shell: false });
+        child.stdout.on("data", (chunk) => {
+          String(chunk).split(/\r?\n/).filter(Boolean).forEach((line) => emit("stdout", { line }));
+        });
+        child.stderr.on("data", (chunk) => {
+          String(chunk).split(/\r?\n/).filter(Boolean).forEach((line) => emit("stderr", { line }));
+        });
+        child.on("error", (error) => {
+          emit("error", { message: error.message });
+          response.end();
+        });
+        child.on("exit", async (code) => {
+          // Re-detect: winget might have finished installing; refresh
+          // the capability record so the next preview picks up Tier 1.
+          try {
+            const { detectLibreOffice } = await import("../preview/detect-libreoffice.mjs");
+            const cap = await detectLibreOffice();
+            if (!runtime.capabilities) runtime.capabilities = {};
+            runtime.capabilities.libreoffice = { ...cap, checkedAt: new Date().toISOString() };
+            emit("done", { exitCode: code, capability: runtime.capabilities.libreoffice });
+          } catch (error) {
+            emit("done", { exitCode: code, error: error.message });
+          }
+          response.end();
+        });
+        request.on("close", () => {
+          try { child.kill(); } catch { /* ignore */ }
+        });
+        return;
+      }
+
       // UCA-181: extract preview-friendly text from binary office docs
       // (docx / xlsx / pptx) so the live-preview panel can show their
       // content instead of "无法预览". Reuses the same OOXML extractor
