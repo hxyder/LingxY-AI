@@ -24,6 +24,15 @@ const DEFAULT_EXAMPLES = {
       ]
     }
   },
+  edit_file: {
+    path: "C:\\Users\\you\\Documents\\Quarterly Review.pptx",
+    outline: {
+      title: "Quarterly Review",
+      slides: [
+        { heading: "Revenue", bullets: ["+12% YoY", "Strong Q4", "Add source link in footer"] }
+      ]
+    }
+  },
   open_url: { url: "https://example.com" },
   compose_email: { to: ["team@example.com"], subject: "Update", body: "Hello team" },
   notify: { title: "Reminder", body: "Meeting in 15 minutes" },
@@ -132,7 +141,7 @@ export function buildAgenticSystemPrompt({
     : requestedFormat?.id === "markdown"
       ? "The user asked for a Markdown artifact. Use `write_file` to create exactly one .md file. Do not call `generate_document` for Markdown."
       : requestedFormat && requestedFormat.id && requestedFormat.id !== "conversational"
-        ? `The user asked for a ${requestedFormat.id} artifact. Use the generate_document tool (kind=${requestedFormat.id}) or write_file to produce it. Pass generate_document.outline as a native JSON object, not a stringified JSON blob. Do not refuse by claiming you cannot save files — you can.`
+        ? `The user asked for a ${requestedFormat.id} artifact. Use generate_document (kind=${requestedFormat.id}) to create a new file, or edit_file to update an existing artifact in place. Pass outline as a native JSON object, not a stringified JSON blob. Do not refuse by claiming you cannot save files — you can.`
         : "If the user does not explicitly ask for a file, reply conversationally.";
 
   const languageLine = language && language !== "auto"
@@ -180,12 +189,15 @@ export function buildAgenticSystemPrompt({
     "",
     "1. If the task contract lists required_steps or required_tools, satisfy them before claiming completion.",
     "2. Before writing about recent, current, or time-sensitive topics (weather, news, prices, flights, events, etc.), call `web_search_fetch` first. If `web_search_fetch` returns no results or fails, use `fetch_url_content` on a specific authoritative URL instead — for example: weather.gov or wttr.in for weather, en.wikipedia.org for facts, finance.yahoo.com for stock prices. Do NOT fall back to training data for time-sensitive information.",
-    "3. When the user asks for a file artifact (pptx / docx / xlsx / pdf), call `generate_document` with the appropriate `kind`. Outline shapes by kind: pptx → `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`; docx/pdf → `{ title, sections: [{ heading, body }] }` (each section's body is a paragraph of prose, may include bullet lines starting with \"- \"); xlsx → `{ rows: [[col1, col2, ...]] }`. For ad-hoc text files, use `write_file`.",
+    "3. When the user asks for a file artifact (pptx / docx / xlsx / pdf), call `generate_document` with the appropriate `kind`. If they ask to revise an already-generated file, locate the existing artifact path and call `edit_file` with the SAME absolute path so the file is updated in place instead of creating a new sibling. Outline shapes by kind: pptx → `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`; docx/pdf → `{ title, sections: [{ heading, body }] }` (each section's body is a paragraph of prose, may include bullet lines starting with \"- \"); xlsx → `{ rows: [[col1, col2, ...]] }`. For ad-hoc text files, use `write_file`.",
     "4. When the user asks you to run code, use `run_script` with `language` strictly in `powershell | node | python`. Do not invent other languages.",
     "5. You may call multiple tools in sequence. Each tool returns an observation you should read before deciding the next step.",
     "6. Only say something was \"done\", \"saved\", \"launched\", or \"created\" when the corresponding tool returned `success: true` in the conversation transcript. If every attempt failed, tell the user what failed and suggest next steps — do not pretend.",
     "7. Keep your final natural-language reply concise. The real deliverables live in the generated artifacts; the reply just summarises what you did and where to find them.",
-    `8. ${languageLine}`,
+    // UCA-182 Phase 21: memory tools. We no longer pre-inject guess-at
+    // context; the model asks for what it needs.
+    "8. Memory: when the user refers to earlier work with a pronoun (\"上个问题\" / \"刚才\" / \"之前那份\" / \"last one\" / \"that report\") or asks you to continue / revise / elaborate on something you or they did before, you MUST call `list_recent_tasks` first (or `recall_memory` with a topic query if the reference is thematic rather than temporal). Then call `get_task_detail` on the matching task_id to load its user_command + final answer + artifact paths. Only after you have concrete details should you act — never guess from the pronoun alone, and never claim you cannot remember prior work while these tools exist.",
+    `9. ${languageLine}`,
     "",
     "## Output format",
     "",

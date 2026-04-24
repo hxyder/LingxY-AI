@@ -12,6 +12,7 @@ import { createActionResult } from "../types.mjs";
 import { translateText } from "../../translation/free-translator.mjs";
 import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "../../search/free-search.mjs";
 import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggregator.mjs";
+import { MEMORY_TOOLS } from "./memory-tools.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2605,6 +2606,10 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   GUI_FIND_ELEMENT_TOOL,
   GUI_CLICK_TOOL,
   GUI_TYPE_TEXT_TOOL,
+  // UCA-182 Phase 21: memory introspection tools so the planner can
+  // ask for prior-task context on its own, replacing the earlier
+  // submit-time digest injection.
+  ...MEMORY_TOOLS,
   // Connector catalog + provider account tools (single aggregation point)
   ...CONNECTOR_ACTION_TOOLS
 ]);

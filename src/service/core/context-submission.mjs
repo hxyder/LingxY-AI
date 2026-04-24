@@ -141,13 +141,20 @@ function findRecentArtifactPath(runtime, preferredKind = null) {
   return null;
 }
 
-// UCA-182 Phase 18: semantic recall across conversations. embeddingStore
-// has been accumulating task-completion records in task-runtime.
-// markTaskSucceeded for a long time but no one read them. Now we pull
-// top-k relevant past tasks at submit time and prepend a compact
-// "[跨对话相关任务]" digest so the planner has cross-conversation
-// memory without the user needing to explicitly recall what they
-// asked before. Strict timeout + small k to keep submit latency flat.
+// UCA-182 Phase 21: shifted from "inject blobs of context at submit
+// time" to "let the AI ask". The model now has three memory tools —
+// recall_memory / list_recent_tasks / get_task_detail — registered
+// in src/service/action_tools/tools/memory-tools.mjs. When it sees
+// a referential pronoun or any gap in its context, the planner calls
+// those tools explicitly instead of us trying to pre-guess. This
+// replaced the earlier regex-based patches.
+//
+// seedSemanticMemories + seedParentTaskContext are still worth doing
+// *when the information is load-bearing and cheap*: the parent digest
+// is triggered only when the client volunteers parent_task_id (user's
+// explicit "I'm following up on this task" signal), and semantic
+// recall keeps a 400ms budget so it never hurts submit latency. All
+// other context seeding is deferred to the AI's own tool choice.
 const MEMORY_RECALL_TIMEOUT_MS = 400;
 const MEMORY_RECALL_K = 3;
 
@@ -674,20 +681,20 @@ export async function submitContextTask({
     trigger: "context_submission"
   });
   const inspectedContextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
-  // UCA-182 Phase 16: cross-turn memory — if the client sent a
-  // parent_task_id, pull the parent's command + final reply + artifact
-  // list into this turn's contextPacket so the planner prompt actually
-  // knows what "上个问题" refers to.
+  // UCA-182 Phase 16: when the *client* explicitly sends parent_task_id
+  // (the user signalled "follow up on this task"), prepend the parent's
+  // command + final reply + artifacts. That's load-bearing memory; keep
+  // it inline because losing it breaks task trees.
   const withParentContext = seedParentTaskContext({
     runtime,
     parentTaskId,
     contextPacket: inspectedContextPacket
   });
-  // UCA-182 Phase 18: cross-conversation memory via semantic recall.
-  // Independently of parent_task_id, pull a handful of previously
-  // completed tasks whose embeddings resemble the current command and
-  // prepend a short digest. Budgeted to ≤400ms so it never dominates
-  // submit latency.
+  // UCA-182 Phase 18: keyword/semantic recall (best-effort, 400ms
+  // budget). Retained because it's cheap and often surfaces a
+  // genuinely matching prior task. When it misses or the user uses
+  // referential language, the model has memory tools (see Phase 21)
+  // and can call recall_memory / list_recent_tasks itself.
   const withMemoryRecall = await seedSemanticMemories({
     runtime,
     userCommand,

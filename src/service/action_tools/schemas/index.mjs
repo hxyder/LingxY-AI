@@ -222,7 +222,20 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     properties: {
       kind: { type: "string" },       // pptx | docx | xlsx | pdf
       outline: {},                    // structured outline; shape depends on kind (see tool description)
-      filename: { type: "string" }    // optional; defaults to result.<ext>
+      filename: { type: "string" },   // optional; defaults to result.<ext>
+      path: { type: "string" }        // optional absolute/relative path to overwrite in place
+    }
+  },
+  edit_file: {
+    type: "object",
+    required: [],
+    properties: {
+      path: { type: "string" },       // absolute path to the existing file to update
+      kind: { type: "string" },       // optional override: pptx | docx | xlsx | pdf | md | txt | html | csv | json
+      outline: {},                    // full updated structured outline for office/pdf files
+      content: { type: "string" },    // full updated text content for text-like files
+      text: { type: "string" },       // alias for content
+      encoding: { type: "string" }    // utf8 | utf-8 | base64 for text-like files
     }
   },
 
@@ -463,6 +476,33 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       automation_id: { type: "string" },
       element_name:  { type: "string" },
       press_enter:   { type: "boolean" }  // send Enter after typing
+    }
+  },
+  // UCA-182 Phase 21: memory introspection tools. Registered so the
+  // planner's adapter sees them under the same schema-count contract
+  // the action-tools verifier locks in.
+  recall_memory: {
+    type: "object",
+    required: ["query"],
+    properties: {
+      query: { type: "string" },
+      limit: { type: "number" }
+    }
+  },
+  list_recent_tasks: {
+    type: "object",
+    required: [],
+    properties: {
+      minutes: { type: "number" },
+      limit: { type: "number" },
+      include_failed: { type: "boolean" }
+    }
+  },
+  get_task_detail: {
+    type: "object",
+    required: ["task_id"],
+    properties: {
+      task_id: { type: "string" }
     }
   }
 });
