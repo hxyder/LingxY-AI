@@ -1068,6 +1068,14 @@ async function submitTaskFromBody(runtime, body) {
     executionMode: body.executionMode,
     executorOverride: body.executorOverride,
     skipDecomposition: Boolean(body.skipDecomposition),
+    // UCA-182 Phase 9: carry the client's parent_task_id so follow-up
+    // turns inside the same conversation hang off the previous task
+    // instead of each turn being an orphan root. Decomposition / plan
+    // layers already skip when parentTaskId is set so we don't
+    // re-decompose an inherited subtask.
+    parentTaskId: typeof body.parent_task_id === "string" && body.parent_task_id
+      ? body.parent_task_id
+      : (typeof body.parentTaskId === "string" && body.parentTaskId ? body.parentTaskId : null),
     background,
     runtime
   });

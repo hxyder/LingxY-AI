@@ -2196,6 +2196,19 @@ async function refreshActiveTask() {
     }
 
     if (task.status === "success" && task.artifacts?.length) {
+      // UCA-182 Phase 9: remember this task + its artifacts on the
+      // conversation so the next turn can link via parent_task_id and
+      // reuse the artifact list without hitting disk again.
+      if (conversationState) {
+        conversationState.lastCompletedTaskId = task.task_id;
+        conversationState.lastArtifacts = task.artifacts.map((a) => ({
+          path: a.path,
+          mime: a.mime ?? null,
+          size: a.size ?? null,
+          producedAt: a.producedAt ?? Date.now()
+        }));
+        conversationState.updatedAt = Date.now();
+      }
       const previewPath = choosePreviewArtifactPath(task.artifacts) ?? task.artifacts[0].path;
       lastArtifactPath = previewPath;
 
@@ -2295,6 +2308,12 @@ async function refreshActiveTask() {
       // every time a task finished. Users explicitly click the "打开文件"
       // button or the artifact in the Console Files tab.
     } else if (task.status === "success" && !task.artifacts?.length) {
+      // UCA-182 Phase 9: conversational success (no artifacts) still
+      // needs to thread — remember the task_id so follow-ups link.
+      if (conversationState) {
+        conversationState.lastCompletedTaskId = task.task_id;
+        conversationState.updatedAt = Date.now();
+      }
       // conversational mode — no artifacts
       if (notifiedTaskId !== task.task_id && notifiedInlineResultTaskId !== task.task_id) {
         notifiedTaskId = task.task_id;
@@ -2516,10 +2535,21 @@ async function submitTask() {
       }
     }
 
+    // UCA-182 Phase 9: link follow-up turns to the conversation's last
+    // completed task. Server-side submitContextTask skips decomposition /
+    // plan layer when parentTaskId is set, so the follow-up inherits the
+    // thread instead of starting a brand-new root task every time.
+    const parentTaskId = conversationState?.lastCompletedTaskId ?? null;
+
     const result = await fetchJson("/task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, background: true })
+      body: JSON.stringify({
+        ...payload,
+        background: true,
+        parent_task_id: parentTaskId,
+        conversation_id: conversationState?.id ?? null
+      })
     });
 
     // UCA-059: Server detected an ambiguous command — show clarification bubble
