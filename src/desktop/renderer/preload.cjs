@@ -211,5 +211,40 @@ contextBridge.exposeInMainWorld("ucaShell", {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:popup-card-resolved", listener);
     return () => ipcRenderer.removeListener("uca:popup-card-resolved", listener);
+  },
+
+  // UCA-182 Phase 14: dedicated preview window on the right edge of
+  // the primary display. Overlay / console invoke showPreviewWindow
+  // to surface an artefact or a running tool; the preview window
+  // listens for init / delta / committed events.
+  showPreviewWindow(payload) {
+    return ipcRenderer.invoke("uca:preview-window-show", payload ?? {});
+  },
+  appendPreviewDelta(payload) {
+    return ipcRenderer.invoke("uca:preview-window-append-delta", payload ?? {});
+  },
+  commitPreviewWindow(payload) {
+    return ipcRenderer.invoke("uca:preview-window-commit", payload ?? {});
+  },
+  closePreviewWindow() {
+    return ipcRenderer.invoke("uca:preview-window-close");
+  },
+  setPreviewWindowAlwaysOnTop(flag) {
+    return ipcRenderer.invoke("uca:preview-window-pin", Boolean(flag));
+  },
+  onPreviewWindowInit(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:preview-window-init", listener);
+    return () => ipcRenderer.removeListener("uca:preview-window-init", listener);
+  },
+  onPreviewWindowDelta(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:preview-window-delta", listener);
+    return () => ipcRenderer.removeListener("uca:preview-window-delta", listener);
+  },
+  onPreviewWindowCommitted(callback) {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("uca:preview-window-committed", listener);
+    return () => ipcRenderer.removeListener("uca:preview-window-committed", listener);
   }
 });

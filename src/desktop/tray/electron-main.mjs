@@ -116,6 +116,11 @@ export function createElectronShellRuntime({
   let noteRecordingState = { active: false };
   let lastExternalWindowContext = null;
   let registeredPopupCardManager = null;
+  // UCA-182 Phase 14: dedicated preview BrowserWindow anchored to the
+  // right edge of the primary display. Created lazily on first show
+  // so apps that never preview a file don't pay the memory cost.
+  let previewWindow = null;
+  let previewWindowPinned = false;
 
   // Desktop shell settings (echo mode, future flags). Persisted as JSON in
   // AppData/Local/UCA/settings.json. Loaded lazily on first access; callers
@@ -1292,6 +1297,108 @@ export function createElectronShellRuntime({
         }
       });
       registeredPopupCardManager = popupCardManager;
+
+      // UCA-182 Phase 14: preview window lifecycle. Created on demand,
+      // positioned to cover the right ~42% of the primary workArea.
+      // We keep the window between uses (hide, not destroy) so the
+      // next preview can paint without reloading the HTML + scripts.
+      function computePreviewBounds() {
+        const { workArea } = screen.getPrimaryDisplay();
+        const width = Math.max(720, Math.min(Math.round(workArea.width * 0.42), 1100));
+        const height = Math.max(480, workArea.height - 32);
+        const x = workArea.x + workArea.width - width - 16;
+        const y = workArea.y + 16;
+        return { x, y, width, height };
+      }
+      function ensurePreviewWindow() {
+        if (previewWindow && !previewWindow.isDestroyed()) return previewWindow;
+        const bounds = computePreviewBounds();
+        const baseUrl = resolvedServiceBaseUrl ?? "";
+        const url = pathToFileURL(path.join(RENDERER_DIR, "preview-window.html")).toString()
+          + `?serviceBaseUrl=${encodeURIComponent(baseUrl)}`;
+        previewWindow = new BrowserWindow({
+          ...bounds,
+          show: false,
+          frame: false,
+          transparent: false,
+          alwaysOnTop: false,
+          resizable: true,
+          movable: true,
+          skipTaskbar: false,
+          title: "LingxY Preview",
+          backgroundColor: "#ffffff",
+          webPreferences: {
+            sandbox: false,
+            contextIsolation: true,
+            preload: PRELOAD_PATH
+          }
+        });
+        previewWindow.on("close", (event) => {
+          // Hide instead of destroy so state survives across opens.
+          // `quitting` is the module-scoped flag set in the before-quit
+          // handler so we don't keep blocking the app shutdown.
+          if (!quitting) {
+            event.preventDefault();
+            previewWindow.hide();
+          }
+        });
+        previewWindow.on("closed", () => { previewWindow = null; });
+        previewWindow.loadURL(url);
+        return previewWindow;
+      }
+      function showPreviewWindowIfHidden() {
+        const win = ensurePreviewWindow();
+        if (!win.isVisible()) {
+          // Re-compute bounds in case the user moved to a different
+          // display since last open.
+          try { win.setBounds(computePreviewBounds()); } catch { /* ignore */ }
+          win.showInactive();
+        } else {
+          try { win.moveTop(); } catch { /* ignore */ }
+        }
+        return win;
+      }
+      function sendToPreview(channel, payload) {
+        const win = showPreviewWindowIfHidden();
+        const deliver = () => {
+          if (win.isDestroyed()) return;
+          win.webContents.send(channel, payload);
+        };
+        // If the window is still loading, wait for did-finish-load once.
+        if (win.webContents.isLoading()) {
+          win.webContents.once("did-finish-load", deliver);
+        } else {
+          deliver();
+        }
+      }
+
+      ipcMain.handle(IPC_CHANNELS.previewWindowShow, (_event, payload = {}) => {
+        sendToPreview(IPC_CHANNELS.previewWindowInit, payload);
+        return { ok: true };
+      });
+      ipcMain.handle(IPC_CHANNELS.previewWindowAppendDelta, (_event, payload = {}) => {
+        if (!previewWindow || previewWindow.isDestroyed() || !previewWindow.isVisible()) {
+          // Deltas before show are noise; drop silently.
+          return { ok: false, reason: "not_shown" };
+        }
+        previewWindow.webContents.send(IPC_CHANNELS.previewWindowDelta, payload);
+        return { ok: true };
+      });
+      ipcMain.handle(IPC_CHANNELS.previewWindowCommit, (_event, payload = {}) => {
+        sendToPreview(IPC_CHANNELS.previewWindowCommitted, payload);
+        return { ok: true };
+      });
+      ipcMain.handle(IPC_CHANNELS.previewWindowClose, () => {
+        if (previewWindow && !previewWindow.isDestroyed()) previewWindow.hide();
+        return { ok: true };
+      });
+      ipcMain.handle("uca:preview-window-pin", (_event, flag) => {
+        previewWindowPinned = Boolean(flag);
+        if (previewWindow && !previewWindow.isDestroyed()) {
+          try { previewWindow.setAlwaysOnTop(previewWindowPinned, "screen-saver"); } catch { /* ignore */ }
+        }
+        return previewWindowPinned;
+      });
 
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({
         serviceBaseUrl: resolvedServiceBaseUrl,

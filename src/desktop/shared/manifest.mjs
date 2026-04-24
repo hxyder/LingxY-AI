@@ -4,7 +4,8 @@ export const WINDOW_IDS = Object.freeze({
   console: "console",
   notification: "notification",
   echoBubble: "echo-bubble",
-  popupCard: "popup-card"
+  popupCard: "popup-card",
+  preview: "preview"
 });
 
 export const IPC_CHANNELS = Object.freeze({
@@ -30,7 +31,17 @@ export const IPC_CHANNELS = Object.freeze({
   popupCardInit: "uca:popup-card-init",
   popupCardTogglePin: "uca:popup-card-toggle-pin",
   popupCardResolved: "uca:popup-card-resolved",
-  popupCardResize: "uca:popup-card-resize"
+  popupCardResize: "uca:popup-card-resize",
+  // UCA-182 Phase 14: dedicated preview BrowserWindow anchored to
+  // the right edge of the primary display. The overlay chat window
+  // no longer hosts the preview panel.
+  previewWindowShow: "uca:preview-window-show",
+  previewWindowAppendDelta: "uca:preview-window-append-delta",
+  previewWindowCommit: "uca:preview-window-commit",
+  previewWindowClose: "uca:preview-window-close",
+  previewWindowInit: "uca:preview-window-init",
+  previewWindowDelta: "uca:preview-window-delta",
+  previewWindowCommitted: "uca:preview-window-committed"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([
