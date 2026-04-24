@@ -1,11 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
-import { listEmailAccounts } from "./accounts.mjs";
+import { listEmailAccounts, resolveAccountCredentials } from "./accounts.mjs";
+import { createImapClient } from "./imap-client.mjs";
 import { summarizeEmail } from "./summarizer.mjs";
 import { extractEmailIntent } from "./intent-extractor.mjs";
 import { appendAuditLog } from "../security/audit-log.mjs";
 import { requireFeature } from "../core/feature-flags.mjs";
+import { listUserAccounts } from "../connectors/core/account-registry.mjs";
+import { listGoogleEmails } from "../connectors/google/google-connector.mjs";
+import { listMicrosoftEmails } from "../connectors/microsoft/microsoft-connector.mjs";
 
 function resolveStatePath(runtime) {
   const baseDir = runtime?.paths?.dataDir
@@ -69,7 +73,7 @@ function withinWindow(now, windowStart, windowEnd) {
   return now >= start && now <= end;
 }
 
-function buildDateRange(now) {
+function buildYesterdayRange(now) {
   const today = new Date(now);
   today.setHours(0, 0, 0, 0);
   const yesterday = new Date(today);
@@ -77,22 +81,84 @@ function buildDateRange(now) {
   return { start: yesterday, end: today };
 }
 
-function collectMessagesForAccount(account, range) {
-  if (account.provider !== "mock") {
-    return [];
-  }
-  const messages = account.mockMessages ?? [];
-  return messages.filter((msg) => {
-    const receivedAt = new Date(msg.receivedAt ?? msg.received_at ?? 0);
-    return receivedAt >= range.start && receivedAt < range.end;
-  });
+function buildRecentFallbackRange(now, days = 7) {
+  const end = new Date(now);
+  const start = new Date(now);
+  start.setDate(end.getDate() - days);
+  return { start, end };
 }
 
-function buildDigestMarkdown({ totals, buckets, perAccount }) {
+function messageInRange(message, range) {
+  const receivedAt = new Date(
+    message.receivedAt
+    ?? message.received_at
+    ?? message.received
+    ?? 0
+  );
+  return receivedAt >= range.start && receivedAt < range.end;
+}
+
+function normalizeDigestMessage(message = {}) {
+  return {
+    id: message.id ?? message.messageId ?? null,
+    threadId: message.threadId ?? message.thread_id ?? message.id ?? message.messageId ?? null,
+    from: message.from ?? message.fromEmail ?? "",
+    subject: message.subject ?? "(no subject)",
+    bodyText: message.bodyText ?? message.body_text ?? message.preview ?? "",
+    receivedAt: message.receivedAt ?? message.received_at ?? message.received ?? new Date().toISOString()
+  };
+}
+
+async function collectMessagesForImapAccount(runtime, account, range) {
+  const credentials = await resolveAccountCredentials(runtime, account);
+  if (!credentials) return [];
+  try {
+    const client = createImapClient({
+      account,
+      credentials,
+      state: { seenByAccount: new Map() }
+    });
+    const messages = await client.listRecent(50);
+    return messages
+      .map(normalizeDigestMessage)
+      .filter((message) => messageInRange(message, range));
+  } catch {
+    return [];
+  }
+}
+
+async function collectMessagesForEmailAccount(runtime, account, range) {
+  if (account.provider !== "mock") {
+    return collectMessagesForImapAccount(runtime, account, range);
+  }
+  const messages = account.mockMessages ?? [];
+  return messages
+    .map(normalizeDigestMessage)
+    .filter((message) => messageInRange(message, range));
+}
+
+async function collectMessagesForConnectedAccount(runtime, account, range) {
+  try {
+    let result = null;
+    if (account.provider === "google" && account.capabilities?.emailRead) {
+      result = await listGoogleEmails(runtime, account, { limit: 50 });
+    } else if (account.provider === "microsoft" && account.capabilities?.emailRead) {
+      result = await listMicrosoftEmails(runtime, account, { limit: 50 });
+    }
+    if (result?.status !== "success") return [];
+    return (result.data?.emails ?? [])
+      .map(normalizeDigestMessage)
+      .filter((message) => messageInRange(message, range));
+  } catch {
+    return [];
+  }
+}
+
+function buildDigestMarkdown({ totals, buckets, perAccount, title = "昨日邮件汇总", summaryLead = null }) {
   const lines = [];
-  lines.push(`# 昨日邮件汇总`);
+  lines.push(`# ${title}`);
   lines.push("");
-  lines.push(`总计 ${totals.total} 封邮件，其中 ${totals.actionRequired} 封需要回复。`);
+  lines.push(summaryLead ?? `总计 ${totals.total} 封邮件，其中 ${totals.actionRequired} 封需要回复。`);
   lines.push("");
   for (const [label, items] of Object.entries(buckets)) {
     lines.push(`## ${label}`);
@@ -165,8 +231,11 @@ export async function maybeRunMorningDigest({ runtime, now = new Date(), force =
       return { ok: false, reason: "already_sent", lastDigestDate: state.lastDigestDate };
     }
 
-    const accounts = listEmailAccounts(runtime).filter((account) => account.enabled);
-    if (accounts.length === 0) {
+    const emailAccounts = listEmailAccounts(runtime).filter((account) => account.enabled);
+    const connectorAccounts = listUserAccounts(runtime).filter((account) =>
+      account.tokenStatus === "active" && account.capabilities?.emailRead
+    );
+    if (emailAccounts.length === 0 && connectorAccounts.length === 0) {
       return { ok: false, reason: "no_accounts" };
     }
 
@@ -181,11 +250,12 @@ export async function maybeRunMorningDigest({ runtime, now = new Date(), force =
     await saveDigestState(runtime, state);
     _digestLastFiredAt.set(runtime, now.getTime());
 
-    const range = buildDateRange(now);
+    const primaryRange = buildYesterdayRange(now);
+    const fallbackRange = force ? buildRecentFallbackRange(now, 7) : null;
     const allMessages = [];
     const perAccount = [];
-    for (const account of accounts) {
-      const messages = collectMessagesForAccount(account, range);
+    for (const account of emailAccounts) {
+      const messages = await collectMessagesForEmailAccount(runtime, account, primaryRange);
       allMessages.push(...messages);
       perAccount.push({
         id: account.id,
@@ -193,6 +263,41 @@ export async function maybeRunMorningDigest({ runtime, now = new Date(), force =
         count: messages.length,
         actionRequired: 0
       });
+    }
+    for (const account of connectorAccounts) {
+      const messages = await collectMessagesForConnectedAccount(runtime, account, primaryRange);
+      allMessages.push(...messages);
+      perAccount.push({
+        id: account.id,
+        name: account.displayName ?? account.email ?? account.id,
+        count: messages.length,
+        actionRequired: 0
+      });
+    }
+
+    let digestTitle = "昨日邮件汇总";
+    let summaryLead = null;
+    if (allMessages.length === 0 && fallbackRange) {
+      for (const entry of perAccount) {
+        entry.count = 0;
+        entry.actionRequired = 0;
+      }
+      for (const account of emailAccounts) {
+        const messages = await collectMessagesForEmailAccount(runtime, account, fallbackRange);
+        allMessages.push(...messages);
+        const target = perAccount.find((entry) => entry.id === account.id);
+        if (target) target.count = messages.length;
+      }
+      for (const account of connectorAccounts) {
+        const messages = await collectMessagesForConnectedAccount(runtime, account, fallbackRange);
+        allMessages.push(...messages);
+        const target = perAccount.find((entry) => entry.id === account.id);
+        if (target) target.count = messages.length;
+      }
+      if (allMessages.length > 0) {
+        digestTitle = "最近邮件摘要（手动测试）";
+        summaryLead = `最近 7 天内共找到 ${allMessages.length} 封邮件，其中稍后需处理的会被归到“需要回复”。`;
+      }
     }
 
     if (allMessages.length === 0) {
@@ -228,15 +333,17 @@ export async function maybeRunMorningDigest({ runtime, now = new Date(), force =
       ).length;
     }
 
-    const digestMd = buildDigestMarkdown({ totals, buckets, perAccount });
+    const digestMd = buildDigestMarkdown({ totals, buckets, perAccount, title: digestTitle, summaryLead });
     const outputDir = runtime.paths?.outputsDir ?? path.join(os.homedir(), "Desktop", "UCA");
     await mkdir(outputDir, { recursive: true });
     const digestPath = path.join(outputDir, `email-digest-${todayKey}.md`);
     await writeFile(digestPath, digestMd, "utf8");
 
     await sendNotification(runtime, {
-      title: "早晨邮件汇总",
-      body: `昨日 ${totals.total} 封邮件，需回复 ${totals.actionRequired} 封。点击查看详情。`,
+      title: force ? "邮件摘要（手动测试）" : "早晨邮件汇总",
+      body: force
+        ? `找到 ${totals.total} 封近期邮件，需回复 ${totals.actionRequired} 封。点击查看详情。`
+        : `昨日 ${totals.total} 封邮件，需回复 ${totals.actionRequired} 封。点击查看详情。`,
       handoff: {
         file_paths: [digestPath],
         source_app: "uca.email",
