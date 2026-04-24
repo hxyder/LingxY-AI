@@ -1358,18 +1358,49 @@ export function createElectronShellRuntime({
         }
         return win;
       }
-      function sendToPreview(channel, payload) {
-        const win = showPreviewWindowIfHidden();
-        const deliver = () => {
-          if (win.isDestroyed()) return;
-          win.webContents.send(channel, payload);
-        };
-        // If the window is still loading, wait for did-finish-load once.
-        if (win.webContents.isLoading()) {
-          win.webContents.once("did-finish-load", deliver);
-        } else {
-          deliver();
+      // Deliver to the preview window with loading-aware queueing.
+      // Problem this fixes: after showPreviewWindowIfHidden() the window
+      // is isVisible() = true but DOM scripts haven't run yet; any
+      // webContents.send() lands on a window without event listeners and
+      // the message is lost. We buffer by channel until did-finish-load
+      // fires, and for delta frames we coalesce (only keep the latest
+      // payload — partial_json is already cumulative).
+      const previewPendingByChannel = new Map();
+      let previewFlushBound = false;
+      function flushPreviewPending() {
+        if (!previewWindow || previewWindow.isDestroyed()) {
+          previewPendingByChannel.clear();
+          return;
         }
+        for (const [channel, payload] of previewPendingByChannel) {
+          try { previewWindow.webContents.send(channel, payload); } catch { /* ignore */ }
+        }
+        previewPendingByChannel.clear();
+      }
+      function sendToPreview(channel, payload, { coalesce = false } = {}) {
+        const win = showPreviewWindowIfHidden();
+        if (win.webContents.isLoading()) {
+          // Buffer. For delta (coalesce), replace any prior frame on
+          // the same channel so we only deliver the latest.
+          if (coalesce) {
+            previewPendingByChannel.set(channel, payload);
+          } else if (previewPendingByChannel.has(channel)) {
+            // For non-delta frames we still overwrite by channel; the
+            // latest init / committed is what the window cares about.
+            previewPendingByChannel.set(channel, payload);
+          } else {
+            previewPendingByChannel.set(channel, payload);
+          }
+          if (!previewFlushBound) {
+            previewFlushBound = true;
+            win.webContents.once("did-finish-load", () => {
+              previewFlushBound = false;
+              flushPreviewPending();
+            });
+          }
+          return;
+        }
+        try { win.webContents.send(channel, payload); } catch { /* ignore */ }
       }
 
       ipcMain.handle(IPC_CHANNELS.previewWindowShow, (_event, payload = {}) => {
@@ -1377,11 +1408,12 @@ export function createElectronShellRuntime({
         return { ok: true };
       });
       ipcMain.handle(IPC_CHANNELS.previewWindowAppendDelta, (_event, payload = {}) => {
-        if (!previewWindow || previewWindow.isDestroyed() || !previewWindow.isVisible()) {
-          // Deltas before show are noise; drop silently.
-          return { ok: false, reason: "not_shown" };
-        }
-        previewWindow.webContents.send(IPC_CHANNELS.previewWindowDelta, payload);
+        // Route through sendToPreview so deltas that arrive while the
+        // window is still loading are coalesced and flushed on
+        // did-finish-load instead of dropped. Previously we required
+        // isVisible() AND not-loading, which silently discarded every
+        // delta between openForTool and the first frame paint.
+        sendToPreview(IPC_CHANNELS.previewWindowDelta, payload, { coalesce: true });
         return { ok: true };
       });
       ipcMain.handle(IPC_CHANNELS.previewWindowCommit, (_event, payload = {}) => {

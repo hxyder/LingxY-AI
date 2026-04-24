@@ -10,6 +10,7 @@ import { routeIntent } from "./router/intent-router.mjs";
 import { decomposeUserCommand } from "./router/decomposer.mjs";
 import { submitCompositeTask } from "./composite-submission.mjs";
 import { createTaskSpec } from "./task-spec.mjs";
+import { extractFileContent } from "../extractors/file-ingest.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -88,6 +89,148 @@ function normalizeContextPacket(contextPacket) {
     file_paths: contextPacket.file_paths,
     image_paths: contextPacket.image_paths,
     captured_at: contextPacket.captured_at ?? new Date().toISOString()
+  };
+}
+
+const FOLLOWUP_ARTIFACT_EDIT_PATTERNS = [
+  /(加上|加入|补充|插入|替换|修改|更新|调整|优化|完善|美化|精美|润色|改一下|改得|重做|重写|继续改)/i,
+  /\b(add|include|insert|replace|modify|edit|update|revise|refine|polish|improve|beautify|restyle)\b/i
+];
+
+function artifactKindFromTextOrPath(text = "", filePath = "") {
+  const normalizedText = String(text ?? "").toLowerCase();
+  const normalizedPath = String(filePath ?? "").toLowerCase();
+  if (normalizedPath.endsWith(".pptx") || /(pptx?|powerpoint|幻灯片|演示文稿|slides?|slideshow)/i.test(normalizedText)) return "pptx";
+  if (normalizedPath.endsWith(".docx") || /(\.docx|docx|word\s*文档|word\s*文件|\bword\b)/i.test(normalizedText)) return "docx";
+  if (normalizedPath.endsWith(".xlsx") || /(\.xlsx|xlsx|excel|电子表格|spreadsheet|表格)/i.test(normalizedText)) return "xlsx";
+  if (normalizedPath.endsWith(".pdf") || /(\.pdf|pdf)/i.test(normalizedText)) return "pdf";
+  if (normalizedPath.endsWith(".md")) return "md";
+  if (normalizedPath.endsWith(".html") || normalizedPath.endsWith(".htm")) return "html";
+  if (normalizedPath.endsWith(".csv")) return "csv";
+  if (normalizedPath.endsWith(".txt")) return "txt";
+  return null;
+}
+
+function isEditableArtifactPath(filePath = "") {
+  return Boolean(artifactKindFromTextOrPath("", filePath));
+}
+
+function looksLikeArtifactEditFollowup(userCommand = "", contextPacket = {}) {
+  if ((contextPacket.file_paths ?? []).some((filePath) => isEditableArtifactPath(filePath))) {
+    return FOLLOWUP_ARTIFACT_EDIT_PATTERNS.some((pattern) => pattern.test(String(userCommand ?? "")));
+  }
+  const text = String(userCommand ?? "");
+  return FOLLOWUP_ARTIFACT_EDIT_PATTERNS.some((pattern) => pattern.test(text))
+    && /(pptx?|powerpoint|幻灯片|演示文稿|slides?|docx?|word|xlsx?|excel|表格|pdf|文件|文档|链接|图片|图表)/i.test(text);
+}
+
+function findRecentArtifactPath(runtime, preferredKind = null) {
+  const tasks = runtime?.store?.listTasks?.() ?? [];
+  const ordered = tasks
+    .filter((task) => ["success", "partial_success"].includes(task?.status))
+    .sort((a, b) => Date.parse(b?.updated_at ?? b?.created_at ?? 0) - Date.parse(a?.updated_at ?? a?.created_at ?? 0));
+  for (const task of ordered) {
+    const artifacts = runtime?.store?.getArtifactsForTask?.(task.task_id) ?? [];
+    for (const artifact of [...artifacts].reverse()) {
+      const kind = artifactKindFromTextOrPath("", artifact.path);
+      if (!kind) continue;
+      if (preferredKind && kind !== preferredKind) continue;
+      return artifact.path;
+    }
+  }
+  return null;
+}
+
+// UCA-182 Phase 16: when a follow-up turn carries parent_task_id,
+// pull the parent task's user_command + final inline_result + any
+// artifacts it produced, and prepend a compact digest to the child's
+// contextPacket.text. Without this, agentic planner's prompt has the
+// follow-up sentence ("生成一份ppt，对于我的上个问题") but zero
+// information about what "上个问题" actually was, so it either asks
+// for clarification or guesses from unrelated recent files. The
+// digest is kept short (~2KB) so it doesn't blow the token budget;
+// the full history still lives in the client-side turns which the
+// UI folds into contextPacket.text separately.
+function seedParentTaskContext({ runtime, parentTaskId, contextPacket }) {
+  if (!parentTaskId || !runtime?.store?.getTask) return contextPacket;
+  let parent, events;
+  try {
+    parent = runtime.store.getTask(parentTaskId);
+    events = runtime.store.getTaskEvents(parentTaskId) ?? [];
+  } catch {
+    return contextPacket;
+  }
+  if (!parent) return contextPacket;
+  const lastSuccess = [...events].reverse().find((e) =>
+    e.event_type === "success" || e.event_type === "inline_result"
+  );
+  const answerText = String(lastSuccess?.payload?.text ?? "").slice(0, 1200);
+  const artifactEvents = events.filter((e) => e.event_type === "artifact_created");
+  const artifactPaths = artifactEvents
+    .map((e) => String(e.payload?.path ?? ""))
+    .filter((p) => p && !p.endsWith("-preview.html") && !p.endsWith("-preview.txt"))
+    .slice(0, 6);
+  const parts = [];
+  parts.push("[上一轮任务摘要 · parent=" + parentTaskId.slice(0, 12) + "]");
+  if (parent.user_command) parts.push("用户上一条指令：" + String(parent.user_command).slice(0, 400));
+  if (answerText) parts.push("助手上一条回复（节选）：\n" + answerText);
+  if (artifactPaths.length) {
+    parts.push("上一轮生成的文件：\n" + artifactPaths.map((p) => "- " + p).join("\n"));
+  }
+  const digest = parts.join("\n\n");
+  const mergedText = [digest, contextPacket?.text ?? ""].filter(Boolean).join("\n\n---\n\n").trim();
+  const mergedFiles = Array.from(new Set([
+    ...(contextPacket?.file_paths ?? []),
+    ...artifactPaths
+  ]));
+  return {
+    ...contextPacket,
+    text: mergedText,
+    file_paths: mergedFiles,
+    selection_metadata: {
+      ...(contextPacket?.selection_metadata ?? {}),
+      parent_task_id: parentTaskId,
+      parent_artifact_paths: artifactPaths
+    }
+  };
+}
+
+async function maybeSeedRecentArtifactContext({ runtime, userCommand, contextPacket }) {
+  const existingFiles = contextPacket?.file_paths ?? [];
+  if (existingFiles.some((filePath) => isEditableArtifactPath(filePath))) {
+    return contextPacket;
+  }
+  if (!looksLikeArtifactEditFollowup(userCommand, contextPacket)) {
+    return contextPacket;
+  }
+  const preferredKind = artifactKindFromTextOrPath(userCommand, "");
+  const targetPath = findRecentArtifactPath(runtime, preferredKind);
+  if (!targetPath) {
+    return contextPacket;
+  }
+  let extractedText = "";
+  try {
+    const extracted = await extractFileContent(targetPath);
+    extractedText = String(extracted?.text ?? "").slice(0, 8000);
+  } catch {
+    extractedText = "";
+  }
+  const note = [
+    "[Editable target artifact]",
+    `Path: ${targetPath}`,
+    extractedText ? "Current extracted contents:" : null,
+    extractedText || null
+  ].filter(Boolean).join("\n");
+  const mergedText = [contextPacket?.text ?? "", note].filter(Boolean).join("\n\n").trim();
+  return {
+    ...contextPacket,
+    text: mergedText,
+    file_paths: [...existingFiles, targetPath],
+    selection_metadata: {
+      ...(contextPacket?.selection_metadata ?? {}),
+      editable_target_path: targetPath,
+      editable_target_kind: preferredKind ?? artifactKindFromTextOrPath("", targetPath)
+    }
   };
 }
 
@@ -353,7 +496,10 @@ async function runExecutor({ runtime, task, executor }) {
     }
 
     const requestedFormat = detectRequestedOutputFormatForTask(task);
-    if (requestedFormat.id !== "conversational" && generatedArtifacts.length === 0) {
+    const shouldSynthesizeFallbackArtifact = requestedFormat.id !== "conversational"
+      && generatedArtifacts.length === 0
+      && task.task_spec?.goal !== "transform_existing_file";
+    if (shouldSynthesizeFallbackArtifact) {
       const outputDir = await createOutputDirForTask({ runtime, artifactStore, task });
       const artifacts = await writeRequestedArtifacts({
         assistantText: isEmptyPlannerResponse(inlineText)
@@ -470,7 +616,21 @@ export async function submitContextTask({
   const inspection = runtime.securityBroker.inspectContext(rawContextPacket, {
     trigger: "context_submission"
   });
-  const normalizedContextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
+  const inspectedContextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
+  // UCA-182 Phase 16: cross-turn memory — if the client sent a
+  // parent_task_id, pull the parent's command + final reply + artifact
+  // list into this turn's contextPacket so the planner prompt actually
+  // knows what "上个问题" refers to.
+  const withParentContext = seedParentTaskContext({
+    runtime,
+    parentTaskId,
+    contextPacket: inspectedContextPacket
+  });
+  const normalizedContextPacket = await maybeSeedRecentArtifactContext({
+    runtime,
+    userCommand,
+    contextPacket: withParentContext
+  });
   const preflightTaskSpec = createTaskSpec(userCommand, normalizedContextPacket, route);
 
   if (inspection.allowed && canDecomposeFromTaskSpec(preflightTaskSpec) && !skipDecomposition && !parentTaskId) {
