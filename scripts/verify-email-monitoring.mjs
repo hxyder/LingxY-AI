@@ -5,6 +5,19 @@ import { upsertEmailAccount } from "../src/service/email/accounts.mjs";
 const service = createServiceBootstrap();
 const runtime = service.runtime;
 
+// UCA-181: auto-creating schedules from email is gated behind a separate
+// feature flag (default OFF) — the previous default of always-on
+// surfaced AI-extracted summaries straight into the user's schedule list
+// without provenance. Tests still need to exercise the auto-create code
+// path, so enable the flag here explicitly.
+runtime.configStore?.save?.({
+  ...(runtime.configStore?.load?.() ?? {}),
+  features: {
+    ...((runtime.configStore?.load?.() ?? {}).features ?? {}),
+    email_auto_schedule: { enabled: true }
+  }
+});
+
 await upsertEmailAccount(runtime, {
   id: "mock-account",
   provider: "mock",

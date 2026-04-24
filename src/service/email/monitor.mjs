@@ -98,7 +98,13 @@ export function createEmailMonitor({ runtime, pollIntervalMs = DEFAULT_POLL_INTE
         summary
       });
 
-      if (intent.actionRequired && intent.dueAt && intent.confidence >= 0.6) {
+      // UCA-181: auto-creating schedules from email is gated behind a
+      // separate feature flag (default OFF). The previous behaviour created
+      // schedules from any email whose AI summary mentioned a date + the
+      // word "请/需要" — too aggressive, surfaced as "2. 核心诉求: ..."
+      // entries in the user's schedule list with no provenance.
+      const autoScheduleGate = requireFeature("email_auto_schedule", runtime.configStore);
+      if (autoScheduleGate.ok && intent.actionRequired && intent.dueAt && intent.confidence >= 0.6) {
         const schedule = runtime.scheduler.createSchedule(
           buildSchedulePayload({ message, intent }),
           { createdBy: "email" }
