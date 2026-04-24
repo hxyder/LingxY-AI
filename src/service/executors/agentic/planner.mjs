@@ -36,6 +36,12 @@ import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
 
+// Whitelist of tools whose argument streams are surfaced as
+// `tool_input_delta` events for the live preview panel. Limiting the set
+// keeps the SSE bus from carrying every partial JSON token (e.g. for
+// arguments to search / lookup tools where a live preview is meaningless).
+const FILE_GEN_TOOLS = new Set(["write_file", "generate_document", "edit_file"]);
+
 const COMPLETION_CLAIM_PATTERNS = [
   /\b(?:done|finished|completed|saved|written|created|generated|launched|opened|executed|ran|published|sent)\b/i,
   /(?:已完成|已保存|已生成|已写入|已创建|已启动|已打开|已运行|已执行|已发送|完成了|创建了|生成了|写好了)/
@@ -294,12 +300,22 @@ export async function runAgenticPlanner({
       const onTextDelta = (adapter.supportsStreaming && onEvent)
         ? (delta) => onEvent({ event_type: "text_delta", payload: { delta } })
         : undefined;
+      const onToolInputDelta = (adapter.supportsStreaming && onEvent)
+        ? (toolName, partialJson) => {
+            if (!FILE_GEN_TOOLS.has(toolName)) return;
+            onEvent({
+              event_type: "tool_input_delta",
+              payload: { tool_id: toolName, partial_json: partialJson }
+            });
+          }
+        : undefined;
       response = await adapter.generate({
         messages,
         tools: toolSchemas,
         signal,
         fetchImpl,
-        onTextDelta
+        onTextDelta,
+        onToolInputDelta
       });
     } catch (error) {
       if (error?.code === "ABORT_ERR") throw error;

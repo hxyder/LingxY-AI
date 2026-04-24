@@ -189,6 +189,30 @@ function needsCurrentWebData(text) {
   return WEB_DATA_PATTERNS.some((p) => p.test(text));
 }
 
+const NOTE_INTENT_PATTERNS = [
+  /(?:笔记|筆記|纪要|會議紀要|会议记录|會議記錄|meeting\s+notes?|study\s+notes?|class\s+notes?)/i,
+  /(?:记一下|記一下|记录一下|記錄一下|整理成(?:笔记|筆記|纪要)|总结成(?:笔记|筆記|纪要)|写成(?:笔记|筆記|纪要)|做成(?:笔记|筆記|纪要))/i,
+  /\b(?:note|notes|minutes)\b/i
+];
+
+function hasContentForNote(contextPacket = {}) {
+  return Boolean(
+    String(contextPacket?.text ?? "").trim()
+    || String(contextPacket?.clipboard_text ?? "").trim()
+    || contextPacket?.file_paths?.length
+    || contextPacket?.image_paths?.length
+    || contextPacket?.source_type === "audio_note"
+    || contextPacket?.source_app === "uca.note"
+  );
+}
+
+function hasNoteTakingIntent(text, contextPacket = {}) {
+  if (contextPacket?.source_type === "audio_note" || contextPacket?.source_app === "uca.note") {
+    return true;
+  }
+  return hasContentForNote(contextPacket) && NOTE_INTENT_PATTERNS.some((p) => p.test(String(text ?? "")));
+}
+
 // ---------------------------------------------------------------------------
 // Detect artifact requirement
 // ---------------------------------------------------------------------------
@@ -228,15 +252,22 @@ function detectFormats(text) {
  */
 export function createTaskSpec(userText, contextPacket = {}, intentRouterResult = {}) {
   const text = String(userText ?? "");
-
-  const goal = classifyGoal(text);
+  const noteIntent = hasNoteTakingIntent(text, contextPacket);
+  const imageDriven = Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0;
+  let goal = classifyGoal(text);
+  if (noteIntent) {
+    goal = imageDriven ? "multimodal_analyze" : "analyze_and_report";
+  }
   const suggestedFormats = detectFormats(text);
-  const explicitFileArtifactKind = suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? null;
-  const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file"].includes(goal)
-    ? "docx"
+  const explicitFileArtifactKind = noteIntent
+    ? (suggestedFormats.includes("md") ? "md" : null)
+    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? null);
+  const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file", "multimodal_analyze"].includes(goal)
+    ? (noteIntent ? "md" : "docx")
     : null;
   const fileArtifactKind = explicitFileArtifactKind ?? inferredFileArtifactKind;
-  const artifactRequired = FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
+  const artifactRequired = noteIntent ||
+    FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
     goal === "generate_document" ||
     goal === "analyze_and_report" ||
     goal === "transform_existing_file";
@@ -253,6 +284,16 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     selection_text: contextPacket?.text ?? "",
     clipboard: contextPacket?.clipboard_text ?? ""
   };
+  const mergedIntentTags = [
+    ...(intentRouterResult.intent_tags ?? []),
+    ...(noteIntent ? ["note_capture"] : [])
+  ];
+  const mergedSuggestedFormats = [
+    ...new Set([
+      ...suggestedFormats,
+      ...(noteIntent ? ["md"] : [])
+    ])
+  ];
 
   const spec = {
     goal,
@@ -279,9 +320,11 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       required_tool_names: []
     },
     // Preserve intent_tags and executor hints from existing router result
-    suggested_executor: intentRouterResult.suggested_executor ?? deriveExecutor(goal, artifactRequired, webDataNeeded),
-    intent_tags: intentRouterResult.intent_tags ?? [],
-    suggested_formats: suggestedFormats
+    suggested_executor: noteIntent
+      ? (imageDriven ? "multi_modal" : "agentic")
+      : (intentRouterResult.suggested_executor ?? deriveExecutor(goal, artifactRequired, webDataNeeded)),
+    intent_tags: mergedIntentTags,
+    suggested_formats: mergedSuggestedFormats
   };
 
   return applyHardenedRules(spec);

@@ -272,7 +272,7 @@ function buildConversationStepLabel(eventType, payload) {
 
 // Event types that should only be published to the live bus and not persisted
 // to the store (avoids flooding the DB with thousands of delta records).
-const EPHEMERAL_EVENT_TYPES = new Set(["text_delta"]);
+const EPHEMERAL_EVENT_TYPES = new Set(["text_delta", "tool_input_delta"]);
 
 export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   const record = {

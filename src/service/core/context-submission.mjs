@@ -5,7 +5,7 @@ import path from "node:path";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
-import { detectRequestedOutputFormat, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
+import { detectRequestedOutputFormatForTask, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import { decomposeUserCommand } from "./router/decomposer.mjs";
 import { submitCompositeTask } from "./composite-submission.mjs";
@@ -352,7 +352,7 @@ async function runExecutor({ runtime, task, executor }) {
       });
     }
 
-    const requestedFormat = detectRequestedOutputFormat(task.user_command);
+    const requestedFormat = detectRequestedOutputFormatForTask(task);
     if (requestedFormat.id !== "conversational" && generatedArtifacts.length === 0) {
       const outputDir = await createOutputDirForTask({ runtime, artifactStore, task });
       const artifacts = await writeRequestedArtifacts({
@@ -580,7 +580,7 @@ export async function submitContextTask({
         || (task.executor === "general" && !hasFastProvider())
         || chatRoutedToCodeCli());
 
-    const requestedFormat = detectRequestedOutputFormat(task.user_command);
+    const requestedFormat = detectRequestedOutputFormatForTask(task);
     const shouldPreferProviderArtifactFlow = requestedFormat.id !== "conversational"
       && hasChatApiProvider()
       && !hasFileOrImageContext(normalizedContextPacket);

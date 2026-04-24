@@ -369,6 +369,92 @@
         color: #fff;
       }
 
+      /* ── per-assistant-bubble Add-to-note action (UCA-181) ── */
+      .bubble-note-actions {
+        margin-top: 6px;
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      .bubble:hover .bubble-note-actions { opacity: 1; }
+      .bubble-note-btn {
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: var(--radius-pill);
+        background: transparent;
+        border: 1px solid var(--line);
+        color: var(--muted);
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .bubble-note-btn:hover {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        color: var(--accent-strong);
+      }
+
+      /* ── overlay note picker popover (UCA-181) ── */
+      .overlay-note-popover {
+        position: absolute;
+        z-index: 200;
+        width: 280px;
+        background: var(--surface-strong);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-sm);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.2);
+        overflow: hidden;
+        font-family: inherit;
+      }
+      .overlay-note-popover .onp-head {
+        padding: 8px 12px;
+        font-size: 11.5px;
+        color: var(--muted);
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .overlay-note-popover .onp-list {
+        max-height: 320px;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+      }
+      .overlay-note-popover .onp-item {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 2px;
+        padding: 8px 12px;
+        border: 0;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+        border-bottom: 1px solid var(--line);
+        font-family: inherit;
+        color: var(--ink);
+      }
+      .overlay-note-popover .onp-item:last-child { border-bottom: 0; }
+      .overlay-note-popover .onp-item:hover { background: var(--surface); }
+      .overlay-note-popover .onp-item-title {
+        font-size: 12.5px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+      .overlay-note-popover .onp-item-snippet {
+        font-size: 11px;
+        color: var(--muted);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+      }
+      .overlay-note-popover .onp-item-new {
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-weight: 600;
+      }
+
       /* ── context chips (attached files / web context) ── */
       .context-chip {
         display: inline-flex;
@@ -1799,6 +1885,7 @@
       <div id="taskListBody" class="task-list-body" role="list"></div>
     </div>
 
+    <script src="./live-preview.js"></script>
     <script type="module" src="./overlay.js"></script>
   </body>
 </html>

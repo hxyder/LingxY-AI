@@ -155,7 +155,7 @@ function parseAnthropicResponse(data) {
   };
 }
 
-async function generateAnthropic(resolved, { messages, tools, maxTokens, signal, fetchImpl, onTextDelta }) {
+async function generateAnthropic(resolved, { messages, tools, maxTokens, signal, fetchImpl, onTextDelta, onToolInputDelta }) {
   const fetchFn = fetchImpl ?? globalThis.fetch;
   if (!fetchFn) throw new Error("No fetch implementation available for Anthropic adapter.");
 
@@ -239,6 +239,10 @@ async function generateAnthropic(resolved, { messages, tools, maxTokens, signal,
           } else if (d?.type === "input_json_delta" && typeof d.partial_json === "string") {
             if (toolInputBuffers[ev.index] !== undefined) {
               toolInputBuffers[ev.index] += d.partial_json;
+              if (typeof onToolInputDelta === "function") {
+                const block = toolUseBlocks[ev.index];
+                onToolInputDelta(block?.name ?? "", toolInputBuffers[ev.index]);
+              }
             }
           }
         }
@@ -330,7 +334,7 @@ function parseOpenAIResponse(data) {
   };
 }
 
-async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fetchImpl, onTextDelta }) {
+async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fetchImpl, onTextDelta, onToolInputDelta }) {
   const fetchFn = fetchImpl ?? globalThis.fetch;
   if (!fetchFn) throw new Error("No fetch implementation available for OpenAI-compatible adapter.");
 
@@ -412,7 +416,12 @@ async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fe
             }
             if (tc.id) toolCallBuilders[idx].id += tc.id;
             if (tc.function?.name) toolCallBuilders[idx].name += tc.function.name;
-            if (tc.function?.arguments) toolCallBuilders[idx].arguments += tc.function.arguments;
+            if (tc.function?.arguments) {
+              toolCallBuilders[idx].arguments += tc.function.arguments;
+              if (typeof onToolInputDelta === "function") {
+                onToolInputDelta(toolCallBuilders[idx].name, toolCallBuilders[idx].arguments);
+              }
+            }
           }
         }
       }

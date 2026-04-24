@@ -36,6 +36,7 @@ import {
   sanitizeTaskRouteForProvider
 } from "../executors/shared/provider-resolver.mjs";
 import { extractPageContent } from "../extractors/page_source/index.mjs";
+import { extractFileContent } from "../extractors/file-ingest.mjs";
 import {
   codeCliModelChoices,
   providerFingerprint,
@@ -1488,6 +1489,64 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       if (method === "GET" && url.pathname === "/config") {
         const config = runtime.configStore?.load?.() ?? {};
         return sendJson(response, 200, { config });
+      }
+
+      // UCA-181: cross-window notes sync. Both console and overlay
+      // windows live in separate Electron BrowserWindows with isolated
+      // localStorage; the previous design dropped chips silently when
+      // the user clicked "+ Note" in the overlay because the console's
+      // localStorage was a different store. Routing notes through the
+      // runtime's disk-backed JSON store gives us a single source of
+      // truth that both windows read + write.
+      if (method === "GET" && url.pathname === "/notes") {
+        if (!runtime.notesStore) return sendJson(response, 200, { notes: [] });
+        return sendJson(response, 200, { notes: runtime.notesStore.listNotes() });
+      }
+      if (method === "POST" && url.pathname === "/notes") {
+        if (!runtime.notesStore) return sendJson(response, 503, { error: "notes store unavailable" });
+        const body = await readJsonBody(request);
+        const notes = runtime.notesStore.saveNotes(body.notes ?? []);
+        return sendJson(response, 200, { notes });
+      }
+      if (method === "POST" && url.pathname === "/notes/upsert") {
+        if (!runtime.notesStore) return sendJson(response, 503, { error: "notes store unavailable" });
+        const body = await readJsonBody(request);
+        const note = runtime.notesStore.upsertNote(body.note ?? body);
+        return sendJson(response, 200, { note });
+      }
+      if (method === "POST" && url.pathname === "/notes/delete") {
+        if (!runtime.notesStore) return sendJson(response, 503, { error: "notes store unavailable" });
+        const body = await readJsonBody(request);
+        const removed = runtime.notesStore.deleteNote(body.id ?? "");
+        return sendJson(response, 200, { ok: removed });
+      }
+      if (method === "POST" && url.pathname === "/notes/append-chip") {
+        if (!runtime.notesStore) return sendJson(response, 503, { error: "notes store unavailable" });
+        const body = await readJsonBody(request);
+        const result = runtime.notesStore.appendChip({
+          noteId: body.noteId ?? "__new__",
+          text: body.text ?? "",
+          sourceLabel: body.sourceLabel ?? null
+        });
+        return sendJson(response, 200, result);
+      }
+
+      // UCA-181: extract preview-friendly text from binary office docs
+      // (docx / xlsx / pptx) so the live-preview panel can show their
+      // content instead of "无法预览". Reuses the same OOXML extractor
+      // used by the file-ingest pipeline.
+      if (method === "GET" && url.pathname === "/file/extract-text") {
+        const target = url.searchParams.get("path");
+        const limitParam = Number(url.searchParams.get("limit") ?? 8000);
+        const limit = Number.isFinite(limitParam) && limitParam > 0 ? Math.min(limitParam, 50000) : 8000;
+        if (!target) return sendJson(response, 400, { error: "missing path" });
+        try {
+          const extracted = await extractFileContent(target);
+          const text = String(extracted?.text ?? "").slice(0, limit);
+          return sendJson(response, 200, { text, mime: extracted?.mime ?? null, mode: extracted?.extraction_mode ?? null });
+        } catch (error) {
+          return sendJson(response, 500, { error: error.message });
+        }
       }
 
       if (method === "GET" && url.pathname === "/projects/store") {

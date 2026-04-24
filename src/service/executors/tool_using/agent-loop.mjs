@@ -12,7 +12,7 @@ import {
   isConnectorDomainRequest,
   matchWorkflowByTrigger
 } from "../../connectors/core/connector-intent.mjs";
-import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
+import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -468,6 +468,14 @@ function extractAbsoluteLocalPathsFromText(text = "") {
   return paths;
 }
 
+function toolDescriptorForAdapter(tool) {
+  return {
+    name: tool.id,
+    description: tool.description ?? tool.name ?? "",
+    input_schema: tool.parameters ?? { type: "object", properties: {} }
+  };
+}
+
 function formatAccountLabel(account = {}, fallback = {}) {
   const provider = account.provider ?? fallback.provider ?? "connector";
   const email = account.email || fallback.accountId || "";
@@ -709,10 +717,7 @@ Guidance (not a rigid checklist — apply judgment):
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
 - **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
 ${needsCurrentDataInstruction}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
-Respond ONLY with a single JSON object (no markdown, no code fences):
-- Call a tool:       {"tool": "tool_id", "args": { ... }}
-- Ask clarification: {"final": "your short clarifying question"}
-- Finish with answer: {"final": "your reply in the user's language"}`;
+Use the native tool interface when a tool is needed. Call at most ONE tool per turn. If no tool is needed, or you need a clarification, reply with plain text only in the user's language.`;
 
   try {
     let resultText = "";
@@ -727,39 +732,36 @@ Respond ONLY with a single JSON object (no markdown, no code fences):
       ]
     );
 
-    if (provider.kind === "anthropic") {
-      const r = await fetch(`${provider.baseUrl}/v1/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": provider.apiKey, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({
-          model: provider.model,
-          max_tokens: 1024,
-          system: systemPrompt,
-          messages: conversationMessages
-        })
-      });
-      const data = await r.json();
-      resultText = data.content?.find((b) => b.type === "text")?.text ?? "";
-    } else {
-      const body = {
-        model: provider.model,
-        max_tokens: 1024,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...conversationMessages
-        ]
+    const adapter = createProviderAdapter(provider);
+    const toolSchemas = tools.map(toolDescriptorForAdapter);
+    const response = await adapter.generate({
+      messages: [
+        { role: "system", content: systemPrompt },
+        ...conversationMessages
+      ],
+      tools: toolSchemas,
+      maxTokens: 1024,
+      onToolInputDelta: (toolName, partialJson) => {
+        if (!["write_file", "generate_document", "edit_file"].includes(toolName)) return;
+        task.__runtime?.emitTaskEvent?.("tool_input_delta", {
+          tool_id: toolName,
+          partial_json: partialJson
+        });
+      }
+    });
+    resultText = response?.text ?? "";
+
+    if (Array.isArray(response?.tool_calls) && response.tool_calls.length > 0) {
+      const call = response.tool_calls[0];
+      return {
+        type: "tool_call",
+        tool: call.name,
+        args: call.arguments ?? {}
       };
-      applyReasoningSelectionToBody(body, provider, provider.model, provider.reasoningEffort);
-      const r = await fetch(`${provider.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.apiKey}` },
-        body: JSON.stringify(body)
-      });
-      const data = await r.json();
-      resultText = data.choices?.[0]?.message?.content ?? "";
     }
 
-    // strip markdown code fences if AI added them
+    // Fallback compatibility path: some providers / bridges may still reply
+    // in the older JSON-text protocol instead of native tool calls.
     let cleaned = resultText.replace(/```(?:json)?\s*([\s\S]*?)```/g, "$1").trim();
     // try to extract JSON object if there's prose around it
     const jsonMatch = cleaned.match(/\{[\s\S]*\}/);

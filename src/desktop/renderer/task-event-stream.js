@@ -85,6 +85,11 @@ export function formatTaskEventSummary(rawEvent) {
         title: "结果已生成",
         body: payload.path ?? "已生成新的结果文件。"
       };
+    case "tool_input_delta":
+      return {
+        title: "正在写入",
+        body: `${payload.tool_id ?? "tool"} · ${(payload.partial_json ?? "").length}B`
+      };
     case "tool_call_started":
     case "tool_call_proposed":
       return {

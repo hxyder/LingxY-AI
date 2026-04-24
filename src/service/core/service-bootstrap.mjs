@@ -11,6 +11,7 @@ import { createTranslateExecutorScaffold } from "../executors/translate/translat
 import { createAgenticExecutorScaffold } from "../executors/agentic/executor.mjs";
 import { createExecutorRegistry } from "../executors/registry.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import { createNotesStore } from "../store/notes-store.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createActionToolRegistry } from "../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
@@ -85,6 +86,7 @@ export function createServiceBootstrap({
     eventBus: createEventBusScaffold(),
     queue,
     artifactStore,
+    notesStore: paths?.notesPath ? createNotesStore({ filePath: paths.notesPath }) : null,
     executors,
     kimiRuntime,
     configStore,

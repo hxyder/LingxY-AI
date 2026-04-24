@@ -13,6 +13,8 @@ export const EVENT_TYPES = Object.freeze([
   "step_finished",
   "log",
   "artifact_created",
+  "text_delta",
+  "tool_input_delta",
   "success",
   "failed",
   "unsupported"

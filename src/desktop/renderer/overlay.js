@@ -705,6 +705,20 @@ function addBubble(role, content, options) {
           } catch { /* ignore */ }
         });
       }
+      // UCA-181: per-assistant-bubble Add-to-note action. Both windows
+      // share notes through the runtime's HTTP store, so the overlay
+      // can show a proper picker (list existing notes + create new)
+      // and write directly without ferrying through navigateConsole.
+      const noteRow = document.createElement("div");
+      noteRow.className = "bubble-note-actions";
+      const addNoteBtn = document.createElement("button");
+      addNoteBtn.type = "button";
+      addNoteBtn.className = "bubble-note-btn";
+      addNoteBtn.textContent = "＋ Note";
+      addNoteBtn.title = "添加到 Notes";
+      addNoteBtn.addEventListener("click", () => openOverlayNotePicker(content, addNoteBtn));
+      noteRow.appendChild(addNoteBtn);
+      bubble.appendChild(noteRow);
     } else {
       bubble.textContent = content;
     }
@@ -1221,6 +1235,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     "tool_call_proposed",
     "tool_call_completed",
     "tool_call_denied",
+    "tool_input_delta",
     "pending_approval_created",
     "log",
     "artifact_created",
@@ -1259,6 +1274,15 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
       const stepEl = appendToolStepBubble(toolId, "pending");
       if (!pendingToolStepBubbles[toolId]) pendingToolStepBubbles[toolId] = [];
       pendingToolStepBubbles[toolId].push(stepEl);
+      if (window.livePreview?.isFileGenTool?.(toolId)) {
+        window.livePreview.openForTool({ toolName: toolId, args: frame.data?.arguments ?? frame.data?.args ?? {} });
+      }
+    }
+  }
+  if (frame.event === "tool_input_delta") {
+    const toolId = frame.data?.tool_id ?? "";
+    if (window.livePreview?.isFileGenTool?.(toolId)) {
+      window.livePreview.appendDelta({ toolName: toolId, partialJson: frame.data?.partial_json ?? "" });
     }
   }
   if (frame.event === "tool_call_completed") {
@@ -1267,6 +1291,15 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     if (toolId) {
       timelineAddStep(`${toolId}`, ok ? "done" : "fail");
       markToolStepBubble(toolId, ok, frame.data?.observation ?? "");
+      if (window.livePreview?.isFileGenTool?.(toolId)) {
+        window.livePreview.commit({
+          toolName: toolId,
+          success: ok,
+          artifactPath: frame.data?.metadata?.path ?? frame.data?.artifact_path ?? "",
+          mime: frame.data?.metadata?.mime_type ?? null,
+          observation: frame.data?.observation ?? ""
+        });
+      }
     }
   }
 
@@ -2006,6 +2039,74 @@ async function fetchJson(pathname, options = {}) {
   const payload = await response.json();
   if (!response.ok) throw new Error(payload.message ?? payload.error ?? pathname);
   return payload;
+}
+
+// UCA-181: overlay-side note picker. Fetches the runtime's notes list
+// (server-side store shared with the console window), renders a small
+// popover anchored at the +Note button, and POSTs the user's pick to
+// `/notes/append-chip`. No navigateConsole IPC — both windows hit the
+// same store directly.
+let overlayNotePickerEl = null;
+async function openOverlayNotePicker(text, anchorEl) {
+  overlayNotePickerEl?.remove();
+  overlayNotePickerEl = null;
+  let notes = [];
+  try {
+    const data = await fetchJson("/notes");
+    notes = Array.isArray(data?.notes) ? data.notes : [];
+  } catch { /* notes endpoint unavailable — still allow create-new */ }
+  const popover = document.createElement("div");
+  popover.className = "overlay-note-popover";
+  popover.innerHTML = `
+    <div class="onp-head">添加到笔记</div>
+    <div class="onp-list">
+      <button type="button" data-note-id="__new__" class="onp-item onp-item-new">＋ 新建笔记</button>
+      ${notes.slice(0, 8).map((n) => {
+        const stripTags = (s) => String(s ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+        const snippet = stripTags(n.body_html).slice(0, 60);
+        const safeTitle = (n.title || "Untitled note").replace(/[<>&"']/g, (c) => ({"<":"&lt;",">":"&gt;","&":"&amp;","\"":"&quot;","'":"&#39;"}[c]));
+        const safeSnippet = snippet.replace(/[<>&"']/g, (c) => ({"<":"&lt;",">":"&gt;","&":"&amp;","\"":"&quot;","'":"&#39;"}[c]));
+        return `<button type="button" data-note-id="${n.id}" class="onp-item">
+          <span class="onp-item-title">${safeTitle}</span>
+          <span class="onp-item-snippet">${safeSnippet}</span>
+        </button>`;
+      }).join("")}
+    </div>
+  `;
+  document.body.appendChild(popover);
+  overlayNotePickerEl = popover;
+  const r = anchorEl?.getBoundingClientRect?.() ?? { left: 100, bottom: 100 };
+  const left = Math.min(window.innerWidth - 280, Math.max(8, r.left + window.scrollX));
+  const top = r.bottom + window.scrollY + 6;
+  popover.style.left = `${left}px`;
+  popover.style.top = `${top}px`;
+  const close = () => {
+    popover.remove();
+    if (overlayNotePickerEl === popover) overlayNotePickerEl = null;
+    document.removeEventListener("mousedown", outside, true);
+  };
+  const outside = (ev) => { if (!popover.contains(ev.target) && ev.target !== anchorEl) close(); };
+  setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
+  popover.querySelectorAll("[data-note-id]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const noteId = btn.dataset.noteId;
+      try {
+        const result = await fetchJson("/notes/append-chip", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ noteId, text, sourceLabel: "From overlay" })
+        });
+        if (anchorEl) {
+          const target = result?.note?.title || "笔记";
+          anchorEl.textContent = result?.created ? `已新建 ✓ ${target}` : `已添加 ✓ ${target}`;
+          setTimeout(() => { anchorEl.textContent = "＋ Note"; }, 1800);
+        }
+      } catch (err) {
+        if (anchorEl) anchorEl.textContent = `失败：${err.message}`;
+      }
+      close();
+    });
+  });
 }
 
 async function refreshStatus() {

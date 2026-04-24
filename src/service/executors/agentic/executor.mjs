@@ -12,7 +12,7 @@
  */
 
 import { runAgenticPlanner } from "./planner.mjs";
-import { detectRequestedOutputFormat } from "../kimi/output-format.mjs";
+import { detectRequestedOutputFormatForTask } from "../kimi/output-format.mjs";
 
 export function createAgenticExecutorScaffold() {
   return {
@@ -54,7 +54,7 @@ export function createAgenticExecutorScaffold() {
         }
       };
 
-      const requestedFormat = detectRequestedOutputFormat(task.user_command ?? "");
+      const requestedFormat = detectRequestedOutputFormatForTask(task);
 
       const runPromise = runAgenticPlanner({
         task,

@@ -52,106 +52,124 @@ function isConversationalIntent(normalized) {
   return true;
 }
 
+function descriptorForFormat(id = "conversational") {
+  switch (id) {
+    case "docx":
+      return {
+        id: "docx",
+        extension: ".docx",
+        mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        primaryRequirement: "word_document",
+        promptInstruction: "Return clean structured plain text suitable for saving into a Word document."
+      };
+    case "html":
+      return {
+        id: "html",
+        extension: ".html",
+        mimeType: "text/html",
+        primaryRequirement: "html_document",
+        promptInstruction: "Return a complete HTML fragment or document only."
+      };
+    case "json":
+      return {
+        id: "json",
+        extension: ".json",
+        mimeType: "application/json",
+        primaryRequirement: "json_file",
+        promptInstruction: "Return valid JSON only."
+      };
+    case "csv":
+      return {
+        id: "csv",
+        extension: ".csv",
+        mimeType: "text/csv",
+        primaryRequirement: "csv_file",
+        promptInstruction: "Return CSV content only."
+      };
+    case "pdf":
+      return {
+        id: "pdf",
+        extension: ".pdf",
+        mimeType: "application/pdf",
+        primaryRequirement: "pdf_document",
+        promptInstruction: "Return a well-structured HTML document suitable for printing to PDF. Use clean headings, paragraphs, and tables."
+      };
+    case "xlsx":
+      return {
+        id: "xlsx",
+        extension: ".xlsx",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        primaryRequirement: "excel_spreadsheet",
+        promptInstruction: "Return clean structured plain text suitable for saving into an Excel spreadsheet. Use one line per row, separate columns with tabs."
+      };
+    case "pptx":
+      return {
+        id: "pptx",
+        extension: ".pptx",
+        mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        primaryRequirement: "pptx_presentation",
+        promptInstruction: "Return a JSON outline with shape: { \"title\": string, \"subtitle\": string?, \"slides\": [{ \"heading\": string, \"bullets\": [string] }] }. Do not wrap in code fences. The generator will produce a real .pptx file from this outline."
+      };
+    case "txt":
+      return {
+        id: "txt",
+        extension: ".txt",
+        mimeType: "text/plain",
+        primaryRequirement: "plain_text_report",
+        promptInstruction: "Return plain text only, without markdown syntax."
+      };
+    case "markdown":
+      return {
+        id: "markdown",
+        extension: ".md",
+        mimeType: "text/markdown",
+        primaryRequirement: "markdown_report",
+        promptInstruction: "Return a complete markdown report."
+      };
+    default:
+      return {
+        id: "conversational",
+        extension: null,
+        mimeType: "text/plain",
+        primaryRequirement: "inline_response",
+        promptInstruction: "Reply concisely and directly. Do not wrap your answer in code fences or markdown formatting."
+      };
+  }
+}
+
 function detectRequestedOutputFormat(userCommand = "") {
   const normalized = `${userCommand}`.toLowerCase();
 
-  if (/(?:\.docx|docx|word\s*文档|word\s*文件|word\b|文档格式)/i.test(normalized)) {
-    return {
-      id: "docx",
-      extension: ".docx",
-      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      primaryRequirement: "word_document",
-      promptInstruction: "Return clean structured plain text suitable for saving into a Word document."
-    };
-  }
+  if (/(?:\.docx|docx|word\s*文档|word\s*文件|word\b|文档格式)/i.test(normalized)) return descriptorForFormat("docx");
+  if (/(?:\.html|html|网页格式|网页文件)/i.test(normalized)) return descriptorForFormat("html");
+  if (/(?:\.json|json)/i.test(normalized)) return descriptorForFormat("json");
+  if (/(?:\.csv|csv|逗号分隔)/i.test(normalized)) return descriptorForFormat("csv");
+  if (/(?:\.pdf|pdf|导出\s*pdf)/i.test(normalized)) return descriptorForFormat("pdf");
+  if (/(?:\.xlsx|xlsx|excel|电子表格|表格文件|spreadsheet)/i.test(normalized)) return descriptorForFormat("xlsx");
+  if (/(?:\.pptx|pptx|powerpoint|\bppt\b|幻灯片|演示(?:文稿|文档)?|slides?|slideshow)/i.test(normalized)) return descriptorForFormat("pptx");
+  if (/(?:\.txt|txt|纯文本|文本文件)/i.test(normalized)) return descriptorForFormat("txt");
+  if (isConversationalIntent(normalized)) return descriptorForFormat("conversational");
+  return descriptorForFormat("markdown");
+}
 
-  if (/(?:\.html|html|网页格式|网页文件)/i.test(normalized)) {
-    return {
-      id: "html",
-      extension: ".html",
-      mimeType: "text/html",
-      primaryRequirement: "html_document",
-      promptInstruction: "Return a complete HTML fragment or document only."
-    };
-  }
+function detectRequestedOutputFormatForTask(task = {}) {
+  const detected = detectRequestedOutputFormat(task?.user_command ?? "");
+  if (detected.id !== "conversational") return detected;
 
-  if (/(?:\.json|json)/i.test(normalized)) {
-    return {
-      id: "json",
-      extension: ".json",
-      mimeType: "application/json",
-      primaryRequirement: "json_file",
-      promptInstruction: "Return valid JSON only."
-    };
-  }
+  const artifactKind = task?.task_spec?.artifact?.kind ?? null;
+  const noteIntent = task?.context_packet?.source_type === "audio_note"
+    || task?.context_packet?.source_app === "uca.note"
+    || task?.task_spec?.intent_tags?.includes?.("note_capture");
 
-  if (/(?:\.csv|csv|逗号分隔)/i.test(normalized)) {
-    return {
-      id: "csv",
-      extension: ".csv",
-      mimeType: "text/csv",
-      primaryRequirement: "csv_file",
-      promptInstruction: "Return CSV content only."
-    };
-  }
-
-  if (/(?:\.pdf|pdf|导出\s*pdf)/i.test(normalized)) {
-    return {
-      id: "pdf",
-      extension: ".pdf",
-      mimeType: "application/pdf",
-      primaryRequirement: "pdf_document",
-      promptInstruction: "Return a well-structured HTML document suitable for printing to PDF. Use clean headings, paragraphs, and tables."
-    };
-  }
-
-  if (/(?:\.xlsx|xlsx|excel|电子表格|表格文件|spreadsheet)/i.test(normalized)) {
-    return {
-      id: "xlsx",
-      extension: ".xlsx",
-      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      primaryRequirement: "excel_spreadsheet",
-      promptInstruction: "Return clean structured plain text suitable for saving into an Excel spreadsheet. Use one line per row, separate columns with tabs."
-    };
-  }
-
-  if (/(?:\.pptx|pptx|powerpoint|\bppt\b|幻灯片|演示(?:文稿|文档)?|slides?|slideshow)/i.test(normalized)) {
-    return {
-      id: "pptx",
-      extension: ".pptx",
-      mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      primaryRequirement: "pptx_presentation",
-      promptInstruction: "Return a JSON outline with shape: { \"title\": string, \"subtitle\": string?, \"slides\": [{ \"heading\": string, \"bullets\": [string] }] }. Do not wrap in code fences. The generator will produce a real .pptx file from this outline."
-    };
-  }
-
-  if (/(?:\.txt|txt|纯文本|文本文件)/i.test(normalized)) {
-    return {
-      id: "txt",
-      extension: ".txt",
-      mimeType: "text/plain",
-      primaryRequirement: "plain_text_report",
-      promptInstruction: "Return plain text only, without markdown syntax."
-    };
-  }
-
-  if (isConversationalIntent(normalized)) {
-    return {
-      id: "conversational",
-      extension: null,
-      mimeType: "text/plain",
-      primaryRequirement: "inline_response",
-      promptInstruction: "Reply concisely and directly. Do not wrap your answer in code fences or markdown formatting."
-    };
-  }
-
-  return {
-    id: "markdown",
-    extension: ".md",
-    mimeType: "text/markdown",
-    primaryRequirement: "markdown_report",
-    promptInstruction: "Return a complete markdown report."
-  };
+  if (artifactKind === "md" || noteIntent) return descriptorForFormat("markdown");
+  if (artifactKind === "docx") return descriptorForFormat("docx");
+  if (artifactKind === "pdf") return descriptorForFormat("pdf");
+  if (artifactKind === "pptx") return descriptorForFormat("pptx");
+  if (artifactKind === "xlsx") return descriptorForFormat("xlsx");
+  if (artifactKind === "html") return descriptorForFormat("html");
+  if (artifactKind === "csv") return descriptorForFormat("csv");
+  if (artifactKind === "txt") return descriptorForFormat("txt");
+  return detected;
 }
 
 function coerceJson(text) {
@@ -461,4 +479,4 @@ export async function writeRequestedArtifacts({
   return artifacts;
 }
 
-export { detectRequestedOutputFormat };
+export { detectRequestedOutputFormat, detectRequestedOutputFormatForTask };

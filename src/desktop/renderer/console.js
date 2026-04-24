@@ -397,6 +397,17 @@ if (window.ucaShell?.onNavigateConsole) {
       void syncConsoleProjectStoreFromService({ rerender: true });
     } else if (tabId === "connectors") {
       void loadConnectorsTab();
+    } else if (tabId === "notes") {
+      // Lazy-init the notes module so window.lingxyNotes is ready, then
+      // honor an optional appendChip handoff from the overlay window.
+      if (typeof initNotesIfNeeded === "function") initNotesIfNeeded();
+      if (typeof payload.appendChip === "string" && payload.appendChip.trim()) {
+        const api = window.lingxyNotes;
+        if (api) {
+          const target = api.list()[0]?.id || api.createNote();
+          api.addToNote(target, payload.appendChip);
+        }
+      }
     }
   });
 }
@@ -573,9 +584,122 @@ function appendConsoleChatMessage(role, text, options = {}) {
   bubble.textContent = text;
   body.appendChild(bubble);
 
+  if (role === "assistant" || role === "ai") {
+    const actions = document.createElement("div");
+    actions.className = "chat-msg-actions";
+    actions.innerHTML = `
+      <button type="button" class="chat-msg-action" data-action="copy" title="Copy">复制</button>
+      <button type="button" class="chat-msg-action" data-action="note" title="Add to note">＋ Note</button>
+    `;
+    actions.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-action]");
+      if (!btn) return;
+      const content = bubble.textContent || "";
+      if (btn.dataset.action === "copy") {
+        try { navigator.clipboard?.writeText?.(content); } catch { /* ignore */ }
+        btn.textContent = "已复制";
+        setTimeout(() => { btn.textContent = "复制"; }, 1200);
+      } else if (btn.dataset.action === "note") {
+        openNoteTargetPicker(content, btn);
+      }
+    });
+    body.appendChild(actions);
+  }
+
   wrapper.appendChild(body);
   consoleChatMessages.appendChild(wrapper);
   consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+}
+
+// ── Selection-floating "+ Note" pill inside the chat feed ────────────────
+// Single document-scoped listener — relies on the notes module exposing
+// `window.lingxyNotes` once it boots. If the module isn't loaded yet we
+// just no-op (the picker handles its own absence).
+let chatSelectionPillEl = null;
+function ensureChatSelectionPill() {
+  if (chatSelectionPillEl) return chatSelectionPillEl;
+  chatSelectionPillEl = document.createElement("button");
+  chatSelectionPillEl.type = "button";
+  chatSelectionPillEl.className = "chat-selection-pill";
+  chatSelectionPillEl.textContent = "＋ Note";
+  chatSelectionPillEl.hidden = true;
+  document.body.appendChild(chatSelectionPillEl);
+  chatSelectionPillEl.addEventListener("mousedown", (ev) => ev.preventDefault());
+  chatSelectionPillEl.addEventListener("click", () => {
+    const text = chatSelectionPillEl.dataset.selectedText || "";
+    chatSelectionPillEl.hidden = true;
+    if (text.trim()) openNoteTargetPicker(text, chatSelectionPillEl);
+  });
+  return chatSelectionPillEl;
+}
+document.addEventListener("selectionchange", () => {
+  if (!consoleChatMessages) return;
+  const sel = document.getSelection();
+  const pill = ensureChatSelectionPill();
+  if (!sel || sel.isCollapsed) { pill.hidden = true; return; }
+  const text = sel.toString();
+  if (!text || text.trim().length < 4) { pill.hidden = true; return; }
+  const range = sel.getRangeAt(0);
+  const within = consoleChatMessages.contains(range.commonAncestorContainer)
+    || consoleChatMessages === range.commonAncestorContainer;
+  if (!within) { pill.hidden = true; return; }
+  const rect = range.getBoundingClientRect();
+  if (!rect || (rect.width === 0 && rect.height === 0)) { pill.hidden = true; return; }
+  pill.dataset.selectedText = text;
+  pill.style.top = `${Math.max(8, rect.top + window.scrollY - 34)}px`;
+  pill.style.left = `${Math.min(window.innerWidth - 90, rect.right + window.scrollX - 80)}px`;
+  pill.hidden = false;
+});
+
+function openNoteTargetPicker(text, anchorEl) {
+  if (!text || !text.trim()) return;
+  const api = window.lingxyNotes;
+  if (!api?.list || !api?.addToNote) {
+    // Notes module hasn't booted yet — quick fallback: stash in clipboard
+    // and surface a hint via the chat state line so the action is never lost.
+    try { navigator.clipboard?.writeText?.(text); } catch { /* ignore */ }
+    if (consoleChatState) {
+      consoleChatState.textContent = "已复制 — 打开 Notes 标签后再粘贴";
+      setTimeout(() => { consoleChatState.textContent = ""; }, 2400);
+    }
+    return;
+  }
+  const notes = api.list();
+  const popover = document.createElement("div");
+  popover.className = "note-target-popover";
+  popover.innerHTML = `
+    <div class="ntp-head">添加到笔记</div>
+    <div class="ntp-list">
+      <button type="button" data-note-id="__new__" class="ntp-item ntp-item-new">＋ 新建笔记</button>
+      ${notes.slice(0, 8).map((n) => `
+        <button type="button" data-note-id="${escapeHtml(n.id)}" class="ntp-item">
+          <span class="ntp-item-title">${escapeHtml(n.title || "Untitled note")}</span>
+          <span class="ntp-item-snippet">${escapeHtml(n.snippet || "")}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+  document.body.appendChild(popover);
+  const r = (anchorEl?.getBoundingClientRect?.()) || { left: 100, bottom: 100 };
+  const left = Math.min(window.innerWidth - 280, Math.max(8, r.left + window.scrollX));
+  const top = r.bottom + window.scrollY + 6;
+  popover.style.left = `${left}px`;
+  popover.style.top = `${top}px`;
+  const close = () => { popover.remove(); document.removeEventListener("mousedown", outside, true); };
+  const outside = (ev) => { if (!popover.contains(ev.target)) close(); };
+  setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
+  popover.querySelectorAll("[data-note-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.noteId;
+      const noteId = id === "__new__" ? api.createNote?.() : id;
+      if (noteId) api.addToNote(noteId, text);
+      close();
+      if (consoleChatState) {
+        consoleChatState.textContent = "已添加到笔记 ✓";
+        setTimeout(() => { if (consoleChatState.textContent === "已添加到笔记 ✓") consoleChatState.textContent = ""; }, 1800);
+      }
+    });
+  });
 }
 
 // UCA-177: premium two-row timeline card for tool invocations.
@@ -722,10 +846,18 @@ function subscribeConsoleChatTask(taskId) {
       const payload = frame.data ?? {};
       if (frame.event === "tool_call_proposed" || frame.event === "tool_call_started") {
         const toolName = payload.tool_id ?? payload.tool ?? "tool";
-        const args = payload.args ?? {};
+        const args = payload.args ?? payload.arguments ?? {};
         const id = createConsoleChatToolCard(toolName, args, { state: "running" });
         if (!payload.__consoleToolCardId) payload.__consoleToolCardId = id;
         consoleChatState.textContent = `Running ${toolName}...`;
+        if (window.livePreview?.isFileGenTool?.(toolName)) {
+          window.livePreview.openForTool({ toolName, args });
+        }
+      } else if (frame.event === "tool_input_delta") {
+        const toolName = payload.tool_id ?? "";
+        if (window.livePreview?.isFileGenTool?.(toolName)) {
+          window.livePreview.appendDelta({ toolName, partialJson: payload.partial_json ?? "" });
+        }
       } else if (frame.event === "tool_call_completed") {
         const toolName = payload.tool_id ?? payload.tool ?? "tool";
         const outcome = payload.observation ?? payload.text ?? payload.error ?? "";
@@ -738,6 +870,16 @@ function subscribeConsoleChatTask(taskId) {
           error: payload.success === false
         });
         consoleChatState.textContent = payload.success === false ? `${toolName} failed` : `${toolName} done`;
+        if (window.livePreview?.isFileGenTool?.(toolName)) {
+          const artifactPath = payload.metadata?.path ?? payload.artifact_path ?? "";
+          window.livePreview.commit({
+            toolName,
+            success: payload.success !== false,
+            artifactPath,
+            mime: payload.metadata?.mime_type ?? null,
+            observation: outcome
+          });
+        }
       } else if (frame.event === "inline_result") {
         appendConsoleChatMessage("assistant", payload.text ?? payload.message ?? "");
         consoleChatResultTaskIds.add(taskId);
@@ -6133,6 +6275,62 @@ function renderChatAttachments() {
 consoleChatAttachBtn?.addEventListener("click", () => {
   consoleChatAttachInput?.click();
 });
+
+const consoleChatNoteBtn = document.querySelector("#consoleChatNoteBtn");
+consoleChatNoteBtn?.addEventListener("click", () => {
+  // Need notes module booted to read note bodies — touch the panel once
+  // to lazily init (matches the tab-switch flow in initNotesIfNeeded).
+  if (typeof initNotesIfNeeded === "function") initNotesIfNeeded();
+  const api = window.lingxyNotes;
+  if (!api) return;
+  const notes = api.list();
+  if (notes.length === 0) {
+    if (consoleChatState) {
+      consoleChatState.textContent = "还没有笔记 — 在 Notes 标签新建一条";
+      setTimeout(() => { consoleChatState.textContent = ""; }, 2400);
+    }
+    return;
+  }
+  const popover = document.createElement("div");
+  popover.className = "note-target-popover";
+  popover.innerHTML = `
+    <div class="ntp-head">从笔记插入</div>
+    <div class="ntp-list">
+      ${notes.slice(0, 8).map((n) => `
+        <button type="button" data-note-id="${escapeHtml(n.id)}" class="ntp-item">
+          <span class="ntp-item-title">${escapeHtml(n.title)}</span>
+          <span class="ntp-item-snippet">${escapeHtml(n.snippet)}</span>
+        </button>
+      `).join("")}
+    </div>
+  `;
+  document.body.appendChild(popover);
+  const r = consoleChatNoteBtn.getBoundingClientRect();
+  popover.style.left = `${Math.max(8, r.left + window.scrollX)}px`;
+  popover.style.top = `${r.top + window.scrollY - 8 - popover.offsetHeight}px`;
+  // After mount we know the height — re-position above the button.
+  popover.style.top = `${r.top + window.scrollY - popover.offsetHeight - 6}px`;
+  const close = () => { popover.remove(); document.removeEventListener("mousedown", outside, true); };
+  const outside = (ev) => { if (!popover.contains(ev.target) && ev.target !== consoleChatNoteBtn) close(); };
+  setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
+  popover.querySelectorAll("[data-note-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const text = api.bodyText(btn.dataset.noteId).trim();
+      if (text && consoleChatInput) {
+        const start = consoleChatInput.selectionStart ?? consoleChatInput.value.length;
+        const end = consoleChatInput.selectionEnd ?? start;
+        const before = consoleChatInput.value.slice(0, start);
+        const after = consoleChatInput.value.slice(end);
+        const insert = (before && !before.endsWith("\n") ? "\n" : "") + text + "\n";
+        consoleChatInput.value = before + insert + after;
+        const cursor = (before + insert).length;
+        consoleChatInput.setSelectionRange(cursor, cursor);
+        consoleChatInput.focus();
+      }
+      close();
+    });
+  });
+});
 consoleChatAttachInput?.addEventListener("change", () => {
   const files = Array.from(consoleChatAttachInput.files ?? []);
   const resolvedPaths = window.ucaShell?.resolveDroppedFilePaths?.(files) ?? [];
@@ -6269,7 +6467,10 @@ initFoldablePanelSections();
    ═══════════════════════════════════════════════════════════════════════════ */
 let notesReady = false;
 function initNotesIfNeeded() {
-  if (notesReady) return;
+  if (notesReady) {
+    window.lingxyNotes?.refresh?.({ preserveSelection: true });
+    return;
+  }
   notesReady = true;
   initQuickNotes();
 }
@@ -6279,6 +6480,7 @@ function initQuickNotes() {
   const LS_SELECTED = "lingxy.notes.selected";
   const LS_FONT_FAMILY = "lingxy.notes.fontFamily";
   const LS_FONT_SIZE = "lingxy.notes.fontSize";
+  const LS_COLLAPSED_GROUPS = "lingxy.notes.collapsedGroups";
 
   const panel = document.getElementById("panel-notes");
   if (!panel) return;
@@ -6295,6 +6497,13 @@ function initQuickNotes() {
   const fontFamilySel = panel.querySelector("#noteFontFamily");
   const newBtn = panel.querySelector("#notesNewBtn");
   const deleteBtn = panel.querySelector("#noteDeleteBtn");
+  const groupInput = panel.querySelector("#noteGroupInput");
+  const groupPickerBtn = panel.querySelector("#noteGroupPickerBtn");
+  const multiActions = panel.querySelector("#notesMultiActions");
+  const multiCount = panel.querySelector("#notesMultiCount");
+  const mergeBtn = panel.querySelector("#notesMergeBtn");
+  const groupBtn = panel.querySelector("#notesGroupBtn");
+  const multiCancelBtn = panel.querySelector("#notesMultiCancelBtn");
   const shareBtn = panel.querySelector("#noteShareBtn");
   const adoptFromChatBtn = panel.querySelector("#noteAdoptFromChatBtn");
   const voiceBtn = panel.querySelector("#noteVoiceBtn");
@@ -6309,7 +6518,64 @@ function initQuickNotes() {
   const runtimeBaseUrl = (() => {
     try { return (window.__lingxyRuntimeBaseUrl) || document.querySelector("html")?.dataset?.runtimeUrl || null; }
     catch { return null; }
-  })() ?? "http://127.0.0.1:4310";
+  })() ?? (typeof state === "object" && state?.serviceBaseUrl) ?? "http://127.0.0.1:4310";
+
+  // ── Server-side notes sync (authoritative store) ──────────────────────
+  // The runtime JSON store is authoritative. localStorage is now only a
+  // first-paint cache so cross-window changes are never overwritten by an
+  // older console snapshot.
+  async function fetchNotesFromServer() {
+    try {
+      const resp = await fetch(`${runtimeBaseUrl}/notes`);
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      return Array.isArray(data?.notes) ? data.notes : null;
+    } catch { return null; }
+  }
+  async function seedNotesToServer(notes) {
+    try {
+      await fetch(`${runtimeBaseUrl}/notes`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ notes })
+      });
+    } catch { /* offline — localStorage cache still kept for next boot */ }
+  }
+
+  async function upsertNoteOnServer(note) {
+    try {
+      const resp = await fetch(`${runtimeBaseUrl}/notes/upsert`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ note })
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      const data = await resp.json();
+      return data?.note ?? note;
+    } catch {
+      return note;
+    }
+  }
+
+  async function deleteNoteOnServer(id) {
+    try {
+      await fetch(`${runtimeBaseUrl}/notes/delete`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+    } catch { /* ignore */ }
+  }
+
+  async function appendChipOnServer({ noteId, text, sourceLabel = null }) {
+    const resp = await fetch(`${runtimeBaseUrl}/notes/append-chip`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ noteId, text, sourceLabel })
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  }
 
   // ── Storage ────────────────────────────────────────────────────────────
   const notesState = {
@@ -6317,8 +6583,21 @@ function initQuickNotes() {
     selectedId: (() => { try { return localStorage.getItem(LS_SELECTED); } catch { return null; } })(),
     searchQuery: "",
     saveTimer: null,
-    pendingChatAdoption: null
+    pendingChatAdoption: null,
+    selectedIds: new Set(),
+    collapsedGroups: loadCollapsedGroups(),
+    refreshToken: 0
   };
+
+  function loadCollapsedGroups() {
+    try {
+      const raw = localStorage.getItem(LS_COLLAPSED_GROUPS);
+      return new Set(raw ? JSON.parse(raw) : []);
+    } catch { return new Set(); }
+  }
+  function saveCollapsedGroups() {
+    try { localStorage.setItem(LS_COLLAPSED_GROUPS, JSON.stringify([...notesState.collapsedGroups])); } catch { /* ignore */ }
+  }
 
   function loadNotes() {
     try {
@@ -6333,6 +6612,44 @@ function initQuickNotes() {
   }
   function rememberSelection(id) {
     try { localStorage.setItem(LS_SELECTED, id ?? ""); } catch { /* ignore */ }
+  }
+
+  function replaceNotes(nextNotes, { preserveSelection = true } = {}) {
+    const prevSelected = preserveSelection ? notesState.selectedId : null;
+    notesState.notes = Array.isArray(nextNotes) ? nextNotes : [];
+    saveNotes();
+    if (preserveSelection && prevSelected && notesState.notes.some((n) => n.id === prevSelected)) {
+      notesState.selectedId = prevSelected;
+    } else if (!notesState.notes.some((n) => n.id === notesState.selectedId)) {
+      notesState.selectedId = notesState.notes[0]?.id ?? null;
+    }
+    rememberSelection(notesState.selectedId);
+    renderList();
+    renderEditor();
+    updateRailBadge();
+  }
+
+  function upsertLocalNote(note) {
+    if (!note?.id) return null;
+    const idx = notesState.notes.findIndex((n) => n.id === note.id);
+    if (idx >= 0) notesState.notes[idx] = note;
+    else notesState.notes.unshift(note);
+    saveNotes();
+    return note;
+  }
+
+  function removeLocalNote(id) {
+    notesState.notes = notesState.notes.filter((n) => n.id !== id);
+    saveNotes();
+  }
+
+  async function refreshNotesFromServer({ preserveSelection = true } = {}) {
+    const refreshToken = ++notesState.refreshToken;
+    const remote = await fetchNotesFromServer();
+    if (!remote) return false;
+    if (refreshToken !== notesState.refreshToken) return false;
+    replaceNotes(remote, { preserveSelection });
+    return true;
   }
 
   function nowIso() { return new Date().toISOString(); }
@@ -6366,10 +6683,20 @@ function initQuickNotes() {
       id: `n-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       title: "",
       body_html: "",
+      group: "",
       created_at: ts,
       updated_at: ts,
       history: [] // [{ts, bytes}] rough edit log for future UI; not rendered yet
     };
+  }
+
+  function knownGroups() {
+    const set = new Set();
+    for (const n of notesState.notes) {
+      const g = (n.group || "").trim();
+      if (g) set.add(g);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
   }
 
   function currentNote() {
@@ -6385,6 +6712,11 @@ function initQuickNotes() {
         notesState.notes.unshift(fresh);
         notesState.selectedId = fresh.id;
         saveNotes();
+        void upsertNoteOnServer(fresh).then((saved) => {
+          upsertLocalNote(saved);
+          renderList();
+          renderEditor();
+        });
       }
       rememberSelection(notesState.selectedId);
     }
@@ -6410,6 +6742,8 @@ function initQuickNotes() {
     const items = sortedFiltered();
     countLabel.textContent = `${items.length}`;
     listEl.innerHTML = "";
+    refreshGroupOptions();
+    refreshMultiActions();
     if (items.length === 0) {
       listEl.hidden = true;
       emptyEl.hidden = false;
@@ -6417,20 +6751,144 @@ function initQuickNotes() {
     }
     listEl.hidden = false;
     emptyEl.hidden = true;
+
+    // Bucket by group. Ungrouped goes first; named groups sorted alpha.
+    const buckets = new Map();
     for (const n of items) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "note-item" + (n.id === notesState.selectedId ? " is-active" : "");
-      btn.dataset.noteId = n.id;
-      btn.innerHTML = `
-        <div class="note-item-title">${escapeHtml(n.title || "Untitled note")}</div>
-        <div class="note-item-snippet">${escapeHtml(stripHtml(n.body_html).slice(0, 110) || "Empty note")}</div>
-        <div class="note-item-ts">${escapeHtml(fmtRel(n.updated_at))}</div>
-      `;
-      btn.addEventListener("click", () => selectNote(n.id));
-      listEl.appendChild(btn);
+      const key = (n.group || "").trim();
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(n);
+    }
+    const ordered = [
+      ...(buckets.has("") ? [["", buckets.get("")]] : []),
+      ...[...buckets.entries()].filter(([k]) => k !== "").sort(([a], [b]) => a.localeCompare(b))
+    ];
+    const showHeaders = ordered.some(([k]) => k !== "");
+
+    for (const [groupKey, groupItems] of ordered) {
+      if (showHeaders) {
+        const collapsed = groupKey !== "" && notesState.collapsedGroups.has(groupKey);
+        const header = document.createElement("button");
+        header.type = "button";
+        header.className = "notes-group-header" + (collapsed ? " is-collapsed" : "");
+        header.innerHTML = `
+          <span class="ngh-caret">▾</span>
+          <span class="ngh-name">${escapeHtml(groupKey || "未分组")}</span>
+          <span class="ngh-count">${groupItems.length}</span>
+        `;
+        header.addEventListener("click", () => {
+          if (groupKey === "") return;
+          if (notesState.collapsedGroups.has(groupKey)) notesState.collapsedGroups.delete(groupKey);
+          else notesState.collapsedGroups.add(groupKey);
+          saveCollapsedGroups();
+          renderList();
+        });
+        listEl.appendChild(header);
+        if (collapsed) continue;
+      }
+      for (const n of groupItems) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        const isSelected = notesState.selectedIds.has(n.id);
+        btn.className = "note-item"
+          + (n.id === notesState.selectedId ? " is-active" : "")
+          + (isSelected ? " is-multi-selected" : "");
+        btn.dataset.noteId = n.id;
+        btn.innerHTML = `
+          <div class="note-item-title">${escapeHtml(n.title || "Untitled note")}</div>
+          <div class="note-item-snippet">${escapeHtml(stripHtml(n.body_html).slice(0, 110) || "Empty note")}</div>
+          <div class="note-item-ts">${escapeHtml(fmtRel(n.updated_at))}</div>
+        `;
+        btn.addEventListener("click", (ev) => {
+          // Ctrl/Cmd + click → toggle multi-select. Plain click → open.
+          if (ev.ctrlKey || ev.metaKey) {
+            if (notesState.selectedIds.has(n.id)) notesState.selectedIds.delete(n.id);
+            else notesState.selectedIds.add(n.id);
+            renderList();
+            return;
+          }
+          // If we're in multi-select mode, plain click also toggles.
+          if (notesState.selectedIds.size > 0) {
+            if (notesState.selectedIds.has(n.id)) notesState.selectedIds.delete(n.id);
+            else notesState.selectedIds.add(n.id);
+            renderList();
+            return;
+          }
+          selectNote(n.id);
+        });
+        listEl.appendChild(btn);
+      }
     }
     updateRailBadge();
+  }
+
+  function refreshGroupOptions() {
+    // No-op now that the picker is a click-dropdown built on demand
+    // (see openGroupPicker). Kept as a stub so renderList() doesn't have
+    // to special-case the old datalist callers.
+  }
+
+  function openGroupPicker(anchorEl) {
+    const groups = knownGroups();
+    document.querySelector(".note-target-popover.is-group-picker")?.remove();
+    const popover = document.createElement("div");
+    popover.className = "note-target-popover is-group-picker";
+    popover.innerHTML = `
+      <div class="ntp-head">选择分组</div>
+      <div class="ntp-list">
+        <button type="button" data-group-pick="" class="ntp-item">
+          <span class="ntp-item-title">未分组</span>
+        </button>
+        ${groups.map((g) => `
+          <button type="button" data-group-pick="${escapeHtml(g)}" class="ntp-item">
+            <span class="ntp-item-title">${escapeHtml(g)}</span>
+          </button>
+        `).join("")}
+        <button type="button" data-group-pick="__new__" class="ntp-item ntp-item-new">＋ 新建分组…</button>
+      </div>
+    `;
+    document.body.appendChild(popover);
+    const r = anchorEl.getBoundingClientRect();
+    const left = Math.min(window.innerWidth - 280, Math.max(8, r.left + window.scrollX));
+    popover.style.left = `${left}px`;
+    popover.style.top = `${r.bottom + window.scrollY + 4}px`;
+    const close = () => { popover.remove(); document.removeEventListener("mousedown", outside, true); };
+    const outside = (ev) => { if (!popover.contains(ev.target)) close(); };
+    setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
+    popover.querySelectorAll("[data-group-pick]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        let value = btn.dataset.groupPick;
+        if (value === "__new__") {
+          const created = (prompt("新分组名称:", "") || "").trim();
+          if (!created) { close(); return; }
+          value = created;
+        }
+        applyGroupToCurrent(value);
+        close();
+      });
+    });
+  }
+
+  function applyGroupToCurrent(value) {
+    const note = currentNote();
+    if (!note) return;
+    note.group = (value || "").trim();
+    note.updated_at = nowIso();
+    if (groupInput) groupInput.value = note.group;
+    saveNotes();
+    renderList();
+    void upsertNoteOnServer(note).then((saved) => {
+      upsertLocalNote(saved);
+      renderList();
+      renderEditor();
+    });
+  }
+
+  function refreshMultiActions() {
+    if (!multiActions) return;
+    const n = notesState.selectedIds.size;
+    multiActions.hidden = n === 0;
+    if (multiCount) multiCount.textContent = `${n} selected`;
   }
 
   function updateRailBadge() {
@@ -6447,6 +6905,7 @@ function initQuickNotes() {
     if (!note) return;
     titleInput.value = note.title || "";
     bodyEl.innerHTML = note.body_html || "";
+    if (groupInput) groupInput.value = note.group || "";
     createdTs.textContent = `Created ${fmtAbsolute(note.created_at)}`;
     updatedTs.textContent = `Edited ${fmtRel(note.updated_at)}`;
     applyFontFamily(readFontFamily());
@@ -6494,11 +6953,88 @@ function initQuickNotes() {
       saveNotes();
       updatedTs.textContent = `Edited ${fmtRel(note.updated_at)}`;
       renderList();
+      void upsertNoteOnServer(note).then((saved) => {
+        upsertLocalNote(saved);
+        renderList();
+        if (saved.id === currentNote()?.id) renderEditor();
+      });
     }, 350);
   }
 
   titleInput.addEventListener("input", scheduleSave);
   bodyEl.addEventListener("input", scheduleSave);
+
+  // ── Group input ───────────────────────────────────────────────────────
+  groupInput?.addEventListener("change", () => applyGroupToCurrent(groupInput.value));
+  groupPickerBtn?.addEventListener("click", () => openGroupPicker(groupPickerBtn));
+  // Clicking the chip area (not just the arrow) opens the picker too —
+  // the input still works for free-text entry.
+  groupInput?.addEventListener("focus", () => openGroupPicker(groupPickerBtn ?? groupInput));
+
+  // ── Multi-select actions ──────────────────────────────────────────────
+  multiCancelBtn?.addEventListener("click", () => {
+    notesState.selectedIds.clear();
+    renderList();
+  });
+
+  groupBtn?.addEventListener("click", () => {
+    if (notesState.selectedIds.size === 0) return;
+    const target = prompt("移到分组（留空 = 取消分组）:", "");
+    if (target === null) return;
+    const group = target.trim();
+    const changed = [];
+    for (const id of notesState.selectedIds) {
+      const n = notesState.notes.find((x) => x.id === id);
+      if (n) {
+        n.group = group;
+        n.updated_at = nowIso();
+        changed.push({ ...n });
+      }
+    }
+    saveNotes();
+    notesState.selectedIds.clear();
+    renderList();
+    renderEditor();
+    void Promise.all(changed.map((note) => upsertNoteOnServer(note)));
+  });
+
+  mergeBtn?.addEventListener("click", () => {
+    if (notesState.selectedIds.size < 2) {
+      toastNote("至少选择两条笔记才能合并");
+      return;
+    }
+    if (!confirm(`合并 ${notesState.selectedIds.size} 条笔记为一条新笔记？原笔记将被删除。`)) return;
+    mergeSelected();
+  });
+
+  function mergeSelected() {
+    const picked = notesState.notes
+      .filter((n) => notesState.selectedIds.has(n.id))
+      .sort((a, b) => (a.updated_at || "").localeCompare(b.updated_at || ""));
+    if (picked.length < 2) return;
+    const merged = makeNote();
+    merged.title = picked[0].title || picked.find((n) => n.title)?.title || "Merged note";
+    merged.group = picked[0].group || "";
+    const parts = [];
+    for (const n of picked) {
+      const stamp = `<div class="note-stamp" contenteditable="false">${escapeHtml(n.title || "Untitled note")} · ${escapeHtml(fmtAbsolute(n.updated_at))}</div>`;
+      parts.push(stamp + (n.body_html || ""));
+    }
+    merged.body_html = parts.join('<hr style="border:none;border-top:1px solid var(--line);margin:14px 0">');
+    const removedIds = [...notesState.selectedIds];
+    notesState.notes = notesState.notes.filter((n) => !notesState.selectedIds.has(n.id));
+    notesState.notes.unshift(merged);
+    notesState.selectedId = merged.id;
+    notesState.selectedIds.clear();
+    saveNotes();
+    rememberSelection(merged.id);
+    renderList();
+    renderEditor();
+    void Promise.all([
+      upsertNoteOnServer(merged),
+      ...removedIds.map((id) => deleteNoteOnServer(id))
+    ]);
+  }
 
   // ── Toolbar ───────────────────────────────────────────────────────────
   toolbar?.addEventListener("click", (ev) => {
@@ -6591,17 +7127,23 @@ function initQuickNotes() {
     renderList();
     renderEditor();
     titleInput.focus();
+    void upsertNoteOnServer(fresh).then((saved) => {
+      upsertLocalNote(saved);
+      renderList();
+      renderEditor();
+    });
   });
 
   deleteBtn?.addEventListener("click", () => {
     const note = currentNote();
     if (!note) return;
     if (!confirm(`Delete "${note.title || "Untitled note"}"?`)) return;
-    notesState.notes = notesState.notes.filter((n) => n.id !== note.id);
+    removeLocalNote(note.id);
     saveNotes();
     ensureSelection();
     renderList();
     renderEditor();
+    void deleteNoteOnServer(note.id);
   });
 
   // ── Search ────────────────────────────────────────────────────────────
@@ -6787,14 +7329,94 @@ function initQuickNotes() {
   function appendAdoptedChip(text) {
     const note = currentNote();
     if (!note) return;
-    const chip = document.createElement("div");
-    chip.className = "note-chat-chip";
-    chip.textContent = text.trim();
-    bodyEl.appendChild(chip);
-    bodyEl.appendChild(document.createElement("p"));
-    scheduleSave();
+    void appendChipToNoteRecord(note, text);
     bodyEl.focus();
   }
+
+  // Append text as a "note-chat-chip" block to a note record. Always
+  // updates body_html + saves; if the target IS the currently-loaded
+  // note, also mirrors into the live editor DOM so the user sees the
+  // chip without a re-render. Previously the active-note branch only
+  // touched the DOM and never persisted, so on next reload the chip
+  // disappeared (UCA-181 bug).
+  async function appendChipToNoteRecord(note, text) {
+    const trimmed = (text || "").trim();
+    if (!trimmed) return;
+    try {
+      const result = await appendChipOnServer({
+        noteId: note.id,
+        text: trimmed,
+        sourceLabel: "From chat"
+      });
+      const savedNote = result?.note ?? note;
+      upsertLocalNote(savedNote);
+      if (savedNote.id !== notesState.selectedId) {
+        notesState.selectedId = savedNote.id;
+        rememberSelection(savedNote.id);
+      }
+      renderList();
+      renderEditor();
+      return savedNote;
+    } catch {
+      const safe = escapeHtml(trimmed);
+      const chipHtml = `<div class="note-chat-chip">${safe}</div><p><br></p>`;
+      note.body_html = (note.body_html || "") + chipHtml;
+      note.updated_at = nowIso();
+      saveNotes();
+      renderList();
+      renderEditor();
+      return note;
+    }
+  }
+
+  // ── Public API for the chat composer / selection pill ─────────────────
+  window.lingxyNotes = {
+    list() {
+      return [...notesState.notes]
+        .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
+        .map((n) => ({
+          id: n.id,
+          title: n.title || "Untitled note",
+          snippet: stripHtml(n.body_html || "").slice(0, 70)
+        }));
+    },
+    createNote() {
+      const fresh = makeNote();
+      notesState.notes.unshift(fresh);
+      notesState.selectedId = fresh.id;
+      saveNotes();
+      rememberSelection(fresh.id);
+      renderList();
+      renderEditor();
+      void upsertNoteOnServer(fresh).then((saved) => {
+        upsertLocalNote(saved);
+        renderList();
+        renderEditor();
+      });
+      return fresh.id;
+    },
+    async addToNote(noteId, text) {
+      if (!text) return;
+      const note = notesState.notes.find((n) => n.id === noteId);
+      if (!note) return;
+      // Auto-select the target so the user actually sees the chip after
+      // the chat-to-note action (the previous version added to whatever
+      // was selected without surfacing the change).
+      if (note.id !== notesState.selectedId) {
+        notesState.selectedId = note.id;
+        rememberSelection(note.id);
+        renderEditor();
+      }
+      await appendChipToNoteRecord(note, text);
+    },
+    async refresh({ preserveSelection = true } = {}) {
+      return refreshNotesFromServer({ preserveSelection });
+    },
+    bodyText(noteId) {
+      const note = notesState.notes.find((n) => n.id === noteId);
+      return stripHtml(note?.body_html || "");
+    }
+  };
 
   function toastNote(msg) {
     // Reuse the global shell notification if available, otherwise fall
@@ -6913,4 +7535,20 @@ function initQuickNotes() {
   renderList();
   renderEditor();
   updateRailBadge();
+
+  // Hydrate from the runtime's notes store. Server is authoritative —
+  // if the user added chips from the overlay window or another session,
+  // they show up here without a console refresh. Local cache is a
+  // first-paint fallback for offline boot.
+  void (async () => {
+    const remote = await fetchNotesFromServer();
+    if (!remote) return;
+    if (remote.length === 0 && notesState.notes.length > 0) {
+      // First boot of the new server store — push the local cache up so
+      // pre-existing notes from before UCA-181 are not lost.
+      await seedNotesToServer(notesState.notes);
+      return;
+    }
+    replaceNotes(remote, { preserveSelection: true });
+  })();
 }

@@ -1019,6 +1019,9 @@
                 <button id="consoleChatAttachBtn" class="icon-btn" type="button" aria-label="Attach file" title="Attach file">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.58 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
+                <button id="consoleChatNoteBtn" class="icon-btn" type="button" aria-label="Insert from notes" title="Insert from notes">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
+                </button>
                 <button id="consoleChatVoiceBtn" class="icon-btn" type="button" aria-label="Voice input" title="Voice input (Ctrl+Shift+V)">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>
                 </button>
@@ -1195,6 +1198,12 @@
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input id="notesSearchInput" type="search" placeholder="Search notes..." autocomplete="off">
           </div>
+          <div id="notesMultiActions" class="notes-multi-actions" hidden>
+            <span id="notesMultiCount" class="muted">0 selected</span>
+            <button id="notesMergeBtn" class="btn btn-sm btn-ghost" type="button" title="Merge selected notes">合并</button>
+            <button id="notesGroupBtn" class="btn btn-sm btn-ghost" type="button" title="Move to group">移到分组</button>
+            <button id="notesMultiCancelBtn" class="btn btn-sm btn-ghost" type="button" title="Exit multi-select">取消</button>
+          </div>
           <div id="notesList" class="notes-list" role="list"></div>
           <div id="notesEmpty" class="notes-empty muted" hidden>
             <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="13" y2="17"/></svg>
@@ -1206,6 +1215,12 @@
           <header class="notes-editor-head">
             <input id="noteTitleInput" class="notes-editor-title" type="text" placeholder="Untitled note" autocomplete="off">
             <div class="notes-editor-meta">
+              <span class="note-group-chip">
+                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7l4-4h10a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z"/></svg>
+                <input id="noteGroupInput" type="text" placeholder="未分组" autocomplete="off">
+                <button id="noteGroupPickerBtn" type="button" class="ngc-arrow" aria-label="选择分组">▾</button>
+              </span>
+              <span class="notes-ts-sep" aria-hidden="true">·</span>
               <span id="noteCreatedTs" class="notes-ts" title="Created"></span>
               <span class="notes-ts-sep" aria-hidden="true">·</span>
               <span id="noteUpdatedTs" class="notes-ts" title="Last edited"></span>
@@ -2236,6 +2251,7 @@
       </aside>
     </div>
 
+    <script src="./live-preview.js"></script>
     <script type="module" src="./console.js"></script>
   </body>
 </html>
