@@ -1,9 +1,14 @@
 # Task 83 — Prose-trap fix + App launcher + Card system + Notification merge
 
-Status: `in_progress`
+Status: `done` (83.5 deferred; 83.1-83.4, 83.6-83.8 shipped)
 Owner: assistant (auto mode)
 Created: 2026-04-25
 Branch: `task/uca-077-connector-foundation` (current)
+
+Commits:
+- `2c7a930` — 83.1 prose trap + 83.2 notification batch + earlier word-break sweep + qwen streaming
+- `e88eabe` — 83.3 overlay tool_call card + 83.4 thinking card (sidepanel + overlay + service channel)
+- `1347931` — 83.6 indexer/matcher/aliases + 83.7 window_control/learner + 83.8 Node integration
 
 ## 1. 任务目标
 
@@ -27,14 +32,14 @@ Branch: `task/uca-077-connector-foundation` (current)
 
 | # | 任务 | 预估改动 | 风险 | 状态 |
 |---|---|---|---|---|
-| **83.1** | A — prose-trap 回灌（agent-loop） | ~50 行 + 1 处 verify 测试 | 低 | pending |
-| **83.2** | F — 通知合并（service 层队列 + 渲染器分页卡）| ~200 行 2-3 文件 | 中（影响 UX 一致性）| pending |
-| **83.3** | C — 卡片基础 CSS + tool_call 重做 | `shared.css` + overlay/console 渲染函数 | 中（影响三个面）| pending |
-| **83.4** | D — thinking 卡片 + `reasoning_content` 端到端通道 | agent-loop 发射 + 三个面接收 | 中 | pending |
-| **83.5** | E — web_search_result + link_preview + citation 卡片 | markdown renderer 扩展 | 中 | pending |
-| **83.6** | B-PR1 — 应用索引器 dry-run（indexer + aliases） | 新建 `scripts/app_launcher/` 5 文件 | 低（不真启动）| pending |
-| **83.7** | B-PR2 — arbiter + window_control + learner + 真启动 | 新建 4 文件 + 依赖安装 | 高（Win32 激活栈）| pending |
-| **83.8** | B-PR3 — Node 集成：launch_app → python launcher | `action_tools/tools/index.mjs` 扩展 | 中 | pending |
+| **83.1** | A — prose-trap 回灌（agent-loop） | ~50 行 + 1 处 verify 测试 | 低 | **done** |
+| **83.2** | F — 通知合并（service 层队列 + 渲染器分页卡）| ~200 行 2-3 文件 | 中（影响 UX 一致性）| **done** |
+| **83.3** | C — overlay tool_call 卡片重做（CSS + JS）| overlay.html + overlay.js | 中（影响 overlay）| **done** |
+| **83.4** | D — thinking 卡片 + `reasoning_content` 端到端通道 | agent-loop 发射 + sidepanel + overlay 接收 | 中 | **done** |
+| **83.5** | E — web_search_result + link_preview + citation 卡片 | markdown renderer 扩展 | 中 | **deferred** |
+| **83.6** | B-PR1 — 应用索引器 dry-run（indexer + aliases） | 新建 `scripts/app_launcher/` 5 文件 | 低（不真启动）| **done** |
+| **83.7** | B-PR2 — arbiter + window_control + learner + 真启动 | 新建 4 文件 + 依赖安装 | 高（Win32 激活栈）| **done** |
+| **83.8** | B-PR3 — Node 集成：launch_app → python launcher | `action_tools/tools/index.mjs` 扩展 | 中 | **done** |
 
 ## 4. 模块与接口规范
 
