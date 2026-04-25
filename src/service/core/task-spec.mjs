@@ -271,6 +271,10 @@ function hasNoteTakingIntent(text, contextPacket = {}) {
   return hasContentForNote(contextPacket) && NOTE_INTENT_PATTERNS.some((p) => p.test(String(text ?? "")));
 }
 
+function isNoteArtifactTask(contextPacket = {}) {
+  return contextPacket?.source_type === "audio_note" || contextPacket?.source_app === "uca.note";
+}
+
 // ---------------------------------------------------------------------------
 // Detect artifact requirement
 // ---------------------------------------------------------------------------
@@ -311,6 +315,7 @@ function detectFormats(text) {
 export function createTaskSpec(userText, contextPacket = {}, intentRouterResult = {}) {
   const text = String(userText ?? "");
   const noteIntent = hasNoteTakingIntent(text, contextPacket);
+  const noteArtifactTask = isNoteArtifactTask(contextPacket);
   const imageDriven = Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0;
   const artifactEditIntent = hasArtifactRefinementIntent(text, contextPacket);
   let goal = classifyGoal(text);
@@ -321,19 +326,19 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   }
   const suggestedFormats = detectFormats(text);
   const contextArtifactKind = detectArtifactKindFromContext(contextPacket);
-  const explicitFileArtifactKind = noteIntent
-    ? (suggestedFormats.includes("md") ? "md" : null)
-    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? contextArtifactKind);
-  const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file", "multimodal_analyze"].includes(goal)
-    ? (noteIntent ? "md" : "docx")
+  const explicitFileArtifactKind = noteArtifactTask
+    ? (suggestedFormats.includes("md") ? "md" : "md")
+    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f) || f === "md") ?? null);
+  const inheritedArtifactKind = ["transform_existing_file", "open_or_reveal_file"].includes(goal)
+    ? contextArtifactKind
     : null;
-  const fileArtifactKind = explicitFileArtifactKind ?? contextArtifactKind ?? inferredFileArtifactKind;
+  const fileArtifactKind = explicitFileArtifactKind ?? inheritedArtifactKind ?? null;
   const artifactRequired = goal === "launch_and_act"
     ? false
-    : (noteIntent ||
+    : (noteArtifactTask ||
+      fileArtifactKind === "md" ||
       FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
       goal === "generate_document" ||
-      goal === "analyze_and_report" ||
       goal === "transform_existing_file");
   const connectorDomainRequest = isConnectorDomainRequest(text);
   const webDataNeeded = !connectorDomainRequest && (
@@ -355,7 +360,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   const mergedSuggestedFormats = [
     ...new Set([
       ...suggestedFormats,
-      ...(noteIntent ? ["md"] : [])
+      ...(noteArtifactTask ? ["md"] : [])
     ])
   ];
 

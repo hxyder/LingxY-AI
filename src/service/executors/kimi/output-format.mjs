@@ -186,7 +186,7 @@ function detectRequestedOutputFormat(userCommand = "") {
   if (/(?:\.pptx|pptx|powerpoint|\bppt\b|幻灯片|演示(?:文稿|文档)?|slides?|slideshow)/i.test(normalized)) return descriptorForFormat("pptx");
   if (/(?:\.txt|txt|纯文本|文本文件)/i.test(normalized)) return descriptorForFormat("txt");
   if (isConversationalIntent(normalized)) return descriptorForFormat("conversational");
-  return descriptorForFormat("markdown");
+  return descriptorForFormat("conversational");
 }
 
 function detectRequestedOutputFormatForTask(task = {}) {
@@ -194,11 +194,11 @@ function detectRequestedOutputFormatForTask(task = {}) {
   if (detected.id !== "conversational") return detected;
 
   const artifactKind = task?.task_spec?.artifact?.kind ?? null;
-  const noteIntent = task?.context_packet?.source_type === "audio_note"
-    || task?.context_packet?.source_app === "uca.note"
-    || task?.task_spec?.intent_tags?.includes?.("note_capture");
+  const noteArtifactTask = Boolean(task?.task_spec?.artifact?.required)
+    && (task?.context_packet?.source_type === "audio_note"
+      || task?.context_packet?.source_app === "uca.note");
 
-  if (artifactKind === "md" || noteIntent) return descriptorForFormat("markdown");
+  if (artifactKind === "md" || noteArtifactTask) return descriptorForFormat("markdown");
   if (artifactKind === "docx") return descriptorForFormat("docx");
   if (artifactKind === "pdf") return descriptorForFormat("pdf");
   if (artifactKind === "pptx") return descriptorForFormat("pptx");
