@@ -575,7 +575,8 @@ label, .field-label {
 .projects-col-body .history-preview {
   margin: 0;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   font-size: var(--fs-sm);
   color: var(--ink-2);
   line-height: 1.55;
@@ -1440,7 +1441,7 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   max-height: 280px;
   overflow-y: auto;
 }
-.log-line { display: flex; gap: 12px; white-space: pre-wrap; word-break: break-word; }
+.log-line { display: flex; gap: 12px; white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; }
 .log-ts { color: #6a665b; flex-shrink: 0; }
 .log-lvl { width: 56px; flex-shrink: 0; font-weight: 600; }
 .log-lvl.info { color: #7ba8c4; }
@@ -3020,7 +3021,8 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   max-height: 360px;
   overflow: auto;
   margin: 0;
@@ -3125,7 +3127,8 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-size: 12px;
   line-height: 1.65;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   max-height: 420px;
   overflow: auto;
   color: var(--ink-2);
@@ -3186,7 +3189,8 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .task-answer-label .zh { margin-left: 4px; font-size: 10px; letter-spacing: 0; font-weight: 400; }
 .task-answer-body {
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   font-size: 13px;
   line-height: 1.65;
   color: var(--ink);
@@ -4654,7 +4658,8 @@ details.timeline-item[open] > summary {
   font-size: 12.5px;
   line-height: 1.55;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   color: var(--ink);
 }
 .live-preview .lp-doc-head {

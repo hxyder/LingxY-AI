@@ -238,26 +238,126 @@ export function createElectronShellRuntime({
     pendingWindowMessages.delete(windowId);
   }
 
+  // 83.2 — Notification batching.
+  //
+  // A single user submission can fire 4+ shellNotify calls in quick succession
+  // (task_created, inline_result, artifact_ready, success). Before the batch
+  // layer each of those became its own top-right card, drowning the screen.
+  //
+  // Strategy:
+  //   - Keep an in-memory buffer keyed by taskId. Each non-error info-style
+  //     notification pushes an entry onto the task's buffer and resets a
+  //     500ms debounce timer.
+  //   - When the timer fires OR a priority notification (error/approval)
+  //     arrives for the same task, flush the buffer as a single "batched"
+  //     popup card with entries[] and let the renderer handle paging 1/N.
+  //   - Errors and approvals skip the buffer entirely — they're immediate,
+  //     actionable, and must not be hidden behind pagination.
+  //   - A single entry in the buffer still renders as "batched" but the UI
+  //     collapses to the simple one-notification form; no UX regression
+  //     for single-notification tasks.
+  const notificationBatches = new Map(); // taskId -> { entries, timer, primaryTitle }
+  const NOTIFICATION_BATCH_MS = 500;
+
+  function normalizeBatchEntry(payload) {
+    const body = payload.body ?? payload.message ?? "";
+    return {
+      title: payload.title ?? "LingxY",
+      lines: body ? String(body).split(/\n+/).slice(0, 4) : [],
+      kind: payload.kind ?? "info",
+      taskId: payload.taskId ?? null,
+      artifactPath: payload.artifactPath ?? null,
+      mime: payload.mime ?? null,
+      inlinePreview: payload.inlinePreview ?? null,
+      openWindow: payload.openWindow ?? null,
+      addedAt: Date.now()
+    };
+  }
+
+  function flushBatch(taskId) {
+    const batch = notificationBatches.get(taskId);
+    if (!batch) return;
+    clearTimeout(batch.timer);
+    notificationBatches.delete(taskId);
+    if (!batch.entries.length) return;
+    if (!registeredPopupCardManager) return;
+    try {
+      // If only one entry, render as a plain info card (no carousel chrome).
+      // If multiple entries, render as "batched" kind with paging controls.
+      if (batch.entries.length === 1) {
+        const only = batch.entries[0];
+        registeredPopupCardManager.showCard({
+          kind: only.kind === "info" ? "info" : only.kind,
+          title: only.title,
+          lines: only.lines,
+          taskId,
+          autoHideMs: 8000,
+          artifactPath: only.artifactPath,
+          mime: only.mime,
+          inlinePreview: only.inlinePreview,
+          openWindow: only.openWindow,
+          dedupeKey: `notify:${taskId}`
+        });
+      } else {
+        registeredPopupCardManager.showCard({
+          kind: "batched",
+          title: `${batch.primaryTitle} (${batch.entries.length})`,
+          taskId,
+          entries: batch.entries,
+          autoHideMs: 12000,
+          dedupeKey: `batched:${taskId}`
+        });
+      }
+    } catch (err) {
+      safeWarn("[UCA] batched popup-card flush failed:", err?.message ?? err);
+    }
+  }
+
+  function queueBatchedNotification(payload) {
+    const taskId = payload.taskId ?? "_no_task_";
+    let batch = notificationBatches.get(taskId);
+    if (!batch) {
+      batch = { entries: [], timer: null, primaryTitle: payload.title ?? "LingxY" };
+      notificationBatches.set(taskId, batch);
+    }
+    batch.entries.push(normalizeBatchEntry(payload));
+    if (batch.timer) clearTimeout(batch.timer);
+    batch.timer = setTimeout(() => flushBatch(taskId), NOTIFICATION_BATCH_MS);
+  }
+
   function showDesktopNotification(payload = {}) {
     // UCA-182 Phase 8: all in-app notifications now route through the
-    // popup-card stack (top-right). The legacy "notification" bottom
-    // window and the native OS toast are gone; users consistently see
-    // a single style of card that they can pin, dismiss or click to
-    // act on. Native OS notification remains a last-resort fallback
-    // for scenarios where the popup-card manager hasn't been wired up
-    // yet (e.g. during early startup).
+    // popup-card stack (top-right). 83.2 adds batching on top so a single
+    // task's rapid-fire notifications collapse into one paged card.
     if (registeredPopupCardManager) {
       try {
-        const body = payload.body ?? payload.message ?? "";
-        registeredPopupCardManager.showCard({
-          kind: "info",
-          title: payload.title ?? "LingxY",
-          lines: body ? String(body).split(/\n+/).slice(0, 4) : [],
-          taskId: payload.taskId ?? null,
-          autoHideMs: payload.autoHideMs ?? 8000,
-          dedupeKey: payload.dedupeKey ?? (payload.taskId ? `notify:${payload.taskId}` : undefined)
-        });
-        return { shown: true, delivery: "popup_card" };
+        // Skip batching for errors, approvals, explicit urgent, or when the
+        // payload explicitly opts out via skipBatch. Also skip when no taskId
+        // is provided — without one we can't group sensibly.
+        const skipBatch =
+          payload.skipBatch === true ||
+          payload.kind === "error" ||
+          payload.kind === "approval" ||
+          !payload.taskId;
+        if (skipBatch) {
+          const body = payload.body ?? payload.message ?? "";
+          registeredPopupCardManager.showCard({
+            kind: payload.kind ?? "info",
+            title: payload.title ?? "LingxY",
+            lines: body ? String(body).split(/\n+/).slice(0, 4) : [],
+            taskId: payload.taskId ?? null,
+            autoHideMs: payload.autoHideMs ?? 8000,
+            artifactPath: payload.artifactPath ?? null,
+            mime: payload.mime ?? null,
+            inlinePreview: payload.inlinePreview ?? null,
+            openWindow: payload.openWindow ?? null,
+            dedupeKey: payload.dedupeKey
+              ?? (payload.taskId ? `notify:${payload.taskId}` : undefined)
+          });
+          return { shown: true, delivery: "popup_card" };
+        }
+        queueBatchedNotification(payload);
+        return { shown: true, delivery: "popup_card_batched" };
       } catch (err) {
         safeWarn("[UCA] popup-card notify failed, falling back:", err?.message ?? err);
       }

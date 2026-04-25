@@ -625,10 +625,49 @@ function buildConversationMessages(userCommand, transcript, initialFilePaths = [
         role: "user",
         content: `[Validation error for ${entry.tool}]: ${entry.error ?? "invalid arguments"}`
       });
+    } else if (entry.type === "prose_trap_retry") {
+      // 83.1: Reinject the LLM's prose-only reply as an assistant turn, then
+      // a synthetic user turn pointing out that no tool call was made. This
+      // breaks the loop where the model promises an action ("我来帮你发邮
+      // 件...") but emits no tool_calls, causing the outer loop to exit
+      // with type:"final" — the user sees a promise that was never kept,
+      // and has to re-submit the request to get the tool actually called.
+      messages.push({
+        role: "assistant",
+        content: entry.assistantProse ?? ""
+      });
+      messages.push({
+        role: "user",
+        content: entry.retryHint
+          ?? "你上面说要执行操作，但没有发出 tool_call。如果确实需要操作，请直接调用工具；如果只是回答/解释而不需要操作，请重新输出最终答复（纯文本）。"
+      });
     }
   }
 
   return messages;
+}
+
+/**
+ * 83.1 — Decide whether a prose-only reply from the LLM warrants a prose-trap
+ * retry. A request that is obviously a pure question shouldn't be retried
+ * (LLM is correct to reply in prose). A request that looks action-shaped
+ * SHOULD — that's where the bug bites.
+ *
+ * Conservative: defaults to "retry" unless we detect interrogative shape.
+ */
+function shouldRetryProseTrap({ task, prose, transcript }) {
+  if (!prose || typeof prose !== "string") return false;
+  // If the loop has already run any tool, we're not in the failure mode.
+  const anyToolRan = transcript.some((e) => e.type === "tool_result");
+  if (anyToolRan) return false;
+  const cmd = (task.user_command ?? "").trim();
+  if (!cmd) return false;
+  // Interrogative markers → probably a pure Q&A, don't retry.
+  if (/[?？]\s*$/.test(cmd)) return false;
+  if (/^(什么|为什么|怎么|如何|哪|谁|何时|多少|几)/.test(cmd)) return false;
+  if (/^(what|why|how|who|when|where|which|does|do|is|are|can|could|should|would|will|were|was)\b/i.test(cmd)) return false;
+  // Otherwise — the command looks imperative / action-shaped. Retry once.
+  return true;
 }
 
 async function llmPlanner({ task, transcript, tools, iteration }) {
@@ -1069,6 +1108,12 @@ export async function runToolAgentLoop({
     }
   }
 
+  // 83.1 — Track prose-trap retries separately from the tool-call iteration
+  // budget. Hard cap at 1: if the model returns prose again after the retry
+  // hint, we accept that as genuinely final.
+  let proseTrapAttemptsUsed = 0;
+  const PROSE_TRAP_MAX_ATTEMPTS = 1;
+
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     const decision = await resolvedPlanner({
       task,
@@ -1079,6 +1124,29 @@ export async function runToolAgentLoop({
     });
 
     if (!decision || decision.type === "final") {
+      // 83.1 — Prose-trap retry. The LLM replied with text but no tool_call.
+      // If the user's command looked action-shaped and we haven't used our
+      // retry budget, inject a synthetic turn that points out the missing
+      // tool call and go around once more. On the next pass either the LLM
+      // emits a real tool_calls array (original bug fixed) or it reaffirms
+      // a prose final (the original reply was legitimately a question).
+      const proseText = (decision?.text ?? "").trim();
+      if (
+        proseText &&
+        proseTrapAttemptsUsed < PROSE_TRAP_MAX_ATTEMPTS &&
+        shouldRetryProseTrap({ task, prose: proseText, transcript })
+      ) {
+        proseTrapAttemptsUsed += 1;
+        transcript.push({
+          type: "prose_trap_retry",
+          assistantProse: proseText
+        });
+        runtime?.emitTaskEvent?.(task.task_id, "prose_trap_retry", {
+          reason: "prose_without_tool_call",
+          attempt: proseTrapAttemptsUsed
+        });
+        continue;
+      }
       const connectorFinal = latestConnectorFinal(transcript, task.user_command);
       return {
         status: "success",

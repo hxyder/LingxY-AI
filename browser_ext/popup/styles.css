@@ -169,7 +169,8 @@ body {
   padding: 6px 10px;
   border-radius: 10px;
   max-width: 92%;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
 .chat-msg.user {

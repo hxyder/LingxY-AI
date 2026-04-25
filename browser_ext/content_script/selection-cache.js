@@ -104,7 +104,8 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
         max-height: ${isLargeDialog ? "min(70vh, 720px)" : "280px"};
         overflow-y: auto;
         white-space: pre-wrap;
-        word-break: break-word;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
       }
       .body.loading {
         color: rgba(28,28,30,0.55);

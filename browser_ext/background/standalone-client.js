@@ -256,16 +256,50 @@ async function streamOpenAICompat(config, { apiKey, model, messages, reasoningEf
   if (!response.ok) {
     return { ok: false, error: `http_${response.status}:${await response.text().catch(() => "")}` };
   }
-  let full = "";
+  // Accumulate `delta.content` (user-visible answer) AND `delta.reasoning_content`
+  // (Qwen3/DeepSeek thinking tokens) separately. Old code only read
+  // `delta.content` through extractOpenAICompatText, which meant that during
+  // Qwen's thinking phase every SSE chunk produced delta="" → no onChunk
+  // fired → full stayed "". Downstream hasMeaningfulText(full)===false then
+  // silently fired a second non-streaming request (see callLLMDirectStream),
+  // making Qwen "sometimes not stream" — the worst of both worlds: double the
+  // tokens billed and no progressive output.
+  let fullContent = "";
+  let fullReasoning = "";
   for await (const frame of parseSseStream(response)) {
     if (frame.event === "done") break;
-    const delta = extractOpenAICompatText(frame.data ?? {});
-    if (delta) {
-      full += delta;
-      onChunk?.(delta, full);
+    const payload = frame.data ?? {};
+    const choice = Array.isArray(payload.choices) ? payload.choices[0] : null;
+    const delta = choice?.delta ?? {};
+    // Content delta — stream to the UI.
+    const contentDelta = typeof delta.content === "string" && delta.content
+      ? delta.content
+      : (extractOpenAICompatText(payload) || "");
+    if (contentDelta) {
+      fullContent += contentDelta;
+      onChunk?.(contentDelta, fullContent);
+    }
+    // Reasoning delta — accumulate silently. We don't stream it to the user
+    // here because the popup/sidepanel bubble doesn't have a "thinking"
+    // section, and mixing thinking into the content would confuse the
+    // reader. But we DO keep it so the "empty stream" check below isn't
+    // fooled into triggering the non-streaming fallback.
+    if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
+      fullReasoning += delta.reasoning_content;
     }
   }
-  return { ok: true, text: full };
+  return {
+    ok: true,
+    text: fullContent,
+    reasoning_content: fullReasoning || null,
+    // Signals to callLLMDirectStream that the SSE stream actually delivered
+    // something — even if fullContent is empty, if reasoning_content is
+    // non-empty we know the model answered, just produced thinking only (or
+    // was cut off mid-thinking). Either way, firing a second non-streaming
+    // request would be wrong: if cut off, a retry should be explicit user
+    // choice, not silent duplication.
+    streamedBytes: fullContent.length + fullReasoning.length
+  };
 }
 
 async function streamAnthropic({ apiKey, model, messages, systemPrompt, maxTokens = 1024, onChunk, signal }) {
@@ -387,6 +421,23 @@ export async function callLLMDirectStream({ config, messages, systemPrompt, maxT
     }
     if (!streamed?.ok) return streamed ?? { ok: false, error: "stream_failed" };
     if (hasMeaningfulText(streamed.text)) return streamed;
+
+    // Stream came back OK but with no visible text. Before we silently fire
+    // a second non-streaming request (which doubles billing and erases the
+    // streaming UX entirely), check if the model actually produced *any*
+    // bytes — reasoning tokens count. If it did, treat this as a real
+    // response and surface the reasoning so the user isn't staring at an
+    // empty bubble. This is the exact failure mode that caused Qwen3
+    // thinking-mode requests to arrive "all at once" after a long silent
+    // wait: the stream was working fine, extractor just dropped every
+    // reasoning chunk.
+    if (streamed.reasoning_content && streamed.streamedBytes > 0) {
+      return {
+        ok: true,
+        text: `【思考】\n${streamed.reasoning_content}`,
+        reasoning_content: streamed.reasoning_content
+      };
+    }
 
     const fallback = await callLLMDirect({
       config: normalizedConfig,

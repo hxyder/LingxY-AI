@@ -127,7 +127,8 @@ html, body {
   border-radius: 12px;
   max-width: 92%;
   line-height: 1.55;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   font-size: 13px;
 }
 .sp-msg.user {
@@ -200,7 +201,8 @@ html, body {
   border-radius: 12px;
   font-size: 13px;
   font-weight: 500;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
   line-height: 1.4;
 }
 .sp-user-attached {

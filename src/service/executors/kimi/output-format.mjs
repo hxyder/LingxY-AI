@@ -55,7 +55,7 @@ async function writeStructuredPreviewHtml({ kind, outputPath, outline = null, pl
       body { margin: 0; padding: 24px; background: #f5f7fb; color: #1e293b; font: 14px/1.6 "Segoe UI", Calibri, Arial, sans-serif; }
       article { max-width: 1080px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 28px; box-shadow: 0 16px 40px rgba(15,23,42,.08); }
       h1 { margin: 0 0 12px; font-size: 28px; }
-      pre { white-space: pre-wrap; word-break: break-word; margin: 0; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
+      pre { white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; margin: 0; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
     </style>
   </head>
   <body>

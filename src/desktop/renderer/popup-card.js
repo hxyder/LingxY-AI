@@ -146,11 +146,96 @@ function renderActions(buttons = []) {
   }
 }
 
+// 83.2 — Batched notification state. When kind === "batched", we hold the
+// entries array here and let prev/next nav switch which entry is currently
+// rendered. Kept in module state so an in-flight re-init (same dedupeKey)
+// can append entries without losing the user's currentIndex.
+const batchState = {
+  entries: [],
+  currentIndex: 0,
+  taskId: null
+};
+
+function renderBatchedEntry() {
+  const entry = batchState.entries[batchState.currentIndex];
+  if (!entry) return;
+  cardEl.setAttribute("data-kind", entry.kind || "info");
+  setText(titleEl, `${entry.title ?? "LingxY"}  ${batchState.currentIndex + 1}/${batchState.entries.length}`);
+  renderBody(entry.lines ?? []);
+  const buttons = [];
+  // Pagination — hidden when there's only one entry (caller already routes
+  // single-entry batches through the plain "info" kind, but guard here too).
+  if (batchState.entries.length > 1) {
+    buttons.push({
+      label: "‹", variant: "ghost",
+      onClick: () => {
+        batchState.currentIndex =
+          (batchState.currentIndex - 1 + batchState.entries.length) % batchState.entries.length;
+        renderBatchedEntry();
+      }
+    });
+    buttons.push({
+      label: "›", variant: "ghost",
+      onClick: () => {
+        batchState.currentIndex = (batchState.currentIndex + 1) % batchState.entries.length;
+        renderBatchedEntry();
+      }
+    });
+  }
+  // Per-entry action (artifact → 预览, conversational → 查看详情, fallback → 好)
+  if (entry.artifactPath) {
+    buttons.push({
+      label: "预览",
+      variant: "primary",
+      onClick: () => resolveCard("preview", { artifactPath: entry.artifactPath, mime: entry.mime ?? null })
+    });
+  } else {
+    buttons.push({
+      label: entry.openWindow === "overlay" ? "打开对话框" : "查看详情",
+      variant: "primary",
+      onClick: () => openTaskDetail(batchState.taskId, entry)
+    });
+  }
+  buttons.push({ label: "关闭", variant: "ghost", onClick: () => closeCard("dismissed") });
+  renderActions(buttons);
+  measureAndResize();
+}
+
 function applyInit(payload) {
   const kind = payload?.kind ?? "info";
   state.kind = kind;
   cardEl.setAttribute("data-kind", kind);
   setText(titleEl, payload?.title ?? defaultTitleFor(kind));
+
+  // 83.2 — Batched kind: hold entries in module state, render by index, let
+  // the user page through with ‹ ›. Skip the normal renderBody because the
+  // body is re-rendered per entry.
+  if (kind === "batched") {
+    const incoming = Array.isArray(payload?.entries) ? payload.entries : [];
+    if (batchState.taskId && batchState.taskId === payload?.taskId) {
+      // Same task re-fired (dedupeKey hit) — append new entries rather than
+      // resetting the carousel so the user's current view is preserved.
+      for (const e of incoming) {
+        const alreadyPresent = batchState.entries.some((existing) =>
+          existing.addedAt === e.addedAt && existing.title === e.title
+        );
+        if (!alreadyPresent) batchState.entries.push(e);
+      }
+    } else {
+      batchState.entries = incoming.slice();
+      batchState.currentIndex = 0;
+      batchState.taskId = payload?.taskId ?? null;
+    }
+    renderBatchedEntry();
+    scheduleAutoHide(payload?.autoHideMs ?? 12000);
+    requestAnimationFrame(() => {
+      cardEl.classList.add("show");
+      measureAndResize();
+      setTimeout(measureAndResize, 260);
+    });
+    return;
+  }
+
   renderBody(payload?.lines ?? payload?.body ?? []);
   const detailLabel = payload?.openWindow === "overlay" ? "打开对话框" : "查看详情";
 
@@ -209,6 +294,7 @@ function defaultTitleFor(kind) {
   if (kind === "approval") return "等待确认";
   if (kind === "success") return "已完成";
   if (kind === "error") return "任务失败";
+  if (kind === "batched") return "LingxY";
   return "LingxY";
 }
 

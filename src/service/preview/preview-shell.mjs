@@ -90,7 +90,8 @@ pre.preview-pre {
   overflow: auto;
   font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   white-space: pre-wrap;
-  word-break: break-word;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 table.preview-table {
   border-collapse: collapse;

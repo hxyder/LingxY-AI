@@ -151,7 +151,13 @@
         border-radius: 14px;
         font-size: 13px;
         line-height: 1.55;
-        word-break: break-word;
+        /* keep-all: CJK characters don't break between each other (so "美元/桶"
+           never splits "美" from "元" like the old word-break:break-word did).
+           overflow-wrap: anywhere is the fallback — if a line genuinely can't
+           fit (long URL, very long Latin run), break anywhere as a last resort
+           rather than overflow the bubble. */
+        word-break: keep-all;
+        overflow-wrap: anywhere;
         animation: bubble-in 180ms ease;
       }
 
@@ -1098,7 +1104,8 @@
         background: rgba(91, 107, 122, 0.08);
         border: 1px solid rgba(91, 107, 122, 0.18);
         border-radius: 14px;
-        word-break: break-word;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
         scroll-behavior: smooth;
         text-align: left;
         transition: border-color 0.2s ease, background 0.2s ease;
@@ -1309,7 +1316,8 @@
         font-size: 13px;
         line-height: 1.6;
         color: var(--ink);
-        word-break: break-word;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
         scrollbar-width: thin;
         margin-bottom: 4px;
       }
@@ -1369,7 +1377,8 @@
         opacity: 0;
         pointer-events: none;
         transition: opacity 260ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
-        word-break: break-word;
+        word-break: keep-all;
+        overflow-wrap: anywhere;
       }
 
       .pop-bubble[data-open="true"] {
