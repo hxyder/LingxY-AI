@@ -63,6 +63,59 @@ function resolveAppCommand(appName) {
   return KNOWN_APPS[key] ?? appName;
 }
 
+// 83.8 — Locate the Python app launcher script. Cached after first resolve
+// so repeated launches don't re-check the filesystem. Looks up several
+// candidates to handle both dev (scripts/app_launcher/launcher.py next to
+// the source) and packaged Electron (process.resourcesPath/scripts/...) layouts.
+let _pythonLauncherPathCache = null;
+async function findPythonLauncherScript() {
+  if (_pythonLauncherPathCache !== null) return _pythonLauncherPathCache;
+  const candidates = [
+    path.join(process.cwd(), "scripts", "app_launcher", "launcher.py"),
+    path.resolve(__dirname, "..", "..", "..", "..", "scripts", "app_launcher", "launcher.py"),
+    process.resourcesPath
+      ? path.join(process.resourcesPath, "scripts", "app_launcher", "launcher.py")
+      : null
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    try {
+      await access(candidate, fsConstants.F_OK);
+      _pythonLauncherPathCache = candidate;
+      return candidate;
+    } catch { /* try next */ }
+  }
+  _pythonLauncherPathCache = "";
+  return "";
+}
+
+/**
+ * Invoke `scripts/app_launcher/launcher.py open --name <name> --json`.
+ * Returns the parsed JSON result, or `{ok: false, reason: "..."}` on spawn/
+ * parse failure. Throws only when Python itself isn't on PATH — callers
+ * fall back to the legacy "exhausted" observation in that case.
+ */
+async function tryPythonLauncher(appName) {
+  const scriptPath = await findPythonLauncherScript();
+  if (!scriptPath) throw new Error("python_launcher_script_not_found");
+  const { stdout } = await execFileAsync("python", [
+    scriptPath, "open", "--name", String(appName), "--json"
+  ], {
+    encoding: "utf8",
+    timeout: 25_000,
+    windowsHide: true,
+    // Force UTF-8 everywhere so Chinese display names survive the round trip.
+    env: { ...process.env, PYTHONIOENCODING: "utf-8" }
+  });
+  const line = String(stdout ?? "").trim().split(/\r?\n/).filter(Boolean).pop();
+  if (!line) throw new Error("python_launcher_no_output");
+  const parsed = JSON.parse(line);
+  // Normalize the "ambiguous" shape into a top-level flag the caller switches on.
+  if (parsed.ok && parsed.action === "ambiguous") {
+    return { ok: false, ambiguous: true, candidates: parsed.candidates ?? [], decision_reason: parsed.decision_reason };
+  }
+  return parsed;
+}
+
 // Fallback resolver: query the Windows Start menu via PowerShell Get-StartApps
 // and return the AppID of the first match. The AppID can be launched via
 // `explorer.exe shell:AppsFolder\<AppID>`, which works for packaged UWP apps
@@ -406,11 +459,71 @@ export const LAUNCH_APP_TOOL = {
         }
       }
 
-      return createActionResult({
-        success: false,
-        observation: `未能启动 ${appArg}。已尝试 Start-Process 和 Get-StartApps，都没找到匹配。你可以告诉我完整的可执行文件路径，或让我用 web_search 帮你搜官方下载页。`,
-        metadata: { method: "exhausted", tried: [command, "Get-StartApps"] }
-      });
+      // Step 3 (83.8) — fallback to the Python launcher (scripts/app_launcher).
+      // It has a broader app index (Start menu + App Paths registry + fs_scan
+      // of common install roots) plus state-aware activation (focus an
+      // already-running instance instead of spawning a second one).
+      // Only runs when both fast-path steps failed so we don't eat its
+      // ~200ms startup latency on every launch.
+      try {
+        const pyResult = await tryPythonLauncher(appArg);
+        if (pyResult.ok) {
+          return createActionResult({
+            success: true,
+            observation: `${pyResult.action === "focused" ? "已切换到" : pyResult.action === "restored" ? "已还原" : "已启动"} ${pyResult.display_name ?? appArg}`,
+            metadata: {
+              method: "python_launcher",
+              action: pyResult.action,
+              display_name: pyResult.display_name,
+              exe_path: pyResult.exe_path,
+              decision_reason: pyResult.decision_reason,
+              hwnd: pyResult.hwnd,
+              pid: pyResult.pid
+            }
+          });
+        }
+        if (pyResult.ambiguous) {
+          // Surface candidates so the agent-loop can ask the user which one.
+          // The LLM turn will see this observation, hopefully emit a
+          // follow-up tool call with args.app = <the chosen exe_path>.
+          const choiceList = (pyResult.candidates ?? [])
+            .map((c, i) => `${i + 1}. ${c.display_name}${c.is_dev_tool ? "（开发工具）" : ""} — ${c.exe_path}`)
+            .join("\n");
+          return createActionResult({
+            success: false,
+            observation: `${appArg} 有多个可能的匹配，请让用户挑一个或告诉我具体路径：\n${choiceList}`,
+            metadata: {
+              method: "python_launcher",
+              action: "ambiguous",
+              candidates: pyResult.candidates
+            }
+          });
+        }
+        // Python launcher returned a structured failure — surface its reason
+        // so logs show what rule fired.
+        return createActionResult({
+          success: false,
+          observation: `未能启动 ${appArg}。Python 启动器：${pyResult.reason ?? "no_candidate"}（${pyResult.decision_reason ?? "unknown"}）。你可以告诉我完整的可执行文件路径。`,
+          metadata: {
+            method: "python_launcher_failed",
+            reason: pyResult.reason,
+            decision_reason: pyResult.decision_reason
+          }
+        });
+      } catch (pyErr) {
+        // Python unavailable / script not found / spawn error. Fall
+        // through to the legacy "exhausted" observation so users on boxes
+        // without Python still see the same text they used to.
+        return createActionResult({
+          success: false,
+          observation: `未能启动 ${appArg}。已尝试 Start-Process 和 Get-StartApps，都没找到匹配。你可以告诉我完整的可执行文件路径，或让我用 web_search 帮你搜官方下载页。`,
+          metadata: {
+            method: "exhausted",
+            tried: [command, "Get-StartApps", "python_launcher"],
+            python_error: pyErr?.message
+          }
+        });
+      }
     }
 
     // Non-Windows platforms: fall back to spawn
