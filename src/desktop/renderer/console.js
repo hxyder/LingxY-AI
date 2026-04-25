@@ -467,6 +467,8 @@ let consoleChatEventStream = null;
 let consoleChatResultTaskIds = new Set();
 let consoleChatToolCardCounter = 0;
 let consoleChatToolCards = new Map();
+let consoleChatThinkingCard = null;
+let consoleChatThinkingText = "";
 const scheduleRunTaskWatchers = new Map();
 const completedScheduleRunTaskIds = new Set();
 let editingSkillPath = null;
@@ -760,6 +762,40 @@ function createConsoleChatToolCard(toolName, args, options = {}) {
   return id;
 }
 
+function appendConsoleChatThinkingDelta(delta) {
+  if (!consoleChatMessages || !delta) return;
+  consoleChatMessages.querySelector(".console-chat-empty")?.remove();
+  if (!consoleChatThinkingCard) {
+    const card = document.createElement("details");
+    card.className = "chat-thinking-card";
+    card.open = true;
+    card.innerHTML = `
+      <summary class="cth-summary">
+        <span class="cth-icon">🧠</span>
+        <span class="cth-label">思考过程</span>
+        <span class="cth-status">…</span>
+      </summary>
+      <div class="cth-body"></div>
+    `;
+    consoleChatMessages.appendChild(card);
+    consoleChatThinkingCard = card;
+    consoleChatThinkingText = "";
+  }
+  consoleChatThinkingText += String(delta);
+  const body = consoleChatThinkingCard.querySelector(".cth-body");
+  if (body) body.textContent = consoleChatThinkingText;
+  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+}
+
+function closeConsoleChatThinkingCard() {
+  if (!consoleChatThinkingCard) return;
+  consoleChatThinkingCard.open = false;
+  const status = consoleChatThinkingCard.querySelector(".cth-status");
+  if (status) status.textContent = `${consoleChatThinkingText.length} chars`;
+  consoleChatThinkingCard = null;
+  consoleChatThinkingText = "";
+}
+
 function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) {
   const card = consoleChatToolCards.get(id);
   if (!card) {
@@ -841,11 +877,14 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
 function subscribeConsoleChatTask(taskId) {
   consoleChatEventStream?.close?.();
   consoleChatToolCards = new Map();
+  closeConsoleChatThinkingCard();
   consoleChatEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
     onEvent(rawEvent) {
       const frame = toTaskEventFrame(rawEvent);
       const payload = frame.data ?? {};
-      if (frame.event === "tool_call_proposed" || frame.event === "tool_call_started") {
+      if (frame.event === "reasoning_delta") {
+        appendConsoleChatThinkingDelta(payload.delta ?? "");
+      } else if (frame.event === "tool_call_proposed" || frame.event === "tool_call_started") {
         const toolName = payload.tool_id ?? payload.tool ?? "tool";
         const args = payload.args ?? payload.arguments ?? {};
         const id = createConsoleChatToolCard(toolName, args, { state: "running" });
@@ -882,10 +921,12 @@ function subscribeConsoleChatTask(taskId) {
           });
         }
       } else if (frame.event === "inline_result") {
+        closeConsoleChatThinkingCard();
         appendConsoleChatMessage("assistant", payload.text ?? payload.message ?? "");
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Done.";
       } else if (frame.event === "failed") {
+        closeConsoleChatThinkingCard();
         appendConsoleChatMessage("system", payload.message ?? "Task failed.");
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Failed.";
@@ -1370,10 +1411,11 @@ function renderEmailAccounts() {
 function renderEmailDigestSettings() {
   const settings = state.workspace.emailDigestSettings ?? {};
   const enabled = settings.enabled !== false;
-  emailDigestEnabled.checked = enabled;
-  emailDigestWindowStart.value = settings.windowStart ?? "06:00";
-  emailDigestWindowEnd.value = settings.windowEnd ?? "12:00";
-  emailDigestSkipWeekends.checked = Boolean(settings.skipWeekends);
+  if (emailDigestEnabled) emailDigestEnabled.checked = enabled;
+  if (connDigestEnabled) connDigestEnabled.checked = enabled;
+  if (emailDigestWindowStart) emailDigestWindowStart.value = settings.windowStart ?? "06:00";
+  if (emailDigestWindowEnd) emailDigestWindowEnd.value = settings.windowEnd ?? "12:00";
+  if (emailDigestSkipWeekends) emailDigestSkipWeekends.checked = Boolean(settings.skipWeekends);
 }
 
 function renderMcpServers() {
@@ -2272,6 +2314,10 @@ function countTasksByFilter(tasks) {
   };
 }
 
+function isCompositeChildTask(task = {}) {
+  return Boolean(task?.parent_task_id) && Number.isInteger(task?.child_index);
+}
+
 function renderTasks() {
   const allTasks = state.workspace.tasks ?? [];
   // Update filter chip counts from the unfiltered list so every chip
@@ -2353,7 +2399,7 @@ function renderTasks() {
     const byId = new Map(list.map((task) => [task.task_id, task]));
     const childrenByParent = new Map();
     for (const task of list) {
-      if (task.parent_task_id) {
+      if (isCompositeChildTask(task)) {
         if (!childrenByParent.has(task.parent_task_id)) {
           childrenByParent.set(task.parent_task_id, []);
         }
@@ -2366,7 +2412,7 @@ function renderTasks() {
       childrenByParent.set(parentId, children);
     }
 
-    const parentsOrSingles = list.filter((task) => !task.parent_task_id);
+    const parentsOrSingles = list.filter((task) => !isCompositeChildTask(task));
     const sorted = parentsOrSingles.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
     const entries = [];
     for (const task of sorted) {
@@ -2692,7 +2738,13 @@ function renderTaskArtifacts(detail) {
   for (const btn of taskArtifactList.querySelectorAll("[data-artifact-reveal]")) {
     btn.addEventListener("click", async (event) => {
       event.stopPropagation();
-      try { await window.ucaShell.revealInFolder?.(btn.dataset.artifactPath); }
+      try {
+        if (typeof window.ucaShell.showItemInFolder === "function") {
+          await window.ucaShell.showItemInFolder(btn.dataset.artifactPath);
+        } else {
+          await window.ucaShell.openPath(btn.dataset.artifactPath);
+        }
+      }
       catch { await window.ucaShell.openPath(btn.dataset.artifactPath); }
     });
   }
@@ -3033,7 +3085,7 @@ function renderTaskDetail(detail) {
       <p class="muted" style="margin:4px 0 0;font-size:12px;">${escapeHtml(task.failure_user_message ?? task.failure_category)}</p>
     </div>
   ` : "";
-  const parentLink = task.parent_task_id ? `
+  const parentLink = isCompositeChildTask(task) ? `
     <span>父任务：
       <button class="btn btn-ghost" data-parent-task-id="${escapeHtml(task.parent_task_id)}" style="padding:0 6px;font-size:11px;">← 返回</button>
     </span>
@@ -4185,6 +4237,16 @@ document.getElementById("saveFeatureTogglesBtn")?.addEventListener("click", asyn
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(toggles)
     });
+    if (state.workspace.health?.config) {
+      state.workspace.health.config.features = toggles;
+    }
+    if (Object.prototype.hasOwnProperty.call(toggles, "morning_digest")) {
+      state.workspace.emailDigestSettings = {
+        ...(state.workspace.emailDigestSettings ?? {}),
+        enabled: toggles.morning_digest.enabled
+      };
+      renderEmailDigestSettings();
+    }
     if (stateLabel) stateLabel.textContent = "Saved.";
   } catch (error) {
     if (stateLabel) stateLabel.textContent = `Failed: ${error.message}`;
@@ -4798,6 +4860,7 @@ document.querySelector("#consoleChatNewBtn")?.addEventListener("click", () => {
   consoleChatEventStream?.close?.();
   consoleChatEventStream = null;
   consoleChatToolCards = new Map();
+  closeConsoleChatThinkingCard();
   consoleChatResultTaskIds = new Set();
   if (consoleChatMessages) {
     consoleChatMessages.innerHTML = `<div class="console-chat-empty">没有对话 — 开始一个吧。</div>`;
@@ -5068,8 +5131,12 @@ emailDigestSaveBtn?.addEventListener("click", async () => {
       body: JSON.stringify(payload)
     });
     state.workspace.emailDigestSettings = result.settings ?? payload;
+    if (state.workspace.health?.config?.features) {
+      state.workspace.health.config.features.morning_digest = { enabled: payload.enabled };
+    }
     emailDigestState.textContent = "Saved.";
     renderEmailDigestSettings();
+    renderFeatureToggles();
   } catch (error) {
     emailDigestState.textContent = `Failed: ${error.message}`;
   }
@@ -6495,7 +6562,11 @@ connDigestEnabled?.addEventListener("change", async () => {
       })
     });
     state.workspace.emailDigestSettings = result.settings ?? state.workspace.emailDigestSettings;
+    if (state.workspace.health?.config?.features) {
+      state.workspace.health.config.features.morning_digest = { enabled: connDigestEnabled.checked };
+    }
     renderEmailDigestSettings();
+    renderFeatureToggles();
   } catch (error) {
     if (connDigestTestState) connDigestTestState.textContent = `Error: ${error.message}`;
   }

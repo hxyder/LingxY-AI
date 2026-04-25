@@ -15,7 +15,7 @@ const PRELOAD_PATH = path.join(RENDERER_DIR, "preload.cjs");
 
 const CARD_WIDTH = 380;
 const CARD_HEIGHT_MIN = 150;
-const CARD_HEIGHT_MAX = 480;
+const CARD_HEIGHT_MAX = 560;
 const CARD_GAP = 8;
 const MAX_CARDS = 5;
 
@@ -136,7 +136,7 @@ export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolve
       resizable: false,
       movable: true,
       skipTaskbar: true,
-      focusable: false,
+      focusable: true,
       maximizable: false,
       minimizable: false,
       fullscreenable: false,

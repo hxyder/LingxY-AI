@@ -17,9 +17,69 @@
         flex-direction: column;
         justify-content: flex-end;
         align-items: center;
-        padding: 0 0 24px;
+        padding: 0 0 26px;
+        position: relative;
+        --overlay-width: min(calc(100vw - 32px), 900px);
         font-family: -apple-system, "SF Pro Text", "SF Pro Display", "Segoe UI Variable Text", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
         /* transparent window — no drag region needed */
+      }
+
+      .window-drag-strip {
+        width: min(260px, calc(100vw - 72px));
+        height: 30px;
+        margin: 0 0 12px;
+        border: 1px solid rgba(91, 107, 122, 0.24);
+        border-radius: 999px;
+        background:
+          linear-gradient(90deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.55)),
+          radial-gradient(circle at 50% 50%, rgba(91, 107, 122, 0.16), transparent 62%);
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+        cursor: grab;
+        backdrop-filter: blur(18px) saturate(150%);
+        -webkit-backdrop-filter: blur(18px) saturate(150%);
+        -webkit-app-region: no-drag;
+        display: grid;
+        place-items: center;
+        color: rgba(15, 23, 42, 0.66);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+      }
+
+      .window-drag-strip:active {
+        cursor: grabbing;
+      }
+
+      .window-drag-strip::before {
+        content: "拖动对话框";
+      }
+
+      .window-resize-grip {
+        position: fixed;
+        right: 12px;
+        bottom: 10px;
+        width: 28px;
+        height: 28px;
+        border: 1px solid rgba(91, 107, 122, 0.22);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.68);
+        box-shadow: 0 12px 28px rgba(15, 23, 42, 0.14);
+        cursor: nwse-resize;
+        backdrop-filter: blur(18px) saturate(150%);
+        -webkit-backdrop-filter: blur(18px) saturate(150%);
+        -webkit-app-region: no-drag;
+        z-index: 20;
+      }
+
+      .window-resize-grip::before {
+        content: "";
+        position: absolute;
+        right: 6px;
+        bottom: 6px;
+        width: 10px;
+        height: 10px;
+        border-right: 2px solid rgba(91, 107, 122, 0.82);
+        border-bottom: 2px solid rgba(91, 107, 122, 0.82);
       }
 
       /* Apple-style auto-hide: when overlay is "popping" (no user engagement)
@@ -223,6 +283,20 @@
       .bubble.assistant .md-link {
         color: var(--accent, #5b6b7a);
         text-decoration: underline;
+      }
+      .bubble.assistant .md-image-link {
+        display: block;
+        margin: 8px 0;
+        border-radius: 12px;
+        overflow: hidden;
+        border: 1px solid rgba(91, 107, 122, 0.14);
+        background: rgba(255, 255, 255, 0.52);
+      }
+      .bubble.assistant .md-image {
+        display: block;
+        max-width: 100%;
+        max-height: 260px;
+        object-fit: contain;
       }
       .bubble.assistant .md-code {
         position: relative;
@@ -681,6 +755,8 @@
           0 12px 30px rgba(0, 0, 0, 0.08),
           inset 0 1px 0 rgba(255, 255, 255, 0.95);
         -webkit-app-region: no-drag;
+        position: relative;
+        z-index: 12;
         transition: opacity 240ms ease, transform 240ms ease;
       }
 
@@ -952,13 +1028,28 @@
       }
 
       body.send-busy .input-bar .send-btn {
-        opacity: 0.85;
+        opacity: 1;
+        position: relative;
         animation: send-btn-pulse 1.2s ease-in-out infinite;
       }
 
+      body.send-busy .input-bar .send-btn::after {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: 999px;
+        border: 2px solid rgba(37, 99, 235, 0.24);
+        border-top-color: rgba(255, 255, 255, 0.9);
+        animation: send-btn-spin 0.75s linear infinite;
+      }
+
       @keyframes send-btn-pulse {
-        0%, 100% { opacity: 0.55; }
-        50%      { opacity: 1;    }
+        0%, 100% { transform: translateY(0) scale(0.98); }
+        50%      { transform: translateY(-1px) scale(1.04); }
+      }
+
+      @keyframes send-btn-spin {
+        to { transform: rotate(360deg); }
       }
 
       .input-bar .aux-btn {
@@ -988,21 +1079,39 @@
       /* ── task list dock ── */
       .task-list-dock {
         position: fixed;
-        right: 22px;
+        left: max(16px, calc((100vw - var(--overlay-width)) / 2 + 12px));
         bottom: 30px;
-        width: 26px;
-        height: 26px;
+        width: 34px;
+        height: 34px;
         padding: 0;
-        border-radius: 8px;
+        border-radius: 12px;
         display: grid;
         place-items: center;
         background: rgba(255, 255, 255, 0.92);
         border: 1px solid rgba(255, 255, 255, 0.6);
-        box-shadow: 0 10px 24px rgba(0, 0, 0, 0.12);
+        box-shadow: 0 14px 30px rgba(15, 23, 42, 0.16);
         cursor: pointer;
         font: inherit;
         color: inherit;
-        z-index: 20;
+        z-index: 22;
+        transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+      }
+      .task-list-dock:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 18px 36px rgba(15, 23, 42, 0.2);
+      }
+      .task-list-dock.is-running {
+        background: linear-gradient(135deg, #111827, #2563eb);
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.7);
+      }
+      .task-list-dock.is-running::before {
+        content: "";
+        position: absolute;
+        inset: -5px;
+        border-radius: 16px;
+        border: 2px solid rgba(37, 99, 235, 0.26);
+        animation: task-dock-pulse 1.25s ease-in-out infinite;
       }
       .task-list-dock:focus-visible {
         outline: 2px solid #6366f1;
@@ -1027,9 +1136,9 @@
 
       .task-list-panel {
         position: fixed;
-        right: 22px;
+        left: max(16px, calc((100vw - var(--overlay-width)) / 2 + 12px));
         bottom: 70px;
-        width: 300px;
+        width: min(360px, calc(100vw - 32px));
         max-height: 360px;
         background: rgba(255, 255, 255, 0.97);
         border: 1px solid rgba(255, 255, 255, 0.7);
@@ -1100,6 +1209,21 @@
         place-items: center;
         font-size: 9px;
         color: var(--muted);
+      }
+      .task-progress-ring.is-running {
+        border-color: rgba(59, 130, 246, 0.2);
+        border-top-color: #2563eb;
+        animation: task-ring-spin 0.9s linear infinite;
+        color: transparent;
+      }
+
+      @keyframes task-ring-spin {
+        to { transform: rotate(360deg); }
+      }
+
+      @keyframes task-dock-pulse {
+        0%, 100% { opacity: 0.3; transform: scale(0.94); }
+        50% { opacity: 1; transform: scale(1.05); }
       }
 
       @keyframes bubble-in {
@@ -1796,10 +1920,20 @@
       }
       body[data-theme="dark"] .wave-bar { background: #e8e8e8; }
       body[data-theme="dark"] .voice-card .voice-transcript { background: rgba(40,40,48,0.8); color: #e8e8e8; }
+      body[data-theme="dark"] .window-drag-strip,
+      body[data-theme="dark"] .window-resize-grip {
+        background: rgba(20, 20, 24, 0.78);
+        border-color: rgba(255, 255, 255, 0.12);
+      }
+      body[data-theme="dark"] .window-resize-grip::before {
+        border-right-color: rgba(232, 232, 232, 0.86);
+        border-bottom-color: rgba(232, 232, 232, 0.86);
+      }
 
     </style>
   </head>
   <body>
+    <div id="windowDragHandle" class="window-drag-strip" title="拖动对话框位置" aria-label="拖动对话框位置"></div>
     <!-- Bubble conversation area -->
     <div id="bubbleArea" class="bubble-area" role="log" aria-live="polite" aria-relevant="additions text" aria-label="对话记录" hidden></div>
 
@@ -1820,7 +1954,7 @@
 
     <!-- UCA-041: Project + history panel (hidden by default) -->
     <div id="projectPanel" class="inline-panel" data-open="false">
-      <div class="panel-title">项目与历史</div>
+      <div class="panel-title">对话与历史</div>
       <div style="display:flex;gap:6px;margin-bottom:8px;">
         <select id="projectDropdown" style="flex:1;font-size:12px;padding:4px 8px;border-radius:6px;background:var(--glass-accent-soft);color:var(--glass-ink);border:1px solid var(--glass-line);"></select>
         <button id="newProjectBtn" type="button" style="font-size:11px;padding:4px 10px;">+ 新项目</button>
@@ -1933,7 +2067,7 @@
         <span class="quick-glyph">&#10133;</span>新会话
       </button>
       <button id="projectSelectorBtn" class="quick-btn" type="button" title="切换项目 / 查看历史会话">
-        <span class="quick-glyph">&#128218;</span>项目
+        <span class="quick-glyph">&#128218;</span>对话
       </button>
       <button class="quick-btn" data-quick-action="translate" type="button" title="翻译当前上下文">
         <span class="quick-glyph">&#127760;</span>翻译
@@ -1999,6 +2133,8 @@
       </div>
       <div id="taskListBody" class="task-list-body" role="list"></div>
     </div>
+
+    <div id="overlayResizeGrip" class="window-resize-grip" title="调整对话框大小" aria-label="调整对话框大小"></div>
 
     <script src="./drop-guard.js"></script>
     <script src="./preview/client-registry.js"></script>

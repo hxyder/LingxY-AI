@@ -23,6 +23,8 @@ syncOverlayTheme();
 
 /* ── DOM refs ── */
 const bubbleArea = document.querySelector("#bubbleArea");
+const windowDragHandle = document.querySelector("#windowDragHandle");
+const overlayResizeGrip = document.querySelector("#overlayResizeGrip");
 const commandInput = document.querySelector("#commandInput");
 const sendBtn = document.querySelector("#sendBtn");
 const closeBtn = document.querySelector("#closeBtn");
@@ -100,6 +102,14 @@ function shouldSurfaceTaskPopupCards() {
   }
 }
 
+function shouldAutoRevealTaskResult() {
+  try {
+    return popKeptOpen || document.visibilityState === "visible";
+  } catch {
+    return popKeptOpen;
+  }
+}
+
 function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, openWindow = null } = {}) {
   if (!taskId || popupSuccessCardTaskId === taskId) return;
   if (!shouldSurfaceTaskPopupCards()) return;
@@ -152,6 +162,7 @@ let taskSummaries = [];
 let taskListFilter = "all";
 let lastTaskSummaryRefresh = 0;
 let compositeHeaderTaskId = null;
+const AUTO_TASK_SURFACED_KEY = "uca.overlay.autoTaskResults.v1";
 
 function escapeHtml(value) {
   return `${value ?? ""}`
@@ -161,6 +172,49 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
+function bindWindowDeltaHandle(element, mode = "move") {
+  if (!element) return;
+  let dragging = false;
+  let lastX = 0;
+  let lastY = 0;
+
+  const stop = () => {
+    dragging = false;
+    window.removeEventListener("pointermove", onPointerMove, true);
+    window.removeEventListener("pointerup", stop, true);
+    window.removeEventListener("pointercancel", stop, true);
+  };
+
+  const onPointerMove = (event) => {
+    if (!dragging) return;
+    const dx = event.screenX - lastX;
+    const dy = event.screenY - lastY;
+    lastX = event.screenX;
+    lastY = event.screenY;
+    if (dx === 0 && dy === 0) return;
+    if (mode === "resize") {
+      void window.ucaShell?.resizeWindowBy?.("overlay", dx, dy);
+    } else {
+      void window.ucaShell?.moveWindowBy?.("overlay", dx, dy);
+    }
+  };
+
+  element.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    dragging = true;
+    lastX = event.screenX;
+    lastY = event.screenY;
+    try { element.setPointerCapture?.(event.pointerId); } catch { /* ignore */ }
+    window.addEventListener("pointermove", onPointerMove, true);
+    window.addEventListener("pointerup", stop, true);
+    window.addEventListener("pointercancel", stop, true);
+    event.preventDefault();
+  });
+}
+
+bindWindowDeltaHandle(windowDragHandle, "move");
+bindWindowDeltaHandle(overlayResizeGrip, "resize");
 
 /* ── conversational state ── */
 let conversationPhase = "idle"; // idle | awaiting_options | done
@@ -190,6 +244,8 @@ const COMPRESS_KEEP_END = 6;
 const MAX_CAPTURE_TEXT_CHARS = 8000;
 const MAX_CONVERSATIONS_PER_PROJECT = 50;
 const DEFAULT_PROJECT_ID = "proj_default";
+const AUTO_SCHEDULE_PROJECT_ID = "proj_auto_schedules";
+const AUTO_EMAIL_PROJECT_ID = "proj_auto_email";
 const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899", "#14b8a6"];
 
 let projectStore = null;
@@ -209,15 +265,15 @@ function updateProjectSyncIndicator(success) {
   if (btn) {
     btn.classList.toggle("sync-offline", !success);
     btn.title = success
-      ? "切换项目 / 查看历史会话"
-      : "切换项目 / 查看历史会话（本地改动未同步到服务端，点击重试）";
+      ? "切换对话 / 查看历史会话"
+      : "切换对话 / 查看历史会话（本地改动未同步到服务端，点击重试）";
   }
   if (!success && prev !== "offline") {
     // First transition into offline — let the user know their changes are
     // local-only. Subsequent failures stay silent until we recover and fail
     // again.
     try {
-      addSystemBubble("项目/会话同步到服务端失败，本地仍会保留。恢复连接后点击「项目」按钮可重新同步。");
+      addSystemBubble("对话/会话同步到服务端失败，本地仍会保留。恢复连接后点击「对话」按钮可重新同步。");
     } catch { /* addSystemBubble not yet initialized on early calls */ }
   }
 }
@@ -240,6 +296,26 @@ function ensureDefaultProject() {
   if (!projectStore.projects.some((p) => p.id === DEFAULT_PROJECT_ID)) {
     projectStore.projects.unshift({ id: DEFAULT_PROJECT_ID, name: "默认", color: PROJECT_COLORS[0], createdAt: Date.now(), metadata: {} });
   }
+}
+
+function ensureSystemProject(projectId, name, color) {
+  if (!projectStore) loadProjectStore();
+  let project = projectStore.projects.find((p) => p.id === projectId);
+  if (!project) {
+    project = { id: projectId, name, color, createdAt: Date.now(), metadata: { system: true } };
+    projectStore.projects.push(project);
+  } else {
+    project.name = project.name || name;
+    project.color = project.color || color;
+    project.metadata = { ...(project.metadata ?? {}), system: true };
+  }
+  return project;
+}
+
+function projectHasUnread(projectId) {
+  return Boolean(projectStore?.conversations?.some((conversation) =>
+    conversation.projectId === projectId && conversation.metadata?.unread === true
+  ));
 }
 
 function buildDefaultProjectStore() {
@@ -398,6 +474,9 @@ function switchConversation(convId) {
   demoteActiveStreamToBackground();
 
   conversationState = conv;
+  if (conversationState.metadata?.unread) {
+    conversationState.metadata = { ...(conversationState.metadata ?? {}), unread: false };
+  }
   projectStore.currentConversationId = convId;
   projectStore.currentProjectId = conv.projectId;
   saveProjectStore();
@@ -582,6 +661,36 @@ function buildHistoryBlock(excludeLast = false) {
   }).join("\n\n");
 }
 
+function buildStructuredConversationTurns(excludeLast = false) {
+  if (!conversationState?.turns?.length) return [];
+  const turns = excludeLast ? conversationState.turns.slice(0, -1) : conversationState.turns;
+  return turns
+    .filter((turn) => turn?.role === "user" || turn?.role === "assistant" || turn?.role === "system")
+    .map((turn) => ({
+      role: turn.role,
+      content: String(turn.content ?? "").trim().slice(0, 1600)
+    }))
+    .filter((turn) => turn.content)
+    .slice(-20);
+}
+
+const EXPLICIT_FOLLOWUP_RE = /(继续|接着|再来|还是|同样|也|上个|上一|刚才|之前|前面|这个|那个|它|这份|这篇|这个文件|那个文件|改一下|修改|补充|加上|删掉|打开它|发给|保存为|导出|基于|根据上面|follow[-\s]?up|continue|same one|that one|previous|above|it\b)/i;
+
+function shouldAttachParentTaskForCommand(commandText = "") {
+  if (!conversationState?.lastCompletedTaskId) return false;
+  const command = String(commandText ?? "").trim();
+  if (!command) return false;
+  if (EXPLICIT_FOLLOWUP_RE.test(command)) return true;
+  if (conversationState.lastArtifacts?.length && /(文件|文档|pptx?|docx?|xlsx?|pdf|导出|保存|打开|发送|分享|修改|edit|open|send|export|save|file|document)/i.test(command)) {
+    return true;
+  }
+  return false;
+}
+
+function isCompositeChildTask(task = {}) {
+  return Boolean(task?.parent_task_id) && Number.isInteger(task?.child_index);
+}
+
 function seedCaptureMatches(newText) {
   if (!conversationState?.seedCapture?.text) return false;
   const a = String(conversationState.seedCapture.text).trim().slice(0, 200);
@@ -630,10 +739,12 @@ function renderMarkdown(text) {
     .replace(/(^|[^\*])\*([^\*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
     // Inline code: `code`
     .replace(/`([^`]+)`/g, "<code class=\"md-inline-code\">$1</code>")
+    // Images: ![alt](url). Keep them clickable so visual results can open full-size.
+    .replace(/!\[([^\]]*)\]\((https?:\/\/[^\)]+)\)/g, "<a href=\"#\" data-open-url=\"$2\" class=\"md-image-link\"><img src=\"$2\" alt=\"$1\" class=\"md-image\"></a>")
     // Links: [text](url)
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, "<a href=\"#\" data-open-url=\"$2\" class=\"md-link\">$1</a>")
     // Bare URLs
-    .replace(/(https?:\/\/[^\s<>"]+)/g, "<a href=\"#\" data-open-url=\"$1\" class=\"md-link\">$1</a>");
+    .replace(/(^|[\s(（])((?:https?:\/\/)[^\s<>"]+)/g, "$1<a href=\"#\" data-open-url=\"$2\" class=\"md-link\">$2</a>");
 
   // Convert blank lines to paragraph breaks, remaining newlines to <br>.
   working = working
@@ -649,6 +760,49 @@ function renderMarkdown(text) {
   });
 
   return working;
+}
+
+function imageMimeForPath(filePath = "") {
+  const lower = String(filePath).toLowerCase();
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".gif")) return "image/gif";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".bmp")) return "image/bmp";
+  return "image/png";
+}
+
+function extractLocalImagePaths(text = "") {
+  const matches = String(text).match(/[A-Za-z]:\\[^\r\n<>"]+?\.(?:png|jpe?g|gif|webp|bmp)/gi) ?? [];
+  return [...new Set(matches.map((item) => item.replace(/[)\].,，。；;:：]+$/g, "")))];
+}
+
+function attachLocalImagePreviews(bubble, sourceText = "") {
+  const paths = extractLocalImagePaths(sourceText);
+  if (!paths.length || !window.ucaShell?.readFileAsDataUrl) return;
+  for (const filePath of paths.slice(0, 4)) {
+    const link = document.createElement("a");
+    link.href = "#";
+    link.className = "md-image-link";
+    link.title = filePath;
+    link.textContent = "正在加载图片预览...";
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      void window.ucaShell?.openPath?.(filePath);
+    });
+    bubble.appendChild(link);
+    window.ucaShell.readFileAsDataUrl(filePath, imageMimeForPath(filePath))
+      .then((dataUrl) => {
+        const img = document.createElement("img");
+        img.className = "md-image";
+        img.src = dataUrl;
+        img.alt = filePath.split(/[\\/]/).pop() || "image";
+        link.textContent = "";
+        link.appendChild(img);
+      })
+      .catch(() => {
+        link.textContent = `打开图片：${filePath}`;
+      });
+  }
 }
 
 function hideEmptyState() {
@@ -714,6 +868,7 @@ function addBubble(role, content, options) {
           } catch { /* ignore */ }
         });
       }
+      attachLocalImagePreviews(bubble, content);
       // UCA-181: per-assistant-bubble Add-to-note action. Both windows
       // share notes through the runtime's HTTP store, so the overlay
       // can show a proper picker (list existing notes + create new)
@@ -1327,6 +1482,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     "accepted",
     "started",
     "provider_resolved",
+    "phase_timing",
     "status_changed",
     "step_started",
     "step_finished",
@@ -1362,7 +1518,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     if (label) timelineAddStep(label, "active");
   }
 
-  if (["accepted", "started", "provider_resolved", "status_changed", "log", "artifact_created"].includes(frame.event)) {
+  if (["accepted", "started", "provider_resolved", "phase_timing", "status_changed", "log", "artifact_created"].includes(frame.event)) {
     timelineAddStep(`${summary.title}: ${summary.body}`, frame.event === "artifact_created" ? "done" : "active");
   }
 
@@ -1822,7 +1978,7 @@ async function handleTaskEventFrame(rawEvent) {
         if (lastTask?.task_spec?.artifact?.required === false) {
           notifiedInlineResultTaskId = activeTaskId;
         }
-        void maybeRevealOverlay();
+        if (shouldAutoRevealTaskResult()) void maybeRevealOverlay();
         // Fire success popup card from the inline-result path as well —
         // the downstream status_changed=success block is guarded by
         // notifiedInlineResultTaskId and otherwise wouldn't trigger the
@@ -2013,13 +2169,281 @@ async function refreshTaskSummaries(force = false) {
   const now = Date.now();
   if (!force && now - lastTaskSummaryRefresh < 4000) return taskSummaries;
   try {
-    const payload = await fetchJson("/tasks");
-    taskSummaries = payload.tasks ?? [];
+    const payload = await fetchJson("/tasks/summary?limit=120");
+    taskSummaries = payload.recent ?? payload.tasks ?? [];
     lastTaskSummaryRefresh = now;
+    repairAutomaticTaskConversations(taskSummaries);
+    void surfaceAutomaticTaskResults(taskSummaries);
   } catch {
     // ignore
   }
   return taskSummaries;
+}
+
+function taskIdsForConversation(conversation = {}) {
+  const ids = new Set();
+  const meta = conversation.metadata ?? {};
+  for (const value of [meta.latestTaskId, meta.taskId, conversation.taskId, conversation.parentTaskId]) {
+    if (typeof value === "string" && value.startsWith("task_")) ids.add(value);
+  }
+  for (const turn of conversation.turns ?? []) {
+    if (typeof turn?.taskId === "string" && turn.taskId.startsWith("task_")) ids.add(turn.taskId);
+  }
+  return ids;
+}
+
+function repairAutomaticTaskConversations(tasks = []) {
+  if (!projectStore?.conversations?.length) return;
+  const byTaskId = new Map(tasks.filter((task) => task?.task_id).map((task) => [task.task_id, task]));
+  let changed = false;
+  for (const conversation of projectStore.conversations) {
+    if (!conversation?.projectId || conversation.metadata?.autoSource) continue;
+    if (conversation.projectId === AUTO_SCHEDULE_PROJECT_ID || conversation.projectId === AUTO_EMAIL_PROJECT_ID) continue;
+    const task = [...taskIdsForConversation(conversation)]
+      .map((taskId) => byTaskId.get(taskId))
+      .find((candidate) => isAutomaticResultTask(candidate));
+    if (!task) continue;
+    const projectInfo = automaticProjectForTask(task);
+    ensureSystemProject(projectInfo.projectId, projectInfo.name, projectInfo.color);
+    const previousProjectId = conversation.projectId;
+    conversation.projectId = projectInfo.projectId;
+    conversation.metadata = {
+      ...(conversation.metadata ?? {}),
+      autoSource: projectInfo.projectId === AUTO_EMAIL_PROJECT_ID ? "email" : "schedule",
+      movedFromProjectId: previousProjectId,
+      latestTaskId: task.task_id,
+      unread: conversation.id !== conversationState?.id
+    };
+    if (conversation.id === conversationState?.id) {
+      projectStore.currentProjectId = projectInfo.projectId;
+    }
+    changed = true;
+  }
+  if (changed) {
+    saveProjectStore();
+    renderProjectPanel();
+  }
+}
+
+function loadSurfacedAutoTaskIds() {
+  try {
+    const raw = localStorage.getItem(AUTO_TASK_SURFACED_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSurfacedAutoTaskIds(ids) {
+  try {
+    localStorage.setItem(AUTO_TASK_SURFACED_KEY, JSON.stringify([...ids].slice(-100)));
+  } catch { /* ignore */ }
+}
+
+function isAutomaticResultTask(task) {
+  if (!task) return false;
+  const metadata = task.context_packet?.selection_metadata
+    ?? task.context_packet?.selectionMetadata
+    ?? task.selection_metadata
+    ?? {};
+  const sourceId = String(metadata.source_id ?? task.schedule_source ?? "");
+  const sourceApp = task.source_app ?? task.context_packet?.source_app ?? "";
+  const captureMode = task.capture_mode ?? task.context_packet?.capture_mode ?? "";
+  return sourceApp === "uca.scheduler"
+    || captureMode === "scheduler"
+    || sourceId.startsWith("sched_")
+    || sourceApp === "uca.email"
+    || captureMode === "email_digest";
+}
+
+function automaticProjectForTask(task = {}) {
+  if (task.source_app === "uca.email" || task.capture_mode === "email_digest") {
+    return {
+      projectId: AUTO_EMAIL_PROJECT_ID,
+      name: "邮件摘要",
+      color: "#14b8a6"
+    };
+  }
+  return {
+    projectId: AUTO_SCHEDULE_PROJECT_ID,
+    name: "定时任务",
+    color: "#f59e0b"
+  };
+}
+
+function isEmailDigestTask(task = {}) {
+  const sourceApp = task.source_app ?? task.context_packet?.source_app ?? "";
+  const captureMode = task.capture_mode ?? task.context_packet?.capture_mode ?? "";
+  return sourceApp === "uca.email" || captureMode === "email_digest";
+}
+
+function automaticConversationKey(task = {}, detail = {}) {
+  const detailTask = detail?.task ?? task;
+  const metadata = detailTask?.context_packet?.selection_metadata
+    ?? detailTask?.context_packet?.selectionMetadata
+    ?? detailTask?.selection_metadata
+    ?? {};
+  if (isEmailDigestTask(detailTask)) {
+    return `email:${new Date(detailTask.updated_at ?? detailTask.created_at ?? Date.now()).toISOString().slice(0, 10)}`;
+  }
+  return `schedule:${metadata.source_id ?? detailTask.schedule_source ?? detailTask.intent ?? detailTask.user_command ?? detailTask.task_id}`;
+}
+
+function titleForAutomaticConversation(task = {}, detail = {}) {
+  const detailTask = detail?.task ?? task;
+  if (isEmailDigestTask(detailTask)) {
+    return "Morning digest";
+  }
+  const metadata = detailTask?.context_packet?.selection_metadata
+    ?? detailTask?.context_packet?.selectionMetadata
+    ?? detailTask?.selection_metadata
+    ?? {};
+  const raw = metadata.source_id || detailTask.intent || detailTask.user_command || "定时任务";
+  return String(raw).slice(0, 48);
+}
+
+function appendAutomaticTurnToConversation({ task, detail, text }) {
+  if (!text) return null;
+  if (!projectStore) loadProjectStore();
+  const projectInfo = automaticProjectForTask(task);
+  ensureSystemProject(projectInfo.projectId, projectInfo.name, projectInfo.color);
+  const conversationKey = automaticConversationKey(task, detail);
+  let conv = projectStore.conversations.find((item) =>
+    item.projectId === projectInfo.projectId
+    && item.metadata?.autoKey === conversationKey
+  );
+  if (!conv) {
+    conv = {
+      id: `conv_auto_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      projectId: projectInfo.projectId,
+      title: titleForAutomaticConversation(task, detail),
+      seedCapture: null,
+      seedCommand: task.user_command ?? task.intent ?? projectInfo.name,
+      turns: [],
+      startedAt: Date.now(),
+      updatedAt: Date.now(),
+      metadata: {
+        autoKey: conversationKey,
+        autoSource: projectInfo.projectId === AUTO_EMAIL_PROJECT_ID ? "email" : "schedule",
+        unread: true,
+        latestTaskId: task.task_id
+      }
+    };
+    projectStore.conversations.push(conv);
+  }
+  conv.turns = Array.isArray(conv.turns) ? conv.turns : [];
+  const existingTurn = conv.turns.find((turn) => turn.taskId === task.task_id && turn.role === "assistant");
+  if (existingTurn) {
+    existingTurn.content = text;
+    existingTurn.ts = Date.now();
+  } else {
+    conv.turns.push({ role: "assistant", content: text, ts: Date.now(), taskId: task.task_id });
+  }
+  conv.updatedAt = Date.now();
+  conv.metadata = {
+    ...(conv.metadata ?? {}),
+    unread: conv.id !== conversationState?.id,
+    latestTaskId: task.task_id
+  };
+  if (conv.id === conversationState?.id) {
+    addBubble("assistant", text);
+  }
+  saveProjectStore();
+  return conv;
+}
+
+function finalTextFromTaskDetail(detail) {
+  const events = detail?.events ?? detail?.taskEvents ?? [];
+  const finalEvent = [...events].reverse().find((event) =>
+    (event.event_type === "inline_result" || event.event_type === "success")
+    && typeof event.payload?.text === "string"
+    && event.payload.text.trim().length > 0
+  );
+  return finalEvent?.payload?.text
+    ?? detail?.task?.result_summary
+    ?? detail?.result_summary
+    ?? "";
+}
+
+async function surfaceAutomaticTaskResults(tasks = []) {
+  const surfaced = loadSurfacedAutoTaskIds();
+  const now = Date.now();
+  const candidates = sortTasksNewestFirst(tasks)
+    .filter((task) => task?.task_id && !surfaced.has(task.task_id))
+    .filter((task) => isAutomaticResultTask(task) && taskIsDone(task.status))
+    .filter((task) => {
+      const updated = new Date(task.updated_at ?? task.created_at ?? 0).getTime();
+      return Number.isFinite(updated) && now - updated < 24 * 60 * 60_000;
+    })
+    .slice(0, 5);
+  if (!candidates.length) return;
+
+  for (const task of candidates.reverse()) {
+    surfaced.add(task.task_id);
+    try {
+      const detail = await fetchJson(`/task/${encodeURIComponent(task.task_id)}`);
+      const finalText = finalTextFromTaskDetail(detail).trim();
+      const artifactLines = (detail?.task?.artifacts ?? task.artifacts ?? [])
+        .map((artifact) => artifact?.path)
+        .filter(Boolean)
+        .map((artifactPath) => `文件：${artifactPath}`);
+      const title = isEmailDigestTask(task)
+        ? "邮件摘要"
+        : "定时任务结果";
+      const body = [finalText, ...artifactLines].filter(Boolean).join("\n\n");
+      if (!body) continue;
+      const renderedText = `**${title}**\n\n${body}`;
+      appendAutomaticTurnToConversation({ task, detail, text: renderedText });
+      renderProjectPanel();
+    } catch {
+      // keep marked to avoid hammering a bad legacy task forever
+    }
+  }
+  saveSurfacedAutoTaskIds(surfaced);
+}
+
+async function openTaskResultInOverlayConversation(taskId, fallback = {}) {
+  if (!taskId) return false;
+  try {
+    const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
+    const task = detail?.task ?? {};
+    const finalText = finalTextFromTaskDetail(detail).trim()
+      || String(fallback.inlinePreview ?? "").trim()
+      || (Array.isArray(fallback.lines) ? fallback.lines.join("\n").trim() : "");
+    const artifactLines = (detail?.artifacts ?? task.artifacts ?? [])
+      .map((artifact) => artifact?.path)
+      .filter(Boolean)
+      .map((artifactPath) => `文件：${artifactPath}`);
+    const body = [finalText, ...artifactLines].filter(Boolean).join("\n\n");
+    if (!body) return false;
+
+    if (isAutomaticResultTask(task)) {
+      const title = isEmailDigestTask(task) ? "邮件摘要" : "定时任务结果";
+      const conv = appendAutomaticTurnToConversation({
+        task,
+        detail,
+        text: `**${title}**\n\n${body}`
+      });
+      if (conv?.id) {
+        switchConversation(conv.id);
+        renderProjectPanel();
+        void maybeRevealOverlay({ markEngaged: true });
+      }
+      const surfaced = loadSurfacedAutoTaskIds();
+      surfaced.add(taskId);
+      saveSurfacedAutoTaskIds(surfaced);
+      return true;
+    }
+
+    ensureConversation(null, task.user_command ?? fallback.title ?? "任务结果");
+    addBubble("assistant", body);
+    appendTurn("assistant", body);
+    void maybeRevealOverlay({ markEngaged: true });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function taskIsActive(status) {
@@ -2032,16 +2456,11 @@ function taskIsDone(status) {
 
 function isUserVisibleTask(task) {
   if (!task) return false;
-  // Scheduler-originated tasks were blanket-hidden from the overlay
-  // because most fire silently in the background. That left two gaps:
-  //   1. "Run now" on a schedule never reached the overlay dock / chip
-  //      (the task does exist; the user just can't see progress).
-  //   2. interactive-mode schedules that need a floating indicator for
-  //      a model call silently run without any surface reaction.
-  // Only hide UNATTENDED-safe scheduler fires; interactive-mode ones
-  // (including manual Run now triggers) surface like any normal task.
-  const isSchedulerTask = task.source_app === "uca.scheduler" || task.capture_mode === "scheduler";
-  if (isSchedulerTask && task.execution_mode !== "interactive") return false;
+  if (task.hidden === true || task.ui_hidden === true) return false;
+  // Automatic tasks used to disappear from the overlay, which made scheduled
+  // runs and email digests look like nothing was happening. Treat task
+  // visibility as a UI contract instead: anything the runtime records as a
+  // task is visible unless it explicitly opts out with hidden/ui_hidden.
   return true;
 }
 
@@ -2053,7 +2472,7 @@ function sortTasksNewestFirst(tasks = []) {
 
 function findLatestOverlayTask(tasks = taskSummaries) {
   const visible = sortTasksNewestFirst(tasks)
-    .filter((task) => isUserVisibleTask(task) && !task.parent_task_id);
+    .filter((task) => isUserVisibleTask(task) && !isCompositeChildTask(task));
   return visible.find((task) => taskIsActive(task.status))
     ?? visible.find((task) => {
       const updatedAt = new Date(task.updated_at ?? task.created_at ?? 0).getTime();
@@ -2121,7 +2540,7 @@ async function ensureCompositeHeader(task) {
   }
 
   const isParent = Array.isArray(task.child_task_ids) && task.child_task_ids.length > 0;
-  const parentId = isParent ? task.task_id : task.parent_task_id;
+  const parentId = isParent ? task.task_id : (isCompositeChildTask(task) ? task.parent_task_id : null);
   if (!parentId) {
     compositeHeaderTaskId = null;
     const existing = bubbleArea.querySelector("[data-composite-header]");
@@ -2201,7 +2620,7 @@ function choosePreviewArtifactPath(artifacts = []) {
 function renderTaskListDock() {
   if (!taskListDock || !taskListBody) return;
   const tasks = taskSummaries ?? [];
-  const parentOrStandalone = tasks.filter((task) => !task.parent_task_id);
+  const parentOrStandalone = tasks.filter((task) => isUserVisibleTask(task) && !isCompositeChildTask(task));
   const filtered = parentOrStandalone.filter((task) => {
     if (taskListFilter === "active") return taskIsActive(task.status);
     if (taskListFilter === "done") return taskIsDone(task.status);
@@ -2210,6 +2629,8 @@ function renderTaskListDock() {
   const limited = filtered.slice(0, 10);
 
   const pendingCount = parentOrStandalone.filter((task) => taskIsActive(task.status)).length;
+  taskListDock.classList.toggle("is-running", pendingCount > 0);
+  document.body.classList.toggle("has-active-tasks", pendingCount > 0);
   if (taskListDockBadge) {
     taskListDockBadge.textContent = `${pendingCount}`;
     taskListDockBadge.hidden = pendingCount === 0;
@@ -2223,15 +2644,21 @@ function renderTaskListDock() {
   taskListBody.innerHTML = limited.map((task) => {
     const progress = Math.round((task.progress ?? 0) * 100);
     const status = task.status ?? "unknown";
+    const active = taskIsActive(status);
     const statusClass = status === "success" ? "ready" : status === "failed" ? "danger" : "warning";
+    const source = task.source_app === "uca.scheduler" || task.capture_mode === "scheduler"
+      ? "定时任务"
+      : task.source_app === "uca.email" || task.capture_mode === "email_digest"
+        ? "邮件摘要"
+        : task.source_type ?? "source";
     return `
       <div class="task-list-item">
         <div style="display:flex;flex-direction:column;gap:2px;">
           <strong style="font-size:12px;">${escapeHtml(task.user_command ?? task.intent ?? "任务")}</strong>
-          <span class="muted" style="font-size:10px;">${escapeHtml(task.executor ?? "executor")} · ${escapeHtml(task.source_type ?? "source")}</span>
+          <span class="muted" style="font-size:10px;">${escapeHtml(task.executor ?? "executor")} · ${escapeHtml(source)}</span>
         </div>
         <div style="display:flex;align-items:center;gap:6px;">
-          <div class="task-progress-ring">${progress}%</div>
+          <div class="task-progress-ring ${active ? "is-running" : ""}">${active ? "" : `${progress}%`}</div>
           <span class="chip ${statusClass}" style="font-size:10px;">${escapeHtml(status)}</span>
           <button class="ghost" data-task-open="${escapeHtml(task.task_id)}" style="font-size:10px;padding:2px 6px;">查看</button>
         </div>
@@ -2569,7 +2996,7 @@ async function refreshActiveTask() {
           streamingBubbleRawText = "";
         } else {
           addBubble("assistant", finalText);
-          await maybeRevealOverlay({ markEngaged: true });
+          if (shouldAutoRevealTaskResult()) await maybeRevealOverlay({ markEngaged: true });
         }
         if (!popKeptOpen) {
           // Apple-style: show a transient pop bubble too, but keep the reply
@@ -2660,6 +3087,7 @@ async function submitTask() {
 
   try {
     let payload;
+    const structuredTurns = buildStructuredConversationTurns(true);
 
     if (pendingFileSelection?.filePaths?.length) {
       const imageExts = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
@@ -2712,7 +3140,10 @@ async function submitTask() {
       payload = {
         userCommand: commandText,
         executionMode: "interactive",
-        capture
+        capture: {
+          ...capture,
+          history: structuredTurns
+        }
       };
       if (executorOverride) payload.executorOverride = executorOverride;
     } else {
@@ -2729,7 +3160,10 @@ async function submitTask() {
         payload = {
           userCommand: commandText,
           executionMode: "interactive",
-          capture: activeBrowserCapture
+          capture: {
+            ...activeBrowserCapture,
+            history: structuredTurns
+          }
         };
       } else {
         // UCA-065: Include conversation history as context so follow-up messages
@@ -2740,6 +3174,7 @@ async function submitTask() {
           captureMode: "overlay",
           sourceType: "clipboard",
           text: historyText ? `[对话历史]\n${historyText}` : "",
+          selectionMetadata: { conversation_turns: structuredTurns },
           userCommand: commandText,
           executionMode: "interactive"
         };
@@ -2750,7 +3185,9 @@ async function submitTask() {
     // completed task. Server-side submitContextTask skips decomposition /
     // plan layer when parentTaskId is set, so the follow-up inherits the
     // thread instead of starting a brand-new root task every time.
-    const parentTaskId = conversationState?.lastCompletedTaskId ?? null;
+    const parentTaskId = shouldAttachParentTaskForCommand(commandText)
+      ? conversationState?.lastCompletedTaskId ?? null
+      : null;
 
     const result = await fetchJson("/task", {
       method: "POST",
@@ -3164,7 +3601,7 @@ function renderProjectPanel() {
   // Populate project dropdown
   if (projectDropdown) {
     projectDropdown.innerHTML = projectStore.projects.map((p) =>
-      `<option value="${p.id}" ${p.id === projectStore.currentProjectId ? "selected" : ""}>${p.name}</option>`
+      `<option value="${p.id}" ${p.id === projectStore.currentProjectId ? "selected" : ""}>${projectHasUnread(p.id) ? "● " : ""}${p.name}</option>`
     ).join("");
   }
   // Populate history list
@@ -3179,8 +3616,10 @@ function renderProjectPanel() {
       const turnCount = c.turns?.length ?? 0;
       const date = c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : "";
       const isActive = c.id === projectStore.currentConversationId;
+      const unread = c.metadata?.unread === true;
       return `
         <div data-conv-id="${c.id}" style="display:flex;align-items:center;gap:6px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:12px;${isActive ? "background:var(--glass-accent-soft);" : ""}">
+          <span style="width:7px;height:7px;border-radius:999px;background:${unread ? "#ef4444" : "transparent"};flex:0 0 auto;"></span>
           <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;${isActive ? "font-weight:600;" : ""}">${title}</div>
           <span style="font-size:10px;color:var(--muted);">${turnCount} turns · ${date}</span>
           <button data-delete-conv="${c.id}" type="button" style="font-size:10px;padding:2px 6px;border:none;background:none;color:var(--muted);cursor:pointer;" title="删除此会话">×</button>
@@ -5806,14 +6245,36 @@ window.ucaShell.onShellReady((payload) => {
 // When an approval is resolved from the floating popup card, the overlay's
 // inline twin (if any) is stale — mark it handled so the user doesn't
 // double-approve. We disable its buttons and overlay a status chip.
-window.ucaShell?.onPopupCardResolved?.((payload) => {
+window.ucaShell?.onPopupCardResolved?.(async (payload) => {
   if (!payload) return;
 
   // UCA-182 Phase 8: success-kind cards carry artifact actions. These
   // replace the old result-toast buttons.
-  if (payload.kind === "success") {
+  if (["preview", "reveal", "copy", "continue", "open_overlay"].includes(payload.action)) {
     const meta = payload.meta ?? {};
     const action = payload.action;
+    if (action === "open_overlay") {
+      void maybeRevealOverlay({ markEngaged: true });
+      const taskId = meta.taskId ?? payload.taskId;
+      if (taskId) {
+        const opened = await openTaskResultInOverlayConversation(taskId, meta);
+        if (!opened) switchActiveTask(taskId);
+        return;
+      }
+      const title = meta.title ?? payload.title ?? "任务结果";
+      const text = meta.inlinePreview
+        || (Array.isArray(meta.lines) ? meta.lines.join("\n") : "")
+        || "";
+      if (text) {
+        ensureConversation(null, title);
+        addBubble("assistant", `**${title}**\n\n${text}`);
+        appendTurn("assistant", `${title}\n\n${text}`);
+      }
+      if (meta.artifactPath) {
+        addBubble("assistant", `文件：${meta.artifactPath}`);
+      }
+      return;
+    }
     if (action === "preview" && meta.artifactPath) {
       if (!window.livePreview?.openForFile?.({ filePath: meta.artifactPath, mime: meta.mime })) {
         void window.ucaShell?.openPath?.(meta.artifactPath);

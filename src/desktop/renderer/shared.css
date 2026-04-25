@@ -2142,6 +2142,49 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .chat-tool-card .tool-name { font-family: var(--font-mono); font-weight: var(--fw-semibold); color: var(--ink); }
 .chat-tool-card .tool-args { color: var(--muted); word-break: break-all; font-family: var(--font-mono); font-size: var(--fs-xs); }
 
+.chat-thinking-card {
+  margin: 8px 0;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in srgb, #7c3aed 24%, var(--line));
+  background: color-mix(in srgb, #7c3aed 6%, var(--panel));
+  color: var(--ink-2);
+  overflow: hidden;
+}
+.chat-thinking-card .cth-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+}
+.chat-thinking-card .cth-summary::-webkit-details-marker { display: none; }
+.chat-thinking-card .cth-icon { font-size: 13px; }
+.chat-thinking-card .cth-label {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  color: #6d28d9;
+}
+.chat-thinking-card .cth-status {
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.chat-thinking-card .cth-body {
+  padding: 0 10px 10px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow: auto;
+}
+
 /* Composer toolbar row (attach / voice / model chip / send). */
 .console-chat-attachments {
   display: flex;

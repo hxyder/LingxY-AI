@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   moveWindowBy(windowId, deltaX, deltaY) {
     return ipcRenderer.invoke("uca:shell-move-window-by", { windowId, deltaX, deltaY });
   },
+  resizeWindowBy(windowId, deltaWidth, deltaHeight) {
+    return ipcRenderer.invoke("uca:shell-resize-window-by", { windowId, deltaWidth, deltaHeight });
+  },
   onShortcutTriggered(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:shortcut-triggered", listener);

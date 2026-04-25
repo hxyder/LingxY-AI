@@ -40,8 +40,8 @@ const ROOT = path.resolve(__dirname, "..");
     "overlay.js must not query #toastOpenBtn");
   assert.ok(js.includes("window.ucaShell?.showPopupCard"),
     "showToast() must delegate to showPopupCard");
-  assert.ok(js.includes('payload.kind === "success"'),
-    "overlay.js must react to success-kind popup-card resolves (preview/reveal/copy/continue)");
+  assert.ok(js.includes('"preview", "reveal", "copy", "continue", "open_overlay"'),
+    "overlay.js must react to success-kind popup-card resolves (preview/reveal/copy/continue/open_overlay)");
   assert.ok(js.includes('action === "preview"'),
     "overlay.js must wire the preview action in the popup-card resolve listener");
 }

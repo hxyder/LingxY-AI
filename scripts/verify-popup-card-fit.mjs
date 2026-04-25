@@ -39,10 +39,14 @@ assert.match(manager, /Math\.max\(\s*CARD_HEIGHT_MIN/,
 assert.match(manager, /reflowStack\(\);/,
   "resizeCard must reflow the stack after a resize");
 
-// Max height bumped from 360 → 480 so longer approval bodies fit without
+// Max height must stay at least 480 so longer approval bodies fit without
 // forcing the body scrollbar.
-assert.match(manager, /CARD_HEIGHT_MAX\s*=\s*480/,
-  "CARD_HEIGHT_MAX should be at least 480 to avoid clipping approval content");
+{
+  const maxMatch = manager.match(/CARD_HEIGHT_MAX\s*=\s*(\d+)/);
+  assert.ok(maxMatch, "popup-card-manager.mjs missing CARD_HEIGHT_MAX constant");
+  assert.ok(Number(maxMatch[1]) >= 480,
+    "CARD_HEIGHT_MAX should be at least 480 to avoid clipping approval content");
+}
 
 // Preload exposes the resize bridge.
 assert.match(preload, /resizePopupCard\(cardId, height\)/,

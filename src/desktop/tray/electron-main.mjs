@@ -55,11 +55,11 @@ function resolveWindowOptions(windowDef) {
 
   if (windowDef.id === "overlay") {
     return {
-      alwaysOnTop: true,
+      alwaysOnTop: false,
       autoHideMenuBar: true,
       frame: false,
       transparent: true,
-      resizable: false,
+      resizable: true,
       fullscreenable: false,
       skipTaskbar: true,
       maximizable: false,
@@ -127,13 +127,34 @@ export function createElectronShellRuntime({
   // mutate via updateSettings() which also broadcasts to interested windows.
   const settingsPath = path.join(os.homedir(), "AppData", "Local", "UCA", "settings.json");
   let settingsCache = null;
+  const WINDOW_ALWAYS_ON_TOP_DEFAULTS = Object.freeze({
+    dock: true,
+    overlay: false,
+    console: false,
+    "echo-bubble": true
+  });
+  const WINDOW_SIZE_LIMITS = Object.freeze({
+    overlay: { minWidth: 420, minHeight: 360, maxWidth: 1400, maxHeight: 1200 }
+  });
+
+  function mergeSettingsDefaults(raw = {}) {
+    return {
+      echoMode: false,
+      windowPreferences: {},
+      ...raw,
+      windowPreferences: {
+        ...(raw?.windowPreferences ?? {})
+      }
+    };
+  }
+
   async function loadSettings() {
     if (settingsCache) return settingsCache;
     try {
       const text = await readFile(settingsPath, "utf8");
-      settingsCache = { echoMode: false, ...JSON.parse(text) };
+      settingsCache = mergeSettingsDefaults(JSON.parse(text));
     } catch {
-      settingsCache = { echoMode: false };
+      settingsCache = mergeSettingsDefaults();
     }
     return settingsCache;
   }
@@ -147,7 +168,14 @@ export function createElectronShellRuntime({
   }
   async function updateSettings(patch) {
     const current = await loadSettings();
-    settingsCache = { ...current, ...patch };
+    settingsCache = mergeSettingsDefaults({
+      ...current,
+      ...patch,
+      windowPreferences: {
+        ...(current?.windowPreferences ?? {}),
+        ...(patch?.windowPreferences ?? {})
+      }
+    });
     await saveSettings();
     for (const browserWindow of windows.values()) {
       if (!browserWindow.webContents?.isDestroyed?.()) {
@@ -156,6 +184,101 @@ export function createElectronShellRuntime({
     }
     return settingsCache;
   }
+
+  function getWindowPreferences(windowId) {
+    return settingsCache?.windowPreferences?.[windowId] ?? {};
+  }
+
+  function isWindowAlwaysOnTop(windowId) {
+    const prefs = getWindowPreferences(windowId);
+    if (typeof prefs.alwaysOnTop === "boolean") return prefs.alwaysOnTop;
+    return WINDOW_ALWAYS_ON_TOP_DEFAULTS[windowId] ?? false;
+  }
+
+  function getWindowSizeLimits(windowId) {
+    return WINDOW_SIZE_LIMITS[windowId] ?? { minWidth: 320, minHeight: 240, maxWidth: 2000, maxHeight: 1600 };
+  }
+
+  function clampWindowBounds(windowId, bounds = {}, options = {}) {
+    const limits = getWindowSizeLimits(windowId);
+    const primaryWorkArea = screen.getPrimaryDisplay().workArea;
+    const width = Math.max(limits.minWidth, Math.min(limits.maxWidth, Math.round(bounds.width ?? limits.minWidth)));
+    const height = Math.max(limits.minHeight, Math.min(limits.maxHeight, Math.round(bounds.height ?? limits.minHeight)));
+    const overlayMove = windowId === "overlay" && options.mode === "move";
+    const visibleMargin = overlayMove ? 96 : 0;
+    const minX = overlayMove ? primaryWorkArea.x - width + visibleMargin : primaryWorkArea.x;
+    const minY = overlayMove ? primaryWorkArea.y - height + visibleMargin : primaryWorkArea.y;
+    const maxX = overlayMove
+      ? primaryWorkArea.x + primaryWorkArea.width - visibleMargin
+      : primaryWorkArea.x + Math.max(0, primaryWorkArea.width - width);
+    const maxY = overlayMove
+      ? primaryWorkArea.y + primaryWorkArea.height - visibleMargin
+      : primaryWorkArea.y + Math.max(0, primaryWorkArea.height - height);
+    return {
+      x: Math.max(minX, Math.min(maxX, Math.round(bounds.x ?? primaryWorkArea.x))),
+      y: Math.max(minY, Math.min(maxY, Math.round(bounds.y ?? primaryWorkArea.y))),
+      width,
+      height
+    };
+  }
+
+  function getDefaultWindowBounds(windowDef, browserWindow) {
+    const { workArea } = screen.getPrimaryDisplay();
+    const [currentWidth, currentHeight] = browserWindow.getSize();
+    const width = currentWidth || windowDef.width;
+    const height = currentHeight || windowDef.height;
+    if (windowDef.id === "dock") {
+      return {
+        x: Math.max(workArea.x, workArea.x + workArea.width - width - 28),
+        y: Math.max(workArea.y, workArea.y + workArea.height - height - 56),
+        width,
+        height
+      };
+    }
+    if (windowDef.id === "overlay") {
+      return {
+        x: Math.round(workArea.x + (workArea.width - width) / 2),
+        y: Math.max(workArea.y, workArea.y + workArea.height - height - 16),
+        width,
+        height
+      };
+    }
+    return {
+      x: Math.round(workArea.x + (workArea.width - width) / 2),
+      y: Math.round(workArea.y + Math.max(0, workArea.height - height) / 2),
+      width,
+      height
+    };
+  }
+
+  function resolveWindowBounds(windowDef, browserWindow) {
+    const prefs = getWindowPreferences(windowDef.id);
+    if (prefs?.bounds && Number.isFinite(prefs.bounds.x) && Number.isFinite(prefs.bounds.y) && Number.isFinite(prefs.bounds.width) && Number.isFinite(prefs.bounds.height)) {
+      return clampWindowBounds(windowDef.id, prefs.bounds);
+    }
+    return clampWindowBounds(windowDef.id, getDefaultWindowBounds(windowDef, browserWindow));
+  }
+
+  function applyWindowPresentation(windowId, browserWindow) {
+    const alwaysOnTop = isWindowAlwaysOnTop(windowId);
+    browserWindow.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? "screen-saver" : "normal");
+  }
+
+  function persistWindowPreferences(windowId, patch = {}) {
+    void (async () => {
+      const current = await loadSettings();
+      const existing = current.windowPreferences?.[windowId] ?? {};
+      await updateSettings({
+        windowPreferences: {
+          [windowId]: {
+            ...existing,
+            ...patch
+          }
+        }
+      });
+    })();
+  }
+
   let activeWindowMemoryPollInFlight = false;
 
   function wait(ms) {
@@ -259,17 +382,28 @@ export function createElectronShellRuntime({
   const notificationBatches = new Map(); // taskId -> { entries, timer, primaryTitle }
   const NOTIFICATION_BATCH_MS = 500;
 
+  function notificationBodyLines(payload, defaultLimit = 4) {
+    const body = payload.allowLongBody === true && payload.inlinePreview
+      ? payload.inlinePreview
+      : (payload.body ?? payload.message ?? "");
+    if (!body) return [];
+    const limit = payload.allowLongBody === true ? 240 : payload.kind === "success" ? 80 : defaultLimit;
+    return String(body).split(/\r?\n/).slice(0, limit);
+  }
+
   function normalizeBatchEntry(payload) {
-    const body = payload.body ?? payload.message ?? "";
     return {
       title: payload.title ?? "LingxY",
-      lines: body ? String(body).split(/\n+/).slice(0, 4) : [],
+      lines: notificationBodyLines(payload),
       kind: payload.kind ?? "info",
       taskId: payload.taskId ?? null,
       artifactPath: payload.artifactPath ?? null,
       mime: payload.mime ?? null,
       inlinePreview: payload.inlinePreview ?? null,
       openWindow: payload.openWindow ?? null,
+      handoff: payload.handoff ?? null,
+      allowLongBody: payload.allowLongBody ?? null,
+      allowContinue: payload.allowContinue ?? null,
       addedAt: Date.now()
     };
   }
@@ -296,6 +430,7 @@ export function createElectronShellRuntime({
           mime: only.mime,
           inlinePreview: only.inlinePreview,
           openWindow: only.openWindow,
+          allowContinue: only.allowContinue,
           dedupeKey: `notify:${taskId}`
         });
       } else {
@@ -340,17 +475,18 @@ export function createElectronShellRuntime({
           payload.kind === "approval" ||
           !payload.taskId;
         if (skipBatch) {
-          const body = payload.body ?? payload.message ?? "";
           registeredPopupCardManager.showCard({
             kind: payload.kind ?? "info",
             title: payload.title ?? "LingxY",
-            lines: body ? String(body).split(/\n+/).slice(0, 4) : [],
+            lines: notificationBodyLines(payload),
             taskId: payload.taskId ?? null,
             autoHideMs: payload.autoHideMs ?? 8000,
             artifactPath: payload.artifactPath ?? null,
             mime: payload.mime ?? null,
             inlinePreview: payload.inlinePreview ?? null,
             openWindow: payload.openWindow ?? null,
+            handoff: payload.handoff ?? null,
+            allowContinue: payload.allowContinue ?? null,
             dedupeKey: payload.dedupeKey
               ?? (payload.taskId ? `notify:${payload.taskId}` : undefined)
           });
@@ -672,6 +808,9 @@ export function createElectronShellRuntime({
           preload: PRELOAD_PATH
         }
       });
+      const initialBounds = resolveWindowBounds(windowDef, browserWindow);
+      browserWindow.setBounds(initialBounds);
+      applyWindowPresentation(windowDef.id, browserWindow);
       browserWindow.on("close", (event) => {
         if (!quitting) {
           event.preventDefault();
@@ -688,6 +827,17 @@ export function createElectronShellRuntime({
         pendingWindowMessages.delete(windowDef.id);
         windows.delete(windowDef.id);
       });
+      let boundsPersistTimer = null;
+      const scheduleBoundsPersist = () => {
+        if (!["overlay", "console", "dock"].includes(windowDef.id)) return;
+        if (boundsPersistTimer) clearTimeout(boundsPersistTimer);
+        boundsPersistTimer = setTimeout(() => {
+          if (browserWindow.isDestroyed()) return;
+          persistWindowPreferences(windowDef.id, { bounds: browserWindow.getBounds() });
+        }, 180);
+      };
+      browserWindow.on("move", scheduleBoundsPersist);
+      browserWindow.on("resize", scheduleBoundsPersist);
       browserWindow.webContents.on("did-finish-load", () => {
         readyWindows.add(windowDef.id);
         browserWindow.webContents.send(IPC_CHANNELS.shellReady, {
@@ -707,14 +857,6 @@ export function createElectronShellRuntime({
         }
       });
       browserWindow.loadURL(buildWindowUrl(windowDef, resolvedServiceBaseUrl));
-      if (windowDef.id === "dock") {
-        const { workArea } = screen.getPrimaryDisplay();
-        const [width, height] = browserWindow.getSize();
-        browserWindow.setPosition(
-          Math.max(workArea.x, workArea.x + workArea.width - width - 28),
-          Math.max(workArea.y, workArea.y + workArea.height - height - 56)
-        );
-      }
       windows.set(windowDef.id, browserWindow);
     }
   }
@@ -727,17 +869,13 @@ export function createElectronShellRuntime({
     if (target.isMinimized()) {
       target.restore();
     }
-    if (windowId === "overlay") {
-      const { workArea } = screen.getPrimaryDisplay();
-      const [width, height] = target.getSize();
-      target.setPosition(
-        Math.round(workArea.x + (workArea.width - width) / 2),
-        Math.max(workArea.y, workArea.y + workArea.height - height - 16)
-      );
+    const windowDef = DESKTOP_SHELL_MANIFEST.windows.find((candidate) => candidate.id === windowId);
+    if (windowDef && !getWindowPreferences(windowId)?.bounds) {
+      target.setBounds(resolveWindowBounds(windowDef, target));
     }
-    target.setAlwaysOnTop(true, "screen-saver");
+    applyWindowPresentation(windowId, target);
     target.show();
-    target.moveTop();
+    try { target.moveTop(); } catch { /* ignore */ }
     target.focus();
     // Keep the dock orb above all other UCA windows so it remains draggable
     // even when the overlay is open on top.
@@ -1029,7 +1167,6 @@ export function createElectronShellRuntime({
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       const todayMs = todayStart.getTime();
       const completed = tasks.filter((t) => {
-        if (t.capture_mode === "scheduler" || t.source_app === "uca.scheduler") return false;
         if (t.status !== "success" && t.status !== "partial_success") return false;
         const ms = new Date(t.updated_at ?? t.created_at).getTime();
         return Number.isFinite(ms) && ms >= todayMs;
@@ -1081,6 +1218,7 @@ export function createElectronShellRuntime({
         safeError("Failed to install permission handler", error);
       }
 
+      await loadSettings();
       createWindows();
       createTray();
       registerShortcuts();
@@ -1370,6 +1508,9 @@ export function createElectronShellRuntime({
                 body: JSON.stringify({ actor: "popup-card" })
               }).catch((err) => safeWarn("[UCA] approval resolve failed:", err?.message ?? err));
             }
+            if (card.action === "open_overlay") {
+              showWindow("overlay");
+            }
           } catch (err) {
             safeWarn("[UCA] popup-card onResolve failed:", err?.message ?? err);
           }
@@ -1384,6 +1525,9 @@ export function createElectronShellRuntime({
                 action: card.action,
                 approvalId: card.payload?.approvalId ?? null,
                 taskId: card.payload?.taskId ?? null,
+                title: card.payload?.title ?? null,
+                lines: card.payload?.lines ?? null,
+                body: card.payload?.body ?? null,
                 // UCA-182 Phase 8: forward arbitrary meta (artifactPath,
                 // inlinePreview, mime, ...) so the overlay's resolve
                 // listener can wire success-kind buttons to the right
@@ -1563,8 +1707,27 @@ export function createElectronShellRuntime({
       ipcMain.handle(IPC_CHANNELS.shellMoveWindowBy, (_event, { windowId, deltaX, deltaY } = {}) => {
         const target = windows.get(windowId);
         if (!target) return false;
-        const [x, y] = target.getPosition();
-        target.setPosition(Math.round(x + (deltaX ?? 0)), Math.round(y + (deltaY ?? 0)));
+        const currentBounds = target.getBounds();
+        const nextBounds = clampWindowBounds(windowId, {
+          ...currentBounds,
+          x: currentBounds.x + (Number(deltaX) || 0),
+          y: currentBounds.y + (Number(deltaY) || 0)
+        }, { mode: "move" });
+        target.setBounds(nextBounds);
+        persistWindowPreferences(windowId, { bounds: nextBounds });
+        return true;
+      });
+      ipcMain.handle(IPC_CHANNELS.shellResizeWindowBy, (_event, { windowId, deltaWidth, deltaHeight } = {}) => {
+        const target = windows.get(windowId);
+        if (!target) return false;
+        const currentBounds = target.getBounds();
+        const nextBounds = clampWindowBounds(windowId, {
+          ...currentBounds,
+          width: currentBounds.width + (Number(deltaWidth) || 0),
+          height: currentBounds.height + (Number(deltaHeight) || 0)
+        });
+        target.setBounds(nextBounds);
+        persistWindowPreferences(windowId, { bounds: nextBounds });
         return true;
       });
       ipcMain.handle(IPC_CHANNELS.shellNotify, (_event, payload = {}) => {

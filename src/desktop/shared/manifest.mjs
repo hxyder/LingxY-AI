@@ -19,6 +19,7 @@ export const IPC_CHANNELS = Object.freeze({
   shellNotify: "uca:shell-notify",
   shellNotificationReceived: "uca:shell-notification-received",
   shellMoveWindowBy: "uca:shell-move-window-by",
+  shellResizeWindowBy: "uca:shell-resize-window-by",
   shellClipboardChanged: "uca:shell-clipboard-changed",
   shellNavigateConsole: "uca:shell-navigate-console",
   overlayToggle: "uca:overlay-toggle",

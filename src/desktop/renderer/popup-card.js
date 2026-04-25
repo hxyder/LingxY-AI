@@ -15,6 +15,8 @@ const state = {
   pinned: false,
   resolved: false,
   autoHideTimer: null,
+  autoHideMs: 0,
+  interacting: false,
   lastReportedHeight: 0
 };
 
@@ -79,6 +81,51 @@ function setText(el, text) {
   el.textContent = text == null ? "" : String(text);
 }
 
+function escapeHtml(value = "") {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderInlineMarkdown(value = "") {
+  const placeholders = [];
+  let html = escapeHtml(value);
+  html = html.replace(/`([^`]+)`/g, (_m, code) => {
+    const token = `@@CODE_${placeholders.length}@@`;
+    placeholders.push(`<code>${code}</code>`);
+    return token;
+  });
+  html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_m, label, href) =>
+    `<a href="${href}" target="_blank" rel="noreferrer">${label}</a>`
+  );
+  html = html.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_m, prefix, href) =>
+    `${prefix}<a href="${href}" target="_blank" rel="noreferrer">${href}</a>`
+  );
+  placeholders.forEach((snippet, index) => {
+    html = html.replace(`@@CODE_${index}@@`, snippet);
+  });
+  return html;
+}
+
+function markdownBlockFor(line = "", index = 0) {
+  const text = String(line ?? "").trimEnd();
+  if (!text.trim()) return `<div class="pc-md-spacer" aria-hidden="true"></div>`;
+  const heading = text.match(/^(#{1,3})\s+(.+)$/);
+  if (heading) {
+    const level = heading[1].length;
+    return `<div class="pc-md-heading pc-md-h${level}">${renderInlineMarkdown(heading[2])}</div>`;
+  }
+  const bullet = text.match(/^[-*]\s+(.+)$/);
+  if (bullet) return `<div class="pc-md-bullet"><span></span><p>${renderInlineMarkdown(bullet[1])}</p></div>`;
+  const numbered = text.match(/^\d+[.)]\s+(.+)$/);
+  if (numbered) return `<div class="pc-md-numbered"><span>${index + 1}</span><p>${renderInlineMarkdown(numbered[1])}</p></div>`;
+  return `<div class="${index === 0 ? "pc-body-primary" : "pc-body-sub"}">${renderInlineMarkdown(text)}</div>`;
+}
+
 function makeButton({ label, variant = "ghost", onClick }) {
   const btn = document.createElement("button");
   btn.className = `pc-btn pc-btn-${variant}`;
@@ -96,10 +143,23 @@ function clearAutoHide() {
 
 function scheduleAutoHide(ms) {
   clearAutoHide();
-  if (!ms || state.pinned) return;
+  state.autoHideMs = Number(ms) || 0;
+  if (!state.autoHideMs || state.pinned || state.interacting) return;
   state.autoHideTimer = setTimeout(() => {
     closeCard("auto_hide");
-  }, ms);
+  }, state.autoHideMs);
+}
+
+function pauseAutoHide() {
+  state.interacting = true;
+  clearAutoHide();
+}
+
+function resumeAutoHide() {
+  state.interacting = false;
+  if (state.autoHideMs && !state.pinned && !state.resolved) {
+    scheduleAutoHide(state.autoHideMs);
+  }
 }
 
 async function closeCard(reason) {
@@ -130,13 +190,13 @@ function setButtonsDisabled(disabled) {
 
 function renderBody(lines) {
   bodyEl.innerHTML = "";
-  const items = Array.isArray(lines) ? lines : [lines].filter(Boolean);
-  items.forEach((item, i) => {
-    const el = document.createElement("div");
-    el.className = i === 0 ? "pc-body-primary" : "pc-body-sub";
-    el.textContent = String(item ?? "");
-    bodyEl.appendChild(el);
-  });
+  const raw = Array.isArray(lines) ? lines.join("\n") : String(lines ?? "");
+  const items = raw.split(/\r?\n/);
+  const fragment = document.createElement("div");
+  fragment.className = "pc-md";
+  fragment.innerHTML = items.map((item, i) => markdownBlockFor(item, i)).join("");
+  bodyEl.appendChild(fragment);
+  bodyEl.scrollTop = 0;
 }
 
 function renderActions(buttons = []) {
@@ -189,11 +249,51 @@ function renderBatchedEntry() {
       variant: "primary",
       onClick: () => resolveCard("preview", { artifactPath: entry.artifactPath, mime: entry.mime ?? null })
     });
+    if (entry.openWindow === "overlay" || entry.handoff) {
+      buttons.push({
+        label: "打开对话框",
+        variant: "ghost",
+        onClick: () => resolveCard("open_overlay", {
+          taskId: entry.taskId ?? batchState.taskId ?? null,
+          artifactPath: entry.artifactPath,
+          mime: entry.mime ?? null,
+          inlinePreview: entry.inlinePreview ?? null,
+          handoff: entry.handoff ?? null,
+          title: entry.title ?? null,
+          lines: entry.lines ?? null
+        })
+      });
+    }
   } else {
     buttons.push({
       label: entry.openWindow === "overlay" ? "打开对话框" : "查看详情",
       variant: "primary",
-      onClick: () => openTaskDetail(batchState.taskId, entry)
+      onClick: () => entry.openWindow === "overlay" || entry.handoff
+        ? resolveCard("open_overlay", {
+            taskId: entry.taskId ?? batchState.taskId ?? null,
+            inlinePreview: entry.inlinePreview ?? null,
+            handoff: entry.handoff ?? null,
+            title: entry.title ?? null,
+            lines: entry.lines ?? null
+          })
+        : openTaskDetail(batchState.taskId, entry)
+    });
+  }
+  if (entry.inlinePreview || entry.artifactPath) {
+    buttons.push({
+      label: "复制",
+      variant: "ghost",
+      onClick: () => resolveCard("copy", {
+        artifactPath: entry.artifactPath ?? null,
+        inlinePreview: entry.inlinePreview ?? null
+      })
+    });
+  }
+  if (entry.allowContinue !== false) {
+    buttons.push({
+      label: "继续追问",
+      variant: "ghost",
+      onClick: () => resolveCard("continue", { taskId: entry.taskId ?? batchState.taskId ?? null })
     });
   }
   buttons.push({ label: "关闭", variant: "ghost", onClick: () => closeCard("dismissed") });
@@ -203,6 +303,8 @@ function renderBatchedEntry() {
 
 function applyInit(payload) {
   const kind = payload?.kind ?? "info";
+  state.resolved = false;
+  state.interacting = false;
   state.kind = kind;
   cardEl.setAttribute("data-kind", kind);
   setText(titleEl, payload?.title ?? defaultTitleFor(kind));
@@ -259,6 +361,21 @@ function applyInit(payload) {
     } else {
       buttons.push({ label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) });
     }
+    if (payload?.openWindow === "overlay" || payload?.handoff) {
+      buttons.push({
+        label: "打开对话框",
+        variant: hasArtifact ? "ghost" : "primary",
+        onClick: () => resolveCard("open_overlay", {
+          taskId: payload?.taskId ?? null,
+          artifactPath: payload?.artifactPath ?? null,
+          mime: payload?.mime ?? null,
+          inlinePreview: payload?.inlinePreview ?? null,
+          handoff: payload?.handoff ?? null,
+          title: payload?.title ?? null,
+          lines: payload?.lines ?? null
+        })
+      });
+    }
     if (hasInline) {
       buttons.push({ label: "复制", variant: "ghost", onClick: () => resolveCard("copy", { artifactPath: payload?.artifactPath ?? null, inlinePreview: payload?.inlinePreview ?? null }) });
     }
@@ -278,7 +395,34 @@ function applyInit(payload) {
     ]);
     scheduleAutoHide(payload?.autoHideMs ?? 12000);
   } else {
-    renderActions([{ label: "好", variant: "primary", onClick: () => closeCard("dismissed") }]);
+    const buttons = [];
+    if (payload?.artifactPath) {
+      buttons.push({ label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });
+      buttons.push({ label: "打开文件夹", variant: "ghost", onClick: () => resolveCard("reveal", { artifactPath: payload.artifactPath }) });
+    }
+    if (payload?.openWindow === "overlay" || payload?.handoff) {
+      buttons.push({
+        label: "打开对话框",
+        variant: buttons.length ? "ghost" : "primary",
+        onClick: () => resolveCard("open_overlay", {
+          taskId: payload?.taskId ?? null,
+          artifactPath: payload?.artifactPath ?? null,
+          mime: payload?.mime ?? null,
+          inlinePreview: payload?.inlinePreview ?? null,
+          handoff: payload?.handoff ?? null,
+          title: payload?.title ?? null,
+          lines: payload?.lines ?? null
+        })
+      });
+    }
+    if (payload?.taskId || payload?.openWindow) {
+      buttons.push({ label: detailLabel, variant: buttons.length ? "ghost" : "primary", onClick: () => openTaskDetail(payload?.taskId, payload) });
+    }
+    if (payload?.inlinePreview || payload?.artifactPath) {
+      buttons.push({ label: "复制", variant: "ghost", onClick: () => resolveCard("copy", { artifactPath: payload?.artifactPath ?? null, inlinePreview: payload?.inlinePreview ?? null }) });
+    }
+    buttons.push({ label: "好", variant: buttons.length ? "ghost" : "primary", onClick: () => closeCard("dismissed") });
+    renderActions(buttons);
     scheduleAutoHide(payload?.autoHideMs ?? 6000);
   }
 
@@ -322,6 +466,26 @@ pinBtn.addEventListener("click", () => {
 });
 
 closeBtn.addEventListener("click", () => closeCard("user"));
+
+cardEl.addEventListener("pointerenter", pauseAutoHide);
+cardEl.addEventListener("pointerleave", resumeAutoHide);
+cardEl.addEventListener("focusin", pauseAutoHide);
+cardEl.addEventListener("focusout", () => {
+  setTimeout(() => {
+    if (!cardEl.contains(document.activeElement)) resumeAutoHide();
+  }, 0);
+});
+
+let scrollResumeTimer = null;
+bodyEl.addEventListener("scroll", () => {
+  pauseAutoHide();
+  if (scrollResumeTimer) clearTimeout(scrollResumeTimer);
+  scrollResumeTimer = setTimeout(() => {
+    if (!cardEl.matches(":hover") && !cardEl.contains(document.activeElement)) {
+      resumeAutoHide();
+    }
+  }, 1800);
+}, { passive: true });
 
 window.ucaShell?.onPopupCardInit?.((payload) => {
   if (!payload) return;

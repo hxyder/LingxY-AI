@@ -77,6 +77,11 @@ export function formatTaskEventSummary(rawEvent) {
           .filter(Boolean)
           .join(" · ") || "已选择执行器。"
       };
+    case "phase_timing":
+      return {
+        title: "耗时",
+        body: `${payload.phase ?? "phase"} · ${payload.duration_ms ?? "?"}ms`
+      };
     case "step_finished":
       return {
         title: "步骤完成",
