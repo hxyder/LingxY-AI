@@ -4,32 +4,32 @@ export const PROVIDER_GROUPS = Object.freeze([
   {
     label: "国际",
     providers: [
-      { id: "anthropic", label: "Anthropic (Claude)", defaultModel: "claude-sonnet-4-6" },
-      { id: "openai", label: "OpenAI", defaultModel: "gpt-4o" },
-      { id: "gemini", label: "Google Gemini", defaultModel: "gemini-1.5-flash" },
-      { id: "xai", label: "xAI (Grok)", defaultModel: "grok-2-latest" },
-      { id: "mistral", label: "Mistral", defaultModel: "mistral-large-latest" },
-      { id: "groq", label: "Groq", defaultModel: "llama-3.3-70b-versatile" },
-      { id: "perplexity", label: "Perplexity", defaultModel: "sonar" },
-      { id: "openrouter", label: "OpenRouter（聚合）", defaultModel: "anthropic/claude-3.5-sonnet" }
+      { id: "anthropic", label: "Anthropic (Claude)", kind: "anthropic", baseUrl: "https://api.anthropic.com", endpoint: "https://api.anthropic.com/v1/messages", defaultModel: "claude-sonnet-4-6" },
+      { id: "openai", label: "OpenAI", kind: "openai", baseUrl: "https://api.openai.com/v1", endpoint: "https://api.openai.com/v1/chat/completions", defaultModel: "gpt-4o" },
+      { id: "gemini", label: "Google Gemini", kind: "gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta", endpoint: "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", defaultModel: "gemini-2.0-flash" },
+      { id: "xai", label: "xAI (Grok)", kind: "openai", baseUrl: "https://api.x.ai/v1", endpoint: "https://api.x.ai/v1/chat/completions", defaultModel: "grok-2-latest" },
+      { id: "mistral", label: "Mistral", kind: "openai", baseUrl: "https://api.mistral.ai/v1", endpoint: "https://api.mistral.ai/v1/chat/completions", defaultModel: "mistral-large-latest" },
+      { id: "groq", label: "Groq", kind: "openai", baseUrl: "https://api.groq.com/openai/v1", endpoint: "https://api.groq.com/openai/v1/chat/completions", defaultModel: "llama-3.3-70b-versatile" },
+      { id: "perplexity", label: "Perplexity", kind: "openai", baseUrl: "https://api.perplexity.ai", endpoint: "https://api.perplexity.ai/chat/completions", defaultModel: "sonar" },
+      { id: "openrouter", label: "OpenRouter（聚合）", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", endpoint: "https://openrouter.ai/api/v1/chat/completions", defaultModel: "anthropic/claude-sonnet-4-5" }
     ]
   },
   {
     label: "国内",
     providers: [
-      { id: "deepseek", label: "DeepSeek", defaultModel: "deepseek-chat" },
-      { id: "doubao", label: "豆包（火山方舟 Ark）", defaultModel: "doubao-seed-2-0-lite-260215" },
-      { id: "moonshot", label: "Moonshot (Kimi)", defaultModel: "moonshot-v1-8k" },
-      { id: "qwen", label: "通义千问 (DashScope)", defaultModel: "qwen3.6-plus" },
-      { id: "zhipu", label: "智谱 GLM", defaultModel: "glm-4-flash" },
-      { id: "siliconflow", label: "硅基流动 SiliconFlow", defaultModel: "deepseek-ai/DeepSeek-V2.5" },
-      { id: "yi", label: "零一万物 Yi", defaultModel: "yi-large" }
+      { id: "deepseek", label: "DeepSeek", kind: "openai", baseUrl: "https://api.deepseek.com/v1", endpoint: "https://api.deepseek.com/chat/completions", defaultModel: "deepseek-v4-flash" },
+      { id: "doubao", label: "豆包（火山方舟 Ark）", kind: "openai", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", defaultModel: "doubao-seed-2-0-lite-260215" },
+      { id: "moonshot", label: "Moonshot (Kimi)", kind: "openai", baseUrl: "https://api.moonshot.cn/v1", endpoint: "https://api.moonshot.cn/v1/chat/completions", defaultModel: "moonshot-v1-8k" },
+      { id: "qwen", label: "通义千问 (DashScope)", kind: "openai", baseUrl: "https://dashscope-us.aliyuncs.com/compatible-mode/v1", endpoint: "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions", defaultModel: "qwen3.6-plus" },
+      { id: "zhipu", label: "智谱 GLM", kind: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4", endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", defaultModel: "glm-4-plus" },
+      { id: "siliconflow", label: "硅基流动 SiliconFlow", kind: "openai", baseUrl: "https://api.siliconflow.cn/v1", endpoint: "https://api.siliconflow.cn/v1/chat/completions", defaultModel: "Qwen/Qwen2.5-72B-Instruct" },
+      { id: "yi", label: "零一万物 Yi", kind: "openai", baseUrl: "https://api.lingyiwanwu.com/v1", endpoint: "https://api.lingyiwanwu.com/v1/chat/completions", defaultModel: "yi-large" }
     ]
   },
   {
     label: "本地",
     providers: [
-      { id: "ollama", label: "Ollama（本地，无需 Key）", defaultModel: "llama3.1" }
+      { id: "ollama", label: "Ollama（本地，无需 Key）", kind: "ollama", baseUrl: "http://127.0.0.1:11434", endpoint: "http://127.0.0.1:11434/v1/chat/completions", defaultModel: "llama3.2" }
     ]
   }
 ]);
@@ -40,22 +40,14 @@ export const PROVIDER_DEFAULT_MODELS = Object.freeze(
   )
 );
 
-export const PROVIDER_CONFIGS = Object.freeze({
-  openai: { label: "OpenAI", endpoint: "https://api.openai.com/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.openai, authStyle: "bearer" },
-  deepseek: { label: "DeepSeek", endpoint: "https://api.deepseek.com/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.deepseek, authStyle: "bearer" },
-  doubao: { label: "豆包 (火山方舟 Ark)", endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.doubao, authStyle: "bearer" },
-  moonshot: { label: "Moonshot (Kimi)", endpoint: "https://api.moonshot.cn/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.moonshot, authStyle: "bearer" },
-  qwen: { label: "通义千问 (DashScope)", endpoint: "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.qwen, authStyle: "bearer" },
-  zhipu: { label: "智谱 GLM", endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.zhipu, authStyle: "bearer" },
-  siliconflow: { label: "硅基流动 SiliconFlow", endpoint: "https://api.siliconflow.cn/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.siliconflow, authStyle: "bearer" },
-  yi: { label: "零一万物 Yi", endpoint: "https://api.lingyiwanwu.com/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.yi, authStyle: "bearer" },
-  groq: { label: "Groq", endpoint: "https://api.groq.com/openai/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.groq, authStyle: "bearer" },
-  mistral: { label: "Mistral", endpoint: "https://api.mistral.ai/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.mistral, authStyle: "bearer" },
-  xai: { label: "xAI (Grok)", endpoint: "https://api.x.ai/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.xai, authStyle: "bearer" },
-  perplexity: { label: "Perplexity", endpoint: "https://api.perplexity.ai/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.perplexity, authStyle: "bearer" },
-  openrouter: { label: "OpenRouter (聚合)", endpoint: "https://openrouter.ai/api/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.openrouter, authStyle: "bearer" },
-  ollama: { label: "Ollama (本地)", endpoint: "http://127.0.0.1:11434/v1/chat/completions", defaultModel: PROVIDER_DEFAULT_MODELS.ollama, authStyle: "none" }
-});
+export const PROVIDER_CONFIGS = Object.freeze(
+  Object.fromEntries(
+    PROVIDER_GROUPS.flatMap((group) => group.providers.map((provider) => [provider.id, {
+      ...provider,
+      authStyle: provider.id === "ollama" ? "none" : "bearer"
+    }]))
+  )
+);
 
 export const PROVIDER_MODEL_PRESETS = Object.freeze({
   anthropic: ["claude-sonnet-4-6", "claude-opus-4-5-20250514", "claude-haiku-4-5-20250514"],
@@ -66,14 +58,14 @@ export const PROVIDER_MODEL_PRESETS = Object.freeze({
   groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
   perplexity: ["sonar", "sonar-pro"],
   openrouter: ["openai/gpt-4o", "anthropic/claude-sonnet-4-5", "google/gemini-2.0-flash"],
-  deepseek: ["deepseek-chat", "deepseek-reasoner"],
+  deepseek: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
   doubao: ["doubao-seed-2-0-lite-260215", "doubao-seed-2-0-pro-260215", "doubao-seed-2-0-mini-260215"],
   moonshot: ["moonshot-v1-8k", "moonshot-v1-32k", "kimi-k2-0711-preview"],
   qwen: ["qwen3.6-plus", "qwen-plus", "qwen-turbo", "qwen-vl-max"],
-  zhipu: ["glm-4-flash", "glm-4-plus", "glm-4v-plus"],
-  siliconflow: ["deepseek-ai/DeepSeek-V2.5", "Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3"],
+  zhipu: ["glm-4-plus", "glm-4-flash", "glm-4v-plus"],
+  siliconflow: ["Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-V2.5"],
   yi: ["yi-large", "yi-medium"],
-  ollama: ["llama3.1", "llama3.2", "qwen2.5", "llava"]
+  ollama: ["llama3.2", "llama3.1", "qwen2.5", "llava"]
 });
 
 const OPENAI_REASONING_OPTIONS = Object.freeze([
@@ -136,7 +128,9 @@ function providerSupportsModel(provider = "", model = "") {
     case "anthropic": return /^claude-/.test(normalizedModel);
     case "openai": return /^(gpt-|o[1-9](-|$)|text-davinci|whisper-)/.test(normalizedModel);
     case "gemini": return /^gemini-/.test(normalizedModel);
-    case "deepseek": return /^deepseek-/.test(normalizedModel);
+    case "deepseek":
+      if (normalizedModel === "deepseek-chat" || normalizedModel === "deepseek-reasoner") return false;
+      return /^deepseek-/.test(normalizedModel);
     case "doubao": return /^(doubao-|ep-)/.test(normalizedModel);
     case "moonshot": return /^(kimi-|moonshot-)/.test(normalizedModel);
     case "qwen": return /^qwen/i.test(normalizedModel);
@@ -146,11 +140,12 @@ function providerSupportsModel(provider = "", model = "") {
   }
 }
 
-export function modelOptionsForProvider(provider = "") {
+export function modelOptionsForProvider(provider = "", discovered = []) {
   const normalizedProvider = `${provider ?? ""}`.trim();
   return uniqueNonEmpty([
     PROVIDER_DEFAULT_MODELS[normalizedProvider] ?? "",
-    ...(PROVIDER_MODEL_PRESETS[normalizedProvider] ?? [])
+    ...(PROVIDER_MODEL_PRESETS[normalizedProvider] ?? []),
+    ...discovered
   ]);
 }
 

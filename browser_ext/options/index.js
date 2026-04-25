@@ -7,6 +7,10 @@ import {
   providerSupportsVision,
   reasoningOptionsForProvider
 } from "../shared/provider-catalog.js";
+import {
+  discoverProviderModels,
+  invalidateProviderModelCache
+} from "../shared/model-discovery.js";
 
 const runtimeInput = document.getElementById("runtime-url");
 const providerSelect = document.getElementById("provider");
@@ -22,6 +26,9 @@ const testBtn = document.getElementById("test-btn");
 const saveStatus = document.getElementById("save-status");
 const statusDesktop = document.getElementById("status-desktop");
 const statusKey = document.getElementById("status-key");
+let discoveredModels = [];
+let modelRefreshToken = 0;
+let refreshModelsTimer = null;
 
 function renderProviderOptions() {
   providerSelect.innerHTML = PROVIDER_GROUPS.map((group) => `
@@ -32,7 +39,7 @@ function renderProviderOptions() {
 }
 
 function renderModelOptions(provider, currentModel = "") {
-  const options = modelOptionsForProvider(provider);
+  const options = modelOptionsForProvider(provider, discoveredModels);
   const selectedModel = currentModel && !options.includes(currentModel) ? "__custom__" : (currentModel || options[0] || "");
   modelSelect.innerHTML = [
     ...options.map((model) => `<option value="${model}">${model}</option>`),
@@ -53,6 +60,38 @@ function renderReasoningOptions(provider, model, currentReasoning = "") {
 function updateProviderHint(provider, model) {
   const vision = providerSupportsVision(provider, model) ? "支持图片直连" : "图片直连可能不可用";
   providerHint.textContent = `${vision}。Key 使用 chrome.storage.local 保存，不会离开您的浏览器。Anthropic 需要 CORS header「anthropic-dangerous-direct-browser-access: true」（扩展已内置）。Ollama 需本地已启动并监听 11434。`;
+}
+
+async function refreshModelOptions({ force = false, preserveCurrent = true } = {}) {
+  const token = ++modelRefreshToken;
+  const provider = providerSelect.value;
+  const currentModel = preserveCurrent
+    ? (selectedModelValue() || PROVIDER_DEFAULT_MODELS[provider] || "")
+    : (PROVIDER_DEFAULT_MODELS[provider] || "");
+  const apiKey = apiKeyInput.value.trim();
+
+  modelSelect.disabled = true;
+  modelSelect.innerHTML = `<option value="${currentModel || ""}">加载模型列表中…</option>`;
+  if (currentModel) modelSelect.value = currentModel;
+
+  const result = await discoverProviderModels(provider, { apiKey, forceRefresh: force });
+  if (token !== modelRefreshToken) return;
+  discoveredModels = result.models ?? [];
+  renderModelOptions(provider, currentModel);
+  syncModelAndReasoning();
+  modelSelect.disabled = false;
+  if (result.error) {
+    saveStatus.textContent = `模型列表已回退到内置值：${result.error}`;
+  } else if (result.dynamic) {
+    saveStatus.textContent = "模型列表已更新";
+  }
+}
+
+function scheduleModelRefresh(options = {}) {
+  clearTimeout(refreshModelsTimer);
+  refreshModelsTimer = setTimeout(() => {
+    refreshModelOptions(options);
+  }, 250);
 }
 
 async function loadConfig() {
@@ -138,8 +177,10 @@ function syncModelAndReasoning() {
 }
 
 providerSelect.addEventListener("change", () => {
+  discoveredModels = [];
   renderModelOptions(providerSelect.value, PROVIDER_DEFAULT_MODELS[providerSelect.value] ?? "");
   syncModelAndReasoning();
+  refreshModelOptions({ force: true, preserveCurrent: false });
 });
 
 modelSelect.addEventListener("change", () => {
@@ -149,6 +190,14 @@ modelSelect.addEventListener("change", () => {
 });
 
 customModelInput.addEventListener("input", syncModelAndReasoning);
+apiKeyInput.addEventListener("change", () => {
+  invalidateProviderModelCache(providerSelect.value, apiKeyInput.value.trim());
+  refreshModelOptions({ force: true });
+});
+apiKeyInput.addEventListener("input", () => {
+  invalidateProviderModelCache(providerSelect.value, apiKeyInput.value.trim());
+  scheduleModelRefresh({ force: true });
+});
 
 saveBtn.addEventListener("click", async () => {
   const config = readFormConfig();
@@ -192,4 +241,5 @@ testBtn.addEventListener("click", async () => {
   await saveConfig(config);
   renderConfig(config);
   probeDesktop(config.runtimeUrl);
+  await refreshModelOptions({ force: true });
 })();

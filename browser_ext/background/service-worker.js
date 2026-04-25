@@ -71,6 +71,7 @@ export const RUNTIME_PAGE_EXPLAIN_URL = "http://127.0.0.1:4310/page/explain";
 export const RUNTIME_TASK_URL = "http://127.0.0.1:4310/task";
 export const RUNTIME_TASK_DETAIL_URL = "http://127.0.0.1:4310/task";
 export const SIDEPANEL_PENDING_ANALYSIS_KEY = "ucaSidePanelPendingAnalysis";
+const MAX_CHAT_HISTORY_TURNS = 20;
 
 const QUICK_ACTION_COMMANDS = Object.freeze({
   translate: "请翻译这段网页内容",
@@ -1029,10 +1030,10 @@ export function registerExtensionRuntime(chromeApi = chrome) {
           sendResponse({ ok: false, error: "empty_input" });
           return;
         }
-        // Cap history at 6 turns — more than that bloats the prompt without
-        // adding much value in a casual popup chat, and it hurts latency.
         const history = Array.isArray(message.history)
-          ? message.history.filter((turn) => turn?.role === "user" || turn?.role === "assistant").slice(-6)
+          ? message.history
+            .filter((turn) => turn?.role === "user" || turn?.role === "assistant")
+            .slice(-MAX_CHAT_HISTORY_TURNS)
           : [];
         const conversation = [...history, { role: "user", content: userText }];
         const config = await loadStandaloneConfig();
@@ -1154,7 +1155,9 @@ function registerChatStreamPort(chromeApi = chrome) {
         return;
       }
       const history = Array.isArray(message.history)
-        ? message.history.filter((turn) => turn?.role === "user" || turn?.role === "assistant").slice(-6)
+        ? message.history
+          .filter((turn) => turn?.role === "user" || turn?.role === "assistant")
+          .slice(-MAX_CHAT_HISTORY_TURNS)
         : [];
       const conversation = [...history, { role: "user", content: userText }];
       const config = await loadStandaloneConfig();
