@@ -165,22 +165,28 @@ export function createEmbeddingStore({ filePath = null } = {}) {
 
       return records
         .map((record) => {
-          let score = 0;
-          if (vec && record.embedding?.type === "vector") {
-            score = cosineSimilarity(vec, record.embedding.data);
-          } else if (record.embedding?.type === "tfidf") {
-            score = jaccardSimilarity(tfidfQueryEntries, record.embedding.data);
-          } else if (record.tfidf) {
-            // Vector-only record (pre-Phase-18 data) — still try the
-            // retained tfidf side; zero otherwise.
-            score = jaccardSimilarity(tfidfQueryEntries, record.tfidf);
-          }
+          const lexicalScore = record.embedding?.type === "tfidf"
+            ? jaccardSimilarity(tfidfQueryEntries, record.embedding.data)
+            : record.tfidf
+              ? jaccardSimilarity(tfidfQueryEntries, record.tfidf)
+              : 0;
+          const semanticScore = vec && record.embedding?.type === "vector"
+            ? cosineSimilarity(vec, record.embedding.data)
+            : 0;
+          // Hybrid retrieval: keep the stronger of semantic and lexical.
+          // This prevents a newly-upgraded vector record from becoming
+          // *harder* to find when cosine underperforms on short follow-up
+          // queries ("上一个 PPT", "之前 AI 报告") that lexical overlap still
+          // handles well.
+          const score = Math.max(semanticScore, lexicalScore);
           return {
             id: record.id,
             text: record.text,
             metadata: record.metadata,
             embeddingType: record.embedding?.type ?? "tfidf",
-            score
+            score,
+            lexicalScore,
+            semanticScore
           };
         })
         .sort((a, b) => b.score - a.score)

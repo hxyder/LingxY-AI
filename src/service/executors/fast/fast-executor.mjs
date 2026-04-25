@@ -10,6 +10,7 @@ import os from "node:os";
 import { resolveProviderForTask, buildKimiRuntimeFromProvider } from "../shared/provider-resolver.mjs";
 import { executeKimiTask } from "../kimi/kimi-cli-executor.mjs";
 import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
+import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
 
 function buildMessages(task) {
   const parts = [];
@@ -76,18 +77,20 @@ async function callAnthropic({ apiKey, baseUrl, model, messages, signal }) {
     ?.join("\n") ?? "";
 }
 
-async function callOpenAICompatible({ apiKey, baseUrl, model, messages, signal }) {
+async function callOpenAICompatible({ provider, apiKey, baseUrl, model, messages, signal }) {
+  const body = {
+    model,
+    messages,
+    max_tokens: 2048
+  };
+  applyReasoningSelectionToBody(body, provider, model, provider?.reasoningEffort ?? "");
   const response = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`
     },
-    body: JSON.stringify({
-      model,
-      messages,
-      max_tokens: 2048
-    }),
+    body: JSON.stringify(body),
     signal
   });
 
@@ -210,6 +213,7 @@ export function createFastExecutorScaffold() {
           });
         } else {
           resultText = await callOpenAICompatible({
+            provider,
             apiKey: provider.apiKey,
             baseUrl: provider.baseUrl,
             model: provider.model,

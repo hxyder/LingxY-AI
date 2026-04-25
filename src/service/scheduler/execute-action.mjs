@@ -268,10 +268,18 @@ async function executeScheduledTask({
             ? successEvent.payload.text
             : (task?.result_summary ?? `定时任务"${actionTarget}"已完成`);
           const title = `计划任务完成：${actionTarget ?? "schedule"}`;
-          const body = resultText.length > 240 ? resultText.slice(0, 240) + "…" : resultText;
           // Fire and forget — a notify failure must not mark the scheduled
           // run as failed.
-          runtime.actionToolRegistry.call("notify", { title, body }, { runtime, task })
+          runtime.actionToolRegistry.call("notify", {
+            kind: "success",
+            title,
+            body: resultText,
+            taskId,
+            openWindow: "overlay",
+            allowLongBody: true,
+            autoHideMs: 14000,
+            dedupeKey: `scheduled-result:${taskId}`
+          }, { runtime, task })
             .catch(() => { /* ignore */ });
         }
       }

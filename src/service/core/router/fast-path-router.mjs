@@ -6,10 +6,10 @@
  * Lightweight tasks (Tier 1) use specialised APIs instead of the main LLM.
  *
  * CRITICAL BOUNDARY RULE:
- *   "打开微信"               → Tier 0  (pure launch, no LLM needed)
+ *   "打开微信"               → null    (let the normal planner decide app vs URL vs workflow)
  *   "打开Outlook写请假邮件"  → null    (compound — LLM needed for content generation)
- *                                       The launch_app step inside the tool loop is
- *                                       still instant; only the email draft calls LLM.
+ *                                       The launch_app step still exists as a tool,
+ *                                       but we do not regex-short-circuit app opens.
  *
  * Returns null to signal "use normal pipeline".
  */
@@ -30,7 +30,6 @@ const CLIPBOARD_REQUEST = /\b(复制|copy)\b/i;
 // Notification / alert (no content generation needed)
 const NOTIFY_REQUEST = /\b(提醒我|notify me|通知我)\b.*(?:[\d一二三四五六七八九十百千]|now|现在|立即)/i;
 
-// Known app names — generic enough to cover any common desktop app
 const APP_NAME_PATTERN = /(?:打开|启动|运行|launch|open|start|run)\s*([^\s，,。.!?！？\n]{2,30}?)(?:\s*$|[，,。.!?！？\n])/i;
 
 // URL pattern
@@ -120,12 +119,6 @@ export function tryFastPath(userCommand, contextPacket) {
     return { tier: 0, tool: "open_url", args: { url } };
   }
 
-  // Pure app launch — generic, any app name
-  const appName = extractPureLaunchApp(cmd);
-  if (appName) {
-    return { tier: 0, tool: "launch_app", args: { app: appName } };
-  }
-
   // Clipboard copy (user selected text + asked to copy)
   if (isClipboardCopy(cmd, contextPacket)) {
     return { tier: 0, tool: "copy_to_clipboard", args: { content: contextPacket.text } };
@@ -147,8 +140,9 @@ export function tryFastPath(userCommand, contextPacket) {
  * For use INSIDE the tool-agent loop (UCA-066 Tier 0 in-loop optimisation).
  *
  * On the very first iteration, if the user command clearly starts with a
- * deterministic action (launch app, open URL), return it immediately without
- * calling the LLM planner. The LLM then only needs to handle subsequent steps.
+ * deterministic URL open, return it immediately without calling the LLM
+ * planner. App opens stay in the normal planner path so the model can use
+ * higher-level judgment.
  *
  * Works generically for any app name or URL.
  *
@@ -160,21 +154,6 @@ export function extractFirstTier0Action(userCommand) {
 
   const url = extractUrl(cmd);
   if (url) return { tool: "open_url", args: { url } };
-
-  // For compound commands, still extract the launch step for first execution
-  const launchMatch = cmd.match(/(?:打开|启动|运行|launch|open|start|run)\s*([^\s，,。.!?！？\n]{2,30})/i);
-  if (launchMatch) {
-    const appCandidate = launchMatch[1].trim()
-      .replace(/^(一个|某个|这个|那个|应用|软件|程序|app|application)\s*/i, "")
-      .trim();
-    // Match the guard in extractPureLaunchApp so "打开word文档" doesn't try
-    // to launch an app called "word文档" inside the tool loop either.
-    if (!appCandidate) return null;
-    if (/^(应用|软件|程序|app|application)$/i.test(appCandidate)) return null;
-    if (URL_PATTERN.test(appCandidate)) return null;
-    if (/(文档|文件|格式|\.docx|\.pptx|\.xlsx|\.pdf|^docx$|^pptx$|^xlsx$|^pdf$)/i.test(appCandidate)) return null;
-    return { tool: "launch_app", args: { app: appCandidate } };
-  }
 
   return null;
 }

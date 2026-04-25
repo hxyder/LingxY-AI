@@ -175,6 +175,19 @@ async function sendNotification(runtime, payload) {
   return notifyTool.execute(payload, { runtime });
 }
 
+async function sendDigestStatusNotification(runtime, { title = "邮件摘要", body = "", kind = "info" } = {}) {
+  if (!body) return null;
+  return sendNotification(runtime, {
+    kind,
+    title,
+    body,
+    openWindow: "overlay",
+    allowContinue: false,
+    skipBatch: true,
+    dedupeKey: `email-digest-status:${Date.now()}`
+  });
+}
+
 // In-memory lock so two concurrent /email/digest/check calls (manual
 // "Test" button + startup auto-check landing at the same millisecond)
 // don't both pass the dedupe guard. Keyed by runtime instance.
@@ -197,6 +210,12 @@ export async function maybeRunMorningDigest({
   const config = runtime.configStore?.load?.() ?? {};
   const featureGate = requireFeature("morning_digest", runtime.configStore);
   if (!featureGate.ok) {
+    if (force) {
+      await sendDigestStatusNotification(runtime, {
+        title: "邮件摘要未运行",
+        body: featureGate.message ?? "早晨邮件汇总功能已关闭。"
+      });
+    }
     return { ok: false, reason: "feature_disabled", gate: featureGate };
   }
   const digestConfig = config.email?.digest ?? {};
@@ -237,6 +256,12 @@ export async function maybeRunMorningDigest({
     const emailAccounts = getEmailAccounts(runtime);
     const connectorAccounts = getConnectorAccounts(runtime);
     if (emailAccounts.length === 0 && connectorAccounts.length === 0) {
+      if (force) {
+        await sendDigestStatusNotification(runtime, {
+          title: "邮件摘要未运行",
+          body: "还没有可读取的邮件账户。请先连接或启用一个邮件账户。"
+        });
+      }
       return { ok: false, reason: "no_accounts" };
     }
 
@@ -302,6 +327,12 @@ export async function maybeRunMorningDigest({
     }
 
     if (allMessages.length === 0) {
+      if (force) {
+        await sendDigestStatusNotification(runtime, {
+          title: "邮件摘要",
+          body: "最近没有找到可汇总的邮件。"
+        });
+      }
       return { ok: true, reason: "no_messages" };
     }
 
@@ -335,18 +366,34 @@ export async function maybeRunMorningDigest({
     }
 
     const digestMd = buildDigestMarkdown({ totals, buckets, perAccount, title: digestTitle, summaryLead });
-    const outputDir = runtime.paths?.outputsDir ?? path.join(os.homedir(), "Desktop", "UCA");
-    await mkdir(outputDir, { recursive: true });
-    const digestPath = path.join(outputDir, `email-digest-${todayKey}.md`);
-    await writeFile(digestPath, digestMd, "utf8");
+    const shouldWriteDigestFile =
+      runtime?.settings?.emailDigest?.writeFile === true ||
+      process.env.LINGXY_EMAIL_DIGEST_WRITE_FILE === "1";
+    let digestPath = null;
+    if (shouldWriteDigestFile) {
+      const outputDir = runtime.paths?.outputsDir ?? path.join(os.homedir(), "Desktop", "UCA");
+      await mkdir(outputDir, { recursive: true });
+      digestPath = path.join(outputDir, `email-digest-${todayKey}.md`);
+      await writeFile(digestPath, digestMd, "utf8");
+    }
 
     await sendNotification(runtime, {
+      kind: "success",
       title: force ? "邮件摘要（手动测试）" : "早晨邮件汇总",
       body: force
-        ? `找到 ${totals.total} 封近期邮件，需回复 ${totals.actionRequired} 封。点击查看详情。`
-        : `昨日 ${totals.total} 封邮件，需回复 ${totals.actionRequired} 封。点击查看详情。`,
+        ? `找到 ${totals.total} 封近期邮件，需回复 ${totals.actionRequired} 封。`
+        : `昨日 ${totals.total} 封邮件，需回复 ${totals.actionRequired} 封。`,
+      artifactPath: digestPath,
+      mime: digestPath ? "text/markdown" : null,
+      inlinePreview: digestMd.slice(0, 12000),
+      openWindow: "overlay",
+      allowContinue: false,
+      allowLongBody: true,
+      dedupeKey: `email-digest:${todayKey}`,
+      skipBatch: true,
       handoff: {
-        file_paths: [digestPath],
+        text: digestMd,
+        file_paths: digestPath ? [digestPath] : [],
         source_app: "uca.email",
         capture_mode: "email_digest",
         userCommand: "请查看昨日邮件汇总"
@@ -356,7 +403,8 @@ export async function maybeRunMorningDigest({
     appendAuditLog(runtime, "email.digest_sent", {
       total: totals.total,
       action_required: totals.actionRequired,
-      digest_path: digestPath
+      digest_path: digestPath,
+      delivery: digestPath ? "file_and_inline" : "inline"
     });
 
     return { ok: true, digestPath, sent: true, forced: force };

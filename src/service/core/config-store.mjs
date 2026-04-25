@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { sanitizeProviderConfig, sanitizeTaskRouteForProvider } from "../../shared/provider-catalog.mjs";
 
 function deepMerge(base, patch) {
   const merged = { ...base };
@@ -20,6 +21,34 @@ function deepMerge(base, patch) {
   return merged;
 }
 
+function cloneJson(value) {
+  return JSON.parse(JSON.stringify(value ?? {}));
+}
+
+function sanitizeAiConfig(ai = {}) {
+  const customProviders = (ai.customProviders ?? []).map((provider) => sanitizeProviderConfig(provider));
+  const providerById = new Map(customProviders.map((provider) => [provider.id, provider]));
+  const taskRouting = Object.fromEntries(
+    Object.entries(ai.taskRouting ?? {}).map(([taskType, route]) => {
+      const provider = route?.providerId ? providerById.get(route.providerId) : null;
+      return [taskType, sanitizeTaskRouteForProvider(provider, route, taskType) ?? route];
+    })
+  );
+  return {
+    ...ai,
+    customProviders,
+    taskRouting
+  };
+}
+
+function migrateRuntimeConfig(config = {}) {
+  const next = cloneJson(config);
+  if (next.ai && typeof next.ai === "object") {
+    next.ai = sanitizeAiConfig(next.ai);
+  }
+  return next;
+}
+
 export function createRuntimeConfigStore({ configPath, defaults = {} }) {
   const directory = path.dirname(configPath);
 
@@ -31,12 +60,19 @@ export function createRuntimeConfigStore({ configPath, defaults = {} }) {
       }
 
       const parsed = JSON.parse(readFileSync(configPath, "utf8"));
-      return deepMerge(defaults, parsed);
+      const merged = deepMerge(defaults, parsed);
+      const migrated = migrateRuntimeConfig(merged);
+      if (JSON.stringify(migrated) !== JSON.stringify(merged)) {
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(configPath, `${JSON.stringify(migrated, null, 2)}\n`, "utf8");
+      }
+      return migrated;
     },
     save(config) {
       mkdirSync(directory, { recursive: true });
-      writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
-      return config;
+      const migrated = migrateRuntimeConfig(config);
+      writeFileSync(configPath, `${JSON.stringify(migrated, null, 2)}\n`, "utf8");
+      return migrated;
     },
     patch(nextPatch) {
       const current = this.load();

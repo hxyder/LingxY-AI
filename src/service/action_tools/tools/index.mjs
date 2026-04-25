@@ -625,11 +625,22 @@ export const NOTIFY_TOOL = {
     await mkdir(notificationDir, { recursive: true });
     const notificationPath = path.join(notificationDir, `notification-${Date.now()}-${crypto.randomUUID()}.json`);
     const payload = {
+      kind: args.kind ?? undefined,
       title: args.title ?? "UCA 提醒",
       body: args.body ?? args.message ?? "时间到了",
       created_at: new Date().toISOString(),
       handoff: args.handoff ?? null,
-      navigate: args.navigate ?? null
+      navigate: args.navigate ?? null,
+      taskId: args.taskId ?? ctx.task?.task_id ?? null,
+      artifactPath: args.artifactPath ?? null,
+      mime: args.mime ?? null,
+      inlinePreview: args.inlinePreview ?? null,
+      openWindow: args.openWindow ?? null,
+      allowContinue: args.allowContinue ?? undefined,
+      allowLongBody: args.allowLongBody ?? undefined,
+      autoHideMs: args.autoHideMs ?? undefined,
+      dedupeKey: args.dedupeKey ?? undefined,
+      skipBatch: args.skipBatch ?? undefined
     };
     await writeFile(notificationPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
     return createActionResult({

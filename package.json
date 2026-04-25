@@ -64,6 +64,7 @@
     "verify:platform-foundation": "node scripts/verify-platform-foundation.mjs",
     "verify:template-dag-persistence": "node scripts/verify-template-dag-persistence.mjs",
     "verify:runtime-wiring": "node scripts/verify-runtime-wiring.mjs",
+    "verify:runtime-search-popup-autotask": "node scripts/verify-runtime-search-popup-autotask.mjs",
     "verify:native-integrations": "node scripts/verify-native-integrations.mjs",
     "verify:email-monitoring": "node scripts/verify-email-monitoring.mjs",
     "verify:email-morning-digest": "node scripts/verify-email-morning-digest.mjs",

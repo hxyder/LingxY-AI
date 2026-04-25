@@ -77,6 +77,9 @@
 | 80 | UCA-080 | [80_connector_write_tools_confirmation.md](80_connector_write_tools_confirmation.md) | Unified Account Connectors | UCA-079 | `task/uca-080-connector-write-tools` | done |
 | 81 | UCA-081 | [81_connector_reauth_resume_audit.md](81_connector_reauth_resume_audit.md) | Unified Account Connectors | UCA-080 | `task/uca-081-connector-reauth-audit` | todo |
 | 82 | UCA-082 | [82_email_monitoring_connector_migration.md](82_email_monitoring_connector_migration.md) | Unified Account Connectors | UCA-044,UCA-045,UCA-081 | `task/uca-082-email-connector-migration` | todo |
+| 83 | UCA-083 | [83_polish_launcher_cards_notifications.md](83_polish_launcher_cards_notifications.md) | Desktop UX Polish | UCA-027,UCA-041,UCA-049 | `task/uca-083-polish-launcher-cards-notifications` | done |
+| 84 | UCA-084 | [84_overlay_console_notes_preview_upgrade.md](84_overlay_console_notes_preview_upgrade.md) | Overlay / Console / Notes / Preview | UCA-041,UCA-049,UCA-083 | `task/uca-084-overlay-console-notes-preview` | in_progress |
+| 85 | UCA-085 | [85_runtime_search_popup_autotask_stability.md](85_runtime_search_popup_autotask_stability.md) | Runtime Search / Popup / Auto Task Stability | UCA-041,UCA-049,UCA-084 | `task/uca-085-runtime-search-popup-autotask` | done |
 
 ## 当前执行规则
 
@@ -166,6 +169,8 @@ ChatGPT 提出了架构升级方案（TaskSpec 单一信息源），经代码审
 | 文档生成是空壳 fixture | UCA-055 | todo |
 | 关闭 UCA-037 连续翻译 bug | UCA-057 | todo |
 | 关闭 UCA-039 搜索旧内容 bug | UCA-057 | todo |
+| Overlay/Console/Note/Preview 交互升级 | UCA-084 | in_progress |
+| 联网搜索变慢 / Dock 运行态 / Popup 消失 / 自动任务错归类 | UCA-085 | done |
 
 ### UCA-026 处理说明
 

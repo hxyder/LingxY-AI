@@ -9,6 +9,7 @@ import { submitImageTask } from "./image-submission.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import { decomposeUserCommand } from "./router/decomposer.mjs";
 import { submitCompositeTask } from "./composite-submission.mjs";
+import { normalizeConversationTurns } from "./conversation-memory.mjs";
 import { createTaskSpec } from "./task-spec.mjs";
 import {
   applyExecutorEvent,
@@ -26,17 +27,24 @@ const MAX_BROWSER_FETCH_BYTES = 5 * 1024 * 1024;
 const MAX_BROWSER_CONTEXT_CHARS = 12000;
 
 function createSelectionMetadata(capture) {
+  const conversationTurns = normalizeConversationTurns(capture?.history ?? []);
   return {
     page_title: capture.pageTitle,
     context_before: capture.contextBefore,
     context_after: capture.contextAfter,
     anchor_text: capture.anchorText,
     image_url: capture.imageUrl,
-    tab_id: capture.tabId
+    tab_id: capture.tabId,
+    conversation_turns: conversationTurns,
+    conversation_turn_count: conversationTurns.length
   };
 }
 
 function normalizeCaptureText(capture) {
+  if (capture.sourceType === "chat") {
+    return capture.text ?? "";
+  }
+
   if (capture.text) {
     return capture.text;
   }

@@ -934,13 +934,11 @@ window.ucaShell.onClipboardChanged((payload) => {
 });
 
 /* ── task running indicator ──
-   activate orb when any non-schedule task is queued or running
-   deactivate when nothing's left
+   activate orb when any visible task is queued or running. Scheduler/email
+   tasks used to be filtered out, which made automatic work look idle.
 */
 function isUserTask(task) {
-  // exclude scheduler-triggered background tasks
-  if (task.source_app === "uca.scheduler") return false;
-  if (task.capture_mode === "scheduler") return false;
+  if (task.hidden === true || task.ui_hidden === true) return false;
   return true;
 }
 
@@ -961,10 +959,9 @@ function schedulePoll(delay) {
 
 async function pollTaskState() {
   try {
-    const resp = await fetch("http://127.0.0.1:4310/tasks");
+    const resp = await fetch("http://127.0.0.1:4310/tasks/summary?limit=40");
     const data = await resp.json();
-    const tasks = data.tasks ?? [];
-    const twoMinAgo = Date.now() - 2 * 60 * 1000;
+    const tasks = data.active ?? data.tasks ?? [];
 
     // Track oldest active task's age so the orb can switch from "thinking"
     // (first ~6s after submission) to "executing" (actually making progress).
@@ -974,7 +971,6 @@ async function pollTaskState() {
       if (!isUserTask(t)) return false;
       if (t.status !== "running" && t.status !== "queued" && t.status !== "cancelling") return false;
       const created = new Date(t.created_at).getTime();
-      if (!(Number.isFinite(created) && created > twoMinAgo)) return false;
       const age = Date.now() - created;
       if (age < youngestActiveAgeMs) youngestActiveAgeMs = age;
       return true;

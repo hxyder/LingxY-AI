@@ -27,6 +27,7 @@ import { getCredential } from "../email/credential-store.mjs";
 import { tryHandleConnectorRoute } from "./http-routes/connector-routes.mjs";
 import { sendJson, sendHtml, readJsonBody, readRawBody } from "./http-helpers.mjs";
 import { maybeRunMorningDigest } from "../email/digest.mjs";
+import { isFeatureEnabled } from "./feature-flags.mjs";
 import { saveAutoSkill } from "./skill-pattern-tracker.mjs";
 import { normalizeTemplateDocument } from "../templates/parser.mjs";
 import { validateTemplateDocument } from "../templates/schema.mjs";
@@ -922,11 +923,40 @@ function listTaskSummaries(runtime) {
     source_type: task.context_packet?.source_type ?? null,
     source_app: task.context_packet?.source_app ?? null,
     capture_mode: task.context_packet?.capture_mode ?? null,
+    selection_metadata: task.context_packet?.selection_metadata ?? task.context_packet?.selectionMetadata ?? {},
+    schedule_source: task.context_packet?.selection_metadata?.source_id
+      ?? task.context_packet?.selectionMetadata?.source_id
+      ?? task.schedule_source
+      ?? null,
+    hidden: task.hidden === true,
+    ui_hidden: task.ui_hidden === true,
     user_command: task.user_command,
     parent_task_id: task.parent_task_id ?? null,
     child_index: task.child_index ?? null,
     child_count: Array.isArray(task.child_task_ids) ? task.child_task_ids.length : 0
   }));
+}
+
+export function buildTaskSummaryPayload(runtime, { recentLimit = 80 } = {}) {
+  const tasks = listTaskSummaries(runtime)
+    .sort((left, right) =>
+      `${right.updated_at ?? right.created_at ?? ""}`.localeCompare(`${left.updated_at ?? left.created_at ?? ""}`)
+    );
+  const isActive = (task) => ["queued", "running", "cancelling", "starting"].includes(task.status);
+  const visible = tasks.filter((task) => task.hidden !== true && task.ui_hidden !== true);
+  const active = visible.filter(isActive);
+  const recent = visible.slice(0, Math.max(1, Math.min(200, Number(recentLimit) || 80)));
+  return {
+    active,
+    recent,
+    counts: {
+      total: tasks.length,
+      visible: visible.length,
+      active: active.length,
+      recent: recent.length
+    },
+    tasks: recent
+  };
 }
 
 function summarizeTask(runtime, taskId) {
@@ -1071,7 +1101,8 @@ async function submitTaskFromBody(runtime, body) {
       source_type: body.sourceType ?? "clipboard",
       source_app: body.sourceApp ?? "uca.http",
       capture_mode: body.captureMode ?? "manual",
-      text: body.text ?? ""
+      text: body.text ?? "",
+      selection_metadata: body.selectionMetadata ?? {}
     },
     userCommand: body.userCommand,
     executionMode: body.executionMode,
@@ -1781,7 +1812,12 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       // body: { featureId: { enabled: bool }, ... }
       if (method === "POST" && url.pathname === "/config/features") {
         const body = await readJsonBody(request);
-        runtime.configStore?.patch?.({ features: body });
+        const patch = { features: body };
+        if (Object.prototype.hasOwnProperty.call(body ?? {}, "morning_digest")
+            && typeof body.morning_digest?.enabled === "boolean") {
+          patch.email = { digest: { enabled: body.morning_digest.enabled } };
+        }
+        runtime.configStore?.patch?.(patch);
         return sendJson(response, 200, { ok: true });
       }
 
@@ -1807,8 +1843,12 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
 
       if (method === "GET" && url.pathname === "/config/email/settings") {
         const config = runtime.configStore?.load?.() ?? {};
+        const featureEnabled = isFeatureEnabled("morning_digest", runtime.configStore);
         return sendJson(response, 200, {
-          settings: config.email?.digest ?? {}
+          settings: {
+            ...(config.email?.digest ?? {}),
+            enabled: featureEnabled && config.email?.digest?.enabled !== false
+          }
         });
       }
 
@@ -1843,6 +1883,15 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
             }
           }
         };
+        if (typeof body.enabled === "boolean") {
+          nextConfig.features = {
+            ...(config.features ?? {}),
+            morning_digest: {
+              ...(config.features?.morning_digest ?? {}),
+              enabled: body.enabled
+            }
+          };
+        }
         runtime.configStore?.save?.(nextConfig);
         return sendJson(response, 200, { ok: true, settings: nextConfig.email.digest });
       }
@@ -2589,6 +2638,12 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, {
           tasks: listTaskSummaries(runtime)
         });
+      }
+
+      if (method === "GET" && url.pathname === "/tasks/summary") {
+        return sendJson(response, 200, buildTaskSummaryPayload(runtime, {
+          recentLimit: url.searchParams.get("limit") ?? 80
+        }));
       }
 
       if (taskMatch && method === "GET") {
