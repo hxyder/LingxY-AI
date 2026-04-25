@@ -27,6 +27,7 @@ export const NO_DECOMPOSE_GOALS = new Set([
   "analyze_and_report",
   "generate_document",
   "transform_existing_file",
+  "launch_and_act",
   "schedule_or_notify",
   "multimodal_analyze"
 ]);
@@ -327,11 +328,13 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     ? (noteIntent ? "md" : "docx")
     : null;
   const fileArtifactKind = explicitFileArtifactKind ?? contextArtifactKind ?? inferredFileArtifactKind;
-  const artifactRequired = noteIntent ||
-    FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
-    goal === "generate_document" ||
-    goal === "analyze_and_report" ||
-    goal === "transform_existing_file";
+  const artifactRequired = goal === "launch_and_act"
+    ? false
+    : (noteIntent ||
+      FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
+      goal === "generate_document" ||
+      goal === "analyze_and_report" ||
+      goal === "transform_existing_file");
   const connectorDomainRequest = isConnectorDomainRequest(text);
   const webDataNeeded = !connectorDomainRequest && (
     needsCurrentWebData(text) ||

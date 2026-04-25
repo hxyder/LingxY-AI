@@ -92,15 +92,24 @@ let notifiedInlineResultTaskId = null;
 let popupSuccessCardTaskId = null;
 let suppressOverlayAutoReveal = false;
 
+function shouldSurfaceTaskPopupCards() {
+  try {
+    return document.visibilityState !== "visible";
+  } catch {
+    return true;
+  }
+}
+
 function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, openWindow = null } = {}) {
   if (!taskId || popupSuccessCardTaskId === taskId) return;
+  if (!shouldSurfaceTaskPopupCards()) return;
   popupSuccessCardTaskId = taskId;
   try {
-    window.ucaShell?.showPopupCard?.({
+    window.ucaShell?.notify?.({
       kind: "success",
       taskId,
       title: title || "任务完成",
-      lines: Array.isArray(body) ? body.filter(Boolean) : [String(body ?? "").slice(0, 160)].filter(Boolean),
+      body: Array.isArray(body) ? body.filter(Boolean).join("\n") : String(body ?? "").slice(0, 160),
       autoHideMs,
       openWindow
     });
@@ -138,6 +147,7 @@ let renderedTimelineEventIds = new Set();
 let streamingBubble = null;
 let streamingBubbleRawText = "";
 let pendingToolStepBubbles = {}; // { toolId: [stepEl, ...] } — updated by tool_call_completed
+const approvalPopupCardIds = new Map(); // approvalId -> popup card id
 let taskSummaries = [];
 let taskListFilter = "all";
 let lastTaskSummaryRefresh = 0;
@@ -828,6 +838,7 @@ function clearBubbles() {
   timelineSpinnerEl = null;
   timelineStepCount = 0;
   bubbleOverflowNoticeShown = false;
+  closeActiveThinkingCard();
 }
 
 /* ═══════════════════════════════════════════════
@@ -965,31 +976,49 @@ function buildToolStepInner(toolId, state, args, observation) {
     ? obsText.replace(/\s+/g, " ").slice(0, 80)
     : (state === "pending" ? "运行中…" : "");
   const hasBody = Boolean(argsText || obsText);
-  const bodyHtml = hasBody
-    ? `<div class="step-body">${
-        argsText ? `<div class="step-args">${escapeHtmlForOverlay(argsText)}</div>` : ""
-      }${
-        obsText ? `<div class="step-outcome">${escapeHtmlForOverlay(obsText)}</div>` : ""
-      }</div>`
-    : "";
   return `
-    <summary class="step-row">
+    <button type="button" class="step-row" aria-expanded="${hasBody ? "true" : "false"}">
       <span class="step-icon">${icon}</span>
       <span class="step-name">${escapeHtmlForOverlay(toolId)}</span>
       <span class="step-summary">${escapeHtmlForOverlay(summaryText)}</span>
       ${hasBody ? STEP_CHEVRON : ""}
-    </summary>
-    ${bodyHtml}
+    </button>
+    <div class="step-body"${hasBody ? "" : " hidden"}>
+      ${argsText ? `<div class="step-args">${escapeHtmlForOverlay(argsText)}</div>` : ""}
+      ${obsText ? `<div class="step-outcome">${escapeHtmlForOverlay(obsText)}</div>` : ""}
+    </div>
   `;
+}
+
+function bindToolStepToggle(stepEl) {
+  if (!stepEl) return;
+  const row = stepEl.querySelector(".step-row");
+  row?.addEventListener("click", () => {
+    const body = stepEl.querySelector(".step-body");
+    if (!body || !body.textContent?.trim()) return;
+    const willOpen = !stepEl.classList.contains("is-open");
+    stepEl.classList.toggle("is-open", willOpen);
+    row.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    body.hidden = !willOpen;
+  });
+}
+
+function setToolStepOpen(stepEl, isOpen) {
+  if (!stepEl) return;
+  stepEl.classList.toggle("is-open", Boolean(isOpen));
+  const row = stepEl.querySelector(".step-row");
+  if (row) row.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  const body = stepEl.querySelector(".step-body");
+  if (body) body.hidden = !isOpen;
 }
 
 function appendToolStepBubble(toolId, state = "pending", detailText = "") {
   if (!toolId) return null;
-  // Use a <details> element so collapse/expand is native and CSS can hook
-  // the [open] attribute for the chevron rotation.
-  const stepEl = document.createElement("details");
+  const stepEl = document.createElement("div");
   stepEl.className = `bubble step ${state}`;
   stepEl.innerHTML = buildToolStepInner(toolId, state, null, detailText);
+  bindToolStepToggle(stepEl);
+  setToolStepOpen(stepEl, false);
   bubbleArea.hidden = false;
   bubbleArea.appendChild(stepEl);
   bubbleArea.scrollTop = bubbleArea.scrollHeight;
@@ -1008,6 +1037,8 @@ function markToolStepBubble(toolId, ok, observation = "") {
   // both the call shape and the result.
   const preservedArgs = stepEl.dataset.args ? safeJsonParseForOverlay(stepEl.dataset.args) : null;
   stepEl.innerHTML = buildToolStepInner(toolId, nextState, preservedArgs, observation);
+  bindToolStepToggle(stepEl);
+  setToolStepOpen(stepEl, false);
   bubbleArea.scrollTop = bubbleArea.scrollHeight;
 }
 
@@ -1024,17 +1055,23 @@ let activeThinkingEl = null;
 let activeThinkingText = "";
 function appendThinkingDelta(delta) {
   if (!activeThinkingEl) {
-    const det = document.createElement("details");
-    det.className = "bubble thinking";
-    det.open = true;
+    const det = document.createElement("div");
+    det.className = "bubble thinking is-open";
     det.innerHTML = `
-      <summary class="thinking-summary">
+      <button type="button" class="thinking-summary" aria-expanded="true">
         <span class="thinking-icon">🧠</span>
         <span class="thinking-label">思考过程</span>
         <span class="thinking-status">…</span>
-      </summary>
+      </button>
       <div class="thinking-body"></div>
     `;
+    det.querySelector(".thinking-summary")?.addEventListener("click", () => {
+      const willOpen = !det.classList.contains("is-open");
+      det.classList.toggle("is-open", willOpen);
+      det.querySelector(".thinking-summary")?.setAttribute("aria-expanded", willOpen ? "true" : "false");
+      const body = det.querySelector(".thinking-body");
+      if (body) body.hidden = !willOpen;
+    });
     bubbleArea.hidden = false;
     bubbleArea.appendChild(det);
     activeThinkingEl = det;
@@ -1047,7 +1084,10 @@ function appendThinkingDelta(delta) {
 }
 function closeActiveThinkingCard() {
   if (!activeThinkingEl) return;
-  activeThinkingEl.open = false;
+  activeThinkingEl.classList.remove("is-open");
+  activeThinkingEl.querySelector(".thinking-summary")?.setAttribute("aria-expanded", "false");
+  const body = activeThinkingEl.querySelector(".thinking-body");
+  if (body) body.hidden = true;
   const status = activeThinkingEl.querySelector(".thinking-status");
   if (status) status.textContent = `${activeThinkingText.length} chars`;
   activeThinkingEl = null;
@@ -1277,6 +1317,8 @@ function closeActiveTaskEventStream() {
   renderedTimelineEventIds = new Set();
   streamingBubble = null;
   streamingBubbleRawText = "";
+  pendingToolStepBubbles = {};
+  closeActiveThinkingCard();
 }
 
 function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
@@ -1294,6 +1336,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     "tool_call_completed",
     "tool_call_denied",
     "tool_input_delta",
+    "reasoning_delta",
     "pending_approval_created",
     "log",
     "artifact_created",
@@ -1327,7 +1370,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
   if (frame.event === "tool_call_started" || frame.event === "tool_call_proposed") {
     const toolId = getToolEventId(frame);
     if (toolId) {
-      timelineAddStep(`调用 ${toolId}…`, "active");
+      if (!showOverlay) timelineAddStep(`调用 ${toolId}…`, "active");
       if (showOverlay) void maybeRevealOverlay();
       const stepEl = appendToolStepBubble(toolId, "pending");
       // 83.3 — Stash args on the element so markToolStepBubble can re-render
@@ -1362,7 +1405,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     const toolId = getToolEventId(frame);
     const ok = frame.data?.success !== false;
     if (toolId) {
-      timelineAddStep(`${toolId}`, ok ? "done" : "fail");
+      if (!showOverlay) timelineAddStep(`${toolId}`, ok ? "done" : "fail");
       markToolStepBubble(toolId, ok, frame.data?.observation ?? "");
       if (window.livePreview?.isFileGenTool?.(toolId)) {
         window.livePreview.commit({
@@ -1378,28 +1421,34 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
 
   if (frame.event === "tool_call_denied") {
     const toolId = getToolEventId(frame);
-    timelineAddStep(toolId ? `${toolId} 已拦截` : summary.body, "fail");
+    if (!showOverlay) timelineAddStep(toolId ? `${toolId} 已拦截` : summary.body, "fail");
   }
 
   if (frame.event === "pending_approval_created") {
     renderInlineApproval(frame);
-    timelineAddStep("等待用户确认", "active");
+    if (!showOverlay) timelineAddStep("等待用户确认", "active");
     if (showOverlay) void maybeRevealOverlay();
     // Floating popup card (non-blocking, stackable). The inline overlay UI
     // stays authoritative; the popup is a convenience surface so the user
     // doesn't miss approvals when the overlay isn't in view.
     try {
       const data = frame.data ?? {};
-      window.ucaShell?.showPopupCard?.({
-        kind: "approval",
-        approvalId: data.approval_id ?? data.approvalId,
-        taskId: frame.task_id ?? data.task_id,
-        title: data.proposed_target ? `等待确认：${data.proposed_target}` : "等待用户确认",
-        lines: [
-          data.summary ?? data.workflow_id ?? "工具调用需要您的确认",
-          data.preview ?? null
-        ].filter(Boolean)
-      });
+      if (shouldSurfaceTaskPopupCards()) {
+        Promise.resolve(window.ucaShell?.showPopupCard?.({
+          kind: "approval",
+          approvalId: data.approval_id ?? data.approvalId,
+          taskId: frame.task_id ?? data.task_id,
+          title: data.proposed_target ? `等待确认：${data.proposed_target}` : "等待用户确认",
+          lines: [
+            data.summary ?? data.workflow_id ?? "工具调用需要您的确认",
+            data.preview ?? null
+          ].filter(Boolean)
+        })).then((popupResult) => {
+          if (popupResult?.cardId) {
+            approvalPopupCardIds.set(data.approval_id ?? data.approvalId, popupResult.cardId);
+          }
+        }).catch(() => {});
+      }
     } catch { /* popup card is optional */ }
   }
 
@@ -1418,6 +1467,15 @@ async function renderInlineApproval(frame) {
   if (!approvalId) return;
   if (renderedApprovalCards.has(approvalId)) return;
 
+  async function closeApprovalPopupCard() {
+    const popupCardId = approvalPopupCardIds.get(approvalId);
+    if (!popupCardId) return;
+    approvalPopupCardIds.delete(approvalId);
+    try {
+      await window.ucaShell?.closePopupCard?.(popupCardId, { reason: "resolved_inline" });
+    } catch { /* optional */ }
+  }
+
   // Fetch the full record so we can show the real preview (SSE payload only
   // carries a summary). Fall back to the payload if the call fails.
   let approval = null;
@@ -1428,9 +1486,36 @@ async function renderInlineApproval(frame) {
       ?? null;
   } catch { /* silent — we'll show a minimal card */ }
 
+  async function listConnectedEmailAccounts() {
+    try {
+      const response = await fetchJson("/connectors/connected-accounts");
+      return (response.accounts ?? [])
+        .filter((account) => account?.tokenStatus === "active" && account?.capabilities?.emailWrite)
+        .sort((a, b) => {
+          const aDefault = a.isDefaultForEmail === true ? 1 : 0;
+          const bDefault = b.isDefaultForEmail === true ? 1 : 0;
+          if (aDefault !== bDefault) return bDefault - aDefault;
+          const at = a.lastUsedAt ? new Date(a.lastUsedAt).getTime() : 0;
+          const bt = b.lastUsedAt ? new Date(b.lastUsedAt).getTime() : 0;
+          return bt - at;
+        });
+    } catch {
+      return [];
+    }
+  }
+
   const card = document.createElement("div");
   card.className = "approval-card";
-  card.style.cssText = "border:1px solid var(--accent, #4a88ff); border-radius:10px; padding:12px 14px; background:rgba(74,136,255,0.06); display:flex; flex-direction:column; gap:10px;";
+  card.style.cssText = [
+    "border:1px solid color-mix(in srgb, var(--accent, #4a88ff) 45%, transparent)",
+    "border-radius:10px",
+    "padding:12px 14px",
+    "background:color-mix(in srgb, var(--panel, rgba(255,255,255,0.92)) 88%, var(--accent, #4a88ff) 12%)",
+    "display:flex",
+    "flex-direction:column",
+    "gap:10px",
+    "color:var(--ink)"
+  ].join(";");
 
   const header = document.createElement("div");
   header.style.cssText = "display:flex; align-items:center; gap:8px; font-weight:600; font-size:13px;";
@@ -1455,7 +1540,7 @@ async function renderInlineApproval(frame) {
 
   function addLabel(text) {
     const lbl = document.createElement("div");
-    lbl.style.cssText = "font-size:11px; color:#666; margin-bottom:2px;";
+    lbl.style.cssText = "font-size:11px; color:var(--muted); margin-bottom:2px;";
     lbl.textContent = text;
     return lbl;
   }
@@ -1467,7 +1552,7 @@ async function renderInlineApproval(frame) {
     const el = document.createElement(multi ? "textarea" : "input");
     if (!multi) el.type = "text";
     el.value = value ?? "";
-    el.style.cssText = "font:inherit; padding:6px 8px; border:1px solid rgba(0,0,0,0.2); border-radius:5px; background:#fff;"
+    el.style.cssText = "font:inherit; color:var(--ink); padding:6px 8px; border:1px solid var(--line); border-radius:5px; background:var(--panel);"
       + (multi ? " min-height:110px; resize:vertical;" : "");
     wrap.appendChild(el);
     card.appendChild(wrap);
@@ -1481,15 +1566,35 @@ async function renderInlineApproval(frame) {
     addTextInput("body", editableInput.body ?? "", "正文", { multi: true });
     if (Array.isArray(editableInput.attachmentPaths) && editableInput.attachmentPaths.length > 0) {
       const note = document.createElement("div");
-      note.style.cssText = "font-size:11px; color:#666;";
+      note.style.cssText = "font-size:11px; color:var(--muted);";
       note.textContent = `附件：${editableInput.attachmentPaths.join(", ")}`;
       card.appendChild(note);
     }
   } else if (approval?.preview_text) {
     const preview = document.createElement("pre");
-    preview.style.cssText = "margin:0; padding:8px 10px; background:rgba(0,0,0,0.06); border-radius:6px; font-family:inherit; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:260px; overflow:auto;";
+    preview.style.cssText = "margin:0; padding:8px 10px; background:color-mix(in srgb, var(--ink) 5%, transparent); border-radius:6px; font-family:inherit; white-space:pre-wrap; word-break:break-word; font-size:12px; max-height:260px; overflow:auto; color:var(--ink);";
     preview.textContent = approval.preview_text;
     card.appendChild(preview);
+  }
+
+  if (editableInput && !editableInput.accountId) {
+    const emailAccounts = await listConnectedEmailAccounts();
+    if (emailAccounts.length > 1) {
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "display:flex; flex-direction:column; gap:2px;";
+      wrap.appendChild(addLabel("发送账户"));
+      const select = document.createElement("select");
+      select.style.cssText = "font:inherit; color:var(--ink); padding:6px 8px; border:1px solid var(--line); border-radius:5px; background:var(--panel);";
+      for (const account of emailAccounts) {
+        const option = document.createElement("option");
+        option.value = account.id ?? account.accountId ?? "";
+        option.textContent = `${account.provider} · ${account.email ?? account.displayName ?? account.id}${account.isDefaultForEmail ? "（默认）" : ""}`;
+        select.appendChild(option);
+      }
+      wrap.appendChild(select);
+      card.appendChild(wrap);
+      editFields.accountId = select;
+    }
   }
 
   const actions = document.createElement("div");
@@ -1498,12 +1603,28 @@ async function renderInlineApproval(frame) {
   approveBtn.type = "button";
   approveBtn.textContent = "确认发送";
   approveBtn.className = "primary";
-  approveBtn.style.cssText = "padding:6px 14px; font-size:13px;";
+  approveBtn.style.cssText = [
+    "padding:6px 14px",
+    "font-size:13px",
+    "border-radius:8px",
+    "border:1px solid color-mix(in srgb, var(--ink) 14%, transparent)",
+    "background:var(--ink)",
+    "color:var(--bg)",
+    "font-weight:600"
+  ].join(";");
   const rejectBtn = document.createElement("button");
   rejectBtn.type = "button";
   rejectBtn.textContent = "拒绝";
   rejectBtn.className = "ghost";
-  rejectBtn.style.cssText = "padding:6px 14px; font-size:13px;";
+  rejectBtn.style.cssText = [
+    "padding:6px 14px",
+    "font-size:13px",
+    "border-radius:8px",
+    "border:1px solid var(--line)",
+    "background:var(--panel)",
+    "color:var(--ink)",
+    "font-weight:600"
+  ].join(";");
 
   async function disableButtons() {
     approveBtn.disabled = true;
@@ -1513,10 +1634,24 @@ async function renderInlineApproval(frame) {
 
   function showResult(text, ok) {
     actions.remove();
-    const result = document.createElement("div");
-    result.style.cssText = `font-size:12px; color:${ok ? "#2e7d32" : "#b71c1c"};`;
+    let result = card.querySelector(".approval-inline-result");
+    if (!result) {
+      result = document.createElement("div");
+      result.className = "approval-inline-result";
+      card.appendChild(result);
+    }
+    result.style.cssText = [
+      "font-size:12px",
+      `color:${ok ? "var(--ok)" : "var(--err)"}`,
+      `background:${ok ? "var(--ok-soft)" : "var(--err-soft)"}`,
+      "border:1px solid var(--line)",
+      "padding:6px 10px",
+      "border-radius:8px",
+      "display:inline-flex",
+      "align-items:center",
+      "width:fit-content"
+    ].join(";");
     result.textContent = text;
-    card.appendChild(result);
   }
 
   function collectOverrides() {
@@ -1535,6 +1670,10 @@ async function renderInlineApproval(frame) {
     if (editFields.body) {
       const raw = editFields.body.value;
       if (raw.trim()) overrides.body = raw;
+    }
+    if (editFields.accountId) {
+      const raw = editFields.accountId.value.trim();
+      if (raw) overrides.accountId = raw;
     }
     return Object.keys(overrides).length > 0 ? overrides : null;
   }
@@ -1568,6 +1707,14 @@ async function renderInlineApproval(frame) {
           );
         }
       }
+      const executionResult = resp?.executionResult ?? null;
+      if (!resumeTaskId && executionResult?.executed) {
+        const ok = executionResult.success !== false;
+        const observation = String(executionResult.observation ?? executionResult.error ?? "").trim();
+        showResult(ok ? "✓ 已执行。" : "执行失败。", ok);
+        if (observation) addBubble(ok ? "assistant" : "system", observation);
+      }
+      await closeApprovalPopupCard();
     } catch (error) {
       approveBtn.disabled = false;
       rejectBtn.disabled = false;
@@ -1583,6 +1730,7 @@ async function renderInlineApproval(frame) {
         body: JSON.stringify({ actor: "overlay", reason: "rejected_in_overlay" })
       });
       showResult("✕ 已拒绝。", false);
+      await closeApprovalPopupCard();
     } catch (error) {
       approveBtn.disabled = false;
       rejectBtn.disabled = false;
@@ -2366,10 +2514,6 @@ async function refreshActiveTask() {
           });
         }
 
-        await window.ucaShell.notify({
-          title: isAudioNoteTask ? "录音笔记已完成" : "UCA task complete",
-          body: filename
-        });
         fireSuccessPopupCardOnce(task.task_id, {
           title: task.intent ?? "任务完成",
           body: [filename, previewText ? previewText.slice(0, 140) : null].filter(Boolean),
@@ -2438,11 +2582,6 @@ async function refreshActiveTask() {
         }
         // UCA-049: provider footer + downgraded warning (system bubble)
         appendProviderFooterBubble(providerInfo);
-        await window.ucaShell.notify({
-          title: "UCA",
-          body: finalText.slice(0, 100),
-          openWindow: "overlay"
-        });
         fireSuccessPopupCardOnce(task.task_id, {
           title: task.intent ?? "任务完成",
           body: finalText,
@@ -2642,10 +2781,13 @@ async function submitTask() {
 
     addBubble("assistant", "Processing in background...");
 
-    await window.ucaShell.notify({
-      title: "UCA processing",
-      body: "Task submitted. You'll be notified when it's done."
-    });
+    if (shouldSurfaceTaskPopupCards()) {
+      await window.ucaShell.notify({
+        title: "LingxY processing",
+        body: "Task submitted. You'll be notified when it's done.",
+        taskId: activeTaskId
+      });
+    }
 
     conversationPhase = "idle";
 
@@ -5152,10 +5294,13 @@ ${sourceAssistRequirement}`;
     clearPendingInputContext();
 
     addBubble("assistant", "Processing in background...");
-    await window.ucaShell.notify({
-      title: "UCA processing",
-      body: "录音笔记正在整理。"
-    });
+    if (shouldSurfaceTaskPopupCards()) {
+      await window.ucaShell.notify({
+        title: "UCA processing",
+        body: "录音笔记正在整理。",
+        taskId: activeTaskId
+      });
+    }
     conversationPhase = "idle";
   } catch (error) {
     addBubble("assistant", `Submit failed: ${error.message}`);
@@ -5696,6 +5841,7 @@ window.ucaShell?.onPopupCardResolved?.((payload) => {
   if (payload.kind !== "approval") return;
   const approvalId = payload.approvalId;
   if (!approvalId) return;
+  approvalPopupCardIds.delete(approvalId);
   const inline = renderedApprovalCards.get(approvalId);
   if (!inline) return;
   inline.querySelectorAll("button").forEach((btn) => {
@@ -5707,7 +5853,16 @@ window.ucaShell?.onPopupCardResolved?.((payload) => {
   if (!chip) {
     chip = document.createElement("div");
     chip.className = "popup-resolved-chip";
-    chip.style.cssText = "margin-top:8px;font-size:12px;color:#166534;background:rgba(16,185,129,0.10);padding:4px 10px;border-radius:6px;display:inline-block;";
+    chip.style.cssText = [
+      "margin-top:8px",
+      "font-size:12px",
+      "color:var(--ok)",
+      "background:var(--ok-soft)",
+      "border:1px solid var(--line)",
+      "padding:4px 10px",
+      "border-radius:6px",
+      "display:inline-block"
+    ].join(";");
     inline.appendChild(chip);
   }
   chip.textContent = payload.action === "approve"

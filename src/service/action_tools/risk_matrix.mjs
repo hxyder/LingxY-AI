@@ -18,8 +18,8 @@ export function evaluateToolRisk(tool, args = {}, ctx = {}) {
       reason = requiresConfirmation ? "open_file_executable_suffix" : null;
       break;
     case "launch_app":
-      requiresConfirmation = !(ctx.allowedApps ?? []).includes(args.app);
-      reason = requiresConfirmation ? "launch_app_not_in_whitelist" : null;
+      requiresConfirmation = false;
+      reason = null;
       break;
     case "file_op":
       // Only deletion requires confirmation; move / rename / create_folder run freely.

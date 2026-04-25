@@ -12,6 +12,8 @@ from typing import Literal
 
 from matcher import Candidate
 
+DEV_QUERY_HINTS = ("dev", "developer", "tool", "sdk", "开发", "调试")
+
 
 @dataclass
 class Decision:
@@ -56,18 +58,28 @@ def _confidence_gap(candidates: list[Candidate]) -> float:
     return candidates[0].score - candidates[1].score
 
 
-def decide(candidates: list[Candidate]) -> Decision:
+def _query_allows_dev_tool(query: str) -> bool:
+    q = (query or "").strip().lower()
+    return any(hint in q for hint in DEV_QUERY_HINTS)
+
+
+def decide(candidates: list[Candidate], query: str = "") -> Decision:
     """Run the rule chain. See module docstring."""
     if not candidates:
         return Decision(kind="ask", candidates=[], reason="no_candidates")
 
     # Rule 1: single candidate → use directly.
     if len(candidates) == 1:
-        return Decision(kind="use", candidate=candidates[0], reason="single_candidate")
+        only = candidates[0]
+        if only.is_dev_tool and not _query_allows_dev_tool(query):
+            return Decision(kind="ask", candidates=[only], reason="only_dev_tool_candidate")
+        return Decision(kind="use", candidate=only, reason="single_candidate")
 
     # Rule 2: exact-name unique → use directly.
     exact = [c for c in candidates if c.reason == "exact"]
     if len(exact) == 1:
+        if exact[0].is_dev_tool and not _query_allows_dev_tool(query):
+            return Decision(kind="ask", candidates=exact, reason="exact_dev_tool_needs_confirmation")
         return Decision(kind="use", candidate=exact[0], reason="exact_unique")
 
     # Rule 3: drop dev-tools when there's a consumer alternative.

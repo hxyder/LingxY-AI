@@ -95,7 +95,7 @@ def _resolve_target(name: str) -> dict:
             "decision_reason": "user_history_threshold",
         }
     candidates = find_candidates(query, index, limit=10)
-    decision = decide(candidates)
+    decision = decide(candidates, query=query)
     if decision.kind == "ask":
         return {
             "ambiguous": True,
@@ -257,7 +257,7 @@ def main(argv: list[str]) -> int:
     if args.cmd == "candidates":
         index = _ensure_index()
         cands = find_candidates(args.name, index)
-        decision = decide(cands)
+        decision = decide(cands, query=args.name)
         payload = {
             "ok": True,
             "candidates": [_candidate_payload(c) for c in cands],

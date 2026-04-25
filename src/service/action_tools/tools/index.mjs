@@ -41,9 +41,9 @@ const KNOWN_APPS = {
   powershell: "powershell.exe",
   paint: "mspaint.exe",
   // Chinese / locally-popular apps — still benefit from Get-StartApps if the
-  // exe name differs from what's on the user's machine.
-  wechat: "WeChat.exe",
-  "微信": "WeChat.exe",
+  // exe name differs from what's on the user's machine. We intentionally do
+  // NOT hard-map 微信/WeChat here: that bypasses the Python launcher's
+  // ambiguity rules and can open 微信开发者工具 instead of the chat client.
   qq: "QQ.exe",
   "钉钉": "DingTalk.exe",
   dingtalk: "DingTalk.exe",
@@ -61,6 +61,29 @@ const KNOWN_APPS = {
 function resolveAppCommand(appName) {
   const key = `${appName}`.toLowerCase().trim();
   return KNOWN_APPS[key] ?? appName;
+}
+
+function looksLikeExecutableTarget(value = "") {
+  const text = String(value ?? "").trim();
+  if (!text) return false;
+  if (/^[A-Za-z]:\\/.test(text)) return true;
+  if (/^\\\\/.test(text)) return true;
+  if (/[\\/]/.test(text)) return true;
+  if (/\.(exe|bat|cmd|lnk)$/i.test(text)) return true;
+  if (/^shell:/i.test(text)) return true;
+  return false;
+}
+
+function formatLaunchAmbiguityObservation(appArg, candidates = []) {
+  const list = Array.isArray(candidates) ? candidates : [];
+  const allDevTools = list.length > 0 && list.every((candidate) => candidate?.is_dev_tool);
+  const choiceList = list
+    .map((c, i) => `${i + 1}. ${c.display_name}${c.is_dev_tool ? "（开发工具）" : ""} — ${c.exe_path}`)
+    .join("\n");
+  if (allDevTools) {
+    return `当前只找到了和 ${appArg} 相关的开发工具，没有找到普通应用。\n如果你要打开普通版 ${appArg}，请告诉我它的可执行文件路径，或先在启动器别名里绑定正确路径。\n${choiceList}`;
+  }
+  return `${appArg} 有多个可能的匹配，请让用户挑一个或告诉我具体路径：\n${choiceList}`;
 }
 
 // 83.8 — Locate the Python app launcher script. Cached after first resolve
@@ -223,11 +246,11 @@ const TOOL_DEFINITIONS = [
   {
     id: "launch_app",
     name: "Launch App",
-    description: "Launch an allowed local application.",
+    description: "Launch or focus a local application.",
     parameters: ACTION_TOOL_SCHEMAS.launch_app,
     risk_level: "medium",
     required_capabilities: ["launch_app"],
-    requires_confirmation: true,
+    requires_confirmation: false,
     formatObservation(args) {
       return `Launched app ${args.app}`;
     }
@@ -419,9 +442,41 @@ export const LAUNCH_APP_TOOL = {
     if (!appArg) return createActionResult({ success: false, observation: "app name required" });
     const command = resolveAppCommand(appArg);
 
-    // Step 1 — if the resolved command looks like an .exe, try Start-Process
-    // directly. This is the fast path for anything on PATH or in the registry.
     if (process.platform === "win32") {
+      if (!looksLikeExecutableTarget(appArg)) {
+        try {
+          const pyResult = await tryPythonLauncher(appArg);
+          if (pyResult.ok) {
+            return createActionResult({
+              success: true,
+              observation: `${pyResult.action === "focused" ? "已切换到" : pyResult.action === "restored" ? "已还原" : pyResult.action === "unhid" ? "已显示" : "已启动"} ${pyResult.display_name ?? appArg}`,
+              metadata: {
+                method: "python_launcher",
+                action: pyResult.action,
+                display_name: pyResult.display_name,
+                exe_path: pyResult.exe_path,
+                decision_reason: pyResult.decision_reason,
+                hwnd: pyResult.hwnd,
+                pid: pyResult.pid
+              }
+            });
+          }
+          if (pyResult.ambiguous) {
+            return createActionResult({
+              success: false,
+              observation: formatLaunchAmbiguityObservation(appArg, pyResult.candidates ?? []),
+              metadata: {
+                method: "python_launcher",
+                action: "ambiguous",
+                candidates: pyResult.candidates
+              }
+            });
+          }
+        } catch {
+          // Fall through to native Windows resolvers when Python is unavailable.
+        }
+      }
+
       try {
         await execFileAsync("powershell.exe", [
           "-NoProfile", "-Command",
@@ -459,12 +514,9 @@ export const LAUNCH_APP_TOOL = {
         }
       }
 
-      // Step 3 (83.8) — fallback to the Python launcher (scripts/app_launcher).
-      // It has a broader app index (Start menu + App Paths registry + fs_scan
-      // of common install roots) plus state-aware activation (focus an
-      // already-running instance instead of spawning a second one).
-      // Only runs when both fast-path steps failed so we don't eat its
-      // ~200ms startup latency on every launch.
+      // Step 3 — final pass through the Python launcher. This keeps custom
+      // aliases / scanned install roots available even when Start-Process
+      // and Get-StartApps couldn't resolve the name.
       try {
         const pyResult = await tryPythonLauncher(appArg);
         if (pyResult.ok) {
@@ -483,15 +535,9 @@ export const LAUNCH_APP_TOOL = {
           });
         }
         if (pyResult.ambiguous) {
-          // Surface candidates so the agent-loop can ask the user which one.
-          // The LLM turn will see this observation, hopefully emit a
-          // follow-up tool call with args.app = <the chosen exe_path>.
-          const choiceList = (pyResult.candidates ?? [])
-            .map((c, i) => `${i + 1}. ${c.display_name}${c.is_dev_tool ? "（开发工具）" : ""} — ${c.exe_path}`)
-            .join("\n");
           return createActionResult({
             success: false,
-            observation: `${appArg} 有多个可能的匹配，请让用户挑一个或告诉我具体路径：\n${choiceList}`,
+            observation: formatLaunchAmbiguityObservation(appArg, pyResult.candidates ?? []),
             metadata: {
               method: "python_launcher",
               action: "ambiguous",
@@ -499,8 +545,6 @@ export const LAUNCH_APP_TOOL = {
             }
           });
         }
-        // Python launcher returned a structured failure — surface its reason
-        // so logs show what rule fired.
         return createActionResult({
           success: false,
           observation: `未能启动 ${appArg}。Python 启动器：${pyResult.reason ?? "no_candidate"}（${pyResult.decision_reason ?? "unknown"}）。你可以告诉我完整的可执行文件路径。`,
@@ -511,9 +555,6 @@ export const LAUNCH_APP_TOOL = {
           }
         });
       } catch (pyErr) {
-        // Python unavailable / script not found / spawn error. Fall
-        // through to the legacy "exhausted" observation so users on boxes
-        // without Python still see the same text they used to.
         return createActionResult({
           success: false,
           observation: `未能启动 ${appArg}。已尝试 Start-Process 和 Get-StartApps，都没找到匹配。你可以告诉我完整的可执行文件路径，或让我用 web_search 帮你搜官方下载页。`,

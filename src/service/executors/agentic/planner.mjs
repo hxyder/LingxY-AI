@@ -389,6 +389,12 @@ export async function runAgenticPlanner({
         signal,
         fetchImpl,
         onTextDelta,
+        onReasoningDelta: (adapter.supportsStreaming && onEvent)
+          ? (delta) => {
+              if (!delta) return;
+              onEvent({ event_type: "reasoning_delta", payload: { delta } });
+            }
+          : undefined,
         onToolInputDelta
       });
     } catch (error) {

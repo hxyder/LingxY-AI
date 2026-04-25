@@ -78,7 +78,7 @@ def find_candidates(query: str, index: dict[str, dict], limit: int = 10) -> list
                 reason = "substring"
             else:
                 fuzzy = max((_fuzzy_score(q, t) for t in norm_terms), default=0.0)
-                if fuzzy < 0.3:
+                if fuzzy < 0.45:
                     continue
                 score = fuzzy
         scored.append(Candidate(
