@@ -13,6 +13,7 @@ import {
   matchWorkflowByTrigger
 } from "../../connectors/core/connector-intent.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
+import { getUserLocation, formatLocationLabel } from "../../utils/location.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -255,6 +256,18 @@ function formatResourceContext(task) {
   const _now = new Date();
   const _tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
   lines.push(`- Current local date and time: ${_now.toLocaleString("sv-SE", { hour12: false })} (${_tz}) — interpret "今天/明天/tomorrow/今晚/next week" relative to this; do not emit years or dates from training memory.`);
+  // Real user location, only populated when the user clicked
+  // "📍 启用精确定位" in the sidepanel AND Chrome granted the prompt (or
+  // the scheduled task's trigger payload carries a fix). We never infer
+  // location from timezone — if the user hasn't granted, we say so
+  // honestly so the model can ask instead of guessing.
+  const _scheduledLocation = ctx.current_location ?? task.trigger_payload?.current_location ?? null;
+  const _location = _scheduledLocation ?? getUserLocation();
+  if (_location) {
+    lines.push(`- User's location: ${formatLocationLabel(_location)} — use this when the request says "附近 / nearby / 这边 / here" or implies regional defaults (currency, language, news scope). Source: ${_location.source ?? "browser"}.`);
+  } else {
+    lines.push(`- User's location: unknown (not yet granted). If the user asks about "附近 / nearby / 这边" or location-specific info, ask them to click "📍 启用精确定位" in the LingxY side panel, or ask which city they mean. Do NOT guess from timezone.`);
+  }
 
   const attachments = [
     ...(ctx.file_paths ?? []),

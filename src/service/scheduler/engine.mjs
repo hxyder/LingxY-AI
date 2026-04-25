@@ -4,26 +4,13 @@ import { applyMisfirePolicy, computeMissedRunTimes, computeNextRunAt } from "./m
 import { createPendingApprovalService } from "./pending-approvals.mjs";
 import { dispatchSchedule } from "./dispatch.mjs";
 import { executeProposedAction } from "./execute-action.mjs";
+import { getSystemTimezone, getUserLocation } from "../utils/location.mjs";
 import {
   MAX_SCHEDULE_COUNT,
   buildScheduleTriggerSummary,
   cloneSchedule,
   createScheduleRecord
 } from "./store.mjs";
-
-// IANA timezone of the machine the scheduler is running on. Falls back to
-// UTC only when the runtime has no Intl data (shouldn't happen on modern
-// Node but guarded for safety). This is the default we inject into
-// triggers that arrive without an explicit timezone — "every day at 9am"
-// means 9am wall-clock time where the user lives, not 9am UTC.
-function getSystemTimezone() {
-  try {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return tz || "UTC";
-  } catch {
-    return "UTC";
-  }
-}
 
 // Derive a human-readable schedule name when the caller/LLM omits one.
 // The scheduler's DB column is NOT NULL, and the tool description doesn't
@@ -66,7 +53,17 @@ function ensureTrigger(trigger) {
     // UTC+8). Persisting the resolved timezone also means the UI can show
     // the user the exact tz the schedule will fire in.
     const timezone = trigger.timezone ?? getSystemTimezone();
-    return { ...trigger, type: typeValue, timezone };
+    // Location at create-time is an *optional* snapshot of where the user
+    // was when they scheduled this. Only captured if they've granted
+    // geolocation — we don't guess from timezone. UI can render "scheduled
+    // while you were in Shanghai" when present, just the timezone otherwise.
+    const createdLocation = trigger.location ?? getUserLocation();
+    return {
+      ...trigger,
+      type: typeValue,
+      timezone,
+      ...(createdLocation ? { location: createdLocation } : {})
+    };
   }
 
   if (trigger?.natural_language) {
@@ -77,7 +74,11 @@ function ensureTrigger(trigger) {
     if (!parsed.ok) {
       throw new Error(parsed.error);
     }
-    return parsed.trigger;
+    const parsedTrigger = parsed.trigger;
+    const createdLocation = parsedTrigger.location ?? getUserLocation();
+    return createdLocation
+      ? { ...parsedTrigger, location: createdLocation }
+      : parsedTrigger;
   }
 
   throw new Error("Schedule trigger is required.");

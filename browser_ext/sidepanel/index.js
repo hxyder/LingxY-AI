@@ -28,6 +28,7 @@ const actionClearBtn = document.getElementById("sp-action-clear");
 const actionPageBtn = document.getElementById("sp-action-page");
 const actionVideoBtn = document.getElementById("sp-action-video");
 const actionSelectionBtn = document.getElementById("sp-action-selection");
+const actionLocationBtn = document.getElementById("sp-action-location");
 
 let conversation = [];
 let activeStreamPort = null;
@@ -307,98 +308,110 @@ function createCompactUserTurn({ displayLabel, attached = "" }) {
     : { role: "user", content: attached || displayLabel || "" };
 }
 
-async function runQuickActionTurn({ action, selectionState = {}, displayLabel = "", attached = "" } = {}) {
+async function startFreshAnalysisThread() {
+  conversation = [];
+  turnCounter = 0;
+  await saveHistory();
+  renderHistory();
+}
+
+async function runQuickActionTurn({ action, selectionState = {}, displayLabel = "", attached = "", resetConversation = true } = {}) {
   return new Promise((resolve) => {
     if (isBusy) { resolve({ ok: false, error: "busy" }); return; }
-    isBusy = true;
-    sendBtn.disabled = true;
-    inputEl.disabled = true;
-    actionPageBtn.disabled = actionVideoBtn.disabled = actionSelectionBtn.disabled = true;
-    statusEl.textContent = "连接中…";
-    const startedAt = Date.now();
-
-    const userTurn = createCompactUserTurn({
-      displayLabel,
-      attached
-    });
-    conversation.push(userTurn);
-    appendTurnEl(userTurn);
-
-    const streamingTurn = { role: "assistant", content: "" };
-    conversation.push(streamingTurn);
-    const streamingEl = appendTurnEl(streamingTurn);
-    streamingEl.classList.add("streaming");
-
-    let port;
-    try {
-      port = chrome.runtime.connect({ name: "uca.quickaction.stream" });
-    } catch (error) {
-      finishWithError(streamingEl, `连接失败：${error?.message ?? error}`);
-      resolve({ ok: false });
-      return;
-    }
-
-    activeStreamPort = port;
-    let settled = false;
-    let acc = "";
-    const settle = async (role, content) => {
-      if (settled) return;
-      settled = true;
-      activeStreamPort = null;
-      streamingEl.classList.remove("streaming");
-      if (role === "error") {
-        streamingEl.classList.remove("assistant");
-        streamingEl.classList.add("error");
-        streamingEl.textContent = content;
-        conversation[conversation.length - 1] = { role: "error", content };
-      } else {
-        turnCounter += 1;
-        const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
-        const approxTokens = Math.max(1, Math.round((content ?? "").length / 3.5));
-        const metaText = [`第 ${turnCounter} 轮`, `${elapsedSec}s`, `~${approxTokens.toLocaleString()} tokens`].join(" · ");
-        streamingEl.innerHTML = renderMd(content);
-        const metaEl = document.createElement("div");
-        metaEl.className = "sp-turn-meta";
-        metaEl.textContent = metaText;
-        streamingEl.appendChild(metaEl);
-        conversation[conversation.length - 1] = { role: "assistant", content, meta: metaText };
+    void (async () => {
+      if (resetConversation) {
+        await startFreshAnalysisThread();
       }
-      await saveHistory();
-      sendBtn.disabled = false;
-      inputEl.disabled = false;
-      actionPageBtn.disabled = actionVideoBtn.disabled = actionSelectionBtn.disabled = false;
-      statusEl.textContent = "";
-      isBusy = false;
-      try { port.disconnect(); } catch { /* ignore */ }
-      resolve({ ok: role !== "error" });
-    };
+      isBusy = true;
+      sendBtn.disabled = true;
+      inputEl.disabled = true;
+      actionPageBtn.disabled = actionVideoBtn.disabled = actionSelectionBtn.disabled = true;
+      statusEl.textContent = "连接中…";
+      const startedAt = Date.now();
 
-    port.onMessage.addListener((msg) => {
-      if (msg?.type === "start") {
-        statusEl.textContent = "分析中…";
-      } else if (msg?.type === "chunk") {
-        acc = typeof msg.full === "string" ? msg.full : (acc + (msg.delta ?? ""));
-        streamingEl.innerHTML = renderMd(acc);
-        historyEl.scrollTop = historyEl.scrollHeight;
-      } else if (msg?.type === "done") {
-        settle("assistant", msg.text ?? acc);
-      } else if (msg?.type === "error") {
-        settle("error", `失败：${msg.error ?? "unknown"}`);
+      const userTurn = createCompactUserTurn({
+        displayLabel,
+        attached
+      });
+      conversation.push(userTurn);
+      appendTurnEl(userTurn);
+
+      const streamingTurn = { role: "assistant", content: "" };
+      conversation.push(streamingTurn);
+      const streamingEl = appendTurnEl(streamingTurn);
+      streamingEl.classList.add("streaming");
+
+      let port;
+      try {
+        port = chrome.runtime.connect({ name: "uca.quickaction.stream" });
+      } catch (error) {
+        finishWithError(streamingEl, `连接失败：${error?.message ?? error}`);
+        resolve({ ok: false });
+        return;
       }
-    });
 
-    port.onDisconnect.addListener(() => {
-      if (!settled) {
-        if (acc) settle("assistant", acc);
-        else settle("error", "连接意外断开");
-      }
-    });
+      activeStreamPort = port;
+      let settled = false;
+      let acc = "";
+      const settle = async (role, content) => {
+        if (settled) return;
+        settled = true;
+        activeStreamPort = null;
+        streamingEl.classList.remove("streaming");
+        if (role === "error") {
+          streamingEl.classList.remove("assistant");
+          streamingEl.classList.add("error");
+          streamingEl.textContent = content;
+          conversation[conversation.length - 1] = { role: "error", content };
+        } else {
+          turnCounter += 1;
+          const elapsedSec = ((Date.now() - startedAt) / 1000).toFixed(1);
+          const approxTokens = Math.max(1, Math.round((content ?? "").length / 3.5));
+          const metaText = [`第 ${turnCounter} 轮`, `${elapsedSec}s`, `~${approxTokens.toLocaleString()} tokens`].join(" · ");
+          streamingEl.innerHTML = renderMd(content);
+          const metaEl = document.createElement("div");
+          metaEl.className = "sp-turn-meta";
+          metaEl.textContent = metaText;
+          streamingEl.appendChild(metaEl);
+          conversation[conversation.length - 1] = { role: "assistant", content, meta: metaText };
+        }
+        await saveHistory();
+        sendBtn.disabled = false;
+        inputEl.disabled = false;
+        actionPageBtn.disabled = actionVideoBtn.disabled = actionSelectionBtn.disabled = false;
+        statusEl.textContent = "";
+        isBusy = false;
+        try { port.disconnect(); } catch { /* ignore */ }
+        resolve({ ok: role !== "error" });
+      };
 
-    port.postMessage({
-      type: "quickaction",
-      action,
-      selectionState
-    });
+      port.onMessage.addListener((msg) => {
+        if (msg?.type === "start") {
+          statusEl.textContent = "分析中…";
+        } else if (msg?.type === "chunk") {
+          acc = typeof msg.full === "string" ? msg.full : (acc + (msg.delta ?? ""));
+          streamingEl.innerHTML = renderMd(acc);
+          historyEl.scrollTop = historyEl.scrollHeight;
+        } else if (msg?.type === "done") {
+          settle("assistant", msg.text ?? acc);
+        } else if (msg?.type === "error") {
+          settle("error", `失败：${msg.error ?? "unknown"}`);
+        }
+      });
+
+      port.onDisconnect.addListener(() => {
+        if (!settled) {
+          if (acc) settle("assistant", acc);
+          else settle("error", "连接意外断开");
+        }
+      });
+
+      port.postMessage({
+        type: "quickaction",
+        action,
+        selectionState
+      });
+    })();
   });
 }
 
@@ -444,8 +457,11 @@ async function extractPagePlainText(tabId) {
   }
 }
 
-async function onAnalyzePageV2({ mode = "analyze" } = {}) {
+async function onAnalyzePageV2({ mode = "analyze", resetConversation = true } = {}) {
   if (isBusy) return;
+  if (resetConversation) {
+    await startFreshAnalysisThread();
+  }
   const tab = await getActiveTab();
   if (!tab?.id) {
     appendTurnEl({ role: "error", content: "当前没有可分析的标签页" });
@@ -486,8 +502,11 @@ async function onAnalyzePageV2({ mode = "analyze" } = {}) {
   });
 }
 
-async function onAnalyzeSelection() {
+async function onAnalyzeSelection({ resetConversation = true } = {}) {
   if (isBusy) return;
+  if (resetConversation) {
+    await startFreshAnalysisThread();
+  }
   const tab = await getActiveTab();
   if (!tab?.id) {
     appendTurnEl({ role: "error", content: "当前没有可分析的标签页" });
@@ -520,15 +539,18 @@ async function onAnalyzeSelection() {
   }
 }
 
-async function onAnalyzeVideo() {
+async function onAnalyzeVideo({ resetConversation = true } = {}) {
   // For the sidepanel, video analysis shares the same capture path as page
   // analysis — __ucaPageSourceCapture already detects YouTube and returns
   // transcript. Users get a hint if the current page isn't a video.
+  if (resetConversation) {
+    await startFreshAnalysisThread();
+  }
   const tab = await getActiveTab();
   if (!/youtube\.com|youtu\.be/.test(tab?.url ?? "")) {
     appendTurnEl({ role: "system", content: "(提示：当前不是 YouTube 页面。点 [分析此页] 也一样能用；视频支持正在逐步扩展到其他平台。)" });
   }
-  await onAnalyzePageV2();
+  await onAnalyzePageV2({ resetConversation: false });
 }
 
 function buildQuickActionDisplayLabel(action, selectionState = {}) {
@@ -582,7 +604,7 @@ async function runPendingAnalysis(request = null) {
     return;
   }
   if (request.kind === "page_explain") {
-    await onAnalyzePageV2({ mode: "explain" });
+    await onAnalyzePageV2({ mode: "explain", resetConversation: true });
     return;
   }
   if (request.kind === "quickaction") {
@@ -590,7 +612,8 @@ async function runPendingAnalysis(request = null) {
       action: request.action,
       selectionState: request.selectionState ?? {},
       displayLabel: request.displayLabel ?? buildQuickActionDisplayLabel(request.action, request.selectionState),
-      attached: request.attached ?? buildQuickActionAttached(request.action, request.selectionState)
+      attached: request.attached ?? buildQuickActionAttached(request.action, request.selectionState),
+      resetConversation: true
     });
   }
 }
@@ -627,22 +650,119 @@ inputEl.addEventListener("keydown", (event) => {
 });
 
 actionClearBtn.addEventListener("click", () => { void onClear(); });
-actionPageBtn.addEventListener("click", () => { void onAnalyzePageV2(); });
-actionVideoBtn.addEventListener("click", () => { void onAnalyzeVideo(); });
-actionSelectionBtn.addEventListener("click", () => { void onAnalyzeSelection(); });
+actionPageBtn.addEventListener("click", () => { void onAnalyzePageV2({ resetConversation: true }); });
+actionVideoBtn.addEventListener("click", () => { void onAnalyzeVideo({ resetConversation: true }); });
+actionSelectionBtn.addEventListener("click", () => { void onAnalyzeSelection({ resetConversation: true }); });
+actionLocationBtn.addEventListener("click", () => { void onLocationChipClick(); });
 optionsBtn.addEventListener("click", () => {
   try { chrome.runtime.openOptionsPage(); } catch { /* ignore */ }
 });
+
+/* ── Location chip ───────────────────────────────────────────────────
+ * Shows cached status; on click requests real geolocation. Chrome-origin
+ * permission is gated to a user gesture, so this MUST stay wired to the
+ * direct click listener — no async detour before requestPreciseLocation.
+ */
+async function refreshLocationChip() {
+  try {
+    const { getCachedLocation, formatLocationLabel } = await import("../shared/location.js");
+    const cached = await getCachedLocation();
+    if (cached) {
+      actionLocationBtn.textContent = `📍 ${formatLocationLabel(cached)}`;
+      actionLocationBtn.title = "已授权。点击刷新或清除";
+      actionLocationBtn.classList.remove("sp-chip-ghost");
+    } else {
+      actionLocationBtn.textContent = "📍 定位：未授权";
+      actionLocationBtn.title = "点击以启用精确定位（会弹权限）";
+      actionLocationBtn.classList.add("sp-chip-ghost");
+    }
+  } catch {
+    /* best effort */
+  }
+}
+
+// Forward a fresh fix to the desktop service so the agent-loop sees it
+// without waiting for the next capture submission. Best effort — if the
+// desktop isn't up, the next task POST will carry the location anyway.
+async function pushLocationToDesktop(location, { clear = false } = {}) {
+  try {
+    const status = await new Promise((resolve) => {
+      chrome.runtime.sendMessage({ type: "uca.standalone.status" }, resolve);
+    });
+    const base = status?.runtimeUrl;
+    if (!base || !status?.desktopAvailable) return;
+    if (clear) {
+      await fetch(`${base}/location`, { method: "DELETE" });
+    } else if (location) {
+      await fetch(`${base}/location`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ location })
+      });
+    }
+  } catch {
+    /* desktop offline is fine */
+  }
+}
+
+async function onLocationChipClick() {
+  const { requestPreciseLocation, clearCachedLocation, getCachedLocation, formatLocationLabel } =
+    await import("../shared/location.js");
+  const existing = await getCachedLocation();
+  if (existing) {
+    const choice = window.confirm(
+      `当前定位：${formatLocationLabel(existing)}\n\n按「确定」重新获取，按「取消」清除并撤销授权（下次需重新允许）。`
+    );
+    if (choice) {
+      actionLocationBtn.textContent = "📍 定位中…";
+      const r = await requestPreciseLocation();
+      if (r.ok) {
+        actionLocationBtn.textContent = `📍 ${formatLocationLabel(r.location)}`;
+        void pushLocationToDesktop(r.location);
+      } else {
+        actionLocationBtn.textContent = `📍 失败：${r.reason}`;
+      }
+    } else {
+      // Full revoke: clears our cache, revokes the optional Chrome
+      // permission (next click prompts again), and tells the desktop
+      // service to drop its mirror. Without all three, "cancel" only
+      // touches one of the three places where state lives and the user
+      // sees stale data until they force-reload.
+      await clearCachedLocation();
+      void pushLocationToDesktop(null, { clear: true });
+      actionLocationBtn.textContent = "📍 定位：已撤销";
+      actionLocationBtn.classList.add("sp-chip-ghost");
+      setTimeout(() => void refreshLocationChip(), 600);
+    }
+    return;
+  }
+  actionLocationBtn.textContent = "📍 请求授权…";
+  const r = await requestPreciseLocation();
+  if (r.ok) {
+    actionLocationBtn.textContent = `📍 ${formatLocationLabel(r.location)}`;
+    actionLocationBtn.classList.remove("sp-chip-ghost");
+    void pushLocationToDesktop(r.location);
+  } else if (r.reason === "permission_denied") {
+    actionLocationBtn.textContent = "📍 已拒绝";
+    actionLocationBtn.title = "你拒绝了授权。再次点击会重新弹出权限请求。";
+  } else if (r.reason === "no_permissions_api") {
+    actionLocationBtn.textContent = "📍 不支持";
+  } else {
+    actionLocationBtn.textContent = `📍 失败：${r.reason}`;
+  }
+}
 
 /* ── Boot ──────────────────────────────────────────────────────────── */
 (async () => {
   await loadHistory();
   renderHistory();
   void refreshMode();
+  void refreshLocationChip();
   await consumePendingAnalysis();
   chrome.storage.onChanged?.addListener((changes, area) => {
     if (area !== "local") return;
     const next = changes?.[PENDING_ANALYSIS_KEY]?.newValue ?? null;
     if (next) void runPendingAnalysis(next);
+    if (changes?.ucaUserLocation) void refreshLocationChip();
   });
 })();

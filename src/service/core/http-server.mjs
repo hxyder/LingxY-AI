@@ -12,6 +12,8 @@ import { createTaskEventStream, encodeSseFrame, SSE_HEADERS } from "../events/ss
 import { retryTask } from "../retry/retry-manager.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import { cancelTask, emitTaskEvent, readTaskEventLog } from "./task-runtime.mjs";
+import { setUserLocation, getUserLocation, clearUserLocation } from "../utils/location.mjs";
+import { refreshWindowsLocation } from "../utils/windows-geolocator.mjs";
 import { tryFastPath } from "./router/fast-path-router.mjs";
 import { submitActionToolTask } from "./action-tool-submission.mjs";
 import { submitBrowserTask } from "./browser-submission.mjs";
@@ -940,6 +942,16 @@ function summarizeTask(runtime, taskId) {
 }
 
 async function submitTaskFromBody(runtime, body) {
+  // Pick up any location fix the caller shipped along with the task
+  // (browser extension does this whenever the user has granted precise
+  // location). Every task submission doubles as a low-latency freshness
+  // signal — no separate polling needed. We accept the field at either
+  // level because the capture helper mirrors it into both.
+  const incomingLocation = body.userLocation ?? body.capture?.userLocation ?? null;
+  if (incomingLocation) {
+    setUserLocation(incomingLocation);
+  }
+
   // UCA-060: Reject requests with no user command — prevents the hotkey
   // "capture active window then send immediately" from using window content
   // as the query when the user hasn't typed anything yet.
@@ -2108,6 +2120,37 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         const body = await readJsonBody(request);
         const result = await submitTaskFromBody(runtime, body);
         return sendJson(response, 200, result);
+      }
+
+      // /location — browser extension pushes fresh fixes here after the
+      // user grants the Chrome geolocation prompt. GET returns the current
+      // cached fix (null when not granted); DELETE wipes it. Keeps the
+      // service honest: it only knows location the user has consented to.
+      if (method === "GET" && url.pathname === "/location") {
+        return sendJson(response, 200, { ok: true, location: getUserLocation() });
+      }
+      if (method === "POST" && url.pathname === "/location") {
+        const body = await readJsonBody(request);
+        const stored = setUserLocation(body?.location ?? body);
+        if (!stored) {
+          return sendJson(response, 400, { ok: false, error: "invalid_location" });
+        }
+        return sendJson(response, 200, { ok: true, location: stored });
+      }
+      if (method === "DELETE" && url.pathname === "/location") {
+        clearUserLocation();
+        return sendJson(response, 200, { ok: true });
+      }
+
+      // Trigger a Windows-side fix. Used by the desktop console's "📍"
+      // button so users who never open the browser sidepanel can still
+      // grant location. Returns the same shape as GET /location on
+      // success, or { ok: false, reason } so the UI can render a
+      // remediation hint (open ms-settings:privacy-location, etc).
+      if (method === "POST" && url.pathname === "/location/windows") {
+        const result = await refreshWindowsLocation();
+        const status = result.ok ? 200 : 400;
+        return sendJson(response, status, result);
       }
 
       // UCA-059: /task/clarify — merge original command + clarification answer

@@ -3,10 +3,34 @@ import { evaluateToolRisk } from "../action_tools/risk_matrix.mjs";
 import { executeProposedAction } from "./execute-action.mjs";
 import { applyScheduleRunOutcome } from "./failure_guard.mjs";
 import { computeNextRunAt } from "./misfire.mjs";
+import { getUserLocation, locationMatches } from "../utils/location.mjs";
 import {
   buildScheduleActionPreview,
   createScheduleRunRecord
 } from "./store.mjs";
+
+// Returns true (and the resolved location) when the schedule's optional
+// location_filter passes against the user's real (browser-granted)
+// location. Returns false and a skip reason when the user is "out of
+// region" — the trigger fired on the clock, but the geo-precondition isn't
+// met. We mark the run as `skipped_location` and advance next_run_at; we
+// do not retry, because the user might be travelling and we don't want to
+// queue up a backlog of "you're not in Shanghai right now" runs.
+//
+// When no location_filter is set, the gate is a no-op. When a filter IS
+// set but the user hasn't granted location yet, locationMatches() returns
+// false — the schedule stays idle until the user enables the "📍 启用精
+// 确定位" chip. This is the correct behaviour: a location-gated schedule
+// without a known location can't safely fire.
+function evaluateLocationGate(schedule) {
+  const filter = schedule.trigger_config?.location_filter;
+  const currentLocation = getUserLocation();
+  if (!filter || typeof filter !== "object") {
+    return { allowed: true, currentLocation };
+  }
+  const allowed = locationMatches(currentLocation, filter);
+  return { allowed, currentLocation, filter };
+}
 
 function shouldCreatePendingApproval(schedule, runtime) {
   if (schedule.execution_mode === "approval_required") {
@@ -117,12 +141,48 @@ export async function dispatchSchedule({
   const claimedSchedule = claimInFlight(runtime, schedule, now);
   Object.assign(schedule, claimedSchedule);
 
+  // Resolve the host's current coarse location once and weave it into both
+  // the location gate and the run's trigger metadata. The agent will read
+  // the `current_location` field out of triggerPayload so a scheduled
+  // "morning digest" task knows whether the user is in Shanghai or Tokyo
+  // when the run fires.
+  const locationGate = evaluateLocationGate(schedule);
+  const enrichedTriggerPayload = {
+    ...triggerPayload,
+    current_location: locationGate.currentLocation
+  };
+
   const run = createScheduleRunRecord({
     scheduleId,
     triggerReason: reason,
-    metadata: triggerPayload
+    metadata: enrichedTriggerPayload
   });
   runtime.store.appendScheduleRun(run);
+
+  if (!locationGate.allowed) {
+    appendAuditLog(runtime, "schedule.trigger", {
+      schedule_id: schedule.schedule_id,
+      trigger_reason: reason,
+      execution_mode: schedule.execution_mode,
+      skipped: "location_filter",
+      current_location: locationGate.currentLocation,
+      filter: locationGate.filter
+    });
+    const whereLabel = locationGate.currentLocation
+      ? (locationGate.currentLocation.city ?? locationGate.currentLocation.timezone ?? "unknown")
+      : "unknown (location not granted)";
+    updateRun(runtime.store, run.run_id, {
+      status: "skipped_location",
+      error_message: `Skipped: user is in ${whereLabel}, schedule requires ${JSON.stringify(locationGate.filter)}.`
+    });
+    updateScheduleAfterRun(runtime, schedule, "skipped_location", now);
+    releaseInFlight(schedule.schedule_id);
+    return {
+      status: "skipped_location",
+      run: runtime.store.getScheduleRun(run.run_id),
+      reason: "location_filter"
+    };
+  }
 
   appendAuditLog(runtime, "schedule.trigger", {
     schedule_id: schedule.schedule_id,

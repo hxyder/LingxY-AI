@@ -12,6 +12,9 @@
     "sidePanel",
     "storage"
   ],
+  "optional_permissions": [
+    "geolocation"
+  ],
   "host_permissions": [
     "<all_urls>",
     "https://api.anthropic.com/*",
@@ -21,6 +24,7 @@
     "https://ark.cn-beijing.volces.com/*",
     "https://api.moonshot.cn/*",
     "https://dashscope.aliyuncs.com/*",
+    "https://dashscope-us.aliyuncs.com/*",
     "https://open.bigmodel.cn/*",
     "https://api.siliconflow.cn/*",
     "https://api.lingyiwanwu.com/*",

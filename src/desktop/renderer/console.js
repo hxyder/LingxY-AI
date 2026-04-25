@@ -23,6 +23,7 @@ const summaryGrid = document.querySelector("#summaryGrid");
 const integrationList = document.querySelector("#integrationList");
 const refreshButton = document.querySelector("#refreshButton");
 const openOverlayButton = document.querySelector("#openOverlayButton");
+const locationButton = document.querySelector("#locationButton");
 const onboardingState = document.querySelector("#onboardingState");
 const wizardList = document.querySelector("#wizardList");
 const taskComposer = document.querySelector("#taskComposer");
@@ -4384,6 +4385,90 @@ document.addEventListener("keydown", (event) => {
 
 refreshButton.addEventListener("click", () => void refreshWorkspace());
 openOverlayButton.addEventListener("click", async () => await window.ucaShell.showWindow("overlay"));
+
+/* ── Desktop location chip ──────────────────────────────────────────────
+ * Hooks the Windows-side geolocator (System.Device.Location via PowerShell
+ * in the service). Three states:
+ *   - unknown         → click to fetch
+ *   - has fix         → tooltip shows city; click again to refresh, shift-click to clear
+ *   - denied/unavail  → guides user to ms-settings:privacy-location
+ *
+ * Reads /location on boot to sync the icon's tooltip with whatever fix the
+ * service already has (could be a browser-pushed fix from earlier).
+ */
+function describeLocationReason(reason) {
+  switch (reason) {
+    case "denied":
+      return "Windows 拒绝了位置访问。请在 设置 → 隐私和安全性 → 定位 中打开「定位服务」和「让桌面应用访问你的位置」。";
+    case "unavailable":
+      return "Windows 定位服务已开启但当前没有可用读数（无 GPS、无 Wi-Fi 定位）。换个网络或稍后再试。";
+    case "timeout":
+      return "Windows 定位查询超时（>12s）。再试一次。";
+    case "unsupported_platform":
+      return "桌面定位仅支持 Windows。在 Mac/Linux 请改用浏览器侧栏的 📍 按钮。";
+    default:
+      return `查询失败：${reason}`;
+  }
+}
+
+async function refreshDesktopLocationChip() {
+  if (!locationButton) return;
+  try {
+    const r = await fetchJson("/location");
+    const loc = r?.location;
+    if (loc) {
+      const where = loc.city
+        ? `${loc.city}${loc.country ? `, ${loc.country}` : ""}`
+        : `${loc.latitude?.toFixed?.(3) ?? "?"}, ${loc.longitude?.toFixed?.(3) ?? "?"}`;
+      const acc = typeof loc.accuracyMeters === "number" ? `, ±${Math.round(loc.accuracyMeters)}m` : "";
+      locationButton.title = `定位：${where} (${loc.timezone}${acc}, source=${loc.source ?? "?"}). Shift+点击 清除`;
+      locationButton.dataset.granted = "1";
+    } else {
+      locationButton.title = "启用 Windows 定位（用于地点相关查询和触发器）。点击调用系统定位服务";
+      delete locationButton.dataset.granted;
+    }
+  } catch {
+    /* desktop service down — leave default tooltip */
+  }
+}
+
+locationButton?.addEventListener("click", async (event) => {
+  if (!locationButton) return;
+  if (event.shiftKey) {
+    try {
+      await fetchJson("/location", { method: "DELETE" });
+      locationButton.title = "已清除桌面定位";
+      delete locationButton.dataset.granted;
+    } catch (err) {
+      locationButton.title = `清除失败：${err.message}`;
+    }
+    return;
+  }
+  const original = locationButton.title;
+  locationButton.title = "查询 Windows 定位中…";
+  try {
+    const r = await fetchJson("/location/windows", { method: "POST" });
+    if (r?.ok) {
+      const loc = r.location;
+      const where = loc.city ? `${loc.city}${loc.country ? `, ${loc.country}` : ""}` : `${loc.latitude.toFixed(3)}, ${loc.longitude.toFixed(3)}`;
+      const acc = typeof loc.accuracyMeters === "number" ? `, ±${Math.round(loc.accuracyMeters)}m` : "";
+      locationButton.title = `定位：${where} (${loc.timezone}${acc}). Shift+点击 清除`;
+      locationButton.dataset.granted = "1";
+    } else {
+      const reason = r?.reason ?? "unknown";
+      locationButton.title = describeLocationReason(reason);
+      if (reason === "denied" && window.ucaShell?.openExternal) {
+        window.ucaShell.openExternal("ms-settings:privacy-location").catch(() => {});
+      }
+    }
+  } catch (err) {
+    locationButton.title = original;
+    console.warn("[location] fetch failed", err);
+  }
+});
+
+// Hydrate on boot so the icon tooltip shows the current state immediately.
+void refreshDesktopLocationChip();
 
 // UCA-104: keyboard-shortcut cheatsheet — open with Ctrl+/ or the ? button,
 // close with Esc / backdrop click / × button.

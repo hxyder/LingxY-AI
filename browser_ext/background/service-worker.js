@@ -13,6 +13,28 @@ import {
   shouldEnrichForAction
 } from "./context-enricher.js";
 import { runTaskWithStream } from "./sse-client.js";
+import { getCachedLocation, getSystemTimezone, STORAGE_KEY as LOCATION_STORAGE_KEY } from "../shared/location.js";
+
+// In-memory mirror of the user's cached geolocation (populated by the
+// sidepanel after the user grants the Chrome prompt). We hydrate from
+// chrome.storage.local on worker start and refresh on change. This exists
+// so buildCapturePayload() can stay synchronous — MV3 service workers may
+// be torn down between message handlers, but module-level caches survive
+// the current handler lifetime and rehydrate cheaply on wake-up.
+let _locationCache = null;
+async function hydrateLocationCache() {
+  _locationCache = await getCachedLocation();
+}
+void hydrateLocationCache();
+try {
+  chrome.storage?.onChanged?.addListener((changes, area) => {
+    if (area === "local" && changes?.[LOCATION_STORAGE_KEY]) {
+      _locationCache = changes[LOCATION_STORAGE_KEY].newValue ?? null;
+    }
+  });
+} catch {
+  /* ignore — test environments may lack chrome.storage */
+}
 
 export const CONTEXT_MENU_DEFINITIONS = Object.freeze([
   {
@@ -104,6 +126,48 @@ export function createContextMenuDefinitions() {
   return CONTEXT_MENU_DEFINITIONS.map((item) => ({ ...item }));
 }
 
+function createContextMenuSafe(chromeApi, item) {
+  return new Promise((resolve) => {
+    try {
+      chromeApi.contextMenus.create(item, () => {
+        const message = chromeApi.runtime?.lastError?.message ?? "";
+        if (message && !/duplicate id/i.test(message)) {
+          console.warn("[lingxy-ext] context menu create failed:", item?.id, message);
+        }
+        resolve();
+      });
+    } catch (error) {
+      console.warn("[lingxy-ext] context menu create threw:", item?.id, error?.message ?? error);
+      resolve();
+    }
+  });
+}
+
+async function syncContextMenus(chromeApi = chrome) {
+  if (!chromeApi.contextMenus?.removeAll || !chromeApi.contextMenus?.create) return;
+  await new Promise((resolve) => {
+    try {
+      chromeApi.contextMenus.removeAll(() => {
+        const message = chromeApi.runtime?.lastError?.message ?? "";
+        if (message && !/cannot find|not found/i.test(message)) {
+          console.warn("[lingxy-ext] context menu reset failed:", message);
+        }
+        resolve();
+      });
+    } catch {
+      resolve();
+    }
+  });
+  for (const item of createContextMenuDefinitions()) {
+    await createContextMenuSafe(chromeApi, item);
+  }
+  await createContextMenuSafe(chromeApi, {
+    id: "uca.open-sidepanel",
+    title: "打开 LingxY 侧边栏",
+    contexts: ["action", "page"]
+  });
+}
+
 async function ensureOverlayDefaults(chromeApi = chrome) {
   const stored = await chromeApi.storage.local.get(["ucaOverlaySettings", "ucaOverlaySecurityState"]);
   if (!stored.ucaOverlaySettings) {
@@ -141,6 +205,12 @@ function buildCapturePayload({ actionId, info = {}, tab, selectionState, overrid
     // link fetches) and added 2-3 s of wasted wall time on top of the LLM
     // call — symptom: 10 s translates.
     actionId,
+    // Timezone is free and non-sensitive. Real location is only attached
+    // when the user has clicked the "📍 启用精确定位" chip and Chrome
+    // granted the geolocation permission — otherwise userLocation is null
+    // and the service treats the request as "location unknown".
+    userTimezone: getSystemTimezone(),
+    userLocation: _locationCache ?? null,
     capture: {
       sourceType: overrideSourceType ?? selected.sourceType,
       browser: "chrome.exe",
@@ -153,7 +223,12 @@ function buildCapturePayload({ actionId, info = {}, tab, selectionState, overrid
       anchorText: info.linkText ?? selectionState?.anchorText ?? "",
       imageUrl: info.srcUrl ?? selectionState?.imageUrl ?? "",
       html: selectionState?.html ?? "",
-      tabId: tab?.id ?? selectionState?.tabId ?? null
+      tabId: tab?.id ?? selectionState?.tabId ?? null,
+      // Mirrored inside `capture` because some downstream paths (runDesktopTask,
+      // overlay handoff) only forward the capture object, not the wrapping
+      // payload. Cheap to duplicate; expensive to lose.
+      userTimezone: getSystemTimezone(),
+      userLocation: _locationCache ?? null
     }
   };
 }
@@ -709,11 +784,13 @@ export async function dispatchBrowserContextSnapshot(context, fetchImpl = fetch)
 
 export function registerExtensionRuntime(chromeApi = chrome) {
   chromeApi.runtime.onInstalled.addListener(async () => {
-    for (const item of createContextMenuDefinitions()) {
-      chromeApi.contextMenus.create(item);
-    }
+    await syncContextMenus(chromeApi);
     await ensureOverlayDefaults(chromeApi);
   });
+  chromeApi.runtime?.onStartup?.addListener?.(() => {
+    void syncContextMenus(chromeApi);
+  });
+  void syncContextMenus(chromeApi);
 
   chromeApi.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === "uca.explain-page") {
@@ -1268,16 +1345,6 @@ function registerSidePanel(chromeApi = chrome) {
   try {
     chromeApi.sidePanel.setPanelBehavior({ openPanelOnActionClick: false });
   } catch { /* ignore */ }
-  // Context menu entry — works regardless of popup focus.
-  if (chromeApi.contextMenus?.create) {
-    try {
-      chromeApi.contextMenus.create({
-        id: "uca.open-sidepanel",
-        title: "打开 LingxY 侧边栏",
-        contexts: ["action", "page"]
-      });
-    } catch { /* already created across SW restarts */ }
-  }
   chromeApi.contextMenus?.onClicked?.addListener((info, tab) => {
     if (info.menuItemId !== "uca.open-sidepanel") return;
     if (tab?.windowId && chromeApi.sidePanel?.open) {
