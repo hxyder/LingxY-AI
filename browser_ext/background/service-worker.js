@@ -1196,6 +1196,15 @@ function registerChatStreamPort(chromeApi = chrome) {
           onChunk: (delta, full) => {
             if (aborted) return;
             try { port.postMessage({ type: "chunk", delta, full }); } catch { /* port closed */ }
+          },
+          // 83.4 — surface reasoning_content (Qwen3 thinking, DeepSeek
+          // reasoning) as separate stream events so the sidepanel can
+          // render a folded "🧠 思考过程" card next to the assistant
+          // bubble. Without this the user just sees a long pause until
+          // the model finishes thinking and starts emitting content.
+          onReasoningChunk: (delta, full) => {
+            if (aborted) return;
+            try { port.postMessage({ type: "reasoning_chunk", delta, full }); } catch { /* port closed */ }
           }
         });
       }

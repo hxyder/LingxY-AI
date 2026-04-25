@@ -237,7 +237,7 @@ function parseSseFrame(raw) {
   return { event, data };
 }
 
-async function streamOpenAICompat(config, { apiKey, model, messages, reasoningEffort = "", maxTokens = 1024, onChunk, signal }) {
+async function streamOpenAICompat(config, { apiKey, model, messages, reasoningEffort = "", maxTokens = 1024, onChunk, onReasoningChunk, signal }) {
   const headers = { "Content-Type": "application/json", Accept: "text/event-stream" };
   if (config.authStyle === "bearer" && apiKey) headers.Authorization = `Bearer ${apiKey}`;
   const body = {
@@ -279,13 +279,14 @@ async function streamOpenAICompat(config, { apiKey, model, messages, reasoningEf
       fullContent += contentDelta;
       onChunk?.(contentDelta, fullContent);
     }
-    // Reasoning delta — accumulate silently. We don't stream it to the user
-    // here because the popup/sidepanel bubble doesn't have a "thinking"
-    // section, and mixing thinking into the content would confuse the
-    // reader. But we DO keep it so the "empty stream" check below isn't
-    // fooled into triggering the non-streaming fallback.
+    // Reasoning delta — surface via onReasoningChunk so the sidepanel can
+    // render a folded "🧠 思考过程" section in real time. Falling back to
+    // accumulate-only when no callback is provided so older callers don't
+    // break. Either way we keep the running total so the "empty stream"
+    // fallback heuristic at line ~389 sees that the model produced bytes.
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
       fullReasoning += delta.reasoning_content;
+      onReasoningChunk?.(delta.reasoning_content, fullReasoning);
     }
   }
   return {
@@ -384,7 +385,7 @@ async function streamGemini({ apiKey, model, messages, systemPrompt, maxTokens =
   return { ok: true, text: full };
 }
 
-export async function callLLMDirectStream({ config, messages, systemPrompt, maxTokens, onChunk, signal }) {
+export async function callLLMDirectStream({ config, messages, systemPrompt, maxTokens, onChunk, onReasoningChunk, signal }) {
   const normalizedConfig = normalizeStandaloneConfig(config);
   const provider = normalizedConfig?.provider;
   try {
@@ -415,7 +416,7 @@ export async function callLLMDirectStream({ config, messages, systemPrompt, maxT
           apiKey: normalizedConfig.apiKey, model: normalizedConfig.model,
           messages: effectiveMessages,
           reasoningEffort: normalizedConfig.reasoningEffort,
-          maxTokens, onChunk, signal
+          maxTokens, onChunk, onReasoningChunk, signal
         }
       );
     }

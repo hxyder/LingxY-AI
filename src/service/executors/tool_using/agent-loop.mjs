@@ -803,6 +803,14 @@ Use the native tool interface when a tool is needed. Call at most ONE tool per t
           tool_id: toolName,
           partial_json: partialJson
         });
+      },
+      // 83.4 — Stream reasoning_content (Qwen3 thinking, DeepSeek reasoner)
+      // as a separate event so renderers (overlay, console) can render a
+      // collapsible "🧠 思考过程" card next to the main bubble. Provider
+      // adapters that don't expose reasoning never call this — silent no-op.
+      onReasoningDelta: (delta) => {
+        if (!delta) return;
+        task.__runtime?.emitTaskEvent?.("reasoning_delta", { delta });
       }
     });
     resultText = response?.text ?? "";

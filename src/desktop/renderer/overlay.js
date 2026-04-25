@@ -939,17 +939,57 @@ function getToolEventId(frame) {
   return frame.data?.tool_id ?? frame.data?.tool ?? "";
 }
 
+// 83.3 — Tool-call card. Renders as a <details> so the user can collapse
+// long arg blobs and result previews. Plain ✓ / ✗ + tool name remains the
+// single-line summary (matches the screenshot the user critiqued, just
+// inside a polished card chrome).
+function escapeHtmlForOverlay(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+const TOOL_STEP_ICONS = {
+  pending: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" opacity="0.3"/><path d="M12 3 a9 9 0 0 1 9 9"/></svg>',
+  done:    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
+  fail:    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'
+};
+const STEP_CHEVRON =
+  '<svg class="step-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
+
+function buildToolStepInner(toolId, state, args, observation) {
+  const icon = TOOL_STEP_ICONS[state] ?? TOOL_STEP_ICONS.pending;
+  const argsText = args == null ? "" : (typeof args === "string" ? args : JSON.stringify(args, null, 2));
+  const obsText = String(observation ?? "").trim();
+  const summaryText = obsText
+    ? obsText.replace(/\s+/g, " ").slice(0, 80)
+    : (state === "pending" ? "运行中…" : "");
+  const hasBody = Boolean(argsText || obsText);
+  const bodyHtml = hasBody
+    ? `<div class="step-body">${
+        argsText ? `<div class="step-args">${escapeHtmlForOverlay(argsText)}</div>` : ""
+      }${
+        obsText ? `<div class="step-outcome">${escapeHtmlForOverlay(obsText)}</div>` : ""
+      }</div>`
+    : "";
+  return `
+    <summary class="step-row">
+      <span class="step-icon">${icon}</span>
+      <span class="step-name">${escapeHtmlForOverlay(toolId)}</span>
+      <span class="step-summary">${escapeHtmlForOverlay(summaryText)}</span>
+      ${hasBody ? STEP_CHEVRON : ""}
+    </summary>
+    ${bodyHtml}
+  `;
+}
+
 function appendToolStepBubble(toolId, state = "pending", detailText = "") {
   if (!toolId) return null;
-  const stepEl = document.createElement("div");
+  // Use a <details> element so collapse/expand is native and CSS can hook
+  // the [open] attribute for the chevron rotation.
+  const stepEl = document.createElement("details");
   stepEl.className = `bubble step ${state}`;
-  stepEl.textContent = state === "pending" ? `${toolId}...` : toolId;
-  if (detailText) {
-    const detail = document.createElement("span");
-    detail.style.cssText = "display:block;font-size:10px;opacity:0.65;margin-top:2px;white-space:pre-wrap;";
-    detail.textContent = detailText;
-    stepEl.appendChild(detail);
-  }
+  stepEl.innerHTML = buildToolStepInner(toolId, state, null, detailText);
   bubbleArea.hidden = false;
   bubbleArea.appendChild(stepEl);
   bubbleArea.scrollTop = bubbleArea.scrollHeight;
@@ -961,16 +1001,57 @@ function markToolStepBubble(toolId, ok, observation = "") {
   const queue = pendingToolStepBubbles[toolId];
   const stepEl = queue?.length ? queue.shift() : appendToolStepBubble(toolId, ok ? "done" : "fail");
   if (!stepEl) return;
-  stepEl.className = `bubble step ${ok ? "done" : "fail"}`;
-  stepEl.textContent = `${ok ? "✓" : "✗"} ${toolId}`;
-  const obs = String(observation ?? "").replace(/\s+/g, " ").trim().slice(0, 120);
-  if (obs) {
-    const detail = document.createElement("span");
-    detail.style.cssText = "display:block;font-size:10px;opacity:0.65;margin-top:2px;white-space:pre-wrap;";
-    detail.textContent = obs;
-    stepEl.appendChild(detail);
-  }
+  const nextState = ok ? "done" : "fail";
+  stepEl.className = `bubble step ${nextState}`;
+  // Preserve any args we recorded during the pending phase (stored on the
+  // dataset by appendToolStepBubble's caller, if any) so the body shows
+  // both the call shape and the result.
+  const preservedArgs = stepEl.dataset.args ? safeJsonParseForOverlay(stepEl.dataset.args) : null;
+  stepEl.innerHTML = buildToolStepInner(toolId, nextState, preservedArgs, observation);
   bubbleArea.scrollTop = bubbleArea.scrollHeight;
+}
+
+function safeJsonParseForOverlay(raw) {
+  try { return JSON.parse(raw); } catch { return raw; }
+}
+
+// 83.4 — Thinking card. Streams reasoning_content into a folded <details>
+// above the answer bubble. We keep one in-flight thinking card per turn —
+// a new turn (signalled by a fresh text_delta or tool call) closes the
+// previous one. Module-level state because multiple events fire from
+// different code paths and we don't want to thread the ref everywhere.
+let activeThinkingEl = null;
+let activeThinkingText = "";
+function appendThinkingDelta(delta) {
+  if (!activeThinkingEl) {
+    const det = document.createElement("details");
+    det.className = "bubble thinking";
+    det.open = true;
+    det.innerHTML = `
+      <summary class="thinking-summary">
+        <span class="thinking-icon">🧠</span>
+        <span class="thinking-label">思考过程</span>
+        <span class="thinking-status">…</span>
+      </summary>
+      <div class="thinking-body"></div>
+    `;
+    bubbleArea.hidden = false;
+    bubbleArea.appendChild(det);
+    activeThinkingEl = det;
+    activeThinkingText = "";
+  }
+  activeThinkingText += delta;
+  const body = activeThinkingEl.querySelector(".thinking-body");
+  if (body) body.textContent = activeThinkingText;
+  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+}
+function closeActiveThinkingCard() {
+  if (!activeThinkingEl) return;
+  activeThinkingEl.open = false;
+  const status = activeThinkingEl.querySelector(".thinking-status");
+  if (status) status.textContent = `${activeThinkingText.length} chars`;
+  activeThinkingEl = null;
+  activeThinkingText = "";
 }
 
 // UCA-059: Show a clarification question bubble.
@@ -1249,6 +1330,13 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
       timelineAddStep(`调用 ${toolId}…`, "active");
       if (showOverlay) void maybeRevealOverlay();
       const stepEl = appendToolStepBubble(toolId, "pending");
+      // 83.3 — Stash args on the element so markToolStepBubble can re-render
+      // them inside the result body. The proposed/started events carry the
+      // arg payload; the completed event carries only the observation.
+      const callArgs = frame.data?.arguments ?? frame.data?.args ?? null;
+      if (stepEl && callArgs) {
+        try { stepEl.dataset.args = JSON.stringify(callArgs); } catch { /* ignore */ }
+      }
       if (!pendingToolStepBubbles[toolId]) pendingToolStepBubbles[toolId] = [];
       pendingToolStepBubbles[toolId].push(stepEl);
       if (window.livePreview?.isFileGenTool?.(toolId)) {
@@ -1261,6 +1349,14 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     if (window.livePreview?.isFileGenTool?.(toolId)) {
       window.livePreview.appendDelta({ toolName: toolId, partialJson: frame.data?.partial_json ?? "" });
     }
+  }
+  // 83.4 — Reasoning tokens from Qwen3 / DeepSeek thinking models. Renders
+  // a folded "🧠 思考过程" bubble that streams in real time. Uses appendOrAppend
+  // so multiple chunks land in the same card rather than spawning one card
+  // per delta.
+  if (frame.event === "reasoning_delta") {
+    const delta = String(frame.data?.delta ?? "");
+    if (delta) appendThinkingDelta(delta);
   }
   if (frame.event === "tool_call_completed") {
     const toolId = getToolEventId(frame);
@@ -1535,6 +1631,9 @@ async function handleTaskEventFrame(rawEvent) {
     if (!isForActiveConv) return; // silent streams don't build bubbles
     const delta = frame.data?.delta ?? frame.data?.text ?? "";
     if (!delta) return;
+    // 83.4 — first content chunk means thinking is over for this turn.
+    // Collapse the thinking card so the answer is the primary focus.
+    closeActiveThinkingCard();
     if (!streamingBubble) {
       streamingBubble = document.createElement("div");
       streamingBubble.className = "bubble assistant streaming";

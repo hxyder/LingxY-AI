@@ -362,7 +362,7 @@ function parseOpenAIResponse(data) {
   };
 }
 
-async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fetchImpl, onTextDelta, onToolInputDelta }) {
+async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fetchImpl, onTextDelta, onToolInputDelta, onReasoningDelta }) {
   const fetchFn = fetchImpl ?? globalThis.fetch;
   if (!fetchFn) throw new Error("No fetch implementation available for OpenAI-compatible adapter.");
 
@@ -443,6 +443,9 @@ async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fe
         }
         if (typeof delta.reasoning_content === "string" && delta.reasoning_content) {
           fullReasoning += delta.reasoning_content;
+          // 83.4 — fire per-chunk so overlay/console can render thinking
+          // progressively rather than waiting for the full reasoning blob.
+          onReasoningDelta?.(delta.reasoning_content);
         }
         if (Array.isArray(delta.tool_calls)) {
           for (const tc of delta.tool_calls) {

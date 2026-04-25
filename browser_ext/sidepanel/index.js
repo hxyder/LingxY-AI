@@ -252,15 +252,61 @@ function sendTurn({ userContent, systemContent = null, assistantPrefix = null, d
       resolve({ ok: role !== "error" });
     };
 
+    // 83.4 — Thinking card buffer. Reasoning chunks (from Qwen3 thinking
+    // mode, DeepSeek reasoner, etc.) arrive on a separate stream event
+    // type and render into a folded <details> block above the answer body
+    // so the user can see "the model is thinking" instead of staring at
+    // an empty bubble.
+    let reasoningAcc = "";
+    let thinkingEl = null;
+    function ensureThinkingBlock() {
+      if (thinkingEl) return thinkingEl;
+      const det = document.createElement("details");
+      det.className = "sp-thinking";
+      det.open = true; // open while streaming so the user sees progress
+      det.innerHTML = `
+        <summary class="sp-thinking-summary">
+          <span class="sp-thinking-icon">🧠</span>
+          <span class="sp-thinking-label">思考过程</span>
+          <span class="sp-thinking-status">…</span>
+        </summary>
+        <div class="sp-thinking-body"></div>
+      `;
+      // Insert before the streaming content so thinking appears above the answer.
+      streamingEl.parentNode.insertBefore(det, streamingEl);
+      thinkingEl = det;
+      return det;
+    }
+
     port.onMessage.addListener((msg) => {
       if (msg?.type === "start") {
         statusEl.textContent = "生成中…";
+      } else if (msg?.type === "reasoning_chunk") {
+        reasoningAcc = typeof msg.full === "string" ? msg.full : (reasoningAcc + (msg.delta ?? ""));
+        const det = ensureThinkingBlock();
+        const body = det.querySelector(".sp-thinking-body");
+        if (body) body.textContent = reasoningAcc;
+        historyEl.scrollTop = historyEl.scrollHeight;
       } else if (msg?.type === "chunk") {
         acc = typeof msg.full === "string" ? msg.full : (acc + (msg.delta ?? ""));
         streamingEl.innerHTML = renderMd(acc);
+        // First content chunk: collapse the thinking block — user has the
+        // answer now, thinking becomes inspectable rather than primary.
+        if (thinkingEl && thinkingEl.open) {
+          thinkingEl.open = false;
+          const status = thinkingEl.querySelector(".sp-thinking-status");
+          if (status) status.textContent = `${reasoningAcc.length} chars`;
+        }
         historyEl.scrollTop = historyEl.scrollHeight;
       } else if (msg?.type === "done") {
         const finalText = msg.text ?? acc;
+        if (thinkingEl) {
+          // Mark thinking complete; preserve in the saved turn meta so
+          // re-rendering history still shows it.
+          thinkingEl.open = false;
+          const status = thinkingEl.querySelector(".sp-thinking-status");
+          if (status) status.textContent = `${reasoningAcc.length} chars · 已完成`;
+        }
         settle("assistant", finalText);
       } else if (msg?.type === "error") {
         settle("error", `失败：${msg.error ?? "unknown"}`);
