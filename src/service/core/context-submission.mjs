@@ -10,6 +10,9 @@ import { routeIntent } from "./router/intent-router.mjs";
 import { decomposeUserCommand } from "./router/decomposer.mjs";
 import { submitCompositeTask } from "./composite-submission.mjs";
 import { createTaskSpec } from "./task-spec.mjs";
+import { extractAllSignals } from "./intent/signals/index.mjs";
+import { shouldConsultSemanticRouter } from "./policy/tool-policy-resolver.mjs";
+import { resolveSemanticDecision } from "./intent/semantic-router.mjs";
 import { extractFileContent } from "../extractors/file-ingest.mjs";
 import {
   applyExecutorEvent,
@@ -714,7 +717,48 @@ export async function submitContextTask({
     userCommand,
     contextPacket: withMemoryRecall
   });
-  const preflightTaskSpec = createTaskSpec(userCommand, normalizedContextPacket, route);
+
+  // P4-03 (step 4): SemanticRouter async preflight. Suggestion-only —
+  // the deterministic rules in tool-policy-resolver remain authoritative.
+  // We compute signals once here and ONLY call the LLM when the
+  // ambiguity gate says rules are weak (no attached files, no strong
+  // explicit_external, no strong explicit_entity, command > 8 chars).
+  // For every other case the cost is exactly one regex pass (signals
+  // recomputed inside createTaskSpec — idempotent). Result is stamped
+  // onto a fresh packet clone so the spec sees it; createTaskSpec
+  // re-reads context_sources / classifies on the clone (idempotent).
+  //
+  // Today the default router has no chat adapter wired; the call
+  // returns {kind:"rejection", code:"no_provider"}. The rejection is
+  // stamped and shows up on the SEMANTIC_ROUTER DecisionTrace stage,
+  // which proves the wire is in place without changing behaviour. When
+  // the chat adapter is plugged in (next P4 step), the merge layer
+  // activates automatically.
+  let routerEnrichedContext = normalizedContextPacket;
+  try {
+    const tentativeSignals = extractAllSignals(userCommand, normalizedContextPacket).signals;
+    if (shouldConsultSemanticRouter({
+      signals: tentativeSignals,
+      contextPacket: normalizedContextPacket,
+      text: userCommand
+    })) {
+      const srResult = await resolveSemanticDecision({
+        text: userCommand,
+        contextPacket: normalizedContextPacket,
+        signals: tentativeSignals
+      });
+      if (srResult.kind === "decision") {
+        routerEnrichedContext = { ...normalizedContextPacket, semantic_router_decision: srResult.decision };
+      } else {
+        routerEnrichedContext = { ...normalizedContextPacket, semantic_router_rejection: srResult };
+      }
+    }
+  } catch {
+    // Belt-and-suspenders: SemanticRouter must NEVER block submission.
+    // Any unexpected throw degrades silently to the deterministic path.
+  }
+
+  const preflightTaskSpec = createTaskSpec(userCommand, routerEnrichedContext, route);
 
   if (inspection.allowed && canDecomposeFromTaskSpec(preflightTaskSpec) && !skipDecomposition && !parentTaskId) {
     const decomposition = await decomposeUserCommand({
