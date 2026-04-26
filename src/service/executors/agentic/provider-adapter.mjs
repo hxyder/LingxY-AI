@@ -155,7 +155,7 @@ function parseAnthropicResponse(data) {
   };
 }
 
-async function generateAnthropic(resolved, { messages, tools, maxTokens, signal, fetchImpl, onTextDelta, onToolInputDelta }) {
+async function generateAnthropic(resolved, { messages, tools, tool_choice, maxTokens, signal, fetchImpl, onTextDelta, onToolInputDelta }) {
   const fetchFn = fetchImpl ?? globalThis.fetch;
   if (!fetchFn) throw new Error("No fetch implementation available for Anthropic adapter.");
 
@@ -172,6 +172,16 @@ async function generateAnthropic(resolved, { messages, tools, maxTokens, signal,
   if (system) payload.system = system;
   const anthTools = buildAnthropicTools(tools);
   if (anthTools) payload.tools = anthTools;
+  // P4-03 follow-up: forward tool_choice when the caller forces a specific
+  // tool. SemanticRouter relies on this to make the LLM call route_task
+  // unconditionally rather than slipping into a free-form text reply.
+  // Anthropic shape matches our call site verbatim:
+  //   { type: "tool", name: "route_task" }   force a specific tool
+  //   { type: "any"  }                       force ANY tool
+  //   { type: "auto" }                       default (omit altogether)
+  if (anthTools && tool_choice && typeof tool_choice === "object") {
+    payload.tool_choice = tool_choice;
+  }
 
   const response = await fetchFn(`${baseUrl}/v1/messages`, {
     method: "POST",
@@ -362,7 +372,7 @@ function parseOpenAIResponse(data) {
   };
 }
 
-async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fetchImpl, onTextDelta, onToolInputDelta, onReasoningDelta }) {
+async function generateOpenAI(resolved, { messages, tools, tool_choice, maxTokens, signal, fetchImpl, onTextDelta, onToolInputDelta, onReasoningDelta }) {
   const fetchFn = fetchImpl ?? globalThis.fetch;
   if (!fetchFn) throw new Error("No fetch implementation available for OpenAI-compatible adapter.");
 
@@ -376,6 +386,20 @@ async function generateOpenAI(resolved, { messages, tools, maxTokens, signal, fe
   };
   const oaTools = buildOpenAITools(tools);
   if (oaTools) body.tools = oaTools;
+  // P4-03 follow-up: forward tool_choice. OpenAI uses a slightly
+  // different shape than Anthropic — translate. Caller passes the
+  // Anthropic-style { type:"tool", name:"X" }; here we map to
+  // { type:"function", function:{ name:"X" } } for OpenAI-compat.
+  if (oaTools && tool_choice && typeof tool_choice === "object") {
+    if (tool_choice.type === "tool" && tool_choice.name) {
+      body.tool_choice = { type: "function", function: { name: tool_choice.name } };
+    } else if (tool_choice.type === "any") {
+      body.tool_choice = "required";
+    } else {
+      // Pass through whatever shape the caller used (string "auto" / "none" / etc.)
+      body.tool_choice = tool_choice;
+    }
+  }
 
   applyReasoningSelectionToBody(body, resolved, resolved.model, resolved.reasoningEffort);
 

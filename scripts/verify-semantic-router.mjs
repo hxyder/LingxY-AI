@@ -424,6 +424,105 @@ async function run() {
     assert.match(systemMessage, /fact > hint > assumption/);
   });
 
+  // ── tool_choice plumbing through real createProviderAdapter ────────────
+  // The router sends `tool_choice: { type:"tool", name:"route_task" }`
+  // to its adapter. Provider-adapter must forward it correctly per
+  // provider kind: anthropic gets the verbatim shape; OpenAI-compat
+  // gets translated to `{ type:"function", function:{ name:"..." } }`.
+  // Pre-fix the field was silently dropped, leaving the LLM free to
+  // skip the tool and reply with raw text → SR would reject as
+  // schema_invalid. Tests use a stub fetch to inspect the outgoing body.
+  await it("tool_choice: anthropic adapter forwards tool_choice verbatim", async () => {
+    const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");
+    const captured = {};
+    const stubFetch = async (_url, init) => {
+      captured.body = JSON.parse(init.body);
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({
+            content: [{ type: "tool_use", id: "tu_1", name: "route_task", input: { ...validDecision } }]
+          });
+        }
+      };
+    };
+    const adapter = createProviderAdapter({ kind: "anthropic", model: "claude-x", baseUrl: "https://x", apiKey: "k" });
+    await adapter.generate({
+      messages: [{ role: "user", content: "x" }],
+      tools: [SEMANTIC_DECISION_TOOL],
+      tool_choice: { type: "tool", name: SEMANTIC_DECISION_TOOL.name },
+      fetchImpl: stubFetch,
+      maxTokens: 64
+    });
+    assert.deepEqual(captured.body.tool_choice, { type: "tool", name: "route_task" });
+    assert.ok(Array.isArray(captured.body.tools));
+  });
+  await it("tool_choice: openai adapter translates to {type:function, function:{name}}", async () => {
+    const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");
+    const captured = {};
+    const stubFetch = async (_url, init) => {
+      captured.body = JSON.parse(init.body);
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({
+            choices: [{ message: { content: "", tool_calls: [{
+              id: "c1", type: "function",
+              function: { name: "route_task", arguments: JSON.stringify(validDecision) }
+            }] } }],
+            usage: {}
+          });
+        }
+      };
+    };
+    const adapter = createProviderAdapter({ kind: "openai", model: "gpt-4", baseUrl: "https://api.openai.com/v1", apiKey: "k" });
+    await adapter.generate({
+      messages: [{ role: "user", content: "x" }],
+      tools: [SEMANTIC_DECISION_TOOL],
+      tool_choice: { type: "tool", name: SEMANTIC_DECISION_TOOL.name },
+      fetchImpl: stubFetch,
+      maxTokens: 64
+    });
+    assert.deepEqual(captured.body.tool_choice, { type: "function", function: { name: "route_task" } });
+  });
+  await it("tool_choice: omitted when caller didn't pass one (back-compat)", async () => {
+    const { createProviderAdapter } = await import("../src/service/executors/agentic/provider-adapter.mjs");
+    const captured = {};
+    const stubFetch = async (_url, init) => {
+      captured.body = JSON.parse(init.body);
+      return {
+        ok: true,
+        async text() {
+          return JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }], usage: {} });
+        }
+      };
+    };
+    const adapter = createProviderAdapter({ kind: "openai", model: "x", baseUrl: "https://x", apiKey: "k" });
+    await adapter.generate({
+      messages: [{ role: "user", content: "x" }],
+      tools: [SEMANTIC_DECISION_TOOL],
+      // NO tool_choice — caller doesn't force one
+      fetchImpl: stubFetch
+    });
+    assert.equal(captured.body.tool_choice, undefined,
+      "tool_choice must be omitted when caller doesn't supply it (existing planner behaviour)");
+  });
+
+  // ── live wire-up: no chat provider configured → no_provider rejection ──
+  // Smoke check that the top-level resolveSemanticDecision degrades
+  // gracefully when no chat provider is set up. This exercises the
+  // dynamic-import path in getDefaultRouter without depending on any
+  // particular dev-box config (we just assert it returns SOMETHING
+  // shaped like a router result and never throws).
+  await it("wire-up: top-level resolveSemanticDecision returns a router result (no throw)", async () => {
+    const { resolveSemanticDecision: liveResolve, _resetDefaultRouterState } = await import("../src/service/core/intent/semantic-router.mjs");
+    if (typeof _resetDefaultRouterState === "function") _resetDefaultRouterState();
+    const out = await liveResolve({ text: "test", contextPacket: {}, signals: {} });
+    assert.ok(out && typeof out === "object");
+    assert.ok(out.kind === "decision" || out.kind === "rejection",
+      `expected decision or rejection, got ${JSON.stringify(out).slice(0, 100)}`);
+  });
+
   // ── 16. public surface ─────────────────────────────────────────────────
   await it("public surface: SEMANTIC_DECISION_TOOL has strict input_schema", () => {
     assert.equal(SEMANTIC_DECISION_TOOL.name, "route_task");

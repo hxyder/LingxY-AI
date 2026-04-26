@@ -201,25 +201,73 @@ export function createSemanticRouter(opts = {}) {
   };
 }
 
-let _defaultRouter = null;
+// P4-03 follow-up: a process-wide cache shared across calls. We rebuild
+// the router each time `resolveSemanticDecision` runs (provider config
+// can hot-reload at runtime, so the adapter must be looked up live)
+// but the cache survives so repeat queries hit fast paths.
+const _processCache = new Map();
+
 /**
- * Process-wide singleton router. P4-03 will swap the adapter to the real
- * chat provider; today this returns a router with no adapter wired so
- * every call resolves to `{kind:"rejection", code:"no_provider"}`. That
- * is intentional — until P4-03 lands, the resolver still uses the
- * regex-only path and the rejection just gets logged.
+ * No-provider router. Returned by getDefaultRouter when there's no
+ * configured chat provider — every call to resolveSemanticDecision
+ * yields `{kind:"rejection", code:"no_provider"}`. Tests that want a
+ * mock adapter should use `createSemanticRouter` directly with their
+ * own injected adapter.
  */
-export function getDefaultRouter() {
-  if (!_defaultRouter) _defaultRouter = createSemanticRouter();
-  return _defaultRouter;
+let _noProviderRouter = null;
+function getNoProviderRouter() {
+  if (!_noProviderRouter) _noProviderRouter = createSemanticRouter({ cache: _processCache });
+  return _noProviderRouter;
+}
+
+/**
+ * Process-wide router factory. Looks up the active chat provider on
+ * each call, builds a fresh adapter, returns a router that uses the
+ * shared `_processCache`. Returns the no-provider router when no chat
+ * provider is configured (rejection path: `code:"no_provider"`).
+ *
+ * Dynamic imports avoid the layering cycle "intent → executor". The
+ * cost is amortized: the imports cache after first call.
+ */
+export async function getDefaultRouter() {
+  try {
+    const { resolveProviderForTask } = await import("../../executors/shared/provider-resolver.mjs");
+    const resolved = resolveProviderForTask("chat");
+    if (!resolved) return getNoProviderRouter();
+
+    // code_cli providers don't currently support tool_use schema
+    // enforcement (the bridge would need its own JSON-mode planning).
+    // Until that lands, fall back to the no-provider router for code_cli
+    // so SR doesn't try to drive a tool call through a free-form CLI.
+    if (resolved.kind === "code_cli") return getNoProviderRouter();
+
+    const { createProviderAdapter } = await import("../../executors/agentic/provider-adapter.mjs");
+    const adapter = createProviderAdapter(resolved);
+    return createSemanticRouter({ adapter, cache: _processCache });
+  } catch {
+    // Belt-and-suspenders: any failure looking up the provider falls
+    // back to the no-provider router. SR must never throw and must
+    // never block submission.
+    return getNoProviderRouter();
+  }
 }
 
 /**
  * @param {{ text: string, contextPacket?: object, signals?: object }} input
  * @returns {Promise<RouterResult>}
  */
-export function resolveSemanticDecision(input) {
-  return getDefaultRouter().resolveSemanticDecision(input);
+export async function resolveSemanticDecision(input) {
+  const router = await getDefaultRouter();
+  return router.resolveSemanticDecision(input);
+}
+
+/**
+ * Test/admin helper — clear the process-wide cache. Production code
+ * never calls this; the cache is bound to process lifetime.
+ */
+export function _resetDefaultRouterState() {
+  _processCache.clear();
+  _noProviderRouter = null;
 }
 
 // ────────────────────────────────────────────────────────────────────────
