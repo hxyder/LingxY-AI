@@ -9,7 +9,7 @@
  * priority — priority lives in policy/ resolvers.
  */
 
-import { emptySignal, SIGNAL_NAMES } from "./_signal-types.mjs";
+import { emptySignal, SIGNAL_NAMES, SIGNAL_KINDS } from "./_signal-types.mjs";
 
 import { detect as detectExplicitExternal } from "./explicit-external.mjs";
 import { detect as detectSourceScope } from "./source-scope.mjs";
@@ -48,4 +48,8 @@ export function extractAllSignals(text, contextPacket = {}) {
   return { signals, evidence };
 }
 
-export { SIGNAL_NAMES, emptySignal };
+// Re-export the public protocol surface so downstream consumers (P4-02
+// SemanticRouter, future tooling) can import everything they need from
+// `signals/index.mjs` without reaching into `_signal-types.mjs` — the
+// underscore prefix marks that file as internal.
+export { SIGNAL_NAMES, SIGNAL_KINDS, emptySignal };

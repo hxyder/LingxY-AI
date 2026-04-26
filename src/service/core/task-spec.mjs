@@ -12,7 +12,8 @@
 import { isConnectorDomainRequest } from "../connectors/core/connector-intent.mjs";
 import { extractPureLaunchApp } from "./router/fast-path-router.mjs";
 import { extractAllSignals } from "./intent/signals/index.mjs";
-import { resolveToolPolicy } from "./policy/tool-policy-resolver.mjs";
+import { resolveToolPolicy, buildExternalWebReadPolicy } from "./policy/tool-policy-resolver.mjs";
+import { enforcePolicyInvariants } from "./policy/policy-invariants.mjs";
 import { resolveExecutor } from "./planning/executor-resolver.mjs";
 import { createTracker, STAGES } from "./contracts/decision-trace.mjs";
 import { compileTaskContract } from "./contracts/task-contract.mjs";
@@ -404,23 +405,56 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
 
   // Connector domain requests bypass external web — their reads happen
   // through the connector tools, never through web_search_fetch.
+  // P4-00: route through buildExternalWebReadPolicy so the connector branch
+  // emits the same group-level + per-toolId expansion as the resolver. Past
+  // bug (Issue β / RR-03): hand-built `{ web_search_fetch: forbidden }`
+  // didn't cover sibling `web_search` / `fetch_url_content` and the LLM
+  // bypassed the wall by switching tools.
   const connectorDomainRequest = isConnectorDomainRequest(text);
-  const toolPolicy = connectorDomainRequest
-    ? {
-        web_search_fetch: {
-          mode: "forbidden",
-          reason: "Connector domain request — connector tools read external state directly.",
-          evidence: [{ type: "context", source: "connector-intent", reason: "isConnectorDomainRequest" }]
-        }
-      }
+  const rawPolicy = connectorDomainRequest
+    ? buildExternalWebReadPolicy(
+        "forbidden",
+        "Connector domain request — connector tools read external state directly.",
+        [{ type: "context", source: "connector-intent", reason: "isConnectorDomainRequest" }]
+      )
     : resolveToolPolicy({ signals, contextPacket });
+  // P4-00.6: enforce the policy_groups ↔ per-toolId invariant. Today
+  // every emitter is consistent, but this is the single guarantee point
+  // for future write paths (SemanticRouter, hand-built test policies).
+  // forbidden wins; group is canonical otherwise. Every conflict gets
+  // its own DecisionTrace entry under POLICY_CONFLICT_RESOLVED so the
+  // operator can see what was overruled.
+  const { resolved: toolPolicy, conflicts: policyConflicts } = enforcePolicyInvariants(rawPolicy);
+  for (const conflict of policyConflicts) {
+    tracker.record(STAGES.POLICY_CONFLICT_RESOLVED, {
+      output: {
+        group: conflict.group,
+        tool_id: conflict.tool_id,
+        resolution: conflict.resolution
+      },
+      reason: `Policy conflict on ${conflict.group}: group=${conflict.group_mode} vs ${conflict.tool_id}=${conflict.tool_mode}; ${conflict.reason} → ${conflict.resolution}.`,
+      evidence: [
+        { type: "invariant", source: "enforcePolicyInvariants", reason: conflict.reason }
+      ]
+    });
+  }
+  // P4-RR: every tool-policy decision activates the resolver mitigation
+  // (RR-01) and the capability-based group expansion (RR-03). When the
+  // resulting policy carries a forbidden mode anywhere, RR-02 (registry
+  // guard) is also armed. Tagging here lets the UI / inspect-routing tool
+  // render "system applied RR-01 / RR-03" alongside the reason.
+  const policyTriggeredRaid = ["RR-01", "RR-03"];
+  const anyForbidden = Object.values(toolPolicy).some((entry) => entry?.mode === "forbidden")
+    || Object.values(toolPolicy.policy_groups ?? {}).some((entry) => entry?.mode === "forbidden");
+  if (anyForbidden) policyTriggeredRaid.push("RR-02");
   tracker.record(STAGES.TOOL_POLICY, {
     output: { web_search_fetch: toolPolicy.web_search_fetch.mode },
     reason: toolPolicy.web_search_fetch.reason,
     evidence: toolPolicy.web_search_fetch.evidence,
     // The other two modes are recorded as alternatives so a UI can show what
     // *could* have been chosen and why it was not.
-    rejected: rejectedToolPolicyModes(toolPolicy.web_search_fetch.mode)
+    rejected: rejectedToolPolicyModes(toolPolicy.web_search_fetch.mode),
+    triggered_raid_ids: policyTriggeredRaid
   });
 
   // Infer source from context packet
@@ -464,7 +498,12 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       artifact_created: artifactRequired,
       artifact_registered: artifactRequired,
       tool_called: goal !== "qa",
-      required_tool_names: []
+      required_tool_names: [],
+      // P4-00.7: group-level requirements. Validator counts any member of
+      // the group as satisfying the requirement — used so the LLM can pick
+      // fetch_url_content or web_search when web_search_fetch returns
+      // nothing without tripping the success contract.
+      required_policy_groups: []
     },
     intent_tags: mergedIntentTags,
     suggested_formats: mergedSuggestedFormats
@@ -549,12 +588,23 @@ export function applyHardenedRules(spec) {
   // UCA-077 P1-05: Rule 1 used to deterministically push "web_search_fetch"
   // into required_steps whenever any weak freshness regex matched. The
   // tool-policy resolver is now the only place that decides whether
-  // web_search_fetch is required. We keep the success-contract mention so
-  // downstream finalize/audit can still confirm the tool actually ran when
-  // the policy says it must, but we no longer fabricate execution steps.
-  if (spec.tool_policy?.web_search_fetch?.mode === "required") {
-    if (!spec.success_contract.required_tool_names.includes("web_search_fetch")) {
-      spec.success_contract.required_tool_names.push("web_search_fetch");
+  // web_search_fetch is required.
+  //
+  // P4-00.7 (revised §18.6.1.A): pull this off the canonical group entry
+  // and stamp ONLY `required_policy_groups`. The previous version also
+  // pushed "web_search_fetch" into `required_tool_names` for prompt
+  // back-compat, but that recreated the exact contradiction the group
+  // semantics was meant to remove — the agentic Rule 1 told the LLM to
+  // call web_search_fetch specifically, even though the validator now
+  // accepts any sibling. Prompt-builder now renders required_policy_groups
+  // verbatim (with applies_to) so the LLM sees the group-level constraint.
+  // `required_tool_names` is reserved for *toolId-specific* hard rules
+  // (e.g. open_or_reveal_file → open_file).
+  const externalWebMode = spec.tool_policy?.policy_groups?.external_web_read?.mode
+    ?? spec.tool_policy?.web_search_fetch?.mode;
+  if (externalWebMode === "required") {
+    if (!spec.success_contract.required_policy_groups.includes("external_web_read")) {
+      spec.success_contract.required_policy_groups.push("external_web_read");
     }
   }
 

@@ -76,10 +76,20 @@ const repoRoot = path.resolve(__dirname, "..");
   assert.match(prompt, /pptx/);
   assert.match(prompt, /Task contract/);
   // UCA-077 P1-07: tool_policy replaces required_steps. The explicit
-  // "今日 AI 新闻" entity must escalate web_search_fetch to required, and
-  // the success-contract tool list must mirror it.
-  assert.match(prompt, /tool_policy:[\s\S]*web_search_fetch: required/);
-  assert.match(prompt, /required_tools: web_search_fetch/);
+  // "今日 AI 新闻" entity must escalate external web reading to required.
+  // P4-00 / P4-00.7: prompt renders policy at the group level with the
+  // `(any of: ...)` member list so the LLM sees siblings share fate and
+  // can pick whichever sibling fits. The shared renderToolPolicyForPrompt
+  // helper enforces this format for both agentic and tool_using.
+  assert.match(prompt, /tool_policy:[\s\S]*external_web_read: required \(any of: [^)]*web_search_fetch[^)]*\)/);
+  // P4-00.7 (revised §18.6.1.A): the contract no longer pretends the
+  // requirement is a specific toolId. It surfaces required_policy_groups
+  // with the same `(any of: ...)` hint so the LLM knows fetch_url_content
+  // / web_search are valid alternatives. required_tools stays "(none)"
+  // for pure web-required tasks; toolId-specific rules (open_file etc.)
+  // still populate it.
+  assert.match(prompt, /required_policy_groups:[\s\S]*- external_web_read \(any of: [^)]*web_search_fetch[^)]*\)/);
+  assert.match(prompt, /required_tools: \(none\)/);
 }
 
 /* ------------------------------------------------------------------------ */

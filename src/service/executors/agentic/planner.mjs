@@ -32,6 +32,7 @@
 import { buildAgenticSystemPrompt, isAudioNoteSingleMarkdownTask } from "./prompt-builder.mjs";
 import { createProviderAdapter } from "./provider-adapter.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
+import { formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
 import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
@@ -66,21 +67,21 @@ function toolDescriptorForAdapter(tool) {
 function buildUserMessage(task) {
   const parts = [];
   parts.push(task.user_command ?? "(no user command)");
-  const contextText = task.context_packet?.text?.trim();
-  if (contextText) {
-    parts.push("");
-    parts.push("Context:");
-    parts.push(contextText.slice(0, 8000));
-  }
+
   const filePaths = task.context_packet?.file_paths ?? [];
   if (filePaths.length > 0) {
     parts.push("");
     parts.push(`Attached files:\n${filePaths.join("\n")}`);
   }
-  const url = task.context_packet?.url?.trim();
-  if (url) {
+  // P4-00.5 trust split: ctx.text and ctx.url come from third-party pages
+  // / selections and may carry prompt-injection payloads. Wrap them in
+  // <untrusted_source> with a guard sentence so the LLM treats them as
+  // data, not policy. Block placement is the user role (this function's
+  // return) — never the system prompt.
+  const untrusted = formatUntrustedSourceMaterial(task);
+  if (untrusted) {
     parts.push("");
-    parts.push(`URL: ${url}`);
+    parts.push(untrusted);
   }
   return parts.join("\n");
 }
@@ -297,6 +298,18 @@ export async function runAgenticPlanner({
   ].filter(Boolean);
   let preflightSearchText = "";
   if (taskNeedsCurrentWebData(task)) {
+    // P4-00.7 design note (§18.6.1.A clarification): we deliberately use
+    // `web_search_fetch` here as the *preferred preflight* — it returns
+    // parsed snippets the LLM can cite directly, which is strictly more
+    // useful than `web_search` (browser-only) or `fetch_url_content`
+    // (needs a known URL). The post-result instruction below tells the
+    // model it can fall back to any sibling in `external_web_read` if
+    // this preflight returns nothing — that's what makes the path
+    // group-aware end-to-end. If a future SemanticRouter forbids
+    // web_search_fetch specifically, the policy guard wraps this call
+    // with a blocked_by_policy result, the post-instruction directs the
+    // model to pick a sibling, and the success contract (any-of group)
+    // is still satisfiable.
     const searchCall = {
       name: "web_search_fetch",
       arguments: {

@@ -13,8 +13,13 @@ import {
   matchWorkflowByTrigger
 } from "../../connectors/core/connector-intent.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
-import { getUserLocation, formatLocationLabel } from "../../utils/location.mjs";
+import {
+  formatResourceContext,
+  formatUntrustedSourceMaterial,
+  extractAbsoluteLocalPathsFromText
+} from "../shared/resource-context.mjs";
 import { detect as detectExplicitSearch } from "../../core/intent/signals/explicit-search.mjs";
+import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
 // UCA-077 P3-01: deterministic / connector planners + their helpers moved
 // into a `planners/` directory so this file owns the loop and provider
@@ -96,70 +101,13 @@ function defaultPlanner({ task, runtime: plannerRuntime = null }) {
  * (LangGraph / CrewAI / AutoGPT) use: give the model the raw context and
  * the tool belt, and let it plan.
  */
-function formatResourceContext(task) {
-  const runtime = task.__runtime ?? null;
-  const ctx = task.context_packet ?? {};
-  const lines = [];
-  lines.push("");
-  lines.push("Resources you can use right now:");
-  // Prefer LOCAL time in YYYY-MM-DD HH:MM:SS form over toISOString's
-  // UTC Z-suffix — "2026-04-21 12:47:05 (Asia/Shanghai)" reads cleanly
-  // to both human and model; the UTC ISO form historically confused
-  // downstream formatting and yielded off-by-one-day answers.
-  const _now = new Date();
-  const _tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
-  lines.push(`- Current local date and time: ${_now.toLocaleString("sv-SE", { hour12: false })} (${_tz}) — interpret "今天/明天/tomorrow/今晚/next week" relative to this; do not emit years or dates from training memory.`);
-  // Real user location, only populated when the user clicked
-  // "📍 启用精确定位" in the sidepanel AND Chrome granted the prompt (or
-  // the scheduled task's trigger payload carries a fix). We never infer
-  // location from timezone — if the user hasn't granted, we say so
-  // honestly so the model can ask instead of guessing.
-  const _scheduledLocation = ctx.current_location ?? task.trigger_payload?.current_location ?? null;
-  const _location = _scheduledLocation ?? getUserLocation();
-  if (_location) {
-    lines.push(`- User's location: ${formatLocationLabel(_location)} — use this when the request says "附近 / nearby / 这边 / here" or implies regional defaults (currency, language, news scope). Source: ${_location.source ?? "browser"}.`);
-  } else {
-    lines.push(`- User's location: unknown (not yet granted). If the user asks about "附近 / nearby / 这边" or location-specific info, ask them to click "📍 启用精确定位" in the LingxY side panel, or ask which city they mean. Do NOT guess from timezone.`);
-  }
-
-  const attachments = [
-    ...(ctx.file_paths ?? []),
-    ...(ctx.image_paths ?? [])
-  ].filter(Boolean);
-  const contextualAbsolutePaths = extractAbsoluteLocalPathsFromText(ctx.text ?? "");
-  if (attachments.length > 0) {
-    lines.push(`- Attached files (absolute paths, safe to pass as tool arguments): ${JSON.stringify(attachments)}`);
-  } else {
-    lines.push(`- Attached files: (none)`);
-  }
-  if (contextualAbsolutePaths.length > 0) {
-    lines.push(`- Absolute local file paths already mentioned in the request/history (safe to pass directly to attachmentPaths / localPath / file args without re-discovering them): ${JSON.stringify(contextualAbsolutePaths)}`);
-  }
-
-  const selectionText = typeof ctx.text === "string" ? ctx.text.trim() : "";
-  if (selectionText && selectionText.length <= 400) {
-    lines.push(`- User-selected text: ${JSON.stringify(selectionText)}`);
-  } else if (selectionText.length > 400) {
-    lines.push(`- User-selected text: ${JSON.stringify(selectionText.slice(0, 200) + "…")} (truncated, ${selectionText.length} chars total)`);
-  }
-
-  try {
-    const accounts = runtime?.store?.listConnectedAccounts?.()
-      ?? runtime?.store?.listUserAccounts?.()
-      ?? [];
-    const rows = accounts.slice(0, 6).map((account) => {
-      const caps = typeof account.capabilities === "object" && account.capabilities
-        ? Object.entries(account.capabilities).filter(([, v]) => v).map(([k]) => k).join(",")
-        : "";
-      return `${account.provider} ${account.email ?? account.id ?? ""}${caps ? ` (${caps})` : ""}`;
-    });
-    if (rows.length > 0) {
-      lines.push(`- Connected accounts: ${rows.join("; ")}`);
-    }
-  } catch { /* no-op */ }
-
-  return lines.join("\n");
-}
+// P4-00.5: formatResourceContext + extractAbsoluteLocalPathsFromText were
+// moved to ../shared/resource-context.mjs so fast / tool_using / agentic
+// share a single source of truth for ambient facts the LLM needs (time,
+// location, attachments, connected accounts). See plan §14.3 / §15.3 — the
+// missing-location bug only surfaced after Phase 1-3 routing started
+// sending conversational location questions to fast (which had no
+// injection at all).
 
 /**
  * Render the connector catalog's workflows as a concise hint block for the
@@ -258,20 +206,6 @@ function buildHistoryString(transcript) {
 
 function hasCjk(value = "") {
   return /[\u3400-\u9fff]/.test(String(value ?? ""));
-}
-
-function extractAbsoluteLocalPathsFromText(text = "") {
-  const matches = String(text ?? "").match(/[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+/g) ?? [];
-  const seen = new Set();
-  const paths = [];
-  for (const raw of matches) {
-    const candidate = raw.trim().replace(/[),.;:!?]+$/g, "");
-    const key = candidate.toLowerCase();
-    if (!candidate || seen.has(key)) continue;
-    seen.add(key);
-    paths.push(candidate);
-  }
-  return paths;
 }
 
 function toolDescriptorForAdapter(tool) {
@@ -516,13 +450,17 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
   } catch { /* non-fatal */ }
 
   // UCA-077 P1-06: render the tool policy as evidence-bearing prose instead
-  // of a "MUST DO X" hard rule. The LLM still sees the decision (required /
-  // optional / forbidden) and the reason, but the resolver is the single
-  // source of truth — there are no longer two competing rules that the
-  // model has to reconcile.
-  const webPolicy = task.task_spec?.tool_policy?.web_search_fetch;
-  const needsCurrentDataInstruction = webPolicy
-    ? `\n\nTool policy:\n- web_search_fetch: ${webPolicy.mode}\n  Reason: ${webPolicy.reason}`
+  // of a "MUST DO X" hard rule. The LLM sees the decision (required /
+  // optional / forbidden) and the reason; the resolver is the single
+  // source of truth.
+  // P4-00.7 (revised §18.6.1.A + this round's tool_using fix): use the
+  // shared helper so this prompt and the agentic prompt-builder render
+  // tool_policy identically — group entries first with `(any of: ...)`
+  // so the LLM understands the requirement is satisfied by any sibling
+  // tool, not narrowed to web_search_fetch.
+  const policyLines = renderToolPolicyForPrompt(task.task_spec?.tool_policy);
+  const needsCurrentDataInstruction = policyLines.length > 0
+    ? `\n\nTool policy:\n${policyLines.map((line) => line.startsWith("  ") ? line : `- ${line}`).join("\n")}`
     : "";
 
   // UCA-063: Override instruction when refusal retry is active.
@@ -567,7 +505,7 @@ Guidance (not a rigid checklist — apply judgment):
 - **Fan out enumerations.** When the user says "all / every / each <something>", start with an enumeration tool (list_files / glob_files / account_list_emails / account_list_files), read the result, then call the per-item action for each result in subsequent iterations. Do not guess counts or filenames.
 - **Connector workflows over raw tools.** Gmail/Outlook/Calendar/Drive operations should use connector_workflow_run when a matching workflow exists (see the workflow list above). The workflow shows the user a draft with 确认/拒绝 buttons; you do NOT need to ask in chat.
 - **Truthfulness.** Only claim an email was sent / event created / file uploaded when the transcript shows the corresponding tool returned success=true. If you prepared a draft and it's waiting on the user's approval, say so explicitly.
-- **Search before answering about current events.** If the user asks about news / prices / flights / weather / anything time-sensitive, call web_search_fetch first. Never answer from memory for real-time topics.
+- **Search before answering about current events.** Read \`tool_policy.external_web_read\` first. When the mode is \`required\` or \`optional\`, AND the user asks about news / prices / flights / weather / anything time-sensitive, call a member of the \`external_web_read\` group first — \`web_search_fetch\` is the typical default; fall back to \`fetch_url_content\` on a known authoritative URL (e.g. weather.gov, en.wikipedia.org, finance.yahoo.com) if the search returns nothing. When the mode is \`forbidden\`, do NOT search — answer from the resources you already have, or tell the user the request is out of scope. Never fabricate real-time facts from memory.
 - **Memory recall.** If the user refers to earlier work with a pronoun ("上个问题" / "刚才" / "之前那份" / "last one" / "that report") or asks you to continue / revise something done before, call list_recent_tasks first (or recall_memory with a topic query if the reference is thematic) and then get_task_detail on the matching task_id. Never reply "I don't remember prior work" while these tools exist.
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
 - **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
@@ -576,9 +514,19 @@ Use the native tool interface when a tool is needed. Call at most ONE tool per t
 
   try {
     let resultText = "";
+    // P4-00.5 trust split: ctx.text was previously surfaced only via the
+    // system-side resourceHint (`User-selected text:` line). That path
+    // elevated third-party page content to system trust and made any
+    // embedded prompt-injection ("ignore previous instructions…") look
+    // like a system directive. Now ctx.text + ctx.url ride in the user
+    // turn, fenced as <untrusted_source> with a guard sentence.
+    const untrusted = formatUntrustedSourceMaterial(task);
+    const initialUserContent = untrusted
+      ? `${task.user_command}\n\n${untrusted}`
+      : task.user_command;
     // UCA-054: Use proper multi-turn messages with observations injected as turns
     const conversationMessages = buildConversationMessages(
-      task.user_command,
+      initialUserContent,
       transcript,
       [
         ...(task.context_packet?.file_paths ?? []),

@@ -10,6 +10,9 @@
  * time and formats each tool entry plus a small example set.
  */
 
+import { toolsInGroup, renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
+import { formatResourceContext } from "../shared/resource-context.mjs";
+
 const DEFAULT_EXAMPLES = {
   web_search_fetch: { query: "latest AI trends 2026", recency: "month" },
   write_file: { path: "notes/plan.md", content: "# Plan\n- step 1\n- step 2" },
@@ -91,24 +94,42 @@ function renderTaskContract(task) {
     ? spec.success_contract.required_tool_names.join(", ")
     : "(none)";
 
+  // P4-00.7 (revised §18.6.1.A): render group-level requirements alongside
+  // toolId-level ones. The validator counts "any tool in the group" as
+  // satisfying the requirement, so the prompt must say so — otherwise we
+  // recreate the contradiction where the LLM is told to call a specific
+  // tool but the validator accepts any sibling. We list the applies_to
+  // members verbatim so the LLM doesn't have to guess what's in the group.
+  const requiredPolicyGroups = Array.isArray(spec.success_contract?.required_policy_groups)
+    ? spec.success_contract.required_policy_groups
+    : [];
+  const requiredGroupLines = requiredPolicyGroups.map((group) => {
+    const members = toolsInGroup(group);
+    const memberHint = members.length > 0 ? ` (any of: ${members.join(", ")})` : "";
+    return `  - ${group}${memberHint}`;
+  });
+
   // UCA-077 P1-07: render the resolved tool policy verbatim so the LLM sees
   // the decision (required / optional / forbidden) and the reason. The old
   // version exposed `required_steps` (a sequence of internal step names that
   // the LLM had no real way to act on) and `needs_current_web_data` (a flag
   // stripped of context). Both are gone — policy carries the same info with
   // evidence attached.
-  const policyLines = [];
-  const webPolicy = spec.tool_policy?.web_search_fetch;
-  if (webPolicy) {
-    policyLines.push(`web_search_fetch: ${webPolicy.mode}`);
-    if (webPolicy.reason) policyLines.push(`  reason: ${webPolicy.reason}`);
-  }
+  //
+  // P4-00 / P4-00.7: render tool_policy via the shared helper so this
+  // executor and tool_using/agent-loop stay in lockstep. The helper emits
+  // group entries first with `any of: <members>` so the LLM sees the
+  // requirement is satisfied by ANY sibling tool, closing the "blocked
+  // web_search_fetch → retry with web_search" bypass at the prompt layer.
+  const policyLines = renderToolPolicyForPrompt(spec.tool_policy);
 
   return [
     `goal: ${spec.goal ?? "unknown"}`,
     `artifact_required: ${Boolean(spec.artifact?.required)}`,
     `artifact_kind: ${spec.artifact?.kind ?? "(none)"}`,
     `required_tools: ${requiredTools}`,
+    "required_policy_groups:",
+    ...(requiredGroupLines.length ? requiredGroupLines : ["  (none)"]),
     `must_verify_artifact: ${Boolean(spec.constraints?.must_verify_artifact)}`,
     "tool_policy:",
     ...(policyLines.length ? policyLines.map((line) => `  ${line}`) : ["  (none)"])
@@ -170,19 +191,16 @@ export function buildAgenticSystemPrompt({
     ? "\n\n## Scheduled-fire context\n\nThis request is the actual firing of an already-scheduled task — the delay has ALREADY elapsed. Execute the action directly. Do NOT call `create_scheduled_task`. For a reminder, call `notify` with a concise title and body. For an email, call the send workflow. The scheduling was done earlier; your job here is to perform the action."
     : "";
 
-  // Inject the wall-clock date/time so the model doesn't fall back on
-  // its training-cutoff year (2025-ish for most current models, which
-  // shows up as "2025年XX月" in answers no matter what the user is
-  // actually asking about). Mirrors the tool_using/agent-loop.mjs
-  // injection — the missing sibling was the whole bug.
-  const nowLocal = new Date();
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
-  const timeBanner = `Current local date and time: ${nowLocal.toLocaleString("sv-SE", { hour12: false })} (${tz}). Treat "今天/明天/昨天/this week/today/tomorrow/yesterday" as relative to this moment. Do NOT emit years or dates from training memory.`;
+  // P4-00.5: until now this prompt only injected the time line ("timeBanner")
+  // — location / connected accounts / attached files were silently missing,
+  // which is the same Issue γ symptom that bit fast. Switch to the shared
+  // resource-context block so all three executors see the same ambient
+  // facts in the same shape.
+  const resourceContext = formatResourceContext(task);
 
   return [
     "You are UCA's agentic assistant. You are running inside a desktop task runtime that can actually execute the tools listed below.",
-    "",
-    timeBanner,
+    resourceContext,
     "",
     "## Available tools",
     "",
@@ -198,10 +216,15 @@ export function buildAgenticSystemPrompt({
     "",
     "## Rules",
     "",
-    // UCA-077 P1-07: Rule 1 used to start with "satisfy required_steps" —
-    // those steps no longer exist in the prompt. The contract above already
-    // states required_tools and tool_policy; the LLM should consult that.
-    "1. Honour the task contract: call every tool listed in `required_tools`, and obey the `tool_policy` block. If a tool is marked `required`, you must call it before claiming completion. If marked `forbidden`, do not call it. `optional` means you may use the tool when you judge it useful but it is not enforced.",
+    // UCA-077 P1-07 / P4-00.7 (revised §18.6.1.A): Rule 1 used to start
+    // with "satisfy required_steps" — those steps no longer exist in the
+    // prompt. The contract above states `required_tools`,
+    // `required_policy_groups`, and `tool_policy`; this rule tells the
+    // LLM how to read each. Critical change vs the previous wording:
+    // `required_policy_groups` is satisfied by ANY ONE member tool, so
+    // calling fetch_url_content is just as valid as calling
+    // web_search_fetch when external_web_read is required.
+    "1. Honour the task contract: (a) call every tool listed in `required_tools`. (b) For each entry in `required_policy_groups`, call AT LEAST ONE tool from that group's `any of:` list before claiming completion — picking whichever sibling tool best fits (e.g. fetch_url_content if web_search_fetch returns nothing). (c) Obey the `tool_policy` block: tools with mode `forbidden` must not be called; `required` means at least one tool covering that decision must be called; `optional` means you may use the tool when useful.",
     // UCA-077 P1-07: the old Rule 2 ("Before writing about recent topics, call web_search_fetch first")
     // was the system policy leaking into the prompt. Whether to search is
     // now decided by tool-policy-resolver and surfaced via tool_policy

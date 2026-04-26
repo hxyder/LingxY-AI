@@ -25,10 +25,14 @@ export function detect(text, _contextPacket) {
   const match = PATTERN.exec(text);
   if (!match) return emptySignal(NAME);
 
+  // P4-01 kind=hint: search verb observed; the LLM still has to judge
+  // whether to actually call a tool (resolver maps strong → "optional",
+  // not "required"). The verb is the marker, the action is conventional.
   return {
     name: NAME,
     matched: true,
     strength: "strong",
+    kind: "hint",
     evidence: [{
       type: "regex",
       source: NAME,

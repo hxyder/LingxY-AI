@@ -19,6 +19,8 @@
  * TaskExecutionSpec once the contract is the canonical intent record.
  */
 
+import { compileRaidLog } from "./risk-register.mjs";
+
 /**
  * @typedef {"chat"|"qa"|"analyze"|"search"|"artifact"|"tool_action"
  *          |"desktop_action"|"translate"|"multimodal"|"workflow"} TaskMode
@@ -60,6 +62,9 @@
  * @property {{ level: "low"|"medium"|"high", approval_required: boolean }} risk
  * @property {number}          confidence     // 0..1, heuristic
  * @property {import("../intent/signals/_signal-types.mjs").Evidence[]} evidence
+ * @property {import("./risk-register.mjs").RaidLog} raid_log
+ *           // P4-RR: full Risks/Assumptions/Issues/Dependencies snapshot.
+ *           // Issues is empty at compile time; future work projects from audit log.
  */
 
 const GOAL_TO_MODE = Object.freeze({
@@ -134,7 +139,8 @@ export function compileTaskContract({ taskSpec, signals, contextPacket }) {
     },
     risk: deriveRisk(taskSpec, contextPacket),
     confidence: deriveConfidence(signals, taskSpec),
-    evidence
+    evidence,
+    raid_log: compileRaidLog({ taskSpec, signals, contextPacket })
   };
 }
 

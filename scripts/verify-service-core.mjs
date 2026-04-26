@@ -75,8 +75,14 @@ const latestTask = createTaskRecord({
 if (!latestTask.task_spec || latestTask.task_spec_valid !== true) {
   throw new Error(`TaskSpec was not attached to created task: ${(latestTask.task_spec_errors ?? []).join("; ")}`);
 }
-if (!latestTask.task_spec.needs_current_web_data || !latestTask.task_spec.success_contract.required_tool_names.includes("web_search_fetch")) {
-  throw new Error("TaskSpec must require web_search_fetch for latest/current tasks.");
+// P4-00.7 (revised §18.6.1.A): the requirement now lives in the group-level
+// field, not the toolId-level one — the LLM may satisfy it by calling any
+// member of `external_web_read` (web_search_fetch / web_search /
+// fetch_url_content), so binding the test to one specific tool name is
+// exactly the contradiction the revision removed.
+if (!latestTask.task_spec.needs_current_web_data
+    || !latestTask.task_spec.success_contract.required_policy_groups.includes("external_web_read")) {
+  throw new Error("TaskSpec must require external_web_read group for latest/current tasks.");
 }
 if (!latestTask.task_spec.artifact.required || latestTask.task_spec.artifact.kind !== "pptx" || !latestTask.task_spec.required_steps.includes("verify_file_exists")) {
   throw new Error("TaskSpec must require artifact verification for generated PPT tasks.");

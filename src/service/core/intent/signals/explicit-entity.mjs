@@ -36,10 +36,15 @@ export function detect(text, _contextPacket) {
   const match = PATTERN.exec(text);
   if (!match) return emptySignal(NAME);
 
+  // P4-01 kind=hint: the entity word is observed (fact-like), but the
+  // mapping "stock / weather / flight names → user wants fresh external
+  // data" is a heuristic — "新闻应用" mentions news without wanting a
+  // headline lookup. Hint, not fact.
   return {
     name: NAME,
     matched: true,
     strength: "strong",
+    kind: "hint",
     evidence: [{
       type: "entity",
       source: NAME,

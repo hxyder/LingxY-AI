@@ -21,10 +21,15 @@ export function detect(text, _contextPacket) {
   const match = PATTERN.exec(text);
   if (!match) return emptySignal(NAME);
 
+  // P4-01 kind=hint: the *phrase* is observed (fact-like) but mapping it
+  // to "user wants the open web" is conventional — "网上有这种说法" can
+  // mean the user is paraphrasing, not asking for a fetch. Marked as hint
+  // so SemanticRouter knows to read it as suggestion, not ground truth.
   return {
     name: NAME,
     matched: true,
     strength: "strong",
+    kind: "hint",
     evidence: [{
       type: "explicit_phrase",
       source: NAME,

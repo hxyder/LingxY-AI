@@ -30,10 +30,14 @@ export function detect(text, _contextPacket) {
   const match = matchZh ?? matchEn;
   if (!match) return emptySignal(NAME);
 
+  // P4-01 kind=hint: a freshness marker is a soft signal — "最近怎么样"
+  // is chitchat; "最近的开源项目" pairs with explicit_search to request a
+  // search. The detector observes the marker, never the intent.
   return {
     name: NAME,
     matched: true,
     strength: "weak",
+    kind: "hint",
     evidence: [{
       type: "regex",
       source: NAME,

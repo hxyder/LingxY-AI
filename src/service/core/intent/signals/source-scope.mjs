@@ -29,10 +29,13 @@ export function detect(text, contextPacket) {
   const selectionText = String(contextPacket?.text ?? "").trim();
 
   if (filePaths.length > 0 || imagePaths.length > 0) {
+    // P4-01 kind=fact: contextPacket arrays are runtime-observable state.
+    // No interpretation needed — the user attached N files.
     return {
       name: NAME,
       matched: true,
       strength: "strong",
+      kind: "fact",
       evidence: [{
         type: "context",
         source: NAME,
@@ -45,10 +48,13 @@ export function detect(text, contextPacket) {
 
   const localMatch = LOCAL_PROJECT_PATTERN.exec(text);
   if (localMatch) {
+    // P4-01 kind=fact: literal phrase ("整个项目") leaves no
+    // interpretation room — the user explicitly named the local project.
     return {
       name: NAME,
       matched: true,
       strength: "strong",
+      kind: "fact",
       evidence: [{
         type: "regex",
         source: NAME,
@@ -61,10 +67,16 @@ export function detect(text, contextPacket) {
 
   const ctxMatch = CURRENT_CONTEXT_PATTERN.exec(text);
   if (ctxMatch) {
+    // P4-01 kind=assumption: pronoun-style references ("这个", "这段")
+    // are interpreted as "the current local context", but the same
+    // phrase can refer to a quoted external article in some flows. The
+    // RAID Assumptions bucket (risk-register A-01) carries this same
+    // interpretation explicitly.
     return {
       name: NAME,
       matched: true,
       strength: "strong",
+      kind: "assumption",
       evidence: [{
         type: "regex",
         source: NAME,
@@ -83,10 +95,14 @@ export function detect(text, contextPacket) {
   const trimmedCommand = String(text ?? "").trim();
   const isJustCommandEcho = selectionText.length > 0 && selectionText === trimmedCommand;
   if (selectionText.length > 0 && !isJustCommandEcho) {
+    // P4-01 kind=fact: text presence is observable, even though the
+    // detector deliberately stays "weak" strength because we can't infer
+    // intent from text alone.
     return {
       name: NAME,
       matched: true,
       strength: "weak",
+      kind: "fact",
       evidence: [{
         type: "context",
         source: NAME,

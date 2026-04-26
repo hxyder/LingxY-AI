@@ -6,15 +6,22 @@
  * them from anywhere (including a future task-runtime finalize hook in
  * Phase 2's OutputPolicy work).
  *
- * Currently validates:
- *   - When tool_policy.web_search_fetch === "required", the transcript must
- *     contain at least one web_search_fetch tool_result whose payload looks
- *     non-empty. "Called but returned nothing" still counts as a violation —
- *     otherwise the task can answer from training memory and tick the box.
+ * Validates:
+ *   - For every entry in `success_contract.required_policy_groups`, the
+ *     transcript must contain at least one tool_result for ANY tool that
+ *     belongs to the group — and the result must look non-empty.
+ *     "Called but returned nothing" still counts as a violation. This is
+ *     the P4-00.7 group-aware check; it replaces the previous hardcoded
+ *     `web_search_fetch === required → must call web_search_fetch` rule
+ *     so the LLM is allowed to satisfy "external_web_read=required" by
+ *     calling fetch_url_content (a sibling tool in the same group) or
+ *     web_search instead.
  *
  * Phase 2 will extend this with: artifact_required → artifact actually
  * created; output=conversational → no spurious file writes.
  */
+
+import { toolsInGroup } from "./policy-groups.mjs";
 
 /**
  * @typedef {Object} TranscriptEntry
@@ -39,25 +46,83 @@
 export function validateSuccessContract(taskSpec, transcript = []) {
   const violations = [];
 
-  const webMode = taskSpec?.tool_policy?.web_search_fetch?.mode;
-  if (webMode === "required") {
-    const hit = (transcript ?? []).find(
-      (entry) => entry?.type === "tool_result" && entry?.tool === "web_search_fetch"
+  // P4-00.7: required policy groups. The LLM may call ANY tool in the
+  // group to satisfy the requirement — that's the whole point of the
+  // group abstraction (LLM can pick the most appropriate sibling — e.g.
+  // fetch_url_content when web_search_fetch returned nothing).
+  //
+  // P4-00.7 revised (§18.6.1.B): hits are filtered to drop entries that
+  // FAILED at the tool layer. Without this, a `web_search_fetch` call
+  // blocked by the registry policy guard returns a long observation
+  // explaining the block ("Tool ... is forbidden by task policy: ...")
+  // and `resultHasSubstance` happily accepts it as substance. That gave
+  // the validator's `satisfied=true` for tasks that never actually
+  // touched the open web. We now fail closed: an entry only counts if
+  // it ran successfully (no entry.error, no entry.success === false).
+  const requiredGroups = Array.isArray(taskSpec?.success_contract?.required_policy_groups)
+    ? taskSpec.success_contract.required_policy_groups
+    : [];
+  for (const group of requiredGroups) {
+    const members = toolsInGroup(group);
+    if (members.length === 0) continue;
+    const memberSet = new Set(members);
+    const allCalls = (transcript ?? []).filter(
+      (entry) => entry?.type === "tool_result" && memberSet.has(entry?.tool)
     );
-    if (!hit) {
+    const successfulHits = allCalls.filter(isSuccessfulHit);
+    if (successfulHits.length === 0) {
+      // Distinguish "never called" from "called but every call failed" so
+      // the user / audit log can see what actually went wrong.
+      const kind = allCalls.length === 0
+        ? `${group}_required_not_called`
+        : `${group}_required_all_failed`;
+      const message = allCalls.length === 0
+        ? `success_contract.required_policy_groups includes "${group}" but the executor never invoked any of: ${members.join(", ")}.`
+        : `success_contract.required_policy_groups includes "${group}"; tools were called (${allCalls.map((h) => h.tool).join(", ")}) but every call failed (errors: ${allCalls.map((h) => h.error ?? "(none)").join(", ")}).`;
+      violations.push({ kind, message });
+      continue;
+    }
+    if (!successfulHits.some((hit) => resultHasSubstance(hit))) {
       violations.push({
-        kind: "web_search_required_not_called",
-        message: "tool_policy.web_search_fetch=required but the executor never invoked web_search_fetch."
-      });
-    } else if (!resultHasSubstance(hit)) {
-      violations.push({
-        kind: "web_search_required_returned_empty",
-        message: "tool_policy.web_search_fetch=required and the tool was called but returned no usable results."
+        kind: `${group}_required_returned_empty`,
+        message: `success_contract.required_policy_groups includes "${group}"; tools succeeded (${successfulHits.map((h) => h.tool).join(", ")}) but none returned usable results.`
       });
     }
   }
 
   return { satisfied: violations.length === 0, violations };
+}
+
+/**
+ * A transcript entry "counts" toward satisfying a requirement only if the
+ * tool actually ran successfully. Failed/blocked/errored calls leave a
+ * record but don't move the success contract forward.
+ *
+ * Inspects every signal the registry sets on a failure:
+ *   - `entry.success === false`  (canonical: createActionResult sets this)
+ *   - `entry.error`              (canonical: blocked_by_policy / rate_limited)
+ *   - `entry.result?.success === false`  (legacy adapters that wrap result)
+ *   - `entry.result?.error`              (legacy adapters that wrap error)
+ *
+ * Defaults to "successful" only when nothing on the entry flags a failure
+ * — fail-closed is wrong here (we'd miss legitimate successes from
+ * adapters that just don't set `success`); fail-open is also wrong (the
+ * §18.6.1.B bug). The compromise: any explicit failure signal disqualifies
+ * the entry; everything else counts.
+ *
+ * @param {object} entry
+ * @returns {boolean}
+ */
+function isSuccessfulHit(entry) {
+  if (!entry || typeof entry !== "object") return false;
+  if (entry.success === false) return false;
+  if (entry.error != null && entry.error !== "") return false;
+  const result = entry.result;
+  if (result && typeof result === "object") {
+    if (result.success === false) return false;
+    if (result.error != null && result.error !== "") return false;
+  }
+  return true;
 }
 
 function resultHasSubstance(entry) {

@@ -190,6 +190,9 @@ const TOOL_DEFINITIONS = [
     parameters: ACTION_TOOL_SCHEMAS.web_search,
     risk_level: "low",
     required_capabilities: ["network"],
+    // P4-00: membership echoed for locality; canonical list lives in
+    // src/service/core/policy/policy-groups.mjs.
+    policy_group: "external_web_read",
     requires_confirmation: false,
     formatObservation(args) {
       return `Opened web search for "${args.query}"`;
@@ -311,6 +314,8 @@ const TOOL_DEFINITIONS = [
     parameters: ACTION_TOOL_SCHEMAS.web_search_fetch,
     risk_level: "low",
     required_capabilities: ["network"],
+    // P4-00: see policy-groups.mjs.
+    policy_group: "external_web_read",
     requires_confirmation: false,
     formatObservation(args) {
       return `Searched the web for "${args.query}"`;
@@ -763,6 +768,8 @@ export const FETCH_URL_CONTENT_TOOL = {
   parameters: ACTION_TOOL_SCHEMAS.fetch_url_content,
   risk_level: "low",
   required_capabilities: ["network"],
+  // P4-00: see policy-groups.mjs.
+  policy_group: "external_web_read",
   requires_confirmation: false,
   async execute(args = {}) {
     const url = String(args.url ?? "").trim();

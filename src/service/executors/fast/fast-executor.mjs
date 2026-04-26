@@ -8,39 +8,51 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { resolveProviderForTask, buildKimiRuntimeFromProvider } from "../shared/provider-resolver.mjs";
+import { formatResourceContext, formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
 import { executeKimiTask } from "../kimi/kimi-cli-executor.mjs";
 import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
 import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
 
-function buildMessages(task) {
-  const parts = [];
-
-  const contextText = task.context_packet?.text?.trim() ?? "";
+/**
+ * Build the chat messages array for the fast executor. Exported so the
+ * P4-00.5 verifier can assert the actual array structure (system content
+ * carries trusted resource context only; user content carries the user
+ * command plus the untrusted-source-material block when ctx.text/url is
+ * present).
+ *
+ * @param {object} task
+ */
+export function buildMessages(task) {
   const filePaths = task.context_packet?.file_paths ?? [];
-  const url = task.context_packet?.url?.trim() ?? "";
 
-  if (contextText) {
-    parts.push(`Context:\n${contextText.slice(0, 8000)}`);
-  }
+  // System: trusted ambient facts only — clock, location, attached file
+  // paths, connected accounts. NEVER ctx.text or page-content; that goes
+  // to the user side wrapped in <untrusted_source>.
+  const baseSystem = "You are UCA, a fast desktop assistant. Reply concisely and directly. Use the user's language. Do not wrap answers in code fences unless asked.";
+  const resourceContext = formatResourceContext(task);
+
+  // User: command + optional file-path list (still trusted, just placed
+  // in user role for proximity to the request) + optional untrusted block
+  // for ctx.text / url. The untrusted block has its own fencing + guard
+  // sentence; we don't add another "Context:" prefix because the fencing
+  // already disambiguates it from the user's actual instruction.
+  const userParts = [task.user_command];
   if (filePaths.length > 0) {
-    parts.push(`Files:\n${filePaths.join("\n")}`);
+    userParts.push(`Files:\n${filePaths.join("\n")}`);
   }
-  if (url) {
-    parts.push(`URL: ${url}`);
+  const untrusted = formatUntrustedSourceMaterial(task);
+  if (untrusted) {
+    userParts.push(untrusted);
   }
-
-  const userContent = parts.length > 0
-    ? `${task.user_command}\n\n${parts.join("\n\n")}`
-    : task.user_command;
 
   return [
     {
       role: "system",
-      content: "You are UCA, a fast desktop assistant. Reply concisely and directly. Use the user's language. Do not wrap answers in code fences unless asked."
+      content: `${baseSystem}\n${resourceContext}`
     },
     {
       role: "user",
-      content: userContent
+      content: userParts.join("\n\n")
     }
   ];
 }

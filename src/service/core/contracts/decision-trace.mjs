@@ -35,6 +35,10 @@ import crypto from "node:crypto";
  * @property {string} reason
  * @property {import("../intent/signals/_signal-types.mjs").Evidence[]} evidence
  * @property {{ candidate: string, reason: string }[]} rejected
+ * @property {string[]} [triggered_raid_ids]
+ *           // P4-RR: optional list of RAID identifiers (e.g. ["RR-03", "A-02"])
+ *           // that this decision recognised and acted on. Empty array stripped
+ *           // so unaware consumers ignore the field entirely.
  * @property {string} created_at
  */
 
@@ -43,11 +47,12 @@ import crypto from "node:crypto";
  * but this helper is exported for one-shot uses.
  *
  * @param {string} stage
- * @param {{ output: Object, reason?: string, evidence?: Array, rejected?: Array }} payload
+ * @param {{ output: Object, reason?: string, evidence?: Array, rejected?: Array, triggered_raid_ids?: string[] }} payload
  * @returns {DecisionTraceEntry}
  */
-export function buildDecisionTrace(stage, { output, reason = "", evidence = [], rejected = [] } = {}) {
-  return {
+export function buildDecisionTrace(stage, { output, reason = "", evidence = [], rejected = [], triggered_raid_ids = [] } = {}) {
+  /** @type {DecisionTraceEntry} */
+  const entry = {
     decision_id: shortId(),
     stage: String(stage ?? "unknown"),
     output: output ?? {},
@@ -56,6 +61,13 @@ export function buildDecisionTrace(stage, { output, reason = "", evidence = [], 
     rejected: Array.isArray(rejected) ? rejected : [],
     created_at: new Date().toISOString()
   };
+  // Only attach the field when the caller actually flagged something —
+  // keeps existing snapshots / logs unchanged for decisions that don't
+  // map to a RAID id.
+  if (Array.isArray(triggered_raid_ids) && triggered_raid_ids.length > 0) {
+    entry.triggered_raid_ids = [...triggered_raid_ids];
+  }
+  return entry;
 }
 
 /**
@@ -99,6 +111,7 @@ export function createTracker() {
 export const STAGES = Object.freeze({
   GOAL_CLASSIFICATION: "goal-classification",
   TOOL_POLICY: "tool-policy",
+  POLICY_CONFLICT_RESOLVED: "policy-conflict-resolved", // P4-00.6 invariant
   EXECUTOR_SELECTION: "executor-selection",
   OUTPUT_POLICY: "output-policy",          // reserved for Phase 2 OutputPolicy step
   SUCCESS_CONTRACT: "success-contract"     // reserved for finalize-time checks

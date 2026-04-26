@@ -1,6 +1,7 @@
 /**
  * UCA-077 P1-03: Tool policy resolver — single source of truth for whether
- * web_search_fetch is forbidden / optional / required for the current task.
+ * external web reading is forbidden / optional / required for the current
+ * task.
  *
  * Replaces the three independent decision points that previously voted
  * inconsistently:
@@ -21,9 +22,28 @@
  *
  * The resolver never returns "required" off a weak signal alone — that was
  * the root cause of the "最近这个框架很慢 → 误联网" symptom.
+ *
+ * UCA-077 P4-00 (Issue β / RR-03): the resolver decides at the policy-group
+ * level (currently only `external_web_read`) and emits TWO views of the same
+ * decision in the returned policy:
+ *
+ *   1. `tool_policy.policy_groups.external_web_read` — canonical group entry
+ *      consumed by the registry-level policy guard for capability-based
+ *      forbidden checks.
+ *   2. `tool_policy.<toolId>` for every member of the group — back-compat
+ *      with consumers (agent-loop, executor-resolver, success-contract,
+ *      task-contract, agentic prompt-builder) that read
+ *      `tool_policy.web_search_fetch.mode` directly.
+ *
+ * Both views carry the same `mode`, `reason`, `evidence`, and a
+ * `policy_group` tag for traceability. The single source of truth for which
+ * toolIds belong to which group lives in `policy-groups.mjs`.
  */
 
+import { toolsInGroup } from "./policy-groups.mjs";
+
 const LOCAL_SCOPES = new Set(["uploaded_files", "current_context", "local_project", "selection"]);
+const PRIMARY_GROUP = "external_web_read";
 
 /**
  * @typedef {Object} ToolPolicy
@@ -109,9 +129,46 @@ export function resolveToolPolicy({ signals, contextPacket: _contextPacket = {} 
 }
 
 function webSearchPolicy(mode, reason, evidence) {
-  return {
-    web_search_fetch: { mode, reason, evidence: Array.isArray(evidence) ? evidence : [] }
+  return buildExternalWebReadPolicy(mode, reason, evidence);
+}
+
+/**
+ * Build a fully-expanded tool_policy fragment for a group-level decision
+ * about external web reading. Public so other code paths that decide to
+ * forbid/require external web reads (e.g. task-spec's connector-domain
+ * branch) emit the same shape — and therefore receive the same enforcement
+ * — as the resolver itself.
+ *
+ * The output contains:
+ *   - `policy_groups.external_web_read` — canonical group entry consumed
+ *     by the registry policy guard for capability-based forbidden checks
+ *     and rendered in the agentic prompt as "applies_to: …".
+ *   - `tool_policy.<toolId>` for every member of the group — back-compat
+ *     for consumers that still read e.g. `tool_policy.web_search_fetch`.
+ *
+ * Each entry is a fresh object so a future per-tool override can mutate
+ * one without affecting siblings.
+ *
+ * @param {"forbidden"|"optional"|"required"} mode
+ * @param {string} reason
+ * @param {import("../intent/signals/_signal-types.mjs").Evidence[]} evidence
+ */
+export function buildExternalWebReadPolicy(mode, reason, evidence) {
+  const baseFields = {
+    mode,
+    reason,
+    evidence: Array.isArray(evidence) ? evidence : [],
+    policy_group: PRIMARY_GROUP
   };
+  const policy = {
+    policy_groups: {
+      [PRIMARY_GROUP]: { ...baseFields }
+    }
+  };
+  for (const toolId of toolsInGroup(PRIMARY_GROUP)) {
+    policy[toolId] = { ...baseFields };
+  }
+  return policy;
 }
 
 function firstMatch(signal) {

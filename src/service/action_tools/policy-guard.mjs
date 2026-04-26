@@ -20,6 +20,7 @@
  */
 
 import { appendAuditLog } from "../security/audit-log.mjs";
+import { groupsOfTool } from "../core/policy/policy-groups.mjs";
 import { createActionResult } from "./types.mjs";
 
 /**
@@ -63,13 +64,26 @@ export function applyPolicyGuard(toolId, args, ctx) {
   const taskId = task?.task_id ?? null;
 
   // 1. Forbidden enforcement.
-  const policy = task?.task_spec?.tool_policy?.[toolId];
-  if (policy && policy.mode === "forbidden") {
+  //
+  // Two-layer check, in priority order:
+  //   1a. Direct toolId entry — `tool_policy[toolId].mode === "forbidden"`.
+  //       This is what the resolver expands to for back-compat.
+  //   1b. Policy-group entry — `tool_policy.policy_groups[group].mode ===
+  //       "forbidden"` for any group this toolId belongs to. Defense in
+  //       depth (P4-00 / Issue β): if a future caller — including
+  //       SemanticRouter or a manually constructed TaskSpec — emits ONLY a
+  //       group-level decision, the guard still catches sibling tools that
+  //       share the group. This is the wall that closes the
+  //       `web_search_fetch` blocked → `web_search` succeeds bypass.
+  const blockingPolicy = findForbiddingPolicy(task?.task_spec?.tool_policy, toolId);
+  if (blockingPolicy) {
+    const { policy, source } = blockingPolicy;
     if (runtime) {
       try {
         appendAuditLog(runtime, "tool.blocked_by_policy", {
           tool_id: toolId,
           reason: policy.reason ?? "tool_policy.mode === forbidden",
+          policy_source: source,           // "tool" | "group:<groupId>"
           args_summary: summariseArgs(args)
         }, taskId);
       } catch { /* audit failure must not break tool execution */ }
@@ -80,7 +94,12 @@ export function applyPolicyGuard(toolId, args, ctx) {
         success: false,
         observation: `Tool "${toolId}" is forbidden by task policy: ${policy.reason ?? "no reason given"}`,
         error: "blocked_by_policy",
-        metadata: { tool_id: toolId, policy_mode: "forbidden", policy_reason: policy.reason ?? null }
+        metadata: {
+          tool_id: toolId,
+          policy_mode: "forbidden",
+          policy_reason: policy.reason ?? null,
+          policy_source: source
+        }
       })
     };
   }
@@ -135,6 +154,36 @@ export function resetRateLimits(runtime) {
  */
 export function getRateLimitUsage(runtime, taskId, toolId) {
   return runtime?.perTaskToolCallCounts?.get(`${taskId}:${toolId}`) ?? 0;
+}
+
+/**
+ * Look for a `forbidden` decision that applies to `toolId`. Returns the
+ * policy object plus a tag identifying which layer it came from, or null
+ * when no layer forbids the tool.
+ *
+ * @param {object|null|undefined} toolPolicy   `task.task_spec.tool_policy`
+ * @param {string} toolId
+ * @returns {{ policy: object, source: string } | null}
+ */
+function findForbiddingPolicy(toolPolicy, toolId) {
+  if (!toolPolicy || typeof toolPolicy !== "object") return null;
+
+  const direct = toolPolicy[toolId];
+  if (direct && direct.mode === "forbidden") {
+    return { policy: direct, source: "tool" };
+  }
+
+  const groupEntries = toolPolicy.policy_groups;
+  if (groupEntries && typeof groupEntries === "object") {
+    for (const group of groupsOfTool(toolId)) {
+      const groupPolicy = groupEntries[group];
+      if (groupPolicy && groupPolicy.mode === "forbidden") {
+        return { policy: groupPolicy, source: `group:${group}` };
+      }
+    }
+  }
+
+  return null;
 }
 
 function resolveRateLimit(toolId, task) {
