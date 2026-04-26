@@ -207,8 +207,14 @@ function scenario4() {
     "s4: createToolUsingExecutorScaffold must branch on result.status === partial_success"
   );
   assert(
-    /event_type:\s*["']partial_success["'][\s\S]{0,220}phase_gate/.test(agentLoopSrc),
+    /event_type:\s*["']partial_success["'][\s\S]{0,300}phase_gate/.test(agentLoopSrc),
     "s4: scaffold partial_success event must carry phase_gate metadata"
+  );
+  // Both gate metadata keys must travel together so the SSE consumer
+  // sees the full envelope regardless of which gate fired.
+  assert(
+    /event_type:\s*["']partial_success["'][\s\S]{0,300}error_budget/.test(agentLoopSrc),
+    "s4: scaffold partial_success event must carry error_budget metadata"
   );
 
   const eventBusSrc = readFileSync(
@@ -223,7 +229,7 @@ function scenario4() {
     eventBusSrc.includes('"error_budget_signal"'),
     "s4: error_budget_signal must be part of the public EVENT_TYPES contract"
   );
-  console.log("  ✓ scenario 4: scaffold preserves phase-gate partial_success + event contract");
+  console.log("  ✓ scenario 4: scaffold preserves phase-gate + error-budget partial_success envelope");
 }
 
 /* ── Scenario 5: error-budget exhaustion on repeated tool_failure ── */

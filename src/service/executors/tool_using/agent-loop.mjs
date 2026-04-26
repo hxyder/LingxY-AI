@@ -792,7 +792,8 @@ export function createToolUsingExecutorScaffold() {
             event_type: "partial_success",
             payload: {
               text,
-              phase_gate: result.phase_gate ?? null
+              phase_gate: result.phase_gate ?? null,
+              error_budget: result.error_budget ?? null
             }
           };
         } else {
