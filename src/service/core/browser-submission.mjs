@@ -40,6 +40,18 @@ function createSelectionMetadata(capture) {
   };
 }
 
+// P4-03 follow-up: browser captures of webpage / link / image WITHOUT
+// user-selected text are SYNTHETIC METADATA (active-tab URL + page
+// title), not the user's selection. Pre-fix the C1 context-source
+// classifier saw "non-empty text ≠ command" and defaulted to
+// `real_selection=true`, which made source-scope anchor the task to
+// the page and forbid web search. Tagging the synthetic text with the
+// `[browser_metadata · ...]` sentinel lets the classifier separate
+// "user is on this page" (background metadata) from "user pasted
+// content from this page" (real selection — anchor).
+const BROWSER_METADATA_SENTINEL =
+  "[browser_metadata · 浏览器自动捕获 · 仅作背景信息，不构成用户选区]";
+
 function normalizeCaptureText(capture) {
   if (capture.sourceType === "chat") {
     return capture.text ?? "";
@@ -50,11 +62,13 @@ function normalizeCaptureText(capture) {
   }
 
   if (capture.sourceType === "text_selection") {
+    // Real user-selected content — anchor.
     return capture.selectionText ?? "";
   }
 
   if (capture.sourceType === "link" && capture.url) {
     return [
+      BROWSER_METADATA_SENTINEL,
       `Link URL: ${capture.url}`,
       capture.anchorText ? `Anchor text: ${capture.anchorText}` : ""
     ].filter(Boolean).join("\n");
@@ -62,6 +76,7 @@ function normalizeCaptureText(capture) {
 
   if (capture.sourceType === "webpage" && capture.url) {
     return [
+      BROWSER_METADATA_SENTINEL,
       `Webpage URL: ${capture.url}`,
       capture.pageTitle ? `Page title: ${capture.pageTitle}` : ""
     ].filter(Boolean).join("\n");
@@ -69,6 +84,7 @@ function normalizeCaptureText(capture) {
 
   if (capture.sourceType === "image" && capture.imageUrl) {
     return [
+      BROWSER_METADATA_SENTINEL,
       `Image URL: ${capture.imageUrl}`,
       capture.pageTitle ? `Page title: ${capture.pageTitle}` : ""
     ].filter(Boolean).join("\n");

@@ -13,6 +13,7 @@ import { createTaskSpec } from "./task-spec.mjs";
 import { extractAllSignals } from "./intent/signals/index.mjs";
 import { shouldConsultSemanticRouter } from "./policy/tool-policy-resolver.mjs";
 import { resolveSemanticDecision } from "./intent/semantic-router.mjs";
+import { classifyContextSources } from "./intent/context-sources.mjs";
 import { extractFileContent } from "../extractors/file-ingest.mjs";
 import {
   applyExecutorEvent,
@@ -720,42 +721,59 @@ export async function submitContextTask({
 
   // P4-03 (step 4): SemanticRouter async preflight. Suggestion-only —
   // the deterministic rules in tool-policy-resolver remain authoritative.
-  // We compute signals once here and ONLY call the LLM when the
-  // ambiguity gate says rules are weak (no attached files, no strong
-  // explicit_external, no strong explicit_entity, command > 8 chars).
-  // For every other case the cost is exactly one regex pass (signals
-  // recomputed inside createTaskSpec — idempotent). Result is stamped
-  // onto a fresh packet clone so the spec sees it; createTaskSpec
-  // re-reads context_sources / classifies on the clone (idempotent).
   //
-  // Today the default router has no chat adapter wired; the call
-  // returns {kind:"rejection", code:"no_provider"}. The rejection is
-  // stamped and shows up on the SEMANTIC_ROUTER DecisionTrace stage,
-  // which proves the wire is in place without changing behaviour. When
-  // the chat adapter is plugged in (next P4 step), the merge layer
-  // activates automatically.
+  // Layering note: we run the C1 context-source classifier FIRST so the
+  // signal bundle and SR ctxSummary both see the correct
+  // `context_sources` shape. Without this, source-scope falls back to
+  // its legacy "non-empty distinct text → selection fact" branch on
+  // RAG/conversation/parent-task-injected text, which (a) wastes the
+  // ambiguity gate on a phantom local anchor, and (b) feeds SR a
+  // legacy `has_text/text_chars` ctxSummary. Once a real chat adapter
+  // is wired, that bug would corrupt SR's reasoning in exactly the
+  // RAG/browser scenarios this layer was meant to fix.
+  //
+  // createTaskSpec re-runs classifyContextSources on the same packet —
+  // pure function, identical output, idempotent. The duplicated work
+  // is cheaper than threading the result through.
+  //
+  // Default router today has no chat adapter; the call returns
+  // {kind:"rejection", code:"no_provider"}. The rejection is stamped
+  // and shows up on the SEMANTIC_ROUTER DecisionTrace stage, proving
+  // the wire is in place without changing behaviour.
   let routerEnrichedContext = normalizedContextPacket;
   try {
-    const tentativeSignals = extractAllSignals(userCommand, normalizedContextPacket).signals;
+    const contextSources = classifyContextSources({
+      text: userCommand,
+      contextPacket: normalizedContextPacket
+    });
+    const routerContext = { ...normalizedContextPacket, context_sources: contextSources };
+    const tentativeSignals = extractAllSignals(userCommand, routerContext).signals;
     if (shouldConsultSemanticRouter({
       signals: tentativeSignals,
-      contextPacket: normalizedContextPacket,
+      contextPacket: routerContext,
       text: userCommand
     })) {
       const srResult = await resolveSemanticDecision({
         text: userCommand,
-        contextPacket: normalizedContextPacket,
+        contextPacket: routerContext,
         signals: tentativeSignals
       });
       if (srResult.kind === "decision") {
-        routerEnrichedContext = { ...normalizedContextPacket, semantic_router_decision: srResult.decision };
+        routerEnrichedContext = { ...routerContext, semantic_router_decision: srResult.decision };
       } else {
-        routerEnrichedContext = { ...normalizedContextPacket, semantic_router_rejection: srResult };
+        routerEnrichedContext = { ...routerContext, semantic_router_rejection: srResult };
       }
+    } else {
+      // Even when SR is gated out, propagate the C1 output so
+      // createTaskSpec doesn't re-do work — and downstream surfaces
+      // (decomposeUserCommand / submitCompositeTask) see consistent
+      // metadata.
+      routerEnrichedContext = routerContext;
     }
   } catch {
-    // Belt-and-suspenders: SemanticRouter must NEVER block submission.
-    // Any unexpected throw degrades silently to the deterministic path.
+    // Belt-and-suspenders: SemanticRouter / classifier must NEVER block
+    // submission. Any unexpected throw degrades silently to the
+    // deterministic path. createTaskSpec will run its own classifier.
   }
 
   const preflightTaskSpec = createTaskSpec(userCommand, routerEnrichedContext, route);

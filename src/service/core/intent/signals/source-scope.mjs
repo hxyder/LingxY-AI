@@ -11,10 +11,18 @@
  */
 
 import { emptySignal } from "./_signal-types.mjs";
+import { LOCAL_ANCHOR_KEYS, hasLocalAnchor } from "../context-sources.mjs";
 
 const NAME = "source_scope";
 
-const CURRENT_CONTEXT_PATTERN = /(这个框架|当前框架|这段代码|这个代码|这段|这个文件|这些文件|上传的文件|这个流程|这个项目|我的程序|我的项目|本地项目|本地代码|刚才的日志|下面[的]?(?:流程|代码|内容|日志|文件|文档|这段)|根据我提供的|根据上面|根据下面|这份文档|这篇文章|这个文档|这篇内容|当前选中|这里(?:的)?(?:代码|内容|流程))/;
+// P4-03 follow-up: page pronouns added so a user explicitly asking the
+// assistant to analyse a webpage anchors the task locally even though
+// the synthetic browser metadata block (`[browser_metadata · ...]`) is
+// no longer a local anchor on its own. "summarize this page" /
+// "总结当前网页" → CURRENT_CONTEXT match → scope=current_context →
+// resolver step 3 forbids web. Without these patterns, only a real
+// selection or a file_path could anchor a browser-derived task.
+const CURRENT_CONTEXT_PATTERN = /(这个框架|当前框架|这段代码|这个代码|这段|这个文件|这些文件|上传的文件|这个流程|这个项目|我的程序|我的项目|本地项目|本地代码|刚才的日志|下面[的]?(?:流程|代码|内容|日志|文件|文档|这段)|根据我提供的|根据上面|根据下面|这份文档|这篇文章|这个文档|这篇内容|当前选中|这里(?:的)?(?:代码|内容|流程)|这个网页|当前网页|这个页面|当前页面|这页内容|本页内容|这篇网页|this\s+page|this\s+webpage|the\s+(?:current\s+)?page)/i;
 
 const LOCAL_PROJECT_PATTERN = /(整个项目|整个仓库|整个代码库|repo\s+root|当前仓库|本地仓库)/i;
 
@@ -118,12 +126,16 @@ export function detect(text, contextPacket) {
   const trimmedCommand = String(text ?? "").trim();
   const isJustCommandEcho = selectionText.length > 0 && selectionText === trimmedCommand;
   const sources = contextPacket?.context_sources;
-  const hasRealLocalAnchor = sources
-    ? Boolean(sources.real_selection || sources.browser_page || sources.file_text)
-    : (selectionText.length > 0 && !isJustCommandEcho);
-  if (hasRealLocalAnchor) {
+  // Pull the anchor flags from C1's canonical LOCAL_ANCHOR_KEYS list
+  // rather than hard-coding member names — when C1 evolves the anchor
+  // set (e.g. P4-03 dropped `browser_page` from anchors), this branch
+  // updates automatically.
+  const hasRealLocalAnchorFlag = sources ? hasLocalAnchor(sources) : false;
+  const hasRealLocalAnchorViaText = !sources && selectionText.length > 0 && !isJustCommandEcho;
+  const hasRealLocalAnchorResult = hasRealLocalAnchorFlag || hasRealLocalAnchorViaText;
+  if (hasRealLocalAnchorResult) {
     const reason = sources
-      ? `context_sources flags a local anchor (real_selection=${sources.real_selection} / browser_page=${sources.browser_page} / file_text=${sources.file_text})`
+      ? `context_sources flags a local anchor (${LOCAL_ANCHOR_KEYS.filter((k) => sources[k]).join(", ") || "(unknown)"})`
       : `contextPacket.text is non-empty (${selectionText.length} chars) and distinct from user command`;
     return {
       name: NAME,

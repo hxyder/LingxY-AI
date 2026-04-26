@@ -97,6 +97,21 @@ async function run() {
     // display surfaces; this assertion just confirms the *anchor*
     // semantics. (Caller would inspect contextPacket.url directly.)
   });
+  it("sentinel: [browser_metadata · ...] sets browser_page=true (background, NOT anchor)", () => {
+    // P4-03 follow-up: browser-submission tags webpage / link / image
+    // captures without user selection with this sentinel. The flag
+    // fires but `browser_page` is OUT of LOCAL_ANCHOR_KEYS, so it
+    // doesn't anchor the task to local-only.
+    const out = classifyContextSources({
+      text: "x",
+      contextPacket: {
+        text: "[browser_metadata · 浏览器自动捕获 · 仅作背景信息，不构成用户选区]\nWebpage URL: https://example.com\nPage title: Foo"
+      }
+    });
+    assert.equal(out.browser_page, true);
+    assert.equal(out.real_selection, false,
+      "synthetic browser metadata must NOT default to real_selection");
+  });
 
   // ── 3. authoritative metadata flags ───────────────────────────────────
   it("metadata: conversation_history_injected=true → conversation_history (no sentinel needed)", () => {
@@ -260,9 +275,14 @@ async function run() {
   it("hasLocalAnchor: only rag_background → false (RAG never an anchor)", () => {
     assert.equal(hasLocalAnchor({ ...ALL_FALSE, rag_background: true }), false);
   });
-  it("hasLocalAnchor: browser_page or file_text → true", () => {
-    assert.equal(hasLocalAnchor({ ...ALL_FALSE, browser_page: true }), true);
+  it("hasLocalAnchor: ONLY file_text → true (real file content)", () => {
     assert.equal(hasLocalAnchor({ ...ALL_FALSE, file_text: true }), true);
+  });
+  it("hasLocalAnchor: browser_page alone → FALSE (P4-03 follow-up: background only)", () => {
+    // Browser metadata (active-tab URL + page title without selection)
+    // is NOT a local anchor. The user must explicitly anchor via
+    // selection or a command-side reference like "这个页面".
+    assert.equal(hasLocalAnchor({ ...ALL_FALSE, browser_page: true }), false);
   });
   it("hasLocalAnchor: null/undefined → false (no crash)", () => {
     assert.equal(hasLocalAnchor(null), false);
@@ -278,8 +298,13 @@ async function run() {
       assert.ok(key in ALL_FALSE, `${key} must appear in ContextSources record`);
     }
   });
-  it("public: LOCAL_ANCHOR_KEYS frozen with the 3 anchor flag names", () => {
-    assert.deepEqual([...LOCAL_ANCHOR_KEYS], ["real_selection", "browser_page", "file_text"]);
+  it("public: LOCAL_ANCHOR_KEYS frozen with the 2 anchor flag names (P4-03 dropped browser_page)", () => {
+    // browser_page is intentionally NOT an anchor — synthetic browser
+    // metadata is background. real_selection / file_text are the only
+    // automatic anchors; explicit user references go through
+    // source-scope.mjs CURRENT_CONTEXT_PATTERN (extended with page
+    // pronouns in the same follow-up).
+    assert.deepEqual([...LOCAL_ANCHOR_KEYS], ["real_selection", "file_text"]);
     assert.throws(() => { LOCAL_ANCHOR_KEYS.push("x"); });
   });
 

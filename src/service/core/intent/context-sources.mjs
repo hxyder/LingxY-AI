@@ -86,6 +86,12 @@ const SENTINEL_RULES = Object.freeze([
   { startsWith: "[memory_background ·",                source: "rag_background" },
   { startsWith: "[上一轮任务摘要 · parent=",             source: "parent_task_context" },
   { match: "[Editable target artifact]",               source: "editable_artifact" },
+  // P4-03 follow-up: synthetic browser-capture metadata — active-tab
+  // URL + page title with no user selection. This is background-only
+  // (NOT a local anchor); browser_page is excluded from
+  // LOCAL_ANCHOR_KEYS so source-scope won't mistake "user is on a
+  // page" for "user wants me to analyse this page".
+  { startsWith: "[browser_metadata ·",                 source: "browser_page" },
   // legacy regex fallback from conversation-memory.mjs:136
   { regex: /^对话历史[:：]/m,                          source: "conversation_history" }
 ]);
@@ -234,9 +240,18 @@ export const CONTEXT_SOURCE_KEYS = Object.freeze([
  * externally. Used by source-scope.mjs (C3) to gate the LOCAL_SCOPES
  * forbid path. NOT a list of "this means forbid web search" — Layer 4
  * (resolver) makes that decision based on these labels.
+ *
+ * P4-03 follow-up: `browser_page` is intentionally NOT an anchor.
+ * Browser captures of webpage / link / image without user selection
+ * carry an active-tab URL + page title for context, not "the user
+ * wants this page analysed". Pre-fix this auto-anchored every
+ * weather/news question asked while a tab was open; the user must
+ * explicitly anchor via a real selection (`real_selection`),
+ * pasted file content (`file_text`), or a command-side reference
+ * (e.g. "总结这个页面" → matches source-scope.mjs CURRENT_CONTEXT_PATTERN).
  */
 export const LOCAL_ANCHOR_KEYS = Object.freeze([
-  "real_selection", "browser_page", "file_text"
+  "real_selection", "file_text"
 ]);
 
 /**
