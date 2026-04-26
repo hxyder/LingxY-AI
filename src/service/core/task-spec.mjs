@@ -163,29 +163,34 @@ const GOAL_RULES = [
   // alone, which routed local-context tasks (e.g. "最新这个框架的功能") to
   // search_and_answer and onward to web_search. Tightening:
   //   - When signals are provided, search_and_answer requires either
-  //     `explicit_external` or `topic_hint` to fire. Weak time markers
-  //     never escalate the goal by themselves.
+  //     a structural external-intent signal OR an SR judgement that
+  //     this is a research-class task. Weak time markers never
+  //     escalate the goal by themselves.
   //   - When signals are absent (back-compat for callers like routeIntent
   //     that have not adopted the signal layer yet), keep the legacy
   //     pattern set, but it now serves only as a coarse hint downstream.
   //
-  // P4-RQ E3 stage C1 / E4 — REMAINING TRANSITIONAL DEPENDENCY:
-  // topic_hint is observability-only at the deterministic-policy
-  // layer (resolver step 3 was removed in C1) BUT it still
-  // participates here as a goal-classification signal. A topical
-  // query like "今天 AI 新闻" without SR available is goal=
-  // search_and_answer + web=forbidden, which routes through
-  // executor-resolver Rule 6 default to `tool_using` (the model
-  // gets to politely explain "I can't search").
+  // P4-RQ §19 #5 / F2 — MIGRATION OFF topic_hint:
+  // Pre-F2 the requiresSignal check read `topic_hint.matched`,
+  // which entrenched the topic-domain regex as a goal-classifier
+  // input. F2 replaces that with the synthetic `semantic_router`
+  // signal that wraps SR's structured judgement. Net effect:
+  //   - With SR available + SR says web≠forbidden → search_and_answer.
+  //   - Without SR + topical query → goal=qa (conservative fallback,
+  //     consistent with the "no SR = forbidden web" principle from
+  //     E3 C1; executor-resolver Rule 5 routes qa+forbidden to fast
+  //     for a quick "I can't reach the web" reply).
+  //   - explicit_external still fires here as a STRUCTURAL hard
+  //     signal (kept-as-regex per the reference docs).
   //
-  // Why this is tracked, not yet removed: migrating goal /
-  // executor selection to read SR/EvidencePolicy output (instead
-  // of topic_hint signals) is a §19 follow-up of equal scope to
-  // E3-C1 itself. Removing this requiresSignal entry without the
-  // migration would bounce more topical queries onto goal=qa
-  // → executor=fast, which is a different conservative-fallback
-  // shape than what fixtures currently encode. Tracked for the
-  // next round; not silently removed here.
+  // explicit_search NOT added per user direction post-E5: "下一步
+  // 不要做'把 explicit_search 加进 goal regex'这种快修, 应该按计划做
+  // goal/executor 从 SR + EvidencePolicy 输出迁移". The migration
+  // is the SR consult; if "查一下 X" without SR is mis-classified
+  // as goal=qa today, that's an acceptable edge — executor still
+  // reaches tool_using because explicit_search drives web=required
+  // at the resolver layer (E5 step 3), and SuccessContract will
+  // require external_web_read either way.
   {
     goal: "search_and_answer",
     // UCA-077 P2-04: split Chinese / English so \b only guards English; the
@@ -197,11 +202,15 @@ const GOAL_RULES = [
       /\b(search|latest|recent|news|today|tomorrow|weather|forecast)\b/i,
       /(天气|气温|明天|后天|明日|汇率|股价|航班|机票|酒店|价格)/
     ],
-    // E4 transitional dependency: topic_hint kept here to preserve
-    // goal=search_and_answer routing for topical queries until SR
-    // output drives goal classification too. See §19 follow-up.
+    // F2: explicit_external (structural hard signal) OR semantic_router
+    // says research-class (web_policy != forbidden). topic_hint REMOVED.
     requiresSignal: (signals) =>
-      Boolean(signals?.explicit_external?.matched || signals?.topic_hint?.matched)
+      Boolean(
+        signals?.explicit_external?.matched
+        || (signals?.semantic_router?.matched
+            && signals.semantic_router.hint?.web_policy
+            && signals.semantic_router.hint.web_policy !== "forbidden")
+      )
   }
   // fallback: "qa" — handled in classifyGoal()
 ];
@@ -633,7 +642,13 @@ function collectGoalEvidence(signals, { noteIntent, artifactEditIntent }) {
   const evidence = [];
   if (noteIntent) evidence.push({ type: "context", source: "note-intent", reason: "hasNoteTakingIntent" });
   if (artifactEditIntent) evidence.push({ type: "context", source: "artifact-edit-intent", reason: "hasArtifactRefinementIntent" });
-  for (const name of ["explicit_external", "topic_hint", "source_scope"]) {
+  // F2: evidence list extended with semantic_router. topic_hint
+  // kept as OBSERVABILITY-ONLY evidence — it no longer participates
+  // in the goal classifier's decision (see GOAL_RULES requiresSignal),
+  // but a topic match alongside a goal=search_and_answer still
+  // surfaces in the trace so operators can see corroborating
+  // signals.
+  for (const name of ["explicit_external", "semantic_router", "topic_hint", "source_scope"]) {
     const signal = signals?.[name];
     if (signal?.matched) evidence.push(...signal.evidence);
   }

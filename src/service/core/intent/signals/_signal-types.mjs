@@ -66,7 +66,8 @@ export const SIGNAL_NAMES = /** @type {const} */ ([
   "topic_hint",
   "pending_offer",
   "explicit_single_url",
-  "explicit_no_search"
+  "explicit_no_search",
+  "semantic_router"
 ]);
 
 /**
