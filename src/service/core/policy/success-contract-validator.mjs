@@ -22,6 +22,7 @@
  */
 
 import { toolsInGroup } from "./policy-groups.mjs";
+import { extractEvidence } from "./evidence-normalizer.mjs";
 
 /**
  * @typedef {Object} TranscriptEntry
@@ -99,7 +100,80 @@ export function validateSuccessContract(taskSpec, transcript = []) {
     }
   }
 
+  // P4-RQ D3: research_quality coverage enforcement. Only fires when
+  // the task is multi_source_research AND external_web_read is
+  // already on required_policy_groups (i.e. web mode is "required").
+  // For "optional" tasks we don't force coverage — the user didn't
+  // ask for hard external research.
+  for (const v of checkResearchCoverage(taskSpec, transcript, requiredGroups)) {
+    violations.push(v);
+  }
+
   return { satisfied: violations.length === 0, violations };
+}
+
+/**
+ * P4-RQ D3: enforce research_quality thresholds against the
+ * transcript's evidence. Three new violation kinds:
+ *
+ *   - external_web_read_insufficient_sources
+ *     source_count < min_sources
+ *
+ *   - external_web_read_single_domain_only
+ *     distinct_domain_count < min_distinct_domains
+ *
+ *   - external_web_read_single_roundup_only
+ *     evidence.is_single_roundup AND
+ *     research_quality.single_source_digest_satisfies === false
+ *     (the more specific "the one publisher you found is a roundup
+ *     page, you need actual independent sources" violation)
+ *
+ * Only runs when:
+ *   - task_spec.research_quality is non-null
+ *   - profile is "multi_source_research" (single_lookup is 1/1/true,
+ *     so the per-group "succeeded with substance" check is enough)
+ *   - external_web_read is in required_policy_groups (i.e. web mode
+ *     was "required" — we don't enforce coverage on optional tasks)
+ *
+ * If the per-group hit-count check above already failed (no
+ * successful hits or returned-empty), running coverage on top would
+ * just stack noise. We still check, because the violations are
+ * orthogonal: "0 hits" vs "1 hit but only 1 publisher" tell the
+ * operator different things.
+ */
+function checkResearchCoverage(taskSpec, transcript, requiredGroups) {
+  const rq = taskSpec?.research_quality;
+  if (!rq || typeof rq !== "object") return [];
+  if (rq.profile !== "multi_source_research") return [];
+  if (!Array.isArray(requiredGroups) || !requiredGroups.includes("external_web_read")) return [];
+
+  const evidence = extractEvidence(transcript);
+  const violations = [];
+
+  // Roundup gets its own (more specific) violation BEFORE the
+  // generic single_domain_only — the runbook recovery is different
+  // ("broaden the query" vs "find another source") so we want the
+  // sharper signal first when both apply.
+  if (evidence.is_single_roundup && rq.single_source_digest_satisfies === false) {
+    violations.push({
+      kind: "external_web_read_single_roundup_only",
+      message: `multi_source_research does not accept a single-publisher roundup/digest as evidence (domain=${evidence.domains.join(", ")}, markers matched: ${evidence.roundup_markers.join(", ")}).`
+    });
+  } else if (evidence.distinct_domain_count < rq.min_distinct_domains) {
+    violations.push({
+      kind: "external_web_read_single_domain_only",
+      message: `multi_source_research requires at least ${rq.min_distinct_domains} distinct publishers; got ${evidence.distinct_domain_count} (${evidence.domains.join(", ") || "none"}).`
+    });
+  }
+
+  if (evidence.source_count < rq.min_sources) {
+    violations.push({
+      kind: "external_web_read_insufficient_sources",
+      message: `multi_source_research requires at least ${rq.min_sources} distinct sources; got ${evidence.source_count}.`
+    });
+  }
+
+  return violations;
 }
 
 /**

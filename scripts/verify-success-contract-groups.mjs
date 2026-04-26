@@ -222,13 +222,26 @@ async function run() {
   });
 
   // ── 9. e2e validator on a real createTaskSpec output ──────────────────
-  it("e2e: real spec + transcript with fetch_url_content alone passes", () => {
+  it("e2e: real spec + transcript with multi-source web evidence passes", () => {
+    // P4-RQ D3: the group-satisfaction check still passes when ANY
+    // tool in the group succeeds. But this is now a multi_source_research
+    // task (research-class command) so the transcript also has to meet
+    // coverage thresholds (≥3 sources / ≥2 domains). Old single-call
+    // version no longer satisfies — split into the dedicated
+    // "single_lookup OR coverage met" tests further down.
     const spec = createTaskSpec("查一下网上最近的开源项目", {}, {});
     const transcript = [{
       type: "tool_result",
-      tool: "fetch_url_content",
+      tool: "web_search_fetch",
       success: true,
-      result: { extractedText: "x".repeat(500) }
+      observation: "x".repeat(500),
+      metadata: {
+        results: [
+          { url: "https://github.com/awesome-project", title: "..." },
+          { url: "https://gitlab.com/another-project", title: "..." },
+          { url: "https://sourceforge.net/yet-another", title: "..." }
+        ]
+      }
     }];
     const out = validateSuccessContract(spec, transcript);
     assert.equal(out.satisfied, true,
@@ -332,17 +345,217 @@ async function run() {
     });
     assert.equal(out.next_action, "escalate");
   });
-  it("phaseGate: backward-compat — validateSuccessContract still works unchanged", () => {
-    // The phase gate didn't change validateSuccessContract's surface.
-    // Snapshot a known-good case from earlier in this file: explicit
-    // external request + fetch_url_content with substance → satisfied.
+  it("phaseGate: backward-compat — validateSuccessContract still works on a satisfied multi-source case", () => {
+    // P4-RQ D3 update: the phase gate didn't change validateSuccessContract's
+    // surface, but research_quality now enforces coverage on multi_source
+    // tasks. Snapshot a known-good case: research-class command +
+    // 3-cross-domain web evidence → satisfied.
     const spec = createTaskSpec("查一下网上最近的开源项目", {}, {});
     const transcript = [{
-      type: "tool_result", tool: "fetch_url_content", success: true,
-      result: { extractedText: "x".repeat(500) }
+      type: "tool_result", tool: "web_search_fetch", success: true,
+      observation: "x".repeat(500),
+      metadata: {
+        results: [
+          { url: "https://github.com/a" },
+          { url: "https://gitlab.com/b" },
+          { url: "https://sourceforge.net/c" }
+        ]
+      }
     }];
     const final = validateSuccessContract(spec, transcript);
     assert.equal(final.satisfied, true);
+  });
+
+  // ── 11. P4-RQ D3: research_quality coverage enforcement ───────────────
+  // The load-bearing change. Single-source completions on a
+  // multi_source_research task must now FAIL validateSuccessContract.
+
+  // Build a multi_source_research spec by hand (avoid depending on
+  // tool-policy-resolver's exact regex behaviour for these tests).
+  function multiSourceSpec() {
+    return {
+      research_quality: {
+        profile: "multi_source_research",
+        min_sources: 3,
+        min_distinct_domains: 2,
+        single_source_digest_satisfies: false,
+        reason: "test"
+      },
+      success_contract: {
+        artifact_created: false, artifact_registered: false, tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: ["external_web_read"]
+      }
+    };
+  }
+  function singleLookupSpec() {
+    return {
+      research_quality: {
+        profile: "single_lookup",
+        min_sources: 1, min_distinct_domains: 1,
+        single_source_digest_satisfies: true,
+        reason: "test"
+      },
+      success_contract: {
+        artifact_created: false, artifact_registered: false, tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: ["external_web_read"]
+      }
+    };
+  }
+
+  it("D3: multi_source + 1 source / 1 domain → insufficient_sources + single_domain_only", () => {
+    const transcript = [{
+      type: "tool_result", tool: "web_search_fetch", success: true,
+      observation: "x".repeat(500),
+      metadata: { results: [{ url: "https://nature.com/articles/x", title: "..." }] }
+    }];
+    const out = validateSuccessContract(multiSourceSpec(), transcript);
+    assert.equal(out.satisfied, false);
+    const kinds = out.violations.map((v) => v.kind);
+    assert.ok(kinds.includes("external_web_read_insufficient_sources"), `kinds=${JSON.stringify(kinds)}`);
+    assert.ok(kinds.includes("external_web_read_single_domain_only"), `kinds=${JSON.stringify(kinds)}`);
+  });
+
+  it("D3: multi_source + 3 sources / 1 domain → single_domain_only fires", () => {
+    const transcript = [{
+      type: "tool_result", tool: "web_search_fetch", success: true,
+      observation: "x".repeat(500),
+      metadata: {
+        results: [
+          { url: "https://nature.com/articles/a" },
+          { url: "https://nature.com/articles/b" },
+          { url: "https://nature.com/articles/c" }
+        ]
+      }
+    }];
+    const out = validateSuccessContract(multiSourceSpec(), transcript);
+    assert.equal(out.satisfied, false);
+    const kinds = out.violations.map((v) => v.kind);
+    assert.ok(kinds.includes("external_web_read_single_domain_only"), `kinds=${JSON.stringify(kinds)}`);
+    // source_count = 3 already meets min_sources, so insufficient should NOT fire
+    assert.ok(!kinds.includes("external_web_read_insufficient_sources"), `kinds=${JSON.stringify(kinds)}`);
+  });
+
+  it("D3: multi_source + ScienceNet roundup → single_roundup_only (preferred over single_domain_only)", () => {
+    const transcript = [{
+      type: "tool_result", tool: "web_search_fetch", success: true,
+      observation: "x".repeat(500),
+      metadata: {
+        results: [
+          { url: "https://paper.sciencenet.cn/htmlnews/2026/4/563765.shtm", title: "一周热闻回顾" },
+          { url: "https://news.sciencenet.cn/htmlnews/2026/4/563766.shtm", title: "..." },
+          { url: "https://blog.sciencenet.cn/post/123", title: "..." }
+        ]
+      }
+    }];
+    const out = validateSuccessContract(multiSourceSpec(), transcript);
+    assert.equal(out.satisfied, false);
+    const kinds = out.violations.map((v) => v.kind);
+    assert.ok(kinds.includes("external_web_read_single_roundup_only"),
+      `expected single_roundup_only, got ${JSON.stringify(kinds)}`);
+    // The branch in checkResearchCoverage uses else-if — single_roundup_only
+    // wins over single_domain_only when both apply. (Both "tell the operator
+    // different things" — but single_roundup is the more actionable one,
+    // pointing the runbook recovery at "broaden query".)
+    assert.ok(!kinds.includes("external_web_read_single_domain_only"), `kinds=${JSON.stringify(kinds)}`);
+  });
+
+  it("D3: multi_source + 3 sources / 3 domains → satisfied", () => {
+    const transcript = [{
+      type: "tool_result", tool: "web_search_fetch", success: true,
+      observation: "x".repeat(500),
+      metadata: {
+        results: [
+          { url: "https://nature.com/articles/a" },
+          { url: "https://reuters.com/world/b" },
+          { url: "https://wired.com/story/c" }
+        ]
+      }
+    }];
+    const out = validateSuccessContract(multiSourceSpec(), transcript);
+    assert.equal(out.satisfied, true,
+      `expected satisfied; violations=${JSON.stringify(out.violations)}`);
+  });
+
+  it("D3: single_lookup + 1 source / 1 domain → satisfied (1/1/digest_ok thresholds)", () => {
+    const transcript = [{
+      type: "tool_result", tool: "fetch_url_content", success: true,
+      observation: "x".repeat(500),
+      metadata: { url: "https://example.com/article" }
+    }];
+    const out = validateSuccessContract(singleLookupSpec(), transcript);
+    assert.equal(out.satisfied, true,
+      `expected satisfied; violations=${JSON.stringify(out.violations)}`);
+  });
+
+  it("D3: research_quality=null skips coverage check (legacy behaviour preserved)", () => {
+    const spec = {
+      research_quality: null,
+      success_contract: {
+        artifact_created: false, artifact_registered: false, tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: ["external_web_read"]
+      }
+    };
+    const transcript = [{
+      type: "tool_result", tool: "web_search_fetch", success: true,
+      observation: "x".repeat(500),
+      metadata: { results: [{ url: "https://nature.com/x" }] }
+    }];
+    const out = validateSuccessContract(spec, transcript);
+    assert.equal(out.satisfied, true,
+      `expected satisfied; violations=${JSON.stringify(out.violations)}`);
+  });
+
+  it("D3: multi_source + optional mode (group NOT in required_policy_groups) skips coverage", () => {
+    // research_quality says multi_source_research but the group is
+    // NOT on required_policy_groups (web mode is "optional"). Don't
+    // force coverage — the user didn't ask for hard external research.
+    const spec = {
+      research_quality: {
+        profile: "multi_source_research",
+        min_sources: 3, min_distinct_domains: 2,
+        single_source_digest_satisfies: false, reason: "test"
+      },
+      success_contract: {
+        artifact_created: false, artifact_registered: false, tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: []   // <-- key
+      }
+    };
+    const out = validateSuccessContract(spec, [
+      { type: "tool_result", tool: "web_search_fetch", success: true, observation: "x".repeat(500), metadata: { results: [{ url: "https://nature.com/x" }] } }
+    ]);
+    assert.equal(out.satisfied, true,
+      "optional-mode multi_source spec must not force coverage");
+  });
+
+  // ── 12. validateStepGate flow with research_quality ───────────────────
+  it("D3 stepGate: multi_source + 1 source mid-loop + lastResult success → continue (let agent fetch more)", () => {
+    const spec = multiSourceSpec();
+    const transcript = [
+      { type: "tool_result", tool: "web_search_fetch", success: true,
+        metadata: { results: [{ url: "https://nature.com/x" }] } }
+    ];
+    const out = validateStepGate(spec, transcript, { iteration: 2, maxIterations: 8 });
+    assert.equal(out.satisfied, false);
+    assert.equal(out.next_action, "continue",
+      "lastResult successful but coverage gap → loop should continue, not abort");
+    const kinds = out.violations.map((v) => v.kind);
+    assert.ok(kinds.includes("external_web_read_insufficient_sources"));
+  });
+
+  it("D3 stepGate: multi_source + 1 source at iteration ceiling → abort", () => {
+    const spec = multiSourceSpec();
+    const transcript = [
+      { type: "tool_result", tool: "web_search_fetch", success: true,
+        metadata: { results: [{ url: "https://nature.com/x" }] } }
+    ];
+    const out = validateStepGate(spec, transcript, { iteration: 7, maxIterations: 8 });
+    assert.equal(out.next_action, "abort");
+    const kinds = out.violations.map((v) => v.kind);
+    assert.ok(kinds.includes("external_web_read_insufficient_sources"));
   });
 
   process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
