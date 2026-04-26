@@ -635,6 +635,28 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       ? `sr_${srRejection.code}`
       : "ok";  // not consulted (gate skipped at preflight) — same as ok
 
+  // P4-RQ G5b: research_signals_present — true when STRUCTURAL
+  // external-intent signals fired. Read by the fast executor's
+  // pre-LLM short-circuit (when routing_status != ok) to refuse
+  // fabricated lookups.
+  //
+  // Gate composition (intentionally tight):
+  //   - explicit_search    (search verb — "查一下/搜索/google")
+  //   - explicit_external  ("网上/online/web search")
+  //   - tool_policy.external_web_read.mode === "required"
+  //     (resolver already escalated for some other structural reason
+  //      — pending_offer external intent, etc.)
+  //
+  // weak_freshness ("最近/today") alone does NOT count: it's a time
+  // marker that fires on chitchat ("最近怎么样") and would falsely
+  // trip the short-circuit. Time markers need a companion signal
+  // (which the resolver already requires for required-mode anyway).
+  const researchSignalsPresent = Boolean(
+    signals?.explicit_search?.matched
+    || signals?.explicit_external?.matched
+    || toolPolicy?.policy_groups?.external_web_read?.mode === "required"
+  );
+
   const partialSpec = {
     goal,
     user_goal_text: text,
@@ -646,6 +668,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     // extension and fast-executor short-circuit (G5).
     routing_status: routingStatus,
     connector_domain: connectorDomainRequest,
+    research_signals_present: researchSignalsPresent,
     artifact: {
       required: artifactRequired,
       kind: fileArtifactKind,

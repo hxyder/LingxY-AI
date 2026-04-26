@@ -103,26 +103,38 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
     );
   }
 
-  // Rule 5 — pure Q&A with web_search FORBIDDEN: cheapest path.
+  // Rule 5 — Q&A or research-blocked with web_search FORBIDDEN:
+  // cheapest path. fast executor produces a quick honest reply
+  // rather than spinning the tool_using planner with a tool belt
+  // the policy forbids.
+  //
   // We deliberately do NOT short-circuit on web=optional here. "查一下文档"
   // ends up with goal=qa + web=optional, and the user genuinely wants the
   // search to happen; routing it to fast (which has no tools) would waste
   // the explicit signal.
   //
-  // P4-RQ E3 stage C1 note: search_and_answer + forbidden is NOT
-  // routed to fast here. That combination occurs in two distinct
-  // shapes — (a) connector-domain queries like "查一下我最近的邮件"
-  // that legitimately need tool_using for the connector workflows,
-  // and (b) topical queries that fell back to forbidden because SR
-  // was unavailable. Distinguishing them inside the executor
-  // resolver would require an extra signal flag; for now both
-  // shapes flow through the default rule below into tool_using and
-  // the model handles each.
-  if (goal === "qa" && webMode === "forbidden") {
+  // P4-RQ G5a covers TWO cases:
+  //   (a) goal=qa + web=forbidden                     → fast (legacy)
+  //   (b) goal=search_and_answer + web=forbidden + !connector_domain → fast
+  //         (NEW: handles "不要联网，告诉我今天 AI 新闻"-type cases
+  //          where SR drives goal=search_and_answer but
+  //          explicit_no_search wins at resolver step 0a. The
+  //          !connector_domain boundary keeps "不要联网，查一下我
+  //          最近的邮件" on tool_using because connector tools
+  //          satisfy that request without external web.)
+  const isQaForbidden = goal === "qa" && webMode === "forbidden";
+  const isResearchExplicitlyBlocked =
+    goal === "search_and_answer"
+    && webMode === "forbidden"
+    && !taskSpec?.connector_domain;
+  if (isQaForbidden || isResearchExplicitlyBlocked) {
+    const reason = isResearchExplicitlyBlocked
+      ? "Research-class goal with web_search forbidden (explicit_no_search wins) and not a connector-domain task; route to fast for an honest 'cannot search' reply."
+      : "Pure Q&A with web_search forbidden; route to fast executor.";
     return decision("fast",
-      "Pure Q&A with web_search forbidden; route to fast executor.",
+      reason,
       [
-        { type: "context", source: "task-spec.goal", matched: "qa" },
+        { type: "context", source: "task-spec.goal", matched: goal },
         { type: "context", source: "tool-policy.web_search_fetch", matched: "forbidden" }
       ],
       rejectAllExcept("fast", routeSuggestion)
