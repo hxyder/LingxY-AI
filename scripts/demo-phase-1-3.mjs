@@ -40,28 +40,66 @@ const SCENARIOS = [
     section: "2. 真实联网需求 — 必须搜索",
     cases: [
       {
-        title: "今天有什么 AI 新闻",
+        title: "今天有什么 AI 新闻 (post-E3 C1: SR-driven)",
         input: "今天有什么 AI 新闻",
-        context: {},
-        why: "topic_hint (AI 新闻) + source_scope=none → required"
+        context: {
+          // E3 stage C1: topic_hint no longer drives required. The
+          // deterministic resolver returns forbidden by itself for
+          // topic-only queries. SR (when available) classifies it as
+          // multi_source_research and the merge upgrades to required.
+          // Demo stubs the SR decision so the merged result is required.
+          semantic_router_decision: {
+            source_scope: "external_world",
+            web_policy: "required",
+            output_kind: "conversation",
+            artifact_required: false,
+            executor: "tool_using",
+            research_depth: "multi_source",
+            confidence: 0.85,
+            reason: "news topic"
+          }
+        },
+        why: "topic_hint observability + SR→required (merge) → required. Without SR stub: forbidden (conservative fallback)."
       },
       {
-        title: "current weather in Raleigh",
+        title: "current weather in Raleigh (post-E3 C1: SR-driven)",
         input: "current weather in Raleigh",
-        context: {},
-        why: "topic_hint (weather) + source_scope=none → required (即使 current 是弱信号)"
+        context: {
+          semantic_router_decision: {
+            source_scope: "external_world",
+            web_policy: "required",
+            output_kind: "conversation",
+            artifact_required: false,
+            executor: "tool_using",
+            research_depth: "single_lookup",
+            confidence: 0.95,
+            reason: "single-fact weather"
+          }
+        },
+        why: "topic_hint observability + SR→required (merge) → required."
       },
       {
         title: "查一下网上最近开源项目",
         input: "查一下网上最近开源项目",
         context: {},
-        why: "explicit_external (网上) 最高优先级 → required"
+        why: "explicit_external (网上) 是结构性 hard signal → required (resolver step 1)。不需要 SR。"
       },
       {
-        title: "查一下 AVIS 为什么暴涨",
+        title: "查一下 AVIS 为什么暴涨 (post-E3 C1: SR-driven)",
         input: "查一下 AVIS 为什么暴涨",
-        context: {},
-        why: "explicit_search + topic_hint (暴涨) → required → tool_using"
+        context: {
+          semantic_router_decision: {
+            source_scope: "external_world",
+            web_policy: "required",
+            output_kind: "conversation",
+            artifact_required: false,
+            executor: "tool_using",
+            research_depth: "single_lookup",
+            confidence: 0.9,
+            reason: "stock-price lookup"
+          }
+        },
+        why: "explicit_search → optional + topic_hint observability + SR→required (merge) → required → tool_using."
       }
     ]
   },

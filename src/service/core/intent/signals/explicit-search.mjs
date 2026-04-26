@@ -1,9 +1,14 @@
 /**
  * UCA-077 P1-02: explicit search-verb detector.
  *
- * Neutral search verbs ("搜索/查一下/查询/google/bing"). On their own, this
- * only escalates web_search to "optional" — required-grade external intent
- * needs explicit_external or (topic_hint + source_scope=none).
+ * Neutral search verbs ("搜索/查一下/查询/google/bing"). One of the 6
+ * structural hard signals both reference docs preserve as
+ * deterministic regex. Today (post-E3 C1) it escalates web_search to
+ * `optional`; the E5 follow-up tracks promoting it to `required`
+ * — the user's directive: "explicit_search 是结构性 hard signal,
+ * 应该升级到 external_search=required, 而不是只 optional 后等 SR".
+ * Required-grade external intent currently also fires from
+ * `explicit_external` (step 1) and `pending_offer` (step 0b).
  *
  * Inherits from the regex previously hard-coded as `isSearchOrNewsRequest` in
  * tool_using/agent-loop.mjs:338-341, with weak time markers and entity

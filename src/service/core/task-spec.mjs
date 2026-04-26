@@ -168,6 +168,24 @@ const GOAL_RULES = [
   //   - When signals are absent (back-compat for callers like routeIntent
   //     that have not adopted the signal layer yet), keep the legacy
   //     pattern set, but it now serves only as a coarse hint downstream.
+  //
+  // P4-RQ E3 stage C1 / E4 — REMAINING TRANSITIONAL DEPENDENCY:
+  // topic_hint is observability-only at the deterministic-policy
+  // layer (resolver step 3 was removed in C1) BUT it still
+  // participates here as a goal-classification signal. A topical
+  // query like "今天 AI 新闻" without SR available is goal=
+  // search_and_answer + web=forbidden, which routes through
+  // executor-resolver Rule 6 default to `tool_using` (the model
+  // gets to politely explain "I can't search").
+  //
+  // Why this is tracked, not yet removed: migrating goal /
+  // executor selection to read SR/EvidencePolicy output (instead
+  // of topic_hint signals) is a §19 follow-up of equal scope to
+  // E3-C1 itself. Removing this requiresSignal entry without the
+  // migration would bounce more topical queries onto goal=qa
+  // → executor=fast, which is a different conservative-fallback
+  // shape than what fixtures currently encode. Tracked for the
+  // next round; not silently removed here.
   {
     goal: "search_and_answer",
     // UCA-077 P2-04: split Chinese / English so \b only guards English; the
@@ -179,6 +197,9 @@ const GOAL_RULES = [
       /\b(search|latest|recent|news|today|tomorrow|weather|forecast)\b/i,
       /(天气|气温|明天|后天|明日|汇率|股价|航班|机票|酒店|价格)/
     ],
+    // E4 transitional dependency: topic_hint kept here to preserve
+    // goal=search_and_answer routing for topical queries until SR
+    // output drives goal classification too. See §19 follow-up.
     requiresSignal: (signals) =>
       Boolean(signals?.explicit_external?.matched || signals?.topic_hint?.matched)
   }

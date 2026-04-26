@@ -12,13 +12,25 @@
  * Inputs are signals (built by intent/signals/) plus the request context.
  * Output carries the decision plus full evidence for tracing.
  *
- * Decision priority (short-circuit in order):
- *   1. explicit_external (strong)             → required
- *   2. topic_hint (strong) + scope=none  → required
- *   3. source_scope ∈ local set               → forbidden
- *   4. explicit_search (strong)               → optional
- *   5. weak_freshness (weak)                  → optional
- *   6. default                                → forbidden
+ * Decision priority (short-circuit in order; current after E1 + E2 + E3 C1):
+ *   0a. explicit_no_search (kind=fact)        → forbidden  (E1 — beats everything)
+ *   0b. pending_offer (external intent)       → required
+ *   1.  explicit_external (strong)            → required
+ *   2a. source_scope kind=fact + LOCAL        → forbidden  (E2 — real selection / file_text)
+ *   2b. explicit_single_url + inline URL      → required   (E2 — structural URL evidence)
+ *   2c. source_scope kind=assumption + LOCAL  → forbidden  (E2 — pronoun without URL)
+ *   3.  explicit_search (strong)              → optional   (today — see E5 plan to promote to required)
+ *   4.  weak_freshness alone                  → forbidden  (kept-as-evidence only)
+ *   5.  default                               → forbidden
+ *
+ * Removed in E3 stage C1 (commit fae6957): the prior step
+ *   "topic_hint (strong) + scope=none → required"
+ * no longer exists. topic_hint is observability-only at the
+ * deterministic layer now; SR + EvidencePolicy merge owns
+ * topical routing. When SR is unavailable, the conservative
+ * fallback is web=forbidden (default rule 5). topic_hint still
+ * fires in the detector and surfaces in the SR prompt + decision
+ * trace, but does not escalate web policy on its own.
  *
  * The resolver never returns "required" off a weak signal alone — that was
  * the root cause of the "最近这个框架很慢 → 误联网" symptom.
