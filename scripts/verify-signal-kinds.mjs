@@ -139,6 +139,31 @@ async function run() {
       "_signal-types.mjs SIGNAL_NAMES must register pending_offer");
   });
 
+  // ── 3.5. explicit_single_url (P4-RQ D1) ──────────────────────────────
+  it("explicit_single_url: matches Chinese phrasings → kind:hint", async () => {
+    const { detect } = await import("../src/service/core/intent/signals/explicit-single-url.mjs");
+    const s = detect("总结这个 URL: https://example.com/a", {});
+    assert.equal(s.matched, true);
+    assert.equal(s.kind, "hint");
+    assert.equal(s.strength, "strong");
+    assert.equal(s.hint?.value, "single_url");
+  });
+  it("explicit_single_url: matches English phrasings → kind:hint", async () => {
+    const { detect } = await import("../src/service/core/intent/signals/explicit-single-url.mjs");
+    const s = detect("summarise this article please", {});
+    assert.equal(s.matched, true);
+    assert.equal(s.kind, "hint");
+  });
+  it("explicit_single_url: NOT matched on research/news phrasing", async () => {
+    const { detect } = await import("../src/service/core/intent/signals/explicit-single-url.mjs");
+    const s = detect("今天有什么 AI 新闻", {});
+    assert.equal(s.matched, false);
+  });
+  it("public surface: SIGNAL_NAMES contains 'explicit_single_url'", () => {
+    assert.ok([...SIGNAL_NAMES].includes("explicit_single_url"),
+      "_signal-types.mjs SIGNAL_NAMES must register explicit_single_url");
+  });
+
   // ── 4. source_scope branches differ by inference depth ────────────────
   it("scope: attachment → kind:fact (observable state)", () => {
     const s = detectScope("帮我看看", { file_paths: ["a.docx"] });

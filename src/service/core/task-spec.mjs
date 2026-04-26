@@ -14,6 +14,7 @@ import { extractPureLaunchApp } from "./router/fast-path-router.mjs";
 import { extractAllSignals } from "./intent/signals/index.mjs";
 import { resolveToolPolicy, buildExternalWebReadPolicy } from "./policy/tool-policy-resolver.mjs";
 import { enforcePolicyInvariants } from "./policy/policy-invariants.mjs";
+import { inferResearchQuality } from "./policy/research-quality.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
 import { resolveExecutor } from "./planning/executor-resolver.mjs";
 import { createTracker, STAGES } from "./contracts/decision-trace.mjs";
@@ -82,6 +83,10 @@ export const GOAL_FAMILIES = /** @type {const} */ ([
  * @property {{ language: string, can_split: boolean, must_use_tools: boolean, must_verify_artifact: boolean }} constraints
  * @property {string[]} required_steps         - ordered step list (injected by hardenedRules)
  * @property {SuccessContract} success_contract
+ * @property {import("./policy/research-quality.mjs").ResearchQuality | null} research_quality
+ *   - P4-RQ D1: research-class enforcement profile. Drives hard
+ *     coverage checks in validateSuccessContract / validateStepGate
+ *     (D3). null when web is forbidden — no enforcement applies.
  * @property {string} suggested_executor       - executor hint (not final — task-runtime decides)
  * @property {string[]} intent_tags            - multi-label tags from intent-router
  * @property {string[]} suggested_formats      - detected output formats
@@ -515,12 +520,24 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     ])
   ];
 
+  // P4-RQ D1: derive research_quality from web policy + context
+  // sources + the explicit_single_url Layer-2 signal.
+  // multi_source_research carries hard thresholds the validator (D3)
+  // enforces; single_lookup is the exception for "summarise this URL"
+  // / local-anchored tasks; null when web is forbidden entirely.
+  const researchQuality = inferResearchQuality({
+    contextSources,
+    signals,
+    toolPolicyMode: toolPolicy?.policy_groups?.external_web_read?.mode
+  });
+
   const partialSpec = {
     goal,
     user_goal_text: text,
     topic: text.slice(0, 100),
     needs_current_web_data: toolPolicy.web_search_fetch.mode === "required",
     tool_policy: toolPolicy,
+    research_quality: researchQuality,
     artifact: {
       required: artifactRequired,
       kind: fileArtifactKind,

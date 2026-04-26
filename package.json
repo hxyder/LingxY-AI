@@ -34,6 +34,7 @@
     "verify:research-principles": "node scripts/verify-research-principles.mjs",
     "verify:evidence-normalizer": "node scripts/verify-evidence-normalizer.mjs",
     "verify:scheduler-residual": "node scripts/verify-scheduler-residual.mjs",
+    "verify:research-quality": "node scripts/verify-research-quality.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",
     "verify:ui-tokens": "node scripts/verify-ui-tokens.mjs",
