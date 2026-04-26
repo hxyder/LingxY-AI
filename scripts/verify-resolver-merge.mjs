@@ -110,17 +110,30 @@ async function run() {
       signals, contextPacket: {}, text: "查一下网上最近的开源项目"
     }), false);
   });
-  it("gate: explicit_entity strong → false", () => {
+  it("gate: explicit_entity strong → TRUE (P4-RQ E3 C1: SR now consulted for topic queries)", () => {
+    // Pre-C1 this returned false (entity skipped SR for latency).
+    // Post-C1 entity is observability-only at the deterministic
+    // layer; SR drives topical routing, so the gate must let
+    // these queries through.
     const signals = makeSignals("今天北京的天气");
     assert.equal(shouldConsultSemanticRouter({
       signals, contextPacket: {}, text: "今天北京的天气"
-    }), false);
+    }), true);
   });
-  it("gate: text ≤ 8 chars → false", () => {
+  it("gate: text ≤ 3 chars → false (chitchat skip, threshold lowered from 8 in C1)", () => {
     const signals = makeSignals("你好");
     assert.equal(shouldConsultSemanticRouter({
       signals, contextPacket: {}, text: "你好"
     }), false);
+  });
+  it("gate: 4-char Chinese topical query → TRUE (was skipped under old 8-char threshold)", () => {
+    // "今天天气" = 5 chars; "AI 新闻" = 6. Pre-C1 the 8-char
+    // threshold skipped these short topical queries. Post-C1
+    // they reach SR.
+    const signals = makeSignals("今天天气");
+    assert.equal(shouldConsultSemanticRouter({
+      signals, contextPacket: {}, text: "今天天气"
+    }), true);
   });
   it("gate: typo / unsignaled long text → true (the SR target case)", () => {
     // "今天天汽" = typo for "今天天气"; explicit_entity won't match the typo

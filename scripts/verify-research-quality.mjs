@@ -164,25 +164,55 @@ it("signal: empty / non-string text → unmatched", () => {
 });
 
 // ── createTaskSpec end-to-end ────────────────────────────────────────
-it("createTaskSpec: stamps research_quality on the spec", () => {
-  const spec = createTaskSpec("今天 AI 新闻汇报", {}, {});
-  // This command should fire explicit_entity (news) → web required →
-  // research_quality should be multi_source_research.
+// P4-RQ E3 stage C1 update: topic regex (explicit_entity) no longer
+// drives web=required deterministically. SR + EvidencePolicy merge
+// owns that decision now. Tests stub a `semantic_router_decision` on
+// the contextPacket so the merge upgrades web to required and
+// research_quality is computed.
+const SR_NEWS_REQUIRED = {
+  source_scope: "external_world",
+  web_policy: "required",
+  output_kind: "conversation",
+  artifact_required: false,
+  executor: "tool_using",
+  research_depth: "multi_source",
+  confidence: 0.85,
+  reason: "news topic"
+};
+
+it("createTaskSpec: stamps research_quality on the spec (with SR stub)", () => {
+  const spec = createTaskSpec("今天 AI 新闻汇报", {
+    semantic_router_decision: { ...SR_NEWS_REQUIRED }
+  }, {});
   assert.ok(spec.research_quality, "spec must carry research_quality");
   assert.equal(spec.research_quality.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH);
   assert.equal(spec.research_quality.min_sources, 3);
 });
-it("createTaskSpec: scheduler-fired research task (per user spec) → multi_source_research", () => {
+it("createTaskSpec: scheduler-fired research task (with SR) → multi_source_research", () => {
+  const spec = createTaskSpec("每天早上汇报 AI 新闻", {
+    source_app: "uca.scheduler",
+    text: "每天早上汇报 AI 新闻",
+    file_paths: [],
+    image_paths: [],
+    semantic_router_decision: { ...SR_NEWS_REQUIRED }
+  }, {});
+  // No "scheduler特判": the same userCommand routed through SR-merge
+  // remains multi_source_research regardless of source_app.
+  assert.equal(spec.research_quality?.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH,
+    "scheduler-fired news task must require multi-source synthesis");
+});
+it("createTaskSpec: scheduler-fired news WITHOUT SR → null research_quality (conservative fallback)", () => {
+  // P4-RQ E3 stage C1 conservative-fallback lock-in: when SR is
+  // unavailable, entity-only queries default forbidden → null
+  // research_quality. This is the explicit user-accepted fallback.
   const spec = createTaskSpec("每天早上汇报 AI 新闻", {
     source_app: "uca.scheduler",
     text: "每天早上汇报 AI 新闻",
     file_paths: [],
     image_paths: []
   }, {});
-  // Even with source_app=uca.scheduler echoed into context_packet.text,
-  // the task must be classified as research-class. No "scheduler特判".
-  assert.equal(spec.research_quality?.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH,
-    "scheduler-fired news task must require multi-source synthesis");
+  assert.equal(spec.research_quality, null,
+    "without SR, the conservative fallback yields web=forbidden → research_quality=null");
 });
 it("createTaskSpec: action-only (forbidden web) task → null research_quality", () => {
   const spec = createTaskSpec("帮我打开微信", {}, {});

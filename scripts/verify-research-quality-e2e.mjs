@@ -44,6 +44,25 @@ function it(label, fn) {
 const NEWS_COMMAND = "今天有什么 AI 新闻动态";
 const SCHEDULER_NEWS_COMMAND = "每天早上汇报 AI 新闻";
 
+// P4-RQ E3 stage C1: with topic regex no longer driving web=required
+// deterministically, these e2e fixtures now stub a SemanticRouter
+// decision so the merge layer upgrades web → required and
+// research_quality is computed.
+const SR_NEWS_REQUIRED = {
+  source_scope: "external_world",
+  web_policy: "required",
+  output_kind: "conversation",
+  artifact_required: false,
+  executor: "tool_using",
+  research_depth: "multi_source",
+  confidence: 0.85,
+  reason: "news topic"
+};
+
+function buildBasicPacket() {
+  return { semantic_router_decision: { ...SR_NEWS_REQUIRED } };
+}
+
 function buildSchedulerPacket() {
   return {
     schema_version: "1.0",
@@ -55,13 +74,14 @@ function buildSchedulerPacket() {
     text: SCHEDULER_NEWS_COMMAND,
     file_paths: [],
     image_paths: [],
-    selection_metadata: { source_id: "test-source", trigger_reason: "scheduled" }
+    selection_metadata: { source_id: "test-source", trigger_reason: "scheduled" },
+    semantic_router_decision: { ...SR_NEWS_REQUIRED }
   };
 }
 
 // ── 1. ScienceNet roundup ───────────────────────────────────────────
 it("e2e: ScienceNet roundup on multi_source task → single_roundup_only violation + INSUFFICIENT_RESEARCH_SOURCES runbook", () => {
-  const spec = createTaskSpec(NEWS_COMMAND, {}, {});
+  const spec = createTaskSpec(NEWS_COMMAND, buildBasicPacket(), {});
   // Sanity check: the news command must classify as multi_source_research
   // for this fixture to be meaningful.
   assert.equal(spec.research_quality?.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH,
@@ -96,7 +116,7 @@ it("e2e: ScienceNet roundup on multi_source task → single_roundup_only violati
 
 // ── 2. 3 cross-domain → satisfied ────────────────────────────────────
 it("e2e: 3 cross-domain transcript on multi_source task → satisfied", () => {
-  const spec = createTaskSpec(NEWS_COMMAND, {}, {});
+  const spec = createTaskSpec(NEWS_COMMAND, buildBasicPacket(), {});
   assert.equal(spec.research_quality?.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH);
 
   const transcript = [{
@@ -179,7 +199,7 @@ it("e2e: single_lookup task with 1 source → satisfied (1/1/digest-ok threshold
 
 // ── 5. Mid-loop continue lets the agent fetch more ───────────────────
 it("e2e: multi_source + 1 source mid-loop → continue (let agent fetch another) NOT abort", () => {
-  const spec = createTaskSpec(NEWS_COMMAND, {}, {});
+  const spec = createTaskSpec(NEWS_COMMAND, buildBasicPacket(), {});
   const transcript = [{
     type: "tool_result", tool: "web_search_fetch", success: true,
     observation: "x".repeat(500),

@@ -68,7 +68,21 @@ const latestTask = createTaskRecord({
     source_type: "manual",
     source_app: "verify-service-core",
     capture_mode: "test",
-    text: ""
+    text: "",
+    // P4-RQ E3 stage C1: topic regex no longer drives required.
+    // Stub SR so the merge upgrades web → required for the news
+    // command. Conservative-fallback path lives in routing-policy
+    // fixtures (news-no-sr-conservative-fallback).
+    semantic_router_decision: {
+      source_scope: "external_world",
+      web_policy: "required",
+      output_kind: "pptx",
+      artifact_required: true,
+      executor: "agentic",
+      research_depth: "multi_source",
+      confidence: 0.85,
+      reason: "news + artifact"
+    }
   },
   userCommand: "搜索最新 AI 新闻并生成一份 ppt"
 });
@@ -96,7 +110,19 @@ const iranDocTask = createTaskRecord({
     source_type: "manual",
     source_app: "verify-service-core",
     capture_mode: "test",
-    text: ""
+    text: "",
+    // P4-RQ E3 stage C1: stub SR for the geopolitics+stocks topic
+    // so the merge upgrades web=required (was driven by entity regex).
+    semantic_router_decision: {
+      source_scope: "external_world",
+      web_policy: "required",
+      output_kind: "docx",
+      artifact_required: true,
+      executor: "agentic",
+      research_depth: "multi_source",
+      confidence: 0.85,
+      reason: "geopolitics + stock research with artifact"
+    }
   },
   userCommand: iranDocCommand
 });

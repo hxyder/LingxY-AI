@@ -87,7 +87,11 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   }
 
   const explicitExternal = signals.explicit_external;
-  const explicitEntity = signals.explicit_entity;
+  // P4-RQ E3 stage C1: explicit_entity is observability-only at the
+  // deterministic layer now (SR + EvidencePolicy merge owns topical
+  // routing). Reference is left out of the destructuring; the
+  // signal is still emitted by the detector and surfaced in the SR
+  // prompt + decision trace. Re-add when a structural use re-emerges.
   const sourceScope = signals.source_scope;
   const explicitSearch = signals.explicit_search;
   const weakFreshness = signals.weak_freshness;
@@ -198,15 +202,21 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
     );
   }
 
-  // 3. Strong external entity (weather, stock, flight…) AND scope is "none"
-  //    or unknown — i.e. the user did not anchor the request to local data.
-  if (explicitEntity?.matched && explicitEntity.strength === "strong" && scopeValue === "none") {
-    return webSearchPolicy(
-      "required",
-      `User named a high-freshness external entity ("${firstMatch(explicitEntity)}") with no local source attached.`,
-      [...explicitEntity.evidence, { type: "context", source: "source_scope", reason: "scope=none" }]
-    );
-  }
+  // 3. (REMOVED in P4-RQ E3 stage C1) The previous "strong topic
+  //    entity (weather/stock/news/etc.) + scope=none → required"
+  //    branch routed entity-only queries deterministically. Per the
+  //    E3 audit + user direction (Option C), topic-domain regex is
+  //    now observability-only at the deterministic layer; the SR +
+  //    EvidencePolicy merge owns this decision. When SR is
+  //    unavailable the conservative fallback is `forbidden` —
+  //    operators who turn SR off opt into the explicit-search
+  //    escape hatch ("查一下 / search the web") rather than being
+  //    auto-escalated by topic regex.
+  //
+  //    The signal still fires (kept for SR prompt + decision-trace
+  //    observability); only its deterministic-required power is
+  //    revoked here. `explicitEntity` reference kept above so future
+  //    additions don't have to re-import.
 
   // 4. Neutral search verb — user explicitly invited a search but did not
   //    pin it to external data. Let downstream LLM judge whether to actually
@@ -278,9 +288,25 @@ export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text 
   }
   const explicitExternal = signals?.explicit_external;
   if (explicitExternal?.matched && explicitExternal.strength === "strong") return false;
-  const explicitEntity = signals?.explicit_entity;
-  if (explicitEntity?.matched && explicitEntity.strength === "strong") return false;
-  if (String(text ?? "").trim().length <= 8) return false;
+  // P4-RQ E3 stage C1: explicit_entity (topic regex) NO LONGER
+  // skips SR. Previously, "今天天气" with strong-explicit_entity
+  // would short-circuit the SR call and rely on the deterministic
+  // step 3 (now removed) to escalate. With Option C, those queries
+  // need the SR's classification, so the gate must let them
+  // through. The latency cost (~200-1500 ms per task on these
+  // queries) is the explicit trade-off for letting SR own
+  // topical routing rather than perpetually expanding regex.
+  //
+  // P4-RQ E3 stage C1: text-length threshold lowered from 8 → 3.
+  // The original 8-char threshold was tuned for English chitchat
+  // ("hi", "thanks") AND was safe because entity regex was the
+  // fast path for short topical queries (e.g. "今天天气" 5 chars).
+  // With Option C the entity fast path is gone — short topical
+  // queries MUST reach SR or get the conservative-forbidden
+  // fallback. 3-char skip keeps obvious chitchat ("你好" 2,
+  // "嗯" 1, "在吗" 2, "好的" 2, "对" 1) out of SR while letting
+  // 4+ char real intent through.
+  if (String(text ?? "").trim().length <= 3) return false;
   return true;
 }
 
@@ -416,6 +442,3 @@ export function buildExternalWebReadPolicy(mode, reason, evidence) {
   return policy;
 }
 
-function firstMatch(signal) {
-  return signal?.evidence?.[0]?.matched ?? "";
-}

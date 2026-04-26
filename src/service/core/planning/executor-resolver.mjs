@@ -108,6 +108,16 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
   // ends up with goal=qa + web=optional, and the user genuinely wants the
   // search to happen; routing it to fast (which has no tools) would waste
   // the explicit signal.
+  //
+  // P4-RQ E3 stage C1 note: search_and_answer + forbidden is NOT
+  // routed to fast here. That combination occurs in two distinct
+  // shapes — (a) connector-domain queries like "查一下我最近的邮件"
+  // that legitimately need tool_using for the connector workflows,
+  // and (b) topical queries that fell back to forbidden because SR
+  // was unavailable. Distinguishing them inside the executor
+  // resolver would require an extra signal flag; for now both
+  // shapes flow through the default rule below into tool_using and
+  // the model handles each.
   if (goal === "qa" && webMode === "forbidden") {
     return decision("fast",
       "Pure Q&A with web_search forbidden; route to fast executor.",

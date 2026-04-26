@@ -51,11 +51,26 @@ const repoRoot = path.resolve(__dirname, "..");
   // is verifying (Task contract carries the policy + required tools) is
   // unchanged; only the input had to be made unambiguous.
   const inputText = "总结今日 AI 新闻并生成 PPT 报告";
+  // P4-RQ E3 stage C1: topic regex no longer drives web=required
+  // deterministically. Stub a SemanticRouter decision so the merge
+  // upgrades web → required and the prompt renders external_web_read=required.
+  const stubContext = {
+    semantic_router_decision: {
+      source_scope: "external_world",
+      web_policy: "required",
+      output_kind: "pptx",
+      artifact_required: true,
+      executor: "agentic",
+      research_depth: "multi_source",
+      confidence: 0.85,
+      reason: "news + artifact"
+    }
+  };
   const prompt = buildAgenticSystemPrompt({
     tools: registry.list(),
     task: {
       user_command: inputText,
-      task_spec: createTaskSpec(inputText, {}, {
+      task_spec: createTaskSpec(inputText, stubContext, {
         suggested_executor: "agentic",
         intent_tags: ["analyze", "search"],
         suggested_formats: ["pptx"]

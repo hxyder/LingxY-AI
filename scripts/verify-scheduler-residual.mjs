@@ -93,15 +93,28 @@ for (const cmd of COMMANDS) {
   });
 }
 
-it("scheduler residual: principles helper renders for scheduler-fired research task", () => {
+it("scheduler residual: principles helper renders for scheduler-fired research task (with SR)", () => {
+  // P4-RQ E3 stage C1: topic regex no longer drives required
+  // deterministically. Stub a SemanticRouter decision so the merge
+  // upgrades web=required → principles block renders.
   const cmd = "每天早上汇报 AI 新闻";
-  const spec = createTaskSpec(cmd, makeSchedulerPacket({ title: cmd }), {});
+  const packet = {
+    ...makeSchedulerPacket({ title: cmd }),
+    semantic_router_decision: {
+      source_scope: "external_world",
+      web_policy: "required",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "tool_using",
+      research_depth: "multi_source",
+      confidence: 0.85,
+      reason: "scheduled news report"
+    }
+  };
+  const spec = createTaskSpec(cmd, packet, {});
   const sources = spec.context_packet?.context_sources
-    ?? classifyContextSources({ text: cmd, contextPacket: makeSchedulerPacket({ title: cmd }) });
+    ?? classifyContextSources({ text: cmd, contextPacket: packet });
   const block = renderResearchPrinciples(spec.tool_policy, sources);
-  // The principles block MUST render: web is at least optional
-  // (research class), there's no local anchor, scheduler stamp does
-  // not suppress.
   assert.ok(block != null,
     "principles block must render for scheduler-fired research task — got null");
   assert.match(block, /Multiple independent sources/);
