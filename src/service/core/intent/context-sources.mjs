@@ -92,6 +92,15 @@ const SENTINEL_RULES = Object.freeze([
   // LOCAL_ANCHOR_KEYS so source-scope won't mistake "user is on a
   // page" for "user wants me to analyse this page".
   { startsWith: "[browser_metadata ·",                 source: "browser_page" },
+  // P4-RQ G2 — back-compat for clients still emitting the legacy
+  // `[对话历史]` header. Frontend overlay.js previously emitted
+  // this without a colon, which the prose-marker regex below
+  // wouldn't catch. New clients emit `[当前对话上下文]` (line 81);
+  // these literal-match rules accept the legacy form so deployed
+  // clients that haven't picked up the canonical header still
+  // route history correctly. Plain string match — NOT topic regex.
+  { match: "[对话历史]",                                source: "conversation_history" },
+  { match: "[Conversation history]",                    source: "conversation_history" },
   // legacy regex fallback for the historical "对话历史:" prose marker
   // (used by older capture paths that didn't emit the [当前对话上下文] sentinel)
   { regex: /^对话历史[:：]/m,                          source: "conversation_history" }

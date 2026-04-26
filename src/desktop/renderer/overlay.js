@@ -3153,7 +3153,7 @@ async function submitTask() {
         if (historyText) {
           activeBrowserCapture.text = [
             activeBrowserCapture.text,
-            `[对话历史]\n${historyText}`
+            `[当前对话上下文]\n${historyText}`
           ].filter(Boolean).join("\n\n---\n\n").slice(0, MAX_CAPTURE_TEXT_CHARS);
         }
         ensureConversation(activeBrowserCapture, conversationState?.seedCommand ?? rawCommand ?? commandText);
@@ -3173,7 +3173,7 @@ async function submitTask() {
           sourceApp: "uca.overlay",
           captureMode: "overlay",
           sourceType: "clipboard",
-          text: historyText ? `[对话历史]\n${historyText}` : "",
+          text: historyText ? `[当前对话上下文]\n${historyText}` : "",
           selectionMetadata: { conversation_turns: structuredTurns },
           userCommand: commandText,
           executionMode: "interactive"

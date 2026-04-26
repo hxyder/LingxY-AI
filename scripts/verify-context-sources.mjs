@@ -208,6 +208,39 @@ async function run() {
     assert.equal(out.conversation_history, true);
   });
 
+  // ── G2 — back-compat for legacy [对话历史] header (no colon) ──────────
+  it("G2 sentinel: [对话历史] header without colon → conversation_history (back-compat)", () => {
+    // Pre-G2 the frontend overlay.js emitted `[对话历史]\n` (no colon).
+    // The legacy regex `/^对话历史[:：]/m` required a colon, so this
+    // form fell through to real_selection. G2 adds a literal-match
+    // sentinel for `[对话历史]` to keep deployed clients working.
+    const out = classifyContextSources({
+      text: "x",
+      contextPacket: { text: "[对话历史]\n用户：你好\n助手：你好" }
+    });
+    assert.equal(out.conversation_history, true);
+    assert.equal(out.real_selection, false,
+      "must NOT be classified as real_selection");
+  });
+  it("G2 sentinel: [Conversation history] (English variant) → conversation_history", () => {
+    const out = classifyContextSources({
+      text: "x",
+      contextPacket: { text: "[Conversation history]\nuser: hi\nassistant: hi back" }
+    });
+    assert.equal(out.conversation_history, true);
+  });
+  it("G2 sentinel: bare '对话历史' word in middle of selection → NOT classified as conversation_history", () => {
+    // The literal match must require the bracketed header form. A
+    // plain occurrence of "对话历史" in the middle of a real
+    // selection text should not collapse to conversation_history.
+    const out = classifyContextSources({
+      text: "x",
+      contextPacket: { text: "我的笔记里提到对话历史的概念，你帮我解释一下" }
+    });
+    assert.equal(out.conversation_history, false,
+      "bare word without bracket header must not match");
+  });
+
   // ── 5. real_selection default ─────────────────────────────────────────
   it("default: text non-empty + no sentinel + ≠ command → real_selection=true", () => {
     const out = classifyContextSources({
