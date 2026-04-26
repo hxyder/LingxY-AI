@@ -58,16 +58,26 @@ const VALID_TERMINAL = new Set(["retry", "escalate", "abort", "partial_success"]
 
 async function run() {
   // ── 1. catalogue contents ─────────────────────────────────────────────
-  it("catalogue: 6 expected runbook ids registered", () => {
+  it("catalogue: 7 expected runbook ids registered", () => {
     for (const id of [
       "EMPTY_WEB_SEARCH_RESULT", "FORBIDDEN_TOOL_REQUESTED",
       "NO_FILE_CHANGE_DETECTED", "AGENT_LOOP_NO_PROGRESS",
-      "TOOL_REPEATED_FAILURE", "GATE_ABORT_AT_ITERATION_CEILING"
+      "TOOL_REPEATED_FAILURE", "GATE_ABORT_AT_ITERATION_CEILING",
+      "INSUFFICIENT_RESEARCH_SOURCES"
     ]) {
       assert.ok(RUNBOOKS[id], `missing runbook: ${id}`);
       assert.equal(RUNBOOKS[id].id, id);
     }
-    assert.equal(RUNBOOK_IDS.length, 6);
+    assert.equal(RUNBOOK_IDS.length, 7);
+  });
+  it("catalogue: INSUFFICIENT_RESEARCH_SOURCES has broaden_query / alternative_terms / independent_domains / disclosure", () => {
+    const rb = RUNBOOKS.INSUFFICIENT_RESEARCH_SOURCES;
+    assert.equal(rb.terminal_action, "partial_success");
+    const stepIds = rb.steps.map((s) => s.id);
+    assert.ok(stepIds.includes("broaden_query_once"), `steps=${stepIds.join(", ")}`);
+    assert.ok(stepIds.includes("search_with_alternative_terms"));
+    assert.ok(stepIds.includes("prefer_independent_domains"));
+    assert.ok(stepIds.includes("return_partial_success_with_disclosure"));
   });
 
   // ── 2. shape ──────────────────────────────────────────────────────────
@@ -155,6 +165,47 @@ async function run() {
       ]
     });
     assert.equal(rb?.id, "TOOL_REPEATED_FAILURE");
+  });
+  it("suggest/stepGate: insufficient_sources → INSUFFICIENT_RESEARCH_SOURCES (research-quality recovery)", () => {
+    const rb = suggestRunbookForStepGate({
+      next_action: "abort",
+      violations: [{ kind: "external_web_read_insufficient_sources" }]
+    });
+    assert.equal(rb?.id, "INSUFFICIENT_RESEARCH_SOURCES");
+  });
+  it("suggest/stepGate: single_domain_only → INSUFFICIENT_RESEARCH_SOURCES", () => {
+    const rb = suggestRunbookForStepGate({
+      next_action: "abort",
+      violations: [{ kind: "external_web_read_single_domain_only" }]
+    });
+    assert.equal(rb?.id, "INSUFFICIENT_RESEARCH_SOURCES");
+  });
+  it("suggest/stepGate: single_roundup_only → INSUFFICIENT_RESEARCH_SOURCES", () => {
+    const rb = suggestRunbookForStepGate({
+      next_action: "abort",
+      violations: [{ kind: "external_web_read_single_roundup_only" }]
+    });
+    assert.equal(rb?.id, "INSUFFICIENT_RESEARCH_SOURCES");
+  });
+  it("suggest/stepGate: research-quality wins over GATE_ABORT_AT_ITERATION_CEILING", () => {
+    // Research-quality violation present alongside the iteration-ceiling
+    // signal — INSUFFICIENT_RESEARCH_SOURCES still wins because the
+    // recovery (broaden query) is more actionable than the generic
+    // "stop the loop / surface violations" steps.
+    const rb = suggestRunbookForStepGate({
+      next_action: "abort",
+      violations: [
+        { kind: "external_web_read_single_domain_only" }
+      ]
+    });
+    assert.equal(rb?.id, "INSUFFICIENT_RESEARCH_SOURCES");
+  });
+  it("suggest/stepGate: research-quality fires from escalate path too", () => {
+    const rb = suggestRunbookForStepGate({
+      next_action: "escalate",
+      violations: [{ kind: "external_web_read_insufficient_sources" }]
+    });
+    assert.equal(rb?.id, "INSUFFICIENT_RESEARCH_SOURCES");
   });
   it("suggest/stepGate: malformed input → null (no crash)", () => {
     assert.equal(suggestRunbookForStepGate(null), null);

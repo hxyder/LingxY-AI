@@ -128,8 +128,35 @@ export const RUNBOOKS = Object.freeze({
       Object.freeze({ id: "surface_violations_to_user", description: "Render the contract violations in the final reply so the user knows what was incomplete." })
     ]),
     terminal_action: "partial_success"
+  }),
+  // P4-RQ D4: research_quality coverage failure. Routes from any of
+  // the three new violation kinds — single-publisher / insufficient
+  // sources / roundup-only — and tells the agent loop the right
+  // recovery is to *broaden* the search, not just retry the same
+  // query. The terminal action is partial_success WITH disclosure:
+  // when the loop has done its best and still doesn't have enough
+  // independent sources, the user must know the answer is limited.
+  INSUFFICIENT_RESEARCH_SOURCES: Object.freeze({
+    id: "INSUFFICIENT_RESEARCH_SOURCES",
+    description: "Multi-source research task did not gather enough independent sources (insufficient_sources / single_domain_only / single_roundup_only).",
+    steps: Object.freeze([
+      Object.freeze({ id: "broaden_query_once", description: "Re-issue web_search_fetch with a broader / less-specific query — current results are dominated by one publisher (or by a roundup page that aggregates internal links)." }),
+      Object.freeze({ id: "search_with_alternative_terms", description: "Try synonyms or sibling phrasings (English ↔ Chinese, formal ↔ casual, primary entity ↔ adjacent entity). Many news/research items are reported across publishers under different headlines." }),
+      Object.freeze({ id: "prefer_independent_domains", description: "If results still cluster on one publisher, fetch a known independent source (Reuters / AP / Nature / Wikipedia / industry-standard outlet for the topic) via fetch_url_content." }),
+      Object.freeze({ id: "return_partial_success_with_disclosure", description: "If still under-covered, mark partial_success and tell the user explicitly: \"based on N sources from M publishers — limited coverage on this topic\"." })
+    ]),
+    terminal_action: "partial_success"
   })
 });
+
+// P4-RQ D4: violation kinds that route to INSUFFICIENT_RESEARCH_SOURCES.
+// All three are emitted by validateSuccessContract / validateStepGate
+// when research_quality enforcement fails coverage (D3).
+const RESEARCH_QUALITY_VIOLATION_KINDS = Object.freeze(new Set([
+  "external_web_read_insufficient_sources",
+  "external_web_read_single_domain_only",
+  "external_web_read_single_roundup_only"
+]));
 
 /**
  * Look up a runbook by failure-mode id.
@@ -164,10 +191,22 @@ export function suggestRunbookForStepGate(stepGateResult) {
   if (!stepGateResult || typeof stepGateResult !== "object") return null;
   const { next_action: nextAction, violations = [] } = stepGateResult;
   if (nextAction === "continue" || nextAction === "retry") return null;
+
+  const kinds = (Array.isArray(violations) ? violations : []).map((v) => v?.kind ?? "");
+
+  // Research-quality violations get the more actionable runbook
+  // regardless of next_action (abort or escalate). The recovery
+  // ("broaden the query / find independent sources") is the same
+  // whether the loop is escalating mid-flight or aborting at the
+  // ceiling — what differs is whether the runbook gets to attempt
+  // its steps before partial_success closes the task.
+  if (kinds.some((k) => RESEARCH_QUALITY_VIOLATION_KINDS.has(k))) {
+    return RUNBOOKS.INSUFFICIENT_RESEARCH_SOURCES;
+  }
+
   if (nextAction === "abort") return RUNBOOKS.GATE_ABORT_AT_ITERATION_CEILING;
   if (nextAction !== "escalate") return null;
 
-  const kinds = (Array.isArray(violations) ? violations : []).map((v) => v?.kind ?? "");
   if (kinds.includes("tool_repeated_failure")) {
     return RUNBOOKS.TOOL_REPEATED_FAILURE;
   }
