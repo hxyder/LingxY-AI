@@ -91,9 +91,26 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
  * @typedef {{ kind: "decision", decision: SemanticDecision, source: "cache"|"provider" }
  *         | { kind: "rejection", code: RejectionCode, reason: string }} RouterResult
  *
- * @typedef {"disabled"|"no_provider"|"timeout"|"schema_invalid"
- *           |"low_confidence"|"fact_conflict"|"exception"} RejectionCode
+ * @typedef {"disabled"|"no_provider"|"unsupported_provider"|"timeout"
+ *           |"schema_invalid"|"low_confidence"|"fact_conflict"|"exception"} RejectionCode
  */
+
+/**
+ * Provider kinds whose tool_use schema enforcement is unreliable enough
+ * that SemanticRouter refuses them rather than risk degraded LLM
+ * judgment. The result is `{kind:"rejection", code:"unsupported_provider"}`
+ * — caller (resolver merge layer) falls back to deterministic baseline.
+ *
+ *   - `code_cli`: bridge encodes tool calls as JSON in free-form text;
+ *     no schema enforcement, prone to drift.
+ *   - `ollama`: tool support varies by Ollama version + model; no
+ *     `tool_choice` plumbing today, so the LLM can skip the route_task
+ *     tool entirely → schema_invalid noise.
+ *
+ * Tracked in §19: add tool_choice support to Ollama once we standardize
+ * on a model + Ollama version that reliably honours it.
+ */
+const UNSUPPORTED_FOR_SEMANTIC_ROUTER = Object.freeze(new Set(["code_cli", "ollama"]));
 
 /**
  * Build a fresh router with injected dependencies. The default adapter
@@ -221,35 +238,16 @@ function getNoProviderRouter() {
 }
 
 /**
- * Process-wide router factory. Looks up the active chat provider on
- * each call, builds a fresh adapter, returns a router that uses the
- * shared `_processCache`. Returns the no-provider router when no chat
- * provider is configured (rejection path: `code:"no_provider"`).
+ * Process-wide router factory. Returns the no-provider router by default.
+ * `resolveSemanticDecision` does the smart dispatch: provider lookup,
+ * kind filtering (code_cli / ollama → unsupported_provider rejection),
+ * adapter build, dispatch — all wrapped in fail-soft try/catch.
  *
- * Dynamic imports avoid the layering cycle "intent → executor". The
- * cost is amortized: the imports cache after first call.
+ * Kept as a public helper for tests / direct use; production code goes
+ * through `resolveSemanticDecision`.
  */
 export async function getDefaultRouter() {
-  try {
-    const { resolveProviderForTask } = await import("../../executors/shared/provider-resolver.mjs");
-    const resolved = resolveProviderForTask("chat");
-    if (!resolved) return getNoProviderRouter();
-
-    // code_cli providers don't currently support tool_use schema
-    // enforcement (the bridge would need its own JSON-mode planning).
-    // Until that lands, fall back to the no-provider router for code_cli
-    // so SR doesn't try to drive a tool call through a free-form CLI.
-    if (resolved.kind === "code_cli") return getNoProviderRouter();
-
-    const { createProviderAdapter } = await import("../../executors/agentic/provider-adapter.mjs");
-    const adapter = createProviderAdapter(resolved);
-    return createSemanticRouter({ adapter, cache: _processCache });
-  } catch {
-    // Belt-and-suspenders: any failure looking up the provider falls
-    // back to the no-provider router. SR must never throw and must
-    // never block submission.
-    return getNoProviderRouter();
-  }
+  return getNoProviderRouter();
 }
 
 /**
@@ -257,7 +255,45 @@ export async function getDefaultRouter() {
  * @returns {Promise<RouterResult>}
  */
 export async function resolveSemanticDecision(input) {
-  const router = await getDefaultRouter();
+  // Top-level disabled check: if the operator turned SR off via env,
+  // we don't even look up the provider. Returns `disabled` rejection
+  // immediately so the inspect-routing UI shows operator intent
+  // unambiguously (vs. unsupported_provider / no_provider, which mean
+  // different things).
+  if (process.env.SEMANTIC_ROUTER_DISABLED === "1") {
+    return reject("disabled", "SemanticRouter disabled via SEMANTIC_ROUTER_DISABLED=1.");
+  }
+
+  let resolved;
+  try {
+    const { resolveProviderForTask } = await import("../../executors/shared/provider-resolver.mjs");
+    resolved = resolveProviderForTask("chat");
+  } catch (err) {
+    return reject("exception", `provider lookup failed: ${err?.message ?? String(err)}`);
+  }
+
+  if (!resolved) {
+    return reject("no_provider", "No chat provider configured.");
+  }
+  if (UNSUPPORTED_FOR_SEMANTIC_ROUTER.has(resolved.kind)) {
+    // Distinguishable from no_provider so the inspect-routing UI can
+    // tell the operator a provider IS configured but the kind is not
+    // wired for SR yet. Reason text is short and operator-facing.
+    return reject(
+      "unsupported_provider",
+      `Provider kind '${resolved.kind}' does not reliably support tool_use schema enforcement; SR skipped.`
+    );
+  }
+
+  let adapter;
+  try {
+    const { createProviderAdapter } = await import("../../executors/agentic/provider-adapter.mjs");
+    adapter = createProviderAdapter(resolved);
+  } catch (err) {
+    return reject("exception", `adapter build failed: ${err?.message ?? String(err)}`);
+  }
+
+  const router = createSemanticRouter({ adapter, cache: _processCache });
   return router.resolveSemanticDecision(input);
 }
 

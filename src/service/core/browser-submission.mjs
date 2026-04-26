@@ -593,17 +593,20 @@ export async function submitBrowserTask({
     const decomposition = await decomposeUserCommand({
       userCommand,
       runtime,
-      contextPacket
+      contextPacket: routerEnrichedContext
     });
     if (decomposition.subtasks.length > 1) {
       return submitCompositeTask({
         runtime,
-        contextPacket,
+        contextPacket: routerEnrichedContext,
         userCommand,
         executionMode,
         subtasks: decomposition.subtasks,
         submitChild: ({ subtask, index, parentTaskId: compositeId }) =>
           submitBrowserTask({
+            // Children rebuild a fresh packet from the original
+            // `capture` and re-run their own preflight. Pattern is
+            // unchanged from pre-fix; this comment is for clarity.
             capture,
             userCommand: subtask.command,
             runtime,
@@ -617,9 +620,13 @@ export async function submitBrowserTask({
     }
   }
 
+  // P4-03 §6 RED-LINE FIX: pass the SR-enriched packet to createTaskRecord
+  // so the final task.task_spec / tool_policy / decision_trace carry the
+  // SemanticRouter merge result. Pre-fix createTaskRecord saw the bare
+  // contextPacket; SR's stamp was lost between preflight and persistence.
   const task = createTaskRecord({
     route,
-    contextPacket,
+    contextPacket: routerEnrichedContext,
     userCommand,
     executionMode,
     parentTaskId,
@@ -635,8 +642,8 @@ export async function submitBrowserTask({
     taskId: task.task_id,
     eventType: "task_created",
     payload: {
-      source_type: contextPacket.source_type,
-      url: contextPacket.url ?? null
+      source_type: routerEnrichedContext.source_type,
+      url: routerEnrichedContext.url ?? null
     }
   });
 

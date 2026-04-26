@@ -511,9 +511,9 @@ async function run() {
   // ── live wire-up: no chat provider configured → no_provider rejection ──
   // Smoke check that the top-level resolveSemanticDecision degrades
   // gracefully when no chat provider is set up. This exercises the
-  // dynamic-import path in getDefaultRouter without depending on any
-  // particular dev-box config (we just assert it returns SOMETHING
-  // shaped like a router result and never throws).
+  // dynamic-import path without depending on any particular dev-box
+  // config (we just assert it returns SOMETHING shaped like a router
+  // result and never throws).
   await it("wire-up: top-level resolveSemanticDecision returns a router result (no throw)", async () => {
     const { resolveSemanticDecision: liveResolve, _resetDefaultRouterState } = await import("../src/service/core/intent/semantic-router.mjs");
     if (typeof _resetDefaultRouterState === "function") _resetDefaultRouterState();
@@ -521,6 +521,39 @@ async function run() {
     assert.ok(out && typeof out === "object");
     assert.ok(out.kind === "decision" || out.kind === "rejection",
       `expected decision or rejection, got ${JSON.stringify(out).slice(0, 100)}`);
+  });
+
+  // ── disabled env var: top-level dispatch returns disabled rejection ──
+  await it("wire-up: SEMANTIC_ROUTER_DISABLED=1 short-circuits at top-level (before provider lookup)", async () => {
+    const { resolveSemanticDecision: liveResolve } = await import("../src/service/core/intent/semantic-router.mjs");
+    const originalEnv = process.env.SEMANTIC_ROUTER_DISABLED;
+    process.env.SEMANTIC_ROUTER_DISABLED = "1";
+    try {
+      const out = await liveResolve({ text: "test", contextPacket: {}, signals: {} });
+      assert.equal(out.kind, "rejection");
+      assert.equal(out.code, "disabled");
+    } finally {
+      if (originalEnv === undefined) delete process.env.SEMANTIC_ROUTER_DISABLED;
+      else process.env.SEMANTIC_ROUTER_DISABLED = originalEnv;
+    }
+  });
+
+  // ── unsupported_provider source-level lock-in ────────────────────────
+  // We can't easily mock resolveProviderForTask without ESM tricks, so
+  // we lock the unsupported-kinds set at source level. The set must
+  // include both code_cli (no schema enforcement in JSON bridge) and
+  // ollama (no tool_choice plumbing today; tool_use is unreliable).
+  await it("unsupported: source declares code_cli + ollama as unsupported for SR", async () => {
+    const { readFileSync } = await import("node:fs");
+    const src = readFileSync("src/service/core/intent/semantic-router.mjs", "utf8");
+    const setMatch = src.match(/UNSUPPORTED_FOR_SEMANTIC_ROUTER\s*=\s*Object\.freeze\(new Set\(\[([^\]]*)\]/);
+    assert.ok(setMatch, "UNSUPPORTED_FOR_SEMANTIC_ROUTER set must be defined");
+    const members = setMatch[1];
+    assert.match(members, /["']code_cli["']/);
+    assert.match(members, /["']ollama["']/);
+    // The rejection code must be in the typedef union too so consumers
+    // can switch on it.
+    assert.match(src, /"unsupported_provider"/);
   });
 
   // ── 16. public surface ─────────────────────────────────────────────────

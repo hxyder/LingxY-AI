@@ -734,18 +734,25 @@ export async function submitContextTask({
     const decomposition = await decomposeUserCommand({
       userCommand,
       runtime,
-      contextPacket: normalizedContextPacket
+      contextPacket: routerEnrichedContext
     });
     if (decomposition.subtasks.length > 1) {
       return submitCompositeTask({
         runtime,
-        contextPacket: normalizedContextPacket,
+        contextPacket: routerEnrichedContext,
         userCommand,
         executionMode,
         subtasks: decomposition.subtasks,
         submitChild: ({ subtask, index, parentTaskId: compositeId }) =>
           submitContextTask({
-            contextPacket: normalizedContextPacket,
+            // Children re-run preflight on their own subtask command —
+            // the cache will hit when the sub-command matches the
+            // parent and short-circuit the LLM call. We pass the
+            // parent's enriched packet so context_sources flows down;
+            // the child's preflight will stamp a fresh
+            // semantic_router_decision (or reject) keyed on the new
+            // subtask command.
+            contextPacket: routerEnrichedContext,
             userCommand: subtask.command,
             runtime,
             executionMode,
@@ -758,9 +765,16 @@ export async function submitContextTask({
     }
   }
 
+  // P4-03 §6 RED-LINE FIX: pass the SR-enriched packet (with
+  // context_sources + semantic_router_decision/rejection stamped) to
+  // createTaskRecord so the final task.task_spec / tool_policy /
+  // decision_trace see the LLM merge. Pre-fix createTaskRecord re-ran
+  // createTaskSpec on the bare normalizedContextPacket, silently
+  // dropping the preflight result — SR only affected decomposition
+  // logic, not the persisted task.
   const task = createTaskRecord({
     route,
-    contextPacket: normalizedContextPacket,
+    contextPacket: routerEnrichedContext,
     userCommand,
     executionMode,
     parentTaskId,
@@ -777,7 +791,7 @@ export async function submitContextTask({
     taskId: task.task_id,
     eventType: "task_created",
     payload: {
-      source_type: normalizedContextPacket.source_type,
+      source_type: routerEnrichedContext.source_type,
       executor: task.executor
     }
   });
@@ -840,7 +854,7 @@ export async function submitContextTask({
     const requestedFormat = detectRequestedOutputFormatForTask(task);
     const shouldPreferProviderArtifactFlow = requestedFormat.id !== "conversational"
       && hasChatApiProvider()
-      && !hasFileOrImageContext(normalizedContextPacket);
+      && !hasFileOrImageContext(routerEnrichedContext);
 
     if (shouldPreferProviderArtifactFlow && (task.executor === "kimi" || task.executor === "code_cli")) {
       task.executor = "fast";
@@ -853,7 +867,7 @@ export async function submitContextTask({
 
     if (shouldUseKimi && resolvedCliRuntime && !shouldPreferProviderArtifactFlow) {
       const artifactStore = runtime.artifactStore ?? createArtifactStore();
-      const allowFallback = !hasFileOrImageContext(normalizedContextPacket);
+      const allowFallback = !hasFileOrImageContext(routerEnrichedContext);
       const providerDescriptor = describeCodeCliRuntime(resolvedCliRuntime);
       const kimiResult = await runKimiExecutor({
         task,

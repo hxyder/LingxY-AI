@@ -42,6 +42,8 @@
 
 import assert from "node:assert/strict";
 
+import { readFileSync } from "node:fs";
+
 import {
   resolveToolPolicy,
   resolveDeterministicPolicy,
@@ -50,6 +52,7 @@ import {
 } from "../src/service/core/policy/tool-policy-resolver.mjs";
 import { extractAllSignals } from "../src/service/core/intent/signals/index.mjs";
 import { createTaskSpec } from "../src/service/core/task-spec.mjs";
+import { createTaskRecord } from "../src/service/core/task-runtime.mjs";
 import { STAGES } from "../src/service/core/contracts/decision-trace.mjs";
 
 let pass = 0;
@@ -257,6 +260,93 @@ async function run() {
     assert.equal(stage, undefined,
       "no semantic-router stage should appear when no preflight ran");
   });
+
+  // ── 12. integration: createTaskRecord preserves SR stamp ───────────────
+  // Bug #6 was that the submission paths stamped SR decision on a
+  // routerEnrichedContext but then passed the bare normalizedContextPacket
+  // to createTaskRecord — task-runtime.mjs:182 re-runs createTaskSpec on
+  // the bare packet, dropping the stamp. Final task.task_spec / decision_trace
+  // had no SEMANTIC_ROUTER stage; merge layer affected only the discarded
+  // preflight spec. These tests lock in that createTaskRecord forwards
+  // contextPacket verbatim to createTaskSpec.
+  it("integration: createTaskRecord with SR decision preserves stage on task.task_spec", () => {
+    const contextPacket = {
+      semantic_router_decision: { ...SR_REQUIRED }
+    };
+    const route = { executor: "fast", intent: "qa", intent_tags: [] };
+    const task = createTaskRecord({
+      route,
+      contextPacket,
+      userCommand: "帮我看看那件事的进展如何",
+      executionMode: "auto"
+    });
+    const stage = task.task_spec.decision_trace.find((e) => e.stage === STAGES.SEMANTIC_ROUTER);
+    assert.ok(stage, "task.task_spec.decision_trace must include SEMANTIC_ROUTER stage when contextPacket carries the stamp");
+    assert.equal(stage.output.web_policy, "required");
+  });
+  it("integration: createTaskRecord with SR decision changes task.task_spec.tool_policy.mode", () => {
+    // Ambiguous text + SR required decision → final tool_policy mode
+    // should be required (merge layer activated). Without the bug fix
+    // this would be the deterministic default (forbidden) because the
+    // stamp was being stripped before the spec was built.
+    const contextPacket = {
+      semantic_router_decision: { ...SR_REQUIRED }
+    };
+    const route = { executor: "fast", intent: "qa", intent_tags: [] };
+    const task = createTaskRecord({
+      route,
+      contextPacket,
+      userCommand: "帮我看看那件事的进展如何",  // ambiguous-gate-passing text
+      executionMode: "auto"
+    });
+    assert.equal(task.task_spec.tool_policy.web_search_fetch.mode, "required",
+      "merge layer must produce web=required for ambiguous query + SR=required");
+    assert.equal(task.task_spec.tool_policy.policy_groups.external_web_read.mode, "required");
+  });
+  it("integration: createTaskRecord with SR rejection still records the stage with rejected:true", () => {
+    const contextPacket = {
+      semantic_router_rejection: { kind: "rejection", code: "no_provider", reason: "no chat provider" }
+    };
+    const task = createTaskRecord({
+      route: { executor: "fast", intent: "qa", intent_tags: [] },
+      contextPacket,
+      userCommand: "帮我看看那件事的进展如何",
+      executionMode: "auto"
+    });
+    const stage = task.task_spec.decision_trace.find((e) => e.stage === STAGES.SEMANTIC_ROUTER);
+    assert.ok(stage, "decision_trace must include SEMANTIC_ROUTER stage for rejection");
+    assert.equal(stage.output.rejected, true);
+    assert.equal(stage.output.code, "no_provider");
+    // No decision → deterministic baseline → forbidden by default for
+    // ambiguous-but-no-signal text.
+    assert.equal(task.task_spec.tool_policy.web_search_fetch.mode, "forbidden");
+  });
+
+  // ── 13. source-level lock-in: submission paths pass routerEnrichedContext to createTaskRecord ──
+  // Belt-and-suspenders against the exact bug pattern: a submission path
+  // builds routerEnrichedContext via the preflight, then passes the WRONG
+  // packet to createTaskRecord. Since the integration tests above can't
+  // boot a full runtime, we grep the submission source files instead and
+  // assert the createTaskRecord call uses `contextPacket: routerEnrichedContext`.
+  const submissionFiles = [
+    "src/service/core/context-submission.mjs",
+    "src/service/core/browser-submission.mjs"
+  ];
+  for (const filePath of submissionFiles) {
+    it(`source lock-in: ${filePath} passes routerEnrichedContext to createTaskRecord`, () => {
+      const src = readFileSync(filePath, "utf8");
+      // Find every createTaskRecord({ ... }) call body and assert the
+      // contextPacket arg references routerEnrichedContext.
+      const calls = src.match(/createTaskRecord\(\{[\s\S]*?contextPacket:\s*([A-Za-z_$][\w$]*)/g) ?? [];
+      assert.ok(calls.length > 0, `${filePath} must call createTaskRecord with a contextPacket arg`);
+      for (const call of calls) {
+        const match = /contextPacket:\s*([A-Za-z_$][\w$]*)/.exec(call);
+        const argName = match?.[1];
+        assert.equal(argName, "routerEnrichedContext",
+          `${filePath} createTaskRecord must receive routerEnrichedContext (got ${argName})`);
+      }
+    });
+  }
 
   process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
   if (fail > 0) process.exit(1);
