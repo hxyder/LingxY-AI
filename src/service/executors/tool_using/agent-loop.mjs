@@ -20,7 +20,8 @@ import {
 } from "../shared/resource-context.mjs";
 import { detect as detectExplicitSearch } from "../../core/intent/signals/explicit-search.mjs";
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
-import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
+import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
+import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 // UCA-077 P3-01: deterministic / connector planners + their helpers moved
 // into a `planners/` directory so this file owns the loop and provider
 // glue, not regex tables. defaultPlanner / repairToolArgs still live here
@@ -1120,6 +1121,74 @@ export async function runToolAgentLoop({
       metadata: result.metadata,
       artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
     });
+
+    // P4-08 wire-up: per-step phase gate. After every tool_result, ask
+    // the validator whether the loop is on track. Skip for the keyword
+    // planner (which short-circuits below) — it doesn't have the
+    // looping pathology this gate exists to catch.
+    if (planner !== defaultPlanner) {
+      const stepGate = validateStepGate(task.task_spec, transcript, {
+        iteration,
+        maxIterations
+      });
+      // Emit SSE + audit so inspect-routing can render the gate decision
+      // alongside tool_call events. Compact payload — no full violations
+      // dump on the wire.
+      runtime.emitTaskEvent?.("phase_gate_signal", {
+        iteration,
+        next_action: stepGate.next_action,
+        violation_kinds: (stepGate.violations ?? []).map((v) => v.kind),
+        satisfied: stepGate.satisfied
+      });
+      appendAuditLog(runtime, task, "tool_loop.phase_gate", {
+        iteration,
+        next_action: stepGate.next_action,
+        satisfied: stepGate.satisfied,
+        violation_count: (stepGate.violations ?? []).length
+      });
+
+      // P4-RB suggestion: log which runbook would handle this signal.
+      // Acting on the runbook (executing its steps) is a follow-up
+      // commit; for now we just record the recommendation so production
+      // traces show what the recovery path would have been.
+      const runbook = suggestRunbookForStepGate(stepGate);
+      if (runbook) {
+        appendAuditLog(runtime, task, "tool_loop.runbook_suggested", {
+          iteration,
+          runbook_id: runbook.id,
+          terminal_action: runbook.terminal_action,
+          step_count: runbook.steps.length
+        });
+      }
+
+      // Early termination: abort or escalate both stop the loop and
+      // hand off to finalize. validateSuccessContract runs there and
+      // produces the proper downgrade reason — same path as the
+      // existing maxIterations-exhaustion finalize, just earlier.
+      // retry / continue keep iterating.
+      if (stepGate.next_action === "abort" || stepGate.next_action === "escalate") {
+        const violationSummary = (stepGate.violations ?? [])
+          .map((v) => v.kind)
+          .filter(Boolean)
+          .join(", ");
+        const reasonText = stepGate.next_action === "abort"
+          ? `Phase gate aborted at iteration ${iteration}: ${violationSummary || "iteration ceiling reached without satisfying contract"}`
+          : `Phase gate escalated at iteration ${iteration}: ${violationSummary || "no specific violation"}`;
+        const connectorFinal = latestConnectorFinal(transcript, task.user_command);
+        return {
+          status: "partial_success",
+          final_text: connectorFinal ?? reasonText,
+          transcript,
+          artifacts: result.artifact_paths ?? [],
+          phase_gate: {
+            next_action: stepGate.next_action,
+            iteration,
+            violations: stepGate.violations ?? [],
+            runbook_suggested: runbook?.id ?? null
+          }
+        };
+      }
+    }
 
     // For the keyword planner, return after one tool call (it doesn't read history)
     if (planner === defaultPlanner) {

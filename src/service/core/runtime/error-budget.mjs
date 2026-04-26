@@ -18,15 +18,29 @@
  * counter hitting zero emits `budget_exhausted` and the runtime
  * escalates (via P4-RB runbook or partial_success).
  *
+ * Semantics: counter `max=N` means the budget exhausts on the Nth event
+ * (consumed >= max is the trip condition — see chargeBudget). The Nth
+ * event hits the ceiling; the (N+1)th and beyond are past-ceiling.
+ *
  * Defaults (safe; per main plan §17.4.2):
- *   max_empty_search_results : 1   one empty web_search → relax + retry
- *                                   (runbook); two empty → budget gone
- *   max_tool_failures        : 2   covers transient errors; 3+ failures
- *                                   means the executor is stuck
- *   max_replan_rounds        : 2   route_reconsider can fire twice; a
- *                                   third re-judgment means the LLM is
- *                                   indecisive
- *   max_no_file_change_runs  : 1   artifact tasks get one rework attempt
+ *   max_empty_search_results : 1   first empty external-web-read result
+ *                                   trips the budget. Runbook
+ *                                   EMPTY_WEB_SEARCH_RESULT can still
+ *                                   run its relax+retry step (runbook
+ *                                   firing is independent of budget
+ *                                   exhaustion); the budget just says
+ *                                   "do not loop on empty results
+ *                                   beyond this one event".
+ *   max_tool_failures        : 2   one transient failure absorbed; the
+ *                                   second hits the ceiling. Reading:
+ *                                   1 strike OK, 2 strikes triggers
+ *                                   escalation.
+ *   max_replan_rounds        : 2   route_reconsider can fire once
+ *                                   without exhausting; the second
+ *                                   re-judgment trips the ceiling.
+ *   max_no_file_change_runs  : 1   first run that promised an artifact
+ *                                   but produced no diff trips the
+ *                                   ceiling immediately.
  *
  * Override path: TaskSpec.execution_constraints.error_budget can ship
  * task-specific ceilings; createTaskSpec doesn't currently populate
