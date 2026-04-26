@@ -92,8 +92,24 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text: 
   const explicitSearch = signals.explicit_search;
   const weakFreshness = signals.weak_freshness;
   const pendingOffer = signals.pending_offer;
+  const explicitNoSearch = signals.explicit_no_search;
 
-  // 0. Pending-offer inheritance (P4-02.x C4). When the user replies with
+  // 0a. P4-RQ E1: explicit no-search override. Highest priority —
+  // beats pending_offer's intent inheritance, explicit_external's
+  // required upgrade, every entity rule. The user said verbatim "do
+  // not browse / 不要联网"; the resolver must respect that even if
+  // the rest of the request would otherwise trigger required.
+  // SignalKind=fact (literal user statement), so SR's hard-fact-conflict
+  // guard would also reject any LLM suggestion that conflicts here.
+  if (explicitNoSearch?.matched) {
+    return webSearchPolicy(
+      "forbidden",
+      "User explicitly forbade web browsing for this task (do-not-browse / 不联网).",
+      explicitNoSearch.evidence
+    );
+  }
+
+  // 0b. Pending-offer inheritance (P4-02.x C4). When the user replies with
   // a short affirmative ("需要", "继续", "yes") to an assistant offer
   // that was about a high-freshness external entity (weather / news /
   // stock / flight / …), upgrade the policy to `required`. The
@@ -248,6 +264,12 @@ export function mergeSemanticRouterDecision({
   const sr = contextPacket?.semantic_router_decision;
   if (!sr || typeof sr !== "object" || !sr.web_policy) return deterministicPolicy;
   if (!shouldConsultSemanticRouter({ signals, contextPacket, text })) return deterministicPolicy;
+
+  // P4-RQ E1: hard fact "no search" beats every SR suggestion. The
+  // user told us not to browse — SR doesn't get to override that.
+  if (signals?.explicit_no_search?.matched) {
+    return stampResearchHint(deterministicPolicy, sr);
+  }
 
   const detMode = deterministicPolicy?.web_search_fetch?.mode;
   if (detMode === "required") return stampResearchHint(deterministicPolicy, sr);

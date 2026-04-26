@@ -65,7 +65,8 @@ export const SIGNAL_NAMES = /** @type {const} */ ([
   "weak_freshness",
   "explicit_entity",
   "pending_offer",
-  "explicit_single_url"
+  "explicit_single_url",
+  "explicit_no_search"
 ]);
 
 /**

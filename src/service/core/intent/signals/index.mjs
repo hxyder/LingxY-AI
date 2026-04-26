@@ -18,6 +18,7 @@ import { detect as detectWeakFreshness } from "./weak-freshness.mjs";
 import { detect as detectExplicitEntity } from "./explicit-entity.mjs";
 import { detect as detectPendingOffer } from "./pending-offer.mjs";
 import { detect as detectExplicitSingleUrl } from "./explicit-single-url.mjs";
+import { detect as detectExplicitNoSearch } from "./explicit-no-search.mjs";
 
 const DETECTORS = {
   explicit_external: detectExplicitExternal,
@@ -26,7 +27,8 @@ const DETECTORS = {
   weak_freshness: detectWeakFreshness,
   explicit_entity: detectExplicitEntity,
   pending_offer: detectPendingOffer,
-  explicit_single_url: detectExplicitSingleUrl
+  explicit_single_url: detectExplicitSingleUrl,
+  explicit_no_search: detectExplicitNoSearch
 };
 
 /**

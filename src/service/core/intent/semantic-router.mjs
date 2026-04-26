@@ -549,6 +549,16 @@ const LOCAL_SCOPES = new Set(["uploaded_files", "current_context", "local_projec
  */
 function detectHardFactConflict(decision, signals) {
   if (!signals || typeof signals !== "object") return null;
+
+  // P4-RQ E1: user explicitly forbade browsing — LLM web_policy
+  // anything other than `forbidden` is a hard-fact conflict. The
+  // signal is kind=fact (literal user statement); SR doesn't get
+  // to second-guess.
+  const noSearch = signals.explicit_no_search;
+  if (noSearch?.matched && noSearch.kind === "fact" && decision.web_policy !== "forbidden") {
+    return `signals.explicit_no_search (kind=fact) is set; LLM web_policy=${decision.web_policy} would override an explicit user constraint`;
+  }
+
   const sourceScope = signals.source_scope;
   if (!sourceScope?.matched || sourceScope.kind !== "fact") return null;
   const factScope = sourceScope.hint?.value;
