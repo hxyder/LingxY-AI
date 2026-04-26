@@ -27,6 +27,7 @@
     "verify:context-sources": "node scripts/verify-context-sources.mjs",
     "verify:rag-digest": "node scripts/verify-rag-digest.mjs",
     "verify:follow-up-routing": "node scripts/verify-follow-up-routing.mjs",
+    "verify:semantic-router": "node scripts/verify-semantic-router.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",
     "verify:ui-tokens": "node scripts/verify-ui-tokens.mjs",
