@@ -632,7 +632,8 @@ export async function submitBrowserTask({
     parentTaskId,
     childIndex,
     retryCount,
-    executorOverride
+    executorOverride,
+    runtime  // G3b: enables parent_task_summary enrichment
   });
 
   store.insertTask(task);

@@ -123,7 +123,8 @@ export async function submitOfficeTask({
     executionMode,
     parentTaskId,
     retryCount,
-    executorOverride
+    executorOverride,
+    runtime  // G3b: enables parent_task_summary enrichment
   });
 
   store.insertTask(task);

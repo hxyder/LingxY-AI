@@ -781,7 +781,8 @@ export async function submitContextTask({
     childIndex,
     retryCount,
     bypassDedupe,
-    executorOverride
+    executorOverride,
+    runtime  // G3b: enables parent_task_summary enrichment
   });
 
   store.insertTask(task);

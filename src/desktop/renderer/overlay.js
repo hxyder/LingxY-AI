@@ -674,16 +674,66 @@ function buildStructuredConversationTurns(excludeLast = false) {
     .slice(-20);
 }
 
-const EXPLICIT_FOLLOWUP_RE = /(继续|接着|再来|还是|同样|也|上个|上一|刚才|之前|前面|这个|那个|它|这份|这篇|这个文件|那个文件|改一下|修改|补充|加上|删掉|打开它|发给|保存为|导出|基于|根据上面|follow[-\s]?up|continue|same one|that one|previous|above|it\b)/i;
+// P4-RQ G3a: parent_task_id attachment — STRUCTURAL rule, NOT topic
+// regex.
+//
+// Pre-G3 this used a topic regex (EXPLICIT_FOLLOWUP_RE) to decide
+// whether to attach parent_task_id. The regex consistently missed
+// short follow-ups like "罗利" (city slot fill) and "对" (yes
+// confirmation), so each became a NEW root task instead of inheriting
+// the parent — the user-reported "one query, 3 tasks, no query
+// happened" reproduction.
+//
+// G3a structural rules (must match EITHER):
+//   1. RECENCY: lastCompletedTaskId is fresh (< 5 min since
+//      completion). The user is in a continuing conversation
+//      window; subsequent input is more likely a follow-up than
+//      a new root task.
+//   2. SHORT TEXT: < 12 Chinese chars / < 30 ASCII chars. Short
+//      input is structurally more likely to be a slot-fill or
+//      confirmation than a self-contained root task.
+//   3. ARTIFACT FOLLOW-UP: prior task produced artifacts AND the
+//      command mentions a file-class verb. This is the one
+//      remaining keep-as-regex case for the artifact hand-off
+//      pattern (kept-as-regex per the structural-vs-topical
+//      distinction — file/document/edit/send are STRUCTURAL
+//      action verbs, not topic words).
+const FOLLOWUP_RECENCY_WINDOW_MS = 5 * 60 * 1000;        // 5 minutes
+const FOLLOWUP_SHORT_TEXT_CHARS = 30;                    // ASCII chars
+const FOLLOWUP_SHORT_TEXT_CHINESE_CHARS = 12;            // CJK glyphs
+const ARTIFACT_VERB_RE = /(文件|文档|pptx?|docx?|xlsx?|pdf|导出|保存|打开|发送|分享|修改|edit|open|send|export|save|file|document)/i;
 
 function shouldAttachParentTaskForCommand(commandText = "") {
   if (!conversationState?.lastCompletedTaskId) return false;
   const command = String(commandText ?? "").trim();
   if (!command) return false;
-  if (EXPLICIT_FOLLOWUP_RE.test(command)) return true;
-  if (conversationState.lastArtifacts?.length && /(文件|文档|pptx?|docx?|xlsx?|pdf|导出|保存|打开|发送|分享|修改|edit|open|send|export|save|file|document)/i.test(command)) {
+
+  // Rule 1: recency window — if we just finished a task, treat
+  // the next input as a likely follow-up by default.
+  const completedAt = conversationState?.lastCompletedAt ?? 0;
+  if (completedAt && Date.now() - completedAt < FOLLOWUP_RECENCY_WINDOW_MS) {
     return true;
   }
+
+  // Rule 2: short text — slot-fill / affirmative / clarification.
+  // Counts CJK glyphs and ASCII chars separately because the same
+  // semantic length looks different by Unicode code points.
+  const cjkCount = (command.match(/[一-鿿]/g) ?? []).length;
+  const asciiCount = command.length - cjkCount;
+  if (cjkCount > 0 && cjkCount <= FOLLOWUP_SHORT_TEXT_CHINESE_CHARS) {
+    return true;
+  }
+  if (cjkCount === 0 && asciiCount > 0 && asciiCount <= FOLLOWUP_SHORT_TEXT_CHARS) {
+    return true;
+  }
+
+  // Rule 3: artifact-followup keeper. The verbs here are structural
+  // (file/document/edit/save/send) — they describe an action on the
+  // prior task's output, not a topic.
+  if (conversationState.lastArtifacts?.length && ARTIFACT_VERB_RE.test(command)) {
+    return true;
+  }
+
   return false;
 }
 
@@ -2848,6 +2898,9 @@ async function refreshActiveTask() {
       // reuse the artifact list without hitting disk again.
       if (conversationState) {
         conversationState.lastCompletedTaskId = task.task_id;
+        // P4-RQ G3a: lastCompletedAt drives the recency window for
+        // structural follow-up attachment (shouldAttachParentTaskForCommand).
+        conversationState.lastCompletedAt = Date.now();
         conversationState.lastArtifacts = task.artifacts.map((a) => ({
           path: a.path,
           mime: a.mime ?? null,
@@ -2955,6 +3008,10 @@ async function refreshActiveTask() {
       // needs to thread — remember the task_id so follow-ups link.
       if (conversationState) {
         conversationState.lastCompletedTaskId = task.task_id;
+        // P4-RQ G3a: lastCompletedAt drives the recency window —
+        // same field used by shouldAttachParentTaskForCommand for
+        // both artifact and conversational successes.
+        conversationState.lastCompletedAt = Date.now();
         conversationState.updatedAt = Date.now();
       }
       // conversational mode — no artifacts

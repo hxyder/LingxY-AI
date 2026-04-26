@@ -332,7 +332,8 @@ export async function submitImageTask({
     executionMode,
     parentTaskId,
     retryCount,
-    executorOverride
+    executorOverride,
+    runtime  // G3b: enables parent_task_summary enrichment
   });
 
   store.insertTask(task);

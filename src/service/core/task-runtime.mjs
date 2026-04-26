@@ -167,6 +167,51 @@ export function ensureRuntimeServices(runtime) {
   return runtime;
 }
 
+/**
+ * P4-RQ G3b: read the parent task's final assistant text from the
+ * runtime store and stamp it on a cloned contextPacket so the
+ * pending-offer signal can detect follow-up affirmatives ("对",
+ * "yes") even when conversation_turns aren't embedded in the
+ * current submission. Pure-function shape — no mutation of the
+ * input.
+ *
+ * Defensively tolerant: if the parent task is missing, has no
+ * final reply, or the runtime store is malformed, returns the
+ * original contextPacket unchanged.
+ */
+function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
+  try {
+    const parent = runtime.store.getTask(parentTaskId);
+    if (!parent || typeof parent !== "object") return contextPacket;
+    // Pull the final assistant text wherever the executor stashed
+    // it. Different executors persist this under different keys —
+    // result_summary is the canonical, but result.final_text and
+    // payload.text show up in some legacy paths.
+    const finalText =
+      parent.result_summary
+      ?? parent.result?.final_text
+      ?? parent.final_text
+      ?? null;
+    if (typeof finalText !== "string" || finalText.trim().length === 0) {
+      return contextPacket;
+    }
+    return {
+      ...(contextPacket ?? {}),
+      parent_task_summary: {
+        parent_task_id: parentTaskId,
+        // Cap to bound prompt growth — only the offer phrasing
+        // (typically near the tail of the reply) is what
+        // pending-offer cares about.
+        assistant_final_text: finalText.slice(0, 1600)
+      }
+    };
+  } catch {
+    // Store I/O exception — never let observability fetch break
+    // task creation.
+    return contextPacket;
+  }
+}
+
 export function createTaskRecord({
   route,
   contextPacket,
@@ -177,9 +222,21 @@ export function createTaskRecord({
   childIndex = null,
   retryCount = 0,
   bypassDedupe = false,
-  executorOverride = null
+  executorOverride = null,
+  runtime = null
 }) {
-  const taskSpec = createTaskSpec(userCommand, contextPacket, route);
+  // P4-RQ G3b: when this task has a parentTaskId AND a runtime
+  // store is available, fetch the parent's final assistant text and
+  // stamp it on contextPacket as parent_task_summary BEFORE
+  // createTaskSpec runs. The pending-offer signal reads this to
+  // detect "对/yes" affirmatives that follow a parent task's offer
+  // even when the current submission didn't carry conversation_turns
+  // in selection_metadata.
+  const enrichedContext = parentTaskId && runtime?.store?.getTask
+    ? attachParentTaskSummary(contextPacket, parentTaskId, runtime)
+    : contextPacket;
+
+  const taskSpec = createTaskSpec(userCommand, enrichedContext, route);
   const taskSpecValidation = validateTaskSpec(taskSpec);
 
   return {
@@ -218,9 +275,12 @@ export function createTaskRecord({
     task_spec_valid: taskSpecValidation.valid,
     task_spec_errors: taskSpecValidation.errors,
     execution_mode: executionMode ?? (route.requires_confirmation ? "approval_required" : "interactive"),
-    context_packet: contextPacket,
+    // P4-RQ G3b: persist the ENRICHED context so parent_task_summary
+    // (and any future orchestrator-stamped fields) are visible to
+    // downstream consumers (executors / observability / replay).
+    context_packet: enrichedContext,
     source_dedupe_key: buildSourceDedupeKey(
-      contextPacket,
+      enrichedContext,
       userCommand,
       executorOverride ?? route.executor
     )

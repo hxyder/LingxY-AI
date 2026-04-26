@@ -139,7 +139,8 @@ export async function submitFileTask({
     executionMode,
     parentTaskId,
     retryCount,
-    executorOverride: preferredExecutorOverride
+    executorOverride: preferredExecutorOverride,
+    runtime  // G3b: enables parent_task_summary enrichment
   });
 
   store.insertTask(task);

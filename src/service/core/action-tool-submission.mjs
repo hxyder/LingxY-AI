@@ -68,7 +68,8 @@ export async function submitActionToolTask({
     parentTaskId,
     retryCount,
     bypassDedupe,
-    executorOverride: "tool_using"
+    executorOverride: "tool_using",
+    runtime  // G3b: enables parent_task_summary enrichment
   });
 
   runtime.store.insertTask(task);

@@ -81,6 +81,25 @@ function findLastAssistantTurn(contextPacket) {
 }
 
 /**
+ * P4-RQ G3b: when no conversation_turns are embedded in this
+ * submission, fall back to the parent task's summary (orchestrator
+ * pre-fetches and stamps it on `enrichedContext.parent_task_summary`
+ * BEFORE signal extraction). Lets short follow-ups like "对" link
+ * to the parent's offer even when the frontend didn't attach the
+ * full turn array.
+ *
+ * The summary shape is `{ assistant_final_text: string|null }`.
+ * Only the assistant final text is needed for offer detection.
+ */
+function findOfferTextFromParentSummary(contextPacket) {
+  const summary = contextPacket?.parent_task_summary;
+  if (!summary || typeof summary !== "object") return null;
+  const text = summary.assistant_final_text;
+  if (typeof text !== "string" || text.trim().length === 0) return null;
+  return { role: "assistant", content: text };
+}
+
+/**
  * @param {string} text
  * @param {object} contextPacket
  * @returns {import("./_signal-types.mjs").Signal}
@@ -90,7 +109,11 @@ export function detect(text, contextPacket = {}) {
   if (!command) return emptySignal(NAME);
   if (!SHORT_AFFIRMATIVE.test(command)) return emptySignal(NAME);
 
-  const lastAssistant = findLastAssistantTurn(contextPacket);
+  // G3b: prefer in-band conversation_turns when present, fall back
+  // to the orchestrator-pre-fetched parent_task_summary. Either source
+  // gives us the assistant text whose offer phrasing we need to match.
+  const lastAssistant = findLastAssistantTurn(contextPacket)
+    ?? findOfferTextFromParentSummary(contextPacket);
   if (!lastAssistant) return emptySignal(NAME);
 
   const assistantText = lastAssistant.content;
