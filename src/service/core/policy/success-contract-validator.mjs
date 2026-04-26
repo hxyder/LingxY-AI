@@ -39,6 +39,15 @@ import { toolsInGroup } from "./policy-groups.mjs";
  */
 
 /**
+ * @typedef {"continue"|"retry"|"escalate"|"abort"} StepNextAction
+ *
+ * @typedef {Object} StepGateResult
+ * @property {boolean}             satisfied
+ * @property {ContractViolation[]} violations
+ * @property {StepNextAction}      next_action
+ */
+
+/**
  * @param {object} taskSpec
  * @param {TranscriptEntry[]} transcript
  * @returns {{ satisfied: boolean, violations: ContractViolation[] }}
@@ -123,6 +132,109 @@ function isSuccessfulHit(entry) {
     if (result.error != null && result.error !== "") return false;
   }
   return true;
+}
+
+/**
+ * UCA-077 P4-08 (main plan §16.5 / §18.4): per-step phase gate.
+ *
+ * Where `validateSuccessContract` is the FINALIZE gate (called once at
+ * task end), `validateStepGate` is the IN-LOOP gate the agent loop
+ * calls after each tool_call_completed. It surfaces failure patterns
+ * early and returns a `next_action` hint so the loop can decide:
+ *
+ *   - `continue`  no problem detected (or contract just got satisfied)
+ *   - `retry`     last tool call failed once — let the model try again
+ *   - `escalate`  same tool failed multiple times, OR contract is
+ *                 unreachable from the current executor → caller
+ *                 should switch executor / upgrade policy / hand off
+ *                 to runbook (P4-RB)
+ *   - `abort`     out of iterations and contract still not met →
+ *                 downgrade to partial_success and stop
+ *
+ * Pre-this-gate the tool loop ran the full maxIterations even when the
+ * same web_search_fetch was failing four turns in a row. The phase
+ * gate detects that pattern at iteration 2 and signals escalate; the
+ * loop can then break out and (with P4-08 step 2 wiring) trigger the
+ * SemanticRouter re-judgment / executor upgrade flow.
+ *
+ * Pure function — same inputs, same output. No side effects, no audit
+ * writes. Caller decides what to do with `next_action`.
+ *
+ * @param {object} taskSpec
+ * @param {TranscriptEntry[]} transcript
+ * @param {{ iteration?: number, maxIterations?: number, perToolFailureThreshold?: number }} [options]
+ * @returns {StepGateResult}
+ */
+export function validateStepGate(taskSpec, transcript = [], options = {}) {
+  const iteration = Number.isFinite(options.iteration) ? options.iteration : 0;
+  const maxIterations = Number.isFinite(options.maxIterations) ? options.maxIterations : 8;
+  const perToolFailureThreshold = Number.isFinite(options.perToolFailureThreshold)
+    ? options.perToolFailureThreshold
+    : 2;
+
+  // 1. Cheap early-out: if the finalize gate would already pass, the
+  //    current iteration is on track. Just continue.
+  const finalGate = validateSuccessContract(taskSpec, transcript);
+  if (finalGate.satisfied) {
+    return { satisfied: true, violations: [], next_action: "continue" };
+  }
+
+  // 2. About to hit the iteration ceiling. Anything not satisfied at
+  //    iteration N-1 will not be satisfied at N either; abort and let
+  //    the caller mark partial_success.
+  if (iteration >= maxIterations - 1) {
+    return {
+      satisfied: false,
+      violations: finalGate.violations,
+      next_action: "abort"
+    };
+  }
+
+  // 3. Examine the transcript tail for a same-tool failure streak. We
+  //    only count CONSECUTIVE failures of the SAME tool from the end
+  //    — a different-tool retry breaks the streak (the agent is
+  //    actually exploring alternatives).
+  const toolResults = (transcript ?? []).filter((e) => e?.type === "tool_result");
+  if (toolResults.length === 0) {
+    return { satisfied: false, violations: finalGate.violations, next_action: "continue" };
+  }
+  const lastResult = toolResults[toolResults.length - 1];
+  if (isSuccessfulHit(lastResult)) {
+    // Last call succeeded but contract still not met — agent is making
+    // progress, let it keep going.
+    return { satisfied: false, violations: finalGate.violations, next_action: "continue" };
+  }
+
+  let consecutiveFailures = 0;
+  for (let i = toolResults.length - 1; i >= 0; i -= 1) {
+    const r = toolResults[i];
+    if (r?.tool !== lastResult.tool) break;
+    if (isSuccessfulHit(r)) break;
+    consecutiveFailures += 1;
+  }
+
+  if (consecutiveFailures >= perToolFailureThreshold) {
+    return {
+      satisfied: false,
+      violations: [
+        ...finalGate.violations,
+        {
+          kind: "tool_repeated_failure",
+          message: `${lastResult.tool} failed ${consecutiveFailures} consecutive times — escalating to a different approach.`
+        }
+      ],
+      next_action: "escalate"
+    };
+  }
+
+  // Single failure (or first failure of a new tool). Let the agent
+  // try one more time before we escalate. This also covers the
+  // "called something else first, then failed once" flow.
+  return {
+    satisfied: false,
+    violations: finalGate.violations,
+    next_action: "retry"
+  };
 }
 
 function resultHasSubstance(entry) {

@@ -30,7 +30,7 @@
 
 import assert from "node:assert/strict";
 
-import { validateSuccessContract } from "../src/service/core/policy/success-contract-validator.mjs";
+import { validateSuccessContract, validateStepGate } from "../src/service/core/policy/success-contract-validator.mjs";
 import { createTaskSpec } from "../src/service/core/task-spec.mjs";
 
 let pass = 0;
@@ -233,6 +233,116 @@ async function run() {
     const out = validateSuccessContract(spec, transcript);
     assert.equal(out.satisfied, true,
       `expected satisfied; violations=${JSON.stringify(out.violations)}`);
+  });
+
+  // ── 10. P4-08 phase gate (validateStepGate) ───────────────────────────
+  // The in-loop gate. Distinct from validateSuccessContract — returns a
+  // next_action hint that drives the agent loop's flow control.
+  const phaseSpec = makeSpec({ groups: ["external_web_read"] });
+
+  it("phaseGate: empty transcript + iteration 0 → continue", () => {
+    const out = validateStepGate(phaseSpec, [], { iteration: 0, maxIterations: 8 });
+    assert.equal(out.satisfied, false);
+    assert.equal(out.next_action, "continue");
+  });
+  it("phaseGate: contract satisfied → continue + satisfied:true", () => {
+    const transcript = [
+      { type: "tool_result", tool: "fetch_url_content", success: true, observation: "x".repeat(500) }
+    ];
+    const out = validateStepGate(phaseSpec, transcript, { iteration: 1, maxIterations: 8 });
+    assert.equal(out.satisfied, true);
+    assert.equal(out.next_action, "continue");
+    assert.deepEqual(out.violations, []);
+  });
+  it("phaseGate: successful tool but contract not yet met → continue (agent making progress)", () => {
+    // write_file succeeded, but external_web_read is required and never called.
+    // Don't escalate — the agent might call web_search next.
+    const transcript = [
+      { type: "tool_result", tool: "write_file", success: true, observation: "saved" }
+    ];
+    const out = validateStepGate(phaseSpec, transcript, { iteration: 0, maxIterations: 8 });
+    assert.equal(out.satisfied, false);
+    assert.equal(out.next_action, "continue");
+  });
+  it("phaseGate: ONE failed tool → retry (give the agent another chance)", () => {
+    const transcript = [
+      { type: "tool_result", tool: "web_search_fetch", success: false, error: "timeout", observation: "" }
+    ];
+    const out = validateStepGate(phaseSpec, transcript, { iteration: 1, maxIterations: 8 });
+    assert.equal(out.next_action, "retry");
+  });
+  it("phaseGate: TWO consecutive same-tool failures → escalate", () => {
+    const transcript = [
+      { type: "tool_result", tool: "web_search_fetch", success: false, error: "timeout" },
+      { type: "tool_result", tool: "web_search_fetch", success: false, error: "blocked_by_policy" }
+    ];
+    const out = validateStepGate(phaseSpec, transcript, { iteration: 2, maxIterations: 8 });
+    assert.equal(out.next_action, "escalate");
+    assert.ok(out.violations.some((v) => v.kind === "tool_repeated_failure"),
+      "escalate must surface the tool_repeated_failure violation for trace clarity");
+  });
+  it("phaseGate: failures of DIFFERENT tools don't count as a streak → retry", () => {
+    // Agent tried web_search_fetch, failed, then tried web_search, also
+    // failed. That's exploration, not stuck-in-a-loop. Single failure
+    // of the LAST tool → retry.
+    const transcript = [
+      { type: "tool_result", tool: "web_search_fetch", success: false, error: "timeout" },
+      { type: "tool_result", tool: "web_search", success: false, error: "no_results" }
+    ];
+    const out = validateStepGate(phaseSpec, transcript, { iteration: 2, maxIterations: 8 });
+    assert.equal(out.next_action, "retry");
+  });
+  it("phaseGate: success then failure → retry (streak counts from tail; success breaks it)", () => {
+    const transcript = [
+      { type: "tool_result", tool: "web_search_fetch", success: true, observation: "x".repeat(40) },
+      { type: "tool_result", tool: "web_search_fetch", success: false, error: "timeout" }
+    ];
+    const out = validateStepGate(phaseSpec, transcript, { iteration: 2, maxIterations: 8 });
+    // Last call failed but the previous one succeeded; streak = 1.
+    // Note: contract was already satisfied by the first hit, so actually
+    // the gate returns continue. But that's because validateSuccessContract
+    // accepts any successful hit with substance — this test doc-pins
+    // that behaviour.
+    assert.equal(out.next_action, "continue");
+    assert.equal(out.satisfied, true);
+  });
+  it("phaseGate: at iteration === maxIterations - 1 with violations → abort", () => {
+    const transcript = [
+      { type: "tool_result", tool: "web_search_fetch", success: false, error: "timeout" }
+    ];
+    const out = validateStepGate(phaseSpec, transcript, { iteration: 7, maxIterations: 8 });
+    assert.equal(out.next_action, "abort");
+    assert.equal(out.satisfied, false);
+  });
+  it("phaseGate: iteration ceiling AND contract satisfied → continue (don't abort a winning state)", () => {
+    const transcript = [
+      { type: "tool_result", tool: "fetch_url_content", success: true, observation: "y".repeat(500) }
+    ];
+    const out = validateStepGate(phaseSpec, transcript, { iteration: 7, maxIterations: 8 });
+    assert.equal(out.satisfied, true);
+    assert.equal(out.next_action, "continue");
+  });
+  it("phaseGate: custom perToolFailureThreshold escalates earlier", () => {
+    // Single failure with threshold=1 → escalate immediately.
+    const transcript = [
+      { type: "tool_result", tool: "web_search_fetch", success: false, error: "timeout" }
+    ];
+    const out = validateStepGate(phaseSpec, transcript, {
+      iteration: 1, maxIterations: 8, perToolFailureThreshold: 1
+    });
+    assert.equal(out.next_action, "escalate");
+  });
+  it("phaseGate: backward-compat — validateSuccessContract still works unchanged", () => {
+    // The phase gate didn't change validateSuccessContract's surface.
+    // Snapshot a known-good case from earlier in this file: explicit
+    // external request + fetch_url_content with substance → satisfied.
+    const spec = createTaskSpec("查一下网上最近的开源项目", {}, {});
+    const transcript = [{
+      type: "tool_result", tool: "fetch_url_content", success: true,
+      result: { extractedText: "x".repeat(500) }
+    }];
+    const final = validateSuccessContract(spec, transcript);
+    assert.equal(final.satisfied, true);
   });
 
   process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
