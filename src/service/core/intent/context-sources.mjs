@@ -92,7 +92,8 @@ const SENTINEL_RULES = Object.freeze([
   // LOCAL_ANCHOR_KEYS so source-scope won't mistake "user is on a
   // page" for "user wants me to analyse this page".
   { startsWith: "[browser_metadata ·",                 source: "browser_page" },
-  // legacy regex fallback from conversation-memory.mjs:136
+  // legacy regex fallback for the historical "对话历史:" prose marker
+  // (used by older capture paths that didn't emit the [当前对话上下文] sentinel)
   { regex: /^对话历史[:：]/m,                          source: "conversation_history" }
 ]);
 
