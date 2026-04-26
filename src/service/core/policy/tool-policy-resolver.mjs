@@ -81,7 +81,7 @@ export function resolveToolPolicy({ signals, contextPacket = {}, text = "" } = {
  * @param {{ signals: object, contextPacket: object, text: string }} input
  * @returns {ToolPolicy}
  */
-export function resolveDeterministicPolicy({ signals, contextPacket = {}, text: _text = "" } = {}) {
+export function resolveDeterministicPolicy({ signals, contextPacket = {}, text = "" } = {}) {
   if (!signals) {
     throw new Error("resolveDeterministicPolicy: signals bundle is required");
   }
@@ -93,6 +93,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text: 
   const weakFreshness = signals.weak_freshness;
   const pendingOffer = signals.pending_offer;
   const explicitNoSearch = signals.explicit_no_search;
+  const explicitSingleUrl = signals.explicit_single_url;
 
   // 0a. P4-RQ E1: explicit no-search override. Highest priority —
   // beats pending_offer's intent inheritance, explicit_external's
@@ -137,24 +138,73 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text: 
     );
   }
 
-  // 2. Strong external entity (weather, stock, flight…) AND scope is "none"
-  //    or unknown — i.e. the user did not anchor the request to local data.
+  // 2a. P4-RQ E2: hard-fact local anchor (real_selection / file_text /
+  // uploaded_files / local_project) — kind=fact source-scope. Web is
+  // forbidden because the user has POINTED AT specific local content
+  // and the inference is direct, not a pronoun. This split (fact
+  // first, assumption later) is what lets explicit_single_url
+  // override the ambiguous "这篇文章" pronoun case in step 2b without
+  // weakening real-selection forbids.
   const scopeValue = sourceScope?.hint?.value ?? "none";
+  if (sourceScope?.matched
+      && sourceScope.kind === "fact"
+      && LOCAL_SCOPES.has(scopeValue)) {
+    return webSearchPolicy(
+      "forbidden",
+      `Task is anchored to ${scopeValue} (fact-kind); external web data is not appropriate.`,
+      sourceScope.evidence
+    );
+  }
+
+  // 2b. P4-RQ E2: explicit single-URL anchor. The user pasted a URL
+  // alongside a summarise-style verb — the URL IS the user's anchor,
+  // and the resolver must force web=required (NOT optional) so the
+  // executor actually fetches the URL via fetch_url_content rather
+  // than answering from training memory.
+  //
+  // Gate: explicit_single_url MATCHED *and* an actual URL is present
+  // in the user command. The signal alone is too permissive — it
+  // also fires for "总结这个页面" (current-context pronoun referring
+  // to the user's open browser tab, no URL in the text). Without
+  // structural URL evidence we cannot upgrade web=required, since
+  // there is nothing for the executor to fetch. When there's no
+  // URL, fall through to step 2c (assumption-local) which forbids,
+  // letting the LLM summarise from whatever local context exists.
+  //
+  // This keeps the explicit_single_url signal broad (D1 research-
+  // quality inference still consumes it for single_lookup profile)
+  // while the deterministic web upgrade requires structural
+  // evidence — the structural-vs-topical distinction the reference
+  // docs require.
+  if (explicitSingleUrl?.matched && hasInlineUrl(text)) {
+    return webSearchPolicy(
+      "required",
+      "User named a single specific URL/article — must fetch it via fetch_url_content (single_lookup task).",
+      explicitSingleUrl.evidence
+    );
+  }
+
+  // 2c. Assumption-kind local anchor — pronoun-style "这个/这篇" without
+  // a URL. Without an explicit external signal to override, treat
+  // as local. Same forbid as before; just split out from the
+  // fact-kind case above.
+  if (sourceScope?.matched
+      && sourceScope.kind === "assumption"
+      && LOCAL_SCOPES.has(scopeValue)) {
+    return webSearchPolicy(
+      "forbidden",
+      `Task is anchored to ${scopeValue} (assumption-kind, e.g. "这个/这篇" pronoun); external web data is not appropriate.`,
+      sourceScope.evidence
+    );
+  }
+
+  // 3. Strong external entity (weather, stock, flight…) AND scope is "none"
+  //    or unknown — i.e. the user did not anchor the request to local data.
   if (explicitEntity?.matched && explicitEntity.strength === "strong" && scopeValue === "none") {
     return webSearchPolicy(
       "required",
       `User named a high-freshness external entity ("${firstMatch(explicitEntity)}") with no local source attached.`,
       [...explicitEntity.evidence, { type: "context", source: "source_scope", reason: "scope=none" }]
-    );
-  }
-
-  // 3. Local source — uploaded files, current context, local project, or
-  //    a selection. The user is asking about something local; do not search.
-  if (sourceScope?.matched && LOCAL_SCOPES.has(scopeValue)) {
-    return webSearchPolicy(
-      "forbidden",
-      `Task is anchored to ${scopeValue}; external web data is not appropriate.`,
-      sourceScope.evidence
     );
   }
 
@@ -186,6 +236,18 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text: 
       : "No external-data signal detected.",
     trailingEvidence
   );
+}
+
+/**
+ * P4-RQ E2: structural URL detection. Used by the explicit_single_url
+ * resolver branch to gate web=required upgrades on actual URL
+ * presence in the user command. NOT a topic regex — http(s):// is a
+ * structural surface signal exactly like the reference docs list as
+ * keep-as-regex.
+ */
+function hasInlineUrl(text) {
+  if (typeof text !== "string" || text.length === 0) return false;
+  return /https?:\/\/\S+/i.test(text);
 }
 
 function webSearchPolicy(mode, reason, evidence) {
