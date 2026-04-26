@@ -84,9 +84,18 @@ async function run() {
     assert.equal(out.uploaded_images, true);
     assert.equal(out.uploaded_files, false);
   });
-  it("structural: ctx.url set → browser_page", () => {
+  it("structural: ctx.url alone does NOT set browser_page (P4-02.x follow-up)", () => {
+    // Before the follow-up fix, URL presence auto-anchored the task to
+    // browser_page=true → forbidden web. Active-tab URL is metadata, not
+    // an anchor; the user must explicitly say "this page" or paste
+    // selection text. Tested below: "今天天气怎么样" + url stays
+    // un-anchored so the resolver can correctly route to required.
     const out = classifyContextSources({ text: "x", contextPacket: { url: "https://example.com" } });
-    assert.equal(out.browser_page, true);
+    assert.equal(out.browser_page, false);
+    assert.equal(out.real_selection, false);
+    // The url itself is still on contextPacket.url for SemanticRouter /
+    // display surfaces; this assertion just confirms the *anchor*
+    // semantics. (Caller would inspect contextPacket.url directly.)
   });
 
   // ── 3. authoritative metadata flags ───────────────────────────────────

@@ -155,7 +155,13 @@ function findRecentArtifactPath(runtime, preferredKind = null) {
 // explicit "I'm following up on this task" signal), and semantic
 // recall keeps a 400ms budget so it never hurts submit latency. All
 // other context seeding is deferred to the AI's own tool choice.
-const MEMORY_RECALL_TIMEOUT_MS = 400;
+// P4-02.x follow-up: bumped from 400ms → 1000ms after measuring the
+// embedding store on a hot cache: store.search consistently took
+// 350-470ms, occasionally above 400ms, which silently dropped legit
+// recalls in production. The 1000ms ceiling still keeps RAG well below
+// SemanticRouter's 1500ms budget and below the user's typing cadence,
+// while letting the realistic-latency p95 actually return results.
+const MEMORY_RECALL_TIMEOUT_MS = 1000;
 const MEMORY_RECALL_K = 3;
 // P4-02.x C2: per-hit threshold gate. TF-IDF-only hits use Jaccard
 // similarity which can return spurious matches at the legacy 0.05 floor

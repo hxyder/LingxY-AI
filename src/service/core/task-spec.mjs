@@ -430,7 +430,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
         "Connector domain request — connector tools read external state directly.",
         [{ type: "context", source: "connector-intent", reason: "isConnectorDomainRequest" }]
       )
-    : resolveToolPolicy({ signals, contextPacket });
+    : resolveToolPolicy({ signals, contextPacket: enrichedContext });
   // P4-00.6: enforce the policy_groups ↔ per-toolId invariant. Today
   // every emitter is consistent, but this is the single guarantee point
   // for future write paths (SemanticRouter, hand-built test policies).
@@ -537,7 +537,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     executorDecision = resolveExecutor({
       taskSpec: partialSpec,
       toolPolicy,
-      contextPacket,
+      contextPacket: enrichedContext,
       routeSuggestion: intentRouterResult.suggested_executor
     });
   }
@@ -559,7 +559,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   // TaskSpec. Existing consumers ignore this field; new consumers (Phase 3
   // graph executor, planning specialists) read `spec.contract` instead of
   // re-deriving intent from a half-dozen TaskSpec fields.
-  spec.contract = compileTaskContract({ taskSpec: spec, signals, contextPacket });
+  spec.contract = compileTaskContract({ taskSpec: spec, signals, contextPacket: enrichedContext });
 
   return applyHardenedRules(spec);
 }

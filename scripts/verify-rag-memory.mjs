@@ -7,11 +7,19 @@
 //   1. static wiring in context-submission.mjs + task-runtime.mjs
 //   2. buildHistoryRecord now includes the final inline_result answer
 //      text + artifact paths, capped to HISTORY_TEXT_CAP
-//   3. seedSemanticMemories returns a contextPacket with the "[跨对话
-//      相关任务]" digest when the store has relevant hits, and leaves
-//      contextPacket untouched when the store is empty or times out
+//   3. seedSemanticMemories returns a contextPacket with the
+//      "[memory_background · ...]" digest when the store has relevant
+//      hits, and leaves contextPacket untouched when the store is empty
+//      or times out
 //   4. the 400ms recall timeout is honoured — verifier builds a fake
 //      store whose search takes 2s, and asserts submit still returns
+//
+// UCA-077 P4-02.x C2: the digest sentinel was renamed from the legacy
+// `[跨对话相关任务（语义召回 · 可作为背景）]` to
+// `[memory_background · 语义召回 · ...]` so the C1 context-source
+// classifier can recognise it as background-only. Per-hit threshold
+// also tightened (0.05 → 0.25 for TF-IDF) and task ids in the digest
+// are now full callable ids, not 12-char slices.
 
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -32,8 +40,8 @@ const ROOT = path.resolve(__dirname, "..");
     "recall must be wrapped in a race-against-timeout");
   assert.ok(ctx.includes("await seedSemanticMemories"),
     "submitContextTask must await the semantic recall helper");
-  assert.ok(ctx.includes("[跨对话相关任务"),
-    "digest label must be present");
+  assert.ok(ctx.includes("[memory_background · 语义召回"),
+    "digest sentinel must be the C2-renamed [memory_background · ...] form");
 
   const tr = await readFile(path.join(ROOT, "src/service/core/task-runtime.mjs"), "utf8");
   assert.ok(tr.includes("HISTORY_TEXT_CAP"),
@@ -76,8 +84,8 @@ const ROOT = path.resolve(__dirname, "..");
     parentTaskId: null,
     contextPacket: { text: "原始 context" }
   });
-  assert.ok(result.text.includes("[跨对话相关任务"),
-    "digest line must be prepended when relevant memories exist");
+  assert.ok(result.text.includes("[memory_background · 语义召回"),
+    "digest line must be prepended with the C2 sentinel when relevant memories exist");
   assert.ok(result.text.includes("task_prior_0") || result.text.includes("生成未来5年AI发展"),
     "digest must cite the matching prior task's summary or id");
   assert.ok(Array.isArray(result.selection_metadata?.semantic_recall_ids),
@@ -104,9 +112,13 @@ const ROOT = path.resolve(__dirname, "..");
   });
   assert.equal(result3.text, "original", "empty store must leave context untouched");
 
-  // timeout budget: a fake store whose search takes 2s should not stall the call
+  // timeout budget: a fake store whose search takes 3s should not stall
+  // the call. P4-02.x follow-up bumped MEMORY_RECALL_TIMEOUT_MS from
+  // 400 → 1000 (real searches measured 350-470ms; 400 was too tight).
+  // The slow-store sleep is now 3s and the assertion ceiling is 1500ms
+  // so the timeout fires well before the store would resolve.
   const slowStore = {
-    search: () => new Promise((r) => setTimeout(() => r([]), 2000))
+    search: () => new Promise((r) => setTimeout(() => r([]), 3000))
   };
   const started = Date.now();
   const result4 = await seedSemanticMemories({
@@ -116,7 +128,7 @@ const ROOT = path.resolve(__dirname, "..");
     contextPacket: { text: "original" }
   });
   const elapsed = Date.now() - started;
-  assert.ok(elapsed < 800, `recall must fall back within timeout; took ${elapsed}ms`);
+  assert.ok(elapsed < 1500, `recall must fall back within timeout; took ${elapsed}ms`);
   assert.equal(result4.text, "original", "slow search must degrade silently");
 
   rmSync(tmpRoot, { recursive: true, force: true });

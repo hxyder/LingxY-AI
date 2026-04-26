@@ -122,14 +122,28 @@ export function classifyContextSources({ text, contextPacket = {} } = {}) {
   const trimmedCtxText = ctxText.trim();
 
   // Stage 0: structural attachments — observable state, no interpretation.
+  //
+  // P4-02.x follow-up: ctx.url presence alone does NOT make
+  // `browser_page=true`. Browser captures often carry the active tab's
+  // URL as metadata (browser-submission.mjs:63 stamps it on every
+  // capture), which is *informational* — not a signal that the user
+  // wants the page to anchor the task. If we treat URL alone as a
+  // local anchor, asking "今天天气怎么样" on any open tab forbids the
+  // weather lookup. The user must explicitly anchor via either:
+  //   - real selection / page text (handled by Stage 2 sentinel scan
+  //     and Stage 3 default `real_selection`)
+  //   - a future producer that emits a `[browser_page · ...]` sentinel
+  //     when the user opts in to "summarize this page"
+  //   - command-side pronouns ("这个页面" / "this page") which would
+  //     match source-scope.mjs CURRENT_CONTEXT_PATTERN and produce
+  //     scope=current_context separately
+  // The URL itself remains accessible via `contextPacket.url` for
+  // SemanticRouter / display, just not as a routing anchor.
   if (Array.isArray(ctx.file_paths) && ctx.file_paths.length > 0) {
     sources.uploaded_files = true;
   }
   if (Array.isArray(ctx.image_paths) && ctx.image_paths.length > 0) {
     sources.uploaded_images = true;
-  }
-  if (typeof ctx.url === "string" && ctx.url.trim().length > 0) {
-    sources.browser_page = true;
   }
 
   // Stage 1: authoritative producer flags. These are set by the same
