@@ -11,6 +11,7 @@ import { decomposeUserCommand } from "./router/decomposer.mjs";
 import { submitCompositeTask } from "./composite-submission.mjs";
 import { normalizeConversationTurns } from "./conversation-memory.mjs";
 import { createTaskSpec } from "./task-spec.mjs";
+import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -576,7 +577,17 @@ export async function submitBrowserTask({
     trigger: "browser_submission"
   });
   const contextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
-  const preflightTaskSpec = createTaskSpec(userCommand, contextPacket, route);
+  // P4-03 §19 #2: SemanticRouter preflight — same shared helper as the
+  // context-submission flow. Classifier + ambiguity gate + optional
+  // LLM call, all wrapped in fail-soft try/catch. Browser captures
+  // benefit specifically because the new `[browser_metadata · ...]`
+  // sentinel lets SR distinguish "user is on a tab" from "user wants
+  // this page analysed".
+  const routerEnrichedContext = await applySemanticRouterPreflight({
+    userCommand,
+    contextPacket
+  });
+  const preflightTaskSpec = createTaskSpec(userCommand, routerEnrichedContext, route);
 
   if (inspection.allowed && canDecomposeFromTaskSpec(preflightTaskSpec) && !skipDecomposition && !parentTaskId) {
     const decomposition = await decomposeUserCommand({
