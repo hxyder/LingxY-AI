@@ -55,12 +55,35 @@ const PRIMARY_GROUP = "external_web_read";
  */
 
 /**
- * @param {{ signals: import("../intent/signals/_signal-types.mjs").SignalBundle["signals"], contextPacket?: object }} input
+ * @param {{ signals: import("../intent/signals/_signal-types.mjs").SignalBundle["signals"], contextPacket?: object, text?: string }} input
  * @returns {ToolPolicy}
  */
-export function resolveToolPolicy({ signals, contextPacket: _contextPacket = {} } = {}) {
+export function resolveToolPolicy({ signals, contextPacket = {}, text = "" } = {}) {
   if (!signals) {
     throw new Error("resolveToolPolicy: signals bundle is required");
+  }
+
+  const det = resolveDeterministicPolicy({ signals, contextPacket, text });
+  // P4-03: when an upstream async caller has stamped a SemanticRouter
+  // decision onto contextPacket.semantic_router_decision and the request
+  // is "ambiguous" (no strong deterministic signal), the LLM suggestion
+  // can upgrade an otherwise default-forbidden policy. Non-ambiguous
+  // cases ignore the stamped decision — rules are still authoritative.
+  return mergeSemanticRouterDecision({ deterministicPolicy: det, signals, contextPacket, text });
+}
+
+/**
+ * The 6-step deterministic chain. Extracted so P4-03 merge logic wraps it
+ * cleanly. External callers always go through `resolveToolPolicy` above
+ * — this internal export is only for test introspection (see
+ * scripts/verify-resolver-merge.mjs).
+ *
+ * @param {{ signals: object, contextPacket: object, text: string }} input
+ * @returns {ToolPolicy}
+ */
+export function resolveDeterministicPolicy({ signals, contextPacket = {}, text: _text = "" } = {}) {
+  if (!signals) {
+    throw new Error("resolveDeterministicPolicy: signals bundle is required");
   }
 
   const explicitExternal = signals.explicit_external;
@@ -151,6 +174,100 @@ export function resolveToolPolicy({ signals, contextPacket: _contextPacket = {} 
 
 function webSearchPolicy(mode, reason, evidence) {
   return buildExternalWebReadPolicy(mode, reason, evidence);
+}
+
+/**
+ * P4-03: ambiguity gate for SemanticRouter consultation.
+ *
+ * The deterministic resolver runs 6 fast-path rules over regex-derived
+ * signals. When NONE of those rules fire decisively (no attached files,
+ * no `explicit_external` strong, no strong `explicit_entity`, command
+ * long enough to carry intent), the request is "ambiguous" — the
+ * deterministic baseline would default to forbidden, but the user may
+ * actually want web reading. SemanticRouter is consulted ONLY for those
+ * ambiguous cases; fast-path tasks never trigger an LLM call (per main
+ * plan §12.10 latency budget: < 5ms when fast-path hits).
+ *
+ * @param {{ signals: object, contextPacket?: object, text?: string }} input
+ * @returns {boolean}
+ */
+export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text = "" } = {}) {
+  if (Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0) {
+    return false;
+  }
+  if (Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0) {
+    return false;
+  }
+  const explicitExternal = signals?.explicit_external;
+  if (explicitExternal?.matched && explicitExternal.strength === "strong") return false;
+  const explicitEntity = signals?.explicit_entity;
+  if (explicitEntity?.matched && explicitEntity.strength === "strong") return false;
+  if (String(text ?? "").trim().length <= 8) return false;
+  return true;
+}
+
+/**
+ * P4-03: merge an upstream-stamped SemanticRouter decision into the
+ * deterministic policy. Contract:
+ *
+ *   - When `contextPacket.semantic_router_decision` is absent → return
+ *     `deterministicPolicy` unchanged.
+ *   - When `shouldConsultSemanticRouter` returns false (request is NOT
+ *     ambiguous; rules fired strongly) → ignore the SR decision. Rules
+ *     win when present (main plan §12.7 invariant: "required 永远尊重
+ *     规则").
+ *   - When deterministic mode is `required` → ignore SR. Defense-in-
+ *     depth on top of the ambiguity gate.
+ *   - When `signals.source_scope.kind === "fact"` and the scope is
+ *     local → ignore SR. Hard facts beat soft inferences (P4-02 §18.3).
+ *   - Otherwise → use the SR-suggested `web_policy` as the new mode.
+ *     SemanticRouter has already filtered low-confidence and
+ *     fact-conflict cases (it would have returned a rejection there);
+ *     any decision stamped here has crossed the 0.6 confidence
+ *     threshold and passed the conflict check.
+ *
+ * The merged policy is built via `buildExternalWebReadPolicy` so the
+ * group + per-toolId expansion + invariants are uniform with the
+ * deterministic emission. SR's `reason` is wrapped with the deterministic
+ * baseline for trace clarity.
+ *
+ * @param {{
+ *   deterministicPolicy: ToolPolicy,
+ *   signals: object,
+ *   contextPacket?: object,
+ *   text?: string
+ * }} input
+ * @returns {ToolPolicy}
+ */
+export function mergeSemanticRouterDecision({
+  deterministicPolicy,
+  signals,
+  contextPacket = {},
+  text = ""
+} = {}) {
+  const sr = contextPacket?.semantic_router_decision;
+  if (!sr || typeof sr !== "object" || !sr.web_policy) return deterministicPolicy;
+  if (!shouldConsultSemanticRouter({ signals, contextPacket, text })) return deterministicPolicy;
+
+  const detMode = deterministicPolicy?.web_search_fetch?.mode;
+  if (detMode === "required") return deterministicPolicy;
+
+  const sourceScope = signals?.source_scope;
+  if (sourceScope?.matched
+      && sourceScope.kind === "fact"
+      && LOCAL_SCOPES.has(sourceScope.hint?.value)) {
+    return deterministicPolicy;
+  }
+
+  const reason = `Semantic router suggested ${sr.web_policy} (confidence=${typeof sr.confidence === "number" ? sr.confidence.toFixed(2) : "?"}); deterministic baseline was ${detMode}.`;
+  return buildExternalWebReadPolicy(
+    sr.web_policy,
+    reason,
+    [
+      { type: "semantic_router", source: "semantic_router", reason: String(sr.reason ?? "").slice(0, 200) },
+      ...(deterministicPolicy?.web_search_fetch?.evidence ?? [])
+    ]
+  );
 }
 
 /**

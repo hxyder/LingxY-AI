@@ -112,6 +112,7 @@ export const STAGES = Object.freeze({
   GOAL_CLASSIFICATION: "goal-classification",
   TOOL_POLICY: "tool-policy",
   POLICY_CONFLICT_RESOLVED: "policy-conflict-resolved", // P4-00.6 invariant
+  SEMANTIC_ROUTER: "semantic-router",                   // P4-03 LLM suggestion (decision OR rejection)
   EXECUTOR_SELECTION: "executor-selection",
   OUTPUT_POLICY: "output-policy",          // reserved for Phase 2 OutputPolicy step
   SUCCESS_CONTRACT: "success-contract"     // reserved for finalize-time checks

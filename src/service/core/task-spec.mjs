@@ -430,13 +430,40 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
         "Connector domain request — connector tools read external state directly.",
         [{ type: "context", source: "connector-intent", reason: "isConnectorDomainRequest" }]
       )
-    : resolveToolPolicy({ signals, contextPacket: enrichedContext });
+    : resolveToolPolicy({ signals, contextPacket: enrichedContext, text });
   // P4-00.6: enforce the policy_groups ↔ per-toolId invariant. Today
   // every emitter is consistent, but this is the single guarantee point
   // for future write paths (SemanticRouter, hand-built test policies).
   // forbidden wins; group is canonical otherwise. Every conflict gets
   // its own DecisionTrace entry under POLICY_CONFLICT_RESOLVED so the
   // operator can see what was overruled.
+  // P4-03: when an upstream async preflight stamped a SemanticRouter
+  // outcome onto the context packet, surface it on the DecisionTrace so
+  // the inspect-routing UI can show the full pipeline. Today no caller
+  // stamps these fields (the default router has no adapter wired); the
+  // stamp is read here so the §19 follow-up that wires the async
+  // preflight in submission paths needs zero changes to task-spec.
+  const srDecision = enrichedContext?.semantic_router_decision;
+  const srRejection = enrichedContext?.semantic_router_rejection;
+  if (srDecision && typeof srDecision === "object") {
+    tracker.record(STAGES.SEMANTIC_ROUTER, {
+      output: {
+        web_policy: srDecision.web_policy ?? null,
+        source_scope: srDecision.source_scope ?? null,
+        executor: srDecision.executor ?? null,
+        confidence: typeof srDecision.confidence === "number" ? srDecision.confidence : null
+      },
+      reason: srDecision.reason ?? "Semantic router returned a decision.",
+      evidence: [{ type: "semantic_router", source: "semantic_router", reason: "decision stamped on contextPacket" }]
+    });
+  } else if (srRejection && typeof srRejection === "object") {
+    tracker.record(STAGES.SEMANTIC_ROUTER, {
+      output: { rejected: true, code: srRejection.code ?? "unknown" },
+      reason: `Semantic router rejected: ${srRejection.reason ?? "(no reason)"}`,
+      evidence: [{ type: "semantic_router", source: "semantic_router", reason: srRejection.code ?? "unknown" }]
+    });
+  }
+
   const { resolved: toolPolicy, conflicts: policyConflicts } = enforcePolicyInvariants(rawPolicy);
   for (const conflict of policyConflicts) {
     tracker.record(STAGES.POLICY_CONFLICT_RESOLVED, {
