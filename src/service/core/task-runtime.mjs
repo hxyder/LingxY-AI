@@ -7,6 +7,8 @@ import { createSecurityBroker } from "../security/broker.mjs";
 import { createPendingApprovalService } from "../scheduler/pending-approvals.mjs";
 import { extractToolSequence, recordToolSequence } from "./skill-pattern-tracker.mjs";
 import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
+import { createActionToolRegistry } from "../action_tools/registry.mjs";
+import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -116,6 +118,13 @@ function buildHistoryRecord(task, runtime) {
 
 export function ensureRuntimeServices(runtime) {
   runtime.activeExecutions ??= new Map();
+  // UCA-077 P4-04.5: registry must be a singleton on the runtime so that
+  // tool_using / agentic / fast all see the same set of tools (including
+  // any registered MCP / plugin tools) AND share the per-task rate-limit
+  // counters bound to runtime.perTaskToolCallCounts. Service-bootstrap
+  // populates this in production; this fallback covers test harnesses
+  // and other narrow runtimes that bypass full bootstrap.
+  runtime.actionToolRegistry ??= createActionToolRegistry(BUILTIN_ACTION_TOOLS);
   runtime.metrics ??= createMetricsRegistry({
     store: runtime.store,
     queue: runtime.queue
@@ -194,7 +203,16 @@ export function createTaskRecord({
     bypass_dedupe: Boolean(bypassDedupe || retryCount > 0),
     executor_history: [],
     intent: route.intent,
-    executor: executorOverride ?? route.executor,
+    // UCA-077 P2-05: executor selection precedence is now:
+    //   1. explicit submission override (e.g. action-tool-submission forces
+    //      tool_using regardless of what intent-router thought)
+    //   2. taskSpec.suggested_executor — this is the resolver's decision,
+    //      built from goal + tool-policy + signals (see executor-resolver.mjs)
+    //   3. route.executor — legacy intent-router fallback, kept for cases
+    //      where the resolver couldn't run (e.g. malformed inputs)
+    // Phase 1's createTaskSpec already populated suggested_executor via
+    // resolveExecutor; Phase 2 finally honours it at the task-record layer.
+    executor: executorOverride ?? taskSpec.suggested_executor ?? route.executor,
     user_command: userCommand,
     task_spec: taskSpec,
     task_spec_valid: taskSpecValidation.valid,
@@ -346,7 +364,10 @@ function buildConversationStepLabel(eventType, payload) {
 
 // Event types that should only be published to the live bus and not persisted
 // to the store (avoids flooding the DB with thousands of delta records).
-const EPHEMERAL_EVENT_TYPES = new Set(["text_delta", "tool_input_delta"]);
+// UCA-077 P3-02: tool_planner_decision is per-iteration observability for
+// the agent loop — useful in SSE streams and tests, but it would bloat the
+// SQLite event store if we persisted every iteration's payload.
+const EPHEMERAL_EVENT_TYPES = new Set(["text_delta", "tool_input_delta", "tool_planner_decision"]);
 
 // UCA-182 Phase 11: also skip writing streaming deltas to the per-task
 // jsonl log. The log is meant for post-mortem inspection, not as a
@@ -464,6 +485,15 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   // observability aid (see /task/:id/log endpoint).
   void persistTaskEvent(runtime, record);
 
+  // UCA-077 P2-03: piggy-back a `decision_trace` event onto every
+  // `task_created` so SSE consumers (overlay timeline, task detail page)
+  // can render the goal / tool-policy / executor decisions without an
+  // extra round trip. Lookup-on-emit avoids touching the 12 submission
+  // sites that already emit task_created themselves.
+  if (eventType === "task_created" && !payload?.__suppressDecisionTrace) {
+    emitDecisionTraceFollowUp(runtime, taskId);
+  }
+
   // UCA-061: Forward qualifying events as conversation_step so the overlay
   // can render real-time step indicators without polling.
   if (CONVERSATION_VISIBLE_EVENTS.has(eventType)) {
@@ -484,6 +514,41 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   }
 
   return record;
+}
+
+function emitDecisionTraceFollowUp(runtime, taskId) {
+  let task;
+  try {
+    task = runtime.store.getTask?.(taskId);
+  } catch {
+    return; // store may not be ready in some test harnesses
+  }
+  const trace = task?.task_spec?.decision_trace;
+  if (!Array.isArray(trace) || trace.length === 0) return;
+
+  const followUp = {
+    event_id: createId("evt"),
+    task_id: taskId,
+    ts: nowIso(),
+    event_type: "decision_trace",
+    payload: {
+      // Mirror the compact `summary()` shape so SSE consumers do not see
+      // the timestamp / decision_id noise unless they ask for the full
+      // record (which they can read from task.task_spec.decision_trace).
+      stages: trace.map((entry) => ({
+        stage: entry.stage,
+        output: entry.output,
+        reason: entry.reason
+      })),
+      executor: task?.task_spec?.suggested_executor,
+      tool_policy: task?.task_spec?.tool_policy
+    }
+  };
+  // decision_trace is an analytical projection of state already on the task
+  // record; we do NOT persist it as its own event row — the task store keeps
+  // task_spec.decision_trace, which is enough for replay and the /task/:id
+  // detail endpoint.
+  runtime.eventBus.publish(followUp);
 }
 
 export function updateTask(runtime, task, patch, emitStatus = false) {

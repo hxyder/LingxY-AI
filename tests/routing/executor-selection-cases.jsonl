@@ -1,0 +1,14 @@
+{"id":"chitchat-fast","input":"你好","expected":{"executor":"fast","mode":"qa"}}
+{"id":"recent-chitchat-fast","input":"最近怎么样","expected":{"executor":"fast","mode":"qa"}}
+{"id":"polish-fast","input":"帮我润色这句话","expected":{"executor":"fast","mode":"qa"}}
+{"id":"local-analyze-fast","input":"最近这个框架很慢，帮我分析","expected":{"executor":"fast","mode":"qa"}}
+{"id":"news-tool-using","input":"今天有什么 AI 新闻","expected":{"executor":"tool_using","mode":"search"}}
+{"id":"weather-tool-using","input":"current weather in Raleigh","expected":{"executor":"tool_using","mode":"search"}}
+{"id":"explicit-online-tool-using","input":"查一下网上最近的开源项目","expected":{"executor":"tool_using"}}
+{"id":"generate-doc-agentic","input":"基于上传文件生成报告","context":{"file_paths":["data.md"]},"expected":{"executor":"agentic","mode":"artifact"}}
+{"id":"edit-doc-agentic","input":"改一下这个文档加入日期","context":{"file_paths":["a.docx"]},"expected":{"executor":"agentic","mode":"artifact"}}
+{"id":"translate-translate","input":"翻译这段","expected":{"executor":"translate","mode":"translate"}}
+{"id":"image-multimodal","input":"识别这张图","context":{"image_paths":["x.png"]},"expected":{"executor":"multi_modal","mode":"multimodal"}}
+{"id":"launch-tool-using","input":"打开微信","expected":{"executor":"tool_using","mode":"desktop_action"}}
+{"id":"route-suggestion-overridden","input":"今天的天气","routeSuggestion":"fast","expected":{"executor":"tool_using","mode":"search","note":"routeSuggestion=fast must lose to tool-policy=required"}}
+{"id":"route-suggestion-respected-when-rules-agree","input":"你好","routeSuggestion":"fast","expected":{"executor":"fast"}}

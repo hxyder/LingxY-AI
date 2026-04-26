@@ -1,0 +1,30 @@
+{"id":"chitchat-greet","input":"你好","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"chitchat-recent","input":"最近怎么样","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"polish","input":"帮我润色这句话","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"local-framework-slow","input":"最近这个框架很慢，帮我分析","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"local-program-slow","input":"最近我的程序执行很慢，帮我排查","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"analyze-below-code","input":"分析下面代码","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"file-search-with-recent","input":"查一下这个文件里最近提到的内容","context":{"file_paths":["a.md"]},"expected":{"web":"forbidden","executor":"fast"}}
+{"id":"current-context-flow","input":"根据我提供的流程，分析当前问题","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"code-current-identifier","input":"这个代码里 current 字段是什么意思","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"local-code-identifier-with-context","input":"这段代码里 current 字段是什么意思","context":{"text":"function foo(){ return current; }"},"expected":{"web":"forbidden","executor":"fast"}}
+{"id":"explicit-online-search","input":"查一下网上最近有没有类似开源项目","expected":{"web":"required","executor":"tool_using"}}
+{"id":"news-today","input":"今天有什么 AI 新闻","expected":{"web":"required","executor":"tool_using"}}
+{"id":"stock-spike","input":"查一下 AVIS 为什么暴涨","expected":{"web":"required","executor":"tool_using"}}
+{"id":"weather-current","input":"current weather in Raleigh","expected":{"web":"required","executor":"tool_using"}}
+{"id":"weather-cn-today","input":"今天北京的天气","expected":{"web":"required","executor":"tool_using"}}
+{"id":"weather-tomorrow","input":"明天的天气怎么样","expected":{"web":"required","executor":"tool_using"}}
+{"id":"flight-status","input":"查一下 CA1234 航班状态","expected":{"web":"required","executor":"tool_using"}}
+{"id":"explicit-search-doc","input":"查一下文档","expected":{"web":"optional","executor":"tool_using"}}
+{"id":"generate-from-uploaded","input":"基于上传文件生成报告","context":{"file_paths":["data.md"]},"expected":{"web":"forbidden","executor":"agentic"}}
+{"id":"summarize-attachment","input":"总结下面内容","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"translate-zh","input":"翻译这段","expected":{"web":"forbidden","executor":"translate"}}
+{"id":"translate-en","input":"translate this paragraph","expected":{"web":"forbidden","executor":"translate"}}
+{"id":"image-attached","input":"识别这张图","context":{"image_paths":["x.png"]},"expected":{"web":"forbidden","executor":"multi_modal"}}
+{"id":"launch-app","input":"打开微信","expected":{"web":"forbidden","executor":"tool_using"}}
+{"id":"edit-existing-doc","input":"改一下这个文档加入日期","context":{"file_paths":["a.docx"]},"expected":{"web":"forbidden","executor":"agentic"}}
+{"id":"connector-mail-search","input":"查一下我最近的邮件","context":{},"expected":{"web":"forbidden","executor":"tool_using"}}
+{"id":"action-tool-context-echo","input":"帮我理解 DeepSeek 最近的 AI 新闻动态","context":{"text":"帮我理解 DeepSeek 最近的 AI 新闻动态"},"expected":{"web":"required","executor":"tool_using"}}
+{"id":"news-no-space","input":"今天有什么AI新闻","expected":{"web":"required","executor":"tool_using"}}
+{"id":"news-no-space-typo","input":"今天又什么AI新闻","expected":{"web":"required","executor":"tool_using"}}
+{"id":"ai-news-tail","input":"AI新闻最近怎么样","expected":{"web":"required","executor":"tool_using"}}

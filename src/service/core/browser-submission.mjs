@@ -270,36 +270,9 @@ function attachProviderFieldsToEvent(descriptor, payload) {
   };
 }
 
-function pickRunnableExecutor(task, runtime) {
-  if (task.executor === "multi_modal") {
-    return runtime.executors?.find((executor) => executor.id === "multi_modal")
-      ?? runtime.executors?.find((executor) => executor.id === "fast")
-      ?? null;
-  }
-
-  if (task.executor === "tool_using") {
-    return runtime.executors?.find((executor) => executor.id === "tool_using")
-      ?? runtime.executors?.find((executor) => executor.id === "fast")
-      ?? null;
-  }
-
-  if (task.executor === "agentic") {
-    const provider = resolveProviderForTask("chat");
-    const agenticExecutor = runtime.executors?.find((executor) => executor.id === "agentic");
-    if (agenticExecutor && provider) {
-      return agenticExecutor;
-    }
-    return runtime.executors?.find((executor) => executor.id === "fast") ?? null;
-  }
-
-  if ((task.executor === "kimi" || task.executor === "code_cli") && !resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime)) {
-    return runtime.executors?.find((executor) => executor.id === "fast") ?? null;
-  }
-
-  return runtime.executors?.find((executor) => executor.id === task.executor)
-    ?? runtime.executors?.find((executor) => executor.id === "fast")
-    ?? null;
-}
+// UCA-077 P2-05: pickRunnableExecutor moved to a shared module so this file
+// and context-submission.mjs no longer maintain byte-for-byte copies.
+import { pickRunnableExecutor } from "./planning/runnable-executor.mjs";
 
 function canDecomposeFromTaskSpec(taskSpec) {
   if (!taskSpec) return true;

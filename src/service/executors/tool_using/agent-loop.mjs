@@ -14,6 +14,21 @@ import {
 } from "../../connectors/core/connector-intent.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
 import { getUserLocation, formatLocationLabel } from "../../utils/location.mjs";
+import { detect as detectExplicitSearch } from "../../core/intent/signals/explicit-search.mjs";
+import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
+// UCA-077 P3-01: deterministic / connector planners + their helpers moved
+// into a `planners/` directory so this file owns the loop and provider
+// glue, not regex tables. defaultPlanner / repairToolArgs still live here
+// because they touch runtime state.
+import { planDeterministicToolCall } from "./planners/deterministic.mjs";
+import { planConnectorToolCall } from "./planners/connector.mjs";
+import {
+  extractUrl,
+  extractLaunchAppName,
+  extractLaunchAppCandidates,
+  normalizeLaunchAppArg,
+  normalizeLaunchAppKey
+} from "./planners/launch-helpers.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -28,7 +43,9 @@ function defaultPlanner({ task, runtime: plannerRuntime = null }) {
   const connector = planConnectorToolCall(task.user_command, catalog);
   if (connector) return connector;
 
-  if (isSearchOrNewsRequest(task.user_command)) {
+  // UCA-077 P1-06: web_search_fetch is decided by tool-policy-resolver.
+  // Defer to that field rather than running a parallel regex gate here.
+  if (task.task_spec?.tool_policy?.web_search_fetch?.mode === "required") {
     return {
       type: "tool_call",
       tool: "web_search_fetch",
@@ -67,173 +84,9 @@ function defaultPlanner({ task, runtime: plannerRuntime = null }) {
   };
 }
 
-function planDeterministicToolCall(userCommand = "", catalog = null) {
-  const text = String(userCommand ?? "").trim();
-  const url = extractUrl(text);
-  if (url && /(打开|访问|open|visit|go to|网页|网站|链接|url)/i.test(text)) {
-    return {
-      type: "tool_call",
-      tool: "open_url",
-      args: { url }
-    };
-  }
-
-  // Workflow dispatch is the LLM planner's job; this no-LLM fallback planner
-  // only runs when no chat provider is configured. Only short-circuit here
-  // when the user explicitly provided every required workflow input in the
-  // text (e.g. "主题：xx 正文：yy") — otherwise let the capability-based read
-  // path below take over so the user still sees something useful instead of
-  // a validation-failed workflow.
-  const workflow = catalog ? matchWorkflowByTrigger(text, catalog) : null;
-  if (workflow) {
-    const firstToolId = workflow.steps?.find((step) => step?.tool)?.tool;
-    const firstTool = firstToolId ? catalog.getTool?.(firstToolId) : null;
-    const required = firstTool?.inputSchema?.required ?? [];
-    const input = extractWorkflowInput(text, workflow);
-    const missing = required.filter((field) => {
-      const value = input?.[field];
-      if (value === undefined || value === null) return true;
-      if (typeof value === "string" && !value.trim()) return true;
-      if (Array.isArray(value) && value.length === 0) return true;
-      return false;
-    });
-    if (missing.length === 0) {
-      return {
-        type: "tool_call",
-        tool: "connector_workflow_run",
-        args: { workflowId: workflow.id, input }
-      };
-    }
-  }
-
-  // Connector-domain guesswork (account_list_emails for anything mentioning
-  // "邮件"/"gmail") is intentionally NOT done here. It would short-circuit
-  // write-intent commands like "给 X 发一份邮件" into a read call and never
-  // let the LLM see the request. The LLM planner has catalog hints and picks
-  // connector_workflow_run itself. Only no-LLM defaultPlanner uses
-  // planConnectorToolCall (as a separate step, not from here).
-  if (/(邮件|email|gmail|outlook|日历|calendar|drive|onedrive|文件|网盘)/i.test(text) || isSearchOrNewsRequest(text)) {
-    return null;
-  }
-
-  const launchApp = extractLaunchAppName(text);
-  if (launchApp) {
-    return {
-      type: "tool_call",
-      tool: "launch_app",
-      args: { app: launchApp }
-    };
-  }
-
-  return null;
-}
-
-function planConnectorToolCall(userCommand = "", catalog = null) {
-  const text = String(userCommand ?? "");
-  if (!isConnectorDomainRequest(text)) return null;
-
-  // Same rule as planDeterministicToolCall: only dispatch a workflow if the
-  // user explicitly provided every required input. Otherwise drop through to
-  // the read-tool fallback so we don't hand the dispatcher empty fields.
-  const workflow = catalog ? matchWorkflowByTrigger(text, catalog) : null;
-  if (workflow) {
-    const firstToolId = workflow.steps?.find((step) => step?.tool)?.tool;
-    const firstTool = firstToolId ? catalog.getTool?.(firstToolId) : null;
-    const required = firstTool?.inputSchema?.required ?? [];
-    const input = extractWorkflowInput(text, workflow);
-    const missing = required.filter((field) => {
-      const value = input?.[field];
-      if (value === undefined || value === null) return true;
-      if (typeof value === "string" && !value.trim()) return true;
-      if (Array.isArray(value) && value.length === 0) return true;
-      return false;
-    });
-    if (missing.length === 0) {
-      return {
-        type: "tool_call",
-        tool: "connector_workflow_run",
-        args: { workflowId: workflow.id, input }
-      };
-    }
-  }
-
-  const provider = inferConnectorProvider(text);
-  const withProvider = provider ? { provider } : {};
-  const limit = inferConnectorLimit(text, 10);
-
-  if (isConnectorAccountIdentityRequest(text)) {
-    return {
-      type: "tool_call",
-      tool: "account_list_connected_accounts",
-      args: withProvider
-    };
-  }
-
-  // Capability-driven read fallback: agent-loop no longer hardcodes Gmail /
-  // Outlook strings. It asks the catalog for a read tool matching the
-  // capability implied by the user's wording, so new providers pick this up
-  // for free once they ship a contract. When the catalog is unavailable (eg
-  // minimal test runtimes) we fall back to the provider-agnostic
-  // account_list_* action tools using the same capability inference.
-  const capability = inferCapabilityFromText(text);
-  if (capability) {
-    if (catalog) {
-      const matches = catalog.listTools({ capability, provider: provider ?? undefined, risk: "low" });
-      if (matches.length > 0) {
-        const readToolId = pickReadActionToolFromCatalog(catalog, matches[0].id);
-        if (readToolId) {
-          return {
-            type: "tool_call",
-            tool: readToolId,
-            args: { ...withProvider, limit }
-          };
-        }
-      }
-    }
-    const fallback = fallbackReadToolForCapability(capability);
-    if (fallback) {
-      return {
-        type: "tool_call",
-        tool: fallback,
-        args: { ...withProvider, limit }
-      };
-    }
-  }
-
-  return {
-    type: "tool_call",
-    tool: "account_list_connected_accounts",
-    args: withProvider
-  };
-}
-
-function fallbackReadToolForCapability(capability) {
-  if (capability === "calendarRead") return "account_list_events";
-  if (capability === "fileRead") return "account_list_files";
-  if (capability === "emailRead") return "account_list_emails";
-  return null;
-}
-
-function inferCapabilityFromText(text = "") {
-  if (/(日历|\bcalendar\b|event|events|会议|日程)/i.test(text)) return "calendarRead";
-  if (/(google\s*drive|onedrive|云端文件|网盘|drive|文件)/i.test(text)) return "fileRead";
-  if (/(邮件|邮箱|\bemails?\b|\bmail\b|gmail|outlook)/i.test(text)) return "emailRead";
-  return null;
-}
-
-function pickReadActionToolFromCatalog(catalog, toolId) {
-  const tool = catalog.getTool?.(toolId);
-  const actionToolId = tool?.execution?.actionTool;
-  if (actionToolId && typeof actionToolId === "string") {
-    return actionToolId;
-  }
-  // Fall back to the canonical account_list_* tools so older contracts still
-  // work until they declare execution.actionTool explicitly.
-  if (tool?.capability === "calendarRead") return "account_list_events";
-  if (tool?.capability === "fileRead") return "account_list_files";
-  if (tool?.capability === "emailRead") return "account_list_emails";
-  return null;
-}
+// UCA-077 P3-01: planDeterministicToolCall, planConnectorToolCall, and the
+// connector capability helpers moved to ./planners/. The launch-app helpers
+// moved to ./planners/launch-helpers.mjs.
 
 /**
  * Summarise the resources the LLM can actually reach right now — attachments,
@@ -335,10 +188,15 @@ function formatWorkflowsForPlanner(catalog) {
   return lines.join("\n");
 }
 
-function isSearchOrNewsRequest(value = "") {
-  if (isConnectorDomainRequest(value)) return false;
-  return /(搜索|查找|查一下|查询|查看一下|帮我查|查.*(?:价格|航班|机票|酒店|天气|汇率|股价|新闻)|新闻|消息|要闻|时政|最新|最近|动态|资讯|热点|近况|机票|航班|订票|实时|当前|google|bing|百度|search|latest|recent|current|news|flight|ticket|weather|hotel)/i.test(String(value ?? ""));
-}
+// UCA-077 P1-06: isSearchOrNewsRequest was the parallel regex gate that
+// short-circuited web_search_fetch before the LLM planner ran. Its concerns
+// have been split:
+//   - The "search verb" half lives in core/intent/signals/explicit-search.mjs
+//   - The "weak time marker" half lives in core/intent/signals/weak-freshness.mjs
+//   - The actual decision (forbidden/optional/required) is owned by
+//     core/policy/tool-policy-resolver.mjs and surfaces as
+//     task.task_spec.tool_policy.web_search_fetch.mode.
+// Callers in this file now read the resolved policy instead of re-deriving.
 
 function inferSearchRecencyFromText(value = "") {
   const text = String(value ?? "").toLowerCase();
@@ -350,65 +208,7 @@ function inferSearchRecencyFromText(value = "") {
   return null;
 }
 
-function extractLaunchAppName(value = "") {
-  const text = String(value ?? "").trim();
-  const patterns = [
-    /(?:启动|打开|运行)\s*(?:一下|下)?\s*(?:应用|软件|程序|app)?\s*([^，。,.!?]+)/i,
-    /\b(?:launch|open|start|run)\s+(?:the\s+)?(?:app\s+|application\s+)?([^,.!?]+)/i
-  ];
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    const candidate = match?.[1]?.trim()
-      ?.replace(/^(一个|某个|这个|那个|应用|软件|程序|app|application)\s*/i, "")
-      ?.trim();
-    if (candidate
-      && !/^(一个)?(应用|软件|程序|app|application)$/i.test(candidate)
-      && !extractUrl(candidate)
-      && !/(网页|网站|链接|网址|url|web\s*page|website)$/i.test(candidate)) {
-      return candidate;
-    }
-  }
-
-  return null;
-}
-
-function extractLaunchAppCandidates(value = "") {
-  const text = String(value ?? "");
-  const patterns = [
-    /(?:启动|打开|运行)\s*(?:一下|下)?\s*(?:应用|软件|程序|app)?\s*([^，,。.!?]+)/gi,
-    /\b(?:launch|open|start|run)\s+(?:the\s+)?(?:app\s+|application\s+)?([^,.!?]+)/gi
-  ];
-  const candidates = [];
-  for (const pattern of patterns) {
-    for (const match of text.matchAll(pattern)) {
-      const candidate = match?.[1]?.trim()
-        ?.replace(/^(一个|某个|这个|那个|应用|软件|程序|app|application)\s*/i, "")
-        ?.trim();
-      if (candidate
-        && !/^(一个)?(应用|软件|程序|app|application)$/i.test(candidate)
-        && !extractUrl(candidate)
-        && !/(网页|网站|链接|网址|url|web\s*page|website)$/i.test(candidate)) {
-        candidates.push(candidate);
-      }
-    }
-  }
-  return [...new Set(candidates)];
-}
-
-function normalizeLaunchAppArg(value) {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item ?? "").trim()).find(Boolean) ?? "";
-  }
-  return String(value ?? "").trim();
-}
-
-function normalizeLaunchAppKey(value = "") {
-  return String(value ?? "")
-    .toLowerCase()
-    .replace(/\.exe$/i, "")
-    .replace(/\s+/g, "");
-}
+// UCA-077 P3-01: launch-app helpers moved to ./planners/launch-helpers.mjs.
 
 function repairToolArgs(decision, task, transcript = []) {
   if (!decision || decision.tool !== "launch_app") return decision?.args ?? {};
@@ -438,14 +238,7 @@ function repairToolArgs(decision, task, transcript = []) {
   return args;
 }
 
-function extractUrl(value = "") {
-  const text = String(value ?? "");
-  const match = text.match(/\bhttps?:\/\/[^\s，。]+/i)
-    ?? text.match(/\bwww\.[^\s，。]+/i);
-  if (!match) return null;
-  const raw = match[0].replace(/[,.!?]+$/g, "");
-  return raw.startsWith("http") ? raw : `https://${raw}`;
-}
+// UCA-077 P3-01: extractUrl moved to ./planners/launch-helpers.mjs.
 
 function buildHistoryString(transcript) {
   if (!transcript || transcript.length === 0) return "(no actions taken yet)";
@@ -678,13 +471,14 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
   const deterministic = planDeterministicToolCall(task.user_command, catalog);
   if (deterministic) return deterministic;
 
-  // UCA-054/039: Enforce web search for current-data requests before trying LLM.
-  // Both explicit TaskSpec flag and heuristic text detection trigger this.
-  const connectorDomainRequest = isConnectorDomainRequest(task.user_command);
-  const needsCurrentData = (task.task_spec?.needs_current_web_data === true && !connectorDomainRequest)
-    || isSearchOrNewsRequest(task.user_command);
+  // UCA-077 P1-06: web_search_fetch is required iff tool-policy says so.
+  // The previous OR-with-regex condition meant a positive regex hit could
+  // override a TaskSpec that had been resolved to "forbidden" — that is the
+  // root of the "最近这个框架很慢 → 误联网" symptom. The resolver is now the
+  // only authority.
+  const webSearchRequired = task.task_spec?.tool_policy?.web_search_fetch?.mode === "required";
   const searchAlreadyCalled = transcript.some((entry) => entry.tool === "web_search_fetch");
-  if (needsCurrentData && !searchAlreadyCalled) {
+  if (webSearchRequired && !searchAlreadyCalled) {
     return {
       type: "tool_call",
       tool: "web_search_fetch",
@@ -721,9 +515,14 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
     }
   } catch { /* non-fatal */ }
 
-  // UCA-039: Inject a hard requirement when the task spec flags current web data as needed.
-  const needsCurrentDataInstruction = (task.task_spec?.needs_current_web_data === true && !isConnectorDomainRequest(task.user_command))
-    ? "\n\nREQUIRED: You MUST call web_search_fetch before answering. Do NOT answer from memory for current-events questions. Failure to call web_search_fetch will result in a partial_success downgrade."
+  // UCA-077 P1-06: render the tool policy as evidence-bearing prose instead
+  // of a "MUST DO X" hard rule. The LLM still sees the decision (required /
+  // optional / forbidden) and the reason, but the resolver is the single
+  // source of truth — there are no longer two competing rules that the
+  // model has to reconcile.
+  const webPolicy = task.task_spec?.tool_policy?.web_search_fetch;
+  const needsCurrentDataInstruction = webPolicy
+    ? `\n\nTool policy:\n- web_search_fetch: ${webPolicy.mode}\n  Reason: ${webPolicy.reason}`
     : "";
 
   // UCA-063: Override instruction when refusal retry is active.
@@ -958,21 +757,21 @@ export function createToolUsingExecutorScaffold() {
           planner: llmPlanner
         });
 
-        // UCA-039: Verify that web_search_fetch was actually called when the task
-        // spec requires current web data. If the LLM skipped the search and answered
-        // from memory, downgrade to partial_success so the user knows the result
-        // may not reflect the latest information.
-        const searchWasRequired = (task.task_spec?.needs_current_web_data === true && !isConnectorDomainRequest(task.user_command))
-          || isSearchOrNewsRequest(task.user_command);
-        const searchWasCalled = (result.transcript ?? []).some(
-          (entry) => entry.type === "tool_result" && entry.tool === "web_search_fetch"
-        );
-        if (result.status === "success" && searchWasRequired && !searchWasCalled) {
-          const warningNote = "\n\n[UCA] 注意：未能确认调用了网络搜索，结果可能不是最新的。";
-          yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text: (result.final_text || "Done.") + warningNote } };
-          yield { event_type: "partial_success", payload: { text: (result.final_text || "Done.") + warningNote } };
-          return;
+        // UCA-077 P1-08: shared SuccessContract validator. Replaces the old
+        // inline "did web_search_fetch fire?" check with a centralised module
+        // so agentic and tool_using both downgrade to partial_success on
+        // identical conditions. Today the validator only inspects the web-
+        // search policy; Phase 2 expands it to artifact/output policies.
+        if (result.status === "success") {
+          const { satisfied, violations } = validateSuccessContract(task.task_spec, result.transcript ?? []);
+          if (!satisfied) {
+            const reasons = violations.map((v) => v.message).join(" ");
+            const warningNote = `\n\n[UCA] 注意：未通过 SuccessContract 校验：${reasons}`;
+            yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
+            yield { event_type: "inline_result", payload: { text: (result.final_text || "Done.") + warningNote } };
+            yield { event_type: "partial_success", payload: { text: (result.final_text || "Done.") + warningNote, violations } };
+            return;
+          }
         }
 
         // UCA-063: Refusal guard — if LLM returned a refusal text but had tools
@@ -1073,7 +872,15 @@ export async function runToolAgentLoop({
   maxIterations = 8,
   planner = null  // resolved below
 }) {
-  const registry = runtime.actionToolRegistry ?? createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+  // UCA-077 P4-04.5: every executor must use the runtime singleton registry
+  // so per-task rate-limit counters and any runtime-level tool registrations
+  // (MCP, plugins) are visible. ensureRuntimeServices guarantees this is
+  // populated; if a caller skipped it we surface the bug loudly rather than
+  // silently constructing a divergent instance.
+  if (!runtime.actionToolRegistry) {
+    throw new Error("runtime.actionToolRegistry is missing — caller must invoke ensureRuntimeServices() first");
+  }
+  const registry = runtime.actionToolRegistry;
   const transcript = [];
   const seenCalls = new Set(); // dedupe identical tool+args to prevent infinite loops
 
@@ -1122,6 +929,16 @@ export async function runToolAgentLoop({
   let proseTrapAttemptsUsed = 0;
   const PROSE_TRAP_MAX_ATTEMPTS = 1;
 
+  // UCA-077 P3-02: each loop iteration emits a `tool_planner_decision`
+  // event so SSE consumers can render the planner timeline (which planner
+  // ran, what it returned, why we accepted or skipped it). The event is
+  // ephemeral — it never persists to the SQLite event log — and the
+  // payload is intentionally compact (no full args / observations) to
+  // keep the wire small.
+  const plannerLabel = resolvedPlanner === defaultPlanner ? "default"
+    : resolvedPlanner === llmPlanner ? "llm"
+    : (resolvedPlanner.name || "custom");
+
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     const decision = await resolvedPlanner({
       task,
@@ -1129,6 +946,17 @@ export async function runToolAgentLoop({
       tools: registry.list(),
       iteration,
       runtime
+    });
+    runtime.emitTaskEvent?.("tool_planner_decision", {
+      iteration,
+      planner: plannerLabel,
+      decision_type: decision?.type ?? "none",
+      tool: decision?.type === "tool_call" ? decision.tool : null,
+      reason: decision?.type === "tool_call"
+        ? `planner=${plannerLabel} chose ${decision.tool}`
+        : decision?.type === "final"
+          ? `planner=${plannerLabel} returned final text`
+          : `planner=${plannerLabel} returned no decision`
     });
 
     if (!decision || decision.type === "final") {

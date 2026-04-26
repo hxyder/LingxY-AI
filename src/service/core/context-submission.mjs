@@ -298,41 +298,9 @@ async function maybeSeedRecentArtifactContext({ runtime, userCommand, contextPac
   };
 }
 
-function pickRunnableExecutor(task, runtime) {
-  if (task.executor === "multi_modal") {
-    return runtime.executors?.find((executor) => executor.id === "multi_modal")
-      ?? runtime.executors?.find((executor) => executor.id === "fast")
-      ?? null;
-  }
-
-  if (task.executor === "tool_using") {
-    return runtime.executors?.find((executor) => executor.id === "tool_using")
-      ?? runtime.executors?.find((executor) => executor.id === "fast")
-      ?? null;
-  }
-
-  if (task.executor === "agentic") {
-    // Agentic executor accepts every provider kind. Native function-calling
-    // providers (anthropic / openai / ollama) drive the planner directly;
-    // code_cli providers go through the JSON planning-mode bridge in
-    // code-cli-bridge.mjs. Falls back to fast only if no provider is
-    // configured at all.
-    const provider = resolveProviderForTask("chat");
-    const agenticExecutor = runtime.executors?.find((executor) => executor.id === "agentic");
-    if (agenticExecutor && provider) {
-      return agenticExecutor;
-    }
-    return runtime.executors?.find((executor) => executor.id === "fast") ?? null;
-  }
-
-  if ((task.executor === "kimi" || task.executor === "code_cli") && !resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime)) {
-    return runtime.executors?.find((executor) => executor.id === "fast") ?? null;
-  }
-
-  return runtime.executors?.find((executor) => executor.id === task.executor)
-    ?? runtime.executors?.find((executor) => executor.id === "fast")
-    ?? null;
-}
+// UCA-077 P2-05: pickRunnableExecutor moved to a shared module so this file
+// and browser-submission.mjs no longer maintain byte-for-byte copies.
+import { pickRunnableExecutor } from "./planning/runnable-executor.mjs";
 
 function canDecomposeFromTaskSpec(taskSpec) {
   if (!taskSpec) return true;

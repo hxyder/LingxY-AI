@@ -11,6 +11,11 @@
 
 import { isConnectorDomainRequest } from "../connectors/core/connector-intent.mjs";
 import { extractPureLaunchApp } from "./router/fast-path-router.mjs";
+import { extractAllSignals } from "./intent/signals/index.mjs";
+import { resolveToolPolicy } from "./policy/tool-policy-resolver.mjs";
+import { resolveExecutor } from "./planning/executor-resolver.mjs";
+import { createTracker, STAGES } from "./contracts/decision-trace.mjs";
+import { compileTaskContract } from "./contracts/task-contract.mjs";
 
 // ---------------------------------------------------------------------------
 // Goal families (the canonical classification of what the user wants to do)
@@ -85,10 +90,12 @@ export const GOAL_FAMILIES = /** @type {const} */ ([
 // ---------------------------------------------------------------------------
 
 const GOAL_RULES = [
-  // translate — highest confidence, check first
+  // translate — highest confidence, check first.
+  // UCA-077 P1-05: split Chinese / English alternations so \b only guards
+  // English (Chinese chars are \W and would never satisfy \b\B\b boundaries).
   {
     goal: "translate",
-    patterns: [/\b(翻译|translate|translation)\b/i]
+    patterns: [/(翻译)|\b(translate|translation)\b/i]
   },
   // multimodal — image/screenshot/OCR input
   {
@@ -143,13 +150,30 @@ const GOAL_RULES = [
       /(分析|analyze|analyse).{0,40}(总结|报告|输出|生成|文档|文件)/i
     ]
   },
-  // search_and_answer — explicitly needs current/latest data
+  // search_and_answer — explicitly needs current/latest data.
+  //
+  // UCA-077 P1-05: this rule used to fire on weak words like "最新/recent"
+  // alone, which routed local-context tasks (e.g. "最新这个框架的功能") to
+  // search_and_answer and onward to web_search. Tightening:
+  //   - When signals are provided, search_and_answer requires either
+  //     `explicit_external` or `explicit_entity` to fire. Weak time markers
+  //     never escalate the goal by themselves.
+  //   - When signals are absent (back-compat for callers like routeIntent
+  //     that have not adopted the signal layer yet), keep the legacy
+  //     pattern set, but it now serves only as a coarse hint downstream.
   {
     goal: "search_and_answer",
+    // UCA-077 P2-04: split Chinese / English so \b only guards English; the
+    // earlier `\b(新闻|最新|...)\b` pattern never matched between two Chinese
+    // chars (Chinese is \W in JS regex). That left "今天有什么 AI 新闻"
+    // classified as `qa` even after every signal correctly fired.
     patterns: [
-      /\b(搜索|search|最新|latest|recent|新闻|news|动态|资讯|热点|今日|today|tomorrow|weather|forecast)\b/i,
-      /(天气|气温|明天|后天|明日|汇率|股价|航班|机票|酒店|价格)/i
-    ]
+      /(搜索|最新|新闻|动态|资讯|热点|今日)/,
+      /\b(search|latest|recent|news|today|tomorrow|weather|forecast)\b/i,
+      /(天气|气温|明天|后天|明日|汇率|股价|航班|机票|酒店|价格)/
+    ],
+    requiresSignal: (signals) =>
+      Boolean(signals?.explicit_external?.matched || signals?.explicit_entity?.matched)
   }
   // fallback: "qa" — handled in classifyGoal()
 ];
@@ -157,10 +181,16 @@ const GOAL_RULES = [
 /**
  * Determine the goal family from user text.
  * Returns the first matching goal, or "qa" as fallback.
+ *
+ * UCA-077 P1-05: `signals` is optional. Rules that declare `requiresSignal`
+ * are gated on it — without signals, the rule is skipped (conservative).
+ * Callers inside the new pipeline (createTaskSpec) always pass signals.
+ *
  * @param {string} text
+ * @param {import("./intent/signals/_signal-types.mjs").SignalBundle["signals"]} [signals]
  * @returns {string}
  */
-export function classifyGoal(text) {
+export function classifyGoal(text, signals = null) {
   const raw = String(text ?? "");
   if (extractPureLaunchApp(raw)) {
     return "launch_and_act";
@@ -169,26 +199,31 @@ export function classifyGoal(text) {
     return "search_and_answer";
   }
   for (const rule of GOAL_RULES) {
-    if (rule.patterns.some((pat) => pat.test(raw))) {
-      return rule.goal;
+    if (!rule.patterns.some((pat) => pat.test(raw))) continue;
+    if (rule.requiresSignal) {
+      if (!signals) continue; // legacy caller — skip gated rules to stay safe
+      if (!rule.requiresSignal(signals)) continue;
     }
+    return rule.goal;
   }
   return "qa";
 }
 
 // ---------------------------------------------------------------------------
-// Detect whether user intent needs real-time web data
+// UCA-077 P1-05: WEB_DATA_PATTERNS / needsCurrentWebData() were removed.
+//
+// They have been split into discrete signal modules under
+// `src/service/core/intent/signals/`:
+//   - weak-freshness.mjs    (最近 / current / today …)
+//   - explicit-search.mjs   (搜索 / 查一下 / google …)
+//   - explicit-entity.mjs   (天气 / 股价 / 航班 …)
+//   - explicit-external.mjs (网上 / online …)
+//   - source-scope.mjs      (这个文件 / 这段代码 …)
+//
+// Tool decisions consume the signal bundle through
+// `policy/tool-policy-resolver.mjs`. This file no longer hard-codes any
+// "needs web search" heuristic.
 // ---------------------------------------------------------------------------
-
-const WEB_DATA_PATTERNS = [
-  /(最新|最近|今日|今天|今年|本周|这周|周末|下周|本月|明天|后天|明日|天气|气温|新闻|动态|资讯|热点|搜索|局势|行情|变化|价格|汇率|股价|航班|机票|酒店)/i,
-  /\b(latest|recent|today|tomorrow|current|news|search|weather|forecast|price|stock|flight|hotel)\b/i
-];
-
-function needsCurrentWebData(text) {
-  if (isConnectorDomainRequest(text)) return false;
-  return WEB_DATA_PATTERNS.some((p) => p.test(text));
-}
 
 const NOTE_INTENT_PATTERNS = [
   /(?:笔记|筆記|纪要|會議紀要|会议记录|會議記錄|meeting\s+notes?|study\s+notes?|class\s+notes?)/i,
@@ -241,8 +276,12 @@ function hasEditableArtifactContext(contextPacket = {}) {
 function hasArtifactRefinementIntent(text, contextPacket = {}) {
   if (!hasEditableArtifactContext(contextPacket)) return false;
   const normalized = String(text ?? "");
-  return ARTIFACT_REFINEMENT_PATTERNS.some((pattern) => pattern.test(normalized))
-    || ARTIFACT_REFERENCE_PATTERNS.some((pattern) => pattern.test(normalized));
+  // UCA-077 P1-05: previously this also returned true on any artifact
+  // reference word ("文件/文档") even without an edit verb, so requests like
+  // "查一下这个文件里最近提到的内容" got upgraded to transform_existing_file
+  // and routed to agentic. The reference alone is too weak — require an
+  // explicit refinement verb.
+  return ARTIFACT_REFINEMENT_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 function detectArtifactKindFromContext(contextPacket = {}) {
@@ -269,10 +308,6 @@ function hasNoteTakingIntent(text, contextPacket = {}) {
     return true;
   }
   return hasContentForNote(contextPacket) && NOTE_INTENT_PATTERNS.some((p) => p.test(String(text ?? "")));
-}
-
-function isNoteArtifactTask(contextPacket = {}) {
-  return contextPacket?.source_type === "audio_note" || contextPacket?.source_app === "uca.note";
 }
 
 // ---------------------------------------------------------------------------
@@ -314,37 +349,79 @@ function detectFormats(text) {
  */
 export function createTaskSpec(userText, contextPacket = {}, intentRouterResult = {}) {
   const text = String(userText ?? "");
+
+  // UCA-077 P1-05: pipeline order is signals → goal → policy → executor.
+  // Each step is a pure function; only this orchestrator carries side intent.
+  // UCA-077 P2-02: every stage records into a DecisionTrace tracker so the
+  // task carries a full "why" log for SSE / UI / audit consumers.
+  const tracker = createTracker();
+  const { signals } = extractAllSignals(text, contextPacket);
   const noteIntent = hasNoteTakingIntent(text, contextPacket);
-  const noteArtifactTask = isNoteArtifactTask(contextPacket);
   const imageDriven = Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0;
   const artifactEditIntent = hasArtifactRefinementIntent(text, contextPacket);
-  let goal = classifyGoal(text);
+
+  const baseGoal = classifyGoal(text, signals);
+  let goal = baseGoal;
+  let goalReason = "Goal classified from text patterns + signals.";
   if (noteIntent) {
     goal = imageDriven ? "multimodal_analyze" : "analyze_and_report";
+    goalReason = "Note-capture intent overrode the regex-classified goal.";
   } else if (artifactEditIntent) {
     goal = "transform_existing_file";
+    goalReason = "User asked to edit an attached editable artifact.";
+  } else if (imageDriven && goal === "qa") {
+    // UCA-077 P2-06: bare image attachments default to multimodal_analyze
+    // even when the verb regex (`/图片|image|截图.../`) misses Chinese
+    // alternatives like "识别这张图". The executor would pick multi_modal
+    // anyway via runtime capability check, but the goal+mode must match
+    // so the TaskContract reports a consistent intent.
+    goal = "multimodal_analyze";
+    goalReason = "Image attachment present and no other goal pattern matched.";
   }
+  tracker.record(STAGES.GOAL_CLASSIFICATION, {
+    output: { goal, base_goal: baseGoal },
+    reason: goalReason,
+    evidence: collectGoalEvidence(signals, { noteIntent, artifactEditIntent }),
+    rejected: baseGoal !== goal ? [{ candidate: baseGoal, reason: "overridden by note/artifact-edit intent" }] : []
+  });
+
   const suggestedFormats = detectFormats(text);
   const contextArtifactKind = detectArtifactKindFromContext(contextPacket);
-  const explicitFileArtifactKind = noteArtifactTask
-    ? (suggestedFormats.includes("md") ? "md" : "md")
-    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f) || f === "md") ?? null);
-  const inheritedArtifactKind = ["transform_existing_file", "open_or_reveal_file"].includes(goal)
-    ? contextArtifactKind
+  const explicitFileArtifactKind = noteIntent
+    ? (suggestedFormats.includes("md") ? "md" : null)
+    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? contextArtifactKind);
+  const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file", "multimodal_analyze"].includes(goal)
+    ? (noteIntent ? "md" : "docx")
     : null;
-  const fileArtifactKind = explicitFileArtifactKind ?? inheritedArtifactKind ?? null;
+  const fileArtifactKind = explicitFileArtifactKind ?? contextArtifactKind ?? inferredFileArtifactKind;
   const artifactRequired = goal === "launch_and_act"
     ? false
-    : (noteArtifactTask ||
-      fileArtifactKind === "md" ||
+    : (noteIntent ||
       FILE_ARTIFACT_FORMATS.has(fileArtifactKind) ||
       goal === "generate_document" ||
+      goal === "analyze_and_report" ||
       goal === "transform_existing_file");
+
+  // Connector domain requests bypass external web — their reads happen
+  // through the connector tools, never through web_search_fetch.
   const connectorDomainRequest = isConnectorDomainRequest(text);
-  const webDataNeeded = !connectorDomainRequest && (
-    needsCurrentWebData(text) ||
-    goal === "search_and_answer"
-  );
+  const toolPolicy = connectorDomainRequest
+    ? {
+        web_search_fetch: {
+          mode: "forbidden",
+          reason: "Connector domain request — connector tools read external state directly.",
+          evidence: [{ type: "context", source: "connector-intent", reason: "isConnectorDomainRequest" }]
+        }
+      }
+    : resolveToolPolicy({ signals, contextPacket });
+  tracker.record(STAGES.TOOL_POLICY, {
+    output: { web_search_fetch: toolPolicy.web_search_fetch.mode },
+    reason: toolPolicy.web_search_fetch.reason,
+    evidence: toolPolicy.web_search_fetch.evidence,
+    // The other two modes are recorded as alternatives so a UI can show what
+    // *could* have been chosen and why it was not.
+    rejected: rejectedToolPolicyModes(toolPolicy.web_search_fetch.mode)
+  });
 
   // Infer source from context packet
   const source = {
@@ -360,15 +437,16 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   const mergedSuggestedFormats = [
     ...new Set([
       ...suggestedFormats,
-      ...(noteArtifactTask ? ["md"] : [])
+      ...(noteIntent ? ["md"] : [])
     ])
   ];
 
-  const spec = {
+  const partialSpec = {
     goal,
     user_goal_text: text,
     topic: text.slice(0, 100),
-    needs_current_web_data: webDataNeeded,
+    needs_current_web_data: toolPolicy.web_search_fetch.mode === "required",
+    tool_policy: toolPolicy,
     artifact: {
       required: artifactRequired,
       kind: fileArtifactKind,
@@ -388,33 +466,75 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       tool_called: goal !== "qa",
       required_tool_names: []
     },
-    // Preserve intent_tags and executor hints from existing router result
-    suggested_executor: noteIntent
-      ? (imageDriven ? "multi_modal" : "agentic")
-      : (intentRouterResult.suggested_executor ?? deriveExecutor(goal, artifactRequired, webDataNeeded)),
     intent_tags: mergedIntentTags,
     suggested_formats: mergedSuggestedFormats
   };
 
+  // Note-capture and image flows have legacy hard hand-offs (multi_modal /
+  // agentic). For them we honour the legacy mapping but still record an
+  // ExecutorDecision so the resolver path is uniform downstream.
+  let executorDecision;
+  if (noteIntent) {
+    executorDecision = {
+      executor: imageDriven ? "multi_modal" : "agentic",
+      reason: imageDriven ? "Note capture with image content" : "Note capture",
+      evidence: [{ type: "context", source: "note-intent", reason: "hasNoteTakingIntent" }],
+      rejected: []
+    };
+  } else {
+    executorDecision = resolveExecutor({
+      taskSpec: partialSpec,
+      toolPolicy,
+      contextPacket,
+      routeSuggestion: intentRouterResult.suggested_executor
+    });
+  }
+  tracker.record(STAGES.EXECUTOR_SELECTION, {
+    output: { executor: executorDecision.executor },
+    reason: executorDecision.reason,
+    evidence: executorDecision.evidence,
+    rejected: executorDecision.rejected
+  });
+
+  const spec = {
+    ...partialSpec,
+    suggested_executor: executorDecision.executor,
+    executor_decision: executorDecision,
+    decision_trace: tracker.entries()
+  };
+
+  // UCA-077 P2-04: attach a structured TaskContract alongside the legacy
+  // TaskSpec. Existing consumers ignore this field; new consumers (Phase 3
+  // graph executor, planning specialists) read `spec.contract` instead of
+  // re-deriving intent from a half-dozen TaskSpec fields.
+  spec.contract = compileTaskContract({ taskSpec: spec, signals, contextPacket });
+
   return applyHardenedRules(spec);
 }
 
-// ---------------------------------------------------------------------------
-// Derive executor from goal family (fallback when routeIntent result missing)
-// ---------------------------------------------------------------------------
-
-function deriveExecutor(goal, artifactRequired, webDataNeeded) {
-  if (goal === "translate") return "translate";
-  if (goal === "multimodal_analyze") return "multi_modal";
-  if (goal === "qa") return "fast";
-  if (goal === "generate_document" || goal === "analyze_and_report" || artifactRequired || webDataNeeded) {
-    return "agentic";
+function collectGoalEvidence(signals, { noteIntent, artifactEditIntent }) {
+  const evidence = [];
+  if (noteIntent) evidence.push({ type: "context", source: "note-intent", reason: "hasNoteTakingIntent" });
+  if (artifactEditIntent) evidence.push({ type: "context", source: "artifact-edit-intent", reason: "hasArtifactRefinementIntent" });
+  for (const name of ["explicit_external", "explicit_entity", "source_scope"]) {
+    const signal = signals?.[name];
+    if (signal?.matched) evidence.push(...signal.evidence);
   }
-  return "tool_using";
+  return evidence;
+}
+
+function rejectedToolPolicyModes(chosen) {
+  return ["forbidden", "optional", "required"]
+    .filter((mode) => mode !== chosen)
+    .map((mode) => ({ candidate: mode, reason: `not selected by tool-policy resolver (chose ${chosen})` }));
 }
 
 // ---------------------------------------------------------------------------
 // applyHardenedRules — enforce non-overridable execution constraints
+// ---------------------------------------------------------------------------
+//
+// UCA-077 P1-05: deriveExecutor() was deleted. Executor selection now goes
+// through `planning/executor-resolver.mjs`, called inside createTaskSpec.
 // ---------------------------------------------------------------------------
 
 /**
@@ -426,17 +546,23 @@ function deriveExecutor(goal, artifactRequired, webDataNeeded) {
 export function applyHardenedRules(spec) {
   const steps = [];
 
-  // Rule 1: needs current web data → FIRST step must be web search
-  if (spec.needs_current_web_data) {
-    steps.push("web_search_fetch");
+  // UCA-077 P1-05: Rule 1 used to deterministically push "web_search_fetch"
+  // into required_steps whenever any weak freshness regex matched. The
+  // tool-policy resolver is now the only place that decides whether
+  // web_search_fetch is required. We keep the success-contract mention so
+  // downstream finalize/audit can still confirm the tool actually ran when
+  // the policy says it must, but we no longer fabricate execution steps.
+  if (spec.tool_policy?.web_search_fetch?.mode === "required") {
     if (!spec.success_contract.required_tool_names.includes("web_search_fetch")) {
       spec.success_contract.required_tool_names.push("web_search_fetch");
     }
   }
 
-  // Rule 2: artifact required → must synthesize before generating
+  // Rule 2: artifact required → must synthesize before generating.
+  // UCA-077 P1-05: the legacy web_search_fetch guard was removed because
+  // required_steps no longer carries that hint; the policy layer does.
   if (spec.artifact.required) {
-    if (!steps.includes("web_search_fetch") && spec.goal === "generate_document") {
+    if (spec.goal === "generate_document") {
       steps.push("synthesize");
     }
     steps.push("generate_artifact");

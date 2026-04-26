@@ -87,20 +87,31 @@ function renderSkillBlock(skill) {
 function renderTaskContract(task) {
   const spec = task?.task_spec;
   if (!spec) return "(none)";
-  const requiredSteps = Array.isArray(spec.required_steps) && spec.required_steps.length > 0
-    ? spec.required_steps.join(" -> ")
-    : "(none)";
   const requiredTools = Array.isArray(spec.success_contract?.required_tool_names) && spec.success_contract.required_tool_names.length > 0
     ? spec.success_contract.required_tool_names.join(", ")
     : "(none)";
+
+  // UCA-077 P1-07: render the resolved tool policy verbatim so the LLM sees
+  // the decision (required / optional / forbidden) and the reason. The old
+  // version exposed `required_steps` (a sequence of internal step names that
+  // the LLM had no real way to act on) and `needs_current_web_data` (a flag
+  // stripped of context). Both are gone — policy carries the same info with
+  // evidence attached.
+  const policyLines = [];
+  const webPolicy = spec.tool_policy?.web_search_fetch;
+  if (webPolicy) {
+    policyLines.push(`web_search_fetch: ${webPolicy.mode}`);
+    if (webPolicy.reason) policyLines.push(`  reason: ${webPolicy.reason}`);
+  }
+
   return [
     `goal: ${spec.goal ?? "unknown"}`,
-    `needs_current_web_data: ${Boolean(spec.needs_current_web_data)}`,
     `artifact_required: ${Boolean(spec.artifact?.required)}`,
     `artifact_kind: ${spec.artifact?.kind ?? "(none)"}`,
-    `required_steps: ${requiredSteps}`,
     `required_tools: ${requiredTools}`,
-    `must_verify_artifact: ${Boolean(spec.constraints?.must_verify_artifact)}`
+    `must_verify_artifact: ${Boolean(spec.constraints?.must_verify_artifact)}`,
+    "tool_policy:",
+    ...(policyLines.length ? policyLines.map((line) => `  ${line}`) : ["  (none)"])
   ].join("\n");
 }
 
@@ -187,9 +198,17 @@ export function buildAgenticSystemPrompt({
     "",
     "## Rules",
     "",
-    "1. If the task contract lists required_steps or required_tools, satisfy them before claiming completion.",
-    "2. Before writing about recent, current, or time-sensitive topics (weather, news, prices, flights, events, etc.), call `web_search_fetch` first. If `web_search_fetch` returns no results or fails, use `fetch_url_content` on a specific authoritative URL instead — for example: weather.gov or wttr.in for weather, en.wikipedia.org for facts, finance.yahoo.com for stock prices. Do NOT fall back to training data for time-sensitive information.",
-    "3. Only create a file when the task contract says `artifact_required: true` or the user explicitly asked for a specific file type (pptx / docx / xlsx / pdf / md / txt / html / csv / json). Otherwise, reply conversationally in chat. If they ask to revise an already-generated file, locate the existing artifact path and call `edit_file` with the SAME absolute path so the file is updated in place instead of creating a new sibling. Outline shapes by kind: pptx → `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`; docx/pdf → `{ title, sections: [{ heading, body }] }` (each section's body is a paragraph of prose, may include bullet lines starting with \"- \"); xlsx → `{ rows: [[col1, col2, ...]] }`. For ad-hoc text files, use `write_file`.",
+    // UCA-077 P1-07: Rule 1 used to start with "satisfy required_steps" —
+    // those steps no longer exist in the prompt. The contract above already
+    // states required_tools and tool_policy; the LLM should consult that.
+    "1. Honour the task contract: call every tool listed in `required_tools`, and obey the `tool_policy` block. If a tool is marked `required`, you must call it before claiming completion. If marked `forbidden`, do not call it. `optional` means you may use the tool when you judge it useful but it is not enforced.",
+    // UCA-077 P1-07: the old Rule 2 ("Before writing about recent topics, call web_search_fetch first")
+    // was the system policy leaking into the prompt. Whether to search is
+    // now decided by tool-policy-resolver and surfaced via tool_policy
+    // above. The fallback URLs are kept as a separate hint because they
+    // are still useful when web_search_fetch IS being called and fails.
+    "2. If `tool_policy.web_search_fetch` is `required` and `web_search_fetch` returns no results or fails, use `fetch_url_content` on a specific authoritative URL instead — for example: weather.gov or wttr.in for weather, en.wikipedia.org for facts, finance.yahoo.com for stock prices. Do not fall back to training data for time-sensitive information.",
+    "3. When the user asks for a file artifact (pptx / docx / xlsx / pdf), call `generate_document` with the appropriate `kind`. If they ask to revise an already-generated file, locate the existing artifact path and call `edit_file` with the SAME absolute path so the file is updated in place instead of creating a new sibling. Outline shapes by kind: pptx → `{ title, subtitle?, slides: [{ heading, bullets: [string] }] }`; docx/pdf → `{ title, sections: [{ heading, body }] }` (each section's body is a paragraph of prose, may include bullet lines starting with \"- \"); xlsx → `{ rows: [[col1, col2, ...]] }`. For ad-hoc text files, use `write_file`.",
     "4. When the user asks you to run code, use `run_script` with `language` strictly in `powershell | node | python`. Do not invent other languages.",
     "5. You may call multiple tools in sequence. Each tool returns an observation you should read before deciding the next step.",
     "6. Only say something was \"done\", \"saved\", \"launched\", or \"created\" when the corresponding tool returned `success: true` in the conversation transcript. If every attempt failed, tell the user what failed and suggest next steps — do not pretend.",

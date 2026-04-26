@@ -1,0 +1,51 @@
+/**
+ * UCA-077 P1-01: Signal extractor — single entry point for routing signals.
+ *
+ * Each signal module exports `detect(text, contextPacket)` and returns a
+ * Signal object (see _signal-types.mjs). This index calls them in a fixed
+ * order, returns a keyed map, and flattens evidence for downstream tracing.
+ *
+ * Signals do NOT call each other. Order in this file determines NOTHING about
+ * priority — priority lives in policy/ resolvers.
+ */
+
+import { emptySignal, SIGNAL_NAMES } from "./_signal-types.mjs";
+
+import { detect as detectExplicitExternal } from "./explicit-external.mjs";
+import { detect as detectSourceScope } from "./source-scope.mjs";
+import { detect as detectExplicitSearch } from "./explicit-search.mjs";
+import { detect as detectWeakFreshness } from "./weak-freshness.mjs";
+import { detect as detectExplicitEntity } from "./explicit-entity.mjs";
+
+const DETECTORS = {
+  explicit_external: detectExplicitExternal,
+  source_scope: detectSourceScope,
+  explicit_search: detectExplicitSearch,
+  weak_freshness: detectWeakFreshness,
+  explicit_entity: detectExplicitEntity
+};
+
+/**
+ * Run every registered detector and return a SignalBundle.
+ *
+ * @param {string} text
+ * @param {Object} [contextPacket]
+ * @returns {import("./_signal-types.mjs").SignalBundle}
+ */
+export function extractAllSignals(text, contextPacket = {}) {
+  const signals = {};
+  const evidence = [];
+
+  for (const name of SIGNAL_NAMES) {
+    const detector = DETECTORS[name];
+    const signal = detector ? detector(String(text ?? ""), contextPacket ?? {}) : emptySignal(name);
+    signals[name] = signal;
+    if (signal.matched) {
+      for (const item of signal.evidence) evidence.push(item);
+    }
+  }
+
+  return { signals, evidence };
+}
+
+export { SIGNAL_NAMES, emptySignal };

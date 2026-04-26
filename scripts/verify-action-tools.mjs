@@ -266,13 +266,21 @@ const fakeSearchRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS.map((to
 const searchRuntime = createRuntime("news-search", {
   actionToolRegistry: fakeSearchRegistry
 });
+// UCA-077 P1-10: input changed from "帮我理解 DeepSeek 最近的相关消息" to a
+// query that fires an explicit_entity signal ("AI 新闻") on top of the
+// weak-freshness marker. The new tool-policy resolver requires either an
+// explicit external phrase ("网上") or a strong external entity to escalate
+// web_search_fetch to "required"; bare "最近 X 消息" no longer auto-triggers
+// it. The downstream behaviour the test verifies (web_search_fetch is
+// invoked with the full query and a recency bucket) is unchanged.
+const newsCommand = "帮我理解 DeepSeek 最近的 AI 新闻动态";
 const newsResult = await submitActionToolTask({
-  userCommand: "帮我理解 DeepSeek 最近的相关消息",
+  userCommand: newsCommand,
   executionMode: "interactive",
   runtime: searchRuntime
 });
 assert.equal(newsResult.task.status, "success");
-assert.equal(searchedArgs.query, "帮我理解 DeepSeek 最近的相关消息");
+assert.equal(searchedArgs.query, newsCommand);
 assert.equal(searchedArgs.recency, "month");
 
 function finalSummary(result) {

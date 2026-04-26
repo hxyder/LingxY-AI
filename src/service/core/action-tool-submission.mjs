@@ -118,7 +118,14 @@ export async function submitActionToolTask({
       // completely bypassing the LLM planner loop. Latency target: < 200ms.
       // Applies to: launch_app, open_url, copy_to_clipboard, notify, open_file.
       if (fastPathTool) {
-        const registry = runtime.actionToolRegistry ?? createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+        // UCA-077 P4-04.5: registry singleton — see agent-loop.mjs for the
+        // same invariant. ensureRuntimeServices() at the top of submitActionToolTask
+        // guarantees runtime.actionToolRegistry is set; if it is not, we want a
+        // loud failure rather than a silent divergent instance.
+        if (!runtime.actionToolRegistry) {
+          throw new Error("runtime.actionToolRegistry is missing — submission layer should have called ensureRuntimeServices()");
+        }
+        const registry = runtime.actionToolRegistry;
         const toolContext = { ...(runtime.toolContext ?? {}), outputDir: runtime.toolOutputDir, runtime, task };
         const toolResult = await registry.call(fastPathTool, fastPathArgs ?? {}, toolContext);
         emitExecutorEvent("tool_call_completed", { tool_id: fastPathTool, success: toolResult.success });

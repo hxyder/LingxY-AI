@@ -43,17 +43,25 @@ const repoRoot = path.resolve(__dirname, "..");
 
 {
   const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+  // UCA-077 P1-07: text changed from "analyse latest AI trends and make a
+  // ppt" to a query that contains an explicit external entity ("今日 AI 新闻"),
+  // because in the new pipeline weak time markers like "latest" no longer
+  // escalate web_search_fetch to required on their own — that was the root
+  // cause of the misroute that this rewrite fixed. The behaviour the test
+  // is verifying (Task contract carries the policy + required tools) is
+  // unchanged; only the input had to be made unambiguous.
+  const inputText = "总结今日 AI 新闻并生成 PPT 报告";
   const prompt = buildAgenticSystemPrompt({
     tools: registry.list(),
     task: {
-      user_command: "analyse latest AI trends and make a ppt",
-      task_spec: createTaskSpec("analyse latest AI trends and make a ppt", {}, {
+      user_command: inputText,
+      task_spec: createTaskSpec(inputText, {}, {
         suggested_executor: "agentic",
         intent_tags: ["analyze", "search"],
         suggested_formats: ["pptx"]
       })
     },
-    requestedFormat: detectRequestedOutputFormat("analyse AI trends and make a ppt")
+    requestedFormat: detectRequestedOutputFormat(inputText)
   });
   const toolIds = listToolIdsInPrompt(prompt);
   // Core planner tools must appear in the catalogue
@@ -67,7 +75,10 @@ const repoRoot = path.resolve(__dirname, "..");
   assert.match(prompt, /generate_document/);
   assert.match(prompt, /pptx/);
   assert.match(prompt, /Task contract/);
-  assert.match(prompt, /required_steps: web_search_fetch -> generate_artifact -> verify_file_exists -> register_artifact/);
+  // UCA-077 P1-07: tool_policy replaces required_steps. The explicit
+  // "今日 AI 新闻" entity must escalate web_search_fetch to required, and
+  // the success-contract tool list must mirror it.
+  assert.match(prompt, /tool_policy:[\s\S]*web_search_fetch: required/);
   assert.match(prompt, /required_tools: web_search_fetch/);
 }
 
