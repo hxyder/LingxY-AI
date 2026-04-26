@@ -41,6 +41,7 @@
  */
 
 import { toolsInGroup } from "./policy-groups.mjs";
+import { PENDING_OFFER_EXTERNAL_INTENTS } from "../intent/signals/pending-offer.mjs";
 
 const LOCAL_SCOPES = new Set(["uploaded_files", "current_context", "local_project", "selection"]);
 const PRIMARY_GROUP = "external_web_read";
@@ -67,6 +68,26 @@ export function resolveToolPolicy({ signals, contextPacket: _contextPacket = {} 
   const sourceScope = signals.source_scope;
   const explicitSearch = signals.explicit_search;
   const weakFreshness = signals.weak_freshness;
+  const pendingOffer = signals.pending_offer;
+
+  // 0. Pending-offer inheritance (P4-02.x C4). When the user replies with
+  // a short affirmative ("需要", "继续", "yes") to an assistant offer
+  // that was about a high-freshness external entity (weather / news /
+  // stock / flight / …), upgrade the policy to `required`. The
+  // pending-offer detector encapsulates both halves of the check
+  // (current text is a short affirmative + last assistant turn made an
+  // external-entity offer), so the resolver only reads its `matched`
+  // flag and the inferred intent. Bug 2 reproduction: "需要" after a
+  // weather offer used to route to fast (web=forbidden) because the
+  // 2-char text matched no signal of its own.
+  if (pendingOffer?.matched
+      && PENDING_OFFER_EXTERNAL_INTENTS.has(pendingOffer.hint?.pending_intent)) {
+    return webSearchPolicy(
+      "required",
+      `Inherits previous offer (pending_intent=${pendingOffer.hint.pending_intent}); user replied with a short affirmative.`,
+      pendingOffer.evidence
+    );
+  }
 
   // 1. Explicit external opt-in — overrides everything, including local scope.
   if (explicitExternal?.matched && explicitExternal.strength === "strong") {

@@ -14,6 +14,7 @@ import { extractPureLaunchApp } from "./router/fast-path-router.mjs";
 import { extractAllSignals } from "./intent/signals/index.mjs";
 import { resolveToolPolicy, buildExternalWebReadPolicy } from "./policy/tool-policy-resolver.mjs";
 import { enforcePolicyInvariants } from "./policy/policy-invariants.mjs";
+import { classifyContextSources } from "./intent/context-sources.mjs";
 import { resolveExecutor } from "./planning/executor-resolver.mjs";
 import { createTracker, STAGES } from "./contracts/decision-trace.mjs";
 import { compileTaskContract } from "./contracts/task-contract.mjs";
@@ -355,8 +356,20 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   // Each step is a pure function; only this orchestrator carries side intent.
   // UCA-077 P2-02: every stage records into a DecisionTrace tracker so the
   // task carries a full "why" log for SSE / UI / audit consumers.
+  //
+  // P4-02.x C1 (plan p4-03-p4-02): Layer 1 context-source classification
+  // runs FIRST so signal extraction (Layer 2) and the policy resolver
+  // (Layer 4) can both consume the canonical labels. Wired here at the
+  // orchestrator entry rather than in `context-submission.mjs` so the
+  // 8+ verifiers that call createTaskSpec directly (routing-policy /
+  // executor-selection / risk-register / signal-kinds / …) automatically
+  // exercise the classifier. Output stamped onto a cloned contextPacket
+  // — original input is not mutated; downstream code reads from the
+  // clone via `enrichedContext`.
   const tracker = createTracker();
-  const { signals } = extractAllSignals(text, contextPacket);
+  const contextSources = classifyContextSources({ text, contextPacket });
+  const enrichedContext = { ...(contextPacket ?? {}), context_sources: contextSources };
+  const { signals } = extractAllSignals(text, enrichedContext);
   const noteIntent = hasNoteTakingIntent(text, contextPacket);
   const imageDriven = Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0;
   const artifactEditIntent = hasArtifactRefinementIntent(text, contextPacket);

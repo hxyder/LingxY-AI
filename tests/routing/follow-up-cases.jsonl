@@ -1,0 +1,8 @@
+{"id":"need-after-weather-offer","input":"需要","context":{"selection_metadata":{"conversation_turns":[{"role":"user","content":"今天怎么样"},{"role":"assistant","content":"想看天气文字摘要的话，我也可以帮你抓取具体数据，需要吗？"}]}},"expected":{"web":"required","executor":"tool_using"}}
+{"id":"continue-after-news-offer","input":"继续","context":{"selection_metadata":{"conversation_turns":[{"role":"user","content":"今天有什么动态"},{"role":"assistant","content":"想要我帮你查一下今日新闻头条吗？"}]}},"expected":{"web":"required","executor":"tool_using"}}
+{"id":"yes-after-stock-offer","input":"是的","context":{"selection_metadata":{"conversation_turns":[{"role":"assistant","content":"想要我帮你查一下纳指最新走势吗？"}]}},"expected":{"web":"required","executor":"tool_using"}}
+{"id":"need-without-offer","input":"需要","context":{"selection_metadata":{"conversation_turns":[{"role":"assistant","content":"好的，已记录。"}]}},"expected":{"web":"forbidden","executor":"fast"}}
+{"id":"need-without-conversation","input":"需要","expected":{"web":"forbidden","executor":"fast"}}
+{"id":"new-request-not-affirmative","input":"新建一个文档吧","context":{"selection_metadata":{"conversation_turns":[{"role":"assistant","content":"想要我帮你查一下新闻吗？"}]}},"expected":{"web":"forbidden","executor":"fast"}}
+{"id":"need-after-non-external-offer","input":"需要","context":{"selection_metadata":{"conversation_turns":[{"role":"assistant","content":"想要我帮你修改一下文档吗？"}]}},"expected":{"web":"forbidden","executor":"fast"}}
+{"id":"yes-after-flight-offer","input":"yes","context":{"selection_metadata":{"conversation_turns":[{"role":"assistant","content":"Want me to fetch the flight status?"}]}},"expected":{"web":"required","executor":"tool_using"}}

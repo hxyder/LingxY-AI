@@ -92,12 +92,39 @@ export function detect(text, contextPacket) {
   // (and other manual-capture paths) duplicate the userCommand into
   // contextPacket.text by default, which would otherwise mis-classify every
   // bare action-tool request as a local-selection task and forbid web search.
+  //
+  // P4-02.x C3 (plan p4-03-p4-02-goofy-forest): the selection branch only
+  // fires for genuinely local content. The C1 context-source classifier
+  // (run in createTaskSpec before signal extraction) marks each kind of
+  // text on the enriched contextPacket. We trust the classifier output:
+  //
+  //   - real_selection / browser_page / file_text  → local-only anchor
+  //     → fire the selection branch with kind="fact"
+  //
+  //   - conversation_history / rag_background / parent_task_context /
+  //     editable_artifact (alone)  → background only, NEVER an anchor
+  //     → DO NOT fire the selection branch; fall through to "none"
+  //
+  // This is the fix for the "今天天气怎么样 + RAG-recalled email task →
+  // forbidden web" regression. RAG digest, conversation history, and
+  // parent task summaries used to all trigger the selection branch
+  // because they share the contextPacket.text bucket; now the C1
+  // classifier separates them.
+  //
+  // Back-compat fallback: when context_sources is absent (e.g. some
+  // test path that bypasses createTaskSpec — should be impossible in
+  // practice but kept defensive), use the legacy "non-empty distinct
+  // text" heuristic. Belt-and-suspenders.
   const trimmedCommand = String(text ?? "").trim();
   const isJustCommandEcho = selectionText.length > 0 && selectionText === trimmedCommand;
-  if (selectionText.length > 0 && !isJustCommandEcho) {
-    // P4-01 kind=fact: text presence is observable, even though the
-    // detector deliberately stays "weak" strength because we can't infer
-    // intent from text alone.
+  const sources = contextPacket?.context_sources;
+  const hasRealLocalAnchor = sources
+    ? Boolean(sources.real_selection || sources.browser_page || sources.file_text)
+    : (selectionText.length > 0 && !isJustCommandEcho);
+  if (hasRealLocalAnchor) {
+    const reason = sources
+      ? `context_sources flags a local anchor (real_selection=${sources.real_selection} / browser_page=${sources.browser_page} / file_text=${sources.file_text})`
+      : `contextPacket.text is non-empty (${selectionText.length} chars) and distinct from user command`;
     return {
       name: NAME,
       matched: true,
@@ -106,7 +133,7 @@ export function detect(text, contextPacket) {
       evidence: [{
         type: "context",
         source: NAME,
-        reason: `contextPacket.text is non-empty (${selectionText.length} chars) and distinct from user command`
+        reason
       }],
       hint: { value: "selection" }
     };

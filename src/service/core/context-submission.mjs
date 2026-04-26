@@ -157,6 +157,21 @@ function findRecentArtifactPath(runtime, preferredKind = null) {
 // other context seeding is deferred to the AI's own tool choice.
 const MEMORY_RECALL_TIMEOUT_MS = 400;
 const MEMORY_RECALL_K = 3;
+// P4-02.x C2: per-hit threshold gate. TF-IDF-only hits use Jaccard
+// similarity which can return spurious matches at the legacy 0.05 floor
+// (the 0.077 unrelated-email recall on a weather query came from 1
+// shared token over 13 unique). Vector-backed hits keep the loose
+// threshold because cosine over a real embedding space is far less
+// noisy. The store reports `embeddingType: "tfidf" | "vector"` per hit
+// (see embeddings/store.mjs:186).
+const MEMORY_RECALL_MIN_SCORE_TFIDF = 0.25;
+const MEMORY_RECALL_MIN_SCORE_VECTOR = 0.05;
+
+function passesHitThreshold(hit) {
+  const score = hit?.score ?? 0;
+  if (hit?.embeddingType === "tfidf") return score > MEMORY_RECALL_MIN_SCORE_TFIDF;
+  return score > MEMORY_RECALL_MIN_SCORE_VECTOR;
+}
 
 export async function seedSemanticMemories({ runtime, userCommand, parentTaskId, contextPacket }) {
   const store = runtime?.platform?.embeddingStore;
@@ -176,15 +191,30 @@ export async function seedSemanticMemories({ runtime, userCommand, parentTaskId,
   const hits = results
     // drop exact parent match — seedParentTaskContext already covers it
     .filter((r) => r?.id && r.id !== parentTaskId)
-    // drop no-signal hits (TF-IDF noise)
-    .filter((r) => (r.score ?? 0) > 0.05)
+    // P4-02.x C2: per-hit threshold based on embedding backing — see
+    // passesHitThreshold above.
+    .filter(passesHitThreshold)
     .slice(0, MEMORY_RECALL_K);
   if (hits.length === 0) return contextPacket;
-  const lines = ["[跨对话相关任务（语义召回 · 可作为背景）]"];
+  // P4-02.x C2: sentinel rename + explicit role marker. The block is
+  // CONTEXT_SOURCE_KEYS.rag_background — the C1 classifier recognizes
+  // this prefix, source-scope (C3) treats it as background-only (NOT a
+  // local anchor), and the LLM sees the explicit "仅作背景，请勿当作当前
+  // 任务上下文" instruction inline.
+  const lines = [
+    "[memory_background · 语义召回 · 仅作背景，请勿当作当前任务上下文]"
+  ];
   for (const hit of hits) {
     const meta = hit.metadata ?? {};
     const summary = String(meta.summary ?? hit.text.slice(0, 100)).slice(0, 120);
-    lines.push(`- ${summary}  (task=${String(hit.id).slice(0, 12)} · score=${(hit.score ?? 0).toFixed(2)})`);
+    // P4-02.x C2: full callable task_id. memory-tools.mjs:212
+    // get_task_detail does exact-match lookup; the prior 12-char slice
+    // produced "task=task_5ab4836..." that the model would extract and
+    // call with → "task not found". Render both: a short display
+    // identifier for human-readable logs, plus the full callable id.
+    const fullId = String(hit.id);
+    const displayId = fullId.slice(0, 12);
+    lines.push(`- ${summary}  (display=${displayId} · callable: task_id=${fullId} · score=${(hit.score ?? 0).toFixed(2)})`);
     if (meta.answer_excerpt) {
       lines.push("  " + String(meta.answer_excerpt).slice(0, 240).replace(/\n+/g, " "));
     }
@@ -200,7 +230,11 @@ export async function seedSemanticMemories({ runtime, userCommand, parentTaskId,
     selection_metadata: {
       ...(contextPacket?.selection_metadata ?? {}),
       semantic_recall_ids: hits.map((h) => h.id),
-      semantic_recall_scores: hits.map((h) => Number((h.score ?? 0).toFixed(3)))
+      semantic_recall_scores: hits.map((h) => Number((h.score ?? 0).toFixed(3))),
+      // P4-02.x C2: unified flag the C1 classifier reads as authoritative
+      // (without depending on sentinel scan). Mirrors the existing
+      // `conversation_history_injected` pattern.
+      memory_background_injected: true
     }
   };
 }

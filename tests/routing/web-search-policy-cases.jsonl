@@ -28,3 +28,8 @@
 {"id":"news-no-space","input":"今天有什么AI新闻","expected":{"web":"required","executor":"tool_using"}}
 {"id":"news-no-space-typo","input":"今天又什么AI新闻","expected":{"web":"required","executor":"tool_using"}}
 {"id":"ai-news-tail","input":"AI新闻最近怎么样","expected":{"web":"required","executor":"tool_using"}}
+{"id":"weather-with-rag-background","input":"今天天气怎么样","context":{"text":"[memory_background · 语义召回 · 仅作背景，请勿当作当前任务上下文]\n- 帮用户发了一封邮件 (display=task_5ab4836a8b · callable: task_id=task_5ab4836a8b7c9d1e · score=0.08)","selection_metadata":{"memory_background_injected":true,"semantic_recall_ids":["task_5ab4836a8b7c9d1e"]}},"expected":{"web":"required","executor":"tool_using"}}
+{"id":"weather-imperative-with-history","input":"你应该给我天气","context":{"text":"[当前对话上下文]\n用户：今天天气怎么样\n助手：让我帮你查一下","selection_metadata":{"conversation_history_injected":true,"conversation_turn_count":2}},"expected":{"web":"required","executor":"tool_using"}}
+{"id":"weather-with-parent-task","input":"今天的天气","context":{"text":"[上一轮任务摘要 · parent=task_abc123]\n用户上一条指令：天气如何","selection_metadata":{"parent_task_id":"task_abc123def456"}},"expected":{"web":"required","executor":"tool_using"}}
+{"id":"explicit-external-overrides-rag","input":"查一下网上最近有没有类似开源项目","context":{"text":"[memory_background · 语义召回]\n- 之前有过相关任务","selection_metadata":{"memory_background_injected":true}},"expected":{"web":"required","executor":"tool_using"}}
+{"id":"real-selection-no-sentinel","input":"summarize","context":{"text":"function foo() { return current; }"},"expected":{"web":"forbidden","executor":"fast"}}

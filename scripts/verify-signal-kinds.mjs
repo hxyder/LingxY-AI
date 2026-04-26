@@ -41,6 +41,8 @@ import { detect as detectSearch }   from "../src/service/core/intent/signals/exp
 import { detect as detectEntity }   from "../src/service/core/intent/signals/explicit-entity.mjs";
 import { detect as detectFresh }    from "../src/service/core/intent/signals/weak-freshness.mjs";
 import { detect as detectScope }    from "../src/service/core/intent/signals/source-scope.mjs";
+import { detect as detectPending }  from "../src/service/core/intent/signals/pending-offer.mjs";
+import { SIGNAL_NAMES }              from "../src/service/core/intent/signals/_signal-types.mjs";
 import { createTaskSpec }            from "../src/service/core/task-spec.mjs";
 
 let pass = 0;
@@ -101,6 +103,40 @@ async function run() {
     const s = detectFresh("最近怎么样", {});
     assert.equal(s.matched, true);
     assert.equal(s.kind, "hint");
+  });
+  it("hint: pending_offer returns kind:hint when both halves match (C4)", () => {
+    const s = detectPending("需要", {
+      selection_metadata: {
+        conversation_turns: [
+          { role: "user", content: "今天怎么样" },
+          { role: "assistant", content: "想看天气文字摘要的话，我也可以帮你抓取具体数据，需要吗？" }
+        ]
+      }
+    });
+    assert.equal(s.matched, true);
+    assert.equal(s.kind, "hint");
+    assert.equal(s.hint?.pending_intent, "weather");
+  });
+  it("pending_offer: NOT matched without offer in conversation (C4)", () => {
+    const s = detectPending("需要", {
+      selection_metadata: {
+        conversation_turns: [{ role: "assistant", content: "好的，已记录。" }]
+      }
+    });
+    assert.equal(s.matched, false);
+    assert.equal(s.kind, null);
+  });
+  it("pending_offer: NOT matched on non-affirmative even with offer (C4)", () => {
+    const s = detectPending("新建一个文档吧", {
+      selection_metadata: {
+        conversation_turns: [{ role: "assistant", content: "想要我查一下天气吗？" }]
+      }
+    });
+    assert.equal(s.matched, false);
+  });
+  it("public surface: SIGNAL_NAMES contains 'pending_offer'", () => {
+    assert.ok([...SIGNAL_NAMES].includes("pending_offer"),
+      "_signal-types.mjs SIGNAL_NAMES must register pending_offer");
   });
 
   // ── 4. source_scope branches differ by inference depth ────────────────

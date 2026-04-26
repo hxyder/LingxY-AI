@@ -63,7 +63,8 @@ export const SIGNAL_NAMES = /** @type {const} */ ([
   "source_scope",
   "explicit_search",
   "weak_freshness",
-  "explicit_entity"
+  "explicit_entity",
+  "pending_offer"
 ]);
 
 /**

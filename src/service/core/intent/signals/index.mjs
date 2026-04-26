@@ -16,13 +16,15 @@ import { detect as detectSourceScope } from "./source-scope.mjs";
 import { detect as detectExplicitSearch } from "./explicit-search.mjs";
 import { detect as detectWeakFreshness } from "./weak-freshness.mjs";
 import { detect as detectExplicitEntity } from "./explicit-entity.mjs";
+import { detect as detectPendingOffer } from "./pending-offer.mjs";
 
 const DETECTORS = {
   explicit_external: detectExplicitExternal,
   source_scope: detectSourceScope,
   explicit_search: detectExplicitSearch,
   weak_freshness: detectWeakFreshness,
-  explicit_entity: detectExplicitEntity
+  explicit_entity: detectExplicitEntity,
+  pending_offer: detectPendingOffer
 };
 
 /**
