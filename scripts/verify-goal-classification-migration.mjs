@@ -130,6 +130,59 @@ it("goal: SR web=optional + topical → search_and_answer (optional is research-
   const { signals } = extractAllSignals(text, ctx);
   assert.equal(classifyGoal(text, signals), "search_and_answer");
 });
+// ── G1: SR-driven escalation bypasses GOAL_RULES.patterns gate ──────
+it("G1: '查一下有没有类似的开源项目' + SR=required → search_and_answer (bypasses pattern gate)", () => {
+  // The text doesn't match any GOAL_RULES.patterns regex (no
+  // weather/news/today/etc.). Pre-G1 the search_and_answer rule
+  // short-circuited at patterns; goal stayed qa even with strong
+  // SR=required. G1 adds a post-loop SR-driven escalation that
+  // overrides the legacy pattern gate.
+  const text = "查一下有没有类似的开源项目";
+  const ctx = { semantic_router_decision: srStub({ web_policy: "required" }) };
+  const { signals } = extractAllSignals(text, ctx);
+  assert.equal(classifyGoal(text, signals), "search_and_answer",
+    "G1 must escalate to search_and_answer when SR=required even without pattern match");
+});
+it("G1: '查一下有没有类似的开源项目' WITHOUT SR → qa (no regression)", () => {
+  // Without SR there's nothing to escalate. Falls to qa
+  // (conservative fallback consistent with the rest of the
+  // post-F2 architecture).
+  const text = "查一下有没有类似的开源项目";
+  const { signals } = extractAllSignals(text, {});
+  assert.equal(classifyGoal(text, signals), "qa");
+});
+it("G1: '翻译这段' + SR=required does NOT override translate goal", () => {
+  // translate rule's pattern matches FIRST. G1's SR escalation
+  // only fires when no other rule matched — so translate wins.
+  const text = "翻译这段";
+  const ctx = { semantic_router_decision: srStub({ web_policy: "required" }) };
+  const { signals } = extractAllSignals(text, ctx);
+  assert.equal(classifyGoal(text, signals), "translate");
+});
+it("G1: SR weak (confidence < 0.7) + non-matching text → qa (don't promote on weak SR)", () => {
+  // strength === "strong" gates the escalation. confidence 0.5 →
+  // strength "weak" → no escalation → qa.
+  const text = "查一下有没有类似的开源项目";
+  const ctx = { semantic_router_decision: srStub({ web_policy: "required", confidence: 0.5 }) };
+  const { signals } = extractAllSignals(text, ctx);
+  assert.equal(classifyGoal(text, signals), "qa");
+});
+it("G1: SR=optional + non-matching text → search_and_answer (optional escalates too)", () => {
+  // The G1 condition is "web_policy != forbidden", so both
+  // required and optional escalate. Matches the rest of the
+  // requiresSignal logic for consistency.
+  const text = "看看有没有类似的工具";
+  const ctx = { semantic_router_decision: srStub({ web_policy: "optional" }) };
+  const { signals } = extractAllSignals(text, ctx);
+  assert.equal(classifyGoal(text, signals), "search_and_answer");
+});
+it("G1: SR=forbidden + non-matching text → qa (forbidden does NOT escalate)", () => {
+  const text = "查一下有没有类似的开源项目";
+  const ctx = { semantic_router_decision: srStub({ web_policy: "forbidden" }) };
+  const { signals } = extractAllSignals(text, ctx);
+  assert.equal(classifyGoal(text, signals), "qa");
+});
+
 it("goal: WITHOUT SR + topical query → qa (conservative fallback, no topic_hint dependency)", () => {
   // Pre-F2: this returned search_and_answer because topic_hint
   // matched. Post-F2: topic_hint removed from the gate; result is

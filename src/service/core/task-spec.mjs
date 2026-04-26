@@ -243,6 +243,39 @@ export function classifyGoal(text, signals = null) {
     }
     return rule.goal;
   }
+
+  // P4-RQ G1: SR-driven goal escalation bypasses the legacy
+  // GOAL_RULES.patterns gate when SR (Layer-3) provides a
+  // structured research-class judgement.
+  //
+  // Reproduction this fixes: "查一下有没有类似的开源项目" + SR=required.
+  // The text doesn't match any topical pattern (weather/news/etc.),
+  // so the search_and_answer rule short-circuited above before
+  // requiresSignal even saw the SR signal — task got goal=qa even
+  // though SR clearly classified it as research.
+  //
+  // Placement (after the rule loop, before qa fallback): we still
+  // let translate / multimodal_analyze / schedule_or_notify /
+  // launch_and_act / generate_document / transform_existing_file /
+  // analyze_and_report win when their patterns match — those are
+  // non-research goals SR shouldn't override. Only when no other
+  // goal pattern matched do we let SR promote ambiguous text to
+  // search_and_answer.
+  //
+  // Conditions:
+  //   - signals.semantic_router.matched (decision was stamped)
+  //   - strength === "strong" (confidence ≥ 0.7 — don't promote
+  //     on weak/uncertain SR)
+  //   - hint.web_policy != "forbidden" (SR-required and SR-optional
+  //     both indicate the task wants external info)
+  const sr = signals?.semantic_router;
+  if (sr?.matched
+      && sr.strength === "strong"
+      && sr.hint?.web_policy
+      && sr.hint.web_policy !== "forbidden") {
+    return "search_and_answer";
+  }
+
   return "qa";
 }
 
