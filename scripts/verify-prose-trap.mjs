@@ -14,6 +14,8 @@
  *      correctly skipped for pure Q&A)
  */
 
+import { readFileSync } from "node:fs";
+
 import { runToolAgentLoop } from "../src/service/executors/tool_using/agent-loop.mjs";
 
 function assert(cond, message) {
@@ -194,11 +196,38 @@ async function scenario3() {
   console.log("  ✓ scenario 3: question command → no retry, direct final");
 }
 
+/* ── Scenario 4: scaffold preserves phase-gate partial_success ── */
+function scenario4() {
+  const agentLoopSrc = readFileSync(
+    new URL("../src/service/executors/tool_using/agent-loop.mjs", import.meta.url),
+    "utf8"
+  );
+  assert(
+    /result\.status\s*===\s*["']partial_success["']/.test(agentLoopSrc),
+    "s4: createToolUsingExecutorScaffold must branch on result.status === partial_success"
+  );
+  assert(
+    /event_type:\s*["']partial_success["'][\s\S]{0,220}phase_gate/.test(agentLoopSrc),
+    "s4: scaffold partial_success event must carry phase_gate metadata"
+  );
+
+  const eventBusSrc = readFileSync(
+    new URL("../src/service/core/events/event-bus.mjs", import.meta.url),
+    "utf8"
+  );
+  assert(
+    eventBusSrc.includes('"phase_gate_signal"'),
+    "s4: phase_gate_signal must be part of the public EVENT_TYPES contract"
+  );
+  console.log("  ✓ scenario 4: scaffold preserves phase-gate partial_success + event contract");
+}
+
 async function main() {
   console.log("verify-prose-trap:");
   await scenario1();
   await scenario2();
   await scenario3();
+  scenario4();
   console.log("Prose-trap retry verification passed.");
 }
 

@@ -8,6 +8,7 @@ export const EVENT_TYPES = Object.freeze([
   "tool_call_proposed",
   "tool_call_completed",
   "tool_call_denied",
+  "phase_gate_signal",
   "pending_approval_created",
   "step_started",
   "step_finished",

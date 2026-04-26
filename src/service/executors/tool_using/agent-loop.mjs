@@ -763,6 +763,17 @@ export function createToolUsingExecutorScaffold() {
         } else if (result.status === "waiting_external_decision") {
           yield { event_type: "inline_result", payload: { text: "Waiting for your approval..." } };
           yield { event_type: "success", payload: { text: "Pending approval." } };
+        } else if (result.status === "partial_success") {
+          const text = result.final_text || result.error || "Tool loop stopped before the success contract was fully satisfied.";
+          yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
+          yield { event_type: "inline_result", payload: { text } };
+          yield {
+            event_type: "partial_success",
+            payload: {
+              text,
+              phase_gate: result.phase_gate ?? null
+            }
+          };
         } else {
           yield { event_type: "inline_result", payload: { text: result.final_text || result.error || "Tool execution failed." } };
           yield { event_type: "success", payload: { text: result.final_text || "Done with errors." } };
