@@ -38,6 +38,7 @@
     "verify:research-quality-e2e": "node scripts/verify-research-quality-e2e.mjs",
     "verify:explicit-no-search": "node scripts/verify-explicit-no-search.mjs",
     "verify:single-url-routing": "node scripts/verify-single-url-routing.mjs",
+    "verify:topic-hint-surfacing": "node scripts/verify-topic-hint-surfacing.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",
     "verify:ui-tokens": "node scripts/verify-ui-tokens.mjs",
