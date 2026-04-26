@@ -34,9 +34,12 @@ export function detect(text, _contextPacket) {
   const match = PATTERN.exec(text);
   if (!match) return emptySignal(NAME);
 
-  // P4-01 kind=hint: search verb observed; the LLM still has to judge
-  // whether to actually call a tool (resolver maps strong → "optional",
-  // not "required"). The verb is the marker, the action is conventional.
+  // P4-01 kind=hint: the search verb is observable text (fact-like),
+  // but the inference "search verb → user wants to consult external
+  // sources" is conventional. Post-E5 the resolver maps strong →
+  // `required` at step 3 (structural hard-signal symmetry with
+  // explicit_external and explicit_no_search); local-anchor cases
+  // still short-circuit at step 2a before reaching it.
   return {
     name: NAME,
     matched: true,

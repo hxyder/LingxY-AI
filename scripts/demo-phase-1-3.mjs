@@ -99,7 +99,7 @@ const SCENARIOS = [
             reason: "stock-price lookup"
           }
         },
-        why: "explicit_search → optional + topic_hint observability + SR→required (merge) → required → tool_using."
+        why: "explicit_search → required (E5 resolver step 3) + topic_hint observability for SR; merge stays at required → tool_using."
       }
     ]
   },
@@ -110,7 +110,7 @@ const SCENARIOS = [
         title: "查一下这个文件里最近提到的内容（带文件附件）",
         input: "查一下这个文件里最近提到的内容",
         context: { file_paths: ["a.md"] },
-        why: "explicit_search + 文件附件。source_scope 优先 → forbidden（不是 'optional'）"
+        why: "explicit_search + 文件附件。source_scope (fact-local) 在 step 2a 优先 → forbidden（如果没有附件，post-E5 会是 required）"
       },
       {
         title: "查一下网上最近开源项目（无文件附件）",
