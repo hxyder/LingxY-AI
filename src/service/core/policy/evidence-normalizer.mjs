@@ -37,6 +37,39 @@
  *     `tldts` later (§19 follow-up).
  */
 
+/**
+ * P4-RQ D2: roundup / digest / weekly-review marker patterns.
+ *
+ * A roundup is a single page that aggregates internal articles —
+ * "一周热闻", "AI weekly", "tech digest". For a multi_source_research
+ * task, treating a roundup as N independent sources is wrong: it is
+ * still ONE publisher's editorial selection.
+ *
+ * The validator (D3) emits `external_web_read_single_roundup_only`
+ * when this marker fires AND `distinct_domain_count == 1`. The
+ * runbook recovery (D4) is "broaden the query to find independent
+ * sources", which is a more actionable hint than the generic
+ * single-domain violation.
+ *
+ * Conservative regex set — false positives here over-flag
+ * legitimate articles as roundups, false negatives leave the
+ * single-domain violation to do the work. We err on the side of
+ * fewer false positives.
+ */
+const ROUNDUP_MARKERS = [
+  // Chinese
+  /一周热?闻/i,
+  /周报|周刊|每周/,
+  /合集|汇总|盘点|要闻回顾/,
+  // English
+  /\bweekly\s+(review|digest|roundup|summary|recap)\b/i,
+  /\b(news|tech|ai|industry)\s+(digest|roundup|recap|weekly)\b/i,
+  /\b(roundup|round-up|digest|weekly\s+wrap)\b/i,
+  // URL paths that frequently indicate roundup pages
+  /\/htmlnews\//i,
+  /\/(weekly|digest|roundup|recap|news-roundup)\//i
+];
+
 const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
   // UK
   "co.uk", "ac.uk", "gov.uk", "org.uk", "ltd.uk", "plc.uk", "me.uk", "net.uk", "sch.uk", "nhs.uk",
@@ -59,6 +92,11 @@ const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
  * @property {number}   distinct_domain_count - count of unique registrable domains
  * @property {string[]} domains               - sorted list of unique domains
  * @property {string[]} urls                  - sorted list of unique URLs
+ * @property {boolean}  is_single_roundup     - P4-RQ D2: true when distinct_domain_count===1
+ *                                              AND any URL/title matches a roundup/digest
+ *                                              marker. Validator uses this to emit the more
+ *                                              specific single_roundup_only violation.
+ * @property {string[]} roundup_markers       - which markers matched (for trace / debug)
  */
 
 /**
@@ -70,8 +108,13 @@ const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
 export function extractEvidence(transcript) {
   const urls = new Set();
   const domains = new Set();
+  const titles = [];   // collected for roundup detection
   if (!Array.isArray(transcript)) {
-    return { source_count: 0, distinct_domain_count: 0, domains: [], urls: [] };
+    return {
+      source_count: 0, distinct_domain_count: 0,
+      domains: [], urls: [],
+      is_single_roundup: false, roundup_markers: []
+    };
   }
   for (const entry of transcript) {
     if (!entry || typeof entry !== "object") continue;
@@ -83,6 +126,7 @@ export function extractEvidence(transcript) {
         for (const r of results) {
           const u = typeof r?.url === "string" ? r.url : null;
           if (u) urls.add(u);
+          if (typeof r?.title === "string") titles.push(r.title);
         }
       }
     } else if (entry.tool === "fetch_url_content") {
@@ -94,11 +138,26 @@ export function extractEvidence(transcript) {
     const d = registrableDomain(u);
     if (d) domains.add(d);
   }
+  // Roundup detection: only when ALL evidence is from a single
+  // publisher (distinct_domain_count === 1). Outside that, the
+  // distinct-domain violation is enough — adding roundup_only to a
+  // multi-domain transcript would over-flag.
+  const matchedMarkers = [];
+  let isSingleRoundup = false;
+  if (domains.size === 1 && urls.size > 0) {
+    const haystack = [...urls, ...titles].join("\n");
+    for (const re of ROUNDUP_MARKERS) {
+      if (re.test(haystack)) matchedMarkers.push(re.source);
+    }
+    isSingleRoundup = matchedMarkers.length > 0;
+  }
   return {
     source_count: urls.size,
     distinct_domain_count: domains.size,
     domains: [...domains].sort(),
-    urls: [...urls].sort()
+    urls: [...urls].sort(),
+    is_single_roundup: isSingleRoundup,
+    roundup_markers: matchedMarkers
   };
 }
 

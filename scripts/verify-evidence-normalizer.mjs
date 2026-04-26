@@ -198,6 +198,66 @@ it("STAGES: EVIDENCE_SUMMARY registered as decision-trace stage id", () => {
   assert.equal(STAGES.EVIDENCE_SUMMARY, "evidence-summary");
 });
 
+// ── P4-RQ D2: roundup / digest detection ─────────────────────────────
+it("roundup: ScienceNet weekly-review titles + /htmlnews/ paths → is_single_roundup=true", () => {
+  const transcript = [
+    { type: "tool_result", tool: "web_search_fetch", success: true, metadata: {
+      results: [
+        { url: "https://paper.sciencenet.cn/htmlnews/2026/4/563765.shtm", title: "一周热闻回顾（4月3日-4月9日）" },
+        { url: "https://news.sciencenet.cn/htmlnews/2026/4/563766.shtm", title: "..." },
+        { url: "https://blog.sciencenet.cn/post/123", title: "..." }
+      ]
+    } }
+  ];
+  const ev = extractEvidence(transcript);
+  assert.equal(ev.distinct_domain_count, 1);
+  assert.equal(ev.is_single_roundup, true);
+  assert.ok(ev.roundup_markers.length > 0, "expected at least one roundup_marker matched");
+});
+it("roundup: cross-domain transcript → is_single_roundup=false (single-domain check is the gate)", () => {
+  const transcript = [
+    { type: "tool_result", tool: "web_search_fetch", success: true, metadata: {
+      results: [
+        { url: "https://nature.com/news/weekly-digest", title: "Weekly digest of AI news" },
+        { url: "https://reuters.com/world/x", title: "Article" }
+      ]
+    } }
+  ];
+  const ev = extractEvidence(transcript);
+  assert.equal(ev.distinct_domain_count, 2);
+  // Even though "weekly digest" matches, distinct_domain_count > 1 →
+  // not a single-roundup. The single-domain gate is the prerequisite.
+  assert.equal(ev.is_single_roundup, false);
+});
+it("roundup: single-domain non-roundup article → is_single_roundup=false", () => {
+  const transcript = [
+    { type: "tool_result", tool: "fetch_url_content", success: true, metadata: {
+      url: "https://nature.com/articles/abc"
+    } }
+  ];
+  const ev = extractEvidence(transcript);
+  assert.equal(ev.distinct_domain_count, 1);
+  assert.equal(ev.is_single_roundup, false);
+});
+it("roundup: English 'AI weekly digest' title with single domain → is_single_roundup=true", () => {
+  const transcript = [
+    { type: "tool_result", tool: "web_search_fetch", success: true, metadata: {
+      results: [
+        { url: "https://example-blog.com/ai-weekly-digest-04", title: "AI Weekly Digest #04" },
+        { url: "https://example-blog.com/posts/older", title: "..." }
+      ]
+    } }
+  ];
+  const ev = extractEvidence(transcript);
+  assert.equal(ev.distinct_domain_count, 1);
+  assert.equal(ev.is_single_roundup, true);
+});
+it("roundup: empty transcript → is_single_roundup=false", () => {
+  const ev = extractEvidence([]);
+  assert.equal(ev.is_single_roundup, false);
+  assert.deepEqual(ev.roundup_markers, []);
+});
+
 // ── Source-level lock-in: agent-loop wraps runToolAgentLoop ─────────
 it("lock-in: agent-loop wraps runToolAgentLoop with finaliseWithEvidence", () => {
   const src = readFileSync(
