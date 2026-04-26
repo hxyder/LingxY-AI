@@ -87,6 +87,19 @@ export const GOAL_FAMILIES = /** @type {const} */ ([
  *   - P4-RQ D1: research-class enforcement profile. Drives hard
  *     coverage checks in validateSuccessContract / validateStepGate
  *     (D3). null when web is forbidden — no enforcement applies.
+ * @property {"ok"|"sr_timeout"|"sr_no_provider"|"sr_unsupported_provider"|"sr_disabled"|"sr_low_confidence"|"sr_schema_invalid"|"sr_fact_conflict"|"sr_exception"} routing_status
+ *   - P4-RQ G4: SR availability flag. "ok" when SR ran (or wasn't
+ *     gated to run); `sr_<code>` when the SR preflight returned a
+ *     rejection. Read by fast-executor (G5) to short-circuit
+ *     research-class queries that lost SR consultation, and by
+ *     audit traces to distinguish "SR said no" from "SR couldn't
+ *     answer".
+ * @property {boolean} connector_domain
+ *   - P4-RQ G4: true when isConnectorDomainRequest fired. Read by
+ *     executor-resolver Rule 5 extension (G5a) to keep
+ *     "查一下我最近的邮件"-style tasks on tool_using even when web
+ *     mode is forbidden (connector tools handle the fetch, not
+ *     external web).
  * @property {string} suggested_executor       - executor hint (not final — task-runtime decides)
  * @property {string[]} intent_tags            - multi-label tags from intent-router
  * @property {string[]} suggested_formats      - detected output formats
@@ -594,6 +607,34 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     toolPolicyMode: toolPolicy?.policy_groups?.external_web_read?.mode
   });
 
+  // P4-RQ G4: routing_status — propagate SR availability to
+  // downstream consumers (executor-resolver Rule 5 ext., fast-
+  // executor truthfulness guard, audit trace). Distinguishes
+  // "SR ran successfully" (ok) from "SR couldn't run" (sr_timeout
+  // / sr_no_provider / sr_unsupported_provider / etc.). Without
+  // this flag, fast-executor can't tell whether a task fell to
+  // qa+forbidden because SR said so or because SR never ran —
+  // those need different conservative behaviours (G5 short-
+  // circuit reads this).
+  //
+  // Codes mirror the SR rejection.code values:
+  //   ok                       — decision present (or never gated)
+  //   sr_timeout               — SR exceeded its timeout
+  //   sr_no_provider           — no chat provider configured
+  //   sr_unsupported_provider  — provider kind not wired for SR
+  //   sr_disabled              — operator turned SR off
+  //   sr_low_confidence        — SR returned but below threshold
+  //   sr_schema_invalid        — SR returned malformed payload
+  //   sr_fact_conflict         — SR's decision contradicted a hard fact
+  //   sr_exception             — adapter / network exception
+  // (srDecision / srRejection already destructured above for the
+  // SEMANTIC_ROUTER decision-trace stage; reuse them here.)
+  const routingStatus = srDecision
+    ? "ok"
+    : srRejection?.code
+      ? `sr_${srRejection.code}`
+      : "ok";  // not consulted (gate skipped at preflight) — same as ok
+
   const partialSpec = {
     goal,
     user_goal_text: text,
@@ -601,6 +642,10 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     needs_current_web_data: toolPolicy.web_search_fetch.mode === "required",
     tool_policy: toolPolicy,
     research_quality: researchQuality,
+    // G4: framework-state flags read by executor-resolver Rule 5
+    // extension and fast-executor short-circuit (G5).
+    routing_status: routingStatus,
+    connector_domain: connectorDomainRequest,
     artifact: {
       required: artifactRequired,
       kind: fileArtifactKind,

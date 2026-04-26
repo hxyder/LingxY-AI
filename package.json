@@ -41,6 +41,7 @@
     "verify:topic-hint-surfacing": "node scripts/verify-topic-hint-surfacing.mjs",
     "verify:explicit-search-required": "node scripts/verify-explicit-search-required.mjs",
     "verify:goal-classification-migration": "node scripts/verify-goal-classification-migration.mjs",
+    "verify:routing-status": "node scripts/verify-routing-status.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",
     "verify:ui-tokens": "node scripts/verify-ui-tokens.mjs",
