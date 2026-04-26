@@ -50,6 +50,14 @@ const OUTPUT_KINDS = Object.freeze([
 const EXECUTORS = Object.freeze([
   "fast", "tool_using", "agentic", "translate", "multi_modal", "kimi"
 ]);
+// P4-RQ C2: research_depth is a SUGGESTION the LLM emits alongside
+// web_policy. `single_lookup` ⇒ "this is a single fact / single URL
+// summary"; `multi_source` ⇒ "this is research / news / comparison /
+// competitor / open-source survey — independent sources matter";
+// `unknown` ⇒ "model isn't confident enough to label". Resolver copies
+// it onto tool_policy.research_hint for downstream observability;
+// no determinism rests on it.
+const RESEARCH_DEPTHS = Object.freeze(["single_lookup", "multi_source", "unknown"]);
 
 /**
  * The strict tool-input schema the LLM must satisfy. Embedded in the
@@ -69,10 +77,11 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
       output_kind: { type: "string", enum: [...OUTPUT_KINDS] },
       artifact_required: { type: "boolean" },
       executor: { type: "string", enum: [...EXECUTORS] },
+      research_depth: { type: "string", enum: [...RESEARCH_DEPTHS] },
       confidence: { type: "number", minimum: 0, maximum: 1 },
       reason: { type: "string", maxLength: 400 }
     },
-    required: ["source_scope", "web_policy", "output_kind", "artifact_required", "executor", "confidence", "reason"]
+    required: ["source_scope", "web_policy", "output_kind", "artifact_required", "executor", "research_depth", "confidence", "reason"]
   }
 });
 
@@ -83,6 +92,7 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
  * @property {typeof OUTPUT_KINDS[number]}      output_kind
  * @property {boolean}                          artifact_required
  * @property {typeof EXECUTORS[number]}         executor
+ * @property {typeof RESEARCH_DEPTHS[number]}   research_depth
  * @property {number}                           confidence
  * @property {string}                           reason
  */
@@ -326,6 +336,7 @@ function buildMessages({ text, contextPacket, signals }) {
     "- web_policy: required only if the answer demands fresh external data the system does not already have; optional if a search would help but isn't critical; forbidden when the request is local-only or you have no signal that the user wants the open web.",
     "- output_kind: conversation for chat replies; pick the file kind (docx/pptx/xlsx/pdf/markdown/...) when the user asked for a document.",
     "- executor: fast for short conversational answers; tool_using for tool-driven actions; agentic for multi-step planning with artifacts; multi_modal for image-led tasks.",
+    "- research_depth: `single_lookup` when the user asks for one fact / one URL / one article (weather, stock price, a specific page they shared, single-fact recall). `multi_source` when independent sources matter — news, current events, competitor research, open-source surveys, comparison shopping, fact-checking, market/price scans. `unknown` only when web_policy is `forbidden` or you genuinely cannot tell.",
     "- confidence: be honest. 0.5 means \"could go either way\", 0.9 means \"only one reading fits\". Low confidence triggers a fallback to the deterministic resolver.",
     "- reason: one short sentence in the user's language; this is shown to the operator, not the user.",
     "",
@@ -512,6 +523,9 @@ function validateDecision(decision) {
   }
   if (!EXECUTORS.includes(decision.executor)) {
     return { ok: false, reason: `executor=${decision.executor} not in enum` };
+  }
+  if (!RESEARCH_DEPTHS.includes(decision.research_depth)) {
+    return { ok: false, reason: `research_depth=${decision.research_depth} not in enum` };
   }
   if (typeof decision.confidence !== "number"
       || decision.confidence < 0 || decision.confidence > 1) {

@@ -65,6 +65,7 @@ const validDecision = Object.freeze({
   output_kind: "conversation",
   artifact_required: false,
   executor: "tool_using",
+  research_depth: "multi_source",
   confidence: 0.85,
   reason: "User asked for current AI news."
 });
@@ -561,9 +562,121 @@ async function run() {
     assert.equal(SEMANTIC_DECISION_TOOL.name, "route_task");
     assert.equal(SEMANTIC_DECISION_TOOL.input_schema.type, "object");
     assert.equal(SEMANTIC_DECISION_TOOL.input_schema.additionalProperties, false);
-    for (const f of ["source_scope", "web_policy", "output_kind", "artifact_required", "executor", "confidence", "reason"]) {
+    for (const f of ["source_scope", "web_policy", "output_kind", "artifact_required", "executor", "research_depth", "confidence", "reason"]) {
       assert.ok(SEMANTIC_DECISION_TOOL.input_schema.properties[f], `schema missing property ${f}`);
     }
+  });
+  await it("public surface: research_depth enum is single_lookup / multi_source / unknown", () => {
+    const enumDef = SEMANTIC_DECISION_TOOL.input_schema.properties.research_depth.enum;
+    assert.deepEqual([...enumDef].sort(), ["multi_source", "single_lookup", "unknown"]);
+    assert.ok(SEMANTIC_DECISION_TOOL.input_schema.required.includes("research_depth"));
+  });
+
+  // ── P4-RQ C2: research_depth schema + plumbing ────────────────────────
+  await it("research_depth: invalid enum value rejected by validator", async () => {
+    const adapter = decisionAdapter({ ...validDecision, research_depth: "invalid_depth" });
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "x" });
+    assert.equal(out.kind, "rejection");
+    assert.equal(out.code, "schema_invalid");
+    assert.match(out.reason, /research_depth=invalid_depth/);
+  });
+  await it("research_depth: missing field treated as schema_invalid (required)", async () => {
+    const adapter = {
+      async generate() {
+        const { research_depth: _rd, ...withoutDepth } = validDecision;
+        return { tool_calls: [{ name: "route_task", arguments: withoutDepth }] };
+      }
+    };
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "x" });
+    assert.equal(out.kind, "rejection");
+    assert.equal(out.code, "schema_invalid");
+    assert.match(out.reason, /research_depth/);
+  });
+  await it("research_depth: valid value preserved end-to-end on the decision", async () => {
+    const adapter = decisionAdapter({ ...validDecision, research_depth: "multi_source" });
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "今天有什么 AI 新闻" });
+    assert.equal(out.kind, "decision");
+    assert.equal(out.decision.research_depth, "multi_source");
+  });
+  await it("research_depth: system prompt teaches single_lookup vs multi_source", async () => {
+    let captured = null;
+    const probeAdapter = {
+      async generate(payload) {
+        captured = payload;
+        return { tool_calls: [{ name: "route_task", arguments: { ...validDecision } }] };
+      }
+    };
+    const router = makeRouter({ adapter: probeAdapter });
+    await router.resolveSemanticDecision({ text: "x" });
+    const systemMessage = captured.messages.find((m) => m.role === "system").content;
+    assert.match(systemMessage, /research_depth/);
+    assert.match(systemMessage, /single_lookup/);
+    assert.match(systemMessage, /multi_source/);
+  });
+  await it("research_depth: resolver merge stamps research_hint onto tool_policy", async () => {
+    const { mergeSemanticRouterDecision, resolveDeterministicPolicy } =
+      await import("../src/service/core/policy/tool-policy-resolver.mjs");
+    const { extractAllSignals } = await import("../src/service/core/intent/signals/index.mjs");
+    const text = "today's AI news please";
+    const signals = extractAllSignals({ text, contextPacket: {} });
+    const detPolicy = resolveDeterministicPolicy({ signals, text });
+    const merged = mergeSemanticRouterDecision({
+      deterministicPolicy: detPolicy,
+      signals,
+      contextPacket: {
+        // SR decision present; gate (text length > 8) passes
+        semantic_router_decision: { ...validDecision, research_depth: "multi_source" }
+      },
+      text
+    });
+    assert.equal(merged.research_hint, "multi_source",
+      "merge must stamp the SR research_depth onto tool_policy.research_hint");
+  });
+  await it("research_depth: stamp fires even when deterministic policy already required (via pending_offer)", async () => {
+    const { mergeSemanticRouterDecision } =
+      await import("../src/service/core/policy/tool-policy-resolver.mjs");
+    // Hand-built deterministic policy that's already "required" — merge
+    // would normally just return it unchanged. We still want the hint
+    // stamped so downstream consumers see what SR thought. Signals here
+    // intentionally avoid explicit_external/explicit_entity strong (those
+    // would short-circuit shouldConsultSemanticRouter), so the merge
+    // reaches the detMode==="required" branch with stamping enabled.
+    const detPolicy = {
+      web_search_fetch: { mode: "required", reason: "pending_offer inherited", evidence: [] },
+      policy_groups: { external_web_read: { mode: "required", reason: "x", evidence: [] } }
+    };
+    const merged = mergeSemanticRouterDecision({
+      deterministicPolicy: detPolicy,
+      signals: {},
+      contextPacket: {
+        semantic_router_decision: { ...validDecision, research_depth: "single_lookup" }
+      },
+      text: "long enough text to pass the gate"
+    });
+    assert.equal(merged.research_hint, "single_lookup");
+    assert.equal(merged.policy_groups?.external_web_read?.mode, "required");
+  });
+  await it("research_depth: no stamp when SR not consulted (deterministic rule fired strongly)", async () => {
+    const { mergeSemanticRouterDecision } =
+      await import("../src/service/core/policy/tool-policy-resolver.mjs");
+    const detPolicy = {
+      web_search_fetch: { mode: "required", reason: "explicit external", evidence: [] },
+      policy_groups: { external_web_read: { mode: "required", reason: "x", evidence: [] } }
+    };
+    const merged = mergeSemanticRouterDecision({
+      deterministicPolicy: detPolicy,
+      // strong explicit_external → shouldConsultSemanticRouter returns false
+      signals: {
+        explicit_external: { matched: true, kind: "hint", strength: "strong", hint: { value: "external" } }
+      },
+      contextPacket: {
+        semantic_router_decision: { ...validDecision, research_depth: "multi_source" }
+      },
+      text: "long enough text"
+    });
+    // Deterministic rule won outright; SR was never consulted. No
+    // research_hint either — keeps the trace honest.
+    assert.equal(merged.research_hint, undefined);
   });
   await it("public surface: enums match the typedef", () => {
     assert.ok(SOURCE_SCOPES.includes("external_world"));

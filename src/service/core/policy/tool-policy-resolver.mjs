@@ -250,17 +250,17 @@ export function mergeSemanticRouterDecision({
   if (!shouldConsultSemanticRouter({ signals, contextPacket, text })) return deterministicPolicy;
 
   const detMode = deterministicPolicy?.web_search_fetch?.mode;
-  if (detMode === "required") return deterministicPolicy;
+  if (detMode === "required") return stampResearchHint(deterministicPolicy, sr);
 
   const sourceScope = signals?.source_scope;
   if (sourceScope?.matched
       && sourceScope.kind === "fact"
       && LOCAL_SCOPES.has(sourceScope.hint?.value)) {
-    return deterministicPolicy;
+    return stampResearchHint(deterministicPolicy, sr);
   }
 
   const reason = `Semantic router suggested ${sr.web_policy} (confidence=${typeof sr.confidence === "number" ? sr.confidence.toFixed(2) : "?"}); deterministic baseline was ${detMode}.`;
-  return buildExternalWebReadPolicy(
+  const merged = buildExternalWebReadPolicy(
     sr.web_policy,
     reason,
     [
@@ -268,6 +268,29 @@ export function mergeSemanticRouterDecision({
       ...(deterministicPolicy?.web_search_fetch?.evidence ?? [])
     ]
   );
+  return stampResearchHint(merged, sr);
+}
+
+/**
+ * P4-RQ C2: stamp the SR's research_depth suggestion onto the
+ * resolved tool_policy as `research_hint`. Suggestion-only — no
+ * downstream determinism rests on it; the prompt-builder helper
+ * `renderResearchPrinciples` reads `tool_policy.policy_groups.external_web_read.mode`,
+ * not this hint. Two roles for `research_hint`:
+ *   1. Decision-trace observability — the operator sees what the SR
+ *      thought when reviewing routing decisions.
+ *   2. Future fork point — when prompt-builder grows depth-specific
+ *      principle variants (§19 follow-up), this is the field it reads.
+ *
+ * Stamps on every merge-result path, including the "deterministic
+ * baseline already correct" case. Cloning the policy to avoid mutating
+ * the deterministic input — important when the caller's policy object
+ * is also captured in DecisionTrace.
+ */
+function stampResearchHint(policy, sr) {
+  const depth = sr?.research_depth;
+  if (typeof depth !== "string" || depth.length === 0) return policy;
+  return { ...policy, research_hint: depth };
 }
 
 /**
