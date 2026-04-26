@@ -266,7 +266,7 @@ const fakeSearchRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS.map((to
 const searchRuntime = createRuntime("news-search", {
   actionToolRegistry: fakeSearchRegistry
 });
-// P4-RQ E3 stage C1: topic regex (explicit_entity) no longer drives
+// P4-RQ E3 stage C1: topic regex (topic_hint) no longer drives
 // web=required deterministically. The previous version of this test
 // relied on "AI 新闻" entity firing required; now we use an explicit
 // external phrase ("网上") which IS still a kept-as-regex structural

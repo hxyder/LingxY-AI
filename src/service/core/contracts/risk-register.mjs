@@ -269,14 +269,14 @@ export function listAssumptionsForTask(taskSpec, signals) {
       status: "unverified"
     });
   }
-  const explicitEntity = signals?.explicit_entity;
-  if (explicitEntity?.matched && explicitEntity.strength === "strong"
+  const topicHint = signals?.topic_hint;
+  if (topicHint?.matched && topicHint.strength === "strong"
       && (sourceScope?.hint?.value ?? "none") === "none") {
     out.push({
       id: "A-02",
       description: "User named a high-freshness external entity (weather / stock / flight / etc.) and did NOT anchor it to local data, so they want a fresh external lookup.",
       confidence: 0.8,
-      evidence: explicitEntity.evidence ?? [],
+      evidence: topicHint.evidence ?? [],
       status: "unverified"
     });
   }

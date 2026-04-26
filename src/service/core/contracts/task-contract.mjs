@@ -146,7 +146,7 @@ export function compileTaskContract({ taskSpec, signals, contextPacket }) {
 
 function collectEvidence(signals, taskSpec) {
   const evidence = [];
-  for (const name of ["explicit_external", "explicit_entity", "source_scope", "explicit_search", "weak_freshness"]) {
+  for (const name of ["explicit_external", "topic_hint", "source_scope", "explicit_search", "weak_freshness"]) {
     const signal = signals?.[name];
     if (signal?.matched) evidence.push(...signal.evidence);
   }
@@ -188,7 +188,7 @@ function deriveConfidence(signals, taskSpec) {
   // the floor.
   let score = 0.5;
   if (signals?.explicit_external?.matched) score += 0.2;
-  if (signals?.explicit_entity?.matched) score += 0.15;
+  if (signals?.topic_hint?.matched) score += 0.15;
   if (signals?.source_scope?.matched && signals.source_scope.strength === "strong") score += 0.15;
   if (signals?.explicit_search?.matched) score += 0.05;
   if (taskSpec?.tool_policy?.web_search_fetch?.mode === "required") score += 0.05;

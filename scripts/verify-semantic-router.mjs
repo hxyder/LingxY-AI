@@ -638,7 +638,7 @@ async function run() {
     // Hand-built deterministic policy that's already "required" — merge
     // would normally just return it unchanged. We still want the hint
     // stamped so downstream consumers see what SR thought. Signals here
-    // intentionally avoid explicit_external/explicit_entity strong (those
+    // intentionally avoid explicit_external/topic_hint strong (those
     // would short-circuit shouldConsultSemanticRouter), so the merge
     // reaches the detMode==="required" branch with stamping enabled.
     const detPolicy = {

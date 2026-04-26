@@ -164,7 +164,7 @@ it("signal: empty / non-string text → unmatched", () => {
 });
 
 // ── createTaskSpec end-to-end ────────────────────────────────────────
-// P4-RQ E3 stage C1 update: topic regex (explicit_entity) no longer
+// P4-RQ E3 stage C1 update: topic regex (topic_hint) no longer
 // drives web=required deterministically. SR + EvidencePolicy merge
 // owns that decision now. Tests stub a `semantic_router_decision` on
 // the contextPacket so the merge upgrades web to required and

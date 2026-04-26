@@ -1,19 +1,39 @@
 /**
- * UCA-077 P1-02: explicit external-entity detector.
+ * UCA-077 P1-02 → P4-RQ E3 stage C2: topic-hint detector.
  *
- * Captures topic words that strongly imply external time-sensitive data —
- * weather, stock movement, flights, exchange rates, news headlines. Lets
- * queries like "current weather in Raleigh" or "查一下 AVIS 为什么暴涨"
- * win against the default-forbidden rule when source_scope is "none".
+ * Pre-C1 this was named `explicit_entity` and its strong+scope=none
+ * matches drove the deterministic resolver to web=required. After
+ * the E3 audit + Option C, the signal is OBSERVABILITY-ONLY at the
+ * deterministic layer:
  *
- * Conservative on purpose: this signal must NOT fire on benign words that
- * happen to contain an entity stem (e.g. "新闻应用" — but acceptable trade
- * because attached file context will short-circuit at source_scope first).
+ *   - The detector still fires on weather / stock / flight / news /
+ *     election / commodity / monetary topics — captured here as a
+ *     LOOSE topical regex, not a precise classifier.
+ *   - The signal is surfaced in the SemanticRouter prompt + decision
+ *     trace + task-contract confidence + risk-register evidence.
+ *   - It does NOT escalate web policy by itself. SR + EvidencePolicy
+ *     merge owns that decision; when SR is unavailable, the
+ *     conservative fallback is web=forbidden.
+ *
+ * Why keep the regex at all? Because the LLM router consumes signal
+ * shapes (kind + matched + hint) as INPUTS to its classification —
+ * presenting a "user named a topical entity" hint helps the LLM
+ * weigh research-class vs chitchat. Removing the regex entirely
+ * would deprive SR of useful input data.
+ *
+ * Conservative on purpose: this signal must NOT fire on benign words
+ * that happen to contain an entity stem (e.g. "新闻应用"). Imprecise
+ * matches are acceptable because no determinism rests on this signal
+ * post-C1; the model resolves the ambiguity.
+ *
+ * Renamed from `explicit_entity` in C2 to better reflect its
+ * post-C1 role: it's a topical hint to the SR, not a structural
+ * "explicit" claim about user intent.
  */
 
 import { emptySignal } from "./_signal-types.mjs";
 
-const NAME = "explicit_entity";
+const NAME = "topic_hint";
 
 // UCA-077 P1-10: regex grew pragmatically to cover the external-research
 // classes the agentic verifiers use as fixtures (geopolitics / equities /

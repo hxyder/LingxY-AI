@@ -21,7 +21,7 @@
  * Design: this is a Layer 2 SIGNAL, not inline regex inside the
  * research-quality module. Reasons:
  *   1. Mirrors the existing user-intent signals (`explicit_search`,
- *      `explicit_external`, `explicit_entity`, `pending_offer`).
+ *      `explicit_external`, `topic_hint`, `pending_offer`).
  *   2. Available to other Layer-3+ consumers (SemanticRouter prompt,
  *      decision-trace) without each rewriting the regex.
  *   3. Tested via verify-signal-kinds along with the rest.

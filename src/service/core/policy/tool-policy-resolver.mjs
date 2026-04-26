@@ -14,7 +14,7 @@
  *
  * Decision priority (short-circuit in order):
  *   1. explicit_external (strong)             → required
- *   2. explicit_entity (strong) + scope=none  → required
+ *   2. topic_hint (strong) + scope=none  → required
  *   3. source_scope ∈ local set               → forbidden
  *   4. explicit_search (strong)               → optional
  *   5. weak_freshness (weak)                  → optional
@@ -87,7 +87,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   }
 
   const explicitExternal = signals.explicit_external;
-  // P4-RQ E3 stage C1: explicit_entity is observability-only at the
+  // P4-RQ E3 stage C1: topic_hint is observability-only at the
   // deterministic layer now (SR + EvidencePolicy merge owns topical
   // routing). Reference is left out of the destructuring; the
   // signal is still emitted by the detector and surfaced in the SR
@@ -215,7 +215,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   //
   //    The signal still fires (kept for SR prompt + decision-trace
   //    observability); only its deterministic-required power is
-  //    revoked here. `explicitEntity` reference kept above so future
+  //    revoked here. `topicHint` reference kept above so future
   //    additions don't have to re-import.
 
   // 4. Neutral search verb — user explicitly invited a search but did not
@@ -235,7 +235,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   //    onto an executor that can call tools, with no useful entity to search
   //    for. We keep the weak_freshness signal in `evidence` (for tracing)
   //    but the policy stays forbidden until an explicit_search,
-  //    explicit_entity, or explicit_external companion appears.
+  //    topic_hint, or explicit_external companion appears.
   const trailingEvidence = [];
   if (weakFreshness?.matched) trailingEvidence.push(...weakFreshness.evidence);
   trailingEvidence.push({ type: "default", source: "tool-policy-resolver", reason: "no companion signal" });
@@ -269,7 +269,7 @@ function webSearchPolicy(mode, reason, evidence) {
  *
  * The deterministic resolver runs 6 fast-path rules over regex-derived
  * signals. When NONE of those rules fire decisively (no attached files,
- * no `explicit_external` strong, no strong `explicit_entity`, command
+ * no `explicit_external` strong, no strong `topic_hint`, command
  * long enough to carry intent), the request is "ambiguous" — the
  * deterministic baseline would default to forbidden, but the user may
  * actually want web reading. SemanticRouter is consulted ONLY for those
@@ -288,8 +288,8 @@ export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text 
   }
   const explicitExternal = signals?.explicit_external;
   if (explicitExternal?.matched && explicitExternal.strength === "strong") return false;
-  // P4-RQ E3 stage C1: explicit_entity (topic regex) NO LONGER
-  // skips SR. Previously, "今天天气" with strong-explicit_entity
+  // P4-RQ E3 stage C1: topic_hint (topic regex) NO LONGER
+  // skips SR. Previously, "今天天气" with strong-topic_hint
   // would short-circuit the SR call and rely on the deterministic
   // step 3 (now removed) to escalate. With Option C, those queries
   // need the SR's classification, so the gate must let them

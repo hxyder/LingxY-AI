@@ -49,7 +49,7 @@ const OFFER_PATTERN_ZH = /(想要?|要不要?|需要(?:我)?(?:帮)?|是否(?:�
 const OFFER_PATTERN_EN = /\b(want|need|like|interested|shall\s+i|should\s+i|do\s+you\s+(?:want|need))\b[\s\S]{0,80}?\?\s*$/i;
 
 // Step 3 — entity detection over the offer text. Reuses the same word
-// list as explicit-entity.mjs but kept inline so this signal stays
+// list as topic-hint.mjs but kept inline so this signal stays
 // self-contained (intent layer doesn't import other signals — they're
 // orthogonal observations).
 const PENDING_INTENT_RULES = Object.freeze([

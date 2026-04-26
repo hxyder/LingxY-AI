@@ -3,11 +3,11 @@
  *
  * Neutral search verbs ("搜索/查一下/查询/google/bing"). On their own, this
  * only escalates web_search to "optional" — required-grade external intent
- * needs explicit_external or (explicit_entity + source_scope=none).
+ * needs explicit_external or (topic_hint + source_scope=none).
  *
  * Inherits from the regex previously hard-coded as `isSearchOrNewsRequest` in
  * tool_using/agent-loop.mjs:338-341, with weak time markers and entity
- * keywords removed (those split out into weak-freshness / explicit-entity).
+ * keywords removed (those split out into weak-freshness / topic-hint).
  */
 
 import { emptySignal } from "./_signal-types.mjs";

@@ -15,7 +15,7 @@ import { detect as detectExplicitExternal } from "./explicit-external.mjs";
 import { detect as detectSourceScope } from "./source-scope.mjs";
 import { detect as detectExplicitSearch } from "./explicit-search.mjs";
 import { detect as detectWeakFreshness } from "./weak-freshness.mjs";
-import { detect as detectExplicitEntity } from "./explicit-entity.mjs";
+import { detect as detectExplicitEntity } from "./topic-hint.mjs";
 import { detect as detectPendingOffer } from "./pending-offer.mjs";
 import { detect as detectExplicitSingleUrl } from "./explicit-single-url.mjs";
 import { detect as detectExplicitNoSearch } from "./explicit-no-search.mjs";
@@ -25,7 +25,7 @@ const DETECTORS = {
   source_scope: detectSourceScope,
   explicit_search: detectExplicitSearch,
   weak_freshness: detectWeakFreshness,
-  explicit_entity: detectExplicitEntity,
+  topic_hint: detectExplicitEntity,
   pending_offer: detectPendingOffer,
   explicit_single_url: detectExplicitSingleUrl,
   explicit_no_search: detectExplicitNoSearch

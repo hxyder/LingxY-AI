@@ -163,7 +163,7 @@ const GOAL_RULES = [
   // alone, which routed local-context tasks (e.g. "最新这个框架的功能") to
   // search_and_answer and onward to web_search. Tightening:
   //   - When signals are provided, search_and_answer requires either
-  //     `explicit_external` or `explicit_entity` to fire. Weak time markers
+  //     `explicit_external` or `topic_hint` to fire. Weak time markers
   //     never escalate the goal by themselves.
   //   - When signals are absent (back-compat for callers like routeIntent
   //     that have not adopted the signal layer yet), keep the legacy
@@ -180,7 +180,7 @@ const GOAL_RULES = [
       /(天气|气温|明天|后天|明日|汇率|股价|航班|机票|酒店|价格)/
     ],
     requiresSignal: (signals) =>
-      Boolean(signals?.explicit_external?.matched || signals?.explicit_entity?.matched)
+      Boolean(signals?.explicit_external?.matched || signals?.topic_hint?.matched)
   }
   // fallback: "qa" — handled in classifyGoal()
 ];
@@ -223,7 +223,7 @@ export function classifyGoal(text, signals = null) {
 // `src/service/core/intent/signals/`:
 //   - weak-freshness.mjs    (最近 / current / today …)
 //   - explicit-search.mjs   (搜索 / 查一下 / google …)
-//   - explicit-entity.mjs   (天气 / 股价 / 航班 …)
+//   - topic-hint.mjs   (天气 / 股价 / 航班 …)
 //   - explicit-external.mjs (网上 / online …)
 //   - source-scope.mjs      (这个文件 / 这段代码 …)
 //
@@ -612,7 +612,7 @@ function collectGoalEvidence(signals, { noteIntent, artifactEditIntent }) {
   const evidence = [];
   if (noteIntent) evidence.push({ type: "context", source: "note-intent", reason: "hasNoteTakingIntent" });
   if (artifactEditIntent) evidence.push({ type: "context", source: "artifact-edit-intent", reason: "hasArtifactRefinementIntent" });
-  for (const name of ["explicit_external", "explicit_entity", "source_scope"]) {
+  for (const name of ["explicit_external", "topic_hint", "source_scope"]) {
     const signal = signals?.[name];
     if (signal?.matched) evidence.push(...signal.evidence);
   }

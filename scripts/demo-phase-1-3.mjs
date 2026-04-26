@@ -43,13 +43,13 @@ const SCENARIOS = [
         title: "今天有什么 AI 新闻",
         input: "今天有什么 AI 新闻",
         context: {},
-        why: "explicit_entity (AI 新闻) + source_scope=none → required"
+        why: "topic_hint (AI 新闻) + source_scope=none → required"
       },
       {
         title: "current weather in Raleigh",
         input: "current weather in Raleigh",
         context: {},
-        why: "explicit_entity (weather) + source_scope=none → required (即使 current 是弱信号)"
+        why: "topic_hint (weather) + source_scope=none → required (即使 current 是弱信号)"
       },
       {
         title: "查一下网上最近开源项目",
@@ -61,7 +61,7 @@ const SCENARIOS = [
         title: "查一下 AVIS 为什么暴涨",
         input: "查一下 AVIS 为什么暴涨",
         context: {},
-        why: "explicit_search + explicit_entity (暴涨) → required → tool_using"
+        why: "explicit_search + topic_hint (暴涨) → required → tool_using"
       }
     ]
   },

@@ -5,11 +5,11 @@
  * never imply external-data need. The policy resolver treats this as a
  * tracing-only signal — it never escalates a request to "required" by
  * itself, and does not even change the default ("forbidden") without a
- * companion signal (explicit_search, explicit_entity, source_scope).
+ * companion signal (explicit_search, topic_hint, source_scope).
  *
  * Inherits the regex previously known as WEB_DATA_PATTERNS in
  * task-spec.mjs:183-186, stripped of entity nouns (天气/汇率/etc moved to
- * explicit-entity) and search verbs (moved to explicit-search).
+ * topic-hint) and search verbs (moved to explicit-search).
  */
 
 import { emptySignal } from "./_signal-types.mjs";

@@ -13,7 +13,7 @@
  *      signal fires, BEATING:
  *        - pending_offer (would otherwise inherit external intent)
  *        - explicit_external (would otherwise upgrade to required)
- *        - explicit_entity (would otherwise upgrade)
+ *        - topic_hint (would otherwise upgrade)
  *   5. resolveToolPolicy / mergeSemanticRouterDecision: SR's
  *      web=required suggestion does NOT override forbidden when
  *      explicit_no_search is set.
@@ -159,11 +159,11 @@ function pendingOfferExternal(intent = "weather") {
 }
 function strongEntityNews() {
   return {
-    name: "explicit_entity",
+    name: "topic_hint",
     matched: true,
     strength: "strong",
     kind: "hint",
-    evidence: [{ type: "regex", source: "explicit_entity", reason: "test" }],
+    evidence: [{ type: "regex", source: "topic_hint", reason: "test" }],
     hint: { entity: "news" }
   };
 }
@@ -191,11 +191,11 @@ it("resolver: explicit_no_search forces web=forbidden over pending_offer externa
   assert.equal(policy.web_search_fetch.mode, "forbidden");
 });
 
-it("resolver: explicit_no_search forces web=forbidden over explicit_entity", () => {
+it("resolver: explicit_no_search forces web=forbidden over topic_hint", () => {
   const policy = resolveDeterministicPolicy({
     signals: {
       explicit_no_search: noSearchSignal(),
-      explicit_entity: strongEntityNews()
+      topic_hint: strongEntityNews()
     },
     text: "不要联网，告诉我今天 AI 新闻"
   });

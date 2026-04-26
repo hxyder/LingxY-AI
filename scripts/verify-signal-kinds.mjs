@@ -14,7 +14,7 @@
  * Asserts:
  *   1. SIGNAL_KINDS is frozen and equals ["fact", "hint", "assumption"].
  *   2. emptySignal(name) carries kind:null (no claim until matched).
- *   3. explicit_external / explicit_search / explicit_entity /
+ *   3. explicit_external / explicit_search / topic_hint /
  *      weak_freshness all annotate kind:"hint" when they fire.
  *   4. source_scope branches:
  *        attachment        → fact
@@ -38,7 +38,7 @@ import { SIGNAL_KINDS, emptySignal } from "../src/service/core/intent/signals/_s
 import * as signalsIndex from "../src/service/core/intent/signals/index.mjs";
 import { detect as detectExternal } from "../src/service/core/intent/signals/explicit-external.mjs";
 import { detect as detectSearch }   from "../src/service/core/intent/signals/explicit-search.mjs";
-import { detect as detectEntity }   from "../src/service/core/intent/signals/explicit-entity.mjs";
+import { detect as detectEntity }   from "../src/service/core/intent/signals/topic-hint.mjs";
 import { detect as detectFresh }    from "../src/service/core/intent/signals/weak-freshness.mjs";
 import { detect as detectScope }    from "../src/service/core/intent/signals/source-scope.mjs";
 import { detect as detectPending }  from "../src/service/core/intent/signals/pending-offer.mjs";
@@ -94,7 +94,7 @@ async function run() {
     assert.equal(s.matched, true);
     assert.equal(s.kind, "hint");
   });
-  it("hint: explicit_entity returns kind:hint when matched", () => {
+  it("hint: topic_hint returns kind:hint when matched", () => {
     const s = detectEntity("今天北京的天气", {});
     assert.equal(s.matched, true);
     assert.equal(s.kind, "hint");

@@ -8,7 +8,7 @@
  * no detector for the user's explicit no-search constraint — even a
  * literal "不要联网，解释一下 X" with X being an external entity
  * (weather / news) would route to web=required because
- * explicit_entity won the chain.
+ * topic_hint won the chain.
  *
  * Design:
  *   - kind: "fact" — the user said this verbatim. SR's

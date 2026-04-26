@@ -13,8 +13,8 @@
  *      - file_paths attached    → false (rules win)
  *      - image_paths attached   → false
  *      - explicit_external strong → false
- *      - explicit_entity strong → false
- *      - text length ≤ 8        → false
+ *      - topic_hint strong → TRUE (post-C1: SR consulted for topic queries)
+ *      - text length ≤ 3        → false (chitchat skip; threshold lowered from 8 in C1)
  *      - none of the above      → true
  *   2. Merge: ambiguous + SR decided required → policy upgrades to required.
  *   3. Merge: ambiguous + SR decided forbidden → policy stays forbidden
@@ -110,7 +110,7 @@ async function run() {
       signals, contextPacket: {}, text: "查一下网上最近的开源项目"
     }), false);
   });
-  it("gate: explicit_entity strong → TRUE (P4-RQ E3 C1: SR now consulted for topic queries)", () => {
+  it("gate: topic_hint strong → TRUE (P4-RQ E3 C1: SR now consulted for topic queries)", () => {
     // Pre-C1 this returned false (entity skipped SR for latency).
     // Post-C1 entity is observability-only at the deterministic
     // layer; SR drives topical routing, so the gate must let
@@ -136,7 +136,7 @@ async function run() {
     }), true);
   });
   it("gate: typo / unsignaled long text → true (the SR target case)", () => {
-    // "今天天汽" = typo for "今天天气"; explicit_entity won't match the typo
+    // "今天天汽" = typo for "今天天气"; topic_hint won't match the typo
     // but it's a clear weather intent. Add another long enough phrase.
     const signals = makeSignals("帮我看看那件事的进展如何");
     assert.equal(shouldConsultSemanticRouter({

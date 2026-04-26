@@ -158,10 +158,10 @@ async function run() {
     const a01 = listAssumptionsForTask({}, signals).find((a) => a.id === "A-01");
     assert.ok(a01.confidence < 0.85);
   });
-  it("assumptions: A-02 fires when explicit_entity strong + scope=none", () => {
+  it("assumptions: A-02 fires when topic_hint strong + scope=none", () => {
     const signals = {
       source_scope: { matched: false, hint: { value: "none" } },
-      explicit_entity: { matched: true, strength: "strong", evidence: [] }
+      topic_hint: { matched: true, strength: "strong", evidence: [] }
     };
     const out = listAssumptionsForTask({}, signals);
     assert.ok(out.some((a) => a.id === "A-02"));
@@ -169,7 +169,7 @@ async function run() {
   it("assumptions: A-02 does NOT fire when scope is local even with strong entity", () => {
     const signals = {
       source_scope: { matched: true, strength: "strong", hint: { value: "current_context" }, evidence: [] },
-      explicit_entity: { matched: true, strength: "strong", evidence: [] }
+      topic_hint: { matched: true, strength: "strong", evidence: [] }
     };
     const out = listAssumptionsForTask({}, signals);
     assert.ok(!out.some((a) => a.id === "A-02"));
