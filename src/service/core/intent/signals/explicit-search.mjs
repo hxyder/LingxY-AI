@@ -1,14 +1,18 @@
 /**
- * UCA-077 P1-02: explicit search-verb detector.
+ * UCA-077 P1-02 → P4-RQ E5: explicit search-verb detector.
  *
  * Neutral search verbs ("搜索/查一下/查询/google/bing"). One of the 6
  * structural hard signals both reference docs preserve as
- * deterministic regex. Today (post-E3 C1) it escalates web_search to
- * `optional`; the E5 follow-up tracks promoting it to `required`
- * — the user's directive: "explicit_search 是结构性 hard signal,
- * 应该升级到 external_search=required, 而不是只 optional 后等 SR".
- * Required-grade external intent currently also fires from
- * `explicit_external` (step 1) and `pending_offer` (step 0b).
+ * deterministic regex. Post-E5 this signal escalates the resolver
+ * to web=required (step 3 in the chain) — symmetry with
+ * `explicit_external` (step 1 → required) and `explicit_no_search`
+ * (step 0a → forbidden). All three are explicit user verbs about
+ * the search axis, each respected verbatim.
+ *
+ * Local-anchor cases ("查一下我的文件" + file_paths) still short-
+ * circuit at resolver step 2a (fact-local source-scope) before
+ * reaching this rule, so the promotion does NOT auto-route local
+ * search to the web.
  *
  * Inherits from the regex previously hard-coded as `isSearchOrNewsRequest` in
  * tool_using/agent-loop.mjs:338-341, with weak time markers and entity

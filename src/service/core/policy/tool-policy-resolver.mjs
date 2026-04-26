@@ -12,14 +12,14 @@
  * Inputs are signals (built by intent/signals/) plus the request context.
  * Output carries the decision plus full evidence for tracing.
  *
- * Decision priority (short-circuit in order; current after E1 + E2 + E3 C1):
+ * Decision priority (short-circuit in order; current after E1 + E2 + E3 C1 + E5):
  *   0a. explicit_no_search (kind=fact)        → forbidden  (E1 — beats everything)
  *   0b. pending_offer (external intent)       → required
  *   1.  explicit_external (strong)            → required
  *   2a. source_scope kind=fact + LOCAL        → forbidden  (E2 — real selection / file_text)
  *   2b. explicit_single_url + inline URL      → required   (E2 — structural URL evidence)
  *   2c. source_scope kind=assumption + LOCAL  → forbidden  (E2 — pronoun without URL)
- *   3.  explicit_search (strong)              → optional   (today — see E5 plan to promote to required)
+ *   3.  explicit_search (strong)              → required   (E5 — structural hard signal symmetry)
  *   4.  weak_freshness alone                  → forbidden  (kept-as-evidence only)
  *   5.  default                               → forbidden
  *
@@ -230,13 +230,25 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   //    revoked here. `topicHint` reference kept above so future
   //    additions don't have to re-import.
 
-  // 4. Neutral search verb — user explicitly invited a search but did not
-  //    pin it to external data. Let downstream LLM judge whether to actually
-  //    call web_search.
+  // 4. P4-RQ E5: explicit search verb (structural hard signal)
+  //    → required. Symmetry with explicit_external (step 1 →
+  //    required) and explicit_no_search (step 0a → forbidden) —
+  //    all three are explicit user verbs about the search axis,
+  //    each respected verbatim by the resolver.
+  //
+  //    Pre-E5 this returned `optional` and waited for SR to upgrade.
+  //    The "wait for SR" default was wrong: when the user typed
+  //    "查一下 / search / google", they declared intent. Local-anchor
+  //    cases (file_paths attached, "查一下我的文件") already
+  //    short-circuit at step 2a (fact-local) before reaching here,
+  //    so promoting search-verb to required does NOT auto-route
+  //    local search to web. SR can still downgrade via the merge
+  //    layer + fact-conflict guard if subsequent signals contradict
+  //    the verb.
   if (explicitSearch?.matched && explicitSearch.strength === "strong") {
     return webSearchPolicy(
-      "optional",
-      "User used a neutral search verb; web_search is allowed but not required.",
+      "required",
+      "User used an explicit search verb (structural hard signal); web_search required.",
       explicitSearch.evidence
     );
   }
