@@ -21,6 +21,7 @@ import {
 import { detect as detectExplicitSearch } from "../../core/intent/signals/explicit-search.mjs";
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples } from "../shared/research-principles.mjs";
+import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
@@ -858,7 +859,36 @@ async function resolveInteractiveConfirmation({ runtime, task, tool, args, risk 
   };
 }
 
-export async function runToolAgentLoop({
+/**
+ * P4-RQ C3 wrapper: runs the agent loop, then stamps an
+ * `evidence_summary` (URL/domain coverage from web tool results) onto
+ * the result for observability. Audit-only — never gates completion.
+ * Existing return shape preserved; new field added alongside.
+ */
+export async function runToolAgentLoop(opts = {}) {
+  const result = await _runToolAgentLoopCore(opts);
+  return finaliseWithEvidence(result, opts);
+}
+
+function finaliseWithEvidence(result, { runtime, task } = {}) {
+  if (!result || typeof result !== "object") return result;
+  if (!Array.isArray(result.transcript)) return result;
+  const evidence = extractEvidence(result.transcript);
+  // Skip the audit/event noise when the loop did no web tool calls —
+  // the typical "launch_app" flow has zero coverage to report.
+  if (evidence.source_count === 0 && evidence.distinct_domain_count === 0) {
+    return { ...result, evidence_summary: evidence };
+  }
+  try {
+    appendAuditLog(runtime, task, "tool_loop.evidence_summary", evidence);
+  } catch { /* audit failures must not break the loop return */ }
+  try {
+    runtime?.emitTaskEvent?.("evidence_summary", evidence);
+  } catch { /* ditto */ }
+  return { ...result, evidence_summary: evidence };
+}
+
+async function _runToolAgentLoopCore({
   task,
   runtime,
   maxIterations = 8,

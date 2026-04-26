@@ -115,7 +115,8 @@ export const STAGES = Object.freeze({
   SEMANTIC_ROUTER: "semantic-router",                   // P4-03 LLM suggestion (decision OR rejection)
   EXECUTOR_SELECTION: "executor-selection",
   OUTPUT_POLICY: "output-policy",          // reserved for Phase 2 OutputPolicy step
-  SUCCESS_CONTRACT: "success-contract"     // reserved for finalize-time checks
+  SUCCESS_CONTRACT: "success-contract",    // reserved for finalize-time checks
+  EVIDENCE_SUMMARY: "evidence-summary"     // P4-RQ C3: post-loop URL/domain coverage (audit-only)
 });
 
 function shortId() {
