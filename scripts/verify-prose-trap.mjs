@@ -219,7 +219,59 @@ function scenario4() {
     eventBusSrc.includes('"phase_gate_signal"'),
     "s4: phase_gate_signal must be part of the public EVENT_TYPES contract"
   );
+  assert(
+    eventBusSrc.includes('"error_budget_signal"'),
+    "s4: error_budget_signal must be part of the public EVENT_TYPES contract"
+  );
   console.log("  ✓ scenario 4: scaffold preserves phase-gate partial_success + event contract");
+}
+
+/* ── Scenario 5: error-budget exhaustion on repeated tool_failure ── */
+async function scenario5() {
+  const events = [];
+  // A registry where every call to launch_app returns success=false.
+  // Drives the tool_failure counter (max=2) to exhaustion in 2 turns.
+  const failingRegistry = {
+    list: () => [{
+      id: "launch_app",
+      description: "Open an app by name",
+      parameters: { type: "object", properties: { name: { type: "string" } } }
+    }],
+    get: (id) => (id === "launch_app"
+      ? { id: "launch_app", parameters: { type: "object", properties: { name: { type: "string" } } } }
+      : null),
+    call: async () => ({ success: false, observation: "permission denied", error: "EACCES" }),
+    evaluate: () => ({ risk_level: "low", requires_confirmation: false }),
+    calls: []
+  };
+  const runtime = createStubRuntime({ toolRegistry: failingRegistry, emittedEvents: events });
+  // Always-tool_call planner — args differ each turn to avoid the
+  // seenCalls dedupe (which would short-circuit to success).
+  const { planner, calls } = makeScriptedPlanner([
+    { type: "tool_call", tool: "launch_app", args: { name: "微信" } },
+    { type: "tool_call", tool: "launch_app", args: { name: "QQ" } },
+    { type: "tool_call", tool: "launch_app", args: { name: "钉钉" } }
+  ]);
+  const task = makeTask("帮我给 bob@example.com 发一封关于下周进度的邮件");
+  task.__runtime = runtime;
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner,
+    maxIterations: 8
+  });
+
+  assert(result.status === "partial_success", `s5: expected status=partial_success, got ${result.status}`);
+  assert(result.error_budget != null, "s5: error_budget metadata must be present");
+  assert(result.error_budget.event === "tool_failure", `s5: expected event=tool_failure, got ${result.error_budget.event}`);
+  assert(result.error_budget.snapshot.consumed_tool_failures === 2, "s5: tool_failure consumed should be 2");
+  // Loop should bail on iteration 1 (charge 1 absorbed; charge 2 exhausts), not run all 8.
+  assert(calls.length === 2, `s5: planner expected 2 calls (1 absorbed + 1 exhaust), got ${calls.length}`);
+  // SSE event for observability.
+  const budgetEvents = events.filter((e) => e.eventType === "error_budget_signal");
+  assert(budgetEvents.length === 1, `s5: expected 1 error_budget_signal, got ${budgetEvents.length}`);
+  console.log("  ✓ scenario 5: repeated tool_failure → error budget exhausts at 2/2 with metadata");
 }
 
 async function main() {
@@ -228,6 +280,7 @@ async function main() {
   await scenario2();
   await scenario3();
   scenario4();
+  await scenario5();
   console.log("Prose-trap retry verification passed.");
 }
 

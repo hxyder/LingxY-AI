@@ -22,6 +22,8 @@ import { detect as detectExplicitSearch } from "../../core/intent/signals/explic
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
+import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
+import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
 // UCA-077 P3-01: deterministic / connector planners + their helpers moved
 // into a `planners/` directory so this file owns the loop and provider
 // glue, not regex tables. defaultPlanner / repairToolArgs still live here
@@ -287,6 +289,25 @@ function latestConnectorFinal(transcript, userCommand = "") {
     && ["account_list_connected_accounts", "account_list_emails", "account_list_files", "account_list_events"].includes(item.tool)
   );
   return entry ? formatConnectorFinal(entry, userCommand) : null;
+}
+
+/**
+ * Mirrors `resultHasSubstance` in success-contract-validator.mjs but
+ * operates on the raw `result` object the registry returns (the
+ * validator inspects transcript entries that wrap that result). Used
+ * by the P4-EB error-budget wire-up to decide whether an
+ * external_web_read success returned anything usable.
+ */
+function toolResultHasSubstance(result) {
+  if (!result || typeof result !== "object") return false;
+  if (Array.isArray(result.results) && result.results.length > 0) return true;
+  if (Array.isArray(result.sources) && result.sources.length > 0) return true;
+  if (typeof result.observation === "string" && result.observation.trim().length > 32) return true;
+  for (const value of Object.values(result)) {
+    if (Array.isArray(value) && value.length > 0) return true;
+    if (typeof value === "string" && value.trim().length > 32) return true;
+  }
+  return false;
 }
 
 /**
@@ -889,6 +910,17 @@ export async function runToolAgentLoop({
   let proseTrapAttemptsUsed = 0;
   const PROSE_TRAP_MAX_ATTEMPTS = 1;
 
+  // P4-EB wire-up: aggregate error budget for this task. Catches the
+  // "tried 4 different tools, every one returned empty" pattern that
+  // validateStepGate's same-tool-streak detector misses (it only counts
+  // consecutive failures of the SAME tool from the tail). Overrides come
+  // from task_spec.execution_constraints.error_budget when SemanticRouter
+  // decides a task warrants more leniency; absent → safe defaults
+  // (1 / 2 / 2 / 1) per error-budget.mjs §17.4.2.
+  let errorBudget = createErrorBudget(
+    task?.task_spec?.execution_constraints?.error_budget
+  );
+
   // UCA-077 P3-02: each loop iteration emits a `tool_planner_decision`
   // event so SSE consumers can render the planner timeline (which planner
   // ran, what it returned, why we accepted or skipped it). The event is
@@ -1133,11 +1165,66 @@ export async function runToolAgentLoop({
       artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
     });
 
+    // P4-EB wire-up: charge the aggregate error budget. Skip the
+    // keyword planner — it short-circuits below after a single tool
+    // call and has no looping pathology to catch. The budget exists to
+    // detect LLM-driven loops that bounce between failing tools.
+    //
+    // Two kinds of event get charged here:
+    //   - tool_failure         result.success === false
+    //   - empty_search_result  external_web_read tool returned without
+    //                          substance (failure cases already counted
+    //                          as tool_failure above; this branch only
+    //                          fires when result.success === true but
+    //                          there's nothing usable in the observation)
+    // replan_round and no_file_change_run charge from elsewhere
+    // (route_reconsider hook + finalize gate respectively); not wired
+    // here.
+    let budgetEvent = null;
+    if (resolvedPlanner !== defaultPlanner) {
+      if (result.success === false) {
+        budgetEvent = "tool_failure";
+      } else if (groupsOfTool(tool.id).includes("external_web_read") && !toolResultHasSubstance(result)) {
+        budgetEvent = "empty_search_result";
+      }
+    }
+    if (budgetEvent) {
+      const charge = chargeBudget(errorBudget, budgetEvent);
+      errorBudget = charge.state;
+      appendAuditLog(runtime, task, "tool_loop.error_budget_charge", {
+        iteration,
+        event: budgetEvent,
+        exhausted: charge.exhausted,
+        snapshot: snapshotBudget(errorBudget)
+      });
+      if (charge.exhausted) {
+        runtime.emitTaskEvent?.("error_budget_signal", {
+          iteration,
+          event: budgetEvent,
+          reason: charge.reason,
+          snapshot: snapshotBudget(errorBudget)
+        });
+        const connectorFinal = latestConnectorFinal(transcript, task.user_command);
+        return {
+          status: "partial_success",
+          final_text: connectorFinal ?? `Error budget exhausted at iteration ${iteration}: ${charge.reason}`,
+          transcript,
+          artifacts: result.artifact_paths ?? [],
+          error_budget: {
+            event: budgetEvent,
+            reason: charge.reason,
+            iteration,
+            snapshot: snapshotBudget(errorBudget)
+          }
+        };
+      }
+    }
+
     // P4-08 wire-up: per-step phase gate. After every tool_result, ask
     // the validator whether the loop is on track. Skip for the keyword
     // planner (which short-circuits below) — it doesn't have the
     // looping pathology this gate exists to catch.
-    if (planner !== defaultPlanner) {
+    if (resolvedPlanner !== defaultPlanner) {
       const stepGate = validateStepGate(task.task_spec, transcript, {
         iteration,
         maxIterations
