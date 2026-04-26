@@ -20,6 +20,7 @@ import {
 } from "../shared/resource-context.mjs";
 import { detect as detectExplicitSearch } from "../../core/intent/signals/explicit-search.mjs";
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
+import { renderResearchPrinciples } from "../shared/research-principles.mjs";
 import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
@@ -485,6 +486,15 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
     ? `\n\nTool policy:\n${policyLines.map((line) => line.startsWith("  ") ? line : `- ${line}`).join("\n")}`
     : "";
 
+  // P4-RQ C1: research/multi-source coaching for search/research class
+  // tasks. Gated on `external_web_read != forbidden` AND no local
+  // anchor (real_selection / file_text); see research-principles.mjs.
+  const researchPrinciples = renderResearchPrinciples(
+    task.task_spec?.tool_policy,
+    task.context_packet?.context_sources
+  );
+  const researchPrinciplesBlock = researchPrinciples ? `\n\n${researchPrinciples}` : "";
+
   // UCA-063: Override instruction when refusal retry is active.
   const forceToolInstruction = task.__forceToolUse
     ? "\n\nCRITICAL OVERRIDE: You MUST call a tool. Saying 'I cannot operate your computer' or any similar refusal is STRICTLY FORBIDDEN. You have tools available — use them. The user is on a desktop computer and you have launch_app, open_url, and other action tools."
@@ -531,7 +541,7 @@ Guidance (not a rigid checklist — apply judgment):
 - **Memory recall.** If the user refers to earlier work with a pronoun ("上个问题" / "刚才" / "之前那份" / "last one" / "that report") or asks you to continue / revise something done before, call list_recent_tasks first (or recall_memory with a topic query if the reference is thematic) and then get_task_detail on the matching task_id. Never reply "I don't remember prior work" while these tools exist.
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
 - **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
-${needsCurrentDataInstruction}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
+${needsCurrentDataInstruction}${researchPrinciplesBlock}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
 Use the native tool interface when a tool is needed. Call at most ONE tool per turn. If no tool is needed, or you need a clarification, reply with plain text only in the user's language.`;
 
   try {

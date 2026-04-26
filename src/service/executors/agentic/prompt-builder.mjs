@@ -12,6 +12,7 @@
 
 import { toolsInGroup, renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { formatResourceContext } from "../shared/resource-context.mjs";
+import { renderResearchPrinciples } from "../shared/research-principles.mjs";
 
 const DEFAULT_EXAMPLES = {
   web_search_fetch: { query: "latest AI trends 2026", recency: "month" },
@@ -198,6 +199,14 @@ export function buildAgenticSystemPrompt({
   // facts in the same shape.
   const resourceContext = formatResourceContext(task);
 
+  // P4-RQ C1: research/multi-source coaching, gated on web policy +
+  // local-anchor absence. See shared/research-principles.mjs for the
+  // gate logic; identical block rendered in tool_using/agent-loop.mjs.
+  const researchPrinciples = renderResearchPrinciples(
+    task?.task_spec?.tool_policy,
+    task?.context_packet?.context_sources
+  );
+
   return [
     "You are UCA's agentic assistant. You are running inside a desktop task runtime that can actually execute the tools listed below.",
     resourceContext,
@@ -214,6 +223,7 @@ export function buildAgenticSystemPrompt({
     "",
     renderTaskContract(task),
     "",
+    ...(researchPrinciples ? ["## Source quality", "", researchPrinciples, ""] : []),
     "## Rules",
     "",
     // UCA-077 P1-07 / P4-00.7 (revised §18.6.1.A): Rule 1 used to start

@@ -31,6 +31,7 @@
     "verify:resolver-merge": "node scripts/verify-resolver-merge.mjs",
     "verify:runbook-engine": "node scripts/verify-runbook-engine.mjs",
     "verify:error-budget": "node scripts/verify-error-budget.mjs",
+    "verify:research-principles": "node scripts/verify-research-principles.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",
     "verify:ui-tokens": "node scripts/verify-ui-tokens.mjs",
