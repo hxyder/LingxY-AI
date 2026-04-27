@@ -1035,6 +1035,12 @@ async function submitTaskFromBody(runtime, body) {
   }
   // Tier 1 (translation) — handled by specialised executor (future: translation_fast)
   // For now fall through to normal pipeline which will route to translate executor.
+  const requestConversationId = typeof body.conversation_id === "string" && body.conversation_id
+    ? body.conversation_id
+    : (typeof body.conversationId === "string" && body.conversationId ? body.conversationId : null);
+  const requestParentTaskId = typeof body.parent_task_id === "string" && body.parent_task_id
+    ? body.parent_task_id
+    : (typeof body.parentTaskId === "string" && body.parentTaskId ? body.parentTaskId : null);
 
   if (body.filePaths?.length) {
     return submitFileTask({
@@ -1044,6 +1050,8 @@ async function submitTaskFromBody(runtime, body) {
       sourceApp: body.sourceApp,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
+      parentTaskId: requestParentTaskId,
+      conversationId: requestConversationId,
       background,
       runtime
     });
@@ -1055,6 +1063,8 @@ async function submitTaskFromBody(runtime, body) {
       userCommand: body.userCommand,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
+      parentTaskId: requestParentTaskId,
+      conversationId: requestConversationId,
       background,
       runtime
     });
@@ -1069,6 +1079,8 @@ async function submitTaskFromBody(runtime, body) {
       captureMode: body.captureMode,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride ?? "multi_modal",
+      parentTaskId: requestParentTaskId,
+      conversationId: requestConversationId,
       background,
       runtime
     });
@@ -1080,6 +1092,8 @@ async function submitTaskFromBody(runtime, body) {
       userCommand: body.userCommand,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
+      parentTaskId: requestParentTaskId,
+      conversationId: requestConversationId,
       background,
       runtime
     });
@@ -1091,6 +1105,8 @@ async function submitTaskFromBody(runtime, body) {
       executionMode: body.executionMode,
       sourceApp: body.sourceApp,
       captureMode: body.captureMode,
+      parentTaskId: requestParentTaskId,
+      conversationId: requestConversationId,
       background,
       runtime
     });
@@ -1113,18 +1129,14 @@ async function submitTaskFromBody(runtime, body) {
     // instead of each turn being an orphan root. Decomposition / plan
     // layers already skip when parentTaskId is set so we don't
     // re-decompose an inherited subtask.
-    parentTaskId: typeof body.parent_task_id === "string" && body.parent_task_id
-      ? body.parent_task_id
-      : (typeof body.parentTaskId === "string" && body.parentTaskId ? body.parentTaskId : null),
+    parentTaskId: requestParentTaskId,
     // P4-RQ K6: thread the client-stamped conversation_id through.
     // Frontend (overlay.js:3256) has been POSTing `conversation_id`
     // on every /task request since Phase 9 — pre-K6 the HTTP layer
     // dropped it on the floor, so K4's auto-resolution sat idle in
     // production. Accept both snake_case and camelCase per the
     // existing parent_task_id pattern.
-    conversationId: typeof body.conversation_id === "string" && body.conversation_id
-      ? body.conversation_id
-      : (typeof body.conversationId === "string" && body.conversationId ? body.conversationId : null),
+    conversationId: requestConversationId,
     background,
     runtime
   });

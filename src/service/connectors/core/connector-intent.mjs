@@ -10,9 +10,112 @@ const CONNECTOR_RESOURCE_PATTERN = /(邮件|邮箱|\bemails?\b|\bmail\b|gmail|ou
 const CONNECTOR_CONTEXT_PATTERN = /(我的|我连接|连接的|已连接|账户|账号|邮箱|邮件|日历|\bcalendar\b|gmail|outlook|google\s*drive|onedrive|云端文件|网盘|最近|最新|列出|查看|读取|具体|多少|哪个|发送|发给|寄|转发|分享|上传|\blist\b|\bshow\b|\bread\b|\brecent\b|\blatest\b|\bconnected\b|\bsend\b|\bmail\b|\bemail\b|\bforward\b|\bshare\b|\bupload\b)/i;
 const CONNECTOR_IDENTITY_PATTERN = /(邮箱|邮件|gmail|outlook|google|microsoft|连接|已连接|connected).{0,20}(账户|账号|帐号|邮箱地址)|(?:账户|账号|帐号).{0,20}(邮箱|邮件|gmail|outlook|google|microsoft|连接|已连接|connected)|我的邮箱账号|我的邮箱账户|具体账户/i;
 const CONNECTOR_SEARCH_TOPIC_PATTERN = /(新闻|资讯|动态|价格|股价|汇率|天气|航班|机票|酒店|\bnews\b|\bprice\b|\bstock\b|\bweather\b|\bflight\b|\bhotel\b)/i;
+const TIME_CONTEXT_PATTERN = /(今天|明天|后天|今晚|上午|下午|中午|晚上|早上|下周|本周|周[一二三四五六日天]|星期[一二三四五六日天]|\d{1,2}\s*(?:点|时)(?:\s*\d{1,2}\s*分)?|\d{1,2}\s*[:：]\s*\d{2}|\b(?:today|tomorrow|tonight|morning|afternoon|evening|next\s+week|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b|\b\d{1,2}\s*(?:am|pm)\b)/i;
+const SELF_AVAILABILITY_PATTERN = /(我|我的|俺|本人).{0,30}(有空|空闲|没空|忙不忙|有没有空|是否有空)|(?:\bam\s+I\b|\bI\s+am\b|\bI'm\b).{0,30}(?:available|availability|free|busy)|\bmy\s+(?:calendar|schedule|availability)\b.{0,30}(?:available|availability|free|busy)|(?:我有没有空|我是否有空|我明天.*有空|am\s+I\s+(?:free|available|busy))/i;
+const CALENDAR_ACTION_PATTERN = /(安排|约|预约|创建|新建|加到|加入|放到|排).{0,30}(会议|会面|日程|日历|meeting|event|appointment)|(?:schedule|book|set\s+up|create|add).{0,30}(?:meeting|event|appointment)/i;
+const CONDITIONAL_CALENDAR_ACTION_PATTERN = /(?:如果|if).{0,30}(?:有空|空闲|available|free).{0,50}(?:安排|约|预约|schedule|book|set\s+up|create|meeting|event|appointment)/i;
+
+/**
+ * Connector capability detection stays capability-oriented, not topical:
+ * calendar availability checks and meeting scheduling imply access to a
+ * connected calendar even when the user omits the literal word "日历".
+ *
+ * @param {string} value
+ * @returns {{ matched: boolean, domain: "calendar"|null, capabilities: string[], operation: "read"|"write"|"read_write"|null, reason: string|null }}
+ */
+export function detectConnectorCapabilityIntent(value = "") {
+  const text = String(value ?? "");
+  if (!text.trim()) {
+    return { matched: false, domain: null, capabilities: [], operation: null, reason: null };
+  }
+
+  const hasTimeContext = TIME_CONTEXT_PATTERN.test(text);
+  const asksOwnAvailability = SELF_AVAILABILITY_PATTERN.test(text);
+  const schedulesCalendarItem = CALENDAR_ACTION_PATTERN.test(text);
+  const conditionallySchedules = CONDITIONAL_CALENDAR_ACTION_PATTERN.test(text);
+
+  if ((asksOwnAvailability && hasTimeContext) || conditionallySchedules) {
+    const capabilities = schedulesCalendarItem || conditionallySchedules
+      ? ["calendarRead", "calendarWrite"]
+      : ["calendarRead"];
+    return {
+      matched: true,
+      domain: "calendar",
+      capabilities,
+      operation: capabilities.includes("calendarWrite") ? "read_write" : "read",
+      reason: "calendar availability/scheduling capability implied by user-owned availability or meeting action"
+    };
+  }
+
+  if (schedulesCalendarItem && hasTimeContext) {
+    return {
+      matched: true,
+      domain: "calendar",
+      capabilities: ["calendarWrite"],
+      operation: "write",
+      reason: "calendar scheduling action with time context"
+    };
+  }
+
+  return { matched: false, domain: null, capabilities: [], operation: null, reason: null };
+}
+
+/**
+ * Infer a coarse calendar query window from date/period words. This is only
+ * used to scope connector read tools; it never decides whether the user needs
+ * a connector by itself.
+ *
+ * @param {string} value
+ * @param {Date} now
+ * @returns {{ startTime: string, endTime: string } | null}
+ */
+export function inferCalendarTimeWindow(value = "", now = new Date()) {
+  const text = String(value ?? "");
+  if (!TIME_CONTEXT_PATTERN.test(text)) return null;
+
+  let dayOffset = 0;
+  if (/(后天|day\s+after\s+tomorrow)/i.test(text)) {
+    dayOffset = 2;
+  } else if (/(明天|tomorrow)/i.test(text)) {
+    dayOffset = 1;
+  } else if (/(下周|next\s+week)/i.test(text)) {
+    dayOffset = 7;
+  }
+
+  let startHour = 0;
+  let endHour = 24;
+  if (/(早上|上午|morning)/i.test(text)) {
+    startHour = 8;
+    endHour = 12;
+  } else if (/(下午|afternoon)/i.test(text)) {
+    startHour = 13;
+    endHour = 18;
+  } else if (/(晚上|今晚|evening|tonight)/i.test(text)) {
+    startHour = 18;
+    endHour = 22;
+  } else if (/(中午|noon)/i.test(text)) {
+    startHour = 11;
+    endHour = 14;
+  }
+
+  const start = new Date(now);
+  start.setDate(start.getDate() + dayOffset);
+  start.setHours(startHour, 0, 0, 0);
+
+  const end = new Date(start);
+  if (endHour === 24) {
+    end.setDate(end.getDate() + 1);
+    end.setHours(0, 0, 0, 0);
+  } else {
+    end.setHours(endHour, 0, 0, 0);
+  }
+
+  return { startTime: start.toISOString(), endTime: end.toISOString() };
+}
 
 export function isConnectorDomainRequest(value = "") {
   const text = String(value ?? "");
+  if (detectConnectorCapabilityIntent(text).matched) return true;
   if (!CONNECTOR_RESOURCE_PATTERN.test(text)) return false;
 
   // "最新 Gmail 新闻" is a web/news request, while "我的 Gmail 最新邮件"

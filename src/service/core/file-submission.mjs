@@ -44,6 +44,7 @@ export async function submitFileTask({
   sourceApp = "explorer.exe",
   executionMode,
   parentTaskId = null,
+  conversationId = null,
   retryCount = 0,
   executorOverride = null,
   background = false,
@@ -103,6 +104,7 @@ export async function submitFileTask({
       runtime,
       executionMode,
       parentTaskId,
+      conversationId,
       retryCount,
       executorOverride: executorOverride ?? null,
       skipDecomposition: false
@@ -122,6 +124,7 @@ export async function submitFileTask({
       runtime,
       executionMode,
       parentTaskId,
+      conversationId,
       retryCount,
       executorOverride: executorOverride ?? null,
       skipDecomposition: false
@@ -138,6 +141,7 @@ export async function submitFileTask({
     userCommand,
     executionMode,
     parentTaskId,
+    conversationId,
     retryCount,
     executorOverride: preferredExecutorOverride,
     runtime  // G3b: enables parent_task_summary enrichment

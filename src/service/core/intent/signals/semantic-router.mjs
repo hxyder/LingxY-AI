@@ -27,7 +27,8 @@
  *                  Per the SignalKind taxonomy: hint = pattern +
  *                  conventional implication.
  *   hint         — { web_policy, source_scope, research_depth,
- *                    output_kind, executor, confidence } —
+ *                    output_kind, executor, primary_intent,
+ *                    source_mode, needed_capabilities, confidence } —
  *                  the routing axes consumers may want to read.
  *   evidence     — single entry pointing back at SR with a
  *                  truncated reason for trace.
@@ -69,6 +70,19 @@ export function detect(_text, contextPacket = {}) {
       research_depth: decision.research_depth ?? null,
       output_kind: decision.output_kind ?? null,
       executor: decision.executor ?? null,
+      primary_intent: decision.primary_intent ?? null,
+      domain: decision.domain ?? null,
+      expected_output: decision.expected_output ?? null,
+      needs_external_info: decision.needs_external_info === true,
+      needs_current_information: decision.needs_current_information === true,
+      needs_user_files: decision.needs_user_files === true,
+      needs_tool_use: decision.needs_tool_use === true,
+      needed_capabilities: Array.isArray(decision.needed_capabilities)
+        ? decision.needed_capabilities.slice()
+        : [],
+      source_mode: decision.source_mode ?? null,
+      complexity: decision.complexity ?? null,
+      risk_level: decision.risk_level ?? null,
       confidence
     }
   };

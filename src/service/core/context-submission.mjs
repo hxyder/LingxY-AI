@@ -754,6 +754,7 @@ export async function submitContextTask({
         contextPacket: routerEnrichedContext,
         userCommand,
         executionMode,
+        conversationId,
         subtasks: decomposition.subtasks,
         submitChild: ({ subtask, index, parentTaskId: compositeId }) =>
           submitContextTask({
@@ -769,6 +770,7 @@ export async function submitContextTask({
             runtime,
             executionMode,
             parentTaskId: compositeId,
+            conversationId,
             childIndex: index,
             executorOverride: subtask.suggested_executor ?? null,
             skipDecomposition: true

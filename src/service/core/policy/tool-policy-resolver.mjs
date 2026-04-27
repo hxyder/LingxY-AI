@@ -22,15 +22,18 @@
  *   3.  explicit_search (strong)              → required   (E5 — structural hard signal symmetry)
  *   4.  weak_freshness alone                  → forbidden  (kept-as-evidence only)
  *   5.  default                               → forbidden
+ *   6.  SR operational failure fallback       → optional   (framework degraded;
+ *                                                         allow tool-capable
+ *                                                         executor to decide)
  *
  * Removed in E3 stage C1 (commit fae6957): the prior step
  *   "topic_hint (strong) + scope=none → required"
  * no longer exists. topic_hint is observability-only at the
  * deterministic layer now; SR + EvidencePolicy merge owns
- * topical routing. When SR is unavailable, the conservative
- * fallback is web=forbidden (default rule 5). topic_hint still
- * fires in the detector and surfaces in the SR prompt + decision
- * trace, but does not escalate web policy on its own.
+ * topical routing. If SR fails operationally (timeout / no provider /
+ * exception / schema invalid), EvidencePolicy degrades to optional web
+ * when no hard forbid/local anchor exists; it does NOT resurrect
+ * topic regex as a deterministic required path.
  *
  * The resolver never returns "required" off a weak signal alone — that was
  * the root cause of the "最近这个框架很慢 → 误联网" symptom.
@@ -53,10 +56,12 @@
  */
 
 import { toolsInGroup } from "./policy-groups.mjs";
+import { deriveExternalWebPolicyFromIntentRoute } from "./evidence-policy.mjs";
 import { PENDING_OFFER_EXTERNAL_INTENTS } from "../intent/signals/pending-offer.mjs";
 
 const LOCAL_SCOPES = new Set(["uploaded_files", "current_context", "local_project", "selection"]);
 const PRIMARY_GROUP = "external_web_read";
+const SR_OPERATIONAL_FAILURE_CODES = new Set(["timeout", "no_provider", "exception", "schema_invalid"]);
 
 /**
  * @typedef {Object} ToolPolicy
@@ -81,7 +86,13 @@ export function resolveToolPolicy({ signals, contextPacket = {}, text = "" } = {
   // is "ambiguous" (no strong deterministic signal), the LLM suggestion
   // can upgrade an otherwise default-forbidden policy. Non-ambiguous
   // cases ignore the stamped decision — rules are still authoritative.
-  return mergeSemanticRouterDecision({ deterministicPolicy: det, signals, contextPacket, text });
+  const merged = mergeSemanticRouterDecision({ deterministicPolicy: det, signals, contextPacket, text });
+  return mergeSemanticRouterOperationalFallback({
+    deterministicPolicy: merged,
+    signals,
+    contextPacket,
+    text
+  });
 }
 
 /**
@@ -420,16 +431,64 @@ export function mergeSemanticRouterDecision({
     return stampResearchHint(deterministicPolicy, sr);
   }
 
-  const reason = `Semantic router suggested ${sr.web_policy} (confidence=${typeof sr.confidence === "number" ? sr.confidence.toFixed(2) : "?"}); deterministic baseline was ${detMode}.`;
+  const evidencePolicy = deriveExternalWebPolicyFromIntentRoute(sr);
+  const nextMode = evidencePolicy?.mode ?? sr.web_policy;
+  const reason = evidencePolicy?.reason
+    ?? `Semantic router suggested ${sr.web_policy} (confidence=${typeof sr.confidence === "number" ? sr.confidence.toFixed(2) : "?"}); deterministic baseline was ${detMode}.`;
   const merged = buildExternalWebReadPolicy(
-    sr.web_policy,
+    nextMode,
     reason,
     [
+      ...(evidencePolicy?.evidence ?? []),
       { type: "semantic_router", source: "semantic_router", reason: String(sr.reason ?? "").slice(0, 200) },
       ...(deterministicPolicy?.web_search_fetch?.evidence ?? [])
     ]
   );
   return stampResearchHint(merged, sr);
+}
+
+/**
+ * EvidencePolicy fallback for SemanticRouter operational failures.
+ *
+ * SR timeout / missing provider / adapter exception / malformed provider
+ * payload means the semantic layer could not produce a judgement. It does
+ * NOT mean the user forbade tools. When the request is exactly the kind
+ * of ambiguous non-hard-fact input that would have gone to SR, keep the
+ * registry guard in place but let a tool-capable executor decide whether
+ * external_web_read is useful by downgrading deterministic forbidden to
+ * optional.
+ *
+ * Hard facts still win because shouldConsultSemanticRouter returns false
+ * for explicit_no_search and fact-kind local anchors.
+ */
+export function mergeSemanticRouterOperationalFallback({
+  deterministicPolicy,
+  signals,
+  contextPacket = {},
+  text = ""
+} = {}) {
+  const rejection = contextPacket?.semantic_router_rejection;
+  if (!rejection || typeof rejection !== "object") return deterministicPolicy;
+  if (contextPacket?.semantic_router_decision) return deterministicPolicy;
+  if (!SR_OPERATIONAL_FAILURE_CODES.has(rejection.code)) return deterministicPolicy;
+  if (!shouldConsultSemanticRouter({ signals, contextPacket, text })) return deterministicPolicy;
+
+  const detMode = deterministicPolicy?.policy_groups?.external_web_read?.mode
+    ?? deterministicPolicy?.web_search_fetch?.mode;
+  if (detMode !== "forbidden") return deterministicPolicy;
+
+  return buildExternalWebReadPolicy(
+    "optional",
+    `SemanticRouter unavailable (${rejection.code}); no hard no-search/local anchor was present, so external_web_read is allowed as an optional degraded fallback for the tool-capable executor.`,
+    [
+      {
+        type: "semantic_router",
+        source: "semantic_router",
+        reason: `operational failure: ${rejection.code}`
+      },
+      ...(deterministicPolicy?.web_search_fetch?.evidence ?? [])
+    ]
+  );
 }
 
 /**
@@ -492,4 +551,3 @@ export function buildExternalWebReadPolicy(mode, reason, evidence) {
   }
   return policy;
 }
-

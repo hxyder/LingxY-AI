@@ -13,6 +13,7 @@ import { isConnectorDomainRequest } from "../connectors/core/connector-intent.mj
 import { extractPureLaunchApp } from "./router/fast-path-router.mjs";
 import { extractAllSignals } from "./intent/signals/index.mjs";
 import { resolveToolPolicy, buildExternalWebReadPolicy } from "./policy/tool-policy-resolver.mjs";
+import { intentRouteNeedsConnector } from "./policy/evidence-policy.mjs";
 import { enforcePolicyInvariants } from "./policy/policy-invariants.mjs";
 import { inferResearchQuality } from "./policy/research-quality.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
@@ -511,7 +512,10 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   // bug (Issue β / RR-03): hand-built `{ web_search_fetch: forbidden }`
   // didn't cover sibling `web_search` / `fetch_url_content` and the LLM
   // bypassed the wall by switching tools.
-  const connectorDomainRequest = isConnectorDomainRequest(text);
+  const srDecision = enrichedContext?.semantic_router_decision;
+  const srRejection = enrichedContext?.semantic_router_rejection;
+  const connectorDomainRequest = isConnectorDomainRequest(text)
+    || intentRouteNeedsConnector(srDecision);
   const rawPolicy = connectorDomainRequest
     ? buildExternalWebReadPolicy(
         "forbidden",
@@ -531,17 +535,23 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   // stamps these fields (the default router has no adapter wired); the
   // stamp is read here so the §19 follow-up that wires the async
   // preflight in submission paths needs zero changes to task-spec.
-  const srDecision = enrichedContext?.semantic_router_decision;
-  const srRejection = enrichedContext?.semantic_router_rejection;
   if (srDecision && typeof srDecision === "object") {
     tracker.record(STAGES.SEMANTIC_ROUTER, {
       output: {
         web_policy: srDecision.web_policy ?? null,
         source_scope: srDecision.source_scope ?? null,
+        primary_intent: srDecision.primary_intent ?? null,
+        expected_output: srDecision.expected_output ?? null,
+        source_mode: srDecision.source_mode ?? null,
+        needed_capabilities: Array.isArray(srDecision.needed_capabilities)
+          ? srDecision.needed_capabilities
+          : [],
+        needs_external_info: srDecision.needs_external_info ?? null,
+        needs_current_information: srDecision.needs_current_information ?? null,
         executor: srDecision.executor ?? null,
         confidence: typeof srDecision.confidence === "number" ? srDecision.confidence : null
       },
-      reason: srDecision.reason ?? "Semantic router returned a decision.",
+      reason: srDecision.rationale_summary ?? srDecision.reason ?? "Semantic router returned a decision.",
       evidence: [{ type: "semantic_router", source: "semantic_router", reason: "decision stamped on contextPacket" }]
     });
   } else if (srRejection && typeof srRejection === "object") {
@@ -618,7 +628,8 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     contextSources,
     signals,
     toolPolicyMode: toolPolicy?.policy_groups?.external_web_read?.mode,
-    srResearchDepth: enrichedContext?.semantic_router_decision?.research_depth ?? null
+    srResearchDepth: enrichedContext?.semantic_router_decision?.research_depth ?? null,
+    srSourceMode: enrichedContext?.semantic_router_decision?.source_mode ?? null
   });
 
   // P4-RQ G4: routing_status — propagate SR availability to

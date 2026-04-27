@@ -106,7 +106,8 @@ export const DEEP_RESEARCH_THRESHOLDS = Object.freeze({
  *   contextSources?: object,
  *   signals?: object,
  *   toolPolicyMode?: "forbidden" | "optional" | "required",
- *   srResearchDepth?: "single_lookup" | "multi_source" | "deep_research" | "unknown" | null
+ *   srResearchDepth?: "single_lookup" | "multi_source" | "deep_research" | "unknown" | null,
+ *   srSourceMode?: "no_external" | "provided_context" | "single_lookup" | "multi_source_research" | "deep_research" | "unknown" | null
  * }} input
  * @returns {ResearchQuality | null}
  */
@@ -114,7 +115,8 @@ export function inferResearchQuality({
   contextSources = null,
   signals = null,
   toolPolicyMode = null,
-  srResearchDepth = null
+  srResearchDepth = null,
+  srSourceMode = null
 } = {}) {
   // Web fully forbidden → no research enforcement applies. The
   // validator never runs research-quality checks for this case.
@@ -141,13 +143,21 @@ export function inferResearchQuality({
     };
   }
 
+  if (srSourceMode === "single_lookup" || srResearchDepth === "single_lookup") {
+    return {
+      profile: RESEARCH_PROFILES.SINGLE_LOOKUP,
+      ...SINGLE_LOOKUP_THRESHOLDS,
+      reason: "IntentRoute classified the request as single_lookup."
+    };
+  }
+
   // K3: SR-driven deep_research escalation. SR's `research_depth =
   // "deep_research"` only fires for explicit thorough/comprehensive
   // phrasings (taught in the SR prompt; see semantic-router.mjs
   // RESEARCH_DEPTHS). Stricter thresholds (5/3) than the default
   // multi_source_research (3/2). Same single_source_digest_satisfies=false
   // — a roundup never satisfies either profile.
-  if (srResearchDepth === "deep_research") {
+  if (srSourceMode === "deep_research" || srResearchDepth === "deep_research") {
     return {
       profile: RESEARCH_PROFILES.DEEP_RESEARCH,
       ...DEEP_RESEARCH_THRESHOLDS,

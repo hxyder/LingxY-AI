@@ -54,9 +54,26 @@ for (const input of CASES) {
 assert.equal(classifyGoal("打开word"), "launch_and_act",
   "pure launch must still be launch_and_act");
 
-// 3) Ordinary QA is still QA. ───────────────────────────────────────────
-assert.equal(classifyGoal("今天纽约天气怎么样"), "search_and_answer",
-  "weather query still connects to search_and_answer (webDataNeeded path)");
+// 3) Ordinary QA is still QA. Topical/current-info routing now comes from
+// SemanticRouter, not the retired webDataNeeded topic regex.
+assert.equal(classifyGoal("今天纽约天气怎么样"), "qa",
+  "without SR, topical/current-info words must not reintroduce topic-regex goal routing");
+assert.equal(
+  createTaskSpec("今天纽约天气怎么样", {
+    semantic_router_decision: {
+      source_scope: "external_world",
+      web_policy: "required",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "tool_using",
+      research_depth: "single_lookup",
+      confidence: 0.86,
+      reason: "weather requires current external info"
+    }
+  }, {}).goal,
+  "search_and_answer",
+  "with SR judgement, current-info queries promote through semantic_router evidence"
+);
 assert.equal(classifyGoal("What is 2 + 2?"), "qa",
   "trivial qa stays on fast");
 

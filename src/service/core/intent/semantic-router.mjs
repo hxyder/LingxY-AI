@@ -3,9 +3,9 @@
  *
  * The SemanticRouter is the LLM-driven understanding layer. It takes the
  * user's text plus the context packet plus the existing signal bundle,
- * asks a strict-schema chat model to map them onto a routing decision
- * (source_scope / web_policy / output_kind / executor), and returns that
- * decision to the caller — typically tool-policy-resolver (P4-03).
+ * asks a strict-schema chat model to map them onto an auditable
+ * IntentRoute judgement, and returns that decision to the caller —
+ * typically EvidencePolicy / tool-policy-resolver (P4-03+).
  *
  * Critical contract — what this module is NOT:
  *
@@ -50,6 +50,68 @@ const OUTPUT_KINDS = Object.freeze([
 const EXECUTORS = Object.freeze([
   "fast", "tool_using", "agentic", "translate", "multi_modal", "kimi"
 ]);
+const PRIMARY_INTENTS = Object.freeze([
+  "qa",
+  "writing",
+  "coding",
+  "debugging",
+  "architecture_design",
+  "research",
+  "file_analysis",
+  "data_analysis",
+  "artifact_generation",
+  "automation",
+  "computer_control",
+  "email_calendar_action",
+  "unknown"
+]);
+const DOMAINS = Object.freeze([
+  "general",
+  "agent_harness",
+  "dairy_science",
+  "finance",
+  "tax",
+  "career",
+  "software",
+  "design",
+  "academic_writing",
+  "other"
+]);
+const EXPECTED_OUTPUTS = Object.freeze([
+  "direct_answer",
+  "step_by_step",
+  "code",
+  "markdown_doc",
+  "table",
+  "email_draft",
+  "ppt",
+  "image",
+  "plan",
+  "execution",
+  "artifact"
+]);
+const SOURCE_MODES = Object.freeze([
+  "no_external",
+  "provided_context",
+  "single_lookup",
+  "multi_source_research",
+  "deep_research",
+  "unknown"
+]);
+const TOOL_CAPABILITIES = Object.freeze([
+  "external_web_read",
+  "file_read",
+  "artifact_generation",
+  "code_execution",
+  "browser_control",
+  "email_calendar_action",
+  "desktop_action",
+  "image_understanding",
+  "image_generation",
+  "none"
+]);
+const COMPLEXITIES = Object.freeze(["low", "medium", "high"]);
+const RISK_LEVELS = Object.freeze(["low", "medium", "high"]);
 // P4-RQ C2 + K3: research_depth is a SUGGESTION the LLM emits
 // alongside web_policy. `single_lookup` ⇒ "this is a single fact /
 // single URL summary"; `multi_source` ⇒ "this is research / news /
@@ -87,10 +149,34 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
       artifact_required: { type: "boolean" },
       executor: { type: "string", enum: [...EXECUTORS] },
       research_depth: { type: "string", enum: [...RESEARCH_DEPTHS] },
+      primary_intent: { type: "string", enum: [...PRIMARY_INTENTS] },
+      domain: { type: "string", enum: [...DOMAINS] },
+      user_goal: { type: "string", maxLength: 400 },
+      expected_output: { type: "string", enum: [...EXPECTED_OUTPUTS] },
+      needs_external_info: { type: "boolean" },
+      needs_current_information: { type: "boolean" },
+      needs_user_files: { type: "boolean" },
+      needs_tool_use: { type: "boolean" },
+      needed_capabilities: {
+        type: "array",
+        items: { type: "string", enum: [...TOOL_CAPABILITIES] },
+        maxItems: 6
+      },
+      source_mode: { type: "string", enum: [...SOURCE_MODES] },
+      complexity: { type: "string", enum: [...COMPLEXITIES] },
+      risk_level: { type: "string", enum: [...RISK_LEVELS] },
+      rationale_summary: { type: "string", maxLength: 400 },
       confidence: { type: "number", minimum: 0, maximum: 1 },
       reason: { type: "string", maxLength: 400 }
     },
-    required: ["source_scope", "web_policy", "output_kind", "artifact_required", "executor", "research_depth", "confidence", "reason"]
+    required: [
+      "source_scope", "web_policy", "output_kind", "artifact_required",
+      "executor", "research_depth", "primary_intent", "domain",
+      "user_goal", "expected_output", "needs_external_info",
+      "needs_current_information", "needs_user_files", "needs_tool_use",
+      "needed_capabilities", "source_mode", "complexity", "risk_level",
+      "confidence", "rationale_summary", "reason"
+    ]
   }
 });
 
@@ -102,7 +188,20 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
  * @property {boolean}                          artifact_required
  * @property {typeof EXECUTORS[number]}         executor
  * @property {typeof RESEARCH_DEPTHS[number]}   research_depth
+ * @property {typeof PRIMARY_INTENTS[number]}   primary_intent
+ * @property {typeof DOMAINS[number]}           domain
+ * @property {string}                           user_goal
+ * @property {typeof EXPECTED_OUTPUTS[number]}  expected_output
+ * @property {boolean}                          needs_external_info
+ * @property {boolean}                          needs_current_information
+ * @property {boolean}                          needs_user_files
+ * @property {boolean}                          needs_tool_use
+ * @property {typeof TOOL_CAPABILITIES[number][]} needed_capabilities
+ * @property {typeof SOURCE_MODES[number]}      source_mode
+ * @property {typeof COMPLEXITIES[number]}      complexity
+ * @property {typeof RISK_LEVELS[number]}       risk_level
  * @property {number}                           confidence
+ * @property {string}                           rationale_summary
  * @property {string}                           reason
  */
 
@@ -195,7 +294,7 @@ export function createSemanticRouter(opts = {}) {
           messages: buildMessages({ text, contextPacket, signals }),
           tools: [SEMANTIC_DECISION_TOOL],
           tool_choice: { type: "tool", name: SEMANTIC_DECISION_TOOL.name },
-          maxTokens: 256
+          maxTokens: 768
         }),
         timeoutMs
       );
@@ -338,7 +437,8 @@ function buildMessages({ text, contextPacket, signals }) {
   // exactly what each enum value means so it doesn't drift. The full
   // schema is enforced server-side via the tool_use input_schema.
   const system = [
-    "You are LingxY's routing classifier. Read the user's request plus the context packet and signal bundle, then call `route_task` ONCE with your best assessment.",
+    "You are LingxY's IntentRoute classifier. Read the user's request plus the context packet and signal bundle, then call `route_task` ONCE with your best structured judgement.",
+    "You do NOT execute tools and you do NOT make final policy. You describe intent, evidence needs, risk, output shape, and capability needs. Deterministic policy layers merge your judgement with hard facts before anything runs.",
     "",
     "Field guidance:",
     "- source_scope: pick the *most specific* scope. uploaded_files / selection beat current_context; current_context beats local_project; local_project beats none. external_world is for explicit online research.",
@@ -346,12 +446,21 @@ function buildMessages({ text, contextPacket, signals }) {
     "- output_kind: conversation for chat replies; pick the file kind (docx/pptx/xlsx/pdf/markdown/...) when the user asked for a document.",
     "- executor: fast for short conversational answers; tool_using for tool-driven actions; agentic for multi-step planning with artifacts; multi_modal for image-led tasks.",
     "- research_depth: `single_lookup` when the user asks for one fact / one URL / one article (weather, stock price, a specific page they shared, single-fact recall). `multi_source` when independent sources matter — news, current events, competitor research, open-source surveys, comparison shopping, fact-checking, market/price scans. `deep_research` ONLY when the user explicitly asks for thorough / comprehensive / in-depth / exhaustive coverage (e.g. \"深入调研\", \"全面对比\", \"彻底搜一下\", \"comprehensive review\", \"exhaustive comparison\", \"deep dive\"). Do NOT pick deep_research just because the topic is broad — the user must have asked for depth verbatim. `unknown` only when web_policy is `forbidden` or you genuinely cannot tell.",
+    "- primary_intent/domain/user_goal: classify what the user is trying to accomplish in plain terms. Domain is context for audit, not an execution command.",
+    "- expected_output: classify the form the user wants back: direct answer, step-by-step, code, markdown doc, table, plan, execution, or artifact.",
+    "- needs_external_info / needs_current_information: true when the answer depends on information outside the current context, especially volatile/current facts. A topic label alone is not a hard rule; use semantic judgement.",
+    "- needs_user_files: true when the user asks to use attached/uploaded/local files or selected text.",
+    "- needs_tool_use: true when answering well requires a capability outside plain chat. Put capability names in needed_capabilities (for example external_web_read, file_read, artifact_generation), NOT concrete tool IDs such as web_search_fetch.",
+    "- source_mode: no_external for stable/general answers; provided_context for local selection/files; single_lookup for one URL/article/fact; multi_source_research when independent sources matter; deep_research only for explicit depth asks.",
+    "- complexity/risk_level: classify execution complexity and user/safety risk. High risk does not mean refuse; it means policy should be careful.",
     "- confidence: be honest. 0.5 means \"could go either way\", 0.9 means \"only one reading fits\". Low confidence triggers a fallback to the deterministic resolver.",
-    "- reason: one short sentence in the user's language; this is shown to the operator, not the user.",
+    "- rationale_summary/reason: short operator-facing summaries in the user's language. Do not include hidden chain-of-thought.",
     "",
     "**Context source ranking** — `context_sources` separates real local content from background-only blocks. `real_selection`, `browser_page`, `file_text`, `uploaded_files`, `uploaded_images` are local-only anchors: they constrain the task to local data and you should NOT pick web_policy=required just because the user attached something. `conversation_history`, `rag_background`, `parent_task_context` are BACKGROUND-ONLY: they are previous turns or memory recalls injected for continuity. Never treat them as the user's current selection. A weather/news/stock question with only background_only sources still needs `web_policy=required`.",
     "",
-    "**Signal-kind ranking** — fact > hint > assumption. A signal with `kind=fact` (e.g. `source_scope` from an attachment) is ground truth and you should not overrule it. `hint` is an explicit phrase pattern in the user text — strong but conventional. `assumption` is the system interpreting an indirect reference (e.g. \"这个\" → current_context); you may second-guess if other signals contradict."
+    "**Signal-kind ranking** — fact > hint > assumption. A signal with `kind=fact` (e.g. `source_scope` from an attachment) is ground truth and you should not overrule it. `hint` is an explicit phrase pattern in the user text — strong but conventional. `assumption` is the system interpreting an indirect reference (e.g. \"这个\" → current_context); you may second-guess if other signals contradict.",
+    "",
+    "**Regex boundary** — regex-derived signals are evidence, not the final intent classifier. Topic hints (weather/news/finance/etc.) help you understand the request but do not by themselves execute tools. The policy layer decides final constraints."
   ].join("\n");
 
   // Strip out fields we don't want to feed the model. ctx.text and url
@@ -536,9 +645,51 @@ function validateDecision(decision) {
   if (!RESEARCH_DEPTHS.includes(decision.research_depth)) {
     return { ok: false, reason: `research_depth=${decision.research_depth} not in enum` };
   }
+  if (!PRIMARY_INTENTS.includes(decision.primary_intent)) {
+    return { ok: false, reason: `primary_intent=${decision.primary_intent} not in enum` };
+  }
+  if (!DOMAINS.includes(decision.domain)) {
+    return { ok: false, reason: `domain=${decision.domain} not in enum` };
+  }
+  if (typeof decision.user_goal !== "string") {
+    return { ok: false, reason: "user_goal must be a string" };
+  }
+  if (!EXPECTED_OUTPUTS.includes(decision.expected_output)) {
+    return { ok: false, reason: `expected_output=${decision.expected_output} not in enum` };
+  }
+  for (const field of [
+    "needs_external_info",
+    "needs_current_information",
+    "needs_user_files",
+    "needs_tool_use"
+  ]) {
+    if (typeof decision[field] !== "boolean") {
+      return { ok: false, reason: `${field} must be boolean` };
+    }
+  }
+  if (!Array.isArray(decision.needed_capabilities)) {
+    return { ok: false, reason: "needed_capabilities must be an array" };
+  }
+  for (const capability of decision.needed_capabilities) {
+    if (!TOOL_CAPABILITIES.includes(capability)) {
+      return { ok: false, reason: `needed_capabilities includes invalid capability: ${capability}` };
+    }
+  }
+  if (!SOURCE_MODES.includes(decision.source_mode)) {
+    return { ok: false, reason: `source_mode=${decision.source_mode} not in enum` };
+  }
+  if (!COMPLEXITIES.includes(decision.complexity)) {
+    return { ok: false, reason: `complexity=${decision.complexity} not in enum` };
+  }
+  if (!RISK_LEVELS.includes(decision.risk_level)) {
+    return { ok: false, reason: `risk_level=${decision.risk_level} not in enum` };
+  }
   if (typeof decision.confidence !== "number"
       || decision.confidence < 0 || decision.confidence > 1) {
     return { ok: false, reason: "confidence must be a number in [0, 1]" };
+  }
+  if (typeof decision.rationale_summary !== "string") {
+    return { ok: false, reason: "rationale_summary must be a string" };
   }
   if (typeof decision.reason !== "string") {
     return { ok: false, reason: "reason must be a string" };
@@ -591,6 +742,13 @@ export {
   OUTPUT_KINDS,
   EXECUTORS,
   SIGNAL_KINDS,
+  PRIMARY_INTENTS,
+  DOMAINS,
+  EXPECTED_OUTPUTS,
+  SOURCE_MODES,
+  TOOL_CAPABILITIES,
+  COMPLEXITIES,
+  RISK_LEVELS,
   DEFAULT_TIMEOUT_MS,
   DEFAULT_CACHE_TTL_MS,
   DEFAULT_CONFIDENCE_THRESHOLD

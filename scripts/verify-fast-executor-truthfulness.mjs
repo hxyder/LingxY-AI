@@ -231,7 +231,10 @@ it("G6b: SR timeout → routing_degraded=true (transient operational failure)", 
   assert.equal(spec.routing_status, "sr_timeout");
   assert.equal(spec.routing_degraded, true,
     "user-reported reproduction: SR timeout for research-class query must trigger routing_degraded");
-  assert.equal(spec.suggested_executor, "fast");
+  assert.equal(spec.tool_policy.web_search_fetch.mode, "optional",
+    "SR operational failure must not be interpreted as forbidden");
+  assert.equal(spec.suggested_executor, "tool_using",
+    "degraded optional fallback must keep a tool-capable executor");
 });
 
 it("G6b: SR exception → routing_degraded=true", () => {
@@ -297,6 +300,8 @@ it("G6b reproduction: '下周天气' + SR timeout → routing_degraded=true (the
   }, {});
   assert.equal(spec.routing_degraded, true,
     "G6b must catch '下周天气 + SR timeout' (the post-G5 reproduction)");
+  assert.equal(spec.suggested_executor, "tool_using",
+    "post-IntentRoute fallback routes to tool_using instead of fast refusal");
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

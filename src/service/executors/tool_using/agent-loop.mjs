@@ -392,6 +392,11 @@ function buildConversationMessages(userCommand, transcript, initialFilePaths = [
         content: entry.retryHint
           ?? "你上面说要执行操作，但没有发出 tool_call。如果确实需要操作，请直接调用工具；如果只是回答/解释而不需要操作，请重新输出最终答复（纯文本）。"
       });
+    } else if (entry.type === "runbook_guidance") {
+      messages.push({
+        role: "user",
+        content: `[Runbook recovery: ${entry.runbook_id}]\n${entry.instruction}`
+      });
     }
   }
 
@@ -428,6 +433,22 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
   // Ambiguous connector commands intentionally fall through to the LLM.
   const deterministic = planDeterministicToolCall(task.user_command, catalog);
   if (deterministic) return deterministic;
+
+  // Connector capability preflight is part of the execution framework, not a
+  // prompt wish. Even when a chat planner is available, first gather the
+  // observable connected-account state for connector-domain requests (calendar
+  // availability, recent mail, drive listing). The LLM then reasons over the
+  // real observation and may perform follow-up writes such as creating an
+  // event. This prevents fast/prose hallucinations and avoids relying on the
+  // model to discover the first read tool from a long tool list.
+  const connectorReadAlreadyCalled = transcript.some((entry) =>
+    entry?.type === "tool_result"
+    && ["account_list_connected_accounts", "account_list_emails", "account_list_files", "account_list_events"].includes(entry.tool)
+  );
+  if (!connectorReadAlreadyCalled && task.task_spec?.connector_domain === true) {
+    const connector = planConnectorToolCall(task.user_command, catalog);
+    if (connector) return connector;
+  }
 
   // UCA-077 P1-06: web_search_fetch is required iff tool-policy says so.
   // The previous OR-with-regex condition meant a positive regex hit could
@@ -969,6 +990,7 @@ async function _runToolAgentLoopCore({
   let errorBudget = createErrorBudget(
     task?.task_spec?.execution_constraints?.error_budget
   );
+  const firedRunbooks = new Set();
 
   // UCA-077 P3-02: each loop iteration emits a `tool_planner_decision`
   // event so SSE consumers can render the planner timeline (which planner
@@ -1306,6 +1328,29 @@ async function _runToolAgentLoopCore({
           terminal_action: runbook.terminal_action,
           step_count: runbook.steps.length
         });
+      }
+
+      if (runbook && !firedRunbooks.has(runbook.id) && iteration < maxIterations - 1) {
+        const instruction = runbook.steps
+          .map((step, index) => `${index + 1}. ${step.description}`)
+          .join("\n");
+        firedRunbooks.add(runbook.id);
+        transcript.push({
+          type: "runbook_guidance",
+          runbook_id: runbook.id,
+          instruction: `${instruction}\n\nExecute the recovery with a different tool call or different arguments now. Do not repeat a failed identical tool+args pair.`
+        });
+        runtime.emitTaskEvent?.("runbook_signal", {
+          iteration,
+          runbook_id: runbook.id,
+          terminal_action: runbook.terminal_action
+        });
+        appendAuditLog(runtime, task, "tool_loop.runbook_executed", {
+          iteration,
+          runbook_id: runbook.id,
+          action: "guidance_injected"
+        });
+        continue;
       }
 
       // Early termination: abort or escalate both stop the loop and

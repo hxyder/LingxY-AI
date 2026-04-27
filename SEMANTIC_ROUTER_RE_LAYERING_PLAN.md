@@ -27,21 +27,33 @@ Hard signals should keep only structural and safety-relevant facts:
 
 Do not add more topic/domain regex to cover cases like news, open-source projects, tech news, URL summaries, market scans, product comparisons, or research tasks.
 
-SemanticRouter output should expand toward this structured shape:
+SemanticRouter output is the structured IntentRoute judgement (see
+`INTENT_ROUTE_EVIDENCE_POLICY_UPGRADE.md` for the live schema):
 
 - `primary_intent`
+- `domain`
+- `user_goal`
 - `expected_output`
 - `needs_external_info`
 - `needs_current_information`
-- `needs_citations`
+- `needs_user_files`
 - `needs_tool_use`
+- `needed_capabilities` (capability-based; not concrete tool ids)
 - `source_mode`
-- `external_search`
-- `min_sources`
-- `min_distinct_domains`
-- `freshness_requirement`
+- `complexity`
+- `risk_level`
 - `confidence`
-- `brief_rationale`
+- `rationale_summary`
+
+The legacy `web_policy` / `research_depth` / `executor` fields stay on
+the decision payload as compatibility shims while EvidencePolicy
+consumes the IntentRoute fields.
+
+Do **not** let SemanticRouter emit numeric quality thresholds such as
+`min_sources` or `min_distinct_domains`. Those remain deterministic policy
+constants in `research-quality.mjs`; the router only chooses categorical
+source modes such as `single_lookup`, `multi_source_research`, or
+`deep_research`.
 
 EvidencePolicy should be merged from SemanticRouter output plus hard signals, then become the source of truth for:
 
@@ -51,11 +63,15 @@ EvidencePolicy should be merged from SemanticRouter output plus hard signals, th
 
 ## 3. Concrete Fixes Needed
 
-- `查一下有没有类似的开源项目` should route to `external_search=required` and `source_mode=multi_source_research`.
-- `research today's tech news` should route to required + multi-source without adding English topic regex patches.
-- `总结这个 URL: https://...` should route to required + single_lookup and allow `fetch_url_content`.
-- Local selections, uploaded files, and explicit "只基于这篇内容" requests should route to provided-context or single_lookup and should not require multi-source research.
-- Explicit "不联网 / do not browse" must override the router and force `external_search=forbidden`.
+`tool_policy.policy_groups.external_web_read.mode` is the concrete axis;
+EvidencePolicy maps IntentRoute `source_mode` / `needed_capabilities`
+onto it.
+
+- `查一下有没有类似的开源项目` → `external_web_read=required` and `source_mode=multi_source_research`.
+- `research today's tech news` → required + multi-source without adding English topic regex patches.
+- `总结这个 URL: https://...` → required + `source_mode=single_lookup` and allow `fetch_url_content`.
+- Local selections, uploaded files, and explicit "只基于这篇内容" requests → provided-context or single_lookup; do not require multi-source research.
+- Explicit "不联网 / do not browse" must override the router and force `external_web_read=forbidden`.
 
 ## 4. Validation
 

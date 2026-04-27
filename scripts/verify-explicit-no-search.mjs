@@ -137,6 +137,25 @@ function noSearchSignal() {
     hint: { value: "no_browse" }
   };
 }
+
+function intentRouteFields(overrides = {}) {
+  return {
+    primary_intent: "research",
+    domain: "general",
+    user_goal: "Answer the user's current-information question.",
+    expected_output: "direct_answer",
+    needs_external_info: true,
+    needs_current_information: true,
+    needs_user_files: false,
+    needs_tool_use: true,
+    needed_capabilities: ["external_web_read"],
+    source_mode: "multi_source_research",
+    complexity: "medium",
+    risk_level: "low",
+    rationale_summary: "The request would normally need external information, but hard facts may constrain it.",
+    ...overrides
+  };
+}
 function strongExternal() {
   return {
     name: "explicit_external",
@@ -249,6 +268,7 @@ it("SR detectHardFactConflict: rejects web=required when explicit_no_search fact
             artifact_required: false,
             executor: "tool_using",
             research_depth: "multi_source",
+            ...intentRouteFields(),
             confidence: 0.95,
             reason: "topic looks current"
           }
@@ -282,6 +302,15 @@ it("SR detectHardFactConflict: web=forbidden when no-search fact is set is OK (n
             artifact_required: false,
             executor: "fast",
             research_depth: "unknown",
+            ...intentRouteFields({
+              primary_intent: "qa",
+              needs_external_info: false,
+              needs_current_information: false,
+              needs_tool_use: false,
+              needed_capabilities: ["none"],
+              source_mode: "no_external",
+              rationale_summary: "The user explicitly forbade browsing."
+            }),
             confidence: 0.7,
             reason: "user told us not to browse"
           }

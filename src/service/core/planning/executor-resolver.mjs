@@ -17,8 +17,10 @@
  *   2. goal=multimodal_analyze OR contextPacket has image_paths      → multi_modal
  *   3. tool_policy.web_search_fetch=required AND no artifact         → tool_using
  *   4. artifact.required=true                                        → agentic
- *   5. goal=qa AND tool_policy.web_search_fetch!=required            → fast
- *   6. default                                                       → tool_using
+ *   5. routing_degraded AND web=optional                             → tool_using
+ *   6. connector_domain=true                                         → tool_using
+ *   7. goal=qa AND tool_policy.web_search_fetch=forbidden            → fast
+ *   8. default                                                       → tool_using
  *
  * Output includes rejected candidates with reasons, which downstream
  * DecisionTrace (Phase 2) will render to the user.
@@ -103,7 +105,38 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
     );
   }
 
-  // Rule 5 — Q&A or research-blocked with web_search FORBIDDEN:
+  // Rule 5 — SR degraded but policy is optional: keep the task on a
+  // tool-capable executor. An operational SemanticRouter failure is not
+  // proof that the user forbade tools; tool_using can answer directly or
+  // call allowed tools under the registry guard.
+  if (taskSpec.routing_degraded === true && webMode === "optional") {
+    return decision("tool_using",
+      "SemanticRouter degraded and external_web_read is optional; route to tool_using so the model can decide under guardrails instead of fast refusing.",
+      [
+        { type: "context", source: "task-spec.routing_degraded", matched: "true" },
+        { type: "context", source: "tool-policy.web_search_fetch", matched: "optional" }
+      ],
+      rejectAllExcept("tool_using", routeSuggestion)
+    );
+  }
+
+  // Rule 6 — connector-domain work reads/writes connected account state
+  // through connector tools, not external_web_read. A connector task can
+  // legitimately have web=forbidden and goal=qa (for example when the SR
+  // classified an email/calendar action but the legacy goal taxonomy has no
+  // dedicated family). Keep it on the tool-capable executor.
+  if (taskSpec?.connector_domain === true) {
+    return decision("tool_using",
+      "Connector-domain task; external_web_read may be forbidden but connector tools can satisfy the request.",
+      [
+        { type: "context", source: "task-spec.connector_domain", matched: "true" },
+        { type: "context", source: "tool-policy.web_search_fetch", matched: webMode }
+      ],
+      rejectAllExcept("tool_using", routeSuggestion)
+    );
+  }
+
+  // Rule 7 — Q&A or research-blocked with web_search FORBIDDEN:
   // cheapest path. fast executor produces a quick honest reply
   // rather than spinning the tool_using planner with a tool belt
   // the policy forbids.
@@ -141,7 +174,7 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
     );
   }
 
-  // Rule 6 — default. tool_using carries the full tool belt; the LLM can
+  // Rule 8 — default. tool_using carries the full tool belt; the LLM can
   // choose a tool or return {final:"..."} when no tool is needed.
   return decision("tool_using",
     `Default — goal=${goal} with tool_policy.web_search_fetch=${webMode} routes to tool_using.`,

@@ -303,8 +303,28 @@ it("K6 source: HTTP /task handler extracts body.conversation_id and passes it on
   // The /task handler body extraction must accept both snake_case
   // (frontend default — overlay.js:3256) and camelCase.
   assert.match(src,
-    /conversationId:\s*typeof body\.conversation_id === "string"[\s\S]*?body\.conversationId/,
-    "HTTP /task handler must extract body.conversation_id (snake_case primary, camelCase fallback) and pass to submitContextTask");
+    /const requestConversationId = typeof body\.conversation_id === "string"[\s\S]*?body\.conversationId/,
+    "HTTP /task handler must extract body.conversation_id (snake_case primary, camelCase fallback)");
+  assert.match(src,
+    /submit(File|Browser|Image|Office|ActionTool|Context)Task\(\{[\s\S]*?conversationId: requestConversationId/,
+    "HTTP /task handler must pass requestConversationId into submission branches");
+});
+
+it("K7 source: non-context submission paths accept and thread conversationId", () => {
+  const files = [
+    "../src/service/core/file-submission.mjs",
+    "../src/service/core/browser-submission.mjs",
+    "../src/service/core/image-submission.mjs",
+    "../src/service/core/office-submission.mjs",
+    "../src/service/core/action-tool-submission.mjs",
+    "../src/service/core/composite-submission.mjs"
+  ];
+  for (const rel of files) {
+    const src = loadFile(rel);
+    assert.match(src, /\bconversationId\b/, `${rel} must carry conversationId`);
+    assert.match(src, /createTaskRecord\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)|submitContextTask\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)|submitCompositeTask\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)/,
+      `${rel} must pass conversationId to its downstream task creation path`);
+  }
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

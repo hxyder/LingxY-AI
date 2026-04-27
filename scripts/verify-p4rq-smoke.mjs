@@ -285,6 +285,30 @@ it("S4 [今天天气怎么样] without SR: conservative fallback → web=forbidd
   assert.equal(spec.suggested_executor, "fast");
 });
 
+it("S4b [天气怎么样] + SR timeout: degraded optional fallback → tool_using", () => {
+  const text = "天气怎么样";
+  const spec = createTaskSpec(text, {
+    semantic_router_rejection: { kind: "rejection", code: "timeout", reason: "simulated timeout" }
+  });
+  assert.equal(spec.routing_status, "sr_timeout");
+  assert.equal(spec.routing_degraded, true);
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional",
+    "SR timeout is operational degradation, not web=forbidden");
+  assert.equal(spec.suggested_executor, "tool_using",
+    "degraded optional fallback must keep the task on a tool-capable executor");
+  assert.ok(!spec.success_contract?.required_policy_groups?.includes("external_web_read"),
+    "optional fallback must not force SuccessContract web coverage");
+});
+
+it("S4b [国际新闻] + SR timeout: degraded optional fallback → tool_using", () => {
+  const text = "国际新闻";
+  const spec = createTaskSpec(text, {
+    semantic_router_rejection: { kind: "rejection", code: "timeout", reason: "simulated timeout" }
+  });
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional");
+  assert.equal(spec.suggested_executor, "tool_using");
+});
+
 // ── Scenario 5 — follow-up auto-parent via conversation_id ─────────
 it("S5 [罗利 follow-up]: createTaskRecord auto-resolves parent + attaches parent_task_summary", () => {
   // Pre-populate a runtime-ish store with a prior weather-offer task.

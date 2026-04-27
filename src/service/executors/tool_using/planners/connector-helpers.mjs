@@ -1,7 +1,8 @@
 /**
  * UCA-077 P3-01: Connector capability helpers, lifted out of agent-loop.mjs.
  *
- * These map the user's free-text intent ("帮我看一下日历", "查我的邮件") to
+ * These map the user's free-text intent ("帮我看一下日历", "查我的邮件",
+ * "明天下午我有没有空") to
  * a generic connector capability key (calendarRead / emailRead / fileRead),
  * then to a callable read tool. The connector planner uses both halves:
  *   1. Ask the connector catalog for a tool with this capability + provider.
@@ -9,11 +10,16 @@
  *      account_list_* action tools so older contracts still work.
  */
 
+import { detectConnectorCapabilityIntent } from "../../../connectors/core/connector-intent.mjs";
+
 /**
  * @param {string} text
  * @returns {"calendarRead"|"fileRead"|"emailRead"|null}
  */
 export function inferCapabilityFromText(text = "") {
+  const connectorIntent = detectConnectorCapabilityIntent(text);
+  if (connectorIntent.capabilities?.includes("calendarRead")) return "calendarRead";
+  if (connectorIntent.capabilities?.includes("calendarWrite")) return "calendarRead";
   if (/(日历|\bcalendar\b|event|events|会议|日程)/i.test(text)) return "calendarRead";
   if (/(google\s*drive|onedrive|云端文件|网盘|drive|文件)/i.test(text)) return "fileRead";
   if (/(邮件|邮箱|\bemails?\b|\bmail\b|gmail|outlook)/i.test(text)) return "emailRead";

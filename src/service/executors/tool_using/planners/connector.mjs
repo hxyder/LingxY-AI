@@ -15,6 +15,7 @@
 import {
   isConnectorAccountIdentityRequest,
   isConnectorDomainRequest,
+  inferCalendarTimeWindow,
   inferConnectorLimit,
   inferConnectorProvider,
   matchWorkflowByTrigger,
@@ -80,6 +81,9 @@ export function planConnectorToolCall(userCommand = "", catalog = null) {
   // account_list_* action tools using the same capability inference.
   const capability = inferCapabilityFromText(text);
   if (capability) {
+    const capabilityArgs = capability === "calendarRead"
+      ? (inferCalendarTimeWindow(text) ?? {})
+      : {};
     if (catalog) {
       const matches = catalog.listTools({ capability, provider: provider ?? undefined, risk: "low" });
       if (matches.length > 0) {
@@ -88,7 +92,7 @@ export function planConnectorToolCall(userCommand = "", catalog = null) {
           return {
             type: "tool_call",
             tool: readToolId,
-            args: { ...withProvider, limit }
+            args: { ...withProvider, limit, ...capabilityArgs }
           };
         }
       }
@@ -98,7 +102,7 @@ export function planConnectorToolCall(userCommand = "", catalog = null) {
       return {
         type: "tool_call",
         tool: fallback,
-        args: { ...withProvider, limit }
+        args: { ...withProvider, limit, ...capabilityArgs }
       };
     }
   }

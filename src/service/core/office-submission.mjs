@@ -97,6 +97,7 @@ export async function submitOfficeTask({
   runtime,
   executionMode,
   parentTaskId = null,
+  conversationId = null,
   retryCount = 0,
   executorOverride = null,
   background = false
@@ -122,6 +123,7 @@ export async function submitOfficeTask({
     userCommand,
     executionMode,
     parentTaskId,
+    conversationId,
     retryCount,
     executorOverride,
     runtime  // G3b: enables parent_task_summary enrichment

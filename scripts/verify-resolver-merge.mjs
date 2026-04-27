@@ -19,8 +19,9 @@
  *   2. Merge: ambiguous + SR decided required → policy upgrades to required.
  *   3. Merge: ambiguous + SR decided forbidden → policy stays forbidden
  *      (SR confirmed the deterministic default).
- *   4. Merge: ambiguous + SR rejection (no decision stamped) → fall through
- *      to deterministic default (forbidden).
+ *   4. Merge: ambiguous + no SR stamp → deterministic default (forbidden).
+ *   4b. Merge: ambiguous + SR operational failure → optional degraded
+ *       fallback, not forbidden.
  *   5. NON-ambiguous: file attached + SR decision present → SR IGNORED.
  *      Rules win.
  *   6. NON-ambiguous: explicit_external strong + SR decision present →
@@ -174,6 +175,39 @@ async function run() {
     assert.match(policy.web_search_fetch.reason, /No external-data signal|chitchat/);
   });
 
+  it("merge/ambiguous: SR timeout becomes optional degraded fallback", () => {
+    const text = "天气怎么样";
+    const signals = makeSignals(text);
+    const ctx = {
+      semantic_router_rejection: { kind: "rejection", code: "timeout", reason: "test timeout" }
+    };
+    const policy = resolveToolPolicy({ signals, contextPacket: ctx, text });
+    assert.equal(policy.web_search_fetch.mode, "optional");
+    assert.equal(policy.policy_groups.external_web_read.mode, "optional");
+    assert.match(policy.web_search_fetch.reason, /SemanticRouter unavailable \(timeout\)/);
+  });
+
+  it("merge/ambiguous: SR no_provider becomes optional degraded fallback", () => {
+    const text = "国际新闻";
+    const signals = makeSignals(text);
+    const ctx = {
+      semantic_router_rejection: { kind: "rejection", code: "no_provider", reason: "no chat provider" }
+    };
+    const policy = resolveToolPolicy({ signals, contextPacket: ctx, text });
+    assert.equal(policy.web_search_fetch.mode, "optional");
+  });
+
+  it("merge/non-ambig: explicit no-search still forbids despite SR timeout", () => {
+    const text = "不要联网，国际新闻";
+    const ctx = {
+      semantic_router_rejection: { kind: "rejection", code: "timeout", reason: "test timeout" }
+    };
+    const signals = makeSignals(text, ctx);
+    const policy = resolveToolPolicy({ signals, contextPacket: ctx, text });
+    assert.equal(policy.web_search_fetch.mode, "forbidden");
+    assert.match(policy.web_search_fetch.reason, /forbade web browsing/);
+  });
+
   // ── 5. non-ambiguous: file attached + SR present → SR ignored ──────────
   it("merge/non-ambig (files): SR decision IGNORED when files attached", () => {
     const text = "帮我看看那件事的进展如何";
@@ -316,7 +350,7 @@ async function run() {
       "merge layer must produce web=required for ambiguous query + SR=required");
     assert.equal(task.task_spec.tool_policy.policy_groups.external_web_read.mode, "required");
   });
-  it("integration: createTaskRecord with SR rejection still records the stage with rejected:true", () => {
+  it("integration: createTaskRecord with SR operational rejection records stage and degrades to optional", () => {
     const contextPacket = {
       semantic_router_rejection: { kind: "rejection", code: "no_provider", reason: "no chat provider" }
     };
@@ -330,9 +364,11 @@ async function run() {
     assert.ok(stage, "decision_trace must include SEMANTIC_ROUTER stage for rejection");
     assert.equal(stage.output.rejected, true);
     assert.equal(stage.output.code, "no_provider");
-    // No decision → deterministic baseline → forbidden by default for
-    // ambiguous-but-no-signal text.
-    assert.equal(task.task_spec.tool_policy.web_search_fetch.mode, "forbidden");
+    // Operational rejection is not user intent. EvidencePolicy keeps
+    // hard guards in place but allows optional web so tool_using can
+    // decide instead of fast refusing.
+    assert.equal(task.task_spec.tool_policy.web_search_fetch.mode, "optional");
+    assert.equal(task.task_spec.suggested_executor, "tool_using");
   });
 
   // ── 13. source-level lock-in: submission paths pass routerEnrichedContext to createTaskRecord ──

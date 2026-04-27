@@ -66,7 +66,20 @@ const validDecision = Object.freeze({
   artifact_required: false,
   executor: "tool_using",
   research_depth: "multi_source",
+  primary_intent: "research",
+  domain: "software",
+  user_goal: "Understand current AI news.",
+  expected_output: "direct_answer",
+  needs_external_info: true,
+  needs_current_information: true,
+  needs_user_files: false,
+  needs_tool_use: true,
+  needed_capabilities: ["external_web_read"],
+  source_mode: "multi_source_research",
+  complexity: "medium",
+  risk_level: "low",
   confidence: 0.85,
+  rationale_summary: "The user asked for current AI news, which needs external sources.",
   reason: "User asked for current AI news."
 });
 
@@ -562,9 +575,38 @@ async function run() {
     assert.equal(SEMANTIC_DECISION_TOOL.name, "route_task");
     assert.equal(SEMANTIC_DECISION_TOOL.input_schema.type, "object");
     assert.equal(SEMANTIC_DECISION_TOOL.input_schema.additionalProperties, false);
-    for (const f of ["source_scope", "web_policy", "output_kind", "artifact_required", "executor", "research_depth", "confidence", "reason"]) {
+    for (const f of [
+      "source_scope", "web_policy", "output_kind", "artifact_required",
+      "executor", "research_depth", "primary_intent", "domain",
+      "user_goal", "expected_output", "needs_external_info",
+      "needs_current_information", "needs_user_files", "needs_tool_use",
+      "needed_capabilities", "source_mode", "complexity", "risk_level",
+      "confidence", "rationale_summary", "reason"
+    ]) {
       assert.ok(SEMANTIC_DECISION_TOOL.input_schema.properties[f], `schema missing property ${f}`);
     }
+  });
+  await it("public surface: IntentRoute fields are required and capability-based", () => {
+    for (const f of [
+      "primary_intent", "domain", "user_goal", "expected_output",
+      "needs_external_info", "needs_current_information", "needs_user_files",
+      "needs_tool_use", "needed_capabilities", "source_mode", "complexity",
+      "risk_level", "rationale_summary"
+    ]) {
+      assert.ok(SEMANTIC_DECISION_TOOL.input_schema.required.includes(f),
+        `IntentRoute field must be required: ${f}`);
+    }
+    const capabilities = SEMANTIC_DECISION_TOOL.input_schema.properties.needed_capabilities.items.enum;
+    assert.ok(capabilities.includes("external_web_read"));
+    assert.ok(!capabilities.includes("web_search_fetch"),
+      "SR emits capabilities, not concrete tool IDs");
+  });
+  await it("IntentRoute: invalid capability rejected by validator", async () => {
+    const adapter = decisionAdapter({ ...validDecision, needed_capabilities: ["web_search_fetch"] });
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "x" });
+    assert.equal(out.kind, "rejection");
+    assert.equal(out.code, "schema_invalid");
+    assert.match(out.reason, /needed_capabilities/);
   });
   await it("public surface: research_depth enum includes single_lookup / multi_source / deep_research / unknown", () => {
     // K3 added "deep_research" to the enum.

@@ -29,6 +29,9 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 import {
   RUNBOOKS,
@@ -39,6 +42,9 @@ import {
   suggestRunbookForFinalize
 } from "../src/service/core/runtime/runbook-engine.mjs";
 import { validateStepGate } from "../src/service/core/policy/success-contract-validator.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, "..");
 
 let pass = 0;
 let fail = 0;
@@ -271,6 +277,16 @@ async function run() {
     assert.equal(gate.next_action, "abort");
     const rb = suggestRunbookForStepGate(gate);
     assert.equal(rb?.id, "GATE_ABORT_AT_ITERATION_CEILING");
+  });
+
+  it("wire-up: tool_using loop injects runbook guidance instead of audit-only suggestions", () => {
+    const src = readFileSync(path.join(root, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
+    assert.match(src, /type:\s*"runbook_guidance"/,
+      "agent loop must add runbook guidance to transcript");
+    assert.match(src, /tool_loop\.runbook_executed/,
+      "agent loop must audit actual runbook execution, not only suggestion");
+    assert.match(src, /runbook_signal/,
+      "agent loop must emit an SSE signal when runbook guidance fires");
   });
 
   process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

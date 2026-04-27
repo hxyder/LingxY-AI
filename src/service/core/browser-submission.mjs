@@ -557,6 +557,7 @@ export async function submitBrowserTask({
   runtime,
   executionMode,
   parentTaskId = null,
+  conversationId = null,
   childIndex = null,
   retryCount = 0,
   executorOverride = null,
@@ -602,6 +603,7 @@ export async function submitBrowserTask({
         userCommand,
         executionMode,
         subtasks: decomposition.subtasks,
+        conversationId,
         submitChild: ({ subtask, index, parentTaskId: compositeId }) =>
           submitBrowserTask({
             // Children rebuild a fresh packet from the original
@@ -612,6 +614,7 @@ export async function submitBrowserTask({
             runtime,
             executionMode,
             parentTaskId: compositeId,
+            conversationId,
             childIndex: index,
             executorOverride: subtask.suggested_executor ?? null,
             skipDecomposition: true
@@ -630,6 +633,7 @@ export async function submitBrowserTask({
     userCommand,
     executionMode,
     parentTaskId,
+    conversationId,
     childIndex,
     retryCount,
     executorOverride,
