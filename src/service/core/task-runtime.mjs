@@ -248,6 +248,41 @@ function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
   }
 }
 
+/**
+ * P6 F3: pre-fetch the recent backend conversation_messages tail for
+ * signal detectors that need prior-turn context (today: pending-offer).
+ * Stamps `contextPacket.prior_messages` as a sanitised, capped array
+ * of {role, content, status, ts}. Excludes UI metadata (no
+ * client_message_id, no message_id, no metadata blob — those are
+ * ledger fields, not signal inputs).
+ *
+ * Becomes the SINGLE source of historical context for signal
+ * extraction when present. Detectors that previously read
+ * `selection_metadata.conversation_turns` or
+ * `parent_task_summary.assistant_final_text` must prefer this. Those
+ * legacy fields stay only as fallbacks for boots without a backend
+ * conversation row.
+ */
+function attachPriorBackendMessages(contextPacket, conversationId, runtime, { limit = 12, contentCap = 1600 } = {}) {
+  if (!conversationId || typeof runtime?.store?.getConversationMessages !== "function") {
+    return contextPacket;
+  }
+  try {
+    const all = runtime.store.getConversationMessages(conversationId);
+    if (!Array.isArray(all) || all.length === 0) return contextPacket;
+    const tail = all.slice(-Math.max(1, Math.min(limit, 50)));
+    const priorMessages = tail.map((m) => ({
+      role: m.role,
+      content: typeof m.content === "string" ? m.content.slice(0, contentCap) : "",
+      status: m.status ?? null,
+      ts: m.ts ?? null
+    }));
+    return { ...(contextPacket ?? {}), prior_messages: priorMessages };
+  } catch {
+    return contextPacket;
+  }
+}
+
 function isSchedulerSourced(contextPacket) {
   return contextPacket?.source_app === "uca.scheduler"
     || contextPacket?.capture_mode === "event";
@@ -407,9 +442,14 @@ export function createTaskRecord({
   // even when the current submission didn't carry conversation_turns
   // in selection_metadata. Uses the auto-resolved parent (K4) so
   // conversation-driven follow-ups also see the parent summary.
-  const enrichedContext = effectiveParentTaskId && runtime?.store?.getTask
+  const withParentSummary = effectiveParentTaskId && runtime?.store?.getTask
     ? attachParentTaskSummary(contextPacket, effectiveParentTaskId, runtime)
     : contextPacket;
+  const enrichedContext = attachPriorBackendMessages(
+    withParentSummary,
+    effectiveConversationId,
+    runtime
+  );
 
   const taskSpec = createTaskSpec(userCommand, enrichedContext, route);
   const taskSpecValidation = validateTaskSpec(taskSpec);

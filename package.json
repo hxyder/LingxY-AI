@@ -68,6 +68,7 @@
     "verify:post-tool-final-synthesis": "node scripts/verify-post-tool-final-synthesis.mjs",
     "verify:synthesis-no-bypass": "node scripts/verify-synthesis-no-bypass.mjs",
     "verify:overlay-backend-backed": "node scripts/verify-overlay-backend-backed.mjs",
+    "verify:pending-offer-uses-backend": "node scripts/verify-pending-offer-uses-backend.mjs",
     "verify:sr-hard-fact-skip": "node scripts/verify-sr-hard-fact-skip.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",

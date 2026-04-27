@@ -68,7 +68,31 @@ function inferPendingIntent(assistantText) {
   return null;
 }
 
-function findLastAssistantTurn(contextPacket) {
+/**
+ * P6 F3: backend conversation_messages is the canonical source.
+ * task-runtime stamps `contextPacket.prior_messages` (a sanitised
+ * tail of {role, content, status, ts}) before signal extraction
+ * runs; pending-offer scans it for the most recent assistant message.
+ */
+function findLastAssistantFromBackendMessages(contextPacket) {
+  const list = contextPacket?.prior_messages;
+  if (!Array.isArray(list) || list.length === 0) return null;
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const m = list[i];
+    if (m?.role === "assistant" && typeof m.content === "string" && m.content.trim().length > 0) {
+      return { role: "assistant", content: m.content };
+    }
+  }
+  return null;
+}
+
+/**
+ * Legacy fallback 1 — `selection_metadata.conversation_turns`. F1
+ * removed the frontend's emitter, but accept it for back-compat with
+ * any caller that still ships it (e.g. external API consumers).
+ * Used ONLY when prior_messages is absent.
+ */
+function findLastAssistantFromInbandTurns(contextPacket) {
   const turns = contextPacket?.selection_metadata?.conversation_turns;
   if (!Array.isArray(turns) || turns.length === 0) return null;
   for (let i = turns.length - 1; i >= 0; i -= 1) {
@@ -81,15 +105,9 @@ function findLastAssistantTurn(contextPacket) {
 }
 
 /**
- * P4-RQ G3b: when no conversation_turns are embedded in this
- * submission, fall back to the parent task's summary (orchestrator
- * pre-fetches and stamps it on `enrichedContext.parent_task_summary`
- * BEFORE signal extraction). Lets short follow-ups like "对" link
- * to the parent's offer even when the frontend didn't attach the
- * full turn array.
- *
- * The summary shape is `{ assistant_final_text: string|null }`.
- * Only the assistant final text is needed for offer detection.
+ * Legacy fallback 2 — `parent_task_summary.assistant_final_text`.
+ * Used ONLY when no structured backend messages are available.
+ * The shape is `{ assistant_final_text: string|null }`.
  */
 function findOfferTextFromParentSummary(contextPacket) {
   const summary = contextPacket?.parent_task_summary;
@@ -97,6 +115,22 @@ function findOfferTextFromParentSummary(contextPacket) {
   const text = summary.assistant_final_text;
   if (typeof text !== "string" || text.trim().length === 0) return null;
   return { role: "assistant", content: text };
+}
+
+/**
+ * Resolve the prior assistant text used for offer matching. Sources
+ * are tried in priority order; only ONE source contributes per call —
+ * structured backend messages and legacy fallbacks must never run in
+ * parallel as parallel history sources.
+ */
+function resolvePriorAssistant(contextPacket) {
+  const fromBackend = findLastAssistantFromBackendMessages(contextPacket);
+  if (fromBackend) return { source: "backend_messages", turn: fromBackend };
+  const fromInband = findLastAssistantFromInbandTurns(contextPacket);
+  if (fromInband) return { source: "inband_conversation_turns", turn: fromInband };
+  const fromSummary = findOfferTextFromParentSummary(contextPacket);
+  if (fromSummary) return { source: "parent_task_summary", turn: fromSummary };
+  return null;
 }
 
 /**
@@ -109,12 +143,9 @@ export function detect(text, contextPacket = {}) {
   if (!command) return emptySignal(NAME);
   if (!SHORT_AFFIRMATIVE.test(command)) return emptySignal(NAME);
 
-  // G3b: prefer in-band conversation_turns when present, fall back
-  // to the orchestrator-pre-fetched parent_task_summary. Either source
-  // gives us the assistant text whose offer phrasing we need to match.
-  const lastAssistant = findLastAssistantTurn(contextPacket)
-    ?? findOfferTextFromParentSummary(contextPacket);
-  if (!lastAssistant) return emptySignal(NAME);
+  const resolved = resolvePriorAssistant(contextPacket);
+  if (!resolved) return emptySignal(NAME);
+  const lastAssistant = resolved.turn;
 
   const assistantText = lastAssistant.content;
   const isOffer = OFFER_PATTERN_ZH.test(assistantText) || OFFER_PATTERN_EN.test(assistantText);
@@ -138,9 +169,9 @@ export function detect(text, contextPacket = {}) {
       type: "context",
       source: NAME,
       matched: command,
-      reason: `short-affirmative reply ("${command}") to assistant offer about ${pendingIntent}`
+      reason: `short-affirmative reply ("${command}") to assistant offer about ${pendingIntent} (history_source=${resolved.source})`
     }],
-    hint: { pending_intent: pendingIntent, raw: snippet }
+    hint: { pending_intent: pendingIntent, raw: snippet, history_source: resolved.source }
   };
 }
 
