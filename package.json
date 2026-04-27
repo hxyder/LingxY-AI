@@ -51,6 +51,7 @@
     "verify:research-budget-prompt": "node scripts/verify-research-budget-prompt.mjs",
     "verify:deep-research-tier": "node scripts/verify-deep-research-tier.mjs",
     "verify:conversation-id": "node scripts/verify-conversation-id.mjs",
+    "verify:p4rq-smoke": "node scripts/verify-p4rq-smoke.mjs",
     "verify:sr-hard-fact-skip": "node scripts/verify-sr-hard-fact-skip.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",
