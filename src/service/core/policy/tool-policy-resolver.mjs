@@ -312,6 +312,33 @@ export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text 
   }
   const explicitExternal = signals?.explicit_external;
   if (explicitExternal?.matched && explicitExternal.strength === "strong") return false;
+
+  // P4-RQ I1: hard-fact skip. The deterministic resolver has already
+  // committed to a definitive answer for these signals; SR cannot
+  // legitimately override hard facts (the merge layer already enforces
+  // this — explicit_no_search beats every SR suggestion (lines
+  // ~382-384), source_scope=fact+LOCAL beats every SR suggestion
+  // (lines ~389-394)). Consulting SR here is wasted effort, AND when
+  // SR fails (timeout / no_provider / exception / schema_invalid) the
+  // outage stamps `routing_status=sr_*` → `routing_degraded=true`,
+  // which the fast executor's G6b short-circuit then reads to refuse
+  // the task with an honest "routing degraded" message. Net result
+  // pre-I1: a "不要联网" or local-anchor task could downgrade to
+  // partial_success purely because SR was unavailable, even though the
+  // deterministic answer was forbidden either way.
+  //
+  // Architectural rule: SR handles ambiguous middle-layer routing; it
+  // does not get consulted on hard facts. Mirrors the existing merge-
+  // layer guards so the skip-set and the override-set are symmetric.
+  const explicitNoSearch = signals?.explicit_no_search;
+  if (explicitNoSearch?.matched && explicitNoSearch.kind === "fact") return false;
+  const sourceScope = signals?.source_scope;
+  if (sourceScope?.matched
+      && sourceScope.kind === "fact"
+      && LOCAL_SCOPES.has(sourceScope.hint?.value)) {
+    return false;
+  }
+
   // P4-RQ E3 stage C1: topic_hint (topic regex) NO LONGER
   // skips SR. Previously, "今天天气" with strong-topic_hint
   // would short-circuit the SR call and rely on the deterministic
