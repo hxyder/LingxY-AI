@@ -1116,6 +1116,15 @@ async function submitTaskFromBody(runtime, body) {
     parentTaskId: typeof body.parent_task_id === "string" && body.parent_task_id
       ? body.parent_task_id
       : (typeof body.parentTaskId === "string" && body.parentTaskId ? body.parentTaskId : null),
+    // P4-RQ K6: thread the client-stamped conversation_id through.
+    // Frontend (overlay.js:3256) has been POSTing `conversation_id`
+    // on every /task request since Phase 9 — pre-K6 the HTTP layer
+    // dropped it on the floor, so K4's auto-resolution sat idle in
+    // production. Accept both snake_case and camelCase per the
+    // existing parent_task_id pattern.
+    conversationId: typeof body.conversation_id === "string" && body.conversation_id
+      ? body.conversation_id
+      : (typeof body.conversationId === "string" && body.conversationId ? body.conversationId : null),
     background,
     runtime
   });

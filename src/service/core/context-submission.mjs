@@ -646,6 +646,7 @@ export async function submitContextTask({
   runtime,
   executionMode,
   parentTaskId = null,
+  conversationId = null,
   childIndex = null,
   retryCount = 0,
   bypassDedupe = false,
@@ -789,6 +790,12 @@ export async function submitContextTask({
     userCommand,
     executionMode,
     parentTaskId,
+    // K6: thread the client-stamped conversation_id through so K4's
+    // auto-resolution actually fires in production. Frontend
+    // (overlay.js) has been minting and POSTing this since Phase 9
+    // but pre-K6 the HTTP layer dropped it before submitContextTask;
+    // K6 plugs both holes.
+    conversationId,
     childIndex,
     retryCount,
     bypassDedupe,

@@ -274,5 +274,38 @@ it("defensive: empty-string conversation_id is treated as null", () => {
   assert.equal(task.parent_task_id, null);
 });
 
+// ── 14. K6: end-to-end submission path threads conversation_id ───
+// (Source-level lock-in — full submitContextTask requires the runtime
+// scaffold which the unit-shape store stub doesn't provide. Assert
+// the wiring by reading the source so we catch any future drop on
+// the floor at the submission seam.)
+import { readFileSync } from "node:fs";
+function loadFile(rel) {
+  return readFileSync(new URL(rel, import.meta.url), "utf8");
+}
+
+it("K6 source: submitContextTask accepts conversationId and threads to createTaskRecord", () => {
+  const src = loadFile("../src/service/core/context-submission.mjs");
+  // submitContextTask's destructured parameter list must include
+  // conversationId.
+  assert.match(src,
+    /export async function submitContextTask\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)/,
+    "submitContextTask must accept a conversationId parameter");
+  // The createTaskRecord call inside submitContextTask must pass
+  // conversationId through.
+  assert.match(src,
+    /createTaskRecord\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)/,
+    "submitContextTask must thread conversationId into createTaskRecord");
+});
+
+it("K6 source: HTTP /task handler extracts body.conversation_id and passes it on", () => {
+  const src = loadFile("../src/service/core/http-server.mjs");
+  // The /task handler body extraction must accept both snake_case
+  // (frontend default — overlay.js:3256) and camelCase.
+  assert.match(src,
+    /conversationId:\s*typeof body\.conversation_id === "string"[\s\S]*?body\.conversationId/,
+    "HTTP /task handler must extract body.conversation_id (snake_case primary, camelCase fallback) and pass to submitContextTask");
+});
+
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
 if (fail > 0) process.exit(1);
