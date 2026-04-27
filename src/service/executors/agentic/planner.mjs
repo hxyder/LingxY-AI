@@ -38,8 +38,17 @@ import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 // and evidence normalizer at planner exit. Pre-H1 agentic skipped both,
 // so D3 research_quality coverage and required_policy_groups were never
 // enforced for agentic tasks.
-import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
+import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
+// J1: per-iteration parity. Pre-J1 agentic ran for the full
+// maxIterations even when the same tool failed repeatedly OR when the
+// success contract was already known to be unreachable. tool_using
+// charges an error budget after each tool result (max 2 tool failures /
+// 1 empty external_web_read) and runs validateStepGate to catch
+// same-tool failure streaks; agentic now does the same.
+import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
+import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
+import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
 
@@ -89,6 +98,29 @@ function transcriptForValidator(plannerTranscript = []) {
     });
   }
   return out;
+}
+
+/**
+ * J1: locally-mirrored substance check from tool_using/agent-loop's
+ * `toolResultHasSubstance`. Used by the per-iteration error budget to
+ * decide whether an external_web_read success "actually returned
+ * something" — a 200-OK call with empty results still consumes the
+ * empty_search_result budget. Kept as a local copy (small, stable)
+ * rather than refactoring tool_using's private helper into a shared
+ * module; matches the H1 transcriptForValidator pattern of putting
+ * cross-executor parity logic at each executor's seam.
+ */
+function agenticToolResultHasSubstance(result) {
+  if (!result || typeof result !== "object") return false;
+  if (Array.isArray(result.results) && result.results.length > 0) return true;
+  if (Array.isArray(result.sources) && result.sources.length > 0) return true;
+  if (typeof result.observation === "string" && result.observation.trim().length > 32) return true;
+  if (Array.isArray(result.metadata?.results) && result.metadata.results.length > 0) return true;
+  for (const value of Object.values(result)) {
+    if (Array.isArray(value) && value.length > 0) return true;
+    if (typeof value === "string" && value.trim().length > 32) return true;
+  }
+  return false;
 }
 
 function toolDescriptorForAdapter(tool) {
@@ -412,6 +444,15 @@ export async function runAgenticPlanner({
   let finalText = "";
   let iterations = 0;
 
+  // J1: per-iteration parity state. errorBudget is mutated (replaced
+  // with each charge); earlyExitState is set when budget exhausts or
+  // step gate aborts/escalates and triggers an early break out of both
+  // loops. The post-loop validator block reads earlyExitState to
+  // build the right downgrade message and surface the diagnostic
+  // metadata (phase_gate / error_budget) on the planner result.
+  let errorBudget = createErrorBudget();
+  let earlyExitState = null;
+
   for (iterations = 0; iterations < maxIterations; iterations += 1) {
     if (signal?.aborted) {
       const err = new Error("Agentic planner aborted.");
@@ -558,6 +599,74 @@ export async function runAgenticPlanner({
         artifact_paths: result.artifact_paths ?? []
       });
 
+      // J1: per-iteration error budget + phase gate (parity with
+      // tool_using/agent-loop:1224-1331). Charge the budget for tool
+      // failures and empty external_web_read returns; if exhausted,
+      // record the reason and break out of both loops via
+      // earlyExitState. Then run validateStepGate to catch same-tool
+      // failure streaks and iteration-ceiling abort; on
+      // abort/escalate, do the same break-out dance.
+      {
+        let budgetEvent = null;
+        if (result.success === false) {
+          budgetEvent = "tool_failure";
+        } else if (groupsOfTool(call.name).includes("external_web_read")
+            && !agenticToolResultHasSubstance(result)) {
+          budgetEvent = "empty_search_result";
+        }
+        if (budgetEvent) {
+          const charge = chargeBudget(errorBudget, budgetEvent);
+          errorBudget = charge.state;
+          onEvent?.({
+            event_type: "log",
+            payload: {
+              message: `error_budget_charge ${budgetEvent} (exhausted=${charge.exhausted})`
+            }
+          });
+          if (charge.exhausted) {
+            earlyExitState = {
+              kind: "error_budget_exhausted",
+              error_budget: {
+                event: budgetEvent,
+                reason: charge.reason,
+                iteration: iterations,
+                snapshot: snapshotBudget(errorBudget)
+              }
+            };
+            break;
+          }
+        }
+
+        const validatorTx = transcriptForValidator(transcript);
+        const stepGate = validateStepGate(task?.task_spec, validatorTx, {
+          iteration: iterations,
+          maxIterations
+        });
+        const runbook = suggestRunbookForStepGate(stepGate);
+        onEvent?.({
+          event_type: "phase_gate_signal",
+          payload: {
+            iteration: iterations,
+            next_action: stepGate.next_action,
+            satisfied: stepGate.satisfied,
+            violation_kinds: (stepGate.violations ?? []).map((v) => v.kind),
+            runbook_suggested: runbook?.id ?? null
+          }
+        });
+        if (stepGate.next_action === "abort" || stepGate.next_action === "escalate") {
+          earlyExitState = {
+            kind: `phase_gate_${stepGate.next_action}`,
+            phase_gate: {
+              next_action: stepGate.next_action,
+              iteration: iterations,
+              violations: stepGate.violations ?? [],
+              runbook_suggested: runbook?.id ?? null
+            }
+          };
+          break;
+        }
+      }
+
       for (const artifactPath of result.artifact_paths ?? []) {
         if (artifactPath && !artifactPaths.includes(artifactPath)) {
           artifactPaths.push(artifactPath);
@@ -601,6 +710,13 @@ export async function runAgenticPlanner({
         messages.__lastArtifactPathsHash = next;
       }
     }
+
+    // J1: propagate early exit out of the outer loop. When the budget
+    // exhausts or the phase gate aborts/escalates, we already broke the
+    // inner tool-call loop above; this break terminates the outer
+    // turn loop too so we go straight to the post-loop validator block
+    // with the diagnostic state populated.
+    if (earlyExitState) break;
   }
 
   // If the loop hit maxIterations without the model ever producing a
@@ -666,6 +782,30 @@ export async function runAgenticPlanner({
   // finaliseWithEvidence. Audit-only.
   const evidenceSummary = extractEvidence(validatorTranscript);
 
+  // J1: surface per-iteration early-exit diagnostics. When the planner
+  // broke out of the loop on a budget/gate signal, downgrade and prepend
+  // an explanation; the validator above may have already flagged the
+  // same task (no successful web tool, etc.), and that's fine — both
+  // messages stack and tell the user what happened.
+  let phaseGate = null;
+  let errorBudgetDiag = null;
+  if (earlyExitState) {
+    downgraded = true;
+    if (earlyExitState.kind === "error_budget_exhausted") {
+      errorBudgetDiag = earlyExitState.error_budget;
+      finalText = `[UCA] 阶段提前结束：error_budget exhausted (${errorBudgetDiag.event} at iteration ${errorBudgetDiag.iteration}). ${errorBudgetDiag.reason}\n\n${finalText || ""}`;
+    } else if (earlyExitState.kind === "phase_gate_abort"
+        || earlyExitState.kind === "phase_gate_escalate") {
+      phaseGate = earlyExitState.phase_gate;
+      const kindLabel = phaseGate.next_action;
+      const violationKinds = (phaseGate.violations ?? []).map((v) => v.kind).join(", ") || "(none)";
+      const runbookHint = phaseGate.runbook_suggested
+        ? ` Runbook recommended: ${phaseGate.runbook_suggested}.`
+        : "";
+      finalText = `[UCA] 阶段提前结束：phase_gate ${kindLabel} at iteration ${phaseGate.iteration} (violations: ${violationKinds}).${runbookHint}\n\n${finalText || ""}`;
+    }
+  }
+
   return {
     success: !downgraded && Boolean(finalText),
     finalText: finalText || "(no response from agentic planner)",
@@ -675,6 +815,8 @@ export async function runAgenticPlanner({
     iterations: iterations + 1,
     downgraded,
     violations,
-    evidence_summary: evidenceSummary
+    evidence_summary: evidenceSummary,
+    phase_gate: phaseGate,
+    error_budget: errorBudgetDiag
   };
 }

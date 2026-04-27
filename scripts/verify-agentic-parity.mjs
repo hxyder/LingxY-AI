@@ -142,7 +142,9 @@ function makeRuntime({
 // ── 1. Source-level lock-in: planner imports the validator + evidence ──
 await it("planner imports validateSuccessContract + extractEvidence", () => {
   const planner = loadFile("../src/service/executors/agentic/planner.mjs");
-  assert.match(planner, /import \{ validateSuccessContract \} from "\.\.\/\.\.\/core\/policy\/success-contract-validator\.mjs"/,
+  // J1 combined the H1 import with validateStepGate into a single
+  // destructured import statement; accept either single or combined form.
+  assert.match(planner, /import \{[^}]*\bvalidateSuccessContract\b[^}]*\} from "\.\.\/\.\.\/core\/policy\/success-contract-validator\.mjs"/,
     "planner must import validateSuccessContract");
   assert.match(planner, /import \{ extractEvidence \} from "\.\.\/\.\.\/core\/policy\/evidence-normalizer\.mjs"/,
     "planner must import extractEvidence");
