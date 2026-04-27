@@ -123,6 +123,131 @@ function agenticToolResultHasSubstance(result) {
   return false;
 }
 
+/**
+ * J2: shared per-tool control helper used by BOTH the preflight call
+ * (`taskNeedsCurrentWebData` web_search_fetch) and the main loop's
+ * tool calls. Pre-J2 only the main loop ran the budget + step-gate
+ * checks; the preflight transcript entry was completely outside the
+ * controls. This meant a preflight that returned an empty external
+ * search result OR a preflight failure was invisible to error-budget /
+ * phase-gate, so the planner kept iterating with one strike already on
+ * the wall but no metadata to act on. tool_using has no preflight, so
+ * its J1 wiring caught everything; agentic was the asymmetric case.
+ *
+ * Returns:
+ *   { errorBudget: <updated state>, earlyExit: null | { kind, error_budget?, phase_gate? } }
+ *
+ * Caller is responsible for breaking out of its loop when earlyExit
+ * is non-null. The same earlyExitState shape is reused so the
+ * post-loop validator block produces a single consistent diagnostic
+ * surface regardless of which code path detected the early exit.
+ *
+ * @param {{
+ *   call:          { name: string },
+ *   result:        { success: boolean, observation?: string, metadata?: object },
+ *   transcript:    object[],   // already includes the just-pushed entry for `call`
+ *   errorBudget:   object,
+ *   iteration:     number,
+ *   maxIterations: number,
+ *   taskSpec:      object | undefined,
+ *   onEvent:       function | undefined,
+ *   preflight:     boolean     // set true for the preflight call site
+ * }} ctx
+ */
+function processAgenticToolResultForControls(ctx) {
+  const { call, result, transcript, iteration, maxIterations, taskSpec, onEvent, preflight } = ctx;
+  let errorBudget = ctx.errorBudget;
+
+  // 1. Charge error budget. tool_failure for outright failures;
+  //    empty_search_result when the call is in the external_web_read
+  //    group AND the success result has no substance. Same predicates
+  //    as tool_using/agent-loop:1226-1230.
+  let budgetEvent = null;
+  if (result.success === false) {
+    budgetEvent = "tool_failure";
+  } else if (groupsOfTool(call.name).includes("external_web_read")
+      && !agenticToolResultHasSubstance(result)) {
+    budgetEvent = "empty_search_result";
+  }
+  if (budgetEvent) {
+    const charge = chargeBudget(errorBudget, budgetEvent);
+    errorBudget = charge.state;
+    onEvent?.({
+      event_type: "log",
+      payload: {
+        message: `error_budget_charge ${budgetEvent} (exhausted=${charge.exhausted}${preflight ? ", preflight" : ""})`
+      }
+    });
+    if (charge.exhausted) {
+      // Parity with tool_using/agent-loop:1242-1247 — emit a separate
+      // observability event so SSE consumers can render "budget burned"
+      // distinctly from a phase_gate decision.
+      onEvent?.({
+        event_type: "error_budget_signal",
+        payload: {
+          iteration,
+          preflight: Boolean(preflight),
+          event: budgetEvent,
+          reason: charge.reason,
+          snapshot: snapshotBudget(errorBudget)
+        }
+      });
+      return {
+        errorBudget,
+        earlyExit: {
+          kind: "error_budget_exhausted",
+          error_budget: {
+            event: budgetEvent,
+            reason: charge.reason,
+            iteration,
+            preflight: Boolean(preflight),
+            snapshot: snapshotBudget(errorBudget)
+          }
+        }
+      };
+    }
+  }
+
+  // 2. Phase gate. Walks the validator-shape transcript and decides
+  //    continue / retry / escalate / abort. Always runs (regardless of
+  //    budgetEvent) so a preflight that returned substance still gets
+  //    its same-tool-streak / contract-unreachable signal recorded.
+  const validatorTx = transcriptForValidator(transcript);
+  const stepGate = validateStepGate(taskSpec, validatorTx, {
+    iteration,
+    maxIterations
+  });
+  const runbook = suggestRunbookForStepGate(stepGate);
+  onEvent?.({
+    event_type: "phase_gate_signal",
+    payload: {
+      iteration,
+      preflight: Boolean(preflight),
+      next_action: stepGate.next_action,
+      satisfied: stepGate.satisfied,
+      violation_kinds: (stepGate.violations ?? []).map((v) => v.kind),
+      runbook_suggested: runbook?.id ?? null
+    }
+  });
+  if (stepGate.next_action === "abort" || stepGate.next_action === "escalate") {
+    return {
+      errorBudget,
+      earlyExit: {
+        kind: `phase_gate_${stepGate.next_action}`,
+        phase_gate: {
+          next_action: stepGate.next_action,
+          iteration,
+          preflight: Boolean(preflight),
+          violations: stepGate.violations ?? [],
+          runbook_suggested: runbook?.id ?? null
+        }
+      }
+    };
+  }
+
+  return { errorBudget, earlyExit: null };
+}
+
 function toolDescriptorForAdapter(tool) {
   return {
     name: tool.id,
@@ -363,6 +488,20 @@ export async function runAgenticPlanner({
     ...(task?.context_packet?.file_paths ?? []),
     ...(task?.context_packet?.image_paths ?? [])
   ].filter(Boolean);
+
+  // J2: initialise the error budget BEFORE the preflight (was J1-time
+  // post-preflight) so the preflight web_search_fetch call participates
+  // in the same per-tool budget+gate controls as the main loop. Reads
+  // execution_constraints.error_budget from TaskSpec — parity with
+  // tool_using/agent-loop:961-963 — so SemanticRouter / runtime
+  // overrides for deep-research / lenient-mode tasks affect both
+  // executors uniformly. earlyExitState may be set by the preflight
+  // helper call below; if so the main loop is skipped entirely.
+  let errorBudget = createErrorBudget(
+    task?.task_spec?.execution_constraints?.error_budget
+  );
+  let earlyExitState = null;
+
   let preflightSearchText = "";
   if (taskNeedsCurrentWebData(task)) {
     // P4-00.7 design note (§18.6.1.A clarification): we deliberately use
@@ -426,6 +565,28 @@ export async function runAgenticPlanner({
       metadata: searchResult.metadata ?? {},
       artifact_paths: searchResult.artifact_paths ?? []
     });
+
+    // J2: run the per-tool controls on the preflight result. Pre-J2
+    // this entry was outside both the budget and the step gate, so an
+    // empty preflight wasted half the budget invisibly and a failed
+    // preflight didn't count toward tool_failure at all. iteration=0
+    // — the preflight runs before any LLM turn.
+    {
+      const ctrl = processAgenticToolResultForControls({
+        call: searchCall,
+        result: searchResult,
+        transcript,
+        errorBudget,
+        iteration: 0,
+        maxIterations,
+        taskSpec: task?.task_spec,
+        onEvent,
+        preflight: true
+      });
+      errorBudget = ctrl.errorBudget;
+      if (ctrl.earlyExit) earlyExitState = ctrl.earlyExit;
+    }
+
     preflightSearchText = [
       "Live web search preflight result:",
       searchResult.observation || "(web_search_fetch returned no observation)",
@@ -444,16 +605,11 @@ export async function runAgenticPlanner({
   let finalText = "";
   let iterations = 0;
 
-  // J1: per-iteration parity state. errorBudget is mutated (replaced
-  // with each charge); earlyExitState is set when budget exhausts or
-  // step gate aborts/escalates and triggers an early break out of both
-  // loops. The post-loop validator block reads earlyExitState to
-  // build the right downgrade message and surface the diagnostic
-  // metadata (phase_gate / error_budget) on the planner result.
-  let errorBudget = createErrorBudget();
-  let earlyExitState = null;
-
-  for (iterations = 0; iterations < maxIterations; iterations += 1) {
+  // J2: skip the main loop entirely if the preflight already triggered
+  // an early exit (budget exhaustion or phase-gate abort/escalate).
+  // The post-loop validator block reads earlyExitState to surface
+  // phase_gate / error_budget on the planner result.
+  for (iterations = 0; iterations < maxIterations && !earlyExitState; iterations += 1) {
     if (signal?.aborted) {
       const err = new Error("Agentic planner aborted.");
       err.code = "ABORT_ERR";
@@ -599,72 +755,24 @@ export async function runAgenticPlanner({
         artifact_paths: result.artifact_paths ?? []
       });
 
-      // J1: per-iteration error budget + phase gate (parity with
-      // tool_using/agent-loop:1224-1331). Charge the budget for tool
-      // failures and empty external_web_read returns; if exhausted,
-      // record the reason and break out of both loops via
-      // earlyExitState. Then run validateStepGate to catch same-tool
-      // failure streaks and iteration-ceiling abort; on
-      // abort/escalate, do the same break-out dance.
-      {
-        let budgetEvent = null;
-        if (result.success === false) {
-          budgetEvent = "tool_failure";
-        } else if (groupsOfTool(call.name).includes("external_web_read")
-            && !agenticToolResultHasSubstance(result)) {
-          budgetEvent = "empty_search_result";
-        }
-        if (budgetEvent) {
-          const charge = chargeBudget(errorBudget, budgetEvent);
-          errorBudget = charge.state;
-          onEvent?.({
-            event_type: "log",
-            payload: {
-              message: `error_budget_charge ${budgetEvent} (exhausted=${charge.exhausted})`
-            }
-          });
-          if (charge.exhausted) {
-            earlyExitState = {
-              kind: "error_budget_exhausted",
-              error_budget: {
-                event: budgetEvent,
-                reason: charge.reason,
-                iteration: iterations,
-                snapshot: snapshotBudget(errorBudget)
-              }
-            };
-            break;
-          }
-        }
-
-        const validatorTx = transcriptForValidator(transcript);
-        const stepGate = validateStepGate(task?.task_spec, validatorTx, {
-          iteration: iterations,
-          maxIterations
-        });
-        const runbook = suggestRunbookForStepGate(stepGate);
-        onEvent?.({
-          event_type: "phase_gate_signal",
-          payload: {
-            iteration: iterations,
-            next_action: stepGate.next_action,
-            satisfied: stepGate.satisfied,
-            violation_kinds: (stepGate.violations ?? []).map((v) => v.kind),
-            runbook_suggested: runbook?.id ?? null
-          }
-        });
-        if (stepGate.next_action === "abort" || stepGate.next_action === "escalate") {
-          earlyExitState = {
-            kind: `phase_gate_${stepGate.next_action}`,
-            phase_gate: {
-              next_action: stepGate.next_action,
-              iteration: iterations,
-              violations: stepGate.violations ?? [],
-              runbook_suggested: runbook?.id ?? null
-            }
-          };
-          break;
-        }
+      // J2: per-tool controls via the shared helper. Same checks as
+      // tool_using/agent-loop:1224-1331; previously inlined here, now
+      // factored so the preflight site can run the same predicate.
+      const ctrl = processAgenticToolResultForControls({
+        call,
+        result,
+        transcript,
+        errorBudget,
+        iteration: iterations,
+        maxIterations,
+        taskSpec: task?.task_spec,
+        onEvent,
+        preflight: false
+      });
+      errorBudget = ctrl.errorBudget;
+      if (ctrl.earlyExit) {
+        earlyExitState = ctrl.earlyExit;
+        break;
       }
 
       for (const artifactPath of result.artifact_paths ?? []) {

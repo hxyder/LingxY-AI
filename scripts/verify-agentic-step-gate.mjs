@@ -302,5 +302,222 @@ await it("legacy compat: no task_spec, single tool failure → no early-exit (bu
     "no task_spec means no contract violations to drive abort");
 });
 
+// ── 8. J2: preflight web_search_fetch participates in the controls ─
+await it("J2: preflight empty external_web_read → fires empty_search_result budget on the preflight site", async () => {
+  // needs_current_web_data=true triggers the preflight web_search_fetch.
+  // The mock tool returns success=true with no substance — pre-J2 this
+  // was invisible to the budget; post-J2 it charges
+  // empty_search_result. Default max_empty_search_results=1, so the
+  // single preflight call exhausts the budget immediately and the
+  // planner skips the main loop.
+  const events = [];
+  const result = await runAgenticPlanner({
+    task: {
+      task_id: "j2-1",
+      user_command: "research today's AI news",
+      task_spec: { needs_current_web_data: true }
+    },
+    runtime: makeEmptySearchRuntime(),
+    adapterOverride: makeSequenceAdapter([
+      { text: "Synthesised from preflight." }
+    ]),
+    onEvent: (e) => events.push(e),
+    maxIterations: 6
+  });
+  assert.equal(result.downgraded, true,
+    "preflight empty result must trigger early-exit downgrade");
+  assert.ok(result.error_budget,
+    `error_budget must be populated; got ${JSON.stringify(result.error_budget)}`);
+  assert.equal(result.error_budget.event, "empty_search_result");
+  assert.equal(result.error_budget.preflight, true,
+    "error_budget must record preflight=true");
+  // When the budget exhausts, parity with tool_using is to emit
+  // `error_budget_signal` (NOT phase_gate_signal — same as
+  // tool_using/agent-loop:1242). Lock that in.
+  const preflightBudgetEvent = events.find((e) =>
+    e.event_type === "error_budget_signal" && e.payload?.preflight === true);
+  assert.ok(preflightBudgetEvent,
+    "error_budget_signal with preflight=true must be emitted when preflight budget exhausts");
+  assert.equal(preflightBudgetEvent.payload.event, "empty_search_result");
+});
+
+await it("J2: preflight that returns substance still emits phase_gate_signal with preflight=true", async () => {
+  // Successful preflight (substantive results) → budget not charged,
+  // step gate runs, phase_gate_signal carries preflight=true. Then
+  // the main loop runs normally and the planner returns success.
+  const tools = BUILTIN_ACTION_TOOLS.map((tool) => tool.id === "web_search_fetch"
+    ? {
+        ...tool,
+        async execute() {
+          return {
+            success: true,
+            observation: "Substantial preflight result with multiple sources covering the topic in depth.",
+            metadata: {
+              tool_id: "web_search_fetch",
+              results: [
+                { url: "https://nytimes.com/a", title: "A" },
+                { url: "https://reuters.com/b", title: "B" }
+              ]
+            },
+            artifact_paths: []
+          };
+        }
+      }
+    : tool);
+  const runtime = { actionToolRegistry: createActionToolRegistry(tools), toolContext: {} };
+  const events = [];
+  await runAgenticPlanner({
+    task: {
+      task_id: "j2-1b",
+      user_command: "research current AI news",
+      task_spec: { needs_current_web_data: true }
+    },
+    runtime,
+    adapterOverride: makeSequenceAdapter([
+      { text: "Synthesised from preflight." }
+    ]),
+    onEvent: (e) => events.push(e),
+    maxIterations: 4
+  });
+  const preflightGateEvent = events.find((e) =>
+    e.event_type === "phase_gate_signal" && e.payload?.preflight === true);
+  assert.ok(preflightGateEvent,
+    "phase_gate_signal with preflight=true must fire when preflight has substance (no budget charge)");
+});
+
+await it("J2: preflight failure counts toward tool_failure budget", async () => {
+  // needs_current_web_data=true triggers preflight; the failing
+  // runtime makes web_search_fetch return success=false.
+  // Pre-J2 this didn't count; post-J2 it charges 1/2 of
+  // max_tool_failures. The main loop then runs (budget not yet
+  // exhausted at 1/2), and the first main-loop tool_failure pushes it
+  // to 2/2 — exhausted, early exit. We assert the snapshot reflects
+  // the cumulative count.
+  const result = await runAgenticPlanner({
+    task: {
+      task_id: "j2-2",
+      user_command: "search current AI news",
+      task_spec: { needs_current_web_data: true }
+    },
+    runtime: makeAllFailingRuntime(),
+    adapterOverride: makeSequenceAdapter([
+      // Main loop: one more failed tool call → budget exhausts at 2/2.
+      { tool_calls: [{ id: "c1", name: "launch_app", arguments: { app: "x" } }] },
+      { text: "Stopped." }
+    ]),
+    maxIterations: 6
+  });
+  assert.equal(result.downgraded, true);
+  // Either error_budget or phase_gate fired — accept either, but
+  // assert the budget snapshot shows ≥ 2 tool_failures consumed
+  // (preflight failure + main loop failure both counted).
+  if (result.error_budget) {
+    assert.equal(result.error_budget.event, "tool_failure",
+      `expected tool_failure; got ${result.error_budget.event}`);
+    assert.ok(result.error_budget.snapshot.consumed_tool_failures >= 2,
+      `snapshot must show ≥ 2 tool_failures (preflight + main); got ${result.error_budget.snapshot.consumed_tool_failures}`);
+  } else if (result.phase_gate) {
+    // The step gate may escalate before the budget exhausts depending
+    // on streak detection; that's also acceptable.
+    assert.ok(["abort", "escalate"].includes(result.phase_gate.next_action));
+  } else {
+    throw new Error(`expected at least one of error_budget / phase_gate to fire; got ${JSON.stringify(result)}`);
+  }
+});
+
+// ── 9. J2: execution_constraints.error_budget override is honoured ─
+await it("J2: execution_constraints.error_budget override widens the budget", async () => {
+  // Default max_empty_search_results=1, so 2 empties would normally
+  // exhaust. Override to 5 — three empty_search_result events should
+  // consume 3/5 (NOT exhaust). The planner is then allowed to keep
+  // iterating; we only assert no early-exit-via-budget fires.
+  //
+  // We also widen max_tool_failures and max_replan_rounds defensively
+  // so unrelated event types can't confuse the assertion.
+  const result = await runAgenticPlanner({
+    task: {
+      task_id: "j2-3",
+      user_command: "thoroughly research AI news",
+      task_spec: {
+        needs_current_web_data: true,
+        execution_constraints: {
+          error_budget: {
+            max_empty_search_results: 5,
+            max_tool_failures: 10,
+            max_replan_rounds: 10,
+            max_no_file_change_runs: 10
+          }
+        }
+      }
+    },
+    runtime: makeEmptySearchRuntime(),
+    adapterOverride: makeSequenceAdapter([
+      // Preflight has already fired on iteration 0; here we add two
+      // more empty web_search_fetch calls in subsequent iterations.
+      { tool_calls: [{ id: "c1", name: "web_search_fetch", arguments: { query: "x" } }] },
+      { tool_calls: [{ id: "c2", name: "web_search_fetch", arguments: { query: "y" } }] },
+      { text: "Couldn't find anything across multiple queries." }
+    ]),
+    maxIterations: 6
+  });
+  // With override: 3 empties → 3/5 consumed → budget NOT exhausted.
+  // The post-loop SuccessContract may still fire (no required_policy
+  // _groups configured here so it shouldn't), but error_budget
+  // specifically must not be set as the early-exit reason.
+  assert.equal(result.error_budget, null,
+    `error_budget must NOT trigger early-exit when override widens cap; got ${JSON.stringify(result.error_budget)}`);
+  assert.equal(result.phase_gate, null,
+    "no contract → no phase_gate abort either");
+});
+
+await it("J2: execution_constraints.error_budget tightens — single failure exhausts when max=1", async () => {
+  // Override max_tool_failures to 1 (default 2). A single failure now
+  // exhausts immediately. Lock-in that the override is read on the
+  // tightening direction too, not just widening.
+  const result = await runAgenticPlanner({
+    task: {
+      task_id: "j2-4",
+      user_command: "do something",
+      task_spec: {
+        execution_constraints: {
+          error_budget: {
+            max_tool_failures: 1
+          }
+        }
+      }
+    },
+    runtime: makeAllFailingRuntime(),
+    adapterOverride: makeSequenceAdapter([
+      { tool_calls: [{ id: "c1", name: "launch_app", arguments: { app: "x" } }] },
+      { text: "Tried." }
+    ]),
+    maxIterations: 4
+  });
+  assert.equal(result.downgraded, true);
+  assert.ok(result.error_budget,
+    `error_budget must fire after a single failure when max=1; got ${JSON.stringify(result)}`);
+  assert.equal(result.error_budget.event, "tool_failure");
+  assert.equal(result.error_budget.snapshot.max_tool_failures, 1,
+    "snapshot must reflect the tightened cap");
+});
+
+// ── 10. J2 source-level lock-in ──────────────────────────────────
+await it("J2 source: planner uses the shared helper for preflight AND main loop", () => {
+  const planner = loadFile("../src/service/executors/agentic/planner.mjs");
+  assert.match(planner, /function processAgenticToolResultForControls/,
+    "planner must define the shared helper");
+  // Helper is called at TWO sites: preflight and main loop. The
+  // preflight site passes preflight: true; the main loop passes
+  // preflight: false. Match both.
+  assert.match(planner, /processAgenticToolResultForControls\([\s\S]*?preflight: true/,
+    "preflight site must invoke the helper with preflight: true");
+  assert.match(planner, /processAgenticToolResultForControls\([\s\S]*?preflight: false/,
+    "main loop site must invoke the helper with preflight: false");
+  // execution_constraints.error_budget override must be threaded into
+  // createErrorBudget.
+  assert.match(planner, /createErrorBudget\(\s*task\?\.task_spec\?\.execution_constraints\?\.error_budget/,
+    "planner must initialise the budget from task_spec.execution_constraints.error_budget");
+});
+
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
 if (fail > 0) process.exit(1);
