@@ -489,7 +489,10 @@ function switchConversation(convId) {
   if (activeTaskId) {
     ensureActiveTaskEventStream(activeTaskId);
   }
-  renderConversationState();
+  // F2: rebuild from backend conversation_messages on conversation switch
+  // instead of reading the localStorage `turns` cache as canonical.
+  ensureBackendCacheFields(conversationState);
+  void loadConversationFromBackend(conversationState.id);
 }
 
 function switchProject(projectId) {
@@ -554,16 +557,21 @@ function ensureConversation(seedCapture = null, seedCommand = null) {
   return conversationState;
 }
 
-function appendTurn(role, content) {
-  if (!content || typeof content !== "string") return;
+function appendTurn(role, content, opts = {}) {
+  if (!content || typeof content !== "string") return null;
   ensureConversation();
-  conversationState.turns.push({ role, content, ts: Date.now() });
+  // F2: turns is now a transient UI cache. Backend conversation_messages
+  // is the canonical store; localStorage projectStore keeps only project
+  // metadata. compressIfNeeded is gone — backend ContextBudgetPolicy
+  // owns history windowing.
+  const turn = { role, content, ts: Date.now(), ...(opts.metadata ?? {}) };
+  conversationState.turns.push(turn);
   conversationState.updatedAt = Date.now();
   if (!conversationState.title && role === "user") {
     conversationState.title = content.slice(0, 30).trim() || "新会话";
   }
-  compressIfNeeded();
-  persistConversation();
+  saveProjectStore();
+  return turn;
 }
 
 // Route an assistant turn to whichever conversation owns this task — not
@@ -606,17 +614,125 @@ function bindTaskToConversation(taskId) {
   persistConversation();
 }
 
-function compressIfNeeded() {
-  if (!conversationState || conversationState.turns.length <= COMPRESS_TURN_LIMIT) return;
-  const turns = conversationState.turns;
-  const keepStart = turns.slice(0, COMPRESS_KEEP_START);
-  const keepEnd = turns.slice(-COMPRESS_KEEP_END);
-  const dropped = turns.length - keepStart.length - keepEnd.length;
-  if (dropped <= 0) return;
-  conversationState.turns = [...keepStart, { role: "system", content: `[…压缩了 ${dropped} 轮早先的对话以节省上下文…]`, ts: Date.now(), compressed: true }, ...keepEnd];
+function persistConversation() { saveProjectStore(); }
+
+// ─── F2: Backend-backed conversation cache ───────────────────────────────────
+// conversationState.turns is a transient UI cache only; the canonical
+// conversation lives in the backend SQL store. The helpers below keep
+// the cache in sync.
+
+function createClientMessageId() {
+  if (typeof crypto?.randomUUID === "function") return `cmsg_${crypto.randomUUID()}`;
+  return `cmsg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function persistConversation() { saveProjectStore(); }
+function ensureBackendCacheFields(conv) {
+  if (!conv) return null;
+  if (!(conv.pendingByClientId instanceof Map)) conv.pendingByClientId = new Map();
+  if (typeof conv.lastKnownSeq !== "number") conv.lastKnownSeq = -1;
+  if (!Array.isArray(conv.turns)) conv.turns = [];
+  return conv;
+}
+
+function markPendingUserMessage(clientMessageId, content) {
+  if (!clientMessageId || typeof content !== "string") return;
+  const conv = ensureBackendCacheFields(conversationState);
+  if (!conv) return;
+  conv.pendingByClientId.set(clientMessageId, {
+    role: "user",
+    content,
+    ts: Date.now()
+  });
+  appendTurn("user", content, { metadata: { client_message_id: clientMessageId, pending: true } });
+  // Optimistic UI bubble — tagged with the client_message_id so the
+  // reconcile pass can recognise it and avoid emitting a duplicate.
+  const bubble = typeof addBubble === "function" ? addBubble("user", content) : null;
+  if (bubble && bubble.dataset) {
+    bubble.dataset.clientMessageId = clientMessageId;
+    bubble.classList.add("pending");
+  }
+}
+
+function clearPending(clientMessageId) {
+  const conv = conversationState;
+  if (conv?.pendingByClientId instanceof Map) {
+    conv.pendingByClientId.delete(clientMessageId);
+  }
+}
+
+function applyBackendMessageToCache(message) {
+  const conv = ensureBackendCacheFields(conversationState);
+  if (!conv) return;
+  if (typeof message?.seq !== "number") return;
+  if (message.seq <= conv.lastKnownSeq) return;
+  conv.lastKnownSeq = Math.max(conv.lastKnownSeq, message.seq);
+
+  const clientId = message.metadata?.client_message_id;
+  // Reconcile by client_message_id: if the backend's user message
+  // matches an optimistic bubble we already rendered, upgrade its
+  // attributes and drop the pending entry. NEVER render a duplicate
+  // user bubble for the same submit.
+  if (clientId) {
+    const existing = bubbleArea?.querySelector?.(`.bubble[data-client-message-id="${cssEscapeFor(clientId)}"]`);
+    if (existing) {
+      existing.dataset.messageId = message.message_id;
+      existing.dataset.seq = String(message.seq);
+      existing.classList.remove("pending");
+      conv.pendingByClientId.delete(clientId);
+      return;
+    }
+    conv.pendingByClientId.delete(clientId);
+  }
+
+  // tool_summary is a backend-only history record — sanitised digest of
+  // the last turn's tools. We don't render it as a chat bubble (the
+  // task timeline already shows tool_call_started / completed events).
+  if (message.role === "tool_summary") return;
+
+  // New canonical message we haven't seen — append to UI cache (turns)
+  // and DOM. Tag the bubble with the backend message_id so reconcile
+  // can recognise it on a subsequent rebuild.
+  appendTurn(message.role, message.content);
+  if (typeof addBubble === "function") {
+    const bubble = addBubble(message.role, message.content);
+    if (bubble && bubble.dataset) {
+      bubble.dataset.messageId = message.message_id;
+      bubble.dataset.seq = String(message.seq);
+    }
+  }
+}
+
+function cssEscapeFor(s) {
+  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(s);
+  return String(s).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+}
+
+async function reconcileConversationFromBackend(convId, { fullRebuild = false } = {}) {
+  if (!convId) return;
+  const conv = ensureBackendCacheFields(conversationState);
+  if (!conv || conv.id !== convId) return;
+  const sinceSeq = fullRebuild ? 0 : Math.max(0, conv.lastKnownSeq + 1);
+  let payload;
+  try {
+    payload = await fetchJson(`/conversation/${encodeURIComponent(convId)}/messages?since=${sinceSeq}&limit=200`);
+  } catch {
+    return;
+  }
+  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
+  if (fullRebuild) {
+    conv.turns = [];
+    conv.lastKnownSeq = -1;
+    clearBubbles();
+  }
+  for (const m of messages) applyBackendMessageToCache(m);
+}
+
+async function loadConversationFromBackend(convId) {
+  if (!convId) return;
+  const conv = ensureBackendCacheFields(conversationState);
+  if (!conv || conv.id !== convId) return;
+  await reconcileConversationFromBackend(convId, { fullRebuild: true });
+}
 function restoreConversation() { loadProjectStore(); }
 
 function renderConversationState() {
@@ -3197,6 +3313,9 @@ async function submitTask() {
       ? conversationState?.lastCompletedTaskId ?? null
       : null;
 
+    const clientMessageId = createClientMessageId();
+    markPendingUserMessage(clientMessageId, commandText);
+
     const result = await fetchJson("/task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -3204,9 +3323,17 @@ async function submitTask() {
         ...payload,
         background: true,
         parent_task_id: parentTaskId,
-        conversation_id: conversationState?.id ?? null
+        conversation_id: conversationState?.id ?? null,
+        client_message_id: clientMessageId
       })
     });
+    // F2: post-submit reconcile is intentionally NOT fired here — SSE
+    // events render the live assistant bubble during task execution.
+    // The next conversation switch / overlay reopen will rebuild from
+    // backend (loadConversationFromBackend), at which point the
+    // optimistic user bubble is upgraded via client_message_id match
+    // and any live-rendered assistant bubble is replaced by the
+    // canonical backend message.
 
     // UCA-059: Server detected an ambiguous command — show clarification bubble
     // instead of starting a background task.
@@ -6190,17 +6317,12 @@ async function handleUserSend() {
       }
     }
 
-    // normal task submission
-    if (text && conversationPhase === "idle") {
-      addBubble("user", text);
-    }
-
-    // Record the user's turn in persistent conversation memory. If no seed
-    // capture has been attached yet, the current pendingCapture becomes it.
+    // F2: normal task submission. Optimistic UI bubble + cache push +
+    // pending registration are handled inside submitTask via
+    // markPendingUserMessage — adding them here would double-render.
     if (text) {
       const seed = pendingCapture?.capture ?? conversationState?.seedCapture ?? null;
       ensureConversation(seed, conversationState?.seedCommand ?? text);
-      appendTurn("user", text);
     }
 
     await submitTask();

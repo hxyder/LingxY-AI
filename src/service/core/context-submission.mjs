@@ -649,6 +649,7 @@ export async function submitContextTask({
   parentTaskId = null,
   parentMessageId = null,
   conversationId = null,
+  clientMessageId = null,
   childIndex = null,
   retryCount = 0,
   bypassDedupe = false,
@@ -757,6 +758,7 @@ export async function submitContextTask({
         userCommand,
         executionMode,
         conversationId,
+      clientMessageId,
         subtasks: decomposition.subtasks,
         submitChild: ({ subtask, index, parentTaskId: compositeId, parentMessageId }) =>
           submitContextTask({
@@ -767,6 +769,7 @@ export async function submitContextTask({
             parentTaskId: compositeId,
             parentMessageId,
             conversationId,
+      clientMessageId,
             childIndex: index,
             executorOverride: subtask.suggested_executor ?? null,
             skipDecomposition: true
@@ -790,6 +793,7 @@ export async function submitContextTask({
     parentTaskId,
     parentMessageId,
     conversationId,
+    clientMessageId,
     childIndex,
     retryCount,
     bypassDedupe,

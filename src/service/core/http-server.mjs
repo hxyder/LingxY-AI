@@ -1041,6 +1041,9 @@ async function submitTaskFromBody(runtime, body) {
   const requestParentTaskId = typeof body.parent_task_id === "string" && body.parent_task_id
     ? body.parent_task_id
     : (typeof body.parentTaskId === "string" && body.parentTaskId ? body.parentTaskId : null);
+  const requestClientMessageId = typeof body.client_message_id === "string" && body.client_message_id
+    ? body.client_message_id
+    : (typeof body.clientMessageId === "string" && body.clientMessageId ? body.clientMessageId : null);
 
   if (body.filePaths?.length) {
     return submitFileTask({
@@ -1052,6 +1055,7 @@ async function submitTaskFromBody(runtime, body) {
       executorOverride: body.executorOverride,
       parentTaskId: requestParentTaskId,
       conversationId: requestConversationId,
+      clientMessageId: requestClientMessageId,
       background,
       runtime
     });
@@ -1065,6 +1069,7 @@ async function submitTaskFromBody(runtime, body) {
       executorOverride: body.executorOverride,
       parentTaskId: requestParentTaskId,
       conversationId: requestConversationId,
+      clientMessageId: requestClientMessageId,
       background,
       runtime
     });
@@ -1081,6 +1086,7 @@ async function submitTaskFromBody(runtime, body) {
       executorOverride: body.executorOverride ?? "multi_modal",
       parentTaskId: requestParentTaskId,
       conversationId: requestConversationId,
+      clientMessageId: requestClientMessageId,
       background,
       runtime
     });
@@ -1094,6 +1100,7 @@ async function submitTaskFromBody(runtime, body) {
       executorOverride: body.executorOverride,
       parentTaskId: requestParentTaskId,
       conversationId: requestConversationId,
+      clientMessageId: requestClientMessageId,
       background,
       runtime
     });
@@ -1107,6 +1114,7 @@ async function submitTaskFromBody(runtime, body) {
       captureMode: body.captureMode,
       parentTaskId: requestParentTaskId,
       conversationId: requestConversationId,
+      clientMessageId: requestClientMessageId,
       background,
       runtime
     });
@@ -1137,6 +1145,7 @@ async function submitTaskFromBody(runtime, body) {
     // production. Accept both snake_case and camelCase per the
     // existing parent_task_id pattern.
     conversationId: requestConversationId,
+    clientMessageId: requestClientMessageId,
     background,
     runtime
   });

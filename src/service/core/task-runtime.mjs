@@ -267,7 +267,7 @@ export function ensureConversation(runtime, { conversationId, projectId = null, 
 }
 
 export function submitTaskWithConversation(params) {
-  const { runtime, parentMessageId = null, projectId = null } = params;
+  const { runtime, parentMessageId = null, projectId = null, clientMessageId = null } = params;
   const task = createTaskRecord(params);
   if (!runtime?.store?.runInTransaction) {
     runtime.store.insertTask(task);
@@ -282,14 +282,18 @@ export function submitTaskWithConversation(params) {
     let userMessage = null;
     if (conversation && !parentMessageId) {
       const role = isSchedulerSourced(task.context_packet) ? "system" : "user";
+      const metadata = {
+        source_app: task.context_packet?.source_app,
+        execution_mode: task.execution_mode
+      };
+      if (typeof clientMessageId === "string" && clientMessageId.trim()) {
+        metadata.client_message_id = clientMessageId.trim().slice(0, 128);
+      }
       userMessage = runtime.store.appendMessage({
         conversation_id: conversation.conversation_id,
         role,
         content: task.user_command,
-        metadata: {
-          source_app: task.context_packet?.source_app,
-          execution_mode: task.execution_mode
-        }
+        metadata
       });
     }
 
