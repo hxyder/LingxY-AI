@@ -45,6 +45,7 @@
     "verify:followup-continuity": "node scripts/verify-followup-continuity.mjs",
     "verify:fast-executor-truthfulness": "node scripts/verify-fast-executor-truthfulness.mjs",
     "verify:status-preservation": "node scripts/verify-status-preservation.mjs",
+    "verify:agentic-parity": "node scripts/verify-agentic-parity.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",
     "verify:ui-tokens": "node scripts/verify-ui-tokens.mjs",

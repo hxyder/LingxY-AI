@@ -34,6 +34,12 @@ import { createProviderAdapter } from "./provider-adapter.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
 import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
+// H1: parity with tool_using — run the same SuccessContract validator
+// and evidence normalizer at planner exit. Pre-H1 agentic skipped both,
+// so D3 research_quality coverage and required_policy_groups were never
+// enforced for agentic tasks.
+import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
+import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
 
@@ -54,6 +60,35 @@ function claimsCompletion(text = "") {
 
 function anyToolSucceeded(transcript = []) {
   return transcript.some((entry) => entry.role === "tool" && entry.success === true);
+}
+
+/**
+ * H1: translate the agentic planner's transcript shape
+ * (`{role:"tool", name, success, observation, artifact_paths}`) into the
+ * shape `validateSuccessContract` / `extractEvidence` expect
+ * (`{type:"tool_result", tool, success, observation, artifact_paths}`).
+ * tool_using already uses the validator shape natively; agentic kept
+ * its own shape for adapter-replay compatibility, so the translation
+ * lives at the validator seam rather than touching the planner's
+ * internal state.
+ */
+function transcriptForValidator(plannerTranscript = []) {
+  const out = [];
+  for (const entry of plannerTranscript) {
+    if (!entry || entry.role !== "tool") continue;
+    out.push({
+      type: "tool_result",
+      tool: entry.name,
+      success: entry.success,
+      observation: entry.observation ?? "",
+      // metadata is what evidence-normalizer reads (results[].url for
+      // web_search_fetch, url for fetch_url_content); preserve it
+      // through the translation.
+      metadata: entry.metadata ?? {},
+      artifact_paths: entry.artifact_paths ?? []
+    });
+  }
+  return out;
 }
 
 function toolDescriptorForAdapter(tool) {
@@ -351,6 +386,12 @@ export async function runAgenticPlanner({
       name: searchCall.name,
       success: searchResult.success,
       observation: searchResult.observation ?? "",
+      // H1: preserve metadata so extractEvidence can pull
+      // `metadata.results[].url` for web_search_fetch and
+      // `metadata.url` for fetch_url_content. Pre-H1 the agentic
+      // transcript dropped metadata, so evidence extraction always
+      // reported 0 sources.
+      metadata: searchResult.metadata ?? {},
       artifact_paths: searchResult.artifact_paths ?? []
     });
     preflightSearchText = [
@@ -512,6 +553,8 @@ export async function runAgenticPlanner({
         name: call.name,
         success: result.success,
         observation: result.observation ?? "",
+        // H1: preserve metadata for extractEvidence (see preflight site above).
+        metadata: result.metadata ?? {},
         artifact_paths: result.artifact_paths ?? []
       });
 
@@ -603,6 +646,26 @@ export async function runAgenticPlanner({
     finalText = `[UCA note] The model claimed the task was completed, but no tool in this run returned success:true. The claim has been downgraded to "partial". See the transcript for what actually happened.\n\n${finalText}`;
   }
 
+  // H1: SuccessContract enforcement (parity with tool_using's
+  // validateSuccessContract call). Walks the transcript and checks every
+  // entry on `task_spec.success_contract.required_policy_groups`, plus
+  // research_quality coverage thresholds (D3). If unsatisfied, downgrade
+  // — independent from the truthfulness guard above; both can fire and
+  // both messages are surfaced.
+  const validatorTranscript = transcriptForValidator(transcript);
+  const contract = validateSuccessContract(task?.task_spec, validatorTranscript);
+  let violations = null;
+  if (!contract.satisfied) {
+    downgraded = true;
+    violations = contract.violations;
+    const reasons = contract.violations.map((v) => v.message).join(" ");
+    finalText = `[UCA] 注意：未通过 SuccessContract 校验：${reasons}\n\n${finalText || ""}`;
+  }
+
+  // H1: evidence_summary stamp for observability — same as tool_using's
+  // finaliseWithEvidence. Audit-only.
+  const evidenceSummary = extractEvidence(validatorTranscript);
+
   return {
     success: !downgraded && Boolean(finalText),
     finalText: finalText || "(no response from agentic planner)",
@@ -610,6 +673,8 @@ export async function runAgenticPlanner({
     artifactPaths,
     provider_descriptor: descriptor,
     iterations: iterations + 1,
-    downgraded
+    downgraded,
+    violations,
+    evidence_summary: evidenceSummary
   };
 }

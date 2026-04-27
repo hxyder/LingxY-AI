@@ -105,13 +105,21 @@ export function createAgenticExecutorScaffold() {
         event_type: "inline_result",
         payload: { text: result.finalText, downgraded: Boolean(result.downgraded) }
       };
+      // H1a: when the planner downgraded (truthfulness guard OR
+      // SuccessContract violation), emit partial_success so the runtime's
+      // applyExecutorEvent stamps task.status="partial_success". Pre-H1
+      // the executor always yielded success, which silently re-promoted
+      // the planner's downgrade decision back to success at the runtime
+      // layer — same shape of bug G6a fixed in the submission paths.
       yield {
-        event_type: "success",
+        event_type: result.downgraded ? "partial_success" : "success",
         payload: {
           text: result.finalText,
           summary: (result.finalText || "").slice(0, 200),
           artifact_paths: result.artifactPaths ?? [],
-          downgraded: Boolean(result.downgraded)
+          downgraded: Boolean(result.downgraded),
+          violations: result.violations ?? null,
+          evidence_summary: result.evidence_summary ?? null
         }
       };
     }
