@@ -33,6 +33,7 @@ import {
   markTaskFailed,
   markTaskSucceeded,
   registerActiveExecution,
+  submitTaskWithConversation,
   unregisterActiveExecution,
   updateTask
 } from "./task-runtime.mjs";
@@ -135,7 +136,7 @@ export async function submitFileTask({
   });
   const contextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
 
-  const task = createTaskRecord({
+  const { task } = submitTaskWithConversation({
     route,
     contextPacket,
     userCommand,
@@ -144,10 +145,8 @@ export async function submitFileTask({
     conversationId,
     retryCount,
     executorOverride: preferredExecutorOverride,
-    runtime  // G3b: enables parent_task_summary enrichment
+    runtime
   });
-
-  store.insertTask(task);
   const enqueued = queue.enqueue(task);
   emitTaskEvent({
     runtime,

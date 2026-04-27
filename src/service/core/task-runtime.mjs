@@ -248,6 +248,106 @@ function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
   }
 }
 
+function isSchedulerSourced(contextPacket) {
+  return contextPacket?.source_app === "uca.scheduler"
+    || contextPacket?.capture_mode === "event";
+}
+
+export function ensureConversation(runtime, { conversationId, projectId = null, title = null }) {
+  if (!runtime?.store?.getConversation || !runtime.store.insertConversation) return null;
+  if (typeof conversationId !== "string" || conversationId.length === 0) return null;
+  const existing = runtime.store.getConversation(conversationId);
+  if (existing) return existing;
+  return runtime.store.insertConversation({
+    conversation_id: conversationId,
+    project_id: projectId ?? null,
+    title: title ?? null,
+    metadata: {}
+  });
+}
+
+export function submitTaskWithConversation(params) {
+  const { runtime, parentMessageId = null, projectId = null } = params;
+  const task = createTaskRecord(params);
+  if (!runtime?.store?.runInTransaction) {
+    runtime.store.insertTask(task);
+    return { task, userMessage: null, conversation: null };
+  }
+  return runtime.store.runInTransaction(() => {
+    const conversation = ensureConversation(runtime, {
+      conversationId: task.conversation_id,
+      projectId
+    });
+
+    let userMessage = null;
+    if (conversation && !parentMessageId) {
+      const role = isSchedulerSourced(task.context_packet) ? "system" : "user";
+      userMessage = runtime.store.appendMessage({
+        conversation_id: conversation.conversation_id,
+        role,
+        content: task.user_command,
+        metadata: {
+          source_app: task.context_packet?.source_app,
+          execution_mode: task.execution_mode
+        }
+      });
+    }
+
+    runtime.store.insertTask(task);
+
+    const messageIdToLink = parentMessageId ?? userMessage?.message_id ?? null;
+    if (messageIdToLink) {
+      runtime.store.linkMessageToTask(messageIdToLink, task.task_id, "triggered");
+    }
+
+    return { task, userMessage, conversation };
+  });
+}
+
+export function appendTaskOutcomeMessage(runtime, task) {
+  if (!runtime?.store?.appendMessage || !runtime.store.linkMessageToTask) return null;
+  const conversationId = task?.conversation_id;
+  if (!conversationId) return null;
+  if (!runtime.store.getConversation?.(conversationId)) return null;
+
+  const status = task.status;
+  let role = "assistant";
+  let content;
+  let messageStatus = status;
+  if (status === "success") {
+    const finalText = task.result_summary ?? task.result?.final_text ?? task.final_text ?? "";
+    if (typeof finalText !== "string" || finalText.trim().length === 0) return null;
+    content = finalText;
+    messageStatus = "ok";
+  } else if (status === "cancelled") {
+    role = "system";
+    content = "Task was cancelled.";
+  } else if (status === "partial_success") {
+    role = "system";
+    content = `Task partially succeeded: ${task.failure_user_message ?? "see task for details"}`;
+  } else if (status === "failed") {
+    role = "system";
+    content = `Task failed: ${task.failure_user_message ?? task.failure_category ?? "unknown error"}`;
+  } else {
+    role = "system";
+    content = `Task ended with status=${status ?? "unknown"}.`;
+  }
+
+  try {
+    const msg = runtime.store.appendMessage({
+      conversation_id: conversationId,
+      role,
+      content,
+      status: messageStatus,
+      metadata: { task_id: task.task_id, executor: task.executor }
+    });
+    runtime.store.linkMessageToTask(msg.message_id, task.task_id, "answered_by");
+    return msg;
+  } catch {
+    return null;
+  }
+}
+
 export function createTaskRecord({
   route,
   contextPacket,
@@ -796,6 +896,7 @@ export function markTaskFailed(runtime, task, errorLike) {
     }
   ];
   runtime.store.updateTask(task.task_id, task);
+  appendTaskOutcomeMessage(runtime, task);
   const historyRecord = buildHistoryRecord(task, runtime);
   if (historyRecord) {
     runtime.platform?.embeddingStore?.add(historyRecord);
@@ -838,6 +939,7 @@ export function markTaskSucceeded(runtime, task) {
   }
 
   runtime.store.updateTask(task.task_id, task);
+  appendTaskOutcomeMessage(runtime, task);
   const historyRecord = buildHistoryRecord(task, runtime);
   if (historyRecord) {
     runtime.platform?.embeddingStore?.add(historyRecord);

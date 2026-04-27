@@ -4,6 +4,7 @@ import {
   emitTaskEvent,
   markTaskSucceeded,
   refreshCompositeParentStatus,
+  submitTaskWithConversation,
   updateTask
 } from "./task-runtime.mjs";
 
@@ -27,7 +28,7 @@ export async function submitCompositeTask({
 }) {
   const store = runtime.store;
   const route = buildCompositeRoute(userCommand);
-  const parentTask = createTaskRecord({
+  const { task: parentTask, userMessage: parentUserMessage } = submitTaskWithConversation({
     route,
     contextPacket,
     userCommand,
@@ -37,8 +38,6 @@ export async function submitCompositeTask({
     executorOverride: "composite",
     childTaskIds: []
   });
-
-  store.insertTask(parentTask);
   emitTaskEvent({
     runtime,
     taskId: parentTask.task_id,
@@ -63,7 +62,8 @@ export async function submitCompositeTask({
     const childResult = await submitChild({
       subtask,
       index: i,
-      parentTaskId: parentTask.task_id
+      parentTaskId: parentTask.task_id,
+      parentMessageId: parentUserMessage?.message_id ?? null
     });
     const childTaskId = childResult?.task?.task_id ?? null;
     if (childTaskId) {

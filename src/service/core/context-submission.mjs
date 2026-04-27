@@ -20,6 +20,7 @@ import {
   markTaskFailed,
   markTaskSucceeded,
   registerActiveExecution,
+  submitTaskWithConversation,
   unregisterActiveExecution,
   updateTask
 } from "./task-runtime.mjs";
@@ -646,6 +647,7 @@ export async function submitContextTask({
   runtime,
   executionMode,
   parentTaskId = null,
+  parentMessageId = null,
   conversationId = null,
   childIndex = null,
   retryCount = 0,
@@ -756,20 +758,14 @@ export async function submitContextTask({
         executionMode,
         conversationId,
         subtasks: decomposition.subtasks,
-        submitChild: ({ subtask, index, parentTaskId: compositeId }) =>
+        submitChild: ({ subtask, index, parentTaskId: compositeId, parentMessageId }) =>
           submitContextTask({
-            // Children re-run preflight on their own subtask command —
-            // the cache will hit when the sub-command matches the
-            // parent and short-circuit the LLM call. We pass the
-            // parent's enriched packet so context_sources flows down;
-            // the child's preflight will stamp a fresh
-            // semantic_router_decision (or reject) keyed on the new
-            // subtask command.
             contextPacket: routerEnrichedContext,
             userCommand: subtask.command,
             runtime,
             executionMode,
             parentTaskId: compositeId,
+            parentMessageId,
             conversationId,
             childIndex: index,
             executorOverride: subtask.suggested_executor ?? null,
@@ -786,26 +782,21 @@ export async function submitContextTask({
   // createTaskSpec on the bare normalizedContextPacket, silently
   // dropping the preflight result — SR only affected decomposition
   // logic, not the persisted task.
-  const task = createTaskRecord({
+  const { task } = submitTaskWithConversation({
     route,
     contextPacket: routerEnrichedContext,
     userCommand,
     executionMode,
     parentTaskId,
-    // K6: thread the client-stamped conversation_id through so K4's
-    // auto-resolution actually fires in production. Frontend
-    // (overlay.js) has been minting and POSTing this since Phase 9
-    // but pre-K6 the HTTP layer dropped it before submitContextTask;
-    // K6 plugs both holes.
+    parentMessageId,
     conversationId,
     childIndex,
     retryCount,
     bypassDedupe,
     executorOverride,
-    runtime  // G3b: enables parent_task_summary enrichment
+    runtime,
+    projectId: routerEnrichedContext?.selection_metadata?.project_id ?? null
   });
-
-  store.insertTask(task);
   const enqueued = queue.enqueue(task);
   emitTaskEvent({
     runtime,

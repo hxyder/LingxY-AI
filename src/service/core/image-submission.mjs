@@ -21,6 +21,7 @@ import {
   markTaskFailed,
   markTaskSucceeded,
   registerActiveExecution,
+  submitTaskWithConversation,
   unregisterActiveExecution,
   updateTask
 } from "./task-runtime.mjs";
@@ -327,7 +328,7 @@ export async function submitImageTask({
     total_size_bytes: fileStats.reduce((sum, entry) => sum + entry.size, 0)
   };
 
-  const task = createTaskRecord({
+  const { task } = submitTaskWithConversation({
     route,
     contextPacket,
     userCommand,
@@ -336,10 +337,8 @@ export async function submitImageTask({
     conversationId,
     retryCount,
     executorOverride,
-    runtime  // G3b: enables parent_task_summary enrichment
+    runtime
   });
-
-  store.insertTask(task);
   const enqueued = queue.enqueue(task);
   emitTaskEvent({
     runtime,

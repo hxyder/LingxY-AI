@@ -20,6 +20,7 @@ import {
   markTaskFailed,
   markTaskSucceeded,
   registerActiveExecution,
+  submitTaskWithConversation,
   unregisterActiveExecution,
   updateTask
 } from "./task-runtime.mjs";
@@ -627,7 +628,7 @@ export async function submitBrowserTask({
   // so the final task.task_spec / tool_policy / decision_trace carry the
   // SemanticRouter merge result. Pre-fix createTaskRecord saw the bare
   // contextPacket; SR's stamp was lost between preflight and persistence.
-  const task = createTaskRecord({
+  const { task } = submitTaskWithConversation({
     route,
     contextPacket: routerEnrichedContext,
     userCommand,
@@ -637,10 +638,8 @@ export async function submitBrowserTask({
     childIndex,
     retryCount,
     executorOverride,
-    runtime  // G3b: enables parent_task_summary enrichment
+    runtime
   });
-
-  store.insertTask(task);
   const enqueued = queue.enqueue(task);
   emitTaskEvent({
     runtime,

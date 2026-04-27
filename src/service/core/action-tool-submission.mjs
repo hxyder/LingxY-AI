@@ -8,6 +8,7 @@ import {
   ensureRuntimeServices,
   markTaskFailed,
   markTaskSucceeded,
+  submitTaskWithConversation,
   updateTask
 } from "./task-runtime.mjs";
 import { runToolAgentLoop } from "../executors/tool_using/agent-loop.mjs";
@@ -61,7 +62,7 @@ export async function submitActionToolTask({
     captureMode
   });
   const route = routeIntent(userCommand);
-  const task = createTaskRecord({
+  const { task } = submitTaskWithConversation({
     route,
     contextPacket,
     userCommand,
@@ -71,10 +72,8 @@ export async function submitActionToolTask({
     retryCount,
     bypassDedupe,
     executorOverride: "tool_using",
-    runtime  // G3b: enables parent_task_summary enrichment
+    runtime
   });
-
-  runtime.store.insertTask(task);
   runtime.queue.enqueue(task);
 
   const emitExecutorEvent = (eventType, payload) =>
