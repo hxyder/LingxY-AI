@@ -1217,7 +1217,7 @@ function setToolStepOpen(stepEl, isOpen) {
   if (body) body.hidden = !isOpen;
 }
 
-function appendToolStepBubble(toolId, state = "pending", detailText = "") {
+function appendToolStepBubble(toolId, state = "pending", detailText = "", { anchorBefore = null } = {}) {
   if (!toolId) return null;
   const stepEl = document.createElement("div");
   stepEl.className = `bubble step ${state}`;
@@ -1225,8 +1225,12 @@ function appendToolStepBubble(toolId, state = "pending", detailText = "") {
   bindToolStepToggle(stepEl);
   setToolStepOpen(stepEl, false);
   bubbleArea.hidden = false;
-  bubbleArea.appendChild(stepEl);
-  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  if (anchorBefore && anchorBefore.parentNode === bubbleArea) {
+    bubbleArea.insertBefore(stepEl, anchorBefore);
+  } else {
+    bubbleArea.appendChild(stepEl);
+    bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  }
   return stepEl;
 }
 
@@ -1526,7 +1530,7 @@ function closeActiveTaskEventStream() {
   closeActiveThinkingCard();
 }
 
-function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
+function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = null } = {}) {
   if (frame.id && renderedTimelineEventIds.has(frame.id)) return;
   const visibleEvents = new Set([
     "accepted",
@@ -1578,7 +1582,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false } = {}) {
     if (toolId) {
       if (!showOverlay) timelineAddStep(`调用 ${toolId}…`, "active");
       if (showOverlay) void maybeRevealOverlay();
-      const stepEl = appendToolStepBubble(toolId, "pending");
+      const stepEl = appendToolStepBubble(toolId, "pending", "", { anchorBefore: replayAnchor });
       // 83.3 — Stash args on the element so markToolStepBubble can re-render
       // them inside the result body. The proposed/started events carry the
       // arg payload; the completed event carries only the observation.
@@ -1953,8 +1957,13 @@ async function renderInlineApproval(frame) {
 }
 
 function replayTaskTimelineEvents(events = []) {
+  // Insert tool bubbles BEFORE the most recent assistant bubble so the
+  // replayed timeline reads chronologically (user → tools → answer)
+  // instead of (user → answer → tools dangling at the bottom).
+  const assistantBubbles = bubbleArea.querySelectorAll(".bubble.assistant");
+  const replayAnchor = assistantBubbles[assistantBubbles.length - 1] ?? null;
   for (const event of events) {
-    renderTaskTimelineEvent(toTaskEventFrame(event), { showOverlay: false });
+    renderTaskTimelineEvent(toTaskEventFrame(event), { showOverlay: false, replayAnchor });
   }
 }
 
