@@ -14,6 +14,8 @@ import {
 } from "../../connectors/core/connector-intent.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
+import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
+import { validateAnswerSynthesis } from "../../core/policy/success-contract-validator.mjs";
 import {
   formatResourceContext,
   formatUntrustedSourceMaterial,
@@ -398,6 +400,15 @@ function buildConversationMessages(prefixMessages, transcript, initialFilePaths 
         role: "user",
         content: `[Runbook recovery: ${entry.runbook_id}]\n${entry.instruction}`
       });
+    } else if (entry.type === "synthesis_retry") {
+      if (entry.assistantDraft) {
+        messages.push({ role: "assistant", content: entry.assistantDraft });
+      }
+      const reasons = (entry.violations ?? []).map((v) => `- ${v.kind}: ${v.message}`).join("\n");
+      messages.push({
+        role: "user",
+        content: `[Synthesis required] The previous draft did not satisfy the user's expected output. Issues:\n${reasons}\n\nRewrite the final answer in the user's language: read the prior tool observations above, transform them into the requested output kind, and respond as plain text. Do NOT call another tool unless new data is genuinely missing. Do NOT repeat raw observation lines verbatim.`
+      });
     }
   }
 
@@ -525,6 +536,10 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
     task.task_spec?.research_quality
   );
   const researchBudgetBlock = researchBudget ? `\n\n${researchBudget}` : "";
+  const synthesisBlock = (() => {
+    const block = buildSynthesisGuidance(task.task_spec);
+    return block ? `\n\n${block}` : "";
+  })();
 
   // UCA-063: Override instruction when refusal retry is active.
   const forceToolInstruction = task.__forceToolUse
@@ -572,7 +587,7 @@ Guidance (not a rigid checklist — apply judgment):
 - **Memory recall.** If the user refers to earlier work with a pronoun ("上个问题" / "刚才" / "之前那份" / "last one" / "that report") or asks you to continue / revise something done before, call list_recent_tasks first (or recall_memory with a topic query if the reference is thematic) and then get_task_detail on the matching task_id. Never reply "I don't remember prior work" while these tools exist.
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
 - **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
-${needsCurrentDataInstruction}${researchPrinciplesBlock}${researchBudgetBlock}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
+${needsCurrentDataInstruction}${researchPrinciplesBlock}${researchBudgetBlock}${synthesisBlock}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
 Use the native tool interface when a tool is needed. Call at most ONE tool per turn. If no tool is needed, or you need a clarification, reply with plain text only in the user's language.`;
 
   try {
@@ -1008,6 +1023,8 @@ async function _runToolAgentLoopCore({
   // hint, we accept that as genuinely final.
   let proseTrapAttemptsUsed = 0;
   const PROSE_TRAP_MAX_ATTEMPTS = 1;
+  let synthesisRetriesUsed = 0;
+  const MAX_SYNTHESIS_RETRIES = 1;
 
   // P4-EB wire-up: aggregate error budget for this task. Catches the
   // "tried 4 different tools, every one returned empty" pattern that
@@ -1076,9 +1093,25 @@ async function _runToolAgentLoopCore({
         continue;
       }
       const connectorFinal = latestConnectorFinal(transcript, task.user_command);
+      const candidateFinal = connectorFinal ?? decision?.text ?? "Done.";
+      const synthesisViolations = validateAnswerSynthesis(task.task_spec, transcript, candidateFinal);
+      if (synthesisViolations.length > 0
+          && synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+        synthesisRetriesUsed += 1;
+        transcript.push({
+          type: "synthesis_retry",
+          assistantDraft: candidateFinal,
+          violations: synthesisViolations
+        });
+        runtime?.emitTaskEvent?.(task.task_id, "synthesis_retry", {
+          attempt: synthesisRetriesUsed,
+          reason: synthesisViolations[0]?.kind
+        });
+        continue;
+      }
       return {
         status: "success",
-        final_text: connectorFinal ?? decision?.text ?? "Done.",
+        final_text: candidateFinal,
         transcript
       };
     }
@@ -1087,15 +1120,30 @@ async function _runToolAgentLoopCore({
       decision.args = repairToolArgs(decision, task, transcript);
     }
 
-    // Dedupe: if the planner is asking for the same tool+args we already executed, treat as final
+    // Dedupe: if the planner repeats the same tool+args, ask it to
+    // synthesize from what's already been observed instead of dumping
+    // raw observations as the final answer.
     const callKey = `${decision.tool}::${JSON.stringify(decision.args ?? {})}`;
     if (seenCalls.has(callKey)) {
+      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+        synthesisRetriesUsed += 1;
+        transcript.push({
+          type: "synthesis_retry",
+          violations: [{
+            kind: "repeated_tool_call",
+            message: `Planner repeated the same ${decision.tool} call; synthesize from prior observations instead.`
+          }]
+        });
+        runtime?.emitTaskEvent?.(task.task_id, "synthesis_retry", {
+          attempt: synthesisRetriesUsed,
+          reason: "repeated_tool_call"
+        });
+        continue;
+      }
       const connectorFinal = latestConnectorFinal(transcript, task.user_command);
       return {
-        status: "success",
-        final_text: connectorFinal ?? (transcript.length > 0
-          ? transcript.filter((e) => e.type === "tool_result").map((e) => e.observation).join("\n")
-          : "Done."),
+        status: "partial_success",
+        final_text: connectorFinal ?? "Could not synthesize a final answer from the available tool observations.",
         transcript
       };
     }

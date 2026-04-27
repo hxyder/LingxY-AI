@@ -23,6 +23,70 @@
 
 import { toolsInGroup } from "./policy-groups.mjs";
 import { extractEvidence } from "./evidence-normalizer.mjs";
+import { SYNTHESIS_REQUIRED_OUTPUTS } from "../intent/semantic-router.mjs";
+
+const SYNTHESIS_OVERLAP_THRESHOLD = 0.6;
+const SYNTHESIS_MIN_OBSERVATION_CHARS = 80;
+const SYNTHESIS_BIGRAM_SAMPLE_CAP = 4000;
+
+function normaliseForOverlap(text) {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, SYNTHESIS_BIGRAM_SAMPLE_CAP);
+}
+
+function bigramSet(text) {
+  const norm = normaliseForOverlap(text);
+  if (norm.length < 2) return new Set();
+  const set = new Set();
+  for (let i = 0; i < norm.length - 1; i++) set.add(norm.slice(i, i + 2));
+  return set;
+}
+
+function bigramOverlap(a, b) {
+  const A = bigramSet(a);
+  const B = bigramSet(b);
+  if (A.size === 0 || B.size === 0) return 0;
+  let inter = 0;
+  for (const g of A) if (B.has(g)) inter += 1;
+  return inter / Math.min(A.size, B.size);
+}
+
+/**
+ * Post-tool synthesis check. Returns at most one violation when the
+ * assistant's final text is a near-verbatim echo of a tool observation
+ * AND the user expected a synthesis kind (summary / comparison /
+ * recommendation / analysis / action_items).
+ *
+ * Deterministic v1: bigram overlap heuristic. No extra LLM call.
+ */
+export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "") {
+  const expected = taskSpec?.synthesis?.expected_output ?? null;
+  if (!expected || !SYNTHESIS_REQUIRED_OUTPUTS.has(expected)) return [];
+  const final = String(finalText ?? "").trim();
+  if (final.length === 0) return [];
+
+  const toolResults = (transcript ?? []).filter(
+    (e) => e?.type === "tool_result" && isSuccessfulHit(e)
+  );
+  if (toolResults.length === 0) return [];
+
+  let maxOverlap = 0;
+  for (const r of toolResults) {
+    const observation = String(r.observation ?? r.result ?? "");
+    if (observation.length < SYNTHESIS_MIN_OBSERVATION_CHARS) continue;
+    const overlap = bigramOverlap(observation, final);
+    if (overlap > maxOverlap) maxOverlap = overlap;
+  }
+  if (maxOverlap < SYNTHESIS_OVERLAP_THRESHOLD) return [];
+
+  return [{
+    kind: "answer_not_synthesized",
+    message: `expected_output=${expected} requires synthesis, but the final answer overlaps ${(maxOverlap * 100).toFixed(0)}% with raw tool observations.`
+  }];
+}
 
 /**
  * @typedef {Object} TranscriptEntry

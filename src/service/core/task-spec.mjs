@@ -697,6 +697,18 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     || toolPolicy?.policy_groups?.external_web_read?.mode === "required"
   );
 
+  const synthesis = {
+    user_goal: typeof srDecision?.user_goal === "string" && srDecision.user_goal.trim()
+      ? srDecision.user_goal.trim()
+      : text,
+    expected_output: typeof srDecision?.expected_output === "string"
+      ? srDecision.expected_output
+      : null,
+    primary_intent: typeof srDecision?.primary_intent === "string"
+      ? srDecision.primary_intent
+      : null
+  };
+
   const partialSpec = {
     goal,
     user_goal_text: text,
@@ -704,6 +716,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     needs_current_web_data: toolPolicy.web_search_fetch.mode === "required",
     tool_policy: toolPolicy,
     research_quality: researchQuality,
+    synthesis,
     // G4: framework-state flags read by executor-resolver Rule 5
     // extension and fast-executor short-circuit (G5/G6b).
     routing_status: routingStatus,

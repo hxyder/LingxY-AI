@@ -88,8 +88,22 @@ const EXPECTED_OUTPUTS = Object.freeze([
   "image",
   "plan",
   "execution",
-  "artifact"
+  "artifact",
+  "summary",
+  "comparison",
+  "recommendation",
+  "analysis",
+  "action_items",
+  "raw_results"
 ]);
+
+export const SYNTHESIS_REQUIRED_OUTPUTS = Object.freeze(new Set([
+  "summary",
+  "comparison",
+  "recommendation",
+  "analysis",
+  "action_items"
+]));
 const SOURCE_MODES = Object.freeze([
   "no_external",
   "provided_context",
@@ -447,7 +461,7 @@ function buildMessages({ text, contextPacket, signals }) {
     "- executor: fast for short conversational answers; tool_using for tool-driven actions; agentic for multi-step planning with artifacts; multi_modal for image-led tasks.",
     "- research_depth: `single_lookup` when the user asks for one fact / one URL / one article (weather, stock price, a specific page they shared, single-fact recall). `multi_source` when independent sources matter — news, current events, competitor research, open-source surveys, comparison shopping, fact-checking, market/price scans. `deep_research` ONLY when the user explicitly asks for thorough / comprehensive / in-depth / exhaustive coverage (e.g. \"深入调研\", \"全面对比\", \"彻底搜一下\", \"comprehensive review\", \"exhaustive comparison\", \"deep dive\"). Do NOT pick deep_research just because the topic is broad — the user must have asked for depth verbatim. `unknown` only when web_policy is `forbidden` or you genuinely cannot tell.",
     "- primary_intent/domain/user_goal: classify what the user is trying to accomplish in plain terms. Domain is context for audit, not an execution command.",
-    "- expected_output: classify the form the user wants back: direct answer, step-by-step, code, markdown doc, table, plan, execution, or artifact.",
+    "- expected_output: classify what the user expects to RECEIVE. Use synthesis kinds (`summary`, `comparison`, `recommendation`, `analysis`, `action_items`) when the user wants tool results transformed; use form kinds (`direct_answer`, `step_by_step`, `code`, `markdown_doc`, `table`, `email_draft`, `ppt`, `image`, `plan`, `execution`, `artifact`) when the form itself is the request; use `raw_results` ONLY when the user verbatim asked for raw / unmodified records.",
     "- needs_external_info / needs_current_information: true when the answer depends on information outside the current context, especially volatile/current facts. A topic label alone is not a hard rule; use semantic judgement.",
     "- needs_user_files: true when the user asks to use attached/uploaded/local files or selected text.",
     "- needs_tool_use: true when answering well requires a capability outside plain chat. Put capability names in needed_capabilities (for example external_web_read, file_read, artifact_generation), NOT concrete tool IDs such as web_search_fetch.",
