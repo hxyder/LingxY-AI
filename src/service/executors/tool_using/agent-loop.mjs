@@ -599,6 +599,7 @@ Use the native tool interface when a tool is needed. Call at most ONE tool per t
 
     const adapter = createProviderAdapter(provider);
     const toolSchemas = tools.map(toolDescriptorForAdapter);
+    const supportsStreaming = adapter.supportsStreaming === true;
     const response = await adapter.generate({
       messages: [
         { role: "system", content: systemPrompt },
@@ -606,6 +607,12 @@ Use the native tool interface when a tool is needed. Call at most ONE tool per t
       ],
       tools: toolSchemas,
       maxTokens: 1024,
+      onTextDelta: supportsStreaming
+        ? (delta) => {
+            if (!delta) return;
+            task.__runtime?.emitTaskEvent?.("text_delta", { delta });
+          }
+        : undefined,
       onToolInputDelta: (toolName, partialJson) => {
         if (!["write_file", "generate_document", "edit_file"].includes(toolName)) return;
         task.__runtime?.emitTaskEvent?.("tool_input_delta", {
@@ -613,10 +620,6 @@ Use the native tool interface when a tool is needed. Call at most ONE tool per t
           partial_json: partialJson
         });
       },
-      // 83.4 — Stream reasoning_content (Qwen3 thinking, DeepSeek reasoner)
-      // as a separate event so renderers (overlay, console) can render a
-      // collapsible "🧠 思考过程" card next to the main bubble. Provider
-      // adapters that don't expose reasoning never call this — silent no-op.
       onReasoningDelta: (delta) => {
         if (!delta) return;
         task.__runtime?.emitTaskEvent?.("reasoning_delta", { delta });
