@@ -1706,6 +1706,108 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         return sendJson(response, 200, { ok: true, store });
       }
 
+      if (method === "GET" && url.pathname === "/conversations") {
+        if (typeof runtime.store?.listConversations !== "function") {
+          return sendJson(response, 200, { conversations: [] });
+        }
+        const projectId = url.searchParams.get("project_id") ?? null;
+        const limitParam = parseInt(url.searchParams.get("limit") ?? "50", 10);
+        const limit = Number.isFinite(limitParam) ? limitParam : 50;
+        const archivedParam = url.searchParams.get("archived");
+        const archived = archivedParam === "any" ? "any"
+          : archivedParam === "1" || archivedParam === "true" ? 1
+          : 0;
+        const conversations = runtime.store.listConversations({ projectId, limit, archived });
+        return sendJson(response, 200, { conversations });
+      }
+
+      const conversationMessagesMatch = url.pathname.match(/^\/conversation\/([^/]+)\/messages$/);
+      if (method === "GET" && conversationMessagesMatch) {
+        const conversationId = conversationMessagesMatch[1];
+        if (typeof runtime.store?.getConversationMessages !== "function") {
+          return sendJson(response, 404, { error: "conversation store not available" });
+        }
+        const conv = runtime.store.getConversation(conversationId);
+        if (!conv) return sendJson(response, 404, { error: "conversation not found" });
+        const sinceSeq = parseInt(url.searchParams.get("since") ?? "0", 10) || 0;
+        const limitParam = parseInt(url.searchParams.get("limit") ?? "500", 10);
+        const limit = Number.isFinite(limitParam) ? limitParam : 500;
+        const messages = runtime.store.getConversationMessages(conversationId, { sinceSeq, limit });
+        const messageIds = messages.map((m) => m.message_id);
+        const links = [];
+        if (typeof runtime.store.getMessageTasks === "function") {
+          for (const id of messageIds) {
+            for (const link of runtime.store.getMessageTasks(id) ?? []) links.push(link);
+          }
+        }
+        return sendJson(response, 200, {
+          conversation_id: conversationId,
+          since_seq: sinceSeq,
+          messages,
+          message_task_links: links
+        });
+      }
+
+      const conversationByIdMatch = url.pathname.match(/^\/conversation\/([^/]+)$/);
+      if (method === "GET" && conversationByIdMatch) {
+        const conversationId = conversationByIdMatch[1];
+        if (typeof runtime.store?.getConversation !== "function") {
+          return sendJson(response, 404, { error: "conversation store not available" });
+        }
+        const conv = runtime.store.getConversation(conversationId);
+        if (!conv) return sendJson(response, 404, { error: "conversation not found" });
+        const messages = runtime.store.getConversationMessages(conversationId, { sinceSeq: 0, limit: 500 });
+        const links = [];
+        if (typeof runtime.store.getMessageTasks === "function") {
+          for (const m of messages) {
+            for (const link of runtime.store.getMessageTasks(m.message_id) ?? []) links.push(link);
+          }
+        }
+        return sendJson(response, 200, {
+          conversation: conv,
+          messages,
+          message_task_links: links
+        });
+      }
+
+      if (method === "PATCH" && conversationByIdMatch) {
+        const conversationId = conversationByIdMatch[1];
+        if (typeof runtime.store?.updateConversation !== "function") {
+          return sendJson(response, 404, { error: "conversation store not available" });
+        }
+        const body = await readJsonBody(request);
+        const patch = {};
+        if (typeof body?.title === "string") patch.title = body.title.slice(0, 200);
+        if (body?.archived !== undefined) patch.archived = Boolean(body.archived);
+        if (Object.keys(patch).length === 0) {
+          return sendJson(response, 400, { error: "no patchable fields supplied" });
+        }
+        const updated = runtime.store.updateConversation(conversationId, patch);
+        if (!updated) return sendJson(response, 404, { error: "conversation not found" });
+        return sendJson(response, 200, { conversation: updated });
+      }
+
+      if (method === "DELETE" && conversationByIdMatch) {
+        const conversationId = conversationByIdMatch[1];
+        const hard = url.searchParams.get("hard") === "true";
+        if (hard) {
+          if (!runtime.config?.allowHardDelete) {
+            return sendJson(response, 403, { error: "hard delete is disabled" });
+          }
+          if (typeof runtime.store?.hardDeleteConversation !== "function") {
+            return sendJson(response, 404, { error: "conversation store not available" });
+          }
+          runtime.store.hardDeleteConversation(conversationId);
+          return sendJson(response, 200, { ok: true, hard: true });
+        }
+        if (typeof runtime.store?.softDeleteConversation !== "function") {
+          return sendJson(response, 404, { error: "conversation store not available" });
+        }
+        const updated = runtime.store.softDeleteConversation(conversationId);
+        if (!updated) return sendJson(response, 404, { error: "conversation not found" });
+        return sendJson(response, 200, { conversation: updated });
+      }
+
       // Auto-detect installed code CLIs (kimi, claude, codex, gemini, etc.)
       if (method === "GET" && url.pathname === "/config/detect-clis") {
         const detected = await detectInstalledCodeClis();
