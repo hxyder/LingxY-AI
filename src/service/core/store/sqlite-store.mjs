@@ -1,7 +1,46 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import Database from "better-sqlite3";
-import { SQLITE_SCHEMA_SQL } from "./sqlite-schema.mjs";
+import { SQLITE_SCHEMA_SQL, SQLITE_INDEX_SQL } from "./sqlite-schema.mjs";
+import { applyConversationV1 } from "./migrations/conversation_v1.mjs";
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+function newId(prefix) {
+  return `${prefix}_${crypto.randomUUID()}`;
+}
+
+function mapConversation(row) {
+  if (!row) return null;
+  return {
+    conversation_id: row.conversation_id,
+    project_id: row.project_id,
+    title: row.title,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    message_count: row.message_count,
+    task_count: row.task_count,
+    archived: Boolean(row.archived),
+    metadata: decodeJson(row.metadata_json, {})
+  };
+}
+
+function mapMessage(row) {
+  if (!row) return null;
+  return {
+    message_id: row.message_id,
+    conversation_id: row.conversation_id,
+    seq: row.seq,
+    role: row.role,
+    content: row.content,
+    ts: row.ts,
+    status: row.status,
+    metadata: decodeJson(row.metadata_json, {})
+  };
+}
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value));
@@ -199,6 +238,9 @@ export function createSqliteStore({ dbPath }) {
   for (const sql of Object.values(SQLITE_SCHEMA_SQL)) {
     db.exec(sql);
   }
+  for (const sql of SQLITE_INDEX_SQL) {
+    db.exec(sql);
+  }
 
   const scheduleColumns = new Set(db.prepare("PRAGMA table_info(schedules)").all().map((column) => column.name));
   if (!scheduleColumns.has("metadata_json")) {
@@ -207,6 +249,8 @@ export function createSqliteStore({ dbPath }) {
   if (!scheduleColumns.has("last_run_task_id")) {
     db.exec("ALTER TABLE schedules ADD COLUMN last_run_task_id TEXT");
   }
+
+  applyConversationV1(db);
 
   const statements = {
     upsertTask: db.prepare(`INSERT INTO tasks (
@@ -371,7 +415,58 @@ export function createSqliteStore({ dbPath }) {
       created_at = excluded.created_at,
       completed_at = excluded.completed_at`),
     getReauthRequest: db.prepare("SELECT * FROM reauth_requests WHERE request_id = ?"),
-    listReauthRequests: db.prepare("SELECT * FROM reauth_requests ORDER BY created_at DESC")
+    listReauthRequests: db.prepare("SELECT * FROM reauth_requests ORDER BY created_at DESC"),
+    insertConversation: db.prepare(`INSERT INTO conversations
+      (conversation_id, project_id, title, created_at, updated_at, message_count, task_count, archived, metadata_json)
+      VALUES (@conversation_id, @project_id, @title, @created_at, @updated_at, 0, 0, 0, @metadata_json)`),
+    getConversation: db.prepare("SELECT * FROM conversations WHERE conversation_id = ?"),
+    listConversationsByProject: db.prepare(`
+      SELECT * FROM conversations
+       WHERE (@project_id IS NULL OR project_id = @project_id)
+         AND (@archived = -1 OR archived = @archived)
+       ORDER BY updated_at DESC LIMIT @limit`),
+    updateConversationFields: db.prepare(`
+      UPDATE conversations
+         SET title = COALESCE(@title, title),
+             project_id = COALESCE(@project_id, project_id),
+             archived = COALESCE(@archived, archived),
+             metadata_json = COALESCE(@metadata_json, metadata_json),
+             updated_at = @updated_at
+       WHERE conversation_id = @conversation_id`),
+    softDeleteConversation: db.prepare(`
+      UPDATE conversations SET archived = 1, updated_at = ? WHERE conversation_id = ?`),
+    hardDeleteConversation: db.prepare("DELETE FROM conversations WHERE conversation_id = ?"),
+    bumpConversationCounters: db.prepare(`
+      UPDATE conversations
+         SET message_count = message_count + @msg_delta,
+             task_count    = task_count + @task_delta,
+             updated_at    = @updated_at
+       WHERE conversation_id = @conversation_id`),
+    nextMessageSeq: db.prepare(`
+      SELECT COALESCE(MAX(seq), -1) + 1 AS next
+        FROM conversation_messages
+       WHERE conversation_id = ?`),
+    insertMessage: db.prepare(`INSERT INTO conversation_messages
+      (message_id, conversation_id, seq, role, content, ts, status, metadata_json)
+      VALUES (@message_id, @conversation_id, @seq, @role, @content, @ts, @status, @metadata_json)`),
+    listMessages: db.prepare(`
+      SELECT * FROM conversation_messages
+       WHERE conversation_id = @conversation_id
+         AND seq >= @since_seq
+       ORDER BY seq ASC LIMIT @limit`),
+    countMessages: db.prepare(`
+      SELECT COUNT(*) AS n FROM conversation_messages WHERE conversation_id = ?`),
+    insertMessageTaskLink: db.prepare(`
+      INSERT OR IGNORE INTO conversation_message_tasks
+        (message_id, task_id, relation, created_at) VALUES (?, ?, ?, ?)`),
+    listMessageTasks: db.prepare(`
+      SELECT message_id, task_id, relation, created_at
+        FROM conversation_message_tasks
+       WHERE message_id = ? ORDER BY created_at ASC`),
+    listTaskMessages: db.prepare(`
+      SELECT message_id, task_id, relation, created_at
+        FROM conversation_message_tasks
+       WHERE task_id = ? ORDER BY created_at ASC`)
   };
 
   function upsertTask(task) {
@@ -665,6 +760,118 @@ export function createSqliteStore({ dbPath }) {
     },
     listReauthRequests() {
       return statements.listReauthRequests.all().map(mapReauthRequest);
+    },
+
+    runInTransaction(fn) {
+      return db.transaction(fn)();
+    },
+
+    insertConversation({ conversation_id, project_id = null, title = null, metadata = {} } = {}) {
+      const id = conversation_id ?? newId("conv");
+      const ts = nowIso();
+      statements.insertConversation.run({
+        conversation_id: id,
+        project_id: project_id ?? null,
+        title: title ?? null,
+        created_at: ts,
+        updated_at: ts,
+        metadata_json: encodeJson(metadata ?? {})
+      });
+      return mapConversation(statements.getConversation.get(id));
+    },
+    getConversation(id) {
+      return mapConversation(statements.getConversation.get(id));
+    },
+    listConversations({ projectId = null, limit = 50, archived = 0 } = {}) {
+      const archivedFilter = archived === "any" || archived === -1 ? -1 : archived ? 1 : 0;
+      const rows = statements.listConversationsByProject.all({
+        project_id: projectId ?? null,
+        archived: archivedFilter,
+        limit: Math.max(1, Math.min(limit ?? 50, 500))
+      });
+      return rows.map(mapConversation);
+    },
+    updateConversation(id, patch = {}) {
+      statements.updateConversationFields.run({
+        conversation_id: id,
+        title: patch.title ?? null,
+        project_id: patch.project_id ?? null,
+        archived: patch.archived === undefined ? null : (patch.archived ? 1 : 0),
+        metadata_json: patch.metadata !== undefined ? encodeJson(patch.metadata) : null,
+        updated_at: nowIso()
+      });
+      return mapConversation(statements.getConversation.get(id));
+    },
+    softDeleteConversation(id) {
+      statements.softDeleteConversation.run(nowIso(), id);
+      return mapConversation(statements.getConversation.get(id));
+    },
+    hardDeleteConversation(id) {
+      statements.hardDeleteConversation.run(id);
+      return true;
+    },
+
+    appendMessage({ conversation_id, role, content, status = null, metadata = {} } = {}) {
+      if (!conversation_id) throw new Error("appendMessage: conversation_id required");
+      if (!["user", "assistant", "system", "tool_summary"].includes(role)) {
+        throw new Error(`appendMessage: invalid role ${role}`);
+      }
+      return db.transaction(() => {
+        const seq = statements.nextMessageSeq.get(conversation_id).next;
+        const message_id = newId("msg");
+        const ts = nowIso();
+        statements.insertMessage.run({
+          message_id, conversation_id, seq, role,
+          content: String(content ?? ""), ts,
+          status: status ?? null,
+          metadata_json: encodeJson(metadata ?? {})
+        });
+        statements.bumpConversationCounters.run({
+          conversation_id, msg_delta: 1, task_delta: 0, updated_at: ts
+        });
+        return mapMessage({
+          message_id, conversation_id, seq, role,
+          content: String(content ?? ""), ts, status, metadata_json: encodeJson(metadata ?? {})
+        });
+      })();
+    },
+    getConversationMessages(conversation_id, { sinceSeq = 0, limit = 500 } = {}) {
+      const rows = statements.listMessages.all({
+        conversation_id,
+        since_seq: Math.max(0, sinceSeq | 0),
+        limit: Math.max(1, Math.min(limit ?? 500, 5000))
+      });
+      return rows.map(mapMessage);
+    },
+    countConversationMessages(conversation_id) {
+      return statements.countMessages.get(conversation_id)?.n ?? 0;
+    },
+
+    linkMessageToTask(message_id, task_id, relation) {
+      if (!["triggered", "answered_by", "tool_summary_for"].includes(relation)) {
+        throw new Error(`linkMessageToTask: invalid relation ${relation}`);
+      }
+      return db.transaction(() => {
+        const ts = nowIso();
+        const result = statements.insertMessageTaskLink.run(message_id, task_id, relation, ts);
+        if (result.changes > 0 && relation === "triggered") {
+          const row = db.prepare(
+            "SELECT conversation_id FROM conversation_messages WHERE message_id = ?"
+          ).get(message_id);
+          if (row?.conversation_id) {
+            statements.bumpConversationCounters.run({
+              conversation_id: row.conversation_id, msg_delta: 0, task_delta: 1, updated_at: ts
+            });
+          }
+        }
+        return { message_id, task_id, relation, created_at: ts, inserted: result.changes > 0 };
+      })();
+    },
+    getMessageTasks(message_id) {
+      return statements.listMessageTasks.all(message_id);
+    },
+    getTaskMessages(task_id) {
+      return statements.listTaskMessages.all(task_id);
     }
   };
 }

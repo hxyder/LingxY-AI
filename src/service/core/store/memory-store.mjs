@@ -1,3 +1,10 @@
+import crypto from "node:crypto";
+
+function memNowIso() { return new Date().toISOString(); }
+function memNewId(prefix) { return `${prefix}_${crypto.randomUUID()}`; }
+const VALID_ROLES = new Set(["user", "assistant", "system", "tool_summary"]);
+const VALID_RELATIONS = new Set(["triggered", "answered_by", "tool_summary_for"]);
+
 export function createInMemoryStoreScaffold() {
   return {
     tasks: new Map(),
@@ -10,6 +17,9 @@ export function createInMemoryStoreScaffold() {
     connectedAccounts: new Map(),
     oauthTokens: new Map(),
     reauthRequests: new Map(),
+    conversations: new Map(),
+    conversationMessages: [],
+    messageTaskLinks: [],
     insertTask(task) {
       this.tasks.set(task.task_id, task);
       return task;
@@ -165,6 +175,131 @@ export function createInMemoryStoreScaffold() {
     },
     listReauthRequests() {
       return [...this.reauthRequests.values()];
+    },
+
+    runInTransaction(fn) {
+      return fn();
+    },
+
+    insertConversation({ conversation_id, project_id = null, title = null, metadata = {} } = {}) {
+      const id = conversation_id ?? memNewId("conv");
+      const ts = memNowIso();
+      const conv = {
+        conversation_id: id,
+        project_id: project_id ?? null,
+        title: title ?? null,
+        created_at: ts,
+        updated_at: ts,
+        message_count: 0,
+        task_count: 0,
+        archived: false,
+        metadata: metadata ?? {}
+      };
+      this.conversations.set(id, conv);
+      return { ...conv };
+    },
+    getConversation(id) {
+      const conv = this.conversations.get(id);
+      return conv ? { ...conv } : null;
+    },
+    listConversations({ projectId = null, limit = 50, archived = 0 } = {}) {
+      const archivedFilter = archived === "any" || archived === -1 ? null : Boolean(archived);
+      let list = [...this.conversations.values()];
+      if (projectId) list = list.filter((c) => c.project_id === projectId);
+      if (archivedFilter !== null) list = list.filter((c) => c.archived === archivedFilter);
+      list.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+      return list.slice(0, Math.max(1, Math.min(limit ?? 50, 500))).map((c) => ({ ...c }));
+    },
+    updateConversation(id, patch = {}) {
+      const conv = this.conversations.get(id);
+      if (!conv) return null;
+      if (patch.title !== undefined) conv.title = patch.title;
+      if (patch.project_id !== undefined) conv.project_id = patch.project_id;
+      if (patch.archived !== undefined) conv.archived = Boolean(patch.archived);
+      if (patch.metadata !== undefined) conv.metadata = patch.metadata;
+      conv.updated_at = memNowIso();
+      return { ...conv };
+    },
+    softDeleteConversation(id) {
+      const conv = this.conversations.get(id);
+      if (!conv) return null;
+      conv.archived = true;
+      conv.updated_at = memNowIso();
+      return { ...conv };
+    },
+    hardDeleteConversation(id) {
+      this.conversationMessages = this.conversationMessages.filter((m) => m.conversation_id !== id);
+      this.messageTaskLinks = this.messageTaskLinks.filter((l) => {
+        const msg = this.conversationMessages.find((m) => m.message_id === l.message_id);
+        return msg !== undefined;
+      });
+      return this.conversations.delete(id);
+    },
+
+    appendMessage({ conversation_id, role, content, status = null, metadata = {} } = {}) {
+      if (!conversation_id) throw new Error("appendMessage: conversation_id required");
+      if (!VALID_ROLES.has(role)) throw new Error(`appendMessage: invalid role ${role}`);
+      const conv = this.conversations.get(conversation_id);
+      if (!conv) throw new Error(`appendMessage: conversation ${conversation_id} not found`);
+      const seq = this.conversationMessages
+        .filter((m) => m.conversation_id === conversation_id)
+        .reduce((max, m) => Math.max(max, m.seq), -1) + 1;
+      const ts = memNowIso();
+      const msg = {
+        message_id: memNewId("msg"),
+        conversation_id, seq, role,
+        content: String(content ?? ""),
+        ts, status: status ?? null,
+        metadata: metadata ?? {}
+      };
+      this.conversationMessages.push(msg);
+      conv.message_count += 1;
+      conv.updated_at = ts;
+      return { ...msg };
+    },
+    getConversationMessages(conversation_id, { sinceSeq = 0, limit = 500 } = {}) {
+      return this.conversationMessages
+        .filter((m) => m.conversation_id === conversation_id && m.seq >= (sinceSeq | 0))
+        .sort((a, b) => a.seq - b.seq)
+        .slice(0, Math.max(1, Math.min(limit ?? 500, 5000)))
+        .map((m) => ({ ...m }));
+    },
+    countConversationMessages(conversation_id) {
+      return this.conversationMessages.filter((m) => m.conversation_id === conversation_id).length;
+    },
+
+    linkMessageToTask(message_id, task_id, relation) {
+      if (!VALID_RELATIONS.has(relation)) {
+        throw new Error(`linkMessageToTask: invalid relation ${relation}`);
+      }
+      if (this.messageTaskLinks.some(
+        (l) => l.message_id === message_id && l.task_id === task_id && l.relation === relation
+      )) {
+        return { message_id, task_id, relation, created_at: memNowIso(), inserted: false };
+      }
+      const created_at = memNowIso();
+      this.messageTaskLinks.push({ message_id, task_id, relation, created_at });
+      if (relation === "triggered") {
+        const msg = this.conversationMessages.find((m) => m.message_id === message_id);
+        if (msg) {
+          const conv = this.conversations.get(msg.conversation_id);
+          if (conv) {
+            conv.task_count += 1;
+            conv.updated_at = created_at;
+          }
+        }
+      }
+      return { message_id, task_id, relation, created_at, inserted: true };
+    },
+    getMessageTasks(message_id) {
+      return this.messageTaskLinks
+        .filter((l) => l.message_id === message_id)
+        .map((l) => ({ ...l }));
+    },
+    getTaskMessages(task_id) {
+      return this.messageTaskLinks
+        .filter((l) => l.task_id === task_id)
+        .map((l) => ({ ...l }));
     }
   };
 }

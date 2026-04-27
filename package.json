@@ -54,6 +54,8 @@
     "verify:p4rq-smoke": "node scripts/verify-p4rq-smoke.mjs",
     "verify:calendar-connector-routing": "node scripts/verify-calendar-connector-routing.mjs",
     "verify:evidence-policy": "node scripts/verify-evidence-policy.mjs",
+    "verify:conversation-store": "node scripts/verify-conversation-store.mjs",
+    "verify:conversation-migration": "node scripts/verify-conversation-migration.mjs",
     "verify:sr-hard-fact-skip": "node scripts/verify-sr-hard-fact-skip.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",
