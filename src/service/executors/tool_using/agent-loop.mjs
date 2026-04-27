@@ -20,7 +20,7 @@ import {
 } from "../shared/resource-context.mjs";
 import { detect as detectExplicitSearch } from "../../core/intent/signals/explicit-search.mjs";
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
-import { renderResearchPrinciples } from "../shared/research-principles.mjs";
+import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
@@ -495,6 +495,14 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
     task.context_packet?.context_sources
   );
   const researchPrinciplesBlock = researchPrinciples ? `\n\n${researchPrinciples}` : "";
+  // P4-RQ K2: numerical budget block — render the validator's
+  // thresholds verbatim so the model sees the exact bar.
+  const researchBudget = renderResearchBudget(
+    task.task_spec?.tool_policy,
+    task.context_packet?.context_sources,
+    task.task_spec?.research_quality
+  );
+  const researchBudgetBlock = researchBudget ? `\n\n${researchBudget}` : "";
 
   // UCA-063: Override instruction when refusal retry is active.
   const forceToolInstruction = task.__forceToolUse
@@ -542,7 +550,7 @@ Guidance (not a rigid checklist — apply judgment):
 - **Memory recall.** If the user refers to earlier work with a pronoun ("上个问题" / "刚才" / "之前那份" / "last one" / "that report") or asks you to continue / revise something done before, call list_recent_tasks first (or recall_memory with a topic query if the reference is thematic) and then get_task_detail on the matching task_id. Never reply "I don't remember prior work" while these tools exist.
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
 - **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
-${needsCurrentDataInstruction}${researchPrinciplesBlock}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
+${needsCurrentDataInstruction}${researchPrinciplesBlock}${researchBudgetBlock}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
 Use the native tool interface when a tool is needed. Call at most ONE tool per turn. If no tool is needed, or you need a clarification, reply with plain text only in the user's language.`;
 
   try {

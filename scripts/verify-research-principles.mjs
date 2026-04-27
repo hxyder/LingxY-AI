@@ -159,7 +159,9 @@ it("tool_using lock-in: agent-loop imports and uses renderResearchPrinciples", (
     new URL("../src/service/executors/tool_using/agent-loop.mjs", import.meta.url),
     "utf8"
   );
-  assert.match(src, /import\s+\{\s*renderResearchPrinciples\s*\}\s+from\s+["']\.\.\/shared\/research-principles\.mjs["']/,
+  // K2 combined this import with renderResearchBudget into a single
+  // destructured statement; accept either single or combined form.
+  assert.match(src, /import\s+\{[^}]*\brenderResearchPrinciples\b[^}]*\}\s+from\s+["']\.\.\/shared\/research-principles\.mjs["']/,
     "agent-loop must import renderResearchPrinciples from shared/research-principles.mjs");
   assert.match(src, /renderResearchPrinciples\s*\(/,
     "agent-loop must call renderResearchPrinciples()");
