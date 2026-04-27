@@ -280,13 +280,58 @@ Each verifier asserts framework rules, not specific test cases.
 | **A** | Schema + repo + migration framework | sqlite-schema, sqlite-store, memory-store, store/migrations/conversation_v1 | conversation-store + conversation-migration |
 | **B** | sanitize + ContextBudgetPolicy + renderHistoryMessages | shared/tool-summary-sanitizer, core/policy/context-budget, shared/conversation-prompt | tool-summary-sanitize + conversation-budget-policy + conversation-prompt-render |
 | **C** | task-runtime: ensure-conv + append-user-msg + create-task in one tx; finalize writes assistant/status/tool_summary | task-runtime, all *-submission.mjs | conversation-message-flow |
-| **D** | Each executor prompt builder reads messages | tool_using/agent-loop, agentic/planner, fast-executor, translate, multi_modal | re-run existing + new context test |
+| **D** | Each executor prompt builder reads messages | tool_using/agent-loop, agentic/planner, fast-executor | conversation-history-loader + executor-uses-structured-history |
 | **E** | HTTP/IPC endpoints | http-server | conversation-http |
-| **F** | overlay → backend-backed | overlay.js, browser-submission, pending-offer | overlay-conversation-sync |
-| **G** | Console past-conversation list + load | console.js, console.html | console-conversation-load |
+| **F1** | Frontend stops emitting legacy history (`[当前对话上下文]`, selection_metadata.conversation_turns, browser conversation_turns). UI display unchanged. | overlay.js, browser-submission.mjs | legacy-history-removed |
+| **PT** | Post-tool final answer synthesis. Reuses existing IntentRoute fields, success-contract validator, and executor LLM call (no new composer module / no new state machine). Removes the dedupe-fallback raw dump in agent-loop. | semantic-router (enum extension), task-spec, tool_using/agent-loop + agentic/planner + fast-executor (system-prompt block + retry transcript), success-contract-validator (new check) | post-tool-final-synthesis + final-answer-completeness + raw-results-exception |
+| **F2** | Overlay rebuilds chat from backend; client_message_id reconciliation; pagination/truncation; remove lossy compression. | overlay.js, http-server (only metadata field if needed) | overlay-backend-backed |
+| **F3** | pending-offer uses backend conversation_messages; parent_task_summary fallback only. | pending-offer.mjs | pending-offer-uses-backend |
+| **G** | Console past-conversation list + load + resume composer | console.js, console.html | console-conversation-load |
 
 Each phase ships in its own commit with its verifier green before moving
 on. Existing P4-RQ / P5 verifiers must stay green throughout.
+
+## Pushbacks recorded against `p6_phase_f_post_tool_synthesis_upgrade.md`
+
+The upstream request asked for several shapes that conflict with
+"don't rebuild, don't run two implementations in parallel". The plan
+above keeps the spirit but rejects these specific shapes, with reasons:
+
+1. **No new state machine.** The request proposes
+   `PLANNING / TOOL_RUNNING / TOOL_DONE / SYNTHESIZING_FINAL /
+   FINAL_CHECK / DONE`. The agent loop already iterates and already
+   uses a synthetic-transcript-entry retry pattern (`prose_trap_retry`,
+   `runbook_guidance`). The synthesis re-check fits the same pattern
+   as a `synthesis_retry` transcript entry on loop exit when the
+   completeness check rejects the answer.
+
+2. **No new `final-answer-composer.mjs` module.** The executor's own
+   LLM call IS the composer; what's missing is a system-prompt block
+   that surfaces `user_goal` / `expected_output` and a one-line rule
+   "transform observations, don't repeat them". Adding a separate
+   composer adds a redundant LLM hop.
+
+3. **No parallel `expected_output` enum.** IntentRoute already exposes
+   one. We extend it with the missing synthesis kinds (`summary`,
+   `comparison`, `recommendation`, `analysis`, `action_items`,
+   `raw_results`). The SR prompt is updated to teach the new values.
+
+4. **No new completeness module.** The synthesis check is added as a
+   new function inside the existing `success-contract-validator.mjs`.
+   Single source of truth for what "completed correctly" means.
+
+5. **Dedupe-fallback raw dump deleted.** `agent-loop.mjs` line ~1090
+   currently dumps `transcript.filter(tool_result).map(observation).join("\n")`
+   as `final_text` when the LLM repeats a tool+args pair. That is the
+   raw-dump anti-pattern. It is removed; the loop instead emits one
+   `synthesis_retry` transcript entry and goes around once with
+   explicit guidance.
+
+6. **Completeness check is deterministic v1.** If
+   `expected_output ∈ synthesis_set` AND the assistant's final text
+   shares a high-overlap signature with the most recent tool
+   observation, the check fails. No extra LLM call. Hybrid/LLM upgrade
+   can come later if the heuristic proves too loose.
 
 ## Out of scope (deferred)
 

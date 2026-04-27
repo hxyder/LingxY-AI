@@ -651,29 +651,6 @@ function startNewConversation() {
   commandInput.focus();
 }
 
-function buildHistoryBlock(excludeLast = false) {
-  if (!conversationState || conversationState.turns.length === 0) return "";
-  const turns = excludeLast ? conversationState.turns.slice(0, -1) : conversationState.turns;
-  if (turns.length === 0) return "";
-  return turns.map((t) => {
-    const label = t.role === "user" ? "用户" : t.role === "assistant" ? "助手" : "系统";
-    return `${label}：${t.content}`;
-  }).join("\n\n");
-}
-
-function buildStructuredConversationTurns(excludeLast = false) {
-  if (!conversationState?.turns?.length) return [];
-  const turns = excludeLast ? conversationState.turns.slice(0, -1) : conversationState.turns;
-  return turns
-    .filter((turn) => turn?.role === "user" || turn?.role === "assistant" || turn?.role === "system")
-    .map((turn) => ({
-      role: turn.role,
-      content: String(turn.content ?? "").trim().slice(0, 1600)
-    }))
-    .filter((turn) => turn.content)
-    .slice(-20);
-}
-
 // P4-RQ G3a: parent_task_id attachment — STRUCTURAL rule, NOT topic
 // regex.
 //
@@ -3153,8 +3130,9 @@ async function submitTask() {
 
   try {
     let payload;
-    const structuredTurns = buildStructuredConversationTurns(true);
-
+    // P6-F1: legacy outbound history removed. Backend conversation_messages
+    // is now the single source of conversation history (see Phase D loader).
+    // The frontend cache is rendered locally but never re-injected here.
     if (pendingFileSelection?.filePaths?.length) {
       const imageExts = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
       const allImages = pendingFileSelection.filePaths.every((fp) =>
@@ -3180,67 +3158,31 @@ async function submitTask() {
       // against the same context keep working even after pendingCapture is
       // cleared. Conversation history (all prior turns) is folded into the
       // capture text so the LLM sees the whole thread.
-      let capture;
-      if (pendingCapture?.capture) {
-        capture = { ...pendingCapture.capture };
-      } else {
-        capture = { ...conversationState.seedCapture };
-      }
-
-      // Inject rolling conversation history. We exclude the turn the user
-      // is about to send — that one ships as `userCommand` so the executor
-      // sees the fresh prompt clearly.
-      const historyBlock = buildHistoryBlock(false);
-      if (historyBlock) {
-        const seedText = conversationState?.seedCapture?.text ?? capture.text ?? "";
-        const seedSegment = seedText ? `原文：\n${seedText}` : "";
-        const body = [seedSegment, `对话历史：\n${historyBlock}`].filter(Boolean).join("\n\n---\n\n");
-        capture.text = body.slice(0, MAX_CAPTURE_TEXT_CHARS);
-      }
-
-      // Let the shared router decide all non-image work so every provider
-      // (Qwen / DeepSeek / OpenAI / etc.) stays on the same tool-capable path.
-      // Images still pin to multi_modal because that surface has explicit
-      // image payload handling.
+      const capture = pendingCapture?.capture
+        ? { ...pendingCapture.capture }
+        : { ...conversationState.seedCapture };
       const executorOverride = capture.sourceType === "image" ? "multi_modal" : undefined;
       payload = {
         userCommand: commandText,
         executionMode: "interactive",
-        capture: {
-          ...capture,
-          history: structuredTurns
-        }
+        capture: { ...capture }
       };
       if (executorOverride) payload.executorOverride = executorOverride;
     } else {
       const activeBrowserCapture = await resolveActiveWindowBrowserCapture();
       if (activeBrowserCapture) {
-        const historyText = buildHistoryBlock(true); // excludeLast=true (current turn not yet sent)
-        if (historyText) {
-          activeBrowserCapture.text = [
-            activeBrowserCapture.text,
-            `[当前对话上下文]\n${historyText}`
-          ].filter(Boolean).join("\n\n---\n\n").slice(0, MAX_CAPTURE_TEXT_CHARS);
-        }
         ensureConversation(activeBrowserCapture, conversationState?.seedCommand ?? rawCommand ?? commandText);
         payload = {
           userCommand: commandText,
           executionMode: "interactive",
-          capture: {
-            ...activeBrowserCapture,
-            history: structuredTurns
-          }
+          capture: { ...activeBrowserCapture }
         };
       } else {
-        // UCA-065: Include conversation history as context so follow-up messages
-        // ("打开你觉得合适的") can reference previous search results / assistant replies.
-        const historyText = buildHistoryBlock(true); // excludeLast=true (current turn not yet sent)
         payload = {
           sourceApp: "uca.overlay",
           captureMode: "overlay",
           sourceType: "clipboard",
-          text: historyText ? `[当前对话上下文]\n${historyText}` : "",
-          selectionMetadata: { conversation_turns: structuredTurns },
+          text: "",
           userCommand: commandText,
           executionMode: "interactive"
         };

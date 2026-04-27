@@ -20,16 +20,12 @@
  * Two-stage classifier:
  *
  *   1. AUTHORITATIVE METADATA FLAGS — set by the producers themselves.
- *      `selection_metadata.conversation_history_injected` (set by
- *      `seedStructuredConversationHistory` at conversation-memory.mjs:166),
- *      `selection_metadata.semantic_recall_ids?.length > 0` (set by
- *      `seedSemanticMemories` at context-submission.mjs:202 and
- *      conversation-memory.mjs:232), `selection_metadata.parent_task_id`
- *      (set by `seedParentTaskContext` at conversation-memory.mjs:124),
- *      `selection_metadata.editable_target_path` (set by
- *      `maybeSeedRecentArtifactContext` at context-submission.mjs:295),
- *      and `selection_metadata.memory_background_injected` (the new C2
- *      RAG flag). When present, these are ground truth.
+ *      `selection_metadata.conversation_history_injected`,
+ *      `selection_metadata.semantic_recall_ids?.length > 0`,
+ *      `selection_metadata.parent_task_id`,
+ *      `selection_metadata.editable_target_path`,
+ *      `selection_metadata.memory_background_injected`. When present,
+ *      these are ground truth.
  *
  *   2. SENTINEL SCAN — fallback for text that arrived from another path
  *      (e.g. an extension that hand-rolled a digest, or a tracking-only
@@ -71,9 +67,7 @@
  *
  * Includes:
  *   - the legacy RAG sentinel `[跨对话相关任务（语义召回 · 可作为背景）]`
- *     (still emitted by older code paths until C2 renames it)
- *   - the legacy duplicate `[跨任务语义记忆（RAG）]` from the dead
- *     conversation-memory.mjs duplicate (kept for safety)
+ *   - the legacy duplicate `[跨任务语义记忆（RAG）]`
  *   - the new C2 sentinel `[memory_background ·` (prefix match — the
  *     full sentinel grows with descriptive suffix that may evolve)
  */
