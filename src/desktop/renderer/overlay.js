@@ -9,6 +9,13 @@ import {
   isScheduleIntentText,
   parseScheduleTriggerFromText
 } from "./schedule-parser.js";
+import {
+  createClientMessageId,
+  ensureBackendCacheFields as ensureBackendCacheFieldsBase,
+  cssEscape as cssEscapeFor,
+  applyMessageBatch as applyMessageBatchShared,
+  fetchMessagesSince as fetchMessagesSinceShared
+} from "./conversation-cache.mjs";
 
 /* ── Theme sync (mirrors console theme via shared localStorage) ── */
 const THEME_KEY = "uca-console-theme";
@@ -618,20 +625,16 @@ function persistConversation() { saveProjectStore(); }
 
 // ─── F2: Backend-backed conversation cache ───────────────────────────────────
 // conversationState.turns is a transient UI cache only; the canonical
-// conversation lives in the backend SQL store. The helpers below keep
-// the cache in sync.
-
-function createClientMessageId() {
-  if (typeof crypto?.randomUUID === "function") return `cmsg_${crypto.randomUUID()}`;
-  return `cmsg_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
+// conversation lives in the backend SQL store. The shared helpers
+// (createClientMessageId / ensureBackendCacheFields / cssEscape /
+// applyMessageBatch / fetchMessagesSince) are imported at the top of
+// this file from conversation-cache.mjs so console.js can reuse the
+// exact same reconcile pattern.
 
 function ensureBackendCacheFields(conv) {
-  if (!conv) return null;
-  if (!(conv.pendingByClientId instanceof Map)) conv.pendingByClientId = new Map();
-  if (typeof conv.lastKnownSeq !== "number") conv.lastKnownSeq = -1;
-  if (!Array.isArray(conv.turns)) conv.turns = [];
-  return conv;
+  const base = ensureBackendCacheFieldsBase(conv);
+  if (base && !Array.isArray(base.turns)) base.turns = [];
+  return base;
 }
 
 function markPendingUserMessage(clientMessageId, content) {
@@ -675,77 +678,57 @@ function markPendingMessageFailed(clientMessageId, error) {
   }
 }
 
-function applyBackendMessageToCache(message) {
-  const conv = ensureBackendCacheFields(conversationState);
-  if (!conv) return;
-  if (typeof message?.seq !== "number") return;
-  if (message.seq <= conv.lastKnownSeq) return;
-  conv.lastKnownSeq = Math.max(conv.lastKnownSeq, message.seq);
-
-  const clientId = message.metadata?.client_message_id;
-  // Reconcile by client_message_id: if the backend's user message
-  // matches an optimistic bubble we already rendered, upgrade its
-  // attributes and drop the pending entry. NEVER render a duplicate
-  // user bubble for the same submit.
-  if (clientId) {
-    const existing = bubbleArea?.querySelector?.(`.bubble[data-client-message-id="${cssEscapeFor(clientId)}"]`);
+// Overlay-specific UI adapter for the shared message classifier. The
+// pure logic + lastKnownSeq / pendingByClientId bookkeeping lives in
+// conversation-cache.mjs; this only describes how to materialise each
+// classification into overlay DOM.
+const overlayMessageAdapter = {
+  onReconcilePending(message, clientMessageId) {
+    const existing = bubbleArea?.querySelector?.(`.bubble[data-client-message-id="${cssEscapeFor(clientMessageId)}"]`);
     if (existing) {
       existing.dataset.messageId = message.message_id;
       existing.dataset.seq = String(message.seq);
       existing.classList.remove("pending");
-      conv.pendingByClientId.delete(clientId);
-      return;
     }
-    conv.pendingByClientId.delete(clientId);
-  }
-
-  // tool_summary is a backend-only history record — sanitised digest of
-  // the last turn's tools. We don't render it as a chat bubble (the
-  // task timeline already shows tool_call_started / completed events).
-  if (message.role === "tool_summary") return;
-
-  // New canonical message we haven't seen — append to UI cache (turns)
-  // and DOM. Tag the bubble with the backend message_id so reconcile
-  // can recognise it on a subsequent rebuild.
-  appendTurn(message.role, message.content);
-  if (typeof addBubble === "function") {
-    const bubble = addBubble(message.role, message.content);
-    if (bubble && bubble.dataset) {
-      bubble.dataset.messageId = message.message_id;
-      bubble.dataset.seq = String(message.seq);
+  },
+  onAppend(message) {
+    appendTurn(message.role, message.content);
+    if (typeof addBubble === "function") {
+      const bubble = addBubble(message.role, message.content);
+      if (bubble && bubble.dataset) {
+        bubble.dataset.messageId = message.message_id;
+        bubble.dataset.seq = String(message.seq);
+      }
     }
-  }
-}
+  },
+  onSkip() { /* tool_summary / stale — no-op in chat */ }
+};
 
-function cssEscapeFor(s) {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") return CSS.escape(s);
-  return String(s).replace(/[^a-zA-Z0-9_-]/g, "\\$&");
+function applyBackendMessageToCache(message) {
+  const conv = ensureBackendCacheFields(conversationState);
+  if (!conv) return;
+  applyMessageBatchShared(conv, { messages: [message] }, overlayMessageAdapter);
 }
 
 async function reconcileConversationFromBackend(convId, { fullRebuild = false } = {}) {
   if (!convId) return;
   const conv = ensureBackendCacheFields(conversationState);
   if (!conv || conv.id !== convId) return;
-  const sinceSeq = fullRebuild ? 0 : Math.max(0, conv.lastKnownSeq + 1);
-  let payload;
-  try {
-    // F2 follow-up TODO: UI currently renders recent 200 messages only.
-    // This is display pagination, not conversation memory truncation —
-    // backend still has every message and Phase B's ContextBudgetPolicy
-    // owns LLM history windowing. A "load earlier" button + virtualised
-    // rendering for very long histories is a UX upgrade, not a memory
-    // change.
-    payload = await fetchJson(`/conversation/${encodeURIComponent(convId)}/messages?since=${sinceSeq}&limit=200`);
-  } catch {
-    return;
-  }
-  const messages = Array.isArray(payload?.messages) ? payload.messages : [];
   if (fullRebuild) {
     conv.turns = [];
     conv.lastKnownSeq = -1;
     clearBubbles();
   }
-  for (const m of messages) applyBackendMessageToCache(m);
+  // F2 follow-up TODO: UI currently renders recent 200 messages only.
+  // This is display pagination, not conversation memory truncation —
+  // backend still has every message and Phase B's ContextBudgetPolicy
+  // owns LLM history windowing. A "load earlier" button + virtualised
+  // rendering for very long histories is a UX upgrade, not a memory
+  // change.
+  const sinceSeq = fullRebuild ? 0 : Math.max(0, conv.lastKnownSeq + 1);
+  const payload = await fetchMessagesSinceShared(fetch.bind(globalThis), serviceBaseUrl, convId, { sinceSeq, limit: 200 });
+  if (!payload) return;
+  applyMessageBatchShared(conv, payload, overlayMessageAdapter);
 }
 
 async function loadConversationFromBackend(convId) {

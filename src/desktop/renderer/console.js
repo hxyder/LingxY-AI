@@ -10,6 +10,14 @@ import {
   parseScheduleTriggerFromText
 } from "./schedule-parser.js";
 import {
+  createClientMessageId as cacheCreateClientMessageId,
+  ensureBackendCacheFields as cacheEnsureBackendFields,
+  cssEscape as cacheCssEscape,
+  applyMessageBatch as cacheApplyBatch,
+  fetchMessagesSince as cacheFetchSince,
+  fetchConversationDetail as cacheFetchConversationDetail
+} from "./conversation-cache.mjs";
+import {
   BUILTIN_API_TEMPLATES,
   codeCliModelChoices,
   modeOptionsForProvider as catalogModeOptionsForProvider,
@@ -471,6 +479,10 @@ let consoleChatToolCardCounter = 0;
 let consoleChatToolCards = new Map();
 let consoleChatThinkingCard = null;
 let consoleChatThinkingText = "";
+// G: console chat resume state. The chat composer threads this
+// conversation_id on every submit, so back-and-forth in the same
+// conversation hangs together server-side. New chat clears it.
+let consoleActiveConversation = null;
 const scheduleRunTaskWatchers = new Map();
 const completedScheduleRunTaskIds = new Set();
 let editingSkillPath = null;
@@ -1069,7 +1081,17 @@ async function submitConsoleChat() {
   const text = consoleChatInput?.value?.trim() ?? "";
   if (!text) return;
   const attachedFilePaths = consoleChatAttachList.map((entry) => `${entry?.path ?? ""}`.trim()).filter(Boolean);
-  appendConsoleChatMessage("user", text);
+  const clientMessageId = cacheCreateClientMessageId();
+  // G: when a conversation is active, we are RESUMING; thread the
+  // existing conversation_id so the backend appends to the same
+  // conversation_messages chain. No new conversation is created.
+  // No history is re-injected — backend already has it.
+  const conversationId = consoleActiveConversation?.conversation_id ?? null;
+  const conv = cacheEnsureBackendFields(consoleActiveConversation);
+  if (conv) {
+    conv.pendingByClientId.set(clientMessageId, { role: "user", content: text, ts: Date.now() });
+  }
+  appendConsoleChatUserMessage(text, clientMessageId);
   consoleChatInput.value = "";
   consoleChatState.textContent = "Submitting...";
   try {
@@ -1083,6 +1105,8 @@ async function submitConsoleChat() {
         text: "",
         userCommand: text,
         executionMode: "interactive",
+        client_message_id: clientMessageId,
+        ...(conversationId ? { conversation_id: conversationId } : {}),
         ...(attachedFilePaths.length > 0 ? { filePaths: attachedFilePaths } : {})
       })
     });
@@ -1092,14 +1116,124 @@ async function submitConsoleChat() {
       consoleChatResultTaskIds.delete(taskId);
       subscribeConsoleChatTask(taskId);
     }
+    // If the backend created a fresh conversation for this submit
+    // (no conversation_id was sent), pick it up so subsequent submits
+    // thread into the same conversation.
+    const replyConvId = result.task?.conversation_id;
+    if (replyConvId && !consoleActiveConversation) {
+      consoleActiveConversation = cacheEnsureBackendFields({ conversation_id: replyConvId });
+      renderConsoleChatHeader();
+    }
     await refreshWorkspace();
     updateChatModelChip?.();
     consoleChatAttachList.length = 0;
     renderChatAttachments?.();
   } catch (error) {
-    appendConsoleChatMessage("system", error.message);
+    markConsoleChatPendingFailed(clientMessageId, error);
     consoleChatState.textContent = "Failed.";
   }
+}
+
+function appendConsoleChatUserMessage(content, clientMessageId) {
+  if (!consoleChatMessages) return;
+  consoleChatMessages.querySelector(".console-chat-empty")?.remove();
+  const wrapper = document.createElement("div");
+  wrapper.className = "console-chat-message console-chat-message-user pending";
+  if (clientMessageId) wrapper.dataset.clientMessageId = clientMessageId;
+  const body = document.createElement("div");
+  body.className = "console-chat-message-body";
+  body.textContent = content;
+  wrapper.appendChild(body);
+  consoleChatMessages.appendChild(wrapper);
+  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+}
+
+function markConsoleChatPendingFailed(clientMessageId, error) {
+  if (!clientMessageId) return;
+  const conv = consoleActiveConversation;
+  if (conv?.pendingByClientId instanceof Map) conv.pendingByClientId.delete(clientMessageId);
+  const node = consoleChatMessages?.querySelector?.(
+    `[data-client-message-id="${cacheCssEscape(clientMessageId)}"]`
+  );
+  if (node) {
+    node.classList.remove("pending");
+    node.classList.add("failed");
+    node.dataset.status = "failed";
+    if (error?.message) node.dataset.failureReason = String(error.message).slice(0, 200);
+  }
+}
+
+function renderConsoleChatHeader() {
+  const titleEl = document.querySelector("#consoleChatActiveTitle");
+  if (!titleEl) return;
+  if (!consoleActiveConversation?.conversation_id) {
+    titleEl.textContent = "";
+    titleEl.hidden = true;
+    return;
+  }
+  const label = consoleActiveConversation.title
+    || consoleActiveConversation.conversation_id.slice(0, 12);
+  titleEl.textContent = `Continuing: ${label}`;
+  titleEl.hidden = false;
+}
+
+const consoleChatMessageAdapter = {
+  onReconcilePending(message, clientMessageId) {
+    const node = consoleChatMessages?.querySelector?.(
+      `[data-client-message-id="${cacheCssEscape(clientMessageId)}"]`
+    );
+    if (node) {
+      node.dataset.messageId = message.message_id;
+      node.dataset.seq = String(message.seq);
+      node.classList.remove("pending");
+    }
+  },
+  onAppend(message) {
+    if (message.role === "user") {
+      const wrapper = document.createElement("div");
+      wrapper.className = "console-chat-message console-chat-message-user";
+      wrapper.dataset.messageId = message.message_id;
+      wrapper.dataset.seq = String(message.seq);
+      const body = document.createElement("div");
+      body.className = "console-chat-message-body";
+      body.textContent = message.content;
+      wrapper.appendChild(body);
+      consoleChatMessages.appendChild(wrapper);
+    } else if (message.role === "assistant" || message.role === "system") {
+      // Reuse the existing renderer for assistant/system bubbles.
+      appendConsoleChatMessage(message.role, message.content);
+      const last = consoleChatMessages?.lastElementChild;
+      if (last && last.dataset) {
+        last.dataset.messageId = message.message_id;
+        last.dataset.seq = String(message.seq);
+      }
+    }
+    consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  },
+  onSkip() { /* tool_summary is backend-only history; the timeline owns it */ }
+};
+
+async function loadConsoleConversationFromBackend(conversationId) {
+  if (!conversationId) return;
+  const detail = await cacheFetchConversationDetail(fetch.bind(globalThis), state.serviceBaseUrl, conversationId);
+  if (!detail?.conversation) return;
+  consoleActiveConversation = cacheEnsureBackendFields({
+    conversation_id: detail.conversation.conversation_id,
+    title: detail.conversation.title,
+    project_id: detail.conversation.project_id
+  });
+  if (consoleChatMessages) {
+    consoleChatMessages.innerHTML = "";
+    consoleChatMessages.scrollTop = 0;
+  }
+  cacheApplyBatch(consoleActiveConversation, detail, consoleChatMessageAdapter);
+  renderConsoleChatHeader();
+  switchTab("chat");
+}
+
+function clearConsoleActiveConversation() {
+  consoleActiveConversation = null;
+  renderConsoleChatHeader();
 }
 
 function formatDateTime(value) {
@@ -4855,15 +4989,16 @@ document.querySelector("#projectNewBtn")?.addEventListener("click", () => {
   projectNameInput?.select?.();
 });
 
-// UCA-125 Phase 3-5: page-head "+ New chat" clears the current thread
-// and returns focus to the composer. A proper multi-session store is
-// intentionally not introduced here — this is a UI alignment pass.
+// "+ New chat" — clear the current thread and the active conversation
+// reference so the next submit creates a fresh conversation_id rather
+// than continuing to thread into the previously-resumed one.
 document.querySelector("#consoleChatNewBtn")?.addEventListener("click", () => {
   consoleChatEventStream?.close?.();
   consoleChatEventStream = null;
   consoleChatToolCards = new Map();
   closeConsoleChatThinkingCard();
   consoleChatResultTaskIds = new Set();
+  clearConsoleActiveConversation();
   if (consoleChatMessages) {
     consoleChatMessages.innerHTML = `<div class="console-chat-empty">没有对话 — 开始一个吧。</div>`;
   }
@@ -5587,8 +5722,21 @@ function renderConversationDetail() {
   if (metaEl) {
     metaEl.textContent = `${conv.message_count} messages · ${conv.task_count} tasks · updated ${formatConvTimestamp(conv.updated_at)}`;
   }
+  // G: Continue this conversation in chat. Only renders the button —
+  // the click handler reuses the SELECTED conversation_id (no new
+  // conversation is created), loads canonical messages from backend,
+  // and switches to the chat tab.
+  const continueButtonHtml = `
+    <div style="margin-bottom:12px;">
+      <button id="conversationsContinueBtn" class="btn btn-sm btn-primary" type="button"
+              data-conversation-id="${escapeConvHtml(conv.conversation_id)}">
+        Continue this conversation
+      </button>
+    </div>
+  `;
   if (!detail.messages.length) {
-    bodyEl.innerHTML = `<p class="muted" style="font-size:12px;">No messages.</p>`;
+    bodyEl.innerHTML = `${continueButtonHtml}<p class="muted" style="font-size:12px;">No messages.</p>`;
+    bindConversationsContinueButton();
     return;
   }
   const linksByMessage = new Map();
@@ -5629,7 +5777,18 @@ function renderConversationDetail() {
       </div>
     `;
   });
-  bodyEl.innerHTML = rows.join("");
+  bodyEl.innerHTML = continueButtonHtml + rows.join("");
+  bindConversationsContinueButton();
+}
+
+function bindConversationsContinueButton() {
+  const btn = document.querySelector("#conversationsContinueBtn");
+  if (!btn) return;
+  btn.addEventListener("click", () => {
+    const convId = btn.dataset.conversationId;
+    if (!convId) return;
+    void loadConsoleConversationFromBackend(convId);
+  });
 }
 
 async function loadConversationDetail(conversationId) {

@@ -41,14 +41,20 @@ async function read(p) { return readFile(path.join(repoRoot, p), "utf8"); }
 const overlay = await read("src/desktop/renderer/overlay.js");
 const httpServer = await read("src/service/core/http-server.mjs");
 const taskRuntime = await read("src/service/core/task-runtime.mjs");
+const cacheModule = await read("src/desktop/renderer/conversation-cache.mjs");
 
 await it("overlay.js: compressIfNeeded is removed (no lossy compression of conversation memory)", () => {
   assert.ok(!/function\s+compressIfNeeded\s*\(/.test(overlay));
   assert.ok(!/compressIfNeeded\(/.test(overlay));
 });
 
-await it("overlay.js: createClientMessageId / markPendingUserMessage helpers exist", () => {
-  assert.match(overlay, /function\s+createClientMessageId\s*\(/);
+await it("createClientMessageId is exported from the shared cache module + imported by overlay", () => {
+  assert.match(cacheModule, /export\s+function\s+createClientMessageId\s*\(/);
+  assert.match(overlay, /from\s+["']\.\/conversation-cache\.mjs["']/);
+  assert.match(overlay, /createClientMessageId/);
+});
+
+await it("overlay.js: markPendingUserMessage helper still exists (UI adapter for the shared cache)", () => {
   assert.match(overlay, /function\s+markPendingUserMessage\s*\(/);
 });
 
@@ -78,14 +84,18 @@ await it("overlay.js: optimistic user bubble carries data-client-message-id and 
   assert.match(overlay, /classList\.add\("pending"\)/);
 });
 
-await it("overlay.js: applyBackendMessageToCache reconciles by client_message_id (no duplicate user bubble)", () => {
-  // Looks for the dataset upgrade path that drops 'pending'.
-  assert.match(overlay, /classList\.remove\("pending"\)/);
-  assert.match(overlay, /pendingByClientId\.delete\(clientId\)/);
+await it("shared cache: classifier reconciles by client_message_id and pendingByClientId is updated centrally", () => {
+  assert.match(cacheModule, /pendingByClientId\.delete\(clientMessageId\)/);
+  assert.match(cacheModule, /reconcile-pending/);
+  assert.match(overlay, /classList\.remove\("pending"\)/,
+    "overlay's UI adapter drops the 'pending' class on reconcile");
 });
 
-await it("overlay.js: tool_summary backend rows are NOT rendered as chat bubbles (timeline owns them)", () => {
-  assert.match(overlay, /role === "tool_summary"/);
+await it("shared cache: tool_summary classifies as skip; overlay's onSkip is a no-op", () => {
+  assert.match(cacheModule, /role === "tool_summary"/);
+  assert.match(cacheModule, /skip-tool-summary/);
+  assert.match(overlay, /onSkip\(\)\s*\{\s*\/\*[^}]*tool_summary[^}]*\*\//,
+    "overlay adapter's onSkip should be an explicit no-op for tool_summary");
 });
 
 await it("http-server.mjs: /task accepts client_message_id (snake) AND clientMessageId (camel)", () => {
