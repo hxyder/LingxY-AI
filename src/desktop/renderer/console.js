@@ -342,6 +342,8 @@ tabButtons.forEach((btn) => {
       void loadInboxTab();
     } else if (btn.dataset.tab === "notes") {
       initNotesIfNeeded();
+    } else if (btn.dataset.tab === "conversations") {
+      void loadConversationsTab();
     }
   });
 });
@@ -5500,6 +5502,182 @@ function renderConnectorsMcpServers(servers) {
     });
   });
 }
+
+/* ═══════════════════════════════════════════════
+   CONVERSATIONS VIEWER (read-only, P6)
+   ═══════════════════════════════════════════════ */
+
+const conversationsState = {
+  items: [],
+  selectedId: null,
+  detail: null,
+  showArchived: false
+};
+
+function escapeConvHtml(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function formatConvTimestamp(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  return d.toLocaleString();
+}
+
+function roleBadge(role) {
+  const colors = {
+    user: "#3b82f6",
+    assistant: "#10b981",
+    system: "#a855f7",
+    tool_summary: "#f59e0b"
+  };
+  const c = colors[role] ?? "#6b7280";
+  return `<span style="background:${c};color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;letter-spacing:0.3px;">${escapeConvHtml(role)}</span>`;
+}
+
+function renderConversationsList() {
+  const listEl = document.querySelector("#conversationsList");
+  const countEl = document.querySelector("#conversationsCount");
+  if (!listEl) return;
+  if (countEl) countEl.textContent = String(conversationsState.items.length);
+  if (conversationsState.items.length === 0) {
+    listEl.innerHTML = `<p class="muted" style="font-size:12px;">No conversations yet.</p>`;
+    return;
+  }
+  listEl.innerHTML = conversationsState.items.map((c) => `
+    <button class="history-item ${c.conversation_id === conversationsState.selectedId ? "active" : ""}"
+            data-conversation-id="${escapeConvHtml(c.conversation_id)}"
+            style="text-align:left;">
+      <div class="row" style="justify-content:space-between;align-items:center;">
+        <strong style="font-size:13px;">${escapeConvHtml(c.title || c.conversation_id.slice(0, 24))}</strong>
+        <span class="muted" style="font-size:11px;">${c.message_count}m · ${c.task_count}t${c.archived ? " · archived" : ""}</span>
+      </div>
+      <p class="muted" style="margin-top:4px;font-size:11px;">${escapeConvHtml(formatConvTimestamp(c.updated_at))}</p>
+    </button>
+  `).join("");
+  for (const btn of listEl.querySelectorAll("[data-conversation-id]")) {
+    btn.addEventListener("click", () => {
+      conversationsState.selectedId = btn.dataset.conversationId;
+      renderConversationsList();
+      void loadConversationDetail(conversationsState.selectedId);
+    });
+  }
+}
+
+function renderConversationDetail() {
+  const titleEl = document.querySelector("#conversationsDetailTitle");
+  const metaEl = document.querySelector("#conversationsDetailMeta");
+  const bodyEl = document.querySelector("#conversationsDetailBody");
+  if (!titleEl || !bodyEl) return;
+  const detail = conversationsState.detail;
+  if (!detail) {
+    titleEl.textContent = "Select a conversation";
+    if (metaEl) metaEl.textContent = "";
+    bodyEl.innerHTML = `<p class="muted" style="font-size:12px;">No conversation selected.</p>`;
+    return;
+  }
+  const conv = detail.conversation;
+  titleEl.textContent = conv.title || conv.conversation_id;
+  if (metaEl) {
+    metaEl.textContent = `${conv.message_count} messages · ${conv.task_count} tasks · updated ${formatConvTimestamp(conv.updated_at)}`;
+  }
+  if (!detail.messages.length) {
+    bodyEl.innerHTML = `<p class="muted" style="font-size:12px;">No messages.</p>`;
+    return;
+  }
+  const linksByMessage = new Map();
+  for (const link of detail.message_task_links ?? []) {
+    if (!linksByMessage.has(link.message_id)) linksByMessage.set(link.message_id, []);
+    linksByMessage.get(link.message_id).push(link);
+  }
+  const rows = detail.messages.map((m) => {
+    const links = linksByMessage.get(m.message_id) ?? [];
+    const linksHtml = links.length
+      ? `<div style="margin-top:6px;font-size:11px;color:#6b7280;">${links.map((l) => `${escapeConvHtml(l.relation)}: <code>${escapeConvHtml(l.task_id)}</code>`).join(" · ")}</div>`
+      : "";
+    const meta = m.metadata && typeof m.metadata === "object" ? m.metadata : {};
+    const metaTags = [];
+    if (meta.backfilled) metaTags.push(`<span class="tag" style="background:#fef3c7;color:#92400e;">backfilled</span>`);
+    if (meta.partial)    metaTags.push(`<span class="tag" style="background:#fef3c7;color:#92400e;">partial</span>`);
+    if (meta.migration_version) metaTags.push(`<span class="tag" style="background:#dbeafe;color:#1e40af;">${escapeConvHtml(meta.migration_version)}</span>`);
+    if (meta.executor)   metaTags.push(`<span class="tag" style="background:#e5e7eb;color:#374151;">exec:${escapeConvHtml(meta.executor)}</span>`);
+    const metaHtml = metaTags.length ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">${metaTags.join("")}</div>` : "";
+    const statusHtml = m.status ? ` <span class="muted" style="font-size:11px;">[${escapeConvHtml(m.status)}]</span>` : "";
+    let preview = String(m.content ?? "");
+    if (m.role === "tool_summary") {
+      try { preview = JSON.stringify(JSON.parse(preview), null, 2); } catch { /* leave as-is */ }
+    }
+    if (preview.length > 1200) preview = preview.slice(0, 1200) + "\n…[truncated]";
+    return `
+      <div class="surface" style="padding:10px 12px;margin-bottom:10px;">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            ${roleBadge(m.role)}
+            <span class="muted" style="font-size:11px;">seq ${m.seq}${statusHtml}</span>
+          </div>
+          <span class="muted" style="font-size:11px;">${escapeConvHtml(formatConvTimestamp(m.ts))}</span>
+        </div>
+        <pre style="margin-top:8px;white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;line-height:1.5;">${escapeConvHtml(preview)}</pre>
+        ${linksHtml}
+        ${metaHtml}
+      </div>
+    `;
+  });
+  bodyEl.innerHTML = rows.join("");
+}
+
+async function loadConversationDetail(conversationId) {
+  try {
+    const res = await fetch(`${state.serviceBaseUrl}/conversation/${encodeURIComponent(conversationId)}`);
+    if (!res.ok) {
+      conversationsState.detail = null;
+      renderConversationDetail();
+      return;
+    }
+    conversationsState.detail = await res.json();
+    renderConversationDetail();
+  } catch (err) {
+    conversationsState.detail = null;
+    renderConversationDetail();
+  }
+}
+
+async function loadConversationsTab() {
+  const listEl = document.querySelector("#conversationsList");
+  if (listEl) listEl.innerHTML = `<p class="muted" style="font-size:12px;">Loading…</p>`;
+  try {
+    const archived = conversationsState.showArchived ? "any" : "0";
+    const res = await fetch(`${state.serviceBaseUrl}/conversations?limit=200&archived=${archived}`);
+    const data = res.ok ? await res.json() : { conversations: [] };
+    conversationsState.items = Array.isArray(data.conversations) ? data.conversations : [];
+    if (!conversationsState.items.some((c) => c.conversation_id === conversationsState.selectedId)) {
+      conversationsState.selectedId = conversationsState.items[0]?.conversation_id ?? null;
+      conversationsState.detail = null;
+    }
+    renderConversationsList();
+    if (conversationsState.selectedId) {
+      await loadConversationDetail(conversationsState.selectedId);
+    } else {
+      renderConversationDetail();
+    }
+  } catch (err) {
+    if (listEl) listEl.innerHTML = `<p class="muted" style="font-size:12px;">Failed to load: ${escapeConvHtml(err.message)}</p>`;
+  }
+}
+
+document.querySelector("#conversationsRefreshBtn")?.addEventListener("click", () => {
+  void loadConversationsTab();
+});
+document.querySelector("#conversationsShowArchived")?.addEventListener("change", (ev) => {
+  conversationsState.showArchived = ev.target.checked;
+  void loadConversationsTab();
+});
 
 async function loadConnectorsTab() {
   try {
