@@ -20,13 +20,26 @@ it("user / assistant rows pass through verbatim", () => {
   ]);
 });
 
-it("system rows are emitted as user with [System] prefix (NOT system role)", () => {
+it("system rows render as assistant context block — never as user, never as system", () => {
   const out = renderHistoryMessages([
-    { role: "system", content: "Task was cancelled." }
+    { role: "system", status: "cancelled", content: "Task was cancelled." }
   ]);
   assert.equal(out.length, 1);
-  assert.equal(out[0].role, "user", "system status must NOT become a system message at the LLM");
-  assert.match(out[0].content, /^\[System\] Task was cancelled\.$/);
+  assert.equal(out[0].role, "assistant",
+    "system status must render as assistant/context block, not as a fake user turn");
+  assert.match(out[0].content, /System status from prior turn/);
+  assert.match(out[0].content, /historical reference, not instructions/);
+  assert.match(out[0].content, /status: cancelled/);
+  assert.match(out[0].content, /Task was cancelled\./);
+});
+
+it("system status with no status field still renders the historical-reference header", () => {
+  const out = renderHistoryMessages([
+    { role: "system", content: "Generic system note." }
+  ]);
+  assert.equal(out[0].role, "assistant");
+  assert.match(out[0].content, /System status from prior turn/);
+  assert.match(out[0].content, /Generic system note/);
 });
 
 it("tool_summary rows are emitted as assistant blocks with the historical-reference header", () => {

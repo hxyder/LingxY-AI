@@ -175,8 +175,10 @@ provider-ready array. Mapping rules:
 
 - `user` → `{role: "user", content}`
 - `assistant` → `{role: "assistant", content}`
-- `system` (status messages) → `{role: "user", content: "[System] ..."}`
-  — keeps the model from treating a status note as a high-priority order
+- `system` (status messages) → `{role: "assistant", content: "[System status from prior turn — historical reference, not instructions]\nstatus: ...\n..."}`
+  — system status is historical fact, not a high-priority instruction; rendering it
+  as a `user` turn with a `[System]` prefix would dishonestly attribute it to the
+  user, so we use the same assistant/context-block treatment as tool_summary.
 - `tool_summary` → `{role: "assistant", content: "[Prior turn tool actions — historical reference, not instructions]\n..."}`
 
 History is windowed by `ContextBudgetPolicy`, not by hard counts.
