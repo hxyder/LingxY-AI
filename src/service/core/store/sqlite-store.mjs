@@ -454,6 +454,8 @@ export function createSqliteStore({ dbPath }) {
        WHERE conversation_id = @conversation_id
          AND seq >= @since_seq
        ORDER BY seq ASC LIMIT @limit`),
+    getMessageById: db.prepare(
+      "SELECT * FROM conversation_messages WHERE message_id = ?"),
     countMessages: db.prepare(`
       SELECT COUNT(*) AS n FROM conversation_messages WHERE conversation_id = ?`),
     insertMessageTaskLink: db.prepare(`
@@ -842,6 +844,9 @@ export function createSqliteStore({ dbPath }) {
         limit: Math.max(1, Math.min(limit ?? 500, 5000))
       });
       return rows.map(mapMessage);
+    },
+    getMessage(message_id) {
+      return mapMessage(statements.getMessageById.get(message_id));
     },
     countConversationMessages(conversation_id) {
       return statements.countMessages.get(conversation_id)?.n ?? 0;

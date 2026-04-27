@@ -13,6 +13,7 @@ import {
   matchWorkflowByTrigger
 } from "../../connectors/core/connector-intent.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
+import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import {
   formatResourceContext,
   formatUntrustedSourceMaterial,
@@ -326,8 +327,8 @@ function toolResultHasSubstance(result) {
  * The LLM genuinely sees each observation before it decides the next step,
  * eliminating the "LLM answers from memory without calling tools" failure mode.
  */
-function buildConversationMessages(userCommand, transcript, initialFilePaths = []) {
-  const messages = [{ role: "user", content: userCommand }];
+function buildConversationMessages(prefixMessages, transcript, initialFilePaths = []) {
+  const messages = Array.isArray(prefixMessages) ? [...prefixMessages] : [];
 
   // UCA-179: roll up every artifact_paths seen so far so a later tool call
   // (e.g. send_email, account_upload_file) always sees the full list. We
@@ -583,12 +584,37 @@ Use the native tool interface when a tool is needed. Call at most ONE tool per t
     // like a system directive. Now ctx.text + ctx.url ride in the user
     // turn, fenced as <untrusted_source> with a guard sentence.
     const untrusted = formatUntrustedSourceMaterial(task);
-    const initialUserContent = untrusted
-      ? `${task.user_command}\n\n${untrusted}`
-      : task.user_command;
-    // UCA-054: Use proper multi-turn messages with observations injected as turns
+    const runtimeForLoader = task.__runtime ?? null;
+    const modelContextWindow = provider?.model?.context_window
+      ?? provider?.model?.context_length
+      ?? provider?.context_window
+      ?? 200000;
+    const historyResult = runtimeForLoader
+      ? loadStructuredHistoryFor({
+          runtime: runtimeForLoader,
+          task,
+          executor: "tool_using",
+          modelContextWindow
+        })
+      : { mode: "legacy_fallback", historyMessages: [], currentMessageRendered: null };
+
+    let prefixMessages;
+    if (historyResult.mode === "structured" && historyResult.currentMessageRendered) {
+      const triggerContent = historyResult.currentMessageRendered.content ?? task.user_command;
+      const currentContent = untrusted ? `${triggerContent}\n\n${untrusted}` : triggerContent;
+      prefixMessages = [
+        ...historyResult.historyMessages,
+        { role: historyResult.currentMessageRendered.role, content: currentContent }
+      ];
+    } else {
+      const initialUserContent = untrusted
+        ? `${task.user_command}\n\n${untrusted}`
+        : task.user_command;
+      prefixMessages = [{ role: "user", content: initialUserContent }];
+    }
+
     const conversationMessages = buildConversationMessages(
-      initialUserContent,
+      prefixMessages,
       transcript,
       [
         ...(task.context_packet?.file_paths ?? []),

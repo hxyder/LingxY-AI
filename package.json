@@ -62,6 +62,8 @@
     "verify:conversation-message-flow": "node scripts/verify-conversation-message-flow.mjs",
     "verify:conversation-http": "node scripts/verify-conversation-http.mjs",
     "verify:conversation-viewer-console": "node scripts/verify-conversation-viewer-console.mjs",
+    "verify:conversation-history-loader": "node scripts/verify-conversation-history-loader.mjs",
+    "verify:executor-uses-structured-history": "node scripts/verify-executor-uses-structured-history.mjs",
     "verify:sr-hard-fact-skip": "node scripts/verify-sr-hard-fact-skip.mjs",
     "verify:registry-snapshot": "node scripts/verify-registry-snapshot.mjs",
     "verify:brand-assets": "node scripts/verify-brand-assets.mjs",

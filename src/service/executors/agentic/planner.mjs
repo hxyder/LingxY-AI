@@ -33,6 +33,7 @@ import { buildAgenticSystemPrompt, isAudioNoteSingleMarkdownTask } from "./promp
 import { createProviderAdapter } from "./provider-adapter.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
+import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 // H1: parity with tool_using — run the same SuccessContract validator
 // and evidence normalizer at planner exit. Pre-H1 agentic skipped both,
@@ -595,10 +596,22 @@ export async function runAgenticPlanner({
     ].join("\n");
   }
 
-  const messages = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: [buildUserMessage(task), preflightSearchText].filter(Boolean).join("\n\n---\n\n") }
-  ];
+  const userContent = [buildUserMessage(task), preflightSearchText].filter(Boolean).join("\n\n---\n\n");
+  const modelContextWindow = provider?.model?.context_window
+    ?? provider?.model?.context_length
+    ?? provider?.context_window
+    ?? 200000;
+  const historyResult = runtime
+    ? loadStructuredHistoryFor({ runtime, task, executor: "agentic", modelContextWindow })
+    : { mode: "legacy_fallback", historyMessages: [], currentMessageRendered: null };
+
+  const messages = [{ role: "system", content: systemPrompt }];
+  if (historyResult.mode === "structured" && historyResult.currentMessageRendered) {
+    for (const m of historyResult.historyMessages) messages.push(m);
+    messages.push({ role: historyResult.currentMessageRendered.role, content: userContent });
+  } else {
+    messages.push({ role: "user", content: userContent });
+  }
 
   const toolSchemas = effectiveTools.map(toolDescriptorForAdapter);
 

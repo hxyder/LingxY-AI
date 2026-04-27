@@ -9,6 +9,7 @@ import path from "node:path";
 import os from "node:os";
 import { resolveProviderForTask, buildKimiRuntimeFromProvider } from "../shared/provider-resolver.mjs";
 import { formatResourceContext, formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
+import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import { executeKimiTask } from "../kimi/kimi-cli-executor.mjs";
 import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
 import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
@@ -22,7 +23,7 @@ import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.
  *
  * @param {object} task
  */
-export function buildMessages(task) {
+export function buildMessages(task, opts = {}) {
   const filePaths = task.context_packet?.file_paths ?? [];
 
   // System: trusted ambient facts only — clock, location, attached file
@@ -37,30 +38,35 @@ export function buildMessages(task) {
   const baseSystem = "You are UCA, a fast desktop assistant. Reply concisely and directly. Use the user's language. Do not wrap answers in code fences unless asked.\n\nYou have NO tools available in this fast mode. Do NOT promise to search, query, fetch live data, browse, or perform any external action. If the user is asking for current information or external data and you cannot answer from your training, say honestly that this assistant mode cannot perform live queries and suggest they retry with the tool-using path.";
   const resourceContext = formatResourceContext(task);
 
-  // User: command + optional file-path list (still trusted, just placed
-  // in user role for proximity to the request) + optional untrusted block
-  // for ctx.text / url. The untrusted block has its own fencing + guard
-  // sentence; we don't add another "Context:" prefix because the fencing
-  // already disambiguates it from the user's actual instruction.
-  const userParts = [task.user_command];
-  if (filePaths.length > 0) {
-    userParts.push(`Files:\n${filePaths.join("\n")}`);
-  }
   const untrusted = formatUntrustedSourceMaterial(task);
-  if (untrusted) {
-    userParts.push(untrusted);
+  const filePart = filePaths.length > 0 ? `Files:\n${filePaths.join("\n")}` : null;
+
+  const runtime = opts.runtime ?? task.__runtime ?? null;
+  const modelContextWindow = opts.modelContextWindow ?? 200000;
+  const historyResult = runtime
+    ? loadStructuredHistoryFor({ runtime, task, executor: "fast", modelContextWindow })
+    : { mode: "legacy_fallback", historyMessages: [], currentMessageRendered: null };
+
+  const messages = [{ role: "system", content: `${baseSystem}\n${resourceContext}` }];
+
+  if (historyResult.mode === "structured" && historyResult.currentMessageRendered) {
+    for (const m of historyResult.historyMessages) messages.push(m);
+    const triggerContent = historyResult.currentMessageRendered.content ?? task.user_command;
+    const userParts = [triggerContent];
+    if (filePart) userParts.push(filePart);
+    if (untrusted) userParts.push(untrusted);
+    messages.push({
+      role: historyResult.currentMessageRendered.role,
+      content: userParts.join("\n\n")
+    });
+  } else {
+    const userParts = [task.user_command];
+    if (filePart) userParts.push(filePart);
+    if (untrusted) userParts.push(untrusted);
+    messages.push({ role: "user", content: userParts.join("\n\n") });
   }
 
-  return [
-    {
-      role: "system",
-      content: `${baseSystem}\n${resourceContext}`
-    },
-    {
-      role: "user",
-      content: userParts.join("\n\n")
-    }
-  ];
+  return messages;
 }
 
 async function callAnthropic({ apiKey, baseUrl, model, messages, signal }) {
@@ -281,7 +287,13 @@ export function createFastExecutorScaffold() {
         payload: { step: "fast_executor", progress: 0.1 }
       };
 
-      const messages = buildMessages(task);
+      const messages = buildMessages(task, {
+        runtime: task.__runtime ?? null,
+        modelContextWindow: provider?.model?.context_window
+          ?? provider?.model?.context_length
+          ?? provider?.context_window
+          ?? 200000
+      });
 
       if (signal?.aborted) {
         throw Object.assign(new Error("Fast executor cancelled."), { code: "ABORT_ERR" });
