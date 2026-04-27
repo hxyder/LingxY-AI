@@ -431,7 +431,7 @@ async function runBrowserExecutor({ task, runtime }) {
       updateTask(runtime, task, { result_summary: inlineText.trim() });
     }
 
-    if (task.status !== "success") {
+    if (task.status === "queued" || task.status === "running") {  // P4-RQ G6a: preserve terminal statuses
       updateTask(runtime, task, {
         status: "success",
         sub_status: "completed",
@@ -439,7 +439,7 @@ async function runBrowserExecutor({ task, runtime }) {
       }, true);
     }
     markTaskSucceeded(runtime, task);
-    return { status: "success", artifacts: generatedArtifacts };
+    return { status: task.status, artifacts: generatedArtifacts };
   } catch (error) {
     markTaskFailed(runtime, task, error);
     return { status: task.status, artifacts: [] };
@@ -534,7 +534,7 @@ async function runKimiExecutor({ task, runtime, artifactStore, cliRuntime = null
 
     assertArtifactContract(task, artifactRecords);
 
-    if (task.status !== "success") {
+    if (task.status === "queued" || task.status === "running") {  // P4-RQ G6a: preserve terminal statuses
       updateTask(runtime, task, {
         status: "success",
         sub_status: "completed",
@@ -542,7 +542,7 @@ async function runKimiExecutor({ task, runtime, artifactStore, cliRuntime = null
       }, true);
     }
     markTaskSucceeded(runtime, task);
-    return { status: "success", artifacts: artifactRecords };
+    return { status: task.status, artifacts: artifactRecords };
   } catch (error) {
     markTaskFailed(runtime, task, error);
     return { status: task.status, artifacts: [] };

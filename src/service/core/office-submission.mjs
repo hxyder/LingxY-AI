@@ -74,7 +74,7 @@ async function runFastExecutor({ task, runtime }) {
       });
     }
 
-    if (task.status !== "success") {
+    if (task.status === "queued" || task.status === "running") {  // P4-RQ G6a: preserve terminal statuses
       updateTask(runtime, task, {
         status: "success",
         sub_status: "completed",
@@ -82,7 +82,7 @@ async function runFastExecutor({ task, runtime }) {
       }, true);
     }
     markTaskSucceeded(runtime, task);
-    return { status: "success" };
+    return { status: task.status };
   } catch (error) {
     markTaskFailed(runtime, task, error);
     return { status: task.status };

@@ -90,10 +90,17 @@ export const GOAL_FAMILIES = /** @type {const} */ ([
  * @property {"ok"|"sr_timeout"|"sr_no_provider"|"sr_unsupported_provider"|"sr_disabled"|"sr_low_confidence"|"sr_schema_invalid"|"sr_fact_conflict"|"sr_exception"} routing_status
  *   - P4-RQ G4: SR availability flag. "ok" when SR ran (or wasn't
  *     gated to run); `sr_<code>` when the SR preflight returned a
- *     rejection. Read by fast-executor (G5) to short-circuit
- *     research-class queries that lost SR consultation, and by
- *     audit traces to distinguish "SR said no" from "SR couldn't
- *     answer".
+ *     rejection. Read by audit traces to distinguish "SR said no"
+ *     from "SR couldn't answer".
+ * @property {boolean} routing_degraded
+ *   - P4-RQ G6b: derived from routing_status. true when SR was
+ *     consulted but failed operationally
+ *     (sr_timeout / sr_exception / sr_no_provider / sr_schema_invalid).
+ *     False for sr_disabled / sr_unsupported_provider (operator
+ *     choice) and sr_low_confidence / sr_fact_conflict (SR ran).
+ *     Read by fast-executor as the PRIMARY pre-LLM short-circuit
+ *     gate so research-class queries don't fabricate live-lookup
+ *     answers when SR couldn't deliver.
  * @property {boolean} connector_domain
  *   - P4-RQ G4: true when isConnectorDomainRequest fired. Read by
  *     executor-resolver Rule 5 extension (G5a) to keep
@@ -635,22 +642,50 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       ? `sr_${srRejection.code}`
       : "ok";  // not consulted (gate skipped at preflight) — same as ok
 
-  // P4-RQ G5b: research_signals_present — true when STRUCTURAL
-  // external-intent signals fired. Read by the fast executor's
-  // pre-LLM short-circuit (when routing_status != ok) to refuse
-  // fabricated lookups.
+  // P4-RQ G6b: routing_degraded — boolean derived from routing_status.
+  // True when the SR preflight was actually called AND failed
+  // operationally (transient fault that prevented SR from forming
+  // a verdict). False when SR ran successfully, when SR was never
+  // consulted, OR when the operator explicitly opted out.
   //
-  // Gate composition (intentionally tight):
-  //   - explicit_search    (search verb — "查一下/搜索/google")
-  //   - explicit_external  ("网上/online/web search")
-  //   - tool_policy.external_web_read.mode === "required"
-  //     (resolver already escalated for some other structural reason
-  //      — pending_offer external intent, etc.)
+  // Read by fast-executor's pre-LLM short-circuit (G5b) as the
+  // PRIMARY gate. This replaces the previous "routing_status != ok
+  // AND research_signals_present" composition because:
+  //   - "research_signals_present" tried to gate on user-text
+  //     surface (explicit_search etc.) — but missed real research-
+  //     class queries like "下周天气" that have no explicit search
+  //     verb. The user's directive: read framework state, not
+  //     user text.
+  //   - "routing_degraded" reads framework state directly: was SR
+  //     consulted, did it fail. If yes, the deterministic
+  //     fallback for non-explicit-signal queries is unreliable —
+  //     fast must surface the degradation honestly.
   //
-  // weak_freshness ("最近/today") alone does NOT count: it's a time
-  // marker that fires on chitchat ("最近怎么样") and would falsely
-  // trip the short-circuit. Time markers need a companion signal
-  // (which the resolver already requires for required-mode anyway).
+  // Codes that count as DEGRADED (operational failures):
+  //   sr_timeout              — SR exceeded its timeout
+  //   sr_exception            — SR adapter / network exception
+  //   sr_no_provider          — no chat provider configured
+  //   sr_schema_invalid       — SR returned malformed payload
+  //
+  // Codes that do NOT count (operator choice / SR ran fine):
+  //   ok                      — SR succeeded (or wasn't consulted)
+  //   sr_disabled             — operator turned SR off explicitly
+  //   sr_unsupported_provider — operator chose ollama / code_cli
+  //   sr_low_confidence       — SR ran, deterministic baseline took over
+  //   sr_fact_conflict        — SR ran, hard fact rejected its decision
+  const DEGRADED_ROUTING_CODES = new Set([
+    "sr_timeout",
+    "sr_exception",
+    "sr_no_provider",
+    "sr_schema_invalid"
+  ]);
+  const routingDegraded = DEGRADED_ROUTING_CODES.has(routingStatus);
+
+  // P4-RQ G5b (legacy): research_signals_present — kept for
+  // observability and potential future consumers. NO LONGER read
+  // by fast-executor's short-circuit (G6b switched that gate to
+  // routing_degraded). Stays as a derived task_spec flag for
+  // audit / decision-trace clarity.
   const researchSignalsPresent = Boolean(
     signals?.explicit_search?.matched
     || signals?.explicit_external?.matched
@@ -665,10 +700,11 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     tool_policy: toolPolicy,
     research_quality: researchQuality,
     // G4: framework-state flags read by executor-resolver Rule 5
-    // extension and fast-executor short-circuit (G5).
+    // extension and fast-executor short-circuit (G5/G6b).
     routing_status: routingStatus,
+    routing_degraded: routingDegraded,        // G6b — primary fast-guard gate
     connector_domain: connectorDomainRequest,
-    research_signals_present: researchSignalsPresent,
+    research_signals_present: researchSignalsPresent,  // G5b legacy — observability
     artifact: {
       required: artifactRequired,
       kind: fileArtifactKind,

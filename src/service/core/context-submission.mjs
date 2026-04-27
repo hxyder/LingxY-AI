@@ -462,11 +462,18 @@ async function runKimiExecutor({ task, runtime, store, queue, artifactStore, mar
 
     assertArtifactContract(task, artifactRecords);
 
-    if (task.status !== "success") {
+    // P4-RQ G6a: preserve any terminal status the executor already
+    // set. Pre-G6 this clobbered partial_success/failed/cancelled
+    // back to success, which silently overwrote G5b/G5c routing-
+    // degraded and unbacked-claim downgrades. Only force success
+    // when the task is still in an in-progress shape (queued/running).
+    // markTaskSucceeded records an executor_history entry tagged
+    // with task.status — safe to call for any terminal state.
+    if (task.status === "queued" || task.status === "running") {
       updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
     }
     markTaskSucceeded(runtime, task);
-    return { status: "success", artifacts: artifactRecords };
+    return { status: task.status, artifacts: artifactRecords };
   } catch (error) {
     if (markFailure) {
       markTaskFailed(runtime, task, error);
@@ -612,7 +619,11 @@ async function runExecutor({ runtime, task, executor }) {
       updateTask(runtime, task, { result_summary: inlineText.trim() });
     }
 
-    if (task.status !== "success") {
+    // P4-RQ G6a: preserve terminal statuses set by the executor
+    // (partial_success / failed / cancelled / waiting_external_decision).
+    // Pre-G6 this forced success unconditionally, clobbering G5b/G5c
+    // routing-degraded and unbacked-claim downgrades.
+    if (task.status === "queued" || task.status === "running") {
       updateTask(runtime, task, {
         status: "success",
         sub_status: "completed",
@@ -620,7 +631,7 @@ async function runExecutor({ runtime, task, executor }) {
       }, true);
     }
     markTaskSucceeded(runtime, task);
-    return { status: "success", artifacts: generatedArtifacts };
+    return { status: task.status, artifacts: generatedArtifacts };
   } catch (error) {
     markTaskFailed(runtime, task, error);
     return { status: task.status, artifacts: generatedArtifacts };

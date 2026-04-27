@@ -290,7 +290,7 @@ export async function submitFileTask({
         store.appendArtifact(artifactRecord);
       }
 
-      if (task.status !== "success") {
+      if (task.status === "queued" || task.status === "running") {  // P4-RQ G6a: preserve terminal statuses
         updateTask(runtime, task, {
           status: "success",
           sub_status: "completed",

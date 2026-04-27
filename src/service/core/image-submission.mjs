@@ -140,11 +140,11 @@ async function runKimiImageFallback({ task, runtime, artifactStore, store, queue
     const artifactRecords = execution.artifacts.map((a) => artifactStore.registerArtifact(task.task_id, a.path, a.mime_type));
     for (const r of artifactRecords) store.appendArtifact(r);
 
-    if (task.status !== "success") {
+    if (task.status === "queued" || task.status === "running") {  // P4-RQ G6a: preserve terminal statuses
       updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
     }
     markTaskSucceeded(runtime, task);
-    return { status: "success", artifacts: artifactRecords };
+    return { status: task.status, artifacts: artifactRecords };
   } catch (error) {
     markTaskFailed(runtime, task, error);
     return { status: task.status, artifacts: [] };
@@ -206,7 +206,7 @@ async function runExecutor({ task, runtime }) {
       });
     }
 
-    if (task.status !== "success") {
+    if (task.status === "queued" || task.status === "running") {  // P4-RQ G6a: preserve terminal statuses
       updateTask(runtime, task, {
         status: "success",
         sub_status: "completed",
@@ -214,7 +214,7 @@ async function runExecutor({ task, runtime }) {
       }, true);
     }
     markTaskSucceeded(runtime, task);
-    return { status: "success" };
+    return { status: task.status };
   } catch (error) {
     markTaskFailed(runtime, task, error);
     return { status: task.status };

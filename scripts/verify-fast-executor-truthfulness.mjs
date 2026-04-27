@@ -165,19 +165,21 @@ it("G5d: buildMessages system prompt contains 'NO tools' clause", () => {
 
 // ── G5b/G5c source-level lock-ins (executor logic isn't directly callable
 // without a provider; lock the structural shape via grep) ─────────────────
-it("G5b lock-in: shouldShortCircuitForRoutingDegraded helper exists and is gated correctly", () => {
+it("G6b lock-in: shouldShortCircuitForRoutingDegraded reads task_spec.routing_degraded (NOT routing_status+research_signals coupling)", () => {
   const src = readFileSync(
     new URL("../src/service/executors/fast/fast-executor.mjs", import.meta.url),
     "utf8"
   );
   assert.match(src, /function\s+shouldShortCircuitForRoutingDegraded\s*\(/,
     "helper must be defined");
-  // Must read routing_status
-  assert.match(src, /task\?\.task_spec\?\.routing_status/);
-  // Must read research_signals_present
-  assert.match(src, /research_signals_present/);
-  // Must NOT short-circuit on routing_status === "ok"
-  assert.match(src, /status === "ok"/);
+  // Post-G6b: reads routing_degraded directly (framework state).
+  assert.match(src, /task\?\.task_spec\?\.routing_degraded/,
+    "G6b: must read routing_degraded boolean");
+  // Pre-G6b "routing_status != 'ok' AND research_signals_present"
+  // composition was wrong (missed '下周天气' without explicit_search).
+  // Lock-in that the new gate doesn't reintroduce that coupling.
+  assert.doesNotMatch(src, /shouldShortCircuit[\s\S]{0,300}research_signals_present/,
+    "post-G6b: must NOT couple short-circuit with research_signals_present");
 });
 
 it("G5b lock-in: pre-LLM short-circuit yields partial_success with routing_degraded", () => {
@@ -215,27 +217,86 @@ it("G5c lock-in: detectFastUnbackedClaim helper + post-LLM guard wired", () => {
 // integration we'd need a provider mock; the source-level lock-ins
 // above cover the structural shape. ─────────────────────────────────
 
-// ── Boundary: G5b only fires when BOTH conditions hold ──────────────
-it("G5b boundary: routing_status=ok + research_signals_present=true → no short-circuit", () => {
-  // research_signals_present is true (explicit_search), but
-  // routing_status=ok (SR ran). Fast not selected anyway because
-  // explicit_search drives web=required (E5 step 3) → executor=tool_using.
-  // Lock in via createTaskSpec output.
-  const spec = createTaskSpec("查一下 X", {}, {});
-  assert.equal(spec.research_signals_present, true);
+// ── G6b: routing_degraded gate behaviour ────────────────────────────
+it("G6b: routing_status=ok → routing_degraded=false → no short-circuit", () => {
+  const spec = createTaskSpec("hello", {}, {});
   assert.equal(spec.routing_status, "ok");
-  assert.equal(spec.suggested_executor, "tool_using");
+  assert.equal(spec.routing_degraded, false);
 });
 
-it("G5b boundary: routing_status=sr_timeout + chitchat → no short-circuit", () => {
-  // Time marker "最近怎么样" alone must NOT count as research signal.
-  const spec = createTaskSpec("你好，最近怎么样", {
+it("G6b: SR timeout → routing_degraded=true (transient operational failure)", () => {
+  const spec = createTaskSpec("我这里下周的天气怎么样", {
     semantic_router_rejection: { kind: "rejection", code: "timeout", reason: "test" }
   }, {});
-  assert.equal(spec.research_signals_present, false,
-    "weak_freshness alone (chitchat time marker) must NOT count as research signal");
   assert.equal(spec.routing_status, "sr_timeout");
+  assert.equal(spec.routing_degraded, true,
+    "user-reported reproduction: SR timeout for research-class query must trigger routing_degraded");
   assert.equal(spec.suggested_executor, "fast");
+});
+
+it("G6b: SR exception → routing_degraded=true", () => {
+  const spec = createTaskSpec("今天天气", {
+    semantic_router_rejection: { kind: "rejection", code: "exception", reason: "test" }
+  }, {});
+  assert.equal(spec.routing_degraded, true);
+});
+
+it("G6b: SR no_provider → routing_degraded=true (config missing — operator should know)", () => {
+  const spec = createTaskSpec("今天天气", {
+    semantic_router_rejection: { kind: "rejection", code: "no_provider", reason: "test" }
+  }, {});
+  assert.equal(spec.routing_degraded, true);
+});
+
+it("G6b: SR schema_invalid → routing_degraded=true", () => {
+  const spec = createTaskSpec("今天天气", {
+    semantic_router_rejection: { kind: "rejection", code: "schema_invalid", reason: "test" }
+  }, {});
+  assert.equal(spec.routing_degraded, true);
+});
+
+it("G6b: SR unsupported_provider → routing_degraded=false (operator choice, not degradation)", () => {
+  // Operator running ollama / code_cli intentionally — every query
+  // would have routing_status=sr_unsupported_provider. Fast guard
+  // must NOT degrade-circuit on this; chitchat works fine without SR.
+  const spec = createTaskSpec("今天天气", {
+    semantic_router_rejection: { kind: "rejection", code: "unsupported_provider", reason: "test" }
+  }, {});
+  assert.equal(spec.routing_status, "sr_unsupported_provider");
+  assert.equal(spec.routing_degraded, false);
+});
+
+it("G6b: SR disabled → routing_degraded=false (operator opted out)", () => {
+  const spec = createTaskSpec("今天天气", {
+    semantic_router_rejection: { kind: "rejection", code: "disabled", reason: "test" }
+  }, {});
+  assert.equal(spec.routing_degraded, false);
+});
+
+it("G6b: SR low_confidence → routing_degraded=false (SR ran, deterministic baseline took over)", () => {
+  const spec = createTaskSpec("今天天气", {
+    semantic_router_rejection: { kind: "rejection", code: "low_confidence", reason: "test" }
+  }, {});
+  assert.equal(spec.routing_degraded, false);
+});
+
+it("G6b: SR fact_conflict → routing_degraded=false (SR ran, hard fact rejected its decision)", () => {
+  const spec = createTaskSpec("今天天气", {
+    semantic_router_rejection: { kind: "rejection", code: "fact_conflict", reason: "test" }
+  }, {});
+  assert.equal(spec.routing_degraded, false);
+});
+
+it("G6b reproduction: '下周天气' + SR timeout → routing_degraded=true (the user's repro)", () => {
+  // Pre-G6b the gate was research_signals_present which checked
+  // explicit_search/external/required-mode. "下周天气" had none of
+  // those, so routing_degraded effectively didn't fire. Post-G6b
+  // the gate reads routing_degraded directly — covers this case.
+  const spec = createTaskSpec("我这里下周的天气怎么样", {
+    semantic_router_rejection: { kind: "rejection", code: "timeout", reason: "test" }
+  }, {});
+  assert.equal(spec.routing_degraded, true,
+    "G6b must catch '下周天气 + SR timeout' (the post-G5 reproduction)");
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

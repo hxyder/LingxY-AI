@@ -143,26 +143,31 @@ async function callOllama({ baseUrl, model, messages, signal }) {
 }
 
 /**
- * P4-RQ G5b: pre-LLM short-circuit for routing-degraded research tasks.
+ * P4-RQ G6b: pre-LLM short-circuit for routing-degraded tasks.
  *
- * Conditions (all must hold):
- *   1. routing_status != "ok" — SR couldn't run (sr_timeout /
- *      sr_no_provider / sr_unsupported_provider / etc.).
- *   2. Some research-class structural signal is present —
- *      explicit_search OR explicit_external OR weak_freshness on
- *      the research_quality decision input. We read these via
- *      task.task_spec.research_signals_present (stamped in
- *      createTaskSpec).
+ * Reads `task.task_spec.routing_degraded` — the framework-derived
+ * boolean that's true when SR was consulted but failed operationally
+ * (sr_timeout / sr_exception / sr_no_provider / sr_schema_invalid).
+ * False when SR ran successfully OR wasn't consulted OR the operator
+ * explicitly turned it off (sr_disabled / sr_unsupported_provider).
  *
- * When both hold, the fast executor refuses to fabricate a live-
- * lookup answer. No LLM call. No model gets to claim "let me search".
+ * G6b shifted the gate from "routing_status != ok AND
+ * research_signals_present" to JUST `routing_degraded`. The
+ * previous user-text-based research_signals_present gate missed
+ * "下周天气" (no explicit_search verb, no 网上, weak_freshness
+ * alone insufficient) — exactly the user's reproduction post-G5.
+ * Reading framework state directly avoids the topic-regex
+ * coupling and catches every degraded research-class case.
+ *
+ * Trade-off: chitchat that reaches SR consultation (text length
+ * > 3 chars) AND coincides with an SR outage will see the
+ * "routing degraded" message. Acceptable per user direction —
+ * better honest degraded reply than silent fabrication.
  *
  * Reads framework state only — no topic regex.
  */
 function shouldShortCircuitForRoutingDegraded(task) {
-  const status = task?.task_spec?.routing_status;
-  if (!status || status === "ok") return false;
-  return Boolean(task?.task_spec?.research_signals_present);
+  return Boolean(task?.task_spec?.routing_degraded);
 }
 
 /**
@@ -201,10 +206,10 @@ export function createFastExecutorScaffold() {
         throw Object.assign(new Error("Fast executor cancelled before start."), { code: "ABORT_ERR" });
       }
 
-      // P4-RQ G5b: pre-LLM short-circuit. When SR couldn't run
-      // AND structural research signals are present, refuse to
-      // fabricate a live-lookup answer. No model call. No
-      // possibility of "I'll search" claims.
+      // P4-RQ G6b: pre-LLM short-circuit when routing is degraded.
+      // Reads task_spec.routing_degraded directly (framework state,
+      // not user-text inference). When true, fast cannot reliably
+      // answer; honest reply rather than fabricated lookup.
       if (shouldShortCircuitForRoutingDegraded(task)) {
         const status = task.task_spec.routing_status;
         const honestText = "我无法在快速模式下进行实时搜索（路由层暂不可用：" + status + "）。请稍后重试，或改用工具执行模式。\n\nI cannot perform a live web lookup in this fast mode (routing degraded: " + status + "). Please retry shortly, or rephrase to use the tool-using executor.";
