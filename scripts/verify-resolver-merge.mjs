@@ -166,25 +166,31 @@ async function run() {
     assert.equal(policy.web_search_fetch.mode, "forbidden");
   });
 
-  // ── 4. ambiguous + no SR decision → deterministic default ──────────────
-  it("merge/ambiguous: no SR decision stamped → deterministic forbidden", () => {
+  // ── 4. ambiguous + no SR decision → P5-2 LLM-primary optional baseline ──
+  it("merge/ambiguous: no SR decision stamped → P5-2 LLM-primary optional", () => {
     const text = "帮我看看那件事的进展如何";
     const signals = makeSignals(text);
     const policy = resolveToolPolicy({ signals, contextPacket: {}, text });
-    assert.equal(policy.web_search_fetch.mode, "forbidden");
-    assert.match(policy.web_search_fetch.reason, /No external-data signal|chitchat/);
+    // P5-2: when no hard signal fires AND no SR decision is stamped,
+    // the deterministic baseline is `optional` (LLM-primary). Pre-P5
+    // this was `forbidden`, which silently vetoed external_web_read
+    // for ambiguous research-class queries when SR was unavailable.
+    assert.equal(policy.web_search_fetch.mode, "optional");
+    assert.match(policy.web_search_fetch.reason, /LLM-primary baseline is optional/);
   });
 
-  it("merge/ambiguous: SR timeout becomes optional degraded fallback", () => {
+  it("merge/ambiguous: SR timeout still yields optional (P5-2 baseline already optional)", () => {
     const text = "天气怎么样";
     const signals = makeSignals(text);
     const ctx = {
       semantic_router_rejection: { kind: "rejection", code: "timeout", reason: "test timeout" }
     };
     const policy = resolveToolPolicy({ signals, contextPacket: ctx, text });
+    // After P5-2 the deterministic baseline is already optional, so the
+    // operational-fallback function is a no-op here. The mode invariant
+    // (optional after SR timeout, not forbidden) is what matters.
     assert.equal(policy.web_search_fetch.mode, "optional");
     assert.equal(policy.policy_groups.external_web_read.mode, "optional");
-    assert.match(policy.web_search_fetch.reason, /SemanticRouter unavailable \(timeout\)/);
   });
 
   it("merge/ambiguous: SR no_provider becomes optional degraded fallback", () => {
@@ -292,8 +298,12 @@ async function run() {
       semantic_router_rejection: { kind: "rejection", code: "low_confidence", reason: "confidence 0.42 below threshold" }
     };
     const spec = createTaskSpec("帮我看看那件事的进展如何", ctx, {});
-    // No decision → policy falls back to deterministic forbidden.
-    assert.equal(spec.tool_policy.web_search_fetch.mode, "forbidden");
+    // P5-2: when no decision and rejection.code is non-operational
+    // (low_confidence ran but below threshold), the deterministic
+    // baseline is now `optional`, not `forbidden`. The stage record
+    // is what this test really cares about; mode is the secondary
+    // assertion and tracks the new LLM-primary baseline.
+    assert.equal(spec.tool_policy.web_search_fetch.mode, "optional");
     const stage = spec.decision_trace.find((e) => e.stage === STAGES.SEMANTIC_ROUTER);
     assert.ok(stage, "decision_trace must include a SEMANTIC_ROUTER stage even on rejection");
     assert.equal(stage.output.rejected, true);

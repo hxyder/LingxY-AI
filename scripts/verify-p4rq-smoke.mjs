@@ -271,18 +271,13 @@ it("S4 [今天天气怎么样] + SR: web=required, multi_source, executor=tool_u
     `executor must route to a tool-capable path; got ${spec.suggested_executor}`);
 });
 
-it("S4 [今天天气怎么样] without SR: conservative fallback → web=forbidden + executor=fast", () => {
-  // Post-E3-stage-C1: topic_hint no longer drives required deterministically.
-  // Without an SR decision, the resolver falls back to forbidden, and Rule 5
-  // ext. routes the task to fast for an honest "I cannot do that without
-  // a live lookup" reply.
+it("S4 [今天天气怎么样] without SR: P5 LLM-primary baseline → optional + tool_using", () => {
   const text = "今天天气怎么样";
   const spec = createTaskSpec(text, {});
-  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden",
-    "without SR, conservative fallback is forbidden");
-  // executor depends on the goal classification; with no goal-pattern
-  // match and no SR, classifyGoal returns qa, and Rule 5 → fast.
-  assert.equal(spec.suggested_executor, "fast");
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional");
+  assert.equal(spec.routing_status, "sr_not_invoked");
+  assert.equal(spec.routing_degraded, true);
+  assert.equal(spec.suggested_executor, "tool_using");
 });
 
 it("S4b [天气怎么样] + SR timeout: degraded optional fallback → tool_using", () => {

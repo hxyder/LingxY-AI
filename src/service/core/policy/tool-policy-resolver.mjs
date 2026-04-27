@@ -1,58 +1,26 @@
 /**
- * UCA-077 P1-03: Tool policy resolver — single source of truth for whether
- * external web reading is forbidden / optional / required for the current
- * task.
+ * Tool policy resolver — single source of truth for the external_web_read
+ * mode (forbidden / optional / required) on a TaskSpec.
  *
- * Replaces the three independent decision points that previously voted
- * inconsistently:
- *   - task-spec.mjs:183-191  WEB_DATA_PATTERNS → needs_current_web_data flag
- *   - task-spec.mjs:425-430  applyHardenedRules pushed web_search_fetch step
- *   - tool_using/agent-loop.mjs:31-39 / 681-696 / 724-727  isSearchOrNewsRequest
+ * Decision order:
+ *   0a. explicit_no_search (kind=fact)         → forbidden  (hard)
+ *   0b. pending_offer external intent          → required   (hard)
+ *   1.  explicit_external strong               → required   (hard)
+ *   2a. source_scope kind=fact + LOCAL         → forbidden  (hard)
+ *   2b. explicit_single_url + inline URL       → required   (hard)
+ *   2c. source_scope kind=assumption + LOCAL   → forbidden  (hard)
+ *   3.  explicit_search strong                 → required   (hard)
+ *   4/5/6. default                             → see resolveDeterministicPolicy
  *
- * Inputs are signals (built by intent/signals/) plus the request context.
- * Output carries the decision plus full evidence for tracing.
+ * P5 — the LLM (SemanticRouter / IntentRoute) is the primary classifier;
+ * this module is a guardrail. When no hard signal fires the default is
+ * `optional`, not `forbidden`. SR (when present) drives the actual
+ * mode via mergeSemanticRouterDecision; without SR the task stays on a
+ * tool-capable executor and the LLM decides whether to reach for tools.
  *
- * Decision priority (short-circuit in order; current after E1 + E2 + E3 C1 + E5):
- *   0a. explicit_no_search (kind=fact)        → forbidden  (E1 — beats everything)
- *   0b. pending_offer (external intent)       → required
- *   1.  explicit_external (strong)            → required
- *   2a. source_scope kind=fact + LOCAL        → forbidden  (E2 — real selection / file_text)
- *   2b. explicit_single_url + inline URL      → required   (E2 — structural URL evidence)
- *   2c. source_scope kind=assumption + LOCAL  → forbidden  (E2 — pronoun without URL)
- *   3.  explicit_search (strong)              → required   (E5 — structural hard signal symmetry)
- *   4.  weak_freshness alone                  → forbidden  (kept-as-evidence only)
- *   5.  default                               → forbidden
- *   6.  SR operational failure fallback       → optional   (framework degraded;
- *                                                         allow tool-capable
- *                                                         executor to decide)
- *
- * Removed in E3 stage C1 (commit fae6957): the prior step
- *   "topic_hint (strong) + scope=none → required"
- * no longer exists. topic_hint is observability-only at the
- * deterministic layer now; SR + EvidencePolicy merge owns
- * topical routing. If SR fails operationally (timeout / no provider /
- * exception / schema invalid), EvidencePolicy degrades to optional web
- * when no hard forbid/local anchor exists; it does NOT resurrect
- * topic regex as a deterministic required path.
- *
- * The resolver never returns "required" off a weak signal alone — that was
- * the root cause of the "最近这个框架很慢 → 误联网" symptom.
- *
- * UCA-077 P4-00 (Issue β / RR-03): the resolver decides at the policy-group
- * level (currently only `external_web_read`) and emits TWO views of the same
- * decision in the returned policy:
- *
- *   1. `tool_policy.policy_groups.external_web_read` — canonical group entry
- *      consumed by the registry-level policy guard for capability-based
- *      forbidden checks.
- *   2. `tool_policy.<toolId>` for every member of the group — back-compat
- *      with consumers (agent-loop, executor-resolver, success-contract,
- *      task-contract, agentic prompt-builder) that read
- *      `tool_policy.web_search_fetch.mode` directly.
- *
- * Both views carry the same `mode`, `reason`, `evidence`, and a
- * `policy_group` tag for traceability. The single source of truth for which
- * toolIds belong to which group lives in `policy-groups.mjs`.
+ * The returned policy carries both the canonical
+ * `policy_groups.external_web_read` entry (consumed by the registry
+ * guard) and `<toolId>` per-tool entries (back-compat readers).
  */
 
 import { toolsInGroup } from "./policy-groups.mjs";
@@ -264,21 +232,21 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
     );
   }
 
-  // 5. Default — including weak_freshness on its own. The original
-  //    intuition was that "最近 / current" should let the LLM decide whether
-  //    to search, but in practice that escalates plain chitchat ("最近怎么样")
-  //    onto an executor that can call tools, with no useful entity to search
-  //    for. We keep the weak_freshness signal in `evidence` (for tracing)
-  //    but the policy stays forbidden until an explicit_search,
-  //    topic_hint, or explicit_external companion appears.
+  // Default. Structural chitchat (≤3 chars) goes forbidden so fast can
+  // answer immediately; otherwise optional so SR / tool_using can decide.
   const trailingEvidence = [];
   if (weakFreshness?.matched) trailingEvidence.push(...weakFreshness.evidence);
   trailingEvidence.push({ type: "default", source: "tool-policy-resolver", reason: "no companion signal" });
+  if (String(text ?? "").trim().length <= 3) {
+    return webSearchPolicy(
+      "forbidden",
+      "Structural chitchat (text ≤ 3 chars); deterministic baseline forbids external web.",
+      trailingEvidence
+    );
+  }
   return webSearchPolicy(
-    "forbidden",
-    weakFreshness?.matched
-      ? "Weak freshness marker without a search verb / external entity / online phrase — treated as chitchat."
-      : "No external-data signal detected.",
+    "optional",
+    "No deterministic hard signal forbids/requires web; LLM-primary baseline is optional.",
     trailingEvidence
   );
 }
@@ -343,6 +311,10 @@ export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text 
   // layer guards so the skip-set and the override-set are symmetric.
   const explicitNoSearch = signals?.explicit_no_search;
   if (explicitNoSearch?.matched && explicitNoSearch.kind === "fact") return false;
+  // Pronoun-style assumption-kind anchors stay SR-eligible by design:
+  // "这个/这段" can refer to local OR a previously-mentioned external
+  // article, and SR (with conversation history) is the right layer
+  // to disambiguate. Only fact-kind local anchors are hard guardrails.
   const sourceScope = signals?.source_scope;
   if (sourceScope?.matched
       && sourceScope.kind === "fact"
@@ -448,18 +420,10 @@ export function mergeSemanticRouterDecision({
 }
 
 /**
- * EvidencePolicy fallback for SemanticRouter operational failures.
- *
- * SR timeout / missing provider / adapter exception / malformed provider
- * payload means the semantic layer could not produce a judgement. It does
- * NOT mean the user forbade tools. When the request is exactly the kind
- * of ambiguous non-hard-fact input that would have gone to SR, keep the
- * registry guard in place but let a tool-capable executor decide whether
- * external_web_read is useful by downgrading deterministic forbidden to
- * optional.
- *
- * Hard facts still win because shouldConsultSemanticRouter returns false
- * for explicit_no_search and fact-kind local anchors.
+ * Fallback when SR didn't produce a judgement: covers operational
+ * failures (rejection.code in SR_OPERATIONAL_FAILURE_CODES) and
+ * "should have consulted but didn't". Upgrades a default-rule
+ * forbidden to optional; never overrides a local-anchor forbidden.
  */
 export function mergeSemanticRouterOperationalFallback({
   deterministicPolicy,
@@ -467,25 +431,27 @@ export function mergeSemanticRouterOperationalFallback({
   contextPacket = {},
   text = ""
 } = {}) {
-  const rejection = contextPacket?.semantic_router_rejection;
-  if (!rejection || typeof rejection !== "object") return deterministicPolicy;
   if (contextPacket?.semantic_router_decision) return deterministicPolicy;
-  if (!SR_OPERATIONAL_FAILURE_CODES.has(rejection.code)) return deterministicPolicy;
+  const rejection = contextPacket?.semantic_router_rejection;
+  const hasRejection = rejection && typeof rejection === "object";
+  if (hasRejection && !SR_OPERATIONAL_FAILURE_CODES.has(rejection.code)) return deterministicPolicy;
   if (!shouldConsultSemanticRouter({ signals, contextPacket, text })) return deterministicPolicy;
 
   const detMode = deterministicPolicy?.policy_groups?.external_web_read?.mode
     ?? deterministicPolicy?.web_search_fetch?.mode;
   if (detMode !== "forbidden") return deterministicPolicy;
 
+  const sourceScope = signals?.source_scope;
+  if (sourceScope?.matched && LOCAL_SCOPES.has(sourceScope.hint?.value)) {
+    return deterministicPolicy;
+  }
+
+  const cause = hasRejection ? `operational_failure:${rejection.code}` : "not_invoked";
   return buildExternalWebReadPolicy(
     "optional",
-    `SemanticRouter unavailable (${rejection.code}); no hard no-search/local anchor was present, so external_web_read is allowed as an optional degraded fallback for the tool-capable executor.`,
+    `SemanticRouter did not produce a judgement (${cause}); LLM-primary fallback to optional.`,
     [
-      {
-        type: "semantic_router",
-        source: "semantic_router",
-        reason: `operational failure: ${rejection.code}`
-      },
+      { type: "semantic_router", source: "semantic_router", reason: cause },
       ...(deterministicPolicy?.web_search_fetch?.evidence ?? [])
     ]
   );

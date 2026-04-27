@@ -63,12 +63,20 @@ it("thresholds: single_lookup is 1 / 1 / digest_satisfies=true", () => {
 it("infer: forbidden mode → null (no enforcement applies)", () => {
   assert.equal(inferResearchQuality({ text: "x", contextSources: noAnchor, toolPolicyMode: "forbidden" }), null);
 });
-it("infer: optional mode + no anchor → multi_source_research", () => {
+it("infer: optional mode + no anchor + no SR classification → null", () => {
   const rq = inferResearchQuality({ text: "今天有什么 AI 新闻", contextSources: noAnchor, toolPolicyMode: "optional" });
+  assert.equal(rq, null);
+});
+
+it("infer: optional + IntentRoute multi_source_research → multi_source profile", () => {
+  const rq = inferResearchQuality({
+    contextSources: noAnchor,
+    toolPolicyMode: "optional",
+    srSourceMode: "multi_source_research"
+  });
   assert.equal(rq?.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH);
   assert.equal(rq.min_sources, 3);
   assert.equal(rq.min_distinct_domains, 2);
-  assert.equal(rq.single_source_digest_satisfies, false);
 });
 it("infer: required mode + no anchor → multi_source_research", () => {
   const rq = inferResearchQuality({ text: "research today's tech news", contextSources: noAnchor, toolPolicyMode: "required" });
@@ -93,24 +101,21 @@ it("infer: explicit_single_url signal matched → single_lookup", () => {
   });
   assert.equal(rq?.profile, RESEARCH_PROFILES.SINGLE_LOOKUP);
 });
-it("infer: explicit_single_url unmatched → multi_source_research (default)", () => {
+it("infer: explicit_single_url unmatched + optional + no anchor → null", () => {
   const rq = inferResearchQuality({
     contextSources: noAnchor,
     signals: { explicit_single_url: { matched: false } },
     toolPolicyMode: "optional"
   });
+  assert.equal(rq, null);
+});
+it("infer: required mode + no anchor → multi_source profile", () => {
+  const rq = inferResearchQuality({ contextSources: noAnchor, toolPolicyMode: "required" });
   assert.equal(rq?.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH);
 });
-it("infer: missing signals/contextSources falls back to multi_source", () => {
-  const rq = inferResearchQuality({ toolPolicyMode: "optional" });
-  assert.equal(rq?.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH);
-});
-it("infer: null toolPolicyMode → defaults to multi_source for safety", () => {
-  // Defensive: when caller omits toolPolicyMode (only happens during
-  // unit tests / partial wiring), don't return null — assume web is
-  // possible. Only the explicit "forbidden" string suppresses.
+it("infer: missing inputs (no mode, no signals) → null", () => {
   const rq = inferResearchQuality({});
-  assert.equal(rq?.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH);
+  assert.equal(rq, null);
 });
 
 // ── Signal-level: explicit_single_url detector ───────────────────────

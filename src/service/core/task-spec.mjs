@@ -12,7 +12,7 @@
 import { isConnectorDomainRequest } from "../connectors/core/connector-intent.mjs";
 import { extractPureLaunchApp } from "./router/fast-path-router.mjs";
 import { extractAllSignals } from "./intent/signals/index.mjs";
-import { resolveToolPolicy, buildExternalWebReadPolicy } from "./policy/tool-policy-resolver.mjs";
+import { resolveToolPolicy, buildExternalWebReadPolicy, shouldConsultSemanticRouter } from "./policy/tool-policy-resolver.mjs";
 import { intentRouteNeedsConnector } from "./policy/evidence-policy.mjs";
 import { enforcePolicyInvariants } from "./policy/policy-invariants.mjs";
 import { inferResearchQuality } from "./policy/research-quality.mjs";
@@ -642,23 +642,19 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   // those need different conservative behaviours (G5 short-
   // circuit reads this).
   //
-  // Codes mirror the SR rejection.code values:
-  //   ok                       — decision present (or never gated)
-  //   sr_timeout               — SR exceeded its timeout
-  //   sr_no_provider           — no chat provider configured
-  //   sr_unsupported_provider  — provider kind not wired for SR
-  //   sr_disabled              — operator turned SR off
-  //   sr_low_confidence        — SR returned but below threshold
-  //   sr_schema_invalid        — SR returned malformed payload
-  //   sr_fact_conflict         — SR's decision contradicted a hard fact
-  //   sr_exception             — adapter / network exception
-  // (srDecision / srRejection already destructured above for the
-  // SEMANTIC_ROUTER decision-trace stage; reuse them here.)
+  // routing_status: ok | sr_<code> | sr_not_invoked. sr_not_invoked
+  // fires when shouldConsultSemanticRouter said yes but neither
+  // decision nor rejection was stamped — the LLM-primary classifier
+  // is silently missing.
+  const srWasEligible = !srDecision && !srRejection
+    && shouldConsultSemanticRouter({ signals, contextPacket: enrichedContext, text });
   const routingStatus = srDecision
     ? "ok"
     : srRejection?.code
       ? `sr_${srRejection.code}`
-      : "ok";  // not consulted (gate skipped at preflight) — same as ok
+      : srWasEligible
+        ? "sr_not_invoked"
+        : "ok";
 
   // P4-RQ G6b: routing_degraded — boolean derived from routing_status.
   // True when the SR preflight was actually called AND failed
@@ -679,23 +675,14 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   //     fallback for non-explicit-signal queries is unreliable —
   //     fast must surface the degradation honestly.
   //
-  // Codes that count as DEGRADED (operational failures):
-  //   sr_timeout              — SR exceeded its timeout
-  //   sr_exception            — SR adapter / network exception
-  //   sr_no_provider          — no chat provider configured
-  //   sr_schema_invalid       — SR returned malformed payload
-  //
-  // Codes that do NOT count (operator choice / SR ran fine):
-  //   ok                      — SR succeeded (or wasn't consulted)
-  //   sr_disabled             — operator turned SR off explicitly
-  //   sr_unsupported_provider — operator chose ollama / code_cli
-  //   sr_low_confidence       — SR ran, deterministic baseline took over
-  //   sr_fact_conflict        — SR ran, hard fact rejected its decision
+  // Degraded = LLM-primary classifier missing (operational failure or
+  // silently not invoked). Non-degraded = SR ran or operator opted out.
   const DEGRADED_ROUTING_CODES = new Set([
     "sr_timeout",
     "sr_exception",
     "sr_no_provider",
-    "sr_schema_invalid"
+    "sr_schema_invalid",
+    "sr_not_invoked"
   ]);
   const routingDegraded = DEGRADED_ROUTING_CODES.has(routingStatus);
 

@@ -1,10 +1,6 @@
 /**
- * EvidencePolicy — bridge from structured IntentRoute judgement to
- * deterministic policy axes.
- *
- * SemanticRouter classifies; EvidencePolicy interprets that classification
- * into policy hints. It never executes tools and never owns numeric research
- * thresholds (research-quality.mjs does).
+ * EvidencePolicy — translates IntentRoute fields into policy axes.
+ * Never executes tools and never owns numeric thresholds.
  */
 
 const EXTERNAL_SOURCE_MODES = new Set([
@@ -18,10 +14,6 @@ const LOCAL_SOURCE_MODES = new Set([
   "provided_context"
 ]);
 
-/**
- * @param {object|null} decision
- * @returns {boolean}
- */
 export function intentRouteNeedsConnector(decision = null) {
   if (!decision || typeof decision !== "object") return false;
   if (decision.primary_intent === "email_calendar_action") return true;
@@ -31,14 +23,6 @@ export function intentRouteNeedsConnector(decision = null) {
   return caps.includes("email_calendar_action");
 }
 
-/**
- * Derive external_web_read mode from IntentRoute fields. Compatibility
- * `web_policy` remains a fallback, but the structural IntentRoute fields are
- * the preferred source.
- *
- * @param {object|null} decision
- * @returns {{ mode: "forbidden"|"optional"|"required", reason: string, evidence: object[] } | null}
- */
 export function deriveExternalWebPolicyFromIntentRoute(decision = null) {
   if (!decision || typeof decision !== "object") return null;
 

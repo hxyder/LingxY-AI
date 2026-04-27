@@ -1,6 +1,6 @@
 {"id":"chitchat-fast","input":"你好","expected":{"executor":"fast","mode":"qa"}}
-{"id":"recent-chitchat-fast","input":"最近怎么样","expected":{"executor":"fast","mode":"qa"}}
-{"id":"polish-fast","input":"帮我润色这句话","expected":{"executor":"fast","mode":"qa"}}
+{"id":"recent-chitchat","input":"最近怎么样","expected":{"executor":"tool_using","mode":"qa"}}
+{"id":"polish","input":"帮我润色这句话","expected":{"executor":"tool_using","mode":"qa"}}
 {"id":"local-analyze-fast","input":"最近这个框架很慢，帮我分析","expected":{"executor":"fast","mode":"qa"}}
 {"id":"news-tool-using","input":"今天有什么 AI 新闻","context":{"semantic_router_decision":{"source_scope":"external_world","web_policy":"required","output_kind":"conversation","artifact_required":false,"executor":"tool_using","research_depth":"multi_source","confidence":0.85,"reason":"news topic"}},"expected":{"executor":"tool_using","mode":"search"}}
 {"id":"weather-tool-using","input":"current weather in Raleigh","context":{"semantic_router_decision":{"source_scope":"external_world","web_policy":"required","output_kind":"conversation","artifact_required":false,"executor":"tool_using","research_depth":"single_lookup","confidence":0.95,"reason":"single-fact weather"}},"expected":{"executor":"tool_using","mode":"search"}}

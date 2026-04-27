@@ -219,7 +219,7 @@ it("G5c lock-in: detectFastUnbackedClaim helper + post-LLM guard wired", () => {
 
 // ── G6b: routing_degraded gate behaviour ────────────────────────────
 it("G6b: routing_status=ok → routing_degraded=false → no short-circuit", () => {
-  const spec = createTaskSpec("hello", {}, {});
+  const spec = createTaskSpec("你好", {}, {});
   assert.equal(spec.routing_status, "ok");
   assert.equal(spec.routing_degraded, false);
 });

@@ -161,15 +161,25 @@ export function inferResearchQuality({
     return {
       profile: RESEARCH_PROFILES.DEEP_RESEARCH,
       ...DEEP_RESEARCH_THRESHOLDS,
-      reason: "SemanticRouter classified the request as deep_research (explicit thorough/comprehensive ask)."
+      reason: "IntentRoute classified the request as deep_research."
     };
   }
 
-  // Default for web-allowed: research-class. Multiple independent
-  // sources are required.
-  return {
-    profile: RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH,
-    ...DEFAULT_MULTI_SOURCE_THRESHOLDS,
-    reason: "Web tool reads allowed and no single-source anchor — research-class task."
-  };
+  if (srSourceMode === "multi_source_research" || srResearchDepth === "multi_source") {
+    return {
+      profile: RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH,
+      ...DEFAULT_MULTI_SOURCE_THRESHOLDS,
+      reason: "IntentRoute classified the request as multi_source_research."
+    };
+  }
+
+  if (toolPolicyMode === "required") {
+    return {
+      profile: RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH,
+      ...DEFAULT_MULTI_SOURCE_THRESHOLDS,
+      reason: "Web tool reads required and no single-source anchor — research-class task."
+    };
+  }
+
+  return null;
 }
