@@ -253,5 +253,43 @@ it("defensive: null runtime", () => {
   assert.equal(snap.window.total_tasks, 0);
 });
 
+// ── 12. K5: audit entries WITHOUT task_id are excluded ─────────────
+it("K5: audit entries without task_id are excluded from violation/runbook counts", () => {
+  // Pre-K5 the filter was `entry.task_id && !taskIdsInWindow.has(...)`
+  // which let entries WITHOUT task_id fall through and pollute the
+  // counts. The correct gate excludes them entirely — un-attributed
+  // audit entries can't be assigned to any window of tasks.
+  const tasks = [makeTask({ task_id: "t1" })];
+  const audit = [
+    // Legitimate entry with matching task_id — counts.
+    { event_subtype: "tool_loop.phase_gate", task_id: "t1", payload: {
+      violation_kinds: ["external_web_read_required_not_called"]
+    } },
+    // No task_id — pre-K5 leaked into counts; post-K5 must be excluded.
+    { event_subtype: "tool_loop.phase_gate", payload: {
+      violation_kinds: ["should_not_appear_in_counts"]
+    } },
+    // Empty-string task_id — same exclusion.
+    { event_subtype: "tool_loop.runbook_suggested", task_id: "", payload: {
+      runbook_id: "should_not_appear_either"
+    } },
+    // task_id null — same exclusion.
+    { event_subtype: "tool_loop.runbook_suggested", task_id: null, payload: {
+      runbook_id: "also_should_not_appear"
+    } },
+    // Legitimate runbook entry for the in-window task — counts.
+    { event_subtype: "tool_loop.runbook_suggested", task_id: "t1", payload: {
+      runbook_id: "INSUFFICIENT_RESEARCH_SOURCES"
+    } }
+  ];
+  const snap = getRoutingDistribution({ store: makeStore({ tasks, audit }) });
+  assert.deepEqual(snap.by_violation_kind, {
+    external_web_read_required_not_called: 1
+  }, `audit entries without task_id must NOT be counted; got ${JSON.stringify(snap.by_violation_kind)}`);
+  assert.deepEqual(snap.by_runbook_suggested, {
+    INSUFFICIENT_RESEARCH_SOURCES: 1
+  }, `runbook entries without task_id must NOT be counted; got ${JSON.stringify(snap.by_runbook_suggested)}`);
+});
+
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
 if (fail > 0) process.exit(1);

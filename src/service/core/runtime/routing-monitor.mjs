@@ -90,17 +90,24 @@ export function getRoutingDistribution(runtime, options = {}) {
     }
   }
 
-  // Walk audit log for phase_gate + runbook entries within this window
-  // (window is checked via the audit entry's task_id being in the
-  // tasks-in-window set; audit entries don't carry their own
-  // created_at consistently across producers, but they do carry
-  // task_id, which we already filtered).
+  // Walk audit log for phase_gate + runbook entries within this window.
+  // Window membership is checked via the audit entry's task_id being in
+  // the tasks-in-window set; audit entries don't carry their own
+  // created_at consistently across producers, but every phase_gate /
+  // runbook_suggested entry from the agent loop is required to carry
+  // a task_id (otherwise the entry doesn't belong to a task and can't
+  // be attributed to a window of tasks anyway).
+  //
+  // K5: entries WITHOUT task_id are excluded — pre-K5 the filter was
+  // `entry.task_id && !taskIdsInWindow.has(entry.task_id)` which let
+  // un-attributed entries fall through and pollute the counts. The
+  // correct gate is "must HAVE task_id AND be in the window".
   const allAudit = runtime?.store?.listAuditLogs?.() ?? [];
   const byViolationKind = {};
   const byRunbookSuggested = {};
   for (const entry of allAudit) {
     if (!entry || typeof entry !== "object") continue;
-    if (entry.task_id && !taskIdsInWindow.has(entry.task_id)) continue;
+    if (!entry.task_id || !taskIdsInWindow.has(entry.task_id)) continue;
     const subtype = entry.event_subtype;
     const payload = entry.payload ?? {};
     if (subtype === "tool_loop.phase_gate") {

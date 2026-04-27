@@ -119,11 +119,32 @@ export function renderResearchBudget(toolPolicy, contextSources, researchQuality
   // the numbers are missing or non-finite.
   if (minSources === null || minDomains === null) return PRINCIPLES_BLOCK;
 
+  // K5: required vs optional get DIFFERENT text. The validator
+  // (D3 checkResearchCoverage) only enforces these thresholds when
+  // external_web_read is in `required_policy_groups` — i.e. when the
+  // resolved web policy is `required`. Pre-K5 the prompt told the
+  // model "the success contract validates this — falling short is a
+  // partial_success, not a success" for BOTH required AND optional
+  // tasks, which was a lie for optional and would push the model to
+  // over-search on requests where the user didn't ask for research
+  // depth. Fix: hard contract language only for required; soft
+  // quality-target language for optional.
   const lines = [
-    "Quality bar for this task:",
-    `- This task requires at least ${minSources} independent source${minSources === 1 ? "" : "s"} from ${minDomains} distinct publisher${minDomains === 1 ? "" : "s"}. The success contract validates this — falling short is a partial_success, not a success.`,
-    "- A single publisher (regardless of how many internal articles their page lists) counts as ONE source. nytimes.com homepage and nytimes.com/article-X are the same publisher."
+    "Quality bar for this task:"
   ];
+  if (mode === "required") {
+    lines.push(
+      `- This task requires at least ${minSources} independent source${minSources === 1 ? "" : "s"} from ${minDomains} distinct publisher${minDomains === 1 ? "" : "s"}. The success contract validates this — falling short is a partial_success, not a success.`
+    );
+  } else {
+    // optional
+    lines.push(
+      `- If you choose to browse, use this as a quality target: at least ${minSources} independent source${minSources === 1 ? "" : "s"} from ${minDomains} distinct publisher${minDomains === 1 ? "" : "s"}. Do not over-search if the user did not ask for research depth — the success contract does NOT enforce this on optional-web tasks.`
+    );
+  }
+  lines.push(
+    "- A single publisher (regardless of how many internal articles their page lists) counts as ONE source. nytimes.com homepage and nytimes.com/article-X are the same publisher."
+  );
   if (!digestOk) {
     lines.push(
       `- A single weekly-review / digest / roundup page does NOT satisfy this bar even if it contains many internal links. Find independent originals.`

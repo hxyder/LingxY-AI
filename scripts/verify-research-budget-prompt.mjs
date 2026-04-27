@@ -82,7 +82,7 @@ it("gate: local anchor → renderResearchBudget returns null (single source by u
 });
 
 // ── 4. multi_source_research: numerical thresholds appear verbatim ──
-it("multi_source_research: rendered text contains the numerical bar verbatim", () => {
+it("multi_source_research + web=required: hard contract language with partial_success", () => {
   const text = renderResearchBudget(policyRequired, noLocalAnchor, multiSource);
   assert.ok(typeof text === "string" && text.length > 0);
   assert.match(text, /at least 3 independent sources/,
@@ -92,7 +92,47 @@ it("multi_source_research: rendered text contains the numerical bar verbatim", (
   assert.match(text, /weekly-review.*digest.*roundup/,
     "single_source_digest_satisfies=false must surface the no-roundup line");
   assert.match(text, /partial_success/,
-    "must mention partial_success so the model knows the consequence");
+    "required must mention partial_success so the model knows the consequence");
+  assert.match(text, /success contract validates this/i,
+    "required must claim contract validation");
+});
+
+// ── 4b. K5: multi_source_research + web=optional → soft target language ─
+it("K5: multi_source_research + web=optional → SOFT 'quality target' language, NOT hard contract", () => {
+  // Pre-K5 optional tasks rendered the same hard "the success contract
+  // validates this — falling short is a partial_success" line as
+  // required. That was a lie — checkResearchCoverage only enforces
+  // when external_web_read is in required_policy_groups (i.e. web=required).
+  // K5: optional gets soft target language that explicitly says the
+  // contract does NOT enforce, so the model doesn't over-search.
+  const text = renderResearchBudget(policyOptional, noLocalAnchor, multiSource);
+  assert.ok(typeof text === "string" && text.length > 0);
+
+  // Numerical bar still surfaces (the target itself is real).
+  assert.match(text, /at least 3 independent sources/);
+  assert.match(text, /from 2 distinct publishers/);
+
+  // K5: optional must NOT claim contract validation / partial_success.
+  assert.doesNotMatch(text, /success contract validates this/i,
+    "optional must NOT claim contract validation");
+  assert.doesNotMatch(text, /\bpartial_success\b/,
+    "optional must NOT threaten partial_success — the validator does not enforce on optional");
+
+  // K5: optional must use soft "quality target" language and tell the
+  // model not to over-search.
+  assert.match(text, /quality target/i,
+    "optional should frame the bar as a quality target");
+  assert.match(text, /do not over-search/i,
+    "optional must explicitly tell the model not to over-search");
+  assert.match(text, /does NOT enforce/i,
+    "optional must explicitly state the contract does not enforce on optional-web tasks");
+});
+
+it("K5: required vs optional rendered text differs structurally", () => {
+  const required = renderResearchBudget(policyRequired, noLocalAnchor, multiSource);
+  const optional = renderResearchBudget(policyOptional, noLocalAnchor, multiSource);
+  assert.notEqual(required, optional,
+    "required and optional must render different text — contract semantics differ");
 });
 
 // ── 5. single_lookup: profile-specific text ───────────────────────
