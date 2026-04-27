@@ -110,16 +110,24 @@ function hasShapeMarker(kind, text) {
 }
 
 /**
- * Post-tool synthesis check. Returns ZERO or ONE violation describing
- * how the final answer fails for the expected output kind.
+ * Post-tool synthesis check.
  *
- * Deterministic v1. Two independent failure modes:
+ * SCOPE — this is a LIGHTWEIGHT GUARDRAIL, not a semantic quality
+ * evaluator. It catches the obvious "tool observation pasted back as
+ * the final answer" anti-pattern and the "wrong shape" cases per the
+ * expected_output kind. It does NOT judge whether a summary is
+ * insightful, whether a comparison is fair, or whether a recommendation
+ * is well-reasoned. Treat it as a tripwire that triggers one synthesis
+ * retry; do not promote it into a quality scoring layer. A future LLM-
+ * based or hybrid evaluator can sit alongside this without replacing
+ * it; this function will remain the deterministic floor.
  *
- *   isLikelyRawDump            bigram overlap with a tool observation
- *                              ≥ SYNTHESIS_OVERLAP_THRESHOLD on a
- *                              non-trivial observation. Catches "I
- *                              found 10 emails: 1. ... 2. ..." pasted
- *                              back as the final answer.
+ * Two independent failure modes:
+ *
+ *   isLikelyRawDump            bigram overlap with a non-trivial tool
+ *                              observation ≥ SYNTHESIS_OVERLAP_THRESHOLD.
+ *                              Catches "I found 10 emails: 1. ... 2. ..."
+ *                              pasted back as the final answer.
  *
  *   missingExpectedTransformation
  *                              The kind-specific shape marker
@@ -128,8 +136,7 @@ function hasShapeMarker(kind, text) {
  *                              comparative wording) is absent.
  *
  * Either condition alone marks the violation; checkerReason describes
- * which fired. No extra LLM call. The caller is expected to retry
- * synthesis once when this violation fires.
+ * which fired. No extra LLM call.
  *
  * Returns [] when:
  *   - expected_output is missing or not a synthesis kind
@@ -137,6 +144,8 @@ function hasShapeMarker(kind, text) {
  *   - no successful tool observation exists (synthesis intent without
  *     tools is the model's free composition; this checker would only
  *     produce false positives)
+ *   - every tool observation is below SYNTHESIS_MIN_OBSERVATION_CHARS
+ *     (degenerate transcript — nothing material to synthesize from)
  */
 export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "") {
   const expected = taskSpec?.synthesis?.expected_output ?? null;

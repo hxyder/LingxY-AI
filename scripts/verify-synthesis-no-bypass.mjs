@@ -80,12 +80,20 @@ await it("fast-executor uses buildSynthesisGuidance in its system prompt", () =>
   assert.match(fastExec, /synthesisGuidance/);
 });
 
-await it("fast-executor justifiably skips the runtime check (no transcript, no tools)", () => {
-  // Guard against accidentally adding a check that would always no-op
-  // and confuse future readers — fast-executor has no synthesis check
-  // because validateAnswerSynthesis returns [] for zero tool results.
+await it("fast-executor's no-check exemption is conditional on having no tool transcript", () => {
+  // The exemption is justified TODAY because fast-executor never feeds
+  // a tool observation transcript into its single-shot LLM call —
+  // validateAnswerSynthesis returns [] for zero tool results, so adding
+  // the call would be a no-op. The day fast-executor changes shape
+  // (gains tool observations or transcript-fed final composition) this
+  // verifier flips intent and the call MUST be wired in. The two locks
+  // below guard the exemption's preconditions:
   assert.ok(!/validateAnswerSynthesis\(/.test(fastExec),
-    "fast-executor must not invoke validateAnswerSynthesis (it has no tool transcript; the check would always be a no-op)");
+    "today fast-executor must not invoke the check; revisit when fast gains tool observations");
+  assert.ok(!/transcript\s*[:=]\s*\[/.test(fastExec.replace(/\/\/.*/g, "")),
+    "fast-executor must not maintain a transcript variable — gaining one means tool observations are now in scope and the synthesis check must be wired in");
+  assert.ok(!/tool_result/.test(fastExec.replace(/\/\/.*/g, "")),
+    "fast-executor must not produce tool_result entries — same reason: that would put tool observations in fast's final answer pipeline");
 });
 
 await it("no executor still contains the legacy raw-dump fallback pattern", () => {
