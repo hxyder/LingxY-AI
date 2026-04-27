@@ -55,12 +55,88 @@ function bigramOverlap(a, b) {
 }
 
 /**
- * Post-tool synthesis check. Returns at most one violation when the
- * assistant's final text is a near-verbatim echo of a tool observation
- * AND the user expected a synthesis kind (summary / comparison /
- * recommendation / analysis / action_items).
+ * Per-kind shape markers. Deterministic v1 — light heuristics that
+ * catch obvious "wrong shape" cases (e.g. expected_output=summary but
+ * the answer is a bare list with no conclusion). Each entry documents
+ * what the kind expects and the markers we look for. Markers are bigram
+ * / phrase signatures, not topic regex.
+ */
+const SHAPE_MARKERS = Object.freeze({
+  summary: {
+    description: "summary or grouped overview with at least one synthesis sentence",
+    patterns: [
+      /(总结|概括|综上|总体来看|总体而言|要点是|核心是|主要|大致来说)/i,
+      /(in\s+summary|overall|to\s+sum\s+up|in\s+short|takeaway|summary:)/i
+    ]
+  },
+  comparison: {
+    description: "explicit comparison across at least one dimension",
+    patterns: [
+      /(相比|对比|比较|相对|优于|劣于|差别|区别|不同点|相同点)/i,
+      /(\bcompared\b|\bvs\.?\b|\bversus\b|\bbetter\b|\bworse\b|\bdifference\b|\bsimilar\b)/i,
+      /\|.+\|/   // a markdown table row often signals comparison
+    ]
+  },
+  recommendation: {
+    description: "ranked / prioritised recommendation with reasoning",
+    patterns: [
+      /(推荐|建议|首选|优先|最佳|最好|强烈推荐|considered|preferred)/i,
+      /(\brecommend\b|\bsuggest\b|\bbest\s+(option|choice)|\bprefer\b|\bgo\s+with\b)/i
+    ]
+  },
+  analysis: {
+    description: "pattern / cause / implication beyond restating the data",
+    patterns: [
+      /(原因|因为|导致|趋势|模式|意味着|说明|可见|因此|所以)/i,
+      /(\bbecause\b|\btherefore\b|\bimplies\b|\bsuggests\b|\bpattern\b|\btrend\b|\broot\s+cause\b)/i
+    ]
+  },
+  action_items: {
+    description: "numbered / bulleted action items with handling guidance",
+    patterns: [
+      /(待处理|需要处理|优先级|紧急|后续|下一步|负责人|deadline)/i,
+      /(\baction\b|\bnext\s+steps?\b|\bpriority\b|\bowner\b|\btodo\b|\bto-?do\b)/i
+    ]
+  }
+});
+
+function hasShapeMarker(kind, text) {
+  const config = SHAPE_MARKERS[kind];
+  if (!config) return true;
+  for (const re of config.patterns) {
+    if (re.test(text)) return true;
+  }
+  return false;
+}
+
+/**
+ * Post-tool synthesis check. Returns ZERO or ONE violation describing
+ * how the final answer fails for the expected output kind.
  *
- * Deterministic v1: bigram overlap heuristic. No extra LLM call.
+ * Deterministic v1. Two independent failure modes:
+ *
+ *   isLikelyRawDump            bigram overlap with a tool observation
+ *                              ≥ SYNTHESIS_OVERLAP_THRESHOLD on a
+ *                              non-trivial observation. Catches "I
+ *                              found 10 emails: 1. ... 2. ..." pasted
+ *                              back as the final answer.
+ *
+ *   missingExpectedTransformation
+ *                              The kind-specific shape marker
+ *                              (e.g. summary requires a conclusion
+ *                              sentence; comparison requires
+ *                              comparative wording) is absent.
+ *
+ * Either condition alone marks the violation; checkerReason describes
+ * which fired. No extra LLM call. The caller is expected to retry
+ * synthesis once when this violation fires.
+ *
+ * Returns [] when:
+ *   - expected_output is missing or not a synthesis kind
+ *   - finalText is empty
+ *   - no successful tool observation exists (synthesis intent without
+ *     tools is the model's free composition; this checker would only
+ *     produce false positives)
  */
 export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "") {
   const expected = taskSpec?.synthesis?.expected_output ?? null;
@@ -74,17 +150,45 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
   if (toolResults.length === 0) return [];
 
   let maxOverlap = 0;
+  let anySubstantialObservation = false;
   for (const r of toolResults) {
     const observation = String(r.observation ?? r.result ?? "");
     if (observation.length < SYNTHESIS_MIN_OBSERVATION_CHARS) continue;
+    anySubstantialObservation = true;
     const overlap = bigramOverlap(observation, final);
     if (overlap > maxOverlap) maxOverlap = overlap;
   }
-  if (maxOverlap < SYNTHESIS_OVERLAP_THRESHOLD) return [];
+
+  // No substantial observation → nothing to synthesize from; skip the
+  // check rather than punish the model for a degenerate transcript.
+  if (!anySubstantialObservation) return [];
+
+  const isLikelyRawDump = maxOverlap >= SYNTHESIS_OVERLAP_THRESHOLD;
+  const missingExpectedTransformation = !hasShapeMarker(expected, final);
+
+  if (!isLikelyRawDump && !missingExpectedTransformation) return [];
+
+  const reasons = [];
+  if (isLikelyRawDump) {
+    reasons.push(`overlap_with_observation=${(maxOverlap * 100).toFixed(0)}%`);
+  }
+  if (missingExpectedTransformation) {
+    reasons.push(`missing_${expected}_shape_markers`);
+  }
+  const checkerReason = reasons.join("; ");
+
+  const expectation = SHAPE_MARKERS[expected]?.description ?? "synthesis";
+  const detail = isLikelyRawDump
+    ? `final answer echoes raw tool observations (${(maxOverlap * 100).toFixed(0)}% bigram overlap)`
+    : `final answer lacks ${expectation}`;
 
   return [{
     kind: "answer_not_synthesized",
-    message: `expected_output=${expected} requires synthesis, but the final answer overlaps ${(maxOverlap * 100).toFixed(0)}% with raw tool observations.`
+    expected_output: expected,
+    isLikelyRawDump,
+    missingExpectedTransformation,
+    checkerReason,
+    message: `expected_output=${expected} requires synthesis: ${detail}.`
   }];
 }
 

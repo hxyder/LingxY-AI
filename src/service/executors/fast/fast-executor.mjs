@@ -10,6 +10,7 @@ import os from "node:os";
 import { resolveProviderForTask, buildKimiRuntimeFromProvider } from "../shared/provider-resolver.mjs";
 import { formatResourceContext, formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
+import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { executeKimiTask } from "../kimi/kimi-cli-executor.mjs";
 import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
 import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
@@ -47,7 +48,11 @@ export function buildMessages(task, opts = {}) {
     ? loadStructuredHistoryFor({ runtime, task, executor: "fast", modelContextWindow })
     : { mode: "legacy_fallback", historyMessages: [], currentMessageRendered: null };
 
-  const messages = [{ role: "system", content: `${baseSystem}\n${resourceContext}` }];
+  const synthesisGuidance = buildSynthesisGuidance(task?.task_spec);
+  const systemContent = synthesisGuidance
+    ? `${baseSystem}\n${resourceContext}\n${synthesisGuidance}`
+    : `${baseSystem}\n${resourceContext}`;
+  const messages = [{ role: "system", content: systemContent }];
 
   if (historyResult.mode === "structured" && historyResult.currentMessageRendered) {
     for (const m of historyResult.historyMessages) messages.push(m);

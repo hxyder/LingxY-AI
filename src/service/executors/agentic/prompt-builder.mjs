@@ -13,6 +13,7 @@
 import { toolsInGroup, renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { formatResourceContext } from "../shared/resource-context.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
+import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 
 const DEFAULT_EXAMPLES = {
   web_search_fetch: { query: "latest AI trends 2026", recency: "month" },
@@ -215,6 +216,8 @@ export function buildAgenticSystemPrompt({
     task?.task_spec?.research_quality
   );
 
+  const synthesisGuidance = buildSynthesisGuidance(task?.task_spec);
+
   return [
     "You are UCA's agentic assistant. You are running inside a desktop task runtime that can actually execute the tools listed below.",
     resourceContext,
@@ -233,6 +236,7 @@ export function buildAgenticSystemPrompt({
     "",
     ...(researchPrinciples ? ["## Source quality", "", researchPrinciples, ""] : []),
     ...(researchBudget ? ["## Research budget", "", researchBudget, ""] : []),
+    ...(synthesisGuidance ? [synthesisGuidance, ""] : []),
     "## Rules",
     "",
     // UCA-077 P1-07 / P4-00.7 (revised §18.6.1.A): Rule 1 used to start

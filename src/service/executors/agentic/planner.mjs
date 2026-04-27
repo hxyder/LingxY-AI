@@ -39,7 +39,7 @@ import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 // and evidence normalizer at planner exit. Pre-H1 agentic skipped both,
 // so D3 research_quality coverage and required_policy_groups were never
 // enforced for agentic tasks.
-import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
+import { validateSuccessContract, validateStepGate, validateAnswerSynthesis } from "../../core/policy/success-contract-validator.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 // J1: per-iteration parity. Pre-J1 agentic ran for the full
 // maxIterations even when the same tool failed repeatedly OR when the
@@ -897,6 +897,27 @@ export async function runAgenticPlanner({
     violations = contract.violations;
     const reasons = contract.violations.map((v) => v.message).join(" ");
     finalText = `[UCA] 注意：未通过 SuccessContract 校验：${reasons}\n\n${finalText || ""}`;
+  }
+
+  // PT2: post-tool synthesis check. When expected_output is a synthesis
+  // kind (summary/comparison/recommendation/analysis/action_items) and
+  // the final text is a raw dump or missing the expected shape, mark
+  // the task as not synthesised and surface the violation alongside the
+  // contract message. The agentic loop has already exited; we don't
+  // retry here (the upstream user can re-prompt). The transcript-retry
+  // shape used by tool_using is not symmetrical to agentic, which uses
+  // a single LLM finalize step — so for agentic the v1 behaviour is
+  // "downgrade + visible reason", not "regenerate".
+  const synthesisViolations = validateAnswerSynthesis(
+    task?.task_spec,
+    validatorTranscript,
+    finalText
+  );
+  if (synthesisViolations.length > 0) {
+    downgraded = true;
+    violations = (violations ?? []).concat(synthesisViolations);
+    const reason = synthesisViolations[0].message;
+    finalText = `[UCA] 注意：${reason}\n\n${finalText || ""}`;
   }
 
   // H1: evidence_summary stamp for observability — same as tool_using's
