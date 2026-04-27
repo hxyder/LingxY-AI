@@ -55,7 +55,17 @@ import { hasLocalAnchor } from "../intent/context-sources.mjs";
 
 export const RESEARCH_PROFILES = Object.freeze({
   MULTI_SOURCE_RESEARCH: "multi_source_research",
-  SINGLE_LOOKUP: "single_lookup"
+  SINGLE_LOOKUP: "single_lookup",
+  // K3: deep_research profile. Stricter than multi_source_research —
+  // triggers only when the SemanticRouter classifies the request as
+  // "deep_research" (user explicitly asked for thorough / comprehensive /
+  // in-depth coverage: "深入调研", "全面对比", "comprehensive review",
+  // "exhaustive research"). Same shape as multi_source_research; only
+  // the threshold numbers differ. The prompt-side budget block (K2)
+  // and the validator's `checkResearchCoverage` are data-driven on
+  // `min_sources` / `min_distinct_domains` so neither needs special
+  // handling — adding deep_research is a profile-list extension.
+  DEEP_RESEARCH: "deep_research"
 });
 
 export const DEFAULT_MULTI_SOURCE_THRESHOLDS = Object.freeze({
@@ -68,6 +78,18 @@ export const SINGLE_LOOKUP_THRESHOLDS = Object.freeze({
   min_sources: 1,
   min_distinct_domains: 1,
   single_source_digest_satisfies: true
+});
+
+// K3: stricter thresholds for "deep_research" — comprehensive
+// research / exhaustive comparison / in-depth review tasks. 5 sources
+// from 3 distinct publishers means the LLM has to actually reach
+// across the news ecosystem, not just hit one extra wire service.
+// single_source_digest_satisfies stays false (a roundup is still a
+// roundup, regardless of how many internal articles it lists).
+export const DEEP_RESEARCH_THRESHOLDS = Object.freeze({
+  min_sources: 5,
+  min_distinct_domains: 3,
+  single_source_digest_satisfies: false
 });
 
 /**
@@ -83,17 +105,24 @@ export const SINGLE_LOOKUP_THRESHOLDS = Object.freeze({
  * @param {{
  *   contextSources?: object,
  *   signals?: object,
- *   toolPolicyMode?: "forbidden" | "optional" | "required"
+ *   toolPolicyMode?: "forbidden" | "optional" | "required",
+ *   srResearchDepth?: "single_lookup" | "multi_source" | "deep_research" | "unknown" | null
  * }} input
  * @returns {ResearchQuality | null}
  */
-export function inferResearchQuality({ contextSources = null, signals = null, toolPolicyMode = null } = {}) {
+export function inferResearchQuality({
+  contextSources = null,
+  signals = null,
+  toolPolicyMode = null,
+  srResearchDepth = null
+} = {}) {
   // Web fully forbidden → no research enforcement applies. The
   // validator never runs research-quality checks for this case.
   if (toolPolicyMode === "forbidden") return null;
 
   // Local anchor — user pointed us at THIS specific content. Don't
-  // fan out across independent sources.
+  // fan out across independent sources. Beats SR depth (deep_research
+  // doesn't override "summarise this PDF").
   if (hasLocalAnchor(contextSources)) {
     return {
       profile: RESEARCH_PROFILES.SINGLE_LOOKUP,
@@ -103,12 +132,26 @@ export function inferResearchQuality({ contextSources = null, signals = null, to
   }
 
   // Layer 2 signal said the user explicitly named a single URL /
-  // article in their command.
+  // article in their command. Same beats-SR-depth rule.
   if (signals?.explicit_single_url?.matched) {
     return {
       profile: RESEARCH_PROFILES.SINGLE_LOOKUP,
       ...SINGLE_LOOKUP_THRESHOLDS,
       reason: "explicit_single_url signal matched — user named a single URL / article."
+    };
+  }
+
+  // K3: SR-driven deep_research escalation. SR's `research_depth =
+  // "deep_research"` only fires for explicit thorough/comprehensive
+  // phrasings (taught in the SR prompt; see semantic-router.mjs
+  // RESEARCH_DEPTHS). Stricter thresholds (5/3) than the default
+  // multi_source_research (3/2). Same single_source_digest_satisfies=false
+  // — a roundup never satisfies either profile.
+  if (srResearchDepth === "deep_research") {
+    return {
+      profile: RESEARCH_PROFILES.DEEP_RESEARCH,
+      ...DEEP_RESEARCH_THRESHOLDS,
+      reason: "SemanticRouter classified the request as deep_research (explicit thorough/comprehensive ask)."
     };
   }
 

@@ -566,9 +566,11 @@ async function run() {
       assert.ok(SEMANTIC_DECISION_TOOL.input_schema.properties[f], `schema missing property ${f}`);
     }
   });
-  await it("public surface: research_depth enum is single_lookup / multi_source / unknown", () => {
+  await it("public surface: research_depth enum includes single_lookup / multi_source / deep_research / unknown", () => {
+    // K3 added "deep_research" to the enum.
     const enumDef = SEMANTIC_DECISION_TOOL.input_schema.properties.research_depth.enum;
-    assert.deepEqual([...enumDef].sort(), ["multi_source", "single_lookup", "unknown"]);
+    assert.deepEqual([...enumDef].sort(),
+      ["deep_research", "multi_source", "single_lookup", "unknown"]);
     assert.ok(SEMANTIC_DECISION_TOOL.input_schema.required.includes("research_depth"));
   });
 

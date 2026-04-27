@@ -144,7 +144,10 @@ export function validateSuccessContract(taskSpec, transcript = []) {
 function checkResearchCoverage(taskSpec, transcript, requiredGroups) {
   const rq = taskSpec?.research_quality;
   if (!rq || typeof rq !== "object") return [];
-  if (rq.profile !== "multi_source_research") return [];
+  // K3: deep_research is a stricter sibling of multi_source_research —
+  // same shape (numerical thresholds + roundup rejection), only the
+  // numbers differ. Both go through the same coverage check.
+  if (rq.profile !== "multi_source_research" && rq.profile !== "deep_research") return [];
   if (!Array.isArray(requiredGroups) || !requiredGroups.includes("external_web_read")) return [];
 
   const evidence = extractEvidence(transcript);
@@ -153,23 +156,26 @@ function checkResearchCoverage(taskSpec, transcript, requiredGroups) {
   // Roundup gets its own (more specific) violation BEFORE the
   // generic single_domain_only — the runbook recovery is different
   // ("broaden the query" vs "find another source") so we want the
-  // sharper signal first when both apply.
+  // sharper signal first when both apply. Violation messages use the
+  // active profile name so the user sees the real bar
+  // ("deep_research requires ..." vs "multi_source_research requires ...").
+  const profileLabel = rq.profile;
   if (evidence.is_single_roundup && rq.single_source_digest_satisfies === false) {
     violations.push({
       kind: "external_web_read_single_roundup_only",
-      message: `multi_source_research does not accept a single-publisher roundup/digest as evidence (domain=${evidence.domains.join(", ")}, markers matched: ${evidence.roundup_markers.join(", ")}).`
+      message: `${profileLabel} does not accept a single-publisher roundup/digest as evidence (domain=${evidence.domains.join(", ")}, markers matched: ${evidence.roundup_markers.join(", ")}).`
     });
   } else if (evidence.distinct_domain_count < rq.min_distinct_domains) {
     violations.push({
       kind: "external_web_read_single_domain_only",
-      message: `multi_source_research requires at least ${rq.min_distinct_domains} distinct publishers; got ${evidence.distinct_domain_count} (${evidence.domains.join(", ") || "none"}).`
+      message: `${profileLabel} requires at least ${rq.min_distinct_domains} distinct publishers; got ${evidence.distinct_domain_count} (${evidence.domains.join(", ") || "none"}).`
     });
   }
 
   if (evidence.source_count < rq.min_sources) {
     violations.push({
       kind: "external_web_read_insufficient_sources",
-      message: `multi_source_research requires at least ${rq.min_sources} distinct sources; got ${evidence.source_count}.`
+      message: `${profileLabel} requires at least ${rq.min_sources} distinct sources; got ${evidence.source_count}.`
     });
   }
 

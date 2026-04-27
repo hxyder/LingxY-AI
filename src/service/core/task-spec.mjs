@@ -608,10 +608,17 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   // multi_source_research carries hard thresholds the validator (D3)
   // enforces; single_lookup is the exception for "summarise this URL"
   // / local-anchored tasks; null when web is forbidden entirely.
+  //
+  // K3: thread the SR's `research_depth` suggestion through. When SR
+  // classified the request as "deep_research" (explicit thorough /
+  // comprehensive ask) and no local anchor is present, the inference
+  // upgrades to the deep_research profile (5/3 thresholds vs the
+  // default 3/2).
   const researchQuality = inferResearchQuality({
     contextSources,
     signals,
-    toolPolicyMode: toolPolicy?.policy_groups?.external_web_read?.mode
+    toolPolicyMode: toolPolicy?.policy_groups?.external_web_read?.mode,
+    srResearchDepth: enrichedContext?.semantic_router_decision?.research_depth ?? null
   });
 
   // P4-RQ G4: routing_status — propagate SR availability to

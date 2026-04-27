@@ -50,14 +50,23 @@ const OUTPUT_KINDS = Object.freeze([
 const EXECUTORS = Object.freeze([
   "fast", "tool_using", "agentic", "translate", "multi_modal", "kimi"
 ]);
-// P4-RQ C2: research_depth is a SUGGESTION the LLM emits alongside
-// web_policy. `single_lookup` ⇒ "this is a single fact / single URL
-// summary"; `multi_source` ⇒ "this is research / news / comparison /
-// competitor / open-source survey — independent sources matter";
-// `unknown` ⇒ "model isn't confident enough to label". Resolver copies
-// it onto tool_policy.research_hint for downstream observability;
-// no determinism rests on it.
-const RESEARCH_DEPTHS = Object.freeze(["single_lookup", "multi_source", "unknown"]);
+// P4-RQ C2 + K3: research_depth is a SUGGESTION the LLM emits
+// alongside web_policy. `single_lookup` ⇒ "this is a single fact /
+// single URL summary"; `multi_source` ⇒ "this is research / news /
+// comparison / competitor / open-source survey — independent sources
+// matter"; `deep_research` ⇒ "user explicitly asked for thorough /
+// comprehensive / in-depth coverage — apply stricter thresholds (K3:
+// 5 sources / 3 distinct publishers vs the default 3 / 2)";
+// `unknown` ⇒ "model isn't confident enough to label". research-quality.mjs
+// reads this to pick deep_research vs multi_source_research; the
+// validator (D3) and prompt-side budget block (K2) read whichever
+// profile lands without further branching.
+const RESEARCH_DEPTHS = Object.freeze([
+  "single_lookup",
+  "multi_source",
+  "deep_research",
+  "unknown"
+]);
 
 /**
  * The strict tool-input schema the LLM must satisfy. Embedded in the
@@ -336,7 +345,7 @@ function buildMessages({ text, contextPacket, signals }) {
     "- web_policy: required only if the answer demands fresh external data the system does not already have; optional if a search would help but isn't critical; forbidden when the request is local-only or you have no signal that the user wants the open web.",
     "- output_kind: conversation for chat replies; pick the file kind (docx/pptx/xlsx/pdf/markdown/...) when the user asked for a document.",
     "- executor: fast for short conversational answers; tool_using for tool-driven actions; agentic for multi-step planning with artifacts; multi_modal for image-led tasks.",
-    "- research_depth: `single_lookup` when the user asks for one fact / one URL / one article (weather, stock price, a specific page they shared, single-fact recall). `multi_source` when independent sources matter — news, current events, competitor research, open-source surveys, comparison shopping, fact-checking, market/price scans. `unknown` only when web_policy is `forbidden` or you genuinely cannot tell.",
+    "- research_depth: `single_lookup` when the user asks for one fact / one URL / one article (weather, stock price, a specific page they shared, single-fact recall). `multi_source` when independent sources matter — news, current events, competitor research, open-source surveys, comparison shopping, fact-checking, market/price scans. `deep_research` ONLY when the user explicitly asks for thorough / comprehensive / in-depth / exhaustive coverage (e.g. \"深入调研\", \"全面对比\", \"彻底搜一下\", \"comprehensive review\", \"exhaustive comparison\", \"deep dive\"). Do NOT pick deep_research just because the topic is broad — the user must have asked for depth verbatim. `unknown` only when web_policy is `forbidden` or you genuinely cannot tell.",
     "- confidence: be honest. 0.5 means \"could go either way\", 0.9 means \"only one reading fits\". Low confidence triggers a fallback to the deterministic resolver.",
     "- reason: one short sentence in the user's language; this is shown to the operator, not the user.",
     "",
