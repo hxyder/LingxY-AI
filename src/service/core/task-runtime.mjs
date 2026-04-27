@@ -179,6 +179,42 @@ export function ensureRuntimeServices(runtime) {
  * final reply, or the runtime store is malformed, returns the
  * original contextPacket unchanged.
  */
+/**
+ * P4-RQ K4: auto-resolve parent_task_id from conversation_id.
+ *
+ * Walks the store for the most recent task whose `conversation_id`
+ * matches `conversationId` and returns its task_id. Returns null
+ * when no match (or no runtime / no listTasks).
+ *
+ * Defensive: any store I/O failure or malformed task is silently
+ * skipped — failing to resolve a parent must never block submission.
+ *
+ * @param {string|null} conversationId
+ * @param {object|null} runtime
+ * @returns {string|null}
+ */
+function resolveParentFromConversation(conversationId, runtime) {
+  if (typeof conversationId !== "string" || conversationId.length === 0) return null;
+  if (typeof runtime?.store?.listTasks !== "function") return null;
+  try {
+    const candidates = runtime.store.listTasks().filter((t) =>
+      t && typeof t === "object" && t.conversation_id === conversationId
+    );
+    if (candidates.length === 0) return null;
+    // Most recent first (created_at is ISO; lexicographic sort works).
+    candidates.sort((a, b) => {
+      const aTs = typeof a.created_at === "string" ? a.created_at : "";
+      const bTs = typeof b.created_at === "string" ? b.created_at : "";
+      if (aTs === bTs) return 0;
+      return aTs < bTs ? 1 : -1;
+    });
+    const newest = candidates[0];
+    return typeof newest?.task_id === "string" ? newest.task_id : null;
+  } catch {
+    return null;
+  }
+}
+
 function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
   try {
     const parent = runtime.store.getTask(parentTaskId);
@@ -218,6 +254,7 @@ export function createTaskRecord({
   userCommand,
   executionMode,
   parentTaskId = null,
+  conversationId = null,
   childTaskIds = null,
   childIndex = null,
   retryCount = 0,
@@ -225,15 +262,49 @@ export function createTaskRecord({
   executorOverride = null,
   runtime = null
 }) {
+  // K4: conversation identity. Frontend mints a UUID per UI session
+  // and stamps it on every command (either via this explicit param
+  // or via contextPacket.selection_metadata.conversation_id). When
+  // the caller didn't provide an explicit parent_task_id, we
+  // auto-resolve to the most-recent prior task with the same
+  // conversation_id. This is the durable replacement for the G3
+  // length/timestamp heuristic — short follow-ups like "罗利" / "对"
+  // become children of the prior weather/location task automatically,
+  // without the frontend having to explicitly track parent_task_id.
+  //
+  // Precedence (most specific wins):
+  //   1. Explicit parentTaskId param         → use verbatim
+  //   2. conversation_id auto-resolution     → newest prior task
+  //                                             with same conv_id
+  //   3. null (no parent)
+  //
+  // Reads from selection_metadata.conversation_id when the param
+  // is not supplied, so existing call sites that just pass a
+  // contextPacket need no signature change.
+  // Normalise: nullish OR empty-string → null. Frontends that ship an
+  // empty placeholder must not look like "task X has conversation_id ''
+  // and therefore matches every other task with empty conversation_id"
+  // during auto-resolution.
+  const rawConversationId = conversationId
+    ?? contextPacket?.selection_metadata?.conversation_id
+    ?? null;
+  const effectiveConversationId =
+    typeof rawConversationId === "string" && rawConversationId.length > 0
+      ? rawConversationId
+      : null;
+  const effectiveParentTaskId = parentTaskId
+    ?? resolveParentFromConversation(effectiveConversationId, runtime);
+
   // P4-RQ G3b: when this task has a parentTaskId AND a runtime
   // store is available, fetch the parent's final assistant text and
   // stamp it on contextPacket as parent_task_summary BEFORE
   // createTaskSpec runs. The pending-offer signal reads this to
   // detect "对/yes" affirmatives that follow a parent task's offer
   // even when the current submission didn't carry conversation_turns
-  // in selection_metadata.
-  const enrichedContext = parentTaskId && runtime?.store?.getTask
-    ? attachParentTaskSummary(contextPacket, parentTaskId, runtime)
+  // in selection_metadata. Uses the auto-resolved parent (K4) so
+  // conversation-driven follow-ups also see the parent summary.
+  const enrichedContext = effectiveParentTaskId && runtime?.store?.getTask
+    ? attachParentTaskSummary(contextPacket, effectiveParentTaskId, runtime)
     : contextPacket;
 
   const taskSpec = createTaskSpec(userCommand, enrichedContext, route);
@@ -253,7 +324,13 @@ export function createTaskRecord({
     failure_user_message: null,
     failure_internal_log_excerpt: null,
     retryable: true,
-    parent_task_id: parentTaskId,
+    parent_task_id: effectiveParentTaskId,
+    // K4: stamp the conversation_id on the task record so future
+    // follow-ups in the same UI session can auto-resolve via the
+    // store walk in resolveParentFromConversation. Round-trips through
+    // SQLite via task_json (no schema migration needed — task is
+    // stored as JSON).
+    conversation_id: effectiveConversationId,
     child_task_ids: Array.isArray(childTaskIds) ? childTaskIds : null,
     child_index: Number.isInteger(childIndex) ? childIndex : null,
     retry_count: retryCount,
