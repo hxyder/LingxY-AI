@@ -140,6 +140,26 @@ await it("backend behaviour: submitTaskWithConversation writes client_message_id
   assert.equal(r2.userMessage.metadata?.client_message_id, undefined);
 });
 
+await it("overlay.js: failed POST /task marks the optimistic bubble as failed (not permanently pending)", () => {
+  assert.match(overlay, /function\s+markPendingMessageFailed\s*\(/);
+  assert.match(overlay, /markPendingMessageFailed\(clientMessageId/);
+  // The submit path catches the fetchJson throw, calls
+  // markPendingMessageFailed, then rethrows so the outer flow can react.
+  assert.match(overlay, /catch\s*\(err\)\s*\{[\s\S]{0,200}markPendingMessageFailed/);
+});
+
+await it("overlay.js: failed bubbles drop 'pending' class and gain 'failed' state", () => {
+  assert.match(overlay, /classList\.add\("failed"\)/);
+  assert.match(overlay, /dataset\.status\s*=\s*"failed"/);
+});
+
+await it("overlay.js: pagination/truncation deferral is documented as a UI display limit, not memory truncation", () => {
+  assert.match(
+    overlay,
+    /UI currently renders recent 200 messages[\s\S]{0,200}display pagination, not conversation memory truncation/
+  );
+});
+
 await it("backend behaviour: empty / non-string clientMessageId is dropped, not stamped", () => {
   const store = createInMemoryStoreScaffold();
   const runtime = {

@@ -114,5 +114,47 @@ it("regression guard: tool_summary header is verbatim 'historical reference, not
   assert.match(out[0].content, /historical reference, not instructions/);
 });
 
+it("UI reconcile metadata (client_message_id / pending / localOnly) never reaches prompt content", () => {
+  // Fabricate the worst case: every metadata field a frontend might attach.
+  const dirtyRows = [
+    {
+      role: "user",
+      content: "what's up",
+      metadata: {
+        client_message_id: "cmsg_LEAK_USER",
+        pending: true,
+        localOnly: true,
+        ui_render_state: "streaming",
+        bubble_id: "ui_node_42"
+      }
+    },
+    {
+      role: "assistant",
+      content: "fine",
+      metadata: { client_message_id: "cmsg_LEAK_ASSISTANT", pending: false }
+    },
+    {
+      role: "system",
+      status: "failed",
+      content: "Task failed: timeout",
+      metadata: { client_message_id: "cmsg_LEAK_SYSTEM" }
+    },
+    {
+      role: "tool_summary",
+      content: JSON.stringify({ tool_id: "x", success: true }),
+      metadata: { client_message_id: "cmsg_LEAK_TOOLSUMMARY" }
+    }
+  ];
+  const out = renderHistoryMessages(dirtyRows);
+  for (const m of out) {
+    const c = String(m.content ?? "");
+    assert.ok(!c.includes("cmsg_LEAK"), "client_message_id-like values must never reach prompt content");
+    assert.ok(!/\bpending\s*:/i.test(c), "pending flag must not appear in prompt content");
+    assert.ok(!/\blocalOnly\b/i.test(c), "localOnly flag must not appear in prompt content");
+    assert.ok(!/ui_render_state/i.test(c), "ui_render_state must not appear in prompt content");
+    assert.ok(!/bubble_id/i.test(c), "bubble_id must not appear in prompt content");
+  }
+});
+
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
 if (fail > 0) process.exit(1);

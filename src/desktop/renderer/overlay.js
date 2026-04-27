@@ -660,6 +660,21 @@ function clearPending(clientMessageId) {
   }
 }
 
+function markPendingMessageFailed(clientMessageId, error) {
+  if (!clientMessageId) return;
+  const conv = conversationState;
+  if (conv?.pendingByClientId instanceof Map) {
+    conv.pendingByClientId.delete(clientMessageId);
+  }
+  const bubble = bubbleArea?.querySelector?.(`.bubble[data-client-message-id="${cssEscapeFor(clientMessageId)}"]`);
+  if (bubble && bubble.dataset) {
+    bubble.classList.remove("pending");
+    bubble.classList.add("failed");
+    bubble.dataset.status = "failed";
+    if (error?.message) bubble.dataset.failureReason = String(error.message).slice(0, 200);
+  }
+}
+
 function applyBackendMessageToCache(message) {
   const conv = ensureBackendCacheFields(conversationState);
   if (!conv) return;
@@ -714,6 +729,12 @@ async function reconcileConversationFromBackend(convId, { fullRebuild = false } 
   const sinceSeq = fullRebuild ? 0 : Math.max(0, conv.lastKnownSeq + 1);
   let payload;
   try {
+    // F2 follow-up TODO: UI currently renders recent 200 messages only.
+    // This is display pagination, not conversation memory truncation —
+    // backend still has every message and Phase B's ContextBudgetPolicy
+    // owns LLM history windowing. A "load earlier" button + virtualised
+    // rendering for very long histories is a UX upgrade, not a memory
+    // change.
     payload = await fetchJson(`/conversation/${encodeURIComponent(convId)}/messages?since=${sinceSeq}&limit=200`);
   } catch {
     return;
@@ -3316,17 +3337,23 @@ async function submitTask() {
     const clientMessageId = createClientMessageId();
     markPendingUserMessage(clientMessageId, commandText);
 
-    const result = await fetchJson("/task", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...payload,
-        background: true,
-        parent_task_id: parentTaskId,
-        conversation_id: conversationState?.id ?? null,
-        client_message_id: clientMessageId
-      })
-    });
+    let result;
+    try {
+      result = await fetchJson("/task", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...payload,
+          background: true,
+          parent_task_id: parentTaskId,
+          conversation_id: conversationState?.id ?? null,
+          client_message_id: clientMessageId
+        })
+      });
+    } catch (err) {
+      markPendingMessageFailed(clientMessageId, err);
+      throw err;
+    }
     // F2: post-submit reconcile is intentionally NOT fired here — SSE
     // events render the live assistant bubble during task execution.
     // The next conversation switch / overlay reopen will rebuild from
