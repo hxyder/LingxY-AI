@@ -1014,22 +1014,41 @@ export function applyExecutorEvent(runtime, task, event) {
     if (task.status === "success") {
       return; // already succeeded, ignore duplicate
     }
-    updateTask(runtime, task, {
+    // Persist event.text as result_summary so writeAssistantMessageForTask
+    // (called from markTaskSucceeded) can write the assistant message into
+    // conversation_messages. Image / multi_modal executors only emit text
+    // via the success event payload — without this they finalised with an
+    // empty result_summary and the conversation lost the assistant turn
+    // entirely (the bubble was visible live, but the row disappeared on
+    // reload). tool_using / agentic also yield success with text; this is
+    // a no-op for them because context-submission's post-execution path
+    // already sets result_summary first (`if (inlineText && !task.result_summary)`).
+    const successText = typeof event.text === "string" ? event.text.trim() : "";
+    const patch = {
       status: "success",
       sub_status: "completed",
       progress: 1
-    }, true);
+    };
+    if (successText && !task.result_summary) {
+      patch.result_summary = successText;
+    }
+    updateTask(runtime, task, patch, true);
   }
 
   if (event.type === "partial_success") {
     if (task.status === "success") {
       return; // don't downgrade a success to partial_success retroactively
     }
-    updateTask(runtime, task, {
+    const partialText = typeof event.text === "string" ? event.text.trim() : "";
+    const patch = {
       status: "partial_success",
       sub_status: "completed_with_warnings",
       progress: event.progress ?? task.progress
-    }, true);
+    };
+    if (partialText && !task.result_summary) {
+      patch.result_summary = partialText;
+    }
+    updateTask(runtime, task, patch, true);
   }
 
   if (event.type === "failed") {

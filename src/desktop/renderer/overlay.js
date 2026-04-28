@@ -757,6 +757,17 @@ async function loadConversationFromBackend(convId) {
   if (!convId) return;
   const conv = ensureBackendCacheFields(conversationState);
   if (!conv || conv.id !== convId) return;
+  // Automatic conversations (scheduled task results, email digests) are
+  // synthesised on the frontend — `appendAutomaticTurnToConversation` writes
+  // their turns into projectStore but never registers them with the backend
+  // conversations table. Calling reconcileConversationFromBackend on a
+  // `conv_auto_*` id wipes the local turns (fullRebuild=true) and then
+  // gets nothing back from the 404 — the user clicks the entry and the
+  // chat area stays empty. Keep these locally rendered.
+  if (conv.metadata?.autoSource || conv.id?.startsWith("conv_auto_")) {
+    renderConversationState();
+    return;
+  }
   await reconcileConversationFromBackend(convId, { fullRebuild: true });
 }
 function restoreConversation() { loadProjectStore(); }
@@ -2131,9 +2142,14 @@ async function handleTaskEventFrame(rawEvent) {
       appendTurnForTask(frameTaskId, "assistant", text);
       if (isForActiveConv) {
         lastArtifactPreview = text;
-        if (lastTask?.task_spec?.artifact?.required === false) {
-          notifiedInlineResultTaskId = activeTaskId;
-        }
+        // Inline_result already rendered the assistant text — mark the task
+        // as notified so the downstream status_changed=success path
+        // (overlay.js ~3124) doesn't append a SECOND bubble with the same
+        // content. The previous `artifact.required === false` gating only
+        // fired when task_spec was strongly populated, so multi_modal /
+        // image-submission tasks (whose preflight task_spec has
+        // `artifact.required` undefined) double-rendered every reply.
+        notifiedInlineResultTaskId = activeTaskId;
         if (shouldAutoRevealTaskResult()) void maybeRevealOverlay();
         // Fire success popup card from the inline-result path as well —
         // the downstream status_changed=success block is guarded by
