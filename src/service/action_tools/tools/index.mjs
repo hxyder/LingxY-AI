@@ -760,6 +760,24 @@ export const WEB_SEARCH_FETCH_TOOL = {
   }
 };
 
+function resolveFetchUrlFallback(url = "", status = null) {
+  if (status !== 404) return null;
+  try {
+    const parsed = new URL(url);
+    if (!/(^|\.)ticketmaster\.com$/i.test(parsed.hostname)) return null;
+    const comedyDiscover = parsed.pathname.match(/^\/discover\/arts-theater\/comedy\/([^/?#]+)\/?$/i);
+    if (!comedyDiscover) return null;
+    const citySlug = comedyDiscover[1].replace(/-[a-z]{2}$/i, "");
+    if (!citySlug) return null;
+    const fallback = new URL(`https://www.ticketmaster.com/discover/${citySlug}`);
+    fallback.searchParams.set("categoryId", "KZFzniwnSyZfZ7v7na");
+    fallback.searchParams.set("classificationId", "KnvZfZ7vAe1");
+    return fallback.toString();
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetch a URL and return its readable text content so the LLM can cite it directly.
  * This is the fallback when web_search_fetch returns no results, fails, or
@@ -785,20 +803,38 @@ export const FETCH_URL_CONTENT_TOOL = {
     const maxChars = Math.max(500, Math.min(12000, Number(args.max_chars) || 6000));
 
     try {
-      const response = await fetch(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
-          "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8"
-        },
+      const requestHeaders = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.7",
+        "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8"
+      };
+      let finalUrl = url;
+      let fallbackUrl = null;
+      let response = await fetch(finalUrl, {
+        headers: requestHeaders,
         redirect: "follow",
         signal: AbortSignal.timeout(12000)
       });
 
       if (!response.ok) {
+        fallbackUrl = resolveFetchUrlFallback(url, response.status);
+        if (fallbackUrl) {
+          response = await fetch(fallbackUrl, {
+            headers: requestHeaders,
+            redirect: "follow",
+            signal: AbortSignal.timeout(12000)
+          });
+          if (response.ok) {
+            finalUrl = fallbackUrl;
+          }
+        }
+      }
+
+      if (!response.ok) {
+        const fallbackHint = fallbackUrl ? `; fallback also failed: ${fallbackUrl}` : "";
         return createActionResult({
           success: false,
-          observation: `Fetch failed: HTTP ${response.status} ${response.statusText} for ${url}`
+          observation: `Fetch failed: HTTP ${response.status} ${response.statusText} for ${url}${fallbackHint}`
         });
       }
 
@@ -815,11 +851,20 @@ export const FETCH_URL_CONTENT_TOOL = {
 
       const excerpt = text.slice(0, maxChars);
       const truncated = text.length > maxChars ? `\n\n[截断：原文共 ${text.length} 字符，仅显示前 ${maxChars} 字符]` : "";
+      const fallbackNote = fallbackUrl
+        ? `\n（原始 URL 返回 404，已改用当前可用页面：${finalUrl}）\n`
+        : "";
 
       return createActionResult({
         success: true,
-        observation: `来源：${url}\n\n${excerpt}${truncated}`,
-        metadata: { url, chars_extracted: text.length, chars_returned: excerpt.length }
+        observation: `来源：${finalUrl}${fallbackNote}\n${excerpt}${truncated}`,
+        metadata: {
+          url: finalUrl,
+          requested_url: url,
+          fallback_url: fallbackUrl,
+          chars_extracted: text.length,
+          chars_returned: excerpt.length
+        }
       });
     } catch (error) {
       return createActionResult({

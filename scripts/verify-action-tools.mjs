@@ -94,6 +94,41 @@ const formattedSearch = formatResultsForAssistant(searchResult.results, {
 assert.equal(formattedSearch.includes("搜索结果：最新 AI 新闻"), true);
 assert.equal(formattedSearch.includes("链接：https://example.com/latest"), true);
 
+const originalFetch = globalThis.fetch;
+const badTicketmasterUrl = "https://www.ticketmaster.com/discover/arts-theater/comedy/raleigh-nc";
+const goodTicketmasterUrl = "https://www.ticketmaster.com/discover/raleigh?categoryId=KZFzniwnSyZfZ7v7na&classificationId=KnvZfZ7vAe1";
+const ticketmasterFetchCalls = [];
+globalThis.fetch = async (url) => {
+  const value = String(url);
+  ticketmasterFetchCalls.push(value);
+  if (value === badTicketmasterUrl) {
+    return new Response("not found", { status: 404, statusText: "Not Found" });
+  }
+  if (value === goodTicketmasterUrl) {
+    return new Response(`
+      <html>
+        <head><title>Comedy Tickets in Raleigh | Ticketmaster Arts & Theatre</title></head>
+        <body><main><h1>Comedy Tickets in Raleigh</h1><p>Rob Anderson</p><p>Danae Hays</p></main></body>
+      </html>
+    `, { status: 200, headers: { "content-type": "text/html" } });
+  }
+  return new Response("unexpected url", { status: 500, statusText: "Unexpected" });
+};
+try {
+  const ticketmasterResult = await registry.call("fetch_url_content", {
+    url: badTicketmasterUrl,
+    max_chars: 1000
+  }, {});
+  assert.equal(ticketmasterResult.success, true);
+  assert.equal(ticketmasterResult.metadata.requested_url, badTicketmasterUrl);
+  assert.equal(ticketmasterResult.metadata.fallback_url, goodTicketmasterUrl);
+  assert.equal(ticketmasterResult.observation.includes("原始 URL 返回 404"), true);
+  assert.equal(ticketmasterResult.observation.includes("Rob Anderson"), true);
+  assert.deepEqual(ticketmasterFetchCalls, [badTicketmasterUrl, goodTicketmasterUrl]);
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
 let interactivePlannerState = 0;
 const interactiveRuntime = createRuntime("interactive", {
   toolPlanner() {
@@ -134,8 +169,16 @@ const interactiveResult = await submitActionToolTask({
 assert.equal(interactiveResult.task.status, "success");
 assert.equal(interactiveRuntime.store.listAuditLogs().some((entry) => entry.event_subtype === "tool.call"), true);
 
+let unattendedPlannerState = 0;
 const unattendedRuntime = createRuntime("unattended", {
   toolPlanner() {
+    if (unattendedPlannerState > 0) {
+      return {
+        type: "final",
+        text: "File operation prepared."
+      };
+    }
+    unattendedPlannerState += 1;
     return {
       type: "tool_call",
       tool: "file_op",

@@ -1575,7 +1575,7 @@ async function _runToolAgentLoopCore({
       });
       // For LLM planner, continue the loop so the model can fix its arguments.
       // For keyword planner, give up — it can't self-correct.
-      if (planner === defaultPlanner) {
+      if (resolvedPlanner === defaultPlanner) {
         return {
           status: "failed",
           error: validation.error,
@@ -1905,7 +1905,7 @@ async function _runToolAgentLoopCore({
     }
 
     // For the keyword planner, return after one tool call (it doesn't read history)
-    if (planner === defaultPlanner) {
+    if (resolvedPlanner === defaultPlanner) {
       const finalText = needsFinalComposer(task, transcript)
         ? await composeFinalAnswer({
             task,

@@ -50,20 +50,28 @@ export function normalizeSearchRecency(recency, query = "") {
   return explicit ?? inferSearchRecency(query);
 }
 
-function stripTags(html = "") {
-  return String(html)
-    .replace(/<[^>]+>/g, "")
+function decodeHtmlEntities(text = "") {
+  return String(text)
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ")
+    .replace(/&#x([0-9a-f]+);/gi, (_match, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_match, dec) => String.fromCodePoint(Number.parseInt(dec, 10)));
+}
+
+function stripTags(html = "") {
+  return decodeHtmlEntities(String(html)
+    .replace(/<[^>]+>/g, "")
+  )
     .replace(/\s+/g, " ")
     .trim();
 }
 
 function decodeUddg(url = "") {
+  url = decodeHtmlEntities(url);
   if (url.startsWith("//")) url = `https:${url}`;
   const uddgMatch = url.match(/[?&]uddg=([^&]+)/);
   if (uddgMatch) {
@@ -87,6 +95,7 @@ function decodeUddg(url = "") {
  */
 export function decodeBingRedirect(url = "") {
   if (typeof url !== "string" || url.length === 0) return url;
+  url = decodeHtmlEntities(url);
   if (!/^https?:\/\/(?:www\.)?bing\.com\/ck\/a/i.test(url)) return url;
   const uMatch = url.match(/[?&]u=([^&]+)/);
   if (!uMatch) return url;
@@ -249,7 +258,7 @@ export function parseBingHtml(html = "", limit = 5) {
   let m;
   while ((m = liRe.exec(html)) && results.length < limit) {
     const block = m[1];
-    const titleMatch = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/h2>/i);
+    const titleMatch = block.match(/<h2[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/h2>/i);
     if (!titleMatch) continue;
     const url = decodeBingRedirect(titleMatch[1]);
     const title = stripTags(titleMatch[2]);
@@ -382,6 +391,10 @@ function isBotDetectionPage(html = "") {
   return (
     lower.includes("captcha") ||
     lower.includes("are you a robot") ||
+    lower.includes("trouble accessing google search") ||
+    lower.includes("/httpservice/retry/enablejs") ||
+    lower.includes("百度安全验证") ||
+    lower.includes("wappass.baidu.com") ||
     lower.includes("please verify") ||
     lower.includes("unusual traffic") ||
     lower.includes("blocked") && lower.includes("duckduckgo")
@@ -405,7 +418,7 @@ async function tryDdgHtml({ q, recency, fetchImpl, signal, limit }) {
       body: params.toString(),
       signal
     });
-    if (!response.ok) return { results: [], provider: "duckduckgo_html", ok: false, fetchFailed: true };
+    if (!response.ok || (typeof response.status === "number" && response.status !== 200)) return { results: [], provider: "duckduckgo_html", ok: false, fetchFailed: true };
     const html = await response.text();
     if (isBotDetectionPage(html)) {
       return { results: [], provider: "duckduckgo_html", ok: false, fetchFailed: true, botDetected: true };
@@ -515,7 +528,7 @@ async function tryDdgLite({ q, recency, fetchImpl, signal, limit }) {
       body: params.toString(),
       signal
     });
-    if (!response.ok) return { results: [], provider: "duckduckgo_lite", ok: false, fetchFailed: true };
+    if (!response.ok || (typeof response.status === "number" && response.status !== 200)) return { results: [], provider: "duckduckgo_lite", ok: false, fetchFailed: true };
     const html = await response.text();
     if (isBotDetectionPage(html)) {
       return { results: [], provider: "duckduckgo_lite", ok: false, fetchFailed: true, botDetected: true };

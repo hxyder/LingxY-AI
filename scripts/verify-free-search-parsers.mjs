@@ -21,7 +21,8 @@ import {
   decodeBingRedirect,
   decodeGoogleRedirect,
   parseBingHtml,
-  parseGoogleHtml
+  parseGoogleHtml,
+  searchWeb
 } from "../src/service/search/free-search.mjs";
 
 let pass = 0;
@@ -96,6 +97,23 @@ it("parseBingHtml: extracts decoded URLs, drops un-unwrappable bing redirects", 
   assert.equal(results[1].url, target2);
 });
 
+it("parseBingHtml: supports current Bing h2 attributes + HTML-entity redirects", () => {
+  const target = "https://www.goodnightscomedy.com/calendar";
+  const tracked = bingTrackedUrl(target).replace(/&/g, "&amp;");
+  const html = `
+    <li class="b_algo" data-id iid=SERP.1>
+      <div class="b_tpcn"><a href="${tracked}"><cite>https://www.goodnightscomedy.com</cite></a></div>
+      <h2 class=""><a target="_blank" href="${tracked}">Goodnights Comedy Club</a></h2>
+      <div class="b_caption"><p class="b_lineclamp2">Apr 15, 2026 &#0183;&#32;Upcoming comedy shows in Raleigh.</p></div>
+    </li>
+  `;
+  const results = parseBingHtml(html, 5);
+  assert.equal(results.length, 1);
+  assert.equal(results[0].url, target);
+  assert.equal(results[0].title, "Goodnights Comedy Club");
+  assert.match(results[0].snippet, /Apr 15, 2026 · Upcoming/);
+});
+
 it("parseBingHtml: empty / falsy input → []", () => {
   assert.deepEqual(parseBingHtml("", 5), []);
   assert.deepEqual(parseBingHtml(null, 5), []);
@@ -159,6 +177,57 @@ it("parseGoogleHtml: respects limit", () => {
   const results = parseGoogleHtml(blocks, 4);
   assert.equal(results.length, 4);
 });
+
+await (async function testSearchWebFallsThroughChallengePagesToBing() {
+  try {
+    const target = "https://www.goodnightscomedy.com/calendar";
+    const tracked = bingTrackedUrl(target).replace(/&/g, "&amp;");
+    const bingHtml = `
+      <html><body><ol id="b_results">
+        <li class="b_algo">
+          <h2 class=""><a target="_blank" href="${tracked}">Goodnights Comedy Club</a></h2>
+          <div class="b_caption"><p>Upcoming comedy shows in Raleigh.</p></div>
+        </li>
+      </ol><div>${"organic result padding ".repeat(80)}</div></body></html>
+    `;
+    const calls = [];
+    const fakeFetch = async (url) => {
+      calls.push(String(url));
+      if (String(url).includes("duckduckgo.com")) {
+        return new Response("<html><title>DuckDuckGo</title></html>", { status: 202 });
+      }
+      if (String(url).includes("google.com")) {
+        return new Response("<html><body><noscript>/httpservice/retry/enablejs</noscript>Trouble accessing Google Search</body></html>", { status: 200 });
+      }
+      if (String(url).includes("bing.com")) {
+        return new Response(bingHtml, { status: 200 });
+      }
+      return new Response("<html><title>百度安全验证</title></html>", { status: 200 });
+    };
+    const result = await searchWeb({
+      query: "Goodnights Raleigh comedy shows May 2026",
+      limit: 3,
+      fetchImpl: fakeFetch
+    });
+    assert.equal(result.provider, "bing");
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].url, target);
+    assert.deepEqual(
+      result.attempts.map((a) => [a.provider, a.fetchFailed]),
+      [
+        ["duckduckgo_html", true],
+        ["duckduckgo_lite", true],
+        ["google", true],
+        ["bing", false]
+      ]
+    );
+    process.stdout.write("PASS  searchWeb: challenge pages fall through to current Bing markup\n");
+    pass += 1;
+  } catch (err) {
+    process.stdout.write(`FAIL  searchWeb: challenge pages fall through to current Bing markup\n  ${err.message}\n`);
+    fail += 1;
+  }
+})();
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
 if (fail > 0) process.exit(1);
