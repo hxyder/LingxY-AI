@@ -11,6 +11,7 @@
 const DEFAULT_FETCH = (typeof fetch === "function") ? fetch : null;
 const DDG_HTML_URL = "https://html.duckduckgo.com/html/";
 const DDG_LITE_URL = "https://lite.duckduckgo.com/lite/";
+const GOOGLE_URL = "https://www.google.com/search";
 const BING_URL = "https://www.bing.com/search";
 const BAIDU_URL = "https://www.baidu.com/s";
 
@@ -68,6 +69,39 @@ function decodeUddg(url = "") {
   if (uddgMatch) {
     try { return decodeURIComponent(uddgMatch[1]); } catch { /* keep as-is */ }
   }
+  return url;
+}
+
+/**
+ * Bing wraps every organic result href in a tracking redirect of the form:
+ *   https://www.bing.com/ck/a?!&...&u=a1<URL-safe base64 of target>&ntb=1
+ *
+ * The `a1` is a 2-char scheme prefix Bing prepends before the base64. Without
+ * decoding, downstream consumers see every result as `bing.com` domain (which
+ * breaks evidence-normalizer's distinct_domain_count) and `fetch_url_content`
+ * calls hit Bing instead of the actual publisher.
+ *
+ * Returns the decoded URL or the original href if no Bing-redirect pattern
+ * matches / the base64 decode fails. Other Bing URL kinds (e.g. image cards
+ * with non-URL `u=` payloads) fall through unchanged.
+ */
+export function decodeBingRedirect(url = "") {
+  if (typeof url !== "string" || url.length === 0) return url;
+  if (!/^https?:\/\/(?:www\.)?bing\.com\/ck\/a/i.test(url)) return url;
+  const uMatch = url.match(/[?&]u=([^&]+)/);
+  if (!uMatch) return url;
+  let raw = uMatch[1];
+  try { raw = decodeURIComponent(raw); } catch { /* keep raw */ }
+  // Strip the 2-char scheme prefix Bing prepends (a1 most common; very
+  // occasionally a2 / a3 appear). If the prefix is missing, fall through.
+  const prefixed = raw.match(/^a[0-9]([A-Za-z0-9_-]+={0,2})$/);
+  if (!prefixed) return url;
+  // URL-safe base64: `-` → `+`, `_` → `/`, then standard atob.
+  const b64 = prefixed[1].replace(/-/g, "+").replace(/_/g, "/");
+  try {
+    const decoded = Buffer.from(b64, "base64").toString("utf8");
+    if (/^https?:\/\//i.test(decoded)) return decoded;
+  } catch { /* fall through */ }
   return url;
 }
 
@@ -138,6 +172,70 @@ export function parseDuckDuckGoHtml(html = "", limit = 5) {
  * Structure: alternating rows of title links and snippet cells.
  */
 /**
+ * Google wraps organic-result hrefs in `/url?q=<URL>&...` (sometimes
+ * absolute `https://www.google.com/url?q=...`). Decode the `q=` param so
+ * downstream consumers see the actual publisher URL. Returns the original
+ * href when no Google-redirect pattern matches.
+ */
+export function decodeGoogleRedirect(url = "") {
+  if (typeof url !== "string" || url.length === 0) return url;
+  const isPath = url.startsWith("/url?");
+  const isAbs = /^https?:\/\/(?:www\.)?google\.com\/url\?/i.test(url);
+  if (!isPath && !isAbs) return url;
+  const m = url.match(/[?&]q=([^&]+)/) ?? url.match(/[?&]url=([^&]+)/);
+  if (!m) return url;
+  try {
+    const decoded = decodeURIComponent(m[1]);
+    if (/^https?:\/\//i.test(decoded)) return decoded;
+  } catch { /* fall through */ }
+  return url;
+}
+
+/**
+ * Parse Google's HTML search page. Google A/B-tests its markup constantly
+ * so the parser is intentionally tolerant: anchor on `<h3>` for the title
+ * inside any block whose class contains one of the modern container
+ * markers (`g`, `tF2Cxc`, `MjjYud`, `Gx5Zad`). Snippets are pulled from
+ * one of the known classes (`VwiC3b`, `aCOpRe`, `s3v9rd`, `st`). Both
+ * the result block boundaries and the snippet element vary, so we keep
+ * the regexes loose and rely on dropping anything that doesn't decode
+ * to a real http(s) URL.
+ *
+ * Google bot-detects aggressively. When it serves a sorry/captcha page
+ * the caller's `isBotDetectionPage` check fires before we ever get
+ * here; results=[] is a routine outcome and the cascade falls through
+ * to the next provider.
+ */
+export function parseGoogleHtml(html = "", limit = 5) {
+  if (!html) return [];
+  const results = [];
+  // Block split is kept loose — Google's wrapper class set has at least
+  // four common variants (g / tF2Cxc / MjjYud / Gx5Zad) and changes
+  // between deployments. We just look for any block that has an h3 + a
+  // close together.
+  const linkRe = /<a[^>]*href="([^"]+)"[^>]*>\s*<h3[^>]*>([\s\S]*?)<\/h3>/gi;
+  const seen = new Set();
+  let m;
+  while ((m = linkRe.exec(html)) && results.length < limit) {
+    const url = decodeGoogleRedirect(m[1]);
+    const title = stripTags(m[2]);
+    if (!title || !url || !/^https?:/i.test(url)) continue;
+    if (/^https?:\/\/(?:www\.)?google\.com\//i.test(url)) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    // Snippet: scan the next ~1500 chars after the link for a known
+    // snippet container. This is approximate but matches how Google
+    // lays out the cards in practice.
+    const tailStart = m.index + m[0].length;
+    const tail = html.slice(tailStart, tailStart + 1500);
+    const snippetMatch = tail.match(/<(?:div|span)[^>]*class="[^"]*(?:VwiC3b|aCOpRe|s3v9rd|MUxGbd|st)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|span)>/i);
+    const snippet = snippetMatch ? stripTags(snippetMatch[1]) : "";
+    results.push({ title, url, snippet });
+  }
+  return results;
+}
+
+/**
  * Parse Bing search results page. Bing's modern markup wraps each
  * organic result in an <li class="b_algo"> with <h2><a href></a></h2>
  * for the title and a <div class="b_caption"><p> for the snippet.
@@ -153,9 +251,13 @@ export function parseBingHtml(html = "", limit = 5) {
     const block = m[1];
     const titleMatch = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/h2>/i);
     if (!titleMatch) continue;
-    const url = titleMatch[1];
+    const url = decodeBingRedirect(titleMatch[1]);
     const title = stripTags(titleMatch[2]);
     if (!title || !url || !/^https?:/i.test(url)) continue;
+    // After decoding, drop any href that's still pointing at bing.com — that
+    // means the redirect couldn't be unwrapped and we'd otherwise feed
+    // fetch_url_content a tracking URL that fails or returns the SERP again.
+    if (/^https?:\/\/(?:www\.)?bing\.com\//i.test(url)) continue;
     // Bing wraps snippets in <p> inside .b_caption. Occasionally there
     // are multiple — grab the first non-empty one.
     const snippetMatch = block.match(/<div[^>]*class="[^"]*\bb_caption\b[^"]*"[^>]*>([\s\S]*?)<\/div>/i);
@@ -315,6 +417,35 @@ async function tryDdgHtml({ q, recency, fetchImpl, signal, limit }) {
   }
 }
 
+async function tryGoogle({ q, recency, fetchImpl, signal, limit }) {
+  // num caps at ~100 in practice but Google often serves ~10 organic
+  // hits per page regardless. We ask for max(limit, 10) to honour
+  // higher limits when the page actually cooperates.
+  const params = new URLSearchParams({ q, hl: "en", num: String(Math.max(limit, 10)) });
+  // Google recency: tbs=qdr:d|w|m|y
+  if (recency) params.set("tbs", `qdr:${recency}`);
+  try {
+    const response = await fetchImpl(`${GOOGLE_URL}?${params.toString()}`, {
+      headers: {
+        "User-Agent": BROWSER_UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.google.com/"
+      },
+      signal
+    });
+    if (!response.ok) return { results: [], provider: "google", ok: false, fetchFailed: true };
+    const html = await response.text();
+    if (isBotDetectionPage(html)) {
+      return { results: [], provider: "google", ok: false, fetchFailed: true, botDetected: true };
+    }
+    const results = parseGoogleHtml(html, limit);
+    return { results, provider: "google", ok: results.length > 0, fetchFailed: false };
+  } catch {
+    return { results: [], provider: "google", ok: false, fetchFailed: true };
+  }
+}
+
 async function tryBing({ q, recency, fetchImpl, signal, limit }) {
   const params = new URLSearchParams({ q, setlang: "en-us", count: String(Math.max(limit, 10)) });
   // Bing recency uses freshness= day|week|month (no year), so we drop
@@ -413,17 +544,21 @@ export async function searchWeb({
 
   const normalizedRecency = normalizeSearchRecency(recency, q);
 
-  // Cascade order. Primary is DDG because it respects recency filters
-  // and doesn't require a user-cookie dance. Chinese queries drop Baidu
-  // in ahead of Bing (Baidu handles CJK content infinitely better);
-  // Latin queries try Bing before Baidu as a sanity fallback.
+  // Cascade order. DDG stays primary — it respects recency filters and
+  // returns clean URLs (no tracking redirect). Google sits between DDG
+  // and Bing: when DDG bot-blocks, Google is preferred over Bing because
+  // (a) Bing wraps every href in a `bing.com/ck/a` tracking redirect that
+  // confuses domain accounting and breaks fetch_url_content even after
+  // we decode it (some redirects don't unwrap), and (b) Google returns
+  // higher-relevance results for most queries. CJK queries still front
+  // Baidu (best for Chinese content), then Google, then Bing.
   const isChinese = looksChinese(q);
   const cascade = [
     (opts) => tryDdgHtml(opts),
     (opts) => tryDdgLite(opts),
     ...(isChinese
-      ? [(opts) => tryBaidu(opts), (opts) => tryBing(opts)]
-      : [(opts) => tryBing(opts),  (opts) => tryBaidu(opts)])
+      ? [(opts) => tryBaidu(opts), (opts) => tryGoogle(opts), (opts) => tryBing(opts)]
+      : [(opts) => tryGoogle(opts), (opts) => tryBing(opts), (opts) => tryBaidu(opts)])
   ];
 
   const attempts = [];

@@ -1021,12 +1021,19 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
       messages,
       tools: toolSchemas,
       maxTokens: 1024,
-      // Planner turns may end up containing tool_calls. Some OpenAI-compatible
-      // providers stream provisional text before the final tool-call decision,
-      // which can leak protocol/control JSON into the chat bubble. Keep planner
-      // text buffered until we know it is a final answer; final-composer turns
-      // still stream normally.
-      onTextDelta: undefined,
+      // Stream planner text live so the user sees output flow in real time.
+      // The previous "buffer until final" version eliminated control-JSON
+      // leaks but also killed streaming on the final answer (planner returns
+      // text-only when the LLM is done). Two-line defense instead: the system
+      // prompt rule forbids raw control JSON, and the renderer suppresses any
+      // `{iteration,next_action,violation_kinds,satisfied}`-shaped chunk that
+      // does slip through.
+      onTextDelta: adapter.supportsStreaming === true
+        ? (delta) => {
+            if (!delta) return;
+            runtime?.emitTaskEvent?.("text_delta", { delta });
+          }
+        : undefined,
       onToolInputDelta: (toolName, partialJson) => {
         if (!["write_file", "generate_document", "edit_file"].includes(toolName)) return;
         runtime?.emitTaskEvent?.("tool_input_delta", {

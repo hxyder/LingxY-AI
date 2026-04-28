@@ -655,11 +655,15 @@ export async function runAgenticPlanner({
 
     let response;
     try {
-      // Planner turns may still decide to call tools after emitting text. Some
-      // OpenAI-compatible providers stream that provisional text anyway, which
-      // can expose internal protocol/control JSON in the UI. Buffer planner
-      // text inside the adapter response; only final synthesis streams.
-      const onTextDelta = undefined;
+      // Stream planner text live so the user sees output flow in real time.
+      // Pre-fix this was disabled to stop providers from leaking control JSON
+      // (`{iteration,next_action,…}`) into the bubble; that also killed
+      // streaming on the final answer. Two-line defense instead: the system
+      // prompt rule forbids raw control JSON, and the renderer suppresses any
+      // chunk that still matches that shape.
+      const onTextDelta = (adapter.supportsStreaming && onEvent)
+        ? (delta) => onEvent({ event_type: "text_delta", payload: { delta } })
+        : undefined;
       const onToolInputDelta = (adapter.supportsStreaming && onEvent)
         ? (toolName, partialJson) => {
             if (!FILE_GEN_TOOLS.has(toolName)) return;
