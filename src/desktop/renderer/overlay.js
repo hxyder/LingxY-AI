@@ -736,6 +736,13 @@ async function reconcileConversationFromBackend(convId, { fullRebuild = false } 
   if (!convId) return;
   const conv = ensureBackendCacheFields(conversationState);
   if (!conv || conv.id !== convId) return;
+  // Snapshot the local turn cache BEFORE clearing so we can restore it if
+  // (a) the user switched conversations during the fetch (race), or
+  // (b) the backend has zero messages for this conversation id (legacy
+  //     conversations from before the conversation_v1 migration, or the
+  //     row was never registered server-side).
+  const targetConvId = conv.id;
+  const turnsSnapshot = Array.isArray(conv.turns) ? [...conv.turns] : [];
   if (fullRebuild) {
     conv.turns = [];
     conv.lastKnownSeq = -1;
@@ -749,7 +756,34 @@ async function reconcileConversationFromBackend(convId, { fullRebuild = false } 
   // change.
   const sinceSeq = fullRebuild ? 0 : Math.max(0, conv.lastKnownSeq + 1);
   const payload = await fetchMessagesSinceShared(fetch.bind(globalThis), serviceBaseUrl, convId, { sinceSeq, limit: 200 });
-  if (!payload) return;
+
+  // Race guard: the user may have clicked another conversation while the
+  // backend fetch was in flight. If so, applying these messages to the
+  // bubble area would render conversation A's content into B's view. Drop
+  // the visual update; restore turns we cleared so a later switch back to
+  // A still has its local cache.
+  if (conversationState?.id !== targetConvId) {
+    if (fullRebuild) conv.turns = turnsSnapshot;
+    return;
+  }
+
+  const hasMessages = payload && Array.isArray(payload.messages) && payload.messages.length > 0;
+  if (!hasMessages) {
+    // Backend returned nothing (404 / empty / network failure). For a full
+    // rebuild we already wiped conv.turns + bubbles, so the user would see
+    // a blank chat. Restore the local cache so old conversations stay
+    // viewable until the backend catches up. Incremental updates (sinceSeq)
+    // with no payload are no-ops.
+    if (fullRebuild && turnsSnapshot.length > 0) {
+      conv.turns = turnsSnapshot;
+      for (const turn of turnsSnapshot) {
+        const role = ["user", "assistant", "system"].includes(turn.role) ? turn.role : "system";
+        addBubble(role, turn.content);
+      }
+    }
+    return;
+  }
+
   applyMessageBatchShared(conv, payload, overlayMessageAdapter);
 }
 

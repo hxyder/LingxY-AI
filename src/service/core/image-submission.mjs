@@ -250,12 +250,6 @@ function looksLikeConnectorFileSend(userCommand = "") {
 //                        叫什么/有几个
 //   short direct forms   什么东西 / 怎么回事
 //   english              what's in / shows / read the text
-const VISION_ANALYSIS_RE = /(分析|识别|描述|总结|读出来|认一认|怎么回事|什么东西|说说.*(?:里面|内容|图)|看看.*(?:里面|内容|是什么|图)|这是什么(?:图|图片|照片|截图)|这张(?:图|图片|照片|截图).*(?:是什么|有什么|叫什么|有几个|是谁|写了什么|写的什么)|(?:里面|内容|图(?:中|里|上|里面|里的)?|图片|照片|这张图|这张照片|截图).*(?:是什么|有什么|叫什么|有几个|是谁|写了什么|写的什么)|\bocr\b|\banalyze\b|\banalyse\b|\bdescribe\b|\bidentify\b|\bsummar(?:ize|ise)\b|what\s*['']?s?\s+(?:is\s+)?in\b|what\s+(?:does|do)\s+.*\s+show|read\s+(?:the\s+)?text)/i;
-
-function looksLikeVisionAnalysisIntent(userCommand = "") {
-  return VISION_ANALYSIS_RE.test(String(userCommand ?? ""));
-}
-
 export async function submitImageTask({
   imagePaths,
   userCommand,
@@ -271,13 +265,17 @@ export async function submitImageTask({
   executorOverride = "multi_modal",
   background = false
 }) {
-  // If the user's command is anything OTHER than a vision-analysis request
-  // ("分析/描述/识别" etc), route to tool_using so the agent-loop can reach
-  // open_file / copy / account_send_email / etc. The image paths are still
-  // surfaced in the context_packet so the planner knows the attachment
-  // exists. We only keep multi_modal for the actual vision-analysis case.
-  if (executorOverride === "multi_modal"
-      && (looksLikeConnectorFileSend(userCommand) || !looksLikeVisionAnalysisIntent(userCommand))) {
+  // The presence of an image attachment IS the vision request. Don't gate
+  // multi_modal behind a topic-keyword regex like "must say 分析/识别/描述" —
+  // that's exactly the regex-per-test-case anti-pattern (phase1_llm_first_plan
+  // hard constraint #6). Phrasings like "这是个什么" / "看看" / "解释" / silent
+  // submit all need vision analysis, and listing them in a regex never
+  // converges. The only structural reason to redirect away from
+  // multi_modal is when the user explicitly wants to *send* the file
+  // somewhere (Gmail / Slack / Drive) — that's covered by
+  // looksLikeConnectorFileSend below, which checks for verbs like
+  // "发给/forward to/attach to send".
+  if (executorOverride === "multi_modal" && looksLikeConnectorFileSend(userCommand)) {
     const { submitContextTask } = await import("./context-submission.mjs");
     return submitContextTask({
       runtime,
