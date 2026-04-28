@@ -125,6 +125,7 @@ function providerToResolved(provider, route, taskType) {
     apiKey: sanitizedProvider.apiKey,
     baseUrl: sanitizedProvider.baseUrl,
     model: resolveRoutedModel(sanitizedProvider, sanitizedRoute, taskType),
+    embeddingModel: sanitizedRoute.embeddingModel ?? sanitizedProvider.embeddingModel ?? null,
     mode: sanitizedRoute.mode ?? "",
     reasoningEffort: cleanReasoning,
     providerName: sanitizedProvider.name
@@ -133,7 +134,7 @@ function providerToResolved(provider, route, taskType) {
 
 /**
  * Resolve provider for a task type.
- * @param {"chat"|"vision"|"file_analysis"|"audio_transcription"} taskType
+ * @param {"chat"|"router"|"vision"|"file_analysis"|"audio_transcription"|"embedding"} taskType
  * @returns provider config or null
  */
 export function resolveProviderForTask(taskType, env = process.env) {
@@ -166,7 +167,14 @@ export function resolveProviderForTask(taskType, env = process.env) {
   // the candidate isn't the original route's target. Otherwise we send the
   // old provider's model name (e.g. "gpt-4o") to a different endpoint
   // (e.g. Doubao Ark) and get a 404 InvalidEndpointOrModel.NotFound.
-  const baseRoute = route ?? routing.chat ?? null;
+  // The semantic router is optional: when the user has not explicitly
+  // configured a routing model, inherit the active chat model. This keeps
+  // first-run setup simple while still allowing Settings -> Routing to pin a
+  // cheap/fast router model later.
+  const inheritedRoute = (taskType === "router" && !route?.providerId)
+    ? (routing.chat ?? null)
+    : (route ?? routing.chat ?? null);
+  const baseRoute = inheritedRoute;
   if (customProviders.length > 0) {
     // for vision tasks, prefer providers that support vision
     const candidates = taskType === "vision"
@@ -204,6 +212,7 @@ export function resolveProviderForTask(taskType, env = process.env) {
       apiKey: openaiKey,
       baseUrl: env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
       model: (taskType === "vision" ? env.UCA_VISION_MODEL : env.UCA_FAST_MODEL) ?? "gpt-4o-mini",
+      embeddingModel: env.UCA_EMBEDDING_MODEL ?? "text-embedding-3-small",
       providerName: "OpenAI (env)"
     };
   }
@@ -217,6 +226,7 @@ export function resolveProviderForTask(taskType, env = process.env) {
       apiKey: kimiKey,
       baseUrl: env.KIMI_BASE_URL ?? "https://api.moonshot.cn/v1",
       model: env.UCA_FAST_MODEL ?? "kimi-k2",
+      embeddingModel: env.UCA_EMBEDDING_MODEL ?? null,
       providerName: "Kimi (env)"
     };
   }

@@ -171,6 +171,27 @@ const skillEditState = document.querySelector("#skillEditState");
 const skillEditSaveBtn = document.querySelector("#skillEditSaveBtn");
 const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
 
+function keepElementPinnedToBottom(element) {
+  if (!element) return;
+  const pin = () => {
+    requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+    });
+  };
+  try {
+    new MutationObserver(pin).observe(element, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  } catch { /* observer is optional */ }
+  try {
+    new ResizeObserver(pin).observe(element);
+  } catch { /* explicit scroll calls remain as fallback */ }
+}
+
+keepElementPinnedToBottom(consoleChatMessages);
+
 /* ═══════════════════════════════════════════════
    TAB NAVIGATION
    ═══════════════════════════════════════════════ */
@@ -480,6 +501,7 @@ let consoleChatToolCards = new Map();
 let consoleChatThinkingCard = null;
 let consoleChatThinkingText = "";
 let consoleChatStreamingAnswer = null;
+let consoleChatProgressEventIds = new Set();
 // G: console chat resume state. The chat composer threads this
 // conversation_id on every submit, so back-and-forth in the same
 // conversation hangs together server-side. New chat clears it.
@@ -834,6 +856,20 @@ function appendConsoleChatThinkingDelta(delta) {
   consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
 }
 
+function appendConsoleChatProgress(frame, textOverride = "") {
+  if (!consoleChatMessages) return;
+  if (frame?.id && consoleChatProgressEventIds.has(frame.id)) return;
+  if (frame?.id) consoleChatProgressEventIds.add(frame.id);
+  const summary = formatTaskEventSummary(frame);
+  const text = String(textOverride || (
+    frame?.event === "conversation_step"
+      ? summary.body
+      : `${summary.title}: ${summary.body}`
+  )).trim();
+  if (!text) return;
+  appendConsoleChatMessage("system", text);
+}
+
 function closeConsoleChatThinkingCard() {
   if (!consoleChatThinkingCard) return;
   consoleChatThinkingCard.open = false;
@@ -929,6 +965,7 @@ function subscribeConsoleChatTask(taskId) {
   consoleChatEventStream?.close?.();
   consoleChatToolCards = new Map();
   consoleChatStreamingAnswer = null;
+  consoleChatProgressEventIds = new Set();
   closeConsoleChatThinkingCard();
   consoleChatEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
     onEvent(rawEvent) {
@@ -975,6 +1012,22 @@ function subscribeConsoleChatTask(taskId) {
             observation: outcome
           });
         }
+      } else if (frame.event === "conversation_step") {
+        const source = payload.source_event ?? "";
+        if (!String(source).startsWith("tool_call")) {
+          appendConsoleChatProgress(frame);
+        }
+      } else if ([
+        "task_created",
+        "accepted",
+        "started",
+        "provider_resolved",
+        "planner_request_started",
+        "final_composer_started",
+        "sr_patch_applied",
+        "background_context_added"
+      ].includes(frame.event)) {
+        appendConsoleChatProgress(frame);
       } else if (frame.event === "inline_result") {
         closeConsoleChatThinkingCard();
         if (!finalizeConsoleChatStreaming(taskId, payload.text ?? payload.message ?? "")) {
@@ -1138,6 +1191,7 @@ async function submitConsoleChat() {
   appendConsoleChatUserMessage(text, clientMessageId);
   consoleChatInput.value = "";
   consoleChatState.textContent = "Submitting...";
+  appendConsoleChatMessage("system", "已收到请求，正在创建任务…");
   try {
     const result = await fetchJson("/task", {
       method: "POST",
@@ -1149,6 +1203,7 @@ async function submitConsoleChat() {
         text: "",
         userCommand: text,
         executionMode: "interactive",
+        background: true,
         client_message_id: clientMessageId,
         ...(conversationId ? { conversation_id: conversationId } : {}),
         ...(attachedFilePaths.length > 0 ? { filePaths: attachedFilePaths } : {})
@@ -1159,6 +1214,7 @@ async function submitConsoleChat() {
     if (taskId) {
       consoleChatResultTaskIds.delete(taskId);
       subscribeConsoleChatTask(taskId);
+      appendConsoleChatMessage("system", "任务已创建，正在执行…");
     }
     // If the backend created a fresh conversation for this submit
     // (no conversation_id was sent), pick it up so subsequent submits
@@ -1769,6 +1825,8 @@ function providerModelOptionsExpired(meta = null) {
 
 const TASK_TYPES = [
   { id: "chat", label: "Chat / Q&A", desc: "General conversation, summarize, translate, explain" },
+  { id: "router", label: "Semantic Router", desc: "Optional fast classifier; leave unselected to inherit Chat / Q&A" },
+  { id: "embedding", label: "Embedding / RAG", desc: "Optional vector memory model; leave unselected to use the Chat provider fallback" },
   { id: "vision", label: "Vision / Image", desc: "Image analysis, screenshot understanding" },
   { id: "file_analysis", label: "File Analysis", desc: "Deep file processing, report generation (uses the routed provider)" },
   { id: "audio_transcription", label: "Audio Transcription", desc: "Speech-to-text for recording notes and system audio" }

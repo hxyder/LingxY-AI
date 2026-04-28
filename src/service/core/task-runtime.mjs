@@ -215,6 +215,29 @@ function resolveParentFromConversation(conversationId, runtime) {
   }
 }
 
+const SHORT_FOLLOWUP_REPLY = /^(好|好的?|可以|继续|需要|要|对|是|是的|嗯|ok|okay|yes|sure|please)\s*[!.！。]?$/i;
+const REFERENTIAL_FOLLOWUP = /(^|\s)(上个|上一|刚才|之前|前面|那个|这个|这些|那些|它|它们|里面的|文件夹里的|图片里的|表格里的|文档里的|这张|那张|第一张|第二张|同样|一样|照这个|继续|再来|改一下|补充|加上|打开它|打开这个|打开那个)(\s|$|[，。！？,.!?])/i;
+const SHORT_SLOT_REPLY_BLOCKER = /(打开|启动|运行|删除|移动|复制|保存|导出|发送|发邮件|搜索|查一下|查询|查找|新闻|天气|气温|股价|股票|汇率|价格|多少钱|文件|文件夹|图片|上传|下载|日历|提醒|定时|为什么|怎么办|怎么|如何|\?|？|\bopen\b|\blaunch\b|\brun\b|\bdelete\b|\bmove\b|\bcopy\b|\bsave\b|\bexport\b|\bsend\b|\bemail\b|\bsearch\b|\bnews\b|\bweather\b|\bstock\b|\bprice\b|\bfile\b|\bfolder\b|\bimage\b|\bcalendar\b|\bremind\b|\bschedule\b|\bwhy\b|\bhow\b|\bwhat\b)/i;
+
+function looksLikeShortSlotReply(text = "") {
+  const value = String(text ?? "").trim();
+  if (!value) return false;
+  if (value.length > 24) return false;
+  if (SHORT_SLOT_REPLY_BLOCKER.test(value)) return false;
+  // A bare noun/name/location/date answer to a previous clarification usually
+  // has no sentence-ending question shape. This covers "罗利", "Raleigh, NC",
+  // "数据分析师", "明天下午三点" without reintroducing topic routing.
+  return /^[\p{L}\p{N}\s,，.'’_-]+$/u.test(value);
+}
+
+export function shouldAutoResolveParentFromConversation(userCommand = "") {
+  const text = String(userCommand ?? "").trim();
+  if (!text) return false;
+  if (SHORT_FOLLOWUP_REPLY.test(text)) return true;
+  if (looksLikeShortSlotReply(text)) return true;
+  return REFERENTIAL_FOLLOWUP.test(text);
+}
+
 function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
   try {
     const parent = runtime.store.getTask(parentTaskId);
@@ -263,7 +286,7 @@ function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
  * legacy fields stay only as fallbacks for boots without a backend
  * conversation row.
  */
-function attachPriorBackendMessages(contextPacket, conversationId, runtime, { limit = 12, contentCap = 1600 } = {}) {
+export function attachPriorBackendMessages(contextPacket, conversationId, runtime, { limit = 12, contentCap = 1600 } = {}) {
   if (!conversationId || typeof runtime?.store?.getConversationMessages !== "function") {
     return contextPacket;
   }
@@ -432,7 +455,9 @@ export function createTaskRecord({
       ? rawConversationId
       : null;
   const effectiveParentTaskId = parentTaskId
-    ?? resolveParentFromConversation(effectiveConversationId, runtime);
+    ?? (shouldAutoResolveParentFromConversation(userCommand)
+      ? resolveParentFromConversation(effectiveConversationId, runtime)
+      : null);
 
   // P4-RQ G3b: when this task has a parentTaskId AND a runtime
   // store is available, fetch the parent's final assistant text and
@@ -583,8 +608,17 @@ export function refreshCompositeParentStatus(runtime, parentTaskId) {
 
 // UCA-061: Event types that should be forwarded to the conversation view as
 // step labels. Other events (e.g. status_changed on every tick) are too noisy.
+//
+// Default visible set is intentionally small. Pre-execution phases
+// (task_created / accepted / started / provider_resolved / semantic_router /
+// background_context_added / sr_patch_applied / final_composer_started) are
+// implementation detail — they belong in the inspect-routing / debug panel,
+// not in the conversation thread, where they create the impression that "lots
+// of work happens before any reply" and hurt perceived latency.
+//
+// Conversation thread shows: a single "思考中" indicator
+// (planner_request_started), tool activity, and failures/cancellations.
 const CONVERSATION_VISIBLE_EVENTS = new Set([
-  "step_started",
   "planner_request_started",
   "tool_call_started",
   "tool_call_proposed",
@@ -619,6 +653,7 @@ const TOOL_STEP_LABELS = {
 
 const STEP_LABELS = {
   tool_planner: "规划操作步骤",
+  semantic_router: "理解任务场景",
   planner_request: "请求模型",
   llm_generate: "生成内容",
   composite_running: "并行执行子任务",
@@ -626,6 +661,19 @@ const STEP_LABELS = {
 };
 
 function buildConversationStepLabel(eventType, payload) {
+  if (eventType === "task_created") {
+    return "▸ 已接收请求，正在准备执行…";
+  }
+  if (eventType === "accepted") {
+    return "▸ 已进入任务队列…";
+  }
+  if (eventType === "started") {
+    return "▸ 开始执行…";
+  }
+  if (eventType === "provider_resolved") {
+    const model = payload?.model ?? payload?.provider_name ?? payload?.provider_id ?? "";
+    return model ? `▸ 已选择模型：${String(model).slice(0, 80)}` : "▸ 已选择模型…";
+  }
   if (eventType === "tool_call_started" || eventType === "tool_call_proposed") {
     const toolId = payload?.tool_id ?? payload?.tool ?? "";
     const label = TOOL_STEP_LABELS[toolId] ?? toolId;
@@ -647,8 +695,27 @@ function buildConversationStepLabel(eventType, payload) {
     const label = STEP_LABELS[step] ?? step;
     return label ? `▸ ${label}…` : null;
   }
+  if (eventType === "step_finished") {
+    const step = payload?.step ?? "";
+    const label = STEP_LABELS[step] ?? step;
+    return label ? `✓ ${label}` : null;
+  }
   if (eventType === "planner_request_started") {
     return "▸ 请求模型…";
+  }
+  if (eventType === "final_composer_started") {
+    return "▸ 整理工具结果并生成回复…";
+  }
+  if (eventType === "sr_patch_applied") {
+    const web = payload?.tool_policy_web ? `联网=${payload.tool_policy_web}` : "";
+    const output = payload?.expected_output ? `输出=${payload.expected_output}` : "";
+    const bits = [web, output].filter(Boolean).join(" · ");
+    return bits ? `✓ 语义分类已更新：${bits}` : "✓ 语义分类已更新";
+  }
+  if (eventType === "background_context_added") {
+    if (payload?.kind === "memory_recall") return `✓ 已补充记忆上下文（${payload.count ?? 0} 条）`;
+    if (payload?.kind === "recent_artifact") return "✓ 已补充最近产物上下文";
+    return "✓ 已补充背景上下文";
   }
   if (eventType === "failed") {
     const msg = payload?.message ?? payload?.category ?? "未知错误";
@@ -962,6 +1029,24 @@ export function applyExecutorEvent(runtime, task, event) {
       status: "partial_success",
       sub_status: "completed_with_warnings",
       progress: event.progress ?? task.progress
+    }, true);
+  }
+
+  if (event.type === "failed") {
+    if (["success", "partial_success", "failed", "cancelled"].includes(task.status)) {
+      return;
+    }
+    const failure = classifyFailure({
+      message: event.message ?? event.text ?? event.error ?? "Executor failed.",
+      category: event.category
+    });
+    updateTask(runtime, task, {
+      status: "failed",
+      sub_status: failure.category,
+      failure_category: failure.category,
+      failure_user_message: failure.userMessage,
+      failure_internal_log_excerpt: failure.internalExcerpt,
+      retryable: failure.retryable
     }, true);
   }
 }

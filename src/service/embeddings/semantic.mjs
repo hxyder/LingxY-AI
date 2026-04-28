@@ -9,6 +9,9 @@ const EMBEDDING_TIMEOUT_MS = 8_000;
 const MAX_INPUT_CHARS = 8_192;
 
 function inferEmbeddingModel(chatModel = "") {
+  if (/^text-embedding-/i.test(chatModel)) {
+    return chatModel;
+  }
   // OpenAI model families → their embedding counterpart
   if (chatModel.includes("gpt-4") || chatModel.includes("gpt-3.5")) {
     return "text-embedding-3-small";
@@ -26,7 +29,7 @@ export async function embedTextSemantic(text) {
     const { resolveProviderForTask } = await import(
       "../executors/shared/provider-resolver.mjs"
     );
-    const provider = resolveProviderForTask("chat");
+    const provider = resolveProviderForTask("embedding");
 
     // Only OpenAI-compatible providers expose /v1/embeddings
     if (

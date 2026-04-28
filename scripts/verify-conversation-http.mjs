@@ -24,7 +24,11 @@ function makeRuntime({ allowHardDelete = false } = {}) {
     paths: {},
     config: { allowHardDelete },
     metrics: { increment() {}, observe() {} },
-    securityBroker: { clearTaskRedactionMap() {} },
+    securityBroker: {
+      clearTaskRedactionMap() {},
+      inspectContext() { return { allowed: true, redactions: [], warnings: [] }; },
+      registerTaskRedactionMap() {}
+    },
     platform: {},
     configStore: { load: () => ({}), save: () => {} }
   };
@@ -134,6 +138,77 @@ await it("GET /conversation/{id}/messages?since=N: returns only seq >= N", async
     assert.equal(r.status, 200);
     assert.deepEqual(r.body.messages.map((m) => m.seq), [3, 4]);
     assert.equal(r.body.since_seq, 3);
+  } finally { await srv.close(); }
+});
+
+await it("POST /task does not run pre-task regex clarification", async () => {
+  const runtime = makeRuntime();
+  const srv = await startServer(runtime);
+  try {
+    const r = await fetchJson(`${srv.url}/task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userCommand: "打开文件",
+        conversation_id: "c_clarify",
+        client_message_id: "cmsg_clarify_1",
+        background: true,
+        sourceApp: "uca.overlay",
+        executionMode: "interactive"
+      })
+    });
+    assert.equal(r.status, 200);
+    assert.ok(r.body.task?.task_id, "ambiguous-looking text should still create a task");
+    assert.notEqual(r.body.type, "clarification_needed");
+    const messages = runtime.store.getConversationMessages("c_clarify");
+    assert.equal(messages.length, 1);
+    assert.deepEqual(messages.map((m) => m.role), ["user"]);
+    assert.equal(messages[0].content, "打开文件");
+    assert.equal(messages[0].metadata.client_message_id, "cmsg_clarify_1");
+  } finally { await srv.close(); }
+});
+
+await it("POST /task ignores stale client parent_task_id for clear new topics", async () => {
+  const runtime = makeRuntime();
+  const srv = await startServer(runtime);
+  try {
+    const r = await fetchJson(`${srv.url}/task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userCommand: "汽车修空调要多少钱",
+        conversation_id: "c_parent_guard",
+        parent_task_id: "task_previous",
+        client_message_id: "cmsg_parent_guard",
+        background: true,
+        sourceApp: "uca.overlay",
+        executionMode: "interactive"
+      })
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.task.parent_task_id, null);
+  } finally { await srv.close(); }
+});
+
+await it("POST /task keeps client parent_task_id for explicit short follow-ups", async () => {
+  const runtime = makeRuntime();
+  const srv = await startServer(runtime);
+  try {
+    const r = await fetchJson(`${srv.url}/task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userCommand: "继续",
+        conversation_id: "c_parent_keep",
+        parent_task_id: "task_previous",
+        client_message_id: "cmsg_parent_keep",
+        background: true,
+        sourceApp: "uca.overlay",
+        executionMode: "interactive"
+      })
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.task.parent_task_id, "task_previous");
   } finally { await srv.close(); }
 });
 

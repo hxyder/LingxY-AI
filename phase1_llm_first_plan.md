@@ -110,7 +110,7 @@ These are non-negotiable across all phases. Any future change must respect them.
 | 1.17  | done | Runtime task features + capability-aware provider selection; model fallback is based on capabilities, not topic regex |
 | 2     | partial | Legacy decomposer/composite split is opt-in only; normal hot path stays in the main AI agent |
 | 3     | pending | Retire regex tables (RULES / TAG_PATTERNS / GOAL_RULES / FORMAT_PATTERNS) — keep structural signals only |
-| 4     | pending | Tool guard rework + system prompt root-fix (refusal persona drift) |
+| 4     | partial | Tool guard rework + system prompt root-fix: lean QA/roleplay mode, tool prompt suppression, pre-task regex clarifier removed |
 
 ---
 
@@ -238,6 +238,39 @@ These are non-negotiable across all phases. Any future change must respect them.
   - removes pre-LLM `routing_degraded` refusal gate
   - removes output-claim regex guard
   - streams OpenAI-compatible provider deltas into `text_delta` events
+
+### Phase 4 partial: lean QA/roleplay + old regex cleanup
+
+- `src/service/core/http-server.mjs`
+  - deleted the global pre-task `detectAmbiguity()` gate.
+  - `/task` no longer returns `clarification_needed` from regex before task
+    creation; missing details are handled by SR / agent-loop inside the normal
+    conversation stream.
+- **deleted:** `src/service/core/clarifier.mjs`
+  - removes the old `AMBIGUITY_RULES` path that could treat narrative pronouns
+    such as "它没有真实的数据" as file-reference clarifications.
+- `src/service/core/policy/tool-policy-resolver.mjs`
+  - removed the roleplay/interview regex skip from
+    `shouldConsultSemanticRouter`; roleplay is not a scene-regex fast path.
+- `src/service/core/router/intent-router.mjs`
+  - tightened legacy analyze tagging so nouns like "数据分析师" and "研究生"
+    do not produce `analyze` / `agentic` route evidence.
+- `src/service/executors/tool_using/agent-loop.mjs`
+  - adds `shouldUseLeanChatMode()` for SR/TaskSpec-classified
+    no-tool conversational turns.
+  - lean mode sends no `call_tool` schema, renders no full tool inventory, and
+    preserves conversation-level roleplay/persona instructions above generic
+    desktop-agent identity.
+  - tool-capable mode filters visible tools by `needed_capabilities` when SR
+    provides them, and renders connector workflow hints only for connector
+    tasks.
+- `src/service/core/task-runtime.mjs`
+  - short slot replies such as "罗利" / "Raleigh, NC" can inherit the previous
+    task in the same conversation while obvious new questions/actions remain
+    unparented.
+- `scripts/verify-roleplay-persistence.mjs`
+  - locks in the roleplay QA contract, lean prompt/tool suppression, removal of
+    pre-task regex clarification, and removal of roleplay regex scene gating.
 - `src/service/core/context-submission.mjs`
   - SR/memory/artifact patch promises are non-enumerable
   - parallel context patches merge `background_contexts`, file/image paths, selection metadata, and context sources instead of overwriting

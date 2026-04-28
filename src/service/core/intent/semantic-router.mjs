@@ -324,11 +324,12 @@ export function createSemanticRouter(opts = {}) {
     let raw;
     try {
       raw = await callWithTimeout(
-        adapter.generate({
+        (signal) => adapter.generate({
           messages: buildMessages({ text, contextPacket, signals }),
           tools: [SEMANTIC_DECISION_TOOL],
           tool_choice: { type: "tool", name: SEMANTIC_DECISION_TOOL.name },
-          maxTokens: 768
+          maxTokens: 768,
+          signal
         }),
         timeoutMs
       );
@@ -419,13 +420,13 @@ export async function resolveSemanticDecision(input) {
   let resolved;
   try {
     const { resolveProviderForTask } = await import("../../executors/shared/provider-resolver.mjs");
-    resolved = resolveProviderForTask("chat");
+    resolved = resolveProviderForTask("router");
   } catch (err) {
     return reject("exception", `provider lookup failed: ${err?.message ?? String(err)}`);
   }
 
   if (!resolved) {
-    return reject("no_provider", "No chat provider configured.");
+    return reject("no_provider", "No routing/chat provider configured.");
   }
   if (UNSUPPORTED_FOR_SEMANTIC_ROUTER.has(resolved.kind)) {
     // Distinguishable from no_provider so the inspect-routing UI can
@@ -491,6 +492,7 @@ function buildMessages({ text, contextPacket, signals }) {
     "- rationale_summary/reason: short operator-facing summaries in the user's language. Do not include hidden chain-of-thought.",
     "",
     "**Context source ranking** — `context_sources` separates real local content from background-only blocks. `real_selection`, `browser_page`, `file_text`, `uploaded_files`, `uploaded_images` are local-only anchors: they constrain the task to local data and you should NOT pick web_policy=required just because the user attached something. `conversation_history`, `rag_background`, `parent_task_context` are BACKGROUND-ONLY: they are previous turns or memory recalls injected for continuity. Never treat them as the user's current selection. A weather/news/stock question with only background_only sources still needs `web_policy=required`.",
+    "Use `prior_messages_tail` only to resolve short follow-ups, pronouns, or missing references. If the current user text clearly starts a new topic, classify from the current text and do not inherit the previous topic.",
     "",
     "**Signal-kind ranking** — fact > hint > assumption. A signal with `kind=fact` (e.g. `source_scope` from an attachment) is ground truth and you should not overrule it. `hint` is an explicit phrase pattern in the user text — strong but conventional. `assumption` is the system interpreting an indirect reference (e.g. \"这个\" → current_context); you may second-guess if other signals contradict.",
     "",
@@ -522,7 +524,8 @@ function buildMessages({ text, contextPacket, signals }) {
         file_paths: Array.isArray(contextPacket?.file_paths) ? contextPacket.file_paths : [],
         image_paths: Array.isArray(contextPacket?.image_paths) ? contextPacket.image_paths : [],
         url: contextPacket?.url ?? null,
-        source_app: contextPacket?.source_app ?? null
+        source_app: contextPacket?.source_app ?? null,
+        prior_messages_tail: summarisePriorMessages(contextPacket?.prior_messages)
       }
     : {
         has_text: typeof contextPacket?.text === "string" && contextPacket.text.trim().length > 0,
@@ -530,7 +533,8 @@ function buildMessages({ text, contextPacket, signals }) {
         file_paths: Array.isArray(contextPacket?.file_paths) ? contextPacket.file_paths : [],
         image_paths: Array.isArray(contextPacket?.image_paths) ? contextPacket.image_paths : [],
         has_url: typeof contextPacket?.url === "string" && contextPacket.url.length > 0,
-        source_app: contextPacket?.source_app ?? null
+        source_app: contextPacket?.source_app ?? null,
+        prior_messages_tail: summarisePriorMessages(contextPacket?.prior_messages)
       };
 
   const signalSummary = summariseSignals(signals);
@@ -587,6 +591,7 @@ function buildCacheKey({ text, contextPacket, signals }) {
     // cache entry. Until C1 lands, this is undefined and the key just
     // shrinks naturally.
     context_sources: contextPacket?.context_sources ?? null,
+    prior_messages_tail: summarisePriorMessagesForCache(contextPacket?.prior_messages),
     // Front-classifier merge: relative time phrases ("5 分钟后", "in 10 mins")
     // resolve to a different `schedule_at` every call. Bucket the cache by
     // minute so a cached schedule decision can't be served stale. Absolute
@@ -619,13 +624,16 @@ function summariseSignalsForCache(signals) {
   return Object.keys(summary).length > 0 ? summary : null;
 }
 
-function callWithTimeout(promise, ms) {
+function callWithTimeout(work, ms) {
+  const controller = new AbortController();
+  const promise = typeof work === "function" ? work(controller.signal) : work;
   if (!Number.isFinite(ms) || ms <= 0) return promise;
   return new Promise((resolve, reject) => {
     let resolved = false;
     const timer = setTimeout(() => {
       if (resolved) return;
       resolved = true;
+      controller.abort();
       const err = new Error("SemanticRouter call timed out");
       err.code = "SEMANTIC_ROUTER_TIMEOUT";
       reject(err);
@@ -664,6 +672,25 @@ function extractDecisionArguments(raw) {
     try { return JSON.parse(args); } catch { return null; }
   }
   return null;
+}
+
+function summarisePriorMessages(priorMessages) {
+  if (!Array.isArray(priorMessages) || priorMessages.length === 0) return [];
+  return priorMessages
+    .slice(-6)
+    .map((message) => ({
+      role: message?.role ?? "unknown",
+      content: String(message?.content ?? "").replace(/\s+/g, " ").slice(0, 360),
+      status: message?.status ?? null
+    }))
+    .filter((message) => message.content.length > 0);
+}
+
+function summarisePriorMessagesForCache(priorMessages) {
+  return summarisePriorMessages(priorMessages).map((message) => ({
+    role: message.role,
+    content: message.content.slice(0, 160)
+  }));
 }
 
 function normalizeDecisionArguments(decision) {

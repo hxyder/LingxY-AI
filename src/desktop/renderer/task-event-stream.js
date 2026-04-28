@@ -50,10 +50,47 @@ export function formatTaskEventSummary(rawEvent) {
   const step = payload.step ?? payload.sub_status ?? payload.status ?? "任务步骤";
 
   switch (frame.event) {
+    case "task_created":
+      return {
+        title: "任务已创建",
+        body: payload.executor ? `执行器：${payload.executor}` : "任务已经进入队列。"
+      };
     case "status_changed":
       return {
         title: "状态更新",
         body: `任务进入 ${payload.status ?? "unknown"}${payload.sub_status ? ` / ${payload.sub_status}` : ""}${typeof payload.progress === "number" ? ` · ${Math.round(payload.progress * 100)}%` : ""}`.trim()
+      };
+    case "planner_request_started":
+      return {
+        title: "请求模型",
+        body: payload.iteration != null ? `第 ${payload.iteration} 轮` : "正在请求模型。"
+      };
+    case "final_composer_started":
+      return {
+        title: "整理回答",
+        body: payload.reason ?? "正在把工具结果合成为最终回复。"
+      };
+    case "conversation_step":
+      return {
+        title: "执行进度",
+        body: payload.step_label ?? payload.message ?? "正在执行。"
+      };
+    case "sr_patch_applied":
+      return {
+        title: "语义路由更新",
+        body: [
+          payload.expected_output ? `输出：${payload.expected_output}` : null,
+          payload.tool_policy_web ? `联网：${payload.tool_policy_web}` : null
+        ].filter(Boolean).join(" · ") || "已按语义分类更新任务策略。"
+      };
+    case "background_context_added":
+      return {
+        title: "补充上下文",
+        body: payload.kind === "memory_recall"
+          ? `记忆召回 ${payload.count ?? 0} 条`
+          : payload.kind === "recent_artifact"
+            ? "已加入最近产物上下文"
+            : "已加入背景上下文"
       };
     case "step_started":
       return {

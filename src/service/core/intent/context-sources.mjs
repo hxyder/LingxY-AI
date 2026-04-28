@@ -155,6 +155,9 @@ export function classifyContextSources({ text, contextPacket = {} } = {}) {
   if (Array.isArray(ctx.image_paths) && ctx.image_paths.length > 0) {
     sources.uploaded_images = true;
   }
+  if (Array.isArray(ctx.prior_messages) && ctx.prior_messages.length > 0) {
+    sources.conversation_history = true;
+  }
 
   // Stage 1: authoritative producer flags. These are set by the same
   // module that wrote the sentinel into ctx.text, so they're ground

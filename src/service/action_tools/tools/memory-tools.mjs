@@ -60,6 +60,15 @@ function formatObservation(lines) {
   return lines.join("\n");
 }
 
+function isUsableMemoryHit(hit) {
+  const meta = hit?.metadata ?? {};
+  const status = meta.status ?? "success";
+  if (!["success", "partial_success"].includes(status)) return false;
+  const answer = String(meta.answer_excerpt ?? "");
+  if (/Unknown tool requested|执行器出错|Task failed:/i.test(answer)) return false;
+  return true;
+}
+
 // ──────────────────────────────────────────────────────────────────
 // recall_memory
 // ──────────────────────────────────────────────────────────────────
@@ -96,6 +105,7 @@ export const RECALL_MEMORY_TOOL = {
     }
     const hits = (results ?? [])
       .filter((r) => r?.id && (r.score ?? 0) > 0.05)
+      .filter(isUsableMemoryHit)
       .slice(0, limit);
     if (hits.length === 0) {
       return createActionResult({ success: true, observation: `No prior tasks matched "${query}".` });

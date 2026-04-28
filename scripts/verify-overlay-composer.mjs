@@ -16,8 +16,6 @@ assert.equal(overlayHtml.includes("bubbleArea"), true);
 assert.equal(overlayHtml.includes("commandInput"), true);
 assert.equal(overlayHtml.includes("sendBtn"), true);
 assert.equal(overlayHtml.includes("clipboardBtn"), true);
-assert.equal(overlayHtml.includes("resultToast"), true);
-assert.equal(overlayHtml.includes("toastOpenBtn"), true);
 // Apple-style voice card + pop bubble + paper-plane send icon
 assert.equal(overlayHtml.includes("voiceCard"), true);
 assert.equal(overlayHtml.includes("wave-bar"), true);
@@ -36,6 +34,7 @@ assert.equal(overlayJs.includes("loadClipboardIntoContext"), true);
 assert.equal(overlayJs.includes("refreshActiveTask"), true);
 assert.equal(overlayJs.includes("showWelcome"), true);
 assert.equal(overlayJs.includes("showContextReceivedBubble"), true);
+assert.equal(overlayJs.includes("retired result-toast DOM"), true);
 assert.equal(overlayJs.includes("showToast"), true);
 assert.equal(overlayJs.includes("handleUserSend"), true);
 assert.equal(overlayJs.includes("createScheduleFromText"), true);
@@ -80,6 +79,14 @@ assert.equal(overlayJs.includes("showActiveWindowPreviewCard"), true);
 assert.equal(overlayJs.includes("data-uca-active-window-card") || overlayJs.includes("dataset.ucaActiveWindowCard"), true);
 assert.equal(overlayJs.includes("分析此页面"), true);
 assert.equal(overlayJs.includes("payload.active_window"), true);
+// Conversation follow-up routing: the overlay must not resurrect the old
+// recency-window heuristic that made every new topic inherit the prior task.
+assert.equal(overlayJs.includes("SHORT_FOLLOWUP_REPLY_RE"), true);
+assert.equal(overlayJs.includes("REFERENTIAL_FOLLOWUP_RE"), true);
+assert.equal(overlayJs.includes("FOLLOWUP_RECENCY_WINDOW_MS"), false);
+// Clarification cards must not linger and capture unrelated future replies.
+assert.equal(overlayJs.includes("clearActiveClarificationBubble"), true);
+assert.equal(overlayJs.includes("answerClientMessageId"), true);
 // UCA-046: inline schedule form now has category + leadTime selects
 assert.equal(overlayHtml.includes("scheduleCategory"), true);
 assert.equal(overlayHtml.includes("scheduleLeadTime"), true);
@@ -130,12 +137,11 @@ const { isScheduleIntentText } = await import(pathToFileURL(path.join(repoRoot, 
 assert.equal(isScheduleIntentText("总结一下今天的时政要闻"), false);
 assert.equal(isScheduleIntentText("明天上午9点提醒我开会"), true);
 
-const notificationHtml = await read("src/desktop/renderer/notification.html");
-assert.equal(notificationHtml.includes("UCA Notification"), true);
+const popupCardHtml = await read("src/desktop/renderer/popup-card.html");
+assert.equal(popupCardHtml.includes("pc-card"), true);
 
-const notificationJs = await read("src/desktop/renderer/notification.js");
-assert.equal(notificationJs.includes("onNotificationReceived"), true);
-assert.equal(notificationJs.includes("lastPayload?.navigate"), true);
-assert.equal(notificationJs.includes("navigateConsole"), true);
+const popupCardJs = await read("src/desktop/renderer/popup-card.js");
+assert.equal(popupCardJs.includes("onPopupCardInit"), true);
+assert.equal(popupCardJs.includes("navigateConsole"), true);
 
 console.log("Overlay composer verification passed.");

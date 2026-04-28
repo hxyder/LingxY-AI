@@ -23,6 +23,8 @@
 // ALSO handle trivial Q&A (the LLM just returns {final:"..."} if it doesn't
 // need a tool). The retired regex classifier entries live in
 // src/service/core/intent/archive/retired-intent-rules.md.
+const ANALYZE_ACTION_PATTERN = /(^|[，,。；;\s]|请|帮我|麻烦你)(分析(?!师)|研究(?!生)|\banaly[sz]e\b|\banalysis\b|\bbreak\s*down\b)/i;
+
 const RULES = [
   // Semantic intent labels (preserved for logging / downstream consumers)
   // — these used to route to `fast` and broke tasks like
@@ -34,7 +36,7 @@ const RULES = [
   { patterns: [/(改写|润色|\brewrite\b|\bpolish\b)/i], intent: "rewrite", executor: "tool_using" },
   { patterns: [/(解释|\bexplain\b)/i], intent: "explain", executor: "tool_using" },
   // Action/tool rules — all land in tool_using (agent-loop with full belt)
-  { patterns: [/(报告|\breport\b|分析|\banalyze\b|\banalyse\b)/i], intent: "generate_report", executor: "agentic", requires_confirmation: false },
+  { patterns: [/(报告|\breport\b)/i, ANALYZE_ACTION_PATTERN], intent: "generate_report", executor: "agentic", requires_confirmation: false },
   { patterns: [/(邮件|邮箱|gmail|outlook|连接账户|已连接账户|账户|账号|\bemail\b|\bmail\b|connected\s+accounts?)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
   { patterns: [/(搜索|查一下|查找|查询|帮我查|\bgoogle\b|\bbing\b|\bbaidu\b|百度一下|新闻|最新|最近|动态|资讯|热点|\blatest\b|\brecent\b|\bnews\b|\bcurrent\b|\bsearch\b)/i], intent: "act", executor: "tool_using", requires_confirmation: false },
   { patterns: [/(机票|航班|订票|flight|ticket|hotel|酒店|天气|weather|汇率|exchange.*rate|股价|股票|price.*(?:of|for)|查.*(?:价|票|班|房))/i], intent: "act", executor: "tool_using", requires_confirmation: false },
@@ -66,7 +68,7 @@ import { extractPureLaunchApp } from "./fast-path-router.mjs";
 /* ------------------------------------------------------------------------ */
 
 const TAG_PATTERNS = [
-  { tag: "analyze", patterns: [/(分析|analyze|analyse|breakdown|研究)/i] },
+  { tag: "analyze", patterns: [ANALYZE_ACTION_PATTERN] },
   { tag: "summarize", patterns: [/(总结|summarize|summary|摘要)/i] },
   { tag: "translate", patterns: [/(翻译|translate)/i] },
   { tag: "rewrite", patterns: [/(改写|rewrite|润色|polish)/i] },

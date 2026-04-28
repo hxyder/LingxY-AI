@@ -11,7 +11,12 @@ import readline from "node:readline";
 import { createTaskEventStream, encodeSseFrame, SSE_HEADERS } from "../events/sse.mjs";
 import { retryTask } from "../retry/retry-manager.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
-import { cancelTask, emitTaskEvent, readTaskEventLog } from "./task-runtime.mjs";
+import {
+  cancelTask,
+  emitTaskEvent,
+  readTaskEventLog,
+  shouldAutoResolveParentFromConversation
+} from "./task-runtime.mjs";
 import { setUserLocation, getUserLocation, clearUserLocation } from "../utils/location.mjs";
 import { refreshWindowsLocation } from "../utils/windows-geolocator.mjs";
 import { submitActionToolTask } from "./action-tool-submission.mjs";
@@ -31,7 +36,6 @@ import { saveAutoSkill } from "./skill-pattern-tracker.mjs";
 import { normalizeTemplateDocument } from "../templates/parser.mjs";
 import { validateTemplateDocument } from "../templates/schema.mjs";
 import { resumeDagGraph, validateDagDefinition } from "../dag/scheduler.mjs";
-import { detectAmbiguity } from "./clarifier.mjs";
 import { parseRelativeTime, formatRelativeDuration } from "../utils/time-parser.mjs";
 import {
   resolveProviderForTask,
@@ -995,30 +999,15 @@ async function submitTaskFromBody(runtime, body) {
   // Write normalised command back so all branches below see the trimmed value
   body.userCommand = userCommand;
   const background = body.background === true || body.returnImmediately === true;
-
-  // UCA-059: Clarify-before-act. If the command is ambiguous (missing referent,
-  // missing recipient, etc.), return a clarification request instead of creating
-  // a task. The overlay renders this as a follow-up question bubble.
-  // Skip when the caller already supplies clarification context (previousCommand).
-  if (!body.clarificationOf) {
-    const ambiguity = detectAmbiguity(userCommand);
-    if (ambiguity.needsClarification) {
-      return {
-        ok: true,
-        type: "clarification_needed",
-        question: ambiguity.question,
-        ruleId: ambiguity.ruleId,
-        original_command: userCommand
-      };
-    }
-  }
-
   const requestConversationId = typeof body.conversation_id === "string" && body.conversation_id
     ? body.conversation_id
     : (typeof body.conversationId === "string" && body.conversationId ? body.conversationId : null);
   const requestParentTaskId = typeof body.parent_task_id === "string" && body.parent_task_id
     ? body.parent_task_id
     : (typeof body.parentTaskId === "string" && body.parentTaskId ? body.parentTaskId : null);
+  const effectiveRequestParentTaskId = requestParentTaskId && shouldAutoResolveParentFromConversation(userCommand)
+    ? requestParentTaskId
+    : null;
   const requestClientMessageId = typeof body.client_message_id === "string" && body.client_message_id
     ? body.client_message_id
     : (typeof body.clientMessageId === "string" && body.clientMessageId ? body.clientMessageId : null);
@@ -1031,7 +1020,7 @@ async function submitTaskFromBody(runtime, body) {
       sourceApp: body.sourceApp,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
-      parentTaskId: requestParentTaskId,
+      parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
       background,
@@ -1045,7 +1034,7 @@ async function submitTaskFromBody(runtime, body) {
       userCommand: body.userCommand,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
-      parentTaskId: requestParentTaskId,
+      parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
       background,
@@ -1062,7 +1051,7 @@ async function submitTaskFromBody(runtime, body) {
       captureMode: body.captureMode,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride ?? "multi_modal",
-      parentTaskId: requestParentTaskId,
+      parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
       background,
@@ -1076,7 +1065,7 @@ async function submitTaskFromBody(runtime, body) {
       userCommand: body.userCommand,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
-      parentTaskId: requestParentTaskId,
+      parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
       background,
@@ -1090,7 +1079,7 @@ async function submitTaskFromBody(runtime, body) {
       executionMode: body.executionMode,
       sourceApp: body.sourceApp,
       captureMode: body.captureMode,
-      parentTaskId: requestParentTaskId,
+      parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
       background,
@@ -1115,7 +1104,7 @@ async function submitTaskFromBody(runtime, body) {
     // instead of each turn being an orphan root. Decomposition / plan
     // layers already skip when parentTaskId is set so we don't
     // re-decompose an inherited subtask.
-    parentTaskId: requestParentTaskId,
+    parentTaskId: effectiveRequestParentTaskId,
     // P4-RQ K6: thread the client-stamped conversation_id through.
     // Frontend (overlay.js:3256) has been POSTing `conversation_id`
     // on every /task request since Phase 9 — pre-K6 the HTTP layer

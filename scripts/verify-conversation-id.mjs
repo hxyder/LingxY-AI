@@ -13,10 +13,10 @@
  *   2. The id is stamped on the task record as `conversation_id`
  *      (round-trips through SQLite via task_json — no schema migration).
  *   3. When the caller didn't provide an explicit parentTaskId AND a
- *      conversationId is present, createTaskRecord walks the store for
- *      the most recent prior task with the same conversation_id and
- *      uses it as the effective parent_task_id. The G3b parent_task_
- *      summary attachment then fires for that auto-resolved parent.
+ *      conversationId is present, createTaskRecord only auto-links to
+ *      the most recent prior task when the current command is a clear
+ *      follow-up (short acceptance, deictic/reference phrase, etc.).
+ *      New topics in the same chat must NOT inherit a parent task.
  *
  * Frontend wiring (mint UUID per UI session, stamp on every command)
  * is OUT OF SCOPE for this commit per the user's "(backend only)"
@@ -103,8 +103,8 @@ it("explicit param wins over selection_metadata.conversation_id", () => {
   assert.equal(task.conversation_id, "conv_explicit");
 });
 
-// ── 4. Auto-resolves parent_task_id from prior same-conversation task ─
-it("auto-resolves parent_task_id to most recent prior task in same conversation", () => {
+// ── 4. New topics in the same conversation do NOT auto-link ───────
+it("does not auto-resolve parent_task_id for a clear new topic in the same conversation", () => {
   const earlier = {
     task_id: "task_first",
     created_at: "2026-04-26T10:00:00Z",
@@ -114,7 +114,27 @@ it("auto-resolves parent_task_id to most recent prior task in same conversation"
   const task = createTaskRecord({
     route: baseRoute,
     contextPacket: {},
-    userCommand: "follow-up",
+    userCommand: "汽车修空调要多少钱",
+    conversationId: "conv_X",
+    runtime: makeRuntime(store)
+  });
+  assert.equal(task.parent_task_id, null,
+    "new topic must not inherit the prior task just because conversation_id matches");
+  assert.equal(task.conversation_id, "conv_X");
+});
+
+// ── 5. Explicit follow-ups auto-resolve parent_task_id ────────────
+it("auto-resolves parent_task_id for a clear follow-up in the same conversation", () => {
+  const earlier = {
+    task_id: "task_first",
+    created_at: "2026-04-26T10:00:00Z",
+    conversation_id: "conv_X"
+  };
+  const store = makeStore([earlier]);
+  const task = createTaskRecord({
+    route: baseRoute,
+    contextPacket: {},
+    userCommand: "继续",
     conversationId: "conv_X",
     runtime: makeRuntime(store)
   });
@@ -123,7 +143,7 @@ it("auto-resolves parent_task_id to most recent prior task in same conversation"
   assert.equal(task.conversation_id, "conv_X");
 });
 
-// ── 5. Picks the MOST RECENT prior task when multiple share the conv ─
+// ── 6. Picks the MOST RECENT prior task when multiple share the conv ─
 it("picks the most recent prior task when multiple share the conversation_id", () => {
   const t1 = { task_id: "t1", created_at: "2026-04-26T10:00:00Z", conversation_id: "conv_Y" };
   const t2 = { task_id: "t2", created_at: "2026-04-26T11:30:00Z", conversation_id: "conv_Y" };
@@ -134,7 +154,7 @@ it("picks the most recent prior task when multiple share the conversation_id", (
   const task = createTaskRecord({
     route: baseRoute,
     contextPacket: {},
-    userCommand: "another follow-up",
+    userCommand: "文件夹里的",
     conversationId: "conv_Y",
     runtime: makeRuntime(store)
   });
@@ -142,7 +162,7 @@ it("picks the most recent prior task when multiple share the conversation_id", (
     "must pick t2 (most recent in conv_Y), not t1, t3, or tOther");
 });
 
-// ── 6. Explicit parentTaskId wins over auto-resolution ────────────
+// ── 7. Explicit parentTaskId wins over auto-resolution ────────────
 it("explicit parentTaskId wins over conversation auto-resolution", () => {
   const earlier = { task_id: "task_first", created_at: "2026-04-26T10:00:00Z", conversation_id: "conv_Z" };
   const store = makeStore([earlier]);
@@ -159,7 +179,7 @@ it("explicit parentTaskId wins over conversation auto-resolution", () => {
   assert.equal(task.conversation_id, "conv_Z");
 });
 
-// ── 7. No conversation_id → no auto-resolution ────────────────────
+// ── 8. No conversation_id → no auto-resolution ────────────────────
 it("no conversation_id → no auto-resolution (parent_task_id stays null)", () => {
   const earlier = { task_id: "task_first", created_at: "2026-04-26T10:00:00Z", conversation_id: "conv_other" };
   const store = makeStore([earlier]);
@@ -173,7 +193,7 @@ it("no conversation_id → no auto-resolution (parent_task_id stays null)", () =
   assert.equal(task.conversation_id, null);
 });
 
-// ── 8. No matching prior task → parent_task_id stays null ─────────
+// ── 9. No matching prior task → parent_task_id stays null ─────────
 it("conversation_id with no prior matching task → parent_task_id stays null", () => {
   const unrelated = { task_id: "tx", created_at: "2026-04-26T10:00:00Z", conversation_id: "conv_other" };
   const store = makeStore([unrelated]);
@@ -188,7 +208,7 @@ it("conversation_id with no prior matching task → parent_task_id stays null", 
   assert.equal(task.conversation_id, "conv_NEW");
 });
 
-// ── 9. parent_task_summary is attached for auto-resolved parents ──
+// ── 10. parent_task_summary is attached for auto-resolved parents ──
 it("auto-resolved parent triggers parent_task_summary attachment (G3b path still fires)", () => {
   const parent = {
     task_id: "task_parent",
@@ -213,7 +233,7 @@ it("auto-resolved parent triggers parent_task_summary attachment (G3b path still
     /weather in Tokyo/);
 });
 
-// ── 10. Defensive: missing runtime → no auto-resolution, no throw ─
+// ── 11. Defensive: missing runtime → no auto-resolution, no throw ─
 it("defensive: missing runtime → no auto-resolution, no throw", () => {
   const task = createTaskRecord({
     route: baseRoute,
@@ -226,7 +246,7 @@ it("defensive: missing runtime → no auto-resolution, no throw", () => {
   assert.equal(task.parent_task_id, null);
 });
 
-// ── 11. Defensive: malformed listTasks (throws) → no auto-resolution ─
+// ── 12. Defensive: malformed listTasks (throws) → no auto-resolution ─
 it("defensive: store.listTasks throwing → no auto-resolution, no throw", () => {
   const brokenStore = {
     listTasks: () => { throw new Error("simulated DB error"); },
@@ -243,7 +263,7 @@ it("defensive: store.listTasks throwing → no auto-resolution, no throw", () =>
     "store I/O failure must not block task creation");
 });
 
-// ── 12. Defensive: tasks without conversation_id are skipped, not matched ─
+// ── 13. Defensive: tasks without conversation_id are skipped, not matched ─
 it("defensive: legacy tasks without conversation_id are skipped during resolution", () => {
   const legacy = { task_id: "legacy", created_at: "2026-04-26T10:00:00Z" };  // no conv_id
   const matching = { task_id: "match", created_at: "2026-04-26T11:00:00Z", conversation_id: "conv_M" };
@@ -251,7 +271,7 @@ it("defensive: legacy tasks without conversation_id are skipped during resolutio
   const task = createTaskRecord({
     route: baseRoute,
     contextPacket: {},
-    userCommand: "follow-up",
+    userCommand: "继续",
     conversationId: "conv_M",
     runtime: makeRuntime(store)
   });
@@ -259,7 +279,7 @@ it("defensive: legacy tasks without conversation_id are skipped during resolutio
     "legacy task with undefined conversation_id must not be picked");
 });
 
-// ── 13. Defensive: empty conversation_id string is treated as null ─
+// ── 14. Defensive: empty conversation_id string is treated as null ─
 it("defensive: empty-string conversation_id is treated as null", () => {
   const store = makeStore();
   const task = createTaskRecord({
@@ -274,7 +294,7 @@ it("defensive: empty-string conversation_id is treated as null", () => {
   assert.equal(task.parent_task_id, null);
 });
 
-// ── 14. K6: end-to-end submission path threads conversation_id ───
+// ── 15. K6: end-to-end submission path threads conversation_id ───
 // (Source-level lock-in — full submitContextTask requires the runtime
 // scaffold which the unit-shape store stub doesn't provide. Assert
 // the wiring by reading the source so we catch any future drop on

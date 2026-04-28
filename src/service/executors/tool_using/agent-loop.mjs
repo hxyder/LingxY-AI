@@ -677,6 +677,122 @@ function taskRequiresToolUse(task) {
   );
 }
 
+function semanticDecisionOf(task) {
+  return task?.context_packet?.semantic_router_decision ?? null;
+}
+
+function externalWebModeOf(task) {
+  return task?.task_spec?.tool_policy?.policy_groups?.external_web_read?.mode
+    ?? task?.task_spec?.tool_policy?.web_search_fetch?.mode
+    ?? "forbidden";
+}
+
+function neededCapabilitiesOf(task) {
+  const decision = semanticDecisionOf(task);
+  return Array.isArray(decision?.needed_capabilities)
+    ? decision.needed_capabilities.filter((value) => typeof value === "string" && value.trim())
+    : [];
+}
+
+function capabilitiesAreNone(capabilities = []) {
+  return capabilities.length === 0 || capabilities.every((capability) => capability === "none");
+}
+
+function shouldUseLeanChatMode(task) {
+  if (taskRequiresToolUse(task)) return false;
+  const spec = task?.task_spec ?? {};
+  if (spec.artifact?.required === true) return false;
+  if (spec.connector_domain === true) return false;
+  if (externalWebModeOf(task) === "required") return false;
+  if (Array.isArray(task?.context_packet?.file_paths) && task.context_packet.file_paths.length > 0) return false;
+  if (Array.isArray(task?.context_packet?.image_paths) && task.context_packet.image_paths.length > 0) return false;
+
+  const decision = semanticDecisionOf(task);
+  if (decision && typeof decision === "object") {
+    const capabilities = neededCapabilitiesOf(task);
+    const sourceMode = decision.source_mode ?? "unknown";
+    const toolFirstIntents = new Set([
+      "automation",
+      "computer_control",
+      "email_calendar_action",
+      "artifact_generation",
+      "file_analysis",
+      "research"
+    ]);
+    return Boolean(
+      decision.needs_tool_use === false
+      && decision.artifact_required !== true
+      && decision.web_policy !== "required"
+      && capabilitiesAreNone(capabilities)
+      && ["no_external", "provided_context"].includes(sourceMode)
+      && !toolFirstIntents.has(decision.primary_intent)
+    );
+  }
+
+  // Conservative no-SR fallback. This is not a rules-answer fast path: it only
+  // trims tool prompting after TaskSpec has already classified the turn as qa.
+  return Boolean(
+    spec.goal === "qa"
+    && spec.contract?.mode === "qa"
+    && externalWebModeOf(task) === "forbidden"
+  );
+}
+
+const CAPABILITY_TOOL_MATCHERS = Object.freeze({
+  external_web_read: (tool) =>
+    tool.policy_group === "external_web_read"
+    || ["web_search", "web_search_fetch", "fetch_url_content", "open_url"].includes(tool.id),
+  file_read: (tool) =>
+    /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|verify_file_exists|file_op|open_file|reveal_in_explorer)$/.test(tool.id),
+  artifact_generation: (tool) =>
+    /^(write_file|generate_document|edit_file|render_diagram|resolve_output_path|register_artifact|verify_file_exists)$/.test(tool.id),
+  code_execution: (tool) => tool.id === "run_script",
+  browser_control: (tool) => ["open_url", "take_screenshot"].includes(tool.id),
+  email_calendar_action: (tool) =>
+    /^(compose_email|send_email_smtp|account_|connector_)/.test(tool.id),
+  desktop_action: (tool) =>
+    /^(launch_app|gui_|open_file|reveal_in_explorer|copy_to_clipboard|notify|read_clipboard)/.test(tool.id),
+  image_understanding: () => false,
+  image_generation: (tool) => ["generate_document", "write_file"].includes(tool.id),
+  none: () => false
+});
+
+function filterToolsForTask(tools = [], task) {
+  const capabilities = neededCapabilitiesOf(task).filter((capability) => capability !== "none");
+  if (capabilities.length === 0) return tools;
+  const filtered = tools.filter((tool) => capabilities.some((capability) => {
+    const matcher = CAPABILITY_TOOL_MATCHERS[capability];
+    return typeof matcher === "function" ? matcher(tool) : false;
+  }));
+  return filtered.length > 0 ? filtered : tools;
+}
+
+function shouldRenderWorkflowHint(task) {
+  const capabilities = neededCapabilitiesOf(task);
+  if (task?.task_spec?.connector_domain === true) return true;
+  if (capabilities.includes("email_calendar_action")) return true;
+  if (Array.isArray(task?.task_spec?.intent_tags) && task.task_spec.intent_tags.includes("connector")) return true;
+  return false;
+}
+
+function formatLeanAmbientContext() {
+  const now = new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+  return `Current local date and time: ${now.toLocaleString("sv-SE", { hour12: false })} (${tz}).`;
+}
+
+function buildLeanChatSystemPrompt({ task, synthesisBlock }) {
+  const expected = task?.task_spec?.synthesis?.expected_output ?? "direct_answer";
+  return `You are LingxY, a helpful conversational AI assistant.
+The current task contract says this turn should be answered directly without external tools.
+If the conversation history establishes a roleplay/persona (interviewer, coach, reviewer, or another requested role), keep that role active. When that role conflicts with the generic LingxY identity, follow the conversation role unless it asks for unsafe real-world action.
+Do not ask for files, folders, accounts, or apps unless the current user message explicitly asks to use them.
+If fresh/current external data is actually required despite the contract, ask one short permission or clarification question instead of guessing.
+Expected output: ${expected}.
+${formatLeanAmbientContext()}${synthesisBlock}
+Reply in the user's language.`;
+}
+
 function shouldRetryProseTrap({ task, prose, transcript }) {
   if (!prose || typeof prose !== "string") return false;
   const anyToolRan = transcript.some((e) => e.type === "tool_result");
@@ -692,8 +808,12 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
     return defaultPlanner({ task, runtime: task.__runtime ?? null });
   }
 
-  const toolList = tools.map(formatToolForPlanner).join("\n");
-  const workflowHint = formatWorkflowsForPlanner(task.__runtime?.connectorCatalog);
+  const leanChatMode = shouldUseLeanChatMode(task);
+  const plannerTools = leanChatMode ? [] : filterToolsForTask(tools, task);
+  const toolList = plannerTools.map(formatToolForPlanner).join("\n");
+  const workflowHint = !leanChatMode && shouldRenderWorkflowHint(task)
+    ? formatWorkflowsForPlanner(task.__runtime?.connectorCatalog)
+    : "";
   const resourceHint = formatResourceContext(task);
   const maxIter = 8;
 
@@ -762,7 +882,9 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
     ? "\n\nSCHEDULED-FIRE CONTEXT: This request is the actual firing of an already-scheduled task — the delay has ALREADY elapsed. Execute the action NOW. Do NOT call create_scheduled_task under any circumstances. For a reminder, call notify directly. For an email, call the send workflow directly. The scheduling was done earlier; your job here is to perform the action."
     : "";
 
-  const systemPrompt = `You are LingxY, a capable desktop AI assistant running ON the user's machine. You have real local-execution tools: launch_app actually starts native applications, open_url actually navigates the user's browser, generate_document actually writes files to disk. You are NOT a "web assistant", "shortcut helper", or "chat-only" persona — refusing to call launch_app on the grounds that you "cannot operate a desktop computer" is wrong; the tools below are exactly that operation. Read the user's request carefully, consider what you have available (tools, workflows, attached resources, connected accounts), and decide how to accomplish their goal. Ask a short clarifying question only when you genuinely cannot proceed faithfully.
+  const systemPrompt = leanChatMode
+    ? buildLeanChatSystemPrompt({ task, synthesisBlock })
+    : `You are LingxY, a capable desktop AI assistant running ON the user's machine. You have real local-execution tools: launch_app actually starts native applications, open_url actually navigates the user's browser, generate_document actually writes files to disk. You are NOT a "web assistant", "shortcut helper", or "chat-only" persona — refusing to call launch_app on the grounds that you "cannot operate a desktop computer" is wrong; the tools below are exactly that operation. Read the user's request carefully, consider what you have available (tools, workflows, attached resources, connected accounts), and decide how to accomplish their goal. Ask a short clarifying question only when you genuinely cannot proceed faithfully.
 ${resourceHint}
 Available execution tools:
 ${toolList}${workflowHint}
@@ -844,8 +966,11 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
       ]
     );
 
-    const toolSchemas = [plannerToolDescriptorForAdapter()];
-    runtime?.emitTaskEvent?.("planner_request_started", { iteration });
+    const toolSchemas = leanChatMode ? [] : [plannerToolDescriptorForAdapter()];
+    runtime?.emitTaskEvent?.("planner_request_started", {
+      iteration,
+      planner_mode: leanChatMode ? "lean_chat" : "tool_planner"
+    });
     const messages = [
       { role: "system", content: systemPrompt },
       ...conversationMessages
@@ -992,24 +1117,10 @@ export function createToolUsingExecutorScaffold() {
         return;
       }
 
-      // Phase 1.11 — LLM-first: zero-wait start.
-      //
-      // The first planner LLM call kicks off IMMEDIATELY with the
-      // deterministic preflight task_spec. SR / memory recall / recent
-      // artifact recall all run in parallel via fire-and-forget patches
-      // (see context-submission.mjs). Their results are visible to
-      // iteration ≥ 1 of the loop because the planner re-reads
-      // task.task_spec and task.context_packet on every iteration. The
-      // synthesis_retry path also picks up the latest SR-patched
-      // expected_output for the second pass.
-      //
-      // Pre-Phase-1.11 there was an 800 ms `Promise.race` here meant
-      // to give SR a head start. It was the wrong default — every
-      // single-turn task ate 0-800 ms of unconditional wait so a
-      // minority of synthesis-sensitive tasks could see SR's expected
-      // output on the first prompt. The new contract trades a slightly
-      // less-tuned first prompt for genuinely instant first-token
-      // latency. SR's value still lands — just one iteration later.
+      // Background submission returns task_created immediately, then
+      // context-submission waits for SemanticRouter before this executor
+      // starts. Memory recall / recent-artifact recall still patch in
+      // asynchronously and are visible to later iterations.
 
       // Ensure emitTaskEvent is available on the runtime so tool_call_proposed /
       // tool_call_completed events are forwarded to the SSE stream (and rendered
@@ -1328,6 +1439,31 @@ async function _runToolAgentLoopCore({
         final_text: candidateFinal,
         transcript
       };
+    }
+
+    if (decision?.type === "tool_call") {
+      if (typeof decision.tool !== "string" || decision.tool.trim().length === 0) {
+        if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+          synthesisRetriesUsed += 1;
+          transcript.push({
+            type: "synthesis_retry",
+            violations: [{
+              kind: "invalid_tool_call",
+              message: "Planner emitted a tool call without a tool id; either call a valid tool or answer/ask for clarification in plain text."
+            }]
+          });
+          runtime?.emitTaskEvent?.("synthesis_retry", {
+            attempt: synthesisRetriesUsed,
+            reason: "invalid_tool_call"
+          });
+          continue;
+        }
+        return {
+          status: "partial_success",
+          final_text: "我没能生成有效的工具调用。请换一种更明确的说法，或指出要操作的对象。",
+          transcript
+        };
+      }
     }
 
     const tool = registry.get(decision.tool);

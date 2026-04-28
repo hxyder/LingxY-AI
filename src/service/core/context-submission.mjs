@@ -19,6 +19,7 @@ import {
 import { extractFileContent } from "../extractors/file-ingest.mjs";
 import {
   applyExecutorEvent,
+  attachPriorBackendMessages,
   createTaskRecord,
   emitTaskEvent,
   ensureRuntimeServices,
@@ -112,6 +113,9 @@ function normalizeContextPacket(contextPacket) {
     semantic_router_decision: contextPacket.semantic_router_decision,
     semantic_router_rejection: contextPacket.semantic_router_rejection,
     context_sources: contextPacket.context_sources,
+    prior_messages: Array.isArray(contextPacket.prior_messages)
+      ? contextPacket.prior_messages
+      : undefined,
     // Phase 1.11 — structured background entries (memory recall / recent
     // artifact / parent task). Producers push here instead of mutating
     // `text`. Pass through so post-task patches can append to a live
@@ -244,6 +248,15 @@ function passesHitThreshold(hit) {
   return score > MEMORY_RECALL_MIN_SCORE_VECTOR;
 }
 
+function isUsableMemoryHit(hit) {
+  const meta = hit?.metadata ?? {};
+  const status = meta.status ?? "success";
+  if (!["success", "partial_success"].includes(status)) return false;
+  const answer = String(meta.answer_excerpt ?? "");
+  if (/Unknown tool requested|执行器出错|Task failed:/i.test(answer)) return false;
+  return true;
+}
+
 /**
  * Phase 1.11 — compute a memory-recall background entry. Returns a
  * structured entry ready for `appendBackgroundContext`, or null when
@@ -265,6 +278,7 @@ export async function computeMemoryRecallEntry({ runtime, userCommand, parentTas
   if (!Array.isArray(results) || results.length === 0) return null;
   const hits = results
     .filter((r) => r?.id && r.id !== parentTaskId)
+    .filter(isUsableMemoryHit)
     .filter(passesHitThreshold)
     .slice(0, MEMORY_RECALL_K);
   if (hits.length === 0) return null;
@@ -789,6 +803,15 @@ export async function submitContextTask({
   ensureRuntimeServices(runtime);
   const store = runtime.store;
   const queue = runtime.queue;
+  const incomingConversationId =
+    (typeof conversationId === "string" && conversationId.length > 0)
+      ? conversationId
+      : (typeof contextPacket?.selection_metadata?.conversation_id === "string"
+        ? contextPacket.selection_metadata.conversation_id
+        : null);
+  const contextPacketForTriage = incomingConversationId
+    ? attachPriorBackendMessages(contextPacket ?? {}, incomingConversationId, runtime)
+    : contextPacket;
 
   // Unified Triage layer (see docs/task-runtime/FRAMEWORK_REDESIGN.md).
   // Runs BEFORE routing. Returns one of:
@@ -800,7 +823,7 @@ export async function submitContextTask({
   // so the scheduled residual doesn't re-enter the plan layer.
   if (!skipPlanLayer && !parentTaskId) {
     const { triage } = await import("./intent/triage.mjs");
-    const t = await triage({ runtime, userCommand, contextPacket, executionMode, background });
+    const t = await triage({ runtime, userCommand, contextPacket: contextPacketForTriage, executionMode, background });
     if (t.lane === "schedule" || t.lane === "clarify") {
       return {
         task: t.task,
@@ -822,12 +845,12 @@ export async function submitContextTask({
       if (t.contextPacket.semantic_router_rejection) stamps.semantic_router_rejection = t.contextPacket.semantic_router_rejection;
       if (t.contextPacket.context_sources) stamps.context_sources = t.contextPacket.context_sources;
       if (Object.keys(stamps).length > 0) {
-        contextPacket = { ...(contextPacket ?? {}), ...stamps };
+        contextPacket = { ...(contextPacketForTriage ?? contextPacket ?? {}), ...stamps };
       }
     }
     if (t.lane === "dag_planner") {
       const { runDagLane } = await import("../dag/entrypoint.mjs");
-      const dagResult = await runDagLane({ runtime, userCommand, contextPacket, executionMode });
+      const dagResult = await runDagLane({ runtime, userCommand, contextPacket: contextPacketForTriage, executionMode });
       if (dagResult?.task) {
         return {
           task: dagResult.task,
@@ -838,6 +861,12 @@ export async function submitContextTask({
       // Decision #4 fallback: planner couldn't produce a valid plan.
       // Let the single-turn agent handle the original command instead.
     }
+  }
+  if (contextPacketForTriage
+      && typeof contextPacketForTriage === "object"
+      && Array.isArray(contextPacketForTriage.prior_messages)
+      && !Array.isArray(contextPacket?.prior_messages)) {
+    contextPacket = { ...contextPacketForTriage, ...(contextPacket ?? {}) };
   }
 
   const route = routeIntent(userCommand);
@@ -863,7 +892,17 @@ export async function submitContextTask({
   // either; task_created emits as soon as DB write + securityBroker
   // finish. The agent loop's iter ≥ 1 reads the patched
   // `task.context_packet.background_contexts` for the recalled material.
-  const normalizedContextPacket = withParentContext;
+  const effectiveConversationId =
+    (typeof conversationId === "string" && conversationId.length > 0)
+      ? conversationId
+      : (typeof withParentContext?.selection_metadata?.conversation_id === "string"
+        ? withParentContext.selection_metadata.conversation_id
+        : null);
+  const normalizedContextPacket = attachPriorBackendMessages(
+    withParentContext,
+    effectiveConversationId,
+    runtime
+  );
 
   // P4-03: SemanticRouter async preflight (shared helper, single source
   // of truth for layering — see router-preflight.mjs). Classifies
@@ -1004,25 +1043,30 @@ export async function submitContextTask({
   const execute = async () => {
     let executionContext = routerEnrichedContext;
     if (deferPreExecutionPlanning && inspection.allowed) {
-      // SR runs in PARALLEL with the executor — the deterministic
-      // preflight task_spec is sufficient to start the agent loop. When
-      // SR returns, we patch task.task_spec / task.context_packet for
-      // any downstream iteration to read. Pre-Phase-1.6 this was an
-      // `await`, which made the main executor LLM wait ~1-2s on SR
-      // before it could even start thinking — that was the actual
-      // user-visible latency, not task_created.
+      // Phase 1.11 — LLM-first zero-wait start.
       //
-      // Race shape:
-      //   - first agent LLM call uses preflightTaskSpec (deterministic)
-      //   - SR resolves → spec refreshed → next iteration's prompt
-      //     reflects research_quality / tool_policy / expected_output
-      //   - if SR still hasn't returned by the time the loop ends,
-      //     task_spec stays at the deterministic baseline. Audit log
-      //     records that.
+      // SR runs in PARALLEL with the executor — the deterministic preflight
+      // task_spec is sufficient to start the agent loop. When SR returns we
+      // patch task.task_spec / task.context_packet for any downstream
+      // iteration to read. Pre-Phase-1.6 this was an `await`, which made the
+      // main executor LLM wait ~1-2s on SR before it could even start
+      // thinking — that was the actual user-visible latency.
+      //
+      // Hard constraints (phase1_llm_first_plan.md §"Hard constraints" #1):
+      //   1. task_spec_initial is NEVER touched here — validators use it
+      //      to avoid retroactive failure when SR arrives late and tightens
+      //      the bar.
+      //   2. task.executor is NEVER mutated — the loop has already locked
+      //      it in.
+      //   3. Stamp `task_spec_source = "semantic_router_patched"` and
+      //      `sr_patch_applied_at` so observability can tell the difference
+      //      between "deterministic only" and "SR-patched mid-flight".
+      //   4. Expose the SR patch via task event so the agent loop's next
+      //      iteration (and final synthesis) read the latest task_spec.
       //
       // Tasks where SR's verdict MUST gate the executor (schedule lane,
-      // clarify lane) already short-circuited inside triage — they
-      // never enter execute().
+      // clarify lane) already short-circuited inside triage — they never
+      // enter execute().
       const srPromise = runExecutionPhase({
         runtime: runtimeWithTaskEmitter(runtime, task.task_id),
         taskId: task.task_id,
@@ -1044,20 +1088,6 @@ export async function submitContextTask({
       });
       // Fire-and-forget patch. Failures degrade silently — the executor
       // already has a valid spec to run with.
-      //
-      // Hard constraints (codex review §):
-      //   1. task_spec_initial is NEVER touched — validators use it to
-      //      avoid retroactive failure when SR arrives late and tightens
-      //      the bar.
-      //   2. task.executor is NEVER mutated — the loop has already
-      //      locked it in.
-      //   3. Stamp `task_spec_source = "semantic_router_patched"` and
-      //      `sr_patch_applied_at` so observability can tell the
-      //      difference between "deterministic only" and
-      //      "SR-patched mid-flight".
-      //   4. Expose the SR patch via task event so the agent loop's
-      //      next iteration (and final synthesis) read the latest
-      //      task_spec.
       setInternalTaskPromise(task, "__srPatchPromise", srPromise.then((srEnriched) => {
         if (!srEnriched) return null;
         try {
@@ -1068,6 +1098,7 @@ export async function submitContextTask({
           const refreshedValidation = validateTaskSpec(refreshedSpec);
           task.context_packet = mergedContext;
           task.task_spec = refreshedSpec;
+          // Hard constraint #1: do NOT mutate task_spec_initial.
           task.task_spec_valid = refreshedValidation.valid;
           task.task_spec_errors = refreshedValidation.errors;
           task.task_spec_source = "semantic_router_patched";

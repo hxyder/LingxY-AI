@@ -86,6 +86,7 @@ function detectModelFamily(model = "") {
   const normalized = `${model ?? ""}`.trim().toLowerCase();
   if (!normalized) return "empty";
   if (/^(gpt-|o[1-9](-|$)|text-davinci|whisper-)/.test(normalized)) return "openai";
+  if (/^text-embedding-/.test(normalized)) return "openai";
   if (/^claude-/.test(normalized)) return "anthropic";
   if (/^gemini-/.test(normalized)) return "gemini";
   if (/^deepseek-/.test(normalized)) return "deepseek";
@@ -111,7 +112,7 @@ function providerSupportsModel(providerFamily, model = "") {
     case "anthropic":
       return /^claude-/.test(normalized);
     case "openai":
-      return /^(gpt-|o[1-9](-|$)|text-davinci|whisper-)/.test(normalized);
+      return /^(gpt-|o[1-9](-|$)|text-davinci|whisper-|text-embedding-)/.test(normalized);
     case "deepseek":
       // UCA-182 Phase 22b: deepseek-chat / deepseek-reasoner are the
       // legacy pair slated for 2026-07 retirement; they also carry
@@ -159,6 +160,8 @@ export function catalogDefaultModelForProvider(provider = {}, taskType = "chat")
 
   if (taskType === "audio_transcription" && family === "openai") return "whisper-1";
   if (taskType === "audio_transcription" && family !== "openai") return "";
+  if (taskType === "embedding" && family === "openai") return "text-embedding-3-small";
+  if (taskType === "embedding" && family !== "openai") return "";
   if (taskType === "vision") {
     if (family === "anthropic") return "claude-sonnet-4-6";
     if (family === "openai") return "gpt-4o";

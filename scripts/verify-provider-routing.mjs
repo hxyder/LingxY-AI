@@ -384,6 +384,86 @@ await writeConfig({
 }
 
 /* ------------------------------------------------------------------------ */
+/* Case 5b — Semantic router routing inherits chat unless explicitly set     */
+/* ------------------------------------------------------------------------ */
+
+{
+  await writeConfig({
+    ai: {
+      customProviders: [
+        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-5-20250514" },
+        { id: "router", name: "Router Model", kind: "openai", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-router", defaultModel: "deepseek-v4-flash" }
+      ],
+      taskRouting: {
+        chat: { providerId: "qa", model: "claude-sonnet-4-5-20250514", mode: "default" }
+      }
+    }
+  });
+  let routerProvider = resolveProviderForTask("router");
+  assert.ok(routerProvider, "router task must inherit chat provider when unset");
+  assert.equal(routerProvider.configId, "qa");
+  assert.equal(routerProvider.kind, "anthropic");
+
+  await writeConfig({
+    ai: {
+      customProviders: [
+        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-5-20250514" },
+        { id: "router", name: "Router Model", kind: "openai", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-router", defaultModel: "deepseek-v4-flash" }
+      ],
+      taskRouting: {
+        chat: { providerId: "qa", model: "claude-sonnet-4-5-20250514", mode: "default" },
+        router: { providerId: "router", model: "deepseek-v4-flash", mode: "default" }
+      }
+    }
+  });
+  routerProvider = resolveProviderForTask("router");
+  assert.ok(routerProvider, "router task must resolve when explicitly configured");
+  assert.equal(routerProvider.configId, "router");
+  assert.equal(routerProvider.kind, "openai");
+  assert.equal(routerProvider.model, "deepseek-v4-flash");
+}
+
+/* ------------------------------------------------------------------------ */
+/* Case 5c — Embedding/RAG routing can use a separate vector model           */
+/* ------------------------------------------------------------------------ */
+
+{
+  await writeConfig({
+    ai: {
+      customProviders: [
+        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-4o", embeddingModel: "text-embedding-3-large" },
+        { id: "embed", name: "Embedding Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-embed", defaultModel: "text-embedding-3-small" }
+      ],
+      taskRouting: {
+        chat: { providerId: "qa", model: "gpt-4o", mode: "default" }
+      }
+    }
+  });
+  let embeddingProvider = resolveProviderForTask("embedding");
+  assert.ok(embeddingProvider, "embedding task must resolve via chat provider fallback when unset");
+  assert.equal(embeddingProvider.configId, "qa");
+  assert.equal(embeddingProvider.embeddingModel, "text-embedding-3-large");
+
+  await writeConfig({
+    ai: {
+      customProviders: [
+        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-4o" },
+        { id: "embed", name: "Embedding Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-embed", defaultModel: "text-embedding-3-small" }
+      ],
+      taskRouting: {
+        chat: { providerId: "qa", model: "gpt-4o", mode: "default" },
+        embedding: { providerId: "embed", model: "text-embedding-3-small", mode: "default" }
+      }
+    }
+  });
+  embeddingProvider = resolveProviderForTask("embedding");
+  assert.ok(embeddingProvider, "embedding task must resolve when explicitly configured");
+  assert.equal(embeddingProvider.configId, "embed");
+  assert.equal(embeddingProvider.kind, "openai");
+  assert.equal(embeddingProvider.model, "text-embedding-3-small");
+}
+
+/* ------------------------------------------------------------------------ */
 /* Case 6 — resolveActiveProviderForTask (diagnostic endpoint helper)       */
 /* ------------------------------------------------------------------------ */
 
@@ -531,4 +611,4 @@ await writeConfig({
   }
 }
 
-console.log("Provider routing verification passed (DeepSeek / Kimi CLI / Claude / Ollama + hot-reload + resolveActiveProviderForTask + CLI-managed model + Codex exec/reasoning).");
+console.log("Provider routing verification passed (DeepSeek / Kimi CLI / Claude / Ollama + hot-reload + router inheritance/override + resolveActiveProviderForTask + CLI-managed model + Codex exec/reasoning).");

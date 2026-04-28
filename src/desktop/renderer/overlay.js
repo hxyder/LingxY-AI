@@ -81,6 +81,27 @@ const taskListBody = document.querySelector("#taskListBody");
 const taskListCloseBtn = document.querySelector("#taskListCloseBtn");
 const taskListFilterBtns = document.querySelectorAll("[data-task-filter]");
 
+function keepElementPinnedToBottom(element) {
+  if (!element) return;
+  const pin = () => {
+    requestAnimationFrame(() => {
+      element.scrollTop = element.scrollHeight;
+    });
+  };
+  try {
+    new MutationObserver(pin).observe(element, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  } catch { /* observer is a convenience only */ }
+  try {
+    new ResizeObserver(pin).observe(element);
+  } catch { /* older Electron fallback: explicit scroll calls still run */ }
+}
+
+keepElementPinnedToBottom(bubbleArea);
+
 /* ── state ── */
 let serviceBaseUrl = new URLSearchParams(window.location.search).get("serviceBaseUrl") ?? "http://127.0.0.1:4310";
 let activeTaskId = null;
@@ -164,6 +185,7 @@ let renderedTimelineEventIds = new Set();
 let streamingBubble = null;
 let streamingBubbleRawText = "";
 let pendingToolStepBubbles = {}; // { toolId: [stepEl, ...] } — updated by tool_call_completed
+let activeClarificationBubble = null;
 const approvalPopupCardIds = new Map(); // approvalId -> popup card id
 let taskSummaries = [];
 let taskListFilter = "all";
@@ -761,6 +783,7 @@ function startNewConversation() {
   selectedOutputSuffix = ""; selectedFormatInstruction = "";
   conversationPhase = "idle"; awaitingOptionType = null;
   conversationState = null;
+  clearActiveClarificationBubble();
   if (projectStore) projectStore.currentConversationId = null;
   saveProjectStore();
   clearPendingInputContext();
@@ -771,33 +794,10 @@ function startNewConversation() {
   commandInput.focus();
 }
 
-// P4-RQ G3a: parent_task_id attachment — STRUCTURAL rule, NOT topic
-// regex.
-//
-// Pre-G3 this used a topic regex (EXPLICIT_FOLLOWUP_RE) to decide
-// whether to attach parent_task_id. The regex consistently missed
-// short follow-ups like "罗利" (city slot fill) and "对" (yes
-// confirmation), so each became a NEW root task instead of inheriting
-// the parent — the user-reported "one query, 3 tasks, no query
-// happened" reproduction.
-//
-// G3a structural rules (must match EITHER):
-//   1. RECENCY: lastCompletedTaskId is fresh (< 5 min since
-//      completion). The user is in a continuing conversation
-//      window; subsequent input is more likely a follow-up than
-//      a new root task.
-//   2. SHORT TEXT: < 12 Chinese chars / < 30 ASCII chars. Short
-//      input is structurally more likely to be a slot-fill or
-//      confirmation than a self-contained root task.
-//   3. ARTIFACT FOLLOW-UP: prior task produced artifacts AND the
-//      command mentions a file-class verb. This is the one
-//      remaining keep-as-regex case for the artifact hand-off
-//      pattern (kept-as-regex per the structural-vs-topical
-//      distinction — file/document/edit/send are STRUCTURAL
-//      action verbs, not topic words).
-const FOLLOWUP_RECENCY_WINDOW_MS = 5 * 60 * 1000;        // 5 minutes
-const FOLLOWUP_SHORT_TEXT_CHARS = 30;                    // ASCII chars
-const FOLLOWUP_SHORT_TEXT_CHINESE_CHARS = 12;            // CJK glyphs
+// Parent attachment is now conservative: backend conversation_messages carry
+// broad context, while parent_task_id is only for clear continuations.
+const SHORT_FOLLOWUP_REPLY_RE = /^(好|好的?|可以|继续|需要|要|对|是|是的|嗯|ok|okay|yes|sure|please)\s*[!.！。]?$/i;
+const REFERENTIAL_FOLLOWUP_RE = /(^|\s)(上个|上一|刚才|之前|前面|那个|这个|这些|那些|它|它们|里面的|文件夹里的|图片里的|表格里的|文档里的|这张|那张|第一张|第二张|同样|一样|照这个|继续|再来|改一下|补充|加上|打开它|打开这个|打开那个)(\s|$|[，。！？,.!?])/i;
 const ARTIFACT_VERB_RE = /(文件|文档|pptx?|docx?|xlsx?|pdf|导出|保存|打开|发送|分享|修改|edit|open|send|export|save|file|document)/i;
 
 function shouldAttachParentTaskForCommand(commandText = "") {
@@ -805,28 +805,9 @@ function shouldAttachParentTaskForCommand(commandText = "") {
   const command = String(commandText ?? "").trim();
   if (!command) return false;
 
-  // Rule 1: recency window — if we just finished a task, treat
-  // the next input as a likely follow-up by default.
-  const completedAt = conversationState?.lastCompletedAt ?? 0;
-  if (completedAt && Date.now() - completedAt < FOLLOWUP_RECENCY_WINDOW_MS) {
-    return true;
-  }
+  if (SHORT_FOLLOWUP_REPLY_RE.test(command)) return true;
+  if (REFERENTIAL_FOLLOWUP_RE.test(command)) return true;
 
-  // Rule 2: short text — slot-fill / affirmative / clarification.
-  // Counts CJK glyphs and ASCII chars separately because the same
-  // semantic length looks different by Unicode code points.
-  const cjkCount = (command.match(/[一-鿿]/g) ?? []).length;
-  const asciiCount = command.length - cjkCount;
-  if (cjkCount > 0 && cjkCount <= FOLLOWUP_SHORT_TEXT_CHINESE_CHARS) {
-    return true;
-  }
-  if (cjkCount === 0 && asciiCount > 0 && asciiCount <= FOLLOWUP_SHORT_TEXT_CHARS) {
-    return true;
-  }
-
-  // Rule 3: artifact-followup keeper. The verbs here are structural
-  // (file/document/edit/save/send) — they describe an action on the
-  // prior task's output, not a topic.
   if (conversationState.lastArtifacts?.length && ARTIFACT_VERB_RE.test(command)) {
     return true;
   }
@@ -1403,7 +1384,14 @@ function closeActiveThinkingCard() {
 // UCA-059: Show a clarification question bubble.
 // The user can type their answer and it will be merged with the original
 // command and submitted to /task/clarify.
+function clearActiveClarificationBubble() {
+  if (!activeClarificationBubble) return;
+  try { activeClarificationBubble.remove(); } catch { /* ignore */ }
+  activeClarificationBubble = null;
+}
+
 function showClarificationBubble(originalCommand, question, originalPayload) {
+  clearActiveClarificationBubble();
   const cardEl = document.createElement("div");
   cardEl.style.cssText = "display:flex;flex-direction:column;gap:8px;";
 
@@ -1426,11 +1414,15 @@ function showClarificationBubble(originalCommand, question, originalPayload) {
     if (!answer) { inputEl.focus(); return; }
     confirmBtn.disabled = true;
     confirmBtn.textContent = "发送中…";
+    const answerClientMessageId = createClientMessageId();
+    markPendingUserMessage(answerClientMessageId, answer);
     try {
       const clarifyPayload = {
         ...originalPayload,
         originalCommand,
-        clarificationAnswer: answer
+        clarificationAnswer: answer,
+        conversation_id: conversationState?.id ?? originalPayload?.conversation_id ?? null,
+        client_message_id: answerClientMessageId
       };
       delete clarifyPayload.userCommand;
       const result = await fetchJson("/task/clarify", {
@@ -1446,10 +1438,12 @@ function showClarificationBubble(originalCommand, question, originalPayload) {
         bindTaskToConversation(activeTaskId);
         ensureActiveTaskEventStream(activeTaskId);
         clearPendingInputContext();
+        clearActiveClarificationBubble();
         addBubble("assistant", "Processing in background...");
         conversationPhase = "idle";
       }
     } catch (err) {
+      markPendingMessageFailed(answerClientMessageId, err);
       addSystemBubble(`提交失败：${err.message}`);
     }
   });
@@ -1458,6 +1452,7 @@ function showClarificationBubble(originalCommand, question, originalPayload) {
   cancelBtn.textContent = "取消";
   cancelBtn.addEventListener("click", () => {
     conversationPhase = "idle";
+    clearActiveClarificationBubble();
   });
 
   inputEl.addEventListener("keydown", (ev) => {
@@ -1466,7 +1461,7 @@ function showClarificationBubble(originalCommand, question, originalPayload) {
 
   actions.append(confirmBtn, cancelBtn);
   cardEl.append(questionEl, inputEl, actions);
-  addBubble("assistant", cardEl);
+  activeClarificationBubble = addBubble("assistant", cardEl);
   // Focus the clarification input so the user can type immediately
   setTimeout(() => inputEl.focus(), 80);
   conversationPhase = "awaiting_options";
@@ -1630,6 +1625,7 @@ function closeActiveTaskEventStream() {
 function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = null } = {}) {
   if (frame.id && renderedTimelineEventIds.has(frame.id)) return;
   const visibleEvents = new Set([
+    "task_created",
     "accepted",
     "started",
     "provider_resolved",
@@ -1638,6 +1634,10 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     "step_started",
     "step_finished",
     "conversation_step",
+    "planner_request_started",
+    "final_composer_started",
+    "sr_patch_applied",
+    "background_context_added",
     "tool_call_started",
     "tool_call_proposed",
     "tool_call_completed",
@@ -1669,7 +1669,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     if (label) timelineAddStep(label, "active");
   }
 
-  if (["accepted", "started", "provider_resolved", "phase_timing", "status_changed", "log", "artifact_created"].includes(frame.event)) {
+  if (["task_created", "accepted", "started", "provider_resolved", "phase_timing", "status_changed", "planner_request_started", "final_composer_started", "sr_patch_applied", "background_context_added", "log", "artifact_created"].includes(frame.event)) {
     timelineAddStep(`${summary.title}: ${summary.body}`, frame.event === "artifact_created" ? "done" : "active");
   }
 
@@ -3244,9 +3244,9 @@ async function submitTask() {
       : "Analyze and summarize these files.";
   }
   const commandText = appendFormatInstruction(appendOutputSuffix(rawCommand)) || defaultCommand;
-  addSystemBubble("Submitting...");
   commandInput.value = "";
   autoSizeInput();
+  clearActiveClarificationBubble();
 
   try {
     let payload;
@@ -3319,6 +3319,7 @@ async function submitTask() {
 
     const clientMessageId = createClientMessageId();
     markPendingUserMessage(clientMessageId, commandText);
+    timelineAddStep("已收到请求，正在创建任务…", "active");
 
     let result;
     try {
@@ -3360,8 +3361,7 @@ async function submitTask() {
     bindTaskToConversation(activeTaskId);
     ensureActiveTaskEventStream(activeTaskId);
     clearPendingInputContext();
-
-    addBubble("assistant", "Processing in background...");
+    timelineAddStep("任务已创建，正在执行…", "active");
 
     if (shouldSurfaceTaskPopupCards()) {
       await window.ucaShell.notify({
