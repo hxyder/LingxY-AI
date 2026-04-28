@@ -114,7 +114,13 @@ function providerToResolved(provider, route, taskType) {
       model,
       mode: sanitizedRoute.mode ?? "",
       reasoningEffort,
-      providerName: sanitizedProvider.name
+      providerName: sanitizedProvider.name,
+      // Codex follow-up: parity with the api-key branch. multi_modal
+      // currently ignores supportsVision:false for routed CLI vision
+      // providers because this field was being dropped here too.
+      // vision_analyze refuses code_cli outright (different concern),
+      // but multi_modal needs the flag to honour an explicit opt-out.
+      supportsVision: sanitizedProvider.supportsVision
     };
   }
   if (!sanitizedProvider.apiKey && sanitizedProvider.kind !== "ollama") return null;

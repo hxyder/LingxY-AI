@@ -21,8 +21,7 @@ import { resolveProviderForTask } from "../../executors/shared/provider-resolver
 import {
   callAnthropicVision,
   callOpenAIVision,
-  loadImageAsBase64,
-  providerCanVision
+  loadImageAsBase64
 } from "../../executors/multi_modal/multi-modal-executor.mjs";
 
 const MAX_IMAGES_PER_CALL = 4;
@@ -107,16 +106,15 @@ async function callVisionProvider({ provider, prompt, images, signal }) {
   if (provider.supportsVision === false) {
     throw new Error(`The configured Vision provider (${provider.providerName ?? provider.id}) is marked supportsVision:false. Pick an image-capable provider in Settings → Routing → Vision.`);
   }
-  // For Ollama specifically the resolver cannot tell from kind alone
-  // whether the chosen model is vision-capable — providerCanVision
-  // inspects the model name. For Anthropic + OpenAI-compat we trust
-  // the resolver's vision filter; only refuse when the fingerprint
-  // proves no vision support.
-  if (provider.kind === "ollama" && !providerCanVision({
-    kind: "ollama",
-    defaultModel: provider.model ?? provider.defaultModel
-  })) {
-    throw new Error(`The configured Ollama model (${provider.model ?? "unknown"}) does not advertise vision support. Pick a vision-capable model (llava, llama3.2-vision, qwen-vl, minicpm-v, bakllava) or route Vision to a different provider.`);
+  // Codex review: callOpenAIVision posts to `${baseUrl}/chat/completions`,
+  // which for Ollama's default baseUrl `http://127.0.0.1:11434` becomes
+  // `/chat/completions` — wrong on both counts (Ollama's native path is
+  // `/api/chat`; its OpenAI-compat path is `/v1/chat/completions`).
+  // Until a real Ollama vision path exists, refuse rather than fire a
+  // request that will 404. multi_modal still has its own Ollama
+  // handling (or lack thereof) and is unaffected by this gate.
+  if (provider.kind === "ollama") {
+    throw new Error(`vision_analyze does not yet support Ollama (${provider.providerName ?? provider.id}). The OpenAI-compat helper would post to the wrong path; needs a dedicated /api/chat route. For now, route Vision to an Anthropic / OpenAI-compatible vision provider.`);
   }
   if (provider.id === "anthropic" || provider.kind === "anthropic") {
     return callAnthropicVision({
@@ -137,6 +135,11 @@ async function callVisionProvider({ provider, prompt, images, signal }) {
     signal
   });
 }
+
+// Test-only export. Surface for unit tests so the Ollama / supportsVision
+// gates can be exercised without monkey-patching the resolver. Not part
+// of the public tool surface.
+export const __test = Object.freeze({ callVisionProvider });
 
 export const VISION_ANALYZE_TOOL = {
   id: "vision_analyze",
@@ -179,11 +182,26 @@ export const VISION_ANALYZE_TOOL = {
         rejectedPaths.push(candidate);
       }
     }
-    if (acceptedPaths.length === 0) {
+    // Codex review: a "compare these two" call where one path is
+    // attached and one isn't was previously slicing to acceptedPaths
+    // and reporting success — the user's intent (a comparison) was
+    // silently destroyed. Be strict: any rejected path is a hard
+    // failure. The planner can retry with the attached set after the
+    // user clarifies / re-attaches.
+    if (rejectedPaths.length > 0) {
       const attachedList = [...allowed.values()];
+      const reason = acceptedPaths.length === 0
+        ? "none of the requested paths are attached to this task"
+        : "some of the requested paths are not attached to this task — partial calls would silently drop the user's intent (e.g. a comparison)";
       return createActionResult({
         success: false,
-        observation: `vision_analyze refused all requested paths because none are attached to this task. Use one of the attached images instead: ${JSON.stringify(attachedList)}. Rejected: ${JSON.stringify(rejectedPaths)}.`
+        observation: `vision_analyze refused: ${reason}. Attached images on this task: ${JSON.stringify(attachedList)}. Rejected paths: ${JSON.stringify(rejectedPaths)}.`,
+        metadata: {
+          tool_id: "vision_analyze",
+          attached_image_paths: attachedList,
+          rejected_image_paths: rejectedPaths,
+          accepted_image_paths: acceptedPaths
+        }
       });
     }
 
@@ -219,8 +237,7 @@ export const VISION_ANALYZE_TOOL = {
           provider: provider?.providerName ?? provider?.id ?? null,
           model: provider?.model ?? null,
           image_count: images.length,
-          image_paths: acceptedPaths.slice(0, MAX_IMAGES_PER_CALL),
-          rejected_image_paths: rejectedPaths.length > 0 ? rejectedPaths : undefined
+          image_paths: acceptedPaths.slice(0, MAX_IMAGES_PER_CALL)
         }
       });
     } catch (error) {
