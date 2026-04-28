@@ -1262,12 +1262,18 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.task-item { min-width: 0; }
+.task-item .row > div:first-child { flex: 1; min-width: 0; }
 .task-item h4 {
   font-size: var(--fs-md);
   font-weight: 600;
   margin: 0;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.task-item p { margin: 4px 0 0; }
+.task-item p { margin: 4px 0 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .task-row-meta {
   display: flex;
   gap: 6px;
@@ -1769,7 +1775,191 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   min-height: 0;
   flex: 1;
   height: 100%;
+  /* Anchor for the absolutely positioned scroll-to-bottom button. */
+  position: relative;
 }
+
+/* Right-click context menu for chat bubbles (Copy / Quote / Regenerate
+   / Note). Single shared instance positioned at the click coordinates.
+   Hidden by default; shown by console.js / overlay.js. */
+.ctx-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 160px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow:
+    0 12px 32px rgba(15, 23, 42, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 13px;
+  user-select: none;
+  animation: ctx-menu-in 90ms ease;
+}
+.ctx-menu[hidden] { display: none; }
+.ctx-menu .ctx-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  border-radius: 5px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+.ctx-menu .ctx-item:hover,
+.ctx-menu .ctx-item:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+.ctx-menu .ctx-item .ctx-glyph {
+  width: 14px;
+  text-align: center;
+  color: var(--muted);
+}
+.ctx-menu .ctx-sep {
+  height: 1px;
+  margin: 3px 4px;
+  background: var(--line);
+}
+@keyframes ctx-menu-in {
+  from { opacity: 0; transform: translateY(-2px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Toast stack — bottom-right, queueable. Each toast auto-dismisses
+   after a few seconds. Click to dismiss early. Replaces ad-hoc
+   `consoleChatState.textContent = ...` flash messages with a uniform
+   surface that doesn't fight with the composer status text. */
+.toast-host {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 220;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.toast {
+  pointer-events: auto;
+  min-width: 220px;
+  max-width: 360px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2);
+  font-size: 13px;
+  line-height: 1.4;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  animation: toast-in 200ms cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+.toast--leaving { animation: toast-out 180ms ease forwards; }
+.toast--err { border-left: 3px solid #ef4444; }
+.toast--ok  { border-left: 3px solid #22c55e; }
+.toast--info { border-left: 3px solid var(--accent); }
+.toast-glyph {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: var(--muted);
+}
+.toast--err .toast-glyph { color: #ef4444; }
+.toast--ok  .toast-glyph { color: #22c55e; }
+.toast--info .toast-glyph { color: var(--accent); }
+.toast-body { flex: 1; min-width: 0; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-out {
+  to { opacity: 0; transform: translateX(20px); }
+}
+
+/* Drop-zone overlay shown while the user drags files toward the chat.
+   Anchored to .console-chat-shell so it covers the message column +
+   composer with a uniform "release to attach" target. The dashed
+   border + soft tint are the long-tail convention (Slack, Discord,
+   ChatGPT). */
+.chat-drop-zone {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg) 88%);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border: 2px dashed var(--accent);
+  border-radius: 12px;
+  pointer-events: none;
+  animation: chat-drop-zone-in 140ms ease;
+}
+.chat-drop-zone[hidden] { display: none; }
+.chat-drop-zone-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 18px 26px;
+  color: var(--accent-strong);
+  text-align: center;
+}
+.chat-drop-zone-title {
+  font-size: 14px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.01em;
+}
+.chat-drop-zone-hint {
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+@keyframes chat-drop-zone-in {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Floating "↓ latest" button. Lives inside .console-chat-shell, sits
+   just above the composer. Toggled by createBottomPinController. */
+.scroll-to-bottom {
+  position: absolute;
+  right: 24px;
+  bottom: 168px;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  z-index: 5;
+}
+.scroll-to-bottom:hover {
+  transform: translateY(-1px);
+  background: var(--panel-2);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.24);
+}
+.scroll-to-bottom[hidden] { display: none; }
 .console-chat-messages {
   flex: 1;
   min-height: 280px;
@@ -1865,6 +2055,21 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   white-space: pre-wrap;
   word-wrap: break-word;
 }
+/* Streaming caret — appended at the tail of an assistant bubble while
+   the runtime is still streaming text_delta frames. The trailing block
+   glyph blinks twice a second; removed when finalizeConsoleChatStreaming
+   clears the .streaming class. */
+.chat-msg-bubble.streaming::after {
+  content: "▍";
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent);
+  animation: lingxy-caret-blink 1s steps(2, jump-none) infinite;
+  vertical-align: baseline;
+}
+@keyframes lingxy-caret-blink {
+  50% { opacity: 0; }
+}
 .chat-msg-bubble a,
 .console-chat-message-body a {
   color: var(--accent);
@@ -1931,6 +2136,19 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-size: 13px;
   line-height: 1.6;
 }
+/* Inline timestamp footer rendered by appendConsoleChatMessage. The
+   bubble shows relative time ("2 分钟前") and a full datetime tooltip
+   on hover. Tinted muted so it doesn't compete with the message body. */
+.chat-msg-time {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+.chat-msg.user .chat-msg-time { text-align: right; }
+
 /* Per-message hover action row. Hidden until the user mouses over the
    bubble — keeps the reading column clean. */
 .chat-msg-actions {
@@ -2214,6 +2432,33 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   background: var(--panel-2);
   font-size: var(--fs-xs);
   color: var(--ink-2);
+}
+/* Image variant — same chip pill, but with a square thumbnail on the
+   left. The thumb uses position:relative for the img to fill while
+   keeping a fixed 24×24 footprint regardless of image aspect. */
+.console-chat-attachments .chip-attach--image {
+  padding-left: 4px;
+}
+.console-chat-attachments .chip-attach-thumb {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg);
+  border: 1px solid var(--line);
+}
+.console-chat-attachments .chip-attach-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.console-chat-attachments .chip-attach-name {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .console-chat-attachments .chip-attach button {
   width: 14px;
@@ -3727,6 +3972,54 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 }
 .approval-item p, .template-item p, .history-item p, .integration-item p { margin: 0; }
 .approval-list, .template-list, .history-list { display: flex; flex-direction: column; gap: 8px; }
+
+/* Conversation row with inline "↗ Resume" button. The main button
+   loads the conversation into the detail panel; the resume button
+   jumps straight to the chat tab. Layout pins them side-by-side so
+   the row stays a single visual item. */
+.history-item-row {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.history-item-row.active {
+  border-color: var(--line-2);
+  box-shadow: inset 3px 0 0 0 var(--accent);
+}
+.history-item-row .history-item--main {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+  color: inherit;
+}
+.history-item-row .history-item--main:hover {
+  background: var(--panel-2);
+}
+.history-item-resume {
+  flex-shrink: 0;
+  width: 36px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.history-item-resume:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
 
 .summary-tile {
   padding: 12px 14px;

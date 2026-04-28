@@ -159,6 +159,7 @@ const emailDigestState = document.querySelector("#emailDigestState");
 const consoleChatForm = document.querySelector("#consoleChatForm");
 const consoleChatInput = document.querySelector("#consoleChatInput");
 const consoleChatMessages = document.querySelector("#consoleChatMessages");
+const consoleChatScrollDownBtn = document.querySelector("#consoleChatScrollDown");
 const consoleChatState = document.querySelector("#consoleChatState");
 const consoleChatAttachBtn = document.querySelector("#consoleChatAttachBtn");
 const consoleChatVoiceBtn = document.querySelector("#consoleChatVoiceBtn");
@@ -173,26 +174,192 @@ const skillEditState = document.querySelector("#skillEditState");
 const skillEditSaveBtn = document.querySelector("#skillEditSaveBtn");
 const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
 
-function keepElementPinnedToBottom(element) {
-  if (!element) return;
-  const pin = () => {
-    requestAnimationFrame(() => {
-      element.scrollTop = element.scrollHeight;
-    });
+// Controller around a scroll container. Tracks whether the user is "at
+// the bottom" — only then does new content auto-scroll. If they've
+// scrolled up to read history, we leave the viewport alone and surface
+// a Scroll-to-bottom button. Replaces the older always-pin observer
+// which yanked users back on every DOM change.
+function createBottomPinController(scrollEl, { button = null, threshold = 80 } = {}) {
+  if (!scrollEl) {
+    return {
+      maybeScrollToBottom() {},
+      scrollToBottom() {},
+      refresh() {},
+      isPinned: () => true
+    };
+  }
+  let pinned = true;
+  let suppressScrollEvent = false;
+  const isNearBottom = () => (
+    scrollEl.scrollHeight - scrollEl.clientHeight - scrollEl.scrollTop <= threshold
+  );
+  const updateButton = () => {
+    if (!button) return;
+    button.hidden = pinned;
   };
+  const refresh = () => {
+    if (suppressScrollEvent) { suppressScrollEvent = false; return; }
+    pinned = isNearBottom();
+    updateButton();
+  };
+  scrollEl.addEventListener("scroll", refresh, { passive: true });
+
+  const scrollToBottom = () => {
+    suppressScrollEvent = true;
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    pinned = true;
+    updateButton();
+  };
+  const maybeScrollToBottom = () => {
+    if (!pinned) return;
+    suppressScrollEvent = true;
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+  };
+
   try {
-    new MutationObserver(pin).observe(element, {
-      childList: true,
-      subtree: true,
-      characterData: true
+    new MutationObserver(maybeScrollToBottom).observe(scrollEl, {
+      childList: true, subtree: true, characterData: true
     });
   } catch { /* observer is optional */ }
   try {
-    new ResizeObserver(pin).observe(element);
-  } catch { /* explicit scroll calls remain as fallback */ }
+    new ResizeObserver(maybeScrollToBottom).observe(scrollEl);
+  } catch { /* fallback: explicit calls still run */ }
+
+  if (button) {
+    button.hidden = true;
+    button.addEventListener("click", scrollToBottom);
+  }
+  return { maybeScrollToBottom, scrollToBottom, refresh, isPinned: () => pinned };
 }
 
-keepElementPinnedToBottom(consoleChatMessages);
+const consoleChatPin = createBottomPinController(consoleChatMessages, {
+  button: consoleChatScrollDownBtn
+});
+
+/* ═══════════════════════════════════════════════
+   TOAST + CONTEXT MENU (shared)
+   ═══════════════════════════════════════════════ */
+
+const consoleToastHost = document.querySelector("#consoleToastHost");
+
+// Lightweight floating toast. Replaces the older pattern of writing
+// flash messages into consoleChatState/.textContent — that text was
+// easy to miss and fought with composer status. kind: "info" | "ok" |
+// "err". Auto-dismisses; click to dismiss early.
+function showConsoleToast(message, { kind = "info", durationMs = 3200 } = {}) {
+  if (!consoleToastHost || !message) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast--${kind}`;
+  toast.setAttribute("role", "status");
+  const glyphMap = {
+    ok: "✓",
+    err: "!",
+    info: "i"
+  };
+  toast.innerHTML = `
+    <span class="toast-glyph">${glyphMap[kind] ?? "i"}</span>
+    <span class="toast-body"></span>
+  `;
+  toast.querySelector(".toast-body").textContent = String(message);
+  consoleToastHost.appendChild(toast);
+  let timer = setTimeout(dismiss, durationMs);
+  function dismiss() {
+    clearTimeout(timer);
+    if (!toast.isConnected) return;
+    toast.classList.add("toast--leaving");
+    toast.addEventListener("animationend", () => toast.remove(), { once: true });
+  }
+  toast.addEventListener("click", dismiss);
+}
+
+// Singleton context-menu element. Each surface (chat panel, etc.)
+// installs its own contextmenu listener that calls openCtxMenu with a
+// list of items + the click coordinates.
+const chatCtxMenu = document.querySelector("#chatCtxMenu");
+function closeCtxMenu() {
+  if (!chatCtxMenu) return;
+  chatCtxMenu.hidden = true;
+  chatCtxMenu.innerHTML = "";
+}
+function openCtxMenu(items, x, y) {
+  if (!chatCtxMenu) return;
+  chatCtxMenu.innerHTML = items.map((item) => {
+    if (item.separator) return `<div class="ctx-sep" role="separator"></div>`;
+    return `
+      <button type="button" class="ctx-item" role="menuitem" data-act="${item.id}">
+        <span class="ctx-glyph">${item.glyph ?? ""}</span>
+        <span>${escapeHtml(item.label)}</span>
+      </button>
+    `;
+  }).join("");
+  chatCtxMenu.hidden = false;
+  // Initial position — clamp to viewport so the menu stays on-screen
+  // when the click is near the right/bottom edge.
+  const rect = chatCtxMenu.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width - 8;
+  const maxY = window.innerHeight - rect.height - 8;
+  chatCtxMenu.style.left = `${Math.max(8, Math.min(x, maxX))}px`;
+  chatCtxMenu.style.top = `${Math.max(8, Math.min(y, maxY))}px`;
+  // Wire the click handlers fresh each open.
+  for (const btn of chatCtxMenu.querySelectorAll("[data-act]")) {
+    btn.addEventListener("click", () => {
+      const item = items.find((i) => i.id === btn.dataset.act);
+      closeCtxMenu();
+      try { item?.onClick?.(); } catch (error) {
+        showConsoleToast(`操作失败：${error?.message ?? error}`, { kind: "err" });
+      }
+    });
+  }
+}
+document.addEventListener("click", (event) => {
+  if (chatCtxMenu && !chatCtxMenu.hidden && !chatCtxMenu.contains(event.target)) {
+    closeCtxMenu();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && chatCtxMenu && !chatCtxMenu.hidden) closeCtxMenu();
+});
+window.addEventListener("blur", closeCtxMenu);
+window.addEventListener("scroll", closeCtxMenu, true);
+
+// Wire chat-bubble contextmenu — one delegated listener on the chat
+// messages container so it covers existing + future bubbles.
+consoleChatMessages?.addEventListener("contextmenu", (event) => {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  const wrapper = target?.closest?.(".chat-msg");
+  if (!wrapper) return;
+  event.preventDefault();
+  const role = wrapper.classList.contains("user") ? "user"
+    : wrapper.classList.contains("assistant") || wrapper.classList.contains("ai") ? "assistant"
+    : "system";
+  if (role === "system") return; // system bubbles aren't actionable
+  const bubble = wrapper.querySelector(".chat-msg-bubble");
+  const text = bubble?.dataset.rawText || bubble?.textContent || "";
+  const taskId = wrapper.dataset.taskId || null;
+  const items = [
+    { id: "copy", label: "复制", glyph: "⧉", onClick: () => {
+      try { navigator.clipboard?.writeText?.(text); } catch { /* ignore */ }
+      showConsoleToast("已复制到剪贴板", { kind: "ok" });
+    }},
+    { id: "quote", label: "引用并回复", glyph: "›", onClick: () => {
+      const quoted = String(text).split("\n").map((line) => `> ${line}`).join("\n");
+      const prefix = consoleChatInput.value.trim() ? `${consoleChatInput.value}\n\n` : "";
+      consoleChatInput.value = `${prefix}${quoted}\n\n`;
+      consoleChatInput.focus();
+      consoleChatInput.setSelectionRange(consoleChatInput.value.length, consoleChatInput.value.length);
+    }},
+    { id: "note", label: "添加到 Note", glyph: "+", onClick: () => {
+      openNoteTargetPicker(text, wrapper);
+    }}
+  ];
+  if (role === "assistant" && taskId) {
+    items.push({ separator: true });
+    items.push({ id: "regen", label: "重新生成", glyph: "↻", onClick: () => {
+      void regenerateConsoleChatTask(taskId, null);
+    }});
+  }
+  openCtxMenu(items, event.clientX, event.clientY);
+});
 
 /* ═══════════════════════════════════════════════
    TAB NAVIGATION
@@ -625,9 +792,7 @@ async function openConsoleChatExternalLink(anchor) {
     window.open(href, "_blank", "noopener,noreferrer");
     return true;
   } catch (error) {
-    if (consoleChatState) {
-      consoleChatState.textContent = `Failed to open link: ${error.message}`;
-    }
+    showConsoleToast(`Failed to open link: ${error.message}`, { kind: "err" });
     return false;
   }
 }
@@ -741,12 +906,30 @@ function appendConsoleChatMessage(role, text, options = {}) {
   renderConsoleChatBubbleContent(bubble, text);
   body.appendChild(bubble);
 
+  // Timestamp footer — relative time visible, absolute time on hover.
+  // Refreshed by refreshChatTimestamps() on a 30-second tick.
+  if (role !== "system") {
+    const ts = options.ts != null ? new Date(options.ts).getTime() : Date.now();
+    const timeEl = document.createElement("time");
+    timeEl.className = "chat-msg-time";
+    timeEl.dataset.ts = String(ts);
+    timeEl.title = formatDateTime(ts);
+    timeEl.textContent = formatRelativeTime(ts);
+    body.appendChild(timeEl);
+  }
+
   if (role === "assistant" || role === "ai") {
     const actions = document.createElement("div");
     actions.className = "chat-msg-actions";
+    const taskId = options.taskId ?? null;
+    if (taskId) wrapper.dataset.taskId = taskId;
+    const regenBtn = taskId
+      ? `<button type="button" class="chat-msg-action" data-action="regen" title="用相同输入重新生成">↻ 重新生成</button>`
+      : "";
     actions.innerHTML = `
       <button type="button" class="chat-msg-action" data-action="copy" title="Copy">复制</button>
       <button type="button" class="chat-msg-action" data-action="note" title="Add to note">＋ Note</button>
+      ${regenBtn}
     `;
     actions.addEventListener("click", (ev) => {
       const btn = ev.target.closest("[data-action]");
@@ -758,6 +941,10 @@ function appendConsoleChatMessage(role, text, options = {}) {
         setTimeout(() => { btn.textContent = "复制"; }, 1200);
       } else if (btn.dataset.action === "note") {
         openNoteTargetPicker(content, btn);
+      } else if (btn.dataset.action === "regen") {
+        const tid = wrapper.dataset.taskId;
+        if (!tid) return;
+        void regenerateConsoleChatTask(tid, btn);
       }
     });
     body.appendChild(actions);
@@ -765,8 +952,40 @@ function appendConsoleChatMessage(role, text, options = {}) {
 
   wrapper.appendChild(body);
   consoleChatMessages.appendChild(wrapper);
-  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  consoleChatPin.maybeScrollToBottom();
   return wrapper;
+}
+
+// Re-run the same task that produced this assistant message. Mirrors
+// the task-detail Retry button but inlines it on the chat surface so
+// the user doesn't have to leave the conversation. Backend handles the
+// re-submission; the new task's events stream into the chat as usual.
+async function regenerateConsoleChatTask(taskId, btn) {
+  if (!taskId) return;
+  const original = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "重新生成中…";
+  }
+  try {
+    await fetchJson(`/task/${encodeURIComponent(taskId)}/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "retry_same" })
+    });
+    if (btn) btn.textContent = "已发起";
+    setTimeout(() => {
+      if (btn) { btn.disabled = false; btn.textContent = original ?? "↻ 重新生成"; }
+    }, 1400);
+    await refreshWorkspace?.();
+  } catch (error) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "重试失败";
+      setTimeout(() => { btn.textContent = original ?? "↻ 重新生成"; }, 1600);
+    }
+    showConsoleToast(`重新生成失败：${error?.message ?? error}`, { kind: "err" });
+  }
 }
 
 function appendConsoleChatTextDelta(taskId, delta) {
@@ -784,19 +1003,23 @@ function appendConsoleChatTextDelta(taskId, delta) {
     return;
   }
   if (!consoleChatStreamingAnswer || consoleChatStreamingAnswer.taskId !== taskId) {
-    const wrapper = appendConsoleChatMessage("assistant", "", { allowEmpty: true });
+    const wrapper = appendConsoleChatMessage("assistant", "", { allowEmpty: true, taskId });
+    const bubble = wrapper?.querySelector(".chat-msg-bubble") ?? null;
+    // Tag the bubble as streaming so the blinking caret CSS kicks in.
+    // The class is removed in finalizeConsoleChatStreaming.
+    bubble?.classList.add("streaming");
     consoleChatStreamingAnswer = {
       taskId,
       text: "",
       wrapper,
-      bubble: wrapper?.querySelector(".chat-msg-bubble") ?? null
+      bubble
     };
   }
   consoleChatStreamingAnswer.text += String(delta);
   if (consoleChatStreamingAnswer.bubble) {
     renderConsoleChatBubbleContent(consoleChatStreamingAnswer.bubble, consoleChatStreamingAnswer.text);
   }
-  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  consoleChatPin.maybeScrollToBottom();
 }
 
 function finalizeConsoleChatStreaming(taskId, finalText = "") {
@@ -812,6 +1035,7 @@ function finalizeConsoleChatStreaming(taskId, finalText = "") {
   if (text && consoleChatStreamingAnswer.bubble) {
     renderConsoleChatBubbleContent(consoleChatStreamingAnswer.bubble, text);
   }
+  consoleChatStreamingAnswer.bubble?.classList.remove("streaming");
   consoleChatStreamingAnswer = null;
   return true;
 }
@@ -863,10 +1087,7 @@ function openNoteTargetPicker(text, anchorEl) {
     // Notes module hasn't booted yet — quick fallback: stash in clipboard
     // and surface a hint via the chat state line so the action is never lost.
     try { navigator.clipboard?.writeText?.(text); } catch { /* ignore */ }
-    if (consoleChatState) {
-      consoleChatState.textContent = "已复制 — 打开 Notes 标签后再粘贴";
-      setTimeout(() => { consoleChatState.textContent = ""; }, 2400);
-    }
+    showConsoleToast("已复制 — 打开 Notes 标签后再粘贴", { kind: "info" });
     return;
   }
   const notes = api.list();
@@ -899,10 +1120,7 @@ function openNoteTargetPicker(text, anchorEl) {
       const noteId = id === "__new__" ? api.createNote?.() : id;
       if (noteId) api.addToNote(noteId, text);
       close();
-      if (consoleChatState) {
-        consoleChatState.textContent = "已添加到笔记 ✓";
-        setTimeout(() => { if (consoleChatState.textContent === "已添加到笔记 ✓") consoleChatState.textContent = ""; }, 1800);
-      }
+      showConsoleToast("已添加到笔记", { kind: "ok" });
     });
   });
 }
@@ -950,7 +1168,7 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
       : ""}
   `;
   consoleChatMessages.appendChild(card);
-  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  consoleChatPin.maybeScrollToBottom();
   return card;
 }
 
@@ -986,7 +1204,7 @@ function appendConsoleChatThinkingDelta(delta) {
   consoleChatThinkingText += String(delta);
   const body = consoleChatThinkingCard.querySelector(".cth-body");
   if (body) body.textContent = consoleChatThinkingText;
-  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  consoleChatPin.maybeScrollToBottom();
 }
 
 function appendConsoleChatProgress(frame, textOverride = "") {
@@ -1056,7 +1274,7 @@ function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) 
   } else if (outcomeEl) {
     outcomeEl.remove();
   }
-  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  consoleChatPin.maybeScrollToBottom();
   return card;
 }
 
@@ -1074,7 +1292,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
   }
   if (directText) {
     if (!finalizeConsoleChatStreaming(taskId, directText)) {
-      appendConsoleChatMessage("assistant", directText);
+      appendConsoleChatMessage("assistant", directText, { taskId });
     }
     consoleChatResultTaskIds.add(taskId);
     return;
@@ -1090,7 +1308,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
     ).trim();
     if (!settledText) return;
     if (!finalizeConsoleChatStreaming(taskId, settledText)) {
-      appendConsoleChatMessage(task?.status === "failed" ? "system" : "assistant", settledText);
+      appendConsoleChatMessage(task?.status === "failed" ? "system" : "assistant", settledText, { taskId });
     }
     consoleChatResultTaskIds.add(taskId);
   } catch {
@@ -1168,7 +1386,7 @@ function subscribeConsoleChatTask(taskId) {
       } else if (frame.event === "inline_result") {
         closeConsoleChatThinkingCard();
         if (!finalizeConsoleChatStreaming(taskId, payload.text ?? payload.message ?? "")) {
-          appendConsoleChatMessage("assistant", payload.text ?? payload.message ?? "");
+          appendConsoleChatMessage("assistant", payload.text ?? payload.message ?? "", { taskId });
         }
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Done.";
@@ -1382,7 +1600,7 @@ function appendConsoleChatUserMessage(content, clientMessageId) {
   renderConsoleChatBubbleContent(body, content);
   wrapper.appendChild(body);
   consoleChatMessages.appendChild(wrapper);
-  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  consoleChatPin.maybeScrollToBottom();
 }
 
 function markConsoleChatPendingFailed(clientMessageId, error) {
@@ -1438,14 +1656,20 @@ const consoleChatMessageAdapter = {
       consoleChatMessages.appendChild(wrapper);
     } else if (message.role === "assistant" || message.role === "system") {
       // Reuse the existing renderer for assistant/system bubbles.
-      appendConsoleChatMessage(message.role, message.content);
+      // Pass through any task_id the backend recorded so the replayed
+      // bubble can also surface a Regenerate button. If the backend
+      // didn't store one (older messages, system bubbles), the action
+      // simply won't render — graceful fallback.
+      appendConsoleChatMessage(message.role, message.content, {
+        taskId: message.task_id ?? message.taskId ?? null
+      });
       const last = consoleChatMessages?.lastElementChild;
       if (last && last.dataset) {
         last.dataset.messageId = message.message_id;
         last.dataset.seq = String(message.seq);
       }
     }
-    consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+    consoleChatPin.maybeScrollToBottom();
   },
   onSkip() { /* tool_summary is backend-only history; the timeline owns it */ }
 };
@@ -1478,6 +1702,27 @@ function formatDateTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+// Short, human-friendly relative time used inside chat bubbles. Falls
+// back to a compact MM/DD HH:MM stamp once the message is more than a
+// day old. The chat surface refreshes these on an interval so "刚刚"
+// promotes to "1 分钟前" etc. without re-rendering the message.
+function formatRelativeTime(value) {
+  if (!value) return "";
+  const ts = typeof value === "number" ? value : new Date(value).getTime();
+  if (Number.isNaN(ts)) return "";
+  const ms = Date.now() - ts;
+  if (ms < 0) return "刚刚";
+  if (ms < 60_000) return "刚刚";
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} 分钟前`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} 小时前`;
+  const d = new Date(ts);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${mm}/${dd} ${hh}:${mi}`;
 }
 
 function formatMoney(value) {
@@ -3338,8 +3583,8 @@ function renderDowngradedWarning(downgraded) {
 // user can expand only what they want to see. Failures and pending steps
 // default to open; routine success steps stay collapsed so the timeline
 // reads cleanly at a glance.
-function renderTimelineEntry(ev) {
-  const s = formatTaskEventSummary(ev);
+function renderTimelineEntry(ev, context = {}) {
+  const s = formatTaskEventSummary(ev, context);
   const payload = ev?.data ?? ev?.payload ?? {};
   const eventType = ev?.event ?? ev?.event_type ?? "";
   const ts = escapeHtml(formatDateTime(ev.ts ?? ev.at));
@@ -3563,7 +3808,29 @@ function renderTaskDetail(detail) {
   }
   const events = detail.events ?? [];
   if (events.length > 0) {
-    taskTimeline.innerHTML = events.map((ev) => renderTimelineEntry(ev)).join("");
+    // Walk events in order so each entry can render its derived step
+    // index ("第 3/N 步") even when the backend emits no step_index.
+    // Total comes from the highest step_total payload we see, falling
+    // back to the final step_started count once the run is over.
+    let stepIndex = 0;
+    let stepTotal = 0;
+    const stepIndexByEvent = new Map();
+    for (const ev of events) {
+      const type = ev?.event_type ?? ev?.event ?? "";
+      const payload = ev?.payload ?? ev?.data ?? {};
+      const totalHint = Number(payload?.step_total ?? 0);
+      if (Number.isFinite(totalHint) && totalHint > stepTotal) stepTotal = totalHint;
+      if (type === "step_started") {
+        stepIndex += 1;
+        stepIndexByEvent.set(ev, stepIndex);
+      } else if (type === "step_finished") {
+        stepIndexByEvent.set(ev, stepIndex);
+      }
+    }
+    if (!stepTotal && stepIndex > 0) stepTotal = stepIndex;
+    taskTimeline.innerHTML = events.map((ev) => renderTimelineEntry(ev, {
+      step: { index: stepIndexByEvent.get(ev) ?? 0, total: stepTotal }
+    })).join("");
     setTaskDetailPanelVisible("taskTimelinePanel", true);
   } else {
     taskTimeline.innerHTML = "";
@@ -5570,6 +5837,19 @@ void refreshWorkspace();
 void refreshOfficeAddinSetupStatus();
 setInterval(() => void refreshWorkspace(), 6000);
 
+// Promote chat-bubble timestamps from "刚刚" → "1 分钟前" → … without
+// re-rendering the message. Cheap; only walks visible <time> nodes.
+function refreshChatTimestamps() {
+  if (!consoleChatMessages) return;
+  for (const el of consoleChatMessages.querySelectorAll(".chat-msg-time[data-ts]")) {
+    const ts = Number(el.dataset.ts);
+    if (!Number.isFinite(ts)) continue;
+    const next = formatRelativeTime(ts);
+    if (el.textContent !== next) el.textContent = next;
+  }
+}
+setInterval(refreshChatTimestamps, 30_000);
+
 /* ═══════════════════════════════════════════════
    UCA-070: CONNECTORS TAB
    ═══════════════════════════════════════════════ */
@@ -5926,21 +6206,45 @@ function renderConversationsList() {
     return;
   }
   listEl.innerHTML = conversationsState.items.map((c) => `
-    <button class="history-item ${c.conversation_id === conversationsState.selectedId ? "active" : ""}"
-            data-conversation-id="${escapeConvHtml(c.conversation_id)}"
-            style="text-align:left;">
-      <div class="row" style="justify-content:space-between;align-items:center;">
-        <strong style="font-size:13px;">${escapeConvHtml(c.title || c.conversation_id.slice(0, 24))}</strong>
-        <span class="muted" style="font-size:11px;">${c.message_count}m · ${c.task_count}t${c.archived ? " · archived" : ""}</span>
-      </div>
-      <p class="muted" style="margin-top:4px;font-size:11px;">${escapeConvHtml(formatConvTimestamp(c.updated_at))}</p>
-    </button>
+    <div class="history-item-row ${c.conversation_id === conversationsState.selectedId ? "active" : ""}"
+         data-row-conversation-id="${escapeConvHtml(c.conversation_id)}">
+      <button class="history-item history-item--main"
+              data-conversation-id="${escapeConvHtml(c.conversation_id)}"
+              style="text-align:left;">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <strong style="font-size:13px;">${escapeConvHtml(c.title || c.conversation_id.slice(0, 24))}</strong>
+          <span class="muted" style="font-size:11px;">${c.message_count}m · ${c.task_count}t${c.archived ? " · archived" : ""}</span>
+        </div>
+        <p class="muted" style="margin-top:4px;font-size:11px;">${escapeConvHtml(formatConvTimestamp(c.updated_at))}</p>
+      </button>
+      <button class="history-item-resume" type="button"
+              data-resume-conversation-id="${escapeConvHtml(c.conversation_id)}"
+              title="在 Chat 标签继续此对话" aria-label="继续对话">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>
+        </svg>
+      </button>
+    </div>
   `).join("");
   for (const btn of listEl.querySelectorAll("[data-conversation-id]")) {
     btn.addEventListener("click", () => {
       conversationsState.selectedId = btn.dataset.conversationId;
       renderConversationsList();
       void loadConversationDetail(conversationsState.selectedId);
+    });
+  }
+  for (const btn of listEl.querySelectorAll("[data-resume-conversation-id]")) {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const convId = btn.dataset.resumeConversationId;
+      if (!convId) return;
+      // Switching to the chat tab is intentional — the user just asked
+      // to "continue" so leaving them on the conversations list would
+      // be confusing. loadConsoleConversationFromBackend handles tab
+      // switching internally (see end of that function).
+      void loadConsoleConversationFromBackend(convId);
+      showConsoleToast("已加载对话，可继续输入", { kind: "ok" });
     });
   }
 }
@@ -7154,6 +7458,28 @@ connectorsMcpRefreshBtn?.addEventListener("click", () => { void loadConnectorsTa
 // UCA-126 Phase 7d: chat composer richness — attachments, voice trigger,
 // model chip label. Attach is local-file-picker + chips (passed into task
 // context). Voice defers to the existing overlay voice mode via hotkey.
+
+// Cache data: URLs for image attachments so re-rendering the chip row
+// (e.g. on add / remove) doesn't re-read the file. Path → data URL.
+const attachThumbnailCache = new Map();
+
+async function loadAttachmentThumbnail(filePath) {
+  if (!filePath || attachThumbnailCache.has(filePath)) {
+    return attachThumbnailCache.get(filePath) ?? null;
+  }
+  if (!isImageArtifactPath(filePath) || !window.ucaShell?.readFileAsDataUrl) return null;
+  // Pre-mark with null so concurrent calls don't race. Real value
+  // overwrites on success; failure leaves null and won't retry.
+  attachThumbnailCache.set(filePath, null);
+  try {
+    const dataUrl = await window.ucaShell.readFileAsDataUrl(filePath, imageMimeFor(filePath));
+    attachThumbnailCache.set(filePath, dataUrl);
+    return dataUrl;
+  } catch {
+    return null;
+  }
+}
+
 function renderChatAttachments() {
   if (!consoleChatAttachments) return;
   if (consoleChatAttachList.length === 0) {
@@ -7162,13 +7488,29 @@ function renderChatAttachments() {
     return;
   }
   consoleChatAttachments.hidden = false;
-  consoleChatAttachments.innerHTML = consoleChatAttachList.map((entry, idx) => `
-    <span class="chip-attach">
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.58 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-      <span>${escapeHtml(entry?.name ?? "")}</span>
-      <button type="button" data-remove-attach="${idx}" aria-label="Remove">×</button>
-    </span>
-  `).join("");
+  consoleChatAttachments.innerHTML = consoleChatAttachList.map((entry, idx) => {
+    const filePath = entry?.path ?? "";
+    const isImage = isImageArtifactPath(filePath);
+    const cached = isImage ? attachThumbnailCache.get(filePath) : null;
+    if (isImage) {
+      // Image chip — square thumb on the left, name + remove on the
+      // right. The img fills lazily once readFileAsDataUrl resolves.
+      return `
+        <span class="chip-attach chip-attach--image" data-path="${escapeHtml(filePath)}">
+          <span class="chip-attach-thumb">${cached ? `<img src="${escapeHtml(cached)}" alt="">` : ""}</span>
+          <span class="chip-attach-name">${escapeHtml(entry?.name ?? "")}</span>
+          <button type="button" data-remove-attach="${idx}" aria-label="Remove">×</button>
+        </span>
+      `;
+    }
+    return `
+      <span class="chip-attach">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.58 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        <span>${escapeHtml(entry?.name ?? "")}</span>
+        <button type="button" data-remove-attach="${idx}" aria-label="Remove">×</button>
+      </span>
+    `;
+  }).join("");
   for (const btn of consoleChatAttachments.querySelectorAll("[data-remove-attach]")) {
     btn.addEventListener("click", () => {
       const idx = Number(btn.dataset.removeAttach);
@@ -7176,6 +7518,23 @@ function renderChatAttachments() {
         consoleChatAttachList.splice(idx, 1);
         renderChatAttachments();
       }
+    });
+  }
+  // Lazy-load thumbnails that aren't cached yet. We render a placeholder
+  // chip first (instant feedback), then patch the <img> in once the
+  // file is decoded — keeps the composer responsive even for large
+  // images.
+  for (const chip of consoleChatAttachments.querySelectorAll(".chip-attach--image")) {
+    const filePath = chip.dataset.path;
+    if (!filePath || chip.querySelector("img")) continue;
+    void loadAttachmentThumbnail(filePath).then((dataUrl) => {
+      if (!dataUrl) return;
+      const thumb = chip.querySelector(".chip-attach-thumb");
+      if (!thumb || thumb.querySelector("img")) return;
+      const img = document.createElement("img");
+      img.src = dataUrl;
+      img.alt = "";
+      thumb.appendChild(img);
     });
   }
 }
@@ -7193,10 +7552,7 @@ consoleChatNoteBtn?.addEventListener("click", () => {
   if (!api) return;
   const notes = api.list();
   if (notes.length === 0) {
-    if (consoleChatState) {
-      consoleChatState.textContent = "还没有笔记 — 在 Notes 标签新建一条";
-      setTimeout(() => { consoleChatState.textContent = ""; }, 2400);
-    }
+    showConsoleToast("还没有笔记 — 在 Notes 标签新建一条", { kind: "info" });
     return;
   }
   const popover = document.createElement("div");
@@ -7252,14 +7608,61 @@ consoleChatAttachInput?.addEventListener("change", () => {
   renderChatAttachments();
 });
 
+// Drag-and-drop attach. The shell-level handlers (drop-guard.js) already
+// preventDefault any file drag, so the OS won't try to open dropped
+// files. We just layer a visual drop-zone over the chat-shell + route
+// drops into the existing attach list. The dragenter/leave counter
+// handles bubbling through child bubbles without the zone flickering.
+(function wireConsoleChatDropZone() {
+  const shell = document.querySelector(".console-chat-shell");
+  const zone = document.querySelector("#consoleChatDropZone");
+  if (!shell || !zone) return;
+  const hasFilePayload = (event) => {
+    const types = event.dataTransfer?.types;
+    if (!types) return false;
+    for (let i = 0; i < types.length; i += 1) if (types[i] === "Files") return true;
+    return false;
+  };
+  let counter = 0;
+  shell.addEventListener("dragenter", (event) => {
+    if (!hasFilePayload(event)) return;
+    counter += 1;
+    zone.hidden = false;
+  });
+  shell.addEventListener("dragleave", (event) => {
+    if (!hasFilePayload(event)) return;
+    counter -= 1;
+    if (counter <= 0) { counter = 0; zone.hidden = true; }
+  });
+  shell.addEventListener("dragover", (event) => {
+    if (hasFilePayload(event)) event.preventDefault();
+  });
+  shell.addEventListener("drop", (event) => {
+    if (!hasFilePayload(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    counter = 0;
+    zone.hidden = true;
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (!files.length) return;
+    const paths = window.ucaShell?.resolveDroppedFilePaths?.(files) ?? [];
+    for (const [i, f] of files.entries()) {
+      consoleChatAttachList.push({
+        name: f.name,
+        path: paths[i] || f.path || ""
+      });
+    }
+    renderChatAttachments();
+  });
+})();
+
 consoleChatVoiceBtn?.addEventListener("click", () => {
   // Defer to the existing overlay voice mode (Ctrl+Shift+V). The preload
   // bridge exposes a helper when available; otherwise surface a hint.
   if (window.ucaBridge?.openOverlayInVoiceMode) {
     window.ucaBridge.openOverlayInVoiceMode();
-  } else if (consoleChatState) {
-    consoleChatState.textContent = "按 Ctrl+Shift+V 开启语音";
-    setTimeout(() => { if (consoleChatState.textContent === "按 Ctrl+Shift+V 开启语音") consoleChatState.textContent = ""; }, 2600);
+  } else {
+    showConsoleToast("按 Ctrl+Shift+V 开启语音", { kind: "info" });
   }
 });
 

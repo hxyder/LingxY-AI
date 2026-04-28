@@ -79,10 +79,26 @@ export function looksLikeInternalControlJsonText(text = "") {
   return hits >= 3;
 }
 
-export function formatTaskEventSummary(rawEvent) {
+// Best-effort "X/Y" step suffix. Backends may emit either step_index +
+// step_total (preferred), step_index alone (numerator only), or neither
+// (callers can pass a fallback index/total via the second argument). The
+// returned string starts with " · " so it can be appended directly.
+function formatStepSuffix(payload, fallback = {}) {
+  const idx = Number(payload.step_index ?? fallback.index);
+  const tot = Number(payload.step_total ?? fallback.total);
+  const idxOk = Number.isFinite(idx) && idx > 0;
+  const totOk = Number.isFinite(tot) && tot > 0;
+  if (idxOk && totOk) return ` · 第 ${idx}/${tot} 步`;
+  if (idxOk) return ` · 第 ${idx} 步`;
+  return "";
+}
+
+export function formatTaskEventSummary(rawEvent, context = {}) {
   const frame = toTaskEventFrame(rawEvent);
   const payload = frame.data ?? {};
   const step = payload.step ?? payload.sub_status ?? payload.status ?? "任务步骤";
+  const pct = typeof payload.progress === "number" ? ` · ${Math.round(payload.progress * 100)}%` : "";
+  const stepSuffix = formatStepSuffix(payload, context.step ?? {});
 
   switch (frame.event) {
     case "task_created":
@@ -93,7 +109,7 @@ export function formatTaskEventSummary(rawEvent) {
     case "status_changed":
       return {
         title: "状态更新",
-        body: `任务进入 ${payload.status ?? "unknown"}${payload.sub_status ? ` / ${payload.sub_status}` : ""}${typeof payload.progress === "number" ? ` · ${Math.round(payload.progress * 100)}%` : ""}`.trim()
+        body: `任务进入 ${payload.status ?? "unknown"}${payload.sub_status ? ` / ${payload.sub_status}` : ""}${pct}${stepSuffix}`.trim()
       };
     case "planner_request_started":
       return {
@@ -130,7 +146,7 @@ export function formatTaskEventSummary(rawEvent) {
     case "step_started":
       return {
         title: "开始执行",
-        body: `${step}${typeof payload.progress === "number" ? ` · ${Math.round(payload.progress * 100)}%` : ""}`.trim()
+        body: `${step}${pct}${stepSuffix}`.trim()
       };
     case "accepted":
       return {
@@ -157,7 +173,7 @@ export function formatTaskEventSummary(rawEvent) {
     case "step_finished":
       return {
         title: "步骤完成",
-        body: `${step}${typeof payload.progress === "number" ? ` · ${Math.round(payload.progress * 100)}%` : ""}`.trim()
+        body: `${step}${pct}${stepSuffix}`.trim()
       };
     case "artifact_created":
       return {

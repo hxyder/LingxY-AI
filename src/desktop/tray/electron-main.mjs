@@ -830,6 +830,29 @@ export function createElectronShellRuntime({
           windowId: windowDef.id
         });
       });
+      // Overlay click-outside behaviour: when the overlay loses focus AND
+      // the user has truly left the application (no other internal window
+      // took focus — popup-card / preview / settings / dock are all
+      // BrowserWindow instances and would show up in getFocusedWindow),
+      // ask the renderer to run its dismiss flow. Defer one tick so the
+      // OS can finish moving focus before we sample it.
+      if (windowDef.id === "overlay") {
+        browserWindow.on("blur", () => {
+          setTimeout(() => {
+            if (browserWindow.isDestroyed()) return;
+            if (!browserWindow.isVisible()) return;
+            // null → no LingxY window has focus → user is in another app.
+            // Non-null → a sibling internal window (popup-card etc.) took
+            // focus, so leave the overlay open underneath.
+            if (BrowserWindow.getFocusedWindow() != null) return;
+            try {
+              browserWindow.webContents.send(IPC_CHANNELS.overlayAutoHide, {});
+            } catch (error) {
+              safeWarn("[overlay] auto-hide IPC send failed:", error?.message ?? error);
+            }
+          }, 80);
+        });
+      }
       browserWindow.on("closed", () => {
         readyWindows.delete(windowDef.id);
         pendingWindowMessages.delete(windowDef.id);

@@ -229,6 +229,168 @@
         box-shadow: var(--shadow-sm);
       }
 
+      /* Streaming caret — appended at the tail while text_delta frames
+         are still arriving. The .streaming class is added when the
+         streaming bubble is created (overlay.js ~2159) and removed when
+         the inline_result event finalizes the answer. */
+      .bubble.assistant.streaming::after {
+        content: "▍";
+        display: inline-block;
+        margin-left: 2px;
+        color: var(--accent);
+        animation: lingxy-caret-blink 1s steps(2, jump-none) infinite;
+        vertical-align: baseline;
+      }
+      @keyframes lingxy-caret-blink {
+        50% { opacity: 0; }
+      }
+
+      /* Per-bubble timestamp footer rendered by addBubble /
+         appendBubbleTimestamp. Relative time is visible; absolute time
+         lives in the title attribute. */
+      .bubble-time {
+        display: block;
+        margin-top: 4px;
+        font-size: 10px;
+        color: var(--muted);
+        letter-spacing: 0.02em;
+        user-select: none;
+      }
+      .bubble.user .bubble-time { text-align: right; }
+
+      /* Right-click context menu for chat bubbles. Same visual
+         language as console.html's menu — small panel + hover rows.
+         Hidden by default; positioned at click coordinates by
+         overlay.js. */
+      .ctx-menu {
+        position: fixed;
+        z-index: 200;
+        min-width: 150px;
+        padding: 4px;
+        background: rgba(255, 255, 255, 0.97);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid var(--line, rgba(91, 107, 122, 0.18));
+        border-radius: 8px;
+        box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        font-size: 12.5px;
+        user-select: none;
+        animation: ctx-menu-in-overlay 90ms ease;
+      }
+      .ctx-menu[hidden] { display: none; }
+      .ctx-menu .ctx-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border: 0;
+        background: transparent;
+        color: var(--ink, #1e293b);
+        text-align: left;
+        border-radius: 5px;
+        cursor: pointer;
+        font: inherit;
+        font-size: 12.5px;
+      }
+      .ctx-menu .ctx-item:hover,
+      .ctx-menu .ctx-item:focus-visible {
+        background: rgba(91, 107, 122, 0.10);
+        outline: none;
+      }
+      .ctx-menu .ctx-item .ctx-glyph {
+        width: 14px;
+        text-align: center;
+        color: var(--muted, #64748b);
+      }
+      .ctx-menu .ctx-sep {
+        height: 1px;
+        margin: 3px 4px;
+        background: rgba(91, 107, 122, 0.16);
+      }
+      @keyframes ctx-menu-in-overlay {
+        from { opacity: 0; transform: translateY(-2px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      /* Drop-zone shown while the user is dragging files toward the
+         overlay window. Sits above all chat content but below the
+         scroll-to-bottom button so it never traps a click meant for the
+         input bar. Pointer-events:none — the dragover/drop events keep
+         flowing through to the body listener that drives the counter. */
+      .overlay-drop-zone {
+        position: absolute;
+        inset: 8px;
+        z-index: 4;
+        display: grid;
+        place-items: center;
+        background: rgba(91, 107, 122, 0.10);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
+        border: 2px dashed var(--accent, #2563eb);
+        border-radius: 14px;
+        pointer-events: none;
+        animation: overlay-drop-zone-in 140ms ease;
+      }
+      .overlay-drop-zone[hidden] { display: none; }
+      .overlay-drop-zone-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 16px 22px;
+        color: var(--accent-strong, #1d4ed8);
+        text-align: center;
+        background: rgba(255, 255, 255, 0.86);
+        border-radius: 12px;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.14);
+      }
+      .overlay-drop-zone-title {
+        font-size: 13px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+      }
+      .overlay-drop-zone-hint {
+        font-size: 10px;
+        color: var(--muted, #64748b);
+        letter-spacing: 0.02em;
+      }
+      @keyframes overlay-drop-zone-in {
+        from { opacity: 0; transform: scale(0.985); }
+        to { opacity: 1; transform: scale(1); }
+      }
+
+      /* Floating "↓ latest" affordance. Anchored above the input bar so
+         it doesn't fight with the message column. createBottomPinController
+         flips its hidden attribute based on the pin state. */
+      .scroll-to-bottom {
+        position: absolute;
+        right: 24px;
+        bottom: 110px;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        color: var(--ink);
+        display: grid;
+        place-items: center;
+        padding: 0;
+        cursor: pointer;
+        box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+        transition: transform 120ms ease, box-shadow 120ms ease;
+        z-index: 5;
+      }
+      .scroll-to-bottom:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(15, 23, 42, 0.24);
+      }
+      .scroll-to-bottom[hidden] { display: none; }
+
       /* Structured/long assistant answer: accent left bar, tighter type scale,
          more space between list items and headings. Short chatty replies keep
          the plain .bubble.assistant layout. */
@@ -472,6 +634,19 @@
         transition: transform 140ms ease;
       }
       .bubble.step.is-open > .step-row .step-chevron { transform: rotate(90deg); }
+      /* "…查看全部" hint shown only when the result was truncated. Keeps
+         the cue inline with the summary so it doesn't visually fight
+         with the chevron. Hidden once the row is expanded — at that
+         point the user is reading the full body. */
+      .bubble.step .step-more {
+        flex-shrink: 0;
+        margin-left: 4px;
+        font-size: 11px;
+        font-weight: 500;
+        color: var(--accent, #2563eb);
+        white-space: nowrap;
+      }
+      .bubble.step.is-open > .step-row .step-more { display: none; }
 
       .bubble.step .step-body {
         padding: 4px 12px 10px 28px;
@@ -479,6 +654,31 @@
         line-height: 1.5;
         color: var(--ink-2, #475569);
         border-top: 1px solid color-mix(in srgb, var(--line, #e2e8f0) 55%, transparent);
+        position: relative;
+      }
+      /* Copy button — top-right of the expanded step body. Uses position
+         absolute so it doesn't shove the args/outcome layout sideways.
+         Subtle until hover so it doesn't visually compete with the
+         result the user came here to read. */
+      .bubble.step .step-copy {
+        position: absolute;
+        top: 6px;
+        right: 8px;
+        padding: 2px 8px;
+        font-size: 10px;
+        color: var(--muted, #64748b);
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid var(--line, #e2e8f0);
+        border-radius: 6px;
+        cursor: pointer;
+        opacity: 0.5;
+        transition: opacity 120ms, background 120ms, color 120ms;
+        z-index: 1;
+      }
+      .bubble.step .step-copy:hover {
+        opacity: 1;
+        color: var(--ink, #1e293b);
+        background: rgba(255, 255, 255, 1);
       }
       .bubble.step .step-body .step-args {
         font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -616,9 +816,11 @@
         color: #fff;
       }
 
-      /* ── per-assistant-bubble Add-to-note action (UCA-181) ── */
+      /* ── per-assistant-bubble action row (Add-to-note, Regenerate) ── */
       .bubble-note-actions {
         margin-top: 6px;
+        display: flex;
+        gap: 6px;
         opacity: 0;
         transition: opacity 0.15s;
       }
@@ -637,6 +839,10 @@
         background: var(--accent-soft);
         border-color: var(--accent);
         color: var(--accent-strong);
+      }
+      .bubble-note-btn:disabled {
+        opacity: 0.5;
+        cursor: progress;
       }
 
       /* ── overlay note picker popover (UCA-181) ── */
@@ -1050,6 +1256,38 @@
 
       @keyframes send-btn-spin {
         to { transform: rotate(360deg); }
+      }
+
+      /* Stop affordance: while a task is running, sendBtn flips to a red
+         circle with a centred square glyph. The paper-plane svg is hidden
+         and a CSS-drawn square is overlaid so we don't have to toggle DOM
+         on every status update. The send-busy spinner is suppressed in
+         this mode — the Stop pill carries the "in progress" signal on its
+         own and stacking two animations reads as noise. */
+      .input-bar .send-btn.send-btn--stop {
+        position: relative;
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+      }
+      .input-bar .send-btn.send-btn--stop:hover {
+        box-shadow: 0 4px 14px rgba(220, 38, 38, 0.45);
+      }
+      .input-bar .send-btn.send-btn--stop svg {
+        visibility: hidden;
+      }
+      .input-bar .send-btn.send-btn--stop::before {
+        content: "";
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        background: #fff;
+      }
+      body.send-busy .input-bar .send-btn.send-btn--stop {
+        animation: none;
+      }
+      body.send-busy .input-bar .send-btn.send-btn--stop::after {
+        display: none;
       }
 
       .input-bar .aux-btn {
@@ -1934,8 +2172,40 @@
   </head>
   <body>
     <div id="windowDragHandle" class="window-drag-strip" title="拖动对话框位置" aria-label="拖动对话框位置"></div>
+    <!-- Right-click context menu for chat bubbles. Singleton, populated
+         on contextmenu events. Reuses the .ctx-menu visual style
+         defined below. -->
+    <div id="overlayCtxMenu" class="ctx-menu" role="menu" hidden></div>
+    <!-- Drop-zone overlay shown while a file drag is in progress over
+         the overlay window. Toggled visible by the drag counter in
+         overlay.js. Pointer-events:none so the dragover/drop events
+         keep landing on the underlying body listener. -->
+    <div id="overlayDropZone" class="overlay-drop-zone" hidden>
+      <div class="overlay-drop-zone-card">
+        <svg viewBox="0 0 24 24" width="34" height="34" fill="none"
+             stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+             stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <div class="overlay-drop-zone-title">松开以添加为附件</div>
+        <div class="overlay-drop-zone-hint">支持图片、文档、代码等</div>
+      </div>
+    </div>
     <!-- Bubble conversation area -->
     <div id="bubbleArea" class="bubble-area" role="log" aria-live="polite" aria-relevant="additions text" aria-label="对话记录" hidden></div>
+    <!-- Floating "scroll to latest" affordance — visible when the user
+         has scrolled up off the bottom of the conversation. Hidden by
+         createBottomPinController until the pin state flips. -->
+    <button id="bubbleScrollDown" class="scroll-to-bottom" type="button"
+            aria-label="回到最新消息" title="回到最新消息" hidden>
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+           stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+           stroke-linejoin="round" aria-hidden="true">
+        <polyline points="6 10 12 16 18 10"></polyline>
+      </svg>
+    </button>
 
     <!-- Empty state — shown when no bubbles exist yet, to orient new users -->
     <div id="emptyState" class="empty-state" aria-hidden="false">

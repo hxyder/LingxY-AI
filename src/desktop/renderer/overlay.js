@@ -83,26 +83,70 @@ const taskListBody = document.querySelector("#taskListBody");
 const taskListCloseBtn = document.querySelector("#taskListCloseBtn");
 const taskListFilterBtns = document.querySelectorAll("[data-task-filter]");
 
-function keepElementPinnedToBottom(element) {
-  if (!element) return;
-  const pin = () => {
-    requestAnimationFrame(() => {
-      element.scrollTop = element.scrollHeight;
-    });
+// Controller around a scroll container. Tracks whether the user is "at
+// the bottom" — only then does new content auto-scroll. If they've
+// scrolled up to read history, we leave the viewport alone and surface
+// a Scroll-to-bottom button. Replaces the older always-pin observer
+// which yanked users back on every DOM change.
+function createBottomPinController(scrollEl, { button = null, threshold = 80 } = {}) {
+  if (!scrollEl) {
+    return {
+      maybeScrollToBottom() {},
+      scrollToBottom() {},
+      refresh() {},
+      isPinned: () => true
+    };
+  }
+  let pinned = true;
+  let suppressScrollEvent = false;
+  const isNearBottom = () => (
+    scrollEl.scrollHeight - scrollEl.clientHeight - scrollEl.scrollTop <= threshold
+  );
+  const updateButton = () => {
+    if (!button) return;
+    button.hidden = pinned;
   };
+  const refresh = () => {
+    if (suppressScrollEvent) { suppressScrollEvent = false; return; }
+    pinned = isNearBottom();
+    updateButton();
+  };
+  scrollEl.addEventListener("scroll", refresh, { passive: true });
+
+  const scrollToBottom = () => {
+    suppressScrollEvent = true;
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+    pinned = true;
+    updateButton();
+  };
+  const maybeScrollToBottom = () => {
+    if (!pinned) return;
+    suppressScrollEvent = true;
+    scrollEl.scrollTop = scrollEl.scrollHeight;
+  };
+
+  // Auto-pin on content / size changes — but only when the user was
+  // already pinned. Mutation + Resize observers cover both new bubbles
+  // and streaming text deltas.
   try {
-    new MutationObserver(pin).observe(element, {
-      childList: true,
-      subtree: true,
-      characterData: true
+    new MutationObserver(maybeScrollToBottom).observe(scrollEl, {
+      childList: true, subtree: true, characterData: true
     });
   } catch { /* observer is a convenience only */ }
   try {
-    new ResizeObserver(pin).observe(element);
-  } catch { /* older Electron fallback: explicit scroll calls still run */ }
+    new ResizeObserver(maybeScrollToBottom).observe(scrollEl);
+  } catch { /* fallback: explicit calls still run */ }
+
+  if (button) {
+    button.hidden = true;
+    button.addEventListener("click", scrollToBottom);
+  }
+  return { maybeScrollToBottom, scrollToBottom, refresh, isPinned: () => pinned };
 }
 
-keepElementPinnedToBottom(bubbleArea);
+const bubbleAreaPin = createBottomPinController(bubbleArea, {
+  button: document.querySelector("#bubbleScrollDown")
+});
 
 /* ── state ── */
 let serviceBaseUrl = new URLSearchParams(window.location.search).get("serviceBaseUrl") ?? "http://127.0.0.1:4310";
@@ -992,6 +1036,69 @@ function showEmptyState() {
   if (el) el.setAttribute("aria-hidden", "false");
 }
 
+// Build the per-assistant-bubble action row: "+ Note" (existing) and
+// "↻ 重新生成" (new — hits /task/:taskId/retry to regenerate the same
+// answer). Both buttons live in the same row so the layout stays
+// compact. Idempotent: removes any prior action row before appending.
+async function regenerateTask(taskId, btn) {
+  if (!taskId) return;
+  const original = btn?.textContent;
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = "重新生成中…";
+  }
+  try {
+    await fetchJson(`/task/${encodeURIComponent(taskId)}/retry`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "retry_same" })
+    });
+    if (btn) btn.textContent = "已发起";
+    setTimeout(() => {
+      if (btn) { btn.disabled = false; btn.textContent = original ?? "↻ 重新生成"; }
+    }, 1400);
+  } catch (error) {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = "重试失败";
+      setTimeout(() => { btn.textContent = original ?? "↻ 重新生成"; }, 1600);
+    }
+    addSystemBubble?.(`重新生成失败：${error?.message ?? error}`);
+  }
+}
+
+function appendAssistantActions(bubble, content, taskId) {
+  if (!bubble) return;
+  bubble.querySelector(":scope > .bubble-note-actions")?.remove();
+  if (taskId) bubble.dataset.taskId = taskId;
+
+  const row = document.createElement("div");
+  row.className = "bubble-note-actions";
+
+  const addNoteBtn = document.createElement("button");
+  addNoteBtn.type = "button";
+  addNoteBtn.className = "bubble-note-btn";
+  addNoteBtn.textContent = "＋ Note";
+  addNoteBtn.title = "添加到 Notes";
+  addNoteBtn.addEventListener("click", () => openOverlayNotePicker(content, addNoteBtn));
+  row.appendChild(addNoteBtn);
+
+  // Regenerate is gated on having a task id — replay history without an
+  // associated task can't be retried, so we just hide the button rather
+  // than show a non-functional one.
+  if (taskId) {
+    const regenBtn = document.createElement("button");
+    regenBtn.type = "button";
+    regenBtn.className = "bubble-note-btn bubble-regen-btn";
+    regenBtn.textContent = "↻ 重新生成";
+    regenBtn.title = "用相同的输入重新生成回答";
+    regenBtn.addEventListener("click", () => void regenerateTask(taskId, regenBtn));
+    row.appendChild(regenBtn);
+  }
+
+  bubble.appendChild(row);
+}
+
 function addBubble(role, content, options) {
   bubbleArea.hidden = false;
   hideEmptyState();
@@ -1005,6 +1112,7 @@ function addBubble(role, content, options) {
   }
 
   if (typeof content === "string") {
+    bubble.dataset.rawText = content;
     if (role === "assistant") {
       bubble.innerHTML = renderMarkdown(content);
       // Apply the "answer" layout (accent bar + richer typography) whenever
@@ -1044,20 +1152,7 @@ function addBubble(role, content, options) {
         });
       }
       attachLocalImagePreviews(bubble, content);
-      // UCA-181: per-assistant-bubble Add-to-note action. Both windows
-      // share notes through the runtime's HTTP store, so the overlay
-      // can show a proper picker (list existing notes + create new)
-      // and write directly without ferrying through navigateConsole.
-      const noteRow = document.createElement("div");
-      noteRow.className = "bubble-note-actions";
-      const addNoteBtn = document.createElement("button");
-      addNoteBtn.type = "button";
-      addNoteBtn.className = "bubble-note-btn";
-      addNoteBtn.textContent = "＋ Note";
-      addNoteBtn.title = "添加到 Notes";
-      addNoteBtn.addEventListener("click", () => openOverlayNotePicker(content, addNoteBtn));
-      noteRow.appendChild(addNoteBtn);
-      bubble.appendChild(noteRow);
+      appendAssistantActions(bubble, content, options?.taskId ?? activeTaskId ?? null);
     } else {
       bubble.textContent = content;
     }
@@ -1107,8 +1202,15 @@ function addBubble(role, content, options) {
     bubble.appendChild(chipRow);
   }
 
+  // Per-bubble timestamp footer. Only meaningful for user / assistant
+  // messages; system / step / timeline bubbles already carry their own
+  // status line and would just gain noise.
+  if (role === "user" || role === "assistant") {
+    appendBubbleTimestamp(bubble, options?.ts);
+  }
+
   bubbleArea.appendChild(bubble);
-  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  bubbleAreaPin.maybeScrollToBottom();
   trimBubbleOverflow();
   return bubble;
 }
@@ -1165,8 +1267,13 @@ function clearBubbles() {
   pendingToolStepBubbles = {};
   renderedTimelineEventIds = new Set();
   timelineLabelEl = null;
+  timelinePhaseEl = null;
   timelineSpinnerEl = null;
   timelineStepCount = 0;
+  timelinePhaseRank = 0;
+  timelineStartedAt = 0;
+  runtimeStepIndex = 0;
+  runtimeStepTotal = 0;
   bubbleOverflowNoticeShown = false;
   closeActiveThinkingCard();
 }
@@ -1178,8 +1285,29 @@ function clearBubbles() {
 let timelineBubble = null;
 let timelineBodyEl = null;
 let timelineLabelEl = null;
+let timelinePhaseEl = null;
 let timelineSpinnerEl = null;
 let timelineStepCount = 0;
+// Stamp the wall-clock time when the timeline first opens. Used to
+// render "+2.3s" relative timestamps next to each step so the user can
+// spot slow stages at a glance. Reset by clear* paths.
+let timelineStartedAt = 0;
+// Per-task step counter for the progress suffix ("第 3/7 步"). Counts
+// only real backend steps (step_started events), not timeline rows. The
+// total stays unknown until the backend hints it via payload.step_total
+// — when it does, the suffix promotes from "第 3 步" to "第 3/7 步".
+let runtimeStepIndex = 0;
+let runtimeStepTotal = 0;
+
+function formatStepDelta(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return "";
+  if (ms < 1000) return `+${ms}ms`;
+  if (ms < 10_000) return `+${(ms / 1000).toFixed(1)}s`;
+  if (ms < 60_000) return `+${Math.round(ms / 1000)}s`;
+  const m = Math.floor(ms / 60_000);
+  const s = Math.round((ms % 60_000) / 1000);
+  return s ? `+${m}m${s}s` : `+${m}m`;
+}
 
 function timelineEnsure() {
   if (timelineBubble) return;
@@ -1211,12 +1339,32 @@ function timelineEnsure() {
   const labelEl = document.createElement("span");
   labelEl.textContent = "执行中…";
 
-  header.append(toggleIcon, spinnerEl, labelEl);
+  // Phase chip — Planning → Executing → Finalizing → Done. Updated by
+  // setTimelinePhase based on the most recent event class so the user
+  // can see at a glance whether the agent is still planning or already
+  // composing the answer. Falls back to invisible until the first
+  // phase-emitting event lands.
+  const phaseEl = document.createElement("span");
+  phaseEl.className = "tl-phase";
+  phaseEl.style.cssText = [
+    "margin-left:auto;padding:1px 8px;border-radius:999px;",
+    "background:rgba(91,107,122,0.12);",
+    "color:var(--ink,rgba(0,0,0,0.62));",
+    "font-size:10px;letter-spacing:0.04em;text-transform:uppercase;",
+    "opacity:0;transition:opacity 160ms;"
+  ].join("");
+  phaseEl.textContent = "";
+
+  header.append(toggleIcon, spinnerEl, labelEl, phaseEl);
 
   // ── step body ──
+  // No inner scroll — the previous max-height: 160px + overflow-y: auto
+  // created a nested scroll container, so wheeling over a long step list
+  // would trap inside the timeline instead of moving the conversation.
+  // Long timelines now flow naturally; the user scrolls the outer
+  // bubbleArea, and the collapse toggle still hides the body wholesale.
   const bodyEl = document.createElement("div");
   bodyEl.style.cssText = [
-    "max-height:160px;overflow-y:auto;",
     "padding:2px 10px 8px 10px;",
     "display:flex;flex-direction:column;gap:2px;"
   ].join("");
@@ -1232,18 +1380,69 @@ function timelineEnsure() {
   bubble.append(header, bodyEl);
   bubbleArea.appendChild(bubble);
   bubbleArea.hidden = false;
-  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  bubbleAreaPin.maybeScrollToBottom();
 
   timelineBubble = bubble;
   timelineBodyEl = bodyEl;
   timelineLabelEl = labelEl;
+  timelinePhaseEl = phaseEl;
   timelineSpinnerEl = spinnerEl;
+  timelineStartedAt = Date.now();
 }
 
 function timelineDone(summaryText) {
   if (!timelineBubble) return;
   if (timelineSpinnerEl) timelineSpinnerEl.style.display = "none";
   if (timelineLabelEl) timelineLabelEl.textContent = summaryText ?? "已完成";
+  // Hide the phase chip on terminal — the label itself is the final
+  // status. Keeping the chip would just stack two "done" indicators.
+  if (timelinePhaseEl) {
+    timelinePhaseEl.style.opacity = "0";
+    timelinePhaseEl.textContent = "";
+  }
+  timelinePhaseRank = 0;
+}
+
+// Phase chip is monotonic: never regress (e.g. don't drop back to
+// Planning when a late step_started arrives after Finalizing has fired).
+const TIMELINE_PHASES = {
+  PLANNING: { rank: 1, label: "Planning" },
+  EXECUTING: { rank: 2, label: "Executing" },
+  FINALIZING: { rank: 3, label: "Finalizing" }
+};
+let timelinePhaseRank = 0;
+function setTimelinePhase(name) {
+  const phase = TIMELINE_PHASES[name];
+  if (!phase) return;
+  if (phase.rank <= timelinePhaseRank) return;
+  timelinePhaseRank = phase.rank;
+  if (timelinePhaseEl) {
+    timelinePhaseEl.textContent = phase.label;
+    timelinePhaseEl.style.opacity = "1";
+  }
+}
+
+// Map event types to phases. Tool / step events stay in Executing;
+// final_composer / text_delta / inline_result / artifact_created are
+// the "drafting the answer" signal.
+function eventToPhase(eventType) {
+  if (!eventType) return null;
+  if ([
+    "task_created", "accepted", "started", "provider_resolved",
+    "planner_request_started", "sr_patch_applied",
+    "background_context_added", "phase_timing"
+  ].includes(eventType)) return "PLANNING";
+  if ([
+    "step_started", "step_finished", "conversation_step",
+    "tool_call_started", "tool_call_proposed", "tool_call_completed",
+    "tool_call_denied", "tool_input_delta", "reasoning_delta",
+    "pending_approval_created", "log"
+  ].includes(eventType)) return "EXECUTING";
+  if ([
+    "final_composer_started", "text_delta", "inline_result",
+    "artifact_created"
+  ].includes(eventType)) return "FINALIZING";
+  return null;
 }
 
 function timelineAddStep(text, kind = "active") {
@@ -1267,13 +1466,28 @@ function timelineAddStep(text, kind = "active") {
   icon.textContent = kind === "done" ? "✓" : kind === "fail" ? "✗" : "▸";
 
   const label = document.createElement("span");
-  label.style.cssText = "flex:1;word-break:break-word;";
+  label.style.cssText = "flex:1;min-width:0;word-break:break-word;";
   label.textContent = text;
 
-  row.append(icon, label);
+  // Relative-time chip ("+2.3s" since the timeline opened). Helps the
+  // user spot slow stages without having to mentally diff event order.
+  const timeEl = document.createElement("span");
+  timeEl.style.cssText = [
+    "flex-shrink:0;",
+    "font-family:ui-monospace,SFMono-Regular,Consolas,monospace;",
+    "font-size:10px;color:rgba(0,0,0,0.36);",
+    "letter-spacing:0.02em;"
+  ].join("");
+  if (timelineStartedAt) {
+    timeEl.textContent = formatStepDelta(Date.now() - timelineStartedAt);
+  }
+
+  row.append(icon, label, timeEl);
   timelineBodyEl.appendChild(row);
-  timelineBodyEl.scrollTop = timelineBodyEl.scrollHeight;
-  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  // No inner-scroll pin — the timeline body now flows under the outer
+  // bubbleArea. bubbleAreaPin.maybeScrollToBottom() handles the only
+  // scroll surface that matters.
+  bubbleAreaPin.maybeScrollToBottom();
 }
 
 function getToolEventId(frame) {
@@ -1302,18 +1516,35 @@ function buildToolStepInner(toolId, state, args, observation) {
   const icon = TOOL_STEP_ICONS[state] ?? TOOL_STEP_ICONS.pending;
   const argsText = args == null ? "" : (typeof args === "string" ? args : JSON.stringify(args, null, 2));
   const obsText = String(observation ?? "").trim();
-  const summaryText = obsText
-    ? obsText.replace(/\s+/g, " ").slice(0, 80)
+  // Single-line summary capped at 80 chars. When the underlying text is
+  // longer we add an explicit "…查看全部" hint so it's clear the row is
+  // collapsible — the chevron alone reads as decoration.
+  const compactObs = obsText.replace(/\s+/g, " ");
+  const isTruncated = compactObs.length > 80;
+  const summaryText = compactObs
+    ? compactObs.slice(0, 80)
     : (state === "pending" ? "运行中…" : "");
   const hasBody = Boolean(argsText || obsText);
+  const truncatedHint = isTruncated
+    ? `<span class="step-more">… 查看全部</span>`
+    : "";
+  // Copy button surfaces in the step body when there's a non-trivial
+  // observation worth copying. Skipped for tiny / empty results so the
+  // body stays clean. Click handler is wired in bindToolStepToggle.
+  const showCopy = obsText.length >= 20;
+  const copyBtn = showCopy
+    ? `<button type="button" class="step-copy" title="复制结果" aria-label="复制工具结果">复制</button>`
+    : "";
   return `
     <button type="button" class="step-row" aria-expanded="${hasBody ? "true" : "false"}">
       <span class="step-icon">${icon}</span>
       <span class="step-name">${escapeHtmlForOverlay(toolId)}</span>
       <span class="step-summary">${escapeHtmlForOverlay(summaryText)}</span>
+      ${truncatedHint}
       ${hasBody ? STEP_CHEVRON : ""}
     </button>
     <div class="step-body"${hasBody ? "" : " hidden"}>
+      ${copyBtn}
       ${argsText ? `<div class="step-args">${escapeHtmlForOverlay(argsText)}</div>` : ""}
       ${obsText ? `<div class="step-outcome">${escapeHtmlForOverlay(obsText)}</div>` : ""}
     </div>
@@ -1330,6 +1561,25 @@ function bindToolStepToggle(stepEl) {
     stepEl.classList.toggle("is-open", willOpen);
     row.setAttribute("aria-expanded", willOpen ? "true" : "false");
     body.hidden = !willOpen;
+  });
+  // Copy button — uses the rendered .step-outcome textContent so the
+  // user gets the observation as plain text. Stops propagation so the
+  // click doesn't also toggle the row open/closed.
+  const copyBtn = stepEl.querySelector(".step-copy");
+  copyBtn?.addEventListener("click", async (event) => {
+    event.stopPropagation();
+    const outcome = stepEl.querySelector(".step-outcome")?.textContent ?? "";
+    if (!outcome) return;
+    try {
+      if (window.ucaShell?.writeClipboardText) {
+        await window.ucaShell.writeClipboardText(outcome);
+      } else {
+        await navigator.clipboard?.writeText?.(outcome);
+      }
+      const original = copyBtn.textContent;
+      copyBtn.textContent = "已复制";
+      setTimeout(() => { copyBtn.textContent = original; }, 1200);
+    } catch { /* clipboard may be denied — silent */ }
   });
 }
 
@@ -1354,7 +1604,7 @@ function appendToolStepBubble(toolId, state = "pending", detailText = "", { anch
     bubbleArea.insertBefore(stepEl, anchorBefore);
   } else {
     bubbleArea.appendChild(stepEl);
-    bubbleArea.scrollTop = bubbleArea.scrollHeight;
+    bubbleAreaPin.maybeScrollToBottom();
   }
   return stepEl;
 }
@@ -1373,7 +1623,7 @@ function markToolStepBubble(toolId, ok, observation = "") {
   stepEl.innerHTML = buildToolStepInner(toolId, nextState, preservedArgs, observation);
   bindToolStepToggle(stepEl);
   setToolStepOpen(stepEl, false);
-  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  bubbleAreaPin.maybeScrollToBottom();
 }
 
 function safeJsonParseForOverlay(raw) {
@@ -1414,7 +1664,7 @@ function appendThinkingDelta(delta) {
   activeThinkingText += delta;
   const body = activeThinkingEl.querySelector(".thinking-body");
   if (body) body.textContent = activeThinkingText;
-  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  bubbleAreaPin.maybeScrollToBottom();
 }
 function closeActiveThinkingCard() {
   if (!activeThinkingEl) return;
@@ -1656,6 +1906,50 @@ function formatDateTime(value) {
   return date.toLocaleTimeString("zh-CN", { hour12: false });
 }
 
+// Compact relative time used inside chat bubbles. Promoted on a 30-second
+// timer (refreshChatTimestamps) so "刚刚" eventually becomes "1 分钟前"
+// without re-rendering the bubble.
+function formatRelativeTime(value) {
+  if (!value) return "";
+  const ts = typeof value === "number" ? value : new Date(value).getTime();
+  if (Number.isNaN(ts)) return "";
+  const ms = Date.now() - ts;
+  if (ms < 0) return "刚刚";
+  if (ms < 60_000) return "刚刚";
+  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} 分钟前`;
+  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} 小时前`;
+  const d = new Date(ts);
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${mm}/${dd} ${hh}:${mi}`;
+}
+
+function formatAbsoluteTimestamp(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+// Append (or refresh) the .bubble-time footer on a bubble. Idempotent:
+// calling twice replaces the existing element. Used by addBubble for
+// fresh bubbles and by the streaming-finalize path so streamed answers
+// also pick up a timestamp once they're committed.
+function appendBubbleTimestamp(bubble, value) {
+  if (!bubble) return;
+  const ts = value != null ? new Date(value).getTime() : Date.now();
+  if (!Number.isFinite(ts)) return;
+  bubble.querySelector(":scope > .bubble-time")?.remove();
+  const timeEl = document.createElement("time");
+  timeEl.className = "bubble-time";
+  timeEl.dataset.ts = String(ts);
+  timeEl.title = formatAbsoluteTimestamp(ts);
+  timeEl.textContent = formatRelativeTime(ts);
+  bubble.appendChild(timeEl);
+}
+
 function closeActiveTaskEventStream() {
   activeTaskEventStream?.close?.();
   activeTaskEventStream = null;
@@ -1666,6 +1960,11 @@ function closeActiveTaskEventStream() {
   streamingBubble = null;
   streamingBubbleRawText = "";
   pendingToolStepBubbles = {};
+  // The new task may not arrive immediately, but resetting here means the
+  // first step_started we see for it always increments from 0 — never
+  // appearing as "第 5 步" because the previous task's counter leaked.
+  runtimeStepIndex = 0;
+  runtimeStepTotal = 0;
   closeActiveThinkingCard();
 }
 
@@ -1699,7 +1998,26 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
   ]);
   if (!visibleEvents.has(frame.event)) return;
   if (frame.id) renderedTimelineEventIds.add(frame.id);
-  const summary = formatTaskEventSummary(frame);
+
+  // Track per-task step progress so summaries can render "第 N 步" /
+  // "第 N/M 步" even when the backend doesn't emit step_index. The
+  // counter increments on each step_started; payload values (when
+  // present) take precedence inside formatStepSuffix.
+  if (frame.event === "step_started") {
+    runtimeStepIndex += 1;
+  }
+  const totalHint = Number(frame.data?.step_total ?? 0);
+  if (Number.isFinite(totalHint) && totalHint > runtimeStepTotal) {
+    runtimeStepTotal = totalHint;
+  }
+  // Promote the timeline-header phase chip based on event class. Always
+  // calls setTimelinePhase — it's a no-op when timelineBubble doesn't
+  // exist yet, and the rank-monotonic guard prevents regressions.
+  const phaseName = eventToPhase(frame.event);
+  if (phaseName) setTimelinePhase(phaseName);
+  const summary = formatTaskEventSummary(frame, {
+    step: { index: runtimeStepIndex, total: runtimeStepTotal }
+  });
 
   if (frame.event === "step_started") {
     const stepText = summary.body || frame.data?.step_label || "步骤开始";
@@ -2096,7 +2414,7 @@ async function renderInlineApproval(frame) {
   card.appendChild(actions);
 
   addBubble("system", card);
-  bubbleArea.scrollTop = bubbleArea.scrollHeight;
+  bubbleAreaPin.maybeScrollToBottom();
   renderedApprovalCards.set(approvalId, card);
 }
 
@@ -2128,6 +2446,9 @@ async function handleTaskEventFrame(rawEvent) {
 
   if (lastTask?.task_id === activeTaskId) {
     lastTask = applyTaskEventPatch(lastTask, frame);
+    // Status may have flipped from running → success/failed/cancelled, so
+    // sync the Send-vs-Stop affordance on every event. Cheap; idempotent.
+    refreshSendBtnMode();
   }
 
   if (isForActiveConv) {
@@ -2148,9 +2469,11 @@ async function handleTaskEventFrame(rawEvent) {
       }
       return;
     }
-    // 83.4 — first content chunk means thinking is over for this turn.
-    // Collapse the thinking card so the answer is the primary focus.
-    closeActiveThinkingCard();
+    // 83.4 — Previously the thinking card collapsed the moment the first
+    // text_delta landed. That was too eager — the user can no longer
+    // watch the model's reasoning while the answer streams. Keep the
+    // card expanded during execution; it folds on terminal events
+    // (success / failed / cancelled) below.
     if (!streamingBubble) {
       streamingBubble = document.createElement("div");
       streamingBubble.className = "bubble assistant streaming";
@@ -2161,7 +2484,7 @@ async function handleTaskEventFrame(rawEvent) {
     }
     streamingBubbleRawText += delta;
     streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
-    bubbleArea.scrollTop = bubbleArea.scrollHeight;
+    bubbleAreaPin.maybeScrollToBottom();
     return;
   }
 
@@ -2178,14 +2501,22 @@ async function handleTaskEventFrame(rawEvent) {
           bubbleArea.appendChild(streamingBubble);
           streamingBubble.classList.remove("streaming");
           streamingBubbleRawText = text;
+          streamingBubble.dataset.rawText = text;
           streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
+          // Now that streaming has settled, attach the action row (+
+          // Note, ↻ 重新生成) and timestamp. Done after the last
+          // innerHTML write so the next render can't wipe them. Without
+          // this the streaming-derived answer used to lack both the
+          // note button and the regenerate affordance.
+          appendAssistantActions(streamingBubble, text, frameTaskId ?? activeTaskId ?? null);
+          appendBubbleTimestamp(streamingBubble);
           streamingBubble = null;
           streamingBubbleRawText = "";
         } else {
           streamingBubbleRawText = "";
-          addBubble("assistant", text);
+          addBubble("assistant", text, { taskId: frameTaskId ?? activeTaskId ?? null });
         }
-        bubbleArea.scrollTop = bubbleArea.scrollHeight;
+        bubbleAreaPin.maybeScrollToBottom();
       }
       appendTurnForTask(frameTaskId, "assistant", text);
       if (isForActiveConv) {
@@ -2252,6 +2583,10 @@ async function handleTaskEventFrame(rawEvent) {
           : frame.event === "failed" ? "执行失败"
             : "已取消";
       timelineDone(doneLabel);
+      // Task settled — fold the thinking card now so the answer reads as
+      // the primary surface. The card is still expandable on click; we
+      // also stamp it with the final character count as a residual hint.
+      closeActiveThinkingCard();
       await refreshActiveTask();
     }
     // Close any background stream for this task — it's done, no more events.
@@ -3780,16 +4115,18 @@ commandInput.addEventListener("keydown", (e) => {
   }
 });
 
-sendBtn.addEventListener("click", () => void handleUserSend());
+sendBtn.addEventListener("click", () => {
+  // Dual-purpose button: when a task is in flight, the icon flips to a
+  // stop glyph and a click cancels the task instead of submitting.
+  if (isTaskRunning()) {
+    void cancelActiveTask();
+    return;
+  }
+  void handleUserSend();
+});
 
 closeBtn.addEventListener("click", () => {
-  if (voiceRecording) stopVoiceRecognition();
-  closeAllPanels();
-  // Keep the visible transcript, pending context, and conversationState intact
-  // so reopening resumes the same thread instead of showing an empty overlay.
-  conversationPhase = "idle";
-  suppressOverlayAutoReveal = true;
-  window.ucaShell.hideWindow("overlay");
+  requestOverlayDismiss();
 });
 
 newSessionBtn?.addEventListener("click", () => {
@@ -5112,7 +5449,7 @@ function attachDroppedFilesToVoice(filePaths) {
   for (const fp of filePaths) existing.add(fp);
   pendingFileSelection = {
     sourceApp: pendingFileSelection?.sourceApp ?? "uca.overlay",
-    captureMode: pendingFileSelection?.captureMode ?? "voice_drop",
+    captureMode: pendingFileSelection?.captureMode ?? "drag_drop",
     filePaths: [...existing]
   };
   renderVoiceChips();
@@ -5160,6 +5497,142 @@ if (voiceCard) {
   });
 }
 
+/* ═══════════════════════════════════════════════
+   CONTEXT MENU on chat bubbles (right-click)
+   ═══════════════════════════════════════════════ */
+
+const overlayCtxMenu = document.querySelector("#overlayCtxMenu");
+
+function escapeHtmlForCtx(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function closeOverlayCtxMenu() {
+  if (!overlayCtxMenu) return;
+  overlayCtxMenu.hidden = true;
+  overlayCtxMenu.innerHTML = "";
+}
+
+function openOverlayCtxMenu(items, x, y) {
+  if (!overlayCtxMenu) return;
+  overlayCtxMenu.innerHTML = items.map((item) => {
+    if (item.separator) return `<div class="ctx-sep" role="separator"></div>`;
+    return `
+      <button type="button" class="ctx-item" role="menuitem" data-act="${escapeHtmlForCtx(item.id)}">
+        <span class="ctx-glyph">${escapeHtmlForCtx(item.glyph ?? "")}</span>
+        <span>${escapeHtmlForCtx(item.label)}</span>
+      </button>
+    `;
+  }).join("");
+  overlayCtxMenu.hidden = false;
+  const rect = overlayCtxMenu.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width - 8;
+  const maxY = window.innerHeight - rect.height - 8;
+  overlayCtxMenu.style.left = `${Math.max(8, Math.min(x, maxX))}px`;
+  overlayCtxMenu.style.top = `${Math.max(8, Math.min(y, maxY))}px`;
+  for (const btn of overlayCtxMenu.querySelectorAll("[data-act]")) {
+    btn.addEventListener("click", () => {
+      const item = items.find((i) => i.id === btn.dataset.act);
+      closeOverlayCtxMenu();
+      try { item?.onClick?.(); } catch { /* surface via system bubble */ }
+    });
+  }
+}
+
+document.addEventListener("click", (event) => {
+  if (overlayCtxMenu && !overlayCtxMenu.hidden && !overlayCtxMenu.contains(event.target)) {
+    closeOverlayCtxMenu();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && overlayCtxMenu && !overlayCtxMenu.hidden) {
+    closeOverlayCtxMenu();
+  }
+});
+window.addEventListener("blur", closeOverlayCtxMenu);
+window.addEventListener("scroll", closeOverlayCtxMenu, true);
+
+bubbleArea?.addEventListener("contextmenu", (event) => {
+  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+  const bubble = target?.closest?.(".bubble.assistant, .bubble.user");
+  if (!bubble) return;
+  event.preventDefault();
+  const isAssistant = bubble.classList.contains("assistant");
+  // Pull text from the rendered bubble. For assistant, strip the action
+  // row + timestamp by reading the dataset/raw content if present;
+  // textContent is a fine fallback for plain replies.
+  const text = bubble.dataset.rawText || bubble.textContent?.replace(/\s*[+＋]\s*Note\s*$/u, "").trim() || "";
+  const taskId = bubble.dataset.taskId || null;
+  const items = [
+    { id: "copy", label: "复制", glyph: "⧉", onClick: async () => {
+      try {
+        if (window.ucaShell?.writeClipboardText) await window.ucaShell.writeClipboardText(text);
+        else await navigator.clipboard?.writeText?.(text);
+      } catch { /* ignore */ }
+    }},
+    { id: "quote", label: "引用并回复", glyph: "›", onClick: () => {
+      const quoted = String(text).split("\n").map((line) => `> ${line}`).join("\n");
+      const prefix = commandInput.value.trim() ? `${commandInput.value}\n\n` : "";
+      commandInput.value = `${prefix}${quoted}\n\n`;
+      commandInput.focus();
+      commandInput.setSelectionRange(commandInput.value.length, commandInput.value.length);
+    }}
+  ];
+  if (isAssistant && taskId) {
+    items.push({ separator: true });
+    items.push({ id: "regen", label: "重新生成", glyph: "↻", onClick: () => {
+      void regenerateTask(taskId, null);
+    }});
+  }
+  openOverlayCtxMenu(items, event.clientX, event.clientY);
+});
+
+// Window-level drop zone for the overlay. Surfaces the same dashed
+// shaded zone the console chat uses, so dragging a file anywhere in the
+// overlay (outside voiceCard) gives clear "release to attach"
+// feedback. voiceCard's listener calls stopPropagation, so this handler
+// only fires when the drop lands on plain bubble-area / drag handle /
+// composer area — exactly the case where the user wasn't aiming at
+// voice mode.
+(function wireOverlayDropZone() {
+  const zone = document.querySelector("#overlayDropZone");
+  if (!zone || !document.body) return;
+  let counter = 0;
+  document.body.addEventListener("dragenter", (event) => {
+    if (!hasFilePayload(event)) return;
+    counter += 1;
+    zone.hidden = false;
+  });
+  document.body.addEventListener("dragleave", (event) => {
+    if (!hasFilePayload(event)) return;
+    counter -= 1;
+    if (counter <= 0) { counter = 0; zone.hidden = true; }
+  });
+  document.body.addEventListener("dragover", (event) => {
+    if (hasFilePayload(event)) event.preventDefault();
+  });
+  document.body.addEventListener("drop", (event) => {
+    if (!hasFilePayload(event)) return;
+    counter = 0;
+    zone.hidden = true;
+    // If the drop landed on voiceCard the region listener already
+    // handled it (stopPropagation). When it reaches here the target is
+    // somewhere else — route through the same attach pipeline so the
+    // user sees a "Received N file(s)" bubble in chat.
+    event.preventDefault();
+    const files = [...(event.dataTransfer?.files ?? [])];
+    const filePaths = (window.ucaShell?.resolveDroppedFilePaths?.(files) ?? [])
+      .filter((fp) => typeof fp === "string" && fp.length > 0);
+    if (filePaths.length === 0) return;
+    attachDroppedFilesToVoice(filePaths);
+    showContextReceivedBubble();
+    void maybeRevealOverlay({ markEngaged: true });
+    commandInput?.focus?.();
+  });
+})();
+
 voiceStartBtn?.addEventListener("click", () => {
   // startVoiceRecognition is async and handles its own errors (including
   // showing an actionable status message). Still wrap the .catch() here so
@@ -5185,25 +5658,42 @@ voiceCancelBtn?.addEventListener("click", () => {
   void endEchoSession();
 });
 
-// Enter while in voice mode → submit and exit
+// Global Esc + voice-mode Enter handling.
+// Esc semantics by precedence:
+//   1. note-recording mode  → close overlay (note keeps recording in bg)
+//   2. voice mode           → exit voice (discard recording if any)
+//   3. task running         → cancel the running task
+//   4. otherwise            → dismiss the overlay
+// Enter is only special in voice (submit-and-exit); in normal mode the
+// commandInput keydown handler owns it.
 document.addEventListener("keydown", (event) => {
-  if (!voiceMode) return;
-  if (noteActive) {
-    if (event.key === "Escape") {
+  if (event.key === "Escape") {
+    if (noteActive) {
       event.preventDefault();
       void window.ucaShell.hideWindow("overlay");
+      return;
     }
+    if (voiceMode) {
+      event.preventDefault();
+      if (voiceRecording) stopVoiceRecognition({ discard: true });
+      commandInput.value = commandInput.dataset.voiceBase ?? "";
+      delete commandInput.dataset.voiceBase;
+      exitVoiceMode();
+      void endEchoSession();
+      return;
+    }
+    if (isTaskRunning()) {
+      event.preventDefault();
+      void cancelActiveTask();
+      return;
+    }
+    event.preventDefault();
+    requestOverlayDismiss();
     return;
   }
-  if (event.key === "Enter" && !event.shiftKey) {
+  if (voiceMode && !noteActive && event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
     closeVoicePanel({ submit: true });
-  } else if (event.key === "Escape") {
-    if (voiceRecording) stopVoiceRecognition({ discard: true });
-    commandInput.value = commandInput.dataset.voiceBase ?? "";
-    delete commandInput.dataset.voiceBase;
-    exitVoiceMode();
-    void endEchoSession();
   }
 });
 
@@ -6349,6 +6839,61 @@ function setSendBusy(busy) {
     commandInput.removeAttribute("readonly");
   }
   document.body.classList.toggle("send-busy", busy);
+  // Stop affordance must stay clickable even when userSendInFlight is true,
+  // so let refreshSendBtnMode have the final say on disabled / label.
+  refreshSendBtnMode();
+}
+
+// True when there is an active task that is still doing work — i.e. the
+// user pressed send and the runtime hasn't reached a terminal state yet.
+// Drives the Send-vs-Stop affordance on sendBtn and the Esc semantics.
+function isTaskRunning() {
+  return Boolean(
+    activeTaskId
+    && lastTask?.task_id === activeTaskId
+    && taskIsActive(lastTask?.status)
+  );
+}
+
+// Toggle sendBtn between "send" and "stop" affordances. Called whenever
+// task status changes; cheap to run idempotently.
+function refreshSendBtnMode() {
+  if (!sendBtn) return;
+  const stopMode = isTaskRunning();
+  sendBtn.classList.toggle("send-btn--stop", stopMode);
+  if (stopMode) {
+    sendBtn.title = "停止任务 (Esc)";
+    sendBtn.setAttribute("aria-label", "停止当前任务");
+    // Stop button stays clickable even while userSendInFlight gates Send.
+    sendBtn.disabled = false;
+  } else {
+    sendBtn.title = "发送 (Enter)";
+    sendBtn.setAttribute("aria-label", "发送指令");
+  }
+}
+
+async function cancelActiveTask({ silent = false } = {}) {
+  if (!activeTaskId) return false;
+  const taskId = activeTaskId;
+  try {
+    await fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, { method: "POST" });
+    if (!silent) addSystemBubble("已请求取消任务。");
+    return true;
+  } catch (error) {
+    if (!silent) addSystemBubble(`取消任务失败：${error?.message ?? error}`);
+    return false;
+  }
+}
+
+// Centralise the overlay-dismiss flow so closeBtn, Esc, and the main-
+// process auto-hide path all do the same cleanup (stop voice, fold any
+// inline panels, mark phase idle, ask the shell to hide the window).
+function requestOverlayDismiss() {
+  if (voiceRecording) stopVoiceRecognition();
+  closeAllPanels();
+  conversationPhase = "idle";
+  suppressOverlayAutoReveal = true;
+  void window.ucaShell.hideWindow("overlay");
 }
 
 async function handleUserSend() {
@@ -6593,6 +7138,18 @@ window.ucaShell?.onCtrlEnter?.(() => {
   }
 });
 
+// Main process notifies the overlay when the user has clicked outside
+// the application entirely. Run the same dismiss flow as the X button so
+// voice recording stops and inline panels fold before the window hides.
+window.ucaShell.onOverlayAutoHide?.(() => {
+  // Recheck the focus contract on the renderer side too — if a sibling
+  // window (popup-card, preview, etc.) raced past the main-process check
+  // between the blur event and the deferred sample, we don't want to
+  // auto-dismiss while the user is acting on a confirmation card.
+  if (document.hasFocus()) return;
+  requestOverlayDismiss();
+});
+
 window.ucaShell.onWindowFocused((payload) => {
   if (payload.windowId === "overlay") {
     suppressOverlayAutoReveal = false;
@@ -6635,3 +7192,16 @@ showWelcome();
 refreshStatus();
 void syncProjectStoreFromService({ render: false });
 setInterval(refreshActiveTask, 2000);
+
+// Promote chat-bubble timestamps from "刚刚" → "1 分钟前" → … without
+// re-rendering the message. Cheap; only walks visible <time> nodes.
+function refreshChatTimestamps() {
+  if (!bubbleArea) return;
+  for (const el of bubbleArea.querySelectorAll(".bubble-time[data-ts]")) {
+    const ts = Number(el.dataset.ts);
+    if (!Number.isFinite(ts)) continue;
+    const next = formatRelativeTime(ts);
+    if (el.textContent !== next) el.textContent = next;
+  }
+}
+setInterval(refreshChatTimestamps, 30_000);

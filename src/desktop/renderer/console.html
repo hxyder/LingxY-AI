@@ -36,6 +36,7 @@
         gap: 8px;
         padding: 14px 10px 12px;
         z-index: 20;
+        overflow-x: hidden;
         overflow-y: auto;
         transition: width var(--duration-base) var(--ease-standard);
       }
@@ -706,9 +707,9 @@
          chips + recent-tasks list + key hints. Reuses the taskComposer
          /task endpoint for submission so there's one code path for
          creating tasks. -->
-    <div id="paletteBackdrop" class="palette-backdrop" role="dialog" aria-modal="true" aria-labelledby="paletteTitle" hidden>
+    <div id="paletteBackdrop" class="palette-backdrop" role="dialog" aria-modal="true" aria-labelledby="paletteGreeting" hidden>
       <div class="palette-panel">
-        <div id="paletteGreeting" class="palette-greeting" id="paletteTitle">Hi — what can I do for you?<span class="zh">想做点什么？</span></div>
+        <div id="paletteGreeting" class="palette-greeting">Hi — what can I do for you?<span class="zh">想做点什么？</span></div>
         <label class="palette-search">
           <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input id="paletteSearchInput" type="text" placeholder="Ask anything, or pick a quick action…  问我或选一个快速动作" aria-label="Palette search"/>
@@ -1003,7 +1004,7 @@
     <section id="panel-chat" class="tab-panel">
       <header class="page-head">
         <div>
-          <h1>Chat<span class="zh">对话</span></h1>
+          <h1 id="consoleChatTitle">Chat<span class="zh">对话</span></h1>
           <div class="sub">Conversational shell — keeps session memory, streams tool calls.<span class="zh">保留会话记忆；支持流式工具调用。</span></div>
         </div>
         <div class="page-head-actions">
@@ -1025,6 +1026,29 @@
               <svg class="console-chat-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               <div class="console-chat-empty-title">Start a conversation</div>
               <div class="console-chat-empty-sub">没有对话 — 开始一个吧。<br/>Type below, or press <span class="kbd">Ctrl</span><span class="kbd">K</span> to pick a template.</div>
+            </div>
+          </div>
+          <button id="consoleChatScrollDown" class="scroll-to-bottom" type="button"
+                  aria-label="回到最新消息" title="回到最新消息" hidden>
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none"
+                 stroke="currentColor" stroke-width="2.2" stroke-linecap="round"
+                 stroke-linejoin="round" aria-hidden="true">
+              <polyline points="6 10 12 16 18 10"></polyline>
+            </svg>
+          </button>
+          <!-- Drop-zone overlay shown while a file drag is in progress.
+               Toggled visible by the drag counter in console.js. -->
+          <div id="consoleChatDropZone" class="chat-drop-zone" hidden>
+            <div class="chat-drop-zone-card">
+              <svg viewBox="0 0 24 24" width="32" height="32" fill="none"
+                   stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+                   stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              <div class="chat-drop-zone-title">松开鼠标以添加附件</div>
+              <div class="chat-drop-zone-hint">支持图片、文档、代码等</div>
             </div>
           </div>
           <div id="consoleChatAttachments" class="console-chat-attachments" hidden></div>
@@ -2350,6 +2374,13 @@
         </div>
       </aside>
     </div>
+
+    <!-- Shared singleton context menu — populated by console.js on
+         contextmenu events from chat bubbles. Lives at body root so it
+         can float over any panel without z-index gymnastics. -->
+    <div id="chatCtxMenu" class="ctx-menu" role="menu" hidden></div>
+    <!-- Toast stack — appendable from anywhere via showConsoleToast(). -->
+    <div id="consoleToastHost" class="toast-host" aria-live="polite" aria-atomic="false"></div>
 
     <script src="./drop-guard.js"></script>
     <script src="./preview/client-registry.js"></script>

@@ -24,6 +24,10 @@ export const IPC_CHANNELS = Object.freeze({
   shellClipboardChanged: "uca:shell-clipboard-changed",
   shellNavigateConsole: "uca:shell-navigate-console",
   overlayToggle: "uca:overlay-toggle",
+  // Sent main → overlay renderer when the overlay window blurs and focus
+  // has left the application entirely. The renderer runs the same
+  // dismiss flow as the X button (stop voice, fold inline panels, etc.).
+  overlayAutoHide: "uca:overlay-auto-hide",
   consoleOpen: "uca:console-open",
   shortcutTriggered: "uca:shortcut-triggered",
   contextPreviewRequested: "uca:context-preview-requested",
