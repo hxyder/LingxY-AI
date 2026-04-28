@@ -194,6 +194,20 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       max_chars: { type: "number" }   // max characters of extracted text to return (default 3000)
     }
   },
+  vision_analyze: {
+    type: "object",
+    required: [],
+    properties: {
+      image_paths: {},                // array of absolute image paths (preferred); a single string is also accepted
+      imagePaths: {},                 // alias the planner sometimes emits
+      paths: {},                      // generous alias
+      path: {},                       // single-image shorthand
+      image_path: {},                 // single-image shorthand
+      prompt: { type: "string" },     // what to extract (e.g. "describe", "OCR the text", "compare")
+      question: { type: "string" },   // alias
+      instruction: { type: "string" } // alias
+    }
+  },
   write_file: {
     type: "object",
     required: [],

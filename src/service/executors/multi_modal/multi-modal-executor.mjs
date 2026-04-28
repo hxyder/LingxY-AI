@@ -102,7 +102,11 @@ function guessMimeType(filePath) {
   return map[ext] ?? "image/png";
 }
 
-async function loadImageAsBase64(imagePath) {
+// Exported so the `vision_analyze` action tool can reuse the exact same
+// base64 + MIME-detection path without duplicating it. See 架构思路.md
+// §12.3.1 — the tool is a tool-backed specialist that delegates the
+// transport plumbing to these helpers; it is NOT a generic abstraction.
+export async function loadImageAsBase64(imagePath) {
   const buffer = await readFile(imagePath);
   return {
     base64: buffer.toString("base64"),
@@ -110,7 +114,7 @@ async function loadImageAsBase64(imagePath) {
   };
 }
 
-async function callAnthropicVision({ apiKey, baseUrl, model, userCommand, images, signal }) {
+export async function callAnthropicVision({ apiKey, baseUrl, model, userCommand, images, signal }) {
   const content = [];
 
   for (const img of images) {
@@ -153,7 +157,7 @@ async function callAnthropicVision({ apiKey, baseUrl, model, userCommand, images
     ?.join("\n") ?? "";
 }
 
-async function callOpenAIVision({ apiKey, baseUrl, model, userCommand, images, signal }) {
+export async function callOpenAIVision({ apiKey, baseUrl, model, userCommand, images, signal }) {
   const content = [];
 
   for (const img of images) {

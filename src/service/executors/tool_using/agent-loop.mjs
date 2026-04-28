@@ -752,7 +752,12 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
     /^(compose_email|send_email_smtp|account_|connector_)/.test(tool.id),
   desktop_action: (tool) =>
     /^(launch_app|gui_|open_file|reveal_in_explorer|copy_to_clipboard|notify|read_clipboard)/.test(tool.id),
-  image_understanding: () => false,
+  // 架构思路.md §12.3.3: vision_analyze is the tool-backed specialist
+  // for image understanding. Without this match the IntentRoute filter
+  // would strip it whenever needed_capabilities=["image_understanding"]
+  // — which is exactly the path image-bearing tasks now take when they
+  // reach tool_using instead of multi_modal.
+  image_understanding: (tool) => tool.id === "vision_analyze",
   image_generation: (tool) => ["generate_document", "write_file"].includes(tool.id),
   none: () => false
 });
@@ -903,7 +908,8 @@ Guidance (not a rigid checklist — apply judgment):
 - **Truthfulness.** Only claim an email was sent / event created / file uploaded when the transcript shows the corresponding tool returned success=true. If you prepared a draft and it's waiting on the user's approval, say so explicitly.
 - **Use search by judgment, not reflex.** Read \`tool_policy.external_web_read\` first. When the mode is \`required\`, call a member of the \`external_web_read\` group before giving a factual current-data answer. When the mode is \`optional\`, decide from the user's goal: ask for missing essentials first, answer from stable knowledge when enough, or search when freshness is genuinely needed. When the mode is \`forbidden\`, do NOT search; ask for permission if live/external data is necessary.
 - **Local context first.** For location-dependent requests, use a real location only when it is present in Resources, the user's message, or conversation history. If Resources says UNKNOWN_LOCATION and the user did not name a place, ask for the city or location permission before searching or acting. Never infer a city from timezone, locale, IP, search defaults, or examples.
-- **Phantom attachments.** If the user refers to an image / file / screenshot / 图片 / 这张 / 这张照片 / 这个文件 / 上传的 but Resources shows \`Attached files: (none)\`, ASK them to attach or paste it. Never describe, summarize, or analyze a fictional attachment. If the conversation history mentions a concrete path, pass that path to a tool argument; do not pretend to "see" it as an inline attachment.
+- **Phantom attachments.** If the user refers to an image / file / screenshot / 图片 / 这张 / 这张照片 / 这个文件 / 上传的 but Resources shows BOTH \`Attached files: (none)\` AND \`Attached images: (none)\`, ASK them to attach or paste it. Never describe, summarize, or analyze a fictional attachment. If the conversation history mentions a concrete path, pass that path to a tool argument; do not pretend to "see" it as an inline attachment.
+- **Vision questions go through \`vision_analyze\`.** When the user asks what is in an attached image, to read text / OCR / 提取文字 from a screenshot, to compare images, or to summarise visual content, call \`vision_analyze\` with the absolute paths from \`Attached images\` (and a short prompt). Do NOT call \`vision_analyze\` for sending / forwarding / uploading / opening / revealing the image — those are connector or file-tool jobs (compose_email, account_send_email, account_upload_file, open_file, reveal_in_explorer). If this turn already includes the image as an inline block (your provider supports vision and the runtime attached it), just answer directly without calling \`vision_analyze\`.
 - **Contracts are boundaries, not dead ends.** If a policy, risk gate, or missing approval blocks the action you think is necessary, do not give up and do not pretend success. Ask the user for the smallest permission or missing detail needed, then stop.
 - **Memory recall.** If the user refers to earlier work with a pronoun ("上个问题" / "刚才" / "之前那份" / "last one" / "that report") or asks you to continue / revise something done before, call list_recent_tasks first (or recall_memory with a topic query if the reference is thematic) and then get_task_detail on the matching task_id. Never reply "I don't remember prior work" while these tools exist.
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.

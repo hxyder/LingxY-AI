@@ -138,19 +138,29 @@ export function formatResourceContext(task) {
     lines.push(`- User's location: UNKNOWN_LOCATION. No city or coordinates are available. For any location-dependent request without a location in the user's message or history, ask for the city or ask them to click "📍 启用精确定位" in the LingxY side panel before using tools. Do NOT infer a city from timezone, locale, IP, search defaults, or examples.`);
   }
 
-  const attachments = [
-    ...(ctx.file_paths ?? []),
-    ...(ctx.image_paths ?? [])
-  ].filter(Boolean);
+  // 架构思路.md §12.3.4: surface attached images as their own line so
+  // the planner can pass image_paths to vision_analyze without first
+  // having to disentangle them from regular file_paths. Files and
+  // images are distinct affordances — files go to open_file /
+  // edit_file / connector upload; images go to vision_analyze (or are
+  // already inline if the chat provider has vision and runtime
+  // attached an image block).
+  const attachedFiles = (ctx.file_paths ?? []).filter(Boolean);
+  const attachedImages = (ctx.image_paths ?? []).filter(Boolean);
   // We DO surface absolute paths the user pasted into the request — paths
   // are short opaque identifiers safe as tool arguments. We do NOT surface
   // the surrounding prose those paths sat in; that goes via
   // `formatUntrustedSourceMaterial` to a user turn.
   const contextualAbsolutePaths = extractAbsoluteLocalPathsFromText(ctx.text ?? "");
-  if (attachments.length > 0) {
-    lines.push(`- Attached files (absolute paths, safe to pass as tool arguments): ${JSON.stringify(attachments)}`);
+  if (attachedFiles.length > 0) {
+    lines.push(`- Attached files (absolute paths, safe to pass as tool arguments): ${JSON.stringify(attachedFiles)}`);
   } else {
     lines.push(`- Attached files: (none)`);
+  }
+  if (attachedImages.length > 0) {
+    lines.push(`- Attached images (absolute paths; pass these to vision_analyze.image_paths to read what's in the picture, or to file/connector tools to send/upload the image): ${JSON.stringify(attachedImages)}`);
+  } else {
+    lines.push(`- Attached images: (none)`);
   }
   if (contextualAbsolutePaths.length > 0) {
     lines.push(`- Absolute local file paths already mentioned in the request/history (safe to pass directly to attachmentPaths / localPath / file args without re-discovering them): ${JSON.stringify(contextualAbsolutePaths)}`);
