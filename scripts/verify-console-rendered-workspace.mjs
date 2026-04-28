@@ -11,13 +11,20 @@ async function read(relativePath) {
 }
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
+assert.equal(consoleHtml.includes('id="panel-tasks"'), true);
+assert.equal(consoleHtml.includes('id="panel-schedules"'), true);
+assert.equal(consoleHtml.includes('id="panel-files"'), true);
+assert.equal(consoleHtml.includes('id="panel-settings"'), true);
 assert.equal(consoleHtml.includes("Tasks"), true);
+assert.equal(consoleHtml.includes("Schedules"), true);
 assert.equal(consoleHtml.includes("Pending Approvals"), true);
-assert.equal(consoleHtml.includes("Scheduled Tasks"), true);
-assert.equal(consoleHtml.includes("Templates"), true);
+assert.equal(consoleHtml.includes('id="approvalList"'), true);
+assert.equal(consoleHtml.includes('id="templateList"'), true);
+assert.equal(consoleHtml.includes('id="templateImportInput"'), true);
 assert.equal(consoleHtml.includes("Import JSON"), true);
-assert.equal(consoleHtml.includes("DAG Workflow"), true);
+assert.equal(consoleHtml.includes('id="monthlyBudgetInput"'), true);
 assert.equal(consoleHtml.includes("Budget"), true);
+assert.equal(consoleHtml.includes('id="auditList"'), true);
 // UCA-121: "History" tab retired. "History" may still appear in
 // cheatsheet label for task timeline; verify is intentionally removed.
 assert.equal(consoleHtml.includes("Privacy & Security"), true);
@@ -52,7 +59,8 @@ assert.equal(consoleJs.includes("configureOfficeAddins"), true);
 assert.equal(consoleJs.includes("/setup/office-addins"), true);
 assert.equal(consoleJs.includes("providerModelPresets"), true);
 assert.equal(consoleJs.includes("modeOptionsForModel"), true);
-assert.equal(consoleJs.includes("deepseek-reasoner"), true);
+assert.equal(consoleJs.includes("reasoningEffortOptions"), true);
+assert.equal(consoleJs.includes("data-routing-reasoning"), true);
 assert.equal(consoleJs.includes("data-routing-mode"), true);
 // UCA-049 commit 3: task detail panel surfaces the resolved provider line
 // + downgraded warning, derived from per-event provider_* fields.

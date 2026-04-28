@@ -1865,6 +1865,18 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   white-space: pre-wrap;
   word-wrap: break-word;
 }
+.chat-msg-bubble a,
+.console-chat-message-body a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.chat-msg-bubble a:hover,
+.console-chat-message-body a:hover {
+  color: var(--accent-strong);
+}
 /* AI side is the primary reading surface — remove the border so it reads
    more like prose than a card. User side keeps a softer accent tint. */
 .chat-msg.assistant .chat-msg-bubble,

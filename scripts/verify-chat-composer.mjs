@@ -42,6 +42,7 @@ assert.match(css, /\.chat-tool-card\s*\{/, "shared.css missing .chat-tool-card")
 assert.match(css, /\.console-chat-toolbar\s*\{/, "shared.css missing .console-chat-toolbar");
 assert.match(css, /\.console-chat-attachments\s*\{/, "shared.css missing .console-chat-attachments");
 assert.match(css, /\.console-chat-toolbar\s+\.model-chip\s*\{/, "shared.css missing toolbar model-chip rule");
+assert.match(css, /\.chat-msg-bubble\s+a,\s*\n\.console-chat-message-body\s+a\s*\{/, "shared.css must style clickable chat links");
 
 // User / AI / system distinction styled.
 assert.match(css, /\.chat-msg\.user\s+\.chat-msg-bubble/, "shared.css missing user bubble styling");
@@ -52,6 +53,11 @@ assert.match(js, /function appendConsoleChatMessage\(/, "console.js missing appe
 assert.match(js, /wrapper\.className = `chat-msg \$\{role\}`/, "appendConsoleChatMessage must create .chat-msg wrapper");
 assert.match(js, /chat-msg-av/, "appendConsoleChatMessage must create .chat-msg-av");
 assert.match(js, /chat-msg-bubble/, "appendConsoleChatMessage must create .chat-msg-bubble");
+assert.match(js, /function renderConsoleChatBubbleContent\(/, "console.js must render linkified chat bubble content");
+assert.match(js, /CHAT_MARKDOWN_LINK_RE/, "console.js must linkify markdown links in chat output");
+assert.match(js, /CHAT_BARE_URL_RE/, "console.js must linkify bare URLs in chat output");
+assert.match(js, /consoleChatMessages\?\.addEventListener\("click"/, "console.js must delegate chat link clicks");
+assert.match(js, /window\.ucaShell\.openExternal\(href\)/, "chat link click must open external links via shell");
 
 // Tool call helper + attach handlers + model chip updater.
 assert.match(js, /function appendConsoleChatToolCall\(/, "console.js missing appendConsoleChatToolCall");

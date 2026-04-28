@@ -525,6 +525,121 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
+const CHAT_MARKDOWN_LINK_RE = /\[([^\]\n]{1,240})\]\((https?:\/\/[^\s<>"']{1,2000}?)\)/gi;
+const CHAT_BARE_URL_RE = /https?:\/\/[^\s<>"']+/gi;
+const CHAT_TRAILING_URL_PUNCTUATION = new Set([".", ",", "!", "?", ";", ":", "，", "。", "！", "？", "；", "：", "、"]);
+
+function normalizeExternalUrl(value) {
+  try {
+    const url = new URL(String(value ?? "").trim());
+    if (!["http:", "https:", "mailto:"].includes(url.protocol)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function countChars(value, char) {
+  return Array.from(String(value ?? "")).filter((c) => c === char).length;
+}
+
+function splitTrailingUrlPunctuation(rawUrl = "") {
+  let url = String(rawUrl ?? "");
+  let trailing = "";
+  while (url) {
+    const last = url.at(-1);
+    const shouldTrimBracket =
+      (last === ")" && countChars(url, ")") > countChars(url, "("))
+      || (last === "]" && countChars(url, "]") > countChars(url, "["))
+      || (last === "）" && countChars(url, "）") > countChars(url, "（"));
+    if (!CHAT_TRAILING_URL_PUNCTUATION.has(last) && !shouldTrimBracket) break;
+    trailing = last + trailing;
+    url = url.slice(0, -1);
+  }
+  return { url, trailing };
+}
+
+function appendChatExternalLink(parent, href, label) {
+  const normalized = normalizeExternalUrl(href);
+  if (!normalized) {
+    parent.appendChild(document.createTextNode(label ?? href ?? ""));
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = normalized;
+  a.textContent = label || href;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.className = "chat-link";
+  parent.appendChild(a);
+}
+
+function appendChatLinkifiedText(parent, text = "") {
+  const source = String(text ?? "");
+  let lastIndex = 0;
+  CHAT_BARE_URL_RE.lastIndex = 0;
+  for (const match of source.matchAll(CHAT_BARE_URL_RE)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      parent.appendChild(document.createTextNode(source.slice(lastIndex, index)));
+    }
+    const { url, trailing } = splitTrailingUrlPunctuation(match[0]);
+    appendChatExternalLink(parent, url, url);
+    if (trailing) parent.appendChild(document.createTextNode(trailing));
+    lastIndex = index + match[0].length;
+  }
+  if (lastIndex < source.length) {
+    parent.appendChild(document.createTextNode(source.slice(lastIndex)));
+  }
+}
+
+function renderConsoleChatBubbleContent(bubble, text = "") {
+  if (!bubble) return;
+  const source = String(text ?? "");
+  bubble.dataset.rawText = source;
+  bubble.replaceChildren();
+
+  let lastIndex = 0;
+  CHAT_MARKDOWN_LINK_RE.lastIndex = 0;
+  for (const match of source.matchAll(CHAT_MARKDOWN_LINK_RE)) {
+    const index = match.index ?? 0;
+    if (index > lastIndex) {
+      appendChatLinkifiedText(bubble, source.slice(lastIndex, index));
+    }
+    appendChatExternalLink(bubble, match[2], match[1]);
+    lastIndex = index + match[0].length;
+  }
+  if (lastIndex < source.length) {
+    appendChatLinkifiedText(bubble, source.slice(lastIndex));
+  }
+}
+
+async function openConsoleChatExternalLink(anchor) {
+  const href = normalizeExternalUrl(anchor?.getAttribute?.("href") ?? anchor?.href ?? "");
+  if (!href) return false;
+  try {
+    if (window.ucaShell?.openExternal) {
+      await window.ucaShell.openExternal(href);
+      return true;
+    }
+    window.open(href, "_blank", "noopener,noreferrer");
+    return true;
+  } catch (error) {
+    if (consoleChatState) {
+      consoleChatState.textContent = `Failed to open link: ${error.message}`;
+    }
+    return false;
+  }
+}
+
+consoleChatMessages?.addEventListener("click", (ev) => {
+  const target = ev.target instanceof Element ? ev.target : null;
+  const anchor = target?.closest?.("a[href]");
+  if (!anchor || !consoleChatMessages.contains(anchor)) return;
+  ev.preventDefault();
+  void openConsoleChatExternalLink(anchor);
+});
+
 function slugify(value) {
   const normalized = `${value ?? ""}`
     .trim()
@@ -623,7 +738,7 @@ function appendConsoleChatMessage(role, text, options = {}) {
 
   const bubble = document.createElement("div");
   bubble.className = "chat-msg-bubble";
-  bubble.textContent = text;
+  renderConsoleChatBubbleContent(bubble, text);
   body.appendChild(bubble);
 
   if (role === "assistant" || role === "ai") {
@@ -636,7 +751,7 @@ function appendConsoleChatMessage(role, text, options = {}) {
     actions.addEventListener("click", (ev) => {
       const btn = ev.target.closest("[data-action]");
       if (!btn) return;
-      const content = bubble.textContent || "";
+      const content = bubble.dataset.rawText || bubble.textContent || "";
       if (btn.dataset.action === "copy") {
         try { navigator.clipboard?.writeText?.(content); } catch { /* ignore */ }
         btn.textContent = "已复制";
@@ -679,7 +794,7 @@ function appendConsoleChatTextDelta(taskId, delta) {
   }
   consoleChatStreamingAnswer.text += String(delta);
   if (consoleChatStreamingAnswer.bubble) {
-    consoleChatStreamingAnswer.bubble.textContent = consoleChatStreamingAnswer.text;
+    renderConsoleChatBubbleContent(consoleChatStreamingAnswer.bubble, consoleChatStreamingAnswer.text);
   }
   consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
 }
@@ -695,7 +810,7 @@ function finalizeConsoleChatStreaming(taskId, finalText = "") {
     return true;
   }
   if (text && consoleChatStreamingAnswer.bubble) {
-    consoleChatStreamingAnswer.bubble.textContent = text;
+    renderConsoleChatBubbleContent(consoleChatStreamingAnswer.bubble, text);
   }
   consoleChatStreamingAnswer = null;
   return true;
@@ -1264,7 +1379,7 @@ function appendConsoleChatUserMessage(content, clientMessageId) {
   if (clientMessageId) wrapper.dataset.clientMessageId = clientMessageId;
   const body = document.createElement("div");
   body.className = "console-chat-message-body";
-  body.textContent = content;
+  renderConsoleChatBubbleContent(body, content);
   wrapper.appendChild(body);
   consoleChatMessages.appendChild(wrapper);
   consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
@@ -1318,7 +1433,7 @@ const consoleChatMessageAdapter = {
       wrapper.dataset.seq = String(message.seq);
       const body = document.createElement("div");
       body.className = "console-chat-message-body";
-      body.textContent = message.content;
+      renderConsoleChatBubbleContent(body, message.content);
       wrapper.appendChild(body);
       consoleChatMessages.appendChild(wrapper);
     } else if (message.role === "assistant" || message.role === "system") {
@@ -8116,7 +8231,7 @@ function initQuickNotes() {
     const msgs = feed.querySelectorAll(".chat-msg.assistant .chat-msg-bubble, .chat-msg.ai .chat-msg-bubble");
     const last = msgs[msgs.length - 1];
     if (!last) { toastNote("No assistant reply yet"); return; }
-    appendAdoptedChip(last.textContent || "");
+    appendAdoptedChip(last.dataset.rawText || last.textContent || "");
   }
 
   function appendAdoptedChip(text) {
