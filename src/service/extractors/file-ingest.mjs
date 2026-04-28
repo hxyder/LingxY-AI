@@ -323,6 +323,17 @@ export async function buildFileContextPacket({
   // the text field and downstream tools can work off that.
   const cliFilePaths = expansionFoundFiles ? expandedFilePaths : [];
 
+  // Surface image files via image_paths so executor-resolver picks
+  // multi_modal and provider-resolver picks the vision-routed provider.
+  // Without this, an image dropped through file-submission (shell menu /
+  // file picker) gets file_paths only, executor-resolver sees no image,
+  // and the task ends up on the chat provider — bypassing the user's
+  // configured Vision/Image model entirely.
+  const imagePaths = cliFilePaths.filter((filePath, idx) => {
+    const mime = fileMetadata[idx]?.mime ?? "";
+    return typeof mime === "string" && mime.startsWith("image/");
+  });
+
   return {
     schema_version: "1.0",
     context_id: contextId,
@@ -335,6 +346,7 @@ export async function buildFileContextPacket({
     file_paths: cliFilePaths,
     original_file_paths: filePaths,
     file_metadata: fileMetadata,
+    image_paths: imagePaths,
     text: extractedTexts.join("\n\n"),
     captured_at: capturedAt
   };
