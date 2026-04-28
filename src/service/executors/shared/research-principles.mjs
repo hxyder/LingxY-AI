@@ -109,7 +109,9 @@ export function renderResearchBudget(toolPolicy, contextSources, researchQuality
     return [
       "Quality bar for this task:",
       "- A single authoritative source is sufficient (single-fact lookup or specific URL summary). You do not need to corroborate across publishers.",
-      "- A single weekly-review / digest / roundup page is acceptable for this profile."
+      "- A single weekly-review / digest / roundup page is acceptable for this profile.",
+      "- Search effort: use up to roughly 8 tool turns if needed, but stop as soon as the authoritative fact/page is found. If the first search is weak, try an alternate query or fetch a known source URL directly; request more fetch_url_content max_chars when the answer needs detailed fields.",
+      "- Return when the source answers the requested fact. If the source does not expose one requested field, answer the fields you found and clearly mark the missing field as unavailable from the sources reached."
     ].join("\n");
   }
 
@@ -142,6 +144,13 @@ export function renderResearchBudget(toolPolicy, contextSources, researchQuality
       `- If you choose to browse, use this as a quality target: at least ${minSources} independent source${minSources === 1 ? "" : "s"} from ${minDomains} distinct publisher${minDomains === 1 ? "" : "s"}. Do not over-search if the user did not ask for research depth — the success contract does NOT enforce this on optional-web tasks.`
     );
   }
+  const turnBudget = profile === "deep_research" ? 16 : 12;
+  lines.push(
+    `- Search effort: use up to roughly ${turnBudget} tool turns for search/fetch/synthesis when needed. Try alternate queries and direct authoritative URLs before giving up, request more fetch_url_content max_chars when detailed fields are needed, and reserve enough room to synthesize the answer.`
+  );
+  lines.push(
+    "- When calling web_search_fetch, prefer limit: 8 to cover more publishers per call. If the topic is broad or the first few queries thin, you may request up to limit: 30 — but more results means more snippet noise, so go beyond 8 only when necessary."
+  );
   lines.push(
     "- A single publisher (regardless of how many internal articles their page lists) counts as ONE source. nytimes.com homepage and nytimes.com/article-X are the same publisher."
   );
@@ -151,7 +160,7 @@ export function renderResearchBudget(toolPolicy, contextSources, researchQuality
     );
   }
   lines.push(
-    `- Stop searching when the bar is met AND you can answer reliably. Do not keep searching for the sake of searching.`
+    `- Stop searching when the bar is met AND you can answer reliably. If the bar cannot be met within the effort budget because sources block access or do not expose the requested data, answer with explicit source-count/source-limit disclosure instead of fabricating.`
   );
   return lines.join("\n");
 }

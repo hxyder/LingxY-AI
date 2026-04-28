@@ -110,15 +110,15 @@ async function run() {
   // ── 2. rate limit ─────────────────────────────────────────────────────────
   await (async () => {
     const tools = makeFakeTools();
-    const registry = createActionToolRegistry([tools.web_search_fetch]);
+    const registry = createActionToolRegistry([tools.write_file]);
     const runtime = makeFakeRuntime();
     const task = makeTask({ taskId: "task_rate" });
 
-    const limit = DEFAULT_RATE_LIMITS.web_search_fetch; // 5
+    const limit = DEFAULT_RATE_LIMITS.write_file;
     let ranSuccessfully = 0;
     let blockedByRate = 0;
     for (let i = 0; i < limit + 2; i += 1) {
-      const r = await registry.call("web_search_fetch", { query: `q${i}` }, { runtime, task });
+      const r = await registry.call("write_file", { path: `q${i}.txt` }, { runtime, task });
       if (r.success) ranSuccessfully += 1;
       else if (r.error === "rate_limited") blockedByRate += 1;
     }
@@ -126,9 +126,9 @@ async function run() {
     it("rate_limit: succeeds exactly `limit` times", () => assert.equal(ranSuccessfully, limit));
     it("rate_limit: blocks subsequent calls", () => assert.equal(blockedByRate, 2));
     it("rate_limit: tool.execute ran exactly `limit` times", () =>
-      assert.equal(tools.counts().webSearchCalls, limit));
+      assert.equal(tools.counts().writeFileCalls, limit));
     it("rate_limit: counter equals limit (does not increment past it)", () =>
-      assert.equal(getRateLimitUsage(runtime, "task_rate", "web_search_fetch"), limit));
+      assert.equal(getRateLimitUsage(runtime, "task_rate", "write_file"), limit));
     it("rate_limit: emits one audit per blocked call", () => {
       const blocks = runtime.auditEntries.filter((e) => e.event_subtype === "tool.rate_limited");
       assert.equal(blocks.length, 2);
@@ -136,7 +136,24 @@ async function run() {
     });
   })();
 
-  // ── 3. uncapped tool, no policy: passes through ───────────────────────────
+  // ── 3. uncapped tools: external web is governed by research/loop budgets ──
+  await (async () => {
+    const tools = makeFakeTools();
+    const registry = createActionToolRegistry([tools.web_search_fetch]);
+    const runtime = makeFakeRuntime();
+    const task = makeTask({ taskId: "task_web_uncapped" });
+
+    for (let i = 0; i < 20; i += 1) {
+      const r = await registry.call("web_search_fetch", { query: `q${i}` }, { runtime, task });
+      if (!r.success) throw new Error(`web call ${i} unexpectedly failed`);
+    }
+    it("uncapped web_search_fetch: no default per-tool quota", () =>
+      assert.equal(tools.counts().webSearchCalls, 20));
+    it("uncapped web_search_fetch: counter remains zero", () =>
+      assert.equal(getRateLimitUsage(runtime, "task_web_uncapped", "web_search_fetch"), 0));
+  })();
+
+  // ── 4. uncapped custom tool, no policy: passes through ────────────────────
   await (async () => {
     const fakeTool = {
       id: "harmless_local",
@@ -162,7 +179,7 @@ async function run() {
       assert.equal(runtime.auditEntries.length, 0));
   })();
 
-  // ── 4. mode=optional and mode=required do NOT block ───────────────────────
+  // ── 5. mode=optional and mode=required do NOT block ───────────────────────
   await (async () => {
     const tools = makeFakeTools();
     const registry = createActionToolRegistry([tools.web_search_fetch]);
@@ -179,7 +196,7 @@ async function run() {
     it("required: does not block", () => assert.equal(r2.success, true));
   })();
 
-  // ── 5. graceful degradation when ctx is bare ──────────────────────────────
+  // ── 6. graceful degradation when ctx is bare ──────────────────────────────
   await (async () => {
     const tools = makeFakeTools();
     const registry = createActionToolRegistry([tools.web_search_fetch]);
@@ -191,7 +208,7 @@ async function run() {
     it("undefined ctx: passes through", () => assert.equal(r2.success, true));
   })();
 
-  // ── 6. task-level rate-limit override ─────────────────────────────────────
+  // ── 7. task-level rate-limit override ─────────────────────────────────────
   await (async () => {
     const tools = makeFakeTools();
     const registry = createActionToolRegistry([tools.write_file]);
@@ -209,7 +226,7 @@ async function run() {
     });
   })();
 
-  // ── 7. unknown tool still throws (we do not gate on policy first) ─────────
+  // ── 8. unknown tool still throws (we do not gate on policy first) ─────────
   await (async () => {
     const registry = createActionToolRegistry([]);
     const runtime = makeFakeRuntime();

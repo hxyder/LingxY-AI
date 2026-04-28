@@ -705,7 +705,7 @@ export const WEB_SEARCH_FETCH_TOOL = {
     if (!query) {
       return createActionResult({ success: false, observation: "query required" });
     }
-    const limit = Math.max(1, Math.min(10, Number(args.limit) || 5));
+    const limit = Math.max(1, Math.min(30, Number(args.limit) || 5));
     try {
       const recency = normalizeSearchRecency(args.recency, query);
       const result = await searchWeb({ query, limit, recency });
@@ -722,7 +722,7 @@ export const WEB_SEARCH_FETCH_TOOL = {
         const tried = (result.attempts ?? []).map((a) => a.provider).filter(Boolean).join(", ") || result.provider;
         return createActionResult({
           success: false,
-          observation: `Web search unavailable. Tried: ${tried}. All providers either timed out, returned HTTP errors, or served bot-detection pages. Do not fall back to training data — tell the user live search is unreachable right now and suggest retrying or checking their connection.`,
+          observation: `Web search unavailable. Tried: ${tried}. All providers either timed out, returned HTTP errors, or served bot-detection pages. Do not answer time-sensitive facts from memory. Try an alternate/broader query or another external_web_read sibling such as fetch_url_content with a known authoritative URL/public data endpoint; only tell the user live data is unreachable after those reasonable recovery paths also fail or policy forbids them.`,
           metadata: {
             tool_id: "web_search_fetch",
             query,
@@ -762,14 +762,15 @@ export const WEB_SEARCH_FETCH_TOOL = {
 
 /**
  * Fetch a URL and return its readable text content so the LLM can cite it directly.
- * This is the fallback when web_search_fetch returns no results — the LLM can
- * call this with a known authoritative URL (e.g. weather.gov, wikipedia.org)
- * and get back the actual page text without opening a browser.
+ * This is the fallback when web_search_fetch returns no results, fails, or
+ * finds only weak snippets. The LLM can call this with a known authoritative
+ * URL (e.g. weather.gov, wikipedia.org, finance.yahoo.com) and get back the
+ * actual page text without opening a browser.
  */
 export const FETCH_URL_CONTENT_TOOL = {
   id: "fetch_url_content",
   name: "Fetch URL Content",
-  description: "Fetch a URL and return its readable text content. Use this when web_search_fetch returns no results — call it with an authoritative URL (e.g. weather.gov for weather, en.wikipedia.org for facts) to read the actual page text. Returns up to 3000 characters of extracted text.",
+  description: "Fetch a URL and return its readable text content. Use this when web_search_fetch returns no results, fails, or gives weak snippets — call it with an authoritative URL to read the actual page text. Examples: weather.gov for weather, en.wikipedia.org for stable facts, official company/regulator/exchange pages, finance.yahoo.com/quote/MSFT for quote-page data, query1.finance.yahoo.com/v8/finance/chart/MSFT for quote JSON, feeds.finance.yahoo.com/rss/2.0/headline?s=MSFT&region=US&lang=en-US for ticker news. Returns up to 6000 characters by default; request max_chars up to 12000 when the task needs detailed fields.",
   parameters: ACTION_TOOL_SCHEMAS.fetch_url_content,
   risk_level: "low",
   required_capabilities: ["network"],
@@ -781,7 +782,7 @@ export const FETCH_URL_CONTENT_TOOL = {
     if (!url || !/^https?:\/\//i.test(url)) {
       return createActionResult({ success: false, observation: "url required (must start with http:// or https://)" });
     }
-    const maxChars = Math.max(500, Math.min(8000, Number(args.max_chars) || 3000));
+    const maxChars = Math.max(500, Math.min(12000, Number(args.max_chars) || 6000));
 
     try {
       const response = await fetch(url, {

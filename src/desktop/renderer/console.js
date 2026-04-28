@@ -2,6 +2,8 @@ import {
   applyTaskEventPatch,
   applyTaskEventToDetail,
   formatTaskEventSummary,
+  isInternalControlJsonText,
+  looksLikeInternalControlJsonText,
   subscribeTaskEvents,
   toTaskEventFrame
 } from "./task-event-stream.js";
@@ -655,6 +657,17 @@ function appendConsoleChatMessage(role, text, options = {}) {
 function appendConsoleChatTextDelta(taskId, delta) {
   if (!taskId || !delta || !consoleChatMessages) return;
   closeConsoleChatThinkingCard();
+  const nextText = `${consoleChatStreamingAnswer?.text ?? ""}${String(delta)}`;
+  if (looksLikeInternalControlJsonText(nextText)) {
+    if (consoleChatStreamingAnswer) {
+      consoleChatStreamingAnswer.text = nextText;
+      if (isInternalControlJsonText(nextText)) {
+        consoleChatStreamingAnswer.wrapper?.remove?.();
+        consoleChatStreamingAnswer = null;
+      }
+    }
+    return;
+  }
   if (!consoleChatStreamingAnswer || consoleChatStreamingAnswer.taskId !== taskId) {
     const wrapper = appendConsoleChatMessage("assistant", "", { allowEmpty: true });
     consoleChatStreamingAnswer = {
@@ -676,6 +689,11 @@ function finalizeConsoleChatStreaming(taskId, finalText = "") {
     return false;
   }
   const text = String(finalText || consoleChatStreamingAnswer.text || "").trim();
+  if (isInternalControlJsonText(text)) {
+    consoleChatStreamingAnswer.wrapper?.remove?.();
+    consoleChatStreamingAnswer = null;
+    return true;
+  }
   if (text && consoleChatStreamingAnswer.bubble) {
     consoleChatStreamingAnswer.bubble.textContent = text;
   }
@@ -935,6 +953,10 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
     ?? payload.message
     ?? ""
   ).trim();
+  if (isInternalControlJsonText(directText)) {
+    consoleChatResultTaskIds.add(taskId);
+    return;
+  }
   if (directText) {
     if (!finalizeConsoleChatStreaming(taskId, directText)) {
       appendConsoleChatMessage("assistant", directText);

@@ -74,7 +74,7 @@ export const RUNBOOKS = Object.freeze({
     description: "External-web-read tool was called but returned no usable sources for a required-web task.",
     steps: Object.freeze([
       Object.freeze({ id: "relax_query_once", description: "Drop tight phrasing / quotes; re-issue web_search_fetch once with broader keywords." }),
-      Object.freeze({ id: "fallback_to_fetch_url_content", description: "If a known authoritative URL exists for the entity (weather.gov, finance.yahoo.com, en.wikipedia.org), fetch it directly." }),
+      Object.freeze({ id: "fallback_to_fetch_url_content", description: "If a known authoritative URL or public data endpoint exists for the entity (weather.gov, official/regulator pages, finance.yahoo.com, en.wikipedia.org), fetch it directly; raise max_chars when the page likely contains detailed fields." }),
       Object.freeze({ id: "mark_partial_success_no_external_data", description: "If still empty, mark the task partial_success and tell the user external data was unreachable — do NOT fabricate from training memory." })
     ]),
     terminal_action: "partial_success"
@@ -175,8 +175,8 @@ export function getRunbook(id) {
  *   - next_action === "abort"      → GATE_ABORT_AT_ITERATION_CEILING
  *   - next_action === "escalate"   → look at violations:
  *       - "tool_repeated_failure" present → TOOL_REPEATED_FAILURE
- *       - any "*_required_all_failed"     → AGENT_LOOP_NO_PROGRESS
  *       - any "*_required_returned_empty" → EMPTY_WEB_SEARCH_RESULT
+ *       - any "*_required_all_failed"     → AGENT_LOOP_NO_PROGRESS
  *       - default                         → AGENT_LOOP_NO_PROGRESS
  *   - next_action === "retry"      → null (let the agent try again on its own)
  *
@@ -212,9 +212,6 @@ export function suggestRunbookForStepGate(stepGateResult) {
   }
   if (kinds.some((k) => k.endsWith("_required_returned_empty"))) {
     return RUNBOOKS.EMPTY_WEB_SEARCH_RESULT;
-  }
-  if (kinds.some((k) => k.endsWith("_required_all_failed"))) {
-    return RUNBOOKS.AGENT_LOOP_NO_PROGRESS;
   }
   return RUNBOOKS.AGENT_LOOP_NO_PROGRESS;
 }

@@ -146,7 +146,7 @@ await it("planner imports validateSuccessContract + extractEvidence", () => {
   // destructured import statement; accept either single or combined form.
   assert.match(planner, /import \{[^}]*\bvalidateSuccessContract\b[^}]*\} from "\.\.\/\.\.\/core\/policy\/success-contract-validator\.mjs"/,
     "planner must import validateSuccessContract");
-  assert.match(planner, /import \{ extractEvidence \} from "\.\.\/\.\.\/core\/policy\/evidence-normalizer\.mjs"/,
+  assert.match(planner, /import \{[^}]*\bextractEvidence\b[^}]*\} from "\.\.\/\.\.\/core\/policy\/evidence-normalizer\.mjs"/,
     "planner must import extractEvidence");
   assert.match(planner, /transcriptForValidator/,
     "planner must define the transcript translation helper");

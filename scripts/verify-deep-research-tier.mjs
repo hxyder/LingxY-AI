@@ -87,11 +87,11 @@ it("inferResearchQuality: srResearchDepth='multi_source' → multi_source_resear
   assert.equal(rq.min_distinct_domains, 2);
 });
 
-it("inferResearchQuality: srResearchDepth='unknown' → multi_source_research default", () => {
+it("inferResearchQuality: required web + srResearchDepth='unknown' → multi_source_research default", () => {
   const rq = inferResearchQuality({
     contextSources: { real_selection: false },
     signals: {},
-    toolPolicyMode: "optional",
+    toolPolicyMode: "required",
     srResearchDepth: "unknown"
   });
   assert.equal(rq.profile, "multi_source_research");

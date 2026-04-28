@@ -25,7 +25,7 @@ import {
 import { renderBackgroundContextsBlock } from "../../core/intent/background-contexts.mjs";
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
-import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
+import { extractEvidence, detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
@@ -487,6 +487,7 @@ async function composeFinalAnswer({ task, transcript, runtime, reason = "" }) {
       "Turn tool observations into the final answer the user asked for, in the user's language.",
       "If the transcript contains concrete values or facts that directly answer the request, use them. Do not claim data is unavailable just because the same observation also contains page boilerplate, navigation text, warnings, or unrelated errors.",
       "Preserve relevant source, timestamp, location, units, and uncertainty from the transcript when they matter to the answer.",
+      "Never output raw internal control/event JSON. If you see fields like iteration, next_action, violation_kinds, or satisfied, treat them as internal diagnostics and omit them.",
       "If a tool failed, say what could be completed and what could not, without exposing stack traces."
     ].join("\n");
     const messages = [
@@ -638,6 +639,15 @@ function buildConversationMessages(prefixMessages, transcript, initialFilePaths 
         role: "user",
         content: `[Runbook recovery: ${entry.runbook_id}]\n${entry.instruction}`
       });
+    } else if (entry.type === "saturation_hint") {
+      const repeated = Array.isArray(entry.repeated_domains) && entry.repeated_domains.length > 0
+        ? entry.repeated_domains.slice(0, 4).join(", ")
+        : "the same publishers";
+      const window = entry.window_size ?? 3;
+      messages.push({
+        role: "user",
+        content: `(system note) The last ${window} web fetches added no new independent publishers/domains beyond ${repeated}. Decide based on what you already have: if the evidence covers the question, synthesize the answer now; if not, try a meaningfully different angle (different keywords, different language, an alternate authoritative URL) — do not repeat near-duplicate searches against the same publishers.`
+      });
     } else if (entry.type === "synthesis_retry") {
       if (entry.assistantDraft) {
         messages.push({ role: "assistant", content: entry.assistantDraft });
@@ -685,6 +695,27 @@ function externalWebModeOf(task) {
   return task?.task_spec?.tool_policy?.policy_groups?.external_web_read?.mode
     ?? task?.task_spec?.tool_policy?.web_search_fetch?.mode
     ?? "forbidden";
+}
+
+// Saturation hint is only worth firing when the task expects multiple
+// independent sources. single_lookup wants exactly one publisher, so a
+// "no new domain" pattern is the success state, not a stuck signal.
+// Tasks without any research_quality stamp (no SR or SR rejected)
+// don't get the hint either — that's the conservative default.
+function shouldCheckSaturation(task) {
+  const profile = task?.task_spec?.research_quality?.profile;
+  return profile === "multi_source_research" || profile === "deep_research";
+}
+
+function resolveTaskMaxIterations(task, fallback = 8) {
+  const configured = task?.task_spec?.execution_constraints?.max_iterations;
+  if (Number.isFinite(configured) && configured > 0) {
+    // execution_constraints is an exact per-task budget, not merely an
+    // upward override. This lets single_lookup cap a generic executor at 8
+    // while multi/deep research can opt into 12/16.
+    return Math.min(24, Math.max(1, Math.floor(configured)));
+  }
+  return fallback;
 }
 
 function neededCapabilitiesOf(task) {
@@ -821,7 +852,7 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
     ? formatWorkflowsForPlanner(task.__runtime?.connectorCatalog)
     : "";
   const resourceHint = formatResourceContext(task);
-  const maxIter = 8;
+  const maxIter = resolveTaskMaxIterations(task, 8);
 
   // UCA-067: Append enabled MCP server capabilities to the tool list so the AI
   // is aware of them. Actual MCP tool invocation is handled separately; this is
@@ -907,6 +938,8 @@ Guidance (not a rigid checklist — apply judgment):
 - **Connector workflows over raw tools.** Gmail/Outlook/Calendar/Drive operations should use connector_workflow_run when a matching workflow exists (see the workflow list above). The workflow shows the user a draft with 确认/拒绝 buttons; you do NOT need to ask in chat.
 - **Truthfulness.** Only claim an email was sent / event created / file uploaded when the transcript shows the corresponding tool returned success=true. If you prepared a draft and it's waiting on the user's approval, say so explicitly.
 - **Use search by judgment, not reflex.** Read \`tool_policy.external_web_read\` first. When the mode is \`required\`, call a member of the \`external_web_read\` group before giving a factual current-data answer. When the mode is \`optional\`, decide from the user's goal: ask for missing essentials first, answer from stable knowledge when enough, or search when freshness is genuinely needed. When the mode is \`forbidden\`, do NOT search; ask for permission if live/external data is necessary.
+- **Recover from weak search.** If \`web_search_fetch\` is empty, unavailable, or any source blocks scraping, do not stop at an apology. Try a better query, then switch to another \`external_web_read\` sibling such as \`fetch_url_content\` with a concrete authoritative URL. Use direct source pages or public data endpoints when you know them (examples: weather.gov, en.wikipedia.org, official company / regulator / exchange pages, finance.yahoo.com quote pages, Yahoo Finance chart/RSS endpoints). For detailed pages, pass a larger \`max_chars\` to \`fetch_url_content\` when needed. Only say live data is unreachable after reasonable alternate queries/URLs fail or policy forbids them.
+- **No internal JSON in user replies.** Never output raw control objects or event payloads such as \`{"iteration":...,"next_action":...,"violation_kinds":...}\`. Final replies must be user-facing prose, lists, tables, or markdown in the user's language.
 - **Local context first.** For location-dependent requests, use a real location only when it is present in Resources, the user's message, or conversation history. If Resources says UNKNOWN_LOCATION and the user did not name a place, ask for the city or location permission before searching or acting. Never infer a city from timezone, locale, IP, search defaults, or examples.
 - **Phantom attachments.** If the user refers to an image / file / screenshot / 图片 / 这张 / 这张照片 / 这个文件 / 上传的 but Resources shows BOTH \`Attached files: (none)\` AND \`Attached images: (none)\`, ASK them to attach or paste it. Never describe, summarize, or analyze a fictional attachment. If the conversation history mentions a concrete path, pass that path to a tool argument; do not pretend to "see" it as an inline attachment.
 - **Vision questions go through \`vision_analyze\`.** When the user asks what is in an attached image, to read text / OCR / 提取文字 from a screenshot, to compare images, or to summarise visual content, call \`vision_analyze\` with the absolute paths from \`Attached images\` (and a short prompt). Do NOT call \`vision_analyze\` for sending / forwarding / uploading / opening / revealing the image — those are connector or file-tool jobs (compose_email, account_send_email, account_upload_file, open_file, reveal_in_explorer). If this turn already includes the image as an inline block (your provider supports vision and the runtime attached it), just answer directly without calling \`vision_analyze\`.
@@ -988,12 +1021,12 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
       messages,
       tools: toolSchemas,
       maxTokens: 1024,
-      onTextDelta: adapter.supportsStreaming === true
-        ? (delta) => {
-            if (!delta) return;
-            runtime?.emitTaskEvent?.("text_delta", { delta });
-          }
-        : undefined,
+      // Planner turns may end up containing tool_calls. Some OpenAI-compatible
+      // providers stream provisional text before the final tool-call decision,
+      // which can leak protocol/control JSON into the chat bubble. Keep planner
+      // text buffered until we know it is a final answer; final-composer turns
+      // still stream normally.
+      onTextDelta: undefined,
       onToolInputDelta: (toolName, partialJson) => {
         if (!["write_file", "generate_document", "edit_file"].includes(toolName)) return;
         runtime?.emitTaskEvent?.("tool_input_delta", {
@@ -1305,6 +1338,7 @@ async function _runToolAgentLoopCore({
   const registry = runtime.actionToolRegistry;
   const transcript = [];
   const seenCalls = new Set(); // dedupe identical tool+args to prevent infinite loops
+  maxIterations = resolveTaskMaxIterations(task, maxIterations);
 
   // Phase 1.8 — `hasCompoundIntent` regex gate is gone. The planner
   // selection precedence is straightforward:
@@ -1343,6 +1377,11 @@ async function _runToolAgentLoopCore({
     task?.task_spec?.execution_constraints?.error_budget
   );
   const firedRunbooks = new Set();
+  // Soft saturation nudge for multi_source / deep_research tasks. Fires
+  // once per task — if the model heeds the hint and changes angle, no
+  // further nudges; if it ignores, the existing research-quality
+  // validator (D3) catches the coverage shortfall at finalize.
+  let saturationHintFired = false;
 
   // UCA-077 P3-02: each loop iteration emits a `tool_planner_decision`
   // event so SSE consumers can render the planner timeline (which planner
@@ -1674,6 +1713,29 @@ async function _runToolAgentLoopCore({
       metadata: result.metadata,
       artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
     });
+
+    if (!saturationHintFired && shouldCheckSaturation(task)) {
+      const sat = detectSearchSaturation(transcript, 3);
+      if (sat.saturated) {
+        saturationHintFired = true;
+        transcript.push({
+          type: "saturation_hint",
+          window_size: sat.window_size,
+          repeated_domains: sat.repeated_domains
+        });
+        runtime.emitTaskEvent?.("saturation_hint", {
+          iteration,
+          window_size: sat.window_size,
+          repeated_domains: sat.repeated_domains,
+          baseline_domain_count: sat.baseline_domain_count
+        });
+        appendAuditLog(runtime, task, "tool_loop.saturation_hint", {
+          iteration,
+          window_size: sat.window_size,
+          repeated_domains: sat.repeated_domains
+        });
+      }
+    }
 
     // P4-EB wire-up: charge the aggregate error budget. Skip the
     // keyword planner — it short-circuits below after a single tool

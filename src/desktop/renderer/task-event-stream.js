@@ -44,6 +44,41 @@ export function toTaskEventFrame(event) {
   };
 }
 
+function normalizeMaybeJsonText(text = "") {
+  return String(text ?? "")
+    .trim()
+    .replace(/^```(?:json)?\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+}
+
+export function isInternalControlJsonText(text = "") {
+  const normalized = normalizeMaybeJsonText(text);
+  if (!normalized.startsWith("{") || !normalized.endsWith("}")) return false;
+  try {
+    const parsed = JSON.parse(normalized);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return false;
+    return Object.prototype.hasOwnProperty.call(parsed, "iteration")
+      && Object.prototype.hasOwnProperty.call(parsed, "next_action")
+      && Object.prototype.hasOwnProperty.call(parsed, "violation_kinds")
+      && Object.prototype.hasOwnProperty.call(parsed, "satisfied");
+  } catch {
+    return false;
+  }
+}
+
+export function looksLikeInternalControlJsonText(text = "") {
+  const normalized = normalizeMaybeJsonText(text);
+  if (!normalized.startsWith("{")) return false;
+  const hits = [
+    /"iteration"\s*:/.test(normalized),
+    /"next_action"\s*:/.test(normalized),
+    /"violation_kinds"\s*:/.test(normalized),
+    /"satisfied"\s*:/.test(normalized)
+  ].filter(Boolean).length;
+  return hits >= 3;
+}
+
 export function formatTaskEventSummary(rawEvent) {
   const frame = toTaskEventFrame(rawEvent);
   const payload = frame.data ?? {};

@@ -304,8 +304,8 @@ async function run() {
       assert.equal(promptPolicyHack, null,
         "agent-loop must not extract webPolicy for prompt rendering — use renderToolPolicyForPrompt");
     });
-    it("agent-loop: 'search before answering' rule mentions external_web_read group", () => {
-      assert.match(src, /Search before answering[\s\S]*external_web_read/);
+    it("agent-loop: search guidance reads the external_web_read group", () => {
+      assert.match(src, /Use search by judgment[\s\S]*external_web_read/);
     });
   })();
 

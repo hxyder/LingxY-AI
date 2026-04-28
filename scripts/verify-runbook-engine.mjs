@@ -162,7 +162,7 @@ async function run() {
     });
     assert.equal(rb?.id, "AGENT_LOOP_NO_PROGRESS");
   });
-  it("suggest/stepGate: tool_repeated_failure wins over other violations (most specific)", () => {
+  it("suggest/stepGate: repeated tool failure wins over external-web recovery", () => {
     const rb = suggestRunbookForStepGate({
       next_action: "escalate",
       violations: [
@@ -245,7 +245,7 @@ async function run() {
   });
 
   // ── 8. integration with validateStepGate ──────────────────────────────
-  it("integration: phase-gate `escalate` from same-tool failure streak picks TOOL_REPEATED_FAILURE", () => {
+  it("integration: external-web same-tool failure streak picks TOOL_REPEATED_FAILURE recovery", () => {
     const taskSpec = {
       success_contract: {
         artifact_created: false, artifact_registered: false, tool_called: true,

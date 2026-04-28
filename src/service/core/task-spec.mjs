@@ -15,7 +15,7 @@ import { extractAllSignals } from "./intent/signals/index.mjs";
 import { resolveToolPolicy, buildExternalWebReadPolicy, shouldConsultSemanticRouter } from "./policy/tool-policy-resolver.mjs";
 import { intentRouteNeedsConnector } from "./policy/evidence-policy.mjs";
 import { enforcePolicyInvariants } from "./policy/policy-invariants.mjs";
-import { inferResearchQuality } from "./policy/research-quality.mjs";
+import { inferResearchQuality, RESEARCH_PROFILES } from "./policy/research-quality.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
 import { resolveExecutor } from "./planning/executor-resolver.mjs";
 import { createTracker, STAGES } from "./contracts/decision-trace.mjs";
@@ -450,6 +450,48 @@ function detectFormats(text) {
     .map(({ format }) => format);
 }
 
+function buildResearchExecutionConstraints(researchQuality) {
+  if (!researchQuality || typeof researchQuality !== "object") return undefined;
+
+  if (researchQuality.profile === RESEARCH_PROFILES.SINGLE_LOOKUP) {
+    return {
+      max_iterations: 8,
+      error_budget: {
+        max_empty_search_results: 2,
+        max_tool_failures: 4,
+        max_replan_rounds: 2,
+        max_no_file_change_runs: 1
+      }
+    };
+  }
+
+  if (researchQuality.profile === RESEARCH_PROFILES.DEEP_RESEARCH) {
+    return {
+      max_iterations: 16,
+      error_budget: {
+        max_empty_search_results: 4,
+        max_tool_failures: 8,
+        max_replan_rounds: 3,
+        max_no_file_change_runs: 1
+      }
+    };
+  }
+
+  if (researchQuality.profile === RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH) {
+    return {
+      max_iterations: 12,
+      error_budget: {
+        max_empty_search_results: 3,
+        max_tool_failures: 6,
+        max_replan_rounds: 3,
+        max_no_file_change_runs: 1
+      }
+    };
+  }
+
+  return undefined;
+}
+
 // ---------------------------------------------------------------------------
 // createTaskSpec — compile user text + context into a TaskSpec
 // ---------------------------------------------------------------------------
@@ -742,6 +784,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       ? srDecision.primary_intent
       : null
   };
+  const executionConstraints = buildResearchExecutionConstraints(researchQuality);
 
   const partialSpec = {
     goal,
@@ -750,6 +793,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     needs_current_web_data: toolPolicy.web_search_fetch.mode === "required",
     tool_policy: toolPolicy,
     research_quality: researchQuality,
+    ...(executionConstraints ? { execution_constraints: executionConstraints } : {}),
     synthesis,
     // G4: framework-state flags read by executor-resolver Rule 5
     // extension and fast-executor short-circuit (G5/G6b).

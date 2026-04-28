@@ -193,6 +193,14 @@ it("createTaskSpec: stamps research_quality on the spec (with SR stub)", () => {
   assert.equal(spec.research_quality.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH);
   assert.equal(spec.research_quality.min_sources, 3);
 });
+it("createTaskSpec: multi_source research gets loop/search budget constraints", () => {
+  const spec = createTaskSpec("今天 AI 新闻汇报", {
+    semantic_router_decision: { ...SR_NEWS_REQUIRED }
+  }, {});
+  assert.equal(spec.execution_constraints?.max_iterations, 12);
+  assert.equal(spec.execution_constraints?.error_budget?.max_empty_search_results, 3);
+  assert.equal(spec.execution_constraints?.error_budget?.max_tool_failures, 6);
+});
 it("createTaskSpec: scheduler-fired research task (with SR) → multi_source_research", () => {
   const spec = createTaskSpec("每天早上汇报 AI 新闻", {
     source_app: "uca.scheduler",
@@ -205,6 +213,19 @@ it("createTaskSpec: scheduler-fired research task (with SR) → multi_source_res
   // remains multi_source_research regardless of source_app.
   assert.equal(spec.research_quality?.profile, RESEARCH_PROFILES.MULTI_SOURCE_RESEARCH,
     "scheduler-fired news task must require multi-source synthesis");
+});
+it("createTaskSpec: deep_research gets larger loop/search budget constraints", () => {
+  const spec = createTaskSpec("深入调研今天 AI 新闻", {
+    semantic_router_decision: {
+      ...SR_NEWS_REQUIRED,
+      research_depth: "deep_research",
+      source_mode: "deep_research"
+    }
+  }, {});
+  assert.equal(spec.research_quality?.profile, RESEARCH_PROFILES.DEEP_RESEARCH);
+  assert.equal(spec.execution_constraints?.max_iterations, 16);
+  assert.equal(spec.execution_constraints?.error_budget?.max_empty_search_results, 4);
+  assert.equal(spec.execution_constraints?.error_budget?.max_tool_failures, 8);
 });
 it("createTaskSpec: scheduler-fired news WITHOUT SR → null research_quality (conservative fallback)", () => {
   // P4-RQ E3 stage C1 conservative-fallback lock-in: when SR is

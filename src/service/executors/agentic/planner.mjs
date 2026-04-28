@@ -40,7 +40,7 @@ import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 // so D3 research_quality coverage and required_policy_groups were never
 // enforced for agentic tasks.
 import { validateSuccessContract, validateStepGate, validateAnswerSynthesis } from "../../core/policy/success-contract-validator.mjs";
-import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
+import { extractEvidence, detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 // J1: per-iteration parity. Pre-J1 agentic ran for the full
 // maxIterations even when the same tool failed repeatedly OR when the
 // success contract was already known to be unreachable. tool_using
@@ -58,6 +58,24 @@ const DEFAULT_MAX_ITERATIONS = 8;
 // keeps the SSE bus from carrying every partial JSON token (e.g. for
 // arguments to search / lookup tools where a live preview is meaningless).
 const FILE_GEN_TOOLS = new Set(["write_file", "generate_document", "edit_file"]);
+
+function resolveTaskMaxIterations(task, fallback = DEFAULT_MAX_ITERATIONS) {
+  const configured = task?.task_spec?.execution_constraints?.max_iterations;
+  if (Number.isFinite(configured) && configured > 0) {
+    // execution_constraints is an exact per-task budget, not merely an
+    // upward override. This lets single_lookup cap a generic executor at 8
+    // while multi/deep research can opt into 12/16.
+    return Math.min(24, Math.max(1, Math.floor(configured)));
+  }
+  return fallback;
+}
+
+// Mirror of tool_using/agent-loop's shouldCheckSaturation: only fire the
+// saturation hint for tasks that expect multiple independent sources.
+function shouldCheckSaturation(task) {
+  const profile = task?.task_spec?.research_quality?.profile;
+  return profile === "multi_source_research" || profile === "deep_research";
+}
 
 const COMPLETION_CLAIM_PATTERNS = [
   /\b(?:done|finished|completed|saved|written|created|generated|launched|opened|executed|ran|published|sent)\b/i,
@@ -502,6 +520,12 @@ export async function runAgenticPlanner({
     task?.task_spec?.execution_constraints?.error_budget
   );
   let earlyExitState = null;
+  // Soft saturation nudge for multi_source / deep_research tasks. Same
+  // shape as tool_using's hint — fires once per task as a system note in
+  // the next message so the model can decide whether to switch angles or
+  // synthesize. See evidence-normalizer.detectSearchSaturation.
+  let saturationHintFired = false;
+  maxIterations = resolveTaskMaxIterations(task, maxIterations);
 
   let preflightSearchText = "";
   if (taskNeedsCurrentWebData(task)) {
@@ -592,7 +616,7 @@ export async function runAgenticPlanner({
       "Live web search preflight result:",
       searchResult.observation || "(web_search_fetch returned no observation)",
       "",
-      "Use the live search result above for current/latest facts. If it failed or looks insufficient, call web_search_fetch again with a better query or call fetch_url_content on an authoritative URL. Do not answer current/latest facts from memory."
+      "Use the live search result above for current/latest facts. If it failed or looks insufficient, try a better query or call fetch_url_content on a known authoritative URL / public data endpoint, with a larger max_chars when the page contains detailed fields. Do not answer current/latest facts from memory."
     ].join("\n");
   }
 
@@ -631,13 +655,11 @@ export async function runAgenticPlanner({
 
     let response;
     try {
-      // Pass onTextDelta only on the last-text iteration (no tool calls pending).
-      // We can't know in advance, so we stream for all iterations — tool-call
-      // responses typically have no text anyway. The overlay accumulates deltas
-      // into a streaming bubble and finalises it on inline_result.
-      const onTextDelta = (adapter.supportsStreaming && onEvent)
-        ? (delta) => onEvent({ event_type: "text_delta", payload: { delta } })
-        : undefined;
+      // Planner turns may still decide to call tools after emitting text. Some
+      // OpenAI-compatible providers stream that provisional text anyway, which
+      // can expose internal protocol/control JSON in the UI. Buffer planner
+      // text inside the adapter response; only final synthesis streams.
+      const onTextDelta = undefined;
       const onToolInputDelta = (adapter.supportsStreaming && onEvent)
         ? (toolName, partialJson) => {
             if (!FILE_GEN_TOOLS.has(toolName)) return;
@@ -813,6 +835,29 @@ export async function runAgenticPlanner({
         tool_call_id: call.id ?? call.name,
         content: toolContent
       });
+
+      if (!saturationHintFired && shouldCheckSaturation(task)) {
+        const sat = detectSearchSaturation(transcriptForValidator(transcript), 3);
+        if (sat.saturated) {
+          saturationHintFired = true;
+          const repeated = sat.repeated_domains.length > 0
+            ? sat.repeated_domains.slice(0, 4).join(", ")
+            : "the same publishers";
+          messages.push({
+            role: "user",
+            content: `(system note) The last ${sat.window_size} web fetches added no new independent publishers/domains beyond ${repeated}. Decide based on what you already have: if the evidence covers the question, synthesize the answer now; if not, try a meaningfully different angle (different keywords, different language, an alternate authoritative URL) — do not repeat near-duplicate searches against the same publishers.`
+          });
+          onEvent?.({
+            event_type: "saturation_hint",
+            payload: {
+              iteration: iterations,
+              window_size: sat.window_size,
+              repeated_domains: sat.repeated_domains,
+              baseline_domain_count: sat.baseline_domain_count
+            }
+          });
+        }
+      }
     }
 
     // UCA-179: once the run has accumulated any artifacts, keep a short
@@ -853,7 +898,7 @@ export async function runAgenticPlanner({
     });
     messages.push({
       role: "user",
-      content: "You've used your tool-call budget. Synthesize a final answer for the original question using only the information already collected above. Do not request more tools."
+      content: "You've used your tool-call budget. Synthesize a final answer for the original question using only the information already collected above. Do not request more tools. Do not output raw internal control/event JSON; omit fields like iteration, next_action, violation_kinds, and satisfied."
     });
     try {
       const synthesis = await adapter.generate({

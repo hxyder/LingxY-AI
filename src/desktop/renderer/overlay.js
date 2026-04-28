@@ -1,6 +1,8 @@
 import {
   applyTaskEventPatch,
   formatTaskEventSummary,
+  isInternalControlJsonText,
+  looksLikeInternalControlJsonText,
   subscribeTaskEvents,
   toTaskEventFrame
 } from "./task-event-stream.js";
@@ -2136,6 +2138,16 @@ async function handleTaskEventFrame(rawEvent) {
     if (!isForActiveConv) return; // silent streams don't build bubbles
     const delta = frame.data?.delta ?? frame.data?.text ?? "";
     if (!delta) return;
+    const nextRawText = `${streamingBubbleRawText}${delta}`;
+    if (looksLikeInternalControlJsonText(nextRawText)) {
+      streamingBubbleRawText = nextRawText;
+      if (isInternalControlJsonText(nextRawText)) {
+        streamingBubble?.remove?.();
+        streamingBubble = null;
+        streamingBubbleRawText = "";
+      }
+      return;
+    }
     // 83.4 — first content chunk means thinking is over for this turn.
     // Collapse the thinking card so the answer is the primary focus.
     closeActiveThinkingCard();
@@ -2158,6 +2170,7 @@ async function handleTaskEventFrame(rawEvent) {
     const trimmedText = text.trim();
     const isPlannerPlaceholder = trimmedText === "(no response from agentic planner)";
     if (text && !isPlannerPlaceholder) {
+      if (isInternalControlJsonText(text)) return;
       if (isForActiveConv) {
         if (streamingBubble) {
           // Tool-step bubbles get appended while the task runs, so move the
@@ -2169,6 +2182,7 @@ async function handleTaskEventFrame(rawEvent) {
           streamingBubble = null;
           streamingBubbleRawText = "";
         } else {
+          streamingBubbleRawText = "";
           addBubble("assistant", text);
         }
         bubbleArea.scrollTop = bubbleArea.scrollHeight;

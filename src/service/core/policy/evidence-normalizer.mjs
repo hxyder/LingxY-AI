@@ -162,6 +162,104 @@ export function extractEvidence(transcript) {
 }
 
 /**
+ * Detect search saturation: are the most recent `windowSize` successful
+ * web tool results adding any new registrable domains beyond what was
+ * already gathered earlier in the same transcript?
+ *
+ * Soft heuristic for research-quality tasks. Callers (agent-loop /
+ * agentic planner) render the result as a one-shot system-style hint in
+ * the next turn — it does NOT force synthesis or stop the loop. The
+ * model decides whether to switch angles, keep searching, or compose
+ * from what it already has. This sits next to extractEvidence on
+ * purpose: same URL/domain extraction logic, just sliced into "before
+ * the window" and "the window" instead of one big set.
+ *
+ * Saturation fires only when ALL of:
+ *   - there are at least `windowSize + 1` successful web tool results
+ *     (so a baseline exists to compare against — one new search
+ *     yielding a familiar domain is not a saturation signal)
+ *   - the most recent `windowSize` results contributed at least one
+ *     domain (zero-domain windows aren't saturation, they're noise)
+ *   - every domain in the window is already in the baseline
+ *
+ * Skips entries with `success === false` (failed fetches contribute
+ * nothing to either side). Reads only the same metadata fields
+ * extractEvidence uses (`web_search_fetch.metadata.results[].url` and
+ * `fetch_url_content.metadata.url`); freeform-text URL extraction is
+ * deliberately out of scope to avoid noisy false saturation.
+ *
+ * @param {object[]} transcript  validator-shape entries
+ *                               ({type:"tool_result", tool, success, metadata})
+ * @param {number} [windowSize=3]
+ * @returns {{
+ *   saturated: boolean,
+ *   window_size: number,
+ *   repeated_domains: string[],
+ *   baseline_domain_count: number
+ * }}
+ */
+export function detectSearchSaturation(transcript, windowSize = 3) {
+  const safeWindow = Number.isFinite(windowSize) && windowSize >= 1 ? Math.floor(windowSize) : 0;
+  const empty = {
+    saturated: false,
+    window_size: safeWindow,
+    repeated_domains: [],
+    baseline_domain_count: 0
+  };
+  if (!Array.isArray(transcript) || safeWindow < 1) return empty;
+
+  const webHits = [];
+  for (const entry of transcript) {
+    if (!entry || entry.type !== "tool_result") continue;
+    if (entry.success === false) continue;
+    if (entry.tool !== "web_search_fetch" && entry.tool !== "fetch_url_content") continue;
+    webHits.push(entry);
+  }
+  if (webHits.length <= safeWindow) return empty;
+
+  const baseline = collectWebDomains(webHits.slice(0, webHits.length - safeWindow));
+  const recent = collectWebDomains(webHits.slice(webHits.length - safeWindow));
+  if (recent.size === 0) {
+    return { ...empty, baseline_domain_count: baseline.size };
+  }
+
+  const repeatedDomains = [];
+  let sawNewDomain = false;
+  for (const d of recent) {
+    if (baseline.has(d)) repeatedDomains.push(d);
+    else { sawNewDomain = true; break; }
+  }
+  if (sawNewDomain) {
+    return { ...empty, baseline_domain_count: baseline.size };
+  }
+  return {
+    saturated: true,
+    window_size: safeWindow,
+    repeated_domains: repeatedDomains.sort(),
+    baseline_domain_count: baseline.size
+  };
+}
+
+function collectWebDomains(entries) {
+  const out = new Set();
+  for (const entry of entries) {
+    if (entry.tool === "web_search_fetch") {
+      const results = entry.metadata?.results;
+      if (Array.isArray(results)) {
+        for (const r of results) {
+          const d = registrableDomain(typeof r?.url === "string" ? r.url : null);
+          if (d) out.add(d);
+        }
+      }
+    } else if (entry.tool === "fetch_url_content") {
+      const d = registrableDomain(typeof entry.metadata?.url === "string" ? entry.metadata.url : null);
+      if (d) out.add(d);
+    }
+  }
+  return out;
+}
+
+/**
  * Extract a registrable domain (eTLD+1) from a URL using the local
  * heuristic. Returns null on malformed input.
  *

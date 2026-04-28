@@ -3,8 +3,6 @@ import { groupsOfTool } from "../core/policy/policy-groups.mjs";
 import { createActionResult } from "./types.mjs";
 
 const DEFAULT_RATE_LIMITS = Object.freeze({
-  web_search_fetch: 5,
-  fetch_url_content: 8,
   connector_workflow_run: 3,
   generate_document: 2,
   edit_file: 4,

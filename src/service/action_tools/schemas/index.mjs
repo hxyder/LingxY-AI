@@ -182,7 +182,7 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     required: [],
     properties: {
       query: { type: "string" },
-      limit: { type: "number" },      // number of results to return (default 5)
+      limit: { type: "number" },      // number of results to return; tool clamps to [1, 30]
       recency: {}                     // optional: day/week/month/year or d/w/m/y
     }
   },
@@ -191,7 +191,7 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     required: [],
     properties: {
       url: { type: "string" },        // full URL to fetch (https://...)
-      max_chars: { type: "number" }   // max characters of extracted text to return (default 3000)
+      max_chars: { type: "number" }   // max characters of extracted text to return (default 6000, max 12000)
     }
   },
   vision_analyze: {

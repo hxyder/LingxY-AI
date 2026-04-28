@@ -264,7 +264,7 @@ it("lock-in: agent-loop wraps runToolAgentLoop with finaliseWithEvidence", () =>
     new URL("../src/service/executors/tool_using/agent-loop.mjs", import.meta.url),
     "utf8"
   );
-  assert.match(src, /import\s+\{\s*extractEvidence\s*\}\s+from\s+["']\.\.\/\.\.\/core\/policy\/evidence-normalizer\.mjs["']/,
+  assert.match(src, /import\s+\{[^}]*\bextractEvidence\b[^}]*\}\s+from\s+["']\.\.\/\.\.\/core\/policy\/evidence-normalizer\.mjs["']/,
     "agent-loop must import extractEvidence");
   assert.match(src, /function\s+finaliseWithEvidence\s*\(/,
     "agent-loop must define finaliseWithEvidence wrapper");

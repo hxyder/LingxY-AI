@@ -22,7 +22,7 @@ const NAME = "source_scope";
 // "总结当前网页" → CURRENT_CONTEXT match → scope=current_context →
 // resolver step 3 forbids web. Without these patterns, only a real
 // selection or a file_path could anchor a browser-derived task.
-const CURRENT_CONTEXT_PATTERN = /(这个框架|当前框架|这段代码|这个代码|这段|这个文件|这些文件|上传的文件|这个流程|这个项目|我的程序|我的项目|本地项目|本地代码|刚才的日志|下面[的]?(?:流程|代码|内容|日志|文件|文档|这段)|根据我提供的|根据上面|根据下面|这份文档|这篇文章|这个文档|这篇内容|当前选中|这里(?:的)?(?:代码|内容|流程)|这个网页|当前网页|这个页面|当前页面|这页内容|本页内容|这篇网页|this\s+page|this\s+webpage|the\s+(?:current\s+)?page)/i;
+const CURRENT_CONTEXT_PATTERN = /(这个框架|当前框架|这段代码|这个代码|这段|这个文件|这些文件|上传的文件|这个流程|这个项目|我的程序|我的项目|本地项目|本地代码|刚才的日志|下面[的]?(?:流程|代码|内容|日志|文件|文档|这段)|根据我提供的|根据上面|根据下面|这份文档|这篇文章|这个文档|这篇内容|当前选中|这里(?:的)?(?:代码|内容|流程)|这个网页|当前网页|这个页面|当前页面|这页内容|本页内容|这篇网页|this\s+(?:page|webpage|code|snippet)|the\s+(?:current\s+)?(?:page|code))/i;
 
 const LOCAL_PROJECT_PATTERN = /(整个项目|整个仓库|整个代码库|repo\s+root|当前仓库|本地仓库)/i;
 
