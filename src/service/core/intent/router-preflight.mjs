@@ -39,6 +39,23 @@ import { shouldConsultSemanticRouter } from "../policy/tool-policy-resolver.mjs"
  */
 export async function applySemanticRouterPreflight({ userCommand, contextPacket } = {}) {
   if (!contextPacket || typeof contextPacket !== "object") return contextPacket;
+  // Front-classifier merge: triage now runs SR once at the top of submission
+  // and stamps the decision/rejection onto the packet before forwarding to
+  // context-submission / browser-submission. When that stamp is already
+  // present, skip the second LLM call. Without this short-circuit triage's
+  // SR call would prime the cache only when text + signals matched; in
+  // practice triage and context-submission build slightly different
+  // packets and miss each other's cache. Explicit skip beats cache
+  // serendipity.
+  if (contextPacket.semantic_router_decision || contextPacket.semantic_router_rejection) {
+    if (!contextPacket.context_sources) {
+      return {
+        ...contextPacket,
+        context_sources: classifyContextSources({ text: userCommand, contextPacket })
+      };
+    }
+    return contextPacket;
+  }
   try {
     const contextSources = classifyContextSources({
       text: userCommand,

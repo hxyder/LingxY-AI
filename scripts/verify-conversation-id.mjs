@@ -284,18 +284,19 @@ function loadFile(rel) {
   return readFileSync(new URL(rel, import.meta.url), "utf8");
 }
 
-it("K6 source: submitContextTask accepts conversationId and threads to createTaskRecord", () => {
+it("K6 source: submitContextTask accepts conversationId and threads to the task-creation entry", () => {
   const src = loadFile("../src/service/core/context-submission.mjs");
   // submitContextTask's destructured parameter list must include
   // conversationId.
   assert.match(src,
     /export async function submitContextTask\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)/,
     "submitContextTask must accept a conversationId parameter");
-  // The createTaskRecord call inside submitContextTask must pass
-  // conversationId through.
+  // The downstream task-creation call must thread conversationId.
+  // Phase C renamed the entry from createTaskRecord →
+  // submitTaskWithConversation; accept either to stay resilient.
   assert.match(src,
-    /createTaskRecord\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)/,
-    "submitContextTask must thread conversationId into createTaskRecord");
+    /(?:createTaskRecord|submitTaskWithConversation)\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)/,
+    "submitContextTask must thread conversationId into the task-creation entry");
 });
 
 it("K6 source: HTTP /task handler extracts body.conversation_id and passes it on", () => {
@@ -322,7 +323,7 @@ it("K7 source: non-context submission paths accept and thread conversationId", (
   for (const rel of files) {
     const src = loadFile(rel);
     assert.match(src, /\bconversationId\b/, `${rel} must carry conversationId`);
-    assert.match(src, /createTaskRecord\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)|submitContextTask\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)|submitCompositeTask\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)/,
+    assert.match(src, /(?:createTaskRecord|submitTaskWithConversation)\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)|submitContextTask\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)|submitCompositeTask\(\{[\s\S]*?\bconversationId\b[\s\S]*?\}\)/,
       `${rel} must pass conversationId to its downstream task creation path`);
   }
 });

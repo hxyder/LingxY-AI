@@ -493,6 +493,15 @@ export function createTaskRecord({
     executor: executorOverride ?? taskSpec.suggested_executor ?? route.executor,
     user_command: userCommand,
     task_spec: taskSpec,
+    // Phase 1.6 — SR parallel safety: snapshot the deterministic spec so
+    // validators (success_contract / step_gate / answer_synthesis) can
+    // pass/fail against the policy that was active when the executor
+    // started. SR's later patches mutate `task_spec` (forward-looking
+    // — next planner iteration sees them) but MUST NOT retroactively
+    // turn a successful run into a failure because the bar moved after
+    // the work was done. Validators read `task_spec_initial` when set.
+    task_spec_initial: taskSpec,
+    task_spec_source: "deterministic",
     task_spec_valid: taskSpecValidation.valid,
     task_spec_errors: taskSpecValidation.errors,
     execution_mode: executionMode ?? (route.requires_confirmation ? "approval_required" : "interactive"),
@@ -576,6 +585,7 @@ export function refreshCompositeParentStatus(runtime, parentTaskId) {
 // step labels. Other events (e.g. status_changed on every tick) are too noisy.
 const CONVERSATION_VISIBLE_EVENTS = new Set([
   "step_started",
+  "planner_request_started",
   "tool_call_started",
   "tool_call_proposed",
   "tool_call_completed",
@@ -609,6 +619,7 @@ const TOOL_STEP_LABELS = {
 
 const STEP_LABELS = {
   tool_planner: "规划操作步骤",
+  planner_request: "请求模型",
   llm_generate: "生成内容",
   composite_running: "并行执行子任务",
   agentic: "AI 分析规划中"
@@ -636,6 +647,9 @@ function buildConversationStepLabel(eventType, payload) {
     const label = STEP_LABELS[step] ?? step;
     return label ? `▸ ${label}…` : null;
   }
+  if (eventType === "planner_request_started") {
+    return "▸ 请求模型…";
+  }
   if (eventType === "failed") {
     const msg = payload?.message ?? payload?.category ?? "未知错误";
     return `✗ 任务失败：${String(msg).slice(0, 60)}`;
@@ -648,7 +662,12 @@ function buildConversationStepLabel(eventType, payload) {
 // UCA-077 P3-02: tool_planner_decision is per-iteration observability for
 // the agent loop — useful in SSE streams and tests, but it would bloat the
 // SQLite event store if we persisted every iteration's payload.
-const EPHEMERAL_EVENT_TYPES = new Set(["text_delta", "tool_input_delta", "tool_planner_decision"]);
+const EPHEMERAL_EVENT_TYPES = new Set([
+  "text_delta",
+  "tool_input_delta",
+  "reasoning_delta",
+  "tool_planner_decision"
+]);
 
 // UCA-182 Phase 11: also skip writing streaming deltas to the per-task
 // jsonl log. The log is meant for post-mortem inspection, not as a
@@ -657,6 +676,7 @@ const EPHEMERAL_EVENT_TYPES = new Set(["text_delta", "tool_input_delta", "tool_p
 const JSONL_SKIP_EVENT_TYPES = new Set([
   "text_delta",
   "tool_input_delta",
+  "reasoning_delta",
   "conversation_step",
   "heartbeat"
 ]);
@@ -665,6 +685,7 @@ const TASK_LOG_MAX_FILES = 500; // evict oldest when this many per-task files ac
 const TASK_LOG_ROTATE_EVERY = 128; // check every N writes to amortise dir scans
 
 let taskLogWriteCounter = 0;
+const firstDeltaTimingEmitted = new Set();
 // Per-task write queues so events in the same task serialise while
 // different tasks remain independent. Without this, concurrent
 // emitTaskEvent calls race at the fs layer and lines can interleave
@@ -760,6 +781,13 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
     runtime.store.appendEvent(record);
   }
   runtime.eventBus.publish(record);
+  if (eventType === "text_delta" && taskId && !firstDeltaTimingEmitted.has(taskId)) {
+    firstDeltaTimingEmitted.add(taskId);
+    emitFirstDeltaTiming(runtime, taskId);
+  }
+  if (eventType === "status_changed" && ["success", "failed", "cancelled", "partial_success"].includes(payload?.status)) {
+    firstDeltaTimingEmitted.delete(taskId);
+  }
   // UCA-182 Phase 11: best-effort durable per-task event log under
   // <logsDir>/tasks/<taskId>.jsonl. Writing is fire-and-forget so
   // nothing on the task hot path waits on disk IO; it is strictly an
@@ -795,6 +823,36 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   }
 
   return record;
+}
+
+function emitFirstDeltaTiming(runtime, taskId) {
+  let durationMs = null;
+  try {
+    const createdAt = runtime?.store?.getTask?.(taskId)?.created_at;
+    const createdMs = typeof createdAt === "string" ? Date.parse(createdAt) : NaN;
+    if (Number.isFinite(createdMs)) {
+      durationMs = Math.max(0, Date.now() - createdMs);
+    }
+  } catch {
+    durationMs = null;
+  }
+  const timing = {
+    event_id: createId("evt"),
+    task_id: taskId,
+    ts: nowIso(),
+    event_type: "phase_timing",
+    payload: {
+      phase: "executor_first_delta",
+      duration_ms: durationMs
+    }
+  };
+  try {
+    runtime?.store?.appendEvent?.(timing);
+  } catch {
+    // Observability must never break token streaming.
+  }
+  runtime?.eventBus?.publish?.(timing);
+  void persistTaskEvent(runtime, timing);
 }
 
 function emitDecisionTraceFollowUp(runtime, taskId) {

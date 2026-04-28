@@ -23,7 +23,7 @@
  *        single_domain_only; 5-source / 3-domain transcript must PASS.
  *
  *   3. "不要联网，告诉我今天 AI 新闻"
- *      → web=forbidden, executor=fast (Rule 5 ext.), routing_degraded
+ *      → web=forbidden, executor=tool_using, routing_degraded
  *        stays false even when SR is unavailable (I1 hard-fact skip).
  *        SuccessContract has no required_policy_groups so any
  *        completion satisfies — the model's job is to refuse
@@ -40,10 +40,9 @@
  *      parent_task_id, parent_task_summary attached for
  *      pending-offer detection (K4 + K6 wiring).
  *
- *   6. "打开word" → tryFastPath returns null (architectural
- *      decision per I2), extractFirstTier0Action returns null,
- *      classifyGoal still recognises launch_and_act on the
- *      planner side, createTaskSpec produces no docx artifact.
+ *   6. "打开word" → no retired fast-path exports, classifyGoal still
+ *      recognises launch_and_act on the planner side, createTaskSpec
+ *      produces no docx artifact.
  *
  *   7. Local selection summary ("总结一下" + ctx.text passage)
  *      → web=forbidden via source_scope=fact+local, research_quality
@@ -59,13 +58,10 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { createTaskSpec } from "../src/service/core/task-spec.mjs";
 import { classifyGoal } from "../src/service/core/task-spec.mjs";
 import { validateSuccessContract } from "../src/service/core/policy/success-contract-validator.mjs";
-import {
-  tryFastPath,
-  extractFirstTier0Action
-} from "../src/service/core/router/fast-path-router.mjs";
 import { createTaskRecord } from "../src/service/core/task-runtime.mjs";
 
 let pass = 0;
@@ -234,19 +230,18 @@ it("S2 [深入调研]: 5 sources / 3 domains → SATISFIED", () => {
 });
 
 // ── Scenario 3 — explicit no-search ────────────────────────────────
-it("S3 [不要联网]: explicit_no_search beats every signal → web=forbidden + executor=fast", () => {
+it("S3 [不要联网]: explicit_no_search beats every signal → web=forbidden + planner contract", () => {
   const text = "不要联网，告诉我今天 AI 新闻";
   // No SR decision stamped — I1 hard-fact skip means SR isn't consulted
   // for explicit_no_search anyway.
   const spec = createTaskSpec(text, {});
   assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
-  // G5a Rule 5 extension: research-class + forbidden + !connector_domain → fast
-  assert.equal(spec.suggested_executor, "fast",
+  assert.equal(spec.suggested_executor, "tool_using",
     `executor: ${spec.suggested_executor}`);
-  // I1 + G6b: SR was correctly skipped on the hard-fact signal, so
-  // routing_status stays "ok" and routing_degraded stays false even
-  // though no SR decision was stamped.
-  assert.equal(spec.routing_status, "ok");
+  // I1 + G6b: explicit_no_search is a deterministic routing lock, so
+  // routing_status is ok_deterministic and routing_degraded stays false
+  // even though no SR decision was stamped.
+  assert.equal(spec.routing_status, "ok_deterministic");
   assert.equal(spec.routing_degraded, false);
   // success_contract must NOT require external_web_read (we forbade it)
   const required = spec.success_contract?.required_policy_groups ?? [];
@@ -346,13 +341,10 @@ it("S5 [罗利 follow-up]: createTaskRecord auto-resolves parent + attaches pare
 });
 
 // ── Scenario 6 — app launch is NOT a regex fast path (I2 lock-in) ──
-it("S6 [打开word]: tryFastPath / extractFirstTier0Action both return null", () => {
-  assert.equal(tryFastPath("打开word", {}), null,
-    "app launch must NOT be a Tier-0 fast path (I2 architecture)");
-  assert.equal(tryFastPath("打开 word", {}), null);
-  assert.equal(tryFastPath("启动Excel", {}), null);
-  assert.equal(extractFirstTier0Action("打开word"), null);
-  assert.equal(extractFirstTier0Action("启动Excel"), null);
+it("S6 [打开word]: retired fast-path exports stay deleted", () => {
+  const source = readFileSync(new URL("../src/service/core/router/fast-path-router.mjs", import.meta.url), "utf8");
+  assert.ok(!/export function tryFastPath|export function extractFirstTier0Action|export function hasCompoundIntent/.test(source),
+    "old fast-path executor exports must not return");
 });
 
 it("S6 [打开word]: planner-side classifyGoal still recognises launch_and_act", () => {
@@ -390,15 +382,35 @@ it("S7a [local selection summary]: real_selection anchor → web=forbidden, no r
     "research_quality must be null when web is forbidden — local content is not research");
 });
 
-it("S7a [local selection summary]: I1 hard-fact skip → routing_degraded stays false even with no SR", () => {
-  // The verify-scheduler regression I1 fixed.
+it("S7a [local selection, neutral command]: deterministic lock → routing_degraded stays false even with no SR", () => {
+  // Local source_scope no longer skips SR in preflight. createTaskSpec
+  // still treats a missing/unavailable SR as ok_deterministic because
+  // the local anchor already locks the external_web_read policy.
+  const text = "save this passage";
+  const ctx = {
+    text: "Long passage describing a framework architecture in considerable detail across multiple paragraphs."
+  };
+  const spec = createTaskSpec(text, ctx);
+  assert.equal(spec.routing_status, "ok_deterministic",
+    "local deterministic lock prevents missing SR from becoming degraded");
+  assert.equal(spec.routing_degraded, false);
+});
+
+it("S7a' [local selection + transformation verb]: local policy lock does not create degraded refusal", () => {
+  // P6: local source_scope is not an SR skip condition, so preflight can
+  // still classify expected_output. If a direct caller reaches
+  // createTaskSpec without preflight, the deterministic local lock keeps
+  // routing_degraded=false; the synthesis validator's defensive raw-dump
+  // arm covers missing expected_output.
   const text = "summarise this passage";
   const ctx = {
     text: "Long passage describing a framework architecture in considerable detail across multiple paragraphs."
   };
   const spec = createTaskSpec(text, ctx);
-  assert.equal(spec.routing_status, "ok",
-    "SR was correctly skipped on the hard-fact source_scope; no rejection stamped");
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden",
+    "deterministic policy still forbids web (local anchor wins)");
+  assert.equal(spec.routing_status, "ok_deterministic",
+    "local deterministic lock prevents direct-call missing SR from becoming degraded");
   assert.equal(spec.routing_degraded, false);
 });
 

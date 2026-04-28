@@ -9,8 +9,14 @@ import { submitImageTask } from "./image-submission.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import { decomposeUserCommand } from "./router/decomposer.mjs";
 import { submitCompositeTask } from "./composite-submission.mjs";
-import { createTaskSpec } from "./task-spec.mjs";
+import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
+import { classifyContextSources } from "./intent/context-sources.mjs";
+import {
+  EXECUTION_PHASES,
+  EXECUTION_STATES,
+  runExecutionPhase
+} from "./runtime/execution-graph.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -26,6 +32,14 @@ import {
 
 const MAX_BROWSER_FETCH_BYTES = 5 * 1024 * 1024;
 const MAX_BROWSER_CONTEXT_CHARS = 12000;
+
+function runtimeWithTaskEmitter(runtime, taskId) {
+  if (runtime?.emitTaskEvent) return runtime;
+  return {
+    ...(runtime ?? {}),
+    emitTaskEvent: (eventType, payload) => emitTaskEvent({ runtime, taskId, eventType, payload })
+  };
+}
 
 function createSelectionMetadata(capture) {
   return {
@@ -582,13 +596,26 @@ export async function submitBrowserTask({
   // benefit specifically because the new `[browser_metadata · ...]`
   // sentinel lets SR distinguish "user is on a tab" from "user wants
   // this page analysed".
-  const routerEnrichedContext = await applySemanticRouterPreflight({
-    userCommand,
-    contextPacket
-  });
+  const deferPreExecutionPlanning = background;
+  let routerEnrichedContext = deferPreExecutionPlanning
+    ? {
+        ...contextPacket,
+        context_sources: classifyContextSources({
+          text: userCommand,
+          contextPacket
+        })
+      }
+    : await applySemanticRouterPreflight({
+        userCommand,
+        contextPacket
+      });
   const preflightTaskSpec = createTaskSpec(userCommand, routerEnrichedContext, route);
 
-  if (inspection.allowed && canDecomposeFromTaskSpec(preflightTaskSpec) && !skipDecomposition && !parentTaskId) {
+  if (!deferPreExecutionPlanning
+      && inspection.allowed
+      && canDecomposeFromTaskSpec(preflightTaskSpec)
+      && !skipDecomposition
+      && !parentTaskId) {
     const decomposition = await decomposeUserCommand({
       userCommand,
       runtime,
@@ -689,6 +716,36 @@ export async function submitBrowserTask({
   }
 
   const execute = async () => {
+    if (deferPreExecutionPlanning && inspection.allowed) {
+      routerEnrichedContext = await runExecutionPhase({
+        runtime: runtimeWithTaskEmitter(runtime, task.task_id),
+        taskId: task.task_id,
+        phase: EXECUTION_PHASES.SEMANTIC_ROUTER,
+        step: "semantic_router",
+        progress: 0.04,
+        state: EXECUTION_STATES.ROUTING,
+        fn: () => applySemanticRouterPreflight({
+          userCommand,
+          contextPacket: routerEnrichedContext
+        }),
+        timingPayload: (result) => {
+          const spec = createTaskSpec(userCommand, result, route);
+          return {
+            routing_status: spec.routing_status,
+            executor: executorOverride ?? spec.suggested_executor ?? route.executor
+          };
+        }
+      });
+      const refreshedSpec = createTaskSpec(userCommand, routerEnrichedContext, route);
+      const refreshedValidation = validateTaskSpec(refreshedSpec);
+      task.context_packet = routerEnrichedContext;
+      task.task_spec = refreshedSpec;
+      task.task_spec_valid = refreshedValidation.valid;
+      task.task_spec_errors = refreshedValidation.errors;
+      task.executor = executorOverride ?? refreshedSpec.suggested_executor ?? route.executor;
+      store.updateTask(task.task_id, task);
+    }
+
     if (capture.sourceType === "image") {
       let imageArtifactPath = null;
       try {

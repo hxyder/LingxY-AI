@@ -461,6 +461,14 @@ export function createElectronShellRuntime({
   }
 
   function showDesktopNotification(payload = {}) {
+    const uiOpen = ["overlay", "console"].some((id) => {
+      const win = windows.get(id);
+      return Boolean(win && !win.isDestroyed() && win.isVisible() && !win.isMinimized());
+    });
+    if (payload.kind === "success" && uiOpen && payload.forcePopup !== true) {
+      return { shown: false, reason: "primary_ui_visible" };
+    }
+
     // UCA-182 Phase 8: all in-app notifications now route through the
     // popup-card stack (top-right). 83.2 adds batching on top so a single
     // task's rapid-fire notifications collapse into one paged card.
@@ -1683,7 +1691,9 @@ export function createElectronShellRuntime({
           id: windowDef.id,
           title: windowDef.title,
           route: windowDef.route,
-          visible: windows.get(windowDef.id)?.isVisible() ?? false
+          visible: windows.get(windowDef.id)?.isVisible() ?? false,
+          minimized: windows.get(windowDef.id)?.isMinimized?.() ?? false,
+          focused: windows.get(windowDef.id)?.isFocused?.() ?? false
         }))
       }));
       ipcMain.handle(IPC_CHANNELS.shellShowWindow, (_event, windowId) => showWindow(windowId));
@@ -1728,6 +1738,12 @@ export function createElectronShellRuntime({
         });
         target.setBounds(nextBounds);
         persistWindowPreferences(windowId, { bounds: nextBounds });
+        return true;
+      });
+      ipcMain.handle(IPC_CHANNELS.shellSetIgnoreMouseEvents, (_event, { windowId, ignore, forward } = {}) => {
+        const target = windows.get(windowId);
+        if (!target || target.isDestroyed()) return false;
+        target.setIgnoreMouseEvents(Boolean(ignore), { forward: forward !== false });
         return true;
       });
       ipcMain.handle(IPC_CHANNELS.shellNotify, (_event, payload = {}) => {

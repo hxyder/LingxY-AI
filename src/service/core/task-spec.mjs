@@ -88,7 +88,7 @@ export const GOAL_FAMILIES = /** @type {const} */ ([
  *   - P4-RQ D1: research-class enforcement profile. Drives hard
  *     coverage checks in validateSuccessContract / validateStepGate
  *     (D3). null when web is forbidden — no enforcement applies.
- * @property {"ok"|"sr_timeout"|"sr_no_provider"|"sr_unsupported_provider"|"sr_disabled"|"sr_low_confidence"|"sr_schema_invalid"|"sr_fact_conflict"|"sr_exception"} routing_status
+ * @property {"ok"|"ok_deterministic"|"sr_not_invoked"|"sr_timeout"|"sr_no_provider"|"sr_unsupported_provider"|"sr_disabled"|"sr_low_confidence"|"sr_schema_invalid"|"sr_fact_conflict"|"sr_exception"} routing_status
  *   - P4-RQ G4: SR availability flag. "ok" when SR ran (or wasn't
  *     gated to run); `sr_<code>` when the SR preflight returned a
  *     rejection. Read by audit traces to distinguish "SR said no"
@@ -124,11 +124,6 @@ const GOAL_RULES = [
   {
     goal: "translate",
     patterns: [/(翻译)|\b(translate|translation)\b/i]
-  },
-  // multimodal — image/screenshot/OCR input
-  {
-    goal: "multimodal_analyze",
-    patterns: [/(图片|image|截图|screenshot|ocr|视觉|vision)/i]
   },
   // schedule / notify
   {
@@ -344,6 +339,8 @@ const ARTIFACT_REFERENCE_PATTERNS = [
   /(pptx?|powerpoint|幻灯片|演示文稿|slides?|slideshow|docx?|word\s*文档|word\s*文件|\bword\b|xlsx?|excel|电子表格|表格|pdf|文件|文档)/i
 ];
 
+const LOCAL_ROUTING_LOCK_SCOPES = new Set(["uploaded_files", "current_context", "local_project", "selection"]);
+
 function artifactKindFromPath(filePath = "") {
   const normalized = String(filePath ?? "").toLowerCase();
   if (normalized.endsWith(".pptx")) return "pptx";
@@ -399,6 +396,31 @@ function hasNoteTakingIntent(text, contextPacket = {}) {
     return true;
   }
   return hasContentForNote(contextPacket) && NOTE_INTENT_PATTERNS.some((p) => p.test(String(text ?? "")));
+}
+
+function hasDeterministicRoutingLock({ signals, contextPacket = {}, toolPolicy, text = "" } = {}) {
+  if (extractPureLaunchApp(text)) return true;
+  if (signals?.explicit_no_search?.matched && signals.explicit_no_search.kind === "fact") return true;
+  if (Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0) return true;
+  if (Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0) return true;
+
+  const sourceScope = signals?.source_scope;
+  const sources = contextPacket?.context_sources;
+  const hasObservedLocalAnchor = Boolean(
+    sources?.real_selection
+    || sources?.file_text
+    || sources?.uploaded_files
+    || sources?.uploaded_images
+  );
+  const webMode = toolPolicy?.policy_groups?.external_web_read?.mode
+    ?? toolPolicy?.web_search_fetch?.mode;
+  return Boolean(
+    webMode === "forbidden"
+    && sourceScope?.matched
+    && LOCAL_ROUTING_LOCK_SCOPES.has(sourceScope.hint?.value)
+    && (sourceScope.kind === "fact"
+      || (sourceScope.kind === "assumption" && hasObservedLocalAnchor))
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -514,7 +536,8 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   // bypassed the wall by switching tools.
   const srDecision = enrichedContext?.semantic_router_decision;
   const srRejection = enrichedContext?.semantic_router_rejection;
-  const connectorDomainRequest = isConnectorDomainRequest(text)
+  const pureLaunchApp = extractPureLaunchApp(text);
+  const connectorDomainRequest = (!pureLaunchApp && isConnectorDomainRequest(text))
     || intentRouteNeedsConnector(srDecision);
   const rawPolicy = connectorDomainRequest
     ? buildExternalWebReadPolicy(
@@ -642,15 +665,26 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   // those need different conservative behaviours (G5 short-
   // circuit reads this).
   //
-  // routing_status: ok | sr_<code> | sr_not_invoked. sr_not_invoked
+  // routing_status: ok | ok_deterministic | sr_<code> | sr_not_invoked. sr_not_invoked
   // fires when shouldConsultSemanticRouter said yes but neither
   // decision nor rejection was stamped — the LLM-primary classifier
-  // is silently missing.
+  // is silently missing. ok_deterministic means SR was unavailable or
+  // absent, but a narrow deterministic lock already settled the routing
+  // axis; local-anchor SR output may still enrich synthesis when it
+  // succeeds, but an outage must not make the task refuse.
+  const deterministicRoutingLock = hasDeterministicRoutingLock({
+    signals,
+    contextPacket: enrichedContext,
+    toolPolicy,
+    text
+  });
   const srWasEligible = !srDecision && !srRejection
     && shouldConsultSemanticRouter({ signals, contextPacket: enrichedContext, text });
   const routingStatus = srDecision
     ? "ok"
-    : srRejection?.code
+    : deterministicRoutingLock
+      ? "ok_deterministic"
+      : srRejection?.code
       ? `sr_${srRejection.code}`
       : srWasEligible
         ? "sr_not_invoked"
@@ -750,7 +784,6 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     intent_tags: mergedIntentTags,
     suggested_formats: mergedSuggestedFormats
   };
-
   // Note-capture and image flows have legacy hard hand-offs (multi_modal /
   // agentic). For them we honour the legacy mapping but still record an
   // ExecutorDecision so the resolver path is uniform downstream.

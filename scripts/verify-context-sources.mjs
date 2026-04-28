@@ -268,7 +268,15 @@ async function run() {
   });
 
   // ── 7. multi-block text ───────────────────────────────────────────────
-  it("multi-block: real selection block + sentinel block → BOTH flags", () => {
+  it("multi-block: producer-sentinel block prevents real_selection on subsequent non-sentinel content (P6 F3 followup mutual-exclusion)", () => {
+    // Once any producer sentinel (parent_task_context / conversation_history /
+    // rag_background) tags ctx.text, the rest of the text is part of the
+    // producer's output — including stray markdown like an embedded `---`
+    // separator coming from the assistant's own previous reply. It is NOT
+    // user selection. Pre-P6 the multi-block scan would have set BOTH the
+    // sentinel flag AND real_selection, which misrepresented backend
+    // history as a user-selected local anchor and contributed to the
+    // email raw-dump regression.
     const out = classifyContextSources({
       text: "summarize",
       contextPacket: {
@@ -276,7 +284,8 @@ async function run() {
       }
     });
     assert.equal(out.conversation_history, true);
-    assert.equal(out.real_selection, true);
+    assert.equal(out.real_selection, false,
+      "real_selection must NOT be set when any producer sentinel is present in ctx.text");
   });
   it("multi-block: only sentinel blocks (no real text) → real_selection stays false", () => {
     const out = classifyContextSources({

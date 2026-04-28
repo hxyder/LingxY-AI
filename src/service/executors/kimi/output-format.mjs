@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { extractPureLaunchApp } from "../../core/router/fast-path-router.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -186,19 +187,28 @@ function detectRequestedOutputFormat(userCommand = "") {
   if (/(?:\.pptx|pptx|powerpoint|\bppt\b|幻灯片|演示(?:文稿|文档)?|slides?|slideshow)/i.test(normalized)) return descriptorForFormat("pptx");
   if (/(?:\.txt|txt|纯文本|文本文件)/i.test(normalized)) return descriptorForFormat("txt");
   if (isConversationalIntent(normalized)) return descriptorForFormat("conversational");
-  return descriptorForFormat("conversational");
+  return descriptorForFormat("markdown");
 }
 
 function detectRequestedOutputFormatForTask(task = {}) {
+  if (task?.task_spec?.goal === "launch_and_act"
+      && task?.task_spec?.artifact?.required !== true) {
+    return descriptorForFormat("conversational");
+  }
+  if (extractPureLaunchApp(task?.user_command ?? "")
+      && task?.task_spec?.artifact?.required !== true) {
+    return descriptorForFormat("conversational");
+  }
+
   const detected = detectRequestedOutputFormat(task?.user_command ?? "");
   if (detected.id !== "conversational") return detected;
 
   const artifactKind = task?.task_spec?.artifact?.kind ?? null;
-  const noteArtifactTask = Boolean(task?.task_spec?.artifact?.required)
-    && (task?.context_packet?.source_type === "audio_note"
-      || task?.context_packet?.source_app === "uca.note");
+  const noteIntent = task?.context_packet?.source_type === "audio_note"
+    || task?.context_packet?.source_app === "uca.note"
+    || task?.task_spec?.intent_tags?.includes?.("note_capture");
 
-  if (artifactKind === "md" || noteArtifactTask) return descriptorForFormat("markdown");
+  if (artifactKind === "md" || noteIntent) return descriptorForFormat("markdown");
   if (artifactKind === "docx") return descriptorForFormat("docx");
   if (artifactKind === "pdf") return descriptorForFormat("pdf");
   if (artifactKind === "pptx") return descriptorForFormat("pptx");

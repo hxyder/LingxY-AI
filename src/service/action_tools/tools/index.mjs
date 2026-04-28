@@ -63,6 +63,10 @@ function resolveAppCommand(appName) {
   return KNOWN_APPS[key] ?? appName;
 }
 
+function hasKnownAppAlias(appName) {
+  return Object.prototype.hasOwnProperty.call(KNOWN_APPS, `${appName}`.toLowerCase().trim());
+}
+
 function looksLikeExecutableTarget(value = "") {
   const text = String(value ?? "").trim();
   if (!text) return false;
@@ -448,7 +452,7 @@ export const LAUNCH_APP_TOOL = {
     const command = resolveAppCommand(appArg);
 
     if (process.platform === "win32") {
-      if (!looksLikeExecutableTarget(appArg)) {
+      if (!looksLikeExecutableTarget(appArg) && !hasKnownAppAlias(appArg)) {
         try {
           const pyResult = await tryPythonLauncher(appArg);
           if (pyResult.ok) {
@@ -2086,13 +2090,27 @@ async function writeManifest(outputDir, entries) {
 // exploding on common patterns like `**/*6236605264*`.
 function globToRegex(pattern) {
   const normalized = String(pattern ?? "").replace(/\\/g, "/");
-  const escaped = normalized.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  const converted = escaped
+  const braceGroups = [];
+  const withBraceTokens = normalized.replace(/\{([^{}]+)\}/g, (_match, body) => {
+    const alternatives = String(body).split(",").map((item) => item.trim()).filter(Boolean);
+    if (alternatives.length === 0) return "";
+    const index = braceGroups.push(alternatives) - 1;
+    return `__BRACE_${index}__`;
+  });
+  const escaped = withBraceTokens.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  let converted = escaped
     .replace(/\*\*\//g, "__GLOBSTAR_DIR__")
     .replace(/\*\*/g, "__GLOBSTAR__")
     .replace(/\*/g, "[^/\\\\]*")
     .replace(/__GLOBSTAR_DIR__/g, "(?:.*[/\\\\])?")
     .replace(/__GLOBSTAR__/g, ".*");
+  for (const [index, alternatives] of braceGroups.entries()) {
+    const escapedAlternatives = alternatives.map((item) => item.replace(/[.+^${}()|[\]\\]/g, "\\$&"));
+    converted = converted.replace(
+      new RegExp(`__BRACE_${index}__`, "g"),
+      `(?:${escapedAlternatives.join("|")})`
+    );
+  }
   return new RegExp(`^${converted}$`, "i");
 }
 

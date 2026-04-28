@@ -6,7 +6,7 @@
  *   0a. explicit_no_search (kind=fact)         → forbidden  (hard)
  *   0b. pending_offer external intent          → required   (hard)
  *   1.  explicit_external strong               → required   (hard)
- *   2a. source_scope kind=fact + LOCAL         → forbidden  (hard)
+ *   2a. source_scope kind=fact + LOCAL         → forbidden  (policy hard; SR may still classify output shape)
  *   2b. explicit_single_url + inline URL       → required   (hard)
  *   2c. source_scope kind=assumption + LOCAL   → forbidden  (hard)
  *   3.  explicit_search strong                 → required   (hard)
@@ -26,6 +26,7 @@
 import { toolsInGroup } from "./policy-groups.mjs";
 import { deriveExternalWebPolicyFromIntentRoute } from "./evidence-policy.mjs";
 import { PENDING_OFFER_EXTERNAL_INTENTS } from "../intent/signals/pending-offer.mjs";
+import { extractPureLaunchApp } from "../router/fast-path-router.mjs";
 
 const LOCAL_SCOPES = new Set(["uploaded_files", "current_context", "local_project", "selection"]);
 const PRIMARY_GROUP = "external_web_read";
@@ -268,21 +269,23 @@ function webSearchPolicy(mode, reason, evidence) {
 }
 
 /**
- * P4-03: ambiguity gate for SemanticRouter consultation.
+ * P4-03 / P6: gate for SemanticRouter consultation.
  *
- * The deterministic resolver runs 6 fast-path rules over regex-derived
- * signals. When NONE of those rules fire decisively (no attached files,
- * no `explicit_external` strong, no strong `topic_hint`, command
- * long enough to carry intent), the request is "ambiguous" — the
- * deterministic baseline would default to forbidden, but the user may
- * actually want web reading. SemanticRouter is consulted ONLY for those
- * ambiguous cases; fast-path tasks never trigger an LLM call (per main
- * plan §12.10 latency budget: < 5ms when fast-path hits).
+ * SemanticRouter is the primary semantic classifier. This gate skips it
+ * only for narrow structural hard signals where the LLM cannot add useful
+ * routing meaning or must not be asked to overrule the user/runtime fact:
+ * attachments, explicit online opt-in, explicit no-search, and tiny
+ * chitchat, plus narrow side-effect actions like a pure app launch.
+ * Local source_scope is intentionally NOT a skip condition: SR may still
+ * classify user_goal / expected_output, while the merge layer keeps the
+ * local-anchor web policy locked.
  *
  * @param {{ signals: object, contextPacket?: object, text?: string }} input
  * @returns {boolean}
  */
 export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text = "" } = {}) {
+  if (extractPureLaunchApp(text)) return false;
+
   if (Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0) {
     return false;
   }
@@ -292,35 +295,8 @@ export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text 
   const explicitExternal = signals?.explicit_external;
   if (explicitExternal?.matched && explicitExternal.strength === "strong") return false;
 
-  // P4-RQ I1: hard-fact skip. The deterministic resolver has already
-  // committed to a definitive answer for these signals; SR cannot
-  // legitimately override hard facts (the merge layer already enforces
-  // this — explicit_no_search beats every SR suggestion (lines
-  // ~382-384), source_scope=fact+LOCAL beats every SR suggestion
-  // (lines ~389-394)). Consulting SR here is wasted effort, AND when
-  // SR fails (timeout / no_provider / exception / schema_invalid) the
-  // outage stamps `routing_status=sr_*` → `routing_degraded=true`,
-  // which the fast executor's G6b short-circuit then reads to refuse
-  // the task with an honest "routing degraded" message. Net result
-  // pre-I1: a "不要联网" or local-anchor task could downgrade to
-  // partial_success purely because SR was unavailable, even though the
-  // deterministic answer was forbidden either way.
-  //
-  // Architectural rule: SR handles ambiguous middle-layer routing; it
-  // does not get consulted on hard facts. Mirrors the existing merge-
-  // layer guards so the skip-set and the override-set are symmetric.
   const explicitNoSearch = signals?.explicit_no_search;
   if (explicitNoSearch?.matched && explicitNoSearch.kind === "fact") return false;
-  // Pronoun-style assumption-kind anchors stay SR-eligible by design:
-  // "这个/这段" can refer to local OR a previously-mentioned external
-  // article, and SR (with conversation history) is the right layer
-  // to disambiguate. Only fact-kind local anchors are hard guardrails.
-  const sourceScope = signals?.source_scope;
-  if (sourceScope?.matched
-      && sourceScope.kind === "fact"
-      && LOCAL_SCOPES.has(sourceScope.hint?.value)) {
-    return false;
-  }
 
   // P4-RQ E3 stage C1: topic_hint (topic regex) NO LONGER
   // skips SR. Previously, "今天天气" with strong-topic_hint

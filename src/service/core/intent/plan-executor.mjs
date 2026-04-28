@@ -1,21 +1,15 @@
 /**
- * TaskPlan executor.
+ * TaskPlan executor — schedule / clarify task-record builders.
  *
- * Week 1 revised — the trigger now only detects whether a time phrase is
- * present; interpretation goes to the understanding LLM whenever the
- * command isn't trivially a "<time phrase> <short residual>" shape. This
- * fixes task_829f8d61 where the old regex-only path classified
- *   "打开 outlook，在日历里新建一个 30 分钟的任务，标题叫吃饭。时间在明天下午1点"
- * as a 15-hour-later schedule, stripping the event time and leaving a
- * truncated residual.
- *
- * Dispatch:
- * - No time phrase                       → return null, fall through
- * - Trivial "N 分钟后 X" (≤40 chars X)    → deterministic schedule, 0 LLM
- * - Any other time-phrase command        → 1 LLM call (understandCommand)
- *                                          which returns schedule / immediate /
- *                                          needs_clarification; we act on
- *                                          that classification.
+ * History: this file used to host both the LLM-driven schedule/clarify
+ * dispatcher (`maybeHandleAsPlan` calling `understandCommand`) AND the
+ * task-record builders that materialise those dispatch outcomes. After the
+ * front-classifier merge, the SemanticRouter emits a unified
+ * `interpretation` field (immediate / schedule / needs_clarification) on
+ * the same tool call that already drove routing. `triage.mjs` reads that
+ * field and calls the builders below directly. The dispatcher / understand
+ * LLM is gone — there is exactly one front LLM and exactly one place that
+ * branches on its verdict.
  */
 
 import crypto from "node:crypto";
@@ -26,8 +20,6 @@ import {
   markTaskSucceeded,
   updateTask
 } from "../task-runtime.mjs";
-import { hasTimePhrase } from "./trigger.mjs";
-import { understandCommand } from "./understand.mjs";
 
 function buildPlanContextPacket({ userCommand, originalContextPacket = null }) {
   return {
@@ -45,8 +37,7 @@ function buildPlanContextPacket({ userCommand, originalContextPacket = null }) {
     captured_at: new Date().toISOString()
   };
 }
-
-function formatRunAtRelative(isoString) {
+export function formatRunAtRelative(isoString) {
   try {
     const d = new Date(isoString);
     const diffMs = d.getTime() - Date.now();
@@ -61,7 +52,7 @@ function formatRunAtRelative(isoString) {
   }
 }
 
-function createScheduledTaskRecord({
+export function createScheduledTaskRecord({
   runtime,
   userCommand,
   contextPacket,
@@ -118,7 +109,7 @@ function createScheduledTaskRecord({
   return task;
 }
 
-function createClarifyTaskRecord({
+export function createClarifyTaskRecord({
   runtime,
   userCommand,
   contextPacket,
@@ -169,7 +160,7 @@ function createClarifyTaskRecord({
   return task;
 }
 
-function buildScheduleFromDecision({ runtime, userCommand, contextPacket, executionMode, runAtIso, residualCommand }) {
+export function buildScheduleFromDecision({ runtime, userCommand, contextPacket, executionMode, runAtIso, residualCommand }) {
   const scheduler = runtime?.scheduler;
   if (!scheduler) return null;
   try {
@@ -193,63 +184,4 @@ function buildScheduleFromDecision({ runtime, userCommand, contextPacket, execut
   } catch {
     return null;
   }
-}
-
-export async function maybeHandleAsPlan({
-  runtime,
-  userCommand,
-  contextPacket,
-  executionMode,
-  // Dependency injection for tests — defaults to the real LLM understanding
-  // call but can be overridden with a stub that returns a fixed decision.
-  understand = understandCommand
-}) {
-  ensureRuntimeServices(runtime);
-  if (!hasTimePhrase(userCommand)) return null;
-
-  // Time phrase detected — the LLM decides what it means. No regex
-  // "looks simple enough, skip the LLM" fast path: that was the exact
-  // classifier-in-disguise we were trying to remove. When the LLM is
-  // unavailable, we fall through so the normal executor handles it.
-  let decision;
-  try {
-    decision = await understand({ userCommand });
-  } catch {
-    return null;
-  }
-  if (!decision) return null;
-
-  if (decision.interpretation === "immediate") {
-    return null;
-  }
-
-  if (decision.interpretation === "needs_clarification" && decision.clarification_question) {
-    const task = createClarifyTaskRecord({
-      runtime, userCommand, contextPacket, executionMode,
-      clarificationQuestion: decision.clarification_question
-    });
-    return { handled: true, task, message: decision.clarification_question };
-  }
-
-  if (decision.interpretation === "schedule"
-    && decision.schedule_at
-    && decision.residual_command) {
-    const schedule = buildScheduleFromDecision({
-      runtime,
-      userCommand,
-      contextPacket,
-      executionMode,
-      runAtIso: decision.schedule_at,
-      residualCommand: decision.residual_command
-    });
-    if (schedule) {
-      const replyText = `已安排 ${formatRunAtRelative(schedule.next_run_at)} 执行：${decision.residual_command}`;
-      const task = createScheduledTaskRecord({
-        runtime, userCommand, contextPacket, executionMode, replyText, schedule
-      });
-      return { handled: true, task, schedule, message: replyText };
-    }
-  }
-
-  return null;
 }

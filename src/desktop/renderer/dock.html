@@ -7,7 +7,7 @@
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
-        width: 64px; height: 64px;
+        width: 52px; height: 52px;
         background: transparent;
         display: grid; place-items: center;
         overflow: hidden;
@@ -25,9 +25,9 @@
         transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
       }
 
-      #dockButton:hover { transform: scale(1.12); }
+      #dockButton:hover { transform: scale(1.06); }
       #dockButton:active { transform: scale(0.94); }
-      #dockButton.dragover { transform: scale(1.18); }
+      #dockButton.dragover { transform: scale(1.08); }
 
       canvas { display: block; border-radius: 50%; }
 
@@ -76,7 +76,7 @@
       /* subtle green breathing ring when completed tasks are waiting */
       @keyframes breathe-ring {
         0%, 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
-        50%       { box-shadow: 0 0 0 5px rgba(34,197,94,0.35); }
+        50%       { box-shadow: 0 0 0 3px rgba(34,197,94,0.35); }
       }
       #dockButton.has-completed { animation: breathe-ring 2.4s ease-in-out infinite; }
 

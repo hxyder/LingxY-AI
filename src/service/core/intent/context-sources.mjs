@@ -176,12 +176,40 @@ export function classifyContextSources({ text, contextPacket = {} } = {}) {
     sources.editable_artifact = true;
   }
 
+  // Stage 1b — Phase 1.11 — read structured `background_contexts[]`.
+  // Producers (memory recall / recent artifact / parent task / SR
+  // patches) push entries here instead of mutating ctx.text. Each entry
+  // carries an explicit `kind` we map to the matching source flag.
+  if (Array.isArray(ctx.background_contexts)) {
+    for (const entry of ctx.background_contexts) {
+      if (!entry || typeof entry !== "object") continue;
+      switch (entry.kind) {
+        case "memory_recall":
+        case "rag_background":
+          sources.rag_background = true;
+          break;
+        case "parent_task":
+          sources.parent_task_context = true;
+          break;
+        case "recent_artifact":
+          sources.editable_artifact = true;
+          break;
+        case "browser_metadata":
+          sources.browser_page = true;
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
   // Stage 2: sentinel scan over ctx.text — handles cases where text
   // arrived without a producer flag (older paths, hand-rolled digests,
   // future producers that haven't been wired to set flags).
   if (trimmedCtxText.length > 0) {
     const blocks = ctxText.split(BLOCK_DELIMITER);
     let nonSentinelBlockSeen = false;
+    let anySentinelMatched = false;
     for (const block of blocks) {
       const trimmed = block.trim();
       if (!trimmed) continue;
@@ -204,26 +232,26 @@ export function classifyContextSources({ text, contextPacket = {} } = {}) {
           break;
         }
       }
-      if (!matched) {
-        nonSentinelBlockSeen = true;
-      }
+      if (matched) anySentinelMatched = true;
+      else nonSentinelBlockSeen = true;
     }
 
-    // Stage 3: real_selection default. If the text contains content not
-    // covered by any sentinel AND that content is meaningfully distinct
-    // from the user's command, treat it as a real selection. This keeps
-    // existing fixtures green ("分析下面代码" with selected text).
+    // Stage 3: real_selection default. ONLY fires when no producer
+    // sentinel was seen anywhere in the text. P6 F3 follow-up: when a
+    // producer (parent-summary / RAG / conversation-history) tagged
+    // its block with a sentinel, the rest of the text is part of that
+    // producer's output (e.g. assistant markdown that happens to
+    // contain `---` as a separator) — NOT user selection. Treating it
+    // as real_selection used to misrepresent backend history as a local
+    // user anchor, which contributed to the synthesis-bypass regression.
     //
     // The "command echo" guard mirrors source-scope.mjs:90 — when the
     // capture path duplicates the user command into ctx.text by default,
-    // we don't want to classify that as a real selection.
+    // we don't want to classify that as a real selection either.
     const isJustCommandEcho = userCommand.length > 0 && trimmedCtxText === userCommand;
-    if (nonSentinelBlockSeen && !isJustCommandEcho) {
+    if (nonSentinelBlockSeen && !anySentinelMatched && !isJustCommandEcho) {
       sources.real_selection = true;
     }
-    // Special case: when there are NO sentinels and NO blocks (single
-    // block of plain text), the loop above sets nonSentinelBlockSeen
-    // for the only block. Already handled.
   }
 
   return sources;

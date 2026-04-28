@@ -2,7 +2,6 @@ import crypto from "node:crypto";
 import { createActionToolRegistry } from "../../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../action_tools/tools/index.mjs";
 import { validateToolCall } from "./tool-call-validator.mjs";
-import { extractFirstTier0Action, hasCompoundIntent } from "../../core/router/fast-path-router.mjs";
 import { emitTaskEvent as _emitTaskEventFn } from "../../core/task-runtime.mjs";
 import {
   extractWorkflowInput,
@@ -13,15 +12,17 @@ import {
   matchWorkflowByTrigger
 } from "../../connectors/core/connector-intent.mjs";
 import { createProviderAdapter } from "../agentic/provider-adapter.mjs";
+import { resolveProviderForTask } from "../shared/provider-resolver.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { validateAnswerSynthesis } from "../../core/policy/success-contract-validator.mjs";
+import { SYNTHESIS_REQUIRED_OUTPUTS } from "../../core/intent/semantic-router.mjs";
 import {
   formatResourceContext,
   formatUntrustedSourceMaterial,
   extractAbsoluteLocalPathsFromText
 } from "../shared/resource-context.mjs";
-import { detect as detectExplicitSearch } from "../../core/intent/signals/explicit-search.mjs";
+import { renderBackgroundContextsBlock } from "../../core/intent/background-contexts.mjs";
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
@@ -36,7 +37,6 @@ import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
 import { planDeterministicToolCall } from "./planners/deterministic.mjs";
 import { planConnectorToolCall } from "./planners/connector.mjs";
 import {
-  extractUrl,
   extractLaunchAppName,
   extractLaunchAppCandidates,
   normalizeLaunchAppArg,
@@ -166,19 +166,38 @@ function inferSearchRecencyFromText(value = "") {
 
 // UCA-077 P3-01: launch-app helpers moved to ./planners/launch-helpers.mjs.
 
-function repairToolArgs(decision, task, transcript = []) {
-  if (!decision || decision.tool !== "launch_app") return decision?.args ?? {};
+function repairSchemaArgAliases(args = {}, tool = null) {
+  const repaired = { ...(args ?? {}) };
+  const properties = tool?.parameters?.properties && typeof tool.parameters.properties === "object"
+    ? tool.parameters.properties
+    : {};
+  if (!("query" in repaired) && "query" in properties && typeof repaired.q === "string") {
+    repaired.query = repaired.q;
+    delete repaired.q;
+  }
+  const propertyKeys = Object.keys(properties);
+  const providedKeys = Object.keys(repaired);
+  if (propertyKeys.length === 1 && providedKeys.length === 1 && !(providedKeys[0] in properties)) {
+    repaired[propertyKeys[0]] = repaired[providedKeys[0]];
+    delete repaired[providedKeys[0]];
+  }
+  return repaired;
+}
+
+function repairToolArgs(decision, task, transcript = [], tool = null) {
+  if (!decision) return {};
+  if (decision.tool !== "launch_app") return repairSchemaArgAliases(decision.args ?? {}, tool);
   const args = { ...(decision.args ?? {}) };
   const explicit = normalizeLaunchAppArg(args.app ?? args.name ?? args.appName);
   if (explicit) {
     args.app = explicit;
     delete args.name;
     delete args.appName;
-    return args;
+    return repairSchemaArgAliases(args, tool);
   }
 
   const candidates = extractLaunchAppCandidates(task?.user_command ?? "");
-  if (candidates.length === 0) return args;
+  if (candidates.length === 0) return repairSchemaArgAliases(args, tool);
 
   const alreadyUsed = new Set(
     transcript
@@ -191,7 +210,7 @@ function repairToolArgs(decision, task, transcript = []) {
   args.app = next;
   delete args.name;
   delete args.appName;
-  return args;
+  return repairSchemaArgAliases(args, tool);
 }
 
 // UCA-077 P3-01: extractUrl moved to ./planners/launch-helpers.mjs.
@@ -216,12 +235,51 @@ function hasCjk(value = "") {
   return /[\u3400-\u9fff]/.test(String(value ?? ""));
 }
 
-function toolDescriptorForAdapter(tool) {
+function plannerToolDescriptorForAdapter() {
   return {
-    name: tool.id,
-    description: tool.description ?? tool.name ?? "",
-    input_schema: tool.parameters ?? { type: "object", properties: {} }
+    name: "call_tool",
+    description: "Call one available execution tool by id. Choose the tool id from Available execution tools and pass its arguments as an object.",
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["tool", "args"],
+      properties: {
+        tool: { type: "string", description: "Exact tool id to call." },
+        args: { type: "object", description: "Arguments for the selected tool.", additionalProperties: true }
+      }
+    }
   };
+}
+
+function summarizeToolParameters(schema = {}) {
+  const properties = schema?.properties && typeof schema.properties === "object"
+    ? schema.properties
+    : {};
+  const entries = Object.entries(properties).slice(0, 10).map(([key, descriptor = {}]) => {
+    const type = descriptor.type ?? (descriptor.enum ? "enum" : "any");
+    const values = Array.isArray(descriptor.enum) && descriptor.enum.length > 0
+      ? `:${descriptor.enum.slice(0, 8).join("|")}`
+      : "";
+    return `${key}:${type}${values}`;
+  });
+  return entries.length > 0 ? `{ ${entries.join(", ")} }` : "{}";
+}
+
+function formatToolDescription(tool = {}) {
+  const base = String(tool.description ?? tool.name ?? "").trim();
+  const metadata = [];
+  metadata.push(`args=${summarizeToolParameters(tool.parameters)}`);
+  if (tool.policy_group) metadata.push(`group=${tool.policy_group}`);
+  if (tool.risk_level) metadata.push(`risk=${tool.risk_level}`);
+  if (tool.requires_confirmation === true) metadata.push("confirmation=required");
+  if (Array.isArray(tool.required_capabilities) && tool.required_capabilities.length > 0) {
+    metadata.push(`capabilities=${tool.required_capabilities.join(",")}`);
+  }
+  return `${base} [${metadata.join("; ")}]`.trim();
+}
+
+function formatToolForPlanner(tool = {}) {
+  return `- ${tool.id}: ${formatToolDescription(tool)}`;
 }
 
 function formatAccountLabel(account = {}, fallback = {}) {
@@ -288,12 +346,192 @@ function formatConnectorFinal(entry, userCommand = "") {
   return null;
 }
 
-function latestConnectorFinal(transcript, userCommand = "") {
+function allowsRawConnectorFinal(taskSpec) {
+  return taskSpec?.synthesis?.expected_output === "raw_results";
+}
+
+function connectorFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
+  const rawAllowed = allowsRawConnectorFinal(taskSpec);
   const entry = [...(transcript ?? [])].reverse().find((item) =>
     item.type === "tool_result"
+    && item.success === true
     && ["account_list_connected_accounts", "account_list_emails", "account_list_files", "account_list_events"].includes(item.tool)
   );
-  return entry ? formatConnectorFinal(entry, userCommand) : null;
+  if (!entry) return fallbackText;
+  if (rawAllowed) return formatConnectorFinal(entry, userCommand);
+  const expected = taskSpec?.synthesis?.expected_output;
+  const needsSynthesis = expected === null
+    || expected === undefined
+    || expected === ""
+    || SYNTHESIS_REQUIRED_OUTPUTS.has(expected);
+  if (needsSynthesis) {
+    const zh = hasCjk(userCommand);
+    return zh
+      ? "工具已经返回了连接器数据，但最终答复仍需要按你的请求进行总结/分析，不能直接把原始记录列表当作答案。"
+      : "The connector returned data, but the final answer still needs synthesis rather than a raw record list.";
+  }
+  return fallbackText ?? entry.observation ?? null;
+}
+
+const ACTION_CONFIRMATION_TOOLS = new Set(["launch_app", "open_url", "open_file", "copy_to_clipboard", "notify"]);
+
+// Phase 1.8 — `WEB_DESTINATION_ALIASES`, `openActionForLaunchTarget`,
+// `plannedOpenActions`, `executedOpenActionKeys`, `nextPlannedOpenAction`,
+// `allPlannedOpenActionsCompleted` were the regex layer that tried to
+// pre-plan multi-app launches. Deleted: the LLM is the only authority on
+// "what tools to call in what order" for compound intents. The system
+// prompt tells it to keep calling tools until the user's full request is
+// satisfied; ReAct iterations naturally chain launch_app(A) → launch_app(B).
+
+function actionCompletionFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
+  const completed = (transcript ?? []).filter((entry) =>
+    entry?.type === "tool_result"
+    && entry.success === true
+    && ACTION_CONFIRMATION_TOOLS.has(entry.tool)
+    && typeof entry.observation === "string"
+    && entry.observation.trim()
+  );
+  if (completed.length === 0) return fallbackText;
+  const observations = [...new Set(completed.map((entry) => entry.observation.trim()))];
+  const zh = hasCjk(userCommand);
+  return zh
+    ? `已完成这些操作：\n${observations.map((line) => `- ${line}`).join("\n")}`
+    : `Completed these actions:\n${observations.map((line) => `- ${line}`).join("\n")}`;
+}
+
+function finalFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
+  const actionFallback = actionCompletionFallbackText(transcript, userCommand, taskSpec);
+  if (actionFallback) return actionFallback;
+  return connectorFallbackText(transcript, userCommand, taskSpec)
+    ?? fallbackText;
+}
+
+function hasToolTranscript(transcript = []) {
+  return transcript.some((entry) => entry?.type === "tool_result");
+}
+
+function isActionConfirmationOnly(transcript = []) {
+  const results = transcript.filter((entry) => entry?.type === "tool_result");
+  return results.length > 0
+    && results.every((entry) => entry.success !== false && ACTION_CONFIRMATION_TOOLS.has(entry.tool));
+}
+
+function needsFinalComposer(task, transcript = []) {
+  if (!hasToolTranscript(transcript)) return false;
+  if (allowsRawConnectorFinal(task?.task_spec)) return false;
+  if (isActionConfirmationOnly(transcript)) return false;
+  return true;
+}
+
+function compactTranscriptForComposer(transcript = []) {
+  const lines = [];
+  for (const [index, entry] of transcript.entries()) {
+    if (entry?.type === "tool_result") {
+      const status = entry.success === false ? "failed" : "success";
+      const obs = String(entry.observation ?? "").replace(/\s+/g, " ").trim().slice(0, 5000);
+      const metadata = entry.metadata
+        ? ` metadata=${JSON.stringify(entry.metadata).slice(0, 1000)}`
+        : "";
+      lines.push(`${index + 1}. ${entry.tool}(${JSON.stringify(entry.args ?? {}).slice(0, 500)}) ${status}: ${obs}${metadata}`);
+    } else if (entry?.type === "tool_denied") {
+      lines.push(`${index + 1}. ${entry.tool} denied: ${entry.reason ?? "denied"}`);
+    } else if (entry?.type === "validation_error") {
+      lines.push(`${index + 1}. ${entry.tool} validation_error: ${entry.error ?? "invalid arguments"}`);
+    }
+  }
+  return lines.join("\n").slice(0, 24000);
+}
+
+function localFallbackFinal({ task, transcript, reason = "" }) {
+  const userCommand = task?.user_command ?? "";
+  const action = actionCompletionFallbackText(transcript, userCommand, task?.task_spec);
+  if (action) return action;
+  const connector = connectorFallbackText(transcript, userCommand, { synthesis: { expected_output: "raw_results" } });
+  if (connector) return connector;
+  const latest = [...(transcript ?? [])].reverse()
+    .find((entry) => entry?.type === "tool_result" && String(entry.observation ?? "").trim());
+  const zh = hasCjk(userCommand);
+  const obs = String(latest?.observation ?? "").trim().slice(0, 800);
+  if (obs) {
+    return zh
+      ? `我已经拿到工具返回的信息，但最终整理没有完成。可用信息如下：\n${obs}`
+      : `I collected tool results, but final synthesis did not complete. Available information:\n${obs}`;
+  }
+  return zh
+    ? `这次没有拿到足够的工具结果来完成最终答复。${reason ? `原因：${reason}` : ""}`.trim()
+    : `I could not collect enough tool results to finish the answer.${reason ? ` Reason: ${reason}` : ""}`.trim();
+}
+
+async function composeFinalAnswer({ task, transcript, runtime, reason = "" }) {
+  runtime?.emitTaskEvent?.("final_composer_started", { reason });
+  const started = Date.now();
+  try {
+    if (typeof runtime?.finalAnswerComposer === "function") {
+      const composed = await runtime.finalAnswerComposer({ task, transcript, reason });
+      const text = String(composed ?? "").trim();
+      if (text) return text;
+    }
+    const provider = resolveProviderForTask("chat");
+    if (!provider || provider.kind === "code_cli") {
+      return localFallbackFinal({ task, transcript, reason });
+    }
+    const adapter = createProviderAdapter(provider);
+    let text = "";
+    const userCommand = task?.user_command ?? "";
+    const taskSpec = task?.task_spec ?? {};
+    const expected = taskSpec?.synthesis?.expected_output ?? null;
+    const system = [
+      "You are LingxY's final answer composer.",
+      "Use only the user request, task spec, and sanitized tool transcript below.",
+      "Do not call tools. Do not mention internal pipeline, retries, budgets, validators, or raw tool protocol.",
+      "Turn tool observations into the final answer the user asked for, in the user's language.",
+      "If the transcript contains concrete values or facts that directly answer the request, use them. Do not claim data is unavailable just because the same observation also contains page boilerplate, navigation text, warnings, or unrelated errors.",
+      "Preserve relevant source, timestamp, location, units, and uncertainty from the transcript when they matter to the answer.",
+      "If a tool failed, say what could be completed and what could not, without exposing stack traces."
+    ].join("\n");
+    const messages = [
+      { role: "system", content: system },
+      {
+        role: "user",
+        content: [
+          `[User request]\n${userCommand}`,
+          `[Expected output]\n${expected ?? "infer from user request"}`,
+          `[Task spec]\n${JSON.stringify({
+            goal: taskSpec.goal,
+            connector_domain: taskSpec.connector_domain,
+            tool_policy: taskSpec.tool_policy,
+            synthesis: taskSpec.synthesis,
+            research_quality: taskSpec.research_quality
+          })}`,
+          `[Stop reason]\n${reason || "normal"}`,
+          `[Tool transcript]\n${compactTranscriptForComposer(transcript) || "(no tool transcript)"}`
+        ].join("\n\n")
+      }
+    ];
+    const response = await adapter.generate({
+      messages,
+      tools: [],
+      maxTokens: 1024,
+      onTextDelta: adapter.supportsStreaming === true
+        ? (delta) => {
+            if (!delta) return;
+            text += delta;
+            runtime?.emitTaskEvent?.("text_delta", { delta });
+          }
+        : undefined
+    });
+    if (!text) text = response?.text ?? "";
+    const finalText = String(text ?? "").trim();
+    return finalText || localFallbackFinal({ task, transcript, reason });
+  } catch {
+    return localFallbackFinal({ task, transcript, reason });
+  } finally {
+    runtime?.emitTaskEvent?.("phase_timing", {
+      phase: "final_composer",
+      duration_ms: Math.max(0, Date.now() - started),
+      reason
+    });
+  }
 }
 
 /**
@@ -415,78 +653,46 @@ function buildConversationMessages(prefixMessages, transcript, initialFilePaths 
   return messages;
 }
 
-/**
- * 83.1 — Decide whether a prose-only reply from the LLM warrants a prose-trap
- * retry. A request that is obviously a pure question shouldn't be retried
- * (LLM is correct to reply in prose). A request that looks action-shaped
- * SHOULD — that's where the bug bites.
- *
- * Conservative: defaults to "retry" unless we detect interrogative shape.
- */
+function taskRequiresToolUse(task) {
+  const spec = task?.task_spec ?? {};
+  const contract = spec.success_contract ?? {};
+  const requiredToolNames = contract.required_tool_names ?? [];
+  const requiredPolicyGroups = contract.required_policy_groups ?? [];
+  const actionGoals = new Set([
+    "launch_and_act",
+    "open_or_reveal_file",
+    "transform_existing_file",
+    "schedule_or_notify",
+    "create_or_update_calendar_event"
+  ]);
+  return Boolean(
+    task?.__forceToolUse === true
+    || spec.connector_domain === true
+    || spec.artifact?.required === true
+    || spec.tool_policy?.web_search_fetch?.mode === "required"
+    || contract.tool_called === true
+    || (Array.isArray(requiredToolNames) && requiredToolNames.length > 0)
+    || (Array.isArray(requiredPolicyGroups) && requiredPolicyGroups.length > 0)
+    || actionGoals.has(spec.goal)
+  );
+}
+
 function shouldRetryProseTrap({ task, prose, transcript }) {
   if (!prose || typeof prose !== "string") return false;
-  // If the loop has already run any tool, we're not in the failure mode.
   const anyToolRan = transcript.some((e) => e.type === "tool_result");
   if (anyToolRan) return false;
   const cmd = (task.user_command ?? "").trim();
   if (!cmd) return false;
-  // Interrogative markers → probably a pure Q&A, don't retry.
-  if (/[?？]\s*$/.test(cmd)) return false;
-  if (/^(什么|为什么|怎么|如何|哪|谁|何时|多少|几)/.test(cmd)) return false;
-  if (/^(what|why|how|who|when|where|which|does|do|is|are|can|could|should|would|will|were|was)\b/i.test(cmd)) return false;
-  // Otherwise — the command looks imperative / action-shaped. Retry once.
-  return true;
+  return taskRequiresToolUse(task);
 }
 
-async function llmPlanner({ task, transcript, tools, iteration }) {
-  const catalog = task.__runtime?.connectorCatalog ?? null;
-  // Pass the catalog so a workflow with fully-specified input (e.g. user
-  // wrote "主题:xx 正文:yy") can still short-circuit without an LLM call.
-  // Ambiguous connector commands intentionally fall through to the LLM.
-  const deterministic = planDeterministicToolCall(task.user_command, catalog);
-  if (deterministic) return deterministic;
-
-  // Connector capability preflight is part of the execution framework, not a
-  // prompt wish. Even when a chat planner is available, first gather the
-  // observable connected-account state for connector-domain requests (calendar
-  // availability, recent mail, drive listing). The LLM then reasons over the
-  // real observation and may perform follow-up writes such as creating an
-  // event. This prevents fast/prose hallucinations and avoids relying on the
-  // model to discover the first read tool from a long tool list.
-  const connectorReadAlreadyCalled = transcript.some((entry) =>
-    entry?.type === "tool_result"
-    && ["account_list_connected_accounts", "account_list_emails", "account_list_files", "account_list_events"].includes(entry.tool)
-  );
-  if (!connectorReadAlreadyCalled && task.task_spec?.connector_domain === true) {
-    const connector = planConnectorToolCall(task.user_command, catalog);
-    if (connector) return connector;
-  }
-
-  // UCA-077 P1-06: web_search_fetch is required iff tool-policy says so.
-  // The previous OR-with-regex condition meant a positive regex hit could
-  // override a TaskSpec that had been resolved to "forbidden" — that is the
-  // root of the "最近这个框架很慢 → 误联网" symptom. The resolver is now the
-  // only authority.
-  const webSearchRequired = task.task_spec?.tool_policy?.web_search_fetch?.mode === "required";
-  const searchAlreadyCalled = transcript.some((entry) => entry.tool === "web_search_fetch");
-  if (webSearchRequired && !searchAlreadyCalled) {
-    return {
-      type: "tool_call",
-      tool: "web_search_fetch",
-      args: {
-        query: task.user_command,
-        recency: inferSearchRecencyFromText(task.user_command)
-      }
-    };
-  }
-
-  const { resolveProviderForTask } = await import("../shared/provider-resolver.mjs");
+async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
   const provider = resolveProviderForTask("chat");
   if (!provider || provider.kind === "code_cli") {
     return defaultPlanner({ task, runtime: task.__runtime ?? null });
   }
 
-  const toolList = tools.map((t) => `- ${t.id}: ${t.description ?? ""}`).join("\n");
+  const toolList = tools.map(formatToolForPlanner).join("\n");
   const workflowHint = formatWorkflowsForPlanner(task.__runtime?.connectorCatalog);
   const resourceHint = formatResourceContext(task);
   const maxIter = 8;
@@ -556,23 +762,12 @@ async function llmPlanner({ task, transcript, tools, iteration }) {
     ? "\n\nSCHEDULED-FIRE CONTEXT: This request is the actual firing of an already-scheduled task — the delay has ALREADY elapsed. Execute the action NOW. Do NOT call create_scheduled_task under any circumstances. For a reminder, call notify directly. For an email, call the send workflow directly. The scheduling was done earlier; your job here is to perform the action."
     : "";
 
-  const systemPrompt = `You are LingxY, a capable desktop AI assistant. Read the user's request carefully, consider what you have available (tools, workflows, attached resources, connected accounts), and decide how to accomplish their goal. Ask a short clarifying question only when you genuinely cannot proceed faithfully.
+  const systemPrompt = `You are LingxY, a capable desktop AI assistant running ON the user's machine. You have real local-execution tools: launch_app actually starts native applications, open_url actually navigates the user's browser, generate_document actually writes files to disk. You are NOT a "web assistant", "shortcut helper", or "chat-only" persona — refusing to call launch_app on the grounds that you "cannot operate a desktop computer" is wrong; the tools below are exactly that operation. Read the user's request carefully, consider what you have available (tools, workflows, attached resources, connected accounts), and decide how to accomplish their goal. Ask a short clarifying question only when you genuinely cannot proceed faithfully.
 ${resourceHint}
-Available tools:
+Available execution tools:
 ${toolList}${workflowHint}
 
-Key tool schemas:
-- launch_app: { "app": "<app name>" }
-- open_url: { "url": "https://..." }
-- web_search_fetch: { "query": "...", "recency": "day"|"week"|"month"|"year" }
-- open_file: { "path": "C:\\\\path\\\\to\\\\file" }
-- list_files / glob_files / find_recent_files — enumerate local files BEFORE fanning out per-file actions
-- account_send_email: { "to": [...], "subject": "...", "body": "...", "attachmentPaths": [optional absolute paths] }
-- account_create_event: { "title": "...", "startTime": "<ISO8601>", "endTime": "<ISO8601>", "attendees": [...] }
-- create_scheduled_task: delay work to a specific moment — use for "N 分钟后 / tomorrow X / at HH:MM" requests
-- generate_document: { "kind": "pptx"|"docx"|"xlsx"|"pdf", "filename": "...", "outline": { ... } } — pass outline as a native object, not a stringified JSON string. For pptx use { title, subtitle?, slides:[{ heading, bullets?: string[] }] }; for docx/pdf use { title, sections:[{ heading, body|bullets }] }; for xlsx use { rows:[[...]] }.
-- edit_file: { "path": "C:\\\\absolute\\\\existing-file.ext", "outline" | "content": ... } — use this when the user asks to revise an already-generated artifact. Keep the SAME absolute path so the file is updated in place instead of creating a new one.
-- notify / copy_to_clipboard / translate_text — self-describing
+Use the native call_tool interface when a tool is needed: choose exactly one tool id from the list and pass its arguments as an object. Tool metadata is part of the execution contract: policy groups say which contract applies, risk indicates approval sensitivity, and capabilities say what the tool can actually touch.
 
 Guidance (not a rigid checklist — apply judgment):
 - **Execute with what you have.** If the request is concrete and you have the tool + data, just call it. Don't ask for permission the user already implicitly gave.
@@ -583,12 +778,16 @@ Guidance (not a rigid checklist — apply judgment):
 - **Fan out enumerations.** When the user says "all / every / each <something>", start with an enumeration tool (list_files / glob_files / account_list_emails / account_list_files), read the result, then call the per-item action for each result in subsequent iterations. Do not guess counts or filenames.
 - **Connector workflows over raw tools.** Gmail/Outlook/Calendar/Drive operations should use connector_workflow_run when a matching workflow exists (see the workflow list above). The workflow shows the user a draft with 确认/拒绝 buttons; you do NOT need to ask in chat.
 - **Truthfulness.** Only claim an email was sent / event created / file uploaded when the transcript shows the corresponding tool returned success=true. If you prepared a draft and it's waiting on the user's approval, say so explicitly.
-- **Search before answering about current events.** Read \`tool_policy.external_web_read\` first. When the mode is \`required\` or \`optional\`, AND the user asks about news / prices / flights / weather / anything time-sensitive, call a member of the \`external_web_read\` group first — \`web_search_fetch\` is the typical default; fall back to \`fetch_url_content\` on a known authoritative URL (e.g. weather.gov, en.wikipedia.org, finance.yahoo.com) if the search returns nothing. When the mode is \`forbidden\`, do NOT search — answer from the resources you already have, or tell the user the request is out of scope. Never fabricate real-time facts from memory.
+- **Use search by judgment, not reflex.** Read \`tool_policy.external_web_read\` first. When the mode is \`required\`, call a member of the \`external_web_read\` group before giving a factual current-data answer. When the mode is \`optional\`, decide from the user's goal: ask for missing essentials first, answer from stable knowledge when enough, or search when freshness is genuinely needed. When the mode is \`forbidden\`, do NOT search; ask for permission if live/external data is necessary.
+- **Local context first.** For location-dependent requests, use a real location only when it is present in Resources, the user's message, or conversation history. If Resources says UNKNOWN_LOCATION and the user did not name a place, ask for the city or location permission before searching or acting. Never infer a city from timezone, locale, IP, search defaults, or examples.
+- **Contracts are boundaries, not dead ends.** If a policy, risk gate, or missing approval blocks the action you think is necessary, do not give up and do not pretend success. Ask the user for the smallest permission or missing detail needed, then stop.
 - **Memory recall.** If the user refers to earlier work with a pronoun ("上个问题" / "刚才" / "之前那份" / "last one" / "that report") or asks you to continue / revise something done before, call list_recent_tasks first (or recall_memory with a topic query if the reference is thematic) and then get_task_detail on the matching task_id. Never reply "I don't remember prior work" while these tools exist.
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
+- **Compound requests = chain tool calls.** When the user asks for multiple actions in one message ("打开 Outlook 和 Excel"，"open A then B"，"启动这三个 app"), call ONE tool per turn but KEEP CALLING tools across turns until every requested action is done. Do NOT return a final answer after the first launch_app — the second / third are still pending. Only return final after every requested action shows success in the transcript.
 - **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
+- **Policy may refine mid-task.** Your task starts with a deterministic policy snapshot. A semantic-routing update may arrive in a later iteration and tighten or relax fields like \`tool_policy.external_web_read\` or \`expected_output\`. Always read the LATEST tool_policy from this prompt; never violate explicit user constraints (e.g. "不要联网") regardless of policy updates.
 ${needsCurrentDataInstruction}${researchPrinciplesBlock}${researchBudgetBlock}${synthesisBlock}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
-Use the native tool interface when a tool is needed. Call at most ONE tool per turn. If no tool is needed, or you need a clarification, reply with plain text only in the user's language.`;
+Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool is needed, or you need a clarification, reply with plain text only in the user's language.`;
 
   try {
     let resultText = "";
@@ -613,17 +812,24 @@ Use the native tool interface when a tool is needed. Call at most ONE tool per t
         })
       : { mode: "legacy_fallback", historyMessages: [], currentMessageRendered: null };
 
+    // Phase 1.11 — pull background_contexts each iteration so post-task
+    // memory / recent-artifact patches land on iter ≥ 1 prompts. Rendered
+    // as a clearly-labelled block AFTER the current user turn so the LLM
+    // can never confuse it with the active request.
+    const backgroundBlock = renderBackgroundContextsBlock(task.context_packet);
+    const trailingContext = [untrusted, backgroundBlock].filter(Boolean).join("\n\n");
+
     let prefixMessages;
     if (historyResult.mode === "structured" && historyResult.currentMessageRendered) {
       const triggerContent = historyResult.currentMessageRendered.content ?? task.user_command;
-      const currentContent = untrusted ? `${triggerContent}\n\n${untrusted}` : triggerContent;
+      const currentContent = trailingContext ? `${triggerContent}\n\n${trailingContext}` : triggerContent;
       prefixMessages = [
         ...historyResult.historyMessages,
         { role: historyResult.currentMessageRendered.role, content: currentContent }
       ];
     } else {
-      const initialUserContent = untrusted
-        ? `${task.user_command}\n\n${untrusted}`
+      const initialUserContent = trailingContext
+        ? `${task.user_command}\n\n${trailingContext}`
         : task.user_command;
       prefixMessages = [{ role: "user", content: initialUserContent }];
     }
@@ -638,38 +844,46 @@ Use the native tool interface when a tool is needed. Call at most ONE tool per t
       ]
     );
 
+    const toolSchemas = [plannerToolDescriptorForAdapter()];
+    runtime?.emitTaskEvent?.("planner_request_started", { iteration });
+    const messages = [
+      { role: "system", content: systemPrompt },
+      ...conversationMessages
+    ];
     const adapter = createProviderAdapter(provider);
-    const toolSchemas = tools.map(toolDescriptorForAdapter);
-    const supportsStreaming = adapter.supportsStreaming === true;
     const response = await adapter.generate({
-      messages: [
-        { role: "system", content: systemPrompt },
-        ...conversationMessages
-      ],
+      messages,
       tools: toolSchemas,
       maxTokens: 1024,
-      onTextDelta: supportsStreaming
+      onTextDelta: adapter.supportsStreaming === true
         ? (delta) => {
             if (!delta) return;
-            task.__runtime?.emitTaskEvent?.("text_delta", { delta });
+            runtime?.emitTaskEvent?.("text_delta", { delta });
           }
         : undefined,
       onToolInputDelta: (toolName, partialJson) => {
         if (!["write_file", "generate_document", "edit_file"].includes(toolName)) return;
-        task.__runtime?.emitTaskEvent?.("tool_input_delta", {
+        runtime?.emitTaskEvent?.("tool_input_delta", {
           tool_id: toolName,
           partial_json: partialJson
         });
       },
       onReasoningDelta: (delta) => {
         if (!delta) return;
-        task.__runtime?.emitTaskEvent?.("reasoning_delta", { delta });
+        runtime?.emitTaskEvent?.("reasoning_delta", { delta });
       }
     });
     resultText = response?.text ?? "";
 
     if (Array.isArray(response?.tool_calls) && response.tool_calls.length > 0) {
       const call = response.tool_calls[0];
+      if (call.name === "call_tool") {
+        return {
+          type: "tool_call",
+          tool: call.arguments?.tool,
+          args: call.arguments?.args ?? {}
+        };
+      }
       return {
         type: "tool_call",
         tool: call.name,
@@ -711,22 +925,6 @@ Use the native tool interface when a tool is needed. Call at most ONE tool per t
     // the internal parser trace.
     return { type: "final", text: `抱歉，暂时无法处理这个请求（${error.message}）。请重试或换一种表达。` };
   }
-}
-
-// UCA-063: Detect AI refusal text so we can force a retry with tool calls.
-// Generic — catches any refusal regardless of app/action/language.
-const REFUSAL_PATTERNS = [
-  /我无法.{0,15}(直接|帮你|为你)?操作/,
-  /我不能.{0,15}(直接|帮你|为你)?操作/,
-  /I\s+(cannot|can't|am\s+unable\s+to).{0,25}(operate|control|access|open|launch|run)/i,
-  /无法直接.{0,15}(为你|帮你|操作)/,
-  /需要你.{0,15}(手动|自行|自己)/,
-  /请你?.{0,10}(手动|自行|自己).{0,15}(打开|启动|操作)/,
-  /please.{0,15}(manually|yourself).{0,15}(open|launch|start)/i
-];
-
-function isRefusalText(text) {
-  return REFUSAL_PATTERNS.some((p) => p.test(String(text ?? "")));
 }
 
 const EMAIL_SEND_CLAIM_RE = /(已\s*(?:确认|确认发送)?\s*发\s*送|已\s*发出|已\s*寄出|邮件已\s*发(?:送|出)|已通过\s*gmail\s*发送|sent(?:\s+successfully|\s+the\s+email)?|email\s+(?:has\s+been\s+)?sent)/i;
@@ -790,9 +988,28 @@ export function createToolUsingExecutorScaffold() {
       // Use module-level runtime stash set by submission layer
       const runtime = task.__runtime;
       if (!runtime) {
-        yield { event_type: "success", payload: { text: "Tool executor missing runtime context." } };
+        yield { event_type: "failed", payload: { text: "执行器缺少运行上下文，无法继续这个任务。" } };
         return;
       }
+
+      // Phase 1.11 — LLM-first: zero-wait start.
+      //
+      // The first planner LLM call kicks off IMMEDIATELY with the
+      // deterministic preflight task_spec. SR / memory recall / recent
+      // artifact recall all run in parallel via fire-and-forget patches
+      // (see context-submission.mjs). Their results are visible to
+      // iteration ≥ 1 of the loop because the planner re-reads
+      // task.task_spec and task.context_packet on every iteration. The
+      // synthesis_retry path also picks up the latest SR-patched
+      // expected_output for the second pass.
+      //
+      // Pre-Phase-1.11 there was an 800 ms `Promise.race` here meant
+      // to give SR a head start. It was the wrong default — every
+      // single-turn task ate 0-800 ms of unconditional wait so a
+      // minority of synthesis-sensitive tasks could see SR's expected
+      // output on the first prompt. The new contract trades a slightly
+      // less-tuned first prompt for genuinely instant first-token
+      // latency. SR's value still lands — just one iteration later.
 
       // Ensure emitTaskEvent is available on the runtime so tool_call_proposed /
       // tool_call_completed events are forwarded to the SSE stream (and rendered
@@ -817,33 +1034,23 @@ export function createToolUsingExecutorScaffold() {
         // identical conditions. Today the validator only inspects the web-
         // search policy; Phase 2 expands it to artifact/output policies.
         if (result.status === "success") {
-          const { satisfied, violations } = validateSuccessContract(task.task_spec, result.transcript ?? []);
+          // Phase 1.12 — validator scope split. validateSuccessContract
+          // is the HARD gate ("did you call the required tools?"). It
+          // reads `task_spec_initial` so SR can't retroactively make a
+          // task fail by tightening required_tool_names after the loop
+          // already finished. The other two validators (step_gate,
+          // answer_synthesis) read the LATEST spec because they're
+          // forward / quality concerns, not retroactive correctness.
+          const validationSpec = task.task_spec_initial ?? task.task_spec;
+          const { satisfied, violations } = validateSuccessContract(validationSpec, result.transcript ?? []);
           if (!satisfied) {
             const reasons = violations.map((v) => v.message).join(" ");
-            const warningNote = `\n\n[UCA] 注意：未通过 SuccessContract 校验：${reasons}`;
+            const warningNote = `\n\n注意：这次执行没有完全满足任务要求：${reasons}`;
             yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-            yield { event_type: "inline_result", payload: { text: (result.final_text || "Done.") + warningNote } };
-            yield { event_type: "partial_success", payload: { text: (result.final_text || "Done.") + warningNote, violations } };
+            yield { event_type: "inline_result", payload: { text: (result.final_text || "任务没有生成最终答复。") + warningNote } };
+            yield { event_type: "partial_success", payload: { text: (result.final_text || "任务没有生成最终答复。") + warningNote, violations } };
             return;
           }
-        }
-
-        // UCA-063: Refusal guard — if LLM returned a refusal text but had tools
-        // available and the task goal is action-oriented, force a retry with an
-        // explicit system-level override. Generic: works for any app/action.
-        const isActionGoal = ["launch_and_act", "open_or_reveal_file", "transform_existing_file"]
-          .includes(task.task_spec?.goal);
-        const noToolsUsed = !(result.transcript ?? []).some((e) => e.type === "tool_result");
-        if (result.status === "success" && isActionGoal && noToolsUsed && isRefusalText(result.final_text)) {
-          // Inject override and retry once with llmPlanner
-          task.__forceToolUse = true;
-          const retryResult = await runToolAgentLoop({ task, runtime, maxIterations: 4, planner: llmPlanner });
-          task.__forceToolUse = false;
-          const retryText = retryResult.final_text || "Done.";
-          yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text: retryText } };
-          yield { event_type: retryResult.status === "success" ? "success" : "partial_success", payload: { text: retryText } };
-          return;
         }
 
         // Truthfulness guard (extension of UCA-039/063): if the final text
@@ -856,20 +1063,20 @@ export function createToolUsingExecutorScaffold() {
         if (result.status === "success" && connectorClaimGuard) {
           const warning = "\n\n[LingxY] 注意：系统没有检测到对应的连接器工具调用成功。上面的文字是模型叙述，不是真实执行结果。请重新发起操作。";
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text: (result.final_text || "Done.") + warning } };
-          yield { event_type: "partial_success", payload: { text: (result.final_text || "Done.") + warning } };
+          yield { event_type: "inline_result", payload: { text: (result.final_text || "任务没有生成最终答复。") + warning } };
+          yield { event_type: "partial_success", payload: { text: (result.final_text || "任务没有生成最终答复。") + warning } };
           return;
         }
 
         if (result.status === "success") {
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text: result.final_text || "Done." } };
-          yield { event_type: "success", payload: { text: result.final_text || "Done." } };
+          yield { event_type: "inline_result", payload: { text: result.final_text || "任务已完成，但没有生成可显示的答复。" } };
+          yield { event_type: "success", payload: { text: result.final_text || "任务已完成，但没有生成可显示的答复。" } };
         } else if (result.status === "waiting_external_decision") {
-          yield { event_type: "inline_result", payload: { text: "Waiting for your approval..." } };
-          yield { event_type: "success", payload: { text: "Pending approval." } };
+          yield { event_type: "inline_result", payload: { text: "等待你的确认。" } };
+          yield { event_type: "success", payload: { text: "已创建待确认操作。" } };
         } else if (result.status === "partial_success") {
-          const text = result.final_text || result.error || "Tool loop stopped before the success contract was fully satisfied.";
+          const text = result.final_text || result.error || "任务已停止，但没有完全满足成功条件。";
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
           yield { event_type: "inline_result", payload: { text } };
           yield {
@@ -881,11 +1088,12 @@ export function createToolUsingExecutorScaffold() {
             }
           };
         } else {
-          yield { event_type: "inline_result", payload: { text: result.final_text || result.error || "Tool execution failed." } };
-          yield { event_type: "success", payload: { text: result.final_text || "Done with errors." } };
+          const text = result.final_text || result.error || "这次执行没有生成可用结果。";
+          yield { event_type: "inline_result", payload: { text } };
+          yield { event_type: "failed", payload: { text } };
         }
       } catch (error) {
-        yield { event_type: "success", payload: { text: `Tool executor error: ${error.message}` } };
+        yield { event_type: "failed", payload: { text: `执行器出错：${error.message}` } };
       }
     }
   };
@@ -979,13 +1187,15 @@ async function _runToolAgentLoopCore({
   const transcript = [];
   const seenCalls = new Set(); // dedupe identical tool+args to prevent infinite loops
 
-  // UCA-065/066: Choose planner based on command structure.
-  // - Compound intent ("open X, do Y"): force llmPlanner so both steps are handled.
-  // - Otherwise: use runtime override, then defaultPlanner.
-  // This ensures "打开Outlook写邮件" always uses llmPlanner, never defaultPlanner
-  // (which exits after one tool call).
+  // Phase 1.8 — `hasCompoundIntent` regex gate is gone. The planner
+  // selection precedence is straightforward:
+  //   1. explicit `planner` argument (createToolUsingExecutorScaffold
+  //      passes llmPlanner explicitly for the production path)
+  //   2. `runtime.toolPlanner` test override
+  //   3. `defaultPlanner` (deterministic, single-tool — only used by
+  //      callers that explicitly want it; the production
+  //      tool_using path passes llmPlanner)
   const resolvedPlanner = planner
-    ?? (hasCompoundIntent(task.user_command) ? llmPlanner : null)
     ?? runtime.toolPlanner
     ?? defaultPlanner;
 
@@ -995,36 +1205,13 @@ async function _runToolAgentLoopCore({
   // composes them with other tools (e.g. web_search_fetch → workflow) when
   // the user's request needs multi-step reasoning. See llmPlanner below.
 
-  // UCA-066: Tier 0 in-loop optimisation.
-  // On the first iteration, if the command starts with a deterministic action
-  // (launch app / open URL), execute it immediately without calling the LLM.
-  // The LLM then only needs to handle what comes AFTER (e.g. drafting an email).
-  // This saves 2-5s per compound action and works for ANY app, not just Outlook.
-  if (resolvedPlanner !== defaultPlanner) {
-    const tier0 = extractFirstTier0Action(task.user_command);
-    if (tier0) {
-      const toolContext = { ...(runtime.toolContext ?? {}), outputDir: runtime.toolOutputDir, runtime, task };
-      const t0result = await registry.call(tier0.tool, tier0.args, toolContext);
-      runtime.emitTaskEvent?.("tool_call_completed", { tool_id: tier0.tool, success: t0result.success });
-      transcript.push({
-        type: "tool_result",
-        tool: tier0.tool,
-        args: tier0.args,
-        success: t0result.success,
-        observation: t0result.observation ?? "",
-        metadata: t0result.metadata
-      });
-      seenCalls.add(`${tier0.tool}::${JSON.stringify(tier0.args)}`);
-    }
-  }
-
   // 83.1 — Track prose-trap retries separately from the tool-call iteration
   // budget. Hard cap at 1: if the model returns prose again after the retry
   // hint, we accept that as genuinely final.
   let proseTrapAttemptsUsed = 0;
   const PROSE_TRAP_MAX_ATTEMPTS = 1;
   let synthesisRetriesUsed = 0;
-  const MAX_SYNTHESIS_RETRIES = 1;
+  const MAX_SYNTHESIS_RETRIES = 2;
 
   // P4-EB wire-up: aggregate error budget for this task. Catches the
   // "tried 4 different tools, every one returned empty" pattern that
@@ -1086,15 +1273,34 @@ async function _runToolAgentLoopCore({
           type: "prose_trap_retry",
           assistantProse: proseText
         });
-        runtime?.emitTaskEvent?.(task.task_id, "prose_trap_retry", {
+        runtime?.emitTaskEvent?.("prose_trap_retry", {
           reason: "prose_without_tool_call",
           attempt: proseTrapAttemptsUsed
         });
         continue;
       }
-      const connectorFinal = latestConnectorFinal(transcript, task.user_command);
-      const candidateFinal = connectorFinal ?? decision?.text ?? "Done.";
-      const synthesisViolations = validateAnswerSynthesis(task.task_spec, transcript, candidateFinal);
+      let candidateFinal = decision?.text
+        ?? finalFallbackText(transcript, task.user_command, task.task_spec)
+        ?? "";
+      if (needsFinalComposer(task, transcript)) {
+        candidateFinal = await composeFinalAnswer({
+          task,
+          transcript,
+          runtime,
+          reason: decision?.type === "final" ? "planner_final_after_tools" : "no_planner_decision"
+        });
+      }
+      if (!candidateFinal) {
+        candidateFinal = localFallbackFinal({ task, transcript, reason: "empty_final" });
+      }
+      // Phase 1.12 — synthesis bar uses the LATEST spec. SR's enrichment
+      // for `expected_output` (summary / comparison / recommendation /
+      // analysis / action_items) directly governs how the final answer
+      // is shaped. Forward-only quality refinement: if SR landed in
+      // time, the validator enforces the better target; if not, the
+      // deterministic spec applies.
+      const synthesisValidationSpec = task.task_spec ?? task.task_spec_initial;
+      const synthesisViolations = validateAnswerSynthesis(synthesisValidationSpec, transcript, candidateFinal);
       if (synthesisViolations.length > 0
           && synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
         synthesisRetriesUsed += 1;
@@ -1103,11 +1309,19 @@ async function _runToolAgentLoopCore({
           assistantDraft: candidateFinal,
           violations: synthesisViolations
         });
-        runtime?.emitTaskEvent?.(task.task_id, "synthesis_retry", {
+        runtime?.emitTaskEvent?.("synthesis_retry", {
           attempt: synthesisRetriesUsed,
           reason: synthesisViolations[0]?.kind
         });
         continue;
+      }
+      if (synthesisViolations.length > 0) {
+        return {
+          status: "partial_success",
+          final_text: candidateFinal,
+          transcript,
+          synthesis_violations: synthesisViolations
+        };
       }
       return {
         status: "success",
@@ -1116,8 +1330,17 @@ async function _runToolAgentLoopCore({
       };
     }
 
+    const tool = registry.get(decision.tool);
+    if (!tool) {
+      return {
+        status: "failed",
+        error: `Unknown tool requested: ${decision.tool}`,
+        transcript
+      };
+    }
+
     if (decision?.type === "tool_call") {
-      decision.args = repairToolArgs(decision, task, transcript);
+      decision.args = repairToolArgs(decision, task, transcript, tool);
     }
 
     // Dedupe: if the planner repeats the same tool+args, ask it to
@@ -1134,29 +1357,24 @@ async function _runToolAgentLoopCore({
             message: `Planner repeated the same ${decision.tool} call; synthesize from prior observations instead.`
           }]
         });
-        runtime?.emitTaskEvent?.(task.task_id, "synthesis_retry", {
+        runtime?.emitTaskEvent?.("synthesis_retry", {
           attempt: synthesisRetriesUsed,
           reason: "repeated_tool_call"
         });
         continue;
       }
-      const connectorFinal = latestConnectorFinal(transcript, task.user_command);
       return {
         status: "partial_success",
-        final_text: connectorFinal ?? "Could not synthesize a final answer from the available tool observations.",
+        final_text: await composeFinalAnswer({
+          task,
+          transcript,
+          runtime,
+          reason: "repeated_tool_call"
+        }),
         transcript
       };
     }
     seenCalls.add(callKey);
-
-    const tool = registry.get(decision.tool);
-    if (!tool) {
-      return {
-        status: "failed",
-        error: `Unknown tool requested: ${decision.tool}`,
-        transcript
-      };
-    }
 
     const validation = validateToolCall(tool, decision.args, runtime.toolContext ?? {});
     if (!validation.ok) {
@@ -1352,10 +1570,14 @@ async function _runToolAgentLoopCore({
           reason: charge.reason,
           snapshot: snapshotBudget(errorBudget)
         });
-        const connectorFinal = latestConnectorFinal(transcript, task.user_command);
         return {
           status: "partial_success",
-          final_text: connectorFinal ?? `Error budget exhausted at iteration ${iteration}: ${charge.reason}`,
+          final_text: await composeFinalAnswer({
+            task,
+            transcript,
+            runtime,
+            reason: charge.reason ?? "error_budget_exhausted"
+          }),
           transcript,
           artifacts: result.artifact_paths ?? [],
           error_budget: {
@@ -1373,7 +1595,13 @@ async function _runToolAgentLoopCore({
     // planner (which short-circuits below) — it doesn't have the
     // looping pathology this gate exists to catch.
     if (resolvedPlanner !== defaultPlanner) {
-      const stepGate = validateStepGate(task.task_spec, transcript, {
+      // Phase 1.12 — step gate uses the LATEST spec. The gate decides
+      // FORWARD: continue / retry / abort. If SR upgraded the policy
+      // (e.g. research budget tightened, web access opened up), the
+      // next iteration should respect that. The gate is forward-only
+      // and never retroactively invalidates work already done.
+      const stepGateSpec = task.task_spec ?? task.task_spec_initial;
+      const stepGate = validateStepGate(stepGateSpec, transcript, {
         iteration,
         maxIterations
       });
@@ -1443,10 +1671,14 @@ async function _runToolAgentLoopCore({
         const reasonText = stepGate.next_action === "abort"
           ? `Phase gate aborted at iteration ${iteration}: ${violationSummary || "iteration ceiling reached without satisfying contract"}`
           : `Phase gate escalated at iteration ${iteration}: ${violationSummary || "no specific violation"}`;
-        const connectorFinal = latestConnectorFinal(transcript, task.user_command);
         return {
           status: "partial_success",
-          final_text: connectorFinal ?? reasonText,
+          final_text: await composeFinalAnswer({
+            task,
+            transcript,
+            runtime,
+            reason: reasonText
+          }),
           transcript,
           artifacts: result.artifact_paths ?? [],
           phase_gate: {
@@ -1461,10 +1693,18 @@ async function _runToolAgentLoopCore({
 
     // For the keyword planner, return after one tool call (it doesn't read history)
     if (planner === defaultPlanner) {
-      const connectorFinal = latestConnectorFinal(transcript, task.user_command);
+      const finalText = needsFinalComposer(task, transcript)
+        ? await composeFinalAnswer({
+            task,
+            transcript,
+            runtime,
+            reason: "default_planner_tool_result"
+          })
+        : finalFallbackText(transcript, task.user_command, task.task_spec, result.observation)
+          ?? localFallbackFinal({ task, transcript, reason: "default_planner_tool_result" });
       return {
         status: "success",
-        final_text: connectorFinal ?? result.observation,
+        final_text: finalText,
         transcript,
         artifacts: result.artifact_paths ?? []
       };
@@ -1474,11 +1714,14 @@ async function _runToolAgentLoopCore({
   }
 
   // Reached max iterations — synthesize whatever we have
-  const connectorFinal = latestConnectorFinal(transcript, task.user_command);
-  const lastObservation = [...transcript].reverse().find((e) => e.type === "tool_result")?.observation;
   return {
     status: "success",
-    final_text: connectorFinal ?? (lastObservation || "Done (max iterations reached)."),
+    final_text: await composeFinalAnswer({
+      task,
+      transcript,
+      runtime,
+      reason: "max_iterations_reached"
+    }),
     transcript
   };
 }

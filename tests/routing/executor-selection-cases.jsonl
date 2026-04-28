@@ -1,15 +1,16 @@
-{"id":"chitchat-fast","input":"你好","expected":{"executor":"fast","mode":"qa"}}
+{"id":"chitchat-ai-agent","input":"你好","expected":{"executor":"tool_using","mode":"qa"}}
 {"id":"recent-chitchat","input":"最近怎么样","expected":{"executor":"tool_using","mode":"qa"}}
 {"id":"polish","input":"帮我润色这句话","expected":{"executor":"tool_using","mode":"qa"}}
-{"id":"local-analyze-fast","input":"最近这个框架很慢，帮我分析","expected":{"executor":"fast","mode":"qa"}}
+{"id":"local-analyze-planner","input":"最近这个框架很慢，帮我分析","expected":{"executor":"tool_using","mode":"qa"}}
 {"id":"news-tool-using","input":"今天有什么 AI 新闻","context":{"semantic_router_decision":{"source_scope":"external_world","web_policy":"required","output_kind":"conversation","artifact_required":false,"executor":"tool_using","research_depth":"multi_source","confidence":0.85,"reason":"news topic"}},"expected":{"executor":"tool_using","mode":"search"}}
 {"id":"weather-tool-using","input":"current weather in Raleigh","context":{"semantic_router_decision":{"source_scope":"external_world","web_policy":"required","output_kind":"conversation","artifact_required":false,"executor":"tool_using","research_depth":"single_lookup","confidence":0.95,"reason":"single-fact weather"}},"expected":{"executor":"tool_using","mode":"search"}}
 {"id":"explicit-online-tool-using","input":"查一下网上最近的开源项目","expected":{"executor":"tool_using"}}
-{"id":"generate-doc-agentic","input":"基于上传文件生成报告","context":{"file_paths":["data.md"]},"expected":{"executor":"agentic","mode":"artifact"}}
-{"id":"edit-doc-agentic","input":"改一下这个文档加入日期","context":{"file_paths":["a.docx"]},"expected":{"executor":"agentic","mode":"artifact"}}
-{"id":"translate-translate","input":"翻译这段","expected":{"executor":"translate","mode":"translate"}}
+{"id":"generate-doc-ai-agent","input":"基于上传文件生成报告","context":{"file_paths":["data.md"]},"expected":{"executor":"tool_using","mode":"artifact"}}
+{"id":"edit-doc-ai-agent","input":"改一下这个文档加入日期","context":{"file_paths":["a.docx"]},"expected":{"executor":"tool_using","mode":"artifact"}}
+{"id":"translate-ai-agent","input":"翻译这段","expected":{"executor":"tool_using","mode":"translate"}}
 {"id":"image-multimodal","input":"识别这张图","context":{"image_paths":["x.png"]},"expected":{"executor":"multi_modal","mode":"multimodal"}}
+{"id":"image-word-without-attachment-ai-agent","input":"我桌面有几个图片文件","expected":{"executor":"tool_using","mode":"qa"}}
 {"id":"launch-tool-using","input":"打开微信","expected":{"executor":"tool_using","mode":"desktop_action"}}
 {"id":"route-suggestion-overridden","input":"今天的天气","routeSuggestion":"fast","context":{"semantic_router_decision":{"source_scope":"external_world","web_policy":"required","output_kind":"conversation","artifact_required":false,"executor":"tool_using","research_depth":"single_lookup","confidence":0.95,"reason":"single-fact weather"}},"expected":{"executor":"tool_using","mode":"search","note":"routeSuggestion=fast must lose to tool-policy=required (post-F2: SR drives the upgrade)"}}
-{"id":"route-suggestion-respected-when-rules-agree","input":"你好","routeSuggestion":"fast","expected":{"executor":"fast"}}
+{"id":"route-suggestion-carried-as-evidence","input":"你好","routeSuggestion":"fast","expected":{"executor":"tool_using"}}
 {"id":"weather-rag-pollution-still-tool-using","input":"今天天气怎么样","context":{"text":"[memory_background · 语义召回 · 仅作背景，请勿当作当前任务上下文]\n- 帮用户发了一封邮件","selection_metadata":{"memory_background_injected":true},"semantic_router_decision":{"source_scope":"external_world","web_policy":"required","output_kind":"conversation","artifact_required":false,"executor":"tool_using","research_depth":"single_lookup","confidence":0.95,"reason":"weather lookup; RAG is background-only"}},"expected":{"executor":"tool_using","mode":"search","note":"RAG-injected background must NOT route to fast — C3 fix; post-F2 SR upgrades web=required"}}

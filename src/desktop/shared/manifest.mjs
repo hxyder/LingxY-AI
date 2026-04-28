@@ -20,6 +20,7 @@ export const IPC_CHANNELS = Object.freeze({
   shellNotificationReceived: "uca:shell-notification-received",
   shellMoveWindowBy: "uca:shell-move-window-by",
   shellResizeWindowBy: "uca:shell-resize-window-by",
+  shellSetIgnoreMouseEvents: "uca:shell-set-ignore-mouse-events",
   shellClipboardChanged: "uca:shell-clipboard-changed",
   shellNavigateConsole: "uca:shell-navigate-console",
   overlayToggle: "uca:overlay-toggle",
@@ -93,8 +94,8 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
       route: "/dock",
       singleton: true,
       startsHidden: false,
-      width: 64,
-      height: 64
+      width: 52,
+      height: 52
     },
     {
       id: WINDOW_IDS.overlay,

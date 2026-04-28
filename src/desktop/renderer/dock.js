@@ -7,6 +7,28 @@ let dragDepth = 0;
 let clipboardReadyTimer = null;
 let noteRecordingActive = false;
 let lastRecordingHeartbeat = 0;
+let dockMouseIgnoring = false;
+
+function setDockMouseIgnoring(ignore) {
+  const next = Boolean(ignore);
+  if (dockMouseIgnoring === next) return;
+  dockMouseIgnoring = next;
+  window.ucaShell?.setIgnoreMouseEvents?.("dock", next, { forward: true });
+}
+
+function syncDockMouseRegion(event) {
+  const rect = dockButton.getBoundingClientRect();
+  const x = event?.clientX;
+  const y = event?.clientY;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  const insideButton = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  setDockMouseIgnoring(!insideButton);
+}
+
+window.addEventListener("mousemove", syncDockMouseRegion, true);
+dockButton.addEventListener("mouseenter", () => setDockMouseIgnoring(false));
+dockButton.addEventListener("mouseleave", (event) => syncDockMouseRegion(event));
+window.addEventListener("blur", () => setDockMouseIgnoring(false));
 
 function applyNoteRecordingState(payload = {}) {
   noteRecordingActive = Boolean(payload.active);

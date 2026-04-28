@@ -138,7 +138,8 @@ function deriveSuggestedFormats(text) {
 
 export function routeIntent(userCommand = "") {
   const raw = String(userCommand ?? "");
-  const connectorDomainRequest = isConnectorDomainRequest(raw);
+  const pureLaunchApp = extractPureLaunchApp(raw);
+  const connectorDomainRequest = pureLaunchApp ? false : isConnectorDomainRequest(raw);
 
   // UCA-051/052: classify goal family first (word-boundary safe, no substring traps)
   const goal = classifyGoal(raw);

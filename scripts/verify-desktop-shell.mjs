@@ -28,4 +28,13 @@ if (host.start().serviceBridgeAttached !== true) {
   throw new Error("Desktop runtime host did not attach service bridge.");
 }
 
+const dockWindow = bootstrap.manifest.windows.find((w) => w.id === "dock");
+if (!dockWindow || dockWindow.width !== 52 || dockWindow.height !== 52) {
+  throw new Error("Dock window must use the reduced 52x52 hitbox.");
+}
+
+if (!bootstrap.manifest.ipcChannels.includes("uca:shell-set-ignore-mouse-events")) {
+  throw new Error("Dock click-through IPC channel is missing.");
+}
+
 console.log("Desktop shell scaffold verification passed.");

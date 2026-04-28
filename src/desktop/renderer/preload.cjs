@@ -84,6 +84,13 @@ contextBridge.exposeInMainWorld("ucaShell", {
   resizeWindowBy(windowId, deltaWidth, deltaHeight) {
     return ipcRenderer.invoke("uca:shell-resize-window-by", { windowId, deltaWidth, deltaHeight });
   },
+  setIgnoreMouseEvents(windowId, ignore, options = {}) {
+    return ipcRenderer.invoke("uca:shell-set-ignore-mouse-events", {
+      windowId,
+      ignore: Boolean(ignore),
+      forward: options.forward !== false
+    });
+  },
   onShortcutTriggered(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:shortcut-triggered", listener);

@@ -209,11 +209,11 @@ it("goal: WITHOUT SR + explicit_external + search_and_answer pattern match → s
 });
 
 // ── 3. End-to-end task-spec routing shape ────────────────────────────
-it("e2e: news WITHOUT SR → goal=qa + web=forbidden + executor=fast (conservative fallback)", () => {
+it("e2e: news WITHOUT SR → goal=qa + web=optional + tool_using (planner-first fallback)", () => {
   const spec = createTaskSpec("今天有什么 AI 新闻", {}, {});
   assert.equal(spec.goal, "qa");
-  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
-  assert.equal(spec.suggested_executor, "fast");
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional");
+  assert.equal(spec.suggested_executor, "tool_using");
 });
 it("e2e: news WITH SR (web=required) → goal=search_and_answer + web=required + executor=tool_using", () => {
   const spec = createTaskSpec("今天有什么 AI 新闻", {
@@ -223,13 +223,13 @@ it("e2e: news WITH SR (web=required) → goal=search_and_answer + web=required +
   assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "required");
   assert.equal(spec.suggested_executor, "tool_using");
 });
-it("e2e: scheduler-fired '每天汇报 AI 新闻' WITHOUT SR → conservative fallback", () => {
+it("e2e: scheduler-fired '每天汇报 AI 新闻' WITHOUT SR → planner-first fallback", () => {
   const spec = createTaskSpec("每天早上汇报 AI 新闻", {
     source_app: "uca.scheduler",
     text: "每天早上汇报 AI 新闻"
   }, {});
   assert.equal(spec.goal, "qa", "no scheduler特判: scheduler-fired path same as user-typed");
-  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional");
 });
 it("e2e: scheduler-fired '每天汇报 AI 新闻' WITH SR → multi-source research class", () => {
   const spec = createTaskSpec("每天早上汇报 AI 新闻", {

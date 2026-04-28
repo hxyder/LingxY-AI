@@ -22,6 +22,7 @@ import {
 import { buildSynthesisGuidance } from "../src/service/executors/shared/synthesis-prompt.mjs";
 import { validateAnswerSynthesis } from "../src/service/core/policy/success-contract-validator.mjs";
 import { createTaskSpec } from "../src/service/core/task-spec.mjs";
+import { runToolAgentLoop } from "../src/service/executors/tool_using/agent-loop.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -35,6 +36,55 @@ function it(label, fn) {
 async function ait(label, fn) {
   try { await fn(); process.stdout.write(`PASS  ${label}\n`); pass += 1; }
   catch (err) { process.stdout.write(`FAIL  ${label}\n  ${err.message}\n`); fail += 1; }
+}
+
+function makeConnectorRuntime({ emails }) {
+  const tool = {
+    id: "account_list_emails",
+    description: "List emails",
+    parameters: { type: "object", properties: {}, required: [] }
+  };
+  return {
+    actionToolRegistry: {
+      list: () => [tool],
+      get: (id) => (id === tool.id ? tool : null),
+      evaluate: () => ({ level: "low", requires_confirmation: false }),
+      call: async () => ({
+        success: true,
+        observation: `account_list_emails returned ${emails.length} emails from google account.`,
+        metadata: {
+          provider: "google",
+          account: { provider: "google", accountId: "user@example.com" },
+          emails
+        }
+      })
+    },
+    toolContext: {},
+    emitTaskEvent() {},
+    store: { appendAuditLog() {} }
+  };
+}
+
+function makeActionRuntime() {
+  const tool = {
+    id: "launch_app",
+    description: "Launch app",
+    parameters: { type: "object", properties: { app: { type: "string" } }, required: ["app"] }
+  };
+  return {
+    actionToolRegistry: {
+      list: () => [tool],
+      get: (id) => (id === tool.id ? tool : null),
+      evaluate: () => ({ risk_level: "medium", requires_confirmation: false }),
+      call: async (_id, args) => ({
+        success: true,
+        observation: `已启动 ${args.app}`
+      })
+    },
+    toolContext: {},
+    emitTaskEvent() {},
+    store: { appendAuditLog() {} }
+  };
 }
 
 it("EXPECTED_OUTPUTS extends with synthesis kinds (no parallel enum)", () => {
@@ -124,6 +174,34 @@ it("validateAnswerSynthesis: fires when answer is a near-verbatim echo of an obs
   assert.equal(violations[0].kind, "answer_not_synthesized");
 });
 
+it("validateAnswerSynthesis: fires when answer dumps tool metadata rather than observation text", () => {
+  const emails = [
+    { received: "Mon, 27 Apr 2026 21:36:42 +0000", fromName: "Groupon", from: "noreply@r.groupon.com", subject: "Jiffy Lube: 15-Minute Drive-Thru Oil Change" },
+    { received: "Mon, 27 Apr 2026 17:34:19 +0000", fromName: "SoFi", from: "SoFi@m.sofi.org", subject: "The Fed meets tomorrow. Here's what that could mean." },
+    { received: "27 Apr 2026 16:32:43 -0000", fromName: "Indeed", from: "no-reply@jm.indeed.com", subject: "Action requested: Profile is still incomplete" }
+  ];
+  const finalText = [
+    "我从 google 查到 3 封邮件：",
+    "1. Mon, 27 Apr 2026 21:36:42 +0000 | Groupon <noreply@r.groupon.com> | Jiffy Lube: 15-Minute Drive-Thru Oil Change",
+    "2. Mon, 27 Apr 2026 17:34:19 +0000 | SoFi <SoFi@m.sofi.org> | The Fed meets tomorrow. Here's what that could mean.",
+    "3. 27 Apr 2026 16:32:43 -0000 | Indeed <no-reply@jm.indeed.com> | Action requested: Profile is still incomplete"
+  ].join("\n");
+  const violations = validateAnswerSynthesis(
+    { synthesis: { expected_output: "summary" } },
+    [{
+      type: "tool_result",
+      tool: "account_list_emails",
+      success: true,
+      observation: "account_list_emails returned 3 emails from google account.",
+      metadata: { emails }
+    }],
+    finalText
+  );
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].kind, "answer_not_synthesized");
+  assert.equal(violations[0].isLikelyRawDump, true);
+});
+
 it("validateAnswerSynthesis: passes when the answer is genuinely a transformed summary", () => {
   const observation = "Email 1: subject A from a@x.com\nEmail 2: subject B from b@y.com\nEmail 3: subject C from c@z.com";
   const summary = "今天收到三封邮件，主要围绕项目进度和会议安排。建议优先回复来自 a@x.com 的请求。";
@@ -131,6 +209,22 @@ it("validateAnswerSynthesis: passes when the answer is genuinely a transformed s
     { synthesis: { expected_output: "summary" } },
     [{ type: "tool_result", tool: "account_list_emails", success: true, observation }],
     summary
+  );
+  assert.equal(violations.length, 0);
+});
+
+it("validateAnswerSynthesis: short synthesis sharing topic words is not a raw dump", () => {
+  const transcript = [{
+    type: "tool_result",
+    tool: "web_search_fetch",
+    success: true,
+    observation: "Mock web search results for latest AI trends 2026 -- 1) https://example.com article A about AI trends and adoption patterns."
+  }];
+  const finalText = "I searched and found that the main trend is practical AI adoption.";
+  const violations = validateAnswerSynthesis(
+    { synthesis: { expected_output: null } },
+    transcript,
+    finalText
   );
   assert.equal(violations.length, 0);
 });
@@ -180,8 +274,147 @@ await ait("agent-loop: dedupe path emits a synthesis_retry transcript entry", as
 
 await ait("agent-loop: final-text path runs validateAnswerSynthesis before returning", async () => {
   const src = await readFile(path.join(repoRoot, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
-  assert.match(src, /validateAnswerSynthesis\(task\.task_spec/);
+  // Phase 1.12 — validator scope split:
+  //   - validateSuccessContract → task_spec_initial (hard, no retro)
+  //   - validateStepGate / validateAnswerSynthesis → task.task_spec
+  //     (LATEST so SR's `expected_output` enrichment shapes synthesis)
+  assert.match(src, /validateAnswerSynthesis\(\s*synthesisValidationSpec\s*,/);
+  assert.match(src, /synthesisValidationSpec\s*=\s*task\.task_spec\s*\?\?\s*task\.task_spec_initial/);
+  assert.match(src, /stepGateSpec\s*=\s*task\.task_spec\s*\?\?\s*task\.task_spec_initial/);
+  assert.match(src, /validationSpec\s*=\s*task\.task_spec_initial\s*\?\?\s*task\.task_spec/);
+  assert.match(src, /validateSuccessContract\(\s*validationSpec/);
   assert.match(src, /MAX_SYNTHESIS_RETRIES/);
+});
+
+await ait("agent-loop: final path does not prefer connector raw-list fallback", async () => {
+  const src = await readFile(path.join(repoRoot, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
+  assert.match(src, /let candidateFinal = decision\?\.text\s*\n\s*\?\? finalFallbackText/);
+  assert.match(src, /needsFinalComposer\(task,\s*transcript\)/);
+  assert.ok(!/const candidateFinal = connectorFinal \?\? decision\?\.text/.test(src),
+    "connector raw fallback must not override an LLM-synthesised final answer");
+});
+
+await ait("agent-loop: connector raw final is gated to raw_results", async () => {
+  const src = await readFile(path.join(repoRoot, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
+  assert.match(src, /function allowsRawConnectorFinal/);
+  assert.match(src, /expected_output === "raw_results"/);
+  assert.match(src, /if \(rawAllowed\) return formatConnectorFinal/);
+});
+
+await ait("agent-loop: synthesis_retry events use the runtime event signature", async () => {
+  const src = await readFile(path.join(repoRoot, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
+  assert.ok(!/emitTaskEvent\?\.\(task\.task_id,\s*"synthesis_retry"/.test(src),
+    "runtime.emitTaskEvent(eventType, payload) must not be called with task_id as the first argument");
+  assert.ok(!/emitTaskEvent\?\.\(task\.task_id,\s*"prose_trap_retry"/.test(src),
+    "prose_trap_retry must use runtime.emitTaskEvent(eventType, payload)");
+});
+
+await ait("agent-loop behavior: connector metadata list does NOT override synthesised LLM final", async () => {
+  const emails = [
+    { received: "Mon, 27 Apr 2026 21:36:42 +0000", fromName: "Groupon", from: "noreply@r.groupon.com", subject: "Jiffy Lube: 15-Minute Drive-Thru Oil Change" },
+    { received: "27 Apr 2026 16:32:43 -0000", fromName: "Indeed", from: "no-reply@jm.indeed.com", subject: "Action requested: Profile is still incomplete" }
+  ];
+  const runtime = makeConnectorRuntime({ emails });
+  runtime.finalAnswerComposer = async () =>
+    "今天邮件主要是促销和账户提醒；优先处理 Indeed 的资料补全提醒，其余促销可稍后查看。";
+  const planner = async ({ transcript }) => (
+    transcript.some((entry) => entry.type === "tool_result")
+      ? { type: "final", text: "今天邮件主要是促销和账户提醒；优先处理 Indeed 的资料补全提醒，其余促销可稍后查看。" }
+      : { type: "tool_call", tool: "account_list_emails", args: {} }
+  );
+  const result = await runToolAgentLoop({
+    runtime,
+    planner,
+    maxIterations: 3,
+    task: {
+      task_id: "task_test",
+      user_command: "总结一下我的邮件",
+      task_spec: {
+        synthesis: { expected_output: "summary", user_goal: "总结邮件" },
+        tool_policy: { web_search_fetch: { mode: "forbidden" } }
+      }
+    }
+  });
+  assert.equal(result.final_text, "今天邮件主要是促销和账户提醒；优先处理 Indeed 的资料补全提醒，其余促销可稍后查看。");
+});
+
+await ait("agent-loop behavior: connector raw list is still allowed for raw_results", async () => {
+  const runtime = makeConnectorRuntime({
+    emails: [{ received: "Mon", fromName: "Groupon", from: "noreply@r.groupon.com", subject: "Deal" }]
+  });
+  const planner = async ({ transcript }) => (
+    transcript.some((entry) => entry.type === "tool_result")
+      ? { type: "final" }
+      : { type: "tool_call", tool: "account_list_emails", args: {} }
+  );
+  const result = await runToolAgentLoop({
+    runtime,
+    planner,
+    maxIterations: 3,
+    task: {
+      task_id: "task_test",
+      user_command: "列出原始邮件",
+      task_spec: {
+        synthesis: { expected_output: "raw_results", user_goal: "列出原始邮件" },
+        tool_policy: { web_search_fetch: { mode: "forbidden" } }
+      }
+    }
+  });
+  assert.match(result.final_text, /我从 google 查到 1 封邮件/);
+  assert.match(result.final_text, /Groupon/);
+});
+
+await ait("agent-loop behavior: repeated successful launch action falls back to action completion text", async () => {
+  const runtime = makeActionRuntime();
+  const planner = async () => ({ type: "tool_call", tool: "launch_app", args: { app: "Excel" } });
+  const result = await runToolAgentLoop({
+    runtime,
+    planner,
+    maxIterations: 4,
+    task: {
+      task_id: "task_launch",
+      user_command: "打开excel",
+      task_spec: {
+        goal: "launch_and_act",
+        synthesis: { expected_output: null, user_goal: "打开excel" },
+        tool_policy: { web_search_fetch: { mode: "optional" } }
+      }
+    }
+  });
+  assert.equal(result.status, "partial_success");
+  assert.match(result.final_text, /Excel/);
+  const forbidden = ["Could", "not", "synthesize"].join(" ");
+  assert.ok(!result.final_text.includes(forbidden),
+    "desktop action fallback must not expose a generic synthesis failure");
+});
+
+await ait("agent-loop: multi-action handling is single-brain (no plannedOpenActions / hasCompoundIntent regex layer)", async () => {
+  // Phase 1.8 — the regex layer that pre-planned multi-app launches is
+  // gone. The LLM is the single brain for deciding "which tools next".
+  // Concretely:
+  //   - `nextPlannedOpenAction` / `allPlannedOpenActionsCompleted` /
+  //     `plannedOpenActions` helpers no longer exist
+  //   - `hasCompoundIntent` is no longer imported
+  //   - the system prompt explicitly tells the LLM to chain tool calls
+  //     across iterations until every requested action is done
+  const src = await readFile(path.join(repoRoot, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
+  // Strip line + block comments so the assertions don't trip over the
+  // deletion notes we left behind to explain the rip-out.
+  const code = src
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !/^\s*\/\//.test(line) && !/^\s*\*/.test(line))
+    .join("\n");
+  assert.ok(!/\bnextPlannedOpenAction\b/.test(code),
+    "nextPlannedOpenAction must be deleted (regex multi-action layer)");
+  assert.ok(!/\ballPlannedOpenActionsCompleted\b/.test(code),
+    "allPlannedOpenActionsCompleted must be deleted (regex multi-action layer)");
+  assert.ok(!/\bplannedOpenActions\b/.test(code),
+    "plannedOpenActions must be deleted (regex multi-action layer)");
+  assert.ok(!/\bhasCompoundIntent\b/.test(code),
+    "hasCompoundIntent import + use must be removed from agent-loop");
+  assert.match(src, /Compound requests = chain tool calls/i,
+    "system prompt must instruct multi-action chaining via the LLM");
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

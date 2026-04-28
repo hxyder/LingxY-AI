@@ -6,7 +6,7 @@
  * truthfulness + Rule 5 extension) reads. These two flags are
  * derived in createTaskSpec from upstream SR preflight output:
  *
- *   routing_status: "ok"
+ *   routing_status: "ok" | "ok_deterministic" | "sr_not_invoked"
  *                 | "sr_timeout" | "sr_no_provider"
  *                 | "sr_unsupported_provider" | "sr_disabled"
  *                 | "sr_low_confidence" | "sr_schema_invalid"
@@ -19,7 +19,8 @@
  *   1. SR decision present → routing_status="ok".
  *   2. SR rejection codes flow through with sr_ prefix (sr_timeout,
  *      sr_unsupported_provider, sr_low_confidence, sr_disabled, etc.).
- *   3. No SR consulted (no decision, no rejection) → "ok"
+ *   3. No SR consulted (no decision, no rejection) → "ok" or
+ *      "ok_deterministic" when a hard deterministic routing lock applies.
  *      (preflight gate may have skipped SR; downstream treats this
  *      same as "SR said the deterministic baseline was correct").
  *   4. connector_domain=true for "查一下我最近的邮件"-style tasks.
@@ -74,6 +75,42 @@ it("routing_status: no SR decision and no rejection → ok (gate skipped)", () =
   // task isn't degraded; deterministic baseline applies.
   const s = createTaskSpec("hi", {}, {});
   assert.equal(s.routing_status, "ok");
+});
+
+it("routing_status: local deterministic lock without SR → ok_deterministic", () => {
+  const s = createTaskSpec("summarise this passage", {
+    text: "A user-selected local passage with enough content to be a real local anchor."
+  }, {});
+  assert.equal(s.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
+  assert.equal(s.routing_status, "ok_deterministic");
+  assert.equal(s.routing_degraded, false);
+});
+
+it("routing_status: local deterministic lock with SR timeout → ok_deterministic", () => {
+  const s = createTaskSpec("summarise this passage", {
+    text: "A user-selected local passage with enough content to be a real local anchor.",
+    semantic_router_rejection: rejection("timeout")
+  }, {});
+  assert.equal(s.routing_status, "ok_deterministic");
+  assert.equal(s.routing_degraded, false);
+});
+
+it("routing_status: assumption-local with observable selection + SR exception → ok_deterministic", () => {
+  const s = createTaskSpec("请总结这段网页内容", {
+    text: "This is a captured browser selection.",
+    semantic_router_rejection: rejection("exception")
+  }, {});
+  assert.equal(s.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
+  assert.equal(s.routing_status, "ok_deterministic");
+  assert.equal(s.routing_degraded, false);
+});
+
+it("routing_status: bare assumption-local without observable anchor can still degrade", () => {
+  const s = createTaskSpec("这篇文章讲的是什么", {
+    semantic_router_rejection: rejection("exception")
+  }, {});
+  assert.equal(s.routing_status, "sr_exception");
+  assert.equal(s.routing_degraded, true);
 });
 
 // ── SR rejection codes flow through ──────────────────────────────────

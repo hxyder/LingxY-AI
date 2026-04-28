@@ -62,9 +62,14 @@ const ROOT = path.resolve(__dirname, "..");
 {
   const { emitTaskEvent, readTaskEventLog, flushTaskLogs } = await import("../src/service/core/task-runtime.mjs");
   const tmpRoot = mkdtempSync(path.join(tmpdir(), "lingxy-task-log-"));
+  const appended = [];
   const runtime = {
     paths: { logsDir: tmpRoot },
-    store: { appendEvent() {}, updateTask() {} },
+    store: {
+      appendEvent(event) { appended.push(event); },
+      updateTask() {},
+      getTask() { return { created_at: new Date(Date.now() - 50).toISOString() }; }
+    },
     eventBus: { publish() {} }
   };
   const taskId = "task_test_phase11";
@@ -72,6 +77,7 @@ const ROOT = path.resolve(__dirname, "..");
   emitTaskEvent({ runtime, taskId, eventType: "started", payload: { intent: "demo" } });
   emitTaskEvent({ runtime, taskId, eventType: "tool_call", payload: { tool_id: "web_search" } });
   emitTaskEvent({ runtime, taskId, eventType: "text_delta", payload: { delta: "skip me" } });
+  emitTaskEvent({ runtime, taskId, eventType: "reasoning_delta", payload: { delta: "also skip me" } });
   emitTaskEvent({ runtime, taskId, eventType: "artifact_created", payload: { path: "C:\\foo.docx" } });
   emitTaskEvent({ runtime, taskId, eventType: "status_changed", payload: { previous_status: "running", status: "success" } });
 
@@ -79,13 +85,15 @@ const ROOT = path.resolve(__dirname, "..");
 
   const events = await readTaskEventLog(runtime, taskId);
   const types = events.map((e) => e.event_type);
+  assert.ok(appended.some((e) => e.event_type === "phase_timing" && e.payload?.phase === "executor_first_delta"),
+    "first text_delta must emit an executor_first_delta phase_timing event");
   assert.deepEqual(
     types,
-    ["started", "tool_call", "artifact_created", "status_changed"],
-    "persisted events must be in-order and skip text_delta"
+    ["started", "tool_call", "phase_timing", "artifact_created", "status_changed"],
+    "persisted events must be in-order, include first-delta timing, and skip streaming deltas"
   );
   assert.equal(events[0].payload.intent, "demo");
-  assert.equal(events[2].payload.path, "C:\\foo.docx");
+  assert.equal(events[3].payload.path, "C:\\foo.docx");
 
   // Unknown task → empty.
   const missing = await readTaskEventLog(runtime, "task_does_not_exist");

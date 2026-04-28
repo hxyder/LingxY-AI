@@ -381,28 +381,29 @@ async function run() {
     assert.equal(task.task_spec.suggested_executor, "tool_using");
   });
 
-  // ── 13. source-level lock-in: submission paths pass routerEnrichedContext to createTaskRecord ──
+  // ── 13. source-level lock-in: submission paths pass routerEnrichedContext to the task-creation entry ──
   // Belt-and-suspenders against the exact bug pattern: a submission path
   // builds routerEnrichedContext via the preflight, then passes the WRONG
-  // packet to createTaskRecord. Since the integration tests above can't
-  // boot a full runtime, we grep the submission source files instead and
-  // assert the createTaskRecord call uses `contextPacket: routerEnrichedContext`.
+  // packet downstream. Since the integration tests above can't boot a full
+  // runtime, we grep the submission source files instead. The task-
+  // creation entry was renamed from createTaskRecord → submitTaskWithConversation
+  // in Phase C (P6 conversation-as-entity); grep for either to stay
+  // resilient to the next rename.
   const submissionFiles = [
     "src/service/core/context-submission.mjs",
     "src/service/core/browser-submission.mjs"
   ];
+  const taskCreatePattern = /(?:createTaskRecord|submitTaskWithConversation)\(\{[\s\S]*?contextPacket:\s*([A-Za-z_$][\w$]*)/g;
   for (const filePath of submissionFiles) {
-    it(`source lock-in: ${filePath} passes routerEnrichedContext to createTaskRecord`, () => {
+    it(`source lock-in: ${filePath} passes routerEnrichedContext to the task-creation entry`, () => {
       const src = readFileSync(filePath, "utf8");
-      // Find every createTaskRecord({ ... }) call body and assert the
-      // contextPacket arg references routerEnrichedContext.
-      const calls = src.match(/createTaskRecord\(\{[\s\S]*?contextPacket:\s*([A-Za-z_$][\w$]*)/g) ?? [];
-      assert.ok(calls.length > 0, `${filePath} must call createTaskRecord with a contextPacket arg`);
+      const calls = src.match(taskCreatePattern) ?? [];
+      assert.ok(calls.length > 0, `${filePath} must call createTaskRecord/submitTaskWithConversation with a contextPacket arg`);
       for (const call of calls) {
         const match = /contextPacket:\s*([A-Za-z_$][\w$]*)/.exec(call);
         const argName = match?.[1];
         assert.equal(argName, "routerEnrichedContext",
-          `${filePath} createTaskRecord must receive routerEnrichedContext (got ${argName})`);
+          `${filePath} task-creation entry must receive routerEnrichedContext (got ${argName})`);
       }
     });
   }

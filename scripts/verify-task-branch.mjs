@@ -31,8 +31,14 @@ const ROOT = path.resolve(__dirname, "..");
 // --- 2. Server wiring: /task handler forwards parent_task_id ---------
 {
   const src = await readFile(path.join(ROOT, "src/service/core/http-server.mjs"), "utf8");
-  assert.ok(src.match(/parentTaskId:\s*typeof body\.parent_task_id/),
-    "http-server /task handler must forward body.parent_task_id to submitContextTask");
+  assert.ok(src.match(/requestParentTaskId\s*=\s*typeof body\.parent_task_id/),
+    "http-server /task handler must parse body.parent_task_id");
+  assert.ok(src.match(/submitContextTask\(\{[\s\S]*?parentTaskId:\s*requestParentTaskId/),
+    "http-server /task handler must forward parent_task_id to submitContextTask");
+  assert.ok(src.match(/submitBrowserTask\(\{[\s\S]*?parentTaskId:\s*requestParentTaskId/),
+    "http-server /task handler must forward parent_task_id to browser submissions");
+  assert.ok(src.match(/submitFileTask\(\{[\s\S]*?parentTaskId:\s*requestParentTaskId/),
+    "http-server /task handler must forward parent_task_id to file submissions");
 }
 
 // --- 3. submitContextTask still honours parentTaskId -----------------

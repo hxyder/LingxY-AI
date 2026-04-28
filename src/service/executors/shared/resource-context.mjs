@@ -42,6 +42,8 @@
  *   plugs that.
  */
 
+import os from "node:os";
+import path from "node:path";
 import { getUserLocation, formatLocationLabel } from "../../utils/location.mjs";
 
 /**
@@ -120,6 +122,8 @@ export function formatResourceContext(task) {
   const now = new Date();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
   lines.push(`- Current local date and time: ${now.toLocaleString("sv-SE", { hour12: false })} (${tz}) — interpret "今天/明天/tomorrow/今晚/next week" relative to this; do not emit years or dates from training memory.`);
+  const home = os.homedir();
+  lines.push(`- Local folders: Desktop=${path.join(home, "Desktop")}; Documents=${path.join(home, "Documents")}; Downloads=${path.join(home, "Downloads")}. Use these exact paths for local file tools; do not guess C:\\Users\\* paths.`);
 
   // Real user location, only populated when the user clicked
   // "📍 启用精确定位" in the sidepanel AND Chrome granted the prompt (or
@@ -129,9 +133,9 @@ export function formatResourceContext(task) {
   const scheduledLocation = ctx.current_location ?? task?.trigger_payload?.current_location ?? null;
   const location = scheduledLocation ?? getUserLocation();
   if (location) {
-    lines.push(`- User's location: ${formatLocationLabel(location)} — use this when the request says "附近 / nearby / 这边 / here" or implies regional defaults (currency, language, news scope). Source: ${location.source ?? "browser"}.`);
+    lines.push(`- User's location: ${formatLocationLabel(location)} — use this for local, nearby, regional, or location-dependent requests. Source: ${location.source ?? "browser"}.`);
   } else {
-    lines.push(`- User's location: unknown (not yet granted). If the user asks about "附近 / nearby / 这边" or location-specific info, ask them to click "📍 启用精确定位" in the LingxY side panel, or ask which city they mean. Do NOT guess from timezone.`);
+    lines.push(`- User's location: UNKNOWN_LOCATION. No city or coordinates are available. For any location-dependent request without a location in the user's message or history, ask for the city or ask them to click "📍 启用精确定位" in the LingxY side panel before using tools. Do NOT infer a city from timezone, locale, IP, search defaults, or examples.`);
   }
 
   const attachments = [

@@ -17,7 +17,6 @@ import { createArtifactStore } from "../src/service/store/artifact-store.mjs";
 import { createEventBusScaffold } from "../src/service/core/events/event-bus.mjs";
 import { createInMemoryStoreScaffold } from "../src/service/core/store/memory-store.mjs";
 import { createTaskQueueScaffold } from "../src/service/core/queue/task-queue.mjs";
-import { createFastExecutorScaffold } from "../src/service/executors/fast/fast-executor.mjs";
 import { createMultiModalExecutorScaffold } from "../src/service/executors/multi_modal/multi-modal-executor.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -42,6 +41,18 @@ function createFetchResponse(body, contentType) {
   };
 }
 
+function createMockFastExecutor() {
+  return {
+    id: "fast",
+    model: "mock",
+    async *execute(task) {
+      const text = `Mock browser summary: ${String(task.context_packet?.text ?? task.user_command ?? "").slice(0, 80)}`;
+      yield { event_type: "inline_result", payload: { text } };
+      yield { event_type: "success", payload: { text, summary: text } };
+    }
+  };
+}
+
 assert.equal(manifest.manifest_version, 3);
 assert.ok(manifest.permissions.includes("nativeMessaging"));
 assert.equal(manifest.background.service_worker, "background/service-worker.js");
@@ -54,7 +65,7 @@ const runtime = {
   eventBus: createEventBusScaffold(),
   queue: createTaskQueueScaffold(),
   artifactStore: createArtifactStore({ baseDir: path.join(repoRoot, ".tmp", "verify-browser-extension") }),
-  executors: [createFastExecutorScaffold(), createMultiModalExecutorScaffold()],
+  executors: [createMockFastExecutor(), createMultiModalExecutorScaffold()],
   async fetchImpl(url) {
     if (url.endsWith("/image.png")) {
       return createFetchResponse(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), "image/png");
@@ -323,8 +334,8 @@ assert.equal(selectionCacheJs.includes("uca.browser.contextSnapshot"), true);
 assert.equal(selectionCacheJs.includes("buildBrowserContextSnapshot"), true);
 assert.equal(selectionCacheJs.includes("yt-navigate-finish"), true);
 assert.equal(selectionCacheJs.includes("ACTION_LABELS"), true);
-// "Open in dialog" button must carry the prior result back to the overlay
-assert.equal(selectionCacheJs.includes("uca.overlay.openWithResult"), true);
+// "Open in dialog" button must carry the prior result into the follow-up path
+assert.equal(selectionCacheJs.includes("uca.result.openFollowup"), true);
 assert.equal(selectionCacheJs.includes("priorResult: resultText"), true);
 
 // Service worker must register the openWithResult message handler

@@ -7,10 +7,15 @@ import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import { detectRequestedOutputFormatForTask, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
-import { decomposeUserCommand } from "./router/decomposer.mjs";
-import { submitCompositeTask } from "./composite-submission.mjs";
-import { createTaskSpec } from "./task-spec.mjs";
+import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
+import { classifyContextSources } from "./intent/context-sources.mjs";
+import { pushBackgroundContextInPlace } from "./intent/background-contexts.mjs";
+import {
+  EXECUTION_PHASES,
+  EXECUTION_STATES,
+  runExecutionPhase
+} from "./runtime/execution-graph.mjs";
 import { extractFileContent } from "../extractors/file-ingest.mjs";
 import {
   applyExecutorEvent,
@@ -52,6 +57,14 @@ function hasFileOrImageContext(contextPacket = {}) {
   return Boolean(contextPacket.file_paths?.length || contextPacket.image_paths?.length);
 }
 
+function runtimeWithTaskEmitter(runtime, taskId) {
+  if (runtime?.emitTaskEvent) return runtime;
+  return {
+    ...(runtime ?? {}),
+    emitTaskEvent: (eventType, payload) => emitTaskEvent({ runtime, taskId, eventType, payload })
+  };
+}
+
 function shouldSaveToDesktop(userCommand = "") {
   return /(?:桌面|desktop)/i.test(userCommand);
 }
@@ -90,8 +103,57 @@ function normalizeContextPacket(contextPacket) {
     selection_metadata: contextPacket.selection_metadata ?? {},
     file_paths: contextPacket.file_paths,
     image_paths: contextPacket.image_paths,
-    captured_at: contextPacket.captured_at ?? new Date().toISOString()
+    captured_at: contextPacket.captured_at ?? new Date().toISOString(),
+    // Front-classifier merge: pass the triage stamps through the
+    // normalizer so applySemanticRouterPreflight downstream sees them and
+    // skips a redundant SR call. createTaskSpec also reads
+    // semantic_router_decision / _rejection from the packet to record the
+    // SEMANTIC_ROUTER DecisionTrace stage.
+    semantic_router_decision: contextPacket.semantic_router_decision,
+    semantic_router_rejection: contextPacket.semantic_router_rejection,
+    context_sources: contextPacket.context_sources,
+    // Phase 1.11 — structured background entries (memory recall / recent
+    // artifact / parent task). Producers push here instead of mutating
+    // `text`. Pass through so post-task patches can append to a live
+    // packet that round-trips to SQLite.
+    background_contexts: Array.isArray(contextPacket.background_contexts)
+      ? contextPacket.background_contexts
+      : []
   };
+}
+
+function uniqueArray(values = []) {
+  return [...new Set((values ?? []).filter((value) => value !== undefined && value !== null))];
+}
+
+function mergeContextPacketPatch(current = {}, patch = {}) {
+  return {
+    ...(current ?? {}),
+    ...(patch ?? {}),
+    selection_metadata: {
+      ...(current?.selection_metadata ?? {}),
+      ...(patch?.selection_metadata ?? {})
+    },
+    context_sources: {
+      ...(current?.context_sources ?? {}),
+      ...(patch?.context_sources ?? {})
+    },
+    file_paths: uniqueArray([...(current?.file_paths ?? []), ...(patch?.file_paths ?? [])]),
+    image_paths: uniqueArray([...(current?.image_paths ?? []), ...(patch?.image_paths ?? [])]),
+    background_contexts: [
+      ...(current?.background_contexts ?? []),
+      ...(patch?.background_contexts ?? [])
+    ]
+  };
+}
+
+function setInternalTaskPromise(task, name, promise) {
+  Object.defineProperty(task, name, {
+    value: promise,
+    enumerable: false,
+    configurable: true,
+    writable: true
+  });
 }
 
 const FOLLOWUP_ARTIFACT_EDIT_PATTERNS = [
@@ -151,18 +213,19 @@ function findRecentArtifactPath(runtime, preferredKind = null) {
 // those tools explicitly instead of us trying to pre-guess. This
 // replaced the earlier regex-based patches.
 //
-// seedSemanticMemories + seedParentTaskContext are still worth doing
-// *when the information is load-bearing and cheap*: the parent digest
-// is triggered only when the client volunteers parent_task_id (user's
-// explicit "I'm following up on this task" signal), and semantic
-// recall keeps a 400ms budget so it never hurts submit latency. All
-// other context seeding is deferred to the AI's own tool choice.
-// P4-02.x follow-up: bumped from 400ms → 1000ms after measuring the
-// embedding store on a hot cache: store.search consistently took
-// 350-470ms, occasionally above 400ms, which silently dropped legit
-// recalls in production. The 1000ms ceiling still keeps RAG well below
-// SemanticRouter's 1500ms budget and below the user's typing cadence,
-// while letting the realistic-latency p95 actually return results.
+// Phase 1.11 — semantic recall + recent-artifact recall now run
+// POST-task as fire-and-forget background patches. The 1000ms recall
+// budget no longer counts against `task_created` latency; iter ≥ 1
+// of the agent loop sees the recall as a structured entry under
+// `context_packet.background_contexts` (see background-contexts.mjs).
+// Parent-task summary stays synchronous because it's load-bearing
+// (user volunteered parent_task_id) and the work is just a small
+// SQL read; structured-field migration for it is a follow-up.
+//
+// Recall budget = 1000ms. Earlier the comment said 400ms but the
+// actual constant was bumped to 1000ms in P4-02.x after measuring
+// store.search at 350-470ms p95; the 1000ms ceiling lets the realistic
+// p95 return results without imposing a p50 wait.
 const MEMORY_RECALL_TIMEOUT_MS = 1000;
 const MEMORY_RECALL_K = 3;
 // P4-02.x C2: per-hit threshold gate. TF-IDF-only hits use Jaccard
@@ -181,45 +244,34 @@ function passesHitThreshold(hit) {
   return score > MEMORY_RECALL_MIN_SCORE_VECTOR;
 }
 
-export async function seedSemanticMemories({ runtime, userCommand, parentTaskId, contextPacket }) {
+/**
+ * Phase 1.11 — compute a memory-recall background entry. Returns a
+ * structured entry ready for `appendBackgroundContext`, or null when
+ * there's nothing to add. Pure async function — caller decides whether
+ * to await (legacy / tests) or fire-and-forget (post-task patcher).
+ */
+export async function computeMemoryRecallEntry({ runtime, userCommand, parentTaskId }) {
   const store = runtime?.platform?.embeddingStore;
-  if (!store?.search || !userCommand) return contextPacket;
+  if (!store?.search || !userCommand) return null;
   let results;
   try {
-    // Race the search against a short timeout — RAG must never
-    // make submit slower than the user's typing cadence.
     results = await Promise.race([
       store.search(userCommand, MEMORY_RECALL_K + 2),
       new Promise((resolve) => setTimeout(() => resolve([]), MEMORY_RECALL_TIMEOUT_MS))
     ]);
   } catch {
-    return contextPacket;
+    return null;
   }
-  if (!Array.isArray(results) || results.length === 0) return contextPacket;
+  if (!Array.isArray(results) || results.length === 0) return null;
   const hits = results
-    // drop exact parent match — seedParentTaskContext already covers it
     .filter((r) => r?.id && r.id !== parentTaskId)
-    // P4-02.x C2: per-hit threshold based on embedding backing — see
-    // passesHitThreshold above.
     .filter(passesHitThreshold)
     .slice(0, MEMORY_RECALL_K);
-  if (hits.length === 0) return contextPacket;
-  // P4-02.x C2: sentinel rename + explicit role marker. The block is
-  // CONTEXT_SOURCE_KEYS.rag_background — the C1 classifier recognizes
-  // this prefix, source-scope (C3) treats it as background-only (NOT a
-  // local anchor), and the LLM sees the explicit "仅作背景，请勿当作当前
-  // 任务上下文" instruction inline.
-  const lines = [
-    "[memory_background · 语义召回 · 仅作背景，请勿当作当前任务上下文]"
-  ];
+  if (hits.length === 0) return null;
+  const lines = [];
   for (const hit of hits) {
     const meta = hit.metadata ?? {};
     const summary = String(meta.summary ?? hit.text.slice(0, 100)).slice(0, 120);
-    // P4-02.x C2: full callable task_id. memory-tools.mjs:212
-    // get_task_detail does exact-match lookup; the prior 12-char slice
-    // produced "task=task_5ab4836..." that the model would extract and
-    // call with → "task not found". Render both: a short display
-    // identifier for human-readable logs, plus the full callable id.
     const fullId = String(hit.id);
     const displayId = fullId.slice(0, 12);
     lines.push(`- ${summary}  (display=${displayId} · callable: task_id=${fullId} · score=${(hit.score ?? 0).toFixed(2)})`);
@@ -230,15 +282,39 @@ export async function seedSemanticMemories({ runtime, userCommand, parentTaskId,
       lines.push("  产物: " + meta.artifact_paths.slice(0, 3).join(" · "));
     }
   }
-  const digest = lines.join("\n");
+  return {
+    kind: "memory_recall",
+    priority: "background",
+    origin: "post_task_patch",
+    content: lines.join("\n"),
+    metadata: {
+      semantic_recall_ids: hits.map((h) => h.id),
+      semantic_recall_scores: hits.map((h) => Number((h.score ?? 0).toFixed(3)))
+    }
+  };
+}
+
+/**
+ * Legacy back-compat shim — older callers (tests, alternate submission
+ * paths that haven't migrated yet) expect the old `seedSemanticMemories`
+ * signature where it returns a mutated contextPacket. New callers should
+ * use `computeMemoryRecallEntry` + appendBackgroundContext directly.
+ */
+export async function seedSemanticMemories({ runtime, userCommand, parentTaskId, contextPacket }) {
+  const entry = await computeMemoryRecallEntry({ runtime, userCommand, parentTaskId });
+  if (!entry) return contextPacket;
+  // Keep the legacy text-merge for the few callers still on the old
+  // contract; new code lifts the entry into background_contexts via
+  // appendBackgroundContext directly.
+  const digest = `[memory_background · 语义召回 · 仅作背景，请勿当作当前任务上下文]\n${entry.content}`;
   const mergedText = [digest, contextPacket?.text ?? ""].filter(Boolean).join("\n\n---\n\n").trim();
   return {
     ...contextPacket,
     text: mergedText,
     selection_metadata: {
       ...(contextPacket?.selection_metadata ?? {}),
-      semantic_recall_ids: hits.map((h) => h.id),
-      semantic_recall_scores: hits.map((h) => Number((h.score ?? 0).toFixed(3))),
+      semantic_recall_ids: entry.metadata.semantic_recall_ids,
+      semantic_recall_scores: entry.metadata.semantic_recall_scores,
       // P4-02.x C2: unified flag the C1 classifier reads as authoritative
       // (without depending on sentinel scan). Mirrors the existing
       // `conversation_history_injected` pattern.
@@ -257,8 +333,31 @@ export async function seedSemanticMemories({ runtime, userCommand, parentTaskId,
 // digest is kept short (~2KB) so it doesn't blow the token budget;
 // the full history still lives in the client-side turns which the
 // UI folds into contextPacket.text separately.
-function seedParentTaskContext({ runtime, parentTaskId, contextPacket }) {
+function seedParentTaskContext({ runtime, parentTaskId, conversationId, contextPacket }) {
   if (!parentTaskId || !runtime?.store?.getTask) return contextPacket;
+  // P6 F3 followup B: structured-history-active gate. When the
+  // conversation already has SQL-backed messages, parent_task_summary
+  // becomes a parallel history source — exactly what the
+  // single-source-of-truth invariant forbids. Skip the text injection;
+  // attachPriorBackendMessages (called later in createTaskRecord) will
+  // stamp the canonical messages onto contextPacket.prior_messages and
+  // signal detectors / executor prompts read from there.
+  //
+  // Legacy fallback only fires when no conversation row exists (tasks
+  // submitted without a conversation_id, or before the v1 backfill
+  // ran).
+  if (typeof conversationId === "string" && conversationId
+      && typeof runtime?.store?.getConversationMessages === "function") {
+    try {
+      const existing = runtime.store.getConversationMessages(conversationId, { limit: 1 });
+      if (Array.isArray(existing) && existing.length > 0) {
+        return contextPacket;
+      }
+    } catch {
+      // store I/O failure — fall through to legacy injection rather
+      // than dropping context entirely.
+    }
+  }
   let parent, events;
   try {
     parent = runtime.store.getTask(parentTaskId);
@@ -301,19 +400,19 @@ function seedParentTaskContext({ runtime, parentTaskId, contextPacket }) {
   };
 }
 
-async function maybeSeedRecentArtifactContext({ runtime, userCommand, contextPacket }) {
+/**
+ * Phase 1.11 — compute a recent-artifact background entry. Returns
+ * { entry, targetPath, preferredKind } or null. The post-task patcher
+ * appends entry to background_contexts AND adds targetPath to
+ * file_paths so connector tools can reach the artifact.
+ */
+export async function computeRecentArtifactEntry({ runtime, userCommand, contextPacket }) {
   const existingFiles = contextPacket?.file_paths ?? [];
-  if (existingFiles.some((filePath) => isEditableArtifactPath(filePath))) {
-    return contextPacket;
-  }
-  if (!looksLikeArtifactEditFollowup(userCommand, contextPacket)) {
-    return contextPacket;
-  }
+  if (existingFiles.some((filePath) => isEditableArtifactPath(filePath))) return null;
+  if (!looksLikeArtifactEditFollowup(userCommand, contextPacket)) return null;
   const preferredKind = artifactKindFromTextOrPath(userCommand, "");
   const targetPath = findRecentArtifactPath(runtime, preferredKind);
-  if (!targetPath) {
-    return contextPacket;
-  }
+  if (!targetPath) return null;
   let extractedText = "";
   try {
     const extracted = await extractFileContent(targetPath);
@@ -321,21 +420,49 @@ async function maybeSeedRecentArtifactContext({ runtime, userCommand, contextPac
   } catch {
     extractedText = "";
   }
+  const lines = [
+    `Path: ${targetPath}`
+  ];
+  if (extractedText) {
+    lines.push("Current extracted contents:");
+    lines.push(extractedText);
+  }
+  return {
+    entry: {
+      kind: "recent_artifact",
+      priority: "weak",
+      origin: "post_task_patch",
+      content: lines.join("\n"),
+      metadata: {
+        editable_target_path: targetPath,
+        editable_target_kind: preferredKind ?? artifactKindFromTextOrPath("", targetPath)
+      }
+    },
+    targetPath,
+    preferredKind
+  };
+}
+
+/**
+ * Legacy back-compat shim: old callers expect mutated contextPacket.
+ * New callers (post-task patcher) use computeRecentArtifactEntry directly.
+ */
+async function maybeSeedRecentArtifactContext({ runtime, userCommand, contextPacket }) {
+  const result = await computeRecentArtifactEntry({ runtime, userCommand, contextPacket });
+  if (!result) return contextPacket;
+  const existingFiles = contextPacket?.file_paths ?? [];
   const note = [
     "[Editable target artifact]",
-    `Path: ${targetPath}`,
-    extractedText ? "Current extracted contents:" : null,
-    extractedText || null
-  ].filter(Boolean).join("\n");
+    result.entry.content
+  ].join("\n");
   const mergedText = [contextPacket?.text ?? "", note].filter(Boolean).join("\n\n").trim();
   return {
     ...contextPacket,
     text: mergedText,
-    file_paths: [...existingFiles, targetPath],
+    file_paths: [...existingFiles, result.targetPath],
     selection_metadata: {
       ...(contextPacket?.selection_metadata ?? {}),
-      editable_target_path: targetPath,
-      editable_target_kind: preferredKind ?? artifactKindFromTextOrPath("", targetPath)
+      ...result.entry.metadata
     }
   };
 }
@@ -503,7 +630,8 @@ async function runExecutor({ runtime, task, executor }) {
   // tool_using / multi_modal executors each resolve the provider themselves,
   // but we record it here so Console + verify scripts see one canonical
   // `provider_resolved` event per task.
-  const resolvedProvider = resolveProviderForTask(executor.id === "multi_modal" ? "vision" : "chat");
+  const taskType = executor.id === "multi_modal" ? "vision" : "chat";
+  const resolvedProvider = resolveProviderForTask(taskType);
   const executorDescriptor = describeResolvedProvider(resolvedProvider);
   if (executorDescriptor) {
     emitTaskEvent({
@@ -511,13 +639,13 @@ async function runExecutor({ runtime, task, executor }) {
       taskId: task.task_id,
       eventType: "provider_resolved",
       payload: attachProviderFieldsToEvent(executorDescriptor, {
-        task_type: executor.id === "multi_modal" ? "vision" : "chat",
+        task_type: taskType,
         executor_id: executor.id
       })
     });
     appendAuditLog(runtime, "ai.provider_resolved", {
       task_id: task.task_id,
-      task_type: executor.id === "multi_modal" ? "vision" : "chat",
+      task_type: taskType,
       executor_id: executor.id,
       ...executorDescriptor
     }, task.task_id);
@@ -664,7 +792,6 @@ export async function submitContextTask({
 
   // Unified Triage layer (see docs/task-runtime/FRAMEWORK_REDESIGN.md).
   // Runs BEFORE routing. Returns one of:
-  //   fast_path   → tier-0 action, submitted via action-tool submission
   //   schedule    → plan-executor built a scheduled-task record; return it
   //   clarify     → plan-executor emitted a clarification question; return it
   //   dag_planner → (Phase 2+, gated by runtime.featureFlags.dagPlanner)
@@ -673,7 +800,7 @@ export async function submitContextTask({
   // so the scheduled residual doesn't re-enter the plan layer.
   if (!skipPlanLayer && !parentTaskId) {
     const { triage } = await import("./intent/triage.mjs");
-    const t = await triage({ runtime, userCommand, contextPacket, executionMode });
+    const t = await triage({ runtime, userCommand, contextPacket, executionMode, background });
     if (t.lane === "schedule" || t.lane === "clarify") {
       return {
         task: t.task,
@@ -683,6 +810,20 @@ export async function submitContextTask({
     }
     if (typeof t.userCommand === "string" && t.userCommand.trim() && t.userCommand !== userCommand) {
       userCommand = t.userCommand;
+    }
+    // Front-classifier merge: triage already ran SR and stamped the
+    // decision/rejection on the packet. Adopt it so downstream
+    // applySemanticRouterPreflight short-circuits instead of issuing a
+    // second LLM call. normalizeContextPacket strips unknown fields so
+    // we lift the SR stamps onto the parameter packet here.
+    if (t.contextPacket && typeof t.contextPacket === "object") {
+      const stamps = {};
+      if (t.contextPacket.semantic_router_decision) stamps.semantic_router_decision = t.contextPacket.semantic_router_decision;
+      if (t.contextPacket.semantic_router_rejection) stamps.semantic_router_rejection = t.contextPacket.semantic_router_rejection;
+      if (t.contextPacket.context_sources) stamps.context_sources = t.contextPacket.context_sources;
+      if (Object.keys(stamps).length > 0) {
+        contextPacket = { ...(contextPacket ?? {}), ...stamps };
+      }
     }
     if (t.lane === "dag_planner") {
       const { runDagLane } = await import("../dag/entrypoint.mjs");
@@ -708,28 +849,21 @@ export async function submitContextTask({
   // UCA-182 Phase 16: when the *client* explicitly sends parent_task_id
   // (the user signalled "follow up on this task"), prepend the parent's
   // command + final reply + artifacts. That's load-bearing memory; keep
-  // it inline because losing it breaks task trees.
+  // it inline because the work is just an SQL read (~1 ms) and losing
+  // it breaks task trees. seedParentTaskContext stays synchronous in
+  // pre-task; structured-field migration is a follow-up.
   const withParentContext = seedParentTaskContext({
     runtime,
     parentTaskId,
+    conversationId,
     contextPacket: inspectedContextPacket
   });
-  // UCA-182 Phase 18: keyword/semantic recall (best-effort, 400ms
-  // budget). Retained because it's cheap and often surfaces a
-  // genuinely matching prior task. When it misses or the user uses
-  // referential language, the model has memory tools (see Phase 21)
-  // and can call recall_memory / list_recent_tasks itself.
-  const withMemoryRecall = await seedSemanticMemories({
-    runtime,
-    userCommand,
-    parentTaskId,
-    contextPacket: withParentContext
-  });
-  const normalizedContextPacket = await maybeSeedRecentArtifactContext({
-    runtime,
-    userCommand,
-    contextPacket: withMemoryRecall
-  });
+  // Phase 1.11 — semantic recall + recent-artifact recall moved to
+  // POST-task fire-and-forget patches. Pre-task path no longer awaits
+  // either; task_created emits as soon as DB write + securityBroker
+  // finish. The agent loop's iter ≥ 1 reads the patched
+  // `task.context_packet.background_contexts` for the recalled material.
+  const normalizedContextPacket = withParentContext;
 
   // P4-03: SemanticRouter async preflight (shared helper, single source
   // of truth for layering — see router-preflight.mjs). Classifies
@@ -738,14 +872,30 @@ export async function submitContextTask({
   // back to no_provider rejection unless a chat adapter is wired —
   // both states are handled inside createTaskSpec via the
   // SEMANTIC_ROUTER DecisionTrace stage.
-  const routerEnrichedContext = await applySemanticRouterPreflight({
-    userCommand,
-    contextPacket: normalizedContextPacket
-  });
+  const deferPreExecutionPlanning = background;
+  let routerEnrichedContext = deferPreExecutionPlanning
+    ? {
+        ...normalizedContextPacket,
+        context_sources: classifyContextSources({
+          text: userCommand,
+          contextPacket: normalizedContextPacket
+        })
+      }
+    : await applySemanticRouterPreflight({
+        userCommand,
+        contextPacket: normalizedContextPacket
+      });
 
   const preflightTaskSpec = createTaskSpec(userCommand, routerEnrichedContext, route);
 
-  if (inspection.allowed && canDecomposeFromTaskSpec(preflightTaskSpec) && !skipDecomposition && !parentTaskId) {
+  if (runtime?.featureFlags?.legacyDecomposer === true
+      && !deferPreExecutionPlanning
+      && inspection.allowed
+      && canDecomposeFromTaskSpec(preflightTaskSpec)
+      && !skipDecomposition
+      && !parentTaskId) {
+    const { decomposeUserCommand } = await import("./router/decomposer.mjs");
+    const { submitCompositeTask } = await import("./composite-submission.mjs");
     const decomposition = await decomposeUserCommand({
       userCommand,
       runtime,
@@ -852,14 +1002,165 @@ export async function submitContextTask({
   }
 
   const execute = async () => {
-    // route to code_cli (Kimi/Claude CLI/etc.) if:
-    // 1. task explicitly uses the kimi/code_cli executor
-    // 2. fast executor has no API provider configured
-    // 3. user routed chat to a code_cli provider (e.g. their own Kimi/Claude CLI)
-    // The dedicated `translate` executor never delegates — it uses the free
-    // translator client directly. Neither does `agentic`: if the user asked
-    // for multi-step tool use, we honour that intent and let pickRunnableExecutor
-    // decide whether to actually run the agentic executor or fall back to fast.
+    let executionContext = routerEnrichedContext;
+    if (deferPreExecutionPlanning && inspection.allowed) {
+      // SR runs in PARALLEL with the executor — the deterministic
+      // preflight task_spec is sufficient to start the agent loop. When
+      // SR returns, we patch task.task_spec / task.context_packet for
+      // any downstream iteration to read. Pre-Phase-1.6 this was an
+      // `await`, which made the main executor LLM wait ~1-2s on SR
+      // before it could even start thinking — that was the actual
+      // user-visible latency, not task_created.
+      //
+      // Race shape:
+      //   - first agent LLM call uses preflightTaskSpec (deterministic)
+      //   - SR resolves → spec refreshed → next iteration's prompt
+      //     reflects research_quality / tool_policy / expected_output
+      //   - if SR still hasn't returned by the time the loop ends,
+      //     task_spec stays at the deterministic baseline. Audit log
+      //     records that.
+      //
+      // Tasks where SR's verdict MUST gate the executor (schedule lane,
+      // clarify lane) already short-circuited inside triage — they
+      // never enter execute().
+      const srPromise = runExecutionPhase({
+        runtime: runtimeWithTaskEmitter(runtime, task.task_id),
+        taskId: task.task_id,
+        phase: EXECUTION_PHASES.SEMANTIC_ROUTER,
+        step: "semantic_router",
+        progress: 0.04,
+        state: EXECUTION_STATES.ROUTING,
+        fn: () => applySemanticRouterPreflight({
+          userCommand,
+          contextPacket: routerEnrichedContext
+        }),
+        timingPayload: (result) => {
+          const spec = createTaskSpec(userCommand, result, route);
+          return {
+            routing_status: spec.routing_status,
+            executor: executorOverride ?? spec.suggested_executor ?? route.executor
+          };
+        }
+      });
+      // Fire-and-forget patch. Failures degrade silently — the executor
+      // already has a valid spec to run with.
+      //
+      // Hard constraints (codex review §):
+      //   1. task_spec_initial is NEVER touched — validators use it to
+      //      avoid retroactive failure when SR arrives late and tightens
+      //      the bar.
+      //   2. task.executor is NEVER mutated — the loop has already
+      //      locked it in.
+      //   3. Stamp `task_spec_source = "semantic_router_patched"` and
+      //      `sr_patch_applied_at` so observability can tell the
+      //      difference between "deterministic only" and
+      //      "SR-patched mid-flight".
+      //   4. Expose the SR patch via task event so the agent loop's
+      //      next iteration (and final synthesis) read the latest
+      //      task_spec.
+      setInternalTaskPromise(task, "__srPatchPromise", srPromise.then((srEnriched) => {
+        if (!srEnriched) return null;
+        try {
+          const mergedContext = mergeContextPacketPatch(task.context_packet ?? executionContext, srEnriched);
+          executionContext = mergedContext;
+          routerEnrichedContext = mergedContext;
+          const refreshedSpec = createTaskSpec(userCommand, mergedContext, route);
+          const refreshedValidation = validateTaskSpec(refreshedSpec);
+          task.context_packet = mergedContext;
+          task.task_spec = refreshedSpec;
+          task.task_spec_valid = refreshedValidation.valid;
+          task.task_spec_errors = refreshedValidation.errors;
+          task.task_spec_source = "semantic_router_patched";
+          task.sr_patch_applied_at = new Date().toISOString();
+          store.updateTask(task.task_id, task);
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: "sr_patch_applied",
+            payload: {
+              applied_at: task.sr_patch_applied_at,
+              executor_suggestion: refreshedSpec.suggested_executor ?? null,
+              tool_policy_web: refreshedSpec.tool_policy?.web_search_fetch?.mode ?? null,
+              expected_output: refreshedSpec.synthesis?.expected_output ?? null,
+              research_quality: refreshedSpec.research_quality ?? null
+            }
+          });
+          return refreshedSpec;
+        } catch { /* parallel SR patch must never break a running executor */ }
+        return null;
+      }).catch(() => null /* swallowed by runExecutionPhase already; defensive */));
+    }
+
+    // Phase 1.11 — memory recall + recent-artifact recall as fire-and-forget
+    // post-task patches. Used to be awaited in the pre-task path (1000 ms
+    // budget × two recalls, sequential) which dominated `task_created`
+    // latency for chat. Now the agent loop iter ≥ 1 reads
+    // `task.context_packet.background_contexts` if either patch landed.
+    // First-iteration prompts proceed without waiting.
+    if (inspection.allowed) {
+      const memoryPatchPromise = (async () => {
+        try {
+          const entry = await computeMemoryRecallEntry({
+            runtime,
+            userCommand,
+            parentTaskId
+          });
+          if (!entry) return null;
+          task.context_packet = pushBackgroundContextInPlace(task.context_packet, entry);
+          // Mirror the legacy classifier flag so context-source detection
+          // continues to work without relying on the old text sentinel.
+          task.context_packet.selection_metadata = {
+            ...(task.context_packet.selection_metadata ?? {}),
+            semantic_recall_ids: entry.metadata.semantic_recall_ids,
+            semantic_recall_scores: entry.metadata.semantic_recall_scores,
+            memory_background_injected: true
+          };
+          store.updateTask(task.task_id, task);
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: "background_context_added",
+            payload: { kind: "memory_recall", count: entry.metadata.semantic_recall_ids.length }
+          });
+          return entry;
+        } catch { return null; }
+      })();
+      const artifactPatchPromise = (async () => {
+        try {
+          const result = await computeRecentArtifactEntry({
+            runtime,
+            userCommand,
+            contextPacket: task.context_packet
+          });
+          if (!result) return null;
+          task.context_packet = pushBackgroundContextInPlace(task.context_packet, result.entry);
+          // Make the artifact reachable to connector tools by adding the
+          // path to file_paths (post-task; agent loop re-reads each iter).
+          const existingFiles = task.context_packet.file_paths ?? [];
+          if (!existingFiles.includes(result.targetPath)) {
+            task.context_packet.file_paths = [...existingFiles, result.targetPath];
+          }
+          task.context_packet.selection_metadata = {
+            ...(task.context_packet.selection_metadata ?? {}),
+            ...result.entry.metadata
+          };
+          store.updateTask(task.task_id, task);
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: "background_context_added",
+            payload: { kind: "recent_artifact", target_path: result.targetPath }
+          });
+          return result.entry;
+        } catch { return null; }
+      })();
+      setInternalTaskPromise(task, "__memoryPatchPromise", memoryPatchPromise);
+      setInternalTaskPromise(task, "__recentArtifactPatchPromise", artifactPatchPromise);
+    }
+
+    // Route to code_cli (Kimi/Claude CLI/etc.) only when explicitly selected
+    // or when chat is configured to use a code_cli provider. Normal chat stays
+    // on the tool-capable AI agent.
     const shouldUseKimi = task.executor !== "translate"
       && task.executor !== "agentic"
       && ((task.executor === "kimi" || task.executor === "code_cli")
@@ -870,10 +1171,10 @@ export async function submitContextTask({
     const requestedFormat = detectRequestedOutputFormatForTask(task);
     const shouldPreferProviderArtifactFlow = requestedFormat.id !== "conversational"
       && hasChatApiProvider()
-      && !hasFileOrImageContext(routerEnrichedContext);
+      && !hasFileOrImageContext(executionContext);
 
     if (shouldPreferProviderArtifactFlow && (task.executor === "kimi" || task.executor === "code_cli")) {
-      task.executor = "fast";
+      task.executor = "tool_using";
       store.updateTask(task.task_id, task);
     }
 
@@ -883,7 +1184,7 @@ export async function submitContextTask({
 
     if (shouldUseKimi && resolvedCliRuntime && !shouldPreferProviderArtifactFlow) {
       const artifactStore = runtime.artifactStore ?? createArtifactStore();
-      const allowFallback = !hasFileOrImageContext(routerEnrichedContext);
+      const allowFallback = !hasFileOrImageContext(executionContext);
       const providerDescriptor = describeCodeCliRuntime(resolvedCliRuntime);
       const kimiResult = await runKimiExecutor({
         task,
@@ -896,16 +1197,16 @@ export async function submitContextTask({
         providerDescriptor
       });
       if (kimiResult.status !== "success" && allowFallback) {
-        const fallbackExecutor = runtime.executors?.find((executor) => executor.id === "fast");
+        const fallbackExecutor = runtime.executors?.find((executor) => executor.id === "tool_using");
         if (fallbackExecutor) {
           updateTask(runtime, task, {
             status: "queued",
-            sub_status: "fallback_to_fast_executor",
+            sub_status: "fallback_to_tool_using_executor",
             failure_category: null,
             failure_user_message: null,
             failure_internal_log_excerpt: null
           }, true);
-          task.executor = "fast";
+          task.executor = "tool_using";
           store.updateTask(task.task_id, task);
           const fallbackResult = await runExecutor({ runtime, task, executor: fallbackExecutor });
           return {

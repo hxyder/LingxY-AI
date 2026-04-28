@@ -13,6 +13,7 @@ export const EVENT_TYPES = Object.freeze([
   "pending_approval_created",
   "step_started",
   "step_finished",
+  "planner_request_started",
   "log",
   "artifact_created",
   "text_delta",

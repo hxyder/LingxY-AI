@@ -9,23 +9,9 @@
  *    as `generate_document`; a real document request ("生成一份word
  *    文档") must still be classified as `generate_document`.
  *
- * 2. P4-RQ I2 architecture lock-in: APP LAUNCH IS NOT A REGEX FAST
- *    PATH. Per the boundary rule in fast-path-router.mjs (lines 8-12)
- *    and the b1dc22c rationale ("fix app launch being misread as
- *    document output"), `tryFastPath` and `extractFirstTier0Action`
- *    no longer short-circuit "打开word" to a deterministic
- *    `launch_app` plan. The normal planner / tool policy /
- *    SuccessContract own the decision. `extractPureLaunchApp` stays
- *    as a BOUNDARY HELPER (it tells callers whether the *text* looks
- *    like a pure launch candidate without committing to one) but is
- *    no longer wired into the routers themselves.
- *
- *    Why the lock-in matters: the only way to satisfy this test is
- *    to keep the deliberate "let the planner decide" architecture.
- *    Re-introducing a Tier-0 launch_app branch would re-open the
- *    "打开word文档 / 打开一个docx" misclassification this commit
- *    set was created to fix. Don't fix this test by adding a new
- *    regex or by restoring the Tier-0 wiring.
+ * 2. P4-RQ I2 architecture lock-in: app launch is not a regex fast path.
+ *    `extractPureLaunchApp` is only boundary evidence for the LLM-first
+ *    pipeline. The retired fast-path exports must stay deleted.
  *
  * Regression refs: UCA-177 (cold-starting the app was creating
  * documents); commit b1dc22c "fix app launch being misread as
@@ -33,8 +19,12 @@
  */
 
 import assert from "node:assert/strict";
-import { extractPureLaunchApp, extractFirstTier0Action, tryFastPath } from "../src/service/core/router/fast-path-router.mjs";
+import { readFileSync } from "node:fs";
+import { extractPureLaunchApp } from "../src/service/core/router/fast-path-router.mjs";
 import { classifyGoal, createTaskSpec } from "../src/service/core/task-spec.mjs";
+import { routeIntent } from "../src/service/core/router/intent-router.mjs";
+import { detectRequestedOutputFormatForTask } from "../src/service/executors/kimi/output-format.mjs";
+import { shouldConsultSemanticRouter } from "../src/service/core/policy/tool-policy-resolver.mjs";
 
 // ── 1. extractPureLaunchApp still recognises pure launch candidates ────
 //      (boundary helper — does NOT commit to launch_app on its own).
@@ -55,50 +45,15 @@ assert.equal(extractPureLaunchApp("打开一个docx"), null,
 assert.equal(extractPureLaunchApp("open the pptx"), null,
   "bare pptx suffix is not a launch candidate");
 
-// ── 3. P4-RQ I2 lock-in: app launch is NOT a regex fast path. ──────────
-//      The boundary helper above can recognise "打开word" as a launch
-//      candidate, but the routers must NOT short-circuit on it. The
-//      planner / tool policy / SuccessContract own the decision so the
-//      "打开word文档 / 打开一个docx" misclassification this commit set
-//      was created to fix cannot recur via a Tier-0 detour.
-assert.equal(tryFastPath("打开word", {}), null,
-  "P4-RQ I2: app launch must NOT be a Tier-0 fast path — let the planner decide");
-assert.equal(tryFastPath("打开 word", {}), null,
-  "P4-RQ I2: spaced launch phrasing also stays out of the fast path");
-assert.equal(tryFastPath("启动Excel", {}), null,
-  "P4-RQ I2: 启动X stays out of the fast path");
-assert.equal(tryFastPath("open chrome", {}), null,
-  "P4-RQ I2: English open X stays out of the fast path");
-
-// File-oriented phrasings are also still null (unchanged behaviour).
-assert.equal(tryFastPath("打开word文档", {}), null,
-  "tryFastPath must NOT promise a fast action for 打开word文档");
-
-// extractFirstTier0Action: today only URL opens are Tier-0; app launches
-// are deliberately not. Lock that in.
-assert.equal(extractFirstTier0Action("打开word"), null,
-  "P4-RQ I2: extractFirstTier0Action must NOT route 打开word to launch_app");
-assert.equal(extractFirstTier0Action("启动Excel"), null,
-  "P4-RQ I2: extractFirstTier0Action must NOT route 启动Excel to launch_app");
-assert.equal(extractFirstTier0Action("打开word文档"), null,
-  "extractFirstTier0Action must reject 打开word文档 as a candidate");
-
-// Sanity: the URL Tier-0 path is unaffected — that's still the ONLY
-// short-circuit. Documents the contract that "Tier-0 today = open_url
-// only".
-const urlFp = tryFastPath("打开 https://example.com", {});
-assert.equal(urlFp?.tool, "open_url",
-  "URL Tier-0 path is preserved — only app launches are excluded from regex fast paths");
-const urlFirst = extractFirstTier0Action("https://example.com");
-assert.equal(urlFirst?.tool, "open_url",
-  "extractFirstTier0Action still routes URLs to open_url");
+// ── 3. P4-RQ I2 lock-in: retired fast-path exports stay gone. ─────────
+const launchHelperSource = readFileSync(new URL("../src/service/core/router/fast-path-router.mjs", import.meta.url), "utf8");
+assert.ok(!/export function tryFastPath|export function extractFirstTier0Action|export function hasCompoundIntent/.test(launchHelperSource),
+  "retired fast-path exports must not come back");
 
 // ── 4. classifyGoal() still recognises pure launches at the goal layer. ─
 //      The goal classifier runs INSIDE the planner path that I2 hands the
 //      task off to. Goal classification is orthogonal to the fast-path
-//      decision: even though tryFastPath returns null, the planner uses
-//      classifyGoal to pick the right tool. This test pins that the
-//      planner-side classification is still correct.
+//      removal: the planner still uses classifyGoal to pick the right tool.
 assert.equal(classifyGoal("打开word"), "launch_and_act",
   "classifyGoal must recognise 打开word → launch_and_act inside the planner path");
 assert.equal(classifyGoal("open VSCode"), "launch_and_act",
@@ -116,6 +71,26 @@ assert.equal(launchSpec.artifact.kind, null,
   "pure launch must not pick a doc kind");
 assert.deepEqual(launchSpec.suggested_formats, [],
   "pure launch must not suggest formats");
+
+for (const command of ["打开ppt", "打开excel", "打开outlook"]) {
+  const route = routeIntent(command);
+  const spec = createTaskSpec(command, {}, route);
+  assert.equal(spec.goal, "launch_and_act",
+    `${command} must be a launch action, not a connector/file-generation request`);
+  assert.equal(spec.connector_domain, false,
+    `${command} must not activate connector-domain routing just because the app name is Outlook/Gmail-like`);
+  assert.equal(spec.routing_status, "ok_deterministic",
+    `${command} is a narrow side-effect hard signal; SR outage must not degrade routing`);
+  assert.equal(spec.artifact.required, false,
+    `${command} must not require a generated artifact`);
+  assert.deepEqual(spec.suggested_formats, [],
+    `${command} must not suggest pptx/xlsx/docx formats`);
+  const requested = detectRequestedOutputFormatForTask({ user_command: command, task_spec: spec });
+  assert.equal(requested.id, "conversational",
+    `${command} must not trigger fallback artifact creation`);
+  assert.equal(shouldConsultSemanticRouter({ signals: {}, contextPacket: {}, text: command }), false,
+    `${command} must not wait for SR before executing a pure app launch`);
+}
 
 // ── 6. But a real document ask is still classified correctly. ──────────
 const docSpec = createTaskSpec("帮我生成一份word文档");

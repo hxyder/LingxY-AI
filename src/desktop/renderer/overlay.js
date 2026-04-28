@@ -2114,18 +2114,18 @@ async function handleTaskEventFrame(rawEvent) {
     const isPlannerPlaceholder = trimmedText === "(no response from agentic planner)";
     if (text && !isPlannerPlaceholder) {
       if (isForActiveConv) {
-        // Tool-step bubbles get appended to bubbleArea as the task runs, so
-        // the streaming bubble (created before any tool calls) ends up ABOVE
-        // the tool list in DOM order. Updating it in place would leave the
-        // final answer scrolled up above the progress rows. Instead drop
-        // the streaming placeholder and append a fresh assistant bubble at
-        // the tail — scrolling-to-bottom now lands on the final answer.
         if (streamingBubble) {
-          streamingBubble.remove();
+          // Tool-step bubbles get appended while the task runs, so move the
+          // live answer node to the tail before finalising it.
+          bubbleArea.appendChild(streamingBubble);
+          streamingBubble.classList.remove("streaming");
+          streamingBubbleRawText = text;
+          streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
           streamingBubble = null;
           streamingBubbleRawText = "";
+        } else {
+          addBubble("assistant", text);
         }
-        addBubble("assistant", text);
         bubbleArea.scrollTop = bubbleArea.scrollHeight;
       }
       appendTurnForTask(frameTaskId, "assistant", text);

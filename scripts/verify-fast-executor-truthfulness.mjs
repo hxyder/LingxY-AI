@@ -1,25 +1,18 @@
 #!/usr/bin/env node
 /**
- * UCA-077 P4-RQ G5: fast-executor truthfulness + Rule 5 extension.
+ * UCA-077 P4-RQ G5: fast-executor truthfulness + planner-first contract.
  *
- * Two-layer defense against fast executor fabricating live-lookup
- * claims when SR couldn't run AND the user's request shows
- * structural research intent:
+ * Fast executor contract after the LLM-first cleanup:
  *
- *   G5a (executor-resolver Rule 5 extension):
- *     goal=search_and_answer + web=forbidden + !connector_domain → fast.
- *     Routes "不要联网，告诉我今天 AI 新闻" through fast for an
- *     honest reply instead of tool_using's planner loop.
- *     Connector-domain boundary preserves
- *     "不要联网，查一下我最近的邮件" → tool_using.
+ *   G5a:
+ *     goal=search_and_answer + web=forbidden + !connector_domain → tool_using.
+ *     The planner treats forbidden web as a contract. It can answer from
+ *     local knowledge or ask the user for permission; it must not be
+ *     downgraded to a no-tool refusal path.
  *
- *   G5b (fast-executor pre-LLM short-circuit):
- *     routing_status != "ok" AND research_signals_present → return
- *     partial_success with routing_degraded message. No LLM call.
- *
- *   G5c (fast-executor post-LLM truthfulness guard):
- *     LLM output containing "让我查一下" / "I'll search" patterns →
- *     downgrade to partial_success with honest note.
+ *   LLM-first:
+ *     routing diagnostics never preempt the fast LLM call; streaming deltas
+ *     are emitted for OpenAI-compatible providers.
  *
  *   G5d (fast-executor system prompt update):
  *     Adds explicit "you have NO tools" clause so the model is
@@ -28,23 +21,12 @@
  * Asserts:
  *
  *   G5a routing:
- *     1. "不要联网，告诉我今天 AI 新闻" + SR=required → fast.
+ *     1. "不要联网，告诉我今天 AI 新闻" + SR=required → tool_using.
  *     2. "不要联网，查一下我最近的邮件" → tool_using (connector_domain).
- *     3. goal=qa + web=forbidden → fast (legacy preserved).
- *
- *   G5b short-circuit:
- *     4. shouldShortCircuitForRoutingDegraded returns true when
- *        routing_status=sr_timeout + research_signals_present=true.
- *     5. Returns false when routing_status=ok.
- *     6. Returns false when no research signals (chitchat).
- *
- *   G5c truthfulness guard:
- *     7. detectFastUnbackedClaim matches Chinese "让我帮你查一下".
- *     8. Matches English "I'll search the web".
- *     9. No match on factual answer.
+ *     3. very short chitchat + web=forbidden → tool_using.
  *
  *   G5d prompt:
- *    10. buildMessages system prompt contains the no-tools clause.
+ *     buildMessages system prompt contains the no-tools clause.
  *
  * Run: node scripts/verify-fast-executor-truthfulness.mjs
  */
@@ -80,20 +62,16 @@ const SR_REQUIRED = Object.freeze({
   reason: "test"
 });
 
-// ── G5a: executor-resolver Rule 5 extension ─────────────────────────
-it("G5a: '不要联网，告诉我今天 AI 新闻' + SR=required → fast", () => {
+// ── G5a: executor-resolver planner-first contract ───────────────────
+it("G5a: '不要联网，告诉我今天 AI 新闻' + SR=required → tool_using", () => {
   const spec = createTaskSpec("不要联网，告诉我今天 AI 新闻", {
     semantic_router_decision: { ...SR_REQUIRED }
   }, {});
-  // explicit_no_search wins at resolver step 0a → web=forbidden.
-  // SR drives goal=search_and_answer (E3 path). Rule 5 extension
-  // routes goal=search_and_answer + forbidden + !connector_domain
-  // to fast.
   assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
   assert.equal(spec.goal, "search_and_answer");
   assert.equal(spec.connector_domain, false);
-  assert.equal(spec.suggested_executor, "fast",
-    "G5a Rule 5 ext. must route research-blocked + non-connector to fast");
+  assert.equal(spec.suggested_executor, "tool_using",
+    "forbidden web is a planner contract; the planner must answer locally or ask for permission");
 });
 
 it("G5a: '不要联网，查一下我最近的邮件' → tool_using (connector_domain boundary)", () => {
@@ -105,16 +83,16 @@ it("G5a: '不要联网，查一下我最近的邮件' → tool_using (connector_
     "connector-domain task must stay on tool_using for connector workflows");
 });
 
-it("G5a: legacy goal=qa + web=forbidden → fast (Rule 5 unchanged)", () => {
+it("G5a: very short chitchat + web=forbidden → tool_using", () => {
   // "你好" — chitchat. goal=qa naturally. web=forbidden default.
   const spec = createTaskSpec("你好", {}, {});
   assert.equal(spec.goal, "qa");
   assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
-  assert.equal(spec.suggested_executor, "fast");
+  assert.equal(spec.suggested_executor, "tool_using");
 });
 
 // ── G5a executor-resolver direct invocation (decoupled from createTaskSpec) ─
-it("G5a resolveExecutor direct: research-blocked + !connector_domain → fast", () => {
+it("G5a resolveExecutor direct: research-blocked + !connector_domain → tool_using", () => {
   const taskSpec = {
     goal: "search_and_answer",
     tool_policy: {
@@ -129,7 +107,7 @@ it("G5a resolveExecutor direct: research-blocked + !connector_domain → fast", 
     toolPolicy: taskSpec.tool_policy,
     contextPacket: {}
   });
-  assert.equal(out.executor, "fast");
+  assert.equal(out.executor, "tool_using");
 });
 
 it("G5a resolveExecutor direct: research-blocked + connector_domain → tool_using (rule 5 skipped)", () => {
@@ -163,53 +141,34 @@ it("G5d: buildMessages system prompt contains 'NO tools' clause", () => {
     "system prompt must coach against fabricated tool-action claims");
 });
 
-// ── G5b/G5c source-level lock-ins (executor logic isn't directly callable
-// without a provider; lock the structural shape via grep) ─────────────────
-it("G6b lock-in: shouldShortCircuitForRoutingDegraded reads task_spec.routing_degraded (NOT routing_status+research_signals coupling)", () => {
+// ── LLM-first source-level lock-ins ─────────────────────────────────
+it("LLM-first: fast executor does not pre-LLM short-circuit on routing_degraded", () => {
   const src = readFileSync(
     new URL("../src/service/executors/fast/fast-executor.mjs", import.meta.url),
     "utf8"
   );
-  assert.match(src, /function\s+shouldShortCircuitForRoutingDegraded\s*\(/,
-    "helper must be defined");
-  // Post-G6b: reads routing_degraded directly (framework state).
-  assert.match(src, /task\?\.task_spec\?\.routing_degraded/,
-    "G6b: must read routing_degraded boolean");
-  // Pre-G6b "routing_status != 'ok' AND research_signals_present"
-  // composition was wrong (missed '下周天气' without explicit_search).
-  // Lock-in that the new gate doesn't reintroduce that coupling.
-  assert.doesNotMatch(src, /shouldShortCircuit[\s\S]{0,300}research_signals_present/,
-    "post-G6b: must NOT couple short-circuit with research_signals_present");
+  assert.equal(src.includes(["should", "Short", "Circuit", "For", "Routing", "Degraded"].join("")), false);
+  assert.doesNotMatch(src, /routing_degraded:\s*true/);
+  assert.doesNotMatch(src, /路由层暂不可用|routing degraded/);
 });
 
-it("G5b lock-in: pre-LLM short-circuit yields partial_success with routing_degraded", () => {
+it("LLM-first: fast executor emits OpenAI-compatible streaming deltas", () => {
   const src = readFileSync(
     new URL("../src/service/executors/fast/fast-executor.mjs", import.meta.url),
     "utf8"
   );
-  // The execute() body must call shouldShortCircuitForRoutingDegraded
-  // BEFORE provider lookup
-  const executeBody = src.match(/async \*execute[\s\S]*?\n    \}/);
-  assert.ok(executeBody, "execute body must be present");
-  assert.match(executeBody[0], /shouldShortCircuitForRoutingDegraded/);
-  // Must yield partial_success with routing_degraded flag
-  assert.match(src, /event_type:\s*"partial_success"[\s\S]{0,200}routing_degraded:\s*true/);
+  assert.match(src, /stream:\s*typeof onTextDelta === "function"/);
+  assert.match(src, /eventType:\s*"text_delta"/);
 });
 
-it("G5c lock-in: detectFastUnbackedClaim helper + post-LLM guard wired", () => {
+it("LLM-first: fast executor has no output-claim regex patch guard", () => {
   const src = readFileSync(
     new URL("../src/service/executors/fast/fast-executor.mjs", import.meta.url),
     "utf8"
   );
-  assert.match(src, /function\s+detectFastUnbackedClaim\s*\(/,
-    "truthfulness guard helper must be defined");
-  assert.match(src, /FAST_UNBACKED_CLAIM_PATTERNS/);
-  // Patterns must catch Chinese 让我查一下 / I'll search etc.
-  assert.match(src, /让我[\s\S]{0,80}查/);
-  assert.match(src, /I'?ll[\s\S]{0,40}(check|search|look)/i);
-  // Post-LLM guard fires after resultText, downgrades to partial_success
-  assert.match(src, /detectFastUnbackedClaim\(resultText\)/);
-  assert.match(src, /unbacked_tool_claim:\s*true/);
+  assert.equal(src.includes(["FAST", "UNBACKED", "CLAIM", "PATTERNS"].join("_")), false);
+  assert.equal(src.includes("detectFastUnbackedClaim"), false);
+  assert.equal(src.includes("unbacked_tool_claim"), false);
 });
 
 // ── G5b/G5c behaviour: import the helpers (they're not exported, so
@@ -234,7 +193,7 @@ it("G6b: SR timeout → routing_degraded=true (transient operational failure)", 
   assert.equal(spec.tool_policy.web_search_fetch.mode, "optional",
     "SR operational failure must not be interpreted as forbidden");
   assert.equal(spec.suggested_executor, "tool_using",
-    "degraded optional fallback must keep a tool-capable executor");
+    "structural freshness signal keeps current-info follow-up on a tool-capable planner");
 });
 
 it("G6b: SR exception → routing_degraded=true", () => {
@@ -301,7 +260,7 @@ it("G6b reproduction: '下周天气' + SR timeout → routing_degraded=true (the
   assert.equal(spec.routing_degraded, true,
     "G6b must catch '下周天气 + SR timeout' (the post-G5 reproduction)");
   assert.equal(spec.suggested_executor, "tool_using",
-    "post-IntentRoute fallback routes to tool_using instead of fast refusal");
+    "structural freshness signal, not routing_degraded itself, keeps this on tool_using");
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

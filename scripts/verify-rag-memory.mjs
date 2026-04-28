@@ -34,14 +34,24 @@ const ROOT = path.resolve(__dirname, "..");
 // --- 1. static wiring ------------------------------------------------
 {
   const ctx = await readFile(path.join(ROOT, "src/service/core/context-submission.mjs"), "utf8");
+  // Phase 1.11: recall is now POST-task fire-and-forget. The legacy
+  // helper `seedSemanticMemories` survives as a back-compat shim that
+  // wraps `computeMemoryRecallEntry`; production callers go through
+  // `computeMemoryRecallEntry` and patch `task.context_packet.background_contexts`.
+  assert.ok(ctx.includes("export async function computeMemoryRecallEntry"),
+    "context-submission must define the structured-entry helper");
   assert.ok(ctx.includes("async function seedSemanticMemories"),
-    "context-submission must define seedSemanticMemories");
+    "context-submission must keep the back-compat seedSemanticMemories shim");
   assert.ok(ctx.includes("MEMORY_RECALL_TIMEOUT_MS"),
-    "recall must be wrapped in a race-against-timeout");
-  assert.ok(ctx.includes("await seedSemanticMemories"),
-    "submitContextTask must await the semantic recall helper");
+    "recall must still be wrapped in a race-against-timeout");
+  assert.ok(!/await\s+seedSemanticMemories/.test(ctx),
+    "submitContextTask must NOT await semantic recall in the pre-task path (Phase 1.11 — moved to post-task)");
+  assert.ok(/computeMemoryRecallEntry\s*\(\s*\{/.test(ctx),
+    "post-task patcher must invoke computeMemoryRecallEntry");
+  assert.ok(/pushBackgroundContextInPlace/.test(ctx),
+    "post-task patcher must push the recall entry into background_contexts");
   assert.ok(ctx.includes("[memory_background · 语义召回"),
-    "digest sentinel must be the C2-renamed [memory_background · ...] form");
+    "back-compat shim must still emit the legacy sentinel for callers on the old contract");
 
   const tr = await readFile(path.join(ROOT, "src/service/core/task-runtime.mjs"), "utf8");
   assert.ok(tr.includes("HISTORY_TEXT_CAP"),

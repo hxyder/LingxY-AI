@@ -14,6 +14,7 @@ import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { executeKimiTask } from "../kimi/kimi-cli-executor.mjs";
 import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
 import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
+import { emitTaskEvent as emitRuntimeTaskEvent } from "../../core/task-runtime.mjs";
 
 /**
  * Build the chat messages array for the fast executor. Exported so the
@@ -106,11 +107,12 @@ async function callAnthropic({ apiKey, baseUrl, model, messages, signal }) {
     ?.join("\n") ?? "";
 }
 
-async function callOpenAICompatible({ provider, apiKey, baseUrl, model, messages, signal }) {
+async function callOpenAICompatible({ provider, apiKey, baseUrl, model, messages, signal, onTextDelta }) {
   const body = {
     model,
     messages,
-    max_tokens: 2048
+    max_tokens: 2048,
+    stream: typeof onTextDelta === "function"
   };
   applyReasoningSelectionToBody(body, provider, model, provider?.reasoningEffort ?? "");
   const response = await fetch(`${baseUrl}/chat/completions`, {
@@ -126,6 +128,37 @@ async function callOpenAICompatible({ provider, apiKey, baseUrl, model, messages
   if (!response.ok) {
     const errorBody = await response.text().catch(() => "");
     throw new Error(`API error ${response.status}: ${errorBody.slice(0, 200)}`);
+  }
+
+  if (body.stream) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = "";
+    let fullText = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (signal?.aborted) {
+        reader.cancel();
+        throw Object.assign(new Error("OpenAI-compatible stream aborted."), { code: "ABORT_ERR" });
+      }
+      sseBuffer += decoder.decode(value, { stream: true });
+      const lines = sseBuffer.split("\n");
+      sseBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const raw = line.slice(6).trim();
+        if (!raw || raw === "[DONE]") continue;
+        let data;
+        try { data = JSON.parse(raw); } catch { continue; }
+        const delta = data.choices?.[0]?.delta?.content ?? "";
+        if (delta) {
+          fullText += delta;
+          onTextDelta(delta);
+        }
+      }
+    }
+    return fullText;
   }
 
   const data = await response.json();
@@ -153,60 +186,6 @@ async function callOllama({ baseUrl, model, messages, signal }) {
   return data.message?.content ?? "";
 }
 
-/**
- * P4-RQ G6b: pre-LLM short-circuit for routing-degraded tasks.
- *
- * Reads `task.task_spec.routing_degraded` — the framework-derived
- * boolean that's true when SR was consulted but failed operationally
- * (sr_timeout / sr_exception / sr_no_provider / sr_schema_invalid).
- * False when SR ran successfully OR wasn't consulted OR the operator
- * explicitly turned it off (sr_disabled / sr_unsupported_provider).
- *
- * G6b shifted the gate from "routing_status != ok AND
- * research_signals_present" to JUST `routing_degraded`. The
- * previous user-text-based research_signals_present gate missed
- * "下周天气" (no explicit_search verb, no 网上, weak_freshness
- * alone insufficient) — exactly the user's reproduction post-G5.
- * Reading framework state directly avoids the topic-regex
- * coupling and catches every degraded research-class case.
- *
- * Trade-off: chitchat that reaches SR consultation (text length
- * > 3 chars) AND coincides with an SR outage will see the
- * "routing degraded" message. Acceptable per user direction —
- * better honest degraded reply than silent fabrication.
- *
- * Reads framework state only — no topic regex.
- */
-function shouldShortCircuitForRoutingDegraded(task) {
-  return Boolean(task?.task_spec?.routing_degraded);
-}
-
-/**
- * P4-RQ G5c: post-LLM truthfulness guard. Detects unbacked-claim
- * patterns in the model's output that would only be true if the
- * fast executor actually had tools (which it doesn't). Mirrors
- * detectUnbackedConnectorClaim in tool_using/agent-loop. These
- * regexes are output-side truthfulness assertions, NOT input-side
- * topic regex — they describe what the fast executor cannot have
- * done, not what the user asked.
- *
- * If matched, caller downgrades to partial_success with an honest
- * message instead of letting "我帮你查一下" propagate as a success.
- */
-const FAST_UNBACKED_CLAIM_PATTERNS = Object.freeze([
-  // Chinese: "让我帮你查/搜/搜索/查询/检索 ..." or future-tense
-  // claims of an action the fast executor cannot have performed.
-  /(让我|让我帮你|帮你|我现在|正在|马上|稍等)\s*(查(?:一下|一下子|看|阅|找)?|搜(?:索|一下)?|搜寻|查询|检索|获取|抓取|访问|打开网页|浏览|联网)/,
-  // English equivalents.
-  /\b(I'?ll|I am going to|I'?m going to|let me|hold on while I|stand by while I)\s+(check|search|look it up|fetch|query|browse|go online|visit|access)\b/i,
-  /\b(searching|querying|fetching|browsing|looking it up|accessing the web)\b/i
-]);
-
-function detectFastUnbackedClaim(text) {
-  if (typeof text !== "string" || text.length === 0) return false;
-  return FAST_UNBACKED_CLAIM_PATTERNS.some((re) => re.test(text));
-}
-
 export function createFastExecutorScaffold() {
   return {
     id: "fast",
@@ -215,32 +194,6 @@ export function createFastExecutorScaffold() {
     async *execute(task, { signal } = {}) {
       if (signal?.aborted) {
         throw Object.assign(new Error("Fast executor cancelled before start."), { code: "ABORT_ERR" });
-      }
-
-      // P4-RQ G6b: pre-LLM short-circuit when routing is degraded.
-      // Reads task_spec.routing_degraded directly (framework state,
-      // not user-text inference). When true, fast cannot reliably
-      // answer; honest reply rather than fabricated lookup.
-      if (shouldShortCircuitForRoutingDegraded(task)) {
-        const status = task.task_spec.routing_status;
-        const honestText = "我无法在快速模式下进行实时搜索（路由层暂不可用：" + status + "）。请稍后重试，或改用工具执行模式。\n\nI cannot perform a live web lookup in this fast mode (routing degraded: " + status + "). Please retry shortly, or rephrase to use the tool-using executor.";
-        yield {
-          event_type: "step_finished",
-          payload: { step: "fast_executor", progress: 0.95 }
-        };
-        yield {
-          event_type: "inline_result",
-          payload: { text: honestText }
-        };
-        yield {
-          event_type: "partial_success",
-          payload: {
-            text: honestText,
-            routing_degraded: true,
-            routing_status: status
-          }
-        };
-        return;
       }
 
       // Resolve provider dynamically on each call (config may have changed)
@@ -308,8 +261,27 @@ export function createFastExecutorScaffold() {
         event_type: "log",
         payload: { message: `Calling ${provider.id} (${provider.model})...` }
       };
+      yield {
+        event_type: "planner_request_started",
+        payload: { executor: "fast", provider: provider.id, model: provider.model }
+      };
 
       let resultText = "";
+      const emitTextDelta = (delta) => {
+        if (!delta) return;
+        if (typeof task.__runtime?.emitTaskEvent === "function") {
+          task.__runtime.emitTaskEvent("text_delta", { delta });
+          return;
+        }
+        if (task.__runtime) {
+          emitRuntimeTaskEvent({
+            runtime: task.__runtime,
+            taskId: task.task_id,
+            eventType: "text_delta",
+            payload: { delta }
+          });
+        }
+      };
       try {
         if (provider.id === "anthropic") {
           resultText = await callAnthropic({
@@ -333,7 +305,8 @@ export function createFastExecutorScaffold() {
             baseUrl: provider.baseUrl,
             model: provider.model,
             messages,
-            signal
+            signal,
+            onTextDelta: emitTextDelta
           });
         }
       } catch (error) {
@@ -347,28 +320,6 @@ export function createFastExecutorScaffold() {
         event_type: "step_finished",
         payload: { step: "fast_executor", progress: 0.95 }
       };
-
-      // P4-RQ G5c: post-LLM truthfulness guard. Even with the
-      // updated system prompt (G5d), some models still emit
-      // "让我查一下" / "I'll search" claims. Fast executor has no
-      // tools — those claims are unbacked. Downgrade to
-      // partial_success with an honest message.
-      if (resultText && detectFastUnbackedClaim(resultText)) {
-        const honestNote = "\n\n[UCA] 注意：上面的回复声称要执行查询/搜索动作，但 fast 模式没有工具能力，没有真实查询发生。如需联网检索，请改用工具执行模式重试。";
-        const augmented = `${resultText}${honestNote}`;
-        yield {
-          event_type: "inline_result",
-          payload: { text: augmented }
-        };
-        yield {
-          event_type: "partial_success",
-          payload: {
-            text: augmented,
-            unbacked_tool_claim: true
-          }
-        };
-        return;
-      }
 
       // emit inline_result for conversational display
       yield {

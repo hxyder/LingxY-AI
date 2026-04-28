@@ -479,6 +479,7 @@ let consoleChatToolCardCounter = 0;
 let consoleChatToolCards = new Map();
 let consoleChatThinkingCard = null;
 let consoleChatThinkingText = "";
+let consoleChatStreamingAnswer = null;
 // G: console chat resume state. The chat composer threads this
 // conversation_id on every submit, so back-and-forth in the same
 // conversation hangs together server-side. New chat clears it.
@@ -573,7 +574,7 @@ async function fetchJson(pathname, options = {}) {
 
 // UCA-126 Phase 7d: rich message cards (user / ai / system / tool_call).
 function appendConsoleChatMessage(role, text, options = {}) {
-  if (!consoleChatMessages || !text) return;
+  if (!consoleChatMessages || (!text && !options.allowEmpty)) return null;
   consoleChatMessages.querySelector(".console-chat-empty")?.remove();
 
   const wrapper = document.createElement("div");
@@ -626,6 +627,38 @@ function appendConsoleChatMessage(role, text, options = {}) {
   wrapper.appendChild(body);
   consoleChatMessages.appendChild(wrapper);
   consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+  return wrapper;
+}
+
+function appendConsoleChatTextDelta(taskId, delta) {
+  if (!taskId || !delta || !consoleChatMessages) return;
+  closeConsoleChatThinkingCard();
+  if (!consoleChatStreamingAnswer || consoleChatStreamingAnswer.taskId !== taskId) {
+    const wrapper = appendConsoleChatMessage("assistant", "", { allowEmpty: true });
+    consoleChatStreamingAnswer = {
+      taskId,
+      text: "",
+      wrapper,
+      bubble: wrapper?.querySelector(".chat-msg-bubble") ?? null
+    };
+  }
+  consoleChatStreamingAnswer.text += String(delta);
+  if (consoleChatStreamingAnswer.bubble) {
+    consoleChatStreamingAnswer.bubble.textContent = consoleChatStreamingAnswer.text;
+  }
+  consoleChatMessages.scrollTop = consoleChatMessages.scrollHeight;
+}
+
+function finalizeConsoleChatStreaming(taskId, finalText = "") {
+  if (!taskId || !consoleChatStreamingAnswer || consoleChatStreamingAnswer.taskId !== taskId) {
+    return false;
+  }
+  const text = String(finalText || consoleChatStreamingAnswer.text || "").trim();
+  if (text && consoleChatStreamingAnswer.bubble) {
+    consoleChatStreamingAnswer.bubble.textContent = text;
+  }
+  consoleChatStreamingAnswer = null;
+  return true;
 }
 
 // ── Selection-floating "+ Note" pill inside the chat feed ────────────────
@@ -867,7 +900,9 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
     ?? ""
   ).trim();
   if (directText) {
-    appendConsoleChatMessage("assistant", directText);
+    if (!finalizeConsoleChatStreaming(taskId, directText)) {
+      appendConsoleChatMessage("assistant", directText);
+    }
     consoleChatResultTaskIds.add(taskId);
     return;
   }
@@ -881,7 +916,9 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
       ?? ""
     ).trim();
     if (!settledText) return;
-    appendConsoleChatMessage(task?.status === "failed" ? "system" : "assistant", settledText);
+    if (!finalizeConsoleChatStreaming(taskId, settledText)) {
+      appendConsoleChatMessage(task?.status === "failed" ? "system" : "assistant", settledText);
+    }
     consoleChatResultTaskIds.add(taskId);
   } catch {
     /* optional */
@@ -891,6 +928,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
 function subscribeConsoleChatTask(taskId) {
   consoleChatEventStream?.close?.();
   consoleChatToolCards = new Map();
+  consoleChatStreamingAnswer = null;
   closeConsoleChatThinkingCard();
   consoleChatEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
     onEvent(rawEvent) {
@@ -898,6 +936,9 @@ function subscribeConsoleChatTask(taskId) {
       const payload = frame.data ?? {};
       if (frame.event === "reasoning_delta") {
         appendConsoleChatThinkingDelta(payload.delta ?? "");
+      } else if (frame.event === "text_delta") {
+        appendConsoleChatTextDelta(taskId, payload.delta ?? payload.text ?? "");
+        consoleChatState.textContent = "Answering...";
       } else if (frame.event === "tool_call_proposed" || frame.event === "tool_call_started") {
         const toolName = payload.tool_id ?? payload.tool ?? "tool";
         const args = payload.args ?? payload.arguments ?? {};
@@ -936,11 +977,14 @@ function subscribeConsoleChatTask(taskId) {
         }
       } else if (frame.event === "inline_result") {
         closeConsoleChatThinkingCard();
-        appendConsoleChatMessage("assistant", payload.text ?? payload.message ?? "");
+        if (!finalizeConsoleChatStreaming(taskId, payload.text ?? payload.message ?? "")) {
+          appendConsoleChatMessage("assistant", payload.text ?? payload.message ?? "");
+        }
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Done.";
       } else if (frame.event === "failed") {
         closeConsoleChatThinkingCard();
+        consoleChatStreamingAnswer = null;
         appendConsoleChatMessage("system", payload.message ?? "Task failed.");
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Failed.";
@@ -4996,6 +5040,7 @@ document.querySelector("#consoleChatNewBtn")?.addEventListener("click", () => {
   consoleChatEventStream?.close?.();
   consoleChatEventStream = null;
   consoleChatToolCards = new Map();
+  consoleChatStreamingAnswer = null;
   closeConsoleChatThinkingCard();
   consoleChatResultTaskIds = new Set();
   clearConsoleActiveConversation();

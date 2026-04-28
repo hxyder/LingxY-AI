@@ -71,6 +71,10 @@ const ROOT = path.resolve(__dirname, "..");
     "electron-main must not special-case the notification window id");
   assert.ok(main.includes("registeredPopupCardManager.showCard"),
     "showDesktopNotification must route through the popup-card manager");
+  assert.ok(main.includes('payload.kind === "success" && uiOpen'),
+    "success popup cards must be suppressed while overlay/console are visible");
+  assert.ok(main.includes('reason: "primary_ui_visible"'),
+    "suppressed success cards must return a primary_ui_visible reason");
   assert.ok(main.includes("meta: card.meta ?? null"),
     "popup-card resolve broadcast must forward meta to overlay");
 }

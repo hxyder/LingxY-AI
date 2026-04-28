@@ -30,12 +30,13 @@ assert.ok(
   "console.html still carries the legacy <nav class=\"tab-bar\"> — should be retired"
 );
 
-// ── all 9 view targets present as rail items ────────────────────────────
-// UCA-121: "history" retired; Memory moved to Tasks via filters.
+// ── current view targets present as rail items ───────────────────────────
+// UCA-121+: "history" and "advanced" retired; advanced settings moved into
+// Settings sections. Conversations/Inbox/Notes are first-class rail items.
 const expectedViews = [
   "tasks", "chat", "files", "schedules",
-  "projects",
-  "connectors", "settings", "advanced"
+  "inbox", "notes", "projects", "conversations",
+  "connectors", "settings"
 ];
 for (const view of expectedViews) {
   const re = new RegExp(`<button class="rail-item[^"]*"[^>]*data-tab="${view}"`);

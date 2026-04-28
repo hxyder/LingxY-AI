@@ -33,8 +33,9 @@
 import crypto from "node:crypto";
 
 import { SIGNAL_KINDS } from "./signals/index.mjs";
+import { hasTimePhrase } from "./trigger.mjs";
 
-const DEFAULT_TIMEOUT_MS = 1500;
+const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_CACHE_TTL_MS = 300_000; // 5 minutes
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.6;
 
@@ -143,6 +144,11 @@ const RESEARCH_DEPTHS = Object.freeze([
   "deep_research",
   "unknown"
 ]);
+// Front-classifier merge: SR also subsumes the schedule/clarify/immediate
+// decision that the legacy `understand.mjs` LLM call made. `immediate` is
+// the default when no time-defer or clarify pattern fits — this matches
+// the legacy "no time phrase → fall through" behaviour.
+const INTERPRETATIONS = Object.freeze(["immediate", "schedule", "needs_clarification"]);
 
 /**
  * The strict tool-input schema the LLM must satisfy. Embedded in the
@@ -181,7 +187,16 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
       risk_level: { type: "string", enum: [...RISK_LEVELS] },
       rationale_summary: { type: "string", maxLength: 400 },
       confidence: { type: "number", minimum: 0, maximum: 1 },
-      reason: { type: "string", maxLength: 400 }
+      reason: { type: "string", maxLength: 400 },
+      // Front-classifier merge fields. Subsume legacy understand.mjs so the
+      // router emits both routing axes AND the schedule/clarify/immediate
+      // verdict in one tool call. Optional in the schema to keep older
+      // adapters / fixtures compatible; validateDecision defaults absent
+      // `interpretation` to "immediate".
+      interpretation: { type: "string", enum: [...INTERPRETATIONS] },
+      schedule_at: { type: ["string", "null"], maxLength: 64 },
+      residual_command: { type: ["string", "null"], maxLength: 600 },
+      clarification_question: { type: ["string", "null"], maxLength: 400 }
     },
     required: [
       "source_scope", "web_policy", "output_kind", "artifact_required",
@@ -265,7 +280,12 @@ export function createSemanticRouter(opts = {}) {
     : () => process.env.SEMANTIC_ROUTER_DISABLED !== "1";
   const now = typeof opts.now === "function" ? opts.now : () => Date.now();
   const cache = opts.cache instanceof Map ? opts.cache : new Map();
-  const timeoutMs = Number.isFinite(opts.timeoutMs) ? opts.timeoutMs : DEFAULT_TIMEOUT_MS;
+  const envTimeoutMs = Number(process.env.SEMANTIC_ROUTER_TIMEOUT_MS ?? "");
+  const timeoutMs = Number.isFinite(opts.timeoutMs)
+    ? opts.timeoutMs
+    : Number.isFinite(envTimeoutMs) && envTimeoutMs > 0
+      ? envTimeoutMs
+      : DEFAULT_TIMEOUT_MS;
   const cacheTtlMs = Number.isFinite(opts.cacheTtlMs) ? opts.cacheTtlMs : DEFAULT_CACHE_TTL_MS;
   const confidenceThreshold = Number.isFinite(opts.confidenceThreshold)
     ? opts.confidenceThreshold
@@ -319,7 +339,7 @@ export function createSemanticRouter(opts = {}) {
       return reject("exception", err?.message ?? String(err));
     }
 
-    const decision = extractDecisionArguments(raw);
+    const decision = normalizeDecisionArguments(extractDecisionArguments(raw));
     if (!decision) {
       return reject("schema_invalid", "Adapter returned no usable tool_call args");
     }
@@ -474,7 +494,13 @@ function buildMessages({ text, contextPacket, signals }) {
     "",
     "**Signal-kind ranking** — fact > hint > assumption. A signal with `kind=fact` (e.g. `source_scope` from an attachment) is ground truth and you should not overrule it. `hint` is an explicit phrase pattern in the user text — strong but conventional. `assumption` is the system interpreting an indirect reference (e.g. \"这个\" → current_context); you may second-guess if other signals contradict.",
     "",
-    "**Regex boundary** — regex-derived signals are evidence, not the final intent classifier. Topic hints (weather/news/finance/etc.) help you understand the request but do not by themselves execute tools. The policy layer decides final constraints."
+    "**Regex boundary** — regex-derived signals are evidence, not the final intent classifier. Topic hints (weather/news/finance/etc.) help you understand the request but do not by themselves execute tools. The policy layer decides final constraints.",
+    "",
+    "**Interpretation (front-classifier merge)** — also decide whether the request should run NOW, be SCHEDULED for later, or NEEDS A CLARIFYING QUESTION. Pick exactly one of `immediate` / `schedule` / `needs_clarification` and emit it as `interpretation`.",
+    "- `immediate` (default): execute now. Use this whenever the request can be acted on with the available context, even if the text mentions a time as DATA (event start time, meeting time, reminder datetime that the tool itself accepts). Example: \"在日历里新建一个时间在明天下午1点的任务\" — create the event NOW; the time is an argument, not a defer.",
+    "- `schedule`: the user wants the AI to EXECUTE LATER, after a delay or at an absolute future time. Set `schedule_at` to an ISO8601 timestamp in the user's local timezone (use the current local time provided in the user turn) and set `residual_command` to a self-contained instruction that, when handed back later, fully captures the user's intent (strip the time phrase, keep the rest coherent). Example: \"5 分钟后发美股汇总到 x@y.com\" → schedule_at = now+5min, residual = \"发美股汇总到 x@y.com\".",
+    "- `needs_clarification`: a required field is missing AND cannot be inferred from context. Set `clarification_question` to ONE short question in the user's language. Use this sparingly — prefer `immediate` if the agent loop can proceed with sensible defaults.",
+    "Prefer `immediate` when in doubt. Multi-clause commands with a time argument almost always mean `immediate`."
   ].join("\n");
 
   // Strip out fields we don't want to feed the model. ctx.text and url
@@ -510,6 +536,7 @@ function buildMessages({ text, contextPacket, signals }) {
   const signalSummary = summariseSignals(signals);
 
   const user = [
+    `Current local time: ${new Date().toISOString()}`,
     `User text: ${JSON.stringify(text ?? "")}`,
     `Context packet: ${JSON.stringify(ctxSummary)}`,
     `Signal bundle (regex-derived facts/hints/assumptions): ${JSON.stringify(signalSummary)}`
@@ -559,7 +586,15 @@ function buildCacheKey({ text, contextPacket, signals }) {
     // text is real selection vs background. Different sources → different
     // cache entry. Until C1 lands, this is undefined and the key just
     // shrinks naturally.
-    context_sources: contextPacket?.context_sources ?? null
+    context_sources: contextPacket?.context_sources ?? null,
+    // Front-classifier merge: relative time phrases ("5 分钟后", "in 10 mins")
+    // resolve to a different `schedule_at` every call. Bucket the cache by
+    // minute so a cached schedule decision can't be served stale. Absolute
+    // phrases ("明天下午3点") resolve to the same wall-clock time within the
+    // 5-min cache TTL anyway, but `hasTimePhrase` matches both — the minute
+    // bucket is harmless for the absolute case and necessary for the
+    // relative one. Non-time queries get `null` and benefit from full caching.
+    time_bucket: hasTimePhrase(text) ? Math.floor(Date.now() / 60_000) : null
   };
   return crypto.createHash("sha1").update(JSON.stringify(parts)).digest("hex");
 }
@@ -629,6 +664,26 @@ function extractDecisionArguments(raw) {
     try { return JSON.parse(args); } catch { return null; }
   }
   return null;
+}
+
+function normalizeDecisionArguments(decision) {
+  if (!decision || typeof decision !== "object") return decision;
+  const normalized = { ...decision };
+  for (const field of [
+    "artifact_required",
+    "needs_external_info",
+    "needs_current_information",
+    "needs_user_files",
+    "needs_tool_use"
+  ]) {
+    if (normalized[field] === "true") normalized[field] = true;
+    if (normalized[field] === "false") normalized[field] = false;
+  }
+  if (typeof normalized.confidence === "string" && normalized.confidence.trim()) {
+    const numeric = Number(normalized.confidence);
+    if (Number.isFinite(numeric)) normalized.confidence = numeric;
+  }
+  return normalized;
 }
 
 function validateDecision(decision) {
@@ -708,7 +763,40 @@ function validateDecision(decision) {
   if (typeof decision.reason !== "string") {
     return { ok: false, reason: "reason must be a string" };
   }
+  // Front-classifier merge: interpretation + the three companion fields
+  // are optional. Absent → caller stamps "immediate" via normaliseDecision.
+  // Present but invalid enum → schema_invalid. When interpretation is
+  // schedule / needs_clarification, the companion fields must be filled.
+  if (decision.interpretation !== undefined) {
+    if (!INTERPRETATIONS.includes(decision.interpretation)) {
+      return { ok: false, reason: `interpretation=${decision.interpretation} not in enum` };
+    }
+    if (decision.interpretation === "schedule") {
+      if (typeof decision.schedule_at !== "string" || !decision.schedule_at) {
+        return { ok: false, reason: "schedule interpretation requires schedule_at (ISO8601)" };
+      }
+      if (typeof decision.residual_command !== "string" || !decision.residual_command.trim()) {
+        return { ok: false, reason: "schedule interpretation requires non-empty residual_command" };
+      }
+    }
+    if (decision.interpretation === "needs_clarification") {
+      if (typeof decision.clarification_question !== "string" || !decision.clarification_question.trim()) {
+        return { ok: false, reason: "needs_clarification interpretation requires non-empty clarification_question" };
+      }
+    }
+  }
   return { ok: true };
+}
+
+/**
+ * Treat a missing / unknown `interpretation` as the default "immediate"
+ * lane. Centralised so triage and any other consumer agree on the same
+ * fallback without each branching independently.
+ */
+export function interpretationOf(decision) {
+  if (!decision || typeof decision !== "object") return "immediate";
+  if (INTERPRETATIONS.includes(decision.interpretation)) return decision.interpretation;
+  return "immediate";
 }
 
 const LOCAL_SCOPES = new Set(["uploaded_files", "current_context", "local_project", "selection"]);

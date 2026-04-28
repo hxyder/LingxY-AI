@@ -27,6 +27,7 @@ import { SYNTHESIS_REQUIRED_OUTPUTS } from "../intent/semantic-router.mjs";
 
 const SYNTHESIS_OVERLAP_THRESHOLD = 0.6;
 const SYNTHESIS_MIN_OBSERVATION_CHARS = 80;
+const SYNTHESIS_MIN_FINAL_RAW_DUMP_CHARS = 120;
 const SYNTHESIS_BIGRAM_SAMPLE_CAP = 4000;
 
 function normaliseForOverlap(text) {
@@ -52,6 +53,15 @@ function bigramOverlap(a, b) {
   let inter = 0;
   for (const g of A) if (B.has(g)) inter += 1;
   return inter / Math.min(A.size, B.size);
+}
+
+function compactMetadataForOverlap(metadata) {
+  if (!metadata || typeof metadata !== "object") return "";
+  try {
+    return JSON.stringify(metadata).slice(0, SYNTHESIS_BIGRAM_SAMPLE_CAP);
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -122,34 +132,58 @@ function hasShapeMarker(kind, text) {
  * based or hybrid evaluator can sit alongside this without replacing
  * it; this function will remain the deterministic floor.
  *
- * Two independent failure modes:
+ * Two independent arms:
  *
- *   isLikelyRawDump            bigram overlap with a non-trivial tool
- *                              observation ≥ SYNTHESIS_OVERLAP_THRESHOLD.
- *                              Catches "I found 10 emails: 1. ... 2. ..."
- *                              pasted back as the final answer.
+ *   ARM 1 — RAW-DUMP DETECTION
+ *     bigram overlap with a non-trivial tool observation ≥
+ *     SYNTHESIS_OVERLAP_THRESHOLD. Catches "I found 10 emails:
+ *     1. ... 2. ..." pasted back as the final answer.
  *
- *   missingExpectedTransformation
- *                              The kind-specific shape marker
- *                              (e.g. summary requires a conclusion
- *                              sentence; comparison requires
- *                              comparative wording) is absent.
+ *     Fires when expected_output is:
+ *       - one of SYNTHESIS_REQUIRED_OUTPUTS (the obvious case), OR
+ *       - null / undefined / "" — i.e. SR was unavailable or skipped
+ *         and IntentRoute never classified the request. Pre-A the
+ *         validator early-returned in this case, so when SR went
+ *         missing the raw-dump regression slipped through (P6 F3 root
+ *         cause: 总结一下今天的邮件 → SR fact-skipped → expected_output
+ *         stayed null → validator silenced → LLM raw-dumped 100 emails).
  *
- * Either condition alone marks the violation; checkerReason describes
+ *     Does NOT fire when expected_output is an EXPLICITLY classified
+ *     non-synthesis kind (raw_results, direct_answer, code, table,
+ *     artifact). When IntentRoute explicitly classified the request
+ *     as wanting raw data, the LLM is allowed to echo observations —
+ *     that's what the user asked for.
+ *
+ *   ARM 2 — SHAPE-MARKER CHECK (synthesis kinds only)
+ *     The kind-specific shape marker (e.g. summary requires a
+ *     conclusion sentence; comparison requires comparative wording)
+ *     is absent. Only runs when expected_output is one of
+ *     SYNTHESIS_REQUIRED_OUTPUTS. For null/non-synthesis kinds we
+ *     don't know the expected shape, so the check is skipped.
+ *
+ * Either arm alone marks the violation; checkerReason describes
  * which fired. No extra LLM call.
  *
  * Returns [] when:
- *   - expected_output is missing or not a synthesis kind
  *   - finalText is empty
  *   - no successful tool observation exists (synthesis intent without
  *     tools is the model's free composition; this checker would only
  *     produce false positives)
  *   - every tool observation is below SYNTHESIS_MIN_OBSERVATION_CHARS
  *     (degenerate transcript — nothing material to synthesize from)
+ *   - no arm fired (no raw dump AND shape markers present / not
+ *     applicable)
  */
 export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "") {
   const expected = taskSpec?.synthesis?.expected_output ?? null;
-  if (!expected || !SYNTHESIS_REQUIRED_OUTPUTS.has(expected)) return [];
+  const isSynthesisKind = typeof expected === "string" && SYNTHESIS_REQUIRED_OUTPUTS.has(expected);
+  // Null / undefined / empty → IntentRoute never classified. Treat as
+  // "synthesis-eligible by default" for the raw-dump arm.
+  const isOutputUnclassified = expected === null
+    || expected === undefined
+    || (typeof expected === "string" && expected.trim().length === 0);
+  const armOneEligible = isSynthesisKind || isOutputUnclassified;
+
   const final = String(finalText ?? "").trim();
   if (final.length === 0) return [];
 
@@ -161,19 +195,29 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
   let maxOverlap = 0;
   let anySubstantialObservation = false;
   for (const r of toolResults) {
-    const observation = String(r.observation ?? r.result ?? "");
-    if (observation.length < SYNTHESIS_MIN_OBSERVATION_CHARS) continue;
-    anySubstantialObservation = true;
-    const overlap = bigramOverlap(observation, final);
-    if (overlap > maxOverlap) maxOverlap = overlap;
+    const candidates = [
+      String(r.observation ?? r.result ?? ""),
+      compactMetadataForOverlap(r.metadata)
+    ].filter(Boolean);
+    for (const candidate of candidates) {
+      if (candidate.length < SYNTHESIS_MIN_OBSERVATION_CHARS) continue;
+      anySubstantialObservation = true;
+      const overlap = bigramOverlap(candidate, final);
+      if (overlap > maxOverlap) maxOverlap = overlap;
+    }
   }
 
   // No substantial observation → nothing to synthesize from; skip the
   // check rather than punish the model for a degenerate transcript.
   if (!anySubstantialObservation) return [];
 
-  const isLikelyRawDump = maxOverlap >= SYNTHESIS_OVERLAP_THRESHOLD;
-  const missingExpectedTransformation = !hasShapeMarker(expected, final);
+  const finalLooksLikeRawList = /\n\s*(?:[-*]|\d+[.)、])\s+/.test(final);
+  const finalLongEnoughForRawDump = final.length >= SYNTHESIS_MIN_FINAL_RAW_DUMP_CHARS
+    || finalLooksLikeRawList;
+  const isLikelyRawDump = armOneEligible
+    && finalLongEnoughForRawDump
+    && maxOverlap >= SYNTHESIS_OVERLAP_THRESHOLD;
+  const missingExpectedTransformation = isSynthesisKind && !hasShapeMarker(expected, final);
 
   if (!isLikelyRawDump && !missingExpectedTransformation) return [];
 
@@ -186,18 +230,28 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
   }
   const checkerReason = reasons.join("; ");
 
-  const expectation = SHAPE_MARKERS[expected]?.description ?? "synthesis";
+  const expectationLabel = isSynthesisKind
+    ? (SHAPE_MARKERS[expected]?.description ?? "synthesis")
+    : "synthesis (expected_output unclassified — defensive raw-dump arm)";
   const detail = isLikelyRawDump
     ? `final answer echoes raw tool observations (${(maxOverlap * 100).toFixed(0)}% bigram overlap)`
-    : `final answer lacks ${expectation}`;
+    : `final answer lacks ${expectationLabel}`;
 
+  // P6 F3 followup A: when expected_output was not classified (SR
+  // unavailable or skipped), expected_output stays null but the
+  // raw-dump arm still applies. Synthesis-kind violations stay tagged
+  // with the original `expected_output`; null cases get a synthetic
+  // "raw_dump" label so the audit trail can distinguish "shape check
+  // failed" from "defensive raw-dump fired without classification".
   return [{
     kind: "answer_not_synthesized",
-    expected_output: expected,
+    expected_output: expected ?? "raw_dump",
     isLikelyRawDump,
     missingExpectedTransformation,
     checkerReason,
-    message: `expected_output=${expected} requires synthesis: ${detail}.`
+    message: isSynthesisKind
+      ? `expected_output=${expected} requires synthesis: ${detail}.`
+      : `final answer is a raw tool-observation echo (${(maxOverlap * 100).toFixed(0)}% bigram overlap); a synthesised reply is required.`
   }];
 }
 

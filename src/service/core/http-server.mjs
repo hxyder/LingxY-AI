@@ -14,7 +14,6 @@ import { createArtifactStore } from "../store/artifact-store.mjs";
 import { cancelTask, emitTaskEvent, readTaskEventLog } from "./task-runtime.mjs";
 import { setUserLocation, getUserLocation, clearUserLocation } from "../utils/location.mjs";
 import { refreshWindowsLocation } from "../utils/windows-geolocator.mjs";
-import { tryFastPath } from "./router/fast-path-router.mjs";
 import { submitActionToolTask } from "./action-tool-submission.mjs";
 import { submitBrowserTask } from "./browser-submission.mjs";
 import { submitContextTask } from "./context-submission.mjs";
@@ -1014,27 +1013,6 @@ async function submitTaskFromBody(runtime, body) {
     }
   }
 
-  // UCA-066: Fast-path for deterministic Tier 0/1 actions.
-  // Pure "open app / open URL / copy to clipboard / translate" bypass the
-  // full LLM pipeline entirely and run in < 200ms.
-  // Compound actions ("open X, then do Y") intentionally fall through to the
-  // normal pipeline so llmPlanner can handle both steps in one tool loop.
-  const contextPacket = body.contextPacket ?? { text: body.text ?? "" };
-  const fastPath = tryFastPath(userCommand, contextPacket);
-  if (fastPath?.tier === 0) {
-    return submitActionToolTask({
-      userCommand,
-      executionMode: body.executionMode ?? "interactive",
-      sourceApp: body.sourceApp ?? "uca.http",
-      captureMode: body.captureMode ?? "fast_path",
-      runtime,
-      fastPathTool: fastPath.tool,
-      fastPathArgs: fastPath.args,
-      background
-    });
-  }
-  // Tier 1 (translation) — handled by specialised executor (future: translation_fast)
-  // For now fall through to normal pipeline which will route to translate executor.
   const requestConversationId = typeof body.conversation_id === "string" && body.conversation_id
     ? body.conversation_id
     : (typeof body.conversationId === "string" && body.conversationId ? body.conversationId : null);

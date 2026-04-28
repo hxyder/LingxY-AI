@@ -731,7 +731,8 @@ async function run() {
     assert.equal(typeof DEFAULT_TIMEOUT_MS, "number");
     assert.equal(typeof DEFAULT_CACHE_TTL_MS, "number");
     assert.equal(typeof DEFAULT_CONFIDENCE_THRESHOLD, "number");
-    assert.ok(DEFAULT_TIMEOUT_MS > 0);
+    assert.ok(DEFAULT_TIMEOUT_MS >= 5000,
+      "real hosted providers routinely exceed 1500ms; default SR timeout must not cause systematic sr_timeout");
     assert.ok(DEFAULT_CACHE_TTL_MS >= 60_000);
     assert.ok(DEFAULT_CONFIDENCE_THRESHOLD > 0 && DEFAULT_CONFIDENCE_THRESHOLD < 1);
   });

@@ -50,15 +50,24 @@ function createStubRuntime({ toolRegistry, emittedEvents }) {
   };
 }
 
-function makeTask(userCommand) {
+function makeTask(userCommand, taskSpec = {}) {
   return {
     task_id: `t_${Math.random().toString(36).slice(2, 9)}`,
     user_command: userCommand,
     context_packet: { text: "" },
     route: { executor: "tool_using" },
+    task_spec: taskSpec,
     __runtime: null
   };
 }
+
+const TOOL_REQUIRED_SPEC = {
+  goal: "launch_and_act",
+  success_contract: {
+    tool_called: true,
+    required_tool_names: ["launch_app"]
+  }
+};
 
 // Fake tool registry matching the real surface: list() / get(id) / call(id, args, ctx).
 function makeToolRegistry() {
@@ -108,7 +117,7 @@ async function scenario1() {
   ]);
   // NOT "打开微信" — that matches the tier0 fast-path and bypasses the planner
   // entirely. We want an action-shaped command that takes the LLM route.
-  const task = makeTask("帮我给 bob@example.com 发一封关于下周进度的邮件");
+  const task = makeTask("帮我给 bob@example.com 发一封关于下周进度的邮件", TOOL_REQUIRED_SPEC);
   task.__runtime = runtime;
 
   const result = await runToolAgentLoop({
@@ -149,7 +158,7 @@ async function scenario2() {
   ]);
   // NOT "打开微信" — that matches the tier0 fast-path and bypasses the planner
   // entirely. We want an action-shaped command that takes the LLM route.
-  const task = makeTask("帮我给 bob@example.com 发一封关于下周进度的邮件");
+  const task = makeTask("帮我给 bob@example.com 发一封关于下周进度的邮件", TOOL_REQUIRED_SPEC);
   task.__runtime = runtime;
 
   const result = await runToolAgentLoop({

@@ -1,35 +1,7 @@
-/**
- * UCA-077 P4-04: Tool-policy guard.
- *
- * Two enforcement layers consumed by `registry.call()`:
- *
- *   1. Forbidden enforcement — when `task.task_spec.tool_policy.<toolId>.mode
- *      === "forbidden"`, block execution and audit. The plan / agentic
- *      prompt-builder already TELL the LLM to respect forbidden, but until
- *      this guard existed nothing actually stopped a misbehaving model from
- *      calling the tool anyway.
- *
- *   2. Per-task rate limit — write-side and externally-billed tools get a
- *      hard cap per task to prevent runaway loops or accidental billing
- *      explosions. Default caps live here; a TaskSpec may override via
- *      `task.task_spec.execution_constraints.rate_limit` (Phase 4 future).
- *
- * The guard is intentionally pure-function-shaped. State (counters) lives
- * on the runtime singleton via `runtime.perTaskToolCallCounts` so it
- * survives cross-call recovery without a dedicated store.
- */
-
 import { appendAuditLog } from "../security/audit-log.mjs";
 import { groupsOfTool } from "../core/policy/policy-groups.mjs";
 import { createActionResult } from "./types.mjs";
 
-/**
- * Per-task call caps. Tools missing from this table have no cap.
- *
- * The numbers are intentionally low for write-side / external-billed tools;
- * read-side and local tools are unconstrained because they cannot fan out
- * to a third party. Override via task.task_spec.execution_constraints.
- */
 const DEFAULT_RATE_LIMITS = Object.freeze({
   web_search_fetch: 5,
   fetch_url_content: 8,
@@ -63,18 +35,6 @@ export function applyPolicyGuard(toolId, args, ctx) {
   const runtime = ctx?.runtime ?? null;
   const taskId = task?.task_id ?? null;
 
-  // 1. Forbidden enforcement.
-  //
-  // Two-layer check, in priority order:
-  //   1a. Direct toolId entry — `tool_policy[toolId].mode === "forbidden"`.
-  //       This is what the resolver expands to for back-compat.
-  //   1b. Policy-group entry — `tool_policy.policy_groups[group].mode ===
-  //       "forbidden"` for any group this toolId belongs to. Defense in
-  //       depth (P4-00 / Issue β): if a future caller — including
-  //       SemanticRouter or a manually constructed TaskSpec — emits ONLY a
-  //       group-level decision, the guard still catches sibling tools that
-  //       share the group. This is the wall that closes the
-  //       `web_search_fetch` blocked → `web_search` succeeds bypass.
   const blockingPolicy = findForbiddingPolicy(task?.task_spec?.tool_policy, toolId);
   if (blockingPolicy) {
     const { policy, source } = blockingPolicy;
@@ -92,20 +52,19 @@ export function applyPolicyGuard(toolId, args, ctx) {
       allowed: false,
       result: createActionResult({
         success: false,
-        observation: `Tool "${toolId}" is forbidden by task policy: ${policy.reason ?? "no reason given"}`,
+        observation: `Tool "${toolId}" needs user permission under the current task contract: ${policy.reason ?? "no reason given"}. Ask the user for permission before retrying.`,
         error: "blocked_by_policy",
         metadata: {
           tool_id: toolId,
           policy_mode: "forbidden",
           policy_reason: policy.reason ?? null,
-          policy_source: source
+          policy_source: source,
+          requires_user_permission: true
         }
       })
     };
   }
 
-  // 2. Per-task rate limit. We need a runtime AND a taskId; otherwise we
-  //    cannot maintain a counter (e.g. unit tests that pass a bare ctx).
   const limit = resolveRateLimit(toolId, task);
   if (limit !== null && runtime && taskId) {
     const counts = ensureRuntimeCounter(runtime);

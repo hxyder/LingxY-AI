@@ -62,7 +62,7 @@ assert.ok(selectedItems >= 1, `expected at least 1 active tab/rail item, found $
 // ── switchTab keeps aria-selected in sync ───────────────────────────────
 const consoleJs = read("src/desktop/renderer/console.js");
 assert.ok(
-  /switchTab\b[\s\S]{0,300}setAttribute\(\s*["']aria-selected["']/.test(consoleJs),
+  /switchTab\b[\s\S]{0,700}setAttribute\(\s*["']aria-selected["']/.test(consoleJs),
   "switchTab in console.js must setAttribute aria-selected"
 );
 
