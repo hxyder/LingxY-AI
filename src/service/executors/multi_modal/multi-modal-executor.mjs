@@ -41,18 +41,29 @@ export function providerCanVision(provider) {
   return false;
 }
 
-// Fallback used only when the routed provider is an API that
-// demonstrably has no vision (e.g. a kind:"ollama" with a text-only
-// model) OR when the user explicitly sets supportsVision:false. For
-// kind:"code_cli" we never force a switch — the CLI's own Read tool
-// handles file-based vision.
-function findFallbackVisionProvider() {
+// Fallback used when the routed provider demonstrably cannot handle
+// images (e.g. kind:"ollama" with a text-only model) OR when the user
+// explicitly sets supportsVision:false. Fallback candidates must not be
+// the current provider and must not carry supportsVision:false.
+function sameProvider(candidate = {}, current = {}) {
+  if (!candidate || !current) return false;
+  const currentId = current.configId ?? current.id ?? null;
+  if (candidate.id && currentId) return candidate.id === currentId;
+  if (candidate.kind === "code_cli" && current.kind === "code_cli") {
+    if (candidate.command && current.command && candidate.command === current.command) return true;
+  }
+  return false;
+}
+
+function findFallbackVisionProvider(currentProvider = null) {
   try {
     const configPath = process.env.UCA_CONFIG_PATH
       ?? path.join(os.homedir(), "AppData", "Roaming", "UCA", "config", "runtime.json");
     if (!existsSync(configPath)) return null;
     const config = JSON.parse(readFileSync(configPath, "utf8"));
-    const providers = config.ai?.customProviders ?? [];
+    const providers = (config.ai?.customProviders ?? [])
+      .filter((p) => p?.supportsVision !== false)
+      .filter((p) => !sameProvider(p, currentProvider));
     const override = providers.find((p) => p.supportsVision === true);
     if (override) return override;
     const anthropic = providers.find((p) => p.kind === "anthropic" && p.apiKey);
@@ -231,7 +242,7 @@ export function createMultiModalExecutorScaffold() {
           defaultModel: provider.model ?? provider.defaultModel
         }));
       if (mustSwitch) {
-        const fallback = findFallbackVisionProvider();
+        const fallback = findFallbackVisionProvider(provider);
         if (fallback) {
           const fromName = provider.providerName ?? provider.command ?? "当前 provider";
           yield { event_type: "log", payload: { message: `${fromName} 标记为不支持图片 — 切到 ${fallback.name ?? fallback.kind}。` } };
@@ -245,7 +256,8 @@ export function createMultiModalExecutorScaffold() {
             args: fallback.args,
             transport: fallback.transport,
             model: defaultVisionModelForProvider(fallback),
-            providerName: fallback.name
+            providerName: fallback.name,
+            supportsVision: fallback.supportsVision
           };
         } else {
           yield {
