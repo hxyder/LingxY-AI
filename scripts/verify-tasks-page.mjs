@@ -35,9 +35,17 @@ assert.ok(
 );
 
 // ── renderSummary emits .stat-card cards + sparkline on Today ──────────
+// renderSummary now branches: an idle-mode collapsed strip first
+// (stat-strip--idle / stat-idle-metric) and the full 4-card layout
+// after. The window is widened to cover both branches; the idle branch
+// is asserted separately so future churn there is caught explicitly.
 assert.ok(
-  /function renderSummary\s*\([^)]*\)\s*\{[\s\S]{0,1500}stat-card-label/.test(consoleJs),
+  /function renderSummary\s*\([^)]*\)\s*\{[\s\S]{0,3500}stat-card-label/.test(consoleJs),
   "renderSummary must emit .stat-card-label"
+);
+assert.ok(
+  /stat-strip--idle/.test(consoleJs) && /stat-idle-metric/.test(consoleJs),
+  "renderSummary must support a collapsed idle strip (.stat-strip--idle / .stat-idle-metric)"
 );
 assert.ok(
   /function buildTodaySparkline\s*\(/.test(consoleJs),
@@ -67,8 +75,13 @@ for (const filter of ["all", "running", "queued", "success", "errors"]) {
 // Exactly one chip is pressed PER chip row. With UCA-121 we now have
 // three rows: #taskFilterChips (status), #taskDateFilterChips (date),
 // #taskSourceFilterChips (source). One "pressed" each is expected.
-const pressed = (consoleHtml.match(/filter-chip"[^>]*aria-pressed="true"/g) ?? []).length;
-assert.ok(pressed >= 1 && pressed <= 3, `expected 1-3 pressed filter chips (one per row), found ${pressed}`);
+// Scope: task-related chips only — they carry data-filter / data-date /
+// data-source. Other surfaces (connectors uses data-conn-cat) must not
+// be counted, otherwise unrelated additions break the assertion.
+const pressed = (
+  consoleHtml.match(/<button[^>]*data-(?:filter|date|source)="[^"]+"[^>]*aria-pressed="true"|<button[^>]*aria-pressed="true"[^>]*data-(?:filter|date|source)="[^"]+"/g) ?? []
+).length;
+assert.ok(pressed >= 1 && pressed <= 3, `expected 1-3 pressed task filter chips (one per row), found ${pressed}`);
 
 // ── search input ────────────────────────────────────────────────────────
 assert.ok(/id="taskSearchInput"/.test(consoleHtml), "missing #taskSearchInput");

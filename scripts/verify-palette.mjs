@@ -91,10 +91,12 @@ for (const q of ["translate", "summarize", "explain", "schedule"]) {
   );
 }
 
-// Submits via /task endpoint (reuse existing flow).
+// Submits via /task endpoint (reuse existing flow). Body uses camelCase
+// (userCommand / sourceApp) — UCA-110 follow-up replaced the legacy
+// snake_case payload, so the assertion must match the current shape.
 assert.ok(
-  /fetchJson\("\/task"/.test(consoleJs) && /source_app:\s*"console\.palette"/.test(consoleJs),
-  "palette must submit via POST /task tagged with source_app=console.palette"
+  /fetchJson\("\/task"/.test(consoleJs) && /sourceApp:\s*"console\.palette"/.test(consoleJs),
+  "palette must submit via POST /task tagged with sourceApp=console.palette"
 );
 
 // ── cheatsheet documents Ctrl+K ────────────────────────────────────────
