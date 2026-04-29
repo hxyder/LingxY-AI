@@ -112,12 +112,15 @@ export function createAgenticExecutorScaffold() {
       // the planner's downgrade decision back to success at the runtime
       // layer — same shape of bug G6a fixed in the submission paths.
       yield {
-        event_type: result.downgraded ? "partial_success" : "success",
+        event_type: (result.downgraded || result.waiting_external_decision) ? "partial_success" : "success",
         payload: {
           text: result.finalText,
           summary: (result.finalText || "").slice(0, 200),
           artifact_paths: result.artifactPaths ?? [],
           downgraded: Boolean(result.downgraded),
+          sub_status: result.waiting_external_decision ? "waiting_external_decision" : undefined,
+          pendingApproval: result.pendingApproval ?? null,
+          obligations: result.obligations ?? null,
           violations: result.violations ?? null,
           evidence_summary: result.evidence_summary ?? null
         }

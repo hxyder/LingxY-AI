@@ -22,8 +22,8 @@
  *      shape via `transcriptForValidator`.
  *   2. planner returns `{ downgraded, violations, evidence_summary }`
  *      with violations populated when SuccessContract fails.
- *   3. executor.mjs picks event_type from result.downgraded:
- *      true → "partial_success", false → "success".
+ *   3. executor.mjs picks event_type from result.downgraded or a pending
+ *      external decision: true → "partial_success", false → "success".
  *
  * Run: node scripts/verify-agentic-parity.mjs
  */
@@ -155,10 +155,10 @@ await it("planner imports validateSuccessContract + extractEvidence", () => {
 });
 
 // ── 2. Source-level lock-in: executor picks event_type from downgraded ──
-await it("executor.mjs emits partial_success when result.downgraded", () => {
+await it("executor.mjs emits partial_success when result.downgraded or waiting", () => {
   const exec = loadFile("../src/service/executors/agentic/executor.mjs");
-  assert.match(exec, /event_type: result\.downgraded \? "partial_success" : "success"/,
-    "executor must select event_type based on result.downgraded");
+  assert.match(exec, /event_type:\s*\(result\.downgraded \|\| result\.waiting_external_decision\) \? "partial_success" : "success"/,
+    "executor must select event_type based on result.downgraded or waiting_external_decision");
 });
 
 // ── 3. SuccessContract: web=required + planner skips web tool → downgraded ──
@@ -331,7 +331,7 @@ await it("executor source: legacy success path still emits success when downgrad
   assert.doesNotMatch(exec, /event_type: "success",\s*payload: \{\s*text: result\.finalText,\s*summary:/,
     "executor must not hardcode event_type: 'success' for the final yield");
   // Positive: must use the conditional.
-  assert.match(exec, /result\.downgraded \? "partial_success" : "success"/);
+  assert.match(exec, /\(result\.downgraded \|\| result\.waiting_external_decision\) \? "partial_success" : "success"/);
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

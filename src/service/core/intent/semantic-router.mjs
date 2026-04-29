@@ -125,6 +125,17 @@ const TOOL_CAPABILITIES = Object.freeze([
   "image_generation",
   "none"
 ]);
+const REQUIRED_POLICY_GROUPS = Object.freeze([
+  "external_web_read",
+  "email_send",
+  "calendar_create",
+  "file_upload"
+]);
+const CLEAR_SIDE_EFFECT_POLICY_GROUPS = new Set([
+  "email_send",
+  "calendar_create",
+  "file_upload"
+]);
 const COMPLEXITIES = Object.freeze(["low", "medium", "high"]);
 const RISK_LEVELS = Object.freeze(["low", "medium", "high"]);
 // P4-RQ C2 + K3: research_depth is a SUGGESTION the LLM emits
@@ -182,6 +193,11 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
         items: { type: "string", enum: [...TOOL_CAPABILITIES] },
         maxItems: 6
       },
+      required_policy_groups: {
+        type: "array",
+        items: { type: "string", enum: [...REQUIRED_POLICY_GROUPS] },
+        maxItems: 6
+      },
       source_mode: { type: "string", enum: [...SOURCE_MODES] },
       complexity: { type: "string", enum: [...COMPLEXITIES] },
       risk_level: { type: "string", enum: [...RISK_LEVELS] },
@@ -203,7 +219,7 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
       "executor", "research_depth", "primary_intent", "domain",
       "user_goal", "expected_output", "needs_external_info",
       "needs_current_information", "needs_user_files", "needs_tool_use",
-      "needed_capabilities", "source_mode", "complexity", "risk_level",
+      "needed_capabilities", "required_policy_groups", "source_mode", "complexity", "risk_level",
       "confidence", "rationale_summary", "reason"
     ]
   }
@@ -226,6 +242,7 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
  * @property {boolean}                          needs_user_files
  * @property {boolean}                          needs_tool_use
  * @property {typeof TOOL_CAPABILITIES[number][]} needed_capabilities
+ * @property {typeof REQUIRED_POLICY_GROUPS[number][]} required_policy_groups
  * @property {typeof SOURCE_MODES[number]}      source_mode
  * @property {typeof COMPLEXITIES[number]}      complexity
  * @property {typeof RISK_LEVELS[number]}       risk_level
@@ -486,6 +503,7 @@ function buildMessages({ text, contextPacket, signals }) {
     "- needs_external_info / needs_current_information: true when the answer depends on information outside the current context, especially volatile/current facts. A topic label alone is not a hard rule; use semantic judgement.",
     "- needs_user_files: true when the user asks to use attached/uploaded/local files or selected text.",
     "- needs_tool_use: true when answering well requires a capability outside plain chat. Put capability names in needed_capabilities (for example external_web_read, file_read, artifact_generation), NOT concrete tool IDs such as web_search_fetch.",
+    "- required_policy_groups: execution contracts the final task must satisfy. Include `external_web_read` when current external evidence is load-bearing. Include `email_send`, `calendar_create`, or `file_upload` ONLY when the user clearly wants a real send/create/upload action executed now or by a scheduled firing, not when they merely ask for advice, a draft, a plan, or a tool suggestion. Leave empty when no tool-success contract is required.",
     "- source_mode: no_external for stable/general answers; provided_context for local selection/files; single_lookup for one URL/article/fact; multi_source_research when independent sources matter; deep_research only for explicit depth asks.",
     "- complexity/risk_level: classify execution complexity and user/safety risk. High risk does not mean refuse; it means policy should be careful.",
     "- confidence: be honest. 0.5 means \"could go either way\", 0.9 means \"only one reading fits\". Low confidence triggers a fallback to the deterministic resolver.",
@@ -706,9 +724,39 @@ function normalizeDecisionArguments(decision) {
     if (normalized[field] === "true") normalized[field] = true;
     if (normalized[field] === "false") normalized[field] = false;
   }
+  if (typeof normalized.required_policy_groups === "string") {
+    normalized.required_policy_groups = normalized.required_policy_groups
+      .replaceAll(";", ",")
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
   if (typeof normalized.confidence === "string" && normalized.confidence.trim()) {
     const numeric = Number(normalized.confidence);
     if (Number.isFinite(numeric)) normalized.confidence = numeric;
+  }
+  // Common model drift: form-level values such as `email_draft` belong in
+  // expected_output, not output_kind. Repair the harmless swap so the router
+  // does not fall back to conservative legacy rules for email workflows.
+  if (normalized.output_kind === "email_draft") {
+    normalized.expected_output = "email_draft";
+    normalized.output_kind = "conversation";
+  }
+  // Contract consistency: action policy groups are real side effects. The
+  // user-facing result is the execution state (completed / waiting approval /
+  // failed), not a draft-only shape for the agent to stop on.
+  const actionPolicyGroups = Array.isArray(normalized.required_policy_groups)
+    ? normalized.required_policy_groups.filter((group) => CLEAR_SIDE_EFFECT_POLICY_GROUPS.has(group))
+    : [];
+  if (actionPolicyGroups.length > 0) {
+    if (normalized.expected_output === "email_draft") {
+      normalized.expected_output = "execution";
+    }
+    normalized.needs_tool_use = true;
+    if (Array.isArray(normalized.needed_capabilities)
+        && !normalized.needed_capabilities.includes("email_calendar_action")) {
+      normalized.needed_capabilities = [...normalized.needed_capabilities, "email_calendar_action"];
+    }
   }
   return normalized;
 }
@@ -769,6 +817,14 @@ function validateDecision(decision) {
   for (const capability of decision.needed_capabilities) {
     if (!TOOL_CAPABILITIES.includes(capability)) {
       return { ok: false, reason: `needed_capabilities includes invalid capability: ${capability}` };
+    }
+  }
+  if (!Array.isArray(decision.required_policy_groups)) {
+    return { ok: false, reason: "required_policy_groups must be an array" };
+  }
+  for (const group of decision.required_policy_groups) {
+    if (!REQUIRED_POLICY_GROUPS.includes(group)) {
+      return { ok: false, reason: `required_policy_groups includes invalid group: ${group}` };
     }
   }
   if (!SOURCE_MODES.includes(decision.source_mode)) {
@@ -876,6 +932,7 @@ export {
   EXPECTED_OUTPUTS,
   SOURCE_MODES,
   TOOL_CAPABILITIES,
+  REQUIRED_POLICY_GROUPS,
   COMPLEXITIES,
   RISK_LEVELS,
   DEFAULT_TIMEOUT_MS,

@@ -31,6 +31,16 @@ import {
   validateStepGate,
   detectUnbackedActionClaims
 } from "../../core/policy/success-contract-validator.mjs";
+import {
+  ACTION_OBLIGATION_GROUPS,
+  actionObligationsWithStatus,
+  buildActionObligationGuidance,
+  buildActionObligationPrompt,
+  evaluateActionObligations,
+  findWaitingActionApproval,
+  findWaitingActionApprovalInTranscript,
+  formatWaitingActionFinal
+} from "../../core/policy/obligation-evaluator.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
 import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
@@ -466,12 +476,7 @@ function localFallbackFinal({ task, transcript, reason = "" }) {
     : `I could not collect enough tool results to finish the answer.${reason ? ` Reason: ${reason}` : ""}`.trim();
 }
 
-function taskSpecRequiresPolicyGroup(taskSpec, group) {
-  const groups = taskSpec?.success_contract?.required_policy_groups ?? [];
-  return Array.isArray(groups) && groups.includes(group);
-}
-
-const REQUIRED_ACTION_POLICY_GROUPS = new Set(["email_send"]);
+const REQUIRED_ACTION_POLICY_GROUPS = new Set(ACTION_OBLIGATION_GROUPS);
 
 function missingRequiredActionGroups(stepGate) {
   if (!stepGate || stepGate.next_action !== "continue") return [];
@@ -492,63 +497,17 @@ function missingRequiredActionGroups(stepGate) {
 export function shouldInjectRequiredActionGuidance(stepGate, transcript = []) {
   const groups = missingRequiredActionGroups(stepGate);
   if (groups.length === 0) return [];
-  const toolResults = (transcript ?? []).filter((entry) => entry?.type === "tool_result");
-  if (toolResults.length === 0) return [];
+  void transcript;
   return groups;
 }
 
 function buildRequiredActionGuidance(groups = []) {
-  const lines = [
-    "The success contract is now blocked only by required action policy groups.",
-    "Stop gathering more supporting data unless an action argument is truly missing. Do not return a draft-only final answer."
-  ];
-  if (groups.includes("email_send")) {
-    lines.push(
-      `Call one member of the email_send policy group now: ${toolsInGroup("email_send").join(", ")}.`,
-      "Use the transcript to compose the subject and body. If a connector workflow is available, prefer connector_workflow_run so the user receives the normal confirmation card."
-    );
-  }
-  return lines.join("\n");
-}
-
-function hasCompletedEmailSend(transcript = []) {
-  return (transcript ?? []).some((entry) => {
-    if (entry?.type !== "tool_result") return false;
-    if (entry.success === false) return false;
-    if (entry.tool === "connector_workflow_run") {
-      return entry.metadata?.connector_status === "success";
-    }
-    return entry.tool === "account_send_email"
-      || entry.tool === "send_email_smtp"
-      || entry.tool === "google.gmail.send_email"
-      || entry.tool === "microsoft.outlook.send_email";
-  });
-}
-
-function findPendingEmailApproval(transcript = []) {
-  return [...(transcript ?? [])].reverse().find((entry) =>
-    entry?.type === "tool_result"
-    && entry.tool === "connector_workflow_run"
-    && entry.metadata?.connector_status === "waiting_external_decision"
-    && entry.metadata?.approval?.approval_id
-  ) ?? null;
-}
-
-function pendingEmailApprovalFinal({ task, pending }) {
-  const approvalId = pending?.metadata?.approval?.approval_id ?? "";
-  const zh = hasCjk(task?.user_command ?? "");
-  if (zh) {
-    return [
-      "邮件内容已经整理好，并生成了待确认的发送操作，但还没有真正发出。",
-      approvalId ? `待确认 ID：${approvalId}` : null,
-      "需要在确认卡片里批准后，Gmail 才会执行发送。"
-    ].filter(Boolean).join("\n");
-  }
-  return [
-    "The email content is prepared, but it has not been sent yet.",
-    approvalId ? `Pending approval ID: ${approvalId}` : null,
-    "Approve the confirmation card to let Gmail send it."
-  ].filter(Boolean).join("\n");
+  const obligations = groups.map((group) => ({
+    group,
+    status: "pending",
+    members: toolsInGroup(group)
+  }));
+  return buildActionObligationGuidance(obligations);
 }
 
 async function composeFinalAnswer({ task, transcript, runtime, reason = "" }) {
@@ -556,11 +515,11 @@ async function composeFinalAnswer({ task, transcript, runtime, reason = "" }) {
   const started = Date.now();
   try {
     const taskSpec = task?.task_spec ?? {};
-    const pendingEmailApproval = findPendingEmailApproval(transcript);
-    if (pendingEmailApproval
-        && taskSpecRequiresPolicyGroup(taskSpec, "email_send")
-        && !hasCompletedEmailSend(transcript)) {
-      return pendingEmailApprovalFinal({ task, pending: pendingEmailApproval });
+    const waitingAction = findWaitingActionApproval(
+      evaluateActionObligations(taskSpec, transcript)
+    ) ?? findWaitingActionApprovalInTranscript(transcript);
+    if (waitingAction) {
+      return formatWaitingActionFinal({ task, obligation: waitingAction });
     }
 
     if (typeof runtime?.finalAnswerComposer === "function") {
@@ -1009,6 +968,9 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
     ? `\n\nTool policy:\n${policyLines.map((line) => line.startsWith("  ") ? line : `- ${line}`).join("\n")}`
     : "";
   const requiredContractBlock = renderRequiredContractForPlanner(task);
+  const actionObligationBlock = !leanChatMode
+    ? buildActionObligationPrompt(task.task_spec, transcript)
+    : "";
 
   // P4-RQ C1: research/multi-source coaching for search/research class
   // tasks. Gated on `external_web_read != forbidden` AND no local
@@ -1051,7 +1013,7 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
     : `You are LingxY, a capable desktop AI assistant running ON the user's machine. You have real local-execution tools: launch_app actually starts native applications, open_url actually navigates the user's browser, generate_document actually writes files to disk. You are NOT a "web assistant", "shortcut helper", or "chat-only" persona — refusing to call launch_app on the grounds that you "cannot operate a desktop computer" is wrong; the tools below are exactly that operation. Read the user's request carefully, consider what you have available (tools, workflows, attached resources, connected accounts), and decide how to accomplish their goal. Ask a short clarifying question only when you genuinely cannot proceed faithfully.
 ${resourceHint}
 Available execution tools:
-${toolList}${workflowHint}${requiredContractBlock}
+${toolList}${workflowHint}${requiredContractBlock}${actionObligationBlock}
 
 Use the native call_tool interface when a tool is needed: choose exactly one tool id from the list and pass its arguments as an object. Tool metadata is part of the execution contract: policy groups say which contract applies, risk indicates approval sensitivity, and capabilities say what the tool can actually touch.
 
@@ -1348,8 +1310,18 @@ export function createToolUsingExecutorScaffold() {
           yield { event_type: "inline_result", payload: { text: result.final_text || "任务已完成，但没有生成可显示的答复。" } };
           yield { event_type: "success", payload: { text: result.final_text || "任务已完成，但没有生成可显示的答复。" } };
         } else if (result.status === "waiting_external_decision") {
-          yield { event_type: "inline_result", payload: { text: "等待你的确认。" } };
-          yield { event_type: "success", payload: { text: "已创建待确认操作。" } };
+          const text = result.final_text || "已创建待确认操作，等待你的确认。";
+          yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
+          yield { event_type: "inline_result", payload: { text } };
+          yield {
+            event_type: "partial_success",
+            payload: {
+              text,
+              sub_status: "waiting_external_decision",
+              pendingApproval: result.approval ?? null,
+              obligations: result.obligations ?? null
+            }
+          };
         } else if (result.status === "partial_success") {
           const text = result.final_text || result.error || "任务已停止，但没有完全满足成功条件。";
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
@@ -1503,7 +1475,8 @@ async function _runToolAgentLoopCore({
     task?.task_spec?.execution_constraints?.error_budget
   );
   const firedRunbooks = new Set();
-  let contractActionGuidanceFired = false;
+  let contractActionGuidanceCount = 0;
+  const MAX_CONTRACT_ACTION_GUIDANCE = 2;
   // Soft saturation nudge for multi_source / deep_research tasks. Fires
   // once per task — if the model heeds the hint and changes angle, no
   // further nudges; if it ignores, the existing research-quality
@@ -1577,6 +1550,71 @@ async function _runToolAgentLoopCore({
       }
       if (!candidateFinal) {
         candidateFinal = localFallbackFinal({ task, transcript, reason: "empty_final" });
+      }
+      const actionObligationSpec = task.task_spec ?? task.task_spec_initial;
+      const actionObligations = evaluateActionObligations(actionObligationSpec, transcript, {
+        finalText: candidateFinal,
+        availableToolIds: registry.list().map((tool) => tool.id)
+      });
+      const waitingAction = findWaitingActionApproval(actionObligations)
+        ?? findWaitingActionApprovalInTranscript(transcript);
+      if (waitingAction) {
+        return {
+          status: "waiting_external_decision",
+          final_text: formatWaitingActionFinal({ task, obligation: waitingAction }),
+          approval: waitingAction.approval ?? null,
+          obligations: actionObligations,
+          transcript
+        };
+      }
+      const pendingActionObligations = actionObligationsWithStatus(actionObligations, ["pending"]);
+      if (pendingActionObligations.length > 0) {
+        if (contractActionGuidanceCount < MAX_CONTRACT_ACTION_GUIDANCE && iteration < maxIterations - 1) {
+          contractActionGuidanceCount += 1;
+          const instruction = buildActionObligationGuidance(pendingActionObligations);
+          transcript.push({
+            type: "contract_guidance",
+            groups: pendingActionObligations.map((obligation) => obligation.group),
+            instruction
+          });
+          runtime.emitTaskEvent?.("contract_action_handoff", {
+            iteration,
+            required_policy_groups: pendingActionObligations.map((obligation) => obligation.group),
+            source: "final_gate"
+          });
+          appendAuditLog(runtime, task, "tool_loop.contract_action_handoff", {
+            iteration,
+            required_policy_groups: pendingActionObligations.map((obligation) => obligation.group),
+            source: "final_gate"
+          });
+          continue;
+        }
+        return {
+          status: "partial_success",
+          final_text: localFallbackFinal({
+            task,
+            transcript,
+            reason: `required action obligations still pending: ${pendingActionObligations.map((obligation) => obligation.group).join(", ")}`
+          }),
+          transcript,
+          obligations: actionObligations
+        };
+      }
+      const terminalActionObligations = actionObligationsWithStatus(actionObligations, [
+        "blocked_missing_input",
+        "abandoned_with_reason"
+      ]);
+      if (terminalActionObligations.length > 0) {
+        return {
+          status: "partial_success",
+          final_text: candidateFinal || localFallbackFinal({
+            task,
+            transcript,
+            reason: terminalActionObligations.map((obligation) => `${obligation.group}: ${obligation.reason}`).join("; ")
+          }),
+          transcript,
+          obligations: actionObligations
+        };
       }
       // Phase 1.12 — synthesis bar uses the LATEST spec. SR's enrichment
       // for `expected_output` (summary / comparison / recommendation /
@@ -1797,9 +1835,23 @@ async function _runToolAgentLoopCore({
           approval_id: approval.approval_id,
           tool: tool.id
         });
+        const actionObligations = evaluateActionObligations(
+          task.task_spec ?? task.task_spec_initial,
+          transcript
+        );
+        const waitingAction = findWaitingActionApproval(actionObligations)
+          ?? findWaitingActionApprovalInTranscript(transcript)
+          ?? {
+            group: "action",
+            status: "waiting_approval",
+            tool: tool.id,
+            approval
+          };
         return {
           status: "waiting_external_decision",
           approval,
+          final_text: formatWaitingActionFinal({ task, obligation: waitingAction }),
+          obligations: actionObligations,
           transcript
         };
       }
@@ -1853,6 +1905,22 @@ async function _runToolAgentLoopCore({
       metadata: result.metadata,
       artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
     });
+
+    {
+      const actionObligationSpec = task.task_spec ?? task.task_spec_initial;
+      const actionObligations = evaluateActionObligations(actionObligationSpec, transcript);
+      const waitingAction = findWaitingActionApproval(actionObligations)
+        ?? findWaitingActionApprovalInTranscript(transcript);
+      if (waitingAction) {
+        return {
+          status: "waiting_external_decision",
+          final_text: formatWaitingActionFinal({ task, obligation: waitingAction }),
+          approval: waitingAction.approval ?? null,
+          obligations: actionObligations,
+          transcript
+        };
+      }
+    }
 
     if (!saturationHintFired && shouldCheckSaturation(task)) {
       const sat = detectSearchSaturation(transcript, 3);
@@ -1968,8 +2036,10 @@ async function _runToolAgentLoopCore({
       });
 
       const actionGroups = shouldInjectRequiredActionGuidance(stepGate, transcript);
-      if (!contractActionGuidanceFired && actionGroups.length > 0 && iteration < maxIterations - 1) {
-        contractActionGuidanceFired = true;
+      if (contractActionGuidanceCount < MAX_CONTRACT_ACTION_GUIDANCE
+          && actionGroups.length > 0
+          && iteration < maxIterations - 1) {
+        contractActionGuidanceCount += 1;
         const instruction = buildRequiredActionGuidance(actionGroups);
         transcript.push({
           type: "contract_guidance",

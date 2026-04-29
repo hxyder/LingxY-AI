@@ -28,6 +28,40 @@ export const POLICY_GROUPS = Object.freeze({
     "web_search",
     "web_search_fetch",
     "fetch_url_content"
+  ]),
+
+  /**
+   * Tools/workflows that actually send email. Draft-only helpers are excluded:
+   * a user-visible "sent" contract should be satisfied only by a delivery
+   * path, or by a connector workflow whose metadata reports success.
+   */
+  email_send: Object.freeze([
+    "account_send_email",
+    "send_email_smtp",
+    "connector_workflow_run",
+    "google.gmail.send_email",
+    "microsoft.outlook.send_email"
+  ]),
+
+  /**
+   * Tools/workflows that create a real calendar event. Draft / preview helpers
+   * are excluded; connector workflows count only when their metadata says the
+   * matching calendar workflow completed.
+   */
+  calendar_create: Object.freeze([
+    "account_create_event",
+    "connector_workflow_run",
+    "google.calendar.create_event",
+    "microsoft.calendar.create_event"
+  ]),
+
+  /**
+   * Tools that upload a local file into a connected cloud-drive account.
+   */
+  file_upload: Object.freeze([
+    "account_upload_file",
+    "google.drive.upload_file",
+    "microsoft.onedrive.upload_file"
   ])
 });
 

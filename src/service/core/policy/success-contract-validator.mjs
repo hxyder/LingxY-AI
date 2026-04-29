@@ -22,6 +22,12 @@
  */
 
 import { toolsInGroup } from "./policy-groups.mjs";
+import {
+  ACTION_OBLIGATION_GROUPS,
+  actionGroupHitSatisfies,
+  evaluateActionObligations,
+  workflowMatchesActionGroup
+} from "./obligation-evaluator.mjs";
 import { extractEvidence } from "./evidence-normalizer.mjs";
 import { SYNTHESIS_REQUIRED_OUTPUTS } from "../intent/semantic-router.mjs";
 
@@ -265,9 +271,7 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
  *     contract. When the group exists in `POLICY_GROUPS`, membership
  *     is read from there (single source of truth — adding a new
  *     gmail/outlook tool to `email_send` automatically extends this
- *     guard with no code change). Groups not yet promoted to
- *     `POLICY_GROUPS` carry an inline `tools` fallback so calendar /
- *     upload contracts still apply.
+ *     guard with no code change).
  *
  *   - `claims`: regexes that match phrases asserting the action *was*
  *     performed. Past tense and completion verbs only — "I will send"
@@ -314,14 +318,6 @@ const ACTION_CLAIM_GROUPS = Object.freeze([
     negations: [
       /未\s*创建|无法\s*创建|创建\s*失败/,
       /\b(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+create/i
-    ],
-    // calendar_create is not a POLICY_GROUPS entry yet; fall back to
-    // an inline list so the guard still binds even before the group
-    // is promoted.
-    tools: [
-      "account_create_event",
-      "google.calendar.create_event",
-      "microsoft.calendar.create_event"
     ]
   },
   {
@@ -334,11 +330,6 @@ const ACTION_CLAIM_GROUPS = Object.freeze([
     negations: [
       /未\s*上传|无法\s*上传|上传\s*失败/,
       /\b(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+upload/i
-    ],
-    tools: [
-      "account_upload_file",
-      "google.drive.upload_file",
-      "microsoft.onedrive.upload_file"
     ]
   }
 ]);
@@ -383,7 +374,8 @@ export function detectUnbackedActionClaims(transcript = [], finalText = "") {
         // Workflow runs only count when the connector actually reported
         // success. waiting_external_decision / failed must not satisfy.
         if (!tools.has(ACTION_CLAIM_WORKFLOW_TOOL)) return false;
-        return t?.metadata?.connector_status === "success";
+        return t?.metadata?.connector_status === "success"
+          && workflowMatchesActionGroup(entry.group, t);
       }
       return tools.has(t.tool);
     });
@@ -445,9 +437,31 @@ export function validateSuccessContract(taskSpec, transcript = []) {
   const requiredGroups = Array.isArray(taskSpec?.success_contract?.required_policy_groups)
     ? taskSpec.success_contract.required_policy_groups
     : [];
+  const actionObligationByGroup = new Map(
+    evaluateActionObligations(taskSpec, transcript).map((obligation) => [obligation.group, obligation])
+  );
   for (const group of requiredGroups) {
     const members = toolsInGroup(group);
     if (members.length === 0) continue;
+    if (ACTION_OBLIGATION_GROUPS.includes(group)) {
+      const obligation = actionObligationByGroup.get(group);
+      if (!obligation) continue;
+      if (["satisfied", "blocked_missing_input", "abandoned_with_reason"].includes(obligation.status)) {
+        continue;
+      }
+      if (obligation.status === "waiting_approval") {
+        violations.push({
+          kind: `${group}_required_waiting_confirmation`,
+          message: `success_contract.required_policy_groups includes "${group}"; the connector/tool prepared the action but is still waiting for user confirmation.`
+        });
+        continue;
+      }
+      violations.push({
+        kind: `${group}_required_not_called`,
+        message: `success_contract.required_policy_groups includes "${group}" but the executor never invoked any of: ${members.join(", ")}.`
+      });
+      continue;
+    }
     const memberSet = new Set(members);
     const allCalls = (transcript ?? []).filter(
       (entry) => entry?.type === "tool_result" && memberSet.has(entry?.tool)
@@ -463,16 +477,6 @@ export function validateSuccessContract(taskSpec, transcript = []) {
         ? `success_contract.required_policy_groups includes "${group}" but the executor never invoked any of: ${members.join(", ")}.`
         : `success_contract.required_policy_groups includes "${group}"; tools were called (${allCalls.map((h) => h.tool).join(", ")}) but every call failed (errors: ${allCalls.map((h) => h.error ?? "(none)").join(", ")}).`;
       violations.push({ kind, message });
-      continue;
-    }
-    if (group === "email_send" && successfulHits.some((hit) =>
-      hit?.tool === "connector_workflow_run"
-      && hit?.metadata?.connector_status === "waiting_external_decision"
-    )) {
-      violations.push({
-        kind: "email_send_required_waiting_confirmation",
-        message: "success_contract.required_policy_groups includes \"email_send\"; the connector workflow prepared the email but is still waiting for user confirmation."
-      });
       continue;
     }
     if (!successfulHits.some((hit) => groupHitSatisfies(group, hit))) {
@@ -598,11 +602,8 @@ function isSuccessfulHit(entry) {
 }
 
 function groupHitSatisfies(group, entry) {
-  if (group === "email_send") {
-    if (entry?.tool === "connector_workflow_run") {
-      return entry?.metadata?.connector_status === "success";
-    }
-    return true;
+  if (ACTION_OBLIGATION_GROUPS.includes(group)) {
+    return actionGroupHitSatisfies(group, entry);
   }
   return resultHasSubstance(entry);
 }

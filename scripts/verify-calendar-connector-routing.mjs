@@ -58,8 +58,8 @@ for (const input of HYBRID_REQUESTS) {
 
     const spec = createTaskSpec(input);
     assert.equal(spec.connector_domain, true);
-    assert.equal(spec.tool_policy.policy_groups.external_web_read.mode, "forbidden",
-      "calendar connector reads external account state; it must not become a web-search task");
+    assert.equal(spec.tool_policy.policy_groups.external_web_read.mode, "optional",
+      "calendar connector reads external account state; absent IntentRoute, open-web search should not be required");
     assert.equal(spec.suggested_executor, "tool_using");
   });
 }
@@ -124,6 +124,7 @@ it("IntentRoute email_calendar_action marks connector_domain even without surfac
       needs_user_files: false,
       needs_tool_use: true,
       needed_capabilities: ["email_calendar_action"],
+      required_policy_groups: [],
       source_mode: "single_lookup",
       complexity: "medium",
       risk_level: "medium",
@@ -136,10 +137,10 @@ it("IntentRoute email_calendar_action marks connector_domain even without surfac
   assert.equal(spec.suggested_executor, "tool_using");
 });
 
-it("llmPlanner source runs connector preflight before falling through to chat planner", () => {
+it("default planner source runs connector preflight before web-search fallback", () => {
   const src = readFileSync(path.join(root, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
-  assert.match(src, /task\.task_spec\?\.connector_domain === true[\s\S]{0,220}planConnectorToolCall/,
-    "llmPlanner must call planConnectorToolCall for connector-domain tasks before asking the LLM");
+  assert.match(src, /planDeterministicToolCall[\s\S]{0,320}planConnectorToolCall[\s\S]{0,420}tool_policy\?\.web_search_fetch\?\.mode === "required"/,
+    "default planner must try connector planning before web-search fallback");
 });
 
 it("boundary: assistant availability chat is not a calendar connector request", () => {

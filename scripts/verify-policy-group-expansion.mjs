@@ -133,28 +133,28 @@ async function run() {
 
   // ── 3. connector-domain branch uses the same expansion ─────────────────
   await (async () => {
-    // "查一下我最近的邮件" hits isConnectorDomainRequest (mail). The plan
-    // explicitly calls this path out (Issue α reuses this branch and the
-    // β bypass leaked through it). After P4-00 it MUST emit the full
-    // expansion, even though α's classification itself is unchanged.
+    // "查一下我最近的邮件" hits isConnectorDomainRequest (mail). Connector
+    // capability requests keep open-web optional unless IntentRoute makes it
+    // required, but the branch still MUST emit the full group expansion so
+    // every external_web_read member shares the same mode.
     const spec = createTaskSpec("查一下我最近的邮件", {}, {});
-    it("connector-domain: forbidden expanded across every group member", () => {
+    it("connector-domain: optional expanded across every group member", () => {
       for (const toolId of toolsInGroup("external_web_read")) {
         assert.equal(
           spec.tool_policy?.[toolId]?.mode,
-          "forbidden",
-          `${toolId} not forbidden in connector-domain branch`
+          "optional",
+          `${toolId} not optional in connector-domain branch`
         );
       }
       assert.equal(
         spec.tool_policy?.policy_groups?.external_web_read?.mode,
-        "forbidden"
+        "optional"
       );
     });
     it("connector-domain: reason mentions connector tools (not lost in expansion)", () => {
       assert.match(
         spec.tool_policy?.web_search_fetch?.reason ?? "",
-        /Connector domain/i
+        /Connector capability/i
       );
     });
   })();

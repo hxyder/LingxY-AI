@@ -295,6 +295,61 @@ export function classifyGoal(text, signals = null) {
   return "qa";
 }
 
+const NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE = new Set([
+  "email_send",
+  "calendar_create",
+  "file_upload"
+]);
+const CLEAR_SIDE_EFFECT_POLICY_GROUPS = new Set([
+  "email_send",
+  "calendar_create",
+  "file_upload"
+]);
+
+function requiredPolicyGroupsFromIntentRoute(decision = null) {
+  if (!decision || typeof decision !== "object") return [];
+  const groups = Array.isArray(decision.required_policy_groups)
+    ? decision.required_policy_groups
+    : [];
+  return [...new Set(groups.filter((group) => NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE.has(group)))];
+}
+
+function expectedOutputFromIntentRoute(decision = null) {
+  if (!decision || typeof decision !== "object") return null;
+  const expected = typeof decision.expected_output === "string"
+    ? decision.expected_output
+    : null;
+  const groups = Array.isArray(decision.required_policy_groups)
+    ? decision.required_policy_groups
+    : [];
+  if (groups.some((group) => CLEAR_SIDE_EFFECT_POLICY_GROUPS.has(group))
+      && expected === "email_draft") {
+    return "execution";
+  }
+  return expected;
+}
+
+function shouldRelaxConnectorWebPolicy({ connectorDomainRequest, srDecision, signals }) {
+  if (!connectorDomainRequest) return false;
+  if (srDecision && typeof srDecision === "object") return false;
+  if (signals?.explicit_external?.matched) return false;
+  if (signals?.explicit_single_url?.matched) return false;
+  return true;
+}
+
+function relaxConnectorWebPolicy(policy) {
+  const mode = policy?.policy_groups?.external_web_read?.mode
+    ?? policy?.web_search_fetch?.mode;
+  if (mode !== "required") return policy;
+  return buildExternalWebReadPolicy(
+    "optional",
+    "Connector capability request: connected-account tools own the external account state; open-web evidence remains optional unless IntentRoute requires it.",
+    [
+      { type: "context", source: "connector-intent", reason: "connector domain is a capability axis, not an open-web requirement" }
+    ]
+  );
+}
+
 // ---------------------------------------------------------------------------
 // UCA-077 P1-05: WEB_DATA_PATTERNS / needsCurrentWebData() were removed.
 //
@@ -569,25 +624,21 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
       goal === "analyze_and_report" ||
       goal === "transform_existing_file");
 
-  // Connector domain requests bypass external web — their reads happen
-  // through the connector tools, never through web_search_fetch.
-  // P4-00: route through buildExternalWebReadPolicy so the connector branch
-  // emits the same group-level + per-toolId expansion as the resolver. Past
-  // bug (Issue β / RR-03): hand-built `{ web_search_fetch: forbidden }`
-  // didn't cover sibling `web_search` / `fetch_url_content` and the LLM
-  // bypassed the wall by switching tools.
   const srDecision = enrichedContext?.semantic_router_decision;
   const srRejection = enrichedContext?.semantic_router_rejection;
   const pureLaunchApp = extractPureLaunchApp(text);
   const connectorDomainRequest = (!pureLaunchApp && isConnectorDomainRequest(text))
     || intentRouteNeedsConnector(srDecision);
-  const rawPolicy = connectorDomainRequest
-    ? buildExternalWebReadPolicy(
-        "forbidden",
-        "Connector domain request — connector tools read external state directly.",
-        [{ type: "context", source: "connector-intent", reason: "isConnectorDomainRequest" }]
-      )
-    : resolveToolPolicy({ signals, contextPacket: enrichedContext, text });
+  // Connector intent is a capability axis, not a web-policy axis. Earlier
+  // versions treated any connector request as "external_web_read=forbidden",
+  // which broke compound workflows such as "research current market data,
+  // then email it". Let resolveToolPolicy + SemanticRouter/EvidencePolicy
+  // decide the web axis, while connector_domain only keeps connector tools
+  // in the executor's planning surface.
+  const resolvedPolicy = resolveToolPolicy({ signals, contextPacket: enrichedContext, text });
+  const rawPolicy = shouldRelaxConnectorWebPolicy({ connectorDomainRequest, srDecision, signals })
+    ? relaxConnectorWebPolicy(resolvedPolicy)
+    : resolvedPolicy;
   // P4-00.6: enforce the policy_groups ↔ per-toolId invariant. Today
   // every emitter is consistent, but this is the single guarantee point
   // for future write paths (SemanticRouter, hand-built test policies).
@@ -610,6 +661,9 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
         source_mode: srDecision.source_mode ?? null,
         needed_capabilities: Array.isArray(srDecision.needed_capabilities)
           ? srDecision.needed_capabilities
+          : [],
+        required_policy_groups: Array.isArray(srDecision.required_policy_groups)
+          ? srDecision.required_policy_groups
           : [],
         needs_external_info: srDecision.needs_external_info ?? null,
         needs_current_information: srDecision.needs_current_information ?? null,
@@ -777,14 +831,15 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     user_goal: typeof srDecision?.user_goal === "string" && srDecision.user_goal.trim()
       ? srDecision.user_goal.trim()
       : text,
-    expected_output: typeof srDecision?.expected_output === "string"
-      ? srDecision.expected_output
-      : null,
+    expected_output: expectedOutputFromIntentRoute(srDecision),
     primary_intent: typeof srDecision?.primary_intent === "string"
       ? srDecision.primary_intent
       : null
   };
   const executionConstraints = buildResearchExecutionConstraints(researchQuality);
+
+  const srRequiredPolicyGroups = requiredPolicyGroupsFromIntentRoute(srDecision);
+  const mustUseTools = goal !== "qa" || connectorDomainRequest || srRequiredPolicyGroups.length > 0;
 
   const partialSpec = {
     goal,
@@ -810,20 +865,20 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     constraints: {
       language: "zh-CN",
       can_split: !artifactRequired && !["generate_document", "analyze_and_report", "transform_existing_file"].includes(goal),
-      must_use_tools: goal !== "qa",
+      must_use_tools: mustUseTools,
       must_verify_artifact: artifactRequired
     },
     required_steps: [],
     success_contract: {
       artifact_created: artifactRequired,
       artifact_registered: artifactRequired,
-      tool_called: goal !== "qa",
+      tool_called: mustUseTools,
       required_tool_names: [],
       // P4-00.7: group-level requirements. Validator counts any member of
       // the group as satisfying the requirement — used so the LLM can pick
       // fetch_url_content or web_search when web_search_fetch returns
       // nothing without tripping the success contract.
-      required_policy_groups: []
+      required_policy_groups: srRequiredPolicyGroups
     },
     intent_tags: mergedIntentTags,
     suggested_formats: mergedSuggestedFormats

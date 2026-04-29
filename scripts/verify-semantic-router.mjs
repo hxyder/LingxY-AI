@@ -75,6 +75,7 @@ const validDecision = Object.freeze({
   needs_user_files: false,
   needs_tool_use: true,
   needed_capabilities: ["external_web_read"],
+  required_policy_groups: ["external_web_read"],
   source_mode: "multi_source_research",
   complexity: "medium",
   risk_level: "low",
@@ -367,6 +368,34 @@ async function run() {
     assert.equal(out.kind, "decision");
     assert.equal(out.source, "provider");
   });
+  await it("schema: repairs email_draft when model puts it in output_kind", async () => {
+    const adapter = decisionAdapter({
+      ...validDecision,
+      output_kind: "email_draft",
+      expected_output: "execution",
+      required_policy_groups: ["email_send"]
+    });
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "send a market summary by email" });
+    assert.equal(out.kind, "decision");
+    assert.equal(out.decision.output_kind, "conversation");
+    assert.equal(out.decision.expected_output, "execution");
+    assert.deepEqual(out.decision.required_policy_groups, ["email_send"]);
+  });
+  await it("schema: email_send contract cannot be normalized to draft-only output", async () => {
+    const adapter = decisionAdapter({
+      ...validDecision,
+      output_kind: "conversation",
+      expected_output: "email_draft",
+      needs_tool_use: false,
+      needed_capabilities: [],
+      required_policy_groups: ["email_send"]
+    });
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "send this by email" });
+    assert.equal(out.kind, "decision");
+    assert.equal(out.decision.expected_output, "execution");
+    assert.equal(out.decision.needs_tool_use, true);
+    assert.ok(out.decision.needed_capabilities.includes("email_calendar_action"));
+  });
 
   // ── 15. adapter exception ──────────────────────────────────────────────
   await it("exception: adapter throws → rejection code=exception (no rethrow)", async () => {
@@ -580,7 +609,7 @@ async function run() {
       "executor", "research_depth", "primary_intent", "domain",
       "user_goal", "expected_output", "needs_external_info",
       "needs_current_information", "needs_user_files", "needs_tool_use",
-      "needed_capabilities", "source_mode", "complexity", "risk_level",
+      "needed_capabilities", "required_policy_groups", "source_mode", "complexity", "risk_level",
       "confidence", "rationale_summary", "reason"
     ]) {
       assert.ok(SEMANTIC_DECISION_TOOL.input_schema.properties[f], `schema missing property ${f}`);
@@ -590,7 +619,7 @@ async function run() {
     for (const f of [
       "primary_intent", "domain", "user_goal", "expected_output",
       "needs_external_info", "needs_current_information", "needs_user_files",
-      "needs_tool_use", "needed_capabilities", "source_mode", "complexity",
+      "needs_tool_use", "needed_capabilities", "required_policy_groups", "source_mode", "complexity",
       "risk_level", "rationale_summary"
     ]) {
       assert.ok(SEMANTIC_DECISION_TOOL.input_schema.required.includes(f),
@@ -600,6 +629,9 @@ async function run() {
     assert.ok(capabilities.includes("external_web_read"));
     assert.ok(!capabilities.includes("web_search_fetch"),
       "SR emits capabilities, not concrete tool IDs");
+    const policyGroups = SEMANTIC_DECISION_TOOL.input_schema.properties.required_policy_groups.items.enum;
+    assert.ok(policyGroups.includes("external_web_read"));
+    assert.ok(policyGroups.includes("email_send"));
   });
   await it("IntentRoute: invalid capability rejected by validator", async () => {
     const adapter = decisionAdapter({ ...validDecision, needed_capabilities: ["web_search_fetch"] });

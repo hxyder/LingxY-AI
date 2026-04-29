@@ -235,6 +235,8 @@ let streamingBubbleRawText = "";
 let pendingToolStepBubbles = {}; // { toolId: [stepEl, ...] } — updated by tool_call_completed
 let activeClarificationBubble = null;
 const approvalPopupCardIds = new Map(); // approvalId -> popup card id
+const surfacedApprovalPopupIds = new Set();
+const surfacingApprovalPopupIds = new Set();
 let taskSummaries = [];
 let taskListFilter = "all";
 let lastTaskSummaryRefresh = 0;
@@ -1986,6 +1988,64 @@ function formatDateTime(value) {
   return date.toLocaleTimeString("zh-CN", { hour12: false });
 }
 
+function approvalIdOf(value = {}) {
+  return value.approval_id ?? value.approvalId ?? value.id ?? null;
+}
+
+async function fetchApprovalRecord(approvalId) {
+  if (!approvalId) return null;
+  try {
+    const response = await fetchJson("/approvals");
+    return (response.approvals ?? []).find((item) => approvalIdOf(item) === approvalId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function surfaceApprovalPopup(approvalLike = {}, { taskId = null } = {}) {
+  const approvalId = approvalIdOf(approvalLike);
+  if (!approvalId || surfacedApprovalPopupIds.has(approvalId) || surfacingApprovalPopupIds.has(approvalId)) return;
+  surfacingApprovalPopupIds.add(approvalId);
+  const fullApproval = await fetchApprovalRecord(approvalId);
+  const approval = fullApproval ?? approvalLike;
+  if (approval.status && approval.status !== "pending") {
+    surfacingApprovalPopupIds.delete(approvalId);
+    return;
+  }
+  const target = approval.proposed_target ?? approval.workflow_id ?? approvalLike.workflow_id ?? "";
+  const preview = approval.preview_text ?? approval.summary ?? approval.preview ?? approvalLike.summary ?? "工具调用需要您的确认";
+  try {
+    if (typeof window.ucaShell?.showPopupCard !== "function") return;
+    const popupResult = await window.ucaShell.showPopupCard({
+      kind: "approval",
+      approvalId,
+      taskId: taskId ?? approval.metadata?.task_id ?? approvalLike.task_id ?? null,
+      title: target ? `等待确认：${target}` : "等待用户确认",
+      lines: [preview],
+      openWindow: "overlay"
+    });
+    if (popupResult?.cardId) approvalPopupCardIds.set(approvalId, popupResult.cardId);
+    surfacedApprovalPopupIds.add(approvalId);
+  } catch {
+    /* popup card is optional */
+  } finally {
+    surfacingApprovalPopupIds.delete(approvalId);
+  }
+}
+
+async function reconcilePendingApprovalPopups() {
+  try {
+    const response = await fetchJson("/approvals");
+    for (const approval of response.approvals ?? []) {
+      if (approval?.status === "pending") {
+        void surfaceApprovalPopup(approval, { taskId: approval.metadata?.task_id ?? null });
+      }
+    }
+  } catch {
+    /* runtime not ready */
+  }
+}
+
 // Compact relative time used inside chat bubbles. Promoted on a 30-second
 // timer (refreshChatTimestamps) so "刚刚" eventually becomes "1 分钟前"
 // without re-rendering the bubble.
@@ -2180,28 +2240,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     renderInlineApproval(frame);
     if (!showOverlay) timelineAddStep("等待用户确认", "active");
     if (showOverlay) void maybeRevealOverlay();
-    // Floating popup card (non-blocking, stackable). The inline overlay UI
-    // stays authoritative; the popup is a convenience surface so the user
-    // doesn't miss approvals when the overlay isn't in view.
-    try {
-      const data = frame.data ?? {};
-      if (shouldSurfaceTaskPopupCards()) {
-        Promise.resolve(window.ucaShell?.showPopupCard?.({
-          kind: "approval",
-          approvalId: data.approval_id ?? data.approvalId,
-          taskId: frame.task_id ?? data.task_id,
-          title: data.proposed_target ? `等待确认：${data.proposed_target}` : "等待用户确认",
-          lines: [
-            data.summary ?? data.workflow_id ?? "工具调用需要您的确认",
-            data.preview ?? null
-          ].filter(Boolean)
-        })).then((popupResult) => {
-          if (popupResult?.cardId) {
-            approvalPopupCardIds.set(data.approval_id ?? data.approvalId, popupResult.cardId);
-          }
-        }).catch(() => {});
-      }
-    } catch { /* popup card is optional */ }
+    void surfaceApprovalPopup(frame.data ?? {}, { taskId: frame.task_id ?? frame.data?.task_id ?? null });
   }
 
   if (frame.event === "failed" || frame.event === "cancelled") {
@@ -7148,6 +7187,7 @@ window.ucaShell.onShellReady((payload) => {
     refreshStatus();
     void syncProjectStoreFromService({ render: false });
     refreshTaskSummaries(true).then(renderTaskListDock);
+    void reconcilePendingApprovalPopups();
     showWelcome();
   }
 });
@@ -7352,7 +7392,9 @@ restoreConversation();
 showWelcome();
 refreshStatus();
 void syncProjectStoreFromService({ render: false });
+void reconcilePendingApprovalPopups();
 setInterval(refreshActiveTask, 2000);
+setInterval(reconcilePendingApprovalPopups, 6000);
 
 // Promote chat-bubble timestamps from "刚刚" → "1 分钟前" → … without
 // re-rendering the message. Cheap; only walks visible <time> nodes.

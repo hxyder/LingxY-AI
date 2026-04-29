@@ -735,6 +735,8 @@ let consoleChatProgressEventIds = new Set();
 let consoleActiveConversation = null;
 const scheduleRunTaskWatchers = new Map();
 const completedScheduleRunTaskIds = new Set();
+const surfacedApprovalPopupIds = new Set();
+const surfacingApprovalPopupIds = new Set();
 let editingSkillPath = null;
 
 /* ═══════════════════════════════════════════════
@@ -1612,6 +1614,10 @@ function subscribeConsoleChatTask(taskId) {
       const payload = frame.data ?? {};
       if (frame.event === "reasoning_delta") {
         appendConsoleChatThinkingDelta(payload.delta ?? "");
+      } else if (frame.event === "pending_approval_created") {
+        void surfaceApprovalPopup(payload, { taskId });
+        appendConsoleChatProgress(frame);
+        void refreshWorkspace();
       } else if (frame.event === "text_delta") {
         appendConsoleChatTextDelta(taskId, payload.delta ?? payload.text ?? "");
         consoleChatState.textContent = "Answering...";
@@ -1706,6 +1712,58 @@ function subscribeConsoleChatTask(taskId) {
 function closeScheduleRunTaskWatcher(taskId) {
   scheduleRunTaskWatchers.get(taskId)?.close?.();
   scheduleRunTaskWatchers.delete(taskId);
+}
+
+function approvalIdOf(value = {}) {
+  return value.approval_id ?? value.approvalId ?? value.id ?? null;
+}
+
+async function fetchApprovalRecord(approvalId) {
+  if (!approvalId) return null;
+  try {
+    const response = await fetchJson("/approvals");
+    return (response.approvals ?? []).find((item) => approvalIdOf(item) === approvalId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function surfaceApprovalPopup(approvalLike = {}, { taskId = null } = {}) {
+  const approvalId = approvalIdOf(approvalLike);
+  if (!approvalId || surfacedApprovalPopupIds.has(approvalId)) return;
+  if (surfacingApprovalPopupIds.has(approvalId)) return;
+  surfacingApprovalPopupIds.add(approvalId);
+  const fullApproval = await fetchApprovalRecord(approvalId);
+  const approval = fullApproval ?? approvalLike;
+  if (approval.status && approval.status !== "pending") {
+    surfacingApprovalPopupIds.delete(approvalId);
+    return;
+  }
+  const target = approval.proposed_target ?? approval.workflow_id ?? approvalLike.workflow_id ?? "";
+  const preview = approval.preview_text ?? approval.summary ?? approvalLike.summary ?? "请先确认后再执行。";
+  try {
+    if (typeof window.ucaShell?.showPopupCard !== "function") return;
+    await window.ucaShell.showPopupCard({
+      kind: "approval",
+      approvalId,
+      taskId: taskId ?? approval.metadata?.task_id ?? approvalLike.task_id ?? null,
+      title: target ? `等待确认：${target}` : "等待用户确认",
+      lines: [preview],
+      openWindow: "console"
+    });
+    surfacedApprovalPopupIds.add(approvalId);
+  } catch {
+    /* optional */
+  } finally {
+    surfacingApprovalPopupIds.delete(approvalId);
+  }
+}
+
+function surfaceNewWorkspaceApprovals(approvals = []) {
+  const pending = (approvals ?? []).filter((approval) => approval?.status === "pending");
+  for (const approval of pending) {
+    void surfaceApprovalPopup(approval, { taskId: approval.metadata?.task_id ?? null });
+  }
 }
 
 function buildScheduleRunCompletionCopy(task = {}) {
@@ -1813,6 +1871,10 @@ function watchScheduleRunTask(task = {}) {
   const stream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
     onEvent(rawEvent) {
       const frame = toTaskEventFrame(rawEvent);
+      if (frame.event === "pending_approval_created") {
+        void surfaceApprovalPopup(frame.data ?? {}, { taskId });
+        void refreshWorkspace();
+      }
       if (["success", "partial_success", "failed", "cancelled"].includes(frame.event)) {
         void settleScheduleRunTask(taskId);
       }
@@ -3596,6 +3658,10 @@ async function handleSelectedTaskEventFrame(rawEvent) {
   const frame = toTaskEventFrame(rawEvent);
   if (frame.id && handledSelectedTaskEventIds.has(frame.id)) return;
   if (frame.id) handledSelectedTaskEventIds.add(frame.id);
+  if (frame.event === "pending_approval_created") {
+    void surfaceApprovalPopup(frame.data ?? {}, { taskId: state.selectedTaskId });
+    void refreshWorkspace();
+  }
 
   const updated = updateTaskInWorkspace(state.selectedTaskId, frame);
   if (updated) { renderSummary(); renderTasks(); }
@@ -5647,6 +5713,7 @@ async function refreshWorkspace() {
       audit: auditP.entries ?? [],
       dagExecutions: dagP.executions ?? []
     };
+    surfaceNewWorkspaceApprovals(state.workspace.approvals);
 
     setRuntimeBadge(true, `Connected · ${state.serviceBaseUrl}`);
     updateTopRuntimePill();
@@ -6597,6 +6664,12 @@ window.ucaShell.onShortcutTriggered((payload) => {
 });
 
 window.ucaShell.onShellReady(() => void refreshWorkspace());
+
+window.ucaShell?.onPopupCardResolved?.((payload) => {
+  if (payload?.kind === "approval") {
+    void refreshWorkspace();
+  }
+});
 
 window.ucaShell.onWindowFocused((payload) => {
   if (payload.windowId === "console") void refreshWorkspace();

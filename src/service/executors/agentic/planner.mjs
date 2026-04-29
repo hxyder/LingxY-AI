@@ -55,6 +55,14 @@ import { extractEvidence, detectSearchSaturation } from "../../core/policy/evide
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
 import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
+import {
+  actionObligationsWithStatus,
+  buildActionObligationGuidance,
+  evaluateActionObligations,
+  findWaitingActionApproval,
+  findWaitingActionApprovalInTranscript,
+  formatWaitingActionFinal
+} from "../../core/policy/obligation-evaluator.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
 
@@ -525,6 +533,8 @@ export async function runAgenticPlanner({
     task?.task_spec?.execution_constraints?.error_budget
   );
   let earlyExitState = null;
+  let contractActionGuidanceCount = 0;
+  const MAX_CONTRACT_ACTION_GUIDANCE = 2;
   // Soft saturation nudge for multi_source / deep_research tasks. Same
   // shape as tool_using's hint — fires once per task as a system note in
   // the next message so the model can decide whether to switch angles or
@@ -642,6 +652,17 @@ export async function runAgenticPlanner({
     messages.push({ role: "user", content: userContent });
   }
 
+  const initialPendingActionObligations = actionObligationsWithStatus(
+    evaluateActionObligations(task?.task_spec, transcript),
+    ["pending"]
+  );
+  if (initialPendingActionObligations.length > 0) {
+    messages.push({
+      role: "user",
+      content: `[Action obligations]\n${buildActionObligationGuidance(initialPendingActionObligations)}`
+    });
+  }
+
   const toolSchemas = effectiveTools.map(toolDescriptorForAdapter);
 
   let finalText = "";
@@ -714,6 +735,54 @@ export async function runAgenticPlanner({
       : null;
 
     if (toolCalls.length === 0) {
+      const validatorTx = transcriptForValidator(transcript);
+      const obligations = evaluateActionObligations(task?.task_spec, validatorTx, {
+        finalText: text,
+        availableToolIds: effectiveTools.map((tool) => tool.id)
+      });
+      const waitingAction = findWaitingActionApproval(obligations)
+        ?? findWaitingActionApprovalInTranscript(validatorTx);
+      if (waitingAction) {
+        earlyExitState = {
+          kind: "waiting_external_decision",
+          obligation: waitingAction
+        };
+        finalText = formatWaitingActionFinal({ task, obligation: waitingAction });
+        break;
+      }
+      const pendingActionObligations = actionObligationsWithStatus(obligations, ["pending"]);
+      if (pendingActionObligations.length > 0
+          && contractActionGuidanceCount < MAX_CONTRACT_ACTION_GUIDANCE
+          && iterations < maxIterations - 1) {
+        contractActionGuidanceCount += 1;
+        if (text && text.trim()) {
+          messages.push({ role: "assistant", content: text });
+          transcript.push({ role: "assistant", text });
+        }
+        messages.push({
+          role: "user",
+          content: `[Required action handoff]\n${buildActionObligationGuidance(pendingActionObligations)}`
+        });
+        onEvent?.({
+          event_type: "contract_action_handoff",
+          payload: {
+            iteration: iterations,
+            required_policy_groups: pendingActionObligations.map((obligation) => obligation.group),
+            source: "final_gate"
+          }
+        });
+        continue;
+      }
+      const terminalActionObligations = actionObligationsWithStatus(obligations, [
+        "blocked_missing_input",
+        "abandoned_with_reason"
+      ]);
+      if (terminalActionObligations.length > 0) {
+        earlyExitState = {
+          kind: "action_obligation_terminal",
+          obligations: terminalActionObligations
+        };
+      }
       finalText = text;
       break;
     }
@@ -798,6 +867,21 @@ export async function runAgenticPlanner({
         metadata: result.metadata ?? {},
         artifact_paths: result.artifact_paths ?? []
       });
+
+      {
+        const validatorTx = transcriptForValidator(transcript);
+        const waitingAction = findWaitingActionApproval(
+          evaluateActionObligations(task?.task_spec, validatorTx)
+        ) ?? findWaitingActionApprovalInTranscript(validatorTx);
+        if (waitingAction) {
+          earlyExitState = {
+            kind: "waiting_external_decision",
+            obligation: waitingAction
+          };
+          finalText = formatWaitingActionFinal({ task, obligation: waitingAction });
+          break;
+        }
+      }
 
       // J2: per-tool controls via the shared helper. Same checks as
       // tool_using/agent-loop:1224-1331; previously inlined here, now
@@ -939,12 +1023,31 @@ export async function runAgenticPlanner({
   let downgraded = false;
   let violations = null;
   const validatorTranscript = transcriptForValidator(transcript);
+  const actionObligationTerminal = earlyExitState?.kind === "action_obligation_terminal"
+    ? earlyExitState.obligations
+    : null;
+  const waitingObligation = earlyExitState?.kind === "waiting_external_decision"
+    ? earlyExitState.obligation
+    : findWaitingActionApprovalInTranscript(validatorTranscript);
+  const waitingExternalDecision = Boolean(waitingObligation);
+  if (waitingExternalDecision) {
+    finalText = formatWaitingActionFinal({ task, obligation: waitingObligation });
+  }
+  if (actionObligationTerminal?.length > 0) {
+    downgraded = true;
+    violations = (violations ?? []).concat(actionObligationTerminal.map((obligation) => ({
+      kind: `${obligation.group}_${obligation.status}`,
+      message: `Required action obligation ${obligation.group} ended as ${obligation.status}: ${obligation.reason ?? ""}`.trim()
+    })));
+  }
 
-  if (finalText && claimsCompletion(finalText) && !anyToolSucceeded(transcript)) {
+  if (!waitingExternalDecision && finalText && claimsCompletion(finalText) && !anyToolSucceeded(transcript)) {
     downgraded = true;
     finalText = `⚠️ The model claimed the task was completed, but no tool in this run returned success. The claim has been downgraded to "partial". See the transcript for what actually happened.\n\n---\n\n${finalText}`;
   }
-  const actionClaimViolations = detectUnbackedActionClaims(validatorTranscript, finalText);
+  const actionClaimViolations = waitingExternalDecision
+    ? []
+    : detectUnbackedActionClaims(validatorTranscript, finalText);
   if (actionClaimViolations.length > 0) {
     downgraded = true;
     violations = (violations ?? []).concat(actionClaimViolations);
@@ -970,7 +1073,9 @@ export async function runAgenticPlanner({
   // research_quality coverage thresholds (D3). If unsatisfied, downgrade
   // — independent from the truthfulness guard above; both can fire and
   // both messages are surfaced.
-  const contract = validateSuccessContract(task?.task_spec, validatorTranscript);
+  const contract = (waitingExternalDecision || actionObligationTerminal?.length > 0)
+    ? { satisfied: true, violations: [] }
+    : validateSuccessContract(task?.task_spec, validatorTranscript);
   if (!contract.satisfied) {
     downgraded = true;
     violations = (violations ?? []).concat(contract.violations);
@@ -987,11 +1092,13 @@ export async function runAgenticPlanner({
   // shape used by tool_using is not symmetrical to agentic, which uses
   // a single LLM finalize step — so for agentic the v1 behaviour is
   // "downgrade + visible reason", not "regenerate".
-  const synthesisViolations = validateAnswerSynthesis(
-    task?.task_spec,
-    validatorTranscript,
-    finalText
-  );
+  const synthesisViolations = waitingExternalDecision
+    ? []
+    : validateAnswerSynthesis(
+      task?.task_spec,
+      validatorTranscript,
+      finalText
+    );
   if (synthesisViolations.length > 0) {
     downgraded = true;
     violations = (violations ?? []).concat(synthesisViolations);
@@ -1010,7 +1117,9 @@ export async function runAgenticPlanner({
   // messages stack and tell the user what happened.
   let phaseGate = null;
   let errorBudgetDiag = null;
-  if (earlyExitState) {
+  if (earlyExitState
+      && earlyExitState.kind !== "waiting_external_decision"
+      && earlyExitState.kind !== "action_obligation_terminal") {
     downgraded = true;
     if (earlyExitState.kind === "error_budget_exhausted") {
       errorBudgetDiag = earlyExitState.error_budget;
@@ -1028,13 +1137,16 @@ export async function runAgenticPlanner({
   }
 
   return {
-    success: !downgraded && Boolean(finalText),
+    success: !waitingExternalDecision && !downgraded && Boolean(finalText),
     finalText: finalText || "(no response from agentic planner)",
     toolCalls: transcript.filter((entry) => entry.role === "tool"),
     artifactPaths,
     provider_descriptor: descriptor,
     iterations: iterations + 1,
     downgraded,
+    waiting_external_decision: waitingExternalDecision,
+    pendingApproval: waitingObligation?.approval ?? null,
+    obligations: waitingObligation ? [waitingObligation] : null,
     violations,
     evidence_summary: evidenceSummary,
     phase_gate: phaseGate,

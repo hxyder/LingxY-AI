@@ -28,7 +28,8 @@
  *                  conventional implication.
  *   hint         — { web_policy, source_scope, research_depth,
  *                    output_kind, executor, primary_intent,
- *                    source_mode, needed_capabilities, confidence } —
+ *                    source_mode, needed_capabilities,
+ *                    required_policy_groups, confidence } —
  *                  the routing axes consumers may want to read.
  *   evidence     — single entry pointing back at SR with a
  *                  truncated reason for trace.
@@ -79,6 +80,9 @@ export function detect(_text, contextPacket = {}) {
       needs_tool_use: decision.needs_tool_use === true,
       needed_capabilities: Array.isArray(decision.needed_capabilities)
         ? decision.needed_capabilities.slice()
+        : [],
+      required_policy_groups: Array.isArray(decision.required_policy_groups)
+        ? decision.required_policy_groups.slice()
         : [],
       source_mode: decision.source_mode ?? null,
       complexity: decision.complexity ?? null,

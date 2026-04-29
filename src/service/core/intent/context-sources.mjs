@@ -116,6 +116,13 @@ function makeEmptySources() {
   };
 }
 
+function isScheduledFireContext(ctx = {}, meta = {}) {
+  if (meta.scheduler_context === true || meta.scheduled_task_fire === true) return true;
+  if (ctx.source_app === "uca.scheduler") return true;
+  if (typeof meta.source_id === "string" && meta.source_id.startsWith("sched_")) return true;
+  return false;
+}
+
 /**
  * Classify the context packet's text + metadata into a ContextSources
  * record. Pure: input is not mutated.
@@ -252,7 +259,8 @@ export function classifyContextSources({ text, contextPacket = {} } = {}) {
     // capture path duplicates the user command into ctx.text by default,
     // we don't want to classify that as a real selection either.
     const isJustCommandEcho = userCommand.length > 0 && trimmedCtxText === userCommand;
-    if (nonSentinelBlockSeen && !anySentinelMatched && !isJustCommandEcho) {
+    const isSchedulerContext = isScheduledFireContext(ctx, meta);
+    if (nonSentinelBlockSeen && !anySentinelMatched && !isJustCommandEcho && !isSchedulerContext) {
       sources.real_selection = true;
     }
   }
