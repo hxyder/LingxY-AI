@@ -48,6 +48,7 @@
     "verify:scheduled-approval-notify": "node scripts/verify-scheduled-approval-notify.mjs",
     "verify:approval-task-bridge": "node scripts/verify-approval-task-bridge.mjs",
     "verify:account-router-fallback": "node scripts/verify-account-router-fallback.mjs",
+    "verify:workflow-error-propagation": "node scripts/verify-workflow-error-propagation.mjs",
     "verify:status-preservation": "node scripts/verify-status-preservation.mjs",
     "verify:agentic-parity": "node scripts/verify-agentic-parity.mjs",
     "verify:agentic-step-gate": "node scripts/verify-agentic-step-gate.mjs",

@@ -117,7 +117,10 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 2. Failed execution → originating task transitions to failed.
+// 2. Failed execution → originating task transitions to failed and
+//    propagates failure_user_message + failure_category. Without this
+//    the overlay shows "Task failed: Unknown error." even though the
+//    underlying classifier set a useful message on the new task.
 // ---------------------------------------------------------------------
 {
   const runtime = makeRuntime();
@@ -128,7 +131,14 @@ function check(label, condition) {
     sub_status: "waiting_external_decision"
   });
 
-  const newTask = { task_id: "task_new_002", status: "failed", result_summary: "Account not found." };
+  const newTask = {
+    task_id: "task_new_002",
+    status: "failed",
+    failure_category: "network_error",
+    failure_user_message: "Google Calendar API 返回 401：invalid_grant",
+    failure_internal_log_excerpt: "Google Calendar API 返回 401：invalid_grant",
+    retryable: true
+  };
   const service = createPendingApprovalService({
     runtime,
     executeApprovedAction: async () => ({ task: newTask })
@@ -147,8 +157,16 @@ function check(label, condition) {
 
   const orig = runtime.store.getTask(originatingTaskId);
   check("failed: original task transitions to status=failed", orig.status === "failed");
+  check("failed: failure_user_message is propagated from new task",
+    orig.failure_user_message === "Google Calendar API 返回 401：invalid_grant");
+  check("failed: failure_category is propagated from new task",
+    orig.failure_category === "network_error");
+  check("failed: retryable mirror'd from new task", orig.retryable === true);
+  check("failed: result_summary uses the same message (no 'Unknown error.' fallback)",
+    /invalid_grant/.test(orig.result_summary));
   const events = runtime.store.listEvents();
-  check("failed: terminal `failed` event appended", events.some((e) => e.event_type === "failed" && e.task_id === originatingTaskId));
+  check("failed: terminal `failed` event appended",
+    events.some((e) => e.event_type === "failed" && e.task_id === originatingTaskId));
 }
 
 // ---------------------------------------------------------------------

@@ -31,6 +31,7 @@ function bridgeApprovalToOriginatingTask({ runtime, approval, executionResult, d
     const newTaskStatus = newTask?.status ?? null;
     const newTaskFinal = String(
       newTask?.result_summary
+        ?? newTask?.failure_user_message
         ?? executionResult?.observation
         ?? executionResult?.executionResult?.observation
         ?? ""
@@ -55,6 +56,19 @@ function bridgeApprovalToOriginatingTask({ runtime, approval, executionResult, d
       : "已通过审批。";
     const finalText = newTaskFinal || summaryFallback;
 
+    // Failure metadata MUST mirror too. Without this, the desktop
+    // overlay falls back to "Task failed: Unknown error." because
+    // failure_user_message stays null on the bridged task even
+    // though the new task's classifier did set it correctly.
+    const failurePatch = resolvedStatus === "failed"
+      ? {
+        failure_category: newTask?.failure_category ?? "internal_error",
+        failure_user_message: newTask?.failure_user_message ?? finalText,
+        failure_internal_log_excerpt: newTask?.failure_internal_log_excerpt ?? null,
+        retryable: newTask?.retryable ?? true
+      }
+      : {};
+
     // Mutate-in-place + full-record write — matches task-runtime.mjs's
     // updateTask helper signature (avoid importing it; circular dep risk).
     Object.assign(originalTask, {
@@ -62,7 +76,8 @@ function bridgeApprovalToOriginatingTask({ runtime, approval, executionResult, d
       sub_status: resolvedSubStatus,
       progress: resolvedStatus === "success" ? 1 : (originalTask.progress ?? 0.95),
       result_summary: finalText,
-      updated_at: decidedAt
+      updated_at: decidedAt,
+      ...failurePatch
     });
     runtime.store.updateTask?.(originalTaskId, originalTask);
 

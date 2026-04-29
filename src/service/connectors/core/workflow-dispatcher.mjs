@@ -291,11 +291,25 @@ async function executeConnectorTool({ runtime, workflow, step, tool, input, task
     summary: result.observation ?? (success ? "Completed." : "Failed."),
     validation
   });
+  // On failure, surface the connector's actual error text so the
+  // workflow runner can propagate something more useful than the
+  // generic "Connector workflow tool failed." fallback. Validation
+  // failures get a structured prefix; tool-layer failures get the
+  // raw observation (which already includes the API error message).
+  const failureError = !success
+    ? (validation.ok === false
+      ? `${tool.id} 输出校验失败：${(validation.failures ?? []).map((f) => f.path ?? f.message ?? f).join("; ") || "missing required fields"}`
+      : (result.observation
+        || result.metadata?.message
+        || result.metadata?.errorCode
+        || `${tool.id} 调用失败。`))
+    : null;
   return {
     status: success ? "success" : "failed",
     output,
     actionResult: result,
-    validation
+    validation,
+    error: failureError
   };
 }
 
