@@ -890,15 +890,146 @@ function parseScheduleTriggerInput(text) {
   return parseScheduleTriggerFromText(text, { fallback: "natural_language" });
 }
 
+/* ═══════════════════════════════════════════════
+   Schedule time picker — reusable across create form + edit popover.
+   Four modes:
+     natural — raw text → backend NL parser (existing path)
+     once    — datetime-local → { type: "at", run_at, timezone }
+     daily   — HH:MM time → cron "M H * * *"
+     weekly  — day-of-week chips + HH:MM → cron "M H * * dow,…"
+   buildSchedulePickerHtml() returns the DOM string; pass a unique
+   `prefix` per instance so multiple pickers can co-exist.
+   readSchedulePicker(root) returns the structured trigger or null
+   when the active mode's required fields aren't filled.
+   ═══════════════════════════════════════════════ */
+function buildSchedulePickerHtml({ prefix = "schedPicker", initialNatural = "" } = {}) {
+  const dows = [
+    { v: "1", label: "一" },
+    { v: "2", label: "二" },
+    { v: "3", label: "三" },
+    { v: "4", label: "四" },
+    { v: "5", label: "五" },
+    { v: "6", label: "六" },
+    { v: "0", label: "日" }
+  ];
+  return `
+    <div class="sched-picker" data-sched-picker>
+      <div class="sched-picker-tabs" role="tablist">
+        <button type="button" class="sched-picker-tab active" data-mode="natural" role="tab" aria-selected="true">自然语言</button>
+        <button type="button" class="sched-picker-tab" data-mode="daily" role="tab" aria-selected="false">每天</button>
+        <button type="button" class="sched-picker-tab" data-mode="weekly" role="tab" aria-selected="false">每周</button>
+        <button type="button" class="sched-picker-tab" data-mode="once" role="tab" aria-selected="false">一次</button>
+      </div>
+      <div class="sched-picker-pane" data-pane="natural">
+        <input type="text" class="sched-picker-input" data-natural placeholder="例如：2分钟以后 / 每天 9点 / every hour" value="${escapeHtml(initialNatural)}"/>
+      </div>
+      <div class="sched-picker-pane" data-pane="daily" hidden>
+        <span class="sched-picker-label">每天</span>
+        <input type="time" class="sched-picker-time" data-daily-time value="09:00"/>
+        <span class="sched-picker-tz muted">(${escapeHtml(getLocalTimezoneShort())})</span>
+      </div>
+      <div class="sched-picker-pane sched-picker-pane--weekly" data-pane="weekly" hidden>
+        <div class="sched-picker-dow">
+          ${dows.map((d) => `
+            <label class="sched-picker-dow-chip">
+              <input type="checkbox" data-dow="${d.v}"/>
+              <span>${d.label}</span>
+            </label>
+          `).join("")}
+        </div>
+        <div class="sched-picker-row">
+          <span class="sched-picker-label">时间</span>
+          <input type="time" class="sched-picker-time" data-weekly-time value="09:00"/>
+          <span class="sched-picker-tz muted">(${escapeHtml(getLocalTimezoneShort())})</span>
+        </div>
+      </div>
+      <div class="sched-picker-pane" data-pane="once" hidden>
+        <span class="sched-picker-label">在</span>
+        <input type="datetime-local" class="sched-picker-datetime" data-once-datetime/>
+        <span class="sched-picker-tz muted">(${escapeHtml(getLocalTimezoneShort())})</span>
+      </div>
+    </div>
+  `;
+}
+
+function getLocalTimezoneShort() {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; }
+  catch { return ""; }
+}
+
+function wireSchedulePicker(root) {
+  if (!root) return;
+  const tabs = root.querySelectorAll(".sched-picker-tab");
+  for (const tab of tabs) {
+    tab.addEventListener("click", () => {
+      tabs.forEach((t) => {
+        const isThis = t === tab;
+        t.classList.toggle("active", isThis);
+        t.setAttribute("aria-selected", isThis ? "true" : "false");
+      });
+      for (const pane of root.querySelectorAll(".sched-picker-pane")) {
+        pane.hidden = pane.dataset.pane !== tab.dataset.mode;
+      }
+    });
+  }
+}
+
+function readSchedulePicker(root) {
+  if (!root) return null;
+  const activeTab = root.querySelector(".sched-picker-tab.active");
+  const mode = activeTab?.dataset.mode ?? "natural";
+  const tz = getLocalTimezoneShort();
+  if (mode === "natural") {
+    const text = root.querySelector("[data-natural]")?.value?.trim() ?? "";
+    if (!text) return null;
+    return { natural_language: text, timezone: tz };
+  }
+  if (mode === "daily") {
+    const time = root.querySelector("[data-daily-time]")?.value ?? "";
+    if (!time) return null;
+    const [hh, mm] = time.split(":").map((n) => Number(n));
+    return { type: "cron", expression: `${mm} ${hh} * * *`, timezone: tz, label: `每天 ${time}` };
+  }
+  if (mode === "weekly") {
+    const time = root.querySelector("[data-weekly-time]")?.value ?? "";
+    const dows = [...root.querySelectorAll("[data-dow]:checked")].map((b) => b.dataset.dow);
+    if (!time || dows.length === 0) return null;
+    const [hh, mm] = time.split(":").map((n) => Number(n));
+    return {
+      type: "cron",
+      expression: `${mm} ${hh} * * ${dows.join(",")}`,
+      timezone: tz,
+      label: `每周 ${dows.length} 天 ${time}`
+    };
+  }
+  if (mode === "once") {
+    const dt = root.querySelector("[data-once-datetime]")?.value ?? "";
+    if (!dt) return null;
+    // datetime-local has no timezone — server's ensureTrigger will
+    // attach the system tz from our tz field.
+    return { type: "at", run_at: dt, timezone: tz, oneShot: true };
+  }
+  return null;
+}
+
+// Mount the picker into the create form on load.
+(function mountScheduleCreatePicker() {
+  const host = document.querySelector("#scheduleCreateWhenPicker");
+  if (!host) return;
+  host.innerHTML = buildSchedulePickerHtml({ prefix: "schedCreate" });
+  wireSchedulePicker(host.querySelector("[data-sched-picker]"));
+})();
+
 async function createScheduleFromConsole() {
-  const whenText = scheduleWhenInput.value.trim();
+  const pickerHost = document.querySelector("#scheduleCreateWhenPicker [data-sched-picker]");
+  const trigger = readSchedulePicker(pickerHost);
   const commandText = scheduleCommandInput.value.trim();
-  if (!whenText || !commandText) {
-    scheduleCreateState.textContent = "Please fill both fields.";
+  if (!trigger || !commandText) {
+    scheduleCreateState.textContent = !commandText
+      ? "Please describe the task."
+      : "Please pick a time or type one in 自然语言.";
     return;
   }
-
-  const trigger = parseScheduleTriggerInput(whenText);
   const scheduledAction = buildScheduleActionFromText(commandText);
   scheduleCreateState.textContent = "Creating...";
   try {
@@ -918,7 +1049,12 @@ async function createScheduleFromConsole() {
       })
     });
     scheduleCreateState.textContent = `Created · next ${formatDateTime(result.schedule?.next_run_at)}`;
-    scheduleWhenInput.value = "";
+    // Reset the picker by re-rendering it
+    const host = document.querySelector("#scheduleCreateWhenPicker");
+    if (host) {
+      host.innerHTML = buildSchedulePickerHtml({ prefix: "schedCreate" });
+      wireSchedulePicker(host.querySelector("[data-sched-picker]"));
+    }
     scheduleCommandInput.value = "";
     await refreshWorkspace();
   } catch (error) {
@@ -4595,19 +4731,25 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
       <input type="text" class="sched-row-edit-input" maxlength="120" value="${escapeHtml(currentName)}" placeholder="计划名称"/>
     </div>
   `;
-  // Inject a second row under .sched-meta for the trigger input so the
-  // layout stays compact even while editing.
+  // Inject a second row under .sched-meta for the trigger picker so
+  // the layout stays compact even while editing. The picker carries
+  // its own tabs (自然语言 / 每天 / 每周 / 一次) — empty / unfilled
+  // fields are interpreted as "no trigger change".
   if (metaEl) {
     metaEl.innerHTML = `
       <div class="sched-row-edit-trigger">
-        <input type="text" class="sched-row-trigger-input" placeholder="触发时间（留空保持不变）— 例如 每天 9 点 / 每周一 上午 10 点 / 5 分钟以后" maxlength="160"/>
-        <button type="button" class="btn btn-sm btn-primary sched-row-edit-save">保存</button>
-        <button type="button" class="btn btn-sm btn-ghost sched-row-edit-cancel">取消</button>
+        <div class="sched-row-edit-trigger-picker">${buildSchedulePickerHtml({ prefix: `schedEdit_${scheduleId}` })}</div>
+        <div style="display:flex;gap:6px;">
+          <button type="button" class="btn btn-sm btn-primary sched-row-edit-save">保存</button>
+          <button type="button" class="btn btn-sm btn-ghost sched-row-edit-cancel">取消</button>
+        </div>
+        <div class="sched-row-edit-hint muted" style="font-size:11px;">触发时间留空保持不变。</div>
       </div>
     `;
+    wireSchedulePicker(metaEl.querySelector("[data-sched-picker]"));
   }
   const nameInput = titleEl.querySelector(".sched-row-edit-input");
-  const triggerInput = metaEl?.querySelector(".sched-row-trigger-input");
+  const pickerRoot = metaEl?.querySelector("[data-sched-picker]");
   const saveBtn = metaEl?.querySelector(".sched-row-edit-save");
   const cancelBtn = metaEl?.querySelector(".sched-row-edit-cancel");
   nameInput?.focus();
@@ -4619,17 +4761,21 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
   cancelBtn?.addEventListener("click", restore);
   const onKey = (ev) => {
     if (ev.key === "Escape") restore();
-    if (ev.key === "Enter") { ev.preventDefault(); saveBtn?.click(); }
+    // Don't auto-submit on Enter from the picker — Enter inside time/
+    // datetime inputs has native semantics. Only the name input
+    // submits on Enter.
   };
-  nameInput?.addEventListener("keydown", onKey);
-  triggerInput?.addEventListener("keydown", onKey);
+  nameInput?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") restore();
+    if (ev.key === "Enter") { ev.preventDefault(); saveBtn?.click(); }
+  });
   saveBtn?.addEventListener("click", async () => {
     const newName = nameInput?.value?.trim() ?? "";
-    const newTrigger = triggerInput?.value?.trim() ?? "";
+    const pickerTrigger = readSchedulePicker(pickerRoot);
     if (!newName) { showConsoleToast("名称不能为空", { kind: "err" }); return; }
     const patch = {};
     if (newName !== currentName) patch.name = newName;
-    if (newTrigger) patch.trigger = { natural_language: newTrigger };
+    if (pickerTrigger) patch.trigger = pickerTrigger;
     if (Object.keys(patch).length === 0) {
       // Nothing actually changed; just close the editor.
       restore();

@@ -1552,8 +1552,15 @@
           </header>
           <form id="scheduleForm" class="panel-section-body">
             <div>
-              <label for="scheduleWhenInput">When<span class="zh">触发时间</span></label>
-              <input id="scheduleWhenInput" type="text" placeholder="例如：2分钟以后 / 每天 9点 / every hour">
+              <label>When<span class="zh">触发时间</span></label>
+              <!-- Picker injected by JS via buildSchedulePickerHtml().
+                   Fallback to legacy text input via [data-natural] if
+                   the user prefers typing. -->
+              <div id="scheduleCreateWhenPicker"></div>
+              <!-- Hidden legacy input kept for any code path that
+                   still reads scheduleWhenInput.value. The picker
+                   syncs into it on submit. -->
+              <input id="scheduleWhenInput" type="text" hidden aria-hidden="true">
             </div>
             <div>
               <label for="scheduleCommandInput">Reminder / Task<span class="zh">要做的事</span></label>

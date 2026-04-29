@@ -2929,28 +2929,113 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-/* Trigger-time edit row sits inside .sched-meta during edit mode.
-   Compact one-liner with placeholder hint so users see what kinds of
-   inputs work without us spelling out a full grammar. */
+/* Trigger-time edit row in .sched-meta carries the picker (tabs +
+   inputs) and the save/cancel buttons. Compact column layout so it
+   doesn't blow up the row height beyond the regular meta line. */
 .sched-row-edit-trigger {
   display: flex;
-  gap: 6px;
-  align-items: center;
+  gap: 8px;
+  align-items: flex-start;
   width: 100%;
-  margin-top: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
 }
-.sched-row-trigger-input {
-  flex: 1;
-  min-width: 0;
-  height: 26px;
+.sched-row-edit-trigger-picker { flex: 1; min-width: 240px; }
+.sched-row-edit-hint { width: 100%; }
+
+/* Schedule picker — shared by create form and edit popover. Tab
+   strip up top, mode-specific input row below. */
+.sched-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px;
+  background: var(--panel);
+}
+.sched-picker-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.sched-picker-tab {
+  padding: 4px 10px;
+  font-size: 11.5px;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11.5px;
+}
+.sched-picker-tab:hover { background: var(--panel-2); color: var(--ink); }
+.sched-picker-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: var(--accent);
+}
+.sched-picker-pane {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 4px;
+}
+.sched-picker-pane[hidden] { display: none; }
+.sched-picker-pane--weekly { flex-direction: column; align-items: flex-start; }
+.sched-picker-pane--weekly .sched-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.sched-picker-input,
+.sched-picker-time,
+.sched-picker-datetime {
+  height: 28px;
   padding: 4px 8px;
   border: 1px solid var(--line);
   border-radius: 6px;
   background: var(--panel);
   color: var(--ink);
   font: inherit;
-  font-size: 11.5px;
+  font-size: 12px;
   outline: none;
+}
+.sched-picker-input { flex: 1; min-width: 160px; }
+.sched-picker-input:focus,
+.sched-picker-time:focus,
+.sched-picker-datetime:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.sched-picker-label { font-size: 12px; color: var(--ink-2); }
+.sched-picker-tz { font-size: 10.5px; }
+.sched-picker-dow {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.sched-picker-dow-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  cursor: pointer;
+  user-select: none;
+}
+.sched-picker-dow-chip input { display: none; }
+.sched-picker-dow-chip:has(input:checked) {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: var(--accent);
 }
 .sched-meta {
   display: flex;
