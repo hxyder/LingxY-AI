@@ -237,22 +237,25 @@ async function executeScheduledTask({
     runtime
   });
 
-  // Scheduled tasks often fire when the user isn't watching. When the task
-  // finishes, push a desktop notification with a short summary of the final
-  // answer so the user actually sees the result. Skip when:
-  //   (a) the scheduled command itself mentions notify / email (regex on
-  //       userCommand) — textual pre-check to avoid obvious double-notify
-  //   (b) the task was deduped / never really ran — `success` event missing
-  //   (c) UCA-098: the task's transcript already shows a successful
-  //       `notify` tool_call — otherwise a reminder command like
-  //       "提醒我喝水" that the agent already handled by calling notify
-  //       produces a SECOND, generic "计划任务完成：提醒我喝水" toast.
+  // Scheduled tasks often fire when the user isn't watching. Two notify
+  // surfaces:
+  //   (a) success path — fired on terminal `success` events with the
+  //       agent's final text.
+  //   (b) waiting-approval path (UCA-181) — fired when the agent
+  //       suspended the task on a side-effect obligation (email_send /
+  //       calendar_create / file_upload). Without this, a scheduled
+  //       email task would silently sit on a pending_approval forever
+  //       because the user wasn't watching the desktop when the
+  //       approval card appeared.
+  // Approval notifications must still fire for scheduled email/calendar/file
+  // tasks even though their command naturally says "send email". The textual
+  // notify/email pre-check only suppresses the generic success toast.
   // Best-effort; never blocks task completion.
   try {
+    const commandRequestsOwnNotification = /(\bnotify\b|通知|发邮件|send\s+email|account_send_email)/i.test(userCommand);
     if (actionParams.notifyOnComplete !== false
         && sourceApp === "uca.scheduler"
-        && captureMode === "event"
-        && !/(\bnotify\b|通知|发邮件|send\s+email|account_send_email)/i.test(userCommand)) {
+        && captureMode === "event") {
       const task = submission?.task;
       const taskId = task?.task_id;
       if (taskId && runtime?.actionToolRegistry?.call) {
@@ -265,7 +268,34 @@ async function executeScheduledTask({
           return toolId === "notify" && payload.success === true;
         });
         const taskReallyRan = Boolean(successEvent) && task?.status !== "partial_success";
-        if (taskReallyRan && !agentAlreadyNotified) {
+
+        const pendingApprovalEvent = task?.sub_status === "waiting_external_decision"
+          ? [...events].reverse().find((e) => e.event_type === "pending_approval_created")
+          : null;
+
+        if (pendingApprovalEvent && !agentAlreadyNotified) {
+          const approvalId = pendingApprovalEvent.payload?.approval_id ?? "";
+          const toolId = pendingApprovalEvent.payload?.tool_id ?? "";
+          const previewEvent = [...events].reverse().find(
+            (e) => e.event_type === "partial_success"
+              && typeof e.payload?.text === "string"
+          );
+          const previewText = previewEvent?.payload?.text
+            ?? `定时任务"${actionTarget}"生成了待确认操作`;
+          runtime.actionToolRegistry.call("notify", {
+            kind: "approval_pending",
+            title: `需要确认：${actionTarget ?? "schedule"}`,
+            body: previewText,
+            taskId,
+            approvalId,
+            toolId,
+            openWindow: "console",
+            allowLongBody: true,
+            autoHideMs: 0,
+            dedupeKey: `scheduled-approval:${taskId}:${approvalId || toolId}`
+          }, { runtime, task })
+            .catch(() => { /* ignore */ });
+        } else if (!commandRequestsOwnNotification && taskReallyRan && !agentAlreadyNotified) {
           const resultText = typeof successEvent?.payload?.text === "string"
             ? successEvent.payload.text
             : (task?.result_summary ?? `定时任务"${actionTarget}"已完成`);
