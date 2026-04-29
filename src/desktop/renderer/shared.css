@@ -2746,6 +2746,30 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .schedule-item h4 { font-size: var(--fs-md); font-weight: 600; margin: 0 0 3px; }
 .schedule-item p { margin: 0; }
 .sched-title { font-size: var(--fs-md); font-weight: 600; margin-bottom: 3px; }
+/* Inline rename UI inside .sched-title — same pattern as the
+   connector edit (in-place, Enter/Esc/save/cancel). */
+.sched-row-edit {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.sched-row-edit-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+.sched-row-edit-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .sched-meta {
   display: flex;
   gap: 10px;

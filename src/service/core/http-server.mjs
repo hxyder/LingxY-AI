@@ -2944,7 +2944,32 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
 
       if (scheduleMatch && method === "PATCH") {
         const body = await readJsonBody(request);
-        const schedule = runtime.scheduler.pauseSchedule(scheduleMatch[1], body.enabled !== false);
+        const scheduleId = scheduleMatch[1];
+        // Two operations share this route:
+        //   { name: "..."   } → rename only
+        //   { enabled: bool } → pause / unpause via scheduler
+        // Mixed bodies update both. The store-level write handles
+        // name; pauseSchedule handles enabled (because it also
+        // recomputes next_run_at on unpause).
+        let schedule = null;
+        if (typeof body?.name === "string") {
+          const existing = runtime.store.getSchedule(scheduleId);
+          if (!existing) {
+            return sendJson(response, 404, { error: "schedule_not_found" });
+          }
+          existing.name = body.name.trim().slice(0, 120) || existing.name;
+          existing.updated_at = new Date().toISOString();
+          runtime.store.updateSchedule(scheduleId, existing);
+          schedule = existing;
+        }
+        if (typeof body?.enabled === "boolean") {
+          schedule = runtime.scheduler.pauseSchedule(scheduleId, body.enabled);
+        }
+        if (!schedule) {
+          // Default to the current state so the client can sync without
+          // having to know whether anything actually changed.
+          schedule = runtime.store.getSchedule(scheduleId);
+        }
         if (!schedule) {
           return sendJson(response, 404, { error: "schedule_not_found" });
         }

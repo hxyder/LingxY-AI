@@ -3179,15 +3179,38 @@ function renderTasks() {
 
   taskCount.textContent = `${tasks.length}`;
   if (tasks.length === 0) {
-    const emptyMsg = allTasks.length === 0
-      ? "No tasks yet."
-      : `No tasks match this filter${search ? ` + search "${search}"` : ""}.`;
-    renderEmpty(taskList, emptyMsg);
-    // Don't clobber the selected detail when the only reason the list is
-    // empty is that the filter hides the selected task.
     if (allTasks.length === 0) {
+      // First-run friendly empty state — give them a clear next step.
+      // The page-head already has "New task" + Refresh; this just
+      // mirrors them inside the empty list so the user notices.
+      taskList.innerHTML = `
+        <div class="empty-state" style="text-align:center;padding:28px 16px;">
+          <p class="muted" style="margin:0 0 12px;font-size:13px;line-height:1.55;">
+            还没有任何任务。Ctrl+K 打开命令面板，或点 Chat 直接对话。
+          </p>
+          <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+            <button type="button" class="btn btn-sm btn-primary" id="taskListEmptyNewBtn" title="Ctrl+K">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              新建任务
+            </button>
+            <button type="button" class="btn btn-sm" id="taskListEmptyChatBtn">
+              去 Chat
+            </button>
+          </div>
+        </div>
+      `;
+      taskList.querySelector("#taskListEmptyNewBtn")?.addEventListener("click", () => {
+        document.querySelector("#tasksNewBtn")?.click();
+      });
+      taskList.querySelector("#taskListEmptyChatBtn")?.addEventListener("click", () => {
+        switchTab("chat");
+      });
       state.selectedTaskId = null;
       renderTaskDetail(null);
+    } else {
+      // Filter / search hides everything but raw data exists — keep
+      // it minimal, the user is in active filter mode.
+      renderEmpty(taskList, `No tasks match this filter${search ? ` + search "${search}"` : ""}.`);
     }
     return;
   }
@@ -4018,7 +4041,7 @@ function renderTaskDetail(detail) {
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
         Retry
       </button>
-      <button type="button" class="btn btn-sm btn-ghost" data-task-act="cancel" ${canCancel ? "" : "disabled"}>Cancel</button>
+      <button type="button" class="btn btn-sm ${canCancel ? "btn-stop" : "btn-ghost"}" data-task-act="cancel" ${canCancel ? "" : "disabled"} title="${canCancel ? "停止此任务" : "Cancel"}">${canCancel ? "停止" : "Cancel"}</button>
       <div style="flex:1"></div>
       <button type="button" class="btn btn-sm btn-danger" data-task-act="delete">
         <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/></svg>
@@ -4459,11 +4482,59 @@ function renderScheduleRow(s) {
         </div>
       </div>
       <div class="sched-actions btn-group">
+        <button class="btn btn-sm btn-ghost" data-edit-schedule-id="${escapeHtml(s.schedule_id)}" title="重命名">编辑</button>
         <button class="btn btn-sm" data-run-schedule-id="${escapeHtml(s.schedule_id)}">${runLabel}</button>
         <button class="btn btn-sm btn-danger" data-delete-schedule-id="${escapeHtml(s.schedule_id)}">Delete</button>
       </div>
     </div>
   `;
+}
+
+// In-place schedule rename — same UX pattern as connector rename.
+// Replaces the .sched-title text with an input + 保存/取消; PATCH
+// /schedules/:id with { name } commits.
+function handleScheduleRowEdit(scheduleId, anchorBtn) {
+  if (!scheduleId) return;
+  const row = anchorBtn?.closest?.(".sched-row");
+  const titleEl = row?.querySelector(".sched-title");
+  if (!row || !titleEl) return;
+  const original = titleEl.textContent ?? "";
+  titleEl.innerHTML = `
+    <div class="sched-row-edit">
+      <input type="text" class="sched-row-edit-input" maxlength="120" value="${escapeHtml(original)}" placeholder="计划名称"/>
+      <button type="button" class="btn btn-sm btn-primary sched-row-edit-save">保存</button>
+      <button type="button" class="btn btn-sm btn-ghost sched-row-edit-cancel">取消</button>
+    </div>
+  `;
+  const input = titleEl.querySelector(".sched-row-edit-input");
+  const saveBtn = titleEl.querySelector(".sched-row-edit-save");
+  const cancelBtn = titleEl.querySelector(".sched-row-edit-cancel");
+  input?.focus();
+  input?.setSelectionRange(0, input.value.length);
+  const restore = () => { titleEl.textContent = original; };
+  cancelBtn?.addEventListener("click", restore);
+  input?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") restore();
+    if (ev.key === "Enter") { ev.preventDefault(); saveBtn?.click(); }
+  });
+  saveBtn?.addEventListener("click", async () => {
+    const value = input?.value?.trim() ?? "";
+    if (!value) { showConsoleToast("名称不能为空", { kind: "err" }); return; }
+    saveBtn.disabled = true;
+    saveBtn.textContent = "保存中…";
+    try {
+      await fetchJson(`/schedules/${encodeURIComponent(scheduleId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: value })
+      });
+      showConsoleToast("已重命名", { kind: "ok" });
+      await refreshWorkspace();
+    } catch (err) {
+      showConsoleToast(`保存失败：${err?.message ?? err}`, { kind: "err" });
+      restore();
+    }
+  });
 }
 
 function renderSchedules() {
@@ -4602,6 +4673,11 @@ function renderSchedules() {
     btn.addEventListener("click", async () => {
       await fetchJson(`/schedules/${encodeURIComponent(btn.dataset.deleteScheduleId)}`, { method: "DELETE" });
       await refreshWorkspace();
+    });
+  }
+  for (const btn of scheduleList.querySelectorAll("[data-edit-schedule-id]")) {
+    btn.addEventListener("click", () => {
+      handleScheduleRowEdit(btn.dataset.editScheduleId, btn);
     });
   }
 
@@ -5715,9 +5791,25 @@ retryTaskButton.addEventListener("click", async () => {
   await refreshWorkspace();
 });
 
+// Track whether we already asked to cancel this task once. Second
+// click on the (now visible) red "停止" button escalates to force —
+// matches the overlay / console-chat Stop semantics.
+let consoleTaskCancellationRequestedId = null;
 cancelTaskButton.addEventListener("click", async () => {
   if (!state.selectedTaskId) return;
-  await fetchJson(`/task/${encodeURIComponent(state.selectedTaskId)}/cancel`, { method: "POST" });
+  const taskId = state.selectedTaskId;
+  const force = consoleTaskCancellationRequestedId === taskId;
+  consoleTaskCancellationRequestedId = taskId;
+  try {
+    await fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force })
+    });
+    showConsoleToast(force ? "已强制取消" : "已请求取消任务", { kind: force ? "ok" : "info" });
+  } catch (error) {
+    showConsoleToast(`取消失败：${error?.message ?? error}`, { kind: "err" });
+  }
   await refreshWorkspace();
 });
 
