@@ -699,9 +699,12 @@ async function runExecutor({ runtime, task, executor }) {
         runtime.store.appendArtifact(artifactRecord);
         generatedArtifacts.push(artifactRecord);
       }
-      // Agentic executor yields artifact_paths on the success event (not artifact_created).
-      // Collect them here so they are visible via getArtifactsForTask.
-      if (event.event_type === "success" && Array.isArray(event.payload?.artifact_paths)) {
+      // Agentic executor yields artifact_paths on its terminal event (not
+      // artifact_created). Collect them for both success and partial_success:
+      // a task can be downgraded by truthfulness/obligation gates while still
+      // having produced valid files that must appear in Console → Files.
+      if (["success", "partial_success"].includes(event.event_type)
+          && Array.isArray(event.payload?.artifact_paths)) {
         for (const filePath of event.payload.artifact_paths) {
           if (!filePath) continue;
           const alreadySaved = generatedArtifacts.some((a) => a.path === filePath);

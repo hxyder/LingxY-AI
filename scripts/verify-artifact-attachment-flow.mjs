@@ -17,6 +17,9 @@
  *   - tool_using/agent-loop.mjs records artifact_paths on each
  *     tool_result transcript entry AND buildConversationMessages()
  *     rolls them up into every subsequent tool observation.
+ *   - submission paths persist terminal artifact_paths on success AND
+ *     partial_success, so downgraded agentic tasks still show files in
+ *     Console -> Files.
  */
 
 import assert from "node:assert/strict";
@@ -32,6 +35,9 @@ const agentic = read("src/service/executors/agentic/planner.mjs");
 const toolUsing = read("src/service/executors/tool_using/agent-loop.mjs");
 const writeTools = read("src/service/connectors/tools/write-tools.mjs");
 const msConnector = read("src/service/connectors/microsoft/microsoft-connector.mjs");
+const contextSubmission = read("src/service/core/context-submission.mjs");
+const browserSubmission = read("src/service/core/browser-submission.mjs");
+const httpServer = read("src/service/core/http-server.mjs");
 
 // ── Backend still accepts attachmentPaths. ────────────────────────────
 assert.match(writeTools, /attachmentPaths:\s*\{[^}]*type:\s*"array"/s,
@@ -54,11 +60,30 @@ assert.match(agentic, /__lastArtifactPathsHash/,
 // ── tool_using/agent-loop: transcript + conversation rollup. ──────────
 assert.match(toolUsing, /artifact_paths:\s*Array\.isArray\(result\.artifact_paths\)/,
   "tool_using agent-loop must store artifact_paths on the transcript entry");
-assert.match(toolUsing, /function buildConversationMessages\(userCommand, transcript, initialFilePaths/,
+assert.match(toolUsing, /function buildConversationMessages\(prefixMessages,\s*transcript,\s*initialFilePaths/,
   "buildConversationMessages must accept initial file paths from the context packet");
 assert.match(toolUsing, /Artifacts available so far/,
   "buildConversationMessages must roll up artifacts into each tool observation");
 assert.match(toolUsing, /context_packet\?\.file_paths/,
   "agent-loop must pass context_packet.file_paths into buildConversationMessages");
+
+// ── submission persistence: terminal artifact_paths. ─────────────────
+for (const [name, source] of [
+  ["context-submission", contextSubmission],
+  ["browser-submission", browserSubmission]
+]) {
+  assert.match(source, /\["success",\s*"partial_success"\]\.includes\(event\.event_type\)[\s\S]{0,160}artifact_paths/,
+    `${name} must persist artifact_paths from success and partial_success terminal events`);
+  assert.match(source, /runtime\.store\.appendArtifact\(artifactRecord\)/,
+    `${name} must append terminal artifact paths to the artifact store`);
+}
+
+// ── console detail recovery: already-finished tasks. ─────────────────
+assert.match(httpServer, /function mergeArtifactsForTask\(taskId,\s*persistedArtifacts = \[\],\s*events = \[\]\)/,
+  "task detail must merge stored artifacts with event-derived artifact paths");
+assert.match(httpServer, /Array\.isArray\(payload\.artifact_paths\)[\s\S]{0,120}candidates\.push\(\.\.\.payload\.artifact_paths\)/,
+  "task detail must recover artifact_paths from historical events");
+assert.match(httpServer, /derived_from_event:\s*true/,
+  "event-derived artifacts must be marked for observability");
 
 console.log("ok verify-artifact-attachment-flow");

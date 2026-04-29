@@ -403,6 +403,18 @@ async function runBrowserExecutor({ task, runtime }) {
         runtime.store.appendArtifact(artifactRecord);
         generatedArtifacts.push(artifactRecord);
       }
+      if (["success", "partial_success"].includes(event.event_type)
+          && Array.isArray(event.payload?.artifact_paths)) {
+        for (const filePath of event.payload.artifact_paths) {
+          if (!filePath) continue;
+          const alreadySaved = generatedArtifacts.some((a) => a.path === filePath);
+          if (!alreadySaved) {
+            const artifactRecord = artifactStore.registerArtifact(task.task_id, filePath, null);
+            runtime.store.appendArtifact(artifactRecord);
+            generatedArtifacts.push(artifactRecord);
+          }
+        }
+      }
       applyExecutorEvent(runtime, task, {
         type: event.event_type,
         ...event.payload

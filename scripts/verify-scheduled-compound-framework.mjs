@@ -7,11 +7,18 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 
 import { createTaskSpec } from "../src/service/core/task-spec.mjs";
 import { classifyContextSources } from "../src/service/core/intent/context-sources.mjs";
 import { validateSuccessContract } from "../src/service/core/policy/success-contract-validator.mjs";
 import { shouldInjectRequiredActionGuidance } from "../src/service/executors/tool_using/agent-loop.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, "..");
+const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const marketEmailDecision = {
   source_scope: "external_world",
@@ -139,6 +146,20 @@ const scheduledContext = {
     }]
   );
   assert.deepEqual(groups, ["email_send"], "loop should hand off from evidence collection to required action");
+}
+
+{
+  const schedulerExecutor = read("src/service/scheduler/execute-action.mjs");
+  assert.match(
+    schedulerExecutor,
+    /const commandRequestsOwnNotification = [\s\S]{0,120}send\\s\+email[\s\S]{0,280}if \(actionParams\.notifyOnComplete !== false[\s\S]{0,180}&& captureMode === "event"\) \{/,
+    "scheduled approval notifications must not be skipped just because the command mentions email"
+  );
+  assert.match(
+    schedulerExecutor,
+    /if \(pendingApprovalEvent && !agentAlreadyNotified\)[\s\S]*else if \(!commandRequestsOwnNotification && taskReallyRan && !agentAlreadyNotified\)/,
+    "email/notify command suppression must apply only to the generic success toast"
+  );
 }
 
 console.log("ok verify-scheduled-compound-framework");

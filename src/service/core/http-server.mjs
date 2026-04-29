@@ -967,11 +967,89 @@ function summarizeTask(runtime, taskId) {
   if (!task) {
     return null;
   }
+  const events = runtime.store.getTaskEvents(taskId);
   return {
     task,
-    events: runtime.store.getTaskEvents(taskId),
-    artifacts: runtime.store.getArtifactsForTask(taskId)
+    events,
+    artifacts: mergeArtifactsForTask(taskId, runtime.store.getArtifactsForTask(taskId), events)
   };
+}
+
+function artifactPathFromValue(value) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (value && typeof value === "object" && typeof value.path === "string") {
+    const trimmed = value.path.trim();
+    return trimmed ? trimmed : null;
+  }
+  return null;
+}
+
+function artifactMimeFromValue(value) {
+  return value && typeof value === "object"
+    ? value.mime_type ?? value.mime ?? null
+    : null;
+}
+
+function artifactsFromEvent(taskId, event) {
+  const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
+  const candidates = [];
+  if (event?.event_type === "artifact_created") {
+    candidates.push(payload);
+  }
+  if (Array.isArray(payload.artifact_paths)) {
+    candidates.push(...payload.artifact_paths);
+  }
+  if (Array.isArray(payload.artifacts)) {
+    candidates.push(...payload.artifacts);
+  }
+
+  return candidates
+    .map((candidate) => {
+      const artifactPath = artifactPathFromValue(candidate);
+      if (!artifactPath) {
+        return null;
+      }
+      const hash = crypto.createHash("sha1").update(artifactPath).digest("hex").slice(0, 10);
+      return {
+        artifact_id: `${taskId}:event:${hash}`,
+        task_id: taskId,
+        path: artifactPath,
+        mime_type: artifactMimeFromValue(candidate),
+        created_at: event?.ts ?? new Date(0).toISOString(),
+        derived_from_event: true
+      };
+    })
+    .filter(Boolean);
+}
+
+function mergeArtifactsForTask(taskId, persistedArtifacts = [], events = []) {
+  const seen = new Set();
+  const merged = [];
+  const add = (artifact) => {
+    const artifactPath = artifactPathFromValue(artifact);
+    if (!artifactPath || seen.has(artifactPath)) {
+      return;
+    }
+    seen.add(artifactPath);
+    merged.push({
+      ...artifact,
+      task_id: artifact.task_id ?? taskId,
+      path: artifactPath
+    });
+  };
+
+  for (const artifact of persistedArtifacts ?? []) {
+    add(artifact);
+  }
+  for (const event of events ?? []) {
+    for (const artifact of artifactsFromEvent(taskId, event)) {
+      add(artifact);
+    }
+  }
+  return merged;
 }
 
 async function submitTaskFromBody(runtime, body) {

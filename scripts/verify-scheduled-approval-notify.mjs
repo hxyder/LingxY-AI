@@ -17,8 +17,6 @@
 
 import assert from "node:assert/strict";
 
-import { executeProposedAction } from "../src/service/scheduler/execute-action.mjs";
-
 function createNotifyCapturingRuntime({ taskStatus, subStatus, events }) {
   const taskId = "task_test_approval_notify";
   const task = {
@@ -43,21 +41,8 @@ function createNotifyCapturingRuntime({ taskStatus, subStatus, events }) {
 }
 
 // We do NOT exercise submitContextTask in this verifier — that's the live
-// test's job. We monkey-patch the submission to short-circuit and just
-// assert the post-submission notify branch.
+// test's job. This harness isolates the post-submission notify branch.
 async function runScheduledNotifyHarness({ taskStatus, subStatus, events, command = "5 分钟后给我发美股汇总" }) {
-  const { runtime, task, calls, taskId } = createNotifyCapturingRuntime({ taskStatus, subStatus, events });
-
-  // Stub the submission layer. executeScheduledTask awaits the submission
-  // before deciding whether to notify; mock it inline.
-  const originalSubmitContextTask = (await import("../src/service/core/context-submission.mjs")).submitContextTask;
-  // We can't easily replace the import; instead, exercise executeProposedAction
-  // with action_type="task" and rely on the runtime stub to avoid triggering
-  // any real network calls. Submission needs runtime.queue + store + executor
-  // pipelines we don't have here, so we test the notify-decision logic by
-  // calling it directly.
-  void originalSubmitContextTask; // silence linter
-
   // Re-implement the notify-decision block from executeScheduledTask
   // verbatim. If the verifier breaks when execute-action.mjs changes,
   // the test must be updated alongside the implementation — that's the
@@ -245,4 +230,3 @@ async function runScheduledNotifyHarness({ taskStatus, subStatus, events, comman
 }
 
 console.log("\nok verify-scheduled-approval-notify");
-void executeProposedAction; // silence linter — exported function exists
