@@ -336,6 +336,46 @@ function deriveConversationTitle(command) {
   return cleaned.length > MAX ? `${cleaned.slice(0, MAX)}…` : cleaned;
 }
 
+// One-shot migration: walk all conversations and back-fill the
+// auto-generated title for any whose title is null/empty/looks like
+// the raw conversation_id (legacy data from before the auto-title
+// shipped). Idempotent — conversations with a real title are
+// untouched. Cheap: one DB read per conversation that needs it,
+// stops at the first user message. Run at runtime boot.
+//
+// Returns { scanned, updated } so the caller can log the impact.
+export function backfillConversationTitles(runtime) {
+  if (!runtime?.store?.listConversations
+      || !runtime.store.getConversationMessages
+      || !runtime.store.updateConversation) {
+    return { scanned: 0, updated: 0 };
+  }
+  // Walk every conversation regardless of project / archived state.
+  const all = runtime.store.listConversations({ limit: 5000, archived: 0 }) ?? [];
+  let updated = 0;
+  for (const conv of all) {
+    const id = conv.conversation_id ?? conv.id;
+    if (!id) continue;
+    const existing = String(conv.title ?? "").trim();
+    // Treat empty / matches-id as "needs fill". Don't blanket-catch
+    // anything starting with "conv_" because a user might legitimately
+    // name a conversation that way.
+    const needsTitle = !existing || existing === id;
+    if (!needsTitle) continue;
+    // First user message wins. Some conversations are scheduler-
+    // sourced (role=system) — skip those, the conv_auto_* surface
+    // already has its own labels.
+    const messages = runtime.store.getConversationMessages(id, { limit: 5 }) ?? [];
+    const firstUserMsg = messages.find((m) => m.role === "user");
+    if (!firstUserMsg?.content) continue;
+    const derived = deriveConversationTitle(firstUserMsg.content);
+    if (!derived) continue;
+    runtime.store.updateConversation(id, { title: derived });
+    updated += 1;
+  }
+  return { scanned: all.length, updated };
+}
+
 export function submitTaskWithConversation(params) {
   const { runtime, parentMessageId = null, projectId = null, clientMessageId = null } = params;
   const task = createTaskRecord(params);

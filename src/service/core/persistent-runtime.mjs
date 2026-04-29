@@ -8,6 +8,7 @@ import { createSqliteStore } from "./store/sqlite-store.mjs";
 import { createExplorerSelectionPipeServer, DEFAULT_EXPLORER_PIPE_NAME } from "./windows-pipe-server.mjs";
 import { getKimiRuntimeStatus, resolveKimiRuntime } from "../ai/code_cli/kimi/runtime.mjs";
 import { createReminderWatcher } from "../scheduler/reminder-watcher.mjs";
+import { backfillConversationTitles } from "./task-runtime.mjs";
 
 const QUEUED_RECOVERY_MAX_AGE_MS = 60 * 60 * 1000;
 
@@ -118,6 +119,21 @@ export function createPersistentRuntime({
   recoverInterruptedTasks(service.runtime);
   service.runtime.securityBroker.recoverRedactionStateLost();
   service.runtime.scheduler.sweepExpiredApprovals();
+  // One-shot back-fill: legacy conversations that pre-date the
+  // auto-title shipping carry empty / conv_xxx titles. Walk the store
+  // once on boot and derive a title from each conversation's first
+  // user message. Idempotent — conversations with a real title (or
+  // no user messages) are skipped.
+  try {
+    const result = backfillConversationTitles(service.runtime);
+    if (result.updated > 0) {
+      appendAuditLog(service.runtime, "conversation.titles_backfilled", result);
+    }
+  } catch (error) {
+    appendAuditLog(service.runtime, "conversation.titles_backfill_failed", {
+      message: error?.message ?? String(error)
+    });
+  }
 
   return {
     paths,
