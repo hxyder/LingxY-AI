@@ -1049,7 +1049,13 @@
       <div class="chat-layout">
         <aside class="chat-sidebar panel" aria-label="Conversation list">
           <header class="chat-sidebar-head">
-            <div>
+            <button id="chatSidebarToggleBtn" class="chat-sidebar-toggle" type="button"
+                    title="收起侧栏" aria-label="收起侧栏" aria-expanded="true">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="15 18 9 12 15 6"/>
+              </svg>
+            </button>
+            <div class="chat-sidebar-head-title">
               <strong style="font-size:13px;">Conversations</strong>
               <span class="zh" style="font-size:12px;color:var(--muted);margin-left:4px;">对话</span>
             </div>
@@ -1068,6 +1074,15 @@
             <p class="muted" style="padding:14px;font-size:12px;">还没有对话，点 + New 开始。</p>
           </div>
         </aside>
+        <!-- Collapsed-state expand button: floats at the chat shell's
+             left edge when the sidebar is collapsed. Same toggle —
+             clicking either restores the sidebar. -->
+        <button id="chatSidebarExpandBtn" class="chat-sidebar-expand" type="button"
+                title="展开侧栏" aria-label="展开侧栏" hidden>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="9 18 15 12 9 6"/>
+          </svg>
+        </button>
         <section class="panel console-chat-panel" aria-labelledby="consoleChatTitle">
           <div class="console-chat-shell">
             <div id="consoleChatActiveTitle" class="muted" style="font-size:12px;padding:4px 8px;" hidden></div>

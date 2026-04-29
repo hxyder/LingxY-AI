@@ -6015,6 +6015,36 @@ function startNewConsoleChat() {
 document.querySelector("#consoleChatNewBtn")?.addEventListener("click", startNewConsoleChat);
 document.querySelector("#chatSidebarNewBtn")?.addEventListener("click", startNewConsoleChat);
 
+// Sidebar collapse toggle. Persisted in localStorage so refreshing
+// keeps the user's preference. Two buttons drive the same state:
+// the chevron in the sidebar header (collapse) and the floating
+// arrow at the chat shell's left edge (expand).
+const CHAT_SIDEBAR_COLLAPSED_KEY = "lingxy.chatSidebar.collapsed";
+function applyChatSidebarCollapsed(collapsed) {
+  const layout = document.querySelector("#panel-chat .chat-layout");
+  if (!layout) return;
+  layout.classList.toggle("sidebar-collapsed", Boolean(collapsed));
+  const toggleBtn = document.querySelector("#chatSidebarToggleBtn");
+  if (toggleBtn) {
+    toggleBtn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    toggleBtn.setAttribute("title", collapsed ? "展开侧栏" : "收起侧栏");
+  }
+  const expandBtn = document.querySelector("#chatSidebarExpandBtn");
+  if (expandBtn) expandBtn.hidden = !collapsed;
+  try { localStorage.setItem(CHAT_SIDEBAR_COLLAPSED_KEY, collapsed ? "1" : "0"); } catch { /* sandbox */ }
+}
+function toggleChatSidebar() {
+  const layout = document.querySelector("#panel-chat .chat-layout");
+  applyChatSidebarCollapsed(!layout?.classList.contains("sidebar-collapsed"));
+}
+document.querySelector("#chatSidebarToggleBtn")?.addEventListener("click", toggleChatSidebar);
+document.querySelector("#chatSidebarExpandBtn")?.addEventListener("click", toggleChatSidebar);
+// Restore preference at boot.
+try {
+  const initialCollapsed = localStorage.getItem(CHAT_SIDEBAR_COLLAPSED_KEY) === "1";
+  if (initialCollapsed) applyChatSidebarCollapsed(true);
+} catch { /* ignore */ }
+
 // Sidebar search — debounced so each keystroke doesn't redraw the list.
 document.querySelector("#chatSidebarSearch")?.addEventListener("input", (event) => {
   chatSidebarSearchTerm = event.target.value ?? "";

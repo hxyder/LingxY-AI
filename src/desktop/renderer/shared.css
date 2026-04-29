@@ -1823,11 +1823,71 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   gap: 14px;
   height: 100%;
   min-height: 0;
+  position: relative;
+  transition: grid-template-columns var(--duration-base) var(--ease-standard);
+}
+/* Collapsed: sidebar slides out, chat shell takes the full width.
+   .chat-sidebar-expand floats at the chat shell's left edge so the
+   user can re-open. State is persisted in localStorage so refreshing
+   keeps the user's preference. */
+.chat-layout.sidebar-collapsed {
+  grid-template-columns: 0 minmax(0, 1fr);
+  gap: 0;
+}
+.chat-layout.sidebar-collapsed .chat-sidebar {
+  visibility: hidden;
+  pointer-events: none;
+}
+.chat-layout.sidebar-collapsed .chat-sidebar-expand {
+  display: grid;
+}
+.chat-sidebar-expand {
+  display: none;
+  position: absolute;
+  top: 12px;
+  left: 0;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 8px 8px 0;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  z-index: 5;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.chat-sidebar-expand:hover {
+  background: var(--panel-2);
+  color: var(--ink);
 }
 @media (max-width: 920px) {
   .chat-layout { grid-template-columns: 1fr; }
   .chat-sidebar { max-height: 220px; }
 }
+
+.chat-sidebar-toggle {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  margin-right: 4px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: background var(--duration-fast) var(--ease-standard), color var(--duration-fast) var(--ease-standard);
+}
+.chat-sidebar-toggle:hover {
+  background: var(--panel-2);
+  color: var(--ink);
+}
+.chat-sidebar-head-title { flex: 1; min-width: 0; }
 
 .chat-sidebar {
   display: flex;
