@@ -179,7 +179,7 @@ const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
 // scrolled up to read history, we leave the viewport alone and surface
 // a Scroll-to-bottom button. Replaces the older always-pin observer
 // which yanked users back on every DOM change.
-function createBottomPinController(scrollEl, { button = null, threshold = 80 } = {}) {
+function createBottomPinController(scrollEl, { button = null, threshold = 24 } = {}) {
   if (!scrollEl) {
     return {
       maybeScrollToBottom() {},
@@ -189,7 +189,6 @@ function createBottomPinController(scrollEl, { button = null, threshold = 80 } =
     };
   }
   let pinned = true;
-  let suppressScrollEvent = false;
   const isNearBottom = () => (
     scrollEl.scrollHeight - scrollEl.clientHeight - scrollEl.scrollTop <= threshold
   );
@@ -198,21 +197,24 @@ function createBottomPinController(scrollEl, { button = null, threshold = 80 } =
     button.hidden = pinned;
   };
   const refresh = () => {
-    if (suppressScrollEvent) { suppressScrollEvent = false; return; }
     pinned = isNearBottom();
     updateButton();
   };
+  const refreshSoon = () => {
+    try { requestAnimationFrame(refresh); } catch { setTimeout(refresh, 0); }
+  };
   scrollEl.addEventListener("scroll", refresh, { passive: true });
+  scrollEl.addEventListener("wheel", refreshSoon, { passive: true });
+  scrollEl.addEventListener("touchmove", refreshSoon, { passive: true });
+  scrollEl.addEventListener("keyup", refreshSoon);
 
   const scrollToBottom = () => {
-    suppressScrollEvent = true;
     scrollEl.scrollTop = scrollEl.scrollHeight;
     pinned = true;
     updateButton();
   };
   const maybeScrollToBottom = () => {
     if (!pinned) return;
-    suppressScrollEvent = true;
     scrollEl.scrollTop = scrollEl.scrollHeight;
   };
 
@@ -918,6 +920,24 @@ function appendConsoleChatMessage(role, text, options = {}) {
     body.appendChild(timeEl);
   }
 
+  // For user messages, add a tiny ↑/↓ nav so the user can jump between
+  // their own prompts in a long thread. Hover-visible so it doesn't
+  // crowd the layout when not in use.
+  if (role === "user") {
+    const nav = document.createElement("div");
+    nav.className = "chat-msg-nav";
+    nav.innerHTML = `
+      <button type="button" class="chat-msg-nav-btn" data-nav="prev" title="上一个问题" aria-label="上一个问题">↑</button>
+      <button type="button" class="chat-msg-nav-btn" data-nav="next" title="下一个问题" aria-label="下一个问题">↓</button>
+    `;
+    nav.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-nav]");
+      if (!btn) return;
+      navigateUserMessage(wrapper, btn.dataset.nav);
+    });
+    body.appendChild(nav);
+  }
+
   if (role === "assistant" || role === "ai") {
     const actions = document.createElement("div");
     actions.className = "chat-msg-actions";
@@ -954,6 +974,22 @@ function appendConsoleChatMessage(role, text, options = {}) {
   consoleChatMessages.appendChild(wrapper);
   consoleChatPin.maybeScrollToBottom();
   return wrapper;
+}
+
+// Jump between user-sent messages in a long thread. Click ↑ on a user
+// bubble to scroll the previous user prompt into view; ↓ for the next.
+// Wraps gracefully when at either end (no-op).
+function navigateUserMessage(currentEl, direction) {
+  if (!consoleChatMessages || !currentEl) return;
+  const all = [...consoleChatMessages.querySelectorAll(".chat-msg.user")];
+  const idx = all.indexOf(currentEl);
+  if (idx === -1) return;
+  const target = direction === "prev" ? all[idx - 1] : all[idx + 1];
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.add("chat-msg--flash");
+    setTimeout(() => target.classList.remove("chat-msg--flash"), 1100);
+  }
 }
 
 // Re-run the same task that produced this assistant message. Mirrors
@@ -1080,29 +1116,37 @@ document.addEventListener("selectionchange", () => {
   pill.hidden = false;
 });
 
-function openNoteTargetPicker(text, anchorEl) {
+// Unified +Note picker — same backend round-trip as the overlay's
+// openOverlayNotePicker so both surfaces behave identically:
+//   - GET /notes              → recent destinations
+//   - POST /notes/append-chip → append (or create new note + append)
+// Previously this used window.lingxyNotes (local in-browser state)
+// which only existed AFTER the user had visited the Notes tab; from a
+// cold console the chip just landed on the clipboard with a "go to
+// Notes" hint. The backend path doesn't depend on tab init.
+async function openNoteTargetPicker(text, anchorEl) {
   if (!text || !text.trim()) return;
-  const api = window.lingxyNotes;
-  if (!api?.list || !api?.addToNote) {
-    // Notes module hasn't booted yet — quick fallback: stash in clipboard
-    // and surface a hint via the chat state line so the action is never lost.
-    try { navigator.clipboard?.writeText?.(text); } catch { /* ignore */ }
-    showConsoleToast("已复制 — 打开 Notes 标签后再粘贴", { kind: "info" });
-    return;
-  }
-  const notes = api.list();
+  let notes = [];
+  try {
+    const data = await fetchJson("/notes");
+    notes = Array.isArray(data?.notes) ? data.notes : [];
+  } catch { /* notes endpoint unavailable — still allow create-new */ }
+  const stripTags = (s) => String(s ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
   const popover = document.createElement("div");
   popover.className = "note-target-popover";
   popover.innerHTML = `
     <div class="ntp-head">添加到笔记</div>
     <div class="ntp-list">
       <button type="button" data-note-id="__new__" class="ntp-item ntp-item-new">＋ 新建笔记</button>
-      ${notes.slice(0, 8).map((n) => `
-        <button type="button" data-note-id="${escapeHtml(n.id)}" class="ntp-item">
-          <span class="ntp-item-title">${escapeHtml(n.title || "Untitled note")}</span>
-          <span class="ntp-item-snippet">${escapeHtml(n.snippet || "")}</span>
-        </button>
-      `).join("")}
+      ${notes.slice(0, 8).map((n) => {
+        const snippet = stripTags(n.body_html || n.snippet || "").slice(0, 60);
+        return `
+          <button type="button" data-note-id="${escapeHtml(n.id)}" class="ntp-item">
+            <span class="ntp-item-title">${escapeHtml(n.title || "Untitled note")}</span>
+            <span class="ntp-item-snippet">${escapeHtml(snippet)}</span>
+          </button>
+        `;
+      }).join("")}
     </div>
   `;
   document.body.appendChild(popover);
@@ -1114,13 +1158,59 @@ function openNoteTargetPicker(text, anchorEl) {
   const close = () => { popover.remove(); document.removeEventListener("mousedown", outside, true); };
   const outside = (ev) => { if (!popover.contains(ev.target)) close(); };
   setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
+  // Submit helper — used by both the existing-note buttons and the
+  // new-note title prompt below.
+  const submitToNote = async (noteId, title = null) => {
+    try {
+      const result = await fetchJson("/notes/append-chip", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ noteId, text, sourceLabel: "From chat", title })
+      });
+      const target = result?.note?.title || "笔记";
+      showConsoleToast(result?.created ? `已新建：${target}` : `已添加到：${target}`, { kind: "ok" });
+      try { window.lingxyNotes?.refresh?.({ preserveSelection: true }); } catch { /* ignore */ }
+    } catch (err) {
+      showConsoleToast(`添加失败：${err.message ?? err}`, { kind: "err" });
+    }
+    close();
+  };
+
   popover.querySelectorAll("[data-note-id]").forEach((btn) => {
     btn.addEventListener("click", () => {
-      const id = btn.dataset.noteId;
-      const noteId = id === "__new__" ? api.createNote?.() : id;
-      if (noteId) api.addToNote(noteId, text);
-      close();
-      showConsoleToast("已添加到笔记", { kind: "ok" });
+      const noteId = btn.dataset.noteId;
+      // New-note flow — inline a title input so the user can name the
+      // note before it's created. Empty title falls back to a default
+      // server-side. Existing-note buttons skip this prompt entirely.
+      if (noteId === "__new__") {
+        const promptEl = document.createElement("div");
+        promptEl.className = "ntp-new-prompt";
+        promptEl.innerHTML = `
+          <input type="text" class="ntp-title-input" placeholder="笔记标题（可选）" maxlength="80"/>
+          <button type="button" class="ntp-title-confirm">创建</button>
+        `;
+        // Replace the picker's body with the prompt to keep the
+        // popover compact. The user can press Esc or click outside
+        // to cancel — handled by the existing outside-click listener.
+        const list = popover.querySelector(".ntp-list");
+        if (list) {
+          list.innerHTML = "";
+          list.appendChild(promptEl);
+        }
+        const titleInput = promptEl.querySelector(".ntp-title-input");
+        const confirmBtn = promptEl.querySelector(".ntp-title-confirm");
+        titleInput?.focus();
+        const submit = () => {
+          const title = titleInput?.value?.trim() || null;
+          void submitToNote("__new__", title);
+        };
+        confirmBtn?.addEventListener("click", submit);
+        titleInput?.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") { ev.preventDefault(); submit(); }
+        });
+        return;
+      }
+      void submitToNote(noteId);
     });
   });
 }
@@ -1684,6 +1774,14 @@ async function loadConsoleConversationFromBackend(conversationId) {
     project_id: detail.conversation.project_id
   });
   if (consoleChatMessages) {
+    // Defensive: if a streaming answer is in flight, drop its reference
+    // before wiping so future text_delta frames don't keep writing into
+    // a detached node and silently lose the user's reply. The wipe
+    // itself is intentional — switching conversations should hard-reset.
+    if (consoleChatStreamingAnswer) {
+      consoleChatStreamingAnswer.bubble?.classList.remove("streaming");
+      consoleChatStreamingAnswer = null;
+    }
     consoleChatMessages.innerHTML = "";
     consoleChatMessages.scrollTop = 0;
   }
@@ -4470,7 +4568,8 @@ function buildDefaultProjectStore() {
     currentProjectId: DEFAULT_PROJECT_ID,
     currentConversationId: null,
     projects: [{ id: DEFAULT_PROJECT_ID, name: "默认", color: PROJECT_COLORS[0], createdAt: Date.now(), metadata: {} }],
-    conversations: []
+    conversations: [],
+    updatedAt: 0
   };
 }
 
@@ -4483,12 +4582,15 @@ function normalizeProjectStore(store) {
   }
   next.currentProjectId = next.currentProjectId || DEFAULT_PROJECT_ID;
   next.currentConversationId = next.currentConversationId ?? null;
+  next.updatedAt = Number.isFinite(Number(next.updatedAt)) ? Number(next.updatedAt) : 0;
   return next;
 }
 
 function mergeProjectStores(localStore, remoteStore) {
   const local = normalizeProjectStore(localStore);
   const remote = normalizeProjectStore(remoteStore);
+  const localIsNewer = (local.updatedAt ?? 0) > (remote.updatedAt ?? 0);
+  const pointerSource = localIsNewer ? local : remote;
   const projects = new Map();
   for (const project of [...remote.projects, ...local.projects]) {
     projects.set(project.id, { ...(projects.get(project.id) ?? {}), ...project });
@@ -4501,10 +4603,11 @@ function mergeProjectStores(localStore, remoteStore) {
     }
   }
   return normalizeProjectStore({
-    currentProjectId: remote.currentProjectId || local.currentProjectId || DEFAULT_PROJECT_ID,
-    currentConversationId: remote.currentConversationId ?? local.currentConversationId ?? null,
+    currentProjectId: pointerSource.currentProjectId || DEFAULT_PROJECT_ID,
+    currentConversationId: pointerSource.currentConversationId ?? null,
     projects: [...projects.values()],
-    conversations: [...conversations.values()]
+    conversations: [...conversations.values()],
+    updatedAt: Math.max(local.updatedAt ?? 0, remote.updatedAt ?? 0)
   });
 }
 
@@ -4520,6 +4623,7 @@ function loadConsoleProjectStore() {
 
 function saveConsoleProjectStore(store) {
   const normalized = normalizeProjectStore(store);
+  normalized.updatedAt = Date.now();
   state.projectStore = normalized;
   localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(normalized));
   void saveConsoleProjectStoreToService(normalized);

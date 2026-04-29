@@ -88,7 +88,7 @@ const taskListFilterBtns = document.querySelectorAll("[data-task-filter]");
 // scrolled up to read history, we leave the viewport alone and surface
 // a Scroll-to-bottom button. Replaces the older always-pin observer
 // which yanked users back on every DOM change.
-function createBottomPinController(scrollEl, { button = null, threshold = 80 } = {}) {
+function createBottomPinController(scrollEl, { button = null, threshold = 24 } = {}) {
   if (!scrollEl) {
     return {
       maybeScrollToBottom() {},
@@ -98,7 +98,6 @@ function createBottomPinController(scrollEl, { button = null, threshold = 80 } =
     };
   }
   let pinned = true;
-  let suppressScrollEvent = false;
   const isNearBottom = () => (
     scrollEl.scrollHeight - scrollEl.clientHeight - scrollEl.scrollTop <= threshold
   );
@@ -107,21 +106,24 @@ function createBottomPinController(scrollEl, { button = null, threshold = 80 } =
     button.hidden = pinned;
   };
   const refresh = () => {
-    if (suppressScrollEvent) { suppressScrollEvent = false; return; }
     pinned = isNearBottom();
     updateButton();
   };
+  const refreshSoon = () => {
+    try { requestAnimationFrame(refresh); } catch { setTimeout(refresh, 0); }
+  };
   scrollEl.addEventListener("scroll", refresh, { passive: true });
+  scrollEl.addEventListener("wheel", refreshSoon, { passive: true });
+  scrollEl.addEventListener("touchmove", refreshSoon, { passive: true });
+  scrollEl.addEventListener("keyup", refreshSoon);
 
   const scrollToBottom = () => {
-    suppressScrollEvent = true;
     scrollEl.scrollTop = scrollEl.scrollHeight;
     pinned = true;
     updateButton();
   };
   const maybeScrollToBottom = () => {
     if (!pinned) return;
-    suppressScrollEvent = true;
     scrollEl.scrollTop = scrollEl.scrollHeight;
   };
 
@@ -394,7 +396,13 @@ function projectHasUnread(projectId) {
 }
 
 function buildDefaultProjectStore() {
-  return { currentProjectId: DEFAULT_PROJECT_ID, currentConversationId: null, projects: [], conversations: [] };
+  return {
+    currentProjectId: DEFAULT_PROJECT_ID,
+    currentConversationId: null,
+    projects: [],
+    conversations: [],
+    updatedAt: 0
+  };
 }
 
 function normalizeProjectStore(store) {
@@ -405,6 +413,7 @@ function normalizeProjectStore(store) {
   next.conversations = Array.isArray(next.conversations) ? next.conversations.filter((conversation) => conversation?.id) : [];
   next.currentProjectId = next.currentProjectId || DEFAULT_PROJECT_ID;
   next.currentConversationId = next.currentConversationId ?? null;
+  next.updatedAt = Number.isFinite(Number(next.updatedAt)) ? Number(next.updatedAt) : 0;
   const previous = projectStore;
   projectStore = next;
   ensureDefaultProject();
@@ -416,6 +425,8 @@ function normalizeProjectStore(store) {
 function mergeProjectStores(localStore, remoteStore) {
   const local = normalizeProjectStore(localStore);
   const remote = normalizeProjectStore(remoteStore);
+  const localIsNewer = (local.updatedAt ?? 0) > (remote.updatedAt ?? 0);
+  const pointerSource = localIsNewer ? local : remote;
   const projects = new Map();
   for (const project of [...remote.projects, ...local.projects]) {
     projects.set(project.id, { ...(projects.get(project.id) ?? {}), ...project });
@@ -430,10 +441,11 @@ function mergeProjectStores(localStore, remoteStore) {
   }
 
   return normalizeProjectStore({
-    currentProjectId: remote.currentProjectId || local.currentProjectId || DEFAULT_PROJECT_ID,
-    currentConversationId: remote.currentConversationId ?? local.currentConversationId ?? null,
+    currentProjectId: pointerSource.currentProjectId || DEFAULT_PROJECT_ID,
+    currentConversationId: pointerSource.currentConversationId ?? null,
     projects: [...projects.values()],
-    conversations: [...conversations.values()]
+    conversations: [...conversations.values()],
+    updatedAt: Math.max(local.updatedAt ?? 0, remote.updatedAt ?? 0)
   });
 }
 
@@ -525,6 +537,7 @@ function loadProjectStore() {
 function saveProjectStore() {
   try {
     if (!projectStore) return;
+    projectStore.updatedAt = Date.now();
     for (const project of projectStore.projects) {
       const convs = projectStore.conversations.filter((c) => c.projectId === project.id).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
       if (convs.length > MAX_CONVERSATIONS_PER_PROJECT) {
@@ -878,6 +891,12 @@ function startNewConversation() {
   if (projectStore) projectStore.currentConversationId = null;
   saveProjectStore();
   clearPendingInputContext();
+  // Hard reset: drop the streaming bubble reference so clearBubbles()
+  // doesn't preserve it into the new conversation. (Defensive guard in
+  // clearBubbles keeps streaming visible during incidental wipes — but
+  // a deliberate "new conversation" should sweep everything.)
+  streamingBubble = null;
+  streamingBubbleRawText = "";
   clearBubbles();
   commandInput.value = "";
   autoSizeInput();
@@ -1067,6 +1086,21 @@ async function regenerateTask(taskId, btn) {
   }
 }
 
+// Jump between user-sent bubbles in a long overlay thread. Mirrors
+// console's navigateUserMessage. Wraps gracefully at either end.
+function navigateUserBubble(currentEl, direction) {
+  if (!bubbleArea || !currentEl) return;
+  const all = [...bubbleArea.querySelectorAll(".bubble.user")];
+  const idx = all.indexOf(currentEl);
+  if (idx === -1) return;
+  const target = direction === "prev" ? all[idx - 1] : all[idx + 1];
+  if (target) {
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.add("bubble--flash");
+    setTimeout(() => target.classList.remove("bubble--flash"), 1100);
+  }
+}
+
 function appendAssistantActions(bubble, content, taskId) {
   if (!bubble) return;
   bubble.querySelector(":scope > .bubble-note-actions")?.remove();
@@ -1158,6 +1192,25 @@ function addBubble(role, content, options) {
     }
   } else {
     bubble.appendChild(content);
+  }
+
+  // Per-user-message ↑/↓ jump nav. Hover-only. Lets the user step
+  // back to a previous prompt in a long thread without scrolling
+  // manually — particularly useful when tool-step bubbles fill the
+  // gap between answers.
+  if (role === "user") {
+    const nav = document.createElement("div");
+    nav.className = "bubble-nav";
+    nav.innerHTML = `
+      <button type="button" class="bubble-nav-btn" data-nav="prev" title="上一个问题" aria-label="上一个问题">↑</button>
+      <button type="button" class="bubble-nav-btn" data-nav="next" title="下一个问题" aria-label="下一个问题">↓</button>
+    `;
+    nav.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-nav]");
+      if (!btn) return;
+      navigateUserBubble(bubble, btn.dataset.nav);
+    });
+    bubble.appendChild(nav);
   }
 
   if (options?.optionButtons) {
@@ -1257,8 +1310,25 @@ function addSystemBubble(text) {
 }
 
 function clearBubbles() {
+  // Defensive: preserve an in-progress streaming bubble across clears.
+  // Without this guard, any code path that calls clearBubbles() while
+  // text_delta frames are still arriving (project-store sync with
+  // render=true, conversation reconcile, focus-driven re-render, etc.)
+  // silently wipes the user's mid-stream answer — the JS reference
+  // sticks around but the DOM node is gone, so future text_delta
+  // updates write into a detached node and the user sees their reply
+  // vanish. Hard-reset paths (startNewConversation, closeActiveTask-
+  // EventStream) explicitly null streamingBubble first so they still
+  // wipe cleanly.
+  const liveStream = streamingBubble?.classList?.contains("streaming")
+    ? streamingBubble
+    : null;
   bubbleArea.innerHTML = "";
   bubbleArea.hidden = true;
+  if (liveStream) {
+    bubbleArea.appendChild(liveStream);
+    bubbleArea.hidden = false;
+  }
   showEmptyState();
   // timeline bubble lives inside bubbleArea, so innerHTML="" already removed it;
   // just clear the JS references
@@ -1602,6 +1672,15 @@ function appendToolStepBubble(toolId, state = "pending", detailText = "", { anch
   bubbleArea.hidden = false;
   if (anchorBefore && anchorBefore.parentNode === bubbleArea) {
     bubbleArea.insertBefore(stepEl, anchorBefore);
+  } else if (streamingBubble && streamingBubble.parentNode === bubbleArea) {
+    // Pin the streaming answer to the bottom of the conversation so the
+    // user can keep watching it while new tool steps fire. Insert the
+    // step bubble just above streamingBubble; final-composer's
+    // bubbleArea.appendChild(streamingBubble) at inline_result re-
+    // anchors it to the tail anyway, but during the streaming window
+    // we want it visible without the user having to scroll.
+    bubbleArea.insertBefore(stepEl, streamingBubble);
+    bubbleAreaPin.maybeScrollToBottom();
   } else {
     bubbleArea.appendChild(stepEl);
     bubbleAreaPin.maybeScrollToBottom();
@@ -3293,24 +3372,55 @@ async function openOverlayNotePicker(text, anchorEl) {
   };
   const outside = (ev) => { if (!popover.contains(ev.target) && ev.target !== anchorEl) close(); };
   setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
-  popover.querySelectorAll("[data-note-id]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const noteId = btn.dataset.noteId;
-      try {
-        const result = await fetchJson("/notes/append-chip", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ noteId, text, sourceLabel: "From overlay" })
-        });
-        if (anchorEl) {
-          const target = result?.note?.title || "笔记";
-          anchorEl.textContent = result?.created ? `已新建 ✓ ${target}` : `已添加 ✓ ${target}`;
-          setTimeout(() => { anchorEl.textContent = "＋ Note"; }, 1800);
-        }
-      } catch (err) {
-        if (anchorEl) anchorEl.textContent = `失败：${err.message}`;
+  const submitToNote = async (noteId, title = null) => {
+    try {
+      const result = await fetchJson("/notes/append-chip", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ noteId, text, sourceLabel: "From overlay", title })
+      });
+      if (anchorEl) {
+        const target = result?.note?.title || "笔记";
+        anchorEl.textContent = result?.created ? `已新建 ✓ ${target}` : `已添加 ✓ ${target}`;
+        setTimeout(() => { anchorEl.textContent = "＋ Note"; }, 1800);
       }
-      close();
+    } catch (err) {
+      if (anchorEl) anchorEl.textContent = `失败：${err.message}`;
+    }
+    close();
+  };
+
+  popover.querySelectorAll("[data-note-id]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const noteId = btn.dataset.noteId;
+      if (noteId === "__new__") {
+        // New-note flow — inline a title input so the user can name the
+        // note. Same UX as the console picker.
+        const promptEl = document.createElement("div");
+        promptEl.className = "onp-new-prompt";
+        promptEl.innerHTML = `
+          <input type="text" class="onp-title-input" placeholder="笔记标题（可选）" maxlength="80"/>
+          <button type="button" class="onp-title-confirm">创建</button>
+        `;
+        const list = popover.querySelector(".onp-list");
+        if (list) {
+          list.innerHTML = "";
+          list.appendChild(promptEl);
+        }
+        const titleInput = promptEl.querySelector(".onp-title-input");
+        const confirmBtn = promptEl.querySelector(".onp-title-confirm");
+        titleInput?.focus();
+        const submit = () => {
+          const title = titleInput?.value?.trim() || null;
+          void submitToNote("__new__", title);
+        };
+        confirmBtn?.addEventListener("click", submit);
+        titleInput?.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") { ev.preventDefault(); submit(); }
+        });
+        return;
+      }
+      void submitToNote(noteId);
     });
   });
 }
@@ -4082,9 +4192,26 @@ async function loadClipboardIntoContext({ showBubble = false } = {}) {
    INPUT AUTO-SIZING
    ═══════════════════════════════════════════════ */
 
+// Auto-grow the composer up to AUTO_MAX_INPUT_HEIGHT while the user
+// types. If the user has manually dragged the textarea's resize handle
+// (browser-native, bottom-right corner), preserve their height — we
+// detect that by remembering the height autoSizeInput last set and
+// comparing on the next call. AUTO_MAX_INPUT_HEIGHT is the soft cap
+// during typing; the CSS max-height (240px) is the hard ceiling for
+// drag-resize.
+const AUTO_MAX_INPUT_HEIGHT = 96;
+let autoSizedInputHeight = 0;
 function autoSizeInput() {
+  if (!commandInput) return;
+  const current = parseFloat(commandInput.style.height) || 0;
+  if (autoSizedInputHeight && Math.abs(current - autoSizedInputHeight) > 2) {
+    // User has dragged the handle — leave their preferred size alone.
+    return;
+  }
   commandInput.style.height = "auto";
-  commandInput.style.height = Math.min(commandInput.scrollHeight, 96) + "px";
+  const next = Math.min(commandInput.scrollHeight, AUTO_MAX_INPUT_HEIGHT);
+  commandInput.style.height = `${next}px`;
+  autoSizedInputHeight = next;
 }
 
 /* ═══════════════════════════════════════════════

@@ -1481,7 +1481,8 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
         const result = runtime.notesStore.appendChip({
           noteId: body.noteId ?? "__new__",
           text: body.text ?? "",
-          sourceLabel: body.sourceLabel ?? null
+          sourceLabel: body.sourceLabel ?? null,
+          title: body.title ?? null
         });
         return sendJson(response, 200, result);
       }

@@ -1759,6 +1759,14 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 #panel-chat.active {
   display: flex;
   flex-direction: column;
+  /* Pin chat to the viewport so the composer stays anchored at the
+     bottom and the message column scrolls inside instead of pushing
+     the composer further down with each streaming chunk. Without this
+     definite height, the flex chain has no upper bound and the
+     messages container grows with content. */
+  height: calc(100vh - var(--topbar-height, 56px));
+  padding-top: 0;
+  padding-bottom: 0;
 }
 .console-chat-panel {
   flex: 1;
@@ -1934,30 +1942,35 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   to { opacity: 1; transform: scale(1); }
 }
 
-/* Floating "↓ latest" button. Lives inside .console-chat-shell, sits
-   just above the composer. Toggled by createBottomPinController. */
+/* Floating "↓ 回到最新" pill. Centered horizontally inside the chat
+   column (above the composer) — reads as part of the conversation
+   instead of stuck on the right edge. Toggled by
+   createBottomPinController. */
 .scroll-to-bottom {
   position: absolute;
-  right: 24px;
-  bottom: 168px;
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
+  left: 50%;
+  bottom: 156px;
+  transform: translateX(-50%);
+  height: 30px;
+  padding: 0 14px 0 12px;
+  border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
-  display: grid;
-  place-items: center;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
-  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.18);
   transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
   z-index: 5;
 }
 .scroll-to-bottom:hover {
-  transform: translateY(-1px);
+  transform: translateX(-50%) translateY(-1px);
   background: var(--panel-2);
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.24);
+  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.22);
 }
 .scroll-to-bottom[hidden] { display: none; }
 .console-chat-messages {
@@ -2136,6 +2149,51 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-size: 13px;
   line-height: 1.6;
 }
+/* Per-user-message ↑/↓ jump nav. Hover-only so the chrome doesn't
+   crowd the column when the user isn't actively navigating. The
+   target prompt briefly flashes via .chat-msg--flash so the user
+   sees where they landed. */
+.chat-msg-nav {
+  display: inline-flex;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  /* User bubbles align right (flex-row-reverse on .chat-msg.user), so
+     pin the nav to the right edge of the body column too. */
+  justify-content: flex-end;
+}
+.chat-msg.user .chat-msg-body { display: flex; flex-direction: column; align-items: flex-end; }
+.chat-msg.user:hover .chat-msg-nav { opacity: 0.75; }
+.chat-msg-nav-btn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  background: transparent;
+  border-radius: 50%;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  font-family: inherit;
+  display: grid;
+  place-items: center;
+}
+.chat-msg-nav-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-color: var(--accent);
+}
+@keyframes chat-msg-flash {
+  0%   { box-shadow: 0 0 0 0 var(--accent-soft); }
+  50%  { box-shadow: 0 0 0 6px var(--accent-soft); }
+  100% { box-shadow: 0 0 0 0 var(--accent-soft); }
+}
+.chat-msg--flash .chat-msg-bubble {
+  animation: chat-msg-flash 1s ease;
+}
+
 /* Inline timestamp footer rendered by appendConsoleChatMessage. The
    bubble shows relative time ("2 分钟前") and a full datetime tooltip
    on hover. Tinted muted so it doesn't compete with the message body. */
@@ -2254,6 +2312,46 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 }
 .note-target-popover .ntp-item-new:hover {
   background: color-mix(in srgb, var(--accent-soft) 70%, var(--accent) 30%);
+}
+
+/* New-note title prompt — replaces the picker list when the user
+   chose "+ 新建笔记". Compact row: text input + 创建 button.
+   Esc / outside-click cancels via the popover's existing handler. */
+.note-target-popover .ntp-new-prompt {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+  align-items: center;
+}
+.note-target-popover .ntp-title-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-family: inherit;
+  outline: none;
+}
+.note-target-popover .ntp-title-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.note-target-popover .ntp-title-confirm {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+.note-target-popover .ntp-title-confirm:hover {
+  background: var(--accent-strong);
 }
 /* UCA-177: premium timeline card for tool calls in chat.
    Two-row layout (head + args) with optional outcome pill and a thin

@@ -105,9 +105,11 @@ export function createNotesStore({ filePath } = {}) {
     },
     // Append a "chat chip" block to a note's body. If `noteId === "__new__"`
     // (or no matching note exists), create a fresh note with the chip.
+    // `title` is honoured only on creation — appending to an existing
+    // note never overwrites its title.
     // Returns `{ note, created }` so the caller can surface "added to
     // <title>" feedback.
-    appendChip({ noteId, text, sourceLabel = null }) {
+    appendChip({ noteId, text, sourceLabel = null, title = null }) {
       const state = readFile();
       const safe = escapeHtml(String(text || "").trim());
       if (!safe) return { note: null, created: false };
@@ -118,7 +120,11 @@ export function createNotesStore({ filePath } = {}) {
       let target = state.notes.find((n) => n.id === noteId);
       let created = false;
       if (!target || noteId === "__new__") {
-        target = normalizeNote({ id: makeId(), title: sourceLabel || "Untitled note" });
+        const trimmedTitle = String(title ?? "").trim();
+        target = normalizeNote({
+          id: makeId(),
+          title: trimmedTitle || sourceLabel || "Untitled note"
+        });
         target.body_html = chipHtml;
         state.notes.unshift(target);
         created = true;
