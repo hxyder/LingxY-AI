@@ -552,6 +552,11 @@ tabButtons.forEach((btn) => {
       initNotesIfNeeded();
     } else if (btn.dataset.tab === "conversations") {
       void loadConversationsTab();
+    } else if (btn.dataset.tab === "chat") {
+      // Phase 2: refresh the chat sidebar's conversation list each
+      // time the user enters the tab so newly-created conversations
+      // show up without a full reload.
+      void refreshChatSidebar();
     }
   });
 });
@@ -1734,6 +1739,11 @@ async function submitConsoleChat() {
       consoleActiveConversation = cacheEnsureBackendFields({ conversation_id: replyConvId });
       renderConsoleChatHeader();
     }
+    // Phase 2: surface the new conversation in the sidebar
+    // immediately. ensureConversationsCache() refetches from backend
+    // so the new conversation_id (with auto-derived title from
+    // first user command) appears.
+    void refreshChatSidebar();
     await refreshWorkspace();
     updateChatModelChip?.();
     consoleChatAttachList.length = 0;
@@ -1853,11 +1863,82 @@ async function loadConsoleConversationFromBackend(conversationId) {
   cacheApplyBatch(consoleActiveConversation, detail, consoleChatMessageAdapter);
   renderConsoleChatHeader();
   switchTab("chat");
+  // Update the sidebar's active highlight to track the just-loaded
+  // conversation.
+  renderChatSidebar();
 }
 
 function clearConsoleActiveConversation() {
   consoleActiveConversation = null;
   renderConsoleChatHeader();
+  renderChatSidebar();
+}
+
+/* ═══════════════════════════════════════════════
+   IA Phase 2 — Chat sidebar
+   Renders the conversation list inside the Chat tab. Stays in sync
+   with conversationsState.items (the same cache the Conversations
+   panel uses). Click any row → load into the chat shell. The "+ New"
+   button reuses the existing #consoleChatNewBtn flow.
+   ═══════════════════════════════════════════════ */
+let chatSidebarSearchTerm = "";
+let chatSidebarSearchDebounce = null;
+
+async function ensureConversationsCache() {
+  if (Array.isArray(conversationsState?.items) && conversationsState.items.length > 0) return;
+  try {
+    const res = await fetch(`${state.serviceBaseUrl}/conversations?limit=100&archived=false`);
+    const data = await res.json();
+    if (conversationsState) {
+      conversationsState.items = Array.isArray(data?.conversations) ? data.conversations : [];
+    }
+  } catch { /* keep cache empty — sidebar shows the empty hint */ }
+}
+
+function renderChatSidebar() {
+  const listEl = document.querySelector("#chatSidebarList");
+  if (!listEl) return;
+  const items = (conversationsState?.items ?? []);
+  const term = chatSidebarSearchTerm.trim().toLowerCase();
+  const filtered = term
+    ? items.filter((c) => {
+        const title = String(c.title || "").toLowerCase();
+        const id = String(c.conversation_id || "").toLowerCase();
+        return title.includes(term) || id.includes(term);
+      })
+    : items;
+  if (filtered.length === 0) {
+    listEl.innerHTML = items.length === 0
+      ? `<p class="chat-sidebar-empty">还没有对话，点 + New 开始。</p>`
+      : `<p class="chat-sidebar-empty">没有匹配 "${escapeHtml(term)}" 的对话。</p>`;
+    return;
+  }
+  const activeId = consoleActiveConversation?.conversation_id ?? null;
+  listEl.innerHTML = filtered.map((c) => {
+    const isActive = c.conversation_id === activeId;
+    return `
+      <button type="button" class="chat-sidebar-item ${isActive ? "active" : ""}" data-chat-sidebar-id="${escapeHtml(c.conversation_id)}">
+        <div class="chat-sidebar-item-title">${escapeHtml(c.title || c.conversation_id.slice(0, 24))}</div>
+        <div class="chat-sidebar-item-meta">
+          <span>${escapeHtml(String(c.message_count ?? 0))}m · ${escapeHtml(String(c.task_count ?? 0))}t</span>
+          <span>·</span>
+          <span>${escapeHtml(formatDateTime(c.updated_at))}</span>
+        </div>
+      </button>
+    `;
+  }).join("");
+  for (const btn of listEl.querySelectorAll("[data-chat-sidebar-id]")) {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.chatSidebarId;
+      if (!id || id === activeId) return;
+      void loadConsoleConversationFromBackend(id);
+    });
+  }
+}
+
+async function refreshChatSidebar() {
+  await ensureConversationsCache();
+  renderChatSidebar();
 }
 
 function formatDateTime(value) {
@@ -5914,7 +5995,7 @@ document.querySelector("#projectNewBtn")?.addEventListener("click", () => {
 // "+ New chat" — clear the current thread and the active conversation
 // reference so the next submit creates a fresh conversation_id rather
 // than continuing to thread into the previously-resumed one.
-document.querySelector("#consoleChatNewBtn")?.addEventListener("click", () => {
+function startNewConsoleChat() {
   consoleChatEventStream?.close?.();
   consoleChatEventStream = null;
   consoleChatToolCards = new Map();
@@ -5928,6 +6009,20 @@ document.querySelector("#consoleChatNewBtn")?.addEventListener("click", () => {
   const input = document.querySelector("#consoleChatInput");
   if (input) { input.value = ""; input.focus(); }
   if (consoleChatState) consoleChatState.textContent = "";
+  renderChatSidebar();
+}
+
+document.querySelector("#consoleChatNewBtn")?.addEventListener("click", startNewConsoleChat);
+document.querySelector("#chatSidebarNewBtn")?.addEventListener("click", startNewConsoleChat);
+
+// Sidebar search — debounced so each keystroke doesn't redraw the list.
+document.querySelector("#chatSidebarSearch")?.addEventListener("input", (event) => {
+  chatSidebarSearchTerm = event.target.value ?? "";
+  if (chatSidebarSearchDebounce) clearTimeout(chatSidebarSearchDebounce);
+  chatSidebarSearchDebounce = setTimeout(() => {
+    chatSidebarSearchDebounce = null;
+    renderChatSidebar();
+  }, 120);
 });
 
 projectCreateForm?.addEventListener("submit", (event) => {
@@ -6251,7 +6346,15 @@ setupOfficeAddinsButton?.addEventListener("click", () => {
 if (dagEditorInput) dagEditorInput.value = JSON.stringify(buildSampleDag(), null, 2);
 void refreshWorkspace();
 void refreshOfficeAddinSetupStatus();
+// Phase 2: hydrate the chat sidebar at startup so a user who opens
+// directly into Chat tab (saved view) doesn't see "no conversations
+// yet" placeholder while their actual list loads in the background.
+void refreshChatSidebar();
 setInterval(() => void refreshWorkspace(), 6000);
+// Refresh sidebar periodically too — picks up conversations created
+// in the overlay while console is open. Cheap (just hits /conversations
+// and re-renders if the cache changed).
+setInterval(() => void refreshChatSidebar(), 30_000);
 
 // Promote chat-bubble timestamps from "刚刚" → "1 分钟前" → … without
 // re-rendering the message. Cheap; only walks visible <time> nodes.

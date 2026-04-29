@@ -566,9 +566,12 @@ label, .field-label {
    ========================================================================= */
 .projects-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) minmax(260px, 0.8fr);
+  /* Phase 2: dropped the third (Preview) column — Chat tab now owns
+     conversation viewing. Two-column layout keeps the project picker
+     on the left and the per-project conversations on the right. */
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 12px;
-  max-width: 1200px;
+  max-width: 960px;
   height: calc(100vh - var(--top-h) - 96px);
   min-height: 480px;
 }
@@ -1808,6 +1811,101 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   height: 100%;
   /* Anchor for the absolutely positioned scroll-to-bottom button. */
   position: relative;
+}
+
+/* IA Phase 2 — Chat tab two-column layout: 280px conversation
+   sidebar (left) + main chat shell (right). The grid takes the
+   panel-chat's height (calc(100vh - topbar)) and lets each child
+   manage its own internal scrolling. */
+.chat-layout {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 14px;
+  height: 100%;
+  min-height: 0;
+}
+@media (max-width: 920px) {
+  .chat-layout { grid-template-columns: 1fr; }
+  .chat-sidebar { max-height: 220px; }
+}
+
+.chat-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+.chat-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.chat-sidebar-head .btn {
+  font-size: 11px;
+  padding: 3px 9px;
+}
+.chat-sidebar-search {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.chat-sidebar-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.chat-sidebar-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  transition: background var(--duration-fast) var(--ease-standard);
+}
+.chat-sidebar-item:hover { background: var(--panel-2); }
+.chat-sidebar-item.active {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 0 var(--accent);
+}
+.chat-sidebar-item-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.chat-sidebar-item.active .chat-sidebar-item-title { color: var(--accent-strong); }
+.chat-sidebar-item-meta {
+  font-size: 10.5px;
+  color: var(--muted);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.chat-sidebar-empty {
+  padding: 14px;
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
 }
 
 /* Right-click context menu for chat bubbles (Copy / Quote / Regenerate

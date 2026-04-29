@@ -1042,9 +1042,35 @@
           </button>
         </div>
       </header>
-      <section class="panel console-chat-panel" aria-labelledby="consoleChatTitle">
-        <div class="console-chat-shell">
-          <div id="consoleChatActiveTitle" class="muted" style="font-size:12px;padding:4px 8px;" hidden></div>
+      <!-- IA Phase 2: Chat tab gets a 280px conversation sidebar on
+           the left so users can switch / search / new-chat without
+           leaving the tab. The right pane (.console-chat-panel) keeps
+           the existing chat shell unchanged. -->
+      <div class="chat-layout">
+        <aside class="chat-sidebar panel" aria-label="Conversation list">
+          <header class="chat-sidebar-head">
+            <div>
+              <strong style="font-size:13px;">Conversations</strong>
+              <span class="zh" style="font-size:12px;color:var(--muted);margin-left:4px;">对话</span>
+            </div>
+            <button id="chatSidebarNewBtn" class="btn btn-sm btn-primary" type="button" title="New chat">
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              New
+            </button>
+          </header>
+          <div class="chat-sidebar-search">
+            <label class="search-input" style="margin:0;width:100%;">
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input id="chatSidebarSearch" type="search" placeholder="搜索对话…" autocomplete="off" />
+            </label>
+          </div>
+          <div id="chatSidebarList" class="chat-sidebar-list">
+            <p class="muted" style="padding:14px;font-size:12px;">还没有对话，点 + New 开始。</p>
+          </div>
+        </aside>
+        <section class="panel console-chat-panel" aria-labelledby="consoleChatTitle">
+          <div class="console-chat-shell">
+            <div id="consoleChatActiveTitle" class="muted" style="font-size:12px;padding:4px 8px;" hidden></div>
           <div id="consoleChatMessages" class="console-chat-messages">
             <div class="console-chat-empty">
               <svg class="console-chat-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
@@ -1102,6 +1128,7 @@
           <input id="consoleChatAttachInput" type="file" multiple hidden>
         </div>
       </section>
+      </div><!-- /.chat-layout -->
     </section>
 
     <!-- ═══════════════════════════════════════
@@ -1412,17 +1439,12 @@
             <div id="projectConversationList" class="item-list"></div>
           </div>
         </section>
-        <section class="projects-col panel">
-          <header class="panel-head projects-col-head">
-            <div class="panel-head-main">
-              <h3 class="panel-title">Preview<span class="zh">预览</span></h3>
-              <span class="panel-sub">会话快照</span>
-            </div>
-          </header>
-          <div class="projects-col-body">
-            <pre id="projectConversationPreview" class="history-preview muted">Select a conversation.</pre>
-          </div>
-        </section>
+        <!-- IA Phase 2: Preview column retired. Chat tab now owns
+             conversation viewing — clicking ↗ Resume on a row in the
+             middle column loads it into Chat. Element kept hidden so
+             any legacy code that writes to #projectConversationPreview
+             keeps working without throwing. -->
+        <pre id="projectConversationPreview" hidden></pre>
       </div>
     </section>
 

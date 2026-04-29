@@ -169,4 +169,25 @@ assert.ok(/\.composer-flash\b|composer-flash\b/.test(sharedCss),
 assert.ok(/id="connBrowseBtn"[^>]*btn-primary/.test(consoleHtml),
   "connectors: Browse catalog button must be btn-primary");
 
+// ── IA Phase 2: chat sidebar ───────────────────────────────────────────
+assert.ok(/class="chat-layout"/.test(consoleHtml),
+  "phase 2: .chat-layout grid missing on Chat tab");
+assert.ok(/id="chatSidebarList"/.test(consoleHtml),
+  "phase 2: #chatSidebarList missing");
+assert.ok(/id="chatSidebarSearch"/.test(consoleHtml),
+  "phase 2: #chatSidebarSearch input missing");
+assert.ok(/id="chatSidebarNewBtn"/.test(consoleHtml),
+  "phase 2: #chatSidebarNewBtn (+ New) missing");
+assert.ok(/function renderChatSidebar/.test(consoleJs),
+  "phase 2: renderChatSidebar() missing in console.js");
+assert.ok(/function refreshChatSidebar/.test(consoleJs),
+  "phase 2: refreshChatSidebar() missing in console.js");
+assert.ok(/function startNewConsoleChat/.test(consoleJs),
+  "phase 2: startNewConsoleChat() must exist (shared by sidebar + page-head buttons)");
+assert.ok(/\.chat-sidebar\b/.test(sharedCss) && /\.chat-sidebar-list\b/.test(sharedCss),
+  "phase 2: chat-sidebar CSS missing");
+// Projects tab Preview column retired
+assert.ok(!/projects-col[^"]*"\s*>[^<]*<header[\s\S]{0,200}Preview<span class="zh">预览/.test(consoleHtml),
+  "phase 2: Projects tab Preview column should be retired");
+
 console.log("ok verify-ui-extras");
