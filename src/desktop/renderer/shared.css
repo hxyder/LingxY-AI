@@ -3175,6 +3175,14 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-size: 14px;
 }
 .mcp-card--v3 .mcp-card-logo svg { width: 18px; height: 18px; }
+/* Explicit "安装" / "配置并安装" button on un-installed MCP cards.
+   Replaces the previously-only toggle which users misread as a
+   passive switch. Sized to fit the card-head row and never larger
+   than the toggle would have been. */
+.mcp-card--v3 .mcp-install-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .mcp-card--v3 .mcp-card-info {
   flex: 1;
   min-width: 0;

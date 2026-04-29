@@ -6163,6 +6163,24 @@ function renderConnectorsMcpServers(servers) {
     const configBtn = hasCfg ? `<button class="btn btn-sm btn-ghost" data-mcp-config="${escapeHtml(s.id)}">${needsConfig ? "Configure" : "Configure"}</button>` : "";
     const guideBtn = meta.guideUrl ? `<button class="btn btn-sm btn-ghost" data-plugin-guide="${escapeHtml(meta.guideUrl)}">Guide</button>` : "";
     const needsConfigBadge = needsConfig ? `<span class="pill pill-warn mcp-needs-config">需配置</span>` : "";
+    // Headline action: when not yet installed, render an explicit
+    // "安装" button instead of (only) a toggle. The toggle was being
+    // misread as a "settings switch" — users didn't realise flipping
+    // it was the install action. The primary button is the
+    // unambiguous affordance; the toggle still appears for already-
+    // installed servers as the on/off control.
+    const headlineAction = installed
+      ? `<label class="toggle" title="禁用">
+           <input type="checkbox" checked data-mcp-install="${escapeHtml(s.id)}" data-mcp-enabled="false">
+           <span class="toggle-track"></span>
+         </label>`
+      : canInstall
+        ? `<button class="btn btn-sm btn-primary mcp-install-btn"
+                   data-mcp-install-click="${escapeHtml(s.id)}"
+                   title="${needsConfig ? "需要先配置凭据" : "安装并启用此 MCP 服务"}">
+             ${needsConfig ? "配置并安装" : "安装"}
+           </button>`
+        : `<span class="pill pill-neutral" title="${escapeHtml(statusLabel)}">${escapeHtml(statusLabel)}</span>`;
     card.innerHTML = `
       <div class="mcp-card-head">
         <div class="conn-logo ${logoClass} mcp-card-logo">${logoGlyph}</div>
@@ -6171,10 +6189,7 @@ function renderConnectorsMcpServers(servers) {
           <div class="mcp-card-desc">${escapeHtml(meta.desc ?? "")}</div>
         </div>
         <span class="mcp-status-dot ${statusClass}" title="${statusLabel}"></span>
-        <label class="toggle" title="${installed ? "Disable" : needsConfig ? "Configure first" : "Enable"}">
-          <input type="checkbox" ${installed ? "checked" : ""} ${canInstall ? "" : "disabled"} data-mcp-install="${escapeHtml(s.id)}" data-mcp-enabled="${installed ? "false" : "true"}">
-          <span class="toggle-track"></span>
-        </label>
+        ${headlineAction}
       </div>
       ${transportLine ? `<div class="mcp-transport">${escapeHtml(transportLine)}</div>` : ""}
       ${(hasCfg || meta.guideUrl || needsConfigBadge) ? `
@@ -6241,6 +6256,41 @@ function renderConnectorsMcpServers(servers) {
       } catch {
         input.disabled = false;
         input.checked = !wantEnabled;
+      }
+    });
+  });
+
+  // Wire the explicit "安装" / "配置并安装" button on un-installed
+  // cards. Mirrors the toggle's flow: needs-config → opens config
+  // panel (so the user can paste credentials and Save); ready →
+  // PATCH the toggle endpoint with enabled=true.
+  connectorsMcpList.querySelectorAll("[data-mcp-install-click]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.mcpInstallClick;
+      if (!id) return;
+      const meta = MCP_SERVER_META[id] ?? {};
+      const cfgDiv = document.getElementById(`mcp-cfg-${id}`);
+      if (meta.configKey && cfgDiv) {
+        cfgDiv.classList.add("open");
+        cfgDiv.scrollIntoView({ behavior: "smooth", block: "center" });
+        document.getElementById(`mcp-cfg-val-${id}`)?.focus();
+        return;
+      }
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "安装中…";
+      try {
+        await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/toggle`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ enabled: true })
+        });
+        await loadConnectorsTab();
+        showConsoleToast(`已安装：${meta.title ?? id}`, { kind: "ok" });
+      } catch (error) {
+        btn.disabled = false;
+        btn.textContent = original;
+        showConsoleToast(`安装失败：${error?.message ?? error}`, { kind: "err" });
       }
     });
   });
