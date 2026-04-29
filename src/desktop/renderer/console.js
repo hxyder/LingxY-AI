@@ -4444,7 +4444,22 @@ function renderSchedules() {
   const schedules = state.workspace.schedules ?? [];
   scheduleCount.textContent = `${schedules.length}`;
   if (schedules.length === 0) {
-    renderEmpty(scheduleList, "No scheduled tasks.");
+    // First-run friendly empty state — give the user an inline
+    // "Create one" button instead of just a muted line. Reaches into
+    // the same #scheduleNewBtn that opens the create form so the
+    // wiring stays single-source.
+    scheduleList.innerHTML = `
+      <div class="empty-state" style="text-align:center;padding:32px 20px;">
+        <p class="muted" style="margin:0 0 14px;font-size:13px;">还没有定时任务。把"每天 9 点提醒我喝水"或"每周一发周报"写进来 — AI 到点自动跑。</p>
+        <button type="button" class="btn btn-sm btn-primary" id="scheduleEmptyCreateBtn">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          创建第一个定时
+        </button>
+      </div>
+    `;
+    scheduleList.querySelector("#scheduleEmptyCreateBtn")?.addEventListener("click", () => {
+      document.querySelector("#scheduleNewBtn")?.click();
+    });
     if (scheduleCalendar) scheduleCalendar.style.display = "none";
     return;
   }
@@ -7271,7 +7286,20 @@ function renderInboxAccounts() {
   const list = document.querySelector("#inboxAccountList");
   if (!list) return;
   if (_inboxState.accounts.length === 0) {
-    list.innerHTML = `<p class="muted inbox-empty-accounts" style="padding:14px 16px;font-size:12px;">尚未连接账户 — 去 Connectors 授权后再来。</p>`;
+    // Empty state — give the user a one-click jump to Connectors so
+    // they don't have to find the rail item manually. Previously this
+    // was a static muted line of text.
+    list.innerHTML = `
+      <div class="inbox-empty-accounts" style="padding:18px 16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start;">
+        <p class="muted" style="margin:0;font-size:12px;line-height:1.5;">尚未连接账户。连接邮箱、文件、日历后，这里能直接预览。</p>
+        <button type="button" class="btn btn-sm btn-primary" id="inboxGoConnectorsBtn">
+          去 Connectors 添加<span class="zh">·</span><span>Connect</span>
+        </button>
+      </div>
+    `;
+    list.querySelector("#inboxGoConnectorsBtn")?.addEventListener("click", () => {
+      switchTab("connectors");
+    });
     return;
   }
   list.innerHTML = _inboxState.accounts.map((account) => {
