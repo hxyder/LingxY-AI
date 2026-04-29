@@ -674,31 +674,42 @@
         line-height: 1.5;
         color: var(--ink-2, #475569);
         border-top: 1px solid color-mix(in srgb, var(--line, #e2e8f0) 55%, transparent);
-        position: relative;
       }
       /* Copy button — top-right of the expanded step body. Uses position
          absolute so it doesn't shove the args/outcome layout sideways.
          Subtle until hover so it doesn't visually compete with the
          result the user came here to read. */
+      /* Copy button — always-visible at the step row's top-right edge.
+         Was previously buried inside .step-body, which only appeared
+         after the user expanded the step (the user reported they
+         couldn't find it). Now sits on the row itself, accent-tinted
+         so it reads as an affordance even on the collapsed card. */
       .bubble.step .step-copy {
         position: absolute;
-        top: 6px;
+        top: 5px;
         right: 8px;
-        padding: 2px 8px;
-        font-size: 10px;
-        color: var(--muted, #64748b);
-        background: rgba(255, 255, 255, 0.8);
-        border: 1px solid var(--line, #e2e8f0);
-        border-radius: 6px;
+        padding: 2px 9px;
+        font-size: 10.5px;
+        font-weight: 500;
+        color: var(--accent, #2563eb);
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid color-mix(in srgb, var(--accent, #2563eb) 35%, var(--line, #e2e8f0) 65%);
+        border-radius: 999px;
         cursor: pointer;
-        opacity: 0.5;
-        transition: opacity 120ms, background 120ms, color 120ms;
-        z-index: 1;
+        opacity: 0.95;
+        transition: opacity 120ms, background 120ms, color 120ms, transform 120ms;
+        z-index: 2;
       }
       .bubble.step .step-copy:hover {
         opacity: 1;
-        color: var(--ink, #1e293b);
-        background: rgba(255, 255, 255, 1);
+        background: var(--accent, #2563eb);
+        color: #fff;
+        transform: translateY(-1px);
+      }
+      /* Push the row content to leave room for the absolutely-placed
+         Copy button so it doesn't overlap step-summary text. */
+      .bubble.step:has(.step-copy) > .step-row {
+        padding-right: 56px;
       }
       .bubble.step .step-body .step-args {
         font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
@@ -1369,6 +1380,31 @@
         position: relative;
         background: linear-gradient(135deg, #ef4444, #dc2626);
         box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+      }
+      /* Cancelling state — orange, slow pulse, hint that one more click
+         escalates to force cancel. Distinct from the solid-red stop
+         state so the user can tell their first click registered. */
+      .input-bar .send-btn.send-btn--cancelling {
+        position: relative;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        box-shadow: 0 2px 8px rgba(217, 119, 6, 0.32);
+        animation: send-btn-cancelling-pulse 1.4s ease-in-out infinite;
+      }
+      .input-bar .send-btn.send-btn--cancelling svg {
+        visibility: hidden;
+      }
+      .input-bar .send-btn.send-btn--cancelling::before {
+        content: "";
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        border-radius: 2px;
+        background: #fff;
+        opacity: 0.9;
+      }
+      @keyframes send-btn-cancelling-pulse {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.06); }
       }
       .input-bar .send-btn.send-btn--stop:hover {
         box-shadow: 0 4px 14px rgba(220, 38, 38, 0.45);

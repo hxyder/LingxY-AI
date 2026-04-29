@@ -2194,6 +2194,19 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   animation: chat-msg-flash 1s ease;
 }
 
+/* Composer flash — used when the right-click "Quote and reply"
+   pre-fills the input. The composer is at the bottom of the chat
+   panel and may be off-screen; the brief outline pulse + auto-scroll
+   makes the action register without surprising the user. */
+@keyframes composer-flash {
+  0%   { outline: 2px solid color-mix(in srgb, var(--accent) 0%, transparent); outline-offset: 2px; }
+  35%  { outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 4px; }
+  100% { outline: 2px solid color-mix(in srgb, var(--accent) 0%, transparent); outline-offset: 2px; }
+}
+.composer-flash {
+  animation: composer-flash 1s ease;
+}
+
 /* Inline timestamp footer rendered by appendConsoleChatMessage. The
    bubble shows relative time ("2 分钟前") and a full datetime tooltip
    on hover. Tinted muted so it doesn't compete with the message body. */
@@ -2543,14 +2556,21 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   flex-shrink: 0;
   border-radius: 4px;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--panel-2);
   border: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  color: var(--muted);
 }
 .console-chat-attachments .chip-attach-thumb img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
+}
+.console-chat-attachments .chip-attach-thumb svg {
+  width: 14px;
+  height: 14px;
 }
 .console-chat-attachments .chip-attach-name {
   max-width: 220px;
@@ -4829,17 +4849,16 @@ details.timeline-item[open] > summary {
   background: var(--panel-2);
   border-radius: 0 6px 6px 0;
   color: var(--ink-2);
-  font-size: var(--fs-sm);
+  /* Inherit the editor's current font-size so the user's choice in the
+     toolbar's font-size dropdown applies to chip content too. The
+     prior fixed var(--fs-sm) ignored the setting. */
+  font-size: inherit;
 }
-.notes-editor-body .note-chat-chip::before {
-  content: "From chat";
-  display: block;
-  font-size: 10.5px;
-  color: var(--muted-2);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  font-weight: var(--fw-semibold);
-  margin-bottom: 3px;
+.notes-editor-body .note-chat-chip > p {
+  margin: 0 0 6px;
+}
+.notes-editor-body .note-chat-chip > p:last-child {
+  margin-bottom: 0;
 }
 
 .notes-editor-foot {

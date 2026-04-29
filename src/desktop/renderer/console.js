@@ -349,6 +349,14 @@ consoleChatMessages?.addEventListener("contextmenu", (event) => {
       consoleChatInput.value = `${prefix}${quoted}\n\n`;
       consoleChatInput.focus();
       consoleChatInput.setSelectionRange(consoleChatInput.value.length, consoleChatInput.value.length);
+      // Make the result visible — the composer is at the bottom of the
+      // chat panel and may be off-screen on a long thread. Smooth-scroll
+      // it into view + flash the focus ring so the user can see where
+      // the quote landed.
+      try { consoleChatInput.scrollIntoView({ behavior: "smooth", block: "end" }); } catch { /* ignore */ }
+      consoleChatInput.classList.add("composer-flash");
+      setTimeout(() => consoleChatInput.classList.remove("composer-flash"), 1200);
+      showConsoleToast("已引用到输入框", { kind: "info", durationMs: 1600 });
     }},
     { id: "note", label: "添加到 Note", glyph: "+", onClick: () => {
       openNoteTargetPicker(text, wrapper);
@@ -4711,13 +4719,23 @@ function renderProjectsWorkspace() {
 
   projectConversationList.innerHTML = conversations.length > 0
     ? conversations.map((conversation) => `
-      <button class="history-item ${conversation.id === selectedConversation?.id ? "active" : ""}" data-project-conversation-id="${escapeHtml(conversation.id)}" style="text-align:left;">
-        <div class="row">
-          <strong style="font-size:13px;">${escapeHtml(conversation.title || conversation.seedCommand || "新会话")}</strong>
-          <span class="muted" style="font-size:11px;">${escapeHtml((conversation.turns ?? []).length)}</span>
-        </div>
-        <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(formatDateTime(conversation.updatedAt ?? conversation.startedAt))}</p>
-      </button>
+      <div class="history-item-row ${conversation.id === selectedConversation?.id ? "active" : ""}">
+        <button class="history-item history-item--main" data-project-conversation-id="${escapeHtml(conversation.id)}" style="text-align:left;">
+          <div class="row">
+            <strong style="font-size:13px;">${escapeHtml(conversation.title || conversation.seedCommand || "新会话")}</strong>
+            <span class="muted" style="font-size:11px;">${escapeHtml((conversation.turns ?? []).length)}</span>
+          </div>
+          <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(formatDateTime(conversation.updatedAt ?? conversation.startedAt))}</p>
+        </button>
+        <button class="history-item-resume" type="button"
+                data-resume-project-conversation-id="${escapeHtml(conversation.id)}"
+                title="在 Chat 标签继续此对话" aria-label="继续对话">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>
+          </svg>
+        </button>
+      </div>
     `).join("")
     : `<p class="muted" style="font-size:12px;">No conversations in this project.</p>`;
 
@@ -4738,6 +4756,15 @@ function renderProjectsWorkspace() {
       store.currentProjectId = state.selectedProjectId || store.currentProjectId;
       saveConsoleProjectStore(store);
       renderProjectsWorkspace();
+    });
+  }
+  for (const btn of projectConversationList.querySelectorAll("[data-resume-project-conversation-id]")) {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const convId = btn.dataset.resumeProjectConversationId;
+      if (!convId) return;
+      void loadConsoleConversationFromBackend(convId);
+      showConsoleToast("已加载对话，可继续输入", { kind: "ok" });
     });
   }
 }
@@ -7579,10 +7606,24 @@ async function loadAttachmentThumbnail(filePath) {
     const dataUrl = await window.ucaShell.readFileAsDataUrl(filePath, imageMimeFor(filePath));
     attachThumbnailCache.set(filePath, dataUrl);
     return dataUrl;
-  } catch {
+  } catch (error) {
+    // Surface the reason for the dev — silent failures here used to
+    // leave the user with an empty thumb slot and no idea why.
+    console.warn("[attach-thumb] readFileAsDataUrl failed", filePath, error?.message ?? error);
     return null;
   }
 }
+
+// Fallback placeholder shown inside .chip-attach-thumb when the data
+// URL hasn't loaded (or failed). Keeps the chip looking like an image
+// chip even before / without the real thumbnail.
+const ATTACH_THUMB_PLACEHOLDER = `
+  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <rect x="3" y="3" width="18" height="18" rx="2"/>
+    <circle cx="8.5" cy="9" r="1.5"/>
+    <path d="m21 15-5-5L5 21"/>
+  </svg>
+`;
 
 function renderChatAttachments() {
   if (!consoleChatAttachments) return;
@@ -7599,9 +7640,14 @@ function renderChatAttachments() {
     if (isImage) {
       // Image chip — square thumb on the left, name + remove on the
       // right. The img fills lazily once readFileAsDataUrl resolves.
+      // Until then the placeholder icon shows so the box is never
+      // empty (otherwise users wonder if the upload broke).
+      const thumbInner = cached
+        ? `<img src="${escapeHtml(cached)}" alt="">`
+        : ATTACH_THUMB_PLACEHOLDER;
       return `
         <span class="chip-attach chip-attach--image" data-path="${escapeHtml(filePath)}">
-          <span class="chip-attach-thumb">${cached ? `<img src="${escapeHtml(cached)}" alt="">` : ""}</span>
+          <span class="chip-attach-thumb">${thumbInner}</span>
           <span class="chip-attach-name">${escapeHtml(entry?.name ?? "")}</span>
           <button type="button" data-remove-attach="${idx}" aria-label="Remove">×</button>
         </span>
@@ -7624,10 +7670,10 @@ function renderChatAttachments() {
       }
     });
   }
-  // Lazy-load thumbnails that aren't cached yet. We render a placeholder
-  // chip first (instant feedback), then patch the <img> in once the
-  // file is decoded — keeps the composer responsive even for large
-  // images.
+  // Lazy-load thumbnails that aren't cached yet. The placeholder icon
+  // is in place from the initial render; this swaps it for the real
+  // image once readFileAsDataUrl resolves. If the load fails the
+  // placeholder simply stays — better than an empty box.
   for (const chip of consoleChatAttachments.querySelectorAll(".chip-attach--image")) {
     const filePath = chip.dataset.path;
     if (!filePath || chip.querySelector("img")) continue;
@@ -7635,6 +7681,8 @@ function renderChatAttachments() {
       if (!dataUrl) return;
       const thumb = chip.querySelector(".chip-attach-thumb");
       if (!thumb || thumb.querySelector("img")) return;
+      // Replace the placeholder svg with the real image.
+      thumb.innerHTML = "";
       const img = document.createElement("img");
       img.src = dataUrl;
       img.alt = "";

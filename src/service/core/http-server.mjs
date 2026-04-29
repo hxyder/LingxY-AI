@@ -2789,9 +2789,15 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       }
 
       if (cancelMatch && method === "POST") {
+        // Body may carry { force: true } — used by the renderer when
+        // the user double-clicks the stop button to escape an
+        // executor that's not honouring the polite cancel signal.
+        let body = {};
+        try { body = await readJsonBody(request); } catch { /* empty body OK */ }
         const task = await cancelTask({
           runtime,
-          taskId: cancelMatch[1]
+          taskId: cancelMatch[1],
+          force: Boolean(body?.force)
         });
         if (!task) {
           return sendJson(response, 404, { error: "task_not_found" });

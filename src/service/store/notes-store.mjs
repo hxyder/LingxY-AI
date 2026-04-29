@@ -111,12 +111,20 @@ export function createNotesStore({ filePath } = {}) {
     // <title>" feedback.
     appendChip({ noteId, text, sourceLabel = null, title = null }) {
       const state = readFile();
-      const safe = escapeHtml(String(text || "").trim());
-      if (!safe) return { note: null, created: false };
+      const trimmed = String(text || "").trim();
+      if (!trimmed) return { note: null, created: false };
+      // Preserve paragraph + line breaks: blank line → <p>…</p> boundary;
+      // single newline inside a paragraph → <br>. Without this the chip
+      // collapsed multi-line replies into one wall of text. Each piece
+      // is escaped first so model-emitted < / > / & stay literal.
+      const paragraphs = trimmed.split(/\n{2,}/);
+      const bodyHtml = paragraphs
+        .map((para) => `<p>${escapeHtml(para).replace(/\n/g, "<br>")}</p>`)
+        .join("");
       const labelHtml = sourceLabel
         ? `<div class="note-stamp" contenteditable="false">${escapeHtml(sourceLabel)} · ${escapeHtml(nowIso().slice(0, 16).replace("T", " "))}</div>`
         : "";
-      const chipHtml = `${labelHtml}<div class="note-chat-chip">${safe}</div><p><br></p>`;
+      const chipHtml = `${labelHtml}<div class="note-chat-chip">${bodyHtml}</div><p><br></p>`;
       let target = state.notes.find((n) => n.id === noteId);
       let created = false;
       if (!target || noteId === "__new__") {

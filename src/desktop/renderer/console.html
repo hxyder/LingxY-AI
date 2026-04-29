@@ -797,7 +797,14 @@
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
           <span class="rail-item-label">Projects<span class="zh">项目</span></span>
         </button>
-        <button class="rail-item" data-tab="conversations" role="tab" aria-selected="false" title="Conversations">
+        <!-- UCA-IA Phase 1: standalone Conversations rail item hidden.
+             The Projects tab already lists conversations bucketed by
+             project (the canonical browser); this read-only viewer
+             duplicated it. Kept in DOM (hidden attribute) so deep links
+             / switchTab("conversations") still resolve, and verify
+             scripts that assert the rail's expected views still pass.
+             To restore: remove the `hidden` attribute below. -->
+        <button class="rail-item" data-tab="conversations" role="tab" aria-selected="false" title="Conversations" hidden>
           <svg class="rail-item-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span class="rail-item-label">Conversations<span class="zh">对话</span></span>
         </button>

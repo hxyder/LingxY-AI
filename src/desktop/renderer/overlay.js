@@ -1598,14 +1598,16 @@ function buildToolStepInner(toolId, state, args, observation) {
   const truncatedHint = isTruncated
     ? `<span class="step-more">… 查看全部</span>`
     : "";
-  // Copy button surfaces in the step body when there's a non-trivial
-  // observation worth copying. Skipped for tiny / empty results so the
-  // body stays clean. Click handler is wired in bindToolStepToggle.
+  // Copy button surfaces on the step row (top-right, always visible)
+  // when there's a non-trivial observation. Hover-only to keep the
+  // collapsed step looking clean; expanding the step makes it solid.
+  // Lives outside .step-row so it isn't a nested button (a11y).
   const showCopy = obsText.length >= 20;
   const copyBtn = showCopy
     ? `<button type="button" class="step-copy" title="复制结果" aria-label="复制工具结果">复制</button>`
     : "";
   return `
+    ${copyBtn}
     <button type="button" class="step-row" aria-expanded="${hasBody ? "true" : "false"}">
       <span class="step-icon">${icon}</span>
       <span class="step-name">${escapeHtmlForOverlay(toolId)}</span>
@@ -1614,7 +1616,6 @@ function buildToolStepInner(toolId, state, args, observation) {
       ${hasBody ? STEP_CHEVRON : ""}
     </button>
     <div class="step-body"${hasBody ? "" : " hidden"}>
-      ${copyBtn}
       ${argsText ? `<div class="step-args">${escapeHtmlForOverlay(argsText)}</div>` : ""}
       ${obsText ? `<div class="step-outcome">${escapeHtmlForOverlay(obsText)}</div>` : ""}
     </div>
@@ -5703,8 +5704,15 @@ bubbleArea?.addEventListener("contextmenu", (event) => {
       const quoted = String(text).split("\n").map((line) => `> ${line}`).join("\n");
       const prefix = commandInput.value.trim() ? `${commandInput.value}\n\n` : "";
       commandInput.value = `${prefix}${quoted}\n\n`;
+      autoSizeInput();
       commandInput.focus();
       commandInput.setSelectionRange(commandInput.value.length, commandInput.value.length);
+      // Surface the result — the input bar is small and the user just
+      // came from clicking somewhere else, so the focus alone may not
+      // register. Flash the composer outline briefly.
+      try { commandInput.scrollIntoView({ behavior: "smooth", block: "end" }); } catch { /* ignore */ }
+      commandInput.classList.add("composer-flash");
+      setTimeout(() => commandInput.classList.remove("composer-flash"), 1200);
     }}
   ];
   if (isAssistant && taskId) {
@@ -6982,16 +6990,26 @@ function isTaskRunning() {
   );
 }
 
-// Toggle sendBtn between "send" and "stop" affordances. Called whenever
-// task status changes; cheap to run idempotently.
+// Toggle sendBtn between "send", "stop", and "cancelling" affordances.
+// Called whenever task status changes; cheap to run idempotently.
 function refreshSendBtnMode() {
   if (!sendBtn) return;
-  const stopMode = isTaskRunning();
-  sendBtn.classList.toggle("send-btn--stop", stopMode);
-  if (stopMode) {
+  const running = isTaskRunning();
+  // After a cancel was requested, sub_status flips to "cancelling".
+  // Render that as a distinct state so the user knows their click
+  // registered (and a second click will escalate to force cancel).
+  const cancelling = running
+    && (lastTask?.status === "cancelling" || lastTask?.sub_status === "cancelling"
+        || cancellationRequestedTaskId === activeTaskId);
+  sendBtn.classList.toggle("send-btn--stop", running && !cancelling);
+  sendBtn.classList.toggle("send-btn--cancelling", Boolean(cancelling));
+  if (cancelling) {
+    sendBtn.title = "再次点击强制取消";
+    sendBtn.setAttribute("aria-label", "正在取消任务，再次点击强制取消");
+    sendBtn.disabled = false;
+  } else if (running) {
     sendBtn.title = "停止任务 (Esc)";
     sendBtn.setAttribute("aria-label", "停止当前任务");
-    // Stop button stays clickable even while userSendInFlight gates Send.
     sendBtn.disabled = false;
   } else {
     sendBtn.title = "发送 (Enter)";
@@ -6999,12 +7017,28 @@ function refreshSendBtnMode() {
   }
 }
 
+// Track which task we already asked to cancel so the second click on
+// the stop button can escalate to a force cancel. Without this, users
+// who repeatedly click stop on an executor that doesn't honour cancel
+// signals get the same polite request each time and the task drags on.
+let cancellationRequestedTaskId = null;
+
 async function cancelActiveTask({ silent = false } = {}) {
   if (!activeTaskId) return false;
   const taskId = activeTaskId;
+  const force = cancellationRequestedTaskId === taskId;
+  cancellationRequestedTaskId = taskId;
   try {
-    await fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, { method: "POST" });
-    if (!silent) addSystemBubble("已请求取消任务。");
+    await fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force })
+    });
+    if (!silent) {
+      addSystemBubble(force
+        ? "强制取消已发出。任务状态已置为已取消。"
+        : "已请求取消任务。如长时间未响应，请再次点击停止以强制取消。");
+    }
     return true;
   } catch (error) {
     if (!silent) addSystemBubble(`取消任务失败：${error?.message ?? error}`);

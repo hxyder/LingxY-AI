@@ -324,6 +324,18 @@ export function ensureConversation(runtime, { conversationId, projectId = null, 
   });
 }
 
+// Derive a short, human-friendly conversation title from the first
+// user command. Used to auto-name new conversations so the
+// Conversations list reads as "请帮我总结这份合同 …" instead of an
+// opaque "conv_abc123…". Returns null if the command is empty.
+function deriveConversationTitle(command) {
+  if (typeof command !== "string") return null;
+  const cleaned = command.replace(/\s+/g, " ").trim();
+  if (!cleaned) return null;
+  const MAX = 36;
+  return cleaned.length > MAX ? `${cleaned.slice(0, MAX)}…` : cleaned;
+}
+
 export function submitTaskWithConversation(params) {
   const { runtime, parentMessageId = null, projectId = null, clientMessageId = null } = params;
   const task = createTaskRecord(params);
@@ -336,6 +348,18 @@ export function submitTaskWithConversation(params) {
       conversationId: task.conversation_id,
       projectId
     });
+
+    // Auto-title freshly created conversations from the first user
+    // command so the sidebar / list reads as recognizable text. Skip
+    // when the title was already set (user renamed it, or a follow-up
+    // task is reusing the conversation).
+    if (conversation && !parentMessageId && !conversation.title && runtime.store?.updateConversation) {
+      const derivedTitle = deriveConversationTitle(task.user_command);
+      if (derivedTitle) {
+        const updated = runtime.store.updateConversation(conversation.conversation_id, { title: derivedTitle });
+        if (updated) Object.assign(conversation, updated);
+      }
+    }
 
     let userMessage = null;
     if (conversation && !parentMessageId) {
@@ -1181,7 +1205,7 @@ export function markTaskSucceeded(runtime, task) {
   runtime.queue.markFinished(task.task_id);
 }
 
-export async function cancelTask({ runtime, taskId }) {
+export async function cancelTask({ runtime, taskId, force = false } = {}) {
   ensureRuntimeServices(runtime);
   const task = runtime.store.getTask(taskId);
   if (!task) {
@@ -1192,27 +1216,41 @@ export async function cancelTask({ runtime, taskId }) {
     return task;
   }
 
-  updateTask(runtime, task, {
-    status: "cancelling",
-    sub_status: "cancelling"
-  }, true);
+  // Force path: skip the polite executor.cancel() round-trip and mark
+  // the task cancelled in the store immediately. Used when the user
+  // clicks "stop" a second time after the first request hasn't taken
+  // effect (executor stuck in an LLM stream that doesn't honour
+  // cancel signals quickly). The downstream worker may still run for
+  // a few seconds — that's a backend concern — but at least the
+  // task's exposed state matches the user's intent.
+  const wasCancelling = task.status === "cancelling";
+  const shouldForce = force || wasCancelling;
 
-  emitTaskEvent({
-    runtime,
-    taskId,
-    eventType: "cancel_requested",
-    payload: { by: "user" }
-  });
+  if (!wasCancelling) {
+    updateTask(runtime, task, {
+      status: "cancelling",
+      sub_status: "cancelling"
+    }, true);
+
+    emitTaskEvent({
+      runtime,
+      taskId,
+      eventType: "cancel_requested",
+      payload: { by: "user" }
+    });
+  }
 
   const activeExecution = runtime.activeExecutions.get(taskId);
-  if (activeExecution?.cancel) {
+  if (activeExecution?.cancel && !shouldForce) {
     await activeExecution.cancel();
   } else {
     updateTask(runtime, task, {
       status: "cancelled",
       sub_status: "user_interrupted",
       failure_category: "user_interrupted",
-      failure_user_message: "任务已被手动取消，可在调整后重新执行。",
+      failure_user_message: shouldForce
+        ? "任务已被手动取消（强制）。底层执行器可能仍在响应，但状态已置为已取消。"
+        : "任务已被手动取消，可在调整后重新执行。",
       retryable: true
     }, true);
     emitTaskEvent({
