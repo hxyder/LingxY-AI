@@ -39,7 +39,12 @@ import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 // and evidence normalizer at planner exit. Pre-H1 agentic skipped both,
 // so D3 research_quality coverage and required_policy_groups were never
 // enforced for agentic tasks.
-import { validateSuccessContract, validateStepGate, validateAnswerSynthesis } from "../../core/policy/success-contract-validator.mjs";
+import {
+  validateSuccessContract,
+  validateStepGate,
+  validateAnswerSynthesis,
+  detectUnbackedActionClaims
+} from "../../core/policy/success-contract-validator.mjs";
 import { extractEvidence, detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 // J1: per-iteration parity. Pre-J1 agentic ran for the full
 // maxIterations even when the same tool failed repeatedly OR when the
@@ -924,12 +929,39 @@ export async function runAgenticPlanner({
     }
   }
 
-  // Truthfulness guard (UCA-049 §B): if the final text claims completion
-  // but no tool actually returned success, downgrade and warn the user.
+  // Truthfulness guard (UCA-049 §B + UCA-181): the original `anyToolSucceeded`
+  // form was too loose — a successful web_search would mask a fabricated
+  // "邮件已发送" because *some* tool succeeded. We now also run
+  // `detectUnbackedActionClaims`, which ties the claim verb (sent /
+  // created / uploaded) to the policy group's actual success tools. If
+  // either guard fires, prepend a banner so the user sees the
+  // correction before the body.
   let downgraded = false;
+  let violations = null;
+  const validatorTranscript = transcriptForValidator(transcript);
+
   if (finalText && claimsCompletion(finalText) && !anyToolSucceeded(transcript)) {
     downgraded = true;
-    finalText = `[UCA note] The model claimed the task was completed, but no tool in this run returned success:true. The claim has been downgraded to "partial". See the transcript for what actually happened.\n\n${finalText}`;
+    finalText = `⚠️ The model claimed the task was completed, but no tool in this run returned success. The claim has been downgraded to "partial". See the transcript for what actually happened.\n\n---\n\n${finalText}`;
+  }
+  const actionClaimViolations = detectUnbackedActionClaims(validatorTranscript, finalText);
+  if (actionClaimViolations.length > 0) {
+    downgraded = true;
+    violations = (violations ?? []).concat(actionClaimViolations);
+    const banners = actionClaimViolations.map((v) => {
+      const group = v.kind.replace(/_claim_unsupported$/, "");
+      if (group === "email_send") {
+        return "⚠️ 邮件实际并未发送。系统未检测到任何成功的邮件发送工具调用，下面的文字是模型自述。";
+      }
+      if (group === "calendar_create") {
+        return "⚠️ 日程/事件实际并未创建。下面的文字仅为模型自述。";
+      }
+      if (group === "file_upload") {
+        return "⚠️ 文件实际并未上传。下面的文字仅为模型自述。";
+      }
+      return "⚠️ 模型声称完成了一项操作，但系统未检测到对应工具的成功调用。下面的文字是模型自述。";
+    });
+    finalText = `${banners.join("\n")}\n\n---\n\n${finalText || ""}`;
   }
 
   // H1: SuccessContract enforcement (parity with tool_using's
@@ -938,12 +970,10 @@ export async function runAgenticPlanner({
   // research_quality coverage thresholds (D3). If unsatisfied, downgrade
   // — independent from the truthfulness guard above; both can fire and
   // both messages are surfaced.
-  const validatorTranscript = transcriptForValidator(transcript);
   const contract = validateSuccessContract(task?.task_spec, validatorTranscript);
-  let violations = null;
   if (!contract.satisfied) {
     downgraded = true;
-    violations = contract.violations;
+    violations = (violations ?? []).concat(contract.violations);
     const reasons = contract.violations.map((v) => v.message).join(" ");
     finalText = `[UCA] 注意：未通过 SuccessContract 校验：${reasons}\n\n${finalText || ""}`;
   }

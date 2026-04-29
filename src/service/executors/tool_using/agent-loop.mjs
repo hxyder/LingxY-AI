@@ -26,7 +26,11 @@ import { renderBackgroundContextsBlock } from "../../core/intent/background-cont
 import { renderToolPolicyForPrompt, toolsInGroup } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { extractEvidence, detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
-import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
+import {
+  validateSuccessContract,
+  validateStepGate,
+  detectUnbackedActionClaims
+} from "../../core/policy/success-contract-validator.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
 import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
@@ -1224,49 +1228,33 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
   }
 }
 
-const EMAIL_SEND_CLAIM_RE = /(已\s*(?:确认|确认发送)?\s*发\s*送|已\s*发出|已\s*寄出|邮件已\s*发(?:送|出)|已通过\s*gmail\s*发送|sent(?:\s+successfully|\s+the\s+email)?|email\s+(?:has\s+been\s+)?sent)/i;
-const CALENDAR_CREATE_CLAIM_RE = /(已\s*创建(?:日程|会议|事件)|event\s+created|calendar\s+event\s+(?:has\s+been\s+)?created)/i;
-const FILE_UPLOAD_CLAIM_RE = /(已\s*上传|uploaded(?:\s+successfully)?|file\s+(?:has\s+been\s+)?uploaded)/i;
-const CONNECTOR_SEND_SUCCESS_TOOLS = new Set(["account_send_email", "connector_workflow_run", "google.gmail.send_email", "microsoft.outlook.send_email"]);
-const CONNECTOR_EVENT_SUCCESS_TOOLS = new Set(["account_create_event", "google.calendar.create_event", "microsoft.calendar.create_event", "connector_workflow_run"]);
-const CONNECTOR_FILE_SUCCESS_TOOLS = new Set(["account_upload_file", "google.drive.upload_file", "microsoft.onedrive.upload_file", "connector_workflow_run"]);
-
-function transcriptHasSuccessfulTool(transcript = [], allowedIds) {
-  return transcript.some((entry) => {
-    if (entry?.type !== "tool_result") return false;
-    if (entry.success === false) return false;
-    if (!allowedIds.has(entry.tool)) return false;
-    // For workflow runs, require the metadata to actually report a success
-    // connector_status (not "waiting_external_decision" / "failed").
-    if (entry.tool === "connector_workflow_run") {
-      return entry.metadata?.connector_status === "success";
-    }
-    return true;
-  });
-}
-
 /**
- * Given the tool-loop result, return true when the final_text claims a
- * connector write action succeeded but no transcript entry backs it up.
- * This is the truthfulness guard for hallucinated "email sent" replies.
+ * Truthfulness guard for connector-write hallucinations. Delegates to
+ * the shared `detectUnbackedActionClaims` so tool_using and agentic
+ * apply identical rules. Returns the first violation kind (e.g.
+ * "email_send_claim_unsupported") or null when the final text is
+ * honest.
  */
 function detectUnbackedConnectorClaim(result) {
-  const text = String(result?.final_text ?? "");
-  if (!text) return false;
-  const transcript = result?.transcript ?? [];
-  if (EMAIL_SEND_CLAIM_RE.test(text)
-    && !transcriptHasSuccessfulTool(transcript, CONNECTOR_SEND_SUCCESS_TOOLS)) {
-    return "email_send";
+  const violations = detectUnbackedActionClaims(
+    result?.transcript ?? [],
+    result?.final_text ?? ""
+  );
+  return violations.length > 0 ? violations[0] : null;
+}
+
+function buildHallucinatedClaimBanner(violation) {
+  const group = String(violation?.kind ?? "").replace(/_claim_unsupported$/, "");
+  if (group === "email_send") {
+    return "⚠️ 邮件实际并未发送。系统未检测到任何成功的邮件发送工具调用，下面的文字是模型自述。请重新发起或人工确认。";
   }
-  if (CALENDAR_CREATE_CLAIM_RE.test(text)
-    && !transcriptHasSuccessfulTool(transcript, CONNECTOR_EVENT_SUCCESS_TOOLS)) {
-    return "calendar_create";
+  if (group === "calendar_create") {
+    return "⚠️ 日程/事件实际并未创建。系统未检测到日历工具的成功调用，下面的文字仅为模型自述。请重新创建。";
   }
-  if (FILE_UPLOAD_CLAIM_RE.test(text)
-    && !transcriptHasSuccessfulTool(transcript, CONNECTOR_FILE_SUCCESS_TOOLS)) {
-    return "file_upload";
+  if (group === "file_upload") {
+    return "⚠️ 文件实际并未上传。系统未检测到上传工具的成功调用，下面的文字仅为模型自述。请重新上传。";
   }
-  return null;
+  return "⚠️ 模型声称完成了一项操作，但系统未检测到对应工具的成功调用。下面的文字是模型自述，不是真实执行结果。";
 }
 
 export function createToolUsingExecutorScaffold() {
@@ -1336,18 +1324,22 @@ export function createToolUsingExecutorScaffold() {
           }
         }
 
-        // Truthfulness guard (extension of UCA-039/063): if the final text
-        // claims a connector write action was performed (email sent, event
-        // created, file uploaded) but no corresponding tool actually returned
-        // success in the transcript, downgrade to partial_success. Without
-        // this, DeepSeek-class models occasionally fabricate "已发送" without
-        // calling connector_workflow_run or account_send_email.
+        // Truthfulness guard (UCA-181): if the final text claims a connector
+        // write action was performed (email sent, event created, file
+        // uploaded) but no corresponding tool actually returned success in
+        // the transcript, downgrade to partial_success and prepend a
+        // banner. Patterns live in success-contract-validator so agentic /
+        // tool_using behave identically; the banner is at the TOP because
+        // users were missing the suffix-style warning at the end of long
+        // generated emails.
         const connectorClaimGuard = detectUnbackedConnectorClaim(result);
         if (result.status === "success" && connectorClaimGuard) {
-          const warning = "\n\n[LingxY] 注意：系统没有检测到对应的连接器工具调用成功。上面的文字是模型叙述，不是真实执行结果。请重新发起操作。";
+          const banner = buildHallucinatedClaimBanner(connectorClaimGuard);
+          const body = result.final_text || "任务没有生成最终答复。";
+          const text = `${banner}\n\n---\n\n${body}`;
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text: (result.final_text || "任务没有生成最终答复。") + warning } };
-          yield { event_type: "partial_success", payload: { text: (result.final_text || "任务没有生成最终答复。") + warning } };
+          yield { event_type: "inline_result", payload: { text } };
+          yield { event_type: "partial_success", payload: { text, violations: [connectorClaimGuard] } };
           return;
         }
 

@@ -256,6 +256,148 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
 }
 
 /**
+ * UCA-181: framework-level guard against fabricated action claims.
+ *
+ * Each entry binds a connector-write contract to the data needed to
+ * audit a final answer:
+ *
+ *   - `group`: the policy_groups.mjs key whose members satisfy the
+ *     contract. When the group exists in `POLICY_GROUPS`, membership
+ *     is read from there (single source of truth — adding a new
+ *     gmail/outlook tool to `email_send` automatically extends this
+ *     guard with no code change). Groups not yet promoted to
+ *     `POLICY_GROUPS` carry an inline `tools` fallback so calendar /
+ *     upload contracts still apply.
+ *
+ *   - `claims`: regexes that match phrases asserting the action *was*
+ *     performed. Past tense and completion verbs only — "I will send"
+ *     / "可以使用 X 发送" must NOT match.
+ *
+ *   - `negations`: regexes that, when present in the same final text,
+ *     suppress the claim (e.g. "邮件未发送", "not yet sent"). This
+ *     prevents an honest "我没能发出邮件" answer from being flagged.
+ *
+ * Patterns live here (not in agent-loop) so tool_using and agentic
+ * apply identical truthfulness rules. Both executors call
+ * `detectUnbackedActionClaims` and prepend the resulting banner.
+ */
+const ACTION_CLAIM_GROUPS = Object.freeze([
+  {
+    group: "email_send",
+    claims: [
+      /已(?:经)?(?:[\s，,])?(?:成功|顺利|确认)?(?:[\s，,])?(?:发送|发出|寄出)/,
+      /邮件(?:[\s，,])?(?:已|成功|顺利)(?:[\s，,])?(?:[已]?(?:成功)?)(?:发送|发出|寄出)/,
+      /(?:发送|发出|寄出)\s*(?:成功|完成|至|到|给)/,
+      /邮件(?:发送|寄出)\s*成功/,
+      /\bemail\s+(?:was|has been|is|got)\s+(?:successfully\s+)?sent\b/i,
+      /\bi\s+(?:have\s+|['']ve\s+)?sent\s+(?:the\s+|an?\s+|my\s+)?email\b/i,
+      /\bsent\s+(?:the\s+|an?\s+|my\s+|this\s+)?email\b/i,
+      /\bsuccessfully\s+sent\s+(?:the\s+|an?\s+)?(?:email|message|mail)\b/i,
+      /\bemail\s+(?:was|has been)\s+delivered\b/i
+    ],
+    negations: [
+      /未\s*(?:发送|发出|寄出)|没\s*能?\s*(?:发送|发出|寄出)|无法\s*(?:发送|发出|寄出)|尚未\s*(?:发送|发出|寄出)|还(?:没|未)\s*(?:发送|发出|寄出)|(?:发送|发出|寄出)\s*失败|(?:发送|发出|寄出).{0,4}失败/,
+      /(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+(?:successfully\s+)?(?:send|sent|deliver|delivered)/i,
+      /not\s+yet\s+(?:sent|delivered)|prepared\s+but\s+not\s+(?:yet\s+)?(?:sent|delivered)/i,
+      /邮件.{0,8}(?:还没|尚未|未真正|未实际|尚未真正).{0,8}(?:发出|发送)/
+    ]
+    // tool list is read from POLICY_GROUPS.email_send at runtime
+  },
+  {
+    group: "calendar_create",
+    claims: [
+      /已\s*创建\s*(?:日程|会议|事件|提醒)/,
+      /日程\s*已\s*创建|事件\s*已\s*创建/,
+      /\bevent\s+(?:was|has been|is)\s+created\b/i,
+      /\bcalendar\s+event\s+(?:has\s+been\s+)?created\b/i
+    ],
+    negations: [
+      /未\s*创建|无法\s*创建|创建\s*失败/,
+      /\b(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+create/i
+    ],
+    // calendar_create is not a POLICY_GROUPS entry yet; fall back to
+    // an inline list so the guard still binds even before the group
+    // is promoted.
+    tools: [
+      "account_create_event",
+      "google.calendar.create_event",
+      "microsoft.calendar.create_event"
+    ]
+  },
+  {
+    group: "file_upload",
+    claims: [
+      /已\s*上传/,
+      /\buploaded\s+(?:successfully|the\s+file)?\b/i,
+      /\bfile\s+(?:has\s+been\s+)?uploaded\b/i
+    ],
+    negations: [
+      /未\s*上传|无法\s*上传|上传\s*失败/,
+      /\b(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+upload/i
+    ],
+    tools: [
+      "account_upload_file",
+      "google.drive.upload_file",
+      "microsoft.onedrive.upload_file"
+    ]
+  }
+]);
+
+const ACTION_CLAIM_WORKFLOW_TOOL = "connector_workflow_run";
+
+function resolveGroupTools(entry) {
+  const fromGroup = toolsInGroup(entry.group);
+  if (fromGroup.length > 0) return new Set(fromGroup);
+  return new Set(entry.tools ?? []);
+}
+
+/**
+ * Inspect the final answer text and the executor transcript. If the
+ * final text claims a connector write action was performed but the
+ * transcript contains no successful tool call from that action's
+ * policy group, return a violation. Returns [] for honest answers.
+ *
+ * Used by both tool_using/agent-loop and agentic/planner so they
+ * downgrade hallucinated "邮件已发送" / "event created" / "uploaded"
+ * replies the same way.
+ *
+ * @param {TranscriptEntry[]} transcript
+ * @param {string} finalText
+ * @returns {ContractViolation[]}
+ */
+export function detectUnbackedActionClaims(transcript = [], finalText = "") {
+  const text = String(finalText ?? "");
+  if (!text) return [];
+  const violations = [];
+  for (const entry of ACTION_CLAIM_GROUPS) {
+    const claimMatched = entry.claims.some((re) => re.test(text));
+    if (!claimMatched) continue;
+    const negationMatched = entry.negations.some((re) => re.test(text));
+    if (negationMatched) continue;
+    const tools = resolveGroupTools(entry);
+    if (tools.size === 0) continue; // misconfigured entry — fail open
+    const succeeded = (transcript ?? []).some((t) => {
+      if (t?.type !== "tool_result") return false;
+      if (!isSuccessfulHit(t)) return false;
+      if (t.tool === ACTION_CLAIM_WORKFLOW_TOOL) {
+        // Workflow runs only count when the connector actually reported
+        // success. waiting_external_decision / failed must not satisfy.
+        if (!tools.has(ACTION_CLAIM_WORKFLOW_TOOL)) return false;
+        return t?.metadata?.connector_status === "success";
+      }
+      return tools.has(t.tool);
+    });
+    if (!succeeded) {
+      violations.push({
+        kind: `${entry.group}_claim_unsupported`,
+        message: `Final answer claims ${entry.group} was completed, but no tool in that policy group ran successfully. The text is a model fabrication, not a real execution result.`
+      });
+    }
+  }
+  return violations;
+}
+
+/**
  * @typedef {Object} TranscriptEntry
  * @property {string} [type]              - "tool_call" | "tool_result" | ...
  * @property {string} [tool]              - tool id when applicable
@@ -323,7 +465,17 @@ export function validateSuccessContract(taskSpec, transcript = []) {
       violations.push({ kind, message });
       continue;
     }
-    if (!successfulHits.some((hit) => resultHasSubstance(hit))) {
+    if (group === "email_send" && successfulHits.some((hit) =>
+      hit?.tool === "connector_workflow_run"
+      && hit?.metadata?.connector_status === "waiting_external_decision"
+    )) {
+      violations.push({
+        kind: "email_send_required_waiting_confirmation",
+        message: "success_contract.required_policy_groups includes \"email_send\"; the connector workflow prepared the email but is still waiting for user confirmation."
+      });
+      continue;
+    }
+    if (!successfulHits.some((hit) => groupHitSatisfies(group, hit))) {
       violations.push({
         kind: `${group}_required_returned_empty`,
         message: `success_contract.required_policy_groups includes "${group}"; tools succeeded (${successfulHits.map((h) => h.tool).join(", ")}) but none returned usable results.`
@@ -443,6 +595,16 @@ function isSuccessfulHit(entry) {
     if (result.error != null && result.error !== "") return false;
   }
   return true;
+}
+
+function groupHitSatisfies(group, entry) {
+  if (group === "email_send") {
+    if (entry?.tool === "connector_workflow_run") {
+      return entry?.metadata?.connector_status === "success";
+    }
+    return true;
+  }
+  return resultHasSubstance(entry);
 }
 
 /**

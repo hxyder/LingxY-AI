@@ -229,7 +229,8 @@ const repoRoot = path.resolve(__dirname, "..");
 
   assert.equal(result.downgraded, true, "planner must downgrade when the model claims completion without a successful tool call");
   assert.equal(result.success, false);
-  assert.match(result.finalText, /\[UCA note\]/);
+  // UCA-181: the truthfulness banner is the leading line, no longer a [UCA note] tag.
+  assert.match(result.finalText, /no tool in this run returned success/);
   assert.match(result.finalText, /downgraded/);
 }
 
