@@ -2066,6 +2066,20 @@ function renderSummary() {
   const running = s.running ?? 0;
   const queued = s.queued ?? 0;
   const spend = s.monthlySpend ?? 0;
+  // Rail badge — show in-flight count so users notice from any tab
+  // when something is still running. Hides at zero. The .stat-strip
+  // already shows the same numbers in detail; this is the at-a-glance
+  // peripheral signal.
+  const railBadge = document.getElementById("railBadgeTasks");
+  if (railBadge) {
+    const live = running + queued;
+    if (live > 0) {
+      railBadge.textContent = String(live);
+      railBadge.hidden = false;
+    } else {
+      railBadge.hidden = true;
+    }
+  }
   // Idle mode: nothing in motion AND no money burned this month. Collapse
   // the 4-card strip to a thin summary line so zero-value cards stop
   // dominating the page. Today's success count + sparkline stay visible
@@ -4115,6 +4129,18 @@ async function refreshTaskDetail() {
 function renderApprovals() {
   const approvals = (state.workspace.approvals ?? []).filter((approval) => approval.status === "pending");
   approvalCount.textContent = `${approvals.length}`;
+  // Rail badge — pending approvals are urgent (the agent is blocked
+  // waiting for the user). Surface a count badge on the Schedules
+  // rail item so the user notices even from another tab.
+  const railBadge = document.getElementById("railBadgeApprovals");
+  if (railBadge) {
+    if (approvals.length > 0) {
+      railBadge.textContent = String(approvals.length);
+      railBadge.hidden = false;
+    } else {
+      railBadge.hidden = true;
+    }
+  }
   if (approvals.length === 0) {
     renderEmpty(approvalList, "No pending approvals.");
     return;
