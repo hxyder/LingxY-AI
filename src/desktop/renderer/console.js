@@ -3477,6 +3477,21 @@ function renderTasks() {
   }
 
   const entries = buildTaskListEntries(tasks);
+  // Cache signature so we can skip the rebuild when nothing material
+  // has changed. Without this, the 6s refresh tick rebuilds the entire
+  // task list every time and every hover / click target gets the
+  // "flash" the user complained about. Compare a compact signature of
+  // (id, status, sub_status, child_count) — anything else is metadata
+  // that doesn't need a re-render.
+  const sig = entries.map(({ task }) => `${task.task_id}|${task.status}|${task.sub_status ?? ""}|${task.child_count ?? 0}`).join("\n");
+  if (taskList._lastSig === sig && taskList.children.length > 0) {
+    // Nothing visibly changed; skip the destructive rebuild. Selection
+    // state is also unchanged because state.selectedTaskId is the
+    // same.
+  } else {
+  taskList._lastSig = sig;
+  // Preserve scroll position across the rebuild.
+  const prevScroll = taskList.scrollTop;
   taskList.innerHTML = entries.map(({ task, indent, isChild }) => {
     const selected = task.task_id === state.selectedTaskId;
     const sc = task.status === "success" ? "ready" : task.status === "failed" ? "danger" : "warning";
@@ -3494,13 +3509,18 @@ function renderTasks() {
       </button>
     `;
   }).join("");
-
+  // Restore scroll position so the user's place isn't reset on the
+  // 6s refresh tick. Pin to bottom if they were already there.
+  taskList.scrollTop = prevScroll;
+  // Re-attach click handlers — only needed when we actually rebuilt.
+  // (The skip branch keeps existing buttons + their listeners.)
   for (const btn of taskList.querySelectorAll("[data-task-id]")) {
     btn.addEventListener("click", () => {
       state.selectedTaskId = btn.dataset.taskId;
       renderTasks();
       void refreshTaskDetail();
     });
+  }
   }
 }
 
@@ -4385,6 +4405,10 @@ function renderApprovals() {
     renderEmpty(approvalList, "No pending approvals.");
     return;
   }
+  // Skip-render guard: approval items carry editable input fields
+  // (override forms). If the user is typing in one, don't wipe their
+  // input on the 6s refresh tick.
+  if (shouldSkipRender(approvalList)) return;
 
   approvalList.innerHTML = approvals.map((a) => renderApprovalItem(a)).join("");
 
@@ -4801,7 +4825,31 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
   });
 }
 
+// Generic guard for the "wholesale innerHTML rebuild" pattern: skip
+// the render if (a) an inline edit popover is open inside the
+// container, OR (b) the user is currently typing into an input
+// inside it. Either way, the next refreshWorkspace tick will catch
+// up after they finish.
+function shouldSkipRender(container, editSelector = "") {
+  if (!container) return false;
+  if (editSelector && container.querySelector(editSelector)) return true;
+  const active = document.activeElement;
+  if (active && container.contains(active)) {
+    const tag = (active.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea" || tag === "select"
+        || active.getAttribute?.("contenteditable") === "true") {
+      return true;
+    }
+  }
+  return false;
+}
+
 function renderSchedules() {
+  // Skip-render guard: if the user is in the middle of editing a row
+  // (rename / change trigger), the 6s refreshWorkspace tick would
+  // wipe the inline form mid-edit and the user loses their text.
+  // The next tick will catch up after they save / cancel.
+  if (shouldSkipRender(scheduleList, ".sched-row-edit")) return;
   const schedules = state.workspace.schedules ?? [];
   scheduleCount.textContent = `${schedules.length}`;
   if (schedules.length === 0) {
@@ -7243,6 +7291,8 @@ let _acConfigOpen = {};   // { microsoft: bool, google: bool }
 async function renderAccountConnectors(connectors, connectedAccounts = []) {
   const list = document.getElementById("accountConnectorsList");
   if (!list) return;
+  // Skip-render guard: don't wipe an inline rename input mid-edit.
+  if (shouldSkipRender(list, ".conn-row-edit")) return;
   list.innerHTML = "";
   // UCA-127: connector cards collapsed into single-line .conn-row entries
   // grouped under "Connected" / "Available providers" section labels
