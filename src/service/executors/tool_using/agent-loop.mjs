@@ -1216,6 +1216,9 @@ function buildHallucinatedClaimBanner(violation) {
   if (group === "file_upload") {
     return "⚠️ 文件实际并未上传。系统未检测到上传工具的成功调用，下面的文字仅为模型自述。请重新上传。";
   }
+  if (group === "schedule_create") {
+    return "⚠️ 定时任务/提醒实际并未创建。系统未检测到 create_scheduled_task 的成功调用，下面的文字仅为模型自述。请重新创建。";
+  }
   return "⚠️ 模型声称完成了一项操作，但系统未检测到对应工具的成功调用。下面的文字是模型自述，不是真实执行结果。";
 }
 

@@ -62,6 +62,16 @@ export const POLICY_GROUPS = Object.freeze({
     "account_upload_file",
     "google.drive.upload_file",
     "microsoft.onedrive.upload_file"
+  ]),
+
+  /**
+   * Tools that persist a schedule (cron / at / interval / natural-language
+   * trigger). Satisfied only when the schedule is actually created — a
+   * model finalizing with "已设置好提醒" without calling the tool fails
+   * the action-claim guard.
+   */
+  schedule_create: Object.freeze([
+    "create_scheduled_task"
   ])
 });
 

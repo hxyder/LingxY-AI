@@ -3,7 +3,8 @@ import { toolsInGroup } from "./policy-groups.mjs";
 export const ACTION_OBLIGATION_GROUPS = Object.freeze([
   "email_send",
   "calendar_create",
-  "file_upload"
+  "file_upload",
+  "schedule_create"
 ]);
 
 const ACTION_OBLIGATION_SET = new Set(ACTION_OBLIGATION_GROUPS);
@@ -12,13 +13,15 @@ const WORKFLOW_TOOL = "connector_workflow_run";
 const GROUP_LABELS = Object.freeze({
   email_send: "email send",
   calendar_create: "calendar event creation",
-  file_upload: "file upload"
+  file_upload: "file upload",
+  schedule_create: "scheduled task creation"
 });
 
 const GROUP_HINTS = Object.freeze({
   email_send: "Use the transcript/context to fill recipient, subject, and body. Prefer connector_workflow_run with a Gmail/Outlook send workflow when available so the user receives the normal confirmation card.",
   calendar_create: "Use title, start/end time, attendees, description, and location from the request/context. Prefer connector_workflow_run with a calendar create workflow when available; otherwise call account_create_event or a provider create-event tool.",
-  file_upload: "Use an absolute local path from attachments/artifacts/context. Call account_upload_file or a provider Drive/OneDrive upload tool; ask for the smallest missing file/path/destination detail only if it cannot be inferred."
+  file_upload: "Use an absolute local path from attachments/artifacts/context. Call account_upload_file or a provider Drive/OneDrive upload tool; ask for the smallest missing file/path/destination detail only if it cannot be inferred.",
+  schedule_create: "Call create_scheduled_task with a name, a trigger ({natural_language:'5 分钟后'} / {type:'at',run_at:'<ISO>'} / {type:'cron',expression:'0 9 * * *'}), and an action ({type:'task',target:'<label>',params:{userCommand:'<full natural-language instruction>'}}). Do NOT execute the work now — schedule it and let the firing path do the work."
 });
 
 const MISSING_INPUT_PATTERNS = Object.freeze({
@@ -36,6 +39,11 @@ const MISSING_INPUT_PATTERNS = Object.freeze({
     /(?:missing|required|invalid|empty).{0,40}(?:file|path|localPath|folder|destination)/i,
     /(?:file|path|localPath|folder|destination).{0,40}(?:missing|required|invalid|empty)/i,
     /(?:文件|路径|本地路径|目标|文件夹).{0,12}(?:缺少|未指定|不能为空|需要|必填)/
+  ],
+  schedule_create: [
+    /(?:missing|required|invalid|empty).{0,40}(?:trigger|cron|run_at|when|action|userCommand)/i,
+    /(?:trigger|cron|run_at|when|action|userCommand).{0,40}(?:missing|required|invalid|empty)/i,
+    /(?:触发|时间|什么时候|执行内容|任务内容).{0,12}(?:缺少|未指定|不能为空|需要|必填)/
   ]
 });
 
@@ -52,6 +60,10 @@ const FINAL_CLARIFICATION_PATTERNS = Object.freeze({
   file_upload: [
     /(?:which file|file path|local path|where should i upload|destination).{0,40}\?/i,
     /(?:哪个文件|文件路径|上传到哪里|目标文件夹|网盘位置)/
+  ],
+  schedule_create: [
+    /(?:when should i run|what time|how often|which trigger).{0,40}\?/i,
+    /(?:几点|什么时候|多久一次|触发时间|频率)/
   ]
 });
 
@@ -383,7 +395,9 @@ export function formatWaitingActionFinal({ task = null, obligation = null } = {}
         ? "日程创建"
         : group === "file_upload"
           ? "文件上传"
-          : "操作";
+          : group === "schedule_create"
+            ? "定时任务创建"
+            : "操作";
     return [
       `${noun}已经生成待确认操作，但还没有真正执行完成。`,
       approvalId ? `待确认 ID：${approvalId}` : null,
@@ -396,7 +410,9 @@ export function formatWaitingActionFinal({ task = null, obligation = null } = {}
       ? "calendar event creation"
       : group === "file_upload"
         ? "file upload"
-        : "action";
+        : group === "schedule_create"
+          ? "scheduled task creation"
+          : "action";
   return [
     `The ${noun} is waiting for confirmation and has not completed yet.`,
     approvalId ? `Pending approval ID: ${approvalId}` : null,

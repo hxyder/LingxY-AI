@@ -298,12 +298,14 @@ export function classifyGoal(text, signals = null) {
 const NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE = new Set([
   "email_send",
   "calendar_create",
-  "file_upload"
+  "file_upload",
+  "schedule_create"
 ]);
 const CLEAR_SIDE_EFFECT_POLICY_GROUPS = new Set([
   "email_send",
   "calendar_create",
-  "file_upload"
+  "file_upload",
+  "schedule_create"
 ]);
 
 function requiredPolicyGroupsFromIntentRoute(decision = null) {

@@ -331,6 +331,26 @@ const ACTION_CLAIM_GROUPS = Object.freeze([
       /未\s*上传|无法\s*上传|上传\s*失败/,
       /\b(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+upload/i
     ]
+  },
+  {
+    group: "schedule_create",
+    claims: [
+      // 已[为你/帮你/成功/顺利] + 设置/创建/安排 + 好 + ... + 提醒/定时/任务/闹钟
+      // Allow up to 30 chars between the verb and the schedule noun so the
+      // typical "已为你设置好每天早上 8 点的提醒" form matches.
+      /已\s*(?:为你|帮你)?\s*(?:成功|顺利)?\s*(?:设置|创建|安排|建立|添加|新建)\s*(?:好|了)?[\s\S]{0,30}?(?:提醒|定时|定时任务|计划任务|每\s*[日天周月]|每\s*\S{1,4}|闹钟)/,
+      /(?:提醒|定时任务|计划任务|闹钟)\s*(?:已|成功)\s*(?:设置|创建|安排|建立)/,
+      /(?:已|成功)\s*(?:为你|帮你)?\s*(?:设置|创建|安排)\s*(?:好|了)?\s*(?:每\s*\S{1,4}|定时|提醒)/,
+      // English
+      /\bi(?:\s+have\s+|['‘’]ve\s+|\s+)(?:set|created|scheduled|added)\s+(?:up\s+)?(?:a\s+|the\s+|an\s+|your\s+)?(?:reminder|schedule|scheduled\s+task|recurring\s+task|cron|alarm)\b/i,
+      /\b(?:reminder|schedule|scheduled\s+task|cron\s+job|alarm)\s+(?:has\s+been\s+|was\s+|is\s+)(?:set|created|scheduled|added|configured)\b/i,
+      /\bsuccessfully\s+(?:set|created|scheduled)\s+(?:a\s+|the\s+)?(?:reminder|schedule|task)\b/i
+    ],
+    negations: [
+      /未\s*(?:设置|创建|安排)|没\s*(?:有)?\s*(?:设置|创建|安排)|无法\s*(?:设置|创建|安排)|尚未\s*(?:设置|创建|安排)|(?:设置|创建|安排)\s*失败/,
+      /(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+(?:set|create|schedule|configure)/i,
+      /not\s+yet\s+(?:set|created|scheduled)|prepared\s+but\s+not\s+(?:yet\s+)?(?:set|scheduled)/i
+    ]
   }
 ]);
 

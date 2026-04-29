@@ -129,12 +129,14 @@ const REQUIRED_POLICY_GROUPS = Object.freeze([
   "external_web_read",
   "email_send",
   "calendar_create",
-  "file_upload"
+  "file_upload",
+  "schedule_create"
 ]);
 const CLEAR_SIDE_EFFECT_POLICY_GROUPS = new Set([
   "email_send",
   "calendar_create",
-  "file_upload"
+  "file_upload",
+  "schedule_create"
 ]);
 const COMPLEXITIES = Object.freeze(["low", "medium", "high"]);
 const RISK_LEVELS = Object.freeze(["low", "medium", "high"]);
@@ -503,7 +505,7 @@ function buildMessages({ text, contextPacket, signals }) {
     "- needs_external_info / needs_current_information: true when the answer depends on information outside the current context, especially volatile/current facts. A topic label alone is not a hard rule; use semantic judgement.",
     "- needs_user_files: true when the user asks to use attached/uploaded/local files or selected text.",
     "- needs_tool_use: true when answering well requires a capability outside plain chat. Put capability names in needed_capabilities (for example external_web_read, file_read, artifact_generation), NOT concrete tool IDs such as web_search_fetch.",
-    "- required_policy_groups: execution contracts the final task must satisfy. Include `external_web_read` when current external evidence is load-bearing. Include `email_send`, `calendar_create`, or `file_upload` ONLY when the user clearly wants a real send/create/upload action executed now or by a scheduled firing, not when they merely ask for advice, a draft, a plan, or a tool suggestion. Leave empty when no tool-success contract is required.",
+    "- required_policy_groups: execution contracts the final task must satisfy. Include `external_web_read` when current external evidence is load-bearing. Include `email_send`, `calendar_create`, `file_upload`, or `schedule_create` ONLY when the user clearly wants a real send/create/upload/schedule action executed now or by a scheduled firing, not when they merely ask for advice, a draft, a plan, or a tool suggestion. `schedule_create` applies when the user asks for a future action — '提醒我 X', '每天/每周 X', '过 N 分钟/小时后 X', 'remind me at HH:MM', 'in N minutes ...'. Leave empty when no tool-success contract is required.",
     "- source_mode: no_external for stable/general answers; provided_context for local selection/files; single_lookup for one URL/article/fact; multi_source_research when independent sources matter; deep_research only for explicit depth asks.",
     "- complexity/risk_level: classify execution complexity and user/safety risk. High risk does not mean refuse; it means policy should be careful.",
     "- confidence: be honest. 0.5 means \"could go either way\", 0.9 means \"only one reading fits\". Low confidence triggers a fallback to the deterministic resolver.",
