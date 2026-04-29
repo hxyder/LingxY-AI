@@ -34,7 +34,9 @@ function buildSchedulerContextPacket({
     image_paths: imagePaths,
     selection_metadata: {
       source_id: sourceId,
-      trigger_reason: triggerReason
+      trigger_reason: triggerReason,
+      scheduler_context: true,
+      scheduled_task_fire: true
     },
     captured_at: new Date().toISOString()
   };

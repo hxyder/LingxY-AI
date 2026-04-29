@@ -23,7 +23,7 @@ import {
   extractAbsoluteLocalPathsFromText
 } from "../shared/resource-context.mjs";
 import { renderBackgroundContextsBlock } from "../../core/intent/background-contexts.mjs";
-import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
+import { renderToolPolicyForPrompt, toolsInGroup } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { extractEvidence, detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 import { validateSuccessContract, validateStepGate } from "../../core/policy/success-contract-validator.mjs";
@@ -462,10 +462,103 @@ function localFallbackFinal({ task, transcript, reason = "" }) {
     : `I could not collect enough tool results to finish the answer.${reason ? ` Reason: ${reason}` : ""}`.trim();
 }
 
+function taskSpecRequiresPolicyGroup(taskSpec, group) {
+  const groups = taskSpec?.success_contract?.required_policy_groups ?? [];
+  return Array.isArray(groups) && groups.includes(group);
+}
+
+const REQUIRED_ACTION_POLICY_GROUPS = new Set(["email_send"]);
+
+function missingRequiredActionGroups(stepGate) {
+  if (!stepGate || stepGate.next_action !== "continue") return [];
+  const violations = Array.isArray(stepGate.violations) ? stepGate.violations : [];
+  if (violations.length === 0) return [];
+  const groups = [];
+  for (const violation of violations) {
+    const kind = String(violation?.kind ?? "");
+    const group = [...REQUIRED_ACTION_POLICY_GROUPS].find(
+      (candidate) => kind === `${candidate}_required_not_called`
+    );
+    if (!group) return [];
+    groups.push(group);
+  }
+  return [...new Set(groups)];
+}
+
+export function shouldInjectRequiredActionGuidance(stepGate, transcript = []) {
+  const groups = missingRequiredActionGroups(stepGate);
+  if (groups.length === 0) return [];
+  const toolResults = (transcript ?? []).filter((entry) => entry?.type === "tool_result");
+  if (toolResults.length === 0) return [];
+  return groups;
+}
+
+function buildRequiredActionGuidance(groups = []) {
+  const lines = [
+    "The success contract is now blocked only by required action policy groups.",
+    "Stop gathering more supporting data unless an action argument is truly missing. Do not return a draft-only final answer."
+  ];
+  if (groups.includes("email_send")) {
+    lines.push(
+      `Call one member of the email_send policy group now: ${toolsInGroup("email_send").join(", ")}.`,
+      "Use the transcript to compose the subject and body. If a connector workflow is available, prefer connector_workflow_run so the user receives the normal confirmation card."
+    );
+  }
+  return lines.join("\n");
+}
+
+function hasCompletedEmailSend(transcript = []) {
+  return (transcript ?? []).some((entry) => {
+    if (entry?.type !== "tool_result") return false;
+    if (entry.success === false) return false;
+    if (entry.tool === "connector_workflow_run") {
+      return entry.metadata?.connector_status === "success";
+    }
+    return entry.tool === "account_send_email"
+      || entry.tool === "send_email_smtp"
+      || entry.tool === "google.gmail.send_email"
+      || entry.tool === "microsoft.outlook.send_email";
+  });
+}
+
+function findPendingEmailApproval(transcript = []) {
+  return [...(transcript ?? [])].reverse().find((entry) =>
+    entry?.type === "tool_result"
+    && entry.tool === "connector_workflow_run"
+    && entry.metadata?.connector_status === "waiting_external_decision"
+    && entry.metadata?.approval?.approval_id
+  ) ?? null;
+}
+
+function pendingEmailApprovalFinal({ task, pending }) {
+  const approvalId = pending?.metadata?.approval?.approval_id ?? "";
+  const zh = hasCjk(task?.user_command ?? "");
+  if (zh) {
+    return [
+      "邮件内容已经整理好，并生成了待确认的发送操作，但还没有真正发出。",
+      approvalId ? `待确认 ID：${approvalId}` : null,
+      "需要在确认卡片里批准后，Gmail 才会执行发送。"
+    ].filter(Boolean).join("\n");
+  }
+  return [
+    "The email content is prepared, but it has not been sent yet.",
+    approvalId ? `Pending approval ID: ${approvalId}` : null,
+    "Approve the confirmation card to let Gmail send it."
+  ].filter(Boolean).join("\n");
+}
+
 async function composeFinalAnswer({ task, transcript, runtime, reason = "" }) {
   runtime?.emitTaskEvent?.("final_composer_started", { reason });
   const started = Date.now();
   try {
+    const taskSpec = task?.task_spec ?? {};
+    const pendingEmailApproval = findPendingEmailApproval(transcript);
+    if (pendingEmailApproval
+        && taskSpecRequiresPolicyGroup(taskSpec, "email_send")
+        && !hasCompletedEmailSend(transcript)) {
+      return pendingEmailApprovalFinal({ task, pending: pendingEmailApproval });
+    }
+
     if (typeof runtime?.finalAnswerComposer === "function") {
       const composed = await runtime.finalAnswerComposer({ task, transcript, reason });
       const text = String(composed ?? "").trim();
@@ -478,7 +571,6 @@ async function composeFinalAnswer({ task, transcript, runtime, reason = "" }) {
     const adapter = createProviderAdapter(provider);
     let text = "";
     const userCommand = task?.user_command ?? "";
-    const taskSpec = task?.task_spec ?? {};
     const expected = taskSpec?.synthesis?.expected_output ?? null;
     const system = [
       "You are LingxY's final answer composer.",
@@ -638,6 +730,11 @@ function buildConversationMessages(prefixMessages, transcript, initialFilePaths 
       messages.push({
         role: "user",
         content: `[Runbook recovery: ${entry.runbook_id}]\n${entry.instruction}`
+      });
+    } else if (entry.type === "contract_guidance") {
+      messages.push({
+        role: "user",
+        content: `[Required action handoff: ${(entry.groups ?? []).join(", ")}]\n${entry.instruction}`
       });
     } else if (entry.type === "saturation_hint") {
       const repeated = Array.isArray(entry.repeated_domains) && entry.repeated_domains.length > 0
@@ -817,6 +914,31 @@ function formatLeanAmbientContext() {
   return `Current local date and time: ${now.toLocaleString("sv-SE", { hour12: false })} (${tz}).`;
 }
 
+function renderRequiredContractForPlanner(task) {
+  const contract = task?.task_spec?.success_contract ?? {};
+  const requiredTools = Array.isArray(contract.required_tool_names)
+    ? contract.required_tool_names.filter(Boolean)
+    : [];
+  const requiredGroups = Array.isArray(contract.required_policy_groups)
+    ? contract.required_policy_groups.filter(Boolean)
+    : [];
+  if (requiredTools.length === 0 && requiredGroups.length === 0) return "";
+
+  const lines = ["", "Task contract:"];
+  lines.push(`- required_tools: ${requiredTools.length > 0 ? requiredTools.join(", ") : "(none)"}`);
+  lines.push("- required_policy_groups:");
+  if (requiredGroups.length === 0) {
+    lines.push("  - (none)");
+  } else {
+    for (const group of requiredGroups) {
+      const members = toolsInGroup(group);
+      const memberHint = members.length > 0 ? ` (any of: ${members.join(", ")})` : "";
+      lines.push(`  - ${group}${memberHint}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 function buildLeanChatSystemPrompt({ task, synthesisBlock }) {
   const expected = task?.task_spec?.synthesis?.expected_output ?? "direct_answer";
   return `You are LingxY, a helpful conversational AI assistant.
@@ -882,6 +1004,7 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
   const needsCurrentDataInstruction = policyLines.length > 0
     ? `\n\nTool policy:\n${policyLines.map((line) => line.startsWith("  ") ? line : `- ${line}`).join("\n")}`
     : "";
+  const requiredContractBlock = renderRequiredContractForPlanner(task);
 
   // P4-RQ C1: research/multi-source coaching for search/research class
   // tasks. Gated on `external_web_read != forbidden` AND no local
@@ -924,7 +1047,7 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
     : `You are LingxY, a capable desktop AI assistant running ON the user's machine. You have real local-execution tools: launch_app actually starts native applications, open_url actually navigates the user's browser, generate_document actually writes files to disk. You are NOT a "web assistant", "shortcut helper", or "chat-only" persona — refusing to call launch_app on the grounds that you "cannot operate a desktop computer" is wrong; the tools below are exactly that operation. Read the user's request carefully, consider what you have available (tools, workflows, attached resources, connected accounts), and decide how to accomplish their goal. Ask a short clarifying question only when you genuinely cannot proceed faithfully.
 ${resourceHint}
 Available execution tools:
-${toolList}${workflowHint}
+${toolList}${workflowHint}${requiredContractBlock}
 
 Use the native call_tool interface when a tool is needed: choose exactly one tool id from the list and pass its arguments as an object. Tool metadata is part of the execution contract: policy groups say which contract applies, risk indicates approval sensitivity, and capabilities say what the tool can actually touch.
 
@@ -1270,12 +1393,15 @@ function appendAuditLog(runtime, task, subtype, payload) {
 }
 
 async function resolveInteractiveConfirmation({ runtime, task, tool, args, risk }) {
-  const decision = await (runtime.confirmationHandler?.({
+  // Caller (the unified gate above) only invokes this when
+  // `runtime.confirmationHandler` is a function — the previous
+  // silent auto-confirm fallback used to swallow real user prompts.
+  const decision = await runtime.confirmationHandler({
     task,
     tool,
     args,
     risk
-  }) ?? Promise.resolve({ decision: "confirm", args }));
+  });
 
   if (decision?.decision === "edit") {
     return {
@@ -1385,6 +1511,7 @@ async function _runToolAgentLoopCore({
     task?.task_spec?.execution_constraints?.error_budget
   );
   const firedRunbooks = new Set();
+  let contractActionGuidanceFired = false;
   // Soft saturation nudge for multi_source / deep_research tasks. Fires
   // once per task — if the model heeds the hint and changes angle, no
   // further nudges; if it ignores, the existing research-quality
@@ -1624,28 +1751,66 @@ async function _runToolAgentLoopCore({
       };
     }
 
-    if (task.execution_mode === "interactive" && risk.requires_confirmation) {
-      const interactiveDecision = await resolveInteractiveConfirmation({
-        runtime,
-        task,
-        tool,
-        args: decision.args,
-        risk
-      });
+    // Unified confirmation gate (UCA-180):
+    //   - If a synchronous `runtime.confirmationHandler` is registered
+    //     (scheduler, MCP host, integration tests) it is the source of
+    //     truth — call it and honour confirm / edit / deny.
+    //   - Otherwise we have a real interactive user. Surface a
+    //     pending_approval and suspend the task so the UI's inline
+    //     approval card resolves it.
+    //   - `unattended_safe` never shows UI; it skips the prompt and
+    //     relies on the high-risk gate below to block dangerous calls.
+    // The previous code had two parallel branches keyed on
+    // execution_mode, which silently auto-confirmed in interactive
+    // chat when no handler was registered (the email-send no-prompt
+    // bug). Keep this single gate.
+    if (risk.requires_confirmation) {
+      if (typeof runtime.confirmationHandler === "function") {
+        const interactiveDecision = await resolveInteractiveConfirmation({
+          runtime,
+          task,
+          tool,
+          args: decision.args,
+          risk
+        });
 
-      if (interactiveDecision.status === "deny") {
-        runtime.emitTaskEvent?.("tool_call_denied", {
-          tool_id: tool.id,
-          reason: "user_denied"
+        if (interactiveDecision.status === "deny") {
+          runtime.emitTaskEvent?.("tool_call_denied", {
+            tool_id: tool.id,
+            reason: "user_denied"
+          });
+          transcript.push({
+            type: "tool_denied",
+            tool: tool.id
+          });
+          continue;
+        }
+
+        decision.args = interactiveDecision.args;
+      } else if (task.execution_mode !== "unattended_safe") {
+        const approval = runtime.pendingApprovals.create({
+          sourceType: "agent_tool_call",
+          sourceId: task.task_id,
+          proposedAction: "action_tool",
+          proposedTarget: tool.id,
+          proposedParams: decision.args,
+          previewText: `Pending tool ${tool.id}`
+        });
+        runtime.emitTaskEvent?.("pending_approval_created", {
+          approval_id: approval.approval_id,
+          tool_id: tool.id
         });
         transcript.push({
-          type: "tool_denied",
+          type: "pending_approval",
+          approval_id: approval.approval_id,
           tool: tool.id
         });
-        continue;
+        return {
+          status: "waiting_external_decision",
+          approval,
+          transcript
+        };
       }
-
-      decision.args = interactiveDecision.args;
     }
 
     if (task.execution_mode === "unattended_safe" && risk.risk_level === "high") {
@@ -1665,31 +1830,6 @@ async function _runToolAgentLoopCore({
       return {
         status: "partial_success",
         final_text: `Blocked high-risk tool ${tool.id} in unattended mode.`,
-        transcript
-      };
-    }
-
-    if (task.execution_mode === "approval_required" && risk.requires_confirmation) {
-      const approval = runtime.pendingApprovals.create({
-        sourceType: "agent_tool_call",
-        sourceId: task.task_id,
-        proposedAction: "action_tool",
-        proposedTarget: tool.id,
-        proposedParams: decision.args,
-        previewText: `Pending tool ${tool.id}`
-      });
-      runtime.emitTaskEvent?.("pending_approval_created", {
-        approval_id: approval.approval_id,
-        tool_id: tool.id
-      });
-      transcript.push({
-        type: "pending_approval",
-        approval_id: approval.approval_id,
-        tool: tool.id
-      });
-      return {
-        status: "waiting_external_decision",
-        approval,
         transcript
       };
     }
@@ -1834,6 +1974,26 @@ async function _runToolAgentLoopCore({
         satisfied: stepGate.satisfied,
         violation_count: (stepGate.violations ?? []).length
       });
+
+      const actionGroups = shouldInjectRequiredActionGuidance(stepGate, transcript);
+      if (!contractActionGuidanceFired && actionGroups.length > 0 && iteration < maxIterations - 1) {
+        contractActionGuidanceFired = true;
+        const instruction = buildRequiredActionGuidance(actionGroups);
+        transcript.push({
+          type: "contract_guidance",
+          groups: actionGroups,
+          instruction
+        });
+        runtime.emitTaskEvent?.("contract_action_handoff", {
+          iteration,
+          required_policy_groups: actionGroups
+        });
+        appendAuditLog(runtime, task, "tool_loop.contract_action_handoff", {
+          iteration,
+          required_policy_groups: actionGroups
+        });
+        continue;
+      }
 
       // P4-RB suggestion: log which runbook would handle this signal.
       // Acting on the runbook (executing its steps) is a follow-up
