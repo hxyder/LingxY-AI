@@ -8438,6 +8438,19 @@ function initQuickNotes() {
   }
   function applyFontSize(size) {
     bodyEl.style.fontSize = `${size}px`;
+    // Chrome's contenteditable bakes inline `style="font-size: …"` into
+    // <span> wrappers during paste/typing. Those win over the body's
+    // inline font-size via specificity, so the dropdown change appears
+    // to do nothing. Sweep the editor and clear any inline font-size
+    // (and the related font-* shorthand) — the body's inline rule
+    // then takes over via inheritance. Chip content is force-inherited
+    // via CSS, so this pass is for plain user-typed paragraphs.
+    try {
+      for (const el of bodyEl.querySelectorAll("[style*='font-size']")) {
+        el.style.removeProperty("font-size");
+        if (!el.getAttribute("style")) el.removeAttribute("style");
+      }
+    } catch { /* ignore — contenteditable can be in odd states */ }
     if (fontSizeSel) fontSizeSel.value = String(size);
     try { localStorage.setItem(LS_FONT_SIZE, String(size)); } catch { /* ignore */ }
   }

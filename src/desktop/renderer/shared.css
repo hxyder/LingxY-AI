@@ -4859,8 +4859,16 @@ details.timeline-item[open] > summary {
   color: var(--ink-2);
   /* Inherit the editor's current font-size so the user's choice in the
      toolbar's font-size dropdown applies to chip content too. The
-     prior fixed var(--fs-sm) ignored the setting. */
-  font-size: inherit;
+     prior fixed var(--fs-sm) ignored the setting. !important is
+     needed because Chrome's contenteditable often injects inline
+     `style="font-size: …"` on <span>s during paste/edit, which would
+     otherwise win over the regular inherit. */
+  font-size: inherit !important;
+}
+.notes-editor-body .note-chat-chip *,
+.notes-editor-body .note-chat-chip > p,
+.notes-editor-body .note-chat-chip > p * {
+  font-size: inherit !important;
 }
 .notes-editor-body .note-chat-chip > p {
   margin: 0 0 6px;
