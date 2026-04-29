@@ -4571,45 +4571,82 @@ function renderScheduleRow(s) {
   `;
 }
 
-// In-place schedule rename — same UX pattern as connector rename.
-// Replaces the .sched-title text with an input + 保存/取消; PATCH
-// /schedules/:id with { name } commits.
+// In-place schedule edit — supports renaming AND rewriting the
+// trigger time. Pops a small popover anchored to the row with two
+// inputs (name + when). Save sends both fields; backend honours
+// whichever changed. Empty "when" field skips the trigger update so
+// the user can rename without re-parsing the time.
 function handleScheduleRowEdit(scheduleId, anchorBtn) {
   if (!scheduleId) return;
   const row = anchorBtn?.closest?.(".sched-row");
-  const titleEl = row?.querySelector(".sched-title");
-  if (!row || !titleEl) return;
-  const original = titleEl.textContent ?? "";
+  if (!row) return;
+  const titleEl = row.querySelector(".sched-title");
+  const metaEl = row.querySelector(".sched-meta");
+  if (!titleEl) return;
+  // Capture current values from the rendered row.
+  const currentName = (titleEl.textContent || "").trim();
+  // The "Next: …" text is the human-friendly form; we don't fill the
+  // input with it (date strings aren't natural-language enough). Leave
+  // the trigger input blank and use placeholder for guidance.
+  const originalTitleHtml = titleEl.innerHTML;
+  const originalMetaHtml = metaEl?.innerHTML ?? "";
   titleEl.innerHTML = `
     <div class="sched-row-edit">
-      <input type="text" class="sched-row-edit-input" maxlength="120" value="${escapeHtml(original)}" placeholder="计划名称"/>
-      <button type="button" class="btn btn-sm btn-primary sched-row-edit-save">保存</button>
-      <button type="button" class="btn btn-sm btn-ghost sched-row-edit-cancel">取消</button>
+      <input type="text" class="sched-row-edit-input" maxlength="120" value="${escapeHtml(currentName)}" placeholder="计划名称"/>
     </div>
   `;
-  const input = titleEl.querySelector(".sched-row-edit-input");
-  const saveBtn = titleEl.querySelector(".sched-row-edit-save");
-  const cancelBtn = titleEl.querySelector(".sched-row-edit-cancel");
-  input?.focus();
-  input?.setSelectionRange(0, input.value.length);
-  const restore = () => { titleEl.textContent = original; };
+  // Inject a second row under .sched-meta for the trigger input so the
+  // layout stays compact even while editing.
+  if (metaEl) {
+    metaEl.innerHTML = `
+      <div class="sched-row-edit-trigger">
+        <input type="text" class="sched-row-trigger-input" placeholder="触发时间（留空保持不变）— 例如 每天 9 点 / 每周一 上午 10 点 / 5 分钟以后" maxlength="160"/>
+        <button type="button" class="btn btn-sm btn-primary sched-row-edit-save">保存</button>
+        <button type="button" class="btn btn-sm btn-ghost sched-row-edit-cancel">取消</button>
+      </div>
+    `;
+  }
+  const nameInput = titleEl.querySelector(".sched-row-edit-input");
+  const triggerInput = metaEl?.querySelector(".sched-row-trigger-input");
+  const saveBtn = metaEl?.querySelector(".sched-row-edit-save");
+  const cancelBtn = metaEl?.querySelector(".sched-row-edit-cancel");
+  nameInput?.focus();
+  nameInput?.setSelectionRange(0, nameInput.value.length);
+  const restore = () => {
+    titleEl.innerHTML = originalTitleHtml;
+    if (metaEl) metaEl.innerHTML = originalMetaHtml;
+  };
   cancelBtn?.addEventListener("click", restore);
-  input?.addEventListener("keydown", (ev) => {
+  const onKey = (ev) => {
     if (ev.key === "Escape") restore();
     if (ev.key === "Enter") { ev.preventDefault(); saveBtn?.click(); }
-  });
+  };
+  nameInput?.addEventListener("keydown", onKey);
+  triggerInput?.addEventListener("keydown", onKey);
   saveBtn?.addEventListener("click", async () => {
-    const value = input?.value?.trim() ?? "";
-    if (!value) { showConsoleToast("名称不能为空", { kind: "err" }); return; }
+    const newName = nameInput?.value?.trim() ?? "";
+    const newTrigger = triggerInput?.value?.trim() ?? "";
+    if (!newName) { showConsoleToast("名称不能为空", { kind: "err" }); return; }
+    const patch = {};
+    if (newName !== currentName) patch.name = newName;
+    if (newTrigger) patch.trigger = { natural_language: newTrigger };
+    if (Object.keys(patch).length === 0) {
+      // Nothing actually changed; just close the editor.
+      restore();
+      return;
+    }
     saveBtn.disabled = true;
     saveBtn.textContent = "保存中…";
     try {
       await fetchJson(`/schedules/${encodeURIComponent(scheduleId)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: value })
+        body: JSON.stringify(patch)
       });
-      showConsoleToast("已重命名", { kind: "ok" });
+      const labels = [];
+      if (patch.name) labels.push("名称");
+      if (patch.trigger) labels.push("触发时间");
+      showConsoleToast(`已更新${labels.join(" + ")}`, { kind: "ok" });
       await refreshWorkspace();
     } catch (err) {
       showConsoleToast(`保存失败：${err?.message ?? err}`, { kind: "err" });

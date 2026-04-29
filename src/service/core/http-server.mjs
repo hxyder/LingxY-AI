@@ -2945,12 +2945,14 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
       if (scheduleMatch && method === "PATCH") {
         const body = await readJsonBody(request);
         const scheduleId = scheduleMatch[1];
-        // Two operations share this route:
-        //   { name: "..."   } → rename only
-        //   { enabled: bool } → pause / unpause via scheduler
-        // Mixed bodies update both. The store-level write handles
-        // name; pauseSchedule handles enabled (because it also
-        // recomputes next_run_at on unpause).
+        // Three operations share this route:
+        //   { name: "..."           } → rename only
+        //   { enabled: bool         } → pause / unpause via scheduler
+        //   { trigger: {...}        } → re-trigger (natural_language
+        //                                or structured); recomputes
+        //                                next_run_at and preserves
+        //                                run history
+        // Mixed bodies are honoured in name → trigger → enabled order.
         let schedule = null;
         if (typeof body?.name === "string") {
           const existing = runtime.store.getSchedule(scheduleId);
@@ -2961,6 +2963,16 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           existing.updated_at = new Date().toISOString();
           runtime.store.updateSchedule(scheduleId, existing);
           schedule = existing;
+        }
+        if (body?.trigger && typeof body.trigger === "object") {
+          try {
+            schedule = runtime.scheduler.rescheduleSchedule(scheduleId, body.trigger);
+            if (!schedule) {
+              return sendJson(response, 404, { error: "schedule_not_found" });
+            }
+          } catch (error) {
+            return sendJson(response, 400, { error: error?.message ?? "trigger_invalid" });
+          }
         }
         if (typeof body?.enabled === "boolean") {
           schedule = runtime.scheduler.pauseSchedule(scheduleId, body.enabled);

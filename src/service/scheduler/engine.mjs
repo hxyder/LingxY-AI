@@ -166,6 +166,28 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
       });
       return cloneSchedule(schedule);
     },
+    // Re-trigger an existing schedule with a new natural-language /
+    // structured trigger. Recomputes next_run_at on the spot so the
+    // schedule actually fires at the new time. Run history (run_count
+    // / last_run_at) is preserved — only the trigger and its
+    // derivative fields change.
+    rescheduleSchedule(scheduleId, triggerInput) {
+      const schedule = runtime.store.getSchedule(scheduleId);
+      if (!schedule) {
+        return null;
+      }
+      const nextTrigger = ensureTrigger(triggerInput);
+      schedule.trigger = nextTrigger;
+      schedule.updated_at = new Date().toISOString();
+      schedule.next_run_at = computeNextRunAt(schedule, { after: schedule.updated_at });
+      runtime.store.updateSchedule(scheduleId, schedule);
+      appendAuditLog(runtime, "tool.call", {
+        tool_id: "reschedule_scheduled_task",
+        schedule_id: scheduleId,
+        trigger: buildScheduleTriggerSummary(schedule)
+      });
+      return cloneSchedule(schedule);
+    },
     async dispatch(scheduleId, reason = "manual", triggerPayload = {}) {
       return dispatchSchedule({
         runtime,

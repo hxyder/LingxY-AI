@@ -2924,9 +2924,33 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-size: var(--fs-sm);
   outline: none;
 }
-.sched-row-edit-input:focus {
+.sched-row-edit-input:focus,
+.sched-row-trigger-input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* Trigger-time edit row sits inside .sched-meta during edit mode.
+   Compact one-liner with placeholder hint so users see what kinds of
+   inputs work without us spelling out a full grammar. */
+.sched-row-edit-trigger {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  width: 100%;
+  margin-top: 4px;
+}
+.sched-row-trigger-input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11.5px;
+  outline: none;
 }
 .sched-meta {
   display: flex;
