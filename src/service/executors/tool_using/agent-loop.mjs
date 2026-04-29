@@ -1824,7 +1824,16 @@ async function _runToolAgentLoopCore({
           proposedAction: "action_tool",
           proposedTarget: tool.id,
           proposedParams: decision.args,
-          previewText: `Pending tool ${tool.id}`
+          previewText: `Pending tool ${tool.id}`,
+          // metadata.task_id is what pending-approvals.approve() reads to
+          // bridge the resulting tool execution back to THIS task — without
+          // it the original task is orphaned in waiting_external_decision
+          // and the UI shows "运行中…" forever.
+          metadata: {
+            task_id: task.task_id,
+            tool_id: tool.id,
+            risk_level: risk.risk_level ?? "high"
+          }
         });
         runtime.emitTaskEvent?.("pending_approval_created", {
           approval_id: approval.approval_id,

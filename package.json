@@ -46,6 +46,8 @@
     "verify:fast-executor-truthfulness": "node scripts/verify-fast-executor-truthfulness.mjs",
     "verify:action-claim-guard": "node scripts/verify-action-claim-guard.mjs",
     "verify:scheduled-approval-notify": "node scripts/verify-scheduled-approval-notify.mjs",
+    "verify:approval-task-bridge": "node scripts/verify-approval-task-bridge.mjs",
+    "verify:account-router-fallback": "node scripts/verify-account-router-fallback.mjs",
     "verify:status-preservation": "node scripts/verify-status-preservation.mjs",
     "verify:agentic-parity": "node scripts/verify-agentic-parity.mjs",
     "verify:agentic-step-gate": "node scripts/verify-agentic-step-gate.mjs",

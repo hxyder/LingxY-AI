@@ -54,10 +54,25 @@ export function resolveAccount(ctx, input = {}, requiredCapability) {
   if (input.accountId) {
     const exact = accounts.find((account) => matchesAccountIdentity(account, input.accountId));
     if (!exact) {
+      // The LLM frequently invents an accountId ("default", "primary",
+      // "user@gmail.com", etc.) that doesn't correspond to any connected
+      // account. Hard-erroring loses the recovery path. Surface the
+      // list of viable accountIds so the next planner turn can self-
+      // correct, AND label the variant so callers can decide whether
+      // to retry-without-accountId or block.
       return {
         status: "error",
         errorCode: "ACCOUNT_NOT_FOUND",
-        message: "指定账户不存在或不可用。"
+        message: `accountId "${input.accountId}" 不在已连接账户列表中。可用账户：${
+          accounts.length === 0
+            ? "（无）请在桌面里连接 Gmail / Outlook"
+            : accounts.map((a) => `${a.provider}/${a.email ?? a.id}`).join("、")
+        }。可省略 accountId 让系统自动选择默认账户。`,
+        availableAccounts: accounts.map((a) => ({
+          accountId: a.id,
+          provider: a.provider,
+          email: a.email ?? null
+        }))
       };
     }
     if (!exact.capabilities[requiredCapability]) {
