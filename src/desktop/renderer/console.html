@@ -934,6 +934,23 @@
                one giant .detail-section. Each panel has a clear head so
                sections can be visually scoped and collapse when empty. -->
           <div id="taskDetailSummary" class="stack muted">Select a task to view details.</div>
+          <!-- Recent conversations — fills the right pane when no task is
+               selected so the area isn't a blank "select something" sea.
+               Hidden once the user picks a task. Click any row → loads
+               that conversation into the Chat tab. -->
+          <section class="panel task-detail-panel" id="taskRecentConversationsPanel">
+            <header class="panel-head">
+              <div class="panel-head-main">
+                <h3 class="panel-title">
+                  <svg class="panel-title-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  Recent conversations<span class="zh">最近对话</span>
+                </h3>
+                <span class="panel-sub">从这里直接续聊或回看最近的会话。</span>
+              </div>
+              <span id="taskRecentConversationsCount" class="tag">0</span>
+            </header>
+            <div class="panel-body" id="taskRecentConversationsList"></div>
+          </section>
           <section class="panel task-detail-panel" id="taskSubtasksPanel" hidden>
             <header class="panel-head">
               <div class="panel-head-main">

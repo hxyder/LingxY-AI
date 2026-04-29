@@ -675,6 +675,49 @@ let selectedTaskEventBaseUrl = null;
 let handledSelectedTaskEventIds = new Set();
 let consoleChatEventStream = null;
 let consoleChatResultTaskIds = new Set();
+// Track the in-flight chat task so the composer can flip the Send
+// button to a Stop button while events stream. Cleared on terminal
+// events (success / failed / cancelled / partial_success).
+let consoleChatActiveTaskId = null;
+let consoleChatCancellationRequestedTaskId = null;
+const consoleChatSendBtn = document.querySelector("#consoleChatSendBtn");
+
+function refreshConsoleChatSendBtnMode() {
+  if (!consoleChatSendBtn) return;
+  const running = Boolean(consoleChatActiveTaskId);
+  const cancelling = running
+    && consoleChatCancellationRequestedTaskId === consoleChatActiveTaskId;
+  consoleChatSendBtn.classList.toggle("btn-stop", running && !cancelling);
+  consoleChatSendBtn.classList.toggle("btn-cancelling", cancelling);
+  if (cancelling) {
+    consoleChatSendBtn.innerHTML = `取消中…<span class="zh">再次点击强制</span>`;
+    consoleChatSendBtn.title = "再次点击强制取消";
+  } else if (running) {
+    consoleChatSendBtn.innerHTML = `停止<span class="zh">Stop</span>`;
+    consoleChatSendBtn.title = "停止当前任务";
+  } else {
+    consoleChatSendBtn.innerHTML = `Send<span class="zh">发送</span>`;
+    consoleChatSendBtn.title = "发送 (Enter)";
+  }
+}
+
+async function cancelConsoleChatActiveTask() {
+  const taskId = consoleChatActiveTaskId;
+  if (!taskId) return;
+  const force = consoleChatCancellationRequestedTaskId === taskId;
+  consoleChatCancellationRequestedTaskId = taskId;
+  refreshConsoleChatSendBtnMode();
+  try {
+    await fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ force })
+    });
+    showConsoleToast(force ? "已强制取消" : "已请求取消任务", { kind: force ? "ok" : "info" });
+  } catch (error) {
+    showConsoleToast(`取消失败：${error?.message ?? error}`, { kind: "err" });
+  }
+}
 let consoleChatToolCardCounter = 0;
 let consoleChatToolCards = new Map();
 let consoleChatThinkingCard = null;
@@ -1420,6 +1463,8 @@ function subscribeConsoleChatTask(taskId) {
   consoleChatStreamingAnswer = null;
   consoleChatProgressEventIds = new Set();
   closeConsoleChatThinkingCard();
+  consoleChatActiveTaskId = taskId;
+  refreshConsoleChatSendBtnMode();
   consoleChatEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
     onEvent(rawEvent) {
       const frame = toTaskEventFrame(rawEvent);
@@ -1494,9 +1539,21 @@ function subscribeConsoleChatTask(taskId) {
         appendConsoleChatMessage("system", payload.message ?? "Task failed.");
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Failed.";
+        if (consoleChatActiveTaskId === taskId) consoleChatActiveTaskId = null;
+        refreshConsoleChatSendBtnMode();
+      } else if (frame.event === "cancelled") {
+        closeConsoleChatThinkingCard();
+        consoleChatStreamingAnswer = null;
+        appendConsoleChatMessage("system", payload.message ?? "任务已取消。");
+        consoleChatResultTaskIds.add(taskId);
+        consoleChatState.textContent = "Cancelled.";
+        if (consoleChatActiveTaskId === taskId) consoleChatActiveTaskId = null;
+        refreshConsoleChatSendBtnMode();
       } else if (frame.event === "success" || frame.event === "partial_success") {
         void appendConsoleChatFinalResult(taskId, payload);
         consoleChatState.textContent = frame.event === "partial_success" ? "Partially done." : "Done.";
+        if (consoleChatActiveTaskId === taskId) consoleChatActiveTaskId = null;
+        refreshConsoleChatSendBtnMode();
       }
     },
     onError(error) {
@@ -3779,6 +3836,80 @@ function renderTaskKvGrid({ provider, model, executor, source, retry, cost, dura
 // Each subtasks/artifacts/timeline section is its own .panel card now,
 // so empty sections just stay hidden instead of rendering a stacked
 // "No X yet." placeholder.
+// Render the "Recent conversations" panel that fills the Tasks tab's
+// right pane when no task is selected. Reuses the conversations cache
+// (loadConversationsTab populates it); fetches lazily if empty so the
+// list shows up on first visit without forcing a Conversations tab
+// click. Click any row → loads that conversation into Chat tab.
+async function renderTaskRecentConversations() {
+  const listEl = document.querySelector("#taskRecentConversationsList");
+  const countEl = document.querySelector("#taskRecentConversationsCount");
+  if (!listEl) return;
+  let items = conversationsState?.items ?? [];
+  if (items.length === 0) {
+    listEl.innerHTML = `<p class="muted" style="font-size:12px;">Loading…</p>`;
+    try {
+      const res = await fetch(`${state.serviceBaseUrl}/conversations?limit=50&archived=false`);
+      const data = await res.json();
+      items = Array.isArray(data?.conversations) ? data.conversations : [];
+      if (conversationsState) conversationsState.items = items;
+    } catch {
+      listEl.innerHTML = `<p class="muted" style="font-size:12px;">Couldn't load conversations.</p>`;
+      if (countEl) countEl.textContent = "0";
+      return;
+    }
+  }
+  if (countEl) countEl.textContent = String(items.length);
+  if (items.length === 0) {
+    listEl.innerHTML = `<p class="muted" style="font-size:12px;">还没有任何对话。从 Chat tab 开始第一条吧。</p>`;
+    return;
+  }
+  // Take top ~10. Each row has the same dual-button shape used in
+  // Conversations / Projects so the user can preview (click main) or
+  // jump-to-chat (click ↗ resume).
+  const top = items.slice(0, 10);
+  listEl.innerHTML = top.map((c) => `
+    <div class="history-item-row">
+      <button class="history-item history-item--main" data-recent-conversation-id="${escapeHtml(c.conversation_id)}" style="text-align:left;">
+        <div class="row" style="justify-content:space-between;align-items:center;">
+          <strong style="font-size:13px;">${escapeHtml(c.title || c.conversation_id.slice(0, 24))}</strong>
+          <span class="muted" style="font-size:11px;">${c.message_count}m · ${c.task_count}t</span>
+        </div>
+        <p class="muted" style="margin-top:4px;font-size:11px;">${escapeHtml(formatDateTime(c.updated_at))}</p>
+      </button>
+      <button class="history-item-resume" type="button"
+              data-recent-resume-id="${escapeHtml(c.conversation_id)}"
+              title="在 Chat 标签继续此对话" aria-label="继续对话">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>
+        </svg>
+      </button>
+    </div>
+  `).join("");
+  for (const btn of listEl.querySelectorAll("[data-recent-conversation-id]")) {
+    btn.addEventListener("click", () => {
+      const convId = btn.dataset.recentConversationId;
+      if (!convId) return;
+      // Switch to the Conversations tab and select this conversation.
+      // Used to be a no-op on the standalone Conversations tab (now
+      // hidden) — the panel HTML is still in DOM so this still resolves.
+      conversationsState.selectedId = convId;
+      void loadConversationDetail(convId);
+      switchTab("conversations");
+    });
+  }
+  for (const btn of listEl.querySelectorAll("[data-recent-resume-id]")) {
+    btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const convId = btn.dataset.recentResumeId;
+      if (!convId) return;
+      void loadConsoleConversationFromBackend(convId);
+      showConsoleToast("已加载对话，可继续输入", { kind: "ok" });
+    });
+  }
+}
+
 function setTaskDetailPanelVisible(id, visible) {
   const el = document.querySelector(`#${id}`);
   if (!el) return;
@@ -3789,18 +3920,26 @@ function setTaskDetailPanelVisible(id, visible) {
 function renderTaskDetail(detail) {
   if (!detail) {
     state.selectedTaskDetail = null;
-    taskDetailSummary.innerHTML = `<p class="muted" style="font-size:12px;">Select a task to view details.</p>`;
+    // Hide the placeholder text — we now fill the empty pane with the
+    // Recent Conversations panel below.
+    taskDetailSummary.innerHTML = "";
     taskTimeline.innerHTML = "";
     setTaskDetailPanelVisible("taskSubtasksPanel", false);
     setTaskDetailPanelVisible("taskArtifactsPanel", false);
     setTaskDetailPanelVisible("taskTimelinePanel", false);
+    setTaskDetailPanelVisible("taskRecentConversationsPanel", true);
     renderTaskArtifacts(null);
     renderTaskChildren(null);
+    void renderTaskRecentConversations();
     retryTaskButton.disabled = true;
     cancelTaskButton.disabled = true;
     if (deleteTaskButton) deleteTaskButton.disabled = true;
     return;
   }
+  // A task is selected — hide the recent-conversations panel so the
+  // detail panels (summary / subtasks / artifacts / timeline) own the
+  // pane.
+  setTaskDetailPanelVisible("taskRecentConversationsPanel", false);
 
   state.selectedTaskDetail = detail;
   const task = detail.task ?? {};
@@ -5507,11 +5646,24 @@ document.addEventListener("keydown", (event) => {
 
 consoleChatForm?.addEventListener("submit", (event) => {
   event.preventDefault();
+  // Dual-purpose: when a task is running, the Send button is showing
+  // "停止" — click cancels instead of submitting a new message.
+  if (consoleChatActiveTaskId) {
+    void cancelConsoleChatActiveTask();
+    return;
+  }
   void submitConsoleChat();
 });
 consoleChatInput?.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
+    if (consoleChatActiveTaskId) {
+      // Enter while a task runs is intentionally NOT a stop signal —
+      // the user might be typing the next prompt mid-stream. The
+      // explicit Stop button is the only way to cancel.
+      showConsoleToast("任务正在运行，点击「停止」取消", { kind: "info" });
+      return;
+    }
     void submitConsoleChat();
   }
 });
@@ -6689,6 +6841,7 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
           ${statusOn ? "active" : escapeHtml(account.tokenStatus ?? "offline")}
         </span>
         <div class="conn-row-actions">
+          <button class="btn btn-sm btn-ghost" data-connected-edit="${escapeHtml(account.id)}" title="重命名显示名">编辑</button>
           <button class="btn btn-sm btn-ghost" data-connected-reauth="${escapeHtml(account.id)}">重新授权</button>
           <button class="btn btn-sm btn-danger" data-connected-delete="${escapeHtml(account.id)}">断开</button>
           <div class="acc-more" data-acc-more-root>
@@ -6845,8 +6998,65 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
       void handleConnectedAccountReauth(btn.dataset.connectedReauth);
     });
   });
+  list.querySelectorAll("[data-connected-edit]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      handleConnectedAccountEdit(btn.dataset.connectedEdit, btn);
+    });
+  });
 
   // UCA-126: Inbox tab handles its own preview loading; no auto-load here.
+}
+
+// In-place rename: replace the row's title with an input + save / cancel
+// buttons. Submit hits PATCH /connectors/connected-accounts/:id with the
+// new displayName; success refreshes the connectors tab.
+function handleConnectedAccountEdit(accountId, anchorBtn) {
+  if (!accountId) return;
+  const row = anchorBtn?.closest?.(".conn-row");
+  const titleEl = row?.querySelector(".conn-row-title");
+  if (!row || !titleEl) return;
+  // Capture original so cancel can restore.
+  const originalTitleHtml = titleEl.innerHTML;
+  const currentName = (titleEl.textContent || "").trim();
+  const editHtml = `
+    <div class="conn-row-edit">
+      <input type="text" class="conn-row-edit-input" maxlength="80"
+             value="${escapeHtml(currentName)}" placeholder="显示名（最多 80 字符）"/>
+      <button type="button" class="btn btn-sm btn-primary conn-row-edit-save">保存</button>
+      <button type="button" class="btn btn-sm btn-ghost conn-row-edit-cancel">取消</button>
+    </div>
+  `;
+  titleEl.innerHTML = editHtml;
+  const input = titleEl.querySelector(".conn-row-edit-input");
+  const saveBtn = titleEl.querySelector(".conn-row-edit-save");
+  const cancelBtn = titleEl.querySelector(".conn-row-edit-cancel");
+  input?.focus();
+  input?.setSelectionRange(0, input.value.length);
+  const restore = () => { titleEl.innerHTML = originalTitleHtml; };
+  cancelBtn?.addEventListener("click", restore);
+  input?.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") restore();
+    if (ev.key === "Enter") { ev.preventDefault(); saveBtn?.click(); }
+  });
+  saveBtn?.addEventListener("click", async () => {
+    const value = input?.value?.trim() ?? "";
+    saveBtn.disabled = true;
+    saveBtn.textContent = "保存中…";
+    try {
+      const res = await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts/${encodeURIComponent(accountId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ displayName: value })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      showConsoleToast("已更新显示名", { kind: "ok" });
+      void loadConnectorsTab();
+    } catch (err) {
+      showConsoleToast(`保存失败：${err?.message ?? err}`, { kind: "err" });
+      saveBtn.disabled = false;
+      saveBtn.textContent = "保存";
+    }
+  });
 }
 
 async function handleConnectedAccountDefault(accountId, purpose) {

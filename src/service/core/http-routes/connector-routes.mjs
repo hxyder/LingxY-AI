@@ -18,7 +18,8 @@ import {
   deleteConnectedAccount,
   getAccountById,
   listUserAccounts,
-  setDefaultAccount
+  setDefaultAccount,
+  upsertConnectedAccount
 } from "../../connectors/core/account-registry.mjs";
 import { submitConnectorWorkflowTask } from "../../connectors/core/workflow-submission.mjs";
 import { sendJson, sendHtml, readJsonBody } from "../http-helpers.mjs";
@@ -165,6 +166,29 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
     sendJson(response, 200, {
       accounts: listUserAccounts(runtime)
     });
+    return true;
+  }
+
+  // PATCH /connectors/connected-accounts/:accountId — rename / edit
+  // mutable fields. Currently displayName only; can grow.
+  if (method === "PATCH" && /^\/connectors\/connected-accounts\/[^/]+$/.test(url.pathname)) {
+    const accountId = decodeURIComponent(url.pathname.split("/")[3]);
+    const body = await readJsonBody(request);
+    const account = getAccountById(runtime, accountId);
+    if (!account) {
+      sendJson(response, 404, { error: "account_not_found" });
+      return true;
+    }
+    const updates = {};
+    if (typeof body?.displayName === "string") {
+      updates.displayName = body.displayName.trim().slice(0, 80) || null;
+    }
+    if (Object.keys(updates).length === 0) {
+      sendJson(response, 400, { error: "no_updatable_fields" });
+      return true;
+    }
+    const updated = upsertConnectedAccount(runtime, { ...account, ...updates });
+    sendJson(response, 200, { ok: true, account: updated });
     return true;
   }
 

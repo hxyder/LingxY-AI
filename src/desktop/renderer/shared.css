@@ -126,6 +126,29 @@ button.primary, button.secondary, button.ghost {
   gap: 6px;
 }
 
+/* Console chat composer Send button — flips to "Stop" while a task
+   is running, then to "Cancel" while a cancel is in-flight. Mirrors
+   the overlay's send-btn--stop / send-btn--cancelling states so both
+   surfaces feel the same. */
+.btn.btn-stop {
+  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+  color: #fff !important;
+  border-color: #b91c1c !important;
+}
+.btn.btn-stop:hover {
+  background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
+}
+.btn.btn-cancelling {
+  background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+  color: #fff !important;
+  border-color: #b45309 !important;
+  animation: btn-cancelling-pulse 1.4s ease-in-out infinite;
+}
+@keyframes btn-cancelling-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.85; }
+}
+
 .btn-primary, button.primary {
   background: var(--ink);
   color: var(--bg);
@@ -3743,6 +3766,32 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   flex-wrap: wrap;
 }
 .conn-row-title .pill { height: 18px; font-size: 10px; padding: 0 7px; }
+/* In-place rename UI inside .conn-row-title — replaces the title text
+   while editing. Sized to fit the row without expanding it. */
+.conn-row-edit {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.conn-row-edit-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  outline: none;
+}
+.conn-row-edit-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .conn-row-sub {
   font-size: 11px;
   color: var(--muted);

@@ -92,6 +92,7 @@
     "verify:foldable-sections": "node scripts/verify-foldable-sections.mjs",
     "verify:chat-composer": "node scripts/verify-chat-composer.mjs",
     "verify:external-surfaces": "node scripts/verify-external-surfaces.mjs",
+    "verify:ui-extras": "node scripts/verify-ui-extras.mjs",
     "verify:popup-card-fit": "node scripts/verify-popup-card-fit.mjs",
     "verify:timeline-card": "node scripts/verify-timeline-card.mjs",
     "verify:notes-feature": "node scripts/verify-notes-feature.mjs",

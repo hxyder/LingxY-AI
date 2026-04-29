@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+/**
+ * verify-ui-extras.mjs — defensive coverage for the cluster of UX
+ * additions made during the post-Batch-6 rounds. These features were
+ * added without dedicated verify scripts and are easy to silent-break
+ * during a subsequent refactor (the original Codex incident showed
+ * exactly that pattern with verify-palette / verify-tasks-page).
+ *
+ * Each assertion checks the minimum DOM / JS / CSS contract — file
+ * paths can move and identifiers can be renamed without fanfare, but
+ * the surface the user touches must keep working. Failures here mean
+ * "you removed something the user was relying on; double-check before
+ * shipping".
+ */
+
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, "..");
+const read = (p) => readFileSync(path.join(root, p), "utf8");
+
+const consoleHtml = read("src/desktop/renderer/console.html");
+const consoleJs = read("src/desktop/renderer/console.js");
+const overlayHtml = read("src/desktop/renderer/overlay.html");
+const overlayJs = read("src/desktop/renderer/overlay.js");
+const sharedCss = read("src/desktop/renderer/shared.css");
+const taskRuntime = read("src/service/core/task-runtime.mjs");
+const notesStore = read("src/service/store/notes-store.mjs");
+const httpServer = read("src/service/core/http-server.mjs");
+const connectorRoutes = read("src/service/core/http-routes/connector-routes.mjs");
+
+// ── Toast system ───────────────────────────────────────────────────────
+assert.ok(/id="consoleToastHost"/.test(consoleHtml), "toast: #consoleToastHost missing in console.html");
+assert.ok(/function showConsoleToast\s*\(/.test(consoleJs), "toast: showConsoleToast() missing");
+assert.ok(/\.toast-host\b/.test(sharedCss), "toast: .toast-host CSS missing");
+assert.ok(/\.toast--err|\.toast--ok|\.toast--info/.test(sharedCss), "toast: kind variants missing");
+
+// ── Right-click context menu ───────────────────────────────────────────
+assert.ok(/id="chatCtxMenu"/.test(consoleHtml), "ctx-menu: #chatCtxMenu missing in console.html");
+assert.ok(/id="overlayCtxMenu"/.test(overlayHtml), "ctx-menu: #overlayCtxMenu missing in overlay.html");
+assert.ok(/function openCtxMenu\s*\(|openCtxMenu\s*=/.test(consoleJs), "ctx-menu: openCtxMenu() missing in console.js");
+assert.ok(/function openOverlayCtxMenu\s*\(|openOverlayCtxMenu\s*=/.test(overlayJs), "ctx-menu: openOverlayCtxMenu() missing");
+assert.ok(/\.ctx-menu\b/.test(sharedCss) && /\.ctx-menu\b/.test(overlayHtml),
+  "ctx-menu: .ctx-menu CSS missing in either console or overlay");
+
+// ── Image attachment thumbnails ────────────────────────────────────────
+assert.ok(/loadAttachmentThumbnail/.test(consoleJs), "thumbnail: loadAttachmentThumbnail missing");
+assert.ok(/ATTACH_THUMB_PLACEHOLDER/.test(consoleJs), "thumbnail: placeholder svg constant missing");
+assert.ok(/\.chip-attach--image|\.chip-attach-thumb/.test(sharedCss), "thumbnail: image-chip CSS missing");
+
+// ── New-note title prompt ──────────────────────────────────────────────
+assert.ok(/ntp-new-prompt/.test(consoleJs) && /ntp-title-input/.test(consoleJs),
+  "+note title: console picker missing inline title prompt");
+assert.ok(/onp-new-prompt/.test(overlayJs) && /onp-title-input/.test(overlayJs),
+  "+note title: overlay picker missing inline title prompt");
+assert.ok(/title:\s*body\.title/.test(httpServer) || /body\.title/.test(httpServer),
+  "+note title: /notes/append-chip handler must forward title");
+assert.ok(/title\s*=\s*null\s*\}\s*\)/.test(notesStore) || /title\s*=\s*null/.test(notesStore),
+  "+note title: notes-store appendChip must accept title arg");
+
+// ── MCP explicit install button ────────────────────────────────────────
+assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");
+assert.ok(/mcp-install-btn/.test(consoleJs) && /mcp-install-btn/.test(sharedCss),
+  "mcp install: .mcp-install-btn class or CSS missing");
+
+// ── Per-user-message ↑/↓ nav ───────────────────────────────────────────
+assert.ok(/chat-msg-nav\b/.test(sharedCss) && /chat-msg-nav-btn/.test(consoleJs),
+  "user nav: console ↑/↓ buttons missing");
+assert.ok(/bubble-nav\b/.test(overlayHtml) && /bubble-nav-btn/.test(overlayJs),
+  "user nav: overlay ↑/↓ buttons missing");
+assert.ok(/function navigateUserMessage/.test(consoleJs), "user nav: navigateUserMessage missing");
+assert.ok(/function navigateUserBubble/.test(overlayJs), "user nav: navigateUserBubble missing");
+
+// ── Streaming caret ────────────────────────────────────────────────────
+assert.ok(/\.chat-msg-bubble\.streaming::after/.test(sharedCss), "streaming caret: console CSS missing");
+assert.ok(/\.bubble\.assistant\.streaming::after/.test(overlayHtml), "streaming caret: overlay CSS missing");
+
+// ── Bubble timestamps ──────────────────────────────────────────────────
+assert.ok(/function formatRelativeTime\s*\(/.test(consoleJs), "timestamps: console formatRelativeTime() missing");
+assert.ok(/function formatRelativeTime\s*\(/.test(overlayJs), "timestamps: overlay formatRelativeTime() missing");
+assert.ok(/refreshChatTimestamps/.test(consoleJs) && /refreshChatTimestamps/.test(overlayJs),
+  "timestamps: refresh tick missing on either surface");
+assert.ok(/\.chat-msg-time\b/.test(sharedCss), "timestamps: .chat-msg-time CSS missing");
+
+// ── Auto-title conversations ───────────────────────────────────────────
+assert.ok(/function deriveConversationTitle\s*\(/.test(taskRuntime),
+  "auto-title: deriveConversationTitle() missing in task-runtime");
+assert.ok(/runtime\.store\?\.updateConversation\b|runtime\.store\.updateConversation\b/.test(taskRuntime),
+  "auto-title: must call updateConversation on first message");
+
+// ── Stop button: force cancel ──────────────────────────────────────────
+assert.ok(/cancelTask\s*\(\s*\{[^}]*force\s*=/.test(taskRuntime),
+  "stop button: cancelTask must accept force arg");
+assert.ok(/cancellationRequestedTaskId/.test(overlayJs),
+  "stop button: overlay must track cancellationRequestedTaskId");
+assert.ok(/send-btn--cancelling/.test(overlayHtml) && /send-btn--cancelling/.test(overlayJs),
+  "stop button: cancelling visual state missing in overlay");
+assert.ok(/consoleChatActiveTaskId/.test(consoleJs),
+  "stop button: console must track consoleChatActiveTaskId");
+assert.ok(/btn-stop\b/.test(consoleJs) && /\.btn\.btn-stop/.test(sharedCss),
+  "stop button: console btn-stop class wiring missing");
+
+// ── Recent conversations panel in Tasks empty state ────────────────────
+assert.ok(/id="taskRecentConversationsPanel"/.test(consoleHtml),
+  "recent convs: panel missing in console.html");
+assert.ok(/function renderTaskRecentConversations/.test(consoleJs),
+  "recent convs: renderTaskRecentConversations() missing");
+
+// ── Connector edit (rename) ────────────────────────────────────────────
+assert.ok(/data-connected-edit/.test(consoleJs),
+  "connector edit: data-connected-edit button missing on connected cards");
+assert.ok(/function handleConnectedAccountEdit/.test(consoleJs),
+  "connector edit: handler missing");
+assert.ok(/PATCH.*connected-accounts.*\$/m.test(connectorRoutes)
+  || /method === "PATCH" && \/\^\\\/connectors\\\/connected-accounts\\\/\[\^\\\/\]\+\$/.test(connectorRoutes)
+  || /connected-accounts\/\[\^\\\/\]\+\$/.test(connectorRoutes),
+  "connector edit: PATCH /connectors/connected-accounts/:id endpoint missing");
+assert.ok(/upsertConnectedAccount/.test(connectorRoutes),
+  "connector edit: route must call upsertConnectedAccount");
+
+// ── Note font-size sweep + chip inheritance ────────────────────────────
+assert.ok(/queryselectorAll\(".\[style\*='font-size'\]/i.test(consoleJs)
+  || /querySelectorAll\("\[style\*='font-size'\]"\)/.test(consoleJs),
+  "note font-size: applyFontSize must sweep [style*='font-size']");
+assert.ok(/note-chat-chip[\s\S]{0,200}font-size:\s*inherit/.test(sharedCss),
+  "note font-size: chip CSS must inherit");
+
+// ── clearBubbles defensive guard ───────────────────────────────────────
+assert.ok(/streamingBubble[\s\S]{0,200}classList\?\.contains\("streaming"\)/.test(overlayJs)
+  || /classList\?\.contains\("streaming"\)/.test(overlayJs),
+  "clearBubbles: must preserve a live .streaming bubble");
+
+// ── Auto-scroll bottom-pin controller ──────────────────────────────────
+assert.ok(/createBottomPinController/.test(consoleJs) && /createBottomPinController/.test(overlayJs),
+  "scroll-pin: controller must exist on both surfaces");
+assert.ok(/id="bubbleScrollDown"/.test(overlayHtml) && /id="consoleChatScrollDown"/.test(consoleHtml),
+  "scroll-pin: scroll-to-bottom buttons missing");
+assert.ok(/\.scroll-to-bottom\b/.test(sharedCss),
+  "scroll-pin: .scroll-to-bottom CSS missing");
+
+// ── Drop-zone visual feedback ──────────────────────────────────────────
+assert.ok(/id="consoleChatDropZone"/.test(consoleHtml) && /id="overlayDropZone"/.test(overlayHtml),
+  "drop-zone: zone DOM missing in either surface");
+assert.ok(/\.chat-drop-zone\b/.test(sharedCss),
+  "drop-zone: .chat-drop-zone CSS missing");
+
+// ── Phase labels in timeline header ────────────────────────────────────
+assert.ok(/TIMELINE_PHASES|setTimelinePhase/.test(overlayJs),
+  "phase labels: TIMELINE_PHASES / setTimelinePhase missing");
+
+// ── Step counter suffix ────────────────────────────────────────────────
+assert.ok(/function formatStepSuffix/.test(read("src/desktop/renderer/task-event-stream.js")),
+  "step counter: formatStepSuffix() missing in task-event-stream");
+
+// ── Step copy on row ───────────────────────────────────────────────────
+assert.ok(/\.bubble\.step\s+\.step-copy/.test(overlayHtml),
+  "step copy: .step-copy CSS missing");
+
+// ── Quote scrolls input into view ──────────────────────────────────────
+assert.ok(/composer-flash/.test(consoleJs) && /composer-flash/.test(overlayJs),
+  "quote: composer-flash class missing on either surface");
+assert.ok(/\.composer-flash\b|composer-flash\b/.test(sharedCss),
+  "quote: composer-flash animation missing");
+
+// ── Connectors browse button promotion ─────────────────────────────────
+assert.ok(/id="connBrowseBtn"[^>]*btn-primary/.test(consoleHtml),
+  "connectors: Browse catalog button must be btn-primary");
+
+console.log("ok verify-ui-extras");
