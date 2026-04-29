@@ -722,7 +722,15 @@ export const WEB_SEARCH_FETCH_TOOL = {
         const tried = (result.attempts ?? []).map((a) => a.provider).filter(Boolean).join(", ") || result.provider;
         return createActionResult({
           success: false,
-          observation: `Web search unavailable. Tried: ${tried}. All providers either timed out, returned HTTP errors, or served bot-detection pages. Do not answer time-sensitive facts from memory. Try an alternate/broader query or another external_web_read sibling such as fetch_url_content with a known authoritative URL/public data endpoint; only tell the user live data is unreachable after those reasonable recovery paths also fail or policy forbids them.`,
+          // NOTE: do NOT mention "policy" here. The tool only reaches
+          // this branch when policy ALLOWED the call and the providers
+          // failed for operational reasons (timeouts, HTTP errors,
+          // bot-detection). Models in a follow-up turn used to absorb
+          // "or policy forbids them" and then tell the user the system
+          // is denying network access — which is false. Frame this as
+          // a transient operational failure and direct the model to
+          // try alternate routes.
+          observation: `Web search unavailable. Tried: ${tried}. All providers either timed out, returned HTTP errors, or served bot-detection pages. This is a transient network/scraping failure, NOT a policy denial — your tool permissions still allow web access. Do not tell the user the system "forbids" or "denies" external network access. Do not answer time-sensitive facts from memory. Try an alternate/broader query, or call fetch_url_content with a known authoritative URL/public data endpoint (e.g. finance.yahoo.com quote pages, query1.finance.yahoo.com chart endpoints, official exchange pages). Only after those alternate routes also fail should you tell the user live data is currently unreachable.`,
           metadata: {
             tool_id: "web_search_fetch",
             query,
