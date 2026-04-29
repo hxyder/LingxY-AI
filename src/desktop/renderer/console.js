@@ -4817,6 +4817,12 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
       if (patch.name) labels.push("名称");
       if (patch.trigger) labels.push("触发时间");
       showConsoleToast(`已更新${labels.join(" + ")}`, { kind: "ok" });
+      // Tear down the inline edit BEFORE refreshWorkspace runs.
+      // Otherwise renderSchedules' skip-guard sees .sched-row-edit
+      // still in DOM and bails out — leaving the row stuck in
+      // "保存中…" forever. restore() puts the old row HTML back; the
+      // very next render replaces it with the fresh saved data.
+      restore();
       await refreshWorkspace();
     } catch (err) {
       showConsoleToast(`保存失败：${err?.message ?? err}`, { kind: "err" });
@@ -7549,6 +7555,11 @@ function handleConnectedAccountEdit(accountId, anchorBtn) {
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       showConsoleToast("已更新显示名", { kind: "ok" });
+      // Tear down the inline rename BEFORE the loadConnectorsTab
+      // re-render runs — otherwise the skip-render guard on
+      // renderAccountConnectors sees .conn-row-edit still present
+      // and the row is stuck in "保存中…".
+      titleEl.innerHTML = originalTitleHtml;
       void loadConnectorsTab();
     } catch (err) {
       showConsoleToast(`保存失败：${err?.message ?? err}`, { kind: "err" });
