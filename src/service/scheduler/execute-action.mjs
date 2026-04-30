@@ -60,6 +60,10 @@ async function executeActionTool({
   captureMode = "event",
   bypassDedupe = false
 }) {
+  if (!runtime.actionToolRegistry?.get?.(actionTarget)) {
+    throw new Error(`Unknown scheduled action tool: ${actionTarget}`);
+  }
+
   const previousPlanner = runtime.toolPlanner;
   const previousConfirmationHandler = runtime.confirmationHandler;
   let emitted = false;

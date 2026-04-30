@@ -85,6 +85,24 @@ function updateScheduleAfterRun(runtime, schedule, runStatus, now, taskId = null
   }
 }
 
+function classifyTaskRunStatus(task) {
+  const taskStatus = task?.status ?? "failed";
+  if (taskStatus === "success") return "success";
+  if (taskStatus === "partial_success") {
+    // Waiting for a human decision is an expected terminal scheduler state:
+    // the action was prepared and must not count as a broken recurring job.
+    if (task?.sub_status === "waiting_external_decision") {
+      return "partial_success";
+    }
+    // Other partial successes usually mean the executor stopped before the
+    // scheduled action was actually completed (unknown tool, blocked call,
+    // unmet obligation, etc.). Count those as failed so the failure guard can
+    // auto-disable a repeatedly broken schedule.
+    return "failed";
+  }
+  return "failed";
+}
+
 // UCA-098: Guard against double-dispatch when the scheduler tick fires
 // again while a previous dispatch is still awaiting executeProposedAction.
 // For a task that takes 30+ seconds to run, the 5-second scheduler tick
@@ -238,8 +256,7 @@ export async function dispatchSchedule({
       bypassDedupe: isManualForeground || triggerPayload?.bypassDedupe === true
     });
 
-    const taskStatus = result.task?.status ?? "failed";
-    const runStatus = ["success", "partial_success"].includes(taskStatus) ? taskStatus : "failed";
+    const runStatus = classifyTaskRunStatus(result.task);
     updateRun(runtime.store, run.run_id, {
       status: runStatus,
       task_id: result.task?.task_id ?? null,
