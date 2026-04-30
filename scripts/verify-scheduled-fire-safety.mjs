@@ -209,6 +209,17 @@ const { runtime } = service;
     /if \(taskAlreadyDisplayedNotify\(events\)\) return;/.test(consoleSource),
     "console Run Now watcher must not show a generic completion card after notify"
   );
+  const fireNoticeStart = consoleSource.indexOf("function fireScheduleRunCompletionNotice");
+  const fireNoticeEnd = consoleSource.indexOf("function taskAlreadyDisplayedNotify", fireNoticeStart);
+  const fireNoticeSource = consoleSource.slice(fireNoticeStart, fireNoticeEnd);
+  const popupIndex = fireNoticeSource.indexOf("window.ucaShell?.showPopupCard?.");
+  const notifyIndex = fireNoticeSource.indexOf("window.ucaShell?.notify?.");
+  assert.ok(popupIndex >= 0, "schedule Run Now completion should use one direct popup card");
+  assert.ok(notifyIndex > popupIndex, "notify must be fallback-only after direct popup card");
+  assert.ok(
+    /if \(!popupShown\)/.test(fireNoticeSource),
+    "schedule Run Now completion notify path must be gated behind popup fallback"
+  );
 }
 
 // ── Bug A (UCA-098): dispatch locks the schedule in-flight ──

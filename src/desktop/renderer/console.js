@@ -1825,22 +1825,32 @@ function fireScheduleRunCompletionNotice(task = {}) {
   if (!taskId || completedScheduleRunTaskIds.has(taskId)) return;
   completedScheduleRunTaskIds.add(taskId);
   const copy = buildScheduleRunCompletionCopy(task);
-  try {
-    window.ucaShell?.notify?.({
-      title: "LingxY",
-      body: copy.body,
-      openWindow: "console"
-    });
-  } catch { /* optional */ }
+  let popupShown = false;
   try {
     window.ucaShell?.showPopupCard?.({
       kind: copy.kind,
       taskId,
       title: copy.title,
       lines: copy.lines,
-      autoHideMs: copy.kind === "error" ? 12000 : 9000
+      autoHideMs: copy.kind === "error" ? 12000 : 9000,
+      dedupeKey: `schedule-run:${taskId}`
     });
+    popupShown = true;
   } catch { /* optional */ }
+
+  if (!popupShown) {
+    try {
+      window.ucaShell?.notify?.({
+        kind: copy.kind,
+        taskId,
+        title: copy.title,
+        body: copy.body,
+        openWindow: "console",
+        autoHideMs: copy.kind === "error" ? 12000 : 9000,
+        dedupeKey: `schedule-run:${taskId}`
+      });
+    } catch { /* optional */ }
+  }
 }
 
 function taskAlreadyDisplayedNotify(events = []) {
