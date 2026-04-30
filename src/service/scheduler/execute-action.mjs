@@ -48,7 +48,15 @@ async function executeActionTool({
   actionParams,
   executionMode,
   sourceLabel,
-  sourceApp = "uca.scheduler",
+  // UCA-181 follow-up: default was "uca.scheduler", which was wrong
+  // for approval-resumed tasks (engine.mjs's executeApprovedAction
+  // doesn't pass sourceApp). That false label made create_scheduled_task
+  // think the task was a scheduler fire and refuse to create the
+  // schedule the user just approved. The default now reflects the
+  // common caller — an approval resume — and scheduler dispatch
+  // explicitly passes "uca.scheduler" with the scheduled_task_fire
+  // metadata when it really IS a fire.
+  sourceApp = "uca.approval",
   captureMode = "event",
   bypassDedupe = false
 }) {

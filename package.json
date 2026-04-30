@@ -53,6 +53,7 @@
     "verify:schedule-create-live": "node scripts/verify-schedule-create-live.mjs",
     "verify:claim-guard-phase-c": "node scripts/verify-claim-guard-phase-c.mjs",
     "verify:redundant-side-effect-block": "node scripts/verify-redundant-side-effect-block.mjs",
+    "verify:create-schedule-recursion-guard": "node scripts/verify-create-schedule-recursion-guard.mjs",
     "verify:status-preservation": "node scripts/verify-status-preservation.mjs",
     "verify:agentic-parity": "node scripts/verify-agentic-parity.mjs",
     "verify:agentic-step-gate": "node scripts/verify-agentic-step-gate.mjs",

@@ -1020,11 +1020,22 @@ export const CREATE_SCHEDULED_TASK_TOOL = {
   required_capabilities: ["schedule_manage"],
   requires_confirmation: true,
   async execute(args, ctx) {
-    // UCA-096: Block agents from creating a new schedule while they are
-    // already running inside a scheduled-task fire. Otherwise the scheduler
-    // feeds the original user command back into the LLM, which re-interprets
-    // it as a scheduling request and builds an infinite loop of clones.
-    if (ctx?.task?.context_packet?.source_app === "uca.scheduler") {
+    // UCA-096: block agents from creating a NEW schedule while running
+    // inside an actual scheduled-task fire. Otherwise the scheduler
+    // feeds the original user command back into the LLM, which re-
+    // interprets it as a scheduling request and builds an infinite
+    // loop of clones.
+    //
+    // UCA-181 follow-up: the previous check keyed off
+    // `source_app === "uca.scheduler"`, which falsely fired when an
+    // agent_tool_call approval was resumed via executeActionTool —
+    // that path defaults sourceApp to "uca.scheduler" too, so a
+    // user-approved schedule-create from chat console got rejected.
+    // The precise signal is `selection_metadata.scheduled_task_fire`,
+    // which buildSchedulerContextPacket sets only on real fires.
+    const packet = ctx?.task?.context_packet ?? {};
+    const isRealScheduledFire = packet.selection_metadata?.scheduled_task_fire === true;
+    if (isRealScheduledFire) {
       return createActionResult({
         success: false,
         observation: "Cannot create a schedule from inside a scheduled task fire. Execute the action now (notify / send_email / etc.).",
