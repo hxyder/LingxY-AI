@@ -877,14 +877,35 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
   none: () => false
 });
 
+// UCA-181 follow-up: tools that create / mutate the schedule registry.
+// Hiding them from the planner when the task is itself a scheduler fire
+// prevents the LLM from re-interpreting the fired userCommand
+// ("提醒用户交 timecard") as another schedule request and re-emitting
+// create_scheduled_task, which then surfaces a needless approval popup
+// before the tool's own recursion guard would refuse it.
+const SCHEDULE_REGISTRY_TOOL_IDS = new Set([
+  "create_scheduled_task",
+  "delete_scheduled_task",
+  "pause_scheduled_task"
+]);
+
+function isScheduledFireTask(task) {
+  return task?.context_packet?.selection_metadata?.scheduled_task_fire === true;
+}
+
 function filterToolsForTask(tools = [], task) {
+  const insideScheduledFire = isScheduledFireTask(task);
+  const stripScheduleRegistry = (list) => insideScheduledFire
+    ? list.filter((tool) => !SCHEDULE_REGISTRY_TOOL_IDS.has(tool.id))
+    : list;
+
   const capabilities = neededCapabilitiesOf(task).filter((capability) => capability !== "none");
-  if (capabilities.length === 0) return tools;
+  if (capabilities.length === 0) return stripScheduleRegistry(tools);
   const filtered = tools.filter((tool) => capabilities.some((capability) => {
     const matcher = CAPABILITY_TOOL_MATCHERS[capability];
     return typeof matcher === "function" ? matcher(tool) : false;
   }));
-  return filtered.length > 0 ? filtered : tools;
+  return stripScheduleRegistry(filtered.length > 0 ? filtered : tools);
 }
 
 function shouldRenderWorkflowHint(task) {
@@ -1530,10 +1551,14 @@ async function _runToolAgentLoopCore({
     : (resolvedPlanner.name || "custom");
 
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    // Filter tools at the loop level so EVERY planner (LLM, custom,
+    // test) sees the same surface — including the scheduler-fire
+    // recursion guard that hides create_scheduled_task /
+    // delete_scheduled_task / pause_scheduled_task.
     const decision = await resolvedPlanner({
       task,
       transcript,
-      tools: registry.list(),
+      tools: filterToolsForTask(registry.list(), task),
       iteration,
       runtime
     });
@@ -1719,6 +1744,40 @@ async function _runToolAgentLoopCore({
       return {
         status: "failed",
         error: `Unknown tool requested: ${decision.tool}`,
+        transcript
+      };
+    }
+
+    // UCA-181 defense-in-depth: even when the planner prompt's tool
+    // list omitted schedule-registry tools (filterToolsForTask above),
+    // the LLM occasionally hallucinates a familiar id. Refuse fast,
+    // BEFORE the confirmation gate, so the user does not see a
+    // pointless approval popup for a call that would have been
+    // refused by the tool's own recursion guard anyway.
+    if (SCHEDULE_REGISTRY_TOOL_IDS.has(tool.id) && isScheduledFireTask(task)) {
+      runtime.emitTaskEvent?.("tool_call_denied", {
+        tool_id: tool.id,
+        reason: "scheduled_fire_cannot_modify_schedule_registry"
+      });
+      transcript.push({
+        type: "tool_denied",
+        tool: tool.id,
+        reason: "scheduled_fire_cannot_modify_schedule_registry"
+      });
+      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+        synthesisRetriesUsed += 1;
+        transcript.push({
+          type: "synthesis_retry",
+          violations: [{
+            kind: "scheduled_fire_recursion_blocked",
+            message: `${tool.id} is unavailable inside a scheduled task fire — execute the action directly (notify / send_email / etc.) instead of creating another schedule.`
+          }]
+        });
+        continue;
+      }
+      return {
+        status: "partial_success",
+        final_text: "无法在已触发的定时任务内部继续创建/修改定时任务。请直接执行原本要做的动作（例如 notify / 发邮件）。",
         transcript
       };
     }
