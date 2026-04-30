@@ -81,6 +81,40 @@ function bridgeApprovalToOriginatingTask({ runtime, approval, executionResult, d
     });
     runtime.store.updateTask?.(originalTaskId, originalTask);
 
+    // The original task fired a `tool_call_proposed` event before the
+    // confirmation gate suspended it; the desktop task panel keeps
+    // that card in "运行中…" state until a matching
+    // `tool_call_completed` arrives. The actual tool execution
+    // happened on the resumed task (different task_id), so this
+    // event never reaches the original task. Synthesize a matching
+    // `tool_call_completed` here so the UI's tool-call card resolves
+    // alongside the terminal status event below.
+    const toolId = approval.metadata?.tool_id ?? approval.proposed_target ?? null;
+    if (toolId) {
+      const newTaskTranscript = newTask?.transcript ?? newTask?.task_spec?.transcript ?? null;
+      const matchingResult = Array.isArray(newTaskTranscript)
+        ? [...newTaskTranscript].reverse().find((entry) =>
+          entry?.type === "tool_call_completed" && entry?.tool_id === toolId)
+        : null;
+      const toolCallCompletedEvent = {
+        event_id: `evt_approval_bridge_tool_${approval.approval_id}`,
+        task_id: originalTaskId,
+        ts: decidedAt,
+        event_type: "tool_call_completed",
+        payload: {
+          tool_id: toolId,
+          success: resolvedStatus !== "failed",
+          observation: matchingResult?.observation ?? finalText,
+          args: approval.proposed_params?.input ?? approval.proposed_params ?? {},
+          bridged_from_approval: true,
+          approval_id: approval.approval_id,
+          resulting_task_id: newTask?.task_id ?? null
+        }
+      };
+      runtime.store?.appendEvent?.(toolCallCompletedEvent);
+      runtime.eventBus?.publish?.(toolCallCompletedEvent);
+    }
+
     // Persist + publish the terminal event so SSE subscribers (desktop
     // task panel) see the resolution and stop showing "运行中…".
     const eventRecord = {

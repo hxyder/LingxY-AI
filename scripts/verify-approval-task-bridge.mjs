@@ -114,6 +114,18 @@ function check(label, condition) {
   check("success: terminal `success` event appended", Boolean(terminal));
   check("success: event payload carries resulting_task_id", terminal?.payload?.resulting_task_id === "task_new_001");
   check("success: event published to bus", runtime.eventBus.listPublished().some((e) => e.event_id === terminal.event_id));
+
+  // Tool-call card reconciliation: the original task previously
+  // emitted tool_call_proposed when the agent picked the tool; the
+  // bridge must emit a matching tool_call_completed so the desktop
+  // panel's tool-call card moves out of "运行中…" state.
+  const toolCallCompleted = events.find((e) => e.event_type === "tool_call_completed" && e.task_id === originatingTaskId);
+  check("success: tool_call_completed mirrored onto originating task",
+    Boolean(toolCallCompleted));
+  check("success: tool_call_completed names the right tool_id",
+    toolCallCompleted?.payload?.tool_id === "account_send_email");
+  check("success: tool_call_completed reports success:true",
+    toolCallCompleted?.payload?.success === true);
 }
 
 // ---------------------------------------------------------------------
@@ -167,6 +179,9 @@ function check(label, condition) {
   const events = runtime.store.listEvents();
   check("failed: terminal `failed` event appended",
     events.some((e) => e.event_type === "failed" && e.task_id === originatingTaskId));
+  const toolCallCompleted = events.find((e) => e.event_type === "tool_call_completed" && e.task_id === originatingTaskId);
+  check("failed: tool_call_completed reports success:false",
+    toolCallCompleted?.payload?.success === false);
 }
 
 // ---------------------------------------------------------------------
