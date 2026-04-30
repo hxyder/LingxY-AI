@@ -13,7 +13,10 @@ import { createMicrosoftEvent, sendMicrosoftEmail, uploadMicrosoftFile } from ".
 // the wrong text. (UCA-181 follow-up: a scheduled task with
 // "...到 a@b.com和c@d.com" was sending to a malformed single
 // recipient because `和` was not a separator.)
-const EMAIL_LIKE_REGEX = /[\w.+\-!#$%&'*/=?^`{|}~]+@[\w-]+(?:\.[\w-]+)+/g;
+// Conservative local-part charset; the permissive RFC-5322 form
+// (allowing `/`, `!`, `#`, etc.) accidentally swallowed separator
+// characters when the LLM emitted shapes like "a@x.com/b@y.com".
+const EMAIL_LIKE_REGEX = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
 function extractEmailAddresses(text) {
   const matches = String(text).match(EMAIL_LIKE_REGEX) ?? [];

@@ -221,7 +221,10 @@ function base64Url(value) {
 // would otherwise re-introduce the "和-not-split" bug. Same email-
 // extraction strategy as write-tools so a recipient list joined by
 // Chinese conjunctions still becomes two addresses.
-const EMAIL_LIKE_REGEX_GC = /[\w.+\-!#$%&'*/=?^`{|}~]+@[\w-]+(?:\.[\w-]+)+/g;
+// Conservative local-part charset — same reasoning as
+// write-tools.mjs::EMAIL_LIKE_REGEX. Permissive RFC-5322 form would
+// merge "a@x.com/b@y.com" into one token.
+const EMAIL_LIKE_REGEX_GC = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
 function asList(value) {
   if (value === undefined || value === null || value === "") return [];

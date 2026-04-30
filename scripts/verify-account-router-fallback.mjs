@@ -101,5 +101,72 @@ function check(label, condition) {
     Array.isArray(result.availableAccounts) && result.availableAccounts.length === 0);
 }
 
+// ---------------------------------------------------------------------
+// 5. Forgiving accountId match — LLM keeps emitting variations of the
+//    error message it just saw. All these should resolve to the
+//    matching account by extracting the @-bearing email token.
+// ---------------------------------------------------------------------
+{
+  const variants = [
+    "google hxy94045@gmail.com",         // bug repro: provider + space + email
+    "google/hxy94045@gmail.com",         // forward slash
+    "Google: hxy94045@gmail.com",        // colon + uppercase
+    "hxy94045@gmail.com (google)",       // email + parenthesised provider
+    "  hxy94045@gmail.com  ",            // pure email with whitespace
+    "<hxy94045@gmail.com>"               // angle brackets
+  ];
+  const accountsWithBugRepro = [{
+    id: "acc_real_001",
+    accountId: "acc_real_001",
+    provider: "google",
+    email: "hxy94045@gmail.com",
+    tokenStatus: "active",
+    capabilities: { emailWrite: true }
+  }];
+  for (const variant of variants) {
+    const result = resolveAccount(
+      { connectedAccounts: accountsWithBugRepro },
+      { accountId: variant },
+      "emailWrite"
+    );
+    check(`forgiving-match: '${variant}' resolves to the real account`,
+      result.status !== "error" && result.id === "acc_real_001");
+  }
+}
+
+// ---------------------------------------------------------------------
+// 6. Email format in error message: the message renders the email
+//    PRIMARILY (not provider/email), so when the LLM copies the
+//    suggested format it gets back a usable accountId.
+// ---------------------------------------------------------------------
+{
+  const result = resolveAccount(
+    { connectedAccounts: accounts },
+    { accountId: "default" },
+    "emailWrite"
+  );
+  check("format: message lists each account as 'email (provider)'",
+    /user@gmail\.com\s*\(google\)/i.test(result.message)
+    && /user@outlook\.com\s*\(microsoft\)/i.test(result.message));
+  check("format: message does NOT use the old slash form (google/email)",
+    !/google\/user@gmail\.com/.test(result.message));
+}
+
+// ---------------------------------------------------------------------
+// 7. Truly garbage accountId still errors out — the forgiving matcher
+//    only kicks in when there's an @-bearing token to extract.
+// ---------------------------------------------------------------------
+{
+  const result = resolveAccount(
+    { connectedAccounts: accounts },
+    { accountId: "primary" },
+    "emailWrite"
+  );
+  check("garbage: 'primary' (no email pattern) still errors out",
+    result.status === "error");
+  check("garbage: error preserves the structured availableAccounts",
+    Array.isArray(result.availableAccounts) && result.availableAccounts.length === 2);
+}
+
 console.log(`\n${pass} pass / ${fail} fail`);
 if (fail > 0) process.exit(1);
