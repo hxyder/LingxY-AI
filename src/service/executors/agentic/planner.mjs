@@ -328,13 +328,90 @@ function inferPreflightSearchRecency(command = "") {
  * The caller is expected to pass the runtime's registry + toolContext;
  * no risk-matrix gating happens here — that's the executor's job.
  */
-async function executeToolCall({ registry, mcpToolById, toolContext, call, runtime, task }) {
+// UCA-181 follow-up: tools that mutate the schedule registry. Inside a
+// real scheduler fire, these MUST NOT run — calling create_scheduled_task
+// from the firing of a previous schedule produces an infinite-loop of
+// clones. tool_using/agent-loop has the same set; keep them aligned.
+const SCHEDULE_REGISTRY_TOOL_IDS = new Set([
+  "create_scheduled_task",
+  "delete_scheduled_task",
+  "pause_scheduled_task"
+]);
+
+function isScheduledFireTask(task) {
+  return task?.context_packet?.selection_metadata?.scheduled_task_fire === true;
+}
+
+// Tools whose success has irreversible side-effects (email send,
+// calendar create, file upload, schedule create). Once one has
+// succeeded in this run, refuse re-fires that vary args slightly to
+// dodge the args-based dedupe (the wild 4-event repro).
+const SIDE_EFFECT_OBLIGATION_GROUPS = new Set([
+  "email_send",
+  "calendar_create",
+  "file_upload",
+  "schedule_create"
+]);
+
+function isSideEffectTool(tool) {
+  if (!tool) return false;
+  const groupSet = new Set();
+  if (typeof tool.policy_group === "string") groupSet.add(tool.policy_group);
+  for (const g of groupSet) {
+    if (SIDE_EFFECT_OBLIGATION_GROUPS.has(g)) return true;
+  }
+  return tool.risk_level === "high" || tool.requires_confirmation === true;
+}
+
+function transcriptHasSuccessfulToolCall(transcript = [], toolId) {
+  if (!toolId) return false;
+  return (transcript ?? []).some((entry) =>
+    entry?.role === "tool"
+    && entry.name === toolId
+    && entry.success === true
+  );
+}
+
+async function executeToolCall({ registry, mcpToolById, toolContext, call, runtime, task, transcript = [] }) {
   const tool = registry?.get?.(call.name) ?? mcpToolById?.get?.(call.name);
   if (!tool) {
     return {
       success: false,
       observation: `Tool ${call.name} is not registered.`,
       metadata: { tool_id: call.name }
+    };
+  }
+
+  // UCA-181 follow-up: defense-in-depth recursion guard. Even when the
+  // prompt's tool list omits schedule-registry tools (filtered upstream
+  // for scheduled_task_fire context), the LLM occasionally hallucinates
+  // a familiar id. Refuse fast — BEFORE the confirmation gate — so the
+  // user does not see a pointless approval popup for a call that would
+  // have been refused anyway by the tool's own UCA-096 guard.
+  if (SCHEDULE_REGISTRY_TOOL_IDS.has(tool.id) && isScheduledFireTask(task)) {
+    return {
+      success: false,
+      observation: `${tool.id} is unavailable inside a scheduled task fire — execute the action directly (notify / send_email / etc.) instead of creating another schedule.`,
+      metadata: {
+        tool_id: tool.id,
+        reason: "scheduled_fire_cannot_modify_schedule_registry"
+      }
+    };
+  }
+
+  // UCA-181 follow-up: redundant side-effect block. After a side-effect
+  // tool already succeeded in this run, refuse further calls to the
+  // SAME tool. Agents that varied a single field (description ordering,
+  // attendee list) were bypassing args-based dedupe and double-firing
+  // real-world side effects.
+  if (isSideEffectTool(tool) && transcriptHasSuccessfulToolCall(transcript, tool.id)) {
+    return {
+      success: false,
+      observation: `${tool.id} already succeeded earlier in this run; do not re-fire side-effect tools — finalize from the existing result.`,
+      metadata: {
+        tool_id: tool.id,
+        reason: "redundant_side_effect_call"
+      }
     };
   }
 
@@ -461,9 +538,15 @@ export async function runAgenticPlanner({
     ?? runtime?.actionToolRegistry?.list?.()
     ?? [];
   const noteSingleMarkdown = isAudioNoteSingleMarkdownTask(task);
-  const builtinTools = noteSingleMarkdown
+  // UCA-181 parity with tool_using: drop schedule-registry tools when
+  // the task is the firing of an already-scheduled run, so the LLM
+  // doesn't re-interpret the fired userCommand as another schedule
+  // request and call create_scheduled_task again.
+  const insideScheduledFire = isScheduledFireTask(task);
+  const builtinTools = (noteSingleMarkdown
     ? rawBuiltinTools.filter((tool) => tool.id !== "generate_document")
-    : rawBuiltinTools;
+    : rawBuiltinTools)
+    .filter((tool) => !insideScheduledFire || !SCHEDULE_REGISTRY_TOOL_IDS.has(tool.id));
 
   // UCA-067: inject MCP tools from enabled stdio servers so ALL providers
   // (including native Anthropic/OpenAI) can call them as first-class tools.
@@ -579,7 +662,8 @@ export async function runAgenticPlanner({
       },
       call: searchCall,
       runtime,
-      task
+      task,
+      transcript
     });
     onEvent?.({
       event_type: "tool_call_completed",
@@ -830,7 +914,8 @@ export async function runAgenticPlanner({
         },
         call,
         runtime,
-        task
+        task,
+        transcript
       });
       // Phase 20: if the gate created an approval, emit a visible
       // event so the overlay popup-card can surface the approval
