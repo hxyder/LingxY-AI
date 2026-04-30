@@ -307,7 +307,8 @@ export function attachPriorBackendMessages(contextPacket, conversationId, runtim
 }
 
 function isSchedulerSourced(contextPacket) {
-  return contextPacket?.source_app === "uca.scheduler"
+  return contextPacket?.selection_metadata?.scheduled_task_fire === true
+    || contextPacket?.source_app === "uca.scheduler"
     || contextPacket?.capture_mode === "event";
 }
 

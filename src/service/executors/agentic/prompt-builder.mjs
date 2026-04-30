@@ -189,7 +189,7 @@ export function buildAgenticSystemPrompt({
   // and when the tool layer refuses it (UCA-096 guard), flounders and
   // emits a confused "sorry I can't create a timer in this environment"
   // reply. Same signal as tool_using/agent-loop.mjs uses.
-  const scheduledFireBanner = task?.context_packet?.source_app === "uca.scheduler"
+  const scheduledFireBanner = task?.context_packet?.selection_metadata?.scheduled_task_fire === true
     ? "\n\n## Scheduled-fire context\n\nThis request is the actual firing of an already-scheduled task — the delay has ALREADY elapsed. Execute the action directly. Do NOT call `create_scheduled_task`. For a reminder, call `notify` with a concise title and body. For an email, call the send workflow. The scheduling was done earlier; your job here is to perform the action."
     : "";
 

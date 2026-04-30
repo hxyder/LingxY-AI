@@ -1047,9 +1047,11 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
   // their original natural-language command (e.g. "提醒我喝水"). Without this
   // guard, the LLM re-interprets the phrase as a NEW scheduling request and
   // calls create_scheduled_task again, self-replicating forever. The
-  // scheduler marks its own submissions with source_app="uca.scheduler";
-  // detect that and tell the LLM to execute the action directly.
-  const scheduledFireInstruction = task.context_packet?.source_app === "uca.scheduler"
+  // scheduler marks its own submissions with scheduled_task_fire=true;
+  // detect that and tell the LLM to execute the action directly. Manual
+  // "Run Now" uses source_app="uca.console.desktop", so the metadata flag
+  // is the source of truth.
+  const scheduledFireInstruction = isScheduledFireTask(task)
     ? "\n\nSCHEDULED-FIRE CONTEXT: This request is the actual firing of an already-scheduled task — the delay has ALREADY elapsed. Execute the action NOW. Do NOT call create_scheduled_task under any circumstances. For a reminder, call notify directly. For an email, call the send workflow directly. The scheduling was done earlier; your job here is to perform the action."
     : "";
 

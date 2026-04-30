@@ -212,6 +212,57 @@ async function executeTaskTemplate({
   };
 }
 
+const REMINDER_FIRE_PATTERN = /(?:提醒我|提醒用户|提醒一下|提醒|remind\s+me|notify\s+me|alert\s+me|set\s+(?:a\s+)?reminder|reminder)/i;
+const SCHEDULE_TIME_WORD_PATTERN = /(?:现在|今天|今晚|明天|后天|下周|这周|本周|上午|下午|晚上|早上|中午|凌晨|\d{1,2}\s*(?:点|[:：.])\s*(?:半|\d{1,2}\s*分?)?|\d+\s*(?:分钟|小时|天|minute|minutes|hour|hours|day|days)\s*(?:以后|后|later|from now))/gi;
+
+function cleanReminderText(value) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  const cleaned = text
+    .replace(SCHEDULE_TIME_WORD_PATTERN, " ")
+    .replace(/(?:请)?(?:现在)?\s*(?:提醒我|提醒用户|提醒一下|提醒|remind\s+me\s+to|remind\s+me|notify\s+me\s+to|notify\s+me|alert\s+me\s+to|alert\s+me)/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || text;
+}
+
+function buildDirectReminderNotifyArgs({ userCommand, actionTarget, actionParams = {}, sourceLabel }) {
+  const reminderSources = [
+    userCommand,
+    actionParams.userCommand,
+    actionParams.contextText,
+    actionParams.message,
+    actionParams.body,
+    actionTarget,
+    sourceLabel
+  ].filter(Boolean).map(String);
+  if (!reminderSources.some((value) => REMINDER_FIRE_PATTERN.test(value))) {
+    return null;
+  }
+
+  const rawBody = actionParams.body
+    ?? actionParams.message
+    ?? userCommand
+    ?? actionParams.userCommand
+    ?? actionParams.contextText
+    ?? actionTarget
+    ?? "时间到了";
+  const body = cleanReminderText(rawBody);
+  const title = actionParams.title
+    ?? (actionTarget && actionTarget !== "context_task" ? cleanReminderText(actionTarget) : null)
+    ?? "LingxY 提醒";
+
+  return {
+    kind: "info",
+    title: title || "LingxY 提醒",
+    body: body || String(rawBody),
+    openWindow: "overlay",
+    allowContinue: false,
+    autoHideMs: actionParams.autoHideMs ?? 14000,
+    dedupeKey: actionParams.dedupeKey ?? null
+  };
+}
+
 async function executeScheduledTask({
   runtime,
   actionTarget,
@@ -225,6 +276,28 @@ async function executeScheduledTask({
   bypassDedupe = false
 }) {
   const userCommand = actionParams.userCommand ?? actionParams.command ?? sourceLabel ?? actionTarget;
+  const directReminder = buildDirectReminderNotifyArgs({
+    userCommand,
+    actionTarget,
+    actionParams,
+    sourceLabel
+  });
+  if (directReminder) {
+    return submitActionToolTask({
+      userCommand,
+      executionMode,
+      sourceApp,
+      captureMode,
+      bypassDedupe,
+      runtime,
+      fastPathTool: "notify",
+      fastPathArgs: {
+        ...directReminder,
+        dedupeKey: directReminder.dedupeKey ?? `scheduled-reminder:${sourceId ?? actionTarget ?? userCommand}`
+      }
+    });
+  }
+
   const submission = await submitContextTask({
     contextPacket: buildSchedulerContextPacket({
       title: actionParams.contextText ?? userCommand,

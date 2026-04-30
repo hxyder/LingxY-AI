@@ -1843,13 +1843,24 @@ function fireScheduleRunCompletionNotice(task = {}) {
   } catch { /* optional */ }
 }
 
+function taskAlreadyDisplayedNotify(events = []) {
+  return (events ?? []).some((event) => {
+    if (event?.event_type !== "tool_call_completed") return false;
+    const payload = event.payload ?? {};
+    const toolId = payload.tool_id ?? payload.tool;
+    return toolId === "notify" && payload.success === true;
+  });
+}
+
 async function settleScheduleRunTask(taskId) {
   if (!taskId) return;
   closeScheduleRunTaskWatcher(taskId);
   try {
     const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
     const task = detail?.task ?? detail ?? null;
+    const events = detail?.events ?? [];
     if (!task) return;
+    if (taskAlreadyDisplayedNotify(events)) return;
     if (!["success", "partial_success", "failed", "cancelled"].includes(task.status)) return;
     fireScheduleRunCompletionNotice(task);
   } catch {
@@ -1863,8 +1874,7 @@ function watchScheduleRunTask(task = {}) {
   const taskId = task?.task_id;
   if (!taskId) return;
   if (["success", "partial_success", "failed", "cancelled"].includes(task.status)) {
-    fireScheduleRunCompletionNotice(task);
-    void refreshWorkspace();
+    void settleScheduleRunTask(taskId);
     return;
   }
   if (scheduleRunTaskWatchers.has(taskId)) return;

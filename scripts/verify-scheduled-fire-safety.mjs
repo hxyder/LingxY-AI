@@ -12,7 +12,7 @@
  *  2. A scheduled task like "提醒我喝水" would fire, run through the tool-using
  *     agent, and the LLM would re-interpret its own userCommand as a NEW
  *     scheduling request — building an infinite chain of self-clones.
- *     Fix A (prompt): when context_packet.source_app === "uca.scheduler",
+ *     Fix A (prompt): when selection_metadata.scheduled_task_fire === true,
  *     the planner prompt tells the LLM to execute the action directly.
  *     Fix B (defense in depth): the CREATE_SCHEDULED_TASK_TOOL short-circuits
  *     with a failure result when called from inside a scheduler-fire task.
@@ -59,7 +59,8 @@ const { runtime } = service;
 {
   const schedulerContextPacket = {
     source_app: "uca.scheduler",
-    source_type: "window"
+    source_type: "window",
+    selection_metadata: { scheduled_task_fire: true }
   };
   const ctx = {
     runtime,
@@ -101,8 +102,8 @@ const { runtime } = service;
     "utf8"
   );
   assert.ok(
-    /source_app === "uca\.scheduler"/.test(source),
-    "agent-loop must detect uca.scheduler source_app"
+    /const scheduledFireInstruction = isScheduledFireTask\(task\)/.test(source),
+    "agent-loop must detect the scheduled_task_fire marker, including manual Run Now"
   );
   assert.ok(
     /SCHEDULED-FIRE CONTEXT/.test(source),
@@ -118,7 +119,11 @@ const { runtime } = service;
 {
   const scheduledTask = {
     user_command: "提醒我喝水",
-    context_packet: { source_app: "uca.scheduler", source_type: "window" }
+    context_packet: {
+      source_app: "uca.console.desktop",
+      source_type: "window",
+      selection_metadata: { scheduled_task_fire: true }
+    }
   };
   const promptScheduled = buildAgenticSystemPrompt({
     tools: [], skills: [], task: scheduledTask, requestedFormat: null, language: "auto"
@@ -142,6 +147,67 @@ const { runtime } = service;
   assert.ok(
     !/Scheduled-fire context/i.test(promptNormal),
     "non-scheduler tasks must NOT see the scheduled-fire banner"
+  );
+}
+
+// ── Bug C (Run Now): reminder task fires notify directly, not calendar. ──
+{
+  const reminderSvc = createServiceBootstrap();
+  const reminderRuntime = reminderSvc.runtime;
+  const target = reminderRuntime.scheduler.createSchedule({
+    name: "Scheduled: 提醒我交timecard",
+    trigger: { type: "at", run_at: new Date(Date.now() - 1000).toISOString() },
+    action: {
+      type: "task",
+      target: "提醒我交timecard",
+      params: {
+        userCommand: "提醒我交timecard",
+        contextText: "提醒我明天下午4点交timecard"
+      }
+    }
+  });
+  const result = await dispatchSchedule({
+    runtime: reminderRuntime,
+    scheduleId: target.schedule_id,
+    reason: "manual",
+    triggerPayload: { source: "desktop_console", bypassDedupe: true }
+  });
+  assert.equal(result.status, "success", "manual Run Now reminder should complete through notify");
+  const events = reminderRuntime.store.getTaskEvents(result.task.task_id);
+  assert.ok(
+    events.some((event) =>
+      event.event_type === "tool_call_completed"
+      && event.payload?.tool_id === "notify"
+      && event.payload?.success === true
+    ),
+    "manual Run Now reminder should call notify"
+  );
+  assert.ok(
+    !events.some((event) => event.event_type === "pending_approval_created"),
+    "manual Run Now reminder must not create approval"
+  );
+  assert.ok(
+    !events.some((event) =>
+      event.event_type === "tool_call_completed"
+      && event.payload?.tool_id === "connector_workflow_run"
+    ),
+    "manual Run Now reminder must not route to connector workflows"
+  );
+}
+
+{
+  const { default: fs } = await import("node:fs");
+  const consoleSource = fs.readFileSync(
+    new URL("../src/desktop/renderer/console.js", import.meta.url),
+    "utf8"
+  );
+  assert.ok(
+    /function taskAlreadyDisplayedNotify\(events = \[\]\)/.test(consoleSource),
+    "console Run Now watcher should detect notify-backed reminder runs"
+  );
+  assert.ok(
+    /if \(taskAlreadyDisplayedNotify\(events\)\) return;/.test(consoleSource),
+    "console Run Now watcher must not show a generic completion card after notify"
   );
 }
 
