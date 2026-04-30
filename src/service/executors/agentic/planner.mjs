@@ -342,6 +342,12 @@ function isScheduledFireTask(task) {
   return task?.context_packet?.selection_metadata?.scheduled_task_fire === true;
 }
 
+function isScheduleRegistryTool(tool) {
+  const id = typeof tool === "string" ? tool : tool?.id;
+  const mcpToolName = typeof tool === "object" ? tool?._mcpToolName : null;
+  return SCHEDULE_REGISTRY_TOOL_IDS.has(id) || SCHEDULE_REGISTRY_TOOL_IDS.has(mcpToolName);
+}
+
 // Tools whose success has irreversible side-effects (email send,
 // calendar create, file upload, schedule create). Once one has
 // succeeded in this run, refuse re-fires that vary args slightly to
@@ -355,8 +361,13 @@ const SIDE_EFFECT_OBLIGATION_GROUPS = new Set([
 
 function isSideEffectTool(tool) {
   if (!tool) return false;
-  const groupSet = new Set();
+  const groupSet = new Set(groupsOfTool(tool.id));
   if (typeof tool.policy_group === "string") groupSet.add(tool.policy_group);
+  if (Array.isArray(tool.policy_groups)) {
+    for (const group of tool.policy_groups) {
+      if (typeof group === "string") groupSet.add(group);
+    }
+  }
   for (const g of groupSet) {
     if (SIDE_EFFECT_OBLIGATION_GROUPS.has(g)) return true;
   }
@@ -388,7 +399,7 @@ async function executeToolCall({ registry, mcpToolById, toolContext, call, runti
   // a familiar id. Refuse fast — BEFORE the confirmation gate — so the
   // user does not see a pointless approval popup for a call that would
   // have been refused anyway by the tool's own UCA-096 guard.
-  if (SCHEDULE_REGISTRY_TOOL_IDS.has(tool.id) && isScheduledFireTask(task)) {
+  if (isScheduleRegistryTool(tool) && isScheduledFireTask(task)) {
     return {
       success: false,
       observation: `${tool.id} is unavailable inside a scheduled task fire — execute the action directly (notify / send_email / etc.) instead of creating another schedule.`,
@@ -546,7 +557,7 @@ export async function runAgenticPlanner({
   const builtinTools = (noteSingleMarkdown
     ? rawBuiltinTools.filter((tool) => tool.id !== "generate_document")
     : rawBuiltinTools)
-    .filter((tool) => !insideScheduledFire || !SCHEDULE_REGISTRY_TOOL_IDS.has(tool.id));
+    .filter((tool) => !insideScheduledFire || !isScheduleRegistryTool(tool));
 
   // UCA-067: inject MCP tools from enabled stdio servers so ALL providers
   // (including native Anthropic/OpenAI) can call them as first-class tools.
@@ -555,6 +566,9 @@ export async function runAgenticPlanner({
   try {
     mcpTools = await getMcpActionTools(mcpRegistry);
   } catch { /* MCP unavailable — continue without it */ }
+  if (insideScheduledFire) {
+    mcpTools = mcpTools.filter((tool) => !isScheduleRegistryTool(tool));
+  }
 
   // Merge: built-in tools first so they take priority on id collision
   const mcpToolById = new Map(mcpTools.map((t) => [t.id, t]));

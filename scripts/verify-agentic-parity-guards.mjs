@@ -63,6 +63,16 @@ const fakeCreateSchedule = {
   requires_confirmation: true,
   async execute() { return { success: true, observation: "scheduled", metadata: {} }; }
 };
+const fakeMcpCreateSchedule = {
+  id: "mcp_scheduler__create_scheduled_task",
+  name: "[MCP] Scheduler: create_scheduled_task",
+  description: "MCP schedule creation tool",
+  parameters: { type: "object", properties: {} },
+  risk_level: "medium",
+  requires_confirmation: false,
+  _mcpToolName: "create_scheduled_task",
+  async execute() { return { success: true, observation: "mcp scheduled", metadata: {} }; }
+};
 
 function makeRegistry(tools) {
   const map = new Map(tools.map((t) => [t.id, t]));
@@ -108,7 +118,7 @@ function makeNonFireTask(command = "请提醒我每天 8 点喝水") {
 {
   const { adapter, captured } = makeCapturingAdapter();
   const runtime = {
-    actionToolRegistry: makeRegistry([fakeNotify, fakeCreateSchedule]),
+    actionToolRegistry: makeRegistry([fakeNotify, fakeCreateSchedule, fakeMcpCreateSchedule]),
     toolContext: {},
     pendingApprovals: { create: () => ({ approval_id: "appr_test" }) },
     eventBus: { publish: () => {} },
@@ -134,6 +144,10 @@ function makeNonFireTask(command = "请提醒我每天 8 点喝水") {
   const schemaIds = captured.toolSchemas[0] ?? [];
   check("scheduler-fire: tool schema list omits create_scheduled_task",
     !schemaIds.includes("create_scheduled_task"));
+  check("scheduler-fire: prompt does NOT include MCP schedule-registry tool block",
+    !/<tool id="mcp_scheduler__create_scheduled_task">/.test(promptText));
+  check("scheduler-fire: tool schema list omits MCP schedule-registry tool",
+    !schemaIds.includes("mcp_scheduler__create_scheduled_task"));
 }
 
 // ---------------------------------------------------------------------
@@ -225,8 +239,10 @@ function makeNonFireTask(command = "请提醒我每天 8 点喝水") {
     name: "account_create_event",
     description: "create event",
     parameters: { type: "object", properties: {} },
-    policy_group: "calendar_create",
-    risk_level: "high",
+    // Real connector write tools rely on POLICY_GROUPS membership;
+    // account_create_event currently has no local policy_group field
+    // and is only medium risk, so this catches the real regression.
+    risk_level: "medium",
     requires_confirmation: false, // skip approval gate in this test
     async execute(args) {
       sideEffectTool.__calls = (sideEffectTool.__calls ?? 0) + 1;
