@@ -215,10 +215,32 @@ function base64Url(value) {
   return Buffer.from(value, "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
+// Defense-in-depth — write-tools.mjs::asEmailArray normalises args at
+// the action-tool boundary, but a direct sendGoogleEmail call (e.g.
+// from a connector workflow that bypasses the action-tool layer)
+// would otherwise re-introduce the "和-not-split" bug. Same email-
+// extraction strategy as write-tools so a recipient list joined by
+// Chinese conjunctions still becomes two addresses.
+const EMAIL_LIKE_REGEX_GC = /[\w.+\-!#$%&'*/=?^`{|}~]+@[\w-]+(?:\.[\w-]+)+/g;
+
 function asList(value) {
   if (value === undefined || value === null || value === "") return [];
-  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
-  if (typeof value === "string") return value.split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean);
+  if (Array.isArray(value)) {
+    const out = [];
+    for (const item of value) {
+      const trimmed = String(item ?? "").trim();
+      if (!trimmed) continue;
+      const matches = trimmed.match(EMAIL_LIKE_REGEX_GC);
+      if (matches?.length) out.push(...matches);
+      else out.push(trimmed);
+    }
+    return [...new Set(out.map((v) => v.trim()).filter(Boolean))];
+  }
+  if (typeof value === "string") {
+    const matches = value.match(EMAIL_LIKE_REGEX_GC);
+    if (matches?.length) return [...new Set(matches.map((v) => v.trim()).filter(Boolean))];
+    return value.split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean);
+  }
   return [String(value)];
 }
 

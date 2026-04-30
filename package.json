@@ -57,6 +57,7 @@
     "verify:scheduled-fire-tool-filter": "node scripts/verify-scheduled-fire-tool-filter.mjs",
     "verify:call-tool-envelope-unwrap": "node scripts/verify-call-tool-envelope-unwrap.mjs",
     "verify:agentic-parity-guards": "node scripts/verify-agentic-parity-guards.mjs",
+    "verify:email-recipient-splitter": "node scripts/verify-email-recipient-splitter.mjs",
     "verify:status-preservation": "node scripts/verify-status-preservation.mjs",
     "verify:agentic-parity": "node scripts/verify-agentic-parity.mjs",
     "verify:agentic-step-gate": "node scripts/verify-agentic-step-gate.mjs",

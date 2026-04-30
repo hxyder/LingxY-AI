@@ -89,13 +89,28 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
     runtime,
     executeApprovedAction: (approval, { overrides = null } = {}) => {
       // User-edited field overrides (subject/body/to/...) from the approval
-      // card get merged into the stored input before the workflow resumes.
+      // card. The merge target depends on the approval shape:
+      //
+      //   - connector_workflow approvals store proposed_params as
+      //     { input: {...}, state: {...} } — overrides belong in `input`
+      //     so the workflow resumes with the edited recipient/body.
+      //   - agent_tool_call / action_tool approvals store proposed_params
+      //     as the flat tool args ({ to, subject, body, ... }) — overrides
+      //     must merge at the TOP level. UCA-181 follow-up: previously
+      //     overrides were always wrapped under `input`, so editing `to`
+      //     in the approval card put the new value at args.input.to while
+      //     the tool only reads args.to → the edit was silently ignored
+      //     and only the original first recipient received the email.
       let actionParams = approval.proposed_params;
       if (overrides && typeof overrides === "object" && Object.keys(overrides).length > 0) {
-        actionParams = {
-          ...actionParams,
-          input: { ...(actionParams?.input ?? {}), ...overrides }
-        };
+        if (approval.proposed_action === "connector_workflow") {
+          actionParams = {
+            ...actionParams,
+            input: { ...(actionParams?.input ?? {}), ...overrides }
+          };
+        } else {
+          actionParams = { ...actionParams, ...overrides };
+        }
       }
       return executeProposedAction({
         runtime,
