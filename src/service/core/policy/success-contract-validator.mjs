@@ -288,15 +288,30 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
 const ACTION_CLAIM_GROUPS = Object.freeze([
   {
     group: "email_send",
+    // All patterns require an email-context anchor (邮件 / email / mail /
+    // an @-bearing recipient / 收件人). Without the anchor the
+    // generic "已发送/sent" verbs collide with notification / file /
+    // schedule claims (regression caught when adding Phase C: a real
+    // notify success was wrongly flagged because email_send's first
+    // pattern was matching "已发送通知").
     claims: [
-      /已(?:经)?(?:[\s，,])?(?:成功|顺利|确认)?(?:[\s，,])?(?:发送|发出|寄出)/,
-      /邮件(?:[\s，,])?(?:已|成功|顺利)(?:[\s，,])?(?:[已]?(?:成功)?)(?:发送|发出|寄出)/,
-      /(?:发送|发出|寄出)\s*(?:成功|完成|至|到|给)/,
-      /邮件(?:发送|寄出)\s*成功/,
+      // 邮件 + (within 3 chars) + (optional 已/成功/顺利 marker) +
+      // (within 3 chars) + 发送/发出/寄出. Tight gaps prevent matches
+      // like "邮件内容已经整理好…的发送操作" where the verb is far
+      // downstream and refers to a different noun.
+      /邮件[\s\S]{0,3}?(?:已|成功|顺利)?[\s\S]{0,3}?(?:发送|发出|寄出)/,
+      // 已 + (optional success marker) + verb-sending + (邮件 |
+      // @email-target) within 12 chars. Stricter than the previous
+      // 30-char window so it doesn't reach over a "通知" object.
+      /(?:已|成功|顺利)\s*(?:成功|顺利)?\s*(?:发送|发出|寄出)[\s\S]{0,12}?(?:邮件|\S+@\S+\.\S+)/,
+      // 邮件/email + 发送/寄出/发出 + 成功 (success acknowledgment)
+      /(?:邮件|email)[\s\S]{0,8}?(?:发送|寄出|发出)\s*成功/i,
+      // 已 + 发送/发出/寄出 + 至/到/给 + email-like target
+      /(?:已|成功)\s*(?:发送|发出|寄出)\s*(?:至|到|给)\s*\S+@\S+/,
       /\bemail\s+(?:was|has been|is|got)\s+(?:successfully\s+)?sent\b/i,
-      /\bi\s+(?:have\s+|['']ve\s+)?sent\s+(?:the\s+|an?\s+|my\s+)?email\b/i,
+      /\bi(?:\s+have\s+|['‘’]ve\s+|\s+)sent\s+(?:the\s+|an?\s+|my\s+)?email\b/i,
       /\bsent\s+(?:the\s+|an?\s+|my\s+|this\s+)?email\b/i,
-      /\bsuccessfully\s+sent\s+(?:the\s+|an?\s+)?(?:email|message|mail)\b/i,
+      /\bsuccessfully\s+sent\s+(?:the\s+|an?\s+)?(?:email|mail)\b/i,
       /\bemail\s+(?:was|has been)\s+delivered\b/i
     ],
     negations: [
@@ -350,6 +365,72 @@ const ACTION_CLAIM_GROUPS = Object.freeze([
       /未\s*(?:设置|创建|安排)|没\s*(?:有)?\s*(?:设置|创建|安排)|无法\s*(?:设置|创建|安排)|尚未\s*(?:设置|创建|安排)|(?:设置|创建|安排)\s*失败/,
       /(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+(?:set|create|schedule|configure)/i,
       /not\s+yet\s+(?:set|created|scheduled)|prepared\s+but\s+not\s+(?:yet\s+)?(?:set|scheduled)/i
+    ]
+  },
+  {
+    // Claim-guard-only entries (Phase C): not promoted to a full
+    // obligation because SR triggers are too ambiguous to require
+    // them. The claim guard still catches hallucinated past-tense
+    // "I modified the file" / "I opened Word" / "I notified you"
+    // when no backing tool ran. Inline `tools` because POLICY_GROUPS
+    // doesn't list these.
+    group: "file_modify",
+    claims: [
+      // 已 + 修改/更新/编辑/改/重写 + 文件名 / 完毕 / 完成
+      /已\s*(?:成功|顺利)?\s*(?:修改|更新|编辑|改写|重写|改了|改完)\s*(?:好|完|完毕|了)?(?:[\s\S]{0,40}?(?:\.md|\.txt|\.json|\.js|\.ts|\.py|\.html|\.css|\.yaml|\.yml|\.csv|文件|README|文档))?/,
+      /(?:文件|文档|README)\s*(?:已|成功)\s*(?:修改|更新|编辑|改写|重写|保存)/,
+      // English
+      /\bi(?:\s+have\s+|['‘’]ve\s+|\s+)(?:modified|updated|edited|rewritten|saved|patched|changed)\s+(?:the\s+|your\s+|that\s+|this\s+|a\s+)?(?:file|README|document|config|script|code|content)\b/i,
+      /\b(?:file|README|document|config|script)\s+(?:has\s+been\s+|was\s+|is\s+)(?:modified|updated|edited|rewritten|saved|patched)\b/i,
+      /\bsuccessfully\s+(?:modified|updated|edited|saved|patched)\s+(?:the\s+|your\s+)?(?:file|README|document)\b/i
+    ],
+    negations: [
+      /未\s*(?:修改|更新|编辑|改|保存)|无法\s*(?:修改|更新|编辑|改|保存)|(?:修改|更新|编辑|保存)\s*失败/,
+      /(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+(?:modify|update|edit|save|patch|rewrite|change)/i,
+      /not\s+yet\s+(?:modified|updated|edited|saved)|没\s*(?:有)?\s*(?:修改|更新|保存)/
+    ],
+    tools: [
+      "edit_file",
+      "write_file",
+      "file_op",
+      "generate_document"
+    ]
+  },
+  {
+    group: "app_launch",
+    claims: [
+      // 已[成功]打开/启动 + 不直接跟"文件"或常见"页面"等中性词
+      /已\s*(?:成功|顺利)?\s*(?:打开|启动|启用|启用了|开启)\s*(?:好|了)?\s*(?!文件|页面|对话框|链接|链接\s|\s*[（(])/,
+      /(?:打开|启动)\s*(?:好|了)\s*(?:应用|程序|软件)/,
+      /\bi(?:\s+have\s+|['‘’]ve\s+|\s+)(?:opened|launched|started|fired\s+up)\s+(?:the\s+|your\s+|a\s+)?(?:app|application|program|browser|word|excel|powerpoint|outlook|slack|chrome|firefox|edge|safari)\b/i,
+      /\b(?:app|application|program|window|browser)\s+(?:has\s+been\s+|was\s+|is\s+)(?:opened|launched|started)\b/i
+    ],
+    negations: [
+      /未\s*(?:打开|启动)|无法\s*(?:打开|启动)|(?:打开|启动)\s*失败/,
+      /(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+(?:open|launch|start|fire\s+up)/i,
+      /not\s+yet\s+(?:opened|launched|started)/i
+    ],
+    tools: [
+      "launch_app",
+      "open_url"
+    ]
+  },
+  {
+    group: "notification_send",
+    claims: [
+      // 已通知你 / 通知已发送 / 已弹出通知
+      // Excludes "通知" alone — must combine with a clear past-action verb.
+      /已\s*(?:成功|顺利)?\s*(?:发送|弹出|推送|展示|显示)\s*(?:好|了)?\s*(?:通知|提示|消息|toast)/,
+      /(?:通知|提示)\s*(?:已|成功)\s*(?:发送|弹出|推送|展示|显示)/,
+      /\bi(?:\s+have\s+|['‘’]ve\s+|\s+)(?:sent|displayed|pushed|shown|fired|popped|raised)\s+(?:you\s+)?(?:a\s+|the\s+)?(?:notification|toast|alert|popup)\b/i,
+      /\b(?:notification|toast|alert|popup)\s+(?:has\s+been\s+|was\s+|is\s+)(?:sent|displayed|shown|pushed|fired|raised)\b/i
+    ],
+    negations: [
+      /未\s*(?:发送|弹出|推送|显示).{0,4}通知|无法\s*(?:发送|推送|弹出|显示).{0,4}通知|通知\s*(?:发送|推送|弹出)\s*失败/,
+      /(?:not|hasn['']?t|wasn['']?t|couldn['']?t|failed\s+to)\s+(?:send|push|fire|display|raise)\s+(?:a\s+|the\s+)?(?:notification|toast|alert)/i
+    ],
+    tools: [
+      "notify"
     ]
   }
 ]);

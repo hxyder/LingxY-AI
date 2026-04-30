@@ -456,6 +456,30 @@ function compactTranscriptForComposer(transcript = []) {
   return lines.join("\n").slice(0, 24000);
 }
 
+// UCA-181 follow-up: a tool counts as "side-effect" if it belongs to
+// any known action-obligation policy group OR is flagged risk_level=high
+// at the registry. We use this to refuse repeat fires after a successful
+// invocation in the same loop — the wild bug was a calendar event
+// being created 4 times because the agent varied the description and
+// dodged the args-based dedupe.
+function isSideEffectTool(tool, registry) {
+  if (!tool) return false;
+  const groups = groupsOfTool(tool.id);
+  if (groups.some((g) => ACTION_OBLIGATION_GROUPS.includes(g))) return true;
+  const spec = registry?.get?.(tool.id) ?? tool;
+  return spec?.risk_level === "high" || spec?.requires_confirmation === true;
+}
+
+function transcriptHasSuccessfulToolCall(transcript = [], toolId) {
+  if (!toolId) return false;
+  return (transcript ?? []).some((entry) =>
+    entry?.type === "tool_result"
+    && entry.tool === toolId
+    && entry.success !== false
+    && (entry.error == null || entry.error === "")
+  );
+}
+
 function localFallbackFinal({ task, transcript, reason = "" }) {
   const userCommand = task?.user_command ?? "";
   const action = actionCompletionFallbackText(transcript, userCommand, task?.task_spec);
@@ -1219,6 +1243,15 @@ function buildHallucinatedClaimBanner(violation) {
   if (group === "schedule_create") {
     return "⚠️ 定时任务/提醒实际并未创建。系统未检测到 create_scheduled_task 的成功调用，下面的文字仅为模型自述。请重新创建。";
   }
+  if (group === "file_modify") {
+    return "⚠️ 文件实际并未修改。系统未检测到 edit_file/write_file/file_op 的成功调用，下面的文字仅为模型自述。请重新发起修改。";
+  }
+  if (group === "app_launch") {
+    return "⚠️ 应用/页面实际并未打开。系统未检测到 launch_app/open_url 的成功调用，下面的文字仅为模型自述。";
+  }
+  if (group === "notification_send") {
+    return "⚠️ 通知实际并未发送。系统未检测到 notify 的成功调用，下面的文字仅为模型自述。";
+  }
   return "⚠️ 模型声称完成了一项操作，但系统未检测到对应工具的成功调用。下面的文字是模型自述，不是真实执行结果。";
 }
 
@@ -1726,6 +1759,43 @@ async function _runToolAgentLoopCore({
       };
     }
     seenCalls.add(callKey);
+
+    // UCA-181 follow-up: after a side-effect tool already succeeded in
+    // this loop, refuse further calls to the SAME tool. Agents that
+    // varied a single field (description ordering, attendee list) were
+    // bypassing the args-based dedupe and double-firing real-world
+    // side effects (4 duplicate calendar events in one task observed
+    // in the wild). The action-obligation engine already says the
+    // group is "satisfied" — push a synthesis hint and ask the
+    // planner to finalize instead.
+    if (isSideEffectTool(tool, registry) && transcriptHasSuccessfulToolCall(transcript, tool.id)) {
+      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+        synthesisRetriesUsed += 1;
+        transcript.push({
+          type: "synthesis_retry",
+          violations: [{
+            kind: "redundant_side_effect_call",
+            message: `${tool.id} already succeeded earlier in this run; do not re-fire side-effect tools — finalize from the existing result.`
+          }]
+        });
+        runtime?.emitTaskEvent?.("synthesis_retry", {
+          attempt: synthesisRetriesUsed,
+          reason: "redundant_side_effect_call",
+          tool_id: tool.id
+        });
+        continue;
+      }
+      return {
+        status: "partial_success",
+        final_text: await composeFinalAnswer({
+          task,
+          transcript,
+          runtime,
+          reason: "redundant_side_effect_call"
+        }),
+        transcript
+      };
+    }
 
     const validation = validateToolCall(tool, decision.args, runtime.toolContext ?? {});
     if (!validation.ok) {
