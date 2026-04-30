@@ -55,6 +55,7 @@ import { extractEvidence, detectSearchSaturation } from "../../core/policy/evide
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
 import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
+import { applySideEffectContractToToolArgs } from "../../core/policy/side-effect-contracts.mjs";
 import {
   actionObligationsWithStatus,
   buildActionObligationGuidance,
@@ -392,6 +393,8 @@ async function executeToolCall({ registry, mcpToolById, toolContext, call, runti
       metadata: { tool_id: call.name }
     };
   }
+  const callArgs = applySideEffectContractToToolArgs(tool.id, call.arguments ?? {}, { task, runtime });
+  call.arguments = callArgs;
 
   // UCA-181 follow-up: defense-in-depth recursion guard. Even when the
   // prompt's tool list omits schedule-registry tools (filtered upstream
@@ -439,15 +442,15 @@ async function executeToolCall({ registry, mcpToolById, toolContext, call, runti
   // tool via executeApprovedAction (see task-runtime.mjs).
   try {
     const { evaluateToolRisk } = await import("../../action_tools/risk_matrix.mjs");
-    const risk = evaluateToolRisk(tool, call.arguments ?? {}, toolContext ?? {});
+    const risk = evaluateToolRisk(tool, callArgs, toolContext ?? {});
     if (risk.requires_confirmation && runtime?.pendingApprovals?.create) {
       const approval = runtime.pendingApprovals.create({
         sourceType: "agent_tool_call",
         sourceId: task?.task_id ?? call.id ?? call.name,
         proposedAction: "action_tool",
         proposedTarget: tool.id,
-        proposedParams: call.arguments ?? {},
-        previewText: buildApprovalPreview(tool, call.arguments ?? {}),
+        proposedParams: callArgs,
+        previewText: buildApprovalPreview(tool, callArgs),
         metadata: {
           tool_id: tool.id,
           risk_level: risk.risk_level ?? tool.risk_level ?? "high",
@@ -480,7 +483,7 @@ async function executeToolCall({ registry, mcpToolById, toolContext, call, runti
   }
 
   try {
-    const result = await tool.execute(call.arguments ?? {}, toolContext ?? {});
+    const result = await tool.execute(callArgs, toolContext ?? {});
     // Normalise shape: action_tools/types createActionResult returns
     // `{ success, observation, metadata, artifact_paths, error }`.
     return {

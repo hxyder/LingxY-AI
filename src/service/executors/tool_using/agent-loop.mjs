@@ -41,6 +41,10 @@ import {
   findWaitingActionApprovalInTranscript,
   formatWaitingActionFinal
 } from "../../core/policy/obligation-evaluator.mjs";
+import {
+  applySideEffectContractToToolArgs,
+  renderSideEffectContractPrompt
+} from "../../core/policy/side-effect-contracts.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
 import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
@@ -503,7 +507,7 @@ function localFallbackFinal({ task, transcript, reason = "" }) {
 const REQUIRED_ACTION_POLICY_GROUPS = new Set(ACTION_OBLIGATION_GROUPS);
 
 function missingRequiredActionGroups(stepGate) {
-  if (!stepGate || stepGate.next_action !== "continue") return [];
+  if (!stepGate || !["continue", "retry", "escalate", "abort"].includes(stepGate.next_action)) return [];
   const violations = Array.isArray(stepGate.violations) ? stepGate.violations : [];
   if (violations.length === 0) return [];
   const groups = [];
@@ -512,26 +516,55 @@ function missingRequiredActionGroups(stepGate) {
     const group = [...REQUIRED_ACTION_POLICY_GROUPS].find(
       (candidate) => kind === `${candidate}_required_not_called`
     );
-    if (!group) return [];
-    groups.push(group);
+    if (group) groups.push(group);
   }
   return [...new Set(groups)];
 }
 
-export function shouldInjectRequiredActionGuidance(stepGate, transcript = []) {
+export function shouldInjectRequiredActionGuidance(stepGate, transcript = [], { allowTerminal = false } = {}) {
   const groups = missingRequiredActionGroups(stepGate);
   if (groups.length === 0) return [];
+  if (["escalate", "abort"].includes(stepGate?.next_action) && !allowTerminal) return [];
   void transcript;
   return groups;
 }
 
-function buildRequiredActionGuidance(groups = []) {
+function buildRequiredActionGuidance(groups = [], { actionOnly = false } = {}) {
   const obligations = groups.map((group) => ({
     group,
     status: "pending",
     members: toolsInGroup(group)
   }));
-  return buildActionObligationGuidance(obligations);
+  const base = buildActionObligationGuidance(obligations);
+  if (!actionOnly) return base;
+  return [
+    base,
+    "",
+    "Action-only handoff: stop research/tool exploration now.",
+    "Only call a tool/workflow that satisfies the pending action obligation. Do not call web_search, web_search_fetch, fetch_url_content, or any other research tool again in this turn.",
+    "Use the best information already collected in the transcript as the action body/content. If a required action argument is truly missing, ask one concise clarifying question."
+  ].join("\n");
+}
+
+function latestActionOnlyGroups(transcript = []) {
+  for (let i = (transcript ?? []).length - 1; i >= 0; i -= 1) {
+    const entry = transcript[i];
+    if (entry?.type !== "contract_guidance") continue;
+    if (entry.action_only !== true) continue;
+    return Array.isArray(entry.groups) ? entry.groups.filter(Boolean) : [];
+  }
+  return [];
+}
+
+function actionOnlyToolIds(transcript = []) {
+  const groups = latestActionOnlyGroups(transcript);
+  return new Set(groups.flatMap((group) => toolsInGroup(group)));
+}
+
+function filterToolsForActionOnlyGuidance(tools = [], transcript = []) {
+  const allowed = actionOnlyToolIds(transcript);
+  if (allowed.size === 0) return tools;
+  return tools.filter((tool) => allowed.has(tool.id));
 }
 
 async function composeFinalAnswer({ task, transcript, runtime, reason = "" }) {
@@ -1016,6 +1049,7 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
   const actionObligationBlock = !leanChatMode
     ? buildActionObligationPrompt(task.task_spec, transcript)
     : "";
+  const sideEffectContractBlock = renderSideEffectContractPrompt(task);
 
   // P4-RQ C1: research/multi-source coaching for search/research class
   // tasks. Gated on `external_web_read != forbidden` AND no local
@@ -1060,7 +1094,7 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
     : `You are LingxY, a capable desktop AI assistant running ON the user's machine. You have real local-execution tools: launch_app actually starts native applications, open_url actually navigates the user's browser, generate_document actually writes files to disk. You are NOT a "web assistant", "shortcut helper", or "chat-only" persona — refusing to call launch_app on the grounds that you "cannot operate a desktop computer" is wrong; the tools below are exactly that operation. Read the user's request carefully, consider what you have available (tools, workflows, attached resources, connected accounts), and decide how to accomplish their goal. Ask a short clarifying question only when you genuinely cannot proceed faithfully.
 ${resourceHint}
 Available execution tools:
-${toolList}${workflowHint}${requiredContractBlock}${actionObligationBlock}
+${toolList}${workflowHint}${requiredContractBlock}${actionObligationBlock}${sideEffectContractBlock}
 
 Use the native call_tool interface when a tool is needed: choose exactly one tool id from the list and pass its arguments as an object. Tool metadata is part of the execution contract: policy groups say which contract applies, risk indicates approval sensitivity, and capabilities say what the tool can actually touch.
 
@@ -1549,7 +1583,9 @@ async function _runToolAgentLoopCore({
   );
   const firedRunbooks = new Set();
   let contractActionGuidanceCount = 0;
+  let terminalContractActionGuidanceCount = 0;
   const MAX_CONTRACT_ACTION_GUIDANCE = 2;
+  const MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE = 1;
   // Soft saturation nudge for multi_source / deep_research tasks. Fires
   // once per task — if the model heeds the hint and changes angle, no
   // further nudges; if it ignores, the existing research-quality
@@ -1571,10 +1607,14 @@ async function _runToolAgentLoopCore({
     // test) sees the same surface — including the scheduler-fire
     // recursion guard that hides create_scheduled_task /
     // delete_scheduled_task / pause_scheduled_task.
+    const visibleTools = filterToolsForActionOnlyGuidance(
+      filterToolsForTask(registry.list(), task),
+      transcript
+    );
     const decision = await resolvedPlanner({
       task,
       transcript,
-      tools: filterToolsForTask(registry.list(), task),
+      tools: visibleTools,
       iteration,
       runtime
     });
@@ -1755,6 +1795,41 @@ async function _runToolAgentLoopCore({
       }
     }
 
+    const actionOnlyAllowedTools = actionOnlyToolIds(transcript);
+    if (actionOnlyAllowedTools.size > 0 && !actionOnlyAllowedTools.has(decision.tool)) {
+      const allowed = [...actionOnlyAllowedTools];
+      const sample = allowed.slice(0, 8).join(", ");
+      const hint = `Action-only handoff is active; ${decision.tool} cannot satisfy the pending action obligation. Call one of: ${sample}.`;
+      runtime.emitTaskEvent?.("tool_call_denied", {
+        tool_id: decision.tool ?? null,
+        reason: "action_only_obligation_handoff",
+        allowed_tools: allowed
+      });
+      transcript.push({
+        type: "tool_denied",
+        tool: decision.tool ?? null,
+        reason: "action_only_obligation_handoff"
+      });
+      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+        synthesisRetriesUsed += 1;
+        transcript.push({
+          type: "synthesis_retry",
+          violations: [{ kind: "action_only_obligation_handoff", message: hint }]
+        });
+        runtime?.emitTaskEvent?.("synthesis_retry", {
+          attempt: synthesisRetriesUsed,
+          reason: "action_only_obligation_handoff",
+          tool_id: decision.tool ?? null
+        });
+        continue;
+      }
+      return {
+        status: "partial_success",
+        final_text: localFallbackFinal({ task, transcript, reason: hint }),
+        transcript
+      };
+    }
+
     const tool = registry.get(decision.tool);
     if (!tool) {
       // Don't slam the task into the unclassified-internal-error path
@@ -1831,6 +1906,7 @@ async function _runToolAgentLoopCore({
 
     if (decision?.type === "tool_call") {
       decision.args = repairToolArgs(decision, task, transcript, tool);
+      decision.args = applySideEffectContractToToolArgs(tool.id, decision.args, { task, runtime });
     }
 
     // Dedupe: if the planner repeats the same tool+args, ask it to
@@ -2223,24 +2299,36 @@ async function _runToolAgentLoopCore({
         violation_count: (stepGate.violations ?? []).length
       });
 
-      const actionGroups = shouldInjectRequiredActionGuidance(stepGate, transcript);
-      if (contractActionGuidanceCount < MAX_CONTRACT_ACTION_GUIDANCE
+      const actionGroups = shouldInjectRequiredActionGuidance(stepGate, transcript, { allowTerminal: true });
+      const terminalActionOnly = ["escalate", "abort"].includes(stepGate.next_action);
+      const canInjectNormalActionGuidance = contractActionGuidanceCount < MAX_CONTRACT_ACTION_GUIDANCE;
+      const actionOnlyHandoff = terminalActionOnly || !canInjectNormalActionGuidance;
+      const canInjectTerminalActionGuidance = actionOnlyHandoff
+        && terminalContractActionGuidanceCount < MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE;
+      if ((canInjectNormalActionGuidance || canInjectTerminalActionGuidance)
           && actionGroups.length > 0
           && iteration < maxIterations - 1) {
-        contractActionGuidanceCount += 1;
-        const instruction = buildRequiredActionGuidance(actionGroups);
+        if (actionOnlyHandoff) {
+          terminalContractActionGuidanceCount += 1;
+        } else {
+          contractActionGuidanceCount += 1;
+        }
+        const instruction = buildRequiredActionGuidance(actionGroups, { actionOnly: actionOnlyHandoff });
         transcript.push({
           type: "contract_guidance",
           groups: actionGroups,
-          instruction
+          instruction,
+          action_only: actionOnlyHandoff
         });
         runtime.emitTaskEvent?.("contract_action_handoff", {
           iteration,
-          required_policy_groups: actionGroups
+          required_policy_groups: actionGroups,
+          action_only: actionOnlyHandoff
         });
         appendAuditLog(runtime, task, "tool_loop.contract_action_handoff", {
           iteration,
-          required_policy_groups: actionGroups
+          required_policy_groups: actionGroups,
+          action_only: actionOnlyHandoff
         });
         continue;
       }

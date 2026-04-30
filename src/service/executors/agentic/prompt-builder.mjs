@@ -14,6 +14,7 @@ import { toolsInGroup, renderToolPolicyForPrompt } from "../../core/policy/polic
 import { formatResourceContext } from "../shared/resource-context.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
+import { renderSideEffectContractPrompt } from "../../core/policy/side-effect-contracts.mjs";
 
 const DEFAULT_EXAMPLES = {
   web_search_fetch: { query: "latest AI trends 2026", recency: "month" },
@@ -217,6 +218,7 @@ export function buildAgenticSystemPrompt({
   );
 
   const synthesisGuidance = buildSynthesisGuidance(task?.task_spec);
+  const sideEffectContract = renderSideEffectContractPrompt(task);
 
   return [
     "You are UCA's agentic assistant. You are running inside a desktop task runtime that can actually execute the tools listed below.",
@@ -234,6 +236,7 @@ export function buildAgenticSystemPrompt({
     "",
     renderTaskContract(task),
     "",
+    ...(sideEffectContract ? [sideEffectContract, ""] : []),
     ...(researchPrinciples ? ["## Source quality", "", researchPrinciples, ""] : []),
     ...(researchBudget ? ["## Research budget", "", researchBudget, ""] : []),
     ...(synthesisGuidance ? [synthesisGuidance, ""] : []),

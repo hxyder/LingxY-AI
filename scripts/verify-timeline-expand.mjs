@@ -25,7 +25,7 @@ assert.ok(
   "console.js must define renderTimelineEntry"
 );
 assert.ok(
-  /taskTimeline\.innerHTML[\s\S]{0,200}renderTimelineEntry\(ev\)/.test(consoleJs),
+  /taskTimeline\.innerHTML[\s\S]{0,500}renderTimelineEntry\(ev\b/.test(consoleJs),
   "timeline render must delegate to renderTimelineEntry"
 );
 

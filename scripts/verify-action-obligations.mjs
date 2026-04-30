@@ -117,6 +117,22 @@ function taskSpec(groups) {
 }
 
 {
+  const gate = {
+    next_action: "escalate",
+    satisfied: false,
+    violations: [{
+      kind: "email_send_required_not_called",
+      message: "email_send missing"
+    }, {
+      kind: "tool_repeated_failure",
+      message: "research tool failed repeatedly"
+    }]
+  };
+  assert.deepEqual(shouldInjectRequiredActionGuidance(gate), []);
+  assert.deepEqual(shouldInjectRequiredActionGuidance(gate, [], { allowTerminal: true }), ["email_send"]);
+}
+
+{
   const violations = detectUnbackedActionClaims([{
     type: "tool_result",
     tool: "connector_workflow_run",
@@ -209,7 +225,10 @@ function taskSpec(groups) {
         success_contract: { required_policy_groups: ["external_web_read", "email_send"], required_tool_names: [] },
         tool_policy: { web_search_fetch: { mode: "required" }, policy_groups: { external_web_read: { mode: "required" } } },
         synthesis: { expected_output: "execution" },
-        execution_constraints: { max_iterations: 6 }
+        execution_constraints: {
+          max_iterations: 6,
+          error_budget: { max_tool_failures: 6 }
+        }
       },
       context_packet: {}
     },
@@ -217,6 +236,195 @@ function taskSpec(groups) {
   });
   assert.equal(result.status, "waiting_external_decision");
   assert.ok(calls.some((call) => call.tool === "connector_workflow_run"));
+}
+
+{
+  const calls = [];
+  const visibleToolSets = [];
+  const registry = createActionToolRegistry([
+    {
+      id: "web_search_fetch",
+      name: "Web Search Fetch",
+      description: "Fetch search results.",
+      parameters: { type: "object", properties: { query: { type: "string" } } },
+      risk_level: "low",
+      requires_confirmation: false,
+      async execute(args) {
+        calls.push({ tool: "web_search_fetch", args });
+        return {
+          success: false,
+          observation: "Fetch failed",
+          metadata: {},
+          artifact_paths: []
+        };
+      }
+    },
+    {
+      id: "connector_workflow_run",
+      name: "Connector Workflow Run",
+      description: "Run connector workflow.",
+      parameters: { type: "object", required: ["workflowId"], properties: { workflowId: { type: "string" }, input: { type: "object" } } },
+      risk_level: "medium",
+      requires_confirmation: false,
+      async execute(args) {
+        calls.push({ tool: "connector_workflow_run", args });
+        return {
+          success: true,
+          observation: "Waiting for user confirmation.",
+          metadata: {
+            connector_status: "waiting_external_decision",
+            workflow_id: args.workflowId,
+            approval: { approval_id: "approval_after_research_failure" }
+          },
+          artifact_paths: []
+        };
+      }
+    }
+  ]);
+  const runtime = {
+    actionToolRegistry: registry,
+    toolContext: {},
+    toolOutputDir: ".",
+    store: { appendAuditLog() {} },
+    emitTaskEvent() {}
+  };
+  const plannerDecisions = [
+    { type: "tool_call", tool: "web_search_fetch", args: { query: "market summary" } },
+    { type: "tool_call", tool: "web_search_fetch", args: { query: "market summary retry" } },
+    {
+      type: "tool_call",
+      tool: "connector_workflow_run",
+      args: {
+        workflowId: "google.gmail.draft_confirm_send",
+        input: {
+          to: ["user-a@example.com"],
+          subject: "Market summary",
+          body: "Use collected information."
+        }
+      }
+    }
+  ];
+  const result = await runToolAgentLoop({
+    runtime,
+    task: {
+      task_id: "task_action_only_after_research_failure",
+      user_command: "Research the market and send the summary to user-a@example.com",
+      execution_mode: "interactive",
+      task_spec: {
+        connector_domain: true,
+        success_contract: { required_policy_groups: ["external_web_read", "email_send"], required_tool_names: [] },
+        tool_policy: { web_search_fetch: { mode: "required" }, policy_groups: { external_web_read: { mode: "required" } } },
+        synthesis: { expected_output: "execution" },
+        execution_constraints: {
+          max_iterations: 6,
+          error_budget: { max_tool_failures: 6 }
+        }
+      },
+      context_packet: {}
+    },
+    planner: async ({ tools }) => {
+      visibleToolSets.push(tools.map((tool) => tool.id));
+      return plannerDecisions.shift();
+    }
+  });
+  assert.equal(result.status, "waiting_external_decision");
+  assert.ok(calls.some((call) => call.tool === "connector_workflow_run"));
+  assert.deepEqual(visibleToolSets.at(-1), ["connector_workflow_run"]);
+}
+
+{
+  const calls = [];
+  const visibleToolSets = [];
+  const registry = createActionToolRegistry([
+    {
+      id: "web_search_fetch",
+      name: "Web Search Fetch",
+      description: "Fetch search results.",
+      parameters: { type: "object", properties: { query: { type: "string" } } },
+      risk_level: "low",
+      requires_confirmation: false,
+      async execute(args) {
+        calls.push({ tool: "web_search_fetch", args });
+        return {
+          success: true,
+          observation: "Current market data with enough substance from multiple sources.",
+          metadata: { results: [{ url: "https://example.com/market" }] },
+          artifact_paths: []
+        };
+      }
+    },
+    {
+      id: "connector_workflow_run",
+      name: "Connector Workflow Run",
+      description: "Run connector workflow.",
+      parameters: { type: "object", required: ["workflowId"], properties: { workflowId: { type: "string" }, input: { type: "object" } } },
+      risk_level: "medium",
+      requires_confirmation: false,
+      async execute(args) {
+        calls.push({ tool: "connector_workflow_run", args });
+        return {
+          success: true,
+          observation: "Waiting for user confirmation.",
+          metadata: {
+            connector_status: "waiting_external_decision",
+            workflow_id: args.workflowId,
+            approval: { approval_id: "approval_after_enough_research" }
+          },
+          artifact_paths: []
+        };
+      }
+    }
+  ]);
+  const runtime = {
+    actionToolRegistry: registry,
+    toolContext: {},
+    toolOutputDir: ".",
+    store: { appendAuditLog() {} },
+    emitTaskEvent() {}
+  };
+  const plannerDecisions = [
+    { type: "tool_call", tool: "web_search_fetch", args: { query: "market summary 1" } },
+    { type: "tool_call", tool: "web_search_fetch", args: { query: "market summary 2" } },
+    { type: "tool_call", tool: "web_search_fetch", args: { query: "market summary 3" } },
+    {
+      type: "tool_call",
+      tool: "connector_workflow_run",
+      args: {
+        workflowId: "google.gmail.draft_confirm_send",
+        input: {
+          to: ["user-a@example.com"],
+          subject: "Market summary",
+          body: "Use collected information."
+        }
+      }
+    }
+  ];
+  const result = await runToolAgentLoop({
+    runtime,
+    task: {
+      task_id: "task_action_only_after_enough_research",
+      user_command: "Research the market and send the summary to user-a@example.com",
+      execution_mode: "interactive",
+      task_spec: {
+        connector_domain: true,
+        success_contract: { required_policy_groups: ["external_web_read", "email_send"], required_tool_names: [] },
+        tool_policy: { web_search_fetch: { mode: "required" }, policy_groups: { external_web_read: { mode: "required" } } },
+        synthesis: { expected_output: "execution" },
+        execution_constraints: {
+          max_iterations: 7,
+          error_budget: { max_tool_failures: 6 }
+        }
+      },
+      context_packet: {}
+    },
+    planner: async ({ tools }) => {
+      visibleToolSets.push(tools.map((tool) => tool.id));
+      return plannerDecisions.shift();
+    }
+  });
+  assert.equal(result.status, "waiting_external_decision");
+  assert.ok(calls.some((call) => call.tool === "connector_workflow_run"));
+  assert.deepEqual(visibleToolSets.at(-1), ["connector_workflow_run"]);
 }
 
 console.log("ok verify-action-obligations");

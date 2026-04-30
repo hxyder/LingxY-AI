@@ -74,6 +74,26 @@ const scheduledContext = {
 }
 
 {
+  const spec = createTaskSpec("整理今天新闻后发送邮件到 user-a@example.com和user-b@example.com", {
+    source_app: "uca.scheduler",
+    selection_metadata: {
+      source_id: "sched_sr_timeout",
+      trigger_reason: "scheduled",
+      scheduler_context: true
+    },
+    semantic_router_rejection: { kind: "rejection", code: "timeout", reason: "test timeout" }
+  }, {});
+  assert.equal(spec.routing_status, "sr_timeout");
+  assert.equal(spec.routing_degraded, true);
+  assert.ok(
+    spec.success_contract.required_policy_groups.includes("email_send"),
+    "SR timeout fallback must still stamp clear side-effect obligations"
+  );
+  assert.equal(spec.synthesis.expected_output, "execution");
+  assert.equal(spec.constraints.must_use_tools, true);
+}
+
+{
   const conflictedContext = {
     ...scheduledContext,
     semantic_router_decision: {

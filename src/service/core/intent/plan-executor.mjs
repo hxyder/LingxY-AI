@@ -20,6 +20,7 @@ import {
   markTaskSucceeded,
   updateTask
 } from "../task-runtime.mjs";
+import { buildSideEffectContract } from "../policy/side-effect-contracts.mjs";
 
 function buildPlanContextPacket({ userCommand, originalContextPacket = null }) {
   return {
@@ -160,9 +161,28 @@ export function createClarifyTaskRecord({
   return task;
 }
 
-export function buildScheduleFromDecision({ runtime, userCommand, contextPacket, executionMode, runAtIso, residualCommand }) {
+export function buildScheduleFromDecision({ runtime, userCommand, contextPacket, executionMode, runAtIso, residualCommand, decision = null }) {
   const scheduler = runtime?.scheduler;
   if (!scheduler) return null;
+  const sideEffectContract = buildSideEffectContract({
+    policyGroups: decision?.required_policy_groups ?? [],
+    runtime,
+    inferPolicyGroups: true,
+    sources: [userCommand, residualCommand],
+    task: {
+      user_command: residualCommand,
+      task_spec: {
+        user_goal_text: residualCommand,
+        success_contract: {
+          required_policy_groups: decision?.required_policy_groups ?? []
+        }
+      },
+      context_packet: {
+        ...(contextPacket ?? {}),
+        text: [contextPacket?.text, userCommand, residualCommand].filter(Boolean).join("\n")
+      }
+    }
+  });
   try {
     return scheduler.createSchedule({
       name: `Scheduled: ${residualCommand.slice(0, 60)}`,
@@ -179,7 +199,8 @@ export function buildScheduleFromDecision({ runtime, userCommand, contextPacket,
         }
       },
       executionMode: executionMode ?? "unattended_safe",
-      catchupPolicy: "skip"
+      catchupPolicy: "skip",
+      metadata: sideEffectContract ? { side_effect_contract: sideEffectContract } : {}
     }, { createdBy: "plan_executor" });
   } catch {
     return null;

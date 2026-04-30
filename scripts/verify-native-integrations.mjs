@@ -14,17 +14,21 @@ const tmpRoot = path.join(repoRoot, ".tmp", "verify-native-integrations", crypto
 const verifyPipeName = `\\\\.\\pipe\\uca-helper-explorer-selection-${crypto.randomUUID()}`;
 
 async function cleanupTempDir(directory) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
+  const retryableCodes = new Set(["EBUSY", "ENOTEMPTY", "EPERM"]);
+  let lastError = null;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
     try {
       await rm(directory, { recursive: true, force: true });
       return;
     } catch (error) {
-      if (error.code !== "EBUSY") {
+      if (!retryableCodes.has(error.code)) {
         throw error;
       }
-      await new Promise((resolve) => setTimeout(resolve, 300 * (attempt + 1)));
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
     }
   }
+  console.warn(`warning: failed to clean temporary verification directory ${directory}: ${lastError?.message ?? "unknown error"}`);
 }
 
 function runCommand(command, args, options = {}) {

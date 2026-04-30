@@ -4761,9 +4761,113 @@ function scheduleBucket(s) {
 }
 function scheduleMatchesSearch(s, q) {
   if (!q) return true;
-  const hay = [s.name, s.schedule_id, s.trigger_type, s.category, s.metadata?.category, s.last_run_status]
+  const hay = [
+    s.name,
+    s.description,
+    s.schedule_id,
+    s.trigger_type,
+    s.category,
+    s.metadata?.category,
+    s.last_run_status,
+    s.action_target,
+    s.action_params?.userCommand,
+    s.action_params?.contextText,
+    scheduleRecipients(s).join(" ")
+  ]
     .filter(Boolean).join(" ").toLowerCase();
   return hay.includes(q);
+}
+
+const SCHEDULE_EMAIL_REGEX = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+
+function uniqueScheduleEmails(values) {
+  const seen = new Set();
+  const emails = [];
+  for (const value of values) {
+    const matches = String(value ?? "").match(SCHEDULE_EMAIL_REGEX) ?? [];
+    for (const email of matches) {
+      const normalized = email.toLowerCase();
+      if (!seen.has(normalized)) {
+        seen.add(normalized);
+        emails.push(email);
+      }
+    }
+  }
+  return emails;
+}
+
+function recipientSegments(text = "") {
+  const value = String(text ?? "");
+  if (!value) return [];
+  const segments = [];
+  const markerPattern = /(?:收件人|发送到|发给|寄给|email\s+to|send\s+to|\bto\b)\s*[:：]?\s*/gi;
+  for (const match of value.matchAll(markerPattern)) {
+    const rest = value.slice(match.index + match[0].length);
+    const stop = rest.search(/(?:主题|subject|正文|body|内容|，邮件|。|\n)/i);
+    segments.push(stop >= 0 ? rest.slice(0, stop) : rest);
+  }
+  return segments;
+}
+
+function scheduleRecipients(schedule = {}) {
+  const params = schedule.action_params ?? {};
+  const input = params.input ?? {};
+  const explicit = [
+    params.to,
+    params.cc,
+    params.bcc,
+    params.recipient,
+    params.recipients,
+    input.to,
+    input.cc,
+    input.bcc,
+    input.recipient,
+    input.recipients
+  ];
+  const explicitEmails = uniqueScheduleEmails(explicit.flatMap((value) => Array.isArray(value) ? value : [value]));
+  if (explicitEmails.length) return explicitEmails;
+
+  const textSources = [
+    schedule.description,
+    params.userCommand,
+    params.contextText,
+    params.command,
+    schedule.action_target
+  ];
+  const segmentEmails = uniqueScheduleEmails(textSources.flatMap(recipientSegments));
+  if (segmentEmails.length) return segmentEmails;
+
+  return uniqueScheduleEmails([schedule.description]);
+}
+
+function scheduleActionPreview(schedule = {}) {
+  const params = schedule.action_params ?? {};
+  const text = params.userCommand
+    ?? params.command
+    ?? params.contextText
+    ?? schedule.description
+    ?? schedule.action_target
+    ?? "";
+  return String(text).replace(/\s+/g, " ").trim();
+}
+
+function clipSchedulePreview(text, max = 170) {
+  const value = String(text ?? "");
+  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
+}
+
+function renderScheduleActionSummary(s) {
+  const recipients = scheduleRecipients(s);
+  const preview = scheduleActionPreview(s);
+  const hasSummary = recipients.length || preview;
+  if (!hasSummary) return "";
+  const recipientHtml = recipients.length
+    ? `<div class="sched-action-summary"><span class="sched-action-label">收件人</span>${recipients.map((email) => `<span class="tag">${escapeHtml(email)}</span>`).join("")}</div>`
+    : "";
+  const previewHtml = preview
+    ? `<div class="sched-action-summary"><span class="sched-action-label">执行</span><span class="sched-action-text" title="${escapeHtml(preview)}">${escapeHtml(clipSchedulePreview(preview))}</span></div>`
+    : "";
+  return `${recipientHtml}${previewHtml}`;
 }
 // "Last:" meta — show time and colored status. When the last run
 // failed AND we know which task it produced, wrap the status in a
@@ -4807,6 +4911,7 @@ function renderScheduleRow(s) {
           ${formatScheduleLastRun(s)}
           ${statePill}
         </div>
+        ${renderScheduleActionSummary(s)}
       </div>
       <div class="sched-actions btn-group">
         <button class="btn btn-sm btn-ghost" data-edit-schedule-id="${escapeHtml(s.schedule_id)}" title="重命名">编辑</button>
@@ -4824,6 +4929,7 @@ function renderScheduleRow(s) {
 // the user can rename without re-parsing the time.
 function handleScheduleRowEdit(scheduleId, anchorBtn) {
   if (!scheduleId) return;
+  const currentSchedule = (state.workspace.schedules ?? []).find((item) => item.schedule_id === scheduleId) ?? null;
   const row = anchorBtn?.closest?.(".sched-row");
   if (!row) return;
   const titleEl = row.querySelector(".sched-title");
@@ -4831,6 +4937,10 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
   if (!titleEl) return;
   // Capture current values from the rendered row.
   const currentName = (titleEl.textContent || "").trim();
+  const currentCommand = (currentSchedule?.action_params?.userCommand
+    ?? currentSchedule?.action_params?.command
+    ?? currentSchedule?.description
+    ?? "").trim();
   // The "Next: …" text is the human-friendly form; we don't fill the
   // input with it (date strings aren't natural-language enough). Leave
   // the trigger input blank and use placeholder for guidance.
@@ -4848,17 +4958,21 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
   if (metaEl) {
     metaEl.innerHTML = `
       <div class="sched-row-edit-trigger">
+        ${currentSchedule?.action_type === "task" ? `
+          <textarea class="sched-row-edit-command" rows="3" placeholder="执行内容">${escapeHtml(currentCommand)}</textarea>
+        ` : ""}
         <div class="sched-row-edit-trigger-picker">${buildSchedulePickerHtml({ prefix: `schedEdit_${scheduleId}` })}</div>
         <div style="display:flex;gap:6px;">
           <button type="button" class="btn btn-sm btn-primary sched-row-edit-save">保存</button>
           <button type="button" class="btn btn-sm btn-ghost sched-row-edit-cancel">取消</button>
         </div>
-        <div class="sched-row-edit-hint muted" style="font-size:11px;">触发时间留空保持不变。</div>
+        <div class="sched-row-edit-hint muted" style="font-size:11px;">触发时间留空保持不变；执行内容会同步到真正运行的任务 payload。</div>
       </div>
     `;
     wireSchedulePicker(metaEl.querySelector("[data-sched-picker]"));
   }
   const nameInput = titleEl.querySelector(".sched-row-edit-input");
+  const commandInput = metaEl?.querySelector(".sched-row-edit-command");
   const pickerRoot = metaEl?.querySelector("[data-sched-picker]");
   const saveBtn = metaEl?.querySelector(".sched-row-edit-save");
   const cancelBtn = metaEl?.querySelector(".sched-row-edit-cancel");
@@ -4881,10 +4995,13 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
   });
   saveBtn?.addEventListener("click", async () => {
     const newName = nameInput?.value?.trim() ?? "";
+    const newCommand = commandInput?.value?.trim() ?? "";
     const pickerTrigger = readSchedulePicker(pickerRoot);
     if (!newName) { showConsoleToast("名称不能为空", { kind: "err" }); return; }
+    if (commandInput && !newCommand) { showConsoleToast("执行内容不能为空", { kind: "err" }); return; }
     const patch = {};
     if (newName !== currentName) patch.name = newName;
+    if (commandInput && newCommand !== currentCommand) patch.userCommand = newCommand;
     if (pickerTrigger) patch.trigger = pickerTrigger;
     if (Object.keys(patch).length === 0) {
       // Nothing actually changed; just close the editor.
@@ -4901,6 +5018,7 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
       });
       const labels = [];
       if (patch.name) labels.push("名称");
+      if (patch.userCommand) labels.push("执行内容");
       if (patch.trigger) labels.push("触发时间");
       showConsoleToast(`已更新${labels.join(" + ")}`, { kind: "ok" });
       // Tear down the inline edit BEFORE refreshWorkspace runs.

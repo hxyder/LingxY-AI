@@ -20,6 +20,7 @@ import { classifyContextSources } from "./intent/context-sources.mjs";
 import { resolveExecutor } from "./planning/executor-resolver.mjs";
 import { createTracker, STAGES } from "./contracts/decision-trace.mjs";
 import { compileTaskContract } from "./contracts/task-contract.mjs";
+import { inferSideEffectPolicyGroups } from "./policy/side-effect-contracts.mjs";
 
 // ---------------------------------------------------------------------------
 // Goal families (the canonical classification of what the user wants to do)
@@ -308,24 +309,37 @@ const CLEAR_SIDE_EFFECT_POLICY_GROUPS = new Set([
   "schedule_create"
 ]);
 
-function requiredPolicyGroupsFromIntentRoute(decision = null) {
-  if (!decision || typeof decision !== "object") return [];
-  const groups = Array.isArray(decision.required_policy_groups)
+function requiredPolicyGroupsFromIntentRoute(decision = null, { text = "", contextPacket = null } = {}) {
+  const groups = decision && typeof decision === "object" && Array.isArray(decision.required_policy_groups)
     ? decision.required_policy_groups
     : [];
-  return [...new Set(groups.filter((group) => NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE.has(group)))];
+  const inferredGroups = inferSideEffectPolicyGroups({
+    sources: [
+      text,
+      contextPacket?.text,
+      contextPacket?.selection_metadata?.schedule_name,
+      contextPacket?.selection_metadata?.schedule_description,
+      contextPacket?.selection_metadata?.schedule_action_target
+    ].filter(Boolean),
+    existingContract: contextPacket?.selection_metadata?.side_effect_contract ?? null,
+    task: {
+      user_command: text,
+      context_packet: contextPacket
+    }
+  });
+  return [...new Set([...groups, ...inferredGroups]
+    .filter((group) => NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE.has(group)))];
 }
 
-function expectedOutputFromIntentRoute(decision = null) {
-  if (!decision || typeof decision !== "object") return null;
-  const expected = typeof decision.expected_output === "string"
+function expectedOutputFromIntentRoute(decision = null, requiredPolicyGroups = []) {
+  const expected = decision && typeof decision === "object" && typeof decision.expected_output === "string"
     ? decision.expected_output
     : null;
-  const groups = Array.isArray(decision.required_policy_groups)
+  const groups = decision && typeof decision === "object" && Array.isArray(decision.required_policy_groups)
     ? decision.required_policy_groups
     : [];
-  if (groups.some((group) => CLEAR_SIDE_EFFECT_POLICY_GROUPS.has(group))
-      && expected === "email_draft") {
+  if ([...groups, ...requiredPolicyGroups].some((group) => CLEAR_SIDE_EFFECT_POLICY_GROUPS.has(group))
+      && (!expected || expected === "email_draft")) {
     return "execution";
   }
   return expected;
@@ -829,18 +843,20 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     || toolPolicy?.policy_groups?.external_web_read?.mode === "required"
   );
 
+  const srRequiredPolicyGroups = requiredPolicyGroupsFromIntentRoute(srDecision, {
+    text,
+    contextPacket: enrichedContext
+  });
   const synthesis = {
     user_goal: typeof srDecision?.user_goal === "string" && srDecision.user_goal.trim()
       ? srDecision.user_goal.trim()
       : text,
-    expected_output: expectedOutputFromIntentRoute(srDecision),
+    expected_output: expectedOutputFromIntentRoute(srDecision, srRequiredPolicyGroups),
     primary_intent: typeof srDecision?.primary_intent === "string"
       ? srDecision.primary_intent
       : null
   };
   const executionConstraints = buildResearchExecutionConstraints(researchQuality);
-
-  const srRequiredPolicyGroups = requiredPolicyGroupsFromIntentRoute(srDecision);
   const mustUseTools = goal !== "qa" || connectorDomainRequest || srRequiredPolicyGroups.length > 0;
 
   const partialSpec = {

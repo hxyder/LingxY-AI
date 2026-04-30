@@ -87,7 +87,14 @@ export function resolveAccount(ctx, input = {}, requiredCapability) {
     .filter((account) => account.tokenStatus === "active");
 
   if (input.accountId) {
-    const exact = accounts.find((account) => matchesAccountIdentity(account, input.accountId));
+    // If a connector tool/workflow supplied a provider, treat that as a hard
+    // boundary. A forgiving accountId match must not let
+    // google.gmail.send_email accidentally route through an Outlook account
+    // just because the malformed accountId contained an Outlook email.
+    const scopedAccounts = input.provider
+      ? accounts.filter((account) => sameText(account.provider, input.provider))
+      : accounts;
+    const exact = scopedAccounts.find((account) => matchesAccountIdentity(account, input.accountId));
     if (!exact) {
       // The LLM frequently invents an accountId ("default", "primary",
       // "user@gmail.com", etc.) that doesn't correspond to any connected
@@ -104,11 +111,11 @@ export function resolveAccount(ctx, input = {}, requiredCapability) {
         status: "error",
         errorCode: "ACCOUNT_NOT_FOUND",
         message: `accountId "${input.accountId}" 不在已连接账户列表中。可用账户：${
-          accounts.length === 0
+          scopedAccounts.length === 0
             ? "（无）请在桌面里连接 Gmail / Outlook"
-            : accounts.map((a) => `${a.email ?? a.id} (${a.provider})`).join("、")
+            : scopedAccounts.map((a) => `${a.email ?? a.id} (${a.provider})`).join("、")
         }。建议直接传 accountId 为邮箱地址，或省略 accountId 让系统自动选择默认账户。`,
-        availableAccounts: accounts.map((a) => ({
+        availableAccounts: scopedAccounts.map((a) => ({
           accountId: a.id,
           provider: a.provider,
           email: a.email ?? null

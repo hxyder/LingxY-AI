@@ -226,7 +226,14 @@ function base64Url(value) {
 // merge "a@x.com/b@y.com" into one token.
 const EMAIL_LIKE_REGEX_GC = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
-function asList(value) {
+function asGenericList(value) {
+  if (value === undefined || value === null || value === "") return [];
+  if (Array.isArray(value)) return value.map((v) => String(v).trim()).filter(Boolean);
+  if (typeof value === "string") return value.split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean);
+  return [String(value)];
+}
+
+function asEmailList(value) {
   if (value === undefined || value === null || value === "") return [];
   if (Array.isArray(value)) {
     const out = [];
@@ -307,10 +314,10 @@ function base64WrapBuffer(buffer, width = 76) {
 }
 
 async function buildRfc822EmailAsync(input = {}) {
-  const to = asList(input.to);
-  const cc = asList(input.cc);
-  const bcc = asList(input.bcc);
-  const attachmentPaths = asList(input.attachmentPaths);
+  const to = asEmailList(input.to);
+  const cc = asEmailList(input.cc);
+  const bcc = asEmailList(input.bcc);
+  const attachmentPaths = asGenericList(input.attachmentPaths);
   const headers = [
     `To: ${to.join(", ")}`,
     cc.length ? `Cc: ${cc.join(", ")}` : null,

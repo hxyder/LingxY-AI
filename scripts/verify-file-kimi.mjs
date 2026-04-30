@@ -138,7 +138,7 @@ const result = await submitCommand(
 
 assert.equal(result.accepted, true);
 assert.equal(result.mode, "file_group");
-assert.equal(result.response.task.executor, "kimi");
+assert.equal(result.response.task.executor, "code_cli");
 assert.equal(result.response.task.context_packet.source_type, "file_group");
 assert.equal(result.response.task.context_packet.file_metadata.length, 6);
 assert.equal(result.response.task.status, "success");

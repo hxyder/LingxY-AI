@@ -250,6 +250,7 @@ export async function dispatchSchedule({
       executionMode: isManualForeground ? "interactive" : schedule.execution_mode,
       sourceLabel: `Scheduled run: ${schedule.name}`,
       sourceId: schedule.schedule_id,
+      scheduleContext: schedule,
       sourceApp: isManualForeground ? "uca.console.desktop" : "uca.scheduler",
       captureMode: isManualForeground ? "desktop_console" : "event",
       triggerReason: reason,

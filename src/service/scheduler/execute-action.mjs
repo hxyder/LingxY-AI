@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { submitContextTask } from "../core/context-submission.mjs";
 import { submitActionToolTask } from "../core/action-tool-submission.mjs";
 import { submitConnectorWorkflowTask } from "../connectors/core/workflow-submission.mjs";
+import { buildSideEffectContract } from "../core/policy/side-effect-contracts.mjs";
 import {
   createTaskRecord,
   emitTaskEvent,
@@ -18,7 +19,8 @@ function buildSchedulerContextPacket({
   imagePaths = [],
   sourceApp = "uca.scheduler",
   captureMode = "event",
-  triggerReason = "scheduled"
+  triggerReason = "scheduled",
+  selectionMetadata = {}
 }) {
   return {
     schema_version: "1.0",
@@ -36,7 +38,8 @@ function buildSchedulerContextPacket({
       source_id: sourceId,
       trigger_reason: triggerReason,
       scheduler_context: true,
-      scheduled_task_fire: true
+      scheduled_task_fire: true,
+      ...selectionMetadata
     },
     captured_at: new Date().toISOString()
   };
@@ -274,12 +277,51 @@ async function executeScheduledTask({
   executionMode,
   sourceLabel,
   sourceId,
+  scheduleContext = null,
   sourceApp = "uca.scheduler",
   captureMode = "event",
   triggerReason = "scheduled",
   bypassDedupe = false
 }) {
   const userCommand = actionParams.userCommand ?? actionParams.command ?? sourceLabel ?? actionTarget;
+  const storedSideEffectContract = scheduleContext?.metadata?.side_effect_contract
+    ?? actionParams.side_effect_contract
+    ?? null;
+  const sideEffectContract = buildSideEffectContract({
+    runtime,
+    existingContract: storedSideEffectContract,
+    inferPolicyGroups: !storedSideEffectContract,
+    includeEntityValues: !storedSideEffectContract,
+    sources: storedSideEffectContract
+      ? []
+      : [
+          scheduleContext?.name,
+          scheduleContext?.description,
+          scheduleContext?.action_target,
+          userCommand,
+          actionParams.contextText
+        ].filter(Boolean),
+    task: storedSideEffectContract
+      ? null
+      : {
+          user_command: userCommand,
+          context_packet: {
+            text: [
+              scheduleContext?.name,
+              scheduleContext?.description,
+              scheduleContext?.action_target,
+              userCommand,
+              actionParams.contextText
+            ].filter(Boolean).join("\n"),
+            file_paths: actionParams.file_paths ?? actionParams.filePaths ?? [],
+            selection_metadata: {
+              schedule_name: scheduleContext?.name ?? null,
+              schedule_description: scheduleContext?.description ?? null,
+              schedule_action_target: scheduleContext?.action_target ?? actionTarget
+            }
+          }
+        }
+  });
   const directReminder = buildDirectReminderNotifyArgs({
     userCommand,
     actionTarget,
@@ -310,7 +352,13 @@ async function executeScheduledTask({
       imagePaths: actionParams.image_paths ?? actionParams.imagePaths ?? [],
       sourceApp,
       captureMode,
-      triggerReason
+      triggerReason,
+      selectionMetadata: {
+        schedule_name: scheduleContext?.name ?? null,
+        schedule_description: scheduleContext?.description ?? null,
+        schedule_action_target: scheduleContext?.action_target ?? actionTarget,
+        ...(sideEffectContract ? { side_effect_contract: sideEffectContract } : {})
+      }
     }),
     userCommand,
     executionMode,
@@ -414,6 +462,7 @@ export async function executeProposedAction({
   executionMode = "interactive",
   sourceLabel,
   sourceId,
+  scheduleContext = null,
   sourceApp = "uca.scheduler",
   captureMode = "event",
   triggerReason = "scheduled",
@@ -452,6 +501,7 @@ export async function executeProposedAction({
       executionMode,
       sourceLabel,
       sourceId,
+      scheduleContext,
       sourceApp,
       captureMode,
       triggerReason,

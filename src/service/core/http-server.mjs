@@ -37,6 +37,7 @@ import { normalizeTemplateDocument } from "../templates/parser.mjs";
 import { validateTemplateDocument } from "../templates/schema.mjs";
 import { resumeDagGraph, validateDagDefinition } from "../dag/scheduler.mjs";
 import { parseRelativeTime, formatRelativeDuration } from "../utils/time-parser.mjs";
+import { buildSideEffectContract } from "./policy/side-effect-contracts.mjs";
 import {
   resolveProviderForTask,
   sanitizeTaskRouteForProvider
@@ -3051,6 +3052,76 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
           } catch (error) {
             return sendJson(response, 400, { error: error?.message ?? "trigger_invalid" });
           }
+        }
+        const actionCommand = typeof body?.userCommand === "string"
+          ? body.userCommand
+          : typeof body?.actionCommand === "string"
+            ? body.actionCommand
+            : null;
+        if (typeof body?.description === "string" || actionCommand !== null) {
+          const existing = schedule ?? runtime.store.getSchedule(scheduleId);
+          if (!existing) {
+            return sendJson(response, 404, { error: "schedule_not_found" });
+          }
+          if (typeof body.description === "string") {
+            existing.description = body.description.trim().slice(0, 2000);
+          }
+          if (actionCommand !== null) {
+            if (existing.action_type !== "task") {
+              return sendJson(response, 400, { error: "schedule_action_not_editable" });
+            }
+            const command = actionCommand.trim();
+            if (!command) {
+              return sendJson(response, 400, { error: "schedule_action_command_required" });
+            }
+            existing.action_params = {
+              ...(existing.action_params ?? {}),
+              userCommand: command,
+              contextText: typeof body.contextText === "string"
+                ? body.contextText
+                : command
+            };
+            existing.action_target = typeof body.actionTarget === "string" && body.actionTarget.trim()
+              ? body.actionTarget.trim().slice(0, 120)
+              : command.slice(0, 120);
+          }
+          const contractSources = actionCommand !== null
+            ? [
+                existing.action_params?.userCommand,
+                existing.action_params?.contextText
+              ].filter(Boolean)
+            : [
+                existing.name,
+                existing.description,
+                existing.action_target,
+                existing.action_params?.userCommand,
+                existing.action_params?.contextText
+              ].filter(Boolean);
+          const rebuiltContract = buildSideEffectContract({
+            runtime,
+            inferPolicyGroups: true,
+            sources: contractSources,
+            task: {
+              user_command: existing.action_params?.userCommand ?? existing.action_target,
+              context_packet: {
+                text: contractSources.join("\n"),
+                file_paths: existing.action_params?.file_paths ?? existing.action_params?.filePaths ?? [],
+                selection_metadata: {}
+              }
+            }
+          });
+          if (rebuiltContract) {
+            existing.metadata = {
+              ...(existing.metadata ?? {}),
+              side_effect_contract: rebuiltContract
+            };
+          } else if (existing.metadata?.side_effect_contract) {
+            const { side_effect_contract: _removed, ...rest } = existing.metadata;
+            existing.metadata = rest;
+          }
+          existing.updated_at = new Date().toISOString();
+          runtime.store.updateSchedule(scheduleId, existing);
+          schedule = existing;
         }
         if (typeof body?.enabled === "boolean") {
           schedule = runtime.scheduler.pauseSchedule(scheduleId, body.enabled);

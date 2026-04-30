@@ -13,6 +13,29 @@ function asList(value) {
   return [String(value)];
 }
 
+const EMAIL_LIKE_REGEX_MS = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+
+function asEmailList(value) {
+  if (value === undefined || value === null || value === "") return [];
+  if (Array.isArray(value)) {
+    const out = [];
+    for (const item of value) {
+      const trimmed = String(item ?? "").trim();
+      if (!trimmed) continue;
+      const matches = trimmed.match(EMAIL_LIKE_REGEX_MS);
+      if (matches?.length) out.push(...matches);
+      else out.push(trimmed);
+    }
+    return [...new Set(out.map((v) => v.trim()).filter(Boolean))];
+  }
+  if (typeof value === "string") {
+    const matches = value.match(EMAIL_LIKE_REGEX_MS);
+    if (matches?.length) return [...new Set(matches.map((v) => v.trim()).filter(Boolean))];
+    return value.split(/[,;\s]+/).map((v) => v.trim()).filter(Boolean);
+  }
+  return [String(value)];
+}
+
 export async function listMicrosoftEmails(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
   const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
   if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };
@@ -181,9 +204,9 @@ export async function sendMicrosoftEmail(runtime, account, input = {}, { fetchIm
       message: {
         subject: input.subject ?? "",
         body: { contentType: "Text", content: input.body ?? "" },
-        toRecipients: asList(input.to).map((address) => ({ emailAddress: { address } })),
-        ccRecipients: asList(input.cc).map((address) => ({ emailAddress: { address } })),
-        bccRecipients: asList(input.bcc).map((address) => ({ emailAddress: { address } })),
+        toRecipients: asEmailList(input.to).map((address) => ({ emailAddress: { address } })),
+        ccRecipients: asEmailList(input.cc).map((address) => ({ emailAddress: { address } })),
+        bccRecipients: asEmailList(input.bcc).map((address) => ({ emailAddress: { address } })),
         ...(attachments.length ? { attachments } : {})
       },
       saveToSentItems: true

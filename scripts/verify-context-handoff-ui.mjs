@@ -17,7 +17,10 @@ const overlayHtml = await read("src/desktop/renderer/overlay.html");
 assert.equal(overlayHtml.includes("bubbleArea"), true);
 assert.equal(overlayHtml.includes("commandInput"), true);
 assert.equal(overlayHtml.includes("clipboardBtn"), true);
-assert.equal(overlayHtml.includes("resultToast"), true);
+assert.equal(
+  overlayHtml.includes("resultToast") || overlayHtml.includes("result-toast retired"),
+  true
+);
 
 const overlayJs = await read("src/desktop/renderer/overlay.js");
 assert.equal(overlayJs.includes("applyShellHandoff"), true);

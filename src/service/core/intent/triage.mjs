@@ -138,7 +138,8 @@ export async function triage({
       contextPacket: enrichedContextPacket,
       executionMode,
       runAtIso: decision.schedule_at,
-      residualCommand: decision.residual_command
+      residualCommand: decision.residual_command,
+      decision
     });
     if (schedule) {
       const replyText = `已安排 ${formatRunAtRelative(schedule.next_run_at)} 执行：${decision.residual_command}`;

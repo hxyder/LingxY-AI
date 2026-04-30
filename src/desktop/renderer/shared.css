@@ -2940,6 +2940,24 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   margin-top: 6px;
   flex-wrap: wrap;
 }
+.sched-row-edit-command {
+  width: 100%;
+  min-height: 68px;
+  resize: vertical;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  outline: none;
+}
+.sched-row-edit-command:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
 .sched-row-edit-trigger-picker { flex: 1; min-width: 240px; }
 .sched-row-edit-hint { width: 100%; }
 
@@ -3044,6 +3062,27 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-size: var(--fs-xs);
   color: var(--muted);
   flex-wrap: wrap;
+}
+.sched-action-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  flex-wrap: wrap;
+}
+.sched-action-label {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.sched-action-text {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .sched-actions { display: flex; gap: 4px; }
 

@@ -19,6 +19,9 @@
 // for defense in depth.
 
 import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 
 import { ACCOUNT_SEND_EMAIL_TOOL } from "../src/service/connectors/tools/write-tools.mjs";
 
@@ -39,15 +42,12 @@ function check(label, condition) {
 // resolution failure; the args printed BEFORE resolveAccount are what
 // got normalized.
 //
-// Even simpler — directly use the same parser the tool uses. Both
-// connectors/tools/write-tools.mjs and google-connector.mjs export
-// nothing for the splitter; we exercise it via the tool's spec
-// schema validation? No — schema is permissive on `to`. So we
-// snapshot the splitter behaviour by re-creating the same regex
-// here and asserting OUTPUT equality. This locks in the framework
-// contract: "given input X, the recipient list comes out as Y".
+// The first cases snapshot the parser contract. Later cases exercise
+// the public account_send_email tool with fake connected accounts and
+// fetch stubs so the test verifies the actual production normalization
+// path, not just a copied helper.
 
-const EMAIL_LIKE_REGEX = /[\w.+\-!#$%&'*/=?^`{|}~]+@[\w-]+(?:\.[\w-]+)+/g;
+const EMAIL_LIKE_REGEX = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 function extractEmailsFromMixedSeparator(value) {
   if (Array.isArray(value)) {
     const out = [];
@@ -164,8 +164,138 @@ function extractEmailsFromMixedSeparator(value) {
     props.to !== undefined);
 }
 
+function createRuntimeWithAccounts(accounts) {
+  const tokenMap = new Map(accounts.map((account) => [
+    account.id,
+    {
+      accountId: account.id,
+      accessToken: `token_${account.id}`,
+      expiresAt: new Date(Date.now() + 3600_000).toISOString()
+    }
+  ]));
+  return {
+    store: {
+      listConnectedAccounts: () => accounts,
+      getConnectedAccount: (id) => accounts.find((account) => account.id === id) ?? null,
+      upsertConnectedAccount: (account) => {
+        const index = accounts.findIndex((item) => item.id === account.id);
+        if (index >= 0) accounts[index] = account;
+        else accounts.push(account);
+        return account;
+      },
+      getOAuthToken: (id) => tokenMap.get(id) ?? null,
+      upsertOAuthToken: (record) => {
+        tokenMap.set(record.accountId, record);
+        return record;
+      }
+    }
+  };
+}
+
+function decodeGmailRaw(raw) {
+  const padded = raw.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(raw.length / 4) * 4, "=");
+  return Buffer.from(padded, "base64").toString("utf8");
+}
+
 // ---------------------------------------------------------------------
-// 10. Override-merge shape: the framework merges overrides at the
+// 10. Real tool path: account_send_email should normalize recipients
+//     before the connector call, and accountId fallback should work.
+// ---------------------------------------------------------------------
+{
+  const runtime = createRuntimeWithAccounts([{
+    id: "acc_google",
+    provider: "google",
+    email: "hxy94045@gmail.com",
+    userId: "local",
+    tokenStatus: "active",
+    capabilities: { emailWrite: true },
+    scopes: ["https://www.googleapis.com/auth/gmail.send"]
+  }]);
+  let rawMessage = "";
+  const fetchImpl = async (_url, init = {}) => {
+    const body = JSON.parse(init.body);
+    rawMessage = decodeGmailRaw(body.raw);
+    return { ok: true, json: async () => ({ id: "msg_two_recipients" }) };
+  };
+  const result = await ACCOUNT_SEND_EMAIL_TOOL.execute({
+    accountId: "google hxy94045@gmail.com",
+    provider: "google",
+    to: "user-a@example.com和user-b@example.com",
+    subject: "x",
+    body: "y"
+  }, { runtime, fetchImpl, task: { user_command: "send" } });
+  check("real-tool: Gmail send succeeds with malformed accountId + 和-separated recipients",
+    result.success === true);
+  check("real-tool: Gmail To header contains both recipients",
+    /^To: hanxy308@163\.com, sophieliang1998@gmail\.com/m.test(rawMessage));
+}
+
+{
+  const runtime = createRuntimeWithAccounts([{
+    id: "acc_ms",
+    provider: "microsoft",
+    email: "user@outlook.com",
+    userId: "local",
+    tokenStatus: "active",
+    capabilities: { emailWrite: true },
+    scopes: ["Mail.Send"]
+  }]);
+  let payload = null;
+  const fetchImpl = async (_url, init = {}) => {
+    payload = JSON.parse(init.body);
+    return { ok: true, json: async () => ({}) };
+  };
+  const result = await ACCOUNT_SEND_EMAIL_TOOL.execute({
+    accountId: "Microsoft: user@outlook.com",
+    provider: "microsoft",
+    to: "user-a@example.com/user-b@example.com",
+    subject: "x",
+    body: "y"
+  }, { runtime, fetchImpl, task: { user_command: "send" } });
+  const addresses = payload?.message?.toRecipients?.map((item) => item.emailAddress.address) ?? [];
+  check("real-tool: Outlook send succeeds with slash-separated recipients",
+    result.success === true);
+  check("real-tool: Outlook payload contains both recipients",
+    addresses.length === 2 && addresses.includes("user-a@example.com") && addresses.includes("user-b@example.com"));
+}
+
+{
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lingxy-email-attach-"));
+  try {
+    const attachmentPath = path.join(tempDir, "report-user-a@example.com.txt");
+    await writeFile(attachmentPath, "attachment body", "utf8");
+    const runtime = createRuntimeWithAccounts([{
+      id: "acc_google_attach",
+      provider: "google",
+      email: "hxy94045@gmail.com",
+      userId: "local",
+      tokenStatus: "active",
+      capabilities: { emailWrite: true },
+      scopes: ["https://www.googleapis.com/auth/gmail.send"]
+    }]);
+    let rawMessage = "";
+    const fetchImpl = async (_url, init = {}) => {
+      const body = JSON.parse(init.body);
+      rawMessage = decodeGmailRaw(body.raw);
+      return { ok: true, json: async () => ({ id: "msg_attachment" }) };
+    };
+    const result = await ACCOUNT_SEND_EMAIL_TOOL.execute({
+      accountId: "hxy94045@gmail.com",
+      provider: "google",
+      to: "recipient@example.com",
+      subject: "x",
+      body: "y",
+      attachmentPaths: [attachmentPath]
+    }, { runtime, fetchImpl, task: { user_command: "send attachment" } });
+    check("real-tool: Gmail attachment path containing @ is not mistaken for an email",
+      result.success === true && /report-hanxy308@163\.com\.txt/.test(rawMessage));
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------
+// 11. Override-merge shape: the framework merges overrides at the
 //     correct level based on the approval's proposed_action.
 //     User repro: edited `to` in approval card, but only first
 //     recipient received the email — overrides were going into

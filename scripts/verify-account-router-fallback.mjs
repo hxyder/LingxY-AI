@@ -135,7 +135,26 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 6. Email format in error message: the message renders the email
+// 6. Provider is a hard boundary for malformed accountIds. A Google
+//    workflow must not route through Outlook just because the bad
+//    accountId contains an Outlook email.
+// ---------------------------------------------------------------------
+{
+  const result = resolveAccount(
+    { connectedAccounts: accounts },
+    { provider: "google", accountId: "microsoft user@outlook.com" },
+    "emailWrite"
+  );
+  check("provider-boundary: Google request does not match Outlook email token",
+    result.status === "error" && result.errorCode === "ACCOUNT_NOT_FOUND");
+  check("provider-boundary: recovery list is scoped to Google accounts",
+    Array.isArray(result.availableAccounts)
+    && result.availableAccounts.length === 1
+    && result.availableAccounts[0].provider === "google");
+}
+
+// ---------------------------------------------------------------------
+// 7. Email format in error message: the message renders the email
 //    PRIMARILY (not provider/email), so when the LLM copies the
 //    suggested format it gets back a usable accountId.
 // ---------------------------------------------------------------------
@@ -153,7 +172,7 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 7. Truly garbage accountId still errors out — the forgiving matcher
+// 8. Truly garbage accountId still errors out — the forgiving matcher
 //    only kicks in when there's an @-bearing token to extract.
 // ---------------------------------------------------------------------
 {

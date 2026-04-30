@@ -1,5 +1,6 @@
 import { createActionResult } from "../../action_tools/types.mjs";
 import { evaluateToolRisk } from "../../action_tools/risk_matrix.mjs";
+import { applySideEffectContractToWorkflowInput } from "../../core/policy/side-effect-contracts.mjs";
 
 function nowMs() {
   return Date.now();
@@ -354,6 +355,9 @@ export async function runConnectorWorkflow({
   const workflow = catalog.getWorkflow(workflowId);
   if (!workflow) {
     throw new Error(`Unknown connector workflow: ${workflowId}`);
+  }
+  if (!isApproved(state)) {
+    input = applySideEffectContractToWorkflowInput(workflowId, input, { task, runtime });
   }
   const outputs = {
     ...(state.outputs ?? {})

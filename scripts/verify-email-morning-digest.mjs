@@ -36,6 +36,13 @@ const service = createServiceBootstrap({
   }
 });
 const runtime = service.runtime;
+runtime.settings = {
+  ...(runtime.settings ?? {}),
+  emailDigest: {
+    ...(runtime.settings?.emailDigest ?? {}),
+    writeFile: true
+  }
+};
 
 const now = new Date("2026-04-11T08:30:00");
 const yesterday = new Date(now);

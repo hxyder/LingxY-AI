@@ -66,7 +66,7 @@ assert.ok(
 
 // ── Morning digest moved from Connectors to Schedules ──────────────
 const schedStart = consoleHtml.indexOf('id="panel-schedules"');
-const schedEnd = consoleHtml.indexOf('id="panel-advanced"');
+const schedEnd = consoleHtml.indexOf('id="panel-connectors"');
 assert.ok(schedStart > 0 && schedEnd > schedStart, "schedule panel slice not found");
 const schedSlice = consoleHtml.slice(schedStart, schedEnd);
 assert.ok(
