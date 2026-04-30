@@ -55,6 +55,7 @@
     "verify:redundant-side-effect-block": "node scripts/verify-redundant-side-effect-block.mjs",
     "verify:create-schedule-recursion-guard": "node scripts/verify-create-schedule-recursion-guard.mjs",
     "verify:scheduled-fire-tool-filter": "node scripts/verify-scheduled-fire-tool-filter.mjs",
+    "verify:call-tool-envelope-unwrap": "node scripts/verify-call-tool-envelope-unwrap.mjs",
     "verify:status-preservation": "node scripts/verify-status-preservation.mjs",
     "verify:agentic-parity": "node scripts/verify-agentic-parity.mjs",
     "verify:agentic-step-gate": "node scripts/verify-agentic-step-gate.mjs",

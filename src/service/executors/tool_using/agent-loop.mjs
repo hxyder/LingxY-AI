@@ -1209,6 +1209,20 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
       try {
         const parsed = JSON.parse(jsonMatch[0]);
         if (parsed.tool) {
+          // Some LLMs nest the call_tool envelope inside the prose
+          // JSON: `{"tool": "call_tool", "args": {"tool": "X", "args": ...}}`.
+          // Unwrap so the registry sees the real tool id rather than
+          // refusing with "Unknown tool requested: call_tool".
+          if (parsed.tool === "call_tool" && parsed.args && typeof parsed.args === "object") {
+            const inner = parsed.args;
+            if (inner.tool) {
+              return {
+                type: "tool_call",
+                tool: inner.tool,
+                args: inner.args ?? {}
+              };
+            }
+          }
           return { type: "tool_call", tool: parsed.tool, args: parsed.args ?? {} };
         }
         if (parsed.final) {
@@ -1741,9 +1755,40 @@ async function _runToolAgentLoopCore({
 
     const tool = registry.get(decision.tool);
     if (!tool) {
+      // Don't slam the task into the unclassified-internal-error path
+      // ("发生未分类内部错误，错误详情：Unknown tool requested: call_tool").
+      // Give the LLM one or two synthesis retries so it can re-emit
+      // a real tool id; only then do we partial_success out with a
+      // user-readable message.
+      const availableIds = registry.list().map((t) => t.id);
+      const sample = availableIds.slice(0, 12).join(", ");
+      const more = availableIds.length > 12 ? `, … +${availableIds.length - 12} more` : "";
+      const hint = `Tool "${decision.tool}" is not registered. Pick one of: ${sample}${more}. If you meant to wrap a real tool with the call_tool envelope, set arguments to {"tool":"<real id>","args":{...}}.`;
+      runtime.emitTaskEvent?.("tool_call_denied", {
+        tool_id: decision.tool ?? null,
+        reason: "unknown_tool"
+      });
+      transcript.push({
+        type: "tool_denied",
+        tool: decision.tool ?? null,
+        reason: "unknown_tool"
+      });
+      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+        synthesisRetriesUsed += 1;
+        transcript.push({
+          type: "synthesis_retry",
+          violations: [{ kind: "unknown_tool", message: hint }]
+        });
+        runtime?.emitTaskEvent?.("synthesis_retry", {
+          attempt: synthesisRetriesUsed,
+          reason: "unknown_tool",
+          tool_id: decision.tool ?? null
+        });
+        continue;
+      }
       return {
-        status: "failed",
-        error: `Unknown tool requested: ${decision.tool}`,
+        status: "partial_success",
+        final_text: `调用了未知工具 "${decision.tool}"。请重新发起，或换一种更明确的说法。`,
         transcript
       };
     }
