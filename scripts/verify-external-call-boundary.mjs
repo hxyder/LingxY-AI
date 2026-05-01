@@ -10,7 +10,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const expectedNakedCalls = new Map([
   ["src/service/connectors/account-connectors.mjs", { fetch: 13, spawn: 0 }],
   ["src/service/executors/agentic/code-cli-bridge.mjs", { fetch: 0, spawn: 1 }],
-  ["src/service/executors/fast/fast-executor.mjs", { fetch: 2, spawn: 0 }],
+  ["src/service/executors/fast/fast-executor.mjs", { fetch: 1, spawn: 0 }],
   ["src/service/executors/kimi/kimi-cli-executor.mjs", { fetch: 0, spawn: 2 }],
   ["src/service/executors/multi_modal/multi-modal-executor.mjs", { fetch: 2, spawn: 0 }]
 ]);

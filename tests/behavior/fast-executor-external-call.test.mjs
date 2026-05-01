@@ -27,7 +27,7 @@ function sseChatResponse(text) {
   });
 }
 
-async function withFakeOpenAIProvider(fn) {
+async function withFakeProvider(provider, fn) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "uca-fast-executor-"));
   const configPath = path.join(dir, "runtime.json");
   const originalConfigPath = process.env.UCA_CONFIG_PATH;
@@ -35,16 +35,9 @@ async function withFakeOpenAIProvider(fn) {
 
   await writeFile(configPath, JSON.stringify({
     ai: {
-      customProviders: [{
-        id: "fake-openai",
-        kind: "openai",
-        name: "Fake OpenAI",
-        apiKey: "test-key",
-        baseUrl: "https://fake-openai.local/v1",
-        defaultModel: "fake-chat-model"
-      }],
+      customProviders: [provider],
       taskRouting: {
-        chat: { providerId: "fake-openai" }
+        chat: { providerId: provider.id }
       }
     }
   }));
@@ -63,6 +56,28 @@ async function withFakeOpenAIProvider(fn) {
 
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+async function withFakeOpenAIProvider(fn) {
+  return withFakeProvider({
+    id: "fake-openai",
+    kind: "openai",
+    name: "Fake OpenAI",
+    apiKey: "test-key",
+    baseUrl: "https://fake-openai.local/v1",
+    defaultModel: "fake-chat-model"
+  }, fn);
+}
+
+async function withFakeAnthropicProvider(fn) {
+  return withFakeProvider({
+    id: "fake-anthropic",
+    kind: "anthropic",
+    name: "Fake Anthropic",
+    apiKey: "test-key",
+    baseUrl: "https://fake-anthropic.local",
+    defaultModel: "fake-claude-model"
+  }, fn);
 }
 
 test("fast executor retries a transient OpenAI-compatible HTTP failure and still emits success", async () => {
@@ -100,6 +115,52 @@ test("fast executor retries a transient OpenAI-compatible HTTP failure and still
         ["step_started", "log", "planner_request_started", "step_finished", "inline_result", "success"]
       );
       assert.equal(events.at(-1).payload.text, "Recovered answer");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("fast executor retries a transient Anthropic HTTP failure and still emits success", async () => {
+  await withFakeAnthropicProvider(async () => {
+    const originalFetch = globalThis.fetch;
+    const calls = [];
+    try {
+      globalThis.fetch = async (url, init = {}) => {
+        calls.push({
+          url,
+          body: JSON.parse(init.body),
+          anthropicVersion: init.headers["anthropic-version"],
+          hasAbortSignal: Boolean(init.signal)
+        });
+        if (calls.length === 1) {
+          return new Response("temporary anthropic failure", { status: 502 });
+        }
+        return Response.json({
+          content: [{ type: "text", text: "Recovered Claude answer" }]
+        });
+      };
+
+      const executor = createFastExecutorScaffold();
+      const events = await collectEvents(executor.execute({
+        task_id: "task_fast_anthropic_retry",
+        user_command: "Say hello",
+        context_packet: {}
+      }));
+
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].url, "https://fake-anthropic.local/v1/messages");
+      assert.equal(typeof calls[0].body.model, "string");
+      assert.ok(calls[0].body.model.length > 0);
+      assert.equal(calls[0].body.messages[0].role, "user");
+      assert.equal(calls[0].anthropicVersion, "2023-06-01");
+      assert.equal(calls.every((call) => call.hasAbortSignal), true);
+
+      assert.deepEqual(
+        events.map((event) => event.event_type),
+        ["step_started", "log", "planner_request_started", "step_finished", "inline_result", "success"]
+      );
+      assert.equal(events.at(-1).payload.text, "Recovered Claude answer");
     } finally {
       globalThis.fetch = originalFetch;
     }

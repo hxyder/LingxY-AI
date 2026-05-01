@@ -82,7 +82,7 @@ async function callAnthropic({ apiKey, baseUrl, model, messages, signal }) {
   const systemMsg = messages.find((m) => m.role === "system")?.content ?? "";
   const userMsgs = messages.filter((m) => m.role !== "system");
 
-  const response = await fetch(`${baseUrl}/v1/messages`, {
+  const response = await fetchExternal(`${baseUrl}/v1/messages`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -96,12 +96,11 @@ async function callAnthropic({ apiKey, baseUrl, model, messages, signal }) {
       messages: userMsgs
     }),
     signal
+  }, {
+    timeoutMs: FAST_API_FETCH_TIMEOUT_MS,
+    label: "fast_executor.anthropic",
+    httpErrorPrefix: "Anthropic API error"
   });
-
-  if (!response.ok) {
-    const errorBody = await response.text().catch(() => "");
-    throw new Error(`Anthropic API error ${response.status}: ${errorBody.slice(0, 200)}`);
-  }
 
   const data = await response.json();
   return data.content
