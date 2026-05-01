@@ -62,7 +62,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
-    submissionKind: [],
+    submissionKind: ["file"],
     executorOverride: []
   },
   "image-submission.mjs": {

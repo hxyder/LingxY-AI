@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 import { evaluateSubmissionBoundary } from "../../src/service/core/policy/submission-boundary.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 import { submitContextTask } from "../../src/service/core/context-submission.mjs";
+import { submitFileTask } from "../../src/service/core/file-submission.mjs";
 import { submitTaskWithConversation } from "../../src/service/core/task-runtime.mjs";
 
 function createRuntime({ enqueueAccepted = true } = {}) {
@@ -97,4 +101,45 @@ test("context submission declares its submission kind through the central bounda
     .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
   assert.ok(audit);
   assert.equal(audit.payload.submission_kind, "context");
+});
+
+async function withEmptyProviderConfig(fn) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "uca-submission-boundary-"));
+  const configPath = path.join(dir, "runtime.json");
+  const originalConfigPath = process.env.UCA_CONFIG_PATH;
+  const originalForceBootKimi = process.env.UCA_FORCE_BOOT_KIMI_RUNTIME;
+  await writeFile(configPath, JSON.stringify({ ai: { customProviders: [], taskRouting: {} } }));
+  process.env.UCA_CONFIG_PATH = configPath;
+  process.env.UCA_FORCE_BOOT_KIMI_RUNTIME = "1";
+  try {
+    return await fn(dir);
+  } finally {
+    if (originalConfigPath === undefined) delete process.env.UCA_CONFIG_PATH;
+    else process.env.UCA_CONFIG_PATH = originalConfigPath;
+    if (originalForceBootKimi === undefined) delete process.env.UCA_FORCE_BOOT_KIMI_RUNTIME;
+    else process.env.UCA_FORCE_BOOT_KIMI_RUNTIME = originalForceBootKimi;
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+test("file submission direct path declares its submission kind through the central boundary", async () => {
+  await withEmptyProviderConfig(async (dir) => {
+    const filePath = path.join(dir, "notes.txt");
+    await writeFile(filePath, "local file content", "utf8");
+    const runtime = createRuntime({ enqueueAccepted: false });
+
+    const { task } = await submitFileTask({
+      runtime,
+      filePaths: [filePath],
+      userCommand: "总结这个文件",
+      executionMode: "interactive"
+    });
+
+    assert.equal(task.submission_boundary.submission_kind, "file");
+
+    const audit = runtime.store.listAuditLogs()
+      .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
+    assert.ok(audit);
+    assert.equal(audit.payload.submission_kind, "file");
+  });
 });

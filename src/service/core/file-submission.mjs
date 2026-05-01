@@ -149,6 +149,7 @@ export async function submitFileTask({
     clientMessageId,
     retryCount,
     executorOverride: preferredExecutorOverride,
+    submissionKind: "file",
     runtime
   });
   const enqueued = queue.enqueue(task);
