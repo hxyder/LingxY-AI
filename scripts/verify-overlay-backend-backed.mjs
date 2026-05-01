@@ -40,7 +40,7 @@ async function read(p) { return readFile(path.join(repoRoot, p), "utf8"); }
 
 const overlay = await read("src/desktop/renderer/overlay.js");
 const taskRoutes = await read("src/service/core/http-routes/task-routes.mjs");
-const taskRuntime = await read("src/service/core/task-runtime.mjs");
+const taskSubmission = await read("src/service/core/task-runtime/task-submission.mjs");
 const cacheModule = await read("src/desktop/renderer/conversation-cache.mjs");
 
 await it("overlay.js: compressIfNeeded is removed (no lossy compression of conversation memory)", () => {
@@ -109,8 +109,8 @@ await it("task-routes.mjs: clientMessageId threaded into every submission helper
   assert.match(taskRoutes, /clientMessageId:\s*requestClientMessageId/);
 });
 
-await it("task-runtime.mjs: submitTaskWithConversation accepts clientMessageId param", () => {
-  assert.match(taskRuntime, /clientMessageId\s*=\s*null/);
+await it("task-submission.mjs: submitTaskWithConversation accepts clientMessageId param", () => {
+  assert.match(taskSubmission, /clientMessageId\s*=\s*null/);
 });
 
 // Behavioural: backend persists client_message_id into the user message metadata.
