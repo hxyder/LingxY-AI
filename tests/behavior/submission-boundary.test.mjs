@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { evaluateSubmissionBoundary } from "../../src/service/core/policy/submission-boundary.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
+import { submitCompositeTask } from "../../src/service/core/composite-submission.mjs";
 import { submitContextTask } from "../../src/service/core/context-submission.mjs";
 import { submitFileTask } from "../../src/service/core/file-submission.mjs";
 import { submitImageTask } from "../../src/service/core/image-submission.mjs";
@@ -193,4 +194,28 @@ test("image submission declares its submission kind through the central boundary
     assert.ok(audit);
     assert.equal(audit.payload.submission_kind, "image");
   });
+});
+
+test("composite submission declares its submission kind through the central boundary", async () => {
+  const runtime = createRuntime();
+  const { task } = await submitCompositeTask({
+    runtime,
+    userCommand: "Do these steps",
+    executionMode: "interactive",
+    contextPacket: {
+      source_type: "composite_test",
+      source_app: "uca.test",
+      capture_mode: "manual",
+      text: "Composite parent"
+    },
+    subtasks: [],
+    submitChild: async () => null
+  });
+
+  assert.equal(task.submission_boundary.submission_kind, "composite");
+
+  const audit = runtime.store.listAuditLogs()
+    .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
+  assert.ok(audit);
+  assert.equal(audit.payload.submission_kind, "composite");
 });

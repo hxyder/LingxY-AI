@@ -44,7 +44,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: false,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
-    submissionKind: [],
+    submissionKind: ["composite"],
     executorOverride: ["composite"]
   },
   "context-submission.mjs": {

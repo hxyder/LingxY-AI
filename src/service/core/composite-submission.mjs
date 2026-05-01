@@ -38,6 +38,7 @@ export async function submitCompositeTask({
     clientMessageId,
     runtime,
     executorOverride: "composite",
+    submissionKind: "composite",
     childTaskIds: []
   });
   emitTaskEvent({
