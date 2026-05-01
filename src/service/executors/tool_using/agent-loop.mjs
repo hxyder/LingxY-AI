@@ -31,7 +31,6 @@ import {
   detectUnbackedActionClaims
 } from "../../core/policy/success-contract-validator.mjs";
 import {
-  ACTION_OBLIGATION_GROUPS,
   actionObligationsWithStatus,
   buildActionObligationGuidance,
   buildActionObligationPrompt,
@@ -91,6 +90,11 @@ import {
   shouldUseLeanChatMode
 } from "./planner-mode.mjs";
 import { buildConversationMessages } from "./conversation-messages.mjs";
+import {
+  isSideEffectTool,
+  toolResultHasSubstance,
+  transcriptHasSuccessfulToolCall
+} from "./tool-call-guards.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
@@ -273,30 +277,6 @@ function repairToolArgs(decision, task, transcript = [], tool = null) {
 // early, the loop injects guidance and lets the planner continue. The sequence
 // lives in the transcript, not in a side-channel queue.
 
-// UCA-181 follow-up: a tool counts as "side-effect" if it belongs to
-// any known action-obligation policy group OR is flagged risk_level=high
-// at the registry. We use this to refuse repeat fires after a successful
-// invocation in the same loop — the wild bug was a calendar event
-// being created 4 times because the agent varied the description and
-// dodged the args-based dedupe.
-function isSideEffectTool(tool, registry) {
-  if (!tool) return false;
-  const groups = groupsOfTool(tool.id);
-  if (groups.some((g) => ACTION_OBLIGATION_GROUPS.includes(g))) return true;
-  const spec = registry?.get?.(tool.id) ?? tool;
-  return spec?.risk_level === "high" || spec?.requires_confirmation === true;
-}
-
-function transcriptHasSuccessfulToolCall(transcript = [], toolId) {
-  if (!toolId) return false;
-  return (transcript ?? []).some((entry) =>
-    entry?.type === "tool_result"
-    && entry.tool === toolId
-    && entry.success !== false
-    && (entry.error == null || entry.error === "")
-  );
-}
-
 function attemptedLaunchKeys(transcript = []) {
   return new Set((transcript ?? [])
     .filter((entry) => entry?.type === "tool_result" && entry.tool === "launch_app")
@@ -324,25 +304,6 @@ function buildLaunchSequenceGuidance(task, transcript = []) {
     `Call launch_app next with {"app": ${JSON.stringify(next)}}.`,
     "Do not finalize just because an earlier independent launch failed; continue the remaining launch targets unless the user must disambiguate that specific failed target."
   ].join("\n");
-}
-
-/**
- * Mirrors `resultHasSubstance` in success-contract-validator.mjs but
- * operates on the raw `result` object the registry returns (the
- * validator inspects transcript entries that wrap that result). Used
- * by the P4-EB error-budget wire-up to decide whether an
- * external_web_read success returned anything usable.
- */
-function toolResultHasSubstance(result) {
-  if (!result || typeof result !== "object") return false;
-  if (Array.isArray(result.results) && result.results.length > 0) return true;
-  if (Array.isArray(result.sources) && result.sources.length > 0) return true;
-  if (typeof result.observation === "string" && result.observation.trim().length > 32) return true;
-  for (const value of Object.values(result)) {
-    if (Array.isArray(value) && value.length > 0) return true;
-    if (typeof value === "string" && value.trim().length > 32) return true;
-  }
-  return false;
 }
 
 // Saturation hint is only worth firing when the task expects multiple
