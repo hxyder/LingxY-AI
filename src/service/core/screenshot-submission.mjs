@@ -13,6 +13,7 @@ export async function submitScreenshotTask({
     sourceApp: "uca.helper.screenshot",
     captureMode: "hotkey",
     runtime,
-    executionMode
+    executionMode,
+    submissionKind: "screenshot"
   });
 }

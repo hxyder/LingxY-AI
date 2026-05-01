@@ -263,6 +263,7 @@ export async function submitImageTask({
   clientMessageId = null,
   retryCount = 0,
   executorOverride = "multi_modal",
+  submissionKind = "image",
   background = false
 }) {
   // The presence of an image attachment IS the vision request. Don't gate
@@ -338,7 +339,7 @@ export async function submitImageTask({
     clientMessageId,
     retryCount,
     executorOverride,
-    submissionKind: "image",
+    submissionKind,
     runtime
   });
   const enqueued = queue.enqueue(task);

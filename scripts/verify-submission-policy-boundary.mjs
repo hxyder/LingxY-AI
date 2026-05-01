@@ -89,7 +89,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: false,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: false,
-    submissionKind: [],
+    submissionKind: ["screenshot"],
     executorOverride: []
   }
 });
@@ -114,7 +114,7 @@ const report = files.map((name) => {
     usesSecurityBroker: /\bsecurityBroker\b|\binspectContext\b/.test(source),
     runsToolAgentLoop: /\brunToolAgentLoop\b/.test(source),
     submitsTaskWithConversation: /\bsubmitTaskWithConversation\b/.test(source),
-    submissionKind: [...source.matchAll(/submissionKind:\s*"([^"]+)"/g)].map((match) => match[1]),
+    submissionKind: [...source.matchAll(/submissionKind(?:\s*:\s*|\s*=\s*)"([^"]+)"/g)].map((match) => match[1]),
     executorOverride: [...source.matchAll(/executorOverride:\s*"([^"]+)"/g)].map((match) => match[1])
   };
 });

@@ -12,6 +12,7 @@ import { submitContextTask } from "../../src/service/core/context-submission.mjs
 import { submitFileTask } from "../../src/service/core/file-submission.mjs";
 import { submitImageTask } from "../../src/service/core/image-submission.mjs";
 import { submitOfficeTask } from "../../src/service/core/office-submission.mjs";
+import { submitScreenshotTask } from "../../src/service/core/screenshot-submission.mjs";
 import { submitTaskWithConversation } from "../../src/service/core/task-runtime.mjs";
 
 function createRuntime({ enqueueAccepted = true } = {}) {
@@ -242,4 +243,29 @@ test("browser submission declares its submission kind through the central bounda
     .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
   assert.ok(audit);
   assert.equal(audit.payload.submission_kind, "browser");
+});
+
+test("screenshot submission preserves its entrypoint kind through the image pipeline", async () => {
+  await withEmptyProviderConfig(async (dir) => {
+    const screenshotPath = path.join(dir, "capture.png");
+    await writeFile(
+      screenshotPath,
+      Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64")
+    );
+    const runtime = createRuntime({ enqueueAccepted: false });
+
+    const { task } = await submitScreenshotTask({
+      runtime,
+      screenshotPath,
+      userCommand: "总结这张截图",
+      executionMode: "interactive"
+    });
+
+    assert.equal(task.submission_boundary.submission_kind, "screenshot");
+
+    const audit = runtime.store.listAuditLogs()
+      .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
+    assert.ok(audit);
+    assert.equal(audit.payload.submission_kind, "screenshot");
+  });
 });
