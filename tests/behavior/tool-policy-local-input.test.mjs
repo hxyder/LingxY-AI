@@ -31,10 +31,10 @@ function localFileDecision(reason = "the search object is the attached file") {
   };
 }
 
-test("attached resume + explicit search can be upgraded by SemanticRouter", () => {
-  const spec = createTaskSpec("结合我的简历搜索适合我的工作", {
-    file_paths: ["resume.pdf"],
-    semantic_router_decision: externalSearchDecision("resume is local evidence; job postings require external search")
+test("attached local input + explicit search can be upgraded by SemanticRouter", () => {
+  const spec = createTaskSpec("结合这份材料搜索外部机会", {
+    file_paths: ["material.pdf"],
+    semantic_router_decision: externalSearchDecision("attached material is local evidence; answering requires external search")
   }, {});
 
   assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "required");
@@ -43,8 +43,8 @@ test("attached resume + explicit search can be upgraded by SemanticRouter", () =
 });
 
 test("neutral search over attached files consults SR instead of deterministic source_scope lock", () => {
-  const text = "结合我的简历搜索适合我的工作";
-  const contextPacket = { file_paths: ["resume.pdf"] };
+  const text = "结合这份材料搜索外部机会";
+  const contextPacket = { file_paths: ["material.pdf"] };
   const { signals } = extractAllSignals(text, contextPacket);
 
   assert.equal(signals.source_scope?.hint?.value, "uploaded_files");
@@ -91,4 +91,26 @@ test("plain attached-file summary remains deterministic local", () => {
   assert.equal(shouldConsultSemanticRouter({ signals, contextPacket, text }), false);
   assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
   assert.equal(spec.routing_degraded, false);
+  assert.equal(spec.artifact.required, false);
+  assert.ok(!spec.required_steps.includes("generate_artifact"));
+});
+
+test("attached local input search does not inherit output artifact from the input file type", () => {
+  const spec = createTaskSpec("结合这份材料搜索外部机会", {
+    file_paths: ["material.docx"]
+  }, {});
+
+  assert.equal(spec.artifact.required, false);
+  assert.equal(spec.artifact.kind, null);
+  assert.ok(!spec.required_steps.includes("generate_artifact"));
+});
+
+test("attached editable file still becomes an artifact when the user asks to modify it", () => {
+  const spec = createTaskSpec("帮我修改这份文档", {
+    file_paths: ["draft.docx"]
+  }, {});
+
+  assert.equal(spec.goal, "transform_existing_file");
+  assert.equal(spec.artifact.required, true);
+  assert.equal(spec.artifact.kind, "docx");
 });

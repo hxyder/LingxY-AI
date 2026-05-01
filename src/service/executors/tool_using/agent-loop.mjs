@@ -393,13 +393,11 @@ function connectorFallbackText(transcript, userCommand = "", taskSpec = null, fa
 
 const ACTION_CONFIRMATION_TOOLS = new Set(["launch_app", "open_url", "open_file", "copy_to_clipboard", "notify"]);
 
-// Phase 1.8 — `WEB_DESTINATION_ALIASES`, `openActionForLaunchTarget`,
-// `plannedOpenActions`, `executedOpenActionKeys`, `nextPlannedOpenAction`,
-// `allPlannedOpenActionsCompleted` were the regex layer that tried to
-// pre-plan multi-app launches. Deleted: the LLM is the only authority on
-// "what tools to call in what order" for compound intents. The system
-// prompt tells it to keep calling tools until the user's full request is
-// satisfied; ReAct iterations naturally chain launch_app(A) → launch_app(B).
+// Phase 1.8 — the old hidden pre-planned launch queue was deleted. The
+// framework still carries a generic action-sequence contract: if the user
+// names multiple independent launch targets and the planner tries to finalize
+// early, the loop injects guidance and lets the planner continue. The sequence
+// lives in the transcript, not in a side-channel queue.
 
 function actionCompletionFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
   const completed = (transcript ?? []).filter((entry) =>
@@ -417,7 +415,36 @@ function actionCompletionFallbackText(transcript, userCommand = "", taskSpec = n
     : `Completed these actions:\n${observations.map((line) => `- ${line}`).join("\n")}`;
 }
 
+function actionAttemptFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
+  const attempts = (transcript ?? []).filter((entry) =>
+    entry?.type === "tool_result"
+    && ACTION_CONFIRMATION_TOOLS.has(entry.tool)
+    && typeof entry.observation === "string"
+    && entry.observation.trim()
+  );
+  if (attempts.length === 0) return fallbackText;
+  const completed = [...new Set(attempts
+    .filter((entry) => entry.success !== false)
+    .map((entry) => entry.observation.trim()))];
+  const failed = [...new Set(attempts
+    .filter((entry) => entry.success === false)
+    .map((entry) => entry.observation.trim()))];
+  const zh = hasCjk(userCommand);
+  const lines = [];
+  if (completed.length > 0) {
+    lines.push(zh ? "已完成这些操作：" : "Completed:");
+    lines.push(...completed.map((line) => `- ${line}`));
+  }
+  if (failed.length > 0) {
+    lines.push(zh ? "还有这些操作没有完成：" : "Not completed:");
+    lines.push(...failed.map((line) => `- ${line}`));
+  }
+  return lines.length > 0 ? lines.join("\n") : fallbackText;
+}
+
 function finalFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
+  const actionAttempt = actionAttemptFallbackText(transcript, userCommand, taskSpec);
+  if (actionAttempt) return actionAttempt;
   const actionFallback = actionCompletionFallbackText(transcript, userCommand, taskSpec);
   if (actionFallback) return actionFallback;
   return connectorFallbackText(transcript, userCommand, taskSpec)
@@ -434,9 +461,17 @@ function isActionConfirmationOnly(transcript = []) {
     && results.every((entry) => entry.success !== false && ACTION_CONFIRMATION_TOOLS.has(entry.tool));
 }
 
+function hasActionAttempts(transcript = []) {
+  return transcript.some((entry) =>
+    entry?.type === "tool_result"
+    && ACTION_CONFIRMATION_TOOLS.has(entry.tool)
+  );
+}
+
 function needsFinalComposer(task, transcript = []) {
   if (!hasToolTranscript(transcript)) return false;
   if (allowsRawConnectorFinal(task?.task_spec)) return false;
+  if ((task?.task_spec ?? task?.task_spec_initial)?.goal === "launch_and_act" && hasActionAttempts(transcript)) return false;
   if (isActionConfirmationOnly(transcript)) return false;
   return true;
 }
@@ -484,8 +519,39 @@ function transcriptHasSuccessfulToolCall(transcript = [], toolId) {
   );
 }
 
+function attemptedLaunchKeys(transcript = []) {
+  return new Set((transcript ?? [])
+    .filter((entry) => entry?.type === "tool_result" && entry.tool === "launch_app")
+    .map((entry) => normalizeLaunchAppKey(entry.args?.app))
+    .filter(Boolean));
+}
+
+function nextPendingLaunchCandidate(task, transcript = []) {
+  const candidates = extractLaunchAppCandidates(task?.user_command ?? "");
+  if (candidates.length <= 1) return null;
+  const attempted = attemptedLaunchKeys(transcript);
+  return candidates.find((candidate) => !attempted.has(normalizeLaunchAppKey(candidate))) ?? null;
+}
+
+function buildLaunchSequenceGuidance(task, transcript = []) {
+  const next = nextPendingLaunchCandidate(task, transcript);
+  if (!next) return null;
+  const candidates = extractLaunchAppCandidates(task?.user_command ?? "");
+  const attempted = attemptedLaunchKeys(transcript);
+  const remaining = candidates.filter((candidate) => !attempted.has(normalizeLaunchAppKey(candidate)));
+  return [
+    "The user requested multiple independent desktop launch actions.",
+    `Already attempted: ${[...attempted].join(", ") || "(none)"}.`,
+    `Remaining targets: ${remaining.join(", ")}.`,
+    `Call launch_app next with {"app": ${JSON.stringify(next)}}.`,
+    "Do not finalize just because an earlier independent launch failed; continue the remaining launch targets unless the user must disambiguate that specific failed target."
+  ].join("\n");
+}
+
 function localFallbackFinal({ task, transcript, reason = "" }) {
   const userCommand = task?.user_command ?? "";
+  const actionAttempt = actionAttemptFallbackText(transcript, userCommand, task?.task_spec);
+  if (actionAttempt) return actionAttempt;
   const action = actionCompletionFallbackText(transcript, userCommand, task?.task_spec);
   if (action) return action;
   const connector = connectorFallbackText(transcript, userCommand, { synthesis: { expected_output: "raw_results" } });
@@ -891,7 +957,7 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
     tool.policy_group === "external_web_read"
     || ["web_search", "web_search_fetch", "fetch_url_content", "open_url"].includes(tool.id),
   file_read: (tool) =>
-    /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|verify_file_exists|file_op|open_file|reveal_in_explorer)$/.test(tool.id),
+    /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|verify_file_exists|file_op)$/.test(tool.id),
   artifact_generation: (tool) =>
     /^(write_file|generate_document|edit_file|render_diagram|resolve_output_path|register_artifact|verify_file_exists)$/.test(tool.id),
   code_execution: (tool) => tool.id === "run_script",
@@ -922,23 +988,44 @@ const SCHEDULE_REGISTRY_TOOL_IDS = new Set([
   "pause_scheduled_task"
 ]);
 
+const DIRECT_FILE_OPEN_TOOL_IDS = new Set(["open_file", "reveal_in_explorer"]);
+
 function isScheduledFireTask(task) {
   return task?.context_packet?.selection_metadata?.scheduled_task_fire === true;
 }
 
+function taskAllowsDirectFileOpen(task) {
+  const spec = task?.task_spec ?? task?.task_spec_initial ?? {};
+  if (spec.goal === "open_or_reveal_file") return true;
+  const requiredTools = Array.isArray(spec.success_contract?.required_tool_names)
+    ? spec.success_contract.required_tool_names
+    : [];
+  if (requiredTools.some((toolId) => DIRECT_FILE_OPEN_TOOL_IDS.has(toolId))) return true;
+  const requiredSteps = Array.isArray(spec.required_steps) ? spec.required_steps : [];
+  return requiredSteps.some((step) => DIRECT_FILE_OPEN_TOOL_IDS.has(step));
+}
+
+function filterDirectFileOpenTools(list = [], task) {
+  if (taskAllowsDirectFileOpen(task)) return list;
+  return list.filter((tool) => !DIRECT_FILE_OPEN_TOOL_IDS.has(tool.id));
+}
+
 function filterToolsForTask(tools = [], task) {
   const insideScheduledFire = isScheduledFireTask(task);
-  const stripScheduleRegistry = (list) => insideScheduledFire
-    ? list.filter((tool) => !SCHEDULE_REGISTRY_TOOL_IDS.has(tool.id))
-    : list;
+  const stripTaskScopedTools = (list) => {
+    const withoutDirectOpen = filterDirectFileOpenTools(list, task);
+    return insideScheduledFire
+      ? withoutDirectOpen.filter((tool) => !SCHEDULE_REGISTRY_TOOL_IDS.has(tool.id))
+      : withoutDirectOpen;
+  };
 
   const capabilities = neededCapabilitiesOf(task).filter((capability) => capability !== "none");
-  if (capabilities.length === 0) return stripScheduleRegistry(tools);
+  if (capabilities.length === 0) return stripTaskScopedTools(tools);
   const filtered = tools.filter((tool) => capabilities.some((capability) => {
     const matcher = CAPABILITY_TOOL_MATCHERS[capability];
     return typeof matcher === "function" ? matcher(tool) : false;
   }));
-  return stripScheduleRegistry(filtered.length > 0 ? filtered : tools);
+  return stripTaskScopedTools(filtered.length > 0 ? filtered : tools);
 }
 
 function shouldRenderWorkflowHint(task) {
@@ -1117,7 +1204,7 @@ Guidance (not a rigid checklist — apply judgment):
 - **Contracts are boundaries, not dead ends.** If a policy, risk gate, or missing approval blocks the action you think is necessary, do not give up and do not pretend success. Ask the user for the smallest permission or missing detail needed, then stop.
 - **Memory recall.** If the user refers to earlier work with a pronoun ("上个问题" / "刚才" / "之前那份" / "last one" / "that report") or asks you to continue / revise something done before, call list_recent_tasks first (or recall_memory with a topic query if the reference is thematic) and then get_task_detail on the matching task_id. Never reply "I don't remember prior work" while these tools exist.
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
-- **Compound requests = chain tool calls.** When the user asks for multiple actions in one message ("打开 Outlook 和 Excel"，"open A then B"，"启动这三个 app"), call ONE tool per turn but KEEP CALLING tools across turns until every requested action is done. Do NOT return a final answer after the first launch_app — the second / third are still pending. Only return final after every requested action shows success in the transcript.
+- **Compound requests = chain tool calls.** When the user asks for multiple actions in one message ("打开 AppA 和 AppB"，"open A then B"，"启动这三个 app"), call ONE tool per turn but KEEP CALLING tools across turns until every requested action is done. Do NOT return a final answer after the first launch_app — the second / third are still pending. Only return final after every requested action shows success in the transcript.
 - **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
 - **Policy may refine mid-task.** Your task starts with a deterministic policy snapshot. A semantic-routing update may arrive in a later iteration and tighten or relax fields like \`tool_policy.external_web_read\` or \`expected_output\`. Always read the LATEST tool_policy from this prompt; never violate explicit user constraints (e.g. "不要联网") regardless of policy updates.
 ${needsCurrentDataInstruction}${researchPrinciplesBlock}${researchBudgetBlock}${synthesisBlock}${forceToolInstruction}${scheduledFireInstruction}${mcpCapabilitiesNote}
@@ -1611,6 +1698,7 @@ async function _runToolAgentLoopCore({
       filterToolsForTask(registry.list(), task),
       transcript
     );
+    const visibleToolIds = new Set(visibleTools.map((tool) => tool.id));
     const decision = await resolvedPlanner({
       task,
       transcript,
@@ -1654,9 +1742,32 @@ async function _runToolAgentLoopCore({
         });
         continue;
       }
+      const launchSequenceGuidance = buildLaunchSequenceGuidance(task, transcript);
+      if (launchSequenceGuidance && iteration < maxIterations - 1) {
+        transcript.push({
+          type: "contract_guidance",
+          groups: ["launch_app"],
+          instruction: launchSequenceGuidance
+        });
+        runtime.emitTaskEvent?.("contract_action_handoff", {
+          iteration,
+          required_policy_groups: ["launch_app"],
+          source: "launch_sequence"
+        });
+        appendAuditLog(runtime, task, "tool_loop.contract_action_handoff", {
+          iteration,
+          required_policy_groups: ["launch_app"],
+          source: "launch_sequence"
+        });
+        continue;
+      }
       let candidateFinal = decision?.text
         ?? finalFallbackText(transcript, task.user_command, task.task_spec)
         ?? "";
+      if (hasActionAttempts(transcript)) {
+        candidateFinal = finalFallbackText(transcript, task.user_command, task.task_spec, candidateFinal)
+          ?? candidateFinal;
+      }
       if (needsFinalComposer(task, transcript)) {
         candidateFinal = await composeFinalAnswer({
           task,
@@ -1793,6 +1904,39 @@ async function _runToolAgentLoopCore({
           transcript
         };
       }
+    }
+
+    if (decision?.type === "tool_call" && !visibleToolIds.has(decision.tool)) {
+      const sample = [...visibleToolIds].slice(0, 12).join(", ");
+      const more = visibleToolIds.size > 12 ? `, … +${visibleToolIds.size - 12} more` : "";
+      const hint = `Tool "${decision.tool}" is not available for this task. Pick one of the visible tools: ${sample}${more}.`;
+      runtime.emitTaskEvent?.("tool_call_denied", {
+        tool_id: decision.tool,
+        reason: "tool_not_available_for_task"
+      });
+      transcript.push({
+        type: "tool_denied",
+        tool: decision.tool,
+        reason: "tool_not_available_for_task"
+      });
+      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+        synthesisRetriesUsed += 1;
+        transcript.push({
+          type: "synthesis_retry",
+          violations: [{ kind: "tool_not_available_for_task", message: hint }]
+        });
+        runtime?.emitTaskEvent?.("synthesis_retry", {
+          attempt: synthesisRetriesUsed,
+          reason: "tool_not_available_for_task",
+          tool_id: decision.tool
+        });
+        continue;
+      }
+      return {
+        status: "partial_success",
+        final_text: localFallbackFinal({ task, transcript, reason: hint }),
+        transcript
+      };
     }
 
     const actionOnlyAllowedTools = actionOnlyToolIds(transcript);
@@ -2183,6 +2327,28 @@ async function _runToolAgentLoopCore({
           obligations: actionObligations,
           transcript
         };
+      }
+    }
+
+    {
+      const launchSequenceGuidance = buildLaunchSequenceGuidance(task, transcript);
+      if (launchSequenceGuidance && iteration < maxIterations - 1) {
+        transcript.push({
+          type: "contract_guidance",
+          groups: ["launch_app"],
+          instruction: launchSequenceGuidance
+        });
+        runtime.emitTaskEvent?.("contract_action_handoff", {
+          iteration,
+          required_policy_groups: ["launch_app"],
+          source: "launch_sequence"
+        });
+        appendAuditLog(runtime, task, "tool_loop.contract_action_handoff", {
+          iteration,
+          required_policy_groups: ["launch_app"],
+          source: "launch_sequence"
+        });
+        continue;
       }
     }
 

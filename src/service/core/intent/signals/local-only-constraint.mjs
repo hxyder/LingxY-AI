@@ -11,8 +11,10 @@ import { emptySignal } from "./_signal-types.mjs";
 
 const SIGNAL_NAME = "local_only_constraint";
 
-const LOCAL_OBJECT_CN = "(?:这(?:一)?(?:份|个|篇|张|段)?\\s*(?:附件|文件|文档|资料|内容|简历|图片|截图|表格|PDF|pdf)|上传(?:的)?(?:附件|文件|文档|资料|内容|简历|图片|截图|表格|PDF|pdf)?|附件|文件|文档|资料|内容|简历|图片|截图|表格|PDF|pdf|本地(?:项目|文件|文档|资料|内容)?|当前(?:文件|文档|内容|选区|页面)?|所给(?:文件|文档|资料|内容)?|提供(?:的)?(?:文件|文档|资料|内容)?)";
-const LOCAL_OBJECT_EN = "(?:this|the|attached|uploaded|provided|local|current)\\s+(?:file|document|attachment|content|resume|image|screenshot|pdf|spreadsheet|text)";
+const LOCAL_MODALITY_CN = "(?:附件|文件|文档|资料|内容|图片|截图|表格|PDF|pdf|选区|页面|项目)";
+const LOCAL_OBJECT_CN = `(?:这(?:一)?(?:份|个|篇|张|段)\\s*\\S{1,24}|上传(?:的)?\\s*(?:${LOCAL_MODALITY_CN}|\\S{1,24})|${LOCAL_MODALITY_CN}|本地(?:${LOCAL_MODALITY_CN})?|当前(?:${LOCAL_MODALITY_CN})?|所给(?:${LOCAL_MODALITY_CN}|\\S{1,24})?|提供(?:的)?(?:${LOCAL_MODALITY_CN}|\\S{1,24})?)`;
+const LOCAL_MODALITY_EN = "(?:file|document|attachment|content|image|screenshot|pdf|spreadsheet|text|selection|page|project)";
+const LOCAL_OBJECT_EN = `(?:this|the|attached|uploaded|provided|local|current)\\s+(?:${LOCAL_MODALITY_EN}|[a-z][\\w-]{0,30})`;
 
 const PATTERNS_CN = [
   new RegExp(`(?:只|仅|仅仅|严格)\\s*(?:基于|依据|根据|参考|使用|用|看|读取|分析)?\\s*${LOCAL_OBJECT_CN}`, "i"),
@@ -22,7 +24,7 @@ const PATTERNS_CN = [
 
 const PATTERNS_EN = [
   new RegExp(`\\b(?:only|just|solely|strictly)\\s+(?:use|using|from|based\\s+on|look\\s+at|read|analy[sz]e)?\\s*${LOCAL_OBJECT_EN}\\b`, "i"),
-  /\b(?:based|rely)\s+only\s+on\s+(?:this|the|attached|uploaded|provided)\s+(?:file|document|attachment|content|resume|image|pdf)\b/i,
+  new RegExp(`\\b(?:based|rely)\\s+only\\s+on\\s+${LOCAL_OBJECT_EN}\\b`, "i"),
   /\b(?:do\s+not|don't|no|without)\s+(?:use|reference|look\s+at|search|check)\s+(?:external|outside|web|internet|online)\s+(?:sources|material|data|info|information)\b/i
 ];
 

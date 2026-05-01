@@ -1,3 +1,5 @@
+import { extractLaunchAppCandidates as extractCoreLaunchAppCandidates } from "../../../core/router/fast-path-router.mjs";
+
 /**
  * UCA-077 P3-01: Launch-app + URL helpers, lifted out of agent-loop.mjs.
  *
@@ -37,6 +39,8 @@ export function extractUrl(value = "") {
  */
 export function extractLaunchAppName(value = "") {
   const text = String(value ?? "").trim();
+  const candidates = extractCoreLaunchAppCandidates(text);
+  if (candidates.length > 0) return candidates[0];
   const patterns = [
     /(?:启动|打开|运行)\s*(?:一下|下)?\s*(?:应用|软件|程序|app)?\s*([^，。,.!?]+)/i,
     /\b(?:launch|open|start|run)\s+(?:the\s+)?(?:app\s+|application\s+)?([^,.!?]+)/i
@@ -66,26 +70,7 @@ export function extractLaunchAppName(value = "") {
  * @returns {string[]}
  */
 export function extractLaunchAppCandidates(value = "") {
-  const text = String(value ?? "");
-  const patterns = [
-    /(?:启动|打开|运行)\s*(?:一下|下)?\s*(?:应用|软件|程序|app)?\s*([^，,。.!?]+)/gi,
-    /\b(?:launch|open|start|run)\s+(?:the\s+)?(?:app\s+|application\s+)?([^,.!?]+)/gi
-  ];
-  const candidates = [];
-  for (const pattern of patterns) {
-    for (const match of text.matchAll(pattern)) {
-      const candidate = match?.[1]?.trim()
-        ?.replace(/^(一个|某个|这个|那个|应用|软件|程序|app|application)\s*/i, "")
-        ?.trim();
-      if (candidate
-        && !/^(一个)?(应用|软件|程序|app|application)$/i.test(candidate)
-        && !extractUrl(candidate)
-        && !/(网页|网站|链接|网址|url|web\s*page|website)$/i.test(candidate)) {
-        candidates.push(candidate);
-      }
-    }
-  }
-  return [...new Set(candidates)];
+  return extractCoreLaunchAppCandidates(value);
 }
 
 /**

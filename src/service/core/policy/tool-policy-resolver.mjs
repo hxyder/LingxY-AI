@@ -26,7 +26,7 @@
 import { toolsInGroup } from "./policy-groups.mjs";
 import { deriveExternalWebPolicyFromIntentRoute } from "./evidence-policy.mjs";
 import { PENDING_OFFER_EXTERNAL_INTENTS } from "../intent/signals/pending-offer.mjs";
-import { extractPureLaunchApp } from "../router/fast-path-router.mjs";
+import { extractLaunchAppCandidates, extractPureLaunchApp } from "../router/fast-path-router.mjs";
 
 const LOCAL_SCOPES = new Set(["uploaded_files", "current_context", "local_project", "selection"]);
 const PRIMARY_GROUP = "external_web_read";
@@ -181,7 +181,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   // 2b. Local input fallback. Local evidence is not a hard no-web
   // constraint, but when the user did not ask to search, browse, or fetch a
   // URL, the deterministic fallback remains local. When a neutral search
-  // verb is present ("查一下我的文件" vs "结合简历搜索工作"), fall through to
+  // verb is present ("查一下我的文件" vs "结合本地材料搜索外部机会"), fall through to
   // step 3 so SR / the planner can disambiguate the search object.
   if (hasLocalScope && !neutralSearch) {
     return webSearchPolicy(
@@ -217,7 +217,8 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   //    Pre-E5 this returned `optional` and waited for SR to upgrade.
   //    The "wait for SR" default was wrong: when the user typed
   //    "查一下 / search / google", they declared intent. Local-input
-  //    cases are the exception: "查一下我的文件" and "结合简历搜索工作"
+  //    cases are the exception: "查一下我的文件" and
+  //    "结合本地材料搜索外部机会"
   //    both contain local evidence, so deterministic policy stays optional
   //    until SR / the planner identifies the search object.
   if (explicitSearch?.matched && explicitSearch.strength === "strong") {
@@ -299,7 +300,7 @@ function hasHardLocalOnlyConstraint(signals) {
  * @returns {boolean}
  */
 export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text = "" } = {}) {
-  if (extractPureLaunchApp(text)) return false;
+  if (extractPureLaunchApp(text) || extractLaunchAppCandidates(text).length > 0) return false;
 
   const neutralSearch = isStrongExplicitSearch(signals?.explicit_search);
   if (Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0 && !neutralSearch) return false;

@@ -49,7 +49,7 @@ const RULES = [
 // UCA-051/052: import goal classification from task-spec
 import { classifyGoal } from "../task-spec.mjs";
 import { isConnectorDomainRequest } from "../../connectors/core/connector-intent.mjs";
-import { extractPureLaunchApp } from "./fast-path-router.mjs";
+import { extractLaunchAppCandidates, extractPureLaunchApp } from "./fast-path-router.mjs";
 
 /* ------------------------------------------------------------------------ */
 /* UCA-049 commit 2: intent_tags multi-label routing                         */
@@ -113,7 +113,7 @@ const AGENTIC_TRIGGERING_TAGS = new Set([
 function deriveIntentTags(text) {
   const connectorDomainRequest = isConnectorDomainRequest(text);
   const tags = [];
-  if (extractPureLaunchApp(text)) {
+  if (extractPureLaunchApp(text) || extractLaunchAppCandidates(text).length > 0) {
     return connectorDomainRequest ? ["act"] : ["launch_app", "act"];
   }
   for (const rule of TAG_PATTERNS) {
@@ -126,7 +126,7 @@ function deriveIntentTags(text) {
 }
 
 function deriveSuggestedFormats(text) {
-  if (extractPureLaunchApp(text)) {
+  if (extractPureLaunchApp(text) || extractLaunchAppCandidates(text).length > 0) {
     return [];
   }
   const formats = [];
@@ -141,7 +141,8 @@ function deriveSuggestedFormats(text) {
 export function routeIntent(userCommand = "") {
   const raw = String(userCommand ?? "");
   const pureLaunchApp = extractPureLaunchApp(raw);
-  const connectorDomainRequest = pureLaunchApp ? false : isConnectorDomainRequest(raw);
+  const launchTargets = extractLaunchAppCandidates(raw);
+  const connectorDomainRequest = (pureLaunchApp || launchTargets.length > 0) ? false : isConnectorDomainRequest(raw);
 
   // UCA-051/052: classify goal family first (word-boundary safe, no substring traps)
   const goal = classifyGoal(raw);

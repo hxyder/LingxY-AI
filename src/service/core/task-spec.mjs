@@ -10,7 +10,7 @@
  */
 
 import { isConnectorDomainRequest } from "../connectors/core/connector-intent.mjs";
-import { extractPureLaunchApp } from "./router/fast-path-router.mjs";
+import { extractLaunchAppCandidates, extractPureLaunchApp } from "./router/fast-path-router.mjs";
 import { extractAllSignals } from "./intent/signals/index.mjs";
 import { resolveToolPolicy, buildExternalWebReadPolicy, shouldConsultSemanticRouter } from "./policy/tool-policy-resolver.mjs";
 import { intentRouteNeedsConnector } from "./policy/evidence-policy.mjs";
@@ -146,6 +146,7 @@ const GOAL_RULES = [
   {
     goal: "open_or_reveal_file",
     patterns: [
+      /(打开|显示|定位).{0,30}((?:这个|这份)?(?:文件|附件|文档)|所在位置|pptx|docx|xlsx|pdf|上次|刚才|最近)/i,
       /\b(打开|open|reveal|显示|定位)\b.{0,30}\b(文件|file|pptx|docx|xlsx|pdf|上次|刚才|最近)\b/i,
       /(打开|open)\s+[\w/\\:.~]+\.(pptx|docx|xlsx|pdf|txt|md|csv|html)/i
     ]
@@ -246,7 +247,7 @@ const GOAL_RULES = [
  */
 export function classifyGoal(text, signals = null) {
   const raw = String(text ?? "");
-  if (extractPureLaunchApp(raw)) {
+  if (extractPureLaunchApp(raw) || extractLaunchAppCandidates(raw).length > 0) {
     return "launch_and_act";
   }
   if (isConnectorDomainRequest(raw)) {
@@ -470,7 +471,7 @@ function hasNoteTakingIntent(text, contextPacket = {}) {
 }
 
 function hasDeterministicRoutingLock({ signals, contextPacket = {}, toolPolicy, text = "" } = {}) {
-  if (extractPureLaunchApp(text)) return true;
+  if (extractPureLaunchApp(text) || extractLaunchAppCandidates(text).length > 0) return true;
   if (signals?.explicit_no_search?.matched && signals.explicit_no_search.kind === "fact") return true;
   if (signals?.local_only_constraint?.matched && signals.local_only_constraint.kind === "fact") return true;
 
@@ -520,7 +521,7 @@ const FORMAT_PATTERNS = [
 const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf"]);
 
 function detectFormats(text) {
-  if (extractPureLaunchApp(text)) {
+  if (extractPureLaunchApp(text) || extractLaunchAppCandidates(text).length > 0) {
     return [];
   }
   return FORMAT_PATTERNS
@@ -634,11 +635,13 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   const contextArtifactKind = detectArtifactKindFromContext(contextPacket);
   const explicitFileArtifactKind = noteIntent
     ? (suggestedFormats.includes("md") ? "md" : null)
-    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? contextArtifactKind);
+    : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? null);
   const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file", "multimodal_analyze"].includes(goal)
     ? (noteIntent ? "md" : "docx")
     : null;
-  const fileArtifactKind = explicitFileArtifactKind ?? contextArtifactKind ?? inferredFileArtifactKind;
+  const fileArtifactKind = explicitFileArtifactKind
+    ?? (goal === "transform_existing_file" ? contextArtifactKind : null)
+    ?? inferredFileArtifactKind;
   const artifactRequired = goal === "launch_and_act"
     ? false
     : (noteIntent ||
