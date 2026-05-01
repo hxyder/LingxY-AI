@@ -5,6 +5,7 @@ import { createTaskSpec } from "../src/service/core/task-spec.mjs";
 import { routeIntent } from "../src/service/core/router/intent-router.mjs";
 
 const agentLoop = readFileSync(new URL("../src/service/executors/tool_using/agent-loop.mjs", import.meta.url), "utf8");
+const plannerMode = readFileSync(new URL("../src/service/executors/tool_using/planner-mode.mjs", import.meta.url), "utf8");
 const taskRoutes = readFileSync(new URL("../src/service/core/http-routes/task-routes.mjs", import.meta.url), "utf8");
 const policyResolver = readFileSync(new URL("../src/service/core/policy/tool-policy-resolver.mjs", import.meta.url), "utf8");
 
@@ -69,12 +70,14 @@ const actionRoute = routeIntent("帮我分析这个 dashboard 的问题");
 assert.ok(actionRoute.intent_tags.includes("analyze"),
   "legacy intent-router should still tag explicit analysis requests");
 
-assert.ok(/function shouldUseLeanChatMode/.test(agentLoop),
-  "agent-loop must define a lean chat mode gate");
-assert.ok(/buildLeanChatSystemPrompt/.test(agentLoop),
-  "agent-loop must have a lean QA/roleplay prompt");
-assert.ok(/conversation history establishes a roleplay\/persona/.test(agentLoop),
+assert.ok(/function shouldUseLeanChatMode/.test(plannerMode),
+  "planner-mode must define a lean chat mode gate");
+assert.ok(/buildLeanChatSystemPrompt/.test(plannerMode),
+  "planner-mode must have a lean QA/roleplay prompt");
+assert.ok(/conversation history establishes a roleplay\/persona/.test(plannerMode),
   "lean prompt must preserve conversation-level roleplay/persona instructions");
+assert.ok(/shouldUseLeanChatMode/.test(agentLoop),
+  "agent-loop must call the lean chat mode gate");
 assert.ok(/planner_mode:\s*leanChatMode\s*\?\s*"lean_chat"\s*:\s*"tool_planner"/.test(agentLoop),
   "planner_request_started must expose lean_chat vs tool_planner mode");
 assert.ok(/const toolSchemas = leanChatMode \? \[\] : \[plannerToolDescriptorForAdapter\(\)\]/.test(agentLoop),
