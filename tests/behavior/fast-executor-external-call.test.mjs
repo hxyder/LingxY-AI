@@ -80,6 +80,17 @@ async function withFakeAnthropicProvider(fn) {
   }, fn);
 }
 
+async function withFakeOllamaProvider(fn) {
+  return withFakeProvider({
+    id: "fake-ollama",
+    kind: "ollama",
+    name: "Fake Ollama",
+    baseUrl: "http://fake-ollama.local",
+    model: "fake-llama",
+    defaultModel: "fake-llama"
+  }, fn);
+}
+
 test("fast executor retries a transient OpenAI-compatible HTTP failure and still emits success", async () => {
   await withFakeOpenAIProvider(async () => {
     const originalFetch = globalThis.fetch;
@@ -161,6 +172,49 @@ test("fast executor retries a transient Anthropic HTTP failure and still emits s
         ["step_started", "log", "planner_request_started", "step_finished", "inline_result", "success"]
       );
       assert.equal(events.at(-1).payload.text, "Recovered Claude answer");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("fast executor retries a transient Ollama HTTP failure and still emits success", async () => {
+  await withFakeOllamaProvider(async () => {
+    const originalFetch = globalThis.fetch;
+    const calls = [];
+    try {
+      globalThis.fetch = async (url, init = {}) => {
+        calls.push({
+          url,
+          body: JSON.parse(init.body),
+          hasAbortSignal: Boolean(init.signal)
+        });
+        if (calls.length === 1) {
+          return new Response("temporary ollama failure", { status: 502 });
+        }
+        return Response.json({
+          message: { content: "Recovered local answer" }
+        });
+      };
+
+      const executor = createFastExecutorScaffold();
+      const events = await collectEvents(executor.execute({
+        task_id: "task_fast_ollama_retry",
+        user_command: "Say hello",
+        context_packet: {}
+      }));
+
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].url, "http://fake-ollama.local/api/chat");
+      assert.equal(calls[0].body.model, "llama3.2");
+      assert.equal(calls[0].body.stream, false);
+      assert.equal(calls.every((call) => call.hasAbortSignal), true);
+
+      assert.deepEqual(
+        events.map((event) => event.event_type),
+        ["step_started", "log", "planner_request_started", "step_finished", "inline_result", "success"]
+      );
+      assert.equal(events.at(-1).payload.text, "Recovered local answer");
     } finally {
       globalThis.fetch = originalFetch;
     }

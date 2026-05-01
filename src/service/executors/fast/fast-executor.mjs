@@ -167,7 +167,7 @@ async function callOpenAICompatible({ provider, apiKey, baseUrl, model, messages
 }
 
 async function callOllama({ baseUrl, model, messages, signal }) {
-  const response = await fetch(`${baseUrl}/api/chat`, {
+  const response = await fetchExternal(`${baseUrl}/api/chat`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -176,12 +176,11 @@ async function callOllama({ baseUrl, model, messages, signal }) {
       stream: false
     }),
     signal
+  }, {
+    timeoutMs: FAST_API_FETCH_TIMEOUT_MS,
+    label: "fast_executor.ollama",
+    httpErrorPrefix: "Ollama error"
   });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Ollama error ${response.status}: ${body.slice(0, 200)}`);
-  }
 
   const data = await response.json();
   return data.message?.content ?? "";
