@@ -19,6 +19,73 @@ const expectedSubmissionFiles = new Set([
   "screenshot-submission.mjs"
 ]);
 
+const expectedClassifications = Object.freeze({
+  "action-tool-submission.mjs": {
+    directPolicyGuard: false,
+    usesActionToolRegistry: true,
+    usesSecurityBroker: true,
+    runsToolAgentLoop: true,
+    submitsTaskWithConversation: true,
+    executorOverride: ["tool_using"]
+  },
+  "browser-submission.mjs": {
+    directPolicyGuard: false,
+    usesActionToolRegistry: false,
+    usesSecurityBroker: true,
+    runsToolAgentLoop: false,
+    submitsTaskWithConversation: true,
+    executorOverride: []
+  },
+  "composite-submission.mjs": {
+    directPolicyGuard: false,
+    usesActionToolRegistry: false,
+    usesSecurityBroker: false,
+    runsToolAgentLoop: false,
+    submitsTaskWithConversation: true,
+    executorOverride: ["composite"]
+  },
+  "context-submission.mjs": {
+    directPolicyGuard: false,
+    usesActionToolRegistry: false,
+    usesSecurityBroker: true,
+    runsToolAgentLoop: false,
+    submitsTaskWithConversation: true,
+    executorOverride: []
+  },
+  "file-submission.mjs": {
+    directPolicyGuard: false,
+    usesActionToolRegistry: false,
+    usesSecurityBroker: true,
+    runsToolAgentLoop: false,
+    submitsTaskWithConversation: true,
+    executorOverride: []
+  },
+  "image-submission.mjs": {
+    directPolicyGuard: false,
+    usesActionToolRegistry: false,
+    usesSecurityBroker: true,
+    runsToolAgentLoop: false,
+    submitsTaskWithConversation: true,
+    executorOverride: ["tool_using"]
+  },
+  "office-submission.mjs": {
+    directPolicyGuard: false,
+    usesActionToolRegistry: false,
+    usesSecurityBroker: true,
+    runsToolAgentLoop: false,
+    submitsTaskWithConversation: true,
+    executorOverride: []
+  },
+  "screenshot-submission.mjs": {
+    directPolicyGuard: false,
+    usesActionToolRegistry: false,
+    usesSecurityBroker: false,
+    runsToolAgentLoop: false,
+    submitsTaskWithConversation: false,
+    executorOverride: []
+  }
+});
+
 const files = readdirSync(coreDir)
   .filter((name) => name.endsWith("-submission.mjs"))
   .sort();
@@ -36,32 +103,39 @@ const report = files.map((name) => {
     file: relativePath,
     directPolicyGuard: /\bapplyPolicyGuard\b|\bpolicyGuard\b|\briskTier\b/.test(source),
     usesActionToolRegistry: /\bactionToolRegistry\b|\bcreateActionToolRegistry\b/.test(source),
+    usesSecurityBroker: /\bsecurityBroker\b|\binspectContext\b/.test(source),
     runsToolAgentLoop: /\brunToolAgentLoop\b/.test(source),
     submitsTaskWithConversation: /\bsubmitTaskWithConversation\b/.test(source),
     executorOverride: [...source.matchAll(/executorOverride:\s*"([^"]+)"/g)].map((match) => match[1])
   };
 });
 
-const directGuarded = report.filter((entry) => entry.directPolicyGuard);
-assert.equal(
-  directGuarded.length,
-  0,
-  "No core submission module currently calls applyPolicyGuard directly; update this audit if that boundary changes."
-);
-
-const actionTool = report.find((entry) => entry.file.endsWith("action-tool-submission.mjs"));
-assert.equal(actionTool.usesActionToolRegistry, true);
-assert.equal(actionTool.runsToolAgentLoop, true);
-assert.ok(
-  report.every((entry) => entry.submitsTaskWithConversation || entry.file.endsWith("screenshot-submission.mjs")),
-  "submissions should funnel task records through submitTaskWithConversation unless explicitly classified"
-);
+for (const entry of report) {
+  const name = path.basename(entry.file);
+  const expected = expectedClassifications[name];
+  assert.ok(expected, `${entry.file} must have an explicit submission boundary classification`);
+  for (const key of [
+    "directPolicyGuard",
+    "usesActionToolRegistry",
+    "usesSecurityBroker",
+    "runsToolAgentLoop",
+    "submitsTaskWithConversation"
+  ]) {
+    assert.equal(entry[key], expected[key], `${entry.file} classification drifted for ${key}`);
+  }
+  assert.deepEqual(
+    entry.executorOverride,
+    expected.executorOverride,
+    `${entry.file} executor override classification drifted`
+  );
+}
 
 console.log("Submission policy boundary audit passed.");
 for (const entry of report) {
   const flags = [
     entry.directPolicyGuard ? "direct_guard" : "no_direct_guard",
     entry.usesActionToolRegistry ? "action_registry" : null,
+    entry.usesSecurityBroker ? "security_broker" : null,
     entry.runsToolAgentLoop ? "tool_loop" : null,
     entry.executorOverride.length ? `executor=${entry.executorOverride.join(",")}` : null
   ].filter(Boolean).join(" | ");
