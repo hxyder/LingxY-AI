@@ -323,6 +323,51 @@ async function run() {
     assert.equal(out.code, "fact_conflict");
     assert.match(out.reason, /uploaded_files/);
   });
+  await it("fact_conflict: fact uploaded_files + explicit_search can be accepted as mixed input", async () => {
+    const signals = {
+      ...factSignals,
+      explicit_search: {
+        name: "explicit_search",
+        matched: true,
+        strength: "strong",
+        kind: "hint",
+        hint: {},
+        evidence: []
+      }
+    };
+    const adapter = decisionAdapter({ ...validDecision, web_policy: "required", source_scope: "external_world" });
+    const out = await makeRouter({ adapter })
+      .resolveSemanticDecision({ text: "结合简历搜索工作", signals });
+    assert.equal(out.kind, "decision",
+      `expected mixed local+search input to be accepted; got ${JSON.stringify(out)}`);
+  });
+  await it("fact_conflict: local_only_constraint rejects external upgrade", async () => {
+    const signals = {
+      ...factSignals,
+      local_only_constraint: {
+        name: "local_only_constraint",
+        matched: true,
+        strength: "strong",
+        kind: "fact",
+        hint: { value: "local_only" },
+        evidence: []
+      },
+      explicit_search: {
+        name: "explicit_search",
+        matched: true,
+        strength: "strong",
+        kind: "hint",
+        hint: {},
+        evidence: []
+      }
+    };
+    const adapter = decisionAdapter({ ...validDecision, web_policy: "required", source_scope: "external_world" });
+    const out = await makeRouter({ adapter })
+      .resolveSemanticDecision({ text: "仅基于这份文件搜索", signals });
+    assert.equal(out.kind, "rejection");
+    assert.equal(out.code, "fact_conflict");
+    assert.match(out.reason, /local_only_constraint/);
+  });
   await it("fact_conflict: fact scope=current_context but LLM source_scope=external_world", async () => {
     const localFactSignals = {
       source_scope: { ...factSignals.source_scope, hint: { value: "current_context" } }

@@ -149,6 +149,7 @@ function intentRouteFields(overrides = {}) {
     needs_user_files: false,
     needs_tool_use: true,
     needed_capabilities: ["external_web_read"],
+    required_policy_groups: ["external_web_read"],
     source_mode: "multi_source_research",
     complexity: "medium",
     risk_level: "low",
@@ -308,6 +309,7 @@ it("SR detectHardFactConflict: web=forbidden when no-search fact is set is OK (n
               needs_current_information: false,
               needs_tool_use: false,
               needed_capabilities: ["none"],
+              required_policy_groups: [],
               source_mode: "no_external",
               rationale_summary: "The user explicitly forbade browsing."
             }),

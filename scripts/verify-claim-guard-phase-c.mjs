@@ -104,6 +104,13 @@ const success = (tool, extras = {}) => ({
   check("app_launch: '已打开文件' does NOT trigger (not an app launch)",
     !v.some((x) => x.kind === "app_launch_claim_unsupported"));
 }
+{
+  // "已启用" is common status prose for schedules/settings and must not
+  // be treated as "launched an app".
+  const v = detectUnbackedActionClaims([], "存在 1 条已启用的定时任务。");
+  check("app_launch: '已启用的定时任务' does NOT trigger",
+    !v.some((x) => x.kind === "app_launch_claim_unsupported"));
+}
 
 // =====================================================================
 // notification_send

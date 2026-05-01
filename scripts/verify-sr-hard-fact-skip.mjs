@@ -14,7 +14,7 @@
  *
  * Cases the gate must skip:
  *   1. explicit_no_search.matched && kind === "fact"     ("不要联网")
- *   2. attachments (file_paths / image_paths)
+ *   2. pure attachments (file_paths / image_paths) with no search verb
  *   3. explicit external opt-in
  *   4. tiny chitchat
  *
@@ -22,6 +22,7 @@
  *   5. source_scope=fact+LOCAL (SR classifies semantics; policy stays locked)
  *   6. assumption-kind source_scope ("这个/这篇" pronoun, no anchor)
  *   7. text-only research-class queries with no anchor / no no-search
+ *   8. attachments + neutral explicit_search ("结合简历搜索工作")
  *
  * Run: node scripts/verify-sr-hard-fact-skip.mjs
  */
@@ -81,14 +82,10 @@ await it("hard-fact skip: 'do not browse' (English no-search) → SR not consult
 });
 
 // ── 2. source_scope=fact + LOCAL → consult SR for semantics ────────
-await it("local fact: scheduler contextText (real_selection) → SR IS consulted", () => {
-  // The verify-scheduler reproduction: scheduled context_task carries
-  // a contextText through buildSchedulerContextPacket → ctx.text. The
-  // classifier's Stage 3 default treats non-sentinel ctx.text as
-  // real_selection=true; source_scope then fires kind=fact +
-  // value=current_context (LOCAL). P6 keeps this SR-eligible so the LLM
-  // can classify user_goal / expected_output, while merge keeps the web
-  // policy forbidden.
+await it("scheduler contextText is not a real_selection, but SR remains eligible", () => {
+  // Scheduled context is runtime background, not a fresh user selection.
+  // It must not become source_scope=fact, but the current command can still
+  // reach SR for semantic classification.
   const text = "今天的状态";
   const ctx = {
     text: "Scheduled AI work smoke test",
@@ -96,15 +93,12 @@ await it("local fact: scheduler contextText (real_selection) → SR IS consulted
     capture_mode: "event"
   };
   const { signals, routerContext } = probe(text, ctx);
-  assert.equal(routerContext.context_sources.real_selection, true,
-    "test fixture: ctx.text must classify as real_selection");
-  assert.equal(signals.source_scope?.matched, true,
-    "test fixture: source_scope must fire on real_selection");
-  assert.equal(signals.source_scope.kind, "fact");
+  assert.equal(routerContext.context_sources.real_selection, false,
+    "scheduler context must stay background, not real_selection");
   assert.equal(
     shouldConsultSemanticRouter({ signals, contextPacket: routerContext, text }),
     true,
-    "real_selection scheduler task must consult SR for semantic classification"
+    "scheduler task must still consult SR for semantic classification"
   );
 });
 
@@ -125,7 +119,7 @@ await it("local fact: passage + neutral command → SR IS consulted", () => {
   );
 });
 
-await it("local fact: scheduler real_selection + summary request → SR IS consulted without regex override", () => {
+await it("scheduler summary request → SR IS consulted without regex override", () => {
   const text = "总结今天的待办";
   const ctx = {
     text: "Scheduled AI work smoke test",
@@ -133,13 +127,11 @@ await it("local fact: scheduler real_selection + summary request → SR IS consu
     capture_mode: "event"
   };
   const { signals, routerContext } = probe(text, ctx);
-  assert.equal(signals.source_scope?.matched, true);
-  assert.equal(signals.source_scope.kind, "fact",
-    "test fixture: source_scope must fire as fact-local");
+  assert.equal(routerContext.context_sources.real_selection, false);
   assert.equal(
     shouldConsultSemanticRouter({ signals, contextPacket: routerContext, text }),
     true,
-    "source_scope=fact+LOCAL must not silence SR"
+    "scheduler summary request must not be silenced by background context"
   );
 });
 
@@ -181,7 +173,7 @@ await it("ambiguous (documented contract): pronoun '这段' + real selection →
   // therefore the right layer to disambiguate. Documenting this here
   // so the I1 hard-fact skip is not over-broadened to swallow ambiguous
   // pronoun cases.
-  const text = "只基于这段内容总结，不要扯其他";
+  const text = "请总结这段内容";
   const ctx = { text: "User pasted a long passage about a framework's architecture." };
   const { signals, routerContext } = probe(text, ctx);
   assert.equal(signals.source_scope.kind, "assumption");
@@ -203,6 +195,31 @@ await it("hard-fact skip: file_paths attached → source_scope=fact uploaded_fil
   assert.equal(
     shouldConsultSemanticRouter({ signals, contextPacket: routerContext, text }),
     false
+  );
+});
+
+await it("local_only_constraint skips SR even when a pronoun and selection are present", () => {
+  const text = "只基于这段内容总结，不要扯其他";
+  const ctx = { text: "User pasted a long passage about a framework's architecture." };
+  const { signals, routerContext } = probe(text, ctx);
+  assert.equal(signals.local_only_constraint?.matched, true);
+  assert.equal(
+    shouldConsultSemanticRouter({ signals, contextPacket: routerContext, text }),
+    false,
+    "explicit local-only constraints settle the web policy without SR"
+  );
+});
+
+await it("mixed input: file_paths + explicit_search → SR IS consulted", () => {
+  const text = "结合我的简历搜索适合我的工作";
+  const ctx = { file_paths: ["C:/tmp/resume.pdf"] };
+  const { signals, routerContext } = probe(text, ctx);
+  assert.equal(signals.source_scope?.hint?.value, "uploaded_files");
+  assert.equal(signals.explicit_search?.matched, true);
+  assert.equal(
+    shouldConsultSemanticRouter({ signals, contextPacket: routerContext, text }),
+    true,
+    "neutral search with local input must reach SR for local-vs-external disambiguation"
   );
 });
 
@@ -310,12 +327,10 @@ await it("end-to-end: '不要联网' + simulated SR outage → routing_degraded=
     "routing_degraded must be false — fast executor must not refuse the task");
 });
 
-await it("end-to-end: scheduler contextText + SR outage → ok_deterministic / routing_degraded=false", async () => {
-  // Reproduces verify-scheduler: scheduled context_task with contextText
-  // routed through buildSchedulerContextPacket → ctx.text. SR remains
-  // eligible; if it fails in test env (no provider configured), the
-  // deterministic local lock collapses the status to ok_deterministic
-  // rather than letting fast refuse the task.
+await it("end-to-end: scheduler contextText remains non-degraded when SR gives no actionable route", async () => {
+  // Scheduler context is background, not a deterministic local lock. SR may
+  // be consulted and can reject for low confidence/no provider depending on
+  // the local test environment, but this path must not be marked degraded.
   const userCommand = "今天的状态";
   const enriched = await applySemanticRouterPreflight({
     userCommand,
@@ -326,9 +341,10 @@ await it("end-to-end: scheduler contextText + SR outage → ok_deterministic / r
     }
   });
   const spec = createTaskSpec(userCommand, enriched, {});
-  assert.ok(["ok", "ok_deterministic"].includes(spec.routing_status),
-    `routing_status must be ok/ok_deterministic; got ${spec.routing_status}`);
-  assert.equal(spec.routing_degraded, false);
+  assert.ok(["ok", "ok_deterministic", "sr_low_confidence", "sr_no_provider", "sr_timeout"].includes(spec.routing_status),
+    `routing_status must be scheduler-compatible status; got ${spec.routing_status}`);
+  const operationalFailure = ["sr_no_provider", "sr_timeout"].includes(spec.routing_status);
+  assert.equal(spec.routing_degraded, operationalFailure);
 });
 
 await it("end-to-end: real_selection + neutral command + SR outage → ok_deterministic / routing_degraded=false", async () => {

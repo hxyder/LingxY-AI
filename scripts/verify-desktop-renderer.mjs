@@ -50,6 +50,31 @@ assert.equal(consoleJs.includes("syncConsoleProjectStoreFromService"), true);
 assert.equal(consoleJs.includes("/projects/store"), true);
 assert.equal(consoleJs.includes("renderProjectsWorkspace"), true);
 assert.equal(consoleJs.includes("projectCreateForm"), true);
+assert.equal(consoleJs.includes('from "./console-task-event-stream.mjs"'), true);
+assert.equal(
+  /let\s+selectedTaskEventStream\b/.test(consoleJs),
+  false,
+  "console.js must keep selected task SSE state inside console-task-event-stream.mjs"
+);
+
+const overlayJs = await read("src/desktop/renderer/overlay.js");
+for (const [fileName, source] of [
+  ["console.js", consoleJs],
+  ["overlay.js", overlayJs]
+]) {
+  assert.equal(
+    /(?:function|const|let|var)\s+escapeHtml\b/.test(source),
+    false,
+    `${fileName} must use shared-ui escapeHtml instead of redefining it`
+  );
+  assert.equal(
+    /(?:function|const|let|var)\s+createBottomPinController\b/.test(source),
+    false,
+    `${fileName} must use shared-ui createBottomPinController instead of redefining it`
+  );
+}
+assert.equal(consoleJs.includes("from \"./shared-ui.mjs\""), true);
+assert.equal(overlayJs.includes("from \"./shared-ui.mjs\""), true);
 
 // UCA-048: console settings has output path + feature toggles
 assert.equal(consoleHtml.includes("outputDirInput"), true);

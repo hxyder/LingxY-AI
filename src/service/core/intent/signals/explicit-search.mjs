@@ -9,10 +9,9 @@
  * (step 0a → forbidden). All three are explicit user verbs about
  * the search axis, each respected verbatim.
  *
- * Local-anchor cases ("查一下我的文件" + file_paths) still short-
- * circuit at resolver step 2a (fact-local source-scope) before
- * reaching this rule, so the promotion does NOT auto-route local
- * search to the web.
+ * Local-input cases ("查一下我的文件" + file_paths) are mixed-intent:
+ * the resolver keeps them optional and lets SemanticRouter / the tool
+ * planner decide whether the search target is local or external.
  *
  * Inherits from the regex previously hard-coded as `isSearchOrNewsRequest` in
  * tool_using/agent-loop.mjs:338-341, with weak time markers and entity
@@ -37,9 +36,8 @@ export function detect(text, _contextPacket) {
   // P4-01 kind=hint: the search verb is observable text (fact-like),
   // but the inference "search verb → user wants to consult external
   // sources" is conventional. Post-E5 the resolver maps strong →
-  // `required` at step 3 (structural hard-signal symmetry with
-  // explicit_external and explicit_no_search); local-anchor cases
-  // still short-circuit at step 2a before reaching it.
+  // `required` at step 3 unless local input is present; local-input cases
+  // stay optional so SR / the planner can disambiguate the search object.
   return {
     name: NAME,
     matched: true,

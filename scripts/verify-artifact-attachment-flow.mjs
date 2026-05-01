@@ -37,7 +37,7 @@ const writeTools = read("src/service/connectors/tools/write-tools.mjs");
 const msConnector = read("src/service/connectors/microsoft/microsoft-connector.mjs");
 const contextSubmission = read("src/service/core/context-submission.mjs");
 const browserSubmission = read("src/service/core/browser-submission.mjs");
-const httpServer = read("src/service/core/http-server.mjs");
+const taskRoutes = read("src/service/core/http-routes/task-routes.mjs");
 
 // ── Backend still accepts attachmentPaths. ────────────────────────────
 assert.match(writeTools, /attachmentPaths:\s*\{[^}]*type:\s*"array"/s,
@@ -79,11 +79,11 @@ for (const [name, source] of [
 }
 
 // ── console detail recovery: already-finished tasks. ─────────────────
-assert.match(httpServer, /function mergeArtifactsForTask\(taskId,\s*persistedArtifacts = \[\],\s*events = \[\]\)/,
+assert.match(taskRoutes, /function mergeArtifactsForTask\(taskId,\s*persistedArtifacts = \[\],\s*events = \[\]\)/,
   "task detail must merge stored artifacts with event-derived artifact paths");
-assert.match(httpServer, /Array\.isArray\(payload\.artifact_paths\)[\s\S]{0,120}candidates\.push\(\.\.\.payload\.artifact_paths\)/,
+assert.match(taskRoutes, /Array\.isArray\(payload\.artifact_paths\)[\s\S]{0,120}candidates\.push\(\.\.\.payload\.artifact_paths\)/,
   "task detail must recover artifact_paths from historical events");
-assert.match(httpServer, /derived_from_event:\s*true/,
+assert.match(taskRoutes, /derived_from_event:\s*true/,
   "event-derived artifacts must be marked for observability");
 
 console.log("ok verify-artifact-attachment-flow");

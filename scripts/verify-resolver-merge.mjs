@@ -10,7 +10,8 @@
  *
  * Asserts:
  *   1. Ambiguity gate (`shouldConsultSemanticRouter`):
- *      - file_paths attached    → false (rules win)
+ *      - pure file_paths attached → false (rules win)
+ *      - file_paths + neutral search → true (SR disambiguates)
  *      - image_paths attached   → false
  *      - explicit_external strong → false
  *      - topic_hint strong → TRUE (post-C1: SR consulted for topic queries)
@@ -93,11 +94,18 @@ function makeSignals(text, contextPacket = {}) {
 
 async function run() {
   // ── 1. shouldConsultSemanticRouter gate ────────────────────────────────
-  it("gate: file_paths attached → false (deterministic wins)", () => {
-    const signals = makeSignals("查一下这件事", { file_paths: ["a.txt"] });
+  it("gate: pure file_paths attached → false (deterministic local fallback wins)", () => {
+    const signals = makeSignals("总结这份文件", { file_paths: ["a.txt"] });
     assert.equal(shouldConsultSemanticRouter({
-      signals, contextPacket: { file_paths: ["a.txt"] }, text: "查一下这件事"
+      signals, contextPacket: { file_paths: ["a.txt"] }, text: "总结这份文件"
     }), false);
+  });
+  it("gate: file_paths + neutral search → true (mixed local/search)", () => {
+    const text = "结合我的简历搜索适合我的工作";
+    const signals = makeSignals(text, { file_paths: ["resume.pdf"] });
+    assert.equal(shouldConsultSemanticRouter({
+      signals, contextPacket: { file_paths: ["resume.pdf"] }, text
+    }), true);
   });
   it("gate: image_paths attached → false", () => {
     const signals = makeSignals("这是什么", { image_paths: ["a.png"] });

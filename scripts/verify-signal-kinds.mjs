@@ -15,7 +15,8 @@
  *   1. SIGNAL_KINDS is frozen and equals ["fact", "hint", "assumption"].
  *   2. emptySignal(name) carries kind:null (no claim until matched).
  *   3. explicit_external / explicit_search / topic_hint /
- *      weak_freshness all annotate kind:"hint" when they fire.
+ *      weak_freshness all annotate kind:"hint" when they fire, while
+ *      local_only_constraint annotates kind:"fact".
  *   4. source_scope branches:
  *        attachment        → fact
  *        LOCAL_PROJECT     → fact
@@ -42,6 +43,7 @@ import { detect as detectEntity }   from "../src/service/core/intent/signals/top
 import { detect as detectFresh }    from "../src/service/core/intent/signals/weak-freshness.mjs";
 import { detect as detectScope }    from "../src/service/core/intent/signals/source-scope.mjs";
 import { detect as detectPending }  from "../src/service/core/intent/signals/pending-offer.mjs";
+import { detect as detectLocalOnly } from "../src/service/core/intent/signals/local-only-constraint.mjs";
 import { SIGNAL_NAMES }              from "../src/service/core/intent/signals/_signal-types.mjs";
 import { createTaskSpec }            from "../src/service/core/task-spec.mjs";
 
@@ -164,6 +166,23 @@ async function run() {
       "_signal-types.mjs SIGNAL_NAMES must register explicit_single_url");
   });
 
+  it("local_only_constraint: matches explicit local-only phrasing → kind:fact", () => {
+    const s = detectLocalOnly("仅基于这份文件总结", {});
+    assert.equal(s.matched, true);
+    assert.equal(s.kind, "fact");
+    assert.equal(s.strength, "strong");
+    assert.equal(s.hint?.constraint, "local_only");
+  });
+  it("local_only_constraint: NOT matched on neutral attachment phrasing", () => {
+    const s = detectLocalOnly("结合我的简历搜索适合我的工作", {});
+    assert.equal(s.matched, false);
+    assert.equal(s.kind, null);
+  });
+  it("public surface: SIGNAL_NAMES contains 'local_only_constraint'", () => {
+    assert.ok([...SIGNAL_NAMES].includes("local_only_constraint"),
+      "_signal-types.mjs SIGNAL_NAMES must register local_only_constraint");
+  });
+
   // ── 4. source_scope branches differ by inference depth ────────────────
   it("scope: attachment → kind:fact (observable state)", () => {
     const s = detectScope("帮我看看", { file_paths: ["a.docx"] });
@@ -206,7 +225,8 @@ async function run() {
       detectEntity("今日 AI 新闻", {}),
       detectFresh("最近怎么样", {}),
       detectScope("分析下面代码", {}),
-      detectScope("帮我看看", { file_paths: ["a.txt"] })
+      detectScope("帮我看看", { file_paths: ["a.txt"] }),
+      detectLocalOnly("只看附件内容", {})
     ];
     for (const s of cases) {
       assert.equal(s.matched, true, `${s.name} should have matched`);
@@ -222,7 +242,8 @@ async function run() {
       detectSearch("hello", {}),
       detectEntity("hello", {}),
       detectFresh("hello", {}),
-      detectScope("hello", {})
+      detectScope("hello", {}),
+      detectLocalOnly("hello", {})
     ];
     for (const s of cases) {
       assert.equal(s.matched, false, `${s.name} should not have matched`);

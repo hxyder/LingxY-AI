@@ -28,17 +28,17 @@ const ROOT = path.resolve(__dirname, "..");
     "overlay.js must cache lastArtifacts so next turn reuses them");
 }
 
-// --- 2. Server wiring: /task handler forwards parent_task_id ---------
+// --- 2. Server wiring: /task route forwards parent_task_id ------------
 {
-  const src = await readFile(path.join(ROOT, "src/service/core/http-server.mjs"), "utf8");
+  const src = await readFile(path.join(ROOT, "src/service/core/http-routes/task-routes.mjs"), "utf8");
   assert.ok(src.match(/requestParentTaskId\s*=\s*typeof body\.parent_task_id/),
-    "http-server /task handler must parse body.parent_task_id");
+    "task route must parse body.parent_task_id");
   assert.ok(src.match(/submitContextTask\(\{[\s\S]*?parentTaskId:\s*effectiveRequestParentTaskId/),
-    "http-server /task handler must forward parent_task_id to submitContextTask");
+    "task route must forward parent_task_id to submitContextTask");
   assert.ok(src.match(/submitBrowserTask\(\{[\s\S]*?parentTaskId:\s*effectiveRequestParentTaskId/),
-    "http-server /task handler must forward parent_task_id to browser submissions");
+    "task route must forward parent_task_id to browser submissions");
   assert.ok(src.match(/submitFileTask\(\{[\s\S]*?parentTaskId:\s*effectiveRequestParentTaskId/),
-    "http-server /task handler must forward parent_task_id to file submissions");
+    "task route must forward parent_task_id to file submissions");
 }
 
 // --- 3. submitContextTask still honours parentTaskId -----------------

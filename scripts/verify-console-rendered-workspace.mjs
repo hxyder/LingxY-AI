@@ -37,6 +37,8 @@ assert.equal(consoleHtml.includes("Office Add-ins"), true);
 assert.equal(consoleHtml.includes("Email Accounts"), true);
 
 const consoleJs = await read("src/desktop/renderer/console.js");
+const taskTimelineJs = await read("src/desktop/renderer/console-task-timeline.mjs");
+const taskEventControllerJs = await read("src/desktop/renderer/console-task-event-stream.mjs");
 assert.equal(consoleJs.includes('fetchJson("/approvals")'), true);
 assert.equal(consoleJs.includes('fetchJson("/schedules")'), true);
 assert.equal(consoleJs.includes('fetchJson("/templates")'), true);
@@ -52,8 +54,10 @@ assert.equal(consoleJs.includes("renderTaskArtifacts"), true);
 assert.equal(consoleJs.includes("openTaskArtifactButton"), true);
 assert.equal(consoleJs.includes("useTaskArtifactContextButton"), true);
 assert.equal(consoleJs.includes('window.ucaShell.showWindow("overlay")'), true);
-assert.equal(consoleJs.includes("ensureSelectedTaskEventStream"), true);
-assert.equal(consoleJs.includes("handleSelectedTaskEventFrame"), true);
+assert.equal(consoleJs.includes("selectedTaskEventController.ensure"), true);
+assert.equal(consoleJs.includes('from "./console-task-event-stream.mjs"'), true);
+assert.equal(taskEventControllerJs.includes("handleSelectedTaskEventFrame"), true);
+assert.equal(taskEventControllerJs.includes("subscribeTaskEvents"), true);
 assert.equal(consoleJs.includes("formatTaskEventSummary"), true);
 assert.equal(consoleJs.includes("configureOfficeAddins"), true);
 assert.equal(consoleJs.includes("/setup/office-addins"), true);
@@ -65,9 +69,10 @@ assert.equal(consoleJs.includes("data-routing-mode"), true);
 // UCA-049 commit 3: task detail panel surfaces the resolved provider line
 // + downgraded warning, derived from per-event provider_* fields.
 assert.equal(consoleJs.includes("extractTaskProviderInfo"), true);
-assert.equal(consoleJs.includes("renderProviderLine"), true);
 assert.equal(consoleJs.includes("renderDowngradedWarning"), true);
-assert.equal(consoleJs.includes("data-uca-downgraded"), true);
+assert.equal(consoleJs.includes('from "./console-task-timeline.mjs"'), true);
+assert.equal(taskTimelineJs.includes("renderProviderLine"), true);
+assert.equal(taskTimelineJs.includes("data-uca-downgraded"), true);
 // UCA-046: Console schedules tab calendar sub-view + category color rendering
 assert.equal(consoleJs.includes("scheduleViewMode"), true);
 assert.equal(consoleJs.includes("renderScheduleCalendarGrid"), true);

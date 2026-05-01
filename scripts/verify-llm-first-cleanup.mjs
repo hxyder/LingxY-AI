@@ -5,7 +5,7 @@ const agentLoop = readFileSync(new URL("../src/service/executors/tool_using/agen
 const resolver = readFileSync(new URL("../src/service/core/planning/executor-resolver.mjs", import.meta.url), "utf8");
 const submission = readFileSync(new URL("../src/service/core/context-submission.mjs", import.meta.url), "utf8");
 const triage = readFileSync(new URL("../src/service/core/intent/triage.mjs", import.meta.url), "utf8");
-const httpServer = readFileSync(new URL("../src/service/core/http-server.mjs", import.meta.url), "utf8");
+const taskRoutes = readFileSync(new URL("../src/service/core/http-routes/task-routes.mjs", import.meta.url), "utf8");
 const semanticRouter = readFileSync(new URL("../src/service/core/intent/semantic-router.mjs", import.meta.url), "utf8");
 const fastExecutor = readFileSync(new URL("../src/service/executors/fast/fast-executor.mjs", import.meta.url), "utf8");
 const registry = readFileSync(new URL("../src/service/action_tools/registry.mjs", import.meta.url), "utf8");
@@ -62,7 +62,7 @@ assert.ok(!/goal\s*===\s*["']multimodal_analyze["']\s*\|\|/.test(resolver),
   "multi_modal routing must require actual image input, not text-only image words");
 assert.ok(!/tryFastPath|lane:\s*"fast_path"|fast_path/.test(triage),
   "triage must not bypass the AI agent with fast_path");
-assert.ok(!/tryFastPath|fastPathTool|captureMode:\s*body\.captureMode\s*\?\?\s*"fast_path"/.test(httpServer),
+assert.ok(!/tryFastPath|fastPathTool|captureMode:\s*body\.captureMode\s*\?\?\s*"fast_path"/.test(taskRoutes),
   "HTTP task submission must not bypass the AI agent with fast_path");
 assert.ok(!fastExecutor.includes(["should", "Short", "Circuit", "For", "Routing", "Degraded"].join(""))
   && !fastExecutor.includes(["routing", "degraded"].join(" "))

@@ -320,7 +320,7 @@ it("K6 source: submitContextTask accepts conversationId and threads to the task-
 });
 
 it("K6 source: HTTP /task handler extracts body.conversation_id and passes it on", () => {
-  const src = loadFile("../src/service/core/http-server.mjs");
+  const src = loadFile("../src/service/core/http-routes/task-routes.mjs");
   // The /task handler body extraction must accept both snake_case
   // (frontend default — overlay.js:3256) and camelCase.
   assert.match(src,

@@ -400,7 +400,7 @@ const ACTION_CLAIM_GROUPS = Object.freeze([
     group: "app_launch",
     claims: [
       // 已[成功]打开/启动 + 不直接跟"文件"或常见"页面"等中性词
-      /已\s*(?:成功|顺利)?\s*(?:打开|启动|启用|启用了|开启)\s*(?:好|了)?\s*(?!文件|页面|对话框|链接|链接\s|\s*[（(])/,
+      /已\s*(?:成功|顺利)?\s*(?:打开|启动)\s*(?:好|了)?\s*(?!文件|页面|对话框|链接|链接\s|\s*[（(])/,
       /(?:打开|启动)\s*(?:好|了)\s*(?:应用|程序|软件)/,
       /\bi(?:\s+have\s+|['‘’]ve\s+|\s+)(?:opened|launched|started|fired\s+up)\s+(?:the\s+|your\s+|a\s+)?(?:app|application|program|browser|word|excel|powerpoint|outlook|slack|chrome|firefox|edge|safari)\b/i,
       /\b(?:app|application|program|window|browser)\s+(?:has\s+been\s+|was\s+|is\s+)(?:opened|launched|started)\b/i

@@ -2,9 +2,10 @@
  * UCA-077 P1-02: source scope detector.
  *
  * Decides what the user is pointing at: uploaded_files, current_context,
- * local_project, selection, or none. The policy resolver uses this as the
- * negative web-search signal — local sources keep web_search forbidden by
- * default.
+ * local_project, selection, or none. This is a provenance signal, not a
+ * local-only constraint. Policy layers may use local sources as a conservative
+ * fallback, but explicit user constraints live in dedicated signals such as
+ * local_only_constraint / explicit_no_search.
  *
  * Strong > weak rule: any of file_paths / image_paths / explicit context
  * indicators is strong; mere selection_text is weak.

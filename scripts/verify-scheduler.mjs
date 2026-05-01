@@ -8,6 +8,28 @@ import { buildPendingApprovalsViewModel } from "../src/desktop/console/pending-a
 import { buildSchedulesViewModel } from "../src/desktop/console/schedules/view-model.mjs";
 import { parseNaturalLanguageTrigger } from "../src/service/scheduler/nl_to_cron.mjs";
 
+// Keep this verifier hermetic. The scheduled "AI work" smoke path only
+// needs to prove that scheduler dispatch creates and completes a task; it
+// must not depend on the user's real provider config/API quota.
+process.env.UCA_CONFIG_PATH = path.join(
+  os.tmpdir(),
+  `uca-scheduler-runtime-${process.pid}-${Date.now()}.json`
+);
+for (const key of [
+  "ANTHROPIC_API_KEY",
+  "UCA_ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "UCA_OPENAI_API_KEY",
+  "MOONSHOT_API_KEY",
+  "KIMI_API_KEY",
+  "UCA_KIMI_API_KEY",
+  "UCA_OLLAMA_BASE_URL",
+  "OLLAMA_HOST",
+  "UCA_OLLAMA_MODEL"
+]) {
+  delete process.env[key];
+}
+
 const service = createServiceBootstrap();
 const { runtime } = service;
 

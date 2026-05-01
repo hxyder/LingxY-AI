@@ -12,12 +12,51 @@ import {
   parseScheduleTriggerFromText
 } from "./schedule-parser.js";
 import {
+  createConversationId as newConversationId,
   createClientMessageId,
   ensureBackendCacheFields as ensureBackendCacheFieldsBase,
   cssEscape as cssEscapeFor,
   applyMessageBatch as applyMessageBatchShared,
   fetchMessagesSince as fetchMessagesSinceShared
 } from "./conversation-cache.mjs";
+import {
+  createBottomPinController,
+  escapeHtml,
+  formatArtifactLabel as formatSharedArtifactLabel,
+  formatDateTime as formatSharedDateTime,
+  formatRelativeTime
+} from "./shared-ui.mjs";
+import {
+  DEFAULT_PROJECT_ID,
+  buildProject,
+  createProjectId
+} from "../../shared/project-store.mjs";
+import {
+  buildOverlayProjectStore,
+  ensureDefaultProjectInStore,
+  ensureSystemProjectInStore,
+  listConversationsForProject,
+  mergeOverlayProjectStores,
+  normalizeOverlayProjectStore,
+  projectHasUnread as projectHasUnreadInStore,
+  pruneProjectConversations
+} from "./overlay-project-model.mjs";
+import {
+  AUTO_EMAIL_PROJECT_ID,
+  AUTO_SCHEDULE_PROJECT_ID,
+  automaticConversationKey,
+  automaticProjectForTask,
+  finalTextFromTaskDetail,
+  isAutomaticResultTask,
+  isEmailDigestTask,
+  taskIdsForConversation,
+  titleForAutomaticConversation
+} from "./overlay-auto-tasks.mjs";
+import {
+  bindTaskToConversationId,
+  clearTaskConversationBinding,
+  taskOwnerConversationId
+} from "./overlay-task-routing.mjs";
 
 /* ── Theme sync (mirrors console theme via shared localStorage) ── */
 const THEME_KEY = "uca-console-theme";
@@ -82,69 +121,6 @@ const taskListPanel = document.querySelector("#taskListPanel");
 const taskListBody = document.querySelector("#taskListBody");
 const taskListCloseBtn = document.querySelector("#taskListCloseBtn");
 const taskListFilterBtns = document.querySelectorAll("[data-task-filter]");
-
-// Controller around a scroll container. Tracks whether the user is "at
-// the bottom" — only then does new content auto-scroll. If they've
-// scrolled up to read history, we leave the viewport alone and surface
-// a Scroll-to-bottom button. Replaces the older always-pin observer
-// which yanked users back on every DOM change.
-function createBottomPinController(scrollEl, { button = null, threshold = 24 } = {}) {
-  if (!scrollEl) {
-    return {
-      maybeScrollToBottom() {},
-      scrollToBottom() {},
-      refresh() {},
-      isPinned: () => true
-    };
-  }
-  let pinned = true;
-  const isNearBottom = () => (
-    scrollEl.scrollHeight - scrollEl.clientHeight - scrollEl.scrollTop <= threshold
-  );
-  const updateButton = () => {
-    if (!button) return;
-    button.hidden = pinned;
-  };
-  const refresh = () => {
-    pinned = isNearBottom();
-    updateButton();
-  };
-  const refreshSoon = () => {
-    try { requestAnimationFrame(refresh); } catch { setTimeout(refresh, 0); }
-  };
-  scrollEl.addEventListener("scroll", refresh, { passive: true });
-  scrollEl.addEventListener("wheel", refreshSoon, { passive: true });
-  scrollEl.addEventListener("touchmove", refreshSoon, { passive: true });
-  scrollEl.addEventListener("keyup", refreshSoon);
-
-  const scrollToBottom = () => {
-    scrollEl.scrollTop = scrollEl.scrollHeight;
-    pinned = true;
-    updateButton();
-  };
-  const maybeScrollToBottom = () => {
-    if (!pinned) return;
-    scrollEl.scrollTop = scrollEl.scrollHeight;
-  };
-
-  // Auto-pin on content / size changes — but only when the user was
-  // already pinned. Mutation + Resize observers cover both new bubbles
-  // and streaming text deltas.
-  try {
-    new MutationObserver(maybeScrollToBottom).observe(scrollEl, {
-      childList: true, subtree: true, characterData: true
-    });
-  } catch { /* observer is a convenience only */ }
-  try {
-    new ResizeObserver(maybeScrollToBottom).observe(scrollEl);
-  } catch { /* fallback: explicit calls still run */ }
-
-  if (button) {
-    button.hidden = true;
-    button.addEventListener("click", scrollToBottom);
-  }
-  return { maybeScrollToBottom, scrollToBottom, refresh, isPinned: () => pinned };
-}
 
 const bubbleAreaPin = createBottomPinController(bubbleArea, {
   button: document.querySelector("#bubbleScrollDown")
@@ -243,15 +219,6 @@ let lastTaskSummaryRefresh = 0;
 let compositeHeaderTaskId = null;
 const AUTO_TASK_SURFACED_KEY = "uca.overlay.autoTaskResults.v1";
 
-function escapeHtml(value) {
-  return `${value ?? ""}`
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
 function bindWindowDeltaHandle(element, mode = "move") {
   if (!element) return;
   let dragging = false;
@@ -322,9 +289,6 @@ const COMPRESS_KEEP_START = 2;
 const COMPRESS_KEEP_END = 6;
 const MAX_CAPTURE_TEXT_CHARS = 8000;
 const MAX_CONVERSATIONS_PER_PROJECT = 50;
-const DEFAULT_PROJECT_ID = "proj_default";
-const AUTO_SCHEDULE_PROJECT_ID = "proj_auto_schedules";
-const AUTO_EMAIL_PROJECT_ID = "proj_auto_email";
 const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899", "#14b8a6"];
 
 let projectStore = null;
@@ -357,14 +321,6 @@ function updateProjectSyncIndicator(success) {
   }
 }
 
-function newConversationId() {
-  return `conv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function newProjectId() {
-  return `proj_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-}
-
 function generateConversationTitle(conv) {
   if (!conv?.turns?.length) return "新会话";
   const first = conv.turns.find((t) => t.role === "user");
@@ -372,83 +328,31 @@ function generateConversationTitle(conv) {
 }
 
 function ensureDefaultProject() {
-  if (!projectStore.projects.some((p) => p.id === DEFAULT_PROJECT_ID)) {
-    projectStore.projects.unshift({ id: DEFAULT_PROJECT_ID, name: "默认", color: PROJECT_COLORS[0], createdAt: Date.now(), metadata: {} });
-  }
+  projectStore = ensureDefaultProjectInStore(projectStore, {
+    defaultProjectId: DEFAULT_PROJECT_ID,
+    defaultColor: PROJECT_COLORS[0]
+  });
 }
 
 function ensureSystemProject(projectId, name, color) {
   if (!projectStore) loadProjectStore();
-  let project = projectStore.projects.find((p) => p.id === projectId);
-  if (!project) {
-    project = { id: projectId, name, color, createdAt: Date.now(), metadata: { system: true } };
-    projectStore.projects.push(project);
-  } else {
-    project.name = project.name || name;
-    project.color = project.color || color;
-    project.metadata = { ...(project.metadata ?? {}), system: true };
-  }
-  return project;
+  return ensureSystemProjectInStore(projectStore, projectId, name, color);
 }
 
 function projectHasUnread(projectId) {
-  return Boolean(projectStore?.conversations?.some((conversation) =>
-    conversation.projectId === projectId && conversation.metadata?.unread === true
-  ));
+  return projectHasUnreadInStore(projectStore, projectId);
 }
 
 function buildDefaultProjectStore() {
-  return {
-    currentProjectId: DEFAULT_PROJECT_ID,
-    currentConversationId: null,
-    projects: [],
-    conversations: [],
-    updatedAt: 0
-  };
+  return buildOverlayProjectStore({ defaultColor: PROJECT_COLORS[0] });
 }
 
 function normalizeProjectStore(store) {
-  const next = store && typeof store === "object"
-    ? JSON.parse(JSON.stringify(store))
-    : buildDefaultProjectStore();
-  next.projects = Array.isArray(next.projects) ? next.projects.filter((project) => project?.id) : [];
-  next.conversations = Array.isArray(next.conversations) ? next.conversations.filter((conversation) => conversation?.id) : [];
-  next.currentProjectId = next.currentProjectId || DEFAULT_PROJECT_ID;
-  next.currentConversationId = next.currentConversationId ?? null;
-  next.updatedAt = Number.isFinite(Number(next.updatedAt)) ? Number(next.updatedAt) : 0;
-  const previous = projectStore;
-  projectStore = next;
-  ensureDefaultProject();
-  const normalized = projectStore;
-  projectStore = previous;
-  return normalized;
+  return normalizeOverlayProjectStore(store, { defaultColor: PROJECT_COLORS[0] });
 }
 
 function mergeProjectStores(localStore, remoteStore) {
-  const local = normalizeProjectStore(localStore);
-  const remote = normalizeProjectStore(remoteStore);
-  const localIsNewer = (local.updatedAt ?? 0) > (remote.updatedAt ?? 0);
-  const pointerSource = localIsNewer ? local : remote;
-  const projects = new Map();
-  for (const project of [...remote.projects, ...local.projects]) {
-    projects.set(project.id, { ...(projects.get(project.id) ?? {}), ...project });
-  }
-
-  const conversations = new Map();
-  for (const conversation of [...remote.conversations, ...local.conversations]) {
-    const existing = conversations.get(conversation.id);
-    if (!existing || (conversation.updatedAt ?? 0) >= (existing.updatedAt ?? 0)) {
-      conversations.set(conversation.id, conversation);
-    }
-  }
-
-  return normalizeProjectStore({
-    currentProjectId: pointerSource.currentProjectId || DEFAULT_PROJECT_ID,
-    currentConversationId: pointerSource.currentConversationId ?? null,
-    projects: [...projects.values()],
-    conversations: [...conversations.values()],
-    updatedAt: Math.max(local.updatedAt ?? 0, remote.updatedAt ?? 0)
-  });
+  return mergeOverlayProjectStores(localStore, remoteStore, { defaultColor: PROJECT_COLORS[0] });
 }
 
 function updateConversationPointerFromStore() {
@@ -539,14 +443,7 @@ function loadProjectStore() {
 function saveProjectStore() {
   try {
     if (!projectStore) return;
-    projectStore.updatedAt = Date.now();
-    for (const project of projectStore.projects) {
-      const convs = projectStore.conversations.filter((c) => c.projectId === project.id).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
-      if (convs.length > MAX_CONVERSATIONS_PER_PROJECT) {
-        const drop = new Set(convs.slice(MAX_CONVERSATIONS_PER_PROJECT).map((c) => c.id));
-        projectStore.conversations = projectStore.conversations.filter((c) => !drop.has(c.id));
-      }
-    }
+    pruneProjectConversations(projectStore, { maxPerProject: MAX_CONVERSATIONS_PER_PROJECT });
     localStorage.setItem(STORAGE_KEY_V3, JSON.stringify(projectStore));
     persistProjectStoreToService();
   } catch { /* quota */ }
@@ -594,7 +491,12 @@ function switchProject(projectId) {
 
 function createProject(name, color) {
   if (!projectStore) loadProjectStore();
-  const p = { id: newProjectId(), name: name || "新项目", color: color || PROJECT_COLORS[projectStore.projects.length % PROJECT_COLORS.length], createdAt: Date.now(), metadata: {} };
+  const p = buildProject({
+    id: createProjectId(),
+    name: name || "新项目",
+    color: color || PROJECT_COLORS[projectStore.projects.length % PROJECT_COLORS.length],
+    metadata: {}
+  });
   projectStore.projects.push(p);
   saveProjectStore();
   return p;
@@ -621,7 +523,7 @@ function deleteConversation(convId) {
 
 function listConversationsForCurrentProject() {
   if (!projectStore) return [];
-  return projectStore.conversations.filter((c) => c.projectId === (projectStore.currentProjectId || DEFAULT_PROJECT_ID)).sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  return listConversationsForProject(projectStore, projectStore.currentProjectId || DEFAULT_PROJECT_ID);
 }
 
 function ensureConversation(seedCapture = null, seedCommand = null) {
@@ -670,7 +572,7 @@ function appendTurn(role, content, opts = {}) {
 // mutated (users see the reply when they switch back).
 function appendTurnForTask(taskId, role, content) {
   if (!content || typeof content !== "string") return;
-  const ownerConvId = taskId ? taskConversationMap.get(taskId) : null;
+  const ownerConvId = taskOwnerConversationId(taskConversationMap, taskId);
   if (!ownerConvId || !projectStore) {
     // Unknown owner — fall back to current conversation semantics.
     appendTurn(role, content);
@@ -698,7 +600,7 @@ function appendTurnForTask(taskId, role, content) {
 function bindTaskToConversation(taskId) {
   if (!taskId) return;
   ensureConversation();
-  taskConversationMap.set(taskId, conversationState.id);
+  bindTaskToConversationId(taskConversationMap, taskId, conversationState.id);
   conversationState.activeTaskId = taskId;
   conversationState.updatedAt = Date.now();
   persistConversation();
@@ -1570,12 +1472,6 @@ function getToolEventId(frame) {
 // long arg blobs and result previews. Plain ✓ / ✗ + tool name remains the
 // single-line summary (matches the screenshot the user critiqued, just
 // inside a polished card chrome).
-function escapeHtmlForOverlay(text) {
-  return String(text ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-
 const TOOL_STEP_ICONS = {
   pending: '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9" opacity="0.3"/><path d="M12 3 a9 9 0 0 1 9 9"/></svg>',
   done:    '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>',
@@ -1612,14 +1508,14 @@ function buildToolStepInner(toolId, state, args, observation) {
     ${copyBtn}
     <button type="button" class="step-row" aria-expanded="${hasBody ? "true" : "false"}">
       <span class="step-icon">${icon}</span>
-      <span class="step-name">${escapeHtmlForOverlay(toolId)}</span>
-      <span class="step-summary">${escapeHtmlForOverlay(summaryText)}</span>
+      <span class="step-name">${escapeHtml(toolId)}</span>
+      <span class="step-summary">${escapeHtml(summaryText)}</span>
       ${truncatedHint}
       ${hasBody ? STEP_CHEVRON : ""}
     </button>
     <div class="step-body"${hasBody ? "" : " hidden"}>
-      ${argsText ? `<div class="step-args">${escapeHtmlForOverlay(argsText)}</div>` : ""}
-      ${obsText ? `<div class="step-outcome">${escapeHtmlForOverlay(obsText)}</div>` : ""}
+      ${argsText ? `<div class="step-args">${escapeHtml(argsText)}</div>` : ""}
+      ${obsText ? `<div class="step-outcome">${escapeHtml(obsText)}</div>` : ""}
     </div>
   `;
 }
@@ -1982,10 +1878,7 @@ function hideToast() {
    ═══════════════════════════════════════════════ */
 
 function formatDateTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString("zh-CN", { hour12: false });
+  return formatSharedDateTime(value, { timeOnly: true });
 }
 
 function approvalIdOf(value = {}) {
@@ -2046,31 +1939,8 @@ async function reconcilePendingApprovalPopups() {
   }
 }
 
-// Compact relative time used inside chat bubbles. Promoted on a 30-second
-// timer (refreshChatTimestamps) so "刚刚" eventually becomes "1 分钟前"
-// without re-rendering the bubble.
-function formatRelativeTime(value) {
-  if (!value) return "";
-  const ts = typeof value === "number" ? value : new Date(value).getTime();
-  if (Number.isNaN(ts)) return "";
-  const ms = Date.now() - ts;
-  if (ms < 0) return "刚刚";
-  if (ms < 60_000) return "刚刚";
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} 分钟前`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} 小时前`;
-  const d = new Date(ts);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${mm}/${dd} ${hh}:${mi}`;
-}
-
 function formatAbsoluteTimestamp(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("zh-CN", { hour12: false });
+  return formatSharedDateTime(value, { invalidFallback: "empty" });
 }
 
 // Append (or refresh) the .bubble-time footer on a bubble. Idempotent:
@@ -2485,7 +2355,7 @@ async function renderInlineApproval(frame) {
         ?? resp?.approval?.resulting_task_id
         ?? null;
       if (resumeTaskId && conversationState?.id) {
-        taskConversationMap.set(resumeTaskId, conversationState.id);
+        bindTaskToConversationId(taskConversationMap, resumeTaskId, conversationState.id);
         const existing = backgroundTaskStreams.get(resumeTaskId);
         if (!existing) {
           const stream = subscribeTaskEvents(serviceBaseUrl, resumeTaskId, {
@@ -2560,7 +2430,7 @@ async function handleTaskEventFrame(rawEvent) {
   // mutate the owning conversation's turns list; we just don't render
   // bubbles for them.
   const frameTaskId = frame.taskId ?? frame.task_id ?? activeTaskId;
-  const ownerConvId = frameTaskId ? taskConversationMap.get(frameTaskId) : null;
+  const ownerConvId = taskOwnerConversationId(taskConversationMap, frameTaskId);
   const isForActiveConv = !ownerConvId || ownerConvId === conversationState?.id;
 
   if (lastTask?.task_id === activeTaskId) {
@@ -2717,7 +2587,7 @@ async function handleTaskEventFrame(rawEvent) {
       }
       // Also clear the owning conversation's activeTaskId so future switches
       // don't try to re-attach to a terminated task.
-      const ownerId = taskConversationMap.get(frameTaskId);
+      const ownerId = taskOwnerConversationId(taskConversationMap, frameTaskId);
       if (ownerId && projectStore) {
         const owner = projectStore.conversations.find((c) => c.id === ownerId);
         if (owner && owner.activeTaskId === frameTaskId) {
@@ -2725,7 +2595,7 @@ async function handleTaskEventFrame(rawEvent) {
           saveProjectStore();
         }
       }
-      taskConversationMap.delete(frameTaskId);
+      clearTaskConversationBinding(taskConversationMap, frameTaskId);
     }
   }
 }
@@ -2854,18 +2724,6 @@ async function refreshTaskSummaries(force = false) {
   return taskSummaries;
 }
 
-function taskIdsForConversation(conversation = {}) {
-  const ids = new Set();
-  const meta = conversation.metadata ?? {};
-  for (const value of [meta.latestTaskId, meta.taskId, conversation.taskId, conversation.parentTaskId]) {
-    if (typeof value === "string" && value.startsWith("task_")) ids.add(value);
-  }
-  for (const turn of conversation.turns ?? []) {
-    if (typeof turn?.taskId === "string" && turn.taskId.startsWith("task_")) ids.add(turn.taskId);
-  }
-  return ids;
-}
-
 function repairAutomaticTaskConversations(tasks = []) {
   if (!projectStore?.conversations?.length) return;
   const byTaskId = new Map(tasks.filter((task) => task?.task_id).map((task) => [task.task_id, task]));
@@ -2913,68 +2771,6 @@ function saveSurfacedAutoTaskIds(ids) {
   try {
     localStorage.setItem(AUTO_TASK_SURFACED_KEY, JSON.stringify([...ids].slice(-100)));
   } catch { /* ignore */ }
-}
-
-function isAutomaticResultTask(task) {
-  if (!task) return false;
-  const metadata = task.context_packet?.selection_metadata
-    ?? task.context_packet?.selectionMetadata
-    ?? task.selection_metadata
-    ?? {};
-  const sourceId = String(metadata.source_id ?? task.schedule_source ?? "");
-  const sourceApp = task.source_app ?? task.context_packet?.source_app ?? "";
-  const captureMode = task.capture_mode ?? task.context_packet?.capture_mode ?? "";
-  return sourceApp === "uca.scheduler"
-    || captureMode === "scheduler"
-    || sourceId.startsWith("sched_")
-    || sourceApp === "uca.email"
-    || captureMode === "email_digest";
-}
-
-function automaticProjectForTask(task = {}) {
-  if (task.source_app === "uca.email" || task.capture_mode === "email_digest") {
-    return {
-      projectId: AUTO_EMAIL_PROJECT_ID,
-      name: "邮件摘要",
-      color: "#14b8a6"
-    };
-  }
-  return {
-    projectId: AUTO_SCHEDULE_PROJECT_ID,
-    name: "定时任务",
-    color: "#f59e0b"
-  };
-}
-
-function isEmailDigestTask(task = {}) {
-  const sourceApp = task.source_app ?? task.context_packet?.source_app ?? "";
-  const captureMode = task.capture_mode ?? task.context_packet?.capture_mode ?? "";
-  return sourceApp === "uca.email" || captureMode === "email_digest";
-}
-
-function automaticConversationKey(task = {}, detail = {}) {
-  const detailTask = detail?.task ?? task;
-  const metadata = detailTask?.context_packet?.selection_metadata
-    ?? detailTask?.context_packet?.selectionMetadata
-    ?? detailTask?.selection_metadata
-    ?? {};
-  if (isEmailDigestTask(detailTask)) {
-    return `email:${new Date(detailTask.updated_at ?? detailTask.created_at ?? Date.now()).toISOString().slice(0, 10)}`;
-  }
-  return `schedule:${metadata.source_id ?? detailTask.schedule_source ?? detailTask.intent ?? detailTask.user_command ?? detailTask.task_id}`;
-}
-
-function titleForAutomaticConversation(task = {}, detail = {}) {
-  const detailTask = detail?.task ?? task;
-  if (isEmailDigestTask(detailTask)) {
-    return "Morning digest";
-  }
-  const metadata = detailTask?.context_packet?.selection_metadata
-    ?? detailTask?.context_packet?.selectionMetadata
-    ?? detailTask?.selection_metadata
-    ?? {};
-  const raw = metadata.source_id || detailTask.intent || detailTask.user_command || "定时任务";
-  return String(raw).slice(0, 48);
 }
 
 function appendAutomaticTurnToConversation({ task, detail, text }) {
@@ -3025,19 +2821,6 @@ function appendAutomaticTurnToConversation({ task, detail, text }) {
   }
   saveProjectStore();
   return conv;
-}
-
-function finalTextFromTaskDetail(detail) {
-  const events = detail?.events ?? detail?.taskEvents ?? [];
-  const finalEvent = [...events].reverse().find((event) =>
-    (event.event_type === "inline_result" || event.event_type === "success")
-    && typeof event.payload?.text === "string"
-    && event.payload.text.trim().length > 0
-  );
-  return finalEvent?.payload?.text
-    ?? detail?.task?.result_summary
-    ?? detail?.result_summary
-    ?? "";
 }
 
 async function surfaceAutomaticTaskResults(tasks = []) {
@@ -3172,7 +2955,7 @@ async function attachLatestActiveTaskToOverlay() {
   // taskConversationMap routing. Without this guard, opening overlay while
   // conversation B has a running task pulls its events into conversation A's
   // bubble area — the exact "两个任务跑完只剩一个结果跑错对话框" bug.
-  const owner = taskConversationMap.get(latest.task_id);
+  const owner = taskOwnerConversationId(taskConversationMap, latest.task_id);
   if (owner && conversationState?.id && owner !== conversationState.id) return false;
   activeTaskId = latest.task_id;
   lastTask = latest;
@@ -3271,14 +3054,7 @@ function normalisePreviewText(rawText = "") {
 }
 
 function formatArtifactLabel(artifactPath = "") {
-  const p = `${artifactPath}`.toLowerCase();
-  if (p.endsWith(".md"))   return "Markdown";
-  if (p.endsWith(".txt"))  return "Text";
-  if (p.endsWith(".html") || p.endsWith(".htm")) return "HTML";
-  if (p.endsWith(".json")) return "JSON";
-  if (p.endsWith(".csv"))  return "CSV";
-  if (p.endsWith(".docx")) return "Word";
-  return "File";
+  return formatSharedArtifactLabel(artifactPath);
 }
 
 function isPreviewableArtifactPath(artifactPath = "") {
@@ -5670,12 +5446,6 @@ if (voiceCard) {
 
 const overlayCtxMenu = document.querySelector("#overlayCtxMenu");
 
-function escapeHtmlForCtx(value) {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-}
-
 function closeOverlayCtxMenu() {
   if (!overlayCtxMenu) return;
   overlayCtxMenu.hidden = true;
@@ -5687,9 +5457,9 @@ function openOverlayCtxMenu(items, x, y) {
   overlayCtxMenu.innerHTML = items.map((item) => {
     if (item.separator) return `<div class="ctx-sep" role="separator"></div>`;
     return `
-      <button type="button" class="ctx-item" role="menuitem" data-act="${escapeHtmlForCtx(item.id)}">
-        <span class="ctx-glyph">${escapeHtmlForCtx(item.glyph ?? "")}</span>
-        <span>${escapeHtmlForCtx(item.label)}</span>
+      <button type="button" class="ctx-item" role="menuitem" data-act="${escapeHtml(item.id)}">
+        <span class="ctx-glyph">${escapeHtml(item.glyph ?? "")}</span>
+        <span>${escapeHtml(item.label)}</span>
       </button>
     `;
   }).join("");

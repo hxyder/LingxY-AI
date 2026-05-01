@@ -4,12 +4,12 @@
  *
  * Decision order:
  *   0a. explicit_no_search (kind=fact)         → forbidden  (hard)
- *   0b. pending_offer external intent          → required   (hard)
+ *   0b. local_only_constraint (kind=fact)      → forbidden  (hard)
+ *   0c. pending_offer external intent          → required   (hard)
  *   1.  explicit_external strong               → required   (hard)
- *   2a. source_scope kind=fact + LOCAL         → forbidden  (policy hard; SR may still classify output shape)
  *   2b. explicit_single_url + inline URL       → required   (hard)
- *   2c. source_scope kind=assumption + LOCAL   → forbidden  (hard)
- *   3.  explicit_search strong                 → required   (hard)
+ *   2c. source_scope + LOCAL, no search intent → forbidden  (local fallback)
+ *   3.  explicit_search strong                 → required, or optional with local input
  *   4/5/6. default                             → see resolveDeterministicPolicy
  *
  * P5 — the LLM (SemanticRouter / IntentRoute) is the primary classifier;
@@ -89,6 +89,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   const weakFreshness = signals.weak_freshness;
   const pendingOffer = signals.pending_offer;
   const explicitNoSearch = signals.explicit_no_search;
+  const localOnlyConstraint = signals.local_only_constraint;
   const explicitSingleUrl = signals.explicit_single_url;
 
   // 0a. P4-RQ E1: explicit no-search override. Highest priority —
@@ -106,7 +107,18 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
     );
   }
 
-  // 0b. Pending-offer inheritance (P4-02.x C4). When the user replies with
+  // 0b. Local-only constraint. This is separate from source_scope:
+  // source_scope says local evidence exists; local_only_constraint says
+  // the user explicitly limited the task to that evidence.
+  if (localOnlyConstraint?.matched) {
+    return webSearchPolicy(
+      "forbidden",
+      "User explicitly constrained the task to local/provided material (local-only).",
+      localOnlyConstraint.evidence
+    );
+  }
+
+  // 0c. Pending-offer inheritance (P4-02.x C4). When the user replies with
   // a short affirmative ("需要", "继续", "yes") to an assistant offer
   // that was about a high-freshness external entity (weather / news /
   // stock / flight / …), upgrade the policy to `required`. The
@@ -125,7 +137,8 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
     );
   }
 
-  // 1. Explicit external opt-in — overrides everything, including local scope.
+  // 1. Explicit external opt-in — overrides local evidence, but not hard
+  // no-search/local-only constraints handled above.
   if (explicitExternal?.matched && explicitExternal.strength === "strong") {
     return webSearchPolicy(
       "required",
@@ -134,25 +147,11 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
     );
   }
 
-  // 2a. P4-RQ E2: hard-fact local anchor (real_selection / file_text /
-  // uploaded_files / local_project) — kind=fact source-scope. Web is
-  // forbidden because the user has POINTED AT specific local content
-  // and the inference is direct, not a pronoun. This split (fact
-  // first, assumption later) is what lets explicit_single_url
-  // override the ambiguous "这篇文章" pronoun case in step 2b without
-  // weakening real-selection forbids.
   const scopeValue = sourceScope?.hint?.value ?? "none";
-  if (sourceScope?.matched
-      && sourceScope.kind === "fact"
-      && LOCAL_SCOPES.has(scopeValue)) {
-    return webSearchPolicy(
-      "forbidden",
-      `Task is anchored to ${scopeValue} (fact-kind); external web data is not appropriate.`,
-      sourceScope.evidence
-    );
-  }
+  const hasLocalScope = isLocalSourceScope(sourceScope);
+  const neutralSearch = isStrongExplicitSearch(explicitSearch);
 
-  // 2b. P4-RQ E2: explicit single-URL anchor. The user pasted a URL
+  // 2a. P4-RQ E2: explicit single-URL anchor. The user pasted a URL
   // alongside a summarise-style verb — the URL IS the user's anchor,
   // and the resolver must force web=required (NOT optional) so the
   // executor actually fetches the URL via fetch_url_content rather
@@ -164,8 +163,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   // to the user's open browser tab, no URL in the text). Without
   // structural URL evidence we cannot upgrade web=required, since
   // there is nothing for the executor to fetch. When there's no
-  // URL, fall through to step 2c (assumption-local) which forbids,
-  // letting the LLM summarise from whatever local context exists.
+  // URL, fall through to the local-input fallback below.
   //
   // This keeps the explicit_single_url signal broad (D1 research-
   // quality inference still consumes it for single_lookup profile)
@@ -180,16 +178,15 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
     );
   }
 
-  // 2c. Assumption-kind local anchor — pronoun-style "这个/这篇" without
-  // a URL. Without an explicit external signal to override, treat
-  // as local. Same forbid as before; just split out from the
-  // fact-kind case above.
-  if (sourceScope?.matched
-      && sourceScope.kind === "assumption"
-      && LOCAL_SCOPES.has(scopeValue)) {
+  // 2b. Local input fallback. Local evidence is not a hard no-web
+  // constraint, but when the user did not ask to search, browse, or fetch a
+  // URL, the deterministic fallback remains local. When a neutral search
+  // verb is present ("查一下我的文件" vs "结合简历搜索工作"), fall through to
+  // step 3 so SR / the planner can disambiguate the search object.
+  if (hasLocalScope && !neutralSearch) {
     return webSearchPolicy(
       "forbidden",
-      `Task is anchored to ${scopeValue} (assumption-kind, e.g. "这个/这篇" pronoun); external web data is not appropriate.`,
+      `Task is anchored to ${scopeValue}; no explicit external/search request requires web data.`,
       sourceScope.evidence
     );
   }
@@ -211,21 +208,26 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   //    additions don't have to re-import.
 
   // 4. P4-RQ E5: explicit search verb (structural hard signal)
-  //    → required. Symmetry with explicit_external (step 1 →
+  //    → required unless local input makes the search object ambiguous.
+  //    Symmetry with explicit_external (step 1 →
   //    required) and explicit_no_search (step 0a → forbidden) —
   //    all three are explicit user verbs about the search axis,
   //    each respected verbatim by the resolver.
   //
   //    Pre-E5 this returned `optional` and waited for SR to upgrade.
   //    The "wait for SR" default was wrong: when the user typed
-  //    "查一下 / search / google", they declared intent. Local-anchor
-  //    cases (file_paths attached, "查一下我的文件") already
-  //    short-circuit at step 2a (fact-local) before reaching here,
-  //    so promoting search-verb to required does NOT auto-route
-  //    local search to web. SR can still downgrade via the merge
-  //    layer + fact-conflict guard if subsequent signals contradict
-  //    the verb.
+  //    "查一下 / search / google", they declared intent. Local-input
+  //    cases are the exception: "查一下我的文件" and "结合简历搜索工作"
+  //    both contain local evidence, so deterministic policy stays optional
+  //    until SR / the planner identifies the search object.
   if (explicitSearch?.matched && explicitSearch.strength === "strong") {
+    if (hasLocalScope) {
+      return webSearchPolicy(
+        "optional",
+        `User used a neutral search verb with local input (${scopeValue}); SemanticRouter or the tool planner must decide whether the search target is local or external.`,
+        explicitSearch.evidence
+      );
+    }
     return webSearchPolicy(
       "required",
       "User used an explicit search verb (structural hard signal); web_search required.",
@@ -268,17 +270,30 @@ function webSearchPolicy(mode, reason, evidence) {
   return buildExternalWebReadPolicy(mode, reason, evidence);
 }
 
+function isStrongExplicitSearch(signal) {
+  return Boolean(signal?.matched && signal.strength === "strong");
+}
+
+function isLocalSourceScope(signal) {
+  return Boolean(signal?.matched && LOCAL_SCOPES.has(signal.hint?.value));
+}
+
+function hasHardLocalOnlyConstraint(signals) {
+  return Boolean(
+    signals?.explicit_no_search?.matched
+    || signals?.local_only_constraint?.matched
+  );
+}
+
 /**
  * P4-03 / P6: gate for SemanticRouter consultation.
  *
  * SemanticRouter is the primary semantic classifier. This gate skips it
  * only for narrow structural hard signals where the LLM cannot add useful
  * routing meaning or must not be asked to overrule the user/runtime fact:
- * attachments, explicit online opt-in, explicit no-search, and tiny
- * chitchat, plus narrow side-effect actions like a pure app launch.
- * Local source_scope is intentionally NOT a skip condition: SR may still
- * classify user_goal / expected_output, while the merge layer keeps the
- * local-anchor web policy locked.
+ * local-only/no-search constraints, pure attachments with no search verb,
+ * explicit online opt-in, and tiny chitchat, plus narrow side-effect actions
+ * like a pure app launch.
  *
  * @param {{ signals: object, contextPacket?: object, text?: string }} input
  * @returns {boolean}
@@ -286,17 +301,18 @@ function webSearchPolicy(mode, reason, evidence) {
 export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text = "" } = {}) {
   if (extractPureLaunchApp(text)) return false;
 
-  if (Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0) {
-    return false;
-  }
-  if (Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0) {
-    return false;
-  }
+  const neutralSearch = isStrongExplicitSearch(signals?.explicit_search);
+  if (Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0 && !neutralSearch) return false;
+  if (Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0 && !neutralSearch) return false;
+
   const explicitExternal = signals?.explicit_external;
   if (explicitExternal?.matched && explicitExternal.strength === "strong") return false;
 
   const explicitNoSearch = signals?.explicit_no_search;
   if (explicitNoSearch?.matched && explicitNoSearch.kind === "fact") return false;
+
+  const localOnlyConstraint = signals?.local_only_constraint;
+  if (localOnlyConstraint?.matched && localOnlyConstraint.kind === "fact") return false;
 
   // P4-RQ E3 stage C1: topic_hint (topic regex) NO LONGER
   // skips SR. Previously, "今天天气" with strong-topic_hint
@@ -332,8 +348,10 @@ export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text 
  *     规则").
  *   - When deterministic mode is `required` → ignore SR. Defense-in-
  *     depth on top of the ambiguity gate.
- *   - When `signals.source_scope.kind === "fact"` and the scope is
- *     local → ignore SR. Hard facts beat soft inferences (P4-02 §18.3).
+ *   - When a hard no-search/local-only constraint is present → ignore SR.
+ *   - When local input has no neutral search verb → ignore SR. Local input is
+ *     evidence, not a policy constraint, but without a search/external signal
+ *     the deterministic local fallback is settled.
  *   - Otherwise → use the SR-suggested `web_policy` as the new mode.
  *     SemanticRouter has already filtered low-confidence and
  *     fact-conflict cases (it would have returned a rejection there);
@@ -368,14 +386,15 @@ export function mergeSemanticRouterDecision({
   if (signals?.explicit_no_search?.matched) {
     return stampResearchHint(deterministicPolicy, sr);
   }
+  if (signals?.local_only_constraint?.matched) {
+    return stampResearchHint(deterministicPolicy, sr);
+  }
 
   const detMode = deterministicPolicy?.web_search_fetch?.mode;
   if (detMode === "required") return stampResearchHint(deterministicPolicy, sr);
 
   const sourceScope = signals?.source_scope;
-  if (sourceScope?.matched
-      && sourceScope.kind === "fact"
-      && LOCAL_SCOPES.has(sourceScope.hint?.value)) {
+  if (isLocalSourceScope(sourceScope) && !isStrongExplicitSearch(signals?.explicit_search)) {
     return stampResearchHint(deterministicPolicy, sr);
   }
 
@@ -398,8 +417,9 @@ export function mergeSemanticRouterDecision({
 /**
  * Fallback when SR didn't produce a judgement: covers operational
  * failures (rejection.code in SR_OPERATIONAL_FAILURE_CODES) and
- * "should have consulted but didn't". Upgrades a default-rule
- * forbidden to optional; never overrides a local-anchor forbidden.
+ * "should have consulted but didn't". Upgrades default-rule/local-search
+ * ambiguity to optional, but never overrides a hard no-search/local-only
+ * constraint or a pure local-input task with no search verb.
  */
 export function mergeSemanticRouterOperationalFallback({
   deterministicPolicy,
@@ -418,7 +438,10 @@ export function mergeSemanticRouterOperationalFallback({
   if (detMode !== "forbidden") return deterministicPolicy;
 
   const sourceScope = signals?.source_scope;
-  if (sourceScope?.matched && LOCAL_SCOPES.has(sourceScope.hint?.value)) {
+  if (hasHardLocalOnlyConstraint(signals)) {
+    return deterministicPolicy;
+  }
+  if (isLocalSourceScope(sourceScope) && !isStrongExplicitSearch(signals?.explicit_search)) {
     return deterministicPolicy;
   }
 

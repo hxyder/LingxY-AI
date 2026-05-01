@@ -39,7 +39,7 @@ async function it(label, fn) {
 async function read(p) { return readFile(path.join(repoRoot, p), "utf8"); }
 
 const overlay = await read("src/desktop/renderer/overlay.js");
-const httpServer = await read("src/service/core/http-server.mjs");
+const taskRoutes = await read("src/service/core/http-routes/task-routes.mjs");
 const taskRuntime = await read("src/service/core/task-runtime.mjs");
 const cacheModule = await read("src/desktop/renderer/conversation-cache.mjs");
 
@@ -98,15 +98,15 @@ await it("shared cache: tool_summary classifies as skip; overlay's onSkip is a n
     "overlay adapter's onSkip should be an explicit no-op for tool_summary");
 });
 
-await it("http-server.mjs: /task accepts client_message_id (snake) AND clientMessageId (camel)", () => {
-  assert.match(httpServer, /body\.client_message_id/);
-  assert.match(httpServer, /body\.clientMessageId/);
+await it("task-routes.mjs: /task accepts client_message_id (snake) AND clientMessageId (camel)", () => {
+  assert.match(taskRoutes, /body\.client_message_id/);
+  assert.match(taskRoutes, /body\.clientMessageId/);
 });
 
-await it("http-server.mjs: clientMessageId threaded into every submission helper", () => {
+await it("task-routes.mjs: clientMessageId threaded into every submission helper", () => {
   // We assert at least one of each to make sure the threading was
   // complete; missing any path is a regression.
-  assert.match(httpServer, /clientMessageId:\s*requestClientMessageId/);
+  assert.match(taskRoutes, /clientMessageId:\s*requestClientMessageId/);
 });
 
 await it("task-runtime.mjs: submitTaskWithConversation accepts clientMessageId param", () => {

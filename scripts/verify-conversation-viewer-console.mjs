@@ -16,6 +16,8 @@ async function it(label, fn) {
 
 const html = await readFile(path.join(repoRoot, "src/desktop/renderer/console.html"), "utf8");
 const js = await readFile(path.join(repoRoot, "src/desktop/renderer/console.js"), "utf8");
+const cache = await readFile(path.join(repoRoot, "src/desktop/renderer/conversation-cache.mjs"), "utf8");
+const viewer = await readFile(path.join(repoRoot, "src/desktop/renderer/console-conversation-viewer.mjs"), "utf8");
 
 await it("rail item: data-tab=\"conversations\" exists", () => {
   assert.match(html, /data-tab="conversations"/);
@@ -40,13 +42,26 @@ await it("js: tab switch hook calls loadConversationsTab", () => {
   assert.match(js, /btn\.dataset\.tab === "conversations"[\s\S]{0,80}loadConversationsTab/);
 });
 
-await it("js: loadConversationsTab GETs /conversations with archived param", () => {
+await it("js: loadConversationsTab uses shared /conversations fetcher with archived param", () => {
   assert.match(js, /async function loadConversationsTab/);
-  assert.match(js, /\/conversations\?[^"]*archived=/);
+  assert.match(js, /fetchConversations\s+as\s+cacheFetchConversations/);
+  assert.match(js, /cacheFetchConversations\(fetch\.bind\(globalThis\),\s*state\.serviceBaseUrl,\s*\{\s*limit,\s*archived\s*\}\)/);
+  assert.match(js, /fetchConversationsList\(\{\s*limit:\s*200,\s*archived\s*\}\)/);
+  assert.match(cache, /\/conversations\?\$\{params\.toString\(\)\}/);
 });
 
-await it("js: loadConversationDetail GETs /conversation/{id}", () => {
-  assert.match(js, /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}/);
+await it("js: loadConversationDetail uses shared /conversation/{id} fetcher", () => {
+  assert.match(js, /fetchConversationDetail\s+as\s+cacheFetchConversationDetail/);
+  assert.match(js, /cacheFetchConversationDetail\(fetch\.bind\(globalThis\),\s*state\.serviceBaseUrl,\s*conversationId\)/);
+  assert.match(cache, /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}/);
+});
+
+await it("js: conversation viewer HTML renderer lives in a dedicated module", () => {
+  assert.match(js, /from\s+["']\.\/console-conversation-viewer\.mjs["']/);
+  assert.match(js, /renderConversationsListHtml\(/);
+  assert.match(js, /renderConversationDetailView\(/);
+  assert.match(viewer, /function renderConversationsListHtml\s*\(/);
+  assert.match(viewer, /function renderConversationDetailView\s*\(/);
 });
 
 await it("js: read-only — no POST/PATCH/DELETE on /conversation in viewer module", () => {
@@ -60,14 +75,14 @@ await it("js: read-only — no POST/PATCH/DELETE on /conversation in viewer modu
 });
 
 await it("js: renderer surfaces backfilled/partial/migration_version metadata tags", () => {
-  assert.match(js, /backfilled/);
-  assert.match(js, /partial/);
-  assert.match(js, /migration_version/);
+  assert.match(viewer, /backfilled/);
+  assert.match(viewer, /partial/);
+  assert.match(viewer, /migration_version/);
 });
 
 await it("js: renderer shows task-link relation labels", () => {
-  assert.match(js, /linksByMessage/);
-  assert.match(js, /\.relation/);
+  assert.match(viewer, /linksByMessage/);
+  assert.match(viewer, /\.relation/);
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

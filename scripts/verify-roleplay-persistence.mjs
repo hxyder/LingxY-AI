@@ -5,7 +5,7 @@ import { createTaskSpec } from "../src/service/core/task-spec.mjs";
 import { routeIntent } from "../src/service/core/router/intent-router.mjs";
 
 const agentLoop = readFileSync(new URL("../src/service/executors/tool_using/agent-loop.mjs", import.meta.url), "utf8");
-const httpServer = readFileSync(new URL("../src/service/core/http-server.mjs", import.meta.url), "utf8");
+const taskRoutes = readFileSync(new URL("../src/service/core/http-routes/task-routes.mjs", import.meta.url), "utf8");
 const policyResolver = readFileSync(new URL("../src/service/core/policy/tool-policy-resolver.mjs", import.meta.url), "utf8");
 
 const roleplayDecision = {
@@ -82,7 +82,7 @@ assert.ok(/const toolSchemas = leanChatMode \? \[\] : \[plannerToolDescriptorFor
 assert.ok(/const plannerTools = leanChatMode \? \[\] : filterToolsForTask/.test(agentLoop),
   "lean chat mode must not render the full tool inventory");
 
-assert.ok(!/detectAmbiguity|clarify-before-act|Clarify-before-act/.test(httpServer),
+assert.ok(!/detectAmbiguity|clarify-before-act|Clarify-before-act/.test(taskRoutes),
   "HTTP submission must not run old pre-task regex clarification");
 assert.ok(!/roleplayOrInterview|角色扮演\|面试官|isPureConversationalTurn/.test(policyResolver),
   "SR gate must not use roleplay/interview regex as a scene classifier");

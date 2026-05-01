@@ -14,7 +14,10 @@ import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { executeKimiTask } from "../kimi/kimi-cli-executor.mjs";
 import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
 import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
+import { fetchExternal } from "../../core/external-call.mjs";
 import { emitTaskEvent as emitRuntimeTaskEvent } from "../../core/task-runtime.mjs";
+
+const FAST_API_FETCH_TIMEOUT_MS = 120_000;
 
 /**
  * Build the chat messages array for the fast executor. Exported so the
@@ -115,7 +118,7 @@ async function callOpenAICompatible({ provider, apiKey, baseUrl, model, messages
     stream: typeof onTextDelta === "function"
   };
   applyReasoningSelectionToBody(body, provider, model, provider?.reasoningEffort ?? "");
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await fetchExternal(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -123,12 +126,11 @@ async function callOpenAICompatible({ provider, apiKey, baseUrl, model, messages
     },
     body: JSON.stringify(body),
     signal
+  }, {
+    timeoutMs: FAST_API_FETCH_TIMEOUT_MS,
+    label: "fast_executor.openai_compatible",
+    httpErrorPrefix: "API error"
   });
-
-  if (!response.ok) {
-    const errorBody = await response.text().catch(() => "");
-    throw new Error(`API error ${response.status}: ${errorBody.slice(0, 200)}`);
-  }
 
   if (body.stream) {
     const reader = response.body.getReader();

@@ -4,12 +4,20 @@
 // per-page — each caller plugs in its own DOM adapter.
 
 const CLIENT_ID_PREFIX = "cmsg_";
+const CONVERSATION_ID_PREFIX = "conv_";
 
 export function createClientMessageId() {
   if (typeof crypto?.randomUUID === "function") {
     return `${CLIENT_ID_PREFIX}${crypto.randomUUID()}`;
   }
   return `${CLIENT_ID_PREFIX}${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function createConversationId() {
+  if (typeof crypto?.randomUUID === "function") {
+    return `${CONVERSATION_ID_PREFIX}${crypto.randomUUID()}`;
+  }
+  return `${CONVERSATION_ID_PREFIX}${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
 export function ensureBackendCacheFields(conv) {
@@ -96,6 +104,18 @@ export async function fetchConversationDetail(fetchFn, baseUrl, conversationId) 
   } catch {
     return null;
   }
+}
+
+export async function fetchConversations(fetchFn, baseUrl, { limit = 100, archived = false, projectId = null } = {}) {
+  if (typeof fetchFn !== "function") return [];
+  const params = new URLSearchParams();
+  params.set("limit", String(Math.max(1, Math.min(Number(limit) || 100, 500))));
+  params.set("archived", archived === true ? "true" : archived === false ? "false" : String(archived));
+  if (projectId) params.set("project_id", String(projectId));
+  const res = await fetchFn(`${baseUrl ?? ""}/conversations?${params.toString()}`);
+  if (!res?.ok) throw new Error(`HTTP ${res?.status ?? "unknown"}`);
+  const data = await res.json();
+  return Array.isArray(data?.conversations) ? data.conversations : [];
 }
 
 /**

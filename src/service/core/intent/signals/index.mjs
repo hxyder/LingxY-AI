@@ -19,6 +19,7 @@ import { detect as detectExplicitEntity } from "./topic-hint.mjs";
 import { detect as detectPendingOffer } from "./pending-offer.mjs";
 import { detect as detectExplicitSingleUrl } from "./explicit-single-url.mjs";
 import { detect as detectExplicitNoSearch } from "./explicit-no-search.mjs";
+import { detect as detectLocalOnlyConstraint } from "./local-only-constraint.mjs";
 import { detect as detectSemanticRouter } from "./semantic-router.mjs";
 
 const DETECTORS = {
@@ -30,6 +31,7 @@ const DETECTORS = {
   pending_offer: detectPendingOffer,
   explicit_single_url: detectExplicitSingleUrl,
   explicit_no_search: detectExplicitNoSearch,
+  local_only_constraint: detectLocalOnlyConstraint,
   semantic_router: detectSemanticRouter
 };
 

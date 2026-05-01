@@ -11,11 +11,10 @@
  *
  * Fix design (framework-level, not patch):
  *   The chain now distinguishes source-scope by SignalKind:
- *     2a. fact-kind local anchor   → forbidden (real selection /
- *                                    file_text / uploaded_files)
- *     2b. explicit_single_url      → required (URL anchor wins
- *                                    over pronoun ambiguity)
- *     2c. assumption-kind local    → forbidden (pronoun without URL)
+ *     0a. explicit_no_search / local_only_constraint → forbidden
+ *     2a. explicit_single_url      → required (URL anchor wins
+ *                                    over pronoun/local-input ambiguity)
+ *     2b. local input without URL/search intent → forbidden fallback
  *   Combined with research_quality=single_lookup (D1) and
  *   required_policy_groups stamping (applyHardenedRules pushes
  *   external_web_read when mode=required).
@@ -27,8 +26,8 @@
  *   2. Single-URL English phrasings same.
  *   3. URL adjacency to summarise verb (URL placed AFTER pronoun)
  *      also routes correctly.
- *   4. fact-kind local anchor (real_selection) STILL forbids even
- *      with URL phrasing in command — real anchor wins.
+ *   4. local input plus an explicit inline URL routes to required; the URL is
+ *      an external source the user named, not a topic regex.
  *   5. Pronoun-only ("总结这段代码") with no URL STILL forbids —
  *      assumption-kind local catches at step 2c.
  *   6. Validator: single_lookup task with 1 fetch_url_content
@@ -94,22 +93,22 @@ for (const text of SINGLE_URL_ENGLISH) {
   });
 }
 
-// ── Boundary: fact-kind local anchor STILL forbids ──────────────────
-it("boundary: file_text anchor + URL phrasing in command → STILL forbidden (fact wins)", () => {
+// ── Boundary: local input + explicit URL still fetches the URL ──────
+it("boundary: file_text anchor + URL phrasing in command → required (URL wins)", () => {
   const spec = createTaskSpec("总结这个 URL: https://example.com", {
     file_paths: ["e:\\some\\local\\file.docx"]
   }, {});
-  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden",
-    "uploaded_files (fact-kind local anchor) must STILL forbid web even with URL phrasing — user's actual anchor is the file");
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "required",
+    "explicit inline URL must be fetchable even when local files are attached");
 });
 
-it("boundary: real_selection anchor + URL phrasing → STILL forbidden", () => {
+it("boundary: real_selection anchor + URL phrasing → required (URL wins)", () => {
   // Selection text genuinely distinct from command — real_selection fact.
   const spec = createTaskSpec("总结这个 URL: https://example.com", {
     text: "function foo() { return 'pasted code, not the URL'; }"
   }, {});
-  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden",
-    "real_selection fact must STILL forbid web");
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "required",
+    "explicit inline URL must be fetchable even when selected text exists");
 });
 
 // ── Boundary: assumption pronoun WITHOUT URL → STILL forbidden ──────

@@ -1,0 +1,142 @@
+export class ExternalCallTimeoutError extends Error {
+  constructor(message, { label = "external_call", timeoutMs = null } = {}) {
+    super(message);
+    this.name = "ExternalCallTimeoutError";
+    this.code = "EXTERNAL_CALL_TIMEOUT";
+    this.label = label;
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export class ExternalCallHttpError extends Error {
+  constructor(message, { label = "external_fetch", status = null, body = "" } = {}) {
+    super(message);
+    this.name = "ExternalCallHttpError";
+    this.code = "EXTERNAL_CALL_HTTP_ERROR";
+    this.label = label;
+    this.status = status;
+    this.body = body;
+  }
+}
+
+function wait(ms) {
+  if (!ms) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function defaultShouldRetry(error) {
+  if (error?.name === "ExternalCallTimeoutError") return true;
+  if (error?.code === "ABORT_ERR") return false;
+  const status = Number(error?.status ?? error?.response?.status);
+  if (Number.isFinite(status)) return status >= 500;
+  return false;
+}
+
+export async function withTimeout(operation, {
+  timeoutMs = 30_000,
+  label = "external_call",
+  signal = null
+} = {}) {
+  if (typeof operation !== "function") {
+    throw new TypeError("withTimeout requires an operation function");
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return operation({ signal });
+  }
+
+  const controller = new AbortController();
+  const abortFromParent = () => {
+    try { controller.abort(signal?.reason); } catch { controller.abort(); }
+  };
+  if (signal?.aborted) abortFromParent();
+  else signal?.addEventListener?.("abort", abortFromParent, { once: true });
+
+  let timer = null;
+  const timeoutError = new ExternalCallTimeoutError(
+    `${label} timed out after ${timeoutMs}ms`,
+    { label, timeoutMs }
+  );
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      try { controller.abort(timeoutError); } catch { /* noop */ }
+      reject(timeoutError);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => operation({ signal: controller.signal })),
+      timeout
+    ]);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener?.("abort", abortFromParent);
+  }
+}
+
+export async function withRetry(operation, {
+  retries = 2,
+  delayMs = 100,
+  label = "external_call",
+  shouldRetry = defaultShouldRetry
+} = {}) {
+  if (typeof operation !== "function") {
+    throw new TypeError("withRetry requires an operation function");
+  }
+
+  let attempt = 0;
+  let lastError = null;
+  while (attempt <= retries) {
+    try {
+      return await operation({ attempt });
+    } catch (error) {
+      lastError = error;
+      const canRetry = attempt < retries && shouldRetry(error, { attempt, label }) !== false;
+      if (!canRetry) throw error;
+      await wait(typeof delayMs === "function" ? delayMs({ attempt, error, label }) : delayMs);
+      attempt += 1;
+    }
+  }
+  throw lastError;
+}
+
+export async function fetchExternal(url, init = {}, {
+  timeoutMs = 30_000,
+  retries = 2,
+  delayMs = 100,
+  label = "external_fetch",
+  signal = null,
+  shouldRetry = defaultShouldRetry,
+  httpErrorPrefix = "External fetch error"
+} = {}) {
+  const requestInit = { ...(init ?? {}) };
+  const parentSignal = signal ?? requestInit.signal ?? null;
+  delete requestInit.signal;
+
+  return withRetry(
+    () => withTimeout(async ({ signal: requestSignal }) => {
+      const response = await fetch(url, {
+        ...requestInit,
+        signal: requestSignal
+      });
+      if (!response.ok) {
+        const body = await response.text().catch(() => "");
+        throw new ExternalCallHttpError(
+          `${httpErrorPrefix} ${response.status}: ${body.slice(0, 200)}`,
+          { label, status: response.status, body }
+        );
+      }
+      return response;
+    }, {
+      timeoutMs,
+      label,
+      signal: parentSignal
+    }),
+    {
+      retries,
+      delayMs,
+      label,
+      shouldRetry
+    }
+  );
+}

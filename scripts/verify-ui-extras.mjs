@@ -24,12 +24,14 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
+const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const sharedCss = read("src/desktop/renderer/shared.css");
+const sharedUi = read("src/desktop/renderer/shared-ui.mjs");
 const taskRuntime = read("src/service/core/task-runtime.mjs");
 const notesStore = read("src/service/store/notes-store.mjs");
-const httpServer = read("src/service/core/http-server.mjs");
+const noteProjectConversationRoutes = read("src/service/core/http-routes/note-project-conversation-routes.mjs");
 const connectorRoutes = read("src/service/core/http-routes/connector-routes.mjs");
 
 // ── Toast system ───────────────────────────────────────────────────────
@@ -56,7 +58,7 @@ assert.ok(/ntp-new-prompt/.test(consoleJs) && /ntp-title-input/.test(consoleJs),
   "+note title: console picker missing inline title prompt");
 assert.ok(/onp-new-prompt/.test(overlayJs) && /onp-title-input/.test(overlayJs),
   "+note title: overlay picker missing inline title prompt");
-assert.ok(/title:\s*body\.title/.test(httpServer) || /body\.title/.test(httpServer),
+assert.ok(/title:\s*body\.title/.test(noteProjectConversationRoutes) || /body\.title/.test(noteProjectConversationRoutes),
   "+note title: /notes/append-chip handler must forward title");
 assert.ok(/title\s*=\s*null\s*\}\s*\)/.test(notesStore) || /title\s*=\s*null/.test(notesStore),
   "+note title: notes-store appendChip must accept title arg");
@@ -79,8 +81,9 @@ assert.ok(/\.chat-msg-bubble\.streaming::after/.test(sharedCss), "streaming care
 assert.ok(/\.bubble\.assistant\.streaming::after/.test(overlayHtml), "streaming caret: overlay CSS missing");
 
 // ── Bubble timestamps ──────────────────────────────────────────────────
-assert.ok(/function formatRelativeTime\s*\(/.test(consoleJs), "timestamps: console formatRelativeTime() missing");
-assert.ok(/function formatRelativeTime\s*\(/.test(overlayJs), "timestamps: overlay formatRelativeTime() missing");
+assert.ok(/function formatRelativeTime\s*\(/.test(sharedUi), "timestamps: shared formatRelativeTime() missing");
+assert.ok(/formatRelativeTime/.test(consoleJs), "timestamps: console must import/use formatRelativeTime()");
+assert.ok(/formatRelativeTime/.test(overlayJs), "timestamps: overlay must import/use formatRelativeTime()");
 assert.ok(/refreshChatTimestamps/.test(consoleJs) && /refreshChatTimestamps/.test(overlayJs),
   "timestamps: refresh tick missing on either surface");
 assert.ok(/\.chat-msg-time\b/.test(sharedCss), "timestamps: .chat-msg-time CSS missing");
@@ -182,6 +185,12 @@ assert.ok(/function renderChatSidebar/.test(consoleJs),
   "phase 2: renderChatSidebar() missing in console.js");
 assert.ok(/function refreshChatSidebar/.test(consoleJs),
   "phase 2: refreshChatSidebar() missing in console.js");
+assert.ok(/from\s+["']\.\/console-chat-sidebar\.mjs["']/.test(consoleJs),
+  "phase 2: chat sidebar renderer module must be imported by console.js");
+assert.ok(/function renderChatSidebarListHtml\s*\(/.test(consoleChatSidebar),
+  "phase 2: chat sidebar list renderer missing");
+assert.ok(/function filterChatSidebarItems\s*\(/.test(consoleChatSidebar),
+  "phase 2: chat sidebar search helper missing");
 assert.ok(/function startNewConsoleChat/.test(consoleJs),
   "phase 2: startNewConsoleChat() must exist (shared by sidebar + page-head buttons)");
 assert.ok(/\.chat-sidebar\b/.test(sharedCss) && /\.chat-sidebar-list\b/.test(sharedCss),

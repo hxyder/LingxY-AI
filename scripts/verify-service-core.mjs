@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { createServiceBootstrap } from "../src/service/core/service-bootstrap.mjs";
 import { createTaskRecord } from "../src/service/core/task-runtime.mjs";
 import { decomposeUserCommand } from "../src/service/core/router/decomposer.mjs";
@@ -10,6 +11,145 @@ import {
 import { createProviderAdapter } from "../src/service/executors/agentic/provider-adapter.mjs";
 
 const service = createServiceBootstrap();
+const httpServerSource = await readFile(new URL("../src/service/core/http-server.mjs", import.meta.url), "utf8");
+const aiStatusRouteSource = await readFile(new URL("../src/service/core/http-routes/ai-status-routes.mjs", import.meta.url), "utf8");
+const audioRouteSource = await readFile(new URL("../src/service/core/http-routes/audio-routes.mjs", import.meta.url), "utf8");
+const browserContextRouteSource = await readFile(new URL("../src/service/core/http-routes/browser-context-routes.mjs", import.meta.url), "utf8");
+const officeRouteSource = await readFile(new URL("../src/service/core/http-routes/office-routes.mjs", import.meta.url), "utf8");
+const previewFileRouteSource = await readFile(new URL("../src/service/core/http-routes/preview-file-routes.mjs", import.meta.url), "utf8");
+const runtimeAdminRouteSource = await readFile(new URL("../src/service/core/http-routes/runtime-admin-routes.mjs", import.meta.url), "utf8");
+const taskRouteSource = await readFile(new URL("../src/service/core/http-routes/task-routes.mjs", import.meta.url), "utf8");
+
+if (!httpServerSource.includes("const routeGroups = [") || !httpServerSource.includes("tryHandleRouteGroups")) {
+  throw new Error("HTTP server must dispatch delegated route modules through routeGroups.");
+}
+if (!httpServerSource.includes("tryHandleBrowserContextRoute")) {
+  throw new Error("HTTP server must delegate browser context routes through routeGroups.");
+}
+if (!httpServerSource.includes("tryHandleAiStatusRoute")) {
+  throw new Error("HTTP server must delegate AI status routes through routeGroups.");
+}
+if (!httpServerSource.includes("tryHandleTaskRoute")) {
+  throw new Error("HTTP server must delegate task routes through routeGroups.");
+}
+if (!httpServerSource.includes("tryHandleOfficeRoute")) {
+  throw new Error("HTTP server must delegate Office routes through routeGroups.");
+}
+if (!httpServerSource.includes("tryHandleRuntimeAdminRoute")) {
+  throw new Error("HTTP server must delegate runtime admin routes through routeGroups.");
+}
+if (httpServerSource.includes('url.pathname === "/config"')) {
+  throw new Error("Config read route must live in config-provider-routes.mjs, not http-server.mjs.");
+}
+const configProviderRouteSource = await readFile(new URL("../src/service/core/http-routes/config-provider-routes.mjs", import.meta.url), "utf8");
+if (!configProviderRouteSource.includes('url.pathname === "/config"')
+    || !configProviderRouteSource.includes("runtime.configStore?.load")) {
+  throw new Error("config-provider-routes.mjs must own GET /config.");
+}
+if (httpServerSource.includes('url.pathname === "/note/transcribe"') || httpServerSource.includes('url.pathname === "/echo/kws"')) {
+  throw new Error("Audio, Echo KWS, and note transcription routes must live in audio-routes.mjs, not http-server.mjs.");
+}
+if (!audioRouteSource.includes('url.pathname === "/note/transcribe"')
+    || !audioRouteSource.includes('url.pathname === "/echo/kws"')
+    || !audioRouteSource.includes('url.pathname === "/echo/enroll-keyword"')) {
+  throw new Error("audio-routes.mjs must own note transcription and Echo wake-word routes.");
+}
+if (httpServerSource.includes('url.pathname === "/file/render-preview-html"')
+    || httpServerSource.includes('url.pathname === "/preview/status"')
+    || httpServerSource.includes('url.pathname === "/file/extract-text"')) {
+  throw new Error("Preview and file-render routes must live in preview-file-routes.mjs, not http-server.mjs.");
+}
+if (!previewFileRouteSource.includes('url.pathname === "/file/render-preview-html"')
+    || !previewFileRouteSource.includes('url.pathname === "/file/pdf"')
+    || !previewFileRouteSource.includes('url.pathname === "/preview/status"')
+    || !previewFileRouteSource.includes('url.pathname === "/preview/cache/clear"')
+    || !previewFileRouteSource.includes('url.pathname === "/file/extract-text"')) {
+  throw new Error("preview-file-routes.mjs must own preview/file render endpoints.");
+}
+if (httpServerSource.includes('url.pathname === "/location"')
+    || httpServerSource.includes('url.pathname === "/overlay/handoff"')
+    || httpServerSource.includes('url.pathname === "/page/explain"')
+    || httpServerSource.includes('url.pathname === "/browser/context"')) {
+  throw new Error("Browser context, location, overlay handoff, and page explain routes must live in browser-context-routes.mjs, not http-server.mjs.");
+}
+if (!browserContextRouteSource.includes('url.pathname === "/location"')
+    || !browserContextRouteSource.includes('url.pathname === "/location/windows"')
+    || !browserContextRouteSource.includes('url.pathname === "/overlay/handoff"')
+    || !browserContextRouteSource.includes('url.pathname === "/page/explain"')
+    || !browserContextRouteSource.includes('url.pathname === "/browser/context"')
+    || !browserContextRouteSource.includes('url.pathname === "/browser/context/recent"')) {
+  throw new Error("browser-context-routes.mjs must own browser context, location, handoff, and page explain endpoints.");
+}
+if (httpServerSource.includes('url.pathname === "/executors"')
+    || httpServerSource.includes('url.pathname === "/ai/providers"')
+    || httpServerSource.includes('url.pathname === "/ai/code-cli"')
+    || httpServerSource.includes('url.pathname === "/ai/mcp"')
+    || httpServerSource.includes('url.pathname === "/ai/skills"')) {
+  throw new Error("AI status and executor catalog routes must live in ai-status-routes.mjs, not http-server.mjs.");
+}
+if (!aiStatusRouteSource.includes('url.pathname === "/executors"')
+    || !aiStatusRouteSource.includes('url.pathname === "/ai/providers"')
+    || !aiStatusRouteSource.includes('url.pathname === "/ai/code-cli"')
+    || !aiStatusRouteSource.includes('url.pathname === "/ai/mcp"')
+    || !aiStatusRouteSource.includes('url.pathname === "/ai/skills"')
+    || !aiStatusRouteSource.includes('/^\\/ai\\/mcp\\/[^/]+\\/toggle$/')
+    || !aiStatusRouteSource.includes('/^\\/ai\\/mcp\\/[^/]+\\/config$/')) {
+  throw new Error("ai-status-routes.mjs must own executor catalog and AI provider/code-cli/MCP/skill status endpoints.");
+}
+if (httpServerSource.includes('url.pathname === "/task"')
+    || httpServerSource.includes('url.pathname === "/task/clarify"')
+    || httpServerSource.includes('url.pathname === "/tasks"')
+    || httpServerSource.includes('url.pathname === "/tasks/summary"')
+    || httpServerSource.includes('url.pathname === "/tasks/failed"')
+    || httpServerSource.includes('url.pathname === "/context"')
+    || httpServerSource.includes("readTaskEventLog")
+    || httpServerSource.includes("submitTaskFromBody")
+    || httpServerSource.includes("mergeArtifactsForTask")) {
+  throw new Error("Task submission, task summary/detail, task events, and context preview routes must live in task-routes.mjs, not http-server.mjs.");
+}
+if (!taskRouteSource.includes('url.pathname === "/task"')
+    || !taskRouteSource.includes('url.pathname === "/task/clarify"')
+    || !taskRouteSource.includes('url.pathname === "/tasks"')
+    || !taskRouteSource.includes('url.pathname === "/tasks/summary"')
+    || !taskRouteSource.includes('url.pathname === "/tasks/failed"')
+    || !taskRouteSource.includes('url.pathname === "/context"')
+    || !taskRouteSource.includes("readTaskEventLog")
+    || !taskRouteSource.includes("createTaskEventStream")
+    || !taskRouteSource.includes("mergeArtifactsForTask")) {
+  throw new Error("task-routes.mjs must own task submission, task summary/detail, task events, and context preview endpoints.");
+}
+if (httpServerSource.includes('url.pathname.startsWith("/office/")')
+    || httpServerSource.includes('url.pathname === "/setup/office-addins/status"')
+    || httpServerSource.includes('url.pathname === "/setup/office-addins"')
+    || httpServerSource.includes("runOfficeAddinSetup")) {
+  throw new Error("Office static/setup routes must live in office-routes.mjs, not http-server.mjs.");
+}
+if (!officeRouteSource.includes('url.pathname.startsWith("/office/")')
+    || !officeRouteSource.includes('url.pathname === "/setup/office-addins/status"')
+    || !officeRouteSource.includes('url.pathname === "/setup/office-addins"')
+    || !officeRouteSource.includes("setup-office-addins.ps1")) {
+  throw new Error("office-routes.mjs must own Office static files and setup endpoints.");
+}
+if (httpServerSource.includes('url.pathname === "/health"')
+    || httpServerSource.includes('url.pathname === "/metrics"')
+    || httpServerSource.includes('url.pathname === "/approvals"')
+    || httpServerSource.includes('url.pathname === "/audit-log"')
+    || httpServerSource.includes('url.pathname === "/security/state"')
+    || httpServerSource.includes('url.pathname === "/budget"')
+    || httpServerSource.includes('url.pathname === "/history/search"')) {
+  throw new Error("Runtime admin routes must live in runtime-admin-routes.mjs, not http-server.mjs.");
+}
+if (!runtimeAdminRouteSource.includes('url.pathname === "/health"')
+    || !runtimeAdminRouteSource.includes('url.pathname === "/metrics"')
+    || !runtimeAdminRouteSource.includes('url.pathname === "/approvals"')
+    || !runtimeAdminRouteSource.includes('url.pathname === "/audit-log"')
+    || !runtimeAdminRouteSource.includes('url.pathname === "/security/state"')
+    || !runtimeAdminRouteSource.includes('url.pathname === "/budget"')
+    || !runtimeAdminRouteSource.includes('url.pathname === "/history/search"')
+    || !runtimeAdminRouteSource.includes('/^\\/approvals\\/([^/]+)\\/approve$/')
+    || !runtimeAdminRouteSource.includes('/^\\/approvals\\/([^/]+)\\/reject$/')) {
+  throw new Error("runtime-admin-routes.mjs must own health, metrics, approvals, audit, security, budget, and history endpoints.");
+}
 
 if (service.store.engine !== "sqlite") {
   throw new Error("Expected sqlite store manifest.");

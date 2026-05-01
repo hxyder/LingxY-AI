@@ -12,10 +12,10 @@
  *   - It is NOT a final authority. The registry policy guard, the
  *     resolver invariants, and the success-contract validator are still
  *     the only enforcement points. SemanticRouter only suggests.
- *   - It does NOT bypass hard facts. If `signals.source_scope.kind ===
- *     "fact"` says local AND the LLM says web=required, the router
- *     rejects its own LLM output rather than escalate. Hard facts beat
- *     soft inferences (§18.3 design constraint).
+ *   - It does NOT bypass hard constraints. If the user said "no web" or
+ *     "only use this file", the router rejects its own LLM output rather
+ *     than escalate. Provenance facts such as attachments are evidence, not
+ *     local-only policy by themselves.
  *   - It is FAIL-SAFE. Any failure path (disabled / no provider /
  *     timeout / schema error / low confidence / fact conflict /
  *     exception) returns a `{kind:"rejection", code, reason}` object
@@ -511,10 +511,10 @@ function buildMessages({ text, contextPacket, signals }) {
     "- confidence: be honest. 0.5 means \"could go either way\", 0.9 means \"only one reading fits\". Low confidence triggers a fallback to the deterministic resolver.",
     "- rationale_summary/reason: short operator-facing summaries in the user's language. Do not include hidden chain-of-thought.",
     "",
-    "**Context source ranking** — `context_sources` separates real local content from background-only blocks. `real_selection`, `browser_page`, `file_text`, `uploaded_files`, `uploaded_images` are local-only anchors: they constrain the task to local data and you should NOT pick web_policy=required just because the user attached something. `conversation_history`, `rag_background`, `parent_task_context` are BACKGROUND-ONLY: they are previous turns or memory recalls injected for continuity. Never treat them as the user's current selection. A weather/news/stock question with only background_only sources still needs `web_policy=required`.",
+    "**Context source ranking** — `context_sources` separates real local content from background-only blocks. `real_selection`, `browser_page`, `file_text`, `uploaded_files`, `uploaded_images` are local input/evidence, not automatically local-only constraints. Do NOT pick web_policy=required just because the user attached something, but DO pick it when the task asks to combine that local evidence with external/current information. `conversation_history`, `rag_background`, `parent_task_context` are BACKGROUND-ONLY: they are previous turns or memory recalls injected for continuity. Never treat them as the user's current selection. A weather/news/stock question with only background_only sources still needs `web_policy=required`.",
     "Use `prior_messages_tail` only to resolve short follow-ups, pronouns, or missing references. If the current user text clearly starts a new topic, classify from the current text and do not inherit the previous topic.",
     "",
-    "**Signal-kind ranking** — fact > hint > assumption. A signal with `kind=fact` (e.g. `source_scope` from an attachment) is ground truth and you should not overrule it. `hint` is an explicit phrase pattern in the user text — strong but conventional. `assumption` is the system interpreting an indirect reference (e.g. \"这个\" → current_context); you may second-guess if other signals contradict.",
+    "**Signal-kind ranking** — fact > hint > assumption. A signal with `kind=fact` is ground truth for what it observes (e.g. an attachment exists, or the user said no web), but provenance facts are not the same as policy constraints. `hint` is an explicit phrase pattern in the user text — strong but conventional. `assumption` is the system interpreting an indirect reference (e.g. \"这个\" → current_context); you may second-guess if other signals contradict.",
     "",
     "**Regex boundary** — regex-derived signals are evidence, not the final intent classifier. Topic hints (weather/news/finance/etc.) help you understand the request but do not by themselves execute tools. The policy layer decides final constraints.",
     "",
@@ -601,10 +601,10 @@ function buildCacheKey({ text, contextPacket, signals }) {
     source_app: contextPacket?.source_app ?? null,
     // P4-02.x C0: signal shape must differentiate cache entries. A cached
     // "web=required" decision MUST NOT be served when a later call arrives
-    // with a fact-kind source_scope that contradicts it. Including the
-    // shape (not the full evidence) keeps the hash stable across noisy
-    // evidence rewrites while still differentiating the fact/hint/scope
-    // axes that drive hard-fact conflict detection.
+    // with a hard local-only/no-search constraint that contradicts it.
+    // Including the shape (not the full evidence) keeps the hash stable
+    // across noisy evidence rewrites while still differentiating the axes
+    // that drive conflict detection.
     signal_shape: summariseSignalsForCache(signals),
     // Forward-compat: when C1 ships, context_sources reflects whether the
     // text is real selection vs background. Different sources → different
@@ -888,9 +888,11 @@ const LOCAL_SCOPES = new Set(["uploaded_files", "current_context", "local_projec
 
 /**
  * Hard-fact conflict — when the LLM's decision contradicts a signal
- * annotated with `kind:"fact"`. Rejected because facts beat soft
- * inferences (§18.3): if the user attached files (fact-source-scope
- * = uploaded_files), the LLM cannot say web=required for that task.
+ * annotated with `kind:"fact"`. Rejected because explicit constraints beat
+ * soft inferences (§18.3). Provenance facts such as "uploaded_files exists"
+ * are not local-only constraints by themselves; they only block external
+ * upgrades when the user provided no search/external signal for SR to
+ * disambiguate.
  *
  * @returns {string|null}  rejection reason, or null when no conflict
  */
@@ -906,12 +908,29 @@ function detectHardFactConflict(decision, signals) {
     return `signals.explicit_no_search (kind=fact) is set; LLM web_policy=${decision.web_policy} would override an explicit user constraint`;
   }
 
+  const localOnly = signals.local_only_constraint;
+  if (localOnly?.matched && localOnly.kind === "fact") {
+    if (decision.web_policy !== "forbidden") {
+      return `signals.local_only_constraint (kind=fact) is set; LLM web_policy=${decision.web_policy} would override an explicit local-only constraint`;
+    }
+    if (decision.source_scope === "external_world") {
+      return "signals.local_only_constraint (kind=fact) is set; LLM picked external_world";
+    }
+  }
+
   const sourceScope = signals.source_scope;
   if (!sourceScope?.matched || sourceScope.kind !== "fact") return null;
   const factScope = sourceScope.hint?.value;
   if (!factScope) return null;
+  const hasSearchOrExternalSignal = Boolean(
+    signals.explicit_search?.matched
+    || signals.explicit_external?.matched
+    || signals.explicit_single_url?.matched
+  );
+  if (hasSearchOrExternalSignal) return null;
 
-  // Fact scope is local-ish but LLM wants web=required → reject.
+  // Local provenance with no search/external signal is a deterministic local
+  // fallback. If the LLM upgrades it anyway, reject the contradiction.
   if (LOCAL_SCOPES.has(factScope) && decision.web_policy === "required") {
     return `signals.source_scope (kind=fact, value=${factScope}) is local; LLM web_policy=required would override a hard fact`;
   }

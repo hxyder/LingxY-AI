@@ -278,11 +278,11 @@ export const CONTEXT_SOURCE_KEYS = Object.freeze([
 ]);
 
 /**
- * The set of ContextSources that count as "local-only anchors" — content
- * the user wants the assistant to read and analyse rather than research
- * externally. Used by source-scope.mjs (C3) to gate the LOCAL_SCOPES
- * forbid path. NOT a list of "this means forbid web search" — Layer 4
- * (resolver) makes that decision based on these labels.
+ * The set of ContextSources that count as local input anchors — content
+ * the user may want the assistant to read and analyse. Used by
+ * source-scope.mjs (C3) to emit provenance. NOT a list of "this means
+ * forbid web search" — explicit constraints and Layer 4 resolver/SR
+ * judgement make that decision.
  *
  * P4-03 follow-up: `browser_page` is intentionally NOT an anchor.
  * Browser captures of webpage / link / image without user selection

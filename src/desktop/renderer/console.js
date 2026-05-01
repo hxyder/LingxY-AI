@@ -1,6 +1,4 @@
 import {
-  applyTaskEventPatch,
-  applyTaskEventToDetail,
   formatTaskEventSummary,
   isInternalControlJsonText,
   looksLikeInternalControlJsonText,
@@ -13,12 +11,69 @@ import {
 } from "./schedule-parser.js";
 import {
   createClientMessageId as cacheCreateClientMessageId,
+  createConversationId as cacheCreateConversationId,
   ensureBackendCacheFields as cacheEnsureBackendFields,
   cssEscape as cacheCssEscape,
   applyMessageBatch as cacheApplyBatch,
   fetchMessagesSince as cacheFetchSince,
+  fetchConversations as cacheFetchConversations,
   fetchConversationDetail as cacheFetchConversationDetail
 } from "./conversation-cache.mjs";
+import {
+  artifactExtension,
+  artifactIconClass,
+  artifactIconText,
+  createBottomPinController,
+  escapeHtml,
+  formatArtifactLabel as formatSharedArtifactLabel,
+  formatDateTime as formatSharedDateTime,
+  formatRelativeTime
+} from "./shared-ui.mjs";
+import {
+  renderChatSidebarListHtml
+} from "./console-chat-sidebar.mjs";
+import {
+  renderConversationDetailView,
+  renderConversationsListHtml
+} from "./console-conversation-viewer.mjs";
+import {
+  extractTaskProviderInfo,
+  renderDowngradedWarning,
+  renderTimelineEntry
+} from "./console-task-timeline.mjs";
+import {
+  buildTaskListEntries,
+  isCompositeChildTask,
+  renderTaskListItemHtml,
+  taskListSignature
+} from "./console-task-list.mjs";
+import {
+  filterFileArtifacts,
+  renderFilesListHtml,
+  renderTaskArtifactRowsHtml
+} from "./console-files-view.mjs";
+import {
+  renderTaskKvGrid
+} from "./console-task-detail.mjs";
+import {
+  createConsoleTaskEventController
+} from "./console-task-event-stream.mjs";
+import {
+  exportAsHtml,
+  exportAsMarkdown,
+  exportAsText,
+  formatNoteAbsoluteTime as fmtAbsolute,
+  formatNoteRelativeTime as fmtRel,
+  makeNote,
+  noteFilename,
+  nowIso,
+  stripHtml
+} from "./console-notes-model.mjs";
+import {
+  formatProjectConversationPreview,
+  renderProjectConversationListHtml,
+  renderProjectListHtml
+} from "./console-projects-view.mjs";
 import {
   BUILTIN_API_TEMPLATES,
   codeCliModelChoices,
@@ -27,6 +82,14 @@ import {
   providerFingerprint,
   providerModelPresets
 } from "../../shared/provider-catalog.mjs";
+import {
+  DEFAULT_PROJECT_ID,
+  buildProject,
+  createProjectId,
+  buildDefaultProjectStore as buildDefaultProjectStoreBase,
+  normalizeProjectStore as normalizeProjectStoreBase,
+  mergeProjectStores as mergeProjectStoresBase
+} from "../../shared/project-store.mjs";
 
 const runtimeState = document.querySelector("#runtimeState");
 const summaryGrid = document.querySelector("#summaryGrid");
@@ -173,66 +236,6 @@ const skillEditPath = document.querySelector("#skillEditPath");
 const skillEditState = document.querySelector("#skillEditState");
 const skillEditSaveBtn = document.querySelector("#skillEditSaveBtn");
 const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
-
-// Controller around a scroll container. Tracks whether the user is "at
-// the bottom" — only then does new content auto-scroll. If they've
-// scrolled up to read history, we leave the viewport alone and surface
-// a Scroll-to-bottom button. Replaces the older always-pin observer
-// which yanked users back on every DOM change.
-function createBottomPinController(scrollEl, { button = null, threshold = 24 } = {}) {
-  if (!scrollEl) {
-    return {
-      maybeScrollToBottom() {},
-      scrollToBottom() {},
-      refresh() {},
-      isPinned: () => true
-    };
-  }
-  let pinned = true;
-  const isNearBottom = () => (
-    scrollEl.scrollHeight - scrollEl.clientHeight - scrollEl.scrollTop <= threshold
-  );
-  const updateButton = () => {
-    if (!button) return;
-    button.hidden = pinned;
-  };
-  const refresh = () => {
-    pinned = isNearBottom();
-    updateButton();
-  };
-  const refreshSoon = () => {
-    try { requestAnimationFrame(refresh); } catch { setTimeout(refresh, 0); }
-  };
-  scrollEl.addEventListener("scroll", refresh, { passive: true });
-  scrollEl.addEventListener("wheel", refreshSoon, { passive: true });
-  scrollEl.addEventListener("touchmove", refreshSoon, { passive: true });
-  scrollEl.addEventListener("keyup", refreshSoon);
-
-  const scrollToBottom = () => {
-    scrollEl.scrollTop = scrollEl.scrollHeight;
-    pinned = true;
-    updateButton();
-  };
-  const maybeScrollToBottom = () => {
-    if (!pinned) return;
-    scrollEl.scrollTop = scrollEl.scrollHeight;
-  };
-
-  try {
-    new MutationObserver(maybeScrollToBottom).observe(scrollEl, {
-      childList: true, subtree: true, characterData: true
-    });
-  } catch { /* observer is optional */ }
-  try {
-    new ResizeObserver(maybeScrollToBottom).observe(scrollEl);
-  } catch { /* fallback: explicit calls still run */ }
-
-  if (button) {
-    button.hidden = true;
-    button.addEventListener("click", scrollToBottom);
-  }
-  return { maybeScrollToBottom, scrollToBottom, refresh, isPinned: () => pinned };
-}
 
 const consoleChatPin = createBottomPinController(consoleChatMessages, {
   button: consoleChatScrollDownBtn
@@ -556,7 +559,7 @@ tabButtons.forEach((btn) => {
       // Phase 2: refresh the chat sidebar's conversation list each
       // time the user enters the tab so newly-created conversations
       // show up without a full reload.
-      void refreshChatSidebar();
+      void refreshChatSidebar({ force: true });
     }
   });
 });
@@ -674,10 +677,6 @@ const state = {
   projectStoreSyncing: false
 };
 
-let selectedTaskEventStream = null;
-let selectedTaskEventTaskId = null;
-let selectedTaskEventBaseUrl = null;
-let handledSelectedTaskEventIds = new Set();
 let consoleChatEventStream = null;
 let consoleChatResultTaskIds = new Set();
 // Track the in-flight chat task so the composer can flip the Send
@@ -705,6 +704,17 @@ function refreshConsoleChatSendBtnMode() {
     consoleChatSendBtn.title = "发送 (Enter)";
   }
 }
+
+const selectedTaskEventController = createConsoleTaskEventController({
+  state,
+  documentRef: document,
+  renderSummary,
+  renderTasks,
+  renderTaskDetail,
+  refreshTaskDetail,
+  refreshWorkspace,
+  surfaceApprovalPopup
+});
 
 async function cancelConsoleChatActiveTask() {
   const taskId = consoleChatActiveTaskId;
@@ -742,15 +752,6 @@ let editingSkillPath = null;
 /* ═══════════════════════════════════════════════
    HELPERS
    ═══════════════════════════════════════════════ */
-
-function escapeHtml(value) {
-  return `${value ?? ""}`
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
 
 const CHAT_MARKDOWN_LINK_RE = /\[([^\]\n]{1,240})\]\((https?:\/\/[^\s<>"']{1,2000}?)\)/gi;
 const CHAT_BARE_URL_RE = /https?:\/\/[^\s<>"']+/gi;
@@ -1912,9 +1913,17 @@ async function submitConsoleChat() {
   if (!text) return;
   const attachedFilePaths = consoleChatAttachList.map((entry) => `${entry?.path ?? ""}`.trim()).filter(Boolean);
   const clientMessageId = cacheCreateClientMessageId();
-  // G: when a conversation is active, we are RESUMING; thread the
-  // existing conversation_id so the backend appends to the same
-  // conversation_messages chain. No new conversation is created.
+  // G: when a conversation is active, we are RESUMING; when the user
+  // started a blank chat, mint the conversation_id before /task so the
+  // backend can create the durable conversation row immediately.
+  if (!consoleActiveConversation?.conversation_id) {
+    const title = text.replace(/\s+/g, " ").trim();
+    consoleActiveConversation = cacheEnsureBackendFields({
+      conversation_id: cacheCreateConversationId(),
+      title: title.length > 36 ? `${title.slice(0, 36)}…` : title
+    });
+    renderConsoleChatHeader();
+  }
   // No history is re-injected — backend already has it.
   const conversationId = consoleActiveConversation?.conversation_id ?? null;
   const conv = cacheEnsureBackendFields(consoleActiveConversation);
@@ -1953,7 +1962,7 @@ async function submitConsoleChat() {
     // (no conversation_id was sent), pick it up so subsequent submits
     // thread into the same conversation.
     const replyConvId = result.task?.conversation_id;
-    if (replyConvId && !consoleActiveConversation) {
+    if (replyConvId && replyConvId !== consoleActiveConversation?.conversation_id) {
       consoleActiveConversation = cacheEnsureBackendFields({ conversation_id: replyConvId });
       renderConsoleChatHeader();
     }
@@ -1961,7 +1970,7 @@ async function submitConsoleChat() {
     // immediately. ensureConversationsCache() refetches from backend
     // so the new conversation_id (with auto-derived title from
     // first user command) appears.
-    void refreshChatSidebar();
+    void refreshChatSidebar({ force: true });
     await refreshWorkspace();
     updateChatModelChip?.();
     consoleChatAttachList.length = 0;
@@ -2102,49 +2111,34 @@ function clearConsoleActiveConversation() {
 let chatSidebarSearchTerm = "";
 let chatSidebarSearchDebounce = null;
 
-async function ensureConversationsCache() {
-  if (Array.isArray(conversationsState?.items) && conversationsState.items.length > 0) return;
+async function fetchConversationsList({ limit = 100, archived = "false" } = {}) {
+  return cacheFetchConversations(fetch.bind(globalThis), state.serviceBaseUrl, { limit, archived });
+}
+
+async function ensureConversationsCache({ force = false, limit = 100, archived = "false" } = {}) {
+  if (!force && Array.isArray(conversationsState?.items) && conversationsState.items.length > 0) {
+    return conversationsState.items;
+  }
   try {
-    const res = await fetch(`${state.serviceBaseUrl}/conversations?limit=100&archived=false`);
-    const data = await res.json();
+    const items = await fetchConversationsList({ limit, archived });
     if (conversationsState) {
-      conversationsState.items = Array.isArray(data?.conversations) ? data.conversations : [];
+      conversationsState.items = items;
     }
+    return items;
   } catch { /* keep cache empty — sidebar shows the empty hint */ }
+  return conversationsState?.items ?? [];
 }
 
 function renderChatSidebar() {
   const listEl = document.querySelector("#chatSidebarList");
   if (!listEl) return;
   const items = (conversationsState?.items ?? []);
-  const term = chatSidebarSearchTerm.trim().toLowerCase();
-  const filtered = term
-    ? items.filter((c) => {
-        const title = String(c.title || "").toLowerCase();
-        const id = String(c.conversation_id || "").toLowerCase();
-        return title.includes(term) || id.includes(term);
-      })
-    : items;
-  if (filtered.length === 0) {
-    listEl.innerHTML = items.length === 0
-      ? `<p class="chat-sidebar-empty">还没有对话，点 + New 开始。</p>`
-      : `<p class="chat-sidebar-empty">没有匹配 "${escapeHtml(term)}" 的对话。</p>`;
-    return;
-  }
   const activeId = consoleActiveConversation?.conversation_id ?? null;
-  listEl.innerHTML = filtered.map((c) => {
-    const isActive = c.conversation_id === activeId;
-    return `
-      <button type="button" class="chat-sidebar-item ${isActive ? "active" : ""}" data-chat-sidebar-id="${escapeHtml(c.conversation_id)}">
-        <div class="chat-sidebar-item-title">${escapeHtml(c.title || c.conversation_id.slice(0, 24))}</div>
-        <div class="chat-sidebar-item-meta">
-          <span>${escapeHtml(String(c.message_count ?? 0))}m · ${escapeHtml(String(c.task_count ?? 0))}t</span>
-          <span>·</span>
-          <span>${escapeHtml(formatDateTime(c.updated_at))}</span>
-        </div>
-      </button>
-    `;
-  }).join("");
+  listEl.innerHTML = renderChatSidebarListHtml({
+    items,
+    searchTerm: chatSidebarSearchTerm,
+    activeConversationId: activeId
+  });
   for (const btn of listEl.querySelectorAll("[data-chat-sidebar-id]")) {
     btn.addEventListener("click", () => {
       const id = btn.dataset.chatSidebarId;
@@ -2154,37 +2148,13 @@ function renderChatSidebar() {
   }
 }
 
-async function refreshChatSidebar() {
-  await ensureConversationsCache();
+async function refreshChatSidebar({ force = false } = {}) {
+  await ensureConversationsCache({ force });
   renderChatSidebar();
 }
 
 function formatDateTime(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString("zh-CN", { hour12: false });
-}
-
-// Short, human-friendly relative time used inside chat bubbles. Falls
-// back to a compact MM/DD HH:MM stamp once the message is more than a
-// day old. The chat surface refreshes these on an interval so "刚刚"
-// promotes to "1 分钟前" etc. without re-rendering the message.
-function formatRelativeTime(value) {
-  if (!value) return "";
-  const ts = typeof value === "number" ? value : new Date(value).getTime();
-  if (Number.isNaN(ts)) return "";
-  const ms = Date.now() - ts;
-  if (ms < 0) return "刚刚";
-  if (ms < 60_000) return "刚刚";
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)} 分钟前`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)} 小时前`;
-  const d = new Date(ts);
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${mm}/${dd} ${hh}:${mi}`;
+  return formatSharedDateTime(value);
 }
 
 function formatMoney(value) {
@@ -2200,35 +2170,15 @@ const CODE_EXTENSIONS = new Set([
 
 const PROJECT_STORE_KEY = "uca.overlay.projects.v3";
 const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6"];
-const DEFAULT_PROJECT_ID = "proj_default";
-
-// UCA-122: map a file extension → v3 .artifact-icon variant class.
-// The CSS defines colored badges for doc/pdf/md/csv/png/txt.
-function artifactIconClass(ext = "") {
-  const e = String(ext).toLowerCase();
-  if (e === "pdf") return "pdf";
-  if (e === "md" || e === "markdown") return "md";
-  if (e === "csv" || e === "tsv") return "csv";
-  if (e === "png" || e === "jpg" || e === "jpeg" || e === "gif" || e === "webp") return "png";
-  if (e === "txt" || e === "log") return "txt";
-  if (e === "docx" || e === "doc" || e === "xlsx" || e === "xls" || e === "pptx" || e === "ppt") return "doc";
-  return "txt";
-}
 
 function formatArtifactLabel(artifactPath = "") {
-  const p = `${artifactPath}`.toLowerCase();
-  if (p.endsWith(".md")) return "Markdown";
-  if (p.endsWith(".txt")) return "Text";
-  if (p.endsWith(".html") || p.endsWith(".htm")) return "HTML";
-  if (p.endsWith(".json")) return "JSON";
-  if (p.endsWith(".csv")) return "CSV";
-  if (p.endsWith(".docx")) return "Word";
-  if (p.endsWith(".xlsx")) return "Excel";
-  if (p.endsWith(".pdf")) return "PDF";
-  for (const ext of CODE_EXTENSIONS) {
-    if (p.endsWith(ext)) return `Code ${ext.replace(".", "")}`;
-  }
-  return "File";
+  return formatSharedArtifactLabel(artifactPath, {
+    labels: {
+      ".xlsx": "Excel",
+      ".pdf": "PDF"
+    },
+    codeExtensions: CODE_EXTENSIONS
+  });
 }
 
 const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg"];
@@ -3410,10 +3360,6 @@ function countTasksByFilter(tasks) {
   };
 }
 
-function isCompositeChildTask(task = {}) {
-  return Boolean(task?.parent_task_id) && Number.isInteger(task?.child_index);
-}
-
 function renderTasks() {
   const allTasks = state.workspace.tasks ?? [];
   // Update filter chip counts from the unfiltered list so every chip
@@ -3514,46 +3460,6 @@ function renderTasks() {
     return;
   }
 
-  function buildTaskListEntries(list) {
-    const byId = new Map(list.map((task) => [task.task_id, task]));
-    const childrenByParent = new Map();
-    for (const task of list) {
-      if (isCompositeChildTask(task)) {
-        if (!childrenByParent.has(task.parent_task_id)) {
-          childrenByParent.set(task.parent_task_id, []);
-        }
-        childrenByParent.get(task.parent_task_id).push(task);
-      }
-    }
-
-    for (const [parentId, children] of childrenByParent) {
-      children.sort((a, b) => (a.child_index ?? 0) - (b.child_index ?? 0));
-      childrenByParent.set(parentId, children);
-    }
-
-    const parentsOrSingles = list.filter((task) => !isCompositeChildTask(task));
-    const sorted = parentsOrSingles.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
-    const entries = [];
-    for (const task of sorted) {
-      if (entries.length >= 12) break;
-      entries.push({ task, indent: 0, isChild: false });
-      const children = childrenByParent.get(task.task_id) ?? [];
-      for (const child of children) {
-        if (entries.length >= 12) break;
-        entries.push({ task: child, indent: 1, isChild: true });
-      }
-    }
-
-    const seen = new Set(entries.map((entry) => entry.task.task_id));
-    for (const task of list) {
-      if (entries.length >= 12) break;
-      if (seen.has(task.task_id)) continue;
-      entries.push({ task, indent: 0, isChild: false });
-    }
-
-    return entries;
-  }
-
   if (!state.selectedTaskId || !tasks.some((t) => t.task_id === state.selectedTaskId)) {
     state.selectedTaskId = tasks[0].task_id;
   }
@@ -3565,7 +3471,7 @@ function renderTasks() {
   // "flash" the user complained about. Compare a compact signature of
   // (id, status, sub_status, child_count) — anything else is metadata
   // that doesn't need a re-render.
-  const sig = entries.map(({ task }) => `${task.task_id}|${task.status}|${task.sub_status ?? ""}|${task.child_count ?? 0}`).join("\n");
+  const sig = taskListSignature(entries);
   if (taskList._lastSig === sig && taskList.children.length > 0) {
     // Nothing visibly changed; skip the destructive rebuild. Selection
     // state is also unchanged because state.selectedTaskId is the
@@ -3574,23 +3480,9 @@ function renderTasks() {
   taskList._lastSig = sig;
   // Preserve scroll position across the rebuild.
   const prevScroll = taskList.scrollTop;
-  taskList.innerHTML = entries.map(({ task, indent, isChild }) => {
-    const selected = task.task_id === state.selectedTaskId;
-    const sc = task.status === "success" ? "ready" : task.status === "failed" ? "danger" : "warning";
-    const childCount = Number(task.child_count ?? 0) || (Array.isArray(task.child_task_ids) ? task.child_task_ids.length : 0);
-    return `
-      <button class="task-item ${selected ? "selected" : ""}" data-task-id="${escapeHtml(task.task_id)}" style="text-align:left;${indent ? "margin-left:18px;" : ""}">
-        <div class="row">
-          <div>
-            <h4>${isChild ? "<span class=\"muted\" style=\"margin-right:6px;\">↳</span>" : childCount > 0 ? "<span class=\"muted\" style=\"margin-right:6px;\">▸</span>" : ""}${escapeHtml(task.user_command ?? task.intent ?? "Unnamed")}${childCount > 0 ? ` <span class="chip muted" style="font-size:10px;padding:2px 6px;">${escapeHtml(childCount)}</span>` : ""}</h4>
-            <p class="muted">${escapeHtml(task.executor ?? "unknown")} · ${escapeHtml(task.source_type ?? "unknown")}</p>
-          </div>
-          <span class="chip ${sc}">${escapeHtml(task.status)}</span>
-        </div>
-        <p class="muted" style="margin-top:6px;">${escapeHtml(formatDateTime(task.created_at))}</p>
-      </button>
-    `;
-  }).join("");
+  taskList.innerHTML = entries.map((entry) =>
+    renderTaskListItemHtml({ ...entry, selectedTaskId: state.selectedTaskId })
+  ).join("");
   // Restore scroll position so the user's place isn't reset on the
   // 6s refresh tick. Pin to bottom if they were already there.
   taskList.scrollTop = prevScroll;
@@ -3657,65 +3549,6 @@ function renderTaskChildren(detail) {
   }
 }
 
-/* ── Task Event Stream ── */
-function closeSelectedTaskEventStream() {
-  selectedTaskEventStream?.close?.();
-  selectedTaskEventStream = null;
-  selectedTaskEventTaskId = null;
-  selectedTaskEventBaseUrl = null;
-  handledSelectedTaskEventIds = new Set();
-}
-
-function updateTaskInWorkspace(taskId, patchEvent) {
-  const i = state.workspace.tasks.findIndex((t) => t.task_id === taskId);
-  if (i === -1) return null;
-  const next = applyTaskEventPatch(state.workspace.tasks[i], patchEvent);
-  state.workspace.tasks[i] = next;
-  return next;
-}
-
-async function handleSelectedTaskEventFrame(rawEvent) {
-  const frame = toTaskEventFrame(rawEvent);
-  if (frame.id && handledSelectedTaskEventIds.has(frame.id)) return;
-  if (frame.id) handledSelectedTaskEventIds.add(frame.id);
-  if (frame.event === "pending_approval_created") {
-    void surfaceApprovalPopup(frame.data ?? {}, { taskId: state.selectedTaskId });
-    void refreshWorkspace();
-  }
-
-  const updated = updateTaskInWorkspace(state.selectedTaskId, frame);
-  if (updated) { renderSummary(); renderTasks(); }
-
-  if (state.selectedTaskDetail?.task?.task_id === state.selectedTaskId) {
-    state.selectedTaskDetail = applyTaskEventToDetail(state.selectedTaskDetail, frame);
-    renderTaskDetail(state.selectedTaskDetail);
-  }
-
-  if (["artifact_created", "success", "partial_success", "failed", "cancelled"].includes(frame.event)) {
-    await refreshTaskDetail();
-  }
-}
-
-function ensureSelectedTaskEventStream(taskId) {
-  if (!taskId) { closeSelectedTaskEventStream(); return; }
-  if (selectedTaskEventTaskId === taskId && selectedTaskEventBaseUrl === state.serviceBaseUrl && selectedTaskEventStream) return;
-
-  closeSelectedTaskEventStream();
-  selectedTaskEventTaskId = taskId;
-  selectedTaskEventBaseUrl = state.serviceBaseUrl;
-  selectedTaskEventStream = subscribeTaskEvents(state.serviceBaseUrl, taskId, {
-    onEvent(event) { void handleSelectedTaskEventFrame(event); },
-    onError(error) {
-      // UCA-P0-D: route stream errors to the rail sys indicator (below)
-      // instead of the retired topbar pill next to the page title.
-      const railSysText = document.querySelector("#railSysText");
-      const railSys = document.querySelector("#railSys");
-      if (railSysText) railSysText.textContent = `Stream disconnected · ${error.message}`;
-      if (railSys) railSys.classList.add("rail-sys--warn");
-    }
-  });
-}
-
 /* ── Artifact selection ── */
 async function loadArtifactPreviewText(artifactPath) {
   if (!artifactPath) return { text: "Select an artifact to preview.", kind: "empty" };
@@ -3751,9 +3584,9 @@ function renderArtifactReport(artifactPath, artifacts) {
   }
   report.removeAttribute("hidden");
   const label = formatArtifactLabel(artifactPath);
-  const ext = (artifactPath.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "").toLowerCase();
+  const ext = artifactExtension(artifactPath);
   icon.className = `artifact-icon ${artifactIconClass(ext)}`;
-  icon.textContent = (ext || "FILE").toUpperCase().slice(0, 3);
+  icon.textContent = artifactIconText(artifactPath);
   name.textContent = label;
   pathEl.textContent = artifactPath;
   // The visible button row uses the existing IDs, so wiring from the
@@ -3838,31 +3671,10 @@ function renderTaskArtifacts(detail) {
   // buttons (v3 style) so each artifact is directly actionable without
   // having to select it first. The shared preview below still reflects
   // the currently focused artifact for quick inline inspection.
-  taskArtifactList.innerHTML = artifacts.map((a, i) => {
-    const label = formatArtifactLabel(a.path);
-    const ext = (a.path.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "").toLowerCase();
-    const iconClass = artifactIconClass(ext);
-    const iconText = (ext || "FILE").toUpperCase().slice(0, 3);
-    const isActive = a.path === state.selectedTaskArtifactPath;
-    return `
-    <div class="artifact-row ${isActive ? "active" : ""}" data-artifact-container>
-      <button type="button" class="artifact-row-main" data-artifact-select data-artifact-path="${escapeHtml(a.path)}">
-        <span class="artifact-icon ${iconClass}">${escapeHtml(iconText)}</span>
-        <div class="artifact-main">
-          <div class="artifact-name">
-            ${escapeHtml(label)}
-            ${i === 0 ? `<span class="pill pill-ok" style="margin-left:6px;">Primary</span>` : ""}
-          </div>
-          <div class="artifact-path">${escapeHtml(a.path)}</div>
-        </div>
-      </button>
-      <div class="artifact-actions btn-group">
-        <button type="button" class="btn btn-sm" data-artifact-open data-artifact-path="${escapeHtml(a.path)}">Open</button>
-        <button type="button" class="btn btn-sm btn-ghost" data-artifact-reveal data-artifact-path="${escapeHtml(a.path)}">Reveal</button>
-        <button type="button" class="btn btn-sm btn-ghost" data-artifact-copy data-artifact-path="${escapeHtml(a.path)}">Copy path</button>
-      </div>
-    </div>
-  `; }).join("");
+  taskArtifactList.innerHTML = renderTaskArtifactRowsHtml(artifacts, {
+    selectedPath: state.selectedTaskArtifactPath,
+    labelForPath: formatArtifactLabel
+  });
 
   for (const btn of taskArtifactList.querySelectorAll("[data-artifact-select]")) {
     btn.addEventListener("click", () => void selectTaskArtifact(btn.dataset.artifactPath));
@@ -3952,38 +3764,15 @@ async function loadAllArtifacts() {
 
 function renderFilesList() {
   if (!filesListEl) return;
-  const filter = filesFilterText.trim().toLowerCase();
-  const visible = filter
-    ? filesAllArtifacts.filter((a) =>
-        a.name.toLowerCase().includes(filter) ||
-        a.path.toLowerCase().includes(filter) ||
-        (a.taskCommand ?? "").toLowerCase().includes(filter) ||
-        a.label.toLowerCase().includes(filter)
-      )
-    : filesAllArtifacts;
+  const visible = filterFileArtifacts(filesAllArtifacts, filesFilterText);
 
   filesCountEl.textContent = `${visible.length}`;
 
-  if (visible.length === 0) {
-    filesListEl.innerHTML = `<p class="muted" style="font-size:12px;">${filesAllArtifacts.length === 0 ? "No files yet. Generated artifacts will appear here." : "No matches."}</p>`;
-    return;
-  }
-
-  // UCA-122: v3 .file-row structure with colored artifact-icon by ext.
-  filesListEl.innerHTML = visible.map((art) => {
-    const ext = (art.path.match(/\.([a-z0-9]{1,5})$/i)?.[1] ?? "").toLowerCase();
-    const iconClass = artifactIconClass(ext);
-    const iconText = (ext || "FILE").toUpperCase().slice(0, 3);
-    const active = art.path === filesSelectedPath ? " active" : "";
-    return `
-    <div class="file-row${active}" data-file-path="${escapeHtml(art.path)}" role="button" tabindex="0">
-      <span class="artifact-icon ${iconClass}">${escapeHtml(iconText)}</span>
-      <div class="file-main">
-        <div class="file-name">${escapeHtml(art.name)}</div>
-        <div class="file-sub">${escapeHtml(formatDateTime(art.createdAt))}${art.taskCommand ? " · " + escapeHtml(art.taskCommand.slice(0, 40)) : ""}</div>
-      </div>
-    </div>
-  `; }).join("");
+  filesListEl.innerHTML = renderFilesListHtml({
+    visibleArtifacts: visible,
+    allArtifacts: filesAllArtifacts,
+    selectedPath: filesSelectedPath
+  });
 
   for (const btn of filesListEl.querySelectorAll("[data-file-path]")) {
     btn.addEventListener("click", () => void selectFileArtifact(btn.dataset.filePath));
@@ -4046,152 +3835,6 @@ filesCopyPathBtn?.addEventListener("click", async () => {
   }, 1200);
 });
 
-// UCA-049: pull provider visibility info out of the task event stream so the
-// task detail panel can show "Provider: DeepSeek · deepseek-chat · HTTPS"
-// and "AI 已降级" warnings without the backend having to denormalise them
-// into the task record itself.
-function extractTaskProviderInfo(detail) {
-  if (!detail?.events?.length) return { descriptor: null, downgraded: false };
-  let descriptor = null;
-  let downgraded = false;
-  for (const event of detail.events) {
-    const payload = event?.payload ?? {};
-    if (payload.provider_id || payload.provider_kind) {
-      descriptor = {
-        provider_id: payload.provider_id ?? null,
-        provider_kind: payload.provider_kind ?? null,
-        provider_name: payload.provider_name ?? null,
-        model: payload.model ?? null,
-        transport: payload.transport ?? null
-      };
-    }
-    if (payload.downgraded === true) {
-      downgraded = true;
-    }
-  }
-  return { descriptor, downgraded };
-}
-
-function renderProviderLine(descriptor) {
-  if (!descriptor) return "";
-  const name = descriptor.provider_name || descriptor.provider_id || descriptor.provider_kind || "unknown provider";
-  const model = descriptor.model || "default";
-  const transport = (descriptor.transport || "").toUpperCase() || "—";
-  return `
-    <div class="row" style="font-size:11px;color:var(--muted);gap:6px;align-items:center;">
-      <span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--status-info-bg);border:1px solid var(--status-info-border);color:var(--status-info-text);">
-        <span style="font-weight:500;">Provider</span>
-        <span>${escapeHtml(name)}</span>
-        <span class="muted">·</span>
-        <span>${escapeHtml(model)}</span>
-        <span class="muted">·</span>
-        <span>${escapeHtml(transport)}</span>
-      </span>
-    </div>
-  `;
-}
-
-function renderDowngradedWarning(downgraded) {
-  if (!downgraded) return "";
-  return `
-    <div data-uca-downgraded="1" style="padding:8px 10px;border-radius:8px;background:var(--warn-soft);border:1px solid var(--warn);margin-top:8px;">
-      <strong style="font-size:12px;color:var(--warn);">AI claim downgraded</strong>
-      <p class="muted" style="margin:4px 0 0;font-size:12px;">The model claimed completion, but no tool in this run returned success:true. The task has been downgraded to partial — see the timeline below for what actually executed.</p>
-    </div>
-  `;
-}
-
-// UCA-102: Render a single timeline entry. Events carrying extra payload
-// detail (tool args, observations, errors) use a <details> element so the
-// user can expand only what they want to see. Failures and pending steps
-// default to open; routine success steps stay collapsed so the timeline
-// reads cleanly at a glance.
-function renderTimelineEntry(ev, context = {}) {
-  const s = formatTaskEventSummary(ev, context);
-  const payload = ev?.data ?? ev?.payload ?? {};
-  const eventType = ev?.event ?? ev?.event_type ?? "";
-  const ts = escapeHtml(formatDateTime(ev.ts ?? ev.at));
-  const title = escapeHtml(s.title);
-  const body = escapeHtml(s.body);
-
-  // Determine whether there's rich detail worth showing behind a toggle.
-  const hasToolArgs = (eventType === "tool_call_started" || eventType === "tool_call_proposed" || eventType === "tool_call_completed")
-    && payload.args && typeof payload.args === "object" && Object.keys(payload.args).length > 0;
-  const hasObservation = eventType === "tool_call_completed"
-    && (typeof payload.observation === "string" || typeof payload.text === "string" || typeof payload.error === "string");
-  const hasError = eventType === "failed" && typeof payload.message === "string" && payload.message.length > 0;
-  const hasRichDetail = hasToolArgs || hasObservation || hasError;
-
-  if (!hasRichDetail) {
-    return `
-      <div class="timeline-item">
-        <div class="row"><strong style="font-size:12px;">${title}</strong><span class="muted" style="font-size:11px;">${ts}</span></div>
-        <p class="muted" style="margin-top:4px;font-size:12px;">${body}</p>
-      </div>
-    `;
-  }
-
-  // Success tool_calls collapse; anything that failed or is pending stays open.
-  const failed = eventType === "tool_call_completed" && payload.success === false;
-  const pending = eventType === "tool_call_started" || eventType === "tool_call_proposed";
-  const openAttr = failed || pending || hasError ? " open" : "";
-
-  const detailLines = [];
-  if (hasToolArgs) {
-    const argsJson = escapeHtml(JSON.stringify(payload.args, null, 2));
-    detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">args</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:auto;">${argsJson}</pre>`);
-  }
-  if (hasObservation) {
-    const raw = typeof payload.observation === "string" ? payload.observation
-      : typeof payload.text === "string" ? payload.text
-        : payload.error ?? "";
-    const label = payload.success === false ? "error" : "observation";
-    detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">${label}</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:auto;white-space:pre-wrap;">${escapeHtml(raw)}</pre>`);
-  }
-  if (hasError) {
-    detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">failure</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:rgba(239,68,68,0.08);border-radius:6px;overflow:auto;white-space:pre-wrap;">${escapeHtml(payload.message)}</pre>`);
-  }
-
-  return `
-    <details class="timeline-item"${openAttr}>
-      <summary style="cursor:pointer;list-style:none;">
-        <div class="row"><strong style="font-size:12px;">${title}</strong><span class="muted" style="font-size:11px;">${ts}</span></div>
-        <p class="muted" style="margin-top:4px;font-size:12px;">${body}</p>
-      </summary>
-      ${detailLines.join("")}
-    </details>
-  `;
-}
-
-// UCA-P0-E: build the task-detail KV grid with only the cells that
-// carry real signal. Earlier the grid always rendered 8 fixed cells,
-// so an idle task (no retries, no cost, no duration captured) showed
-// a wall of "—" and "0" that made the view look like a broken form.
-// Rules:
-//   - string fields ("—" / null / empty) are skipped
-//   - retry=0 is skipped (no-retry is the normal case)
-//   - cost=0 is skipped on terminal tasks (no spend is the normal case)
-//   - CSS uses auto-fit so the remaining cells reflow cleanly into
-//     whatever column count fits (no widowed cells when 5 or 7 remain)
-function renderTaskKvGrid({ provider, model, executor, source, retry, cost, duration, transport }) {
-  const hasText = (v) => v != null && v !== "" && v !== "—";
-  const cells = [];
-  if (hasText(provider)) cells.push(["Provider", provider]);
-  if (hasText(model)) cells.push(["Model", model]);
-  if (hasText(executor)) cells.push(["Executor", executor]);
-  if (hasText(source)) cells.push(["Source", source]);
-  if (retry && Number(retry) > 0) cells.push(["Retry", String(retry)]);
-  if (cost && Number(cost) > 0) cells.push(["Cost", formatMoney(cost)]);
-  if (hasText(duration)) cells.push(["Duration", duration]);
-  if (hasText(transport)) cells.push(["Transport", transport]);
-  if (cells.length === 0) return "";
-  return `
-    <div class="kv-grid kv-grid--auto">
-      ${cells.map(([k, v]) => `<div class="kv-cell"><div class="kv-k">${escapeHtml(k)}</div><div class="kv-v">${escapeHtml(String(v))}</div></div>`).join("")}
-    </div>
-  `;
-}
-
 // UCA-125 Phase 2b: show/hide helpers for the split detail panels.
 // Each subtasks/artifacts/timeline section is its own .panel card now,
 // so empty sections just stay hidden instead of rendering a stacked
@@ -4205,19 +3848,14 @@ async function renderTaskRecentConversations() {
   const listEl = document.querySelector("#taskRecentConversationsList");
   const countEl = document.querySelector("#taskRecentConversationsCount");
   if (!listEl) return;
-  let items = conversationsState?.items ?? [];
-  if (items.length === 0) {
-    listEl.innerHTML = `<p class="muted" style="font-size:12px;">Loading…</p>`;
-    try {
-      const res = await fetch(`${state.serviceBaseUrl}/conversations?limit=50&archived=false`);
-      const data = await res.json();
-      items = Array.isArray(data?.conversations) ? data.conversations : [];
-      if (conversationsState) conversationsState.items = items;
-    } catch {
-      listEl.innerHTML = `<p class="muted" style="font-size:12px;">Couldn't load conversations.</p>`;
-      if (countEl) countEl.textContent = "0";
-      return;
-    }
+  listEl.innerHTML = `<p class="muted" style="font-size:12px;">Loading…</p>`;
+  let items = [];
+  try {
+    items = await ensureConversationsCache({ force: true, limit: 100 });
+  } catch {
+    listEl.innerHTML = `<p class="muted" style="font-size:12px;">Couldn't load conversations.</p>`;
+    if (countEl) countEl.textContent = "0";
+    return;
   }
   if (countEl) countEl.textContent = String(items.length);
   if (items.length === 0) {
@@ -4279,6 +3917,7 @@ function setTaskDetailPanelVisible(id, visible) {
 
 function renderTaskDetail(detail) {
   if (!detail) {
+    selectedTaskEventController.close();
     state.selectedTaskDetail = null;
     // Hide the placeholder text — we now fill the empty pane with the
     // Recent Conversations panel below.
@@ -4385,7 +4024,7 @@ function renderTaskDetail(detail) {
         ${task.retry_count ? `<span>Retry ${escapeHtml(task.retry_count)}</span>` : ""}
         ${parentLink}
       </div>
-      ${renderTaskKvGrid({ provider, model, executor: task.executor, source, retry: task.retry_count, cost: task.cost_usd, duration, transport })}
+      ${renderTaskKvGrid({ provider, model, executor: task.executor, source, retry: task.retry_count, cost: task.cost_usd, duration, transport }, { formatMoney })}
       ${tokensUsed ? `<div class="muted" style="font-size:11px;margin-top:10px;font-family:var(--font-mono);">tokens: ${escapeHtml(tokensUsed)}</div>` : ""}
       ${heroActions}
     </div>
@@ -4449,7 +4088,11 @@ function renderTaskDetail(detail) {
 }
 
 async function refreshTaskDetail() {
-  if (!state.selectedTaskId) { renderTaskDetail(null); return; }
+  if (!state.selectedTaskId) {
+    selectedTaskEventController.close();
+    renderTaskDetail(null);
+    return;
+  }
   const v = ++state.detailVersion;
   taskDetailSummary.innerHTML = `
     <div aria-label="Loading task details" role="status">
@@ -4461,7 +4104,7 @@ async function refreshTaskDetail() {
   try {
     const detail = await fetchJson(`/task/${encodeURIComponent(state.selectedTaskId)}`);
     if (v !== state.detailVersion) return;
-    ensureSelectedTaskEventStream(state.selectedTaskId);
+    selectedTaskEventController.ensure(state.selectedTaskId);
     renderTaskDetail(detail);
   } catch (error) {
     if (v !== state.detailVersion) return;
@@ -5350,51 +4993,15 @@ function renderBudget() {
 // empty array so anything that still reads it sees a no-op.
 
 function buildDefaultProjectStore() {
-  return {
-    currentProjectId: DEFAULT_PROJECT_ID,
-    currentConversationId: null,
-    projects: [{ id: DEFAULT_PROJECT_ID, name: "默认", color: PROJECT_COLORS[0], createdAt: Date.now(), metadata: {} }],
-    conversations: [],
-    updatedAt: 0
-  };
+  return buildDefaultProjectStoreBase({ defaultColor: PROJECT_COLORS[0] });
 }
 
 function normalizeProjectStore(store) {
-  const next = store && typeof store === "object" ? store : buildDefaultProjectStore();
-  next.projects = Array.isArray(next.projects) ? next.projects : [];
-  next.conversations = Array.isArray(next.conversations) ? next.conversations : [];
-  if (!next.projects.some((project) => project.id === DEFAULT_PROJECT_ID)) {
-    next.projects.unshift({ id: DEFAULT_PROJECT_ID, name: "默认", color: PROJECT_COLORS[0], createdAt: Date.now(), metadata: {} });
-  }
-  next.currentProjectId = next.currentProjectId || DEFAULT_PROJECT_ID;
-  next.currentConversationId = next.currentConversationId ?? null;
-  next.updatedAt = Number.isFinite(Number(next.updatedAt)) ? Number(next.updatedAt) : 0;
-  return next;
+  return normalizeProjectStoreBase(store, { defaultColor: PROJECT_COLORS[0] });
 }
 
 function mergeProjectStores(localStore, remoteStore) {
-  const local = normalizeProjectStore(localStore);
-  const remote = normalizeProjectStore(remoteStore);
-  const localIsNewer = (local.updatedAt ?? 0) > (remote.updatedAt ?? 0);
-  const pointerSource = localIsNewer ? local : remote;
-  const projects = new Map();
-  for (const project of [...remote.projects, ...local.projects]) {
-    projects.set(project.id, { ...(projects.get(project.id) ?? {}), ...project });
-  }
-  const conversations = new Map();
-  for (const conversation of [...remote.conversations, ...local.conversations]) {
-    const existing = conversations.get(conversation.id);
-    if (!existing || (conversation.updatedAt ?? 0) >= (existing.updatedAt ?? 0)) {
-      conversations.set(conversation.id, conversation);
-    }
-  }
-  return normalizeProjectStore({
-    currentProjectId: pointerSource.currentProjectId || DEFAULT_PROJECT_ID,
-    currentConversationId: pointerSource.currentConversationId ?? null,
-    projects: [...projects.values()],
-    conversations: [...conversations.values()],
-    updatedAt: Math.max(local.updatedAt ?? 0, remote.updatedAt ?? 0)
-  });
+  return mergeProjectStoresBase(localStore, remoteStore, { defaultColor: PROJECT_COLORS[0] });
 }
 
 function loadConsoleProjectStore() {
@@ -5446,21 +5053,6 @@ async function syncConsoleProjectStoreFromService({ rerender = false } = {}) {
   }
 }
 
-function formatProjectConversationPreview(conversation) {
-  if (!conversation) return "Select a conversation.";
-  const lines = [
-    conversation.title || conversation.seedCommand || conversation.id,
-    `Updated: ${formatDateTime(conversation.updatedAt)}`,
-    ""
-  ];
-  for (const turn of (conversation.turns ?? []).slice(-12)) {
-    const label = turn.role === "user" ? "User" : turn.role === "assistant" ? "Assistant" : "System";
-    lines.push(`${label}: ${turn.content ?? ""}`);
-    lines.push("");
-  }
-  return lines.join("\n").trim() || "No turns yet.";
-}
-
 function renderProjectsWorkspace() {
   if (!projectList || !projectConversationList) return;
   const store = state.projectStore ?? loadConsoleProjectStore();
@@ -5482,40 +5074,17 @@ function renderProjectsWorkspace() {
   projectConversationCount.textContent = `${conversations.length}`;
   projectConversationPreview.textContent = formatProjectConversationPreview(selectedConversation);
 
-  projectList.innerHTML = projects.map((project) => {
-    const selected = project.id === selectedProject?.id;
-    return `
-      <button class="history-item ${selected ? "active" : ""}" data-project-id="${escapeHtml(project.id)}" style="text-align:left;border-left:4px solid ${escapeHtml(project.color ?? PROJECT_COLORS[0])};">
-        <div class="row">
-          <strong style="font-size:13px;">${escapeHtml(project.name ?? project.id)}</strong>
-          <span class="muted" style="font-size:11px;">${escapeHtml((store.conversations ?? []).filter((conversation) => conversation.projectId === project.id).length)}</span>
-        </div>
-        <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(project.id)}</p>
-      </button>
-    `;
-  }).join("");
+  projectList.innerHTML = renderProjectListHtml({
+    projects,
+    conversations: store.conversations ?? [],
+    selectedProjectId: selectedProject?.id,
+    defaultColor: PROJECT_COLORS[0]
+  });
 
-  projectConversationList.innerHTML = conversations.length > 0
-    ? conversations.map((conversation) => `
-      <div class="history-item-row ${conversation.id === selectedConversation?.id ? "active" : ""}">
-        <button class="history-item history-item--main" data-project-conversation-id="${escapeHtml(conversation.id)}" style="text-align:left;">
-          <div class="row">
-            <strong style="font-size:13px;">${escapeHtml(conversation.title || conversation.seedCommand || "新会话")}</strong>
-            <span class="muted" style="font-size:11px;">${escapeHtml((conversation.turns ?? []).length)}</span>
-          </div>
-          <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(formatDateTime(conversation.updatedAt ?? conversation.startedAt))}</p>
-        </button>
-        <button class="history-item-resume" type="button"
-                data-resume-project-conversation-id="${escapeHtml(conversation.id)}"
-                title="在 Chat 标签继续此对话" aria-label="继续对话">
-          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-               stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>
-          </svg>
-        </button>
-      </div>
-    `).join("")
-    : `<p class="muted" style="font-size:12px;">No conversations in this project.</p>`;
+  projectConversationList.innerHTML = renderProjectConversationListHtml({
+    conversations,
+    selectedConversationId: selectedConversation?.id
+  });
 
   for (const btn of projectList.querySelectorAll("[data-project-id]")) {
     btn.addEventListener("click", () => {
@@ -6505,13 +6074,12 @@ projectCreateForm?.addEventListener("submit", (event) => {
     return;
   }
   const store = loadConsoleProjectStore();
-  const project = {
-    id: `proj_${crypto.randomUUID().slice(0, 8)}`,
+  const project = buildProject({
+    id: createProjectId(),
     name,
     color: PROJECT_COLORS[store.projects.length % PROJECT_COLORS.length],
-    createdAt: Date.now(),
     metadata: {}
-  };
+  });
   store.projects.push(project);
   store.currentProjectId = project.id;
   saveConsoleProjectStore(store);
@@ -6832,7 +6400,7 @@ setInterval(() => void refreshWorkspace(), 6000);
 // Refresh sidebar periodically too — picks up conversations created
 // in the overlay while console is open. Cheap (just hits /conversations
 // and re-renders if the cache changed).
-setInterval(() => void refreshChatSidebar(), 30_000);
+setInterval(() => void refreshChatSidebar({ force: true }), 30_000);
 
 // Promote chat-bubble timestamps from "刚刚" → "1 分钟前" → … without
 // re-rendering the message. Cheap; only walks visible <time> nodes.
@@ -7216,64 +6784,15 @@ const conversationsState = {
   showArchived: false
 };
 
-function escapeConvHtml(text) {
-  return String(text ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
-
-function formatConvTimestamp(ts) {
-  if (!ts) return "";
-  const d = new Date(ts);
-  if (isNaN(d.getTime())) return ts;
-  return d.toLocaleString();
-}
-
-function roleBadge(role) {
-  const colors = {
-    user: "#3b82f6",
-    assistant: "#10b981",
-    system: "#a855f7",
-    tool_summary: "#f59e0b"
-  };
-  const c = colors[role] ?? "#6b7280";
-  return `<span style="background:${c};color:#fff;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;letter-spacing:0.3px;">${escapeConvHtml(role)}</span>`;
-}
-
 function renderConversationsList() {
   const listEl = document.querySelector("#conversationsList");
   const countEl = document.querySelector("#conversationsCount");
   if (!listEl) return;
   if (countEl) countEl.textContent = String(conversationsState.items.length);
-  if (conversationsState.items.length === 0) {
-    listEl.innerHTML = `<p class="muted" style="font-size:12px;">No conversations yet.</p>`;
-    return;
-  }
-  listEl.innerHTML = conversationsState.items.map((c) => `
-    <div class="history-item-row ${c.conversation_id === conversationsState.selectedId ? "active" : ""}"
-         data-row-conversation-id="${escapeConvHtml(c.conversation_id)}">
-      <button class="history-item history-item--main"
-              data-conversation-id="${escapeConvHtml(c.conversation_id)}"
-              style="text-align:left;">
-        <div class="row" style="justify-content:space-between;align-items:center;">
-          <strong style="font-size:13px;">${escapeConvHtml(c.title || c.conversation_id.slice(0, 24))}</strong>
-          <span class="muted" style="font-size:11px;">${c.message_count}m · ${c.task_count}t${c.archived ? " · archived" : ""}</span>
-        </div>
-        <p class="muted" style="margin-top:4px;font-size:11px;">${escapeConvHtml(formatConvTimestamp(c.updated_at))}</p>
-      </button>
-      <button class="history-item-resume" type="button"
-              data-resume-conversation-id="${escapeConvHtml(c.conversation_id)}"
-              title="在 Chat 标签继续此对话" aria-label="继续对话">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>
-        </svg>
-      </button>
-    </div>
-  `).join("");
+  listEl.innerHTML = renderConversationsListHtml({
+    items: conversationsState.items,
+    selectedId: conversationsState.selectedId
+  });
   for (const btn of listEl.querySelectorAll("[data-conversation-id]")) {
     btn.addEventListener("click", () => {
       conversationsState.selectedId = btn.dataset.conversationId;
@@ -7301,74 +6820,10 @@ function renderConversationDetail() {
   const metaEl = document.querySelector("#conversationsDetailMeta");
   const bodyEl = document.querySelector("#conversationsDetailBody");
   if (!titleEl || !bodyEl) return;
-  const detail = conversationsState.detail;
-  if (!detail) {
-    titleEl.textContent = "Select a conversation";
-    if (metaEl) metaEl.textContent = "";
-    bodyEl.innerHTML = `<p class="muted" style="font-size:12px;">No conversation selected.</p>`;
-    return;
-  }
-  const conv = detail.conversation;
-  titleEl.textContent = conv.title || conv.conversation_id;
-  if (metaEl) {
-    metaEl.textContent = `${conv.message_count} messages · ${conv.task_count} tasks · updated ${formatConvTimestamp(conv.updated_at)}`;
-  }
-  // G: Continue this conversation in chat. Only renders the button —
-  // the click handler reuses the SELECTED conversation_id (no new
-  // conversation is created), loads canonical messages from backend,
-  // and switches to the chat tab.
-  const continueButtonHtml = `
-    <div style="margin-bottom:12px;">
-      <button id="conversationsContinueBtn" class="btn btn-sm btn-primary" type="button"
-              data-conversation-id="${escapeConvHtml(conv.conversation_id)}">
-        Continue this conversation
-      </button>
-    </div>
-  `;
-  if (!detail.messages.length) {
-    bodyEl.innerHTML = `${continueButtonHtml}<p class="muted" style="font-size:12px;">No messages.</p>`;
-    bindConversationsContinueButton();
-    return;
-  }
-  const linksByMessage = new Map();
-  for (const link of detail.message_task_links ?? []) {
-    if (!linksByMessage.has(link.message_id)) linksByMessage.set(link.message_id, []);
-    linksByMessage.get(link.message_id).push(link);
-  }
-  const rows = detail.messages.map((m) => {
-    const links = linksByMessage.get(m.message_id) ?? [];
-    const linksHtml = links.length
-      ? `<div style="margin-top:6px;font-size:11px;color:#6b7280;">${links.map((l) => `${escapeConvHtml(l.relation)}: <code>${escapeConvHtml(l.task_id)}</code>`).join(" · ")}</div>`
-      : "";
-    const meta = m.metadata && typeof m.metadata === "object" ? m.metadata : {};
-    const metaTags = [];
-    if (meta.backfilled) metaTags.push(`<span class="tag" style="background:#fef3c7;color:#92400e;">backfilled</span>`);
-    if (meta.partial)    metaTags.push(`<span class="tag" style="background:#fef3c7;color:#92400e;">partial</span>`);
-    if (meta.migration_version) metaTags.push(`<span class="tag" style="background:#dbeafe;color:#1e40af;">${escapeConvHtml(meta.migration_version)}</span>`);
-    if (meta.executor)   metaTags.push(`<span class="tag" style="background:#e5e7eb;color:#374151;">exec:${escapeConvHtml(meta.executor)}</span>`);
-    const metaHtml = metaTags.length ? `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">${metaTags.join("")}</div>` : "";
-    const statusHtml = m.status ? ` <span class="muted" style="font-size:11px;">[${escapeConvHtml(m.status)}]</span>` : "";
-    let preview = String(m.content ?? "");
-    if (m.role === "tool_summary") {
-      try { preview = JSON.stringify(JSON.parse(preview), null, 2); } catch { /* leave as-is */ }
-    }
-    if (preview.length > 1200) preview = preview.slice(0, 1200) + "\n…[truncated]";
-    return `
-      <div class="surface" style="padding:10px 12px;margin-bottom:10px;">
-        <div class="row" style="justify-content:space-between;align-items:center;">
-          <div style="display:flex;align-items:center;gap:8px;">
-            ${roleBadge(m.role)}
-            <span class="muted" style="font-size:11px;">seq ${m.seq}${statusHtml}</span>
-          </div>
-          <span class="muted" style="font-size:11px;">${escapeConvHtml(formatConvTimestamp(m.ts))}</span>
-        </div>
-        <pre style="margin-top:8px;white-space:pre-wrap;word-break:break-word;font-family:inherit;font-size:13px;line-height:1.5;">${escapeConvHtml(preview)}</pre>
-        ${linksHtml}
-        ${metaHtml}
-      </div>
-    `;
-  });
-  bodyEl.innerHTML = continueButtonHtml + rows.join("");
+  const view = renderConversationDetailView(conversationsState.detail);
+  titleEl.textContent = view.title;
+  if (metaEl) metaEl.textContent = view.meta;
+  bodyEl.innerHTML = view.bodyHtml;
   bindConversationsContinueButton();
 }
 
@@ -7384,13 +6839,13 @@ function bindConversationsContinueButton() {
 
 async function loadConversationDetail(conversationId) {
   try {
-    const res = await fetch(`${state.serviceBaseUrl}/conversation/${encodeURIComponent(conversationId)}`);
-    if (!res.ok) {
+    const detail = await cacheFetchConversationDetail(fetch.bind(globalThis), state.serviceBaseUrl, conversationId);
+    if (!detail?.conversation) {
       conversationsState.detail = null;
       renderConversationDetail();
       return;
     }
-    conversationsState.detail = await res.json();
+    conversationsState.detail = detail;
     renderConversationDetail();
   } catch (err) {
     conversationsState.detail = null;
@@ -7403,9 +6858,7 @@ async function loadConversationsTab() {
   if (listEl) listEl.innerHTML = `<p class="muted" style="font-size:12px;">Loading…</p>`;
   try {
     const archived = conversationsState.showArchived ? "any" : "0";
-    const res = await fetch(`${state.serviceBaseUrl}/conversations?limit=200&archived=${archived}`);
-    const data = res.ok ? await res.json() : { conversations: [] };
-    conversationsState.items = Array.isArray(data.conversations) ? data.conversations : [];
+    conversationsState.items = await fetchConversationsList({ limit: 200, archived });
     if (!conversationsState.items.some((c) => c.conversation_id === conversationsState.selectedId)) {
       conversationsState.selectedId = conversationsState.items[0]?.conversation_id ?? null;
       conversationsState.detail = null;
@@ -7417,7 +6870,7 @@ async function loadConversationsTab() {
       renderConversationDetail();
     }
   } catch (err) {
-    if (listEl) listEl.innerHTML = `<p class="muted" style="font-size:12px;">Failed to load: ${escapeConvHtml(err.message)}</p>`;
+    if (listEl) listEl.innerHTML = `<p class="muted" style="font-size:12px;">Failed to load: ${escapeHtml(err.message)}</p>`;
   }
 }
 
@@ -9109,44 +8562,6 @@ function initQuickNotes() {
     return true;
   }
 
-  function nowIso() { return new Date().toISOString(); }
-  function fmtRel(iso) {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    const now = new Date();
-    const diff = (now - d) / 1000;
-    if (diff < 60) return "just now";
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-    const sameYear = d.getFullYear() === now.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    const hh = String(d.getHours()).padStart(2, "0");
-    const mi = String(d.getMinutes()).padStart(2, "0");
-    return sameYear ? `${mm}-${dd} ${hh}:${mi}` : `${d.getFullYear()}-${mm}-${dd}`;
-  }
-  function fmtAbsolute(iso) {
-    if (!iso) return "";
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return "";
-    const pad = (n) => String(n).padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  }
-
-  function makeNote() {
-    const ts = nowIso();
-    return {
-      id: `n-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      title: "",
-      body_html: "",
-      group: "",
-      created_at: ts,
-      updated_at: ts,
-      history: [] // [{ts, bytes}] rough edit log for future UI; not rendered yet
-    };
-  }
-
   function knownGroups() {
     const set = new Set();
     for (const n of notesState.notes) {
@@ -9187,12 +8602,6 @@ function initQuickNotes() {
       || stripHtml(n.body_html || "").toLowerCase().includes(q);
     return [...notesState.notes].filter(matches)
       .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""));
-  }
-
-  function stripHtml(html) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = html;
-    return (tmp.textContent || "").replace(/\s+/g, " ").trim();
   }
 
   function renderList() {
@@ -9671,11 +9080,6 @@ function initQuickNotes() {
     });
   }
 
-  function noteFilename(note, ext) {
-    const base = (note.title || "note").replace(/[\\/:*?"<>|]/g, "_").trim() || "note";
-    return `${base}.${ext}`;
-  }
-
   function copyToClipboard(text) {
     try {
       navigator.clipboard?.writeText?.(text);
@@ -9691,96 +9095,6 @@ function initQuickNotes() {
     a.click();
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  function exportAsText(note, opts) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = opts.keepInlineStamps ? note.body_html : stripInlineStamps(note.body_html);
-    const body = (tmp.textContent || "").trim();
-    const header = [];
-    header.push(note.title || "Untitled note");
-    if (opts.withTimestamps) {
-      header.push(`Created: ${fmtAbsolute(note.created_at)}`);
-      header.push(`Last edited: ${fmtAbsolute(note.updated_at)}`);
-    }
-    return `${header.join("\n")}\n\n${body}\n`;
-  }
-
-  function exportAsMarkdown(note, opts) {
-    const md = htmlToMarkdown(opts.keepInlineStamps ? note.body_html : stripInlineStamps(note.body_html));
-    const header = [`# ${note.title || "Untitled note"}`];
-    if (opts.withTimestamps) {
-      header.push("");
-      header.push(`> Created: ${fmtAbsolute(note.created_at)}  `);
-      header.push(`> Last edited: ${fmtAbsolute(note.updated_at)}`);
-    }
-    return `${header.join("\n")}\n\n${md}\n`;
-  }
-
-  function exportAsHtml(note, opts) {
-    const body = opts.keepInlineStamps ? note.body_html : stripInlineStamps(note.body_html);
-    const tsBlock = opts.withTimestamps
-      ? `<p style="color:#94a3b8;font-size:12px;margin-top:0">Created: ${escapeHtml(fmtAbsolute(note.created_at))} · Last edited: ${escapeHtml(fmtAbsolute(note.updated_at))}</p>`
-      : "";
-    return `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(note.title || "Note")}</title>
-<style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#0f172a;line-height:1.7}h1{font-size:22px}img{max-width:100%;border-radius:6px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #e5e7eb;padding:6px 10px}.note-stamp{color:#94a3b8;font-family:ui-monospace,monospace;font-size:11.5px;padding:0 4px;background:rgba(0,0,0,.04);border-radius:3px}</style>
-</head><body><h1>${escapeHtml(note.title || "Untitled note")}</h1>${tsBlock}${body}</body></html>`;
-  }
-
-  function stripInlineStamps(html) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = html || "";
-    tmp.querySelectorAll(".note-stamp").forEach((el) => el.remove());
-    return tmp.innerHTML;
-  }
-
-  function htmlToMarkdown(html) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = html || "";
-    const walk = (node) => {
-      if (node.nodeType === Node.TEXT_NODE) return node.textContent;
-      if (node.nodeType !== Node.ELEMENT_NODE) return "";
-      const tag = node.tagName.toLowerCase();
-      const inner = Array.from(node.childNodes).map(walk).join("");
-      switch (tag) {
-        case "h1": return `\n# ${inner}\n\n`;
-        case "h2": return `\n## ${inner}\n\n`;
-        case "h3": return `\n### ${inner}\n\n`;
-        case "p": case "div": return `${inner}\n\n`;
-        case "br": return "\n";
-        case "strong": case "b": return `**${inner}**`;
-        case "em": case "i": return `*${inner}*`;
-        case "u": return inner;
-        case "a": return `[${inner}](${node.getAttribute("href") || ""})`;
-        case "img": {
-          const src = node.getAttribute("src") || "";
-          const alt = node.getAttribute("alt") || "";
-          return `![${alt}](${src})`;
-        }
-        case "code": return `\`${inner}\``;
-        case "blockquote": return inner.split("\n").map((l) => `> ${l}`).join("\n") + "\n\n";
-        case "hr": return `\n---\n\n`;
-        case "li": {
-          const parent = node.parentElement?.tagName?.toLowerCase();
-          return parent === "ol" ? `1. ${inner}\n` : `- ${inner}\n`;
-        }
-        case "ul": case "ol": return `${inner}\n`;
-        case "table": return tableToMd(node) + "\n";
-        default: return inner;
-      }
-    };
-    return Array.from(tmp.childNodes).map(walk).join("").replace(/\n{3,}/g, "\n\n").trim();
-  }
-
-  function tableToMd(table) {
-    const rows = Array.from(table.querySelectorAll("tr"));
-    if (rows.length === 0) return "";
-    const render = (tr) => Array.from(tr.children).map((c) => (c.textContent || "").trim().replace(/\|/g, "\\|")).join(" | ");
-    const head = render(rows[0]);
-    const cols = rows[0].children.length;
-    const sep = Array.from({ length: cols }, () => "---").join(" | ");
-    const body = rows.slice(1).map(render).join("\n");
-    return `| ${head} |\n| ${sep} |${body ? `\n| ${body.split("\n").map(r => r + " |").join("\n| ")}` : ""}`;
   }
 
   // ── Adopt from chat ───────────────────────────────────────────────────

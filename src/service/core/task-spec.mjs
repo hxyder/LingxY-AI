@@ -472,8 +472,14 @@ function hasNoteTakingIntent(text, contextPacket = {}) {
 function hasDeterministicRoutingLock({ signals, contextPacket = {}, toolPolicy, text = "" } = {}) {
   if (extractPureLaunchApp(text)) return true;
   if (signals?.explicit_no_search?.matched && signals.explicit_no_search.kind === "fact") return true;
-  if (Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0) return true;
-  if (Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0) return true;
+  if (signals?.local_only_constraint?.matched && signals.local_only_constraint.kind === "fact") return true;
+
+  const neutralSearch = Boolean(
+    signals?.explicit_search?.matched
+    && signals.explicit_search.strength === "strong"
+  );
+  if (Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0 && !neutralSearch) return true;
+  if (Array.isArray(contextPacket?.image_paths) && contextPacket.image_paths.length > 0 && !neutralSearch) return true;
 
   const sourceScope = signals?.source_scope;
   const sources = contextPacket?.context_sources;
@@ -489,6 +495,7 @@ function hasDeterministicRoutingLock({ signals, contextPacket = {}, toolPolicy, 
     webMode === "forbidden"
     && sourceScope?.matched
     && LOCAL_ROUTING_LOCK_SCOPES.has(sourceScope.hint?.value)
+    && !neutralSearch
     && (sourceScope.kind === "fact"
       || (sourceScope.kind === "assumption" && hasObservedLocalAnchor))
   );

@@ -12,8 +12,8 @@
  *
  * Asserts the promotion AND the boundary-preservation invariants:
  *   1. "查一下 X" / "search for X" with no context → required.
- *   2. "查一下我的文件" + file_paths attached → forbidden
- *      (step 2a fact-local wins over step 3).
+ *   2. "查一下我的文件" + file_paths attached → optional without SR,
+ *      because neutral search + local input is a mixed-intent question.
  *   3. "查一下 X，不要联网" → forbidden (step 0a explicit_no_search
  *      wins over step 3).
  *   4. "搜索这个 URL: https://..." → required via step 2b
@@ -74,14 +74,14 @@ it("E5: '搜索 / google / 查询' verbs all promote to required", () => {
 });
 
 // ── Boundary preservation ────────────────────────────────────────────
-it("boundary: explicit_search + file_paths → forbidden (step 2a fact-local wins)", () => {
+it("boundary: explicit_search + file_paths → optional without SR (mixed local/search)", () => {
   const mode = modeFor("查一下我的文件里写了什么", { file_paths: ["a.docx"] });
-  assert.equal(mode, "forbidden",
-    "fact-local source-scope must short-circuit before step 3");
+  assert.equal(mode, "optional",
+    "neutral search over local input must defer to SR/planner instead of fake-forbidden");
 });
-it("boundary: explicit_search + image_paths → forbidden (step 2a fact-local wins)", () => {
+it("boundary: explicit_search + image_paths → optional without SR (mixed local/search)", () => {
   const mode = modeFor("查一下这张图片里有什么", { image_paths: ["a.png"] });
-  assert.equal(mode, "forbidden");
+  assert.equal(mode, "optional");
 });
 it("boundary: explicit_search + explicit_no_search → forbidden (step 0a wins)", () => {
   const mode = modeFor("查一下这个，但不要联网");
@@ -141,14 +141,14 @@ it("E5 end-to-end: 'search for X' in English same shape as Chinese", () => {
   assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "required");
 });
 
-it("E5 end-to-end: '查一下我的文件' + file_paths preserves forbidden + agentic executor", () => {
+it("E5 end-to-end: '查一下我的文件' + file_paths is optional when SR is absent", () => {
   const spec = createTaskSpec("查一下我的文件里写了什么", {
     file_paths: ["a.docx"]
   }, {});
-  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
-  // Don't assert exact executor — file_paths drives multi_modal /
-  // agentic / tool_using depending on artifact path; only verify
-  // that web stays forbidden (the boundary we care about for E5).
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional");
+  assert.equal(spec.routing_status, "sr_not_invoked");
+  // Don't assert exact executor — this check only locks the mixed-intent
+  // policy boundary.
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

@@ -18,28 +18,33 @@ const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const consoleJs = read("src/desktop/renderer/console.js");
+const taskTimeline = read("src/desktop/renderer/console-task-timeline.mjs");
 
-// renderTimelineEntry exists.
+// renderTimelineEntry exists in the dedicated timeline renderer module.
 assert.ok(
-  /function renderTimelineEntry\s*\(/.test(consoleJs),
-  "console.js must define renderTimelineEntry"
+  /function renderTimelineEntry\s*\(/.test(taskTimeline),
+  "console-task-timeline.mjs must define renderTimelineEntry"
 );
 assert.ok(
   /taskTimeline\.innerHTML[\s\S]{0,500}renderTimelineEntry\(ev\b/.test(consoleJs),
   "timeline render must delegate to renderTimelineEntry"
 );
+assert.ok(
+  /from\s+["']\.\/console-task-timeline\.mjs["']/.test(consoleJs),
+  "console.js must import the timeline renderer module"
+);
 
 // Opens for failures + pending.
 assert.ok(
-  /payload\.success === false/.test(consoleJs),
+  /payload\.success === false/.test(taskTimeline),
   "renderTimelineEntry must branch on tool failure"
 );
 assert.ok(
-  /<details\s+class="timeline-item"/.test(consoleJs),
+  /<details\s+class="timeline-item"/.test(taskTimeline),
   "renderTimelineEntry must emit <details class=\"timeline-item\">"
 );
 assert.ok(
-  /<summary/.test(consoleJs),
+  /<summary/.test(taskTimeline),
   "renderTimelineEntry must emit a <summary>"
 );
 

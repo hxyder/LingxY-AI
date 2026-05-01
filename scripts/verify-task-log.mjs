@@ -2,7 +2,7 @@
 //
 // Steps:
 //   1. Static wiring: emitTaskEvent persists via persistTaskEvent;
-//      readTaskEventLog is exported; http-server has /task/:id/log
+//      readTaskEventLog is exported; task-routes has /task/:id/log
 //      and /tasks/failed handlers; console.html+js show the panel.
 //   2. Live behaviour: build a tiny fake runtime with a temp logsDir,
 //      call emitTaskEvent a few times, then read back via
@@ -30,20 +30,26 @@ const ROOT = path.resolve(__dirname, "..");
   );
   assert.ok(tr.includes("persistTaskEvent(runtime, record)"),
     "emitTaskEvent must invoke persistTaskEvent");
-  assert.ok(tr.includes("export async function readTaskEventLog"),
-    "task-runtime must export readTaskEventLog");
-  assert.ok(tr.includes("JSONL_SKIP_EVENT_TYPES"),
-    "task-runtime must skip ephemeral events when persisting");
+  assert.ok(tr.includes('from "./task-runtime/event-log.mjs"'),
+    "task-runtime must delegate task jsonl log writing to event-log.mjs");
 
-  const hs = await (await import("node:fs/promises")).readFile(
-    path.join(ROOT, "src/service/core/http-server.mjs"), "utf8"
+  const eventLog = await (await import("node:fs/promises")).readFile(
+    path.join(ROOT, "src/service/core/task-runtime/event-log.mjs"), "utf8"
   );
-  assert.ok(hs.includes("readTaskEventLog"),
-    "http-server must import readTaskEventLog");
-  assert.ok(hs.includes('url.pathname === "/tasks/failed"'),
-    "http-server must expose /tasks/failed");
-  assert.ok(hs.includes("^\\/task\\/([^/]+)\\/log$"),
-    "http-server must expose /task/:id/log");
+  assert.ok(eventLog.includes("export async function readTaskEventLog"),
+    "event-log module must export readTaskEventLog");
+  assert.ok(eventLog.includes("JSONL_SKIP_EVENT_TYPES"),
+    "event-log module must skip ephemeral events when persisting");
+
+  const taskRoutes = await (await import("node:fs/promises")).readFile(
+    path.join(ROOT, "src/service/core/http-routes/task-routes.mjs"), "utf8"
+  );
+  assert.ok(taskRoutes.includes("readTaskEventLog"),
+    "task-routes must import readTaskEventLog");
+  assert.ok(taskRoutes.includes('url.pathname === "/tasks/failed"'),
+    "task-routes must expose /tasks/failed");
+  assert.ok(taskRoutes.includes("^\\/task\\/([^/]+)\\/log$"),
+    "task-routes must expose /task/:id/log");
 
   const html = await (await import("node:fs/promises")).readFile(
     path.join(ROOT, "src/desktop/renderer/console.html"), "utf8"

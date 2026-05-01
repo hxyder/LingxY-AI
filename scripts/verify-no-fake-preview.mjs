@@ -82,9 +82,15 @@ if (offenders.length) {
 // output into a <pre> inside /file/render-preview-html. We look for
 // the exact marker string the fallback used.
 {
-  const http = await readFile(path.join(ROOT, "src", "service", "core", "http-server.mjs"), "utf8");
-  assert.ok(!http.includes("(无可提取文本)"),
-    "http-server.mjs still contains legacy <pre> fallback marker");
+  const routeFiles = [
+    "src/service/core/http-server.mjs",
+    "src/service/core/http-routes/preview-file-routes.mjs"
+  ];
+  for (const routeFile of routeFiles) {
+    const source = await readFile(path.join(ROOT, routeFile), "utf8");
+    assert.ok(!source.includes("(无可提取文本)"),
+      `${routeFile} still contains legacy <pre> fallback marker`);
+  }
 }
 
 // Positive check: the replacement modules exist.
