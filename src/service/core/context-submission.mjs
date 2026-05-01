@@ -990,6 +990,7 @@ export async function submitContextTask({
     retryCount,
     bypassDedupe,
     executorOverride,
+    submissionKind: "context",
     runtime,
     projectId: routerEnrichedContext?.selection_metadata?.project_id ?? null
   });
