@@ -13,7 +13,8 @@
  * (taskSpec, toolPolicy, runtimeCapabilities) — facts the system can defend.
  *
  * Decision table:
- *   - image input uses the multimodal AI executor
+ *   - image-only input uses the multimodal AI executor
+ *   - image + required external tools uses the tool-capable AI agent
  *   - everything else defaults to the tool-capable AI agent
  *
  * Output includes rejected candidates with reasons, which downstream
@@ -42,6 +43,7 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
   const artifactRequired = taskSpec.artifact?.required === true;
   const webMode = toolPolicy.web_search_fetch.mode;
   const hasImage = Array.isArray(contextPacket.image_paths) && contextPacket.image_paths.length > 0;
+  const requiresExternalWeb = isExternalWebRequired(taskSpec, toolPolicy);
   const evidence = [];
   const rejected = [];
 
@@ -53,6 +55,19 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
       matched: routeSuggestion,
       reason: "intent-router suggested this executor; carried as evidence only"
     });
+  }
+
+  if (hasImage && requiresExternalWeb) {
+    return decision("tool_using",
+      "Image attachments plus required external_web_read need tool-capable image understanding and search.",
+      [
+        { type: "context", source: "context.image_paths",
+          matched: `${contextPacket.image_paths.length} image(s)` },
+        { type: "policy", source: "tool_policy.external_web_read",
+          matched: "required" }
+      ],
+      rejectAllExcept("tool_using", routeSuggestion)
+    );
   }
 
   if (hasImage) {
@@ -91,6 +106,13 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
       rejected: rejectedCandidates
     };
   }
+}
+
+function isExternalWebRequired(taskSpec = {}, toolPolicy = {}) {
+  return toolPolicy?.web_search_fetch?.mode === "required"
+    || toolPolicy?.policy_groups?.external_web_read?.mode === "required"
+    || (Array.isArray(taskSpec?.success_contract?.required_policy_groups)
+      && taskSpec.success_contract.required_policy_groups.includes("external_web_read"));
 }
 
 function rejectAllExcept(chosen, routeSuggestion) {

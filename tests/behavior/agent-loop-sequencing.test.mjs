@@ -245,6 +245,73 @@ test("hidden direct file-open tools are denied even if a planner hallucinates th
   ));
 });
 
+test("image-grounded external research can use vision and search tools in one tool loop", async () => {
+  const { runtime } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([
+      makeNoopTool("vision_analyze"),
+      makeNoopTool("web_search_fetch", { policy_group: "external_web_read" })
+    ]),
+    finalAnswerComposer: async ({ transcript }) => {
+      assert.ok(transcript.some((entry) =>
+        entry.type === "tool_result"
+        && entry.tool === "vision_analyze"
+      ));
+      assert.ok(transcript.some((entry) =>
+        entry.type === "tool_result"
+        && entry.tool === "web_search_fetch"
+      ));
+      return "vision plus search complete";
+    }
+  });
+  const seenToolIds = [];
+  const task = {
+    task_id: "task_image_external_research",
+    user_command: "结合这张产品图搜索外部竞品",
+    execution_mode: "interactive",
+    context_packet: {
+      image_paths: ["E:\\fixtures\\product.png"],
+      semantic_router_decision: {
+        needed_capabilities: ["image_understanding", "external_web_read"]
+      }
+    },
+    task_spec: {
+      goal: "multimodal_analyze",
+      synthesis: { expected_output: "summary", user_goal: "image-grounded external research" },
+      tool_policy: {
+        policy_groups: { external_web_read: { mode: "required" } },
+        web_search_fetch: { mode: "required" }
+      },
+      success_contract: {
+        required_tool_names: [],
+        required_policy_groups: ["external_web_read"]
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ tools, iteration }) => {
+      seenToolIds.push(...tools.map((tool) => tool.id));
+      assert.ok(tools.some((tool) => tool.id === "vision_analyze"));
+      assert.ok(tools.some((tool) => tool.id === "web_search_fetch"));
+      if (iteration === 0) {
+        return { type: "tool_call", tool: "vision_analyze", args: { image_paths: ["E:\\fixtures\\product.png"] } };
+      }
+      if (iteration === 1) {
+        return { type: "tool_call", tool: "web_search_fetch", args: { query: "competitors from product image" } };
+      }
+      return { type: "final", text: "done" };
+    },
+    maxIterations: 4
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.final_text, "vision plus search complete");
+  assert.ok(seenToolIds.includes("vision_analyze"));
+  assert.ok(seenToolIds.includes("web_search_fetch"));
+});
+
 test("explicit file-open tasks still expose open_file", async () => {
   const { runtime } = makeRuntime({
     actionToolRegistry: createActionToolRegistry([

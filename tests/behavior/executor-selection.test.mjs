@@ -50,6 +50,34 @@ test("executor resolver routes image context to multi_modal", () => {
   assert.ok(decision.rejected.some((item) => item.candidate === "fast"));
 });
 
+test("executor resolver routes image plus required external search to tool_using", () => {
+  const taskSpec = {
+    goal: "multimodal_analyze",
+    artifact: { required: false },
+    connector_domain: false,
+    success_contract: {
+      required_policy_groups: ["external_web_read"]
+    }
+  };
+  const toolPolicy = {
+    web_search_fetch: { mode: "required" },
+    policy_groups: {
+      external_web_read: { mode: "required" }
+    }
+  };
+
+  const decision = resolveExecutor({
+    taskSpec,
+    toolPolicy,
+    contextPacket: { image_paths: ["product.png"] },
+    routeSuggestion: "multi_modal"
+  });
+
+  assert.equal(decision.executor, "tool_using");
+  assert.match(decision.reason, /Image attachments.*external_web_read/);
+  assert.ok(decision.rejected.some((item) => item.candidate === "multi_modal"));
+});
+
 test("executor resolver gives image context priority even when an artifact is required", () => {
   const taskSpec = {
     goal: "generate_document",
@@ -93,6 +121,29 @@ test("createTaskSpec records executor-selection behavior in the decision trace",
   assert.equal(spec.suggested_executor, "multi_modal");
   assert.equal(spec.executor_decision?.executor, "multi_modal");
   assert.ok(spec.decision_trace.some((entry) => entry.stage === "executor-selection"));
+});
+
+test("createTaskSpec composes image understanding with external search tools", () => {
+  const spec = createTaskSpec("结合这张产品图搜索外部竞品", {
+    image_paths: ["product.png"],
+    semantic_router_decision: {
+      source_scope: "external_world",
+      web_policy: "required",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "tool_using",
+      needed_capabilities: ["image_understanding", "external_web_read"],
+      required_policy_groups: ["external_web_read"],
+      confidence: 0.86,
+      reason: "image-grounded external research"
+    }
+  }, {
+    suggested_executor: "multi_modal"
+  });
+
+  assert.equal(spec.suggested_executor, "tool_using");
+  assert.equal(spec.executor_decision?.executor, "tool_using");
+  assert.ok(spec.success_contract.required_policy_groups.includes("external_web_read"));
 });
 
 test("executor registry remains an availability registry with explicit fallback behavior", () => {
