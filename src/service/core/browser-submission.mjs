@@ -675,6 +675,7 @@ export async function submitBrowserTask({
     childIndex,
     retryCount,
     executorOverride,
+    submissionKind: "browser",
     runtime
   });
   const enqueued = queue.enqueue(task);

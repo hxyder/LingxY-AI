@@ -35,7 +35,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
-    submissionKind: [],
+    submissionKind: ["browser"],
     executorOverride: []
   },
   "composite-submission.mjs": {

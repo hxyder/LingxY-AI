@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { evaluateSubmissionBoundary } from "../../src/service/core/policy/submission-boundary.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
+import { submitBrowserTask } from "../../src/service/core/browser-submission.mjs";
 import { submitCompositeTask } from "../../src/service/core/composite-submission.mjs";
 import { submitContextTask } from "../../src/service/core/context-submission.mjs";
 import { submitFileTask } from "../../src/service/core/file-submission.mjs";
@@ -218,4 +219,27 @@ test("composite submission declares its submission kind through the central boun
     .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
   assert.ok(audit);
   assert.equal(audit.payload.submission_kind, "composite");
+});
+
+test("browser submission declares its submission kind through the central boundary", async () => {
+  const runtime = createRuntime({ enqueueAccepted: false });
+  const { task } = await submitBrowserTask({
+    runtime,
+    userCommand: "Summarize this page",
+    executionMode: "interactive",
+    background: true,
+    capture: {
+      sourceType: "webpage",
+      browser: "uca.test.browser",
+      url: "https://example.com/article",
+      pageTitle: "Example Article"
+    }
+  });
+
+  assert.equal(task.submission_boundary.submission_kind, "browser");
+
+  const audit = runtime.store.listAuditLogs()
+    .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
+  assert.ok(audit);
+  assert.equal(audit.payload.submission_kind, "browser");
 });
