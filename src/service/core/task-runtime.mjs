@@ -1,18 +1,11 @@
 import crypto from "node:crypto";
-import { classifyFailure } from "../failures/classifier.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
 import { appendAuditLog } from "../security/audit-log.mjs";
 import { createPendingApprovalService } from "../scheduler/pending-approvals.mjs";
-import { extractToolSequence, recordToolSequence } from "./skill-pattern-tracker.mjs";
 import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import { evaluateSubmissionBoundary } from "./policy/submission-boundary.mjs";
 import {
-  aggregateCompositeStatus,
-  listChildTasks
-} from "./task-runtime/composite-status.mjs";
-import {
-  appendTaskOutcomeMessage,
   attachParentTaskSummary,
   attachPriorBackendMessages,
   deriveConversationTitle,
@@ -22,6 +15,7 @@ import {
   shouldAutoResolveParentFromConversation
 } from "./task-runtime/conversation-lifecycle.mjs";
 import { emitTaskEvent } from "./task-runtime/event-emitter.mjs";
+import { updateTask } from "./task-runtime/task-lifecycle.mjs";
 import { createActionToolRegistry } from "../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 
@@ -38,6 +32,15 @@ export {
   shouldAutoResolveParentFromConversation
 } from "./task-runtime/conversation-lifecycle.mjs";
 export { emitTaskEvent } from "./task-runtime/event-emitter.mjs";
+export {
+  applyExecutorEvent,
+  markTaskFailed,
+  markTaskSucceeded,
+  refreshCompositeParentStatus,
+  registerActiveExecution,
+  unregisterActiveExecution,
+  updateTask
+} from "./task-runtime/task-lifecycle.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -57,92 +60,6 @@ function buildSourceDedupeKey(contextPacket, userCommand, executor) {
     ?? textKey
     ?? contextPacket.source_type;
   return `${contextPacket.source_type}:${contextPacket.source_app}:${executor}:${userCommand}:${sourceKey}`;
-}
-
-// UCA-182 Phase 18: compact cap on record text so the embedding store
-// doesn't bloat with entire clipped web pages. 2KB of Unicode is more
-// than enough for TF-IDF term importance and stays well under any
-// semantic model's token window. context_packet.text is truncated
-// individually because a huge page-dump can single-handedly drown out
-// the rest of the signal.
-const HISTORY_TEXT_CAP = 2000;
-const HISTORY_CTX_TEXT_CAP = 600;
-const HISTORY_ANSWER_CAP = 800;
-
-function buildHistoryRecord(task, runtime) {
-  const parts = [
-    task.user_command,
-    task.intent,
-    task.context_packet?.title,
-    String(task.context_packet?.text ?? "").slice(0, HISTORY_CTX_TEXT_CAP),
-    task.context_packet?.url,
-    task.context_packet?.file_paths?.join(" "),
-    task.failure_user_message
-  ];
-
-  // UCA-064: For composite tasks include child task content so history search
-  // can find sub-task text and subtasks don't silently disappear from history.
-  if (Array.isArray(task.child_task_ids) && task.child_task_ids.length > 0 && runtime) {
-    const children = task.child_task_ids
-      .map((id) => runtime.store?.getTask(id))
-      .filter(Boolean);
-    for (const child of children) {
-      if (child.user_command) parts.push(child.user_command);
-      if (child.failure_user_message) parts.push(child.failure_user_message);
-    }
-  }
-
-  // Also include result_summary if the executor produced one
-  if (task.result_summary) parts.push(task.result_summary);
-
-  // UCA-182 Phase 18: include the assistant's final reply so the
-  // embedding store indexes "what was generated", not just "what was
-  // asked". Without this, a RAG recall keyed on "ppt" finds the user
-  // command (which might just say "ppt") but nothing about the actual
-  // subject matter of the earlier report.
-  let answerText = "";
-  let artifactPaths = [];
-  if (runtime?.store?.getTaskEvents) {
-    try {
-      const events = runtime.store.getTaskEvents(task.task_id) ?? [];
-      const finalEvent = [...events].reverse().find((e) =>
-        e.event_type === "success" || e.event_type === "inline_result"
-      );
-      answerText = String(finalEvent?.payload?.text ?? "").slice(0, HISTORY_ANSWER_CAP);
-      artifactPaths = events
-        .filter((e) => e.event_type === "artifact_created")
-        .map((e) => String(e.payload?.path ?? ""))
-        .filter((p) => p && !p.endsWith("-preview.html") && !p.endsWith("-preview.txt"))
-        .slice(0, 6);
-    } catch { /* best-effort; history is not load-bearing */ }
-  }
-  if (answerText) parts.push(answerText);
-  if (artifactPaths.length) parts.push(artifactPaths.join(" "));
-
-  const text = parts.filter(Boolean).join("\n").slice(0, HISTORY_TEXT_CAP);
-
-  if (!text) {
-    return null;
-  }
-
-  return {
-    id: task.task_id,
-    text,
-    metadata: {
-      summary: task.user_command ?? task.intent ?? task.task_id,
-      created_at: task.created_at,
-      updated_at: task.updated_at,
-      status: task.status,
-      source_type: task.context_packet?.source_type ?? "unknown",
-      intent: task.intent,
-      executor: task.executor,
-      // Phase 18: carry the distilled answer + artifact list so
-      // semantic-recall can cite the assistant's prior reply without
-      // re-fetching task events.
-      answer_excerpt: answerText || null,
-      artifact_paths: artifactPaths
-    }
-  };
 }
 
 export function ensureRuntimeServices(runtime) {
@@ -405,252 +322,6 @@ export function createTaskRecord({
     contextPacket: enrichedContext
   });
   return taskRecord;
-}
-
-export function refreshCompositeParentStatus(runtime, parentTaskId) {
-  // UCA-056: Re-read parent task inside this call to avoid stale state from
-  // concurrent child completions. If another child already updated the parent
-  // between our read and write, we just emit the latest state (eventual consistency).
-  const parentTask = runtime.store.getTask(parentTaskId);
-  if (!parentTask) return null;
-  const childTasks = listChildTasks(runtime, parentTask);
-  const aggregate = aggregateCompositeStatus(childTasks);
-  const previousStatus = parentTask.status;
-  updateTask(runtime, parentTask, {
-    status: aggregate.status,
-    sub_status: aggregate.sub_status,
-    progress: aggregate.progress,
-    failure_count: aggregate.failure_count ?? 0
-  }, true);
-  return {
-    parentTask,
-    previousStatus,
-    aggregate
-  };
-}
-
-export function updateTask(runtime, task, patch, emitStatus = false) {
-  const previousStatus = task.status;
-  Object.assign(task, patch, { updated_at: nowIso() });
-  runtime.store.updateTask(task.task_id, task);
-
-  if (emitStatus && previousStatus !== task.status) {
-    emitTaskEvent({
-      runtime,
-      taskId: task.task_id,
-      eventType: "status_changed",
-      payload: {
-        previous_status: previousStatus,
-        status: task.status,
-        sub_status: task.sub_status,
-        progress: task.progress
-      }
-    });
-  }
-
-  if (task.parent_task_id && task.child_index != null && previousStatus !== task.status) {
-    refreshCompositeParentStatus(runtime, task.parent_task_id);
-  }
-
-  return task;
-}
-
-export function registerActiveExecution(runtime, taskId, executionControl) {
-  runtime.activeExecutions.set(taskId, executionControl);
-}
-
-export function unregisterActiveExecution(runtime, taskId) {
-  runtime.activeExecutions.delete(taskId);
-}
-
-export function applyExecutorEvent(runtime, task, event) {
-  if (event.type === "step_started") {
-    updateTask(runtime, task, {
-      current_step: event.step ?? null,
-      sub_status: event.step ?? "running",
-      progress: event.progress ?? task.progress
-    });
-  }
-
-  if (event.type === "step_finished") {
-    const step = event.step ?? null;
-    if (step && !task.completed_steps.includes(step)) {
-      updateTask(runtime, task, {
-        completed_steps: [...task.completed_steps, step]
-      });
-    }
-  }
-
-  if (event.type === "success") {
-    // UCA-056: Guard against duplicate success events — executor should only succeed once
-    if (task.status === "success") {
-      return; // already succeeded, ignore duplicate
-    }
-    // Persist event.text as result_summary so writeAssistantMessageForTask
-    // (called from markTaskSucceeded) can write the assistant message into
-    // conversation_messages. Image / multi_modal executors only emit text
-    // via the success event payload — without this they finalised with an
-    // empty result_summary and the conversation lost the assistant turn
-    // entirely (the bubble was visible live, but the row disappeared on
-    // reload). tool_using / agentic also yield success with text; this is
-    // a no-op for them because context-submission's post-execution path
-    // already sets result_summary first (`if (inlineText && !task.result_summary)`).
-    const successText = typeof event.text === "string" ? event.text.trim() : "";
-    const patch = {
-      status: "success",
-      sub_status: "completed",
-      progress: 1
-    };
-    if (successText && !task.result_summary) {
-      patch.result_summary = successText;
-    }
-    updateTask(runtime, task, patch, true);
-  }
-
-  if (event.type === "partial_success") {
-    if (task.status === "success") {
-      return; // don't downgrade a success to partial_success retroactively
-    }
-    const partialText = typeof event.text === "string" ? event.text.trim() : "";
-    const patch = {
-      status: "partial_success",
-      sub_status: event.sub_status ?? "completed_with_warnings",
-      progress: event.progress ?? task.progress
-    };
-    if (partialText && !task.result_summary) {
-      patch.result_summary = partialText;
-    }
-    updateTask(runtime, task, patch, true);
-  }
-
-  if (event.type === "failed") {
-    if (["success", "partial_success", "failed", "cancelled"].includes(task.status)) {
-      return;
-    }
-    const failure = classifyFailure({
-      message: event.message ?? event.text ?? event.error ?? "Executor failed.",
-      category: event.category
-    });
-    updateTask(runtime, task, {
-      status: "failed",
-      sub_status: failure.category,
-      failure_category: failure.category,
-      failure_user_message: failure.userMessage,
-      failure_internal_log_excerpt: failure.internalExcerpt,
-      retryable: failure.retryable
-    }, true);
-  }
-}
-
-export function markTaskFailed(runtime, task, errorLike) {
-  const failure = classifyFailure(errorLike);
-  updateTask(runtime, task, {
-    status: failure.category === "user_interrupted" ? "cancelled" : "failed",
-    sub_status: failure.category,
-    failure_category: failure.category,
-    failure_user_message: failure.userMessage,
-    failure_internal_log_excerpt: failure.internalExcerpt,
-    retryable: failure.retryable
-  }, true);
-
-  emitTaskEvent({
-    runtime,
-    taskId: task.task_id,
-    eventType: failure.category === "user_interrupted" ? "cancelled" : "failed",
-    payload: {
-      category: failure.category,
-      message: failure.userMessage,
-      user_actions: failure.userActions,
-      internal_excerpt: failure.internalExcerpt
-    }
-  });
-
-  task.executor_history = [
-    ...task.executor_history,
-    {
-      executor: task.executor,
-      outcome: task.status,
-      ended_at: task.updated_at
-    }
-  ];
-  runtime.store.updateTask(task.task_id, task);
-  appendTaskOutcomeMessage(runtime, task);
-  const historyRecord = buildHistoryRecord(task, runtime);
-  if (historyRecord) {
-    runtime.platform?.embeddingStore?.add(historyRecord);
-  }
-  runtime.securityBroker?.clearTaskRedactionMap(task.task_id);
-  runtime.queue.markFinished(task.task_id);
-  return failure;
-}
-
-export function markTaskSucceeded(runtime, task) {
-  const freshTask = runtime.store.getTask(task.task_id) ?? task;
-  Object.assign(task, freshTask);
-  task.executor_history = [
-    ...(task.executor_history ?? []),
-    {
-      executor: task.executor,
-      outcome: task.status,
-      ended_at: nowIso()
-    }
-  ];
-
-  // UCA-064: For composite tasks, build a result_summary listing every
-  // subtask outcome so the overlay can show "已完成 3/3 个任务" instead of "Done."
-  if (Array.isArray(task.child_task_ids) && task.child_task_ids.length > 0) {
-    const children = task.child_task_ids
-      .map((id) => runtime.store.getTask(id))
-      .filter(Boolean);
-    if (children.length > 0) {
-      const successCount = children.filter((c) => c.status === "success" || c.status === "partial_success").length;
-      const failCount = children.filter((c) => c.status === "failed" || c.status === "cancelled").length;
-      const lines = children.map((c, i) => {
-        const icon = (c.status === "success" || c.status === "partial_success") ? "✓" : "✗";
-        return `${i + 1}. ${icon} ${c.user_command ?? c.intent ?? c.task_id}`;
-      });
-      task.result_summary = [
-        `已完成 ${successCount}/${children.length} 个任务${failCount > 0 ? `（${failCount} 个失败）` : ""}`,
-        ...lines
-      ].join("\n");
-    }
-  }
-
-  runtime.store.updateTask(task.task_id, task);
-  appendTaskOutcomeMessage(runtime, task);
-  const historyRecord = buildHistoryRecord(task, runtime);
-  if (historyRecord) {
-    runtime.platform?.embeddingStore?.add(historyRecord);
-  }
-
-  // UCA-075: Auto-skill classification — detect repeated tool sequences
-  try {
-    const skillPatternsPath = runtime.paths?.skillPatternsPath ?? null;
-    if (skillPatternsPath) {
-      const taskEvents = runtime.store.getTaskEvents?.(task.task_id) ?? [];
-      const toolSequence = extractToolSequence(taskEvents);
-      const proposal = recordToolSequence(skillPatternsPath, {
-        taskId: task.task_id,
-        command: task.user_command,
-        toolSequence
-      });
-      if (proposal) {
-        // Emit as inline_result so the overlay shows a save-skill bubble
-        emitTaskEvent({
-          runtime,
-          taskId: task.task_id,
-          eventType: "skill_proposal",
-          payload: {
-            text: `💡 此操作流程已重复执行 ${proposal.count} 次：${proposal.tools.join(" → ")}\n是否保存为可复用技能「${proposal.suggestedName}」？`,
-            proposal
-          }
-        });
-      }
-    }
-  } catch { /* non-fatal */ }
-
-  runtime.securityBroker?.clearTaskRedactionMap(task.task_id);
-  runtime.queue.markFinished(task.task_id);
 }
 
 export async function cancelTask({ runtime, taskId, force = false } = {}) {
