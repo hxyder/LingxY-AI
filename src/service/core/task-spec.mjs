@@ -55,6 +55,17 @@ export const GOAL_FAMILIES = /** @type {const} */ ([
   "multimodal_analyze"     // Vision / OCR / image description
 ]);
 
+function goalRuleMatches(rule, raw, signals = null) {
+  if (!rule?.patterns?.some((pat) => pat.test(raw))) return false;
+  if (!rule.requiresSignal) return true;
+  return Boolean(signals && rule.requiresSignal(signals));
+}
+
+function isLaunchTaskText(text) {
+  const raw = String(text ?? "");
+  return Boolean(extractPureLaunchApp(raw) || extractLaunchAppCandidates(raw).length > 0);
+}
+
 // ---------------------------------------------------------------------------
 // TaskSpec type (JSDoc typedef for IDE support)
 // ---------------------------------------------------------------------------
@@ -247,18 +258,24 @@ const GOAL_RULES = [
  */
 export function classifyGoal(text, signals = null) {
   const raw = String(text ?? "");
-  if (extractPureLaunchApp(raw) || extractLaunchAppCandidates(raw).length > 0) {
+  const scheduleRule = GOAL_RULES.find((rule) => rule.goal === "schedule_or_notify");
+  if (goalRuleMatches(scheduleRule, raw, signals)) {
+    return "schedule_or_notify";
+  }
+  const openFileRule = GOAL_RULES.find((rule) => rule.goal === "open_or_reveal_file");
+  if (goalRuleMatches(openFileRule, raw, signals)) {
+    return "open_or_reveal_file";
+  }
+  if (isLaunchTaskText(raw)) {
     return "launch_and_act";
   }
   if (isConnectorDomainRequest(raw)) {
     return "search_and_answer";
   }
   for (const rule of GOAL_RULES) {
-    if (!rule.patterns.some((pat) => pat.test(raw))) continue;
-    if (rule.requiresSignal) {
-      if (!signals) continue; // legacy caller — skip gated rules to stay safe
-      if (!rule.requiresSignal(signals)) continue;
-    }
+    if (rule.goal === "schedule_or_notify") continue;
+    if (rule.goal === "open_or_reveal_file") continue;
+    if (!goalRuleMatches(rule, raw, signals)) continue;
     return rule.goal;
   }
 
@@ -471,7 +488,7 @@ function hasNoteTakingIntent(text, contextPacket = {}) {
 }
 
 function hasDeterministicRoutingLock({ signals, contextPacket = {}, toolPolicy, text = "" } = {}) {
-  if (extractPureLaunchApp(text) || extractLaunchAppCandidates(text).length > 0) return true;
+  if (isLaunchTaskText(text)) return true;
   if (signals?.explicit_no_search?.matched && signals.explicit_no_search.kind === "fact") return true;
   if (signals?.local_only_constraint?.matched && signals.local_only_constraint.kind === "fact") return true;
 
@@ -521,7 +538,7 @@ const FORMAT_PATTERNS = [
 const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf"]);
 
 function detectFormats(text) {
-  if (extractPureLaunchApp(text) || extractLaunchAppCandidates(text).length > 0) {
+  if (isLaunchTaskText(text)) {
     return [];
   }
   return FORMAT_PATTERNS
