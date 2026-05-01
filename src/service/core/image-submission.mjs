@@ -338,6 +338,7 @@ export async function submitImageTask({
     clientMessageId,
     retryCount,
     executorOverride,
+    submissionKind: "image",
     runtime
   });
   const enqueued = queue.enqueue(task);

@@ -8,6 +8,7 @@ import { evaluateSubmissionBoundary } from "../../src/service/core/policy/submis
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
 import { submitContextTask } from "../../src/service/core/context-submission.mjs";
 import { submitFileTask } from "../../src/service/core/file-submission.mjs";
+import { submitImageTask } from "../../src/service/core/image-submission.mjs";
 import { submitOfficeTask } from "../../src/service/core/office-submission.mjs";
 import { submitTaskWithConversation } from "../../src/service/core/task-runtime.mjs";
 
@@ -167,4 +168,29 @@ test("office submission declares its submission kind through the central boundar
     .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
   assert.ok(audit);
   assert.equal(audit.payload.submission_kind, "office");
+});
+
+test("image submission declares its submission kind through the central boundary", async () => {
+  await withEmptyProviderConfig(async (dir) => {
+    const imagePath = path.join(dir, "pixel.png");
+    await writeFile(
+      imagePath,
+      Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64")
+    );
+    const runtime = createRuntime({ enqueueAccepted: false });
+
+    const { task } = await submitImageTask({
+      runtime,
+      imagePaths: [imagePath],
+      userCommand: "分析这张图",
+      executionMode: "interactive"
+    });
+
+    assert.equal(task.submission_boundary.submission_kind, "image");
+
+    const audit = runtime.store.listAuditLogs()
+      .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
+    assert.ok(audit);
+    assert.equal(audit.payload.submission_kind, "image");
+  });
 });

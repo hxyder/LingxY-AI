@@ -71,7 +71,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
-    submissionKind: [],
+    submissionKind: ["image"],
     executorOverride: ["tool_using"]
   },
   "office-submission.mjs": {
