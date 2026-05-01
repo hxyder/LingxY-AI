@@ -415,6 +415,38 @@ function actionCompletionFallbackText(transcript, userCommand = "", taskSpec = n
     : `Completed these actions:\n${observations.map((line) => `- ${line}`).join("\n")}`;
 }
 
+function isLaunchDisambiguationResult(entry = {}) {
+  return entry?.tool === "launch_app"
+    && entry.success === false
+    && entry.metadata?.disambiguation_required === true
+    && entry.metadata?.disambiguation_type === "launch_app_candidate"
+    && Array.isArray(entry.metadata?.candidates)
+    && entry.metadata.candidates.length > 0;
+}
+
+function formatLaunchDisambiguationFallback(attempts = [], userCommand = "") {
+  const entries = attempts.filter(isLaunchDisambiguationResult);
+  if (entries.length === 0) return null;
+  const zh = hasCjk(userCommand);
+  const lines = [
+    zh
+      ? "我找到了多个可能的应用，请选择要打开哪一个："
+      : "I found multiple possible apps. Please choose which one to open:"
+  ];
+  for (const entry of entries) {
+    const target = entry.metadata?.target_app || entry.args?.app || "";
+    if (target) lines.push(`${target}:`);
+    for (const [index, candidate] of entry.metadata.candidates.entries()) {
+      const label = candidate.display_name || candidate.app_id || candidate.exe_path || `Candidate ${index + 1}`;
+      const targetPath = candidate.exe_path || candidate.app_id || "";
+      const devSuffix = candidate.is_dev_tool ? (zh ? "（开发工具）" : " (developer tool)") : "";
+      lines.push(`${index + 1}. ${label}${devSuffix}${targetPath ? ` — ${targetPath}` : ""}`);
+    }
+  }
+  lines.push(zh ? "你确认后我会继续打开对应应用。" : "Once you choose, I can continue with that app.");
+  return lines.join("\n");
+}
+
 function actionAttemptFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
   const attempts = (transcript ?? []).filter((entry) =>
     entry?.type === "tool_result"
@@ -426,14 +458,18 @@ function actionAttemptFallbackText(transcript, userCommand = "", taskSpec = null
   const completed = [...new Set(attempts
     .filter((entry) => entry.success !== false)
     .map((entry) => entry.observation.trim()))];
+  const disambiguation = formatLaunchDisambiguationFallback(attempts, userCommand);
   const failed = [...new Set(attempts
-    .filter((entry) => entry.success === false)
+    .filter((entry) => entry.success === false && !isLaunchDisambiguationResult(entry))
     .map((entry) => entry.observation.trim()))];
   const zh = hasCjk(userCommand);
   const lines = [];
   if (completed.length > 0) {
     lines.push(zh ? "已完成这些操作：" : "Completed:");
     lines.push(...completed.map((line) => `- ${line}`));
+  }
+  if (disambiguation) {
+    lines.push(disambiguation);
   }
   if (failed.length > 0) {
     lines.push(zh ? "还有这些操作没有完成：" : "Not completed:");
@@ -466,6 +502,19 @@ function hasActionAttempts(transcript = []) {
     entry?.type === "tool_result"
     && ACTION_CONFIRMATION_TOOLS.has(entry.tool)
   );
+}
+
+function actionAttemptKey(entry = {}) {
+  return `${entry.tool}::${JSON.stringify(entry.args ?? {})}`;
+}
+
+function hasUnresolvedActionFailure(transcript = []) {
+  const latestStatusByAction = new Map();
+  for (const entry of transcript ?? []) {
+    if (entry?.type !== "tool_result" || !ACTION_CONFIRMATION_TOOLS.has(entry.tool)) continue;
+    latestStatusByAction.set(actionAttemptKey(entry), entry.success === false ? "failed" : "succeeded");
+  }
+  return [...latestStatusByAction.values()].some((status) => status === "failed");
 }
 
 function needsFinalComposer(task, transcript = []) {
@@ -1842,6 +1891,16 @@ async function _runToolAgentLoopCore({
           }),
           transcript,
           obligations: actionObligations
+        };
+      }
+      if (hasUnresolvedActionFailure(transcript)) {
+        return {
+          status: "partial_success",
+          final_text: candidateFinal,
+          transcript,
+          action_attempts: {
+            unresolved_failure: true
+          }
         };
       }
       // Phase 1.12 — synthesis bar uses the LATEST spec. SR's enrichment

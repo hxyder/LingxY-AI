@@ -79,16 +79,95 @@ function looksLikeExecutableTarget(value = "") {
   return false;
 }
 
-function formatLaunchAmbiguityObservation(appArg, candidates = []) {
+function stableLaunchCandidateId(candidate = {}, index = 0) {
+  const seed = [
+    candidate.app_id,
+    candidate.exe_path,
+    candidate.display_name,
+    index + 1
+  ].filter(Boolean).join("\n");
+  return crypto.createHash("sha256").update(seed || `candidate:${index + 1}`).digest("hex").slice(0, 12);
+}
+
+function stringOrEmpty(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function numberOrNull(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+export function normalizeLaunchCandidates(candidates = []) {
   const list = Array.isArray(candidates) ? candidates : [];
+  return list.map((candidate = {}, index) => {
+    const displayName = stringOrEmpty(candidate.display_name)
+      || stringOrEmpty(candidate.name)
+      || stringOrEmpty(candidate.app_id)
+      || stringOrEmpty(candidate.exe_path)
+      || `Candidate ${index + 1}`;
+    const exePath = stringOrEmpty(candidate.exe_path) || stringOrEmpty(candidate.path);
+    const appId = stringOrEmpty(candidate.app_id) || stringOrEmpty(candidate.id);
+    const launchTarget = exePath || appId || displayName;
+    const normalized = {
+      candidate_id: stringOrEmpty(candidate.candidate_id) || stableLaunchCandidateId({
+        app_id: appId,
+        exe_path: exePath,
+        display_name: displayName
+      }, index),
+      index: index + 1,
+      display_name: displayName,
+      is_dev_tool: Boolean(candidate.is_dev_tool),
+      launch_args: { app: launchTarget }
+    };
+    if (appId) normalized.app_id = appId;
+    if (exePath) normalized.exe_path = exePath;
+    const score = numberOrNull(candidate.score);
+    if (score !== null) normalized.score = score;
+    const reason = stringOrEmpty(candidate.reason);
+    if (reason) normalized.reason = reason;
+    const useCount = numberOrNull(candidate.use_count);
+    if (useCount !== null) normalized.use_count = useCount;
+    const lastUsedAt = stringOrEmpty(candidate.last_used_at);
+    if (lastUsedAt) normalized.last_used_at = lastUsedAt;
+    return normalized;
+  });
+}
+
+function formatLaunchAmbiguityObservation(appArg, candidates = []) {
+  const list = normalizeLaunchCandidates(candidates);
   const allDevTools = list.length > 0 && list.every((candidate) => candidate?.is_dev_tool);
   const choiceList = list
-    .map((c, i) => `${i + 1}. ${c.display_name}${c.is_dev_tool ? "（开发工具）" : ""} — ${c.exe_path}`)
+    .map((c) => {
+      const target = c.exe_path || c.app_id || c.launch_args?.app || "";
+      return `${c.index}. ${c.display_name}${c.is_dev_tool ? "（开发工具）" : ""}${target ? ` — ${target}` : ""}`;
+    })
     .join("\n");
   if (allDevTools) {
     return `当前只找到了和 ${appArg} 相关的开发工具，没有找到普通应用。\n如果你要打开普通版 ${appArg}，请告诉我它的可执行文件路径，或先在启动器别名里绑定正确路径。\n${choiceList}`;
   }
-  return `${appArg} 有多个可能的匹配，请让用户挑一个或告诉我具体路径：\n${choiceList}`;
+  return `${appArg} 有多个可能的匹配，请确认要打开哪一个，或告诉我具体路径：\n${choiceList}`;
+}
+
+export function createLaunchAmbiguityResult(appArg, candidates = [], options = {}) {
+  const normalized = normalizeLaunchCandidates(candidates);
+  const metadata = {
+    method: options.method ?? "python_launcher",
+    action: "ambiguous",
+    disambiguation_required: true,
+    disambiguation_type: "launch_app_candidate",
+    target_app: String(appArg ?? ""),
+    candidate_count: normalized.length,
+    candidates: normalized,
+    next_tool: "launch_app"
+  };
+  const decisionReason = options.decision_reason ?? options.decisionReason;
+  if (decisionReason) metadata.decision_reason = decisionReason;
+  return createActionResult({
+    success: false,
+    observation: formatLaunchAmbiguityObservation(appArg, normalized),
+    metadata
+  });
 }
 
 // 83.8 — Locate the Python app launcher script. Cached after first resolve
@@ -472,14 +551,9 @@ export const LAUNCH_APP_TOOL = {
             });
           }
           if (pyResult.ambiguous) {
-            return createActionResult({
-              success: false,
-              observation: formatLaunchAmbiguityObservation(appArg, pyResult.candidates ?? []),
-              metadata: {
-                method: "python_launcher",
-                action: "ambiguous",
-                candidates: pyResult.candidates
-              }
+            return createLaunchAmbiguityResult(appArg, pyResult.candidates ?? [], {
+              method: "python_launcher",
+              decision_reason: pyResult.decision_reason
             });
           }
         } catch {
@@ -545,14 +619,9 @@ export const LAUNCH_APP_TOOL = {
           });
         }
         if (pyResult.ambiguous) {
-          return createActionResult({
-            success: false,
-            observation: formatLaunchAmbiguityObservation(appArg, pyResult.candidates ?? []),
-            metadata: {
-              method: "python_launcher",
-              action: "ambiguous",
-              candidates: pyResult.candidates
-            }
+          return createLaunchAmbiguityResult(appArg, pyResult.candidates ?? [], {
+            method: "python_launcher",
+            decision_reason: pyResult.decision_reason
           });
         }
         return createActionResult({

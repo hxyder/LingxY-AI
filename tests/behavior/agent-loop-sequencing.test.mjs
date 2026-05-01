@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
+import { createLaunchAmbiguityResult } from "../../src/service/action_tools/tools/index.mjs";
 import { createTaskSpec } from "../../src/service/core/task-spec.mjs";
 import { runToolAgentLoop } from "../../src/service/executors/tool_using/agent-loop.mjs";
 
@@ -392,4 +393,74 @@ test("compound launch continues remaining independent targets after one target f
     event.eventType === "contract_action_handoff"
     && event.payload?.source === "launch_sequence"
   ));
+});
+
+test("launch ambiguity final answer asks for disambiguation from structured candidates", async () => {
+  const launchTool = {
+    id: "launch_app",
+    name: "Launch App",
+    description: "Launch app",
+    risk_level: "medium",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["app"],
+      properties: { app: { type: "string" } }
+    },
+    async execute(args = {}) {
+      return createLaunchAmbiguityResult(args.app, [
+        {
+          app_id: "alpha.desktop",
+          display_name: "Alpha Desktop",
+          exe_path: "C:\\Apps\\Alpha\\alpha.exe",
+          is_dev_tool: false
+        },
+        {
+          app_id: "alpha.tools",
+          display_name: "Alpha Tools",
+          exe_path: "C:\\Apps\\AlphaTools\\alpha-tools.exe",
+          is_dev_tool: true
+        }
+      ]);
+    }
+  };
+  const { runtime } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([launchTool])
+  });
+  const task = {
+    task_id: "task_launch_disambiguation",
+    user_command: "打开 Alpha",
+    execution_mode: "interactive",
+    task_spec: {
+      goal: "launch_and_act",
+      synthesis: { expected_output: "execution", user_goal: "open app" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } },
+      success_contract: {
+        required_tool_names: ["launch_app"],
+        required_policy_groups: [],
+        tool_called: true
+      }
+    }
+  };
+
+  const planner = async ({ iteration }) => {
+    if (iteration === 0) {
+      return { type: "tool_call", tool: "launch_app", args: { app: "Alpha" } };
+    }
+    return { type: "final", text: "I cannot operate your computer." };
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner,
+    maxIterations: 3
+  });
+
+  assert.equal(result.status, "partial_success");
+  assert.match(result.final_text, /请选择要打开哪一个|choose which/i);
+  assert.match(result.final_text, /Alpha Desktop/);
+  assert.match(result.final_text, /Alpha Tools/);
+  assert.ok(!/cannot operate your computer/i.test(result.final_text));
+  assert.ok(!/launch_args/.test(result.final_text));
 });
