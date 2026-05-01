@@ -27,6 +27,8 @@ for (const state of [
 assert.ok(graph.includes("runExecutionPhase"), "execution graph must export a phase wrapper");
 assert.ok(graph.includes('"phase_started"'), "execution graph must emit phase_started");
 assert.ok(graph.includes('"phase_timing"'), "execution graph must emit phase_timing");
+assert.ok(graph.includes('SEMANTIC_ROUTER_PATCH: "semantic_router_patch"'),
+  "execution graph must distinguish deferred SemanticRouter patching from blocking preflight");
 
 for (const rel of [
   "src/service/core/context-submission.mjs",
@@ -34,7 +36,7 @@ for (const rel of [
 ]) {
   const src = await source(rel);
   assert.ok(src.includes("runExecutionPhase"), `${rel} must use the shared execution graph wrapper`);
-  assert.ok(src.includes("EXECUTION_PHASES.SEMANTIC_ROUTER"), `${rel} must route SemanticRouter through the graph phase`);
+  assert.ok(src.includes("EXECUTION_PHASES.SEMANTIC_ROUTER_PATCH"), `${rel} must route deferred SemanticRouter through the patch graph phase`);
   assert.ok(src.includes("EXECUTION_STATES.ROUTING"), `${rel} must stamp routing state`);
 }
 
@@ -47,9 +49,10 @@ assert.ok(agentLoop.includes('runtime?.emitTaskEvent?.("text_delta"'),
   "tool_using streaming deltas must use the execution runtime emitter");
 
 const taskRuntime = await source("src/service/core/task-runtime.mjs");
+const taskEventLog = await source("src/service/core/task-runtime/event-log.mjs");
 assert.ok(/EPHEMERAL_EVENT_TYPES[\s\S]*"reasoning_delta"/.test(taskRuntime),
   "reasoning_delta must be ephemeral");
-assert.ok(/JSONL_SKIP_EVENT_TYPES[\s\S]*"reasoning_delta"/.test(taskRuntime),
+assert.ok(/JSONL_SKIP_EVENT_TYPES[\s\S]*"reasoning_delta"/.test(taskEventLog),
   "reasoning_delta must be skipped from jsonl task logs");
 assert.ok(taskRuntime.includes('phase: "executor_first_delta"'),
   "task runtime must record first-token latency as executor_first_delta");

@@ -1073,8 +1073,8 @@ export async function submitContextTask({
       const srPromise = runExecutionPhase({
         runtime: runtimeWithTaskEmitter(runtime, task.task_id),
         taskId: task.task_id,
-        phase: EXECUTION_PHASES.SEMANTIC_ROUTER,
-        step: "semantic_router",
+        phase: EXECUTION_PHASES.SEMANTIC_ROUTER_PATCH,
+        step: "semantic_router_patch",
         progress: 0.04,
         state: EXECUTION_STATES.ROUTING,
         fn: () => applySemanticRouterPreflight({

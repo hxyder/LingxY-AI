@@ -685,6 +685,7 @@ const TOOL_STEP_LABELS = {
 const STEP_LABELS = {
   tool_planner: "规划操作步骤",
   semantic_router: "理解任务场景",
+  semantic_router_patch: "更新任务理解",
   planner_request: "请求模型",
   llm_generate: "生成内容",
   composite_running: "并行执行子任务",

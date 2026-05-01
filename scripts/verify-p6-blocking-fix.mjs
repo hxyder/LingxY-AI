@@ -385,8 +385,10 @@ await it("Case 8 (latency): background task creation defers SemanticRouter prefl
   const executeBody = src.slice(executeIndex);
   assert.match(executeBody, /if\s*\(\s*deferPreExecutionPlanning\s*&&\s*inspection\.allowed\s*\)/,
     "execute() must contain the deferred preflight branch");
-  assert.match(executeBody, /runExecutionPhase\(\{[\s\S]*step:\s*"semantic_router"/,
-    "worker preflight must run through the execution graph and emit a semantic_router step");
+  assert.match(executeBody, /phase:\s*EXECUTION_PHASES\.SEMANTIC_ROUTER_PATCH/,
+    "deferred worker SR must use the semantic_router_patch phase, not the blocking preflight phase");
+  assert.match(executeBody, /runExecutionPhase\(\{[\s\S]*step:\s*"semantic_router_patch"/,
+    "deferred worker SR must emit a semantic_router_patch step");
   assert.match(executeBody, /fn:\s*\(\)\s*=>\s*applySemanticRouterPreflight/,
     "worker preflight must still call SemanticRouter before executor selection");
   // Phase 1.6 — SR runs in PARALLEL with the executor (fire-and-forget).
@@ -421,8 +423,10 @@ await it("Case 8b (latency): browser capture background tasks use the same defer
   const executeBody = src.slice(executeIndex);
   assert.match(executeBody, /if\s*\(\s*deferPreExecutionPlanning\s*&&\s*inspection\.allowed\s*\)/,
     "browser execute() must contain the deferred preflight branch");
-  assert.match(executeBody, /runExecutionPhase\(\{[\s\S]*step:\s*"semantic_router"/,
-    "browser worker preflight must run through the execution graph and emit a semantic_router step");
+  assert.match(executeBody, /phase:\s*EXECUTION_PHASES\.SEMANTIC_ROUTER_PATCH/,
+    "browser deferred worker SR must use the semantic_router_patch phase, not the blocking preflight phase");
+  assert.match(executeBody, /runExecutionPhase\(\{[\s\S]*step:\s*"semantic_router_patch"/,
+    "browser deferred worker SR must emit a semantic_router_patch step");
   assert.match(executeBody, /fn:\s*\(\)\s*=>\s*applySemanticRouterPreflight/,
     "browser worker preflight must still call SemanticRouter before executor selection");
   assert.match(executeBody, /task\.task_spec\s*=\s*refreshedSpec/,

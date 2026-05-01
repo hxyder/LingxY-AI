@@ -11,6 +11,7 @@ export const EXECUTION_STATES = Object.freeze({
 
 export const EXECUTION_PHASES = Object.freeze({
   SEMANTIC_ROUTER: "semantic_router_preflight",
+  SEMANTIC_ROUTER_PATCH: "semantic_router_patch",
   DECOMPOSITION: "decomposition",
   EXECUTOR: "executor",
   FINAL_SYNTHESIS: "final_synthesis",
