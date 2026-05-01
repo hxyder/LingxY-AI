@@ -57,3 +57,47 @@ test("action-tool fast path treats policy-guard denial as task failure", async (
   assert.ok(audit);
   assert.equal(audit.payload.tool_id, "web_search");
 });
+
+test("action-tool fast path creates approval for confirmation-required tools", async () => {
+  const runtime = createRuntime();
+  const calls = [];
+  runtime.actionToolRegistry = createActionToolRegistry([{
+    id: "send_email_smtp",
+    name: "Fake SMTP sender",
+    description: "Fake high-risk send tool for approval testing.",
+    parameters: { type: "object", properties: {} },
+    risk_level: "high",
+    requires_confirmation: true,
+    async execute(args) {
+      calls.push(args);
+      return { success: true, observation: "sent" };
+    }
+  }]);
+
+  const result = await submitActionToolTask({
+    runtime,
+    userCommand: "发送邮件给 ops@example.com",
+    executionMode: "interactive",
+    fastPathTool: "send_email_smtp",
+    fastPathArgs: {
+      to: ["ops@example.com"],
+      subject: "Approval required",
+      body: "Do not send before approval."
+    }
+  });
+
+  assert.equal(calls.length, 0);
+  assert.equal(result.task.status, "partial_success");
+  assert.equal(result.task.sub_status, "waiting_external_decision");
+  assert.ok(result.pendingApproval);
+
+  const approvals = runtime.store.listPendingApprovals();
+  assert.equal(approvals.length, 1);
+  assert.equal(approvals[0].proposed_target, "send_email_smtp");
+  assert.equal(approvals[0].metadata.task_id, result.task.task_id);
+
+  const created = result.taskEvents
+    .find((event) => event.event_type === "pending_approval_created");
+  assert.ok(created);
+  assert.equal(created.payload.tool_id, "send_email_smtp");
+});

@@ -39,6 +39,40 @@ function buildActionContextPacket({ userCommand, sourceApp = "uca.console", capt
   };
 }
 
+function createFastPathApproval({ runtime, task, toolId, args, risk }) {
+  const approval = runtime.pendingApprovals.create({
+    sourceType: "agent_tool_call",
+    sourceId: task.task_id,
+    proposedAction: "action_tool",
+    proposedTarget: toolId,
+    proposedParams: args ?? {},
+    previewText: `Pending tool ${toolId}`,
+    metadata: {
+      task_id: task.task_id,
+      tool_id: toolId,
+      risk_level: risk?.risk_level ?? "high",
+      reason: risk?.reason ?? "requires_confirmation",
+      fast_path: true
+    }
+  });
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: "pending_approval_created",
+    payload: {
+      approval_id: approval.approval_id,
+      tool_id: toolId
+    }
+  });
+  updateTask(runtime, task, {
+    status: "partial_success",
+    sub_status: "waiting_external_decision",
+    retryable: true
+  }, true);
+  markTaskSucceeded(runtime, task);
+  return approval;
+}
+
 export async function submitActionToolTask({
   userCommand,
   executionMode = "interactive",
@@ -132,6 +166,23 @@ export async function submitActionToolTask({
         }
         const registry = runtime.actionToolRegistry;
         const toolContext = { ...(runtime.toolContext ?? {}), outputDir: runtime.toolOutputDir, runtime, task };
+        const risk = registry.evaluate(fastPathTool, fastPathArgs ?? {}, toolContext);
+        if (risk.requires_confirmation && task.execution_mode !== "unattended_safe") {
+          const approval = createFastPathApproval({
+            runtime,
+            task,
+            toolId: fastPathTool,
+            args: fastPathArgs ?? {},
+            risk
+          });
+          return {
+            task,
+            taskEvents: runtime.store.getTaskEvents(task.task_id),
+            pendingApproval: approval,
+            fast_path: true,
+            final_text: `工具 ${fastPathTool} 需要审批后执行。`
+          };
+        }
         const toolResult = await registry.call(fastPathTool, fastPathArgs ?? {}, toolContext);
         emitExecutorEvent("tool_call_completed", {
           tool_id: fastPathTool,
