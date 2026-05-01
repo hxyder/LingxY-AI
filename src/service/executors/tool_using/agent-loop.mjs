@@ -16,7 +16,6 @@ import { resolveProviderForTask } from "../shared/provider-resolver.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { validateAnswerSynthesis } from "../../core/policy/success-contract-validator.mjs";
-import { SYNTHESIS_REQUIRED_OUTPUTS } from "../../core/intent/semantic-router.mjs";
 import {
   formatResourceContext,
   formatUntrustedSourceMaterial,
@@ -60,6 +59,14 @@ import {
   normalizeLaunchAppArg,
   normalizeLaunchAppKey
 } from "./planners/launch-helpers.mjs";
+import {
+  compactTranscriptForComposer,
+  finalFallbackText,
+  hasActionAttempts,
+  hasUnresolvedActionFailure,
+  localFallbackFinal,
+  needsFinalComposer
+} from "./finalization.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -249,10 +256,6 @@ function buildHistoryString(transcript) {
   }).join("\n");
 }
 
-function hasCjk(value = "") {
-  return /[\u3400-\u9fff]/.test(String(value ?? ""));
-}
-
 function plannerToolDescriptorForAdapter() {
   return {
     name: "call_tool",
@@ -300,249 +303,11 @@ function formatToolForPlanner(tool = {}) {
   return `- ${tool.id}: ${formatToolDescription(tool)}`;
 }
 
-function formatAccountLabel(account = {}, fallback = {}) {
-  const provider = account.provider ?? fallback.provider ?? "connector";
-  const email = account.email || fallback.accountId || "";
-  const display = account.displayName ? ` (${account.displayName})` : "";
-  return `${provider}${email ? ` ${email}` : ""}${display}`.trim();
-}
-
-function formatConnectorFinal(entry, userCommand = "") {
-  const metadata = entry?.metadata ?? {};
-  const zh = hasCjk(userCommand);
-
-  if (entry?.tool === "account_list_connected_accounts") {
-    const accounts = metadata.accounts ?? [];
-    if (accounts.length === 0) return zh ? "我查了一下，目前没有已连接的 Google/Microsoft 账户。" : "No connected Google/Microsoft accounts were found.";
-    const lines = accounts.map((account, index) => {
-      const caps = Object.entries(account.capabilities ?? {})
-        .filter(([, enabled]) => enabled)
-        .map(([name]) => name)
-        .join(", ") || "none";
-      return zh
-        ? `${index + 1}. ${formatAccountLabel(account)}，状态 ${account.tokenStatus}，能力：${caps}`
-        : `${index + 1}. ${formatAccountLabel(account)}; status=${account.tokenStatus}; capabilities=${caps}`;
-    });
-    return zh
-      ? `我查到当前已连接账户：\n${lines.join("\n")}`
-      : `Connected accounts:\n${lines.join("\n")}`;
-  }
-
-  if (entry?.tool === "account_list_emails") {
-    const emails = metadata.emails ?? [];
-    const account = metadata.account ?? { provider: metadata.provider, accountId: metadata.accountId };
-    if (emails.length === 0) return zh ? `我查看了 ${formatAccountLabel(account)}，没有找到邮件。` : `No emails were found in ${formatAccountLabel(account)}.`;
-    const lines = emails.map((email, index) => {
-      const sender = email.fromName ? `${email.fromName} <${email.from ?? ""}>` : (email.from ?? "unknown sender");
-      return `${index + 1}. ${email.received ?? "unknown date"} | ${sender} | ${email.subject ?? "(no subject)"}`;
-    });
-    return zh
-      ? `我从 ${formatAccountLabel(account)} 查到 ${emails.length} 封邮件：\n${lines.join("\n")}`
-      : `I found ${emails.length} emails in ${formatAccountLabel(account)}:\n${lines.join("\n")}`;
-  }
-
-  if (entry?.tool === "account_list_files") {
-    const files = metadata.files ?? [];
-    const account = metadata.account ?? { provider: metadata.provider, accountId: metadata.accountId };
-    if (files.length === 0) return zh ? `我查看了 ${formatAccountLabel(account)}，没有找到云端文件。` : `No cloud files were found in ${formatAccountLabel(account)}.`;
-    const lines = files.map((file, index) => `${index + 1}. ${file.name ?? "(untitled)"} | modified ${file.modified ?? "unknown"}${file.url ? ` | ${file.url}` : ""}`);
-    return zh
-      ? `我从 ${formatAccountLabel(account)} 查到 ${files.length} 个云端文件：\n${lines.join("\n")}`
-      : `I found ${files.length} cloud files in ${formatAccountLabel(account)}:\n${lines.join("\n")}`;
-  }
-
-  if (entry?.tool === "account_list_events") {
-    const events = metadata.events ?? [];
-    const account = metadata.account ?? { provider: metadata.provider, accountId: metadata.accountId };
-    if (events.length === 0) return zh ? `我查看了 ${formatAccountLabel(account)}，没有找到日历事件。` : `No calendar events were found in ${formatAccountLabel(account)}.`;
-    const lines = events.map((event, index) => `${index + 1}. ${event.start ?? "unknown time"} | ${event.title ?? "(untitled)"}${event.location ? ` | ${event.location}` : ""}`);
-    return zh
-      ? `我从 ${formatAccountLabel(account)} 查到 ${events.length} 个日历事件：\n${lines.join("\n")}`
-      : `I found ${events.length} calendar events in ${formatAccountLabel(account)}:\n${lines.join("\n")}`;
-  }
-
-  return null;
-}
-
-function allowsRawConnectorFinal(taskSpec) {
-  return taskSpec?.synthesis?.expected_output === "raw_results";
-}
-
-function connectorFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
-  const rawAllowed = allowsRawConnectorFinal(taskSpec);
-  const entry = [...(transcript ?? [])].reverse().find((item) =>
-    item.type === "tool_result"
-    && item.success === true
-    && ["account_list_connected_accounts", "account_list_emails", "account_list_files", "account_list_events"].includes(item.tool)
-  );
-  if (!entry) return fallbackText;
-  if (rawAllowed) return formatConnectorFinal(entry, userCommand);
-  const expected = taskSpec?.synthesis?.expected_output;
-  const needsSynthesis = expected === null
-    || expected === undefined
-    || expected === ""
-    || SYNTHESIS_REQUIRED_OUTPUTS.has(expected);
-  if (needsSynthesis) {
-    const zh = hasCjk(userCommand);
-    return zh
-      ? "工具已经返回了连接器数据，但最终答复仍需要按你的请求进行总结/分析，不能直接把原始记录列表当作答案。"
-      : "The connector returned data, but the final answer still needs synthesis rather than a raw record list.";
-  }
-  return fallbackText ?? entry.observation ?? null;
-}
-
-const ACTION_CONFIRMATION_TOOLS = new Set(["launch_app", "open_url", "open_file", "copy_to_clipboard", "notify"]);
-
 // Phase 1.8 — the old hidden pre-planned launch queue was deleted. The
 // framework still carries a generic action-sequence contract: if the user
 // names multiple independent launch targets and the planner tries to finalize
 // early, the loop injects guidance and lets the planner continue. The sequence
 // lives in the transcript, not in a side-channel queue.
-
-function actionCompletionFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
-  const completed = (transcript ?? []).filter((entry) =>
-    entry?.type === "tool_result"
-    && entry.success === true
-    && ACTION_CONFIRMATION_TOOLS.has(entry.tool)
-    && typeof entry.observation === "string"
-    && entry.observation.trim()
-  );
-  if (completed.length === 0) return fallbackText;
-  const observations = [...new Set(completed.map((entry) => entry.observation.trim()))];
-  const zh = hasCjk(userCommand);
-  return zh
-    ? `已完成这些操作：\n${observations.map((line) => `- ${line}`).join("\n")}`
-    : `Completed these actions:\n${observations.map((line) => `- ${line}`).join("\n")}`;
-}
-
-function isLaunchDisambiguationResult(entry = {}) {
-  return entry?.tool === "launch_app"
-    && entry.success === false
-    && entry.metadata?.disambiguation_required === true
-    && entry.metadata?.disambiguation_type === "launch_app_candidate"
-    && Array.isArray(entry.metadata?.candidates)
-    && entry.metadata.candidates.length > 0;
-}
-
-function formatLaunchDisambiguationFallback(attempts = [], userCommand = "") {
-  const entries = attempts.filter(isLaunchDisambiguationResult);
-  if (entries.length === 0) return null;
-  const zh = hasCjk(userCommand);
-  const lines = [
-    zh
-      ? "我找到了多个可能的应用，请选择要打开哪一个："
-      : "I found multiple possible apps. Please choose which one to open:"
-  ];
-  for (const entry of entries) {
-    const target = entry.metadata?.target_app || entry.args?.app || "";
-    if (target) lines.push(`${target}:`);
-    for (const [index, candidate] of entry.metadata.candidates.entries()) {
-      const label = candidate.display_name || candidate.app_id || candidate.exe_path || `Candidate ${index + 1}`;
-      const targetPath = candidate.exe_path || candidate.app_id || "";
-      const devSuffix = candidate.is_dev_tool ? (zh ? "（开发工具）" : " (developer tool)") : "";
-      lines.push(`${index + 1}. ${label}${devSuffix}${targetPath ? ` — ${targetPath}` : ""}`);
-    }
-  }
-  lines.push(zh ? "你确认后我会继续打开对应应用。" : "Once you choose, I can continue with that app.");
-  return lines.join("\n");
-}
-
-function actionAttemptFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
-  const attempts = (transcript ?? []).filter((entry) =>
-    entry?.type === "tool_result"
-    && ACTION_CONFIRMATION_TOOLS.has(entry.tool)
-    && typeof entry.observation === "string"
-    && entry.observation.trim()
-  );
-  if (attempts.length === 0) return fallbackText;
-  const completed = [...new Set(attempts
-    .filter((entry) => entry.success !== false)
-    .map((entry) => entry.observation.trim()))];
-  const disambiguation = formatLaunchDisambiguationFallback(attempts, userCommand);
-  const failed = [...new Set(attempts
-    .filter((entry) => entry.success === false && !isLaunchDisambiguationResult(entry))
-    .map((entry) => entry.observation.trim()))];
-  const zh = hasCjk(userCommand);
-  const lines = [];
-  if (completed.length > 0) {
-    lines.push(zh ? "已完成这些操作：" : "Completed:");
-    lines.push(...completed.map((line) => `- ${line}`));
-  }
-  if (disambiguation) {
-    lines.push(disambiguation);
-  }
-  if (failed.length > 0) {
-    lines.push(zh ? "还有这些操作没有完成：" : "Not completed:");
-    lines.push(...failed.map((line) => `- ${line}`));
-  }
-  return lines.length > 0 ? lines.join("\n") : fallbackText;
-}
-
-function finalFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
-  const actionAttempt = actionAttemptFallbackText(transcript, userCommand, taskSpec);
-  if (actionAttempt) return actionAttempt;
-  const actionFallback = actionCompletionFallbackText(transcript, userCommand, taskSpec);
-  if (actionFallback) return actionFallback;
-  return connectorFallbackText(transcript, userCommand, taskSpec)
-    ?? fallbackText;
-}
-
-function hasToolTranscript(transcript = []) {
-  return transcript.some((entry) => entry?.type === "tool_result");
-}
-
-function isActionConfirmationOnly(transcript = []) {
-  const results = transcript.filter((entry) => entry?.type === "tool_result");
-  return results.length > 0
-    && results.every((entry) => entry.success !== false && ACTION_CONFIRMATION_TOOLS.has(entry.tool));
-}
-
-function hasActionAttempts(transcript = []) {
-  return transcript.some((entry) =>
-    entry?.type === "tool_result"
-    && ACTION_CONFIRMATION_TOOLS.has(entry.tool)
-  );
-}
-
-function actionAttemptKey(entry = {}) {
-  return `${entry.tool}::${JSON.stringify(entry.args ?? {})}`;
-}
-
-function hasUnresolvedActionFailure(transcript = []) {
-  const latestStatusByAction = new Map();
-  for (const entry of transcript ?? []) {
-    if (entry?.type !== "tool_result" || !ACTION_CONFIRMATION_TOOLS.has(entry.tool)) continue;
-    latestStatusByAction.set(actionAttemptKey(entry), entry.success === false ? "failed" : "succeeded");
-  }
-  return [...latestStatusByAction.values()].some((status) => status === "failed");
-}
-
-function needsFinalComposer(task, transcript = []) {
-  if (!hasToolTranscript(transcript)) return false;
-  if (allowsRawConnectorFinal(task?.task_spec)) return false;
-  if ((task?.task_spec ?? task?.task_spec_initial)?.goal === "launch_and_act" && hasActionAttempts(transcript)) return false;
-  if (isActionConfirmationOnly(transcript)) return false;
-  return true;
-}
-
-function compactTranscriptForComposer(transcript = []) {
-  const lines = [];
-  for (const [index, entry] of transcript.entries()) {
-    if (entry?.type === "tool_result") {
-      const status = entry.success === false ? "failed" : "success";
-      const obs = String(entry.observation ?? "").replace(/\s+/g, " ").trim().slice(0, 5000);
-      const metadata = entry.metadata
-        ? ` metadata=${JSON.stringify(entry.metadata).slice(0, 1000)}`
-        : "";
-      lines.push(`${index + 1}. ${entry.tool}(${JSON.stringify(entry.args ?? {}).slice(0, 500)}) ${status}: ${obs}${metadata}`);
-    } else if (entry?.type === "tool_denied") {
-      lines.push(`${index + 1}. ${entry.tool} denied: ${entry.reason ?? "denied"}`);
-    } else if (entry?.type === "validation_error") {
-      lines.push(`${index + 1}. ${entry.tool} validation_error: ${entry.error ?? "invalid arguments"}`);
-    }
-  }
-  return lines.join("\n").slice(0, 24000);
-}
 
 // UCA-181 follow-up: a tool counts as "side-effect" if it belongs to
 // any known action-obligation policy group OR is flagged risk_level=high
@@ -595,28 +360,6 @@ function buildLaunchSequenceGuidance(task, transcript = []) {
     `Call launch_app next with {"app": ${JSON.stringify(next)}}.`,
     "Do not finalize just because an earlier independent launch failed; continue the remaining launch targets unless the user must disambiguate that specific failed target."
   ].join("\n");
-}
-
-function localFallbackFinal({ task, transcript, reason = "" }) {
-  const userCommand = task?.user_command ?? "";
-  const actionAttempt = actionAttemptFallbackText(transcript, userCommand, task?.task_spec);
-  if (actionAttempt) return actionAttempt;
-  const action = actionCompletionFallbackText(transcript, userCommand, task?.task_spec);
-  if (action) return action;
-  const connector = connectorFallbackText(transcript, userCommand, { synthesis: { expected_output: "raw_results" } });
-  if (connector) return connector;
-  const latest = [...(transcript ?? [])].reverse()
-    .find((entry) => entry?.type === "tool_result" && String(entry.observation ?? "").trim());
-  const zh = hasCjk(userCommand);
-  const obs = String(latest?.observation ?? "").trim().slice(0, 800);
-  if (obs) {
-    return zh
-      ? `我已经拿到工具返回的信息，但最终整理没有完成。可用信息如下：\n${obs}`
-      : `I collected tool results, but final synthesis did not complete. Available information:\n${obs}`;
-  }
-  return zh
-    ? `这次没有拿到足够的工具结果来完成最终答复。${reason ? `原因：${reason}` : ""}`.trim()
-    : `I could not collect enough tool results to finish the answer.${reason ? ` Reason: ${reason}` : ""}`.trim();
 }
 
 const REQUIRED_ACTION_POLICY_GROUPS = new Set(ACTION_OBLIGATION_GROUPS);
