@@ -11,6 +11,16 @@ import {
   aggregateCompositeStatus,
   listChildTasks
 } from "./task-runtime/composite-status.mjs";
+import {
+  appendTaskOutcomeMessage,
+  attachParentTaskSummary,
+  attachPriorBackendMessages,
+  deriveConversationTitle,
+  ensureConversation,
+  isSchedulerSourced,
+  resolveParentFromConversation,
+  shouldAutoResolveParentFromConversation
+} from "./task-runtime/conversation-lifecycle.mjs";
 import { persistTaskEvent } from "./task-runtime/event-log.mjs";
 import { createActionToolRegistry } from "../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
@@ -19,6 +29,14 @@ export {
   flushTaskLogs,
   readTaskEventLog
 } from "./task-runtime/event-log.mjs";
+export {
+  appendTaskOutcomeMessage,
+  attachPriorBackendMessages,
+  backfillConversationTitles,
+  deriveConversationTitle,
+  ensureConversation,
+  shouldAutoResolveParentFromConversation
+} from "./task-runtime/conversation-lifecycle.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -177,216 +195,6 @@ export function ensureRuntimeServices(runtime) {
   return runtime;
 }
 
-/**
- * P4-RQ G3b: read the parent task's final assistant text from the
- * runtime store and stamp it on a cloned contextPacket so the
- * pending-offer signal can detect follow-up affirmatives ("对",
- * "yes") even when conversation_turns aren't embedded in the
- * current submission. Pure-function shape — no mutation of the
- * input.
- *
- * Defensively tolerant: if the parent task is missing, has no
- * final reply, or the runtime store is malformed, returns the
- * original contextPacket unchanged.
- */
-/**
- * P4-RQ K4: auto-resolve parent_task_id from conversation_id.
- *
- * Walks the store for the most recent task whose `conversation_id`
- * matches `conversationId` and returns its task_id. Returns null
- * when no match (or no runtime / no listTasks).
- *
- * Defensive: any store I/O failure or malformed task is silently
- * skipped — failing to resolve a parent must never block submission.
- *
- * @param {string|null} conversationId
- * @param {object|null} runtime
- * @returns {string|null}
- */
-function resolveParentFromConversation(conversationId, runtime) {
-  if (typeof conversationId !== "string" || conversationId.length === 0) return null;
-  if (typeof runtime?.store?.listTasks !== "function") return null;
-  try {
-    const candidates = runtime.store.listTasks().filter((t) =>
-      t && typeof t === "object" && t.conversation_id === conversationId
-    );
-    if (candidates.length === 0) return null;
-    // Most recent first (created_at is ISO; lexicographic sort works).
-    candidates.sort((a, b) => {
-      const aTs = typeof a.created_at === "string" ? a.created_at : "";
-      const bTs = typeof b.created_at === "string" ? b.created_at : "";
-      if (aTs === bTs) return 0;
-      return aTs < bTs ? 1 : -1;
-    });
-    const newest = candidates[0];
-    return typeof newest?.task_id === "string" ? newest.task_id : null;
-  } catch {
-    return null;
-  }
-}
-
-const SHORT_FOLLOWUP_REPLY = /^(好|好的?|可以|继续|需要|要|对|是|是的|嗯|ok|okay|yes|sure|please)\s*[!.！。]?$/i;
-const REFERENTIAL_FOLLOWUP = /(^|\s)(上个|上一|刚才|之前|前面|那个|这个|这些|那些|它|它们|里面的|文件夹里的|图片里的|表格里的|文档里的|这张|那张|第一张|第二张|同样|一样|照这个|继续|再来|改一下|补充|加上|打开它|打开这个|打开那个)(\s|$|[，。！？,.!?])/i;
-const SHORT_SLOT_REPLY_BLOCKER = /(打开|启动|运行|删除|移动|复制|保存|导出|发送|发邮件|搜索|查一下|查询|查找|新闻|天气|气温|股价|股票|汇率|价格|多少钱|文件|文件夹|图片|上传|下载|日历|提醒|定时|为什么|怎么办|怎么|如何|\?|？|\bopen\b|\blaunch\b|\brun\b|\bdelete\b|\bmove\b|\bcopy\b|\bsave\b|\bexport\b|\bsend\b|\bemail\b|\bsearch\b|\bnews\b|\bweather\b|\bstock\b|\bprice\b|\bfile\b|\bfolder\b|\bimage\b|\bcalendar\b|\bremind\b|\bschedule\b|\bwhy\b|\bhow\b|\bwhat\b)/i;
-
-function looksLikeShortSlotReply(text = "") {
-  const value = String(text ?? "").trim();
-  if (!value) return false;
-  if (value.length > 24) return false;
-  if (SHORT_SLOT_REPLY_BLOCKER.test(value)) return false;
-  // A bare noun/name/location/date answer to a previous clarification usually
-  // has no sentence-ending question shape. This covers "罗利", "Raleigh, NC",
-  // "数据分析师", "明天下午三点" without reintroducing topic routing.
-  return /^[\p{L}\p{N}\s,，.'’_-]+$/u.test(value);
-}
-
-export function shouldAutoResolveParentFromConversation(userCommand = "") {
-  const text = String(userCommand ?? "").trim();
-  if (!text) return false;
-  if (SHORT_FOLLOWUP_REPLY.test(text)) return true;
-  if (looksLikeShortSlotReply(text)) return true;
-  return REFERENTIAL_FOLLOWUP.test(text);
-}
-
-function attachParentTaskSummary(contextPacket, parentTaskId, runtime) {
-  try {
-    const parent = runtime.store.getTask(parentTaskId);
-    if (!parent || typeof parent !== "object") return contextPacket;
-    // Pull the final assistant text wherever the executor stashed
-    // it. Different executors persist this under different keys —
-    // result_summary is the canonical, but result.final_text and
-    // payload.text show up in some legacy paths.
-    const finalText =
-      parent.result_summary
-      ?? parent.result?.final_text
-      ?? parent.final_text
-      ?? null;
-    if (typeof finalText !== "string" || finalText.trim().length === 0) {
-      return contextPacket;
-    }
-    return {
-      ...(contextPacket ?? {}),
-      parent_task_summary: {
-        parent_task_id: parentTaskId,
-        // Cap to bound prompt growth — only the offer phrasing
-        // (typically near the tail of the reply) is what
-        // pending-offer cares about.
-        assistant_final_text: finalText.slice(0, 1600)
-      }
-    };
-  } catch {
-    // Store I/O exception — never let observability fetch break
-    // task creation.
-    return contextPacket;
-  }
-}
-
-/**
- * P6 F3: pre-fetch the recent backend conversation_messages tail for
- * signal detectors that need prior-turn context (today: pending-offer).
- * Stamps `contextPacket.prior_messages` as a sanitised, capped array
- * of {role, content, status, ts}. Excludes UI metadata (no
- * client_message_id, no message_id, no metadata blob — those are
- * ledger fields, not signal inputs).
- *
- * Becomes the SINGLE source of historical context for signal
- * extraction when present. Detectors that previously read
- * `selection_metadata.conversation_turns` or
- * `parent_task_summary.assistant_final_text` must prefer this. Those
- * legacy fields stay only as fallbacks for boots without a backend
- * conversation row.
- */
-export function attachPriorBackendMessages(contextPacket, conversationId, runtime, { limit = 12, contentCap = 1600 } = {}) {
-  if (!conversationId || typeof runtime?.store?.getConversationMessages !== "function") {
-    return contextPacket;
-  }
-  try {
-    const all = runtime.store.getConversationMessages(conversationId);
-    if (!Array.isArray(all) || all.length === 0) return contextPacket;
-    const tail = all.slice(-Math.max(1, Math.min(limit, 50)));
-    const priorMessages = tail.map((m) => ({
-      role: m.role,
-      content: typeof m.content === "string" ? m.content.slice(0, contentCap) : "",
-      status: m.status ?? null,
-      ts: m.ts ?? null
-    }));
-    return { ...(contextPacket ?? {}), prior_messages: priorMessages };
-  } catch {
-    return contextPacket;
-  }
-}
-
-function isSchedulerSourced(contextPacket) {
-  return contextPacket?.selection_metadata?.scheduled_task_fire === true
-    || contextPacket?.source_app === "uca.scheduler"
-    || contextPacket?.capture_mode === "event";
-}
-
-export function ensureConversation(runtime, { conversationId, projectId = null, title = null }) {
-  if (!runtime?.store?.getConversation || !runtime.store.insertConversation) return null;
-  if (typeof conversationId !== "string" || conversationId.length === 0) return null;
-  const existing = runtime.store.getConversation(conversationId);
-  if (existing) return existing;
-  return runtime.store.insertConversation({
-    conversation_id: conversationId,
-    project_id: projectId ?? null,
-    title: title ?? null,
-    metadata: {}
-  });
-}
-
-// Derive a short, human-friendly conversation title from the first
-// user command. Used to auto-name new conversations so the
-// Conversations list reads as "请帮我总结这份合同 …" instead of an
-// opaque "conv_abc123…". Returns null if the command is empty.
-function deriveConversationTitle(command) {
-  if (typeof command !== "string") return null;
-  const cleaned = command.replace(/\s+/g, " ").trim();
-  if (!cleaned) return null;
-  const MAX = 36;
-  return cleaned.length > MAX ? `${cleaned.slice(0, MAX)}…` : cleaned;
-}
-
-// One-shot migration: walk all conversations and back-fill the
-// auto-generated title for any whose title is null/empty/looks like
-// the raw conversation_id (legacy data from before the auto-title
-// shipped). Idempotent — conversations with a real title are
-// untouched. Cheap: one DB read per conversation that needs it,
-// stops at the first user message. Run at runtime boot.
-//
-// Returns { scanned, updated } so the caller can log the impact.
-export function backfillConversationTitles(runtime) {
-  if (!runtime?.store?.listConversations
-      || !runtime.store.getConversationMessages
-      || !runtime.store.updateConversation) {
-    return { scanned: 0, updated: 0 };
-  }
-  // Walk every conversation regardless of project / archived state.
-  const all = runtime.store.listConversations({ limit: 5000, archived: 0 }) ?? [];
-  let updated = 0;
-  for (const conv of all) {
-    const id = conv.conversation_id ?? conv.id;
-    if (!id) continue;
-    const existing = String(conv.title ?? "").trim();
-    // Treat empty / matches-id as "needs fill". Don't blanket-catch
-    // anything starting with "conv_" because a user might legitimately
-    // name a conversation that way.
-    const needsTitle = !existing || existing === id;
-    if (!needsTitle) continue;
-    // First user message wins. Some conversations are scheduler-
-    // sourced (role=system) — skip those, the conv_auto_* surface
-    // already has its own labels.
-    const messages = runtime.store.getConversationMessages(id, { limit: 5 }) ?? [];
-    const firstUserMsg = messages.find((m) => m.role === "user");
-    if (!firstUserMsg?.content) continue;
-    const derived = deriveConversationTitle(firstUserMsg.content);
-    if (!derived) continue;
-    runtime.store.updateConversation(id, { title: derived });
-    updated += 1;
-  }
-  return { scanned: all.length, updated };
-}
-
 function auditSubmissionBoundary(runtime, task) {
   if (!runtime || !task?.submission_boundary) return null;
   try {
@@ -455,50 +263,6 @@ export function submitTaskWithConversation(params) {
 
     return { task, userMessage, conversation };
   });
-}
-
-export function appendTaskOutcomeMessage(runtime, task) {
-  if (!runtime?.store?.appendMessage || !runtime.store.linkMessageToTask) return null;
-  const conversationId = task?.conversation_id;
-  if (!conversationId) return null;
-  if (!runtime.store.getConversation?.(conversationId)) return null;
-
-  const status = task.status;
-  let role = "assistant";
-  let content;
-  let messageStatus = status;
-  if (status === "success") {
-    const finalText = task.result_summary ?? task.result?.final_text ?? task.final_text ?? "";
-    if (typeof finalText !== "string" || finalText.trim().length === 0) return null;
-    content = finalText;
-    messageStatus = "ok";
-  } else if (status === "cancelled") {
-    role = "system";
-    content = "Task was cancelled.";
-  } else if (status === "partial_success") {
-    role = "system";
-    content = `Task partially succeeded: ${task.failure_user_message ?? "see task for details"}`;
-  } else if (status === "failed") {
-    role = "system";
-    content = `Task failed: ${task.failure_user_message ?? task.failure_category ?? "unknown error"}`;
-  } else {
-    role = "system";
-    content = `Task ended with status=${status ?? "unknown"}.`;
-  }
-
-  try {
-    const msg = runtime.store.appendMessage({
-      conversation_id: conversationId,
-      role,
-      content,
-      status: messageStatus,
-      metadata: { task_id: task.task_id, executor: task.executor }
-    });
-    runtime.store.linkMessageToTask(msg.message_id, task.task_id, "answered_by");
-    return msg;
-  } catch {
-    return null;
-  }
 }
 
 export function createTaskRecord({

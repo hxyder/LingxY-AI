@@ -30,6 +30,7 @@ const overlayJs = read("src/desktop/renderer/overlay.js");
 const sharedCss = read("src/desktop/renderer/shared.css");
 const sharedUi = read("src/desktop/renderer/shared-ui.mjs");
 const taskRuntime = read("src/service/core/task-runtime.mjs");
+const conversationLifecycle = read("src/service/core/task-runtime/conversation-lifecycle.mjs");
 const notesStore = read("src/service/store/notes-store.mjs");
 const noteProjectConversationRoutes = read("src/service/core/http-routes/note-project-conversation-routes.mjs");
 const connectorRoutes = read("src/service/core/http-routes/connector-routes.mjs");
@@ -89,8 +90,10 @@ assert.ok(/refreshChatTimestamps/.test(consoleJs) && /refreshChatTimestamps/.tes
 assert.ok(/\.chat-msg-time\b/.test(sharedCss), "timestamps: .chat-msg-time CSS missing");
 
 // ── Auto-title conversations ───────────────────────────────────────────
-assert.ok(/function deriveConversationTitle\s*\(/.test(taskRuntime),
-  "auto-title: deriveConversationTitle() missing in task-runtime");
+assert.ok(/function deriveConversationTitle\s*\(/.test(conversationLifecycle),
+  "auto-title: deriveConversationTitle() missing in conversation-lifecycle");
+assert.ok(/from\s+["']\.\/task-runtime\/conversation-lifecycle\.mjs["']/.test(taskRuntime),
+  "auto-title: task-runtime must delegate conversation lifecycle helpers");
 assert.ok(/runtime\.store\?\.updateConversation\b|runtime\.store\.updateConversation\b/.test(taskRuntime),
   "auto-title: must call updateConversation on first message");
 
