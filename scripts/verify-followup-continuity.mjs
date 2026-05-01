@@ -6,9 +6,10 @@
  * fill) and "对" (yes confirmation) became NEW root tasks instead
  * of inheriting the parent. Two structural fixes ship together:
  *
- *   G3a (frontend): shouldAttachParentTaskForCommand replaces the
- *   topic regex EXPLICIT_FOLLOWUP_RE with structural rules
- *   (recency window + short-text length).
+ *   G3a (frontend): shouldAttachParentTaskForCommand replaced the
+ *   broad recency-window heuristic with conservative explicit
+ *   continuation gates. Backend conversation_messages now carry broad
+ *   context; parent_task_id is reserved for clear continuations.
  *
  *   G3b (backend): pending-offer detector falls back to
  *   contextPacket.parent_task_summary when conversation_turns is
@@ -28,8 +29,8 @@
  *   5. pending-offer NO match when parent_task_summary's final text
  *      doesn't contain an offer pattern (offer detection still gates).
  *   6. Frontend lock-in (source-level): shouldAttachParentTaskForCommand
- *      references structural conditions (recency + length), not the
- *      old EXPLICIT_FOLLOWUP_RE.
+ *      references explicit follow-up / referential / artifact gates, not
+ *      the old EXPLICIT_FOLLOWUP_RE or recency-window heuristic.
  *
  * Run: node scripts/verify-followup-continuity.mjs
  */
@@ -264,28 +265,28 @@ it("G3b end-to-end: createTaskSpec via createTaskRecord → pending-offer matche
 });
 
 // ── G3a frontend lock-in (source-level grep) ────────────────────────
-it("G3a lock-in: overlay.js shouldAttachParentTaskForCommand uses recency + length, not topic regex", () => {
+it("G3a lock-in: overlay.js uses conservative follow-up gates, not broad recency", () => {
   const src = readFileSync(
     new URL("../src/desktop/renderer/overlay.js", import.meta.url),
     "utf8"
   );
-  // Must reference the structural rules
-  assert.match(src, /lastCompletedAt/,
-    "overlay.js must track lastCompletedAt for the recency rule");
-  assert.match(src, /FOLLOWUP_RECENCY_WINDOW_MS/,
-    "shouldAttachParentTaskForCommand must use a recency window constant");
-  assert.match(src, /FOLLOWUP_SHORT_TEXT_CHARS|FOLLOWUP_SHORT_TEXT_CHINESE_CHARS/,
-    "must use a short-text length threshold");
-  // Must NOT reference the deprecated topic regex
+  assert.match(src, /SHORT_FOLLOWUP_REPLY_RE/,
+    "overlay.js must keep the short affirmative follow-up gate");
+  assert.match(src, /REFERENTIAL_FOLLOWUP_RE/,
+    "overlay.js must keep the referential follow-up gate");
+  assert.match(src, /ARTIFACT_VERB_RE/,
+    "overlay.js must keep the artifact continuation gate");
   assert.doesNotMatch(src, /EXPLICIT_FOLLOWUP_RE\s*=\s*\//,
     "EXPLICIT_FOLLOWUP_RE topic regex must be removed");
+  assert.doesNotMatch(src, /FOLLOWUP_RECENCY_WINDOW_MS/,
+    "the old recency-window heuristic must not be restored");
+  assert.doesNotMatch(src, /FOLLOWUP_SHORT_TEXT_CHARS|FOLLOWUP_SHORT_TEXT_CHINESE_CHARS/,
+    "the old broad short-text threshold must not be restored");
 });
 
-it("G3a lock-in: shouldAttachParentTaskForCommand body checks recency window first", () => {
+it("G3a lock-in: shouldAttachParentTaskForCommand body only attaches clear continuations", () => {
   // The function is in the renderer (not directly importable in
-  // node), so we lock its structure via source-level grep. Function
-  // body must include `Date.now() - completedAt` recency check
-  // BEFORE any other rule.
+  // node), so we lock its structure via source-level grep.
   const src = readFileSync(
     new URL("../src/desktop/renderer/overlay.js", import.meta.url),
     "utf8"
@@ -293,10 +294,16 @@ it("G3a lock-in: shouldAttachParentTaskForCommand body checks recency window fir
   const fnMatch = src.match(/function shouldAttachParentTaskForCommand[\s\S]*?\n\}/);
   assert.ok(fnMatch, "shouldAttachParentTaskForCommand definition must be present");
   const body = fnMatch[0];
-  assert.match(body, /Date\.now\(\)\s*-\s*completedAt/,
-    "must compute recency from Date.now() - lastCompletedAt");
-  assert.match(body, /cjkCount|FOLLOWUP_SHORT_TEXT/,
-    "must check character-length thresholds");
+  assert.match(body, /conversationState\?\.lastCompletedTaskId/,
+    "must require a concrete completed parent task");
+  assert.match(body, /SHORT_FOLLOWUP_REPLY_RE\.test\(command\)/,
+    "must allow short affirmative continuations");
+  assert.match(body, /REFERENTIAL_FOLLOWUP_RE\.test\(command\)/,
+    "must allow referential continuations");
+  assert.match(body, /conversationState\.lastArtifacts\?\.length[\s\S]*ARTIFACT_VERB_RE\.test\(command\)/,
+    "must only attach artifact verbs when prior artifacts exist");
+  assert.doesNotMatch(body, /Date\.now\(\)|lastCompletedAt|FOLLOWUP_RECENCY_WINDOW_MS|FOLLOWUP_SHORT_TEXT/,
+    "must not use the retired recency/short-text heuristic");
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
