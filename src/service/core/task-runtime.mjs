@@ -2,9 +2,11 @@ import crypto from "node:crypto";
 import { classifyFailure } from "../failures/classifier.mjs";
 import { createMetricsRegistry } from "../metrics/registry.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
+import { appendAuditLog } from "../security/audit-log.mjs";
 import { createPendingApprovalService } from "../scheduler/pending-approvals.mjs";
 import { extractToolSequence, recordToolSequence } from "./skill-pattern-tracker.mjs";
 import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
+import { evaluateSubmissionBoundary } from "./policy/submission-boundary.mjs";
 import {
   aggregateCompositeStatus,
   listChildTasks
@@ -385,11 +387,26 @@ export function backfillConversationTitles(runtime) {
   return { scanned: all.length, updated };
 }
 
+function auditSubmissionBoundary(runtime, task) {
+  if (!runtime || !task?.submission_boundary) return null;
+  try {
+    return appendAuditLog(
+      runtime,
+      "submission.boundary_evaluated",
+      task.submission_boundary.audit_payload ?? task.submission_boundary,
+      task.task_id
+    );
+  } catch {
+    return null;
+  }
+}
+
 export function submitTaskWithConversation(params) {
   const { runtime, parentMessageId = null, projectId = null, clientMessageId = null } = params;
   const task = createTaskRecord(params);
   if (!runtime?.store?.runInTransaction) {
     runtime.store.insertTask(task);
+    auditSubmissionBoundary(runtime, task);
     return { task, userMessage: null, conversation: null };
   }
   return runtime.store.runInTransaction(() => {
@@ -429,6 +446,7 @@ export function submitTaskWithConversation(params) {
     }
 
     runtime.store.insertTask(task);
+    auditSubmissionBoundary(runtime, task);
 
     const messageIdToLink = parentMessageId ?? userMessage?.message_id ?? null;
     if (messageIdToLink) {
@@ -495,6 +513,7 @@ export function createTaskRecord({
   retryCount = 0,
   bypassDedupe = false,
   executorOverride = null,
+  submissionKind = "unknown",
   runtime = null
 }) {
   // K4: conversation identity. Frontend mints a UUID per UI session
@@ -551,8 +570,9 @@ export function createTaskRecord({
 
   const taskSpec = createTaskSpec(userCommand, enrichedContext, route);
   const taskSpecValidation = validateTaskSpec(taskSpec);
+  const selectedExecutor = executorOverride ?? taskSpec.suggested_executor ?? route.executor;
 
-  return {
+  const taskRecord = {
     task_id: createId("task"),
     created_at: nowIso(),
     updated_at: nowIso(),
@@ -588,7 +608,7 @@ export function createTaskRecord({
     //      where the resolver couldn't run (e.g. malformed inputs)
     // Phase 1's createTaskSpec already populated suggested_executor via
     // resolveExecutor; Phase 2 finally honours it at the task-record layer.
-    executor: executorOverride ?? taskSpec.suggested_executor ?? route.executor,
+    executor: selectedExecutor,
     user_command: userCommand,
     task_spec: taskSpec,
     // Phase 1.6 — SR parallel safety: snapshot the deterministic spec so
@@ -610,9 +630,16 @@ export function createTaskRecord({
     source_dedupe_key: buildSourceDedupeKey(
       enrichedContext,
       userCommand,
-      executorOverride ?? route.executor
+      selectedExecutor
     )
   };
+  taskRecord.submission_boundary = evaluateSubmissionBoundary({
+    task: taskRecord,
+    submissionKind,
+    executorOverride,
+    contextPacket: enrichedContext
+  });
+  return taskRecord;
 }
 
 export function refreshCompositeParentStatus(runtime, parentTaskId) {

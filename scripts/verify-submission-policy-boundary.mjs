@@ -26,6 +26,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: true,
     submitsTaskWithConversation: true,
+    submissionKind: ["action_tool"],
     executorOverride: ["tool_using"]
   },
   "browser-submission.mjs": {
@@ -34,6 +35,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    submissionKind: [],
     executorOverride: []
   },
   "composite-submission.mjs": {
@@ -42,6 +44,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: false,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    submissionKind: [],
     executorOverride: ["composite"]
   },
   "context-submission.mjs": {
@@ -50,6 +53,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    submissionKind: [],
     executorOverride: []
   },
   "file-submission.mjs": {
@@ -58,6 +62,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    submissionKind: [],
     executorOverride: []
   },
   "image-submission.mjs": {
@@ -66,6 +71,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    submissionKind: [],
     executorOverride: ["tool_using"]
   },
   "office-submission.mjs": {
@@ -74,6 +80,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    submissionKind: [],
     executorOverride: []
   },
   "screenshot-submission.mjs": {
@@ -82,6 +89,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: false,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: false,
+    submissionKind: [],
     executorOverride: []
   }
 });
@@ -106,6 +114,7 @@ const report = files.map((name) => {
     usesSecurityBroker: /\bsecurityBroker\b|\binspectContext\b/.test(source),
     runsToolAgentLoop: /\brunToolAgentLoop\b/.test(source),
     submitsTaskWithConversation: /\bsubmitTaskWithConversation\b/.test(source),
+    submissionKind: [...source.matchAll(/submissionKind:\s*"([^"]+)"/g)].map((match) => match[1]),
     executorOverride: [...source.matchAll(/executorOverride:\s*"([^"]+)"/g)].map((match) => match[1])
   };
 });
@@ -124,6 +133,11 @@ for (const entry of report) {
     assert.equal(entry[key], expected[key], `${entry.file} classification drifted for ${key}`);
   }
   assert.deepEqual(
+    entry.submissionKind,
+    expected.submissionKind,
+    `${entry.file} submissionKind classification drifted`
+  );
+  assert.deepEqual(
     entry.executorOverride,
     expected.executorOverride,
     `${entry.file} executor override classification drifted`
@@ -137,6 +151,7 @@ for (const entry of report) {
     entry.usesActionToolRegistry ? "action_registry" : null,
     entry.usesSecurityBroker ? "security_broker" : null,
     entry.runsToolAgentLoop ? "tool_loop" : null,
+    entry.submissionKind.length ? `submission=${entry.submissionKind.join(",")}` : null,
     entry.executorOverride.length ? `executor=${entry.executorOverride.join(",")}` : null
   ].filter(Boolean).join(" | ");
   console.log(`- ${entry.file}: ${flags}`);

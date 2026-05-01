@@ -74,6 +74,7 @@ export async function submitActionToolTask({
     retryCount,
     bypassDedupe,
     executorOverride: "tool_using",
+    submissionKind: "action_tool",
     runtime
   });
   runtime.queue.enqueue(task);
