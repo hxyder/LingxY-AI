@@ -182,13 +182,13 @@ function createFakeEmailTool() {
   assert.ok(src.includes("waiting_approval: true"),
     "planner.mjs must flag the tool result as waiting_approval so the agent stops chaining");
 
-  const tr = await (await import("node:fs/promises")).readFile(
-    new URL("../src/service/core/task-runtime.mjs", import.meta.url),
+  const runtimeServices = await (await import("node:fs/promises")).readFile(
+    new URL("../src/service/core/task-runtime/runtime-services.mjs", import.meta.url),
     "utf8"
   );
-  assert.ok(tr.includes("executeApprovedAction: async (approval)"),
-    "task-runtime must wire executeApprovedAction into createPendingApprovalService");
-  assert.ok(tr.includes('approval.source_type !== "agent_tool_call"'),
+  assert.ok(runtimeServices.includes("executeApprovedAction: async (approval)"),
+    "runtime-services must wire executeApprovedAction into createPendingApprovalService");
+  assert.ok(runtimeServices.includes('approval.source_type !== "agent_tool_call"'),
     "executeApprovedAction must branch on source_type agent_tool_call");
 }
 

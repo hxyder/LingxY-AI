@@ -31,6 +31,8 @@ const sharedCss = read("src/desktop/renderer/shared.css");
 const sharedUi = read("src/desktop/renderer/shared-ui.mjs");
 const taskRuntime = read("src/service/core/task-runtime.mjs");
 const conversationLifecycle = read("src/service/core/task-runtime/conversation-lifecycle.mjs");
+const taskSubmission = read("src/service/core/task-runtime/task-submission.mjs");
+const taskCancellation = read("src/service/core/task-runtime/task-cancellation.mjs");
 const notesStore = read("src/service/store/notes-store.mjs");
 const noteProjectConversationRoutes = read("src/service/core/http-routes/note-project-conversation-routes.mjs");
 const connectorRoutes = read("src/service/core/http-routes/connector-routes.mjs");
@@ -92,13 +94,13 @@ assert.ok(/\.chat-msg-time\b/.test(sharedCss), "timestamps: .chat-msg-time CSS m
 // ── Auto-title conversations ───────────────────────────────────────────
 assert.ok(/function deriveConversationTitle\s*\(/.test(conversationLifecycle),
   "auto-title: deriveConversationTitle() missing in conversation-lifecycle");
-assert.ok(/from\s+["']\.\/task-runtime\/conversation-lifecycle\.mjs["']/.test(taskRuntime),
-  "auto-title: task-runtime must delegate conversation lifecycle helpers");
-assert.ok(/runtime\.store\?\.updateConversation\b|runtime\.store\.updateConversation\b/.test(taskRuntime),
+assert.ok(/from\s+["']\.\/conversation-lifecycle\.mjs["']/.test(taskSubmission),
+  "auto-title: task-submission must delegate conversation lifecycle helpers");
+assert.ok(/runtime\.store\?\.updateConversation\b|runtime\.store\.updateConversation\b/.test(taskSubmission),
   "auto-title: must call updateConversation on first message");
 
 // ── Stop button: force cancel ──────────────────────────────────────────
-assert.ok(/cancelTask\s*\(\s*\{[^}]*force\s*=/.test(taskRuntime),
+assert.ok(/cancelTask\s*\(\s*\{[^}]*force\s*=/.test(taskCancellation),
   "stop button: cancelTask must accept force arg");
 assert.ok(/cancellationRequestedTaskId/.test(overlayJs),
   "stop button: overlay must track cancellationRequestedTaskId");

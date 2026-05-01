@@ -4,7 +4,7 @@
 // from it, so RAG never fired. This verifier proves the two newly
 // added paths actually land:
 //
-//   1. static wiring in context-submission.mjs + task-runtime.mjs
+//   1. static wiring in context-submission.mjs + task-lifecycle.mjs
 //   2. buildHistoryRecord now includes the final inline_result answer
 //      text + artifact paths, capped to HISTORY_TEXT_CAP
 //   3. seedSemanticMemories returns a contextPacket with the
@@ -53,12 +53,12 @@ const ROOT = path.resolve(__dirname, "..");
   assert.ok(ctx.includes("[memory_background · 语义召回"),
     "back-compat shim must still emit the legacy sentinel for callers on the old contract");
 
-  const tr = await readFile(path.join(ROOT, "src/service/core/task-runtime.mjs"), "utf8");
-  assert.ok(tr.includes("HISTORY_TEXT_CAP"),
-    "task-runtime must cap history record text");
-  assert.ok(tr.includes("answer_excerpt"),
+  const taskLifecycle = await readFile(path.join(ROOT, "src/service/core/task-runtime/task-lifecycle.mjs"), "utf8");
+  assert.ok(taskLifecycle.includes("HISTORY_TEXT_CAP"),
+    "task-lifecycle must cap history record text");
+  assert.ok(taskLifecycle.includes("answer_excerpt"),
     "history metadata must carry the assistant answer excerpt");
-  assert.ok(tr.includes("artifact_paths"),
+  assert.ok(taskLifecycle.includes("artifact_paths"),
     "history metadata must carry artifact paths");
 }
 
