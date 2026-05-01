@@ -28,10 +28,16 @@ const ROOT = path.resolve(__dirname, "..");
   const tr = await (await import("node:fs/promises")).readFile(
     path.join(ROOT, "src/service/core/task-runtime.mjs"), "utf8"
   );
-  assert.ok(tr.includes("persistTaskEvent(runtime, record)"),
+  assert.ok(tr.includes('from "./task-runtime/event-emitter.mjs"'),
+    "task-runtime must delegate task event emission to event-emitter.mjs");
+
+  const eventEmitter = await (await import("node:fs/promises")).readFile(
+    path.join(ROOT, "src/service/core/task-runtime/event-emitter.mjs"), "utf8"
+  );
+  assert.ok(eventEmitter.includes("persistTaskEvent(runtime, record)"),
     "emitTaskEvent must invoke persistTaskEvent");
-  assert.ok(tr.includes('from "./task-runtime/event-log.mjs"'),
-    "task-runtime must delegate task jsonl log writing to event-log.mjs");
+  assert.ok(eventEmitter.includes('from "./event-log.mjs"'),
+    "event-emitter must delegate task jsonl log writing to event-log.mjs");
 
   const eventLog = await (await import("node:fs/promises")).readFile(
     path.join(ROOT, "src/service/core/task-runtime/event-log.mjs"), "utf8"

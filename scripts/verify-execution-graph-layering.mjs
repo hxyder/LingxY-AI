@@ -49,13 +49,16 @@ assert.ok(agentLoop.includes('runtime?.emitTaskEvent?.("text_delta"'),
   "tool_using streaming deltas must use the execution runtime emitter");
 
 const taskRuntime = await source("src/service/core/task-runtime.mjs");
+const taskEventEmitter = await source("src/service/core/task-runtime/event-emitter.mjs");
 const taskEventLog = await source("src/service/core/task-runtime/event-log.mjs");
-assert.ok(/EPHEMERAL_EVENT_TYPES[\s\S]*"reasoning_delta"/.test(taskRuntime),
+assert.ok(taskRuntime.includes('from "./task-runtime/event-emitter.mjs"'),
+  "task runtime must delegate event emission to event-emitter");
+assert.ok(/EPHEMERAL_EVENT_TYPES[\s\S]*"reasoning_delta"/.test(taskEventEmitter),
   "reasoning_delta must be ephemeral");
 assert.ok(/JSONL_SKIP_EVENT_TYPES[\s\S]*"reasoning_delta"/.test(taskEventLog),
   "reasoning_delta must be skipped from jsonl task logs");
-assert.ok(taskRuntime.includes('phase: "executor_first_delta"'),
-  "task runtime must record first-token latency as executor_first_delta");
+assert.ok(taskEventEmitter.includes('phase: "executor_first_delta"'),
+  "task event emitter must record first-token latency as executor_first_delta");
 
 const main = await source("src/desktop/tray/electron-main.mjs");
 assert.ok(main.includes('reason: "primary_ui_visible"'),
