@@ -133,8 +133,26 @@ export async function submitActionToolTask({
         const registry = runtime.actionToolRegistry;
         const toolContext = { ...(runtime.toolContext ?? {}), outputDir: runtime.toolOutputDir, runtime, task };
         const toolResult = await registry.call(fastPathTool, fastPathArgs ?? {}, toolContext);
-        emitExecutorEvent("tool_call_completed", { tool_id: fastPathTool, success: toolResult.success });
+        emitExecutorEvent("tool_call_completed", {
+          tool_id: fastPathTool,
+          success: toolResult.success,
+          error: toolResult.error ?? null
+        });
         const finalText = toolResult.observation ?? (toolResult.success ? "完成。" : "操作失败。");
+        if (!toolResult.success) {
+          markTaskFailed(runtime, task, {
+            code: toolResult.error ?? "action_tool_failed",
+            message: finalText
+          });
+          persistArtifacts(runtime, task.task_id, toolResult.artifact_paths);
+          return {
+            task,
+            taskEvents: runtime.store.getTaskEvents(task.task_id),
+            artifacts: toolResult.artifact_paths ?? [],
+            fast_path: true,
+            final_text: finalText
+          };
+        }
         updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
         markTaskSucceeded(runtime, task);
         persistArtifacts(runtime, task.task_id, toolResult.artifact_paths);
