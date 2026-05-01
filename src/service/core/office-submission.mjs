@@ -129,6 +129,7 @@ export async function submitOfficeTask({
     clientMessageId,
     retryCount,
     executorOverride,
+    submissionKind: "office",
     runtime
   });
   const enqueued = queue.enqueue(task);

@@ -80,7 +80,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
-    submissionKind: [],
+    submissionKind: ["office"],
     executorOverride: []
   },
   "screenshot-submission.mjs": {
