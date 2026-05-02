@@ -612,11 +612,21 @@ export async function listCalendarEvents(runtime, type, { limit = 10 } = {}) {
   try {
     const now = new Date().toISOString();
     if (type === "microsoft") {
-      const r = await fetch(
-        `https://graph.microsoft.com/v1.0/me/events?$top=${limit}&$filter=start/dateTime ge '${now}'&$orderby=start/dateTime&$select=subject,start,end,organizer,location`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      if (!r.ok) throw new Error(`graph_calendar_error: ${r.status}`);
+      let r;
+      try {
+        r = await fetchExternal(
+          `https://graph.microsoft.com/v1.0/me/events?$top=${limit}&$filter=start/dateTime ge '${now}'&$orderby=start/dateTime&$select=subject,start,end,organizer,location`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+          {
+            timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+            label: "account_connectors.microsoft_calendar",
+            httpErrorPrefix: "Microsoft calendar error"
+          }
+        );
+      } catch (err) {
+        if (Number.isFinite(Number(err?.status))) throw new Error(`graph_calendar_error: ${err.status}`);
+        throw err;
+      }
       const d = await r.json();
       return {
         ok: true, events: (d.value ?? []).map((e) => ({

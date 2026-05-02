@@ -10,6 +10,7 @@ import {
   getValidAccessToken,
   listFiles,
   listEmails,
+  listCalendarEvents,
   startGoogleAuth,
   startMicrosoftAuth
 } from "../../src/service/connectors/account-connectors.mjs";
@@ -520,6 +521,65 @@ test("account connector Microsoft emails retries a transient mail endpoint failu
           "https://graph.microsoft.com/v1.0/me/messages?$top=3&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead"
         );
         assert.equal(calls[0].authorization, "Bearer mail-access-token");
+        assert.equal(calls.every((call) => call.hasAbortSignal), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});
+
+test("account connector Microsoft calendar retries a transient events endpoint failure", async () => {
+  await withTokenRuntime(
+    "microsoft",
+    {
+      access_token: "calendar-access-token",
+      refresh_token: "calendar-refresh-token",
+      expires_at: Date.now() + 3600_000
+    },
+    { clientId: "microsoft-client-id" },
+    async ({ runtime }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (calls.length === 1) {
+            return new Response("temporary calendar endpoint failure", { status: 502 });
+          }
+          return Response.json({
+            value: [{
+              id: "event-1",
+              subject: "Planning",
+              start: { dateTime: "2026-05-02T15:00:00" },
+              end: { dateTime: "2026-05-02T16:00:00" },
+              organizer: { emailAddress: { name: "Organizer" } },
+              location: { displayName: "Room 1" }
+            }]
+          });
+        };
+
+        const result = await listCalendarEvents(runtime, "microsoft", { limit: 4 });
+
+        assert.equal(result.ok, true);
+        assert.equal(result.events.length, 1);
+        assert.deepEqual(result.events[0], {
+          id: "event-1",
+          title: "Planning",
+          start: "2026-05-02T15:00:00",
+          end: "2026-05-02T16:00:00",
+          organizer: "Organizer",
+          location: "Room 1"
+        });
+        assert.equal(calls.length, 2);
+        assert.match(String(calls[0].url), /^https:\/\/graph\.microsoft\.com\/v1\.0\/me\/events\?/);
+        assert.match(String(calls[0].url), /\$top=4/);
+        assert.match(String(calls[0].url), /\$orderby=start\/dateTime/);
+        assert.equal(calls[0].authorization, "Bearer calendar-access-token");
         assert.equal(calls.every((call) => call.hasAbortSignal), true);
       } finally {
         globalThis.fetch = originalFetch;
