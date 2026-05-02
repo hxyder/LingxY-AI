@@ -27,8 +27,7 @@ import { renderResearchPrinciples, renderResearchBudget } from "../shared/resear
 import { extractEvidence, detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 import {
   validateSuccessContract,
-  validateStepGate,
-  detectUnbackedActionClaims
+  validateStepGate
 } from "../../core/policy/success-contract-validator.mjs";
 import {
   actionObligationsWithStatus,
@@ -92,6 +91,10 @@ import {
   transcriptHasSuccessfulToolCall
 } from "./tool-call-guards.mjs";
 import { repairToolArgs } from "./tool-arg-repair.mjs";
+import {
+  buildHallucinatedClaimBanner,
+  detectUnbackedConnectorClaim
+} from "./truthfulness-guard.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
@@ -523,47 +526,6 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
     // the internal parser trace.
     return { type: "final", text: `抱歉，暂时无法处理这个请求（${error.message}）。请重试或换一种表达。` };
   }
-}
-
-/**
- * Truthfulness guard for connector-write hallucinations. Delegates to
- * the shared `detectUnbackedActionClaims` so tool_using and agentic
- * apply identical rules. Returns the first violation kind (e.g.
- * "email_send_claim_unsupported") or null when the final text is
- * honest.
- */
-function detectUnbackedConnectorClaim(result) {
-  const violations = detectUnbackedActionClaims(
-    result?.transcript ?? [],
-    result?.final_text ?? ""
-  );
-  return violations.length > 0 ? violations[0] : null;
-}
-
-function buildHallucinatedClaimBanner(violation) {
-  const group = String(violation?.kind ?? "").replace(/_claim_unsupported$/, "");
-  if (group === "email_send") {
-    return "⚠️ 邮件实际并未发送。系统未检测到任何成功的邮件发送工具调用，下面的文字是模型自述。请重新发起或人工确认。";
-  }
-  if (group === "calendar_create") {
-    return "⚠️ 日程/事件实际并未创建。系统未检测到日历工具的成功调用，下面的文字仅为模型自述。请重新创建。";
-  }
-  if (group === "file_upload") {
-    return "⚠️ 文件实际并未上传。系统未检测到上传工具的成功调用，下面的文字仅为模型自述。请重新上传。";
-  }
-  if (group === "schedule_create") {
-    return "⚠️ 定时任务/提醒实际并未创建。系统未检测到 create_scheduled_task 的成功调用，下面的文字仅为模型自述。请重新创建。";
-  }
-  if (group === "file_modify") {
-    return "⚠️ 文件实际并未修改。系统未检测到 edit_file/write_file/file_op 的成功调用，下面的文字仅为模型自述。请重新发起修改。";
-  }
-  if (group === "app_launch") {
-    return "⚠️ 应用/页面实际并未打开。系统未检测到 launch_app/open_url 的成功调用，下面的文字仅为模型自述。";
-  }
-  if (group === "notification_send") {
-    return "⚠️ 通知实际并未发送。系统未检测到 notify 的成功调用，下面的文字仅为模型自述。";
-  }
-  return "⚠️ 模型声称完成了一项操作，但系统未检测到对应工具的成功调用。下面的文字是模型自述，不是真实执行结果。";
 }
 
 export function createToolUsingExecutorScaffold() {
