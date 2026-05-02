@@ -406,3 +406,62 @@ test("account connector Microsoft files retries a transient Drive endpoint failu
     }
   );
 });
+
+test("account connector Google files retries a transient Drive endpoint failure", async () => {
+  await withTokenRuntime(
+    "google",
+    {
+      access_token: "google-files-access-token",
+      refresh_token: "google-files-refresh-token",
+      expires_at: Date.now() + 3600_000
+    },
+    { clientId: "google-client-id", clientSecret: "google-client-secret" },
+    async ({ runtime }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (calls.length === 1) {
+            return new Response("temporary drive endpoint failure", { status: 502 });
+          }
+          return Response.json({
+            files: [{
+              id: "gfile-1",
+              name: "Roadmap Sheet",
+              webViewLink: "https://example.com/sheet",
+              modifiedTime: "2026-05-01T13:00:00Z",
+              size: "128",
+              mimeType: "application/vnd.google-apps.spreadsheet"
+            }]
+          });
+        };
+
+        const result = await listFiles(runtime, "google", { limit: 2 });
+
+        assert.equal(result.ok, true);
+        assert.equal(result.files.length, 1);
+        assert.deepEqual(result.files[0], {
+          id: "gfile-1",
+          name: "Roadmap Sheet",
+          url: "https://example.com/sheet",
+          modified: "2026-05-01T13:00:00Z",
+          size: "128",
+          isFolder: false
+        });
+        assert.equal(calls.length, 2);
+        assert.match(String(calls[0].url), /^https:\/\/www\.googleapis\.com\/drive\/v3\/files\?/);
+        assert.match(String(calls[0].url), /pageSize=2/);
+        assert.match(String(calls[0].url), /orderBy=modifiedTime\+desc/);
+        assert.equal(calls[0].authorization, "Bearer google-files-access-token");
+        assert.equal(calls.every((call) => call.hasAbortSignal), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});

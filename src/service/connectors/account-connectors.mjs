@@ -516,10 +516,19 @@ export async function listFiles(runtime, type, { limit = 20, query = "" } = {}) 
         fields: "files(id,name,webViewLink,modifiedTime,size,mimeType)",
         ...(query ? { q: `fullText contains '${query}'` } : {})
       });
-      const r = await fetch(`https://www.googleapis.com/drive/v3/files?${qs}`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      if (!r.ok) throw new Error(`gdrive_files_error: ${r.status}`);
+      let r;
+      try {
+        r = await fetchExternal(`https://www.googleapis.com/drive/v3/files?${qs}`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        }, {
+          timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+          label: "account_connectors.google_files",
+          httpErrorPrefix: "Google Drive files error"
+        });
+      } catch (err) {
+        if (Number.isFinite(Number(err?.status))) throw new Error(`gdrive_files_error: ${err.status}`);
+        throw err;
+      }
       const d = await r.json();
       return {
         ok: true, files: (d.files ?? []).map((f) => ({
