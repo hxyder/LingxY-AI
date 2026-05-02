@@ -7,6 +7,7 @@ import test from "node:test";
 import {
   completeOAuthCallback,
   getValidAccessToken,
+  startGoogleAuth,
   startMicrosoftAuth
 } from "../../src/service/connectors/account-connectors.mjs";
 
@@ -184,6 +185,67 @@ test("account connector Microsoft OAuth callback retries a transient token excha
         const saved = JSON.parse(await readFile(tokenPath, "utf8"));
         assert.equal(saved["microsoft:tokens"].access_token, "callback-access-token");
         assert.equal(saved["microsoft:tokens"].refresh_token, "callback-refresh-token");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});
+
+test("account connector Google OAuth callback retries a transient token exchange failure", async () => {
+  const auth = startGoogleAuth("google-client-id");
+
+  await withTokenRuntime(
+    "google",
+    {},
+    { clientId: "google-client-id", clientSecret: "google-client-secret" },
+    async ({ runtime, tokenPath }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            body: String(init.body ?? ""),
+            contentType: init.headers?.["Content-Type"] ?? null,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (String(url) === "https://oauth2.googleapis.com/token") {
+            if (calls.filter((call) => String(call.url) === "https://oauth2.googleapis.com/token").length === 1) {
+              return new Response("temporary token exchange failure", { status: 502 });
+            }
+            return Response.json({
+              access_token: "callback-google-access-token",
+              refresh_token: "callback-google-refresh-token",
+              scope: "openid email profile",
+              expires_in: 3600
+            });
+          }
+          return Response.json({
+            id: "google-user-id",
+            name: "Google User",
+            email: "google@example.com"
+          });
+        };
+
+        const result = await completeOAuthCallback(runtime, "google-auth-code", auth.state);
+
+        const tokenCalls = calls.filter((call) => String(call.url) === "https://oauth2.googleapis.com/token");
+        assert.equal(result.ok, true);
+        assert.equal(result.type, "google");
+        assert.equal(tokenCalls.length, 2);
+        assert.equal(tokenCalls[0].url, "https://oauth2.googleapis.com/token");
+        assert.match(tokenCalls[0].body, /grant_type=authorization_code/);
+        assert.match(tokenCalls[0].body, /client_id=google-client-id/);
+        assert.match(tokenCalls[0].body, /client_secret=google-client-secret/);
+        assert.match(tokenCalls[0].body, /code=google-auth-code/);
+        assert.equal(tokenCalls[0].contentType, "application/x-www-form-urlencoded");
+        assert.equal(tokenCalls.every((call) => call.hasAbortSignal), true);
+
+        const saved = JSON.parse(await readFile(tokenPath, "utf8"));
+        assert.equal(saved["google:tokens"].access_token, "callback-google-access-token");
+        assert.equal(saved["google:tokens"].refresh_token, "callback-google-refresh-token");
       } finally {
         globalThis.fetch = originalFetch;
       }

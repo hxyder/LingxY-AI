@@ -342,11 +342,19 @@ export async function completeOAuthCallback(runtime, code, state) {
       redirect_uri: REDIRECT_URI,
       code_verifier: verifier
     });
-    tokenRes = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: params
-    });
+    try {
+      tokenRes = await fetchExternal("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params
+      }, {
+        timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+        label: "account_connectors.google_token_exchange",
+        httpErrorPrefix: "Google token exchange error"
+      });
+    } catch (err) {
+      return { ok: false, error: "token_exchange_failed", detail: err?.body ?? err?.message ?? String(err) };
+    }
   } else {
     return { ok: false, error: "unknown_type" };
   }
