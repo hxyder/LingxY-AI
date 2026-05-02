@@ -455,10 +455,13 @@ export async function getConnectorStatus(runtime, type) {
 
 async function getUserInfo(type, accessToken) {
   if (type === "microsoft") {
-    const r = await fetch("https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName", {
+    const r = await fetchExternal("https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName", {
       headers: { Authorization: `Bearer ${accessToken}` }
+    }, {
+      timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+      label: "account_connectors.microsoft_user_info",
+      httpErrorPrefix: "Microsoft user info error"
     });
-    if (!r.ok) throw new Error("graph_error");
     const d = await r.json();
     return { providerAccountId: d.id ?? d.userPrincipalName ?? d.mail, displayName: d.displayName, email: d.mail ?? d.userPrincipalName };
   } else {

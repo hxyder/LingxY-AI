@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   completeOAuthCallback,
+  getConnectorStatus,
   getValidAccessToken,
   startGoogleAuth,
   startMicrosoftAuth
@@ -246,6 +247,51 @@ test("account connector Google OAuth callback retries a transient token exchange
         const saved = JSON.parse(await readFile(tokenPath, "utf8"));
         assert.equal(saved["google:tokens"].access_token, "callback-google-access-token");
         assert.equal(saved["google:tokens"].refresh_token, "callback-google-refresh-token");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});
+
+test("account connector Microsoft user info retries a transient profile endpoint failure", async () => {
+  await withTokenRuntime(
+    "microsoft",
+    {
+      access_token: "profile-access-token",
+      refresh_token: "profile-refresh-token",
+      expires_at: Date.now() + 3600_000
+    },
+    { clientId: "microsoft-client-id" },
+    async ({ runtime }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (calls.length === 1) {
+            return new Response("temporary profile endpoint failure", { status: 502 });
+          }
+          return Response.json({
+            id: "profile-user-id",
+            displayName: "Profile User",
+            mail: "profile@example.com"
+          });
+        };
+
+        const status = await getConnectorStatus(runtime, "microsoft");
+
+        assert.equal(status.connected, true);
+        assert.equal(status.email, "profile@example.com");
+        assert.equal(status.displayName, "Profile User");
+        assert.equal(calls.length, 2);
+        assert.equal(calls[0].url, "https://graph.microsoft.com/v1.0/me?$select=id,displayName,mail,userPrincipalName");
+        assert.equal(calls[0].authorization, "Bearer profile-access-token");
+        assert.equal(calls.every((call) => call.hasAbortSignal), true);
       } finally {
         globalThis.fetch = originalFetch;
       }
