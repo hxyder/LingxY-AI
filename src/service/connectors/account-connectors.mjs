@@ -550,11 +550,21 @@ export async function listEmails(runtime, type, { limit = 10 } = {}) {
 
   try {
     if (type === "microsoft") {
-      const r = await fetch(
-        `https://graph.microsoft.com/v1.0/me/messages?$top=${limit}&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      if (!r.ok) throw new Error(`graph_mail_error: ${r.status}`);
+      let r;
+      try {
+        r = await fetchExternal(
+          `https://graph.microsoft.com/v1.0/me/messages?$top=${limit}&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+          {
+            timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+            label: "account_connectors.microsoft_mail",
+            httpErrorPrefix: "Microsoft mail error"
+          }
+        );
+      } catch (err) {
+        if (Number.isFinite(Number(err?.status))) throw new Error(`graph_mail_error: ${err.status}`);
+        throw err;
+      }
       const d = await r.json();
       return {
         ok: true, emails: (d.value ?? []).map((m) => ({

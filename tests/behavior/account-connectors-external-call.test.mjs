@@ -9,6 +9,7 @@ import {
   getConnectorStatus,
   getValidAccessToken,
   listFiles,
+  listEmails,
   startGoogleAuth,
   startMicrosoftAuth
 } from "../../src/service/connectors/account-connectors.mjs";
@@ -458,6 +459,67 @@ test("account connector Google files retries a transient Drive endpoint failure"
         assert.match(String(calls[0].url), /pageSize=2/);
         assert.match(String(calls[0].url), /orderBy=modifiedTime\+desc/);
         assert.equal(calls[0].authorization, "Bearer google-files-access-token");
+        assert.equal(calls.every((call) => call.hasAbortSignal), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});
+
+test("account connector Microsoft emails retries a transient mail endpoint failure", async () => {
+  await withTokenRuntime(
+    "microsoft",
+    {
+      access_token: "mail-access-token",
+      refresh_token: "mail-refresh-token",
+      expires_at: Date.now() + 3600_000
+    },
+    { clientId: "microsoft-client-id" },
+    async ({ runtime }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (calls.length === 1) {
+            return new Response("temporary mail endpoint failure", { status: 502 });
+          }
+          return Response.json({
+            value: [{
+              id: "mail-1",
+              subject: "Status",
+              from: { emailAddress: { address: "sender@example.com", name: "Sender" } },
+              receivedDateTime: "2026-05-01T14:00:00Z",
+              bodyPreview: "All good",
+              isRead: false
+            }]
+          });
+        };
+
+        const result = await listEmails(runtime, "microsoft", { limit: 3 });
+
+        assert.equal(result.ok, true);
+        assert.equal(result.emails.length, 1);
+        assert.deepEqual(result.emails[0], {
+          id: "mail-1",
+          subject: "Status",
+          from: "sender@example.com",
+          fromName: "Sender",
+          received: "2026-05-01T14:00:00Z",
+          preview: "All good",
+          isRead: false
+        });
+        assert.equal(calls.length, 2);
+        assert.equal(
+          calls[0].url,
+          "https://graph.microsoft.com/v1.0/me/messages?$top=3&$orderby=receivedDateTime desc&$select=subject,from,receivedDateTime,bodyPreview,isRead"
+        );
+        assert.equal(calls[0].authorization, "Bearer mail-access-token");
         assert.equal(calls.every((call) => call.hasAbortSignal), true);
       } finally {
         globalThis.fetch = originalFetch;
