@@ -185,7 +185,7 @@ export async function callOpenAIVision({ apiKey, baseUrl, model, userCommand, im
 
   content.push({ type: "text", text: userCommand });
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await fetchExternal(`${baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -197,12 +197,11 @@ export async function callOpenAIVision({ apiKey, baseUrl, model, userCommand, im
       messages: [{ role: "user", content }]
     }),
     signal
+  }, {
+    timeoutMs: MULTI_MODAL_API_FETCH_TIMEOUT_MS,
+    label: "multi_modal.openai_compatible_vision",
+    httpErrorPrefix: "OpenAI Vision API error"
   });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`OpenAI Vision API error ${response.status}: ${body.slice(0, 200)}`);
-  }
 
   const data = await response.json();
   return data.choices?.[0]?.message?.content ?? "";

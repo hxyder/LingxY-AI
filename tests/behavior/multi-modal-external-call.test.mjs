@@ -59,6 +59,18 @@ async function withFakeAnthropicVisionProvider(fn) {
   }, fn);
 }
 
+async function withFakeOpenAIVisionProvider(fn) {
+  return withFakeVisionProvider({
+    id: "fake-openai-vision",
+    kind: "openai",
+    name: "Fake OpenAI Vision",
+    apiKey: "test-key",
+    baseUrl: "https://fake-openai-vision.local/v1",
+    defaultModel: "gpt-4o",
+    supportsVision: true
+  }, fn);
+}
+
 test("multi-modal executor retries a transient Anthropic Vision HTTP failure and still emits success", async () => {
   await withFakeAnthropicVisionProvider(async ({ imagePath }) => {
     const originalFetch = globalThis.fetch;
@@ -100,6 +112,53 @@ test("multi-modal executor retries a transient Anthropic Vision HTTP failure and
         ["step_started", "step_started", "log", "step_finished", "inline_result", "success"]
       );
       assert.equal(events.at(-1).payload.text, "Recovered vision answer");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+test("multi-modal executor retries a transient OpenAI-compatible Vision HTTP failure and still emits success", async () => {
+  await withFakeOpenAIVisionProvider(async ({ imagePath }) => {
+    const originalFetch = globalThis.fetch;
+    const calls = [];
+    try {
+      globalThis.fetch = async (url, init = {}) => {
+        const body = JSON.parse(init.body);
+        calls.push({
+          url,
+          body,
+          authorization: init.headers.Authorization,
+          hasAbortSignal: Boolean(init.signal)
+        });
+        if (calls.length === 1) {
+          return new Response("temporary openai vision failure", { status: 502 });
+        }
+        return Response.json({
+          choices: [{ message: { content: "Recovered OpenAI vision answer" } }]
+        });
+      };
+
+      const executor = createMultiModalExecutorScaffold();
+      const events = await collectEvents(executor.execute({
+        task_id: "task_multi_modal_openai_retry",
+        user_command: "Describe the image",
+        context_packet: { image_paths: [imagePath] }
+      }));
+
+      assert.equal(calls.length, 2);
+      assert.equal(calls[0].url, "https://fake-openai-vision.local/v1/chat/completions");
+      assert.equal(calls[0].authorization, "Bearer test-key");
+      assert.equal(typeof calls[0].body.model, "string");
+      assert.ok(calls[0].body.model.length > 0);
+      assert.equal(calls[0].body.messages[0].role, "user");
+      assert.equal(calls.every((call) => call.hasAbortSignal), true);
+
+      assert.deepEqual(
+        events.map((event) => event.event_type),
+        ["step_started", "step_started", "log", "step_finished", "inline_result", "success"]
+      );
+      assert.equal(events.at(-1).payload.text, "Recovered OpenAI vision answer");
     } finally {
       globalThis.fetch = originalFetch;
     }
