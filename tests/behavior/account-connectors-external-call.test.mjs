@@ -4,7 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { getValidAccessToken } from "../../src/service/connectors/account-connectors.mjs";
+import {
+  completeOAuthCallback,
+  getValidAccessToken,
+  startMicrosoftAuth
+} from "../../src/service/connectors/account-connectors.mjs";
 
 async function withTokenRuntime(type, tokens, connectorConfig, fn) {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "uca-account-connectors-"));
@@ -120,6 +124,66 @@ test("account connector Google refresh retries a transient token endpoint failur
         const saved = JSON.parse(await readFile(tokenPath, "utf8"));
         assert.equal(saved["google:tokens"].access_token, "fresh-google-token");
         assert.equal(saved["google:tokens"].refresh_token, "google-refresh-token");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});
+
+test("account connector Microsoft OAuth callback retries a transient token exchange failure", async () => {
+  const auth = startMicrosoftAuth("microsoft-client-id");
+
+  await withTokenRuntime(
+    "microsoft",
+    {},
+    { clientId: "microsoft-client-id" },
+    async ({ runtime, tokenPath }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            body: String(init.body ?? ""),
+            contentType: init.headers?.["Content-Type"] ?? null,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (String(url).includes("/oauth2/v2.0/token")) {
+            if (calls.filter((call) => String(call.url).includes("/oauth2/v2.0/token")).length === 1) {
+              return new Response("temporary token exchange failure", { status: 502 });
+            }
+            return Response.json({
+              access_token: "callback-access-token",
+              refresh_token: "callback-refresh-token",
+              scope: "openid profile email User.Read",
+              expires_in: 3600
+            });
+          }
+          return Response.json({
+            id: "microsoft-user-id",
+            displayName: "Test User",
+            mail: "test@example.com"
+          });
+        };
+
+        const result = await completeOAuthCallback(runtime, "auth-code", auth.state);
+
+        const tokenCalls = calls.filter((call) => String(call.url).includes("/oauth2/v2.0/token"));
+        assert.equal(result.ok, true);
+        assert.equal(result.type, "microsoft");
+        assert.equal(tokenCalls.length, 2);
+        assert.equal(tokenCalls[0].url, "https://login.microsoftonline.com/common/oauth2/v2.0/token");
+        assert.match(tokenCalls[0].body, /grant_type=authorization_code/);
+        assert.match(tokenCalls[0].body, /client_id=microsoft-client-id/);
+        assert.match(tokenCalls[0].body, /code=auth-code/);
+        assert.equal(tokenCalls[0].contentType, "application/x-www-form-urlencoded");
+        assert.equal(tokenCalls.every((call) => call.hasAbortSignal), true);
+
+        const saved = JSON.parse(await readFile(tokenPath, "utf8"));
+        assert.equal(saved["microsoft:tokens"].access_token, "callback-access-token");
+        assert.equal(saved["microsoft:tokens"].refresh_token, "callback-refresh-token");
       } finally {
         globalThis.fetch = originalFetch;
       }
