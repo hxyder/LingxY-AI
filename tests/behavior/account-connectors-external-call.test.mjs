@@ -529,6 +529,71 @@ test("account connector Microsoft emails retries a transient mail endpoint failu
   );
 });
 
+test("account connector Gmail list retries a transient message-list endpoint failure", async () => {
+  await withTokenRuntime(
+    "google",
+    {
+      access_token: "gmail-access-token",
+      refresh_token: "gmail-refresh-token",
+      expires_at: Date.now() + 3600_000
+    },
+    { clientId: "google-client-id", clientSecret: "google-client-secret" },
+    async ({ runtime }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      let listAttempts = 0;
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (String(url).includes("/gmail/v1/users/me/messages?")) {
+            listAttempts += 1;
+            if (listAttempts === 1) {
+              return new Response("temporary gmail list endpoint failure", { status: 502 });
+            }
+            return Response.json({ messages: [{ id: "gmail-1" }] });
+          }
+          if (String(url).includes("/gmail/v1/users/me/messages/gmail-1?")) {
+            return Response.json({
+              labelIds: ["INBOX"],
+              payload: {
+                headers: [
+                  { name: "Subject", value: "Gmail Status" },
+                  { name: "From", value: "sender@example.com" },
+                  { name: "Date", value: "Fri, 01 May 2026 14:00:00 GMT" }
+                ]
+              }
+            });
+          }
+          return new Response("unexpected url", { status: 404 });
+        };
+
+        const result = await listEmails(runtime, "google", { limit: 2 });
+
+        const listCalls = calls.filter((call) => String(call.url).includes("/gmail/v1/users/me/messages?"));
+        assert.equal(result.ok, true);
+        assert.deepEqual(result.emails, [{
+          id: "gmail-1",
+          subject: "Gmail Status",
+          from: "sender@example.com",
+          received: "Fri, 01 May 2026 14:00:00 GMT",
+          isRead: true
+        }]);
+        assert.equal(listCalls.length, 2);
+        assert.match(String(listCalls[0].url), /maxResults=2/);
+        assert.match(String(listCalls[0].url), /labelIds=INBOX/);
+        assert.equal(listCalls[0].authorization, "Bearer gmail-access-token");
+        assert.equal(listCalls.every((call) => call.hasAbortSignal), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});
+
 test("account connector Microsoft calendar retries a transient events endpoint failure", async () => {
   await withTokenRuntime(
     "microsoft",

@@ -577,11 +577,21 @@ export async function listEmails(runtime, type, { limit = 10 } = {}) {
       };
     } else {
       // Gmail: fetch message IDs, then get details for first few
-      const r = await fetch(
-        `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}&labelIds=INBOX`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      if (!r.ok) throw new Error(`gmail_list_error: ${r.status}`);
+      let r;
+      try {
+        r = await fetchExternal(
+          `https://gmail.googleapis.com/gmail/v1/users/me/messages?maxResults=${limit}&labelIds=INBOX`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+          {
+            timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+            label: "account_connectors.gmail_list",
+            httpErrorPrefix: "Gmail list error"
+          }
+        );
+      } catch (err) {
+        if (Number.isFinite(Number(err?.status))) throw new Error(`gmail_list_error: ${err.status}`);
+        throw err;
+      }
       const d = await r.json();
       const ids = (d.messages ?? []).slice(0, limit).map((m) => m.id);
       const details = await Promise.all(ids.map(async (id) => {
