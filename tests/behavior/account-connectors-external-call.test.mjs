@@ -594,6 +594,71 @@ test("account connector Gmail list retries a transient message-list endpoint fai
   );
 });
 
+test("account connector Gmail details retry a transient per-message metadata failure", async () => {
+  await withTokenRuntime(
+    "google",
+    {
+      access_token: "gmail-detail-access-token",
+      refresh_token: "gmail-detail-refresh-token",
+      expires_at: Date.now() + 3600_000
+    },
+    { clientId: "google-client-id", clientSecret: "google-client-secret" },
+    async ({ runtime }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      let detailAttempts = 0;
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (String(url).includes("/gmail/v1/users/me/messages?")) {
+            return Response.json({ messages: [{ id: "gmail-detail-1" }] });
+          }
+          if (String(url).includes("/gmail/v1/users/me/messages/gmail-detail-1?")) {
+            detailAttempts += 1;
+            if (detailAttempts === 1) {
+              return new Response("temporary gmail detail endpoint failure", { status: 502 });
+            }
+            return Response.json({
+              labelIds: ["INBOX", "UNREAD"],
+              payload: {
+                headers: [
+                  { name: "Subject", value: "Gmail Detail" },
+                  { name: "From", value: "detail-sender@example.com" },
+                  { name: "Date", value: "Fri, 01 May 2026 15:00:00 GMT" }
+                ]
+              }
+            });
+          }
+          return new Response("unexpected url", { status: 404 });
+        };
+
+        const result = await listEmails(runtime, "google", { limit: 1 });
+
+        const detailCalls = calls.filter((call) => String(call.url).includes("/gmail/v1/users/me/messages/gmail-detail-1?"));
+        assert.equal(result.ok, true);
+        assert.deepEqual(result.emails, [{
+          id: "gmail-detail-1",
+          subject: "Gmail Detail",
+          from: "detail-sender@example.com",
+          received: "Fri, 01 May 2026 15:00:00 GMT",
+          isRead: false
+        }]);
+        assert.equal(detailCalls.length, 2);
+        assert.match(String(detailCalls[0].url), /format=metadata/);
+        assert.match(String(detailCalls[0].url), /metadataHeaders=Subject,From,Date/);
+        assert.equal(detailCalls[0].authorization, "Bearer gmail-detail-access-token");
+        assert.equal(detailCalls.every((call) => call.hasAbortSignal), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});
+
 test("account connector Microsoft calendar retries a transient events endpoint failure", async () => {
   await withTokenRuntime(
     "microsoft",

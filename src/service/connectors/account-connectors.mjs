@@ -595,11 +595,21 @@ export async function listEmails(runtime, type, { limit = 10 } = {}) {
       const d = await r.json();
       const ids = (d.messages ?? []).slice(0, limit).map((m) => m.id);
       const details = await Promise.all(ids.map(async (id) => {
-        const dr = await fetch(
-          `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject,From,Date`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
-        if (!dr.ok) return null;
+        let dr;
+        try {
+          dr = await fetchExternal(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=Subject,From,Date`,
+            { headers: { Authorization: `Bearer ${accessToken}` } },
+            {
+              timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+              label: "account_connectors.gmail_detail",
+              httpErrorPrefix: "Gmail message detail error"
+            }
+          );
+        } catch (err) {
+          if (Number.isFinite(Number(err?.status))) return null;
+          throw err;
+        }
         const msg = await dr.json();
         const headers = Object.fromEntries((msg.payload?.headers ?? []).map((h) => [h.name, h.value]));
         return {
