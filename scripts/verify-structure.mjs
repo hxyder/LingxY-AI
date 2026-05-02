@@ -50,6 +50,7 @@ const requiredPaths = [
   "tests/behavior/agent-loop-tool-call-guards.test.mjs",
   "tests/behavior/agent-loop-tool-arg-repair.test.mjs",
   "tests/behavior/agent-loop-tool-surface.test.mjs",
+  "tests/behavior/account-connectors-external-call.test.mjs",
   "tests/behavior/external-call.test.mjs",
   "tests/behavior/executor-selection.test.mjs",
   "tests/behavior/fast-executor-external-call.test.mjs",

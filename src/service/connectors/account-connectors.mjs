@@ -24,8 +24,10 @@ import {
   saveOAuthTokenRecord,
   upsertConnectedAccount
 } from "./core/account-registry.mjs";
+import { fetchExternal } from "../core/external-call.mjs";
 
 const SERVICE_NAME = "UCA.AccountConnector";
+const ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS = 120_000;
 const MICROSOFT_SCOPES = Object.freeze([
   "openid",
   "profile",
@@ -180,13 +182,20 @@ async function refreshMicrosoftTokens(tokens, clientId) {
     refresh_token: tokens.refresh_token,
     scope: MICROSOFT_SCOPES.join(" ")
   });
-  const r = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params
-  });
-  if (!r.ok) return null;
-  return attachExpiry(await r.json());
+  try {
+    const r = await fetchExternal("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params
+    }, {
+      timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+      label: "account_connectors.microsoft_refresh",
+      httpErrorPrefix: "Microsoft token refresh error"
+    });
+    return attachExpiry(await r.json());
+  } catch {
+    return null;
+  }
 }
 
 async function refreshGoogleTokens(tokens, clientId, clientSecret) {
