@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import { spawnExternal } from "../../core/external-call.mjs";
 import { finalizeJsonLines, parseJsonLinesChunk } from "./jsonl-parser.mjs";
 import { buildKimiPrintPrompt, deriveKimiWorkspace } from "./print-mode-prompt.mjs";
 import { detectRequestedOutputFormat, writeRequestedArtifacts } from "./output-format.mjs";
@@ -67,26 +68,11 @@ async function executeKimiJsonlTask({
   onEvent = () => {},
   abortSignal
 }) {
-  const child = spawn(command, args, {
-    env: {
-      ...env,
-      PYTHONIOENCODING: "utf-8",
-      PYTHONUTF8: "1"
-    },
-    stdio: ["pipe", "pipe", "pipe"]
-  });
-
-  child.stdin.setDefaultEncoding?.("utf8");
-
   const events = [];
   const artifacts = [];
   const parserState = { remainder: "" };
   const stderrPath = path.join(taskPackage.output_requirements.output_dir, "kimi.stderr.log");
   const stderrStream = createWriteStream(stderrPath, { flags: "a" });
-  let aborted = abortSignal?.aborted ?? false;
-  let forceKillTimer = null;
-
-  child.stderr.pipe(stderrStream);
 
   const publish = (event) => {
     const normalized = {
@@ -105,50 +91,47 @@ async function executeKimiJsonlTask({
     onEvent(normalized);
   };
 
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    const parsedEvents = parseJsonLinesChunk(chunk, parserState);
-    for (const event of parsedEvents) {
-      publish(event);
+  const result = await spawnExternal(command, args, {
+    env: {
+      ...env,
+      PYTHONIOENCODING: "utf-8",
+      PYTHONUTF8: "1"
+    },
+    input: Buffer.from(`${JSON.stringify(taskPackage)}\n`, "utf8"),
+    timeoutMs: maxRuntimeSeconds * 1000,
+    label: "kimi_jsonl",
+    signal: abortSignal,
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: false,
+    timeoutKillSignal: "SIGTERM",
+    abortKillSignal: "SIGTERM",
+    forceKillAfterMs: 250,
+    settleOnSignal: "close",
+    onStdout(chunk) {
+      const parsedEvents = parseJsonLinesChunk(chunk, parserState);
+      for (const event of parsedEvents) {
+        publish(event);
+      }
+    },
+    onStderr(chunk) {
+      stderrStream.write(chunk);
     }
-  });
-
-  const timeoutHandle = setTimeout(() => {
-    aborted = true;
-    child.kill("SIGTERM");
-  }, maxRuntimeSeconds * 1000);
-
-  const abortListener = () => {
-    aborted = true;
-    child.kill("SIGTERM");
-    forceKillTimer = setTimeout(() => {
-      child.kill("SIGKILL");
-    }, 250);
-  };
-
-  abortSignal?.addEventListener("abort", abortListener, { once: true });
-
-  child.stdin.write(Buffer.from(`${JSON.stringify(taskPackage)}\n`, "utf8"));
-  child.stdin.end();
-
-  const exit = await new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", (code, signal) => resolve({ code, signal }));
   }).finally(() => {
-    clearTimeout(timeoutHandle);
-    clearTimeout(forceKillTimer);
-    abortSignal?.removeEventListener("abort", abortListener);
     stderrStream.end();
   });
+
+  if (result.spawnError) {
+    throw new Error(result.stderr || "kimi_jsonl spawn failed");
+  }
 
   for (const event of finalizeJsonLines(parserState)) {
     publish(event);
   }
 
   return {
-    status: aborted || exit.signal ? "cancelled" : exit.code === 0 ? "success" : "failed",
-    exitCode: exit.code,
-    exitSignal: exit.signal,
+    status: result.aborted || result.timedOut || result.exitSignal ? "cancelled" : result.exitCode === 0 ? "success" : "failed",
+    exitCode: result.exitCode,
+    exitSignal: result.exitSignal,
     events,
     artifacts,
     stderrPath
