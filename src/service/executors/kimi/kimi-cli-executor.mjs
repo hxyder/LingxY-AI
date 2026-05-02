@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -292,21 +291,6 @@ async function executeKimiPrintModeTask({
     imagePaths: taskPackage.context?.image_paths ?? []
   });
 
-  const child = spawn(command, invocationArgs, {
-    env: {
-      ...env,
-      PYTHONIOENCODING: "utf-8",
-      PYTHONUTF8: "1"
-    },
-    stdio: ["pipe", "pipe", "pipe"],
-    cwd: workDir || process.cwd(),
-    windowsHide: true
-  });
-
-  child.stdin.setDefaultEncoding?.("utf8");
-
-  let aborted = abortSignal?.aborted ?? false;
-  let forceKillTimer = null;
   let remainder = "";
   const transcript = [];
   const events = [];
@@ -332,57 +316,55 @@ async function executeKimiPrintModeTask({
   publish({ type: "started" });
   publish({ type: "step_started", step: "run_kimi_cli", progress: 0.1 });
 
-  child.stderr.pipe(stderrStream);
-  child.stdout.setEncoding("utf8");
-  child.stdout.on("data", (chunk) => {
-    stdoutStream.write(chunk);
-    remainder += chunk;
-    const lines = remainder.split(/\r?\n/);
-    remainder = lines.pop() ?? "";
+  const result = await spawnExternal(command, invocationArgs, {
+    env: {
+      ...env,
+      PYTHONIOENCODING: "utf-8",
+      PYTHONUTF8: "1"
+    },
+    cwd: workDir || process.cwd(),
+    input: Buffer.from(prompt, "utf8"),
+    timeoutMs: maxRuntimeSeconds * 1000,
+    label: "kimi_print",
+    signal: abortSignal,
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+    timeoutKillSignal: "SIGTERM",
+    abortKillSignal: "SIGTERM",
+    forceKillAfterMs: 250,
+    settleOnSignal: "close",
+    onStdout(chunk) {
+      stdoutStream.write(chunk);
+      remainder += chunk;
+      const lines = remainder.split(/\r?\n/);
+      remainder = lines.pop() ?? "";
 
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
-      if (!line) {
-        continue;
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) {
+          continue;
+        }
+        try {
+          transcript.push(JSON.parse(line));
+        } catch {
+          transcript.push({
+            role: "system",
+            content: [{ type: "text", text: line }]
+          });
+        }
       }
-      try {
-        transcript.push(JSON.parse(line));
-      } catch {
-        transcript.push({
-          role: "system",
-          content: [{ type: "text", text: line }]
-        });
-      }
+    },
+    onStderr(chunk) {
+      stderrStream.write(chunk);
     }
-  });
-
-  const timeoutHandle = setTimeout(() => {
-    aborted = true;
-    child.kill("SIGTERM");
-  }, maxRuntimeSeconds * 1000);
-
-  const abortListener = () => {
-    aborted = true;
-    child.kill("SIGTERM");
-    forceKillTimer = setTimeout(() => {
-      child.kill("SIGKILL");
-    }, 250);
-  };
-
-  abortSignal?.addEventListener("abort", abortListener, { once: true });
-  child.stdin.write(Buffer.from(prompt, "utf8"));
-  child.stdin.end();
-
-  const exit = await new Promise((resolve, reject) => {
-    child.once("error", reject);
-    child.once("close", (code, signal) => resolve({ code, signal }));
   }).finally(() => {
-    clearTimeout(timeoutHandle);
-    clearTimeout(forceKillTimer);
-    abortSignal?.removeEventListener("abort", abortListener);
     stderrStream.end();
     stdoutStream.end();
   });
+
+  if (result.spawnError) {
+    throw new Error(result.stderr || "kimi_print spawn failed");
+  }
 
   if (remainder.trim()) {
     try {
@@ -395,22 +377,22 @@ async function executeKimiPrintModeTask({
     }
   }
 
-  if (aborted || exit.signal) {
+  if (result.aborted || result.timedOut || result.exitSignal) {
     return {
       status: "cancelled",
-      exitCode: exit.code,
-      exitSignal: exit.signal,
+      exitCode: result.exitCode,
+      exitSignal: result.exitSignal,
       events,
       artifacts,
       stderrPath
     };
   }
 
-  if (exit.code !== 0) {
+  if (result.exitCode !== 0) {
     return {
       status: "failed",
-      exitCode: exit.code,
-      exitSignal: exit.signal,
+      exitCode: result.exitCode,
+      exitSignal: result.exitSignal,
       events,
       artifacts,
       stderrPath
@@ -434,8 +416,8 @@ async function executeKimiPrintModeTask({
 
     return {
       status: "success",
-      exitCode: exit.code,
-      exitSignal: exit.signal,
+      exitCode: result.exitCode,
+      exitSignal: result.exitSignal,
       events,
       artifacts,
       inlineText: finalAssistantText,
@@ -458,8 +440,8 @@ async function executeKimiPrintModeTask({
 
   return {
     status: "success",
-    exitCode: exit.code,
-    exitSignal: exit.signal,
+    exitCode: result.exitCode,
+    exitSignal: result.exitSignal,
     events,
     artifacts,
     stderrPath,

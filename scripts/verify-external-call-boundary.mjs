@@ -7,9 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-const expectedNakedCalls = new Map([
-  ["src/service/executors/kimi/kimi-cli-executor.mjs", { fetch: 0, spawn: 1 }]
-]);
+const expectedNakedCalls = new Map([]);
 
 function walk(dir) {
   const files = [];

@@ -86,3 +86,69 @@ test("Kimi JSONL executor reports cancellation after subprocess timeout", async 
     assert.match(result.stderrPath, /kimi\.stderr\.log$/);
   });
 });
+
+test("Kimi print-mode executor writes stdout log and generated artifacts", async () => {
+  await withOutputDir(async (outputDir) => {
+    const observedEvents = [];
+    const result = await executeKimiTask({
+      command: process.execPath,
+      args: [mockKimiCli],
+      taskPackage: createTaskPackage(outputDir, {
+        user_command: "请总结这个文件，并保存为 html 文件",
+        output_requirements: {
+          output_dir: outputDir,
+          format_id: "html"
+        }
+      }),
+      transport: "stream_json_print",
+      maxRuntimeSeconds: 5,
+      onEvent(event) {
+        observedEvents.push(event);
+      }
+    });
+
+    assert.equal(result.status, "success");
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.exitSignal, null);
+    assert.deepEqual(observedEvents.map((event) => event.type), [
+      "accepted",
+      "started",
+      "step_started",
+      "step_finished",
+      "artifact_created",
+      "success"
+    ]);
+    assert.equal(result.artifacts.length, 1);
+    assert.match(result.artifacts[0].path, /result\.html$/);
+    assert.match(await readFile(result.artifacts[0].path, "utf8"), /Mock HTML Result|Mock Report/);
+    assert.match(await readFile(result.stdoutPath, "utf8"), /assistant/);
+    assert.match(result.stderrPath, /kimi\.stderr\.log$/);
+  });
+});
+
+test("Kimi print-mode executor reports cancellation after subprocess timeout", async () => {
+  await withOutputDir(async (outputDir) => {
+    const result = await executeKimiTask({
+      command: process.execPath,
+      args: [mockSlowKimiCli],
+      taskPackage: createTaskPackage(outputDir, {
+        output_requirements: {
+          output_dir: outputDir,
+          format_id: "markdown"
+        }
+      }),
+      transport: "stream_json_print",
+      maxRuntimeSeconds: 0.2
+    });
+
+    assert.equal(result.status, "cancelled");
+    assert.equal(result.exitCode !== null || result.exitSignal !== null, true);
+    assert.deepEqual(result.events.map((event) => event.type), [
+      "accepted",
+      "started",
+      "step_started"
+    ]);
+    assert.equal(result.artifacts.length, 0);
+    assert.match(result.stderrPath, /kimi\.stderr\.log$/);
+  });
+});
