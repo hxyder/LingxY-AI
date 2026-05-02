@@ -206,15 +206,22 @@ async function refreshGoogleTokens(tokens, clientId, clientSecret) {
     grant_type: "refresh_token",
     refresh_token: tokens.refresh_token
   });
-  const r = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params
-  });
-  if (!r.ok) return null;
-  const fresh = await r.json();
-  // Google doesn't re-issue refresh_token — keep the original
-  return attachExpiry({ refresh_token: tokens.refresh_token, ...fresh });
+  try {
+    const r = await fetchExternal("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: params
+    }, {
+      timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+      label: "account_connectors.google_refresh",
+      httpErrorPrefix: "Google token refresh error"
+    });
+    const fresh = await r.json();
+    // Google doesn't re-issue refresh_token — keep the original
+    return attachExpiry({ refresh_token: tokens.refresh_token, ...fresh });
+  } catch {
+    return null;
+  }
 }
 
 // Returns a valid access_token, refreshing if needed. Returns null if unavailable.
