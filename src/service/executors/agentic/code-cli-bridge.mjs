@@ -22,7 +22,7 @@
  * native function-calling providers do.
  */
 
-import { spawn } from "node:child_process";
+import { spawnExternal } from "../../core/external-call.mjs";
 import { buildCodeCliInvocationArgs } from "../shared/code-cli-invocation.mjs";
 
 /* ------------------------------------------------------------------------ */
@@ -183,7 +183,14 @@ function buildInvocationArgs({ baseArgs, transport, model, configFile = null, mc
  * Spawn a code_cli provider as a subprocess, write the prompt to stdin,
  * and capture stdout/stderr. Returns the raw output for downstream parsing.
  */
-export function spawnCodeCliChat({
+function normalizeBridgeTimeoutDiagnostic(stderr, timeoutSeconds) {
+  return `${stderr ?? ""}`.replace(
+    /\[bridge\] killed after \d+(?:\.\d+)?ms timeout/g,
+    `[bridge] killed after ${timeoutSeconds}s timeout`
+  );
+}
+
+export async function spawnCodeCliChat({
   command,
   args = [],
   env = process.env,
@@ -219,124 +226,30 @@ export function spawnCodeCliChat({
     command
   });
 
-  return new Promise((resolve) => {
-    let child;
-    try {
-      child = spawn(command, invocationArgs, {
-        env: {
-          ...env,
-          PYTHONIOENCODING: "utf-8",
-          PYTHONUTF8: "1"
-        },
-        stdio: ["pipe", "pipe", "pipe"],
-        windowsHide: true
-      });
-      child.stdin.setDefaultEncoding?.("utf8");
-    } catch (error) {
-      resolve({
-        ok: false,
-        stdout: "",
-        stderr: error.message,
-        exitCode: null,
-        timedOut: false,
-        spawnError: true
-      });
-      return;
-    }
-
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-
-    const cleanup = () => {
-      try { abortSignal?.removeEventListener?.("abort", onAbort); } catch { /* noop */ }
-      clearTimeout(killTimer);
-    };
-
-    const finish = (result) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(result);
-    };
-
-    const killTimer = setTimeout(() => {
-      try { child.kill("SIGKILL"); } catch { /* noop */ }
-      finish({
-        ok: false,
-        stdout,
-        stderr: stderr + `\n[bridge] killed after ${timeoutSeconds}s timeout`,
-        exitCode: null,
-        timedOut: true,
-        spawnError: false
-      });
-    }, timeoutSeconds * 1000);
-
-    const onAbort = () => {
-      try { child.kill("SIGTERM"); } catch { /* noop */ }
-      setTimeout(() => {
-        try { child.kill("SIGKILL"); } catch { /* noop */ }
-      }, 250);
-      finish({
-        ok: false,
-        stdout,
-        stderr: stderr + "\n[bridge] aborted by signal",
-        exitCode: null,
-        timedOut: false,
-        spawnError: false,
-        aborted: true
-      });
-    };
-
-    if (abortSignal) {
-      if (abortSignal.aborted) {
-        onAbort();
-        return;
-      }
-      abortSignal.addEventListener("abort", onAbort, { once: true });
-    }
-
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk) => { stdout += chunk; });
-    child.stderr?.on("data", (chunk) => { stderr += chunk; });
-
-    child.on("error", (error) => {
-      finish({
-        ok: false,
-        stdout,
-        stderr: stderr + `\n${error.message}`,
-        exitCode: null,
-        timedOut: false,
-        spawnError: true
-      });
-    });
-
-    child.on("close", (code) => {
-      finish({
-        ok: code === 0,
-        stdout,
-        stderr,
-        exitCode: code,
-        timedOut: false,
-        spawnError: false
-      });
-    });
-
-    try {
-      child.stdin?.write(prompt);
-      child.stdin?.end();
-    } catch (error) {
-      finish({
-        ok: false,
-        stdout,
-        stderr: stderr + `\n${error.message}`,
-        exitCode: null,
-        timedOut: false,
-        spawnError: true
-      });
-    }
+  const result = await spawnExternal(command, invocationArgs, {
+    env: {
+      ...env,
+      PYTHONIOENCODING: "utf-8",
+      PYTHONUTF8: "1"
+    },
+    input: prompt,
+    timeoutMs: timeoutSeconds * 1000,
+    label: "bridge",
+    signal: abortSignal,
+    stdio: ["pipe", "pipe", "pipe"],
+    windowsHide: true,
+    timeoutKillSignal: "SIGKILL",
+    abortKillSignal: "SIGTERM",
+    forceKillAfterMs: 250
   });
+
+  if (result.timedOut) {
+    return {
+      ...result,
+      stderr: normalizeBridgeTimeoutDiagnostic(result.stderr, timeoutSeconds)
+    };
+  }
+  return result;
 }
 
 /* ------------------------------------------------------------------------ */
