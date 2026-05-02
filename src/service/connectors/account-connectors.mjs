@@ -638,11 +638,21 @@ export async function listCalendarEvents(runtime, type, { limit = 10 } = {}) {
       };
     } else {
       const timeMin = encodeURIComponent(now);
-      const r = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=${limit}&timeMin=${timeMin}&singleEvents=true&orderBy=startTime&fields=items(id,summary,start,end,organizer,location)`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      if (!r.ok) throw new Error(`gcal_error: ${r.status}`);
+      let r;
+      try {
+        r = await fetchExternal(
+          `https://www.googleapis.com/calendar/v3/calendars/primary/events?maxResults=${limit}&timeMin=${timeMin}&singleEvents=true&orderBy=startTime&fields=items(id,summary,start,end,organizer,location)`,
+          { headers: { Authorization: `Bearer ${accessToken}` } },
+          {
+            timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+            label: "account_connectors.google_calendar",
+            httpErrorPrefix: "Google calendar error"
+          }
+        );
+      } catch (err) {
+        if (Number.isFinite(Number(err?.status))) throw new Error(`gcal_error: ${err.status}`);
+        throw err;
+      }
       const d = await r.json();
       return {
         ok: true, events: (d.items ?? []).map((e) => ({

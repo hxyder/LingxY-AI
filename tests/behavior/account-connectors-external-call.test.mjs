@@ -587,3 +587,63 @@ test("account connector Microsoft calendar retries a transient events endpoint f
     }
   );
 });
+
+test("account connector Google calendar retries a transient events endpoint failure", async () => {
+  await withTokenRuntime(
+    "google",
+    {
+      access_token: "google-calendar-access-token",
+      refresh_token: "google-calendar-refresh-token",
+      expires_at: Date.now() + 3600_000
+    },
+    { clientId: "google-client-id", clientSecret: "google-client-secret" },
+    async ({ runtime }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (calls.length === 1) {
+            return new Response("temporary calendar endpoint failure", { status: 502 });
+          }
+          return Response.json({
+            items: [{
+              id: "gevent-1",
+              summary: "Google Planning",
+              start: { dateTime: "2026-05-03T15:00:00" },
+              end: { dateTime: "2026-05-03T16:00:00" },
+              organizer: { displayName: "Google Organizer", email: "organizer@example.com" },
+              location: "Meet"
+            }]
+          });
+        };
+
+        const result = await listCalendarEvents(runtime, "google", { limit: 4 });
+
+        assert.equal(result.ok, true);
+        assert.equal(result.events.length, 1);
+        assert.deepEqual(result.events[0], {
+          id: "gevent-1",
+          title: "Google Planning",
+          start: "2026-05-03T15:00:00",
+          end: "2026-05-03T16:00:00",
+          organizer: "Google Organizer",
+          location: "Meet"
+        });
+        assert.equal(calls.length, 2);
+        assert.match(String(calls[0].url), /^https:\/\/www\.googleapis\.com\/calendar\/v3\/calendars\/primary\/events\?/);
+        assert.match(String(calls[0].url), /maxResults=4/);
+        assert.match(String(calls[0].url), /singleEvents=true/);
+        assert.match(String(calls[0].url), /orderBy=startTime/);
+        assert.equal(calls[0].authorization, "Bearer google-calendar-access-token");
+        assert.equal(calls.every((call) => call.hasAbortSignal), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});
