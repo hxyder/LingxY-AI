@@ -73,6 +73,14 @@ function createFastPathApproval({ runtime, task, toolId, args, risk }) {
   return approval;
 }
 
+function summarizeSubmissionBoundaryBlock(boundary) {
+  const tools = Array.isArray(boundary?.blocked_tools)
+    ? boundary.blocked_tools.map((tool) => tool.tool_id).filter(Boolean)
+    : [];
+  const toolText = tools.length > 0 ? `tool "${tools.join(", ")}"` : "the requested tool";
+  return `Submission blocked by policy: ${toolText} needs user permission under the current task contract.`;
+}
+
 export async function submitActionToolTask({
   userCommand,
   executionMode = "interactive",
@@ -109,8 +117,23 @@ export async function submitActionToolTask({
     bypassDedupe,
     executorOverride: "tool_using",
     submissionKind: "action_tool",
+    boundaryContext: fastPathTool ? { requestedToolIds: [fastPathTool] } : null,
     runtime
   });
+  if (task.submission_boundary?.blocking) {
+    const finalText = summarizeSubmissionBoundaryBlock(task.submission_boundary);
+    markTaskFailed(runtime, task, {
+      code: "submission_boundary_blocked",
+      message: finalText
+    });
+    return {
+      task,
+      taskEvents: runtime.store.getTaskEvents(task.task_id),
+      artifacts: [],
+      blocked: true,
+      final_text: finalText
+    };
+  }
   runtime.queue.enqueue(task);
 
   const emitExecutorEvent = (eventType, payload) =>

@@ -41,6 +41,7 @@ export function createTaskRecord({
   bypassDedupe = false,
   executorOverride = null,
   submissionKind = "unknown",
+  boundaryContext = null,
   runtime = null
 }) {
   const rawConversationId = conversationId
@@ -109,7 +110,8 @@ export function createTaskRecord({
     task: taskRecord,
     submissionKind,
     executorOverride,
-    contextPacket: enrichedContext
+    contextPacket: enrichedContext,
+    boundaryContext
   });
   return taskRecord;
 }

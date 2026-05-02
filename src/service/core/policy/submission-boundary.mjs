@@ -1,3 +1,5 @@
+import { groupsOfTool } from "./policy-groups.mjs";
+
 const KNOWN_SUBMISSION_KINDS = Object.freeze(new Set([
   "action_tool",
   "browser",
@@ -49,21 +51,69 @@ function listSuccessRequiredPolicyGroups(taskSpec) {
     : [];
 }
 
+function normalizeRequestedToolIds(boundaryContext) {
+  const raw = boundaryContext?.requestedToolIds ?? boundaryContext?.requested_tool_ids ?? [];
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw
+    .map((toolId) => `${toolId ?? ""}`.trim())
+    .filter(Boolean))]
+    .sort();
+}
+
+function listForbiddenRequestedTools(taskSpec, requestedToolIds) {
+  const toolPolicy = taskSpec?.tool_policy;
+  if (!toolPolicy || typeof toolPolicy !== "object" || requestedToolIds.length === 0) {
+    return [];
+  }
+
+  const blocked = [];
+  for (const toolId of requestedToolIds) {
+    const direct = toolPolicy[toolId];
+    if (direct?.mode === "forbidden") {
+      blocked.push({
+        tool_id: toolId,
+        policy_source: `tool:${toolId}`,
+        reason: direct.reason ?? null
+      });
+      continue;
+    }
+
+    const groupEntries = toolPolicy.policy_groups;
+    if (!groupEntries || typeof groupEntries !== "object") continue;
+    for (const group of groupsOfTool(toolId)) {
+      const groupPolicy = groupEntries[group];
+      if (groupPolicy?.mode === "forbidden") {
+        blocked.push({
+          tool_id: toolId,
+          policy_source: `group:${group}`,
+          reason: groupPolicy.reason ?? null
+        });
+        break;
+      }
+    }
+  }
+  return blocked;
+}
+
 /**
- * Audit-only task admission classifier. This does not replace the action-tool
- * policy guard; it records task-level risk before a queued task runs.
+ * Task admission classifier. Most submissions are audit-only; when a caller
+ * declares direct tools up front, this can block tools already forbidden by
+ * the task policy before the queued task runs.
  */
 export function evaluateSubmissionBoundary({
   task,
   submissionKind = "unknown",
   executorOverride = null,
-  contextPacket = null
+  contextPacket = null,
+  boundaryContext = null
 } = {}) {
   const normalizedKind = normalizeSubmissionKind(submissionKind);
   const taskSpec = task?.task_spec ?? null;
+  const requestedToolIds = normalizeRequestedToolIds(boundaryContext);
   const reasons = [];
   const requiredGuards = [];
   let risk = "low";
+  let blocking = false;
 
   if (normalizedKind === "unknown") {
     reasons.push("missing_submission_kind");
@@ -75,6 +125,16 @@ export function evaluateSubmissionBoundary({
     reasons.push(`forbidden_policy_group:${group}`);
     requiredGuards.push(`policy_group:${group}`);
     risk = bumpRisk(risk, "medium");
+  }
+
+  const blockedTools = listForbiddenRequestedTools(taskSpec, requestedToolIds);
+  for (const blocked of blockedTools) {
+    reasons.push(`requested_tool_forbidden:${blocked.tool_id}:${blocked.policy_source}`);
+    requiredGuards.push(blocked.policy_source.startsWith("group:")
+      ? `policy_group:${blocked.policy_source.slice("group:".length)}`
+      : blocked.policy_source);
+    risk = bumpRisk(risk, "high");
+    blocking = true;
   }
 
   for (const group of listSuccessRequiredPolicyGroups(taskSpec)) {
@@ -96,25 +156,28 @@ export function evaluateSubmissionBoundary({
   }
 
   const uniqueRequiredGuards = [...new Set(requiredGuards)].sort();
-  const decision = reasons.length > 0 ? "audit_only" : "allow";
+  const decision = blocking ? "block" : (reasons.length > 0 ? "audit_only" : "allow");
 
   return {
     decision,
-    blocking: false,
+    blocking,
     risk,
     submission_kind: normalizedKind,
     reasons,
     required_guards: uniqueRequiredGuards,
+    requested_tools: requestedToolIds,
+    blocked_tools: blockedTools,
     audit_payload: {
       decision,
-      blocking: false,
+      blocking,
       risk,
       submission_kind: normalizedKind,
       reasons,
       required_guards: uniqueRequiredGuards,
+      requested_tools: requestedToolIds,
+      blocked_tools: blockedTools,
       executor: task?.executor ?? null,
       goal: taskSpec?.goal ?? null
     }
   };
 }
-

@@ -84,6 +84,40 @@ test("submission boundary pure evaluator records missing kind and forbidden poli
   assert.match(decision.reasons.join("\n"), /forbidden_policy_group:external_web_read/);
 });
 
+test("submission boundary blocks declared direct tools forbidden by task policy", () => {
+  const decision = evaluateSubmissionBoundary({
+    submissionKind: "action_tool",
+    executorOverride: "tool_using",
+    contextPacket: {},
+    boundaryContext: {
+      requestedToolIds: ["web_search"]
+    },
+    task: {
+      executor: "tool_using",
+      task_spec: {
+        goal: "search",
+        tool_policy: {
+          policy_groups: {
+            external_web_read: { mode: "forbidden", reason: "local only" }
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(decision.decision, "block");
+  assert.equal(decision.blocking, true);
+  assert.equal(decision.risk, "high");
+  assert.deepEqual(decision.requested_tools, ["web_search"]);
+  assert.deepEqual(decision.blocked_tools, [{
+    tool_id: "web_search",
+    policy_source: "group:external_web_read",
+    reason: "local only"
+  }]);
+  assert.match(decision.reasons.join("\n"), /requested_tool_forbidden:web_search/);
+  assert.match(decision.audit_payload.reasons.join("\n"), /requested_tool_forbidden:web_search/);
+});
+
 test("context submission declares its submission kind through the central boundary", async () => {
   const runtime = createRuntime({ enqueueAccepted: false });
   const { task } = await submitContextTask({

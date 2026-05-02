@@ -20,7 +20,7 @@ function createRuntime() {
   };
 }
 
-test("action-tool fast path treats policy-guard denial as task failure", async () => {
+test("action-tool fast path blocks forbidden direct tools at submission boundary", async () => {
   const runtime = createRuntime();
   let executed = false;
   runtime.actionToolRegistry = createActionToolRegistry([{
@@ -45,17 +45,51 @@ test("action-tool fast path treats policy-guard denial as task failure", async (
 
   assert.equal(executed, false);
   assert.equal(result.task.status, "failed");
+  assert.equal(result.task.submission_boundary.decision, "block");
+  assert.equal(result.task.submission_boundary.blocking, true);
+  assert.match(result.task.submission_boundary.reasons.join("\n"), /requested_tool_forbidden:web_search/);
 
   const completion = result.taskEvents
     .find((event) => event.event_type === "tool_call_completed");
-  assert.ok(completion);
-  assert.equal(completion.payload.success, false);
-  assert.equal(completion.payload.error, "blocked_by_policy");
+  assert.equal(completion, undefined);
 
-  const audit = runtime.store.listAuditLogs()
+  const boundaryAudit = runtime.store.listAuditLogs()
+    .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
+  assert.ok(boundaryAudit);
+  assert.equal(boundaryAudit.payload.decision, "block");
+  assert.deepEqual(boundaryAudit.payload.blocked_tools.map((tool) => tool.tool_id), ["web_search"]);
+
+  const toolAudit = runtime.store.listAuditLogs()
     .find((entry) => entry.event_subtype === "tool.blocked_by_policy");
-  assert.ok(audit);
-  assert.equal(audit.payload.tool_id, "web_search");
+  assert.equal(toolAudit, undefined);
+});
+
+test("action-tool fast path still executes allowed direct tools", async () => {
+  const runtime = createRuntime();
+  const calls = [];
+  runtime.actionToolRegistry = createActionToolRegistry([{
+    id: "notify",
+    name: "Fake notify",
+    description: "Fake allowed tool for boundary testing.",
+    parameters: { type: "object", properties: {} },
+    async execute(args) {
+      calls.push(args);
+      return { success: true, observation: "notified" };
+    }
+  }]);
+
+  const result = await submitActionToolTask({
+    runtime,
+    userCommand: "通知我：构建完成",
+    executionMode: "interactive",
+    fastPathTool: "notify",
+    fastPathArgs: { title: "构建", body: "完成" }
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(result.task.status, "success");
+  assert.equal(result.task.submission_boundary.blocking, false);
+  assert.equal(result.final_text, "notified");
 });
 
 test("action-tool fast path creates approval for confirmation-required tools", async () => {

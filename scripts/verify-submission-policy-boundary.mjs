@@ -26,6 +26,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: true,
     submitsTaskWithConversation: true,
+    declaresBoundaryContext: true,
     submissionKind: ["action_tool"],
     executorOverride: ["tool_using"]
   },
@@ -35,6 +36,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    declaresBoundaryContext: false,
     submissionKind: ["browser"],
     executorOverride: []
   },
@@ -44,6 +46,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: false,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    declaresBoundaryContext: false,
     submissionKind: ["composite"],
     executorOverride: ["composite"]
   },
@@ -53,6 +56,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    declaresBoundaryContext: false,
     submissionKind: ["context"],
     executorOverride: []
   },
@@ -62,6 +66,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    declaresBoundaryContext: false,
     submissionKind: ["file"],
     executorOverride: []
   },
@@ -71,6 +76,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    declaresBoundaryContext: false,
     submissionKind: ["image"],
     executorOverride: ["tool_using"]
   },
@@ -80,6 +86,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: true,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: true,
+    declaresBoundaryContext: false,
     submissionKind: ["office"],
     executorOverride: []
   },
@@ -89,6 +96,7 @@ const expectedClassifications = Object.freeze({
     usesSecurityBroker: false,
     runsToolAgentLoop: false,
     submitsTaskWithConversation: false,
+    declaresBoundaryContext: false,
     submissionKind: ["screenshot"],
     executorOverride: []
   }
@@ -114,6 +122,7 @@ const report = files.map((name) => {
     usesSecurityBroker: /\bsecurityBroker\b|\binspectContext\b/.test(source),
     runsToolAgentLoop: /\brunToolAgentLoop\b/.test(source),
     submitsTaskWithConversation: /\bsubmitTaskWithConversation\b/.test(source),
+    declaresBoundaryContext: /\bboundaryContext\b/.test(source),
     submissionKind: [...source.matchAll(/submissionKind(?:\s*:\s*|\s*=\s*)"([^"]+)"/g)].map((match) => match[1]),
     executorOverride: [...source.matchAll(/executorOverride:\s*"([^"]+)"/g)].map((match) => match[1])
   };
@@ -128,7 +137,8 @@ for (const entry of report) {
     "usesActionToolRegistry",
     "usesSecurityBroker",
     "runsToolAgentLoop",
-    "submitsTaskWithConversation"
+    "submitsTaskWithConversation",
+    "declaresBoundaryContext"
   ]) {
     assert.equal(entry[key], expected[key], `${entry.file} classification drifted for ${key}`);
   }
@@ -151,6 +161,7 @@ for (const entry of report) {
     entry.usesActionToolRegistry ? "action_registry" : null,
     entry.usesSecurityBroker ? "security_broker" : null,
     entry.runsToolAgentLoop ? "tool_loop" : null,
+    entry.declaresBoundaryContext ? "boundary_context" : null,
     entry.submissionKind.length ? `submission=${entry.submissionKind.join(",")}` : null,
     entry.executorOverride.length ? `executor=${entry.executorOverride.join(",")}` : null
   ].filter(Boolean).join(" | ");
