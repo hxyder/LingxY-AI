@@ -5,6 +5,7 @@ import {
   ExternalCallHttpError,
   ExternalCallTimeoutError,
   fetchExternal,
+  spawnExternal,
   withRetry,
   withTimeout
 } from "../../src/service/core/external-call.mjs";
@@ -125,4 +126,69 @@ test("fetchExternal preserves HTTP error status when retries are exhausted", asy
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("spawnExternal captures stdout and stderr while writing stdin", async () => {
+  const result = await spawnExternal(process.execPath, [
+    "-e",
+    [
+      "let input = '';",
+      "process.stdin.setEncoding('utf8');",
+      "process.stdin.on('data', (chunk) => { input += chunk; });",
+      "process.stdin.on('end', () => {",
+      "  console.log(`stdout:${input.trim()}`);",
+      "  console.error('stderr:ready');",
+      "});"
+    ].join("")
+  ], {
+    input: "hello subprocess\n",
+    timeoutMs: 1000,
+    label: "fake_spawn"
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /stdout:hello subprocess/);
+  assert.match(result.stderr, /stderr:ready/);
+  assert.equal(result.timedOut, false);
+  assert.equal(result.aborted, false);
+  assert.equal(result.spawnError, false);
+});
+
+test("spawnExternal times out a stuck subprocess without hanging the caller", async () => {
+  const result = await spawnExternal(process.execPath, [
+    "-e",
+    "setInterval(() => {}, 1000);"
+  ], {
+    timeoutMs: 20,
+    label: "slow_spawn",
+    timeoutKillSignal: "SIGKILL"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.timedOut, true);
+  assert.equal(result.spawnError, false);
+  assert.match(result.stderr, /\[slow_spawn\] killed after 20ms timeout/);
+});
+
+test("spawnExternal aborts a running subprocess through AbortSignal", async () => {
+  const controller = new AbortController();
+  const pending = spawnExternal(process.execPath, [
+    "-e",
+    "setInterval(() => {}, 1000);"
+  ], {
+    signal: controller.signal,
+    timeoutMs: 1000,
+    label: "abort_spawn",
+    forceKillAfterMs: 20
+  });
+
+  setTimeout(() => controller.abort(), 10);
+  const result = await pending;
+
+  assert.equal(result.ok, false);
+  assert.equal(result.aborted, true);
+  assert.equal(result.timedOut, false);
+  assert.equal(result.spawnError, false);
+  assert.match(result.stderr, /\[abort_spawn\] aborted by signal/);
 });

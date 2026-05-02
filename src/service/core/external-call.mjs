@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+
 export class ExternalCallTimeoutError extends Error {
   constructor(message, { label = "external_call", timeoutMs = null } = {}) {
     super(message);
@@ -139,4 +141,200 @@ export async function fetchExternal(url, init = {}, {
       shouldRetry
     }
   );
+}
+
+function appendDiagnostic(stderr, diagnostic) {
+  if (!diagnostic) return stderr ?? "";
+  if (!stderr) return diagnostic;
+  return `${stderr}\n${diagnostic}`;
+}
+
+export function spawnExternal(command, args = [], {
+  env = process.env,
+  cwd = undefined,
+  input = null,
+  timeoutMs = 30_000,
+  label = "external_spawn",
+  signal = null,
+  stdio = ["pipe", "pipe", "pipe"],
+  windowsHide = true,
+  encoding = "utf8",
+  onStdout = null,
+  onStderr = null,
+  timeoutKillSignal = "SIGTERM",
+  abortKillSignal = "SIGTERM",
+  forceKillSignal = "SIGKILL",
+  forceKillAfterMs = 250
+} = {}) {
+  if (!command) {
+    return Promise.resolve({
+      ok: false,
+      stdout: "",
+      stderr: `${label} missing command`,
+      exitCode: null,
+      exitSignal: null,
+      timedOut: false,
+      aborted: false,
+      spawnError: true
+    });
+  }
+
+  if (signal?.aborted) {
+    return Promise.resolve({
+      ok: false,
+      stdout: "",
+      stderr: `[${label}] aborted by signal`,
+      exitCode: null,
+      exitSignal: null,
+      timedOut: false,
+      aborted: true,
+      spawnError: false
+    });
+  }
+
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(command, args, {
+        env,
+        cwd,
+        stdio,
+        windowsHide
+      });
+      child.stdin?.setDefaultEncoding?.(encoding);
+    } catch (error) {
+      resolve({
+        ok: false,
+        stdout: "",
+        stderr: error.message,
+        exitCode: null,
+        exitSignal: null,
+        timedOut: false,
+        aborted: false,
+        spawnError: true
+      });
+      return;
+    }
+
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    let timeoutHandle = null;
+    let forceKillHandle = null;
+
+    const cleanup = ({ keepForceKillHandle = false } = {}) => {
+      clearTimeout(timeoutHandle);
+      if (!keepForceKillHandle) clearTimeout(forceKillHandle);
+      signal?.removeEventListener?.("abort", onAbort);
+    };
+
+    const finish = (result, cleanupOptions = {}) => {
+      if (settled) return;
+      settled = true;
+      cleanup(cleanupOptions);
+      resolve(result);
+    };
+
+    const scheduleForceKill = () => {
+      if (!Number.isFinite(forceKillAfterMs) || forceKillAfterMs < 0) return;
+      forceKillHandle = setTimeout(() => {
+        try { child.kill(forceKillSignal); } catch { /* noop */ }
+      }, forceKillAfterMs);
+    };
+
+    const onTimeout = () => {
+      try { child.kill(timeoutKillSignal); } catch { /* noop */ }
+      if (timeoutKillSignal !== forceKillSignal) scheduleForceKill();
+      finish({
+        ok: false,
+        stdout,
+        stderr: appendDiagnostic(stderr, `[${label}] killed after ${timeoutMs}ms timeout`),
+        exitCode: null,
+        exitSignal: null,
+        timedOut: true,
+        aborted: false,
+        spawnError: false
+      }, { keepForceKillHandle: timeoutKillSignal !== forceKillSignal });
+    };
+
+    const onAbort = () => {
+      try { child.kill(abortKillSignal); } catch { /* noop */ }
+      if (abortKillSignal !== forceKillSignal) scheduleForceKill();
+      finish({
+        ok: false,
+        stdout,
+        stderr: appendDiagnostic(stderr, `[${label}] aborted by signal`),
+        exitCode: null,
+        exitSignal: null,
+        timedOut: false,
+        aborted: true,
+        spawnError: false
+      }, { keepForceKillHandle: abortKillSignal !== forceKillSignal });
+    };
+
+    if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+      timeoutHandle = setTimeout(onTimeout, timeoutMs);
+    }
+
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+
+    child.stdout?.setEncoding?.(encoding);
+    child.stderr?.setEncoding?.(encoding);
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk;
+      onStdout?.(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk;
+      onStderr?.(chunk);
+    });
+
+    child.on("error", (error) => {
+      finish({
+        ok: false,
+        stdout,
+        stderr: appendDiagnostic(stderr, error.message),
+        exitCode: null,
+        exitSignal: null,
+        timedOut: false,
+        aborted: false,
+        spawnError: true
+      });
+    });
+
+    child.on("close", (code, closeSignal) => {
+      if (settled) {
+        clearTimeout(forceKillHandle);
+        return;
+      }
+      finish({
+        ok: code === 0,
+        stdout,
+        stderr,
+        exitCode: code,
+        exitSignal: closeSignal,
+        timedOut: false,
+        aborted: false,
+        spawnError: false
+      });
+    });
+
+    try {
+      if (input != null) {
+        child.stdin?.write(input);
+      }
+      child.stdin?.end();
+    } catch (error) {
+      finish({
+        ok: false,
+        stdout,
+        stderr: appendDiagnostic(stderr, error.message),
+        exitCode: null,
+        exitSignal: null,
+        timedOut: false,
+        aborted: false,
+        spawnError: true
+      });
+    }
+  });
 }
