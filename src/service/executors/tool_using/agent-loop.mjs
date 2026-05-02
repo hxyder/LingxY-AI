@@ -52,11 +52,8 @@ import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
 // the fallback planner bound to this executor.
 import { planDeterministicToolCall } from "./planners/deterministic.mjs";
 import { planConnectorToolCall } from "./planners/connector.mjs";
-import {
-  extractLaunchAppName,
-  extractLaunchAppCandidates,
-  normalizeLaunchAppKey
-} from "./planners/launch-helpers.mjs";
+import { extractLaunchAppName } from "./planners/launch-helpers.mjs";
+import { buildLaunchSequenceGuidance } from "./launch-sequence.mjs";
 import {
   finalFallbackText,
   hasActionAttempts,
@@ -223,41 +220,6 @@ function inferSearchRecencyFromText(value = "") {
 
 // UCA-077 P3-01: extractUrl moved to ./planners/launch-helpers.mjs.
 // Planner prompt formatting now lives in ./planner-formatting.mjs.
-
-// Phase 1.8 — the old hidden pre-planned launch queue was deleted. The
-// framework still carries a generic action-sequence contract: if the user
-// names multiple independent launch targets and the planner tries to finalize
-// early, the loop injects guidance and lets the planner continue. The sequence
-// lives in the transcript, not in a side-channel queue.
-
-function attemptedLaunchKeys(transcript = []) {
-  return new Set((transcript ?? [])
-    .filter((entry) => entry?.type === "tool_result" && entry.tool === "launch_app")
-    .map((entry) => normalizeLaunchAppKey(entry.args?.app))
-    .filter(Boolean));
-}
-
-function nextPendingLaunchCandidate(task, transcript = []) {
-  const candidates = extractLaunchAppCandidates(task?.user_command ?? "");
-  if (candidates.length <= 1) return null;
-  const attempted = attemptedLaunchKeys(transcript);
-  return candidates.find((candidate) => !attempted.has(normalizeLaunchAppKey(candidate))) ?? null;
-}
-
-function buildLaunchSequenceGuidance(task, transcript = []) {
-  const next = nextPendingLaunchCandidate(task, transcript);
-  if (!next) return null;
-  const candidates = extractLaunchAppCandidates(task?.user_command ?? "");
-  const attempted = attemptedLaunchKeys(transcript);
-  const remaining = candidates.filter((candidate) => !attempted.has(normalizeLaunchAppKey(candidate)));
-  return [
-    "The user requested multiple independent desktop launch actions.",
-    `Already attempted: ${[...attempted].join(", ") || "(none)"}.`,
-    `Remaining targets: ${remaining.join(", ")}.`,
-    `Call launch_app next with {"app": ${JSON.stringify(next)}}.`,
-    "Do not finalize just because an earlier independent launch failed; continue the remaining launch targets unless the user must disambiguate that specific failed target."
-  ].join("\n");
-}
 
 // Saturation hint is only worth firing when the task expects multiple
 // independent sources. single_lookup wants exactly one publisher, so a
