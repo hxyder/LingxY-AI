@@ -488,10 +488,19 @@ export async function listFiles(runtime, type, { limit = 20, query = "" } = {}) 
       const qs = query
         ? `search(q='${encodeURIComponent(query)}')?$top=${limit}&$select=name,id,webUrl,lastModifiedDateTime,size,file`
         : `root/children?$top=${limit}&$orderby=lastModifiedDateTime desc&$select=name,id,webUrl,lastModifiedDateTime,size,file`;
-      const r = await fetch(`https://graph.microsoft.com/v1.0/me/drive/${qs}`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      if (!r.ok) throw new Error(`graph_files_error: ${r.status}`);
+      let r;
+      try {
+        r = await fetchExternal(`https://graph.microsoft.com/v1.0/me/drive/${qs}`, {
+          headers: { Authorization: `Bearer ${accessToken}` }
+        }, {
+          timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+          label: "account_connectors.microsoft_files",
+          httpErrorPrefix: "Microsoft files error"
+        });
+      } catch (err) {
+        if (Number.isFinite(Number(err?.status))) throw new Error(`graph_files_error: ${err.status}`);
+        throw err;
+      }
       const d = await r.json();
       return {
         ok: true, files: (d.value ?? []).map((f) => ({

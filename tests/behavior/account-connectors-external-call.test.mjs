@@ -8,6 +8,7 @@ import {
   completeOAuthCallback,
   getConnectorStatus,
   getValidAccessToken,
+  listFiles,
   startGoogleAuth,
   startMicrosoftAuth
 } from "../../src/service/connectors/account-connectors.mjs";
@@ -338,6 +339,66 @@ test("account connector Google user info retries a transient profile endpoint fa
         assert.equal(calls.length, 2);
         assert.equal(calls[0].url, "https://www.googleapis.com/oauth2/v2/userinfo");
         assert.equal(calls[0].authorization, "Bearer google-profile-access-token");
+        assert.equal(calls.every((call) => call.hasAbortSignal), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});
+
+test("account connector Microsoft files retries a transient Drive endpoint failure", async () => {
+  await withTokenRuntime(
+    "microsoft",
+    {
+      access_token: "files-access-token",
+      refresh_token: "files-refresh-token",
+      expires_at: Date.now() + 3600_000
+    },
+    { clientId: "microsoft-client-id" },
+    async ({ runtime }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (calls.length === 1) {
+            return new Response("temporary drive endpoint failure", { status: 502 });
+          }
+          return Response.json({
+            value: [{
+              id: "file-1",
+              name: "Plan.docx",
+              webUrl: "https://example.com/plan",
+              lastModifiedDateTime: "2026-05-01T12:00:00Z",
+              size: 42,
+              file: {}
+            }]
+          });
+        };
+
+        const result = await listFiles(runtime, "microsoft", { limit: 2 });
+
+        assert.equal(result.ok, true);
+        assert.equal(result.files.length, 1);
+        assert.deepEqual(result.files[0], {
+          id: "file-1",
+          name: "Plan.docx",
+          url: "https://example.com/plan",
+          modified: "2026-05-01T12:00:00Z",
+          size: 42,
+          isFolder: false
+        });
+        assert.equal(calls.length, 2);
+        assert.equal(
+          calls[0].url,
+          "https://graph.microsoft.com/v1.0/me/drive/root/children?$top=2&$orderby=lastModifiedDateTime desc&$select=name,id,webUrl,lastModifiedDateTime,size,file"
+        );
+        assert.equal(calls[0].authorization, "Bearer files-access-token");
         assert.equal(calls.every((call) => call.hasAbortSignal), true);
       } finally {
         globalThis.fetch = originalFetch;
