@@ -30,6 +30,32 @@ export function plannerToolDescriptorForAdapter() {
   };
 }
 
+/**
+ * Render the connector catalog's workflows as a concise hint block for the
+ * LLM planner. The LLM owns when to call connector_workflow_run and how to
+ * sequence it with other tools; this block only tells it which workflows
+ * exist, what triggers them, and what inputs they require.
+ */
+export function formatWorkflowsForPlanner(catalog) {
+  if (!catalog || typeof catalog.listWorkflows !== "function") return "";
+  const summaries = catalog.listWorkflows();
+  if (!summaries.length) return "";
+  const lines = ["", "Connector workflows (call via connector_workflow_run):"];
+  for (const summary of summaries) {
+    const full = catalog.getWorkflow?.(summary.id) ?? summary;
+    const firstToolId = full.steps?.find((step) => step?.tool)?.tool;
+    const firstTool = firstToolId ? catalog.getTool?.(firstToolId) : null;
+    const required = firstTool?.inputSchema?.required ?? [];
+    const triggers = (full.triggerPatterns ?? []).slice(0, 5).join(" | ");
+    lines.push(`- ${full.id} — ${full.description ?? full.name ?? ""}`);
+    if (triggers) lines.push(`    trigger hints: ${triggers}`);
+    if (required.length) lines.push(`    required input: { ${required.join(", ")} }`);
+  }
+  lines.push("");
+  lines.push("When a user asks to send mail / create calendar event / upload Drive file, prefer a workflow call with a fully-filled input. If you need data to fill the input (e.g. weather forecast, search results, current context), chain the relevant read/search tool FIRST, then call connector_workflow_run with all required fields populated. Never call connector_workflow_run with empty subject/body — the workflow validator will reject it.");
+  return lines.join("\n");
+}
+
 export function summarizeToolParameters(schema = {}) {
   const properties = schema?.properties && typeof schema.properties === "object"
     ? schema.properties

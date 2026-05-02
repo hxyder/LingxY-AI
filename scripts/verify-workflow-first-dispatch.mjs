@@ -139,16 +139,21 @@ function makeTask(command) {
 //    workflow ids. (The real LLM path is provider-dependent so we verify the
 //    hint-construction primitive only.)
 const { default: fs } = await import("node:fs");
-const source = fs.readFileSync(
+const agentLoopSource = fs.readFileSync(
   path.join(repoRoot, "src/service/executors/tool_using/agent-loop.mjs"),
   "utf8"
 );
-assert.ok(
-  source.includes("formatWorkflowsForPlanner"),
-  "agent-loop must define formatWorkflowsForPlanner for LLM planner prompt enrichment"
+const plannerFormattingSource = fs.readFileSync(
+  path.join(repoRoot, "src/service/executors/tool_using/planner-formatting.mjs"),
+  "utf8"
 );
 assert.ok(
-  source.includes("${workflowHint}"),
+  plannerFormattingSource.includes("formatWorkflowsForPlanner"),
+  "planner-formatting must define formatWorkflowsForPlanner for LLM planner prompt enrichment"
+);
+assert.ok(
+  agentLoopSource.includes("formatWorkflowsForPlanner")
+    && agentLoopSource.includes("${workflowHint}"),
   "llmPlanner system prompt must inject the workflow hint block"
 );
 

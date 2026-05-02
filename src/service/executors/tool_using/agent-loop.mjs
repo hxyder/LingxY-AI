@@ -63,6 +63,7 @@ import {
 import { composeFinalAnswer } from "./final-composer.mjs";
 import {
   buildHistoryString,
+  formatWorkflowsForPlanner,
   formatToolForPlanner,
   plannerToolDescriptorForAdapter
 } from "./planner-formatting.mjs";
@@ -171,33 +172,6 @@ function defaultPlanner({ task, runtime: plannerRuntime = null }) {
 // missing-location bug only surfaced after Phase 1-3 routing started
 // sending conversational location questions to fast (which had no
 // injection at all).
-
-/**
- * Render the connector catalog's workflows as a concise hint block for the
- * LLM planner's system prompt. The LLM owns when to call
- * connector_workflow_run and how to sequence it with other tools — this block
- * just tells it which workflows exist, what triggers them, and what inputs
- * they need so it doesn't have to guess.
- */
-function formatWorkflowsForPlanner(catalog) {
-  if (!catalog || typeof catalog.listWorkflows !== "function") return "";
-  const summaries = catalog.listWorkflows();
-  if (!summaries.length) return "";
-  const lines = ["", "Connector workflows (call via connector_workflow_run):"];
-  for (const summary of summaries) {
-    const full = catalog.getWorkflow?.(summary.id) ?? summary;
-    const firstToolId = full.steps?.find((step) => step?.tool)?.tool;
-    const firstTool = firstToolId ? catalog.getTool?.(firstToolId) : null;
-    const required = firstTool?.inputSchema?.required ?? [];
-    const triggers = (full.triggerPatterns ?? []).slice(0, 5).join(" | ");
-    lines.push(`- ${full.id} — ${full.description ?? full.name ?? ""}`);
-    if (triggers) lines.push(`    trigger hints: ${triggers}`);
-    if (required.length) lines.push(`    required input: { ${required.join(", ")} }`);
-  }
-  lines.push("");
-  lines.push("When a user asks to send mail / create calendar event / upload Drive file, prefer a workflow call with a fully-filled input. If you need data to fill the input (e.g. weather forecast, search results, current context), chain the relevant read/search tool FIRST, then call connector_workflow_run with all required fields populated. Never call connector_workflow_run with empty subject/body — the workflow validator will reject it.");
-  return lines.join("\n");
-}
 
 // UCA-077 P1-06: isSearchOrNewsRequest was the parallel regex gate that
 // short-circuited web_search_fetch before the LLM planner ran. Its concerns

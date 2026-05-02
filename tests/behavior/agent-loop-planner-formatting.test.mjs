@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   buildHistoryString,
+  formatWorkflowsForPlanner,
   formatToolForPlanner,
   plannerToolDescriptorForAdapter
 } from "../../src/service/executors/tool_using/planner-formatting.mjs";
@@ -54,6 +55,37 @@ test("agent planner formatting keeps transcript history readable for planner tur
   assert.match(history, /\[step 1\] called web_search_fetch/);
   assert.match(history, /\[step 2\] denied open_file: not allowed/);
   assert.match(history, /\[step 3\] validation error on send_email: missing to/);
+});
+
+test("agent planner formatting renders connector workflow hints", () => {
+  const catalog = {
+    listWorkflows() {
+      return [{ id: "google.gmail.draft_confirm_send" }];
+    },
+    getWorkflow(id) {
+      return {
+        id,
+        description: "Draft and confirm a Gmail message",
+        triggerPatterns: [/gmail/i, /send mail/i],
+        steps: [{ tool: "google.gmail.draft" }]
+      };
+    },
+    getTool(id) {
+      assert.equal(id, "google.gmail.draft");
+      return {
+        inputSchema: {
+          required: ["to", "subject", "body"]
+        }
+      };
+    }
+  };
+
+  const rendered = formatWorkflowsForPlanner(catalog);
+
+  assert.match(rendered, /Connector workflows/);
+  assert.match(rendered, /google\.gmail\.draft_confirm_send/);
+  assert.match(rendered, /required input: \{ to, subject, body \}/);
+  assert.match(rendered, /Never call connector_workflow_run with empty subject\/body/);
 });
 
 test("agent planner tool descriptor exposes the single call_tool adapter schema", () => {
