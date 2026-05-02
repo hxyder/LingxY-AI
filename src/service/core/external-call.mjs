@@ -164,7 +164,8 @@ export function spawnExternal(command, args = [], {
   timeoutKillSignal = "SIGTERM",
   abortKillSignal = "SIGTERM",
   forceKillSignal = "SIGKILL",
-  forceKillAfterMs = 250
+  forceKillAfterMs = 250,
+  settleOnSignal = "immediate"
 } = {}) {
   if (!command) {
     return Promise.resolve({
@@ -219,6 +220,7 @@ export function spawnExternal(command, args = [], {
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let pendingSignalResult = null;
     let timeoutHandle = null;
     let forceKillHandle = null;
 
@@ -242,15 +244,28 @@ export function spawnExternal(command, args = [], {
       }, forceKillAfterMs);
     };
 
+    const settleAfterSignal = (result, cleanupOptions = {}) => {
+      if (settleOnSignal !== "close") {
+        const { diagnostic, ...publicResult } = result;
+        finish({
+          ...publicResult,
+          stdout,
+          stderr: appendDiagnostic(stderr, diagnostic),
+          exitCode: null,
+          exitSignal: null
+        }, cleanupOptions);
+        return;
+      }
+      pendingSignalResult = result;
+      cleanup(cleanupOptions);
+    };
+
     const onTimeout = () => {
       try { child.kill(timeoutKillSignal); } catch { /* noop */ }
       if (timeoutKillSignal !== forceKillSignal) scheduleForceKill();
-      finish({
+      settleAfterSignal({
         ok: false,
-        stdout,
-        stderr: appendDiagnostic(stderr, `[${label}] killed after ${timeoutMs}ms timeout`),
-        exitCode: null,
-        exitSignal: null,
+        diagnostic: `[${label}] killed after ${timeoutMs}ms timeout`,
         timedOut: true,
         aborted: false,
         spawnError: false
@@ -260,12 +275,9 @@ export function spawnExternal(command, args = [], {
     const onAbort = () => {
       try { child.kill(abortKillSignal); } catch { /* noop */ }
       if (abortKillSignal !== forceKillSignal) scheduleForceKill();
-      finish({
+      settleAfterSignal({
         ok: false,
-        stdout,
-        stderr: appendDiagnostic(stderr, `[${label}] aborted by signal`),
-        exitCode: null,
-        exitSignal: null,
+        diagnostic: `[${label}] aborted by signal`,
         timedOut: false,
         aborted: true,
         spawnError: false
@@ -305,6 +317,19 @@ export function spawnExternal(command, args = [], {
     child.on("close", (code, closeSignal) => {
       if (settled) {
         clearTimeout(forceKillHandle);
+        return;
+      }
+      if (pendingSignalResult) {
+        finish({
+          ok: false,
+          stdout,
+          stderr: appendDiagnostic(stderr, pendingSignalResult.diagnostic),
+          exitCode: code,
+          exitSignal: closeSignal,
+          timedOut: pendingSignalResult.timedOut,
+          aborted: pendingSignalResult.aborted,
+          spawnError: false
+        });
         return;
       }
       finish({

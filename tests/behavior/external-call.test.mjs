@@ -192,3 +192,31 @@ test("spawnExternal aborts a running subprocess through AbortSignal", async () =
   assert.equal(result.spawnError, false);
   assert.match(result.stderr, /\[abort_spawn\] aborted by signal/);
 });
+
+test("spawnExternal can wait for subprocess close after timeout before returning", async () => {
+  const result = await spawnExternal(process.execPath, [
+    "-e",
+    [
+      "process.on('SIGTERM', () => {",
+      "  console.error('cleanup-before-close');",
+      "  setTimeout(() => process.exit(0), 10);",
+      "});",
+      "setInterval(() => {}, 1000);"
+    ].join("")
+  ], {
+    timeoutMs: 20,
+    label: "close_spawn",
+    timeoutKillSignal: "SIGTERM",
+    forceKillAfterMs: 200,
+    settleOnSignal: "close"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.timedOut, true);
+  assert.equal(result.spawnError, false);
+  assert.equal(result.exitCode !== null || result.exitSignal !== null, true);
+  if (process.platform !== "win32") {
+    assert.match(result.stderr, /cleanup-before-close/);
+  }
+  assert.match(result.stderr, /\[close_spawn\] killed after 20ms timeout/);
+});
