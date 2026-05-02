@@ -53,6 +53,7 @@ const requiredPaths = [
   "tests/behavior/external-call.test.mjs",
   "tests/behavior/executor-selection.test.mjs",
   "tests/behavior/fast-executor-external-call.test.mjs",
+  "tests/behavior/multi-modal-external-call.test.mjs",
   "tests/behavior/task-runtime-event-emitter.test.mjs",
   "tests/behavior/task-runtime-event-log.test.mjs",
   "tests/behavior/task-runtime-composite.test.mjs",

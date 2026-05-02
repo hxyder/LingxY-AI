@@ -12,6 +12,9 @@ import { executeKimiTask } from "../kimi/kimi-cli-executor.mjs";
 import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
 import { mkdir } from "node:fs/promises";
 import os from "node:os";
+import { fetchExternal } from "../../core/external-call.mjs";
+
+const MULTI_MODAL_API_FETCH_TIMEOUT_MS = 120_000;
 
 // True when the configured provider can plausibly handle image bytes.
 // Used only for the UI hint in Settings → Routing → Vision — the
@@ -141,7 +144,7 @@ export async function callAnthropicVision({ apiKey, baseUrl, model, userCommand,
 
   content.push({ type: "text", text: userCommand });
 
-  const response = await fetch(`${baseUrl}/v1/messages`, {
+  const response = await fetchExternal(`${baseUrl}/v1/messages`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -154,12 +157,11 @@ export async function callAnthropicVision({ apiKey, baseUrl, model, userCommand,
       messages: [{ role: "user", content }]
     }),
     signal
+  }, {
+    timeoutMs: MULTI_MODAL_API_FETCH_TIMEOUT_MS,
+    label: "multi_modal.anthropic_vision",
+    httpErrorPrefix: "Anthropic Vision API error"
   });
-
-  if (!response.ok) {
-    const body = await response.text().catch(() => "");
-    throw new Error(`Anthropic Vision API error ${response.status}: ${body.slice(0, 200)}`);
-  }
 
   const data = await response.json();
   return data.content
