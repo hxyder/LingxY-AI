@@ -298,3 +298,50 @@ test("account connector Microsoft user info retries a transient profile endpoint
     }
   );
 });
+
+test("account connector Google user info retries a transient profile endpoint failure", async () => {
+  await withTokenRuntime(
+    "google",
+    {
+      access_token: "google-profile-access-token",
+      refresh_token: "google-profile-refresh-token",
+      expires_at: Date.now() + 3600_000
+    },
+    { clientId: "google-client-id", clientSecret: "google-client-secret" },
+    async ({ runtime }) => {
+      const originalFetch = globalThis.fetch;
+      const calls = [];
+      try {
+        globalThis.fetch = async (url, init = {}) => {
+          calls.push({
+            url,
+            authorization: init.headers?.Authorization ?? null,
+            hasAbortSignal: Boolean(init.signal)
+          });
+          if (calls.length === 1) {
+            return new Response("temporary profile endpoint failure", { status: 502 });
+          }
+          return Response.json({
+            id: "google-profile-user-id",
+            name: "Google Profile User",
+            email: "google-profile@example.com",
+            picture: "https://example.com/profile.png"
+          });
+        };
+
+        const status = await getConnectorStatus(runtime, "google");
+
+        assert.equal(status.connected, true);
+        assert.equal(status.email, "google-profile@example.com");
+        assert.equal(status.displayName, "Google Profile User");
+        assert.equal(status.photoUrl, "https://example.com/profile.png");
+        assert.equal(calls.length, 2);
+        assert.equal(calls[0].url, "https://www.googleapis.com/oauth2/v2/userinfo");
+        assert.equal(calls[0].authorization, "Bearer google-profile-access-token");
+        assert.equal(calls.every((call) => call.hasAbortSignal), true);
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    }
+  );
+});

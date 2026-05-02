@@ -465,10 +465,13 @@ async function getUserInfo(type, accessToken) {
     const d = await r.json();
     return { providerAccountId: d.id ?? d.userPrincipalName ?? d.mail, displayName: d.displayName, email: d.mail ?? d.userPrincipalName };
   } else {
-    const r = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
+    const r = await fetchExternal("https://www.googleapis.com/oauth2/v2/userinfo", {
       headers: { Authorization: `Bearer ${accessToken}` }
+    }, {
+      timeoutMs: ACCOUNT_CONNECTOR_FETCH_TIMEOUT_MS,
+      label: "account_connectors.google_user_info",
+      httpErrorPrefix: "Google user info error"
     });
-    if (!r.ok) throw new Error("google_userinfo_error");
     const d = await r.json();
     return { providerAccountId: d.id ?? d.email, displayName: d.name, email: d.email, photoUrl: d.picture };
   }
