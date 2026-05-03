@@ -319,6 +319,15 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteSkillRegistry(id) {
     return ipcRenderer.invoke("uca:skill-registry-delete", id ?? "");
   },
+  updateRoutingConfig(payload) {
+    return ipcRenderer.invoke("uca:routing-config-update", payload ?? {});
+  },
+  updateOutputConfig(payload) {
+    return ipcRenderer.invoke("uca:output-config-update", payload ?? {});
+  },
+  updateFeatureConfig(payload) {
+    return ipcRenderer.invoke("uca:feature-config-update", payload ?? {});
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

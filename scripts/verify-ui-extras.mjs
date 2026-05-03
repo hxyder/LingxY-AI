@@ -188,6 +188,18 @@ assert.ok(!/fetchJson\(\s*["'`]\/config\/skills\/registries["'`]\s*,\s*\{\s*meth
   "skill registry save: console must not POST /config/skills/registries directly");
 assert.ok(!/fetchJson\(\s*`\/config\/skills\/registries\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
   "skill registry delete: console must not DELETE /config/skills/registries/:id directly");
+assert.ok(/updateRoutingConfigViaShell/.test(consoleJs) && /window\.ucaShell\.updateRoutingConfig/.test(consoleJs),
+  "routing config: console must use desktop shell bridge");
+assert.ok(/updateOutputConfigViaShell/.test(consoleJs) && /window\.ucaShell\.updateOutputConfig/.test(consoleJs),
+  "output config: console must use desktop shell bridge");
+assert.ok(/updateFeatureConfigViaShell/.test(consoleJs) && /window\.ucaShell\.updateFeatureConfig/.test(consoleJs),
+  "feature config: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/routing["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "routing config: console must not POST /config/routing directly");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/output["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "output config: console must not POST /config/output directly");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/features["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "feature config: console must not POST /config/features directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

@@ -3256,11 +3256,7 @@ document.getElementById("saveRoutingBtn")?.addEventListener("click", async () =>
   const stateEl = document.getElementById("routingSaveState");
   stateEl.textContent = "Saving...";
   try {
-    await fetchJson("/config/routing", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(taskRouting)
-    });
+    await updateRoutingConfigViaShell(taskRouting);
     stateEl.textContent = "Saved.";
     setTimeout(() => { stateEl.textContent = ""; }, 2000);
   } catch (error) {
@@ -5356,11 +5352,7 @@ document.getElementById("saveOutputDirBtn")?.addEventListener("click", async () 
   const stateLabel = document.getElementById("outputDirSaveState");
   const dir = input?.value?.trim() || "";
   try {
-    await fetchJson("/config/output", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ defaultDir: dir, autoCreateDirs: true })
-    });
+    await updateOutputConfigViaShell({ defaultDir: dir, autoCreateDirs: true });
     if (stateLabel) stateLabel.textContent = "Saved.";
   } catch (error) {
     if (stateLabel) stateLabel.textContent = `Failed: ${error.message}`;
@@ -5374,11 +5366,7 @@ document.getElementById("saveFeatureTogglesBtn")?.addEventListener("click", asyn
     toggles[input.dataset.featureId] = { enabled: input.checked };
   }
   try {
-    await fetchJson("/config/features", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(toggles)
-    });
+    await updateFeatureConfigViaShell(toggles);
     if (state.workspace.health?.config) {
       state.workspace.health.config.features = toggles;
     }
@@ -6462,6 +6450,36 @@ async function deleteSkillRegistryViaShell(registryId) {
   return assertShellResult(
     await window.ucaShell.deleteSkillRegistry(registryId),
     "Could not delete skill registry."
+  );
+}
+
+async function updateRoutingConfigViaShell(routing) {
+  if (typeof window.ucaShell?.updateRoutingConfig !== "function") {
+    throw new Error("Desktop routing config bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.updateRoutingConfig(routing),
+    "Could not save routing config."
+  );
+}
+
+async function updateOutputConfigViaShell(output) {
+  if (typeof window.ucaShell?.updateOutputConfig !== "function") {
+    throw new Error("Desktop output config bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.updateOutputConfig(output),
+    "Could not save output config."
+  );
+}
+
+async function updateFeatureConfigViaShell(features) {
+  if (typeof window.ucaShell?.updateFeatureConfig !== "function") {
+    throw new Error("Desktop feature config bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.updateFeatureConfig(features),
+    "Could not save feature config."
   );
 }
 

@@ -209,6 +209,10 @@ function normalizeSkillRegistryId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
 
+function normalizeRuntimeConfigPayload(payload = {}) {
+  return normalizePlainObject(payload) ?? {};
+}
+
 async function requestDesktopServiceJson({
   base,
   pathname,
@@ -2419,6 +2423,60 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "skill_registry_delete_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.routingConfigUpdate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/config/routing",
+            body: normalizeRuntimeConfigPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "routing_config_update_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.outputConfigUpdate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/config/output",
+            body: normalizeRuntimeConfigPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "output_config_update_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.featureConfigUpdate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/config/features",
+            body: normalizeRuntimeConfigPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "feature_config_update_failed",
             message: error?.message ?? String(error)
           };
         }
