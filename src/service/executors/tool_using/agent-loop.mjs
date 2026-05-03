@@ -39,8 +39,7 @@ import {
   applySideEffectContractToToolArgs,
   renderSideEffectContractPrompt
 } from "../../core/policy/side-effect-contracts.mjs";
-import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
-import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
+import { createErrorBudget } from "../../core/runtime/error-budget.mjs";
 // UCA-077 P3-01: deterministic / connector planners + their helpers moved
 // into a `planners/` directory so this file owns the loop and provider
 // glue, not regex tables. defaultPlanner still lives here because it is
@@ -82,7 +81,6 @@ import {
 import { buildConversationMessages } from "./conversation-messages.mjs";
 import {
   isSideEffectTool,
-  toolResultHasSubstance,
   transcriptHasSuccessfulToolCall
 } from "./tool-call-guards.mjs";
 import { repairToolArgs } from "./tool-arg-repair.mjs";
@@ -109,6 +107,12 @@ import {
   planContractActionHandoff,
   planRunbookGuidance
 } from "./phase-gate.mjs";
+import {
+  chargeToolLoopErrorBudget,
+  errorBudgetChargeAuditPayload,
+  errorBudgetResultPayload,
+  errorBudgetSignalPayload
+} from "./error-budget-gate.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
@@ -1424,46 +1428,45 @@ async function _runToolAgentLoopCore({
     // replan_round and no_file_change_run charge from elsewhere
     // (route_reconsider hook + finalize gate respectively); not wired
     // here.
-    let budgetEvent = null;
-    if (resolvedPlanner !== defaultPlanner) {
-      if (result.success === false) {
-        budgetEvent = "tool_failure";
-      } else if (groupsOfTool(tool.id).includes("external_web_read") && !toolResultHasSubstance(result)) {
-        budgetEvent = "empty_search_result";
-      }
-    }
-    if (budgetEvent) {
-      const charge = chargeBudget(errorBudget, budgetEvent);
-      errorBudget = charge.state;
-      appendAuditLog(runtime, task, "tool_loop.error_budget_charge", {
-        iteration,
-        event: budgetEvent,
-        exhausted: charge.exhausted,
-        snapshot: snapshotBudget(errorBudget)
-      });
-      if (charge.exhausted) {
-        runtime.emitTaskEvent?.("error_budget_signal", {
+    const budgetCharge = chargeToolLoopErrorBudget({
+      errorBudget,
+      tool,
+      result,
+      isDefaultPlanner: resolvedPlanner === defaultPlanner
+    });
+    if (budgetCharge.event) {
+      errorBudget = budgetCharge.nextBudget;
+      appendAuditLog(
+        runtime,
+        task,
+        "tool_loop.error_budget_charge",
+        errorBudgetChargeAuditPayload({
           iteration,
-          event: budgetEvent,
-          reason: charge.reason,
-          snapshot: snapshotBudget(errorBudget)
-        });
+          event: budgetCharge.event,
+          charge: budgetCharge.charge
+        })
+      );
+      if (budgetCharge.charge.exhausted) {
+        runtime.emitTaskEvent?.("error_budget_signal", errorBudgetSignalPayload({
+          iteration,
+          event: budgetCharge.event,
+          charge: budgetCharge.charge
+        }));
         return {
           status: "partial_success",
           final_text: await composeFinalAnswer({
             task,
             transcript,
             runtime,
-            reason: charge.reason ?? "error_budget_exhausted"
+            reason: budgetCharge.charge.reason ?? "error_budget_exhausted"
           }),
           transcript,
           artifacts: result.artifact_paths ?? [],
-          error_budget: {
-            event: budgetEvent,
-            reason: charge.reason,
+          error_budget: errorBudgetResultPayload({
             iteration,
-            snapshot: snapshotBudget(errorBudget)
-          }
+            event: budgetCharge.event,
+            charge: budgetCharge.charge
+          })
         };
       }
     }
