@@ -26,10 +26,18 @@ function normalizeTransport(transport) {
   return TRANSPORTS.has(transport) ? transport : "stdio";
 }
 
+function resolveSourcePath(source) {
+  return typeof source === "string" && source.toLowerCase().endsWith(".json")
+    ? source
+    : null;
+}
+
 export function createConfiguredMCPServer(server = {}) {
   const id = server.id;
   const transport = normalizeTransport(server.transport);
   const displayName = server.displayName ?? server.name ?? id;
+  const source = server.source ?? "runtime_config";
+  const sourcePath = resolveSourcePath(source);
 
   return {
     id,
@@ -40,7 +48,7 @@ export function createConfiguredMCPServer(server = {}) {
     url: server.url ?? null,
     env: server.env ?? null,
     enabled: server.enabled !== false,
-    source: server.source ?? "runtime_config",
+    source,
     async isAvailable() {
       if (server.enabled === false) {
         return false;
@@ -62,7 +70,8 @@ export function createConfiguredMCPServer(server = {}) {
         command: server.command ?? null,
         args: Array.isArray(server.args) ? server.args : [],
         url: server.url ?? null,
-        source: server.source ?? "runtime_config",
+        source,
+        ...(sourcePath ? { sourcePath } : {}),
         detail: available ? "ready" : server.enabled === false ? "disabled" : "not_available"
       };
     },

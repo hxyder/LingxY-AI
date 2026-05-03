@@ -15,7 +15,10 @@ export function getMcpSourceView(server = {}) {
     return {
       readOnly: true,
       canToggle: false,
-      label: "From file",
+      label: "Read-only",
+      tooltip: server.sourcePath
+        ? `Declared in ${server.sourcePath}`
+        : "Declared in a JSON manifest, not user config",
       className: "muted"
     };
   }
@@ -24,6 +27,7 @@ export function getMcpSourceView(server = {}) {
     readOnly: false,
     canToggle: true,
     label: "",
+    tooltip: "",
     className: ""
   };
 }

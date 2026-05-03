@@ -6779,7 +6779,7 @@ function renderConnectorsMcpServers(servers) {
     // unambiguous affordance; the toggle still appears for already-
     // installed servers as the on/off control.
     const headlineAction = sourceView.readOnly
-      ? `<span class="pill pill-neutral" title="Declared in a local JSON file">${escapeHtml(statusLabel)}</span>`
+      ? `<span class="pill pill-neutral" title="${escapeHtml(sourceView.tooltip)}">${escapeHtml(statusLabel)}</span>`
       : installed
       ? `<label class="toggle" title="禁用">
            <input type="checkbox" checked data-mcp-install="${escapeHtml(s.id)}" data-mcp-enabled="false">

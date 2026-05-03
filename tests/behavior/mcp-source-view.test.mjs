@@ -23,10 +23,19 @@ test("builtin MCP servers remain user-toggleable", () => {
 test("JSON-declared MCP servers render as read-only", () => {
   const view = getMcpSourceView({
     id: "readonly",
-    source: "E:\\linxi\\data\\integrations\\mcp\\readonly.json"
+    source: "E:\\linxi\\data\\integrations\\mcp\\readonly.json",
+    sourcePath: "data\\integrations\\mcp\\readonly.json"
   });
   assert.equal(view.readOnly, true);
   assert.equal(view.canToggle, false);
-  assert.equal(view.label, "From file");
+  assert.equal(view.label, "Read-only");
+  assert.equal(view.tooltip, "Declared in data\\integrations\\mcp\\readonly.json");
   assert.equal(isReadOnlyMcpServer({ source: "/home/me/mcp/server.json" }), true);
+});
+
+test("read-only MCP servers without a source path get a generic tooltip", () => {
+  const view = getMcpSourceView({ id: "plugin", source: "plugin:demo" });
+  assert.equal(view.readOnly, true);
+  assert.equal(view.label, "Read-only");
+  assert.equal(view.tooltip, "Declared in a JSON manifest, not user config");
 });

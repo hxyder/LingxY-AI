@@ -210,6 +210,8 @@ try {
   assert.equal(mockMcp.available, true);
   assert.equal(mockMcp.transport, "stdio");
   assert.equal(mockMcp.enabled, true);
+  const readonlyMcp = mcpPayload.servers.find((server) => server.id === "readonly-mcp");
+  assert.ok(readonlyMcp.sourcePath?.endsWith(path.join("integrations", "mcp", "readonly-mcp.json")));
 
   await patchJson(listening.baseUrl, "/ai/mcp/mock-mcp/toggle", { enabled: false });
   const disabledMcpPayload = await fetch(`${listening.baseUrl}/ai/mcp`).then((response) => response.json());
