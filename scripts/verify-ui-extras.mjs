@@ -172,6 +172,14 @@ assert.ok(!/fetchJson\(\s*["'`]\/config\/providers["'`]\s*,\s*\{\s*method:\s*["'
   "provider save: console must not POST /config/providers directly");
 assert.ok(!/fetchJson\(\s*`\/config\/providers\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
   "provider delete: console must not DELETE /config/providers/:id directly");
+assert.ok(/saveCodeCliAdapterViaShell/.test(consoleJs) && /window\.ucaShell\.saveCodeCliAdapter/.test(consoleJs),
+  "Code CLI adapter save: console must use desktop shell bridge");
+assert.ok(/deleteCodeCliAdapterViaShell/.test(consoleJs) && /window\.ucaShell\.deleteCodeCliAdapter/.test(consoleJs),
+  "Code CLI adapter delete: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/code-cli\/adapters["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "Code CLI adapter save: console must not POST /config/code-cli/adapters directly");
+assert.ok(!/fetchJson\(\s*`\/config\/code-cli\/adapters\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
+  "Code CLI adapter delete: console must not DELETE /config/code-cli/adapters/:id directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

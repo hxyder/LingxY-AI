@@ -597,6 +597,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "POST" && url.pathname === "/config/code-cli/adapters") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const body = await readJsonBody(request);
     if (!body.id || !(body.command ?? body.executable)) {
       sendJson(response, 400, { error: "id and command required" });
@@ -628,6 +629,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "DELETE" && url.pathname.startsWith("/config/code-cli/adapters/")) {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const id = decodeURIComponent(url.pathname.replace(/^\/config\/code-cli\/adapters\//, ""));
     saveRuntimeConfig(runtime, (currentConfig) => ({
       ...currentConfig,

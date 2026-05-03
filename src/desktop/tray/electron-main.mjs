@@ -193,6 +193,14 @@ function normalizeProviderId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
 
+function normalizeCodeCliAdapterPayload(payload = {}) {
+  return normalizePlainObject(payload) ?? {};
+}
+
+function normalizeCodeCliAdapterId(id) {
+  return typeof id === "string" ? id.trim() : "";
+}
+
 async function requestDesktopServiceJson({
   base,
   pathname,
@@ -2323,6 +2331,46 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "provider_delete_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.codeCliAdapterSave, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/config/code-cli/adapters",
+            body: normalizeCodeCliAdapterPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "code_cli_adapter_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.codeCliAdapterDelete, async (event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const adapterId = normalizeCodeCliAdapterId(id);
+        if (!adapterId) {
+          return { ok: false, error: "code_cli_adapter_id_required", message: "Code CLI adapter id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "DELETE",
+            actor,
+            pathname: `/config/code-cli/adapters/${encodeURIComponent(adapterId)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "code_cli_adapter_delete_failed",
             message: error?.message ?? String(error)
           };
         }

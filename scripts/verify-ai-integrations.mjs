@@ -258,7 +258,7 @@ try {
     args: ["--version"],
     defaultModel: "mock-model",
     transport: "stream_json_print"
-  });
+  }, desktopActorHeaders);
 
   const providersPayload = await fetch(`${listening.baseUrl}/ai/providers`).then((response) => response.json());
   assert.ok(providersPayload.providers.some((provider) => provider.id === "mock-openai" && provider.configured));

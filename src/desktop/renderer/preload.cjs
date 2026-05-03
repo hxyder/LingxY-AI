@@ -307,6 +307,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteProvider(id) {
     return ipcRenderer.invoke("uca:provider-delete", id ?? "");
   },
+  saveCodeCliAdapter(payload) {
+    return ipcRenderer.invoke("uca:code-cli-adapter-save", payload ?? {});
+  },
+  deleteCodeCliAdapter(id) {
+    return ipcRenderer.invoke("uca:code-cli-adapter-delete", id ?? "");
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

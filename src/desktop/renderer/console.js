@@ -2646,7 +2646,7 @@ function renderCodeCliAdapters() {
       if (!id) return;
       codeCliAdapterState.textContent = "Deleting...";
       try {
-        await fetchJson(`/config/code-cli/adapters/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await deleteCodeCliAdapterViaShell(id);
         codeCliAdapterState.textContent = "Deleted.";
         await refreshWorkspace();
       } catch (error) {
@@ -6425,6 +6425,26 @@ async function deleteProviderViaShell(providerId) {
   );
 }
 
+async function saveCodeCliAdapterViaShell(adapter) {
+  if (typeof window.ucaShell?.saveCodeCliAdapter !== "function") {
+    throw new Error("Desktop Code CLI adapter bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveCodeCliAdapter(adapter),
+    "Could not save Code CLI adapter."
+  );
+}
+
+async function deleteCodeCliAdapterViaShell(adapterId) {
+  if (typeof window.ucaShell?.deleteCodeCliAdapter !== "function") {
+    throw new Error("Desktop Code CLI adapter bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteCodeCliAdapter(adapterId),
+    "Could not delete Code CLI adapter."
+  );
+}
+
 async function saveMcpServer(server) {
   if (typeof window.ucaShell?.saveMcpServer !== "function") {
     throw new Error("Desktop MCP config bridge unavailable.");
@@ -6762,7 +6782,7 @@ codeCliAdapterForm?.addEventListener("submit", async (event) => {
   };
   codeCliAdapterState.textContent = "Saving...";
   try {
-    await fetchJson("/config/code-cli/adapters", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    await saveCodeCliAdapterViaShell(payload);
     codeCliAdapterState.textContent = "Saved.";
     codeCliAdapterId.value = "";
     codeCliAdapterName.value = "";
