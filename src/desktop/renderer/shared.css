@@ -249,6 +249,33 @@ button.primary, button.secondary, button.ghost {
 .pill-neutral::before, .pill-ghost::before { display: none; }
 @keyframes lingxy-pill-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
 
+.preflight-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.preflight-state--ok {
+  background: var(--ok-soft);
+  border-color: color-mix(in srgb, var(--ok) 28%, transparent);
+  color: var(--ok);
+}
+.preflight-state--err {
+  background: var(--err-soft);
+  border-color: color-mix(in srgb, var(--err) 28%, transparent);
+  color: var(--err);
+}
+.preflight-state--pending {
+  background: var(--panel-2);
+  border-color: var(--line);
+  color: var(--muted);
+}
+
 /* Legacy chip-classes used by many renderers — map to pill */
 .chip.ready   { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 10px; font-weight: 600; background: var(--ok-soft); color: var(--ok); border: 1px solid transparent; }
 .chip.warning { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 10px; font-weight: 600; background: var(--warn-soft); color: var(--warn); border: 1px solid transparent; }

@@ -74,6 +74,19 @@ assert.ok(/id="mcpServerTestBtn"/.test(consoleHtml), "mcp preflight: test button
 assert.ok(/\/config\/mcp\/test/.test(consoleJs), "mcp preflight: console must call /config/mcp/test");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");
 assert.ok(/\/config\/skills\/test/.test(consoleJs), "skill preflight: console must call /config/skills/test");
+assert.ok(/function setPreflightState\s*\(/.test(consoleJs), "preflight state: helper missing");
+assert.ok((consoleJs.match(/setPreflightState\s*\(/g) ?? []).length >= 8,
+  "preflight state: MCP/Skill test and save paths must use setPreflightState");
+assert.ok(/\.preflight-state--ok\b/.test(sharedCss)
+    && /\.preflight-state--err\b/.test(sharedCss)
+    && /\.preflight-state--pending\b/.test(sharedCss),
+  "preflight state: ok/err/pending CSS classes missing");
+assert.ok(/Actual startup tested/.test(consoleJs),
+  "mcp preflight: success copy must clarify descriptor-only validation");
+assert.ok(!/mcpServerState\.textContent\s*=\s*["'`]Looks valid/.test(consoleJs),
+  "mcp preflight: raw Looks valid text must use state helper");
+assert.ok(!/skillRegistryState\.textContent\s*=\s*["'`]Looks valid/.test(consoleJs),
+  "skill preflight: raw Looks valid text must use state helper");
 
 // ── Per-user-message ↑/↓ nav ───────────────────────────────────────────
 assert.ok(/chat-msg-nav\b/.test(sharedCss) && /chat-msg-nav-btn/.test(consoleJs),

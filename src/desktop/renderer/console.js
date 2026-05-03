@@ -6165,6 +6165,14 @@ function closeMcpServerFormSoon() {
   }, 400);
 }
 
+function setPreflightState(el, kind, text) {
+  if (!el) return;
+  el.classList.remove("preflight-state--ok", "preflight-state--err", "preflight-state--pending");
+  el.classList.add("preflight-state", `preflight-state--${kind}`);
+  const label = kind === "ok" ? "OK" : kind === "err" ? "!" : "...";
+  el.textContent = `${label} ${text}`;
+}
+
 function buildMcpServerPayloadFromForm() {
   const id = mcpServerId.value.trim();
   const displayName = mcpServerName.value.trim();
@@ -6193,31 +6201,31 @@ async function preflightMcpServerConfig() {
 }
 
 mcpServerTestBtn?.addEventListener("click", async () => {
-  mcpServerState.textContent = "Checking...";
+  setPreflightState(mcpServerState, "pending", "Testing...");
   try {
     const result = await preflightMcpServerConfig();
     if (!result.ok) {
-      mcpServerState.textContent = `Invalid: ${formatMcpPreflightErrors(result.errors)}`;
+      setPreflightState(mcpServerState, "err", `Invalid: ${formatMcpPreflightErrors(result.errors)}`);
       return;
     }
-    mcpServerState.textContent = "Looks valid.";
+    setPreflightState(mcpServerState, "ok", "Valid configuration. Actual startup tested when MCP first starts.");
   } catch (error) {
-    mcpServerState.textContent = `Failed: ${error.message}`;
+    setPreflightState(mcpServerState, "err", `Failed: ${error.message}`);
   }
 });
 
 mcpServerForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  mcpServerState.textContent = "Checking...";
+  setPreflightState(mcpServerState, "pending", "Testing...");
   try {
     const result = await preflightMcpServerConfig();
     if (!result.ok) {
-      mcpServerState.textContent = `Invalid: ${formatMcpPreflightErrors(result.errors)}`;
+      setPreflightState(mcpServerState, "err", `Invalid: ${formatMcpPreflightErrors(result.errors)}`);
       return;
     }
-    mcpServerState.textContent = "Saving...";
+    setPreflightState(mcpServerState, "pending", "Saving...");
     await fetchJson("/config/mcp/servers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result.server) });
-    mcpServerState.textContent = "Saved.";
+    setPreflightState(mcpServerState, "ok", "Saved.");
     mcpServerId.value = "";
     mcpServerName.value = "";
     mcpCommand.value = "";
@@ -6225,7 +6233,7 @@ mcpServerForm?.addEventListener("submit", async (event) => {
     await refreshWorkspace();
     closeMcpServerFormSoon();
   } catch (error) {
-    mcpServerState.textContent = `Failed: ${error.message}`;
+    setPreflightState(mcpServerState, "err", `Failed: ${error.message}`);
   }
 });
 
@@ -6253,37 +6261,37 @@ async function preflightSkillRegistryConfig() {
 }
 
 skillRegistryTestBtn?.addEventListener("click", async () => {
-  skillRegistryState.textContent = "Checking...";
+  setPreflightState(skillRegistryState, "pending", "Testing...");
   try {
     const result = await preflightSkillRegistryConfig();
     if (!result.ok) {
-      skillRegistryState.textContent = `Invalid: ${formatSkillPreflightErrors(result.errors)}`;
+      setPreflightState(skillRegistryState, "err", `Invalid: ${formatSkillPreflightErrors(result.errors)}`);
       return;
     }
-    skillRegistryState.textContent = `Looks valid. ${result.skillCount ?? 0} skills found.`;
+    setPreflightState(skillRegistryState, "ok", `Valid. ${result.skillCount ?? 0} skill(s) found at this path.`);
   } catch (error) {
-    skillRegistryState.textContent = `Failed: ${error.message}`;
+    setPreflightState(skillRegistryState, "err", `Failed: ${error.message}`);
   }
 });
 
 skillRegistryForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  skillRegistryState.textContent = "Checking...";
+  setPreflightState(skillRegistryState, "pending", "Testing...");
   try {
     const result = await preflightSkillRegistryConfig();
     if (!result.ok) {
-      skillRegistryState.textContent = `Invalid: ${formatSkillPreflightErrors(result.errors)}`;
+      setPreflightState(skillRegistryState, "err", `Invalid: ${formatSkillPreflightErrors(result.errors)}`);
       return;
     }
-    skillRegistryState.textContent = "Saving...";
+    setPreflightState(skillRegistryState, "pending", "Saving...");
     await fetchJson("/config/skills/registries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result.registry) });
-    skillRegistryState.textContent = "Saved.";
+    setPreflightState(skillRegistryState, "ok", "Saved.");
     skillRegistryId.value = "";
     skillRegistryName.value = "";
     skillRegistryPath.value = "";
     await refreshWorkspace();
   } catch (error) {
-    skillRegistryState.textContent = `Failed: ${error.message}`;
+    setPreflightState(skillRegistryState, "err", `Failed: ${error.message}`);
   }
 });
 
