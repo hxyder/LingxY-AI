@@ -57,6 +57,27 @@ async function fetchJson(url, opts = {}) {
   return { status: res.status, body };
 }
 
+const DESKTOP_ACTOR_HEADER = "X-Lingxy-Desktop-Actor";
+function desktopJson(method, body) {
+  return {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      [DESKTOP_ACTOR_HEADER]: "desktop_console"
+    },
+    body: JSON.stringify(body ?? {})
+  };
+}
+
+function desktopMutation(method) {
+  return {
+    method,
+    headers: {
+      [DESKTOP_ACTOR_HEADER]: "desktop_console"
+    }
+  };
+}
+
 await it("GET /conversations: empty store returns []", async () => {
   const runtime = makeRuntime();
   const srv = await startServer(runtime);
@@ -217,11 +238,10 @@ await it("PATCH /conversation/{id}: title and archived can be updated", async ()
   runtime.store.insertConversation({ conversation_id: "c_patch" });
   const srv = await startServer(runtime);
   try {
-    const r = await fetchJson(`${srv.url}/conversation/c_patch`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "renamed", archived: true })
-    });
+    const r = await fetchJson(`${srv.url}/conversation/c_patch`, desktopJson("PATCH", {
+      title: "renamed",
+      archived: true
+    }));
     assert.equal(r.status, 200);
     assert.equal(r.body.conversation.title, "renamed");
     assert.equal(r.body.conversation.archived, true);
@@ -233,11 +253,7 @@ await it("PATCH: rejects body without patchable fields", async () => {
   runtime.store.insertConversation({ conversation_id: "c_p2" });
   const srv = await startServer(runtime);
   try {
-    const r = await fetchJson(`${srv.url}/conversation/c_p2`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ unsupported: 1 })
-    });
+    const r = await fetchJson(`${srv.url}/conversation/c_p2`, desktopJson("PATCH", { unsupported: 1 }));
     assert.equal(r.status, 400);
   } finally { await srv.close(); }
 });
@@ -248,7 +264,7 @@ await it("DELETE: default is soft delete (archived=true), no cascade", async () 
   runtime.store.appendMessage({ conversation_id: "c_del", role: "user", content: "x" });
   const srv = await startServer(runtime);
   try {
-    const r = await fetchJson(`${srv.url}/conversation/c_del`, { method: "DELETE" });
+    const r = await fetchJson(`${srv.url}/conversation/c_del`, desktopMutation("DELETE"));
     assert.equal(r.status, 200);
     assert.equal(r.body.conversation.archived, true);
     const conv = runtime.store.getConversation("c_del");
@@ -262,7 +278,7 @@ await it("DELETE ?hard=true: rejected with 403 when allowHardDelete is false", a
   runtime.store.insertConversation({ conversation_id: "c_hd" });
   const srv = await startServer(runtime);
   try {
-    const r = await fetchJson(`${srv.url}/conversation/c_hd?hard=true`, { method: "DELETE" });
+    const r = await fetchJson(`${srv.url}/conversation/c_hd?hard=true`, desktopMutation("DELETE"));
     assert.equal(r.status, 403);
     assert.ok(runtime.store.getConversation("c_hd"), "row must NOT be deleted");
   } finally { await srv.close(); }
@@ -274,7 +290,7 @@ await it("DELETE ?hard=true with allowHardDelete=true cascades messages", async 
   runtime.store.appendMessage({ conversation_id: "c_hard", role: "user", content: "x" });
   const srv = await startServer(runtime);
   try {
-    const r = await fetchJson(`${srv.url}/conversation/c_hard?hard=true`, { method: "DELETE" });
+    const r = await fetchJson(`${srv.url}/conversation/c_hard?hard=true`, desktopMutation("DELETE"));
     assert.equal(r.status, 200);
     assert.equal(r.body.hard, true);
     assert.equal(runtime.store.getConversation("c_hard"), null);

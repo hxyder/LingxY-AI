@@ -7,6 +7,7 @@ import {
 const NOTES_EDITOR_ACTORS = ["desktop_console"];
 const NOTES_CHIP_ACTORS = ["desktop_console", "desktop_overlay"];
 const PROJECT_STORE_ACTORS = ["desktop_console", "desktop_overlay"];
+const CONVERSATION_MUTATION_ACTORS = ["desktop_console"];
 
 function normalizeProjectStore(store) {
   return normalizeProjectStoreBase(store, { withUpdatedAt: false });
@@ -180,6 +181,7 @@ export async function tryHandleNoteProjectConversationRoute({
 
   if (method === "PATCH" && conversationByIdMatch) {
     const conversationId = conversationByIdMatch[1];
+    if (!requireDesktopActor({ request, response, allowedActors: CONVERSATION_MUTATION_ACTORS })) return true;
     if (typeof runtime.store?.updateConversation !== "function") {
       sendJson(response, 404, { error: "conversation store not available" });
       return true;
@@ -200,6 +202,7 @@ export async function tryHandleNoteProjectConversationRoute({
 
   if (method === "DELETE" && conversationByIdMatch) {
     const conversationId = conversationByIdMatch[1];
+    if (!requireDesktopActor({ request, response, allowedActors: CONVERSATION_MUTATION_ACTORS })) return true;
     const hard = url.searchParams.get("hard") === "true";
     if (hard) {
       if (!runtime.config?.allowHardDelete) {

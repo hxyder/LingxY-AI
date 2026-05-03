@@ -314,14 +314,14 @@ const expectedSurfaces = [
   surface("note-project-conversation-routes.mjs", "DELETE", "/^\\/conversation\\/([^/]+)$/", {
     domain: "conversation",
     effect: "local_state_write",
-    boundary: "local_ui_pending_guard",
-    migration: "conversation_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("note-project-conversation-routes.mjs", "PATCH", "/^\\/conversation\\/([^/]+)$/", {
     domain: "conversation",
     effect: "local_state_write",
-    boundary: "local_ui_pending_guard",
-    migration: "conversation_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("note-project-conversation-routes.mjs", "POST", "/notes", {
     domain: "notes",

@@ -429,6 +429,37 @@ function makeProjectStoreRuntime(initialConfig = {}) {
   };
 }
 
+function makeConversationMutationRuntime({ allowHardDelete = false } = {}) {
+  const calls = [];
+  const conversation = {
+    conversation_id: "conv_demo",
+    title: "Demo",
+    archived: false
+  };
+  return {
+    calls,
+    config: { allowHardDelete },
+    store: {
+      updateConversation(conversationId, patch) {
+        calls.push({ method: "store.updateConversation", conversationId, patch });
+        if (conversationId !== conversation.conversation_id) return null;
+        Object.assign(conversation, patch);
+        return { ...conversation };
+      },
+      softDeleteConversation(conversationId) {
+        calls.push({ method: "store.softDeleteConversation", conversationId });
+        if (conversationId !== conversation.conversation_id) return null;
+        conversation.archived = true;
+        return { ...conversation };
+      },
+      hardDeleteConversation(conversationId) {
+        calls.push({ method: "store.hardDeleteConversation", conversationId });
+        return conversationId === conversation.conversation_id;
+      }
+    }
+  };
+}
+
 async function noteProjectConversationRoute({
   method,
   pathname,
@@ -1007,4 +1038,71 @@ test("project store mutation allows console and overlay project writers", async 
     assert.equal(runtime.calls[1].value.ui.projectStore.currentProjectId, "proj_demo");
     assert.ok(runtime.calls[1].value.ui.projectStore.projects.some((project) => project.id === "proj_demo"));
   }
+});
+
+test("conversation mutation routes reject non-console actors before store writes", async () => {
+  const cases = [
+    { method: "PATCH", pathname: "/conversation/conv_demo", actor: "browser_page", body: { title: "Renamed" } },
+    { method: "PATCH", pathname: "/conversation/conv_demo", actor: "desktop_overlay", body: { archived: true } },
+    { method: "DELETE", pathname: "/conversation/conv_demo", actor: "browser_page" },
+    { method: "DELETE", pathname: "/conversation/conv_demo?hard=true", actor: "desktop_overlay" }
+  ];
+
+  for (const entry of cases) {
+    const runtime = makeConversationMutationRuntime({ allowHardDelete: true });
+    const result = await noteProjectConversationRoute({
+      ...entry,
+      runtime
+    });
+    assert.equal(result.handled, true, `${entry.method} ${entry.pathname} should be handled`);
+    assert.equal(result.statusCode, 403, `${entry.method} ${entry.pathname} should reject`);
+    assert.equal(result.payload.error, "desktop_actor_required");
+    assert.deepEqual(runtime.calls, [], `${entry.method} ${entry.pathname} must not touch conversation store`);
+  }
+});
+
+test("conversation mutation routes allow console actor for metadata and deletes", async () => {
+  const patchRuntime = makeConversationMutationRuntime();
+  const patched = await noteProjectConversationRoute({
+    method: "PATCH",
+    pathname: "/conversation/conv_demo",
+    actor: "desktop_console",
+    runtime: patchRuntime,
+    body: { title: "Renamed", archived: true }
+  });
+  assert.equal(patched.statusCode, 200);
+  assert.equal(patched.payload.conversation.title, "Renamed");
+  assert.deepEqual(patchRuntime.calls, [
+    {
+      method: "store.updateConversation",
+      conversationId: "conv_demo",
+      patch: { title: "Renamed", archived: true }
+    }
+  ]);
+
+  const softRuntime = makeConversationMutationRuntime();
+  const softDeleted = await noteProjectConversationRoute({
+    method: "DELETE",
+    pathname: "/conversation/conv_demo",
+    actor: "desktop_console",
+    runtime: softRuntime
+  });
+  assert.equal(softDeleted.statusCode, 200);
+  assert.equal(softDeleted.payload.conversation.archived, true);
+  assert.deepEqual(softRuntime.calls, [
+    { method: "store.softDeleteConversation", conversationId: "conv_demo" }
+  ]);
+
+  const hardRuntime = makeConversationMutationRuntime({ allowHardDelete: true });
+  const hardDeleted = await noteProjectConversationRoute({
+    method: "DELETE",
+    pathname: "/conversation/conv_demo?hard=true",
+    actor: "desktop_console",
+    runtime: hardRuntime
+  });
+  assert.equal(hardDeleted.statusCode, 200);
+  assert.equal(hardDeleted.payload.hard, true);
+  assert.deepEqual(hardRuntime.calls, [
+    { method: "store.hardDeleteConversation", conversationId: "conv_demo" }
+  ]);
 });
