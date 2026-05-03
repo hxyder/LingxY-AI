@@ -177,6 +177,7 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
   // PATCH /connectors/connected-accounts/:accountId — rename / edit
   // mutable fields. Currently displayName only; can grow.
   if (method === "PATCH" && /^\/connectors\/connected-accounts\/[^/]+$/.test(url.pathname)) {
+    if (!requireDesktopActor({ request, response })) return true;
     const accountId = decodeURIComponent(url.pathname.split("/")[3]);
     const body = await readJsonBody(request);
     const account = getAccountById(runtime, accountId);
@@ -199,6 +200,7 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
 
   // PATCH /connectors/connected-accounts/:accountId/defaults — set default purpose
   if (method === "PATCH" && /^\/connectors\/connected-accounts\/[^/]+\/defaults$/.test(url.pathname)) {
+    if (!requireDesktopActor({ request, response })) return true;
     const accountId = decodeURIComponent(url.pathname.split("/")[3]);
     const body = await readJsonBody(request);
     const purposes = [];
@@ -225,6 +227,7 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
 
   // DELETE /connectors/connected-accounts/:accountId — disconnect one account
   if (method === "DELETE" && /^\/connectors\/connected-accounts\/[^/]+$/.test(url.pathname)) {
+    if (!requireDesktopActor({ request, response })) return true;
     const accountId = decodeURIComponent(url.pathname.split("/")[3]);
     const account = deleteConnectedAccount(runtime, accountId);
     if (!account) {
@@ -283,6 +286,7 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
 
   // PATCH /connectors/accounts/:type/config — save client_id / client_secret
   if (method === "PATCH" && /^\/connectors\/accounts\/(microsoft|google)\/config$/.test(url.pathname)) {
+    if (!requireDesktopActor({ request, response })) return true;
     const type = url.pathname.split("/")[3];
     const body = await readJsonBody(request);
     const updates = {};
@@ -310,6 +314,7 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
 
   // DELETE /connectors/accounts/:type — disconnect (revoke stored tokens)
   if (method === "DELETE" && /^\/connectors\/accounts\/(microsoft|google)$/.test(url.pathname)) {
+    if (!requireDesktopActor({ request, response })) return true;
     const type = url.pathname.split("/")[3];
     await disconnectAccount(runtime, type);
     sendJson(response, 200, { ok: true });

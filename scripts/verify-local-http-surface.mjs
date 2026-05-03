@@ -222,14 +222,14 @@ const expectedSurfaces = [
   surface("connector-routes.mjs", "DELETE", "/^\\/connectors\\/accounts\\/(microsoft|google)$/", {
     domain: "connector_accounts",
     effect: "credential_config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "connector_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("connector-routes.mjs", "DELETE", "/^\\/connectors\\/connected-accounts\\/[^/]+$/", {
     domain: "connector_accounts",
     effect: "credential_config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "connector_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("connector-routes.mjs", "DELETE", "/^\\/plugins\\/[^/]+$/", {
     domain: "plugins",
@@ -240,20 +240,20 @@ const expectedSurfaces = [
   surface("connector-routes.mjs", "PATCH", "/^\\/connectors\\/accounts\\/(microsoft|google)\\/config$/", {
     domain: "connector_accounts",
     effect: "credential_config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "connector_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("connector-routes.mjs", "PATCH", "/^\\/connectors\\/connected-accounts\\/[^/]+\\/defaults$/", {
     domain: "connector_accounts",
     effect: "credential_config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "connector_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("connector-routes.mjs", "PATCH", "/^\\/connectors\\/connected-accounts\\/[^/]+$/", {
     domain: "connector_accounts",
     effect: "credential_config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "connector_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("connector-routes.mjs", "PATCH", "/^\\/plugins\\/[^/]+\\/enabled$/", {
     domain: "plugins",
@@ -610,7 +610,13 @@ function assertDesktopActorGuard(surfaceEntry) {
         routeIndex = source.indexOf(`if (method === "${surfaceEntry.method}" && ${variableMatch[1]}`);
       }
     } else {
-      routeIndex = source.indexOf(surfaceEntry.matcher);
+      routeIndex = source.indexOf(`if (method === "${surfaceEntry.method}" && ${surfaceEntry.matcher}.test(url.pathname))`);
+      if (routeIndex < 0) {
+        routeIndex = source.indexOf(`if (${surfaceEntry.matcher}.test(url.pathname) && method === "${surfaceEntry.method}")`);
+      }
+      if (routeIndex < 0) {
+        routeIndex = source.indexOf(surfaceEntry.matcher);
+      }
     }
   } else if (surfaceEntry.matcher.endsWith("*")) {
     routeIndex = source.indexOf(`url.pathname.startsWith("${surfaceEntry.matcher.slice(0, -1)}")`);

@@ -148,6 +148,77 @@ async function pluginRoute({ method, pathname, actor = "desktop_console", body =
   };
 }
 
+function makeConnectorAccountRuntime() {
+  const calls = [];
+  const config = {};
+  const account = {
+    id: "acct_demo",
+    provider: "google",
+    providerAccountId: "google-user",
+    email: "demo@example.com",
+    displayName: "Demo",
+    scopes: [],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  };
+  return {
+    calls,
+    configStore: {
+      load() {
+        calls.push({ method: "config.load" });
+        return config;
+      },
+      save(next) {
+        calls.push({ method: "config.save", value: next });
+      }
+    },
+    store: {
+      getConnectedAccount(accountId) {
+        calls.push({ method: "store.getConnectedAccount", accountId });
+        return accountId === account.id ? account : null;
+      },
+      listConnectedAccounts() {
+        calls.push({ method: "store.listConnectedAccounts" });
+        return [account];
+      },
+      upsertConnectedAccount(next) {
+        calls.push({ method: "store.upsertConnectedAccount", account: next });
+        return next;
+      },
+      deleteConnectedAccount(accountId) {
+        calls.push({ method: "store.deleteConnectedAccount", accountId });
+        return accountId === account.id ? account : null;
+      },
+      deleteOAuthToken(accountId) {
+        calls.push({ method: "store.deleteOAuthToken", accountId });
+      }
+    }
+  };
+}
+
+async function connectorAccountRoute({
+  method,
+  pathname,
+  actor = "desktop_console",
+  body = {},
+  runtime = makeConnectorAccountRuntime()
+}) {
+  const response = captureResponse();
+  const handled = await tryHandleConnectorRoute({
+    request: jsonRequest(body, actor ? { [ACTOR_HEADER]: actor } : {}),
+    response,
+    method,
+    url: new URL(`http://127.0.0.1${pathname}`),
+    runtime
+  });
+  return {
+    handled,
+    statusCode: response.statusCode,
+    payload: parsePayload(response),
+    runtime
+  };
+}
+
 test("local mutation guard rejects misspelled desktop actors before mutating config", async () => {
   const result = await postConfigRoute({
     pathname: "/config/output",
@@ -254,4 +325,61 @@ test("plugin mutation routes allow trusted desktop actors", async () => {
   assert.deepEqual(toggle.runtime.calls, [
     { method: "setEnabled", pluginId: "demo", enabled: false }
   ]);
+});
+
+test("connector account mutation routes reject unknown desktop actors before local state changes", async () => {
+  const cases = [
+    { method: "PATCH", pathname: "/connectors/accounts/google/config", body: { clientId: "id" } },
+    { method: "DELETE", pathname: "/connectors/accounts/google" },
+    { method: "PATCH", pathname: "/connectors/connected-accounts/acct_demo", body: { displayName: "Renamed" } },
+    { method: "PATCH", pathname: "/connectors/connected-accounts/acct_demo/defaults", body: { purpose: "email" } },
+    { method: "DELETE", pathname: "/connectors/connected-accounts/acct_demo" }
+  ];
+
+  for (const entry of cases) {
+    const result = await connectorAccountRoute({
+      ...entry,
+      actor: "browser_page"
+    });
+    assert.equal(result.handled, true, `${entry.method} ${entry.pathname} should be handled`);
+    assert.equal(result.statusCode, 403, `${entry.method} ${entry.pathname} should reject`);
+    assert.equal(result.payload.error, "desktop_actor_required");
+    assert.deepEqual(result.runtime.calls, [], `${entry.method} ${entry.pathname} must not touch connector state`);
+  }
+});
+
+test("connector account mutation routes allow trusted desktop actors", async () => {
+  const config = await connectorAccountRoute({
+    method: "PATCH",
+    pathname: "/connectors/accounts/google/config",
+    actor: "desktop_console",
+    body: { clientId: "client-id", clientSecret: "secret" }
+  });
+  assert.equal(config.statusCode, 200);
+  assert.deepEqual(config.runtime.calls, [
+    { method: "config.load" },
+    {
+      method: "config.save",
+      value: {
+        connectors: {
+          google: {
+            clientId: "client-id",
+            clientSecret: "secret"
+          }
+        }
+      }
+    }
+  ]);
+
+  const rename = await connectorAccountRoute({
+    method: "PATCH",
+    pathname: "/connectors/connected-accounts/acct_demo",
+    actor: "desktop_overlay",
+    body: { displayName: "Renamed" }
+  });
+  assert.equal(rename.statusCode, 200);
+  assert.equal(rename.payload.account.displayName, "Renamed");
+  assert.equal(rename.runtime.calls[0].method, "store.getConnectedAccount");
+  assert.equal(rename.runtime.calls[1].method, "store.getConnectedAccount");
+  assert.equal(rename.runtime.calls[2].method, "store.upsertConnectedAccount");
 });
