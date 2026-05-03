@@ -79,6 +79,10 @@ if (!configProviderRouteSource.includes('url.pathname === "/config/routing"')
     || (configProviderRouteSource.match(/requireDesktopActor/g) ?? []).length < 11) {
   throw new Error("Runtime config mutation routes must live in config-provider-routes.mjs and require the shared desktop actor guard.");
 }
+if (!configProviderRouteSource.includes('url.pathname === "/config/email/settings"')
+    || (configProviderRouteSource.match(/requireDesktopActor/g) ?? []).length < 12) {
+  throw new Error("Email settings mutation route must live in config-provider-routes.mjs and require the shared desktop actor guard.");
+}
 if (configProviderRouteSource.includes('url.pathname === "/config/mcp/install/preview"')) {
   throw new Error("MCP install preview route must live in mcp-install-routes.mjs, not config-provider-routes.mjs.");
 }

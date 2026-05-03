@@ -328,6 +328,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   updateFeatureConfig(payload) {
     return ipcRenderer.invoke("uca:feature-config-update", payload ?? {});
   },
+  updateEmailSettings(payload) {
+    return ipcRenderer.invoke("uca:email-settings-update", payload ?? {});
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

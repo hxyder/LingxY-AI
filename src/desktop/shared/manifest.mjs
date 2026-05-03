@@ -74,7 +74,8 @@ export const IPC_CHANNELS = Object.freeze({
   skillRegistryDelete: "uca:skill-registry-delete",
   routingConfigUpdate: "uca:routing-config-update",
   outputConfigUpdate: "uca:output-config-update",
-  featureConfigUpdate: "uca:feature-config-update"
+  featureConfigUpdate: "uca:feature-config-update",
+  emailSettingsUpdate: "uca:email-settings-update"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

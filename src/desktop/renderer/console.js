@@ -6483,6 +6483,16 @@ async function updateFeatureConfigViaShell(features) {
   );
 }
 
+async function updateEmailSettingsViaShell(settings) {
+  if (typeof window.ucaShell?.updateEmailSettings !== "function") {
+    throw new Error("Desktop email settings bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.updateEmailSettings(settings),
+    "Could not save email settings."
+  );
+}
+
 async function saveMcpServer(server) {
   if (typeof window.ucaShell?.saveMcpServer !== "function") {
     throw new Error("Desktop MCP config bridge unavailable.");
@@ -6881,11 +6891,7 @@ emailDigestSaveBtn?.addEventListener("click", async () => {
   };
   emailDigestState.textContent = "Saving...";
   try {
-    const result = await fetchJson("/config/email/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    const result = await updateEmailSettingsViaShell(payload);
     state.workspace.emailDigestSettings = result.settings ?? payload;
     if (state.workspace.health?.config?.features) {
       state.workspace.health.config.features.morning_digest = { enabled: payload.enabled };
@@ -8561,13 +8567,9 @@ connDigestTestBtn?.addEventListener("click", async () => {
 
 connDigestEnabled?.addEventListener("change", async () => {
   try {
-    const result = await fetchJson("/config/email/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...(state.workspace.emailDigestSettings ?? {}),
-        enabled: connDigestEnabled.checked
-      })
+    const result = await updateEmailSettingsViaShell({
+      ...(state.workspace.emailDigestSettings ?? {}),
+      enabled: connDigestEnabled.checked
     });
     state.workspace.emailDigestSettings = result.settings ?? state.workspace.emailDigestSettings;
     if (state.workspace.health?.config?.features) {

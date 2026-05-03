@@ -200,6 +200,10 @@ assert.ok(!/fetchJson\(\s*["'`]\/config\/output["'`]\s*,\s*\{\s*method:\s*["'`]P
   "output config: console must not POST /config/output directly");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/features["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "feature config: console must not POST /config/features directly");
+assert.ok(/updateEmailSettingsViaShell/.test(consoleJs) && /window\.ucaShell\.updateEmailSettings/.test(consoleJs),
+  "email settings: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/email\/settings["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "email settings: console must not POST /config/email/settings directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

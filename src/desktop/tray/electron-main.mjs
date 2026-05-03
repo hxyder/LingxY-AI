@@ -2481,6 +2481,24 @@ export function createElectronShellRuntime({
           };
         }
       });
+      ipcMain.handle(IPC_CHANNELS.emailSettingsUpdate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/config/email/settings",
+            body: normalizeRuntimeConfigPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "email_settings_update_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
 
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({
         serviceBaseUrl: resolvedServiceBaseUrl,
