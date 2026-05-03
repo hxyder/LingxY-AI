@@ -74,6 +74,12 @@ assert.ok(/id="mcpServerTestBtn"/.test(consoleHtml), "mcp preflight: test button
 assert.ok(/\/config\/mcp\/test/.test(consoleJs), "mcp preflight: console must call /config/mcp/test");
 assert.ok(/id="mcpInstallPackageDir"/.test(consoleHtml) && /id="mcpInstallPreviewBtn"/.test(consoleHtml),
   "mcp install preview: packageDir input and preview button missing");
+assert.ok(/id="mcpInstallSource"/.test(consoleHtml) && /id="mcpInstallPlanBtn"/.test(consoleHtml),
+  "mcp install plan: source input and plan button missing");
+assert.ok(/\/config\/mcp\/install\/plan/.test(consoleJs),
+  "mcp install plan: console must call dry-run plan endpoint");
+assert.ok(/applyMcpInstallPlanToForm/.test(consoleJs) && /Install is not executed here/.test(consoleJs),
+  "mcp install plan: plan must populate packageDir without executing install");
 assert.ok(/\/config\/mcp\/install\/preview/.test(consoleJs),
   "mcp install preview: console must call dry-run preview endpoint");
 assert.ok(/applyMcpInstallPreviewToForm/.test(consoleJs) && /Review fields before saving/.test(consoleJs),

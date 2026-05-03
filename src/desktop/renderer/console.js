@@ -184,6 +184,10 @@ const mcpServerState = document.querySelector("#mcpServerState");
 const mcpServerList = document.querySelector("#mcpServerList");
 const mcpServerRefreshBtn = document.querySelector("#mcpServerRefreshBtn");
 const mcpServerTestBtn = document.querySelector("#mcpServerTestBtn");
+const mcpInstallSource = document.querySelector("#mcpInstallSource");
+const mcpInstallPlanBtn = document.querySelector("#mcpInstallPlanBtn");
+const mcpInstallPlanSummary = document.querySelector("#mcpInstallPlanSummary");
+const mcpInstallPlanState = document.querySelector("#mcpInstallPlanState");
 const mcpInstallPackageDir = document.querySelector("#mcpInstallPackageDir");
 const mcpInstallPreviewBtn = document.querySelector("#mcpInstallPreviewBtn");
 const mcpInstallPreviewSummary = document.querySelector("#mcpInstallPreviewSummary");
@@ -6180,6 +6184,7 @@ function setPreflightState(el, kind, text) {
 const PREFLIGHT_FIELD_KEYS = {
   mcp: {
     id: "mcp-id",
+    source: "mcp-source",
     packageDir: "mcp-packageDir",
     transport: "mcp-transport",
     command: "mcp-command",
@@ -6267,6 +6272,17 @@ async function preflightMcpServerConfig() {
   });
 }
 
+async function planMcpInstallSource() {
+  return fetchJson("/config/mcp/install/plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      source: mcpInstallSource?.value?.trim() ?? "",
+      id: mcpServerId?.value?.trim() ?? ""
+    })
+  });
+}
+
 async function previewMcpInstallCandidate() {
   return fetchJson("/config/mcp/install/preview", {
     method: "POST",
@@ -6293,6 +6309,44 @@ function applyMcpInstallPreviewToForm(result = {}) {
     mcpInstallPreviewSummary.hidden = false;
   }
 }
+
+function applyMcpInstallPlanToForm(result = {}) {
+  if (mcpInstallPackageDir && result.packageDir) {
+    mcpInstallPackageDir.value = result.packageDir;
+  }
+  if (mcpInstallPlanSummary) {
+    const source = result.sourceType ? `source: ${result.sourceType}` : "source: planned";
+    const scripts = result.allowScripts ? "package scripts allowed" : "package scripts disabled";
+    mcpInstallPlanSummary.textContent = `Plan ready (${source}; ${scripts}). Package directory copied below; install is not executed here.`;
+    mcpInstallPlanSummary.hidden = false;
+  }
+}
+
+mcpInstallPlanBtn?.addEventListener("click", async () => {
+  clearFieldErrors(mcpServerForm);
+  if (mcpInstallPlanSummary) {
+    mcpInstallPlanSummary.hidden = true;
+    mcpInstallPlanSummary.textContent = "";
+  }
+  setPreflightState(mcpInstallPlanState, "pending", "Planning...");
+  try {
+    const result = await planMcpInstallSource();
+    if (!result.ok) {
+      showPreflightErrors({
+        formEl: mcpServerForm,
+        kind: "mcp",
+        stateEl: mcpInstallPlanState,
+        errors: result.errors,
+        fallback: "Could not build an MCP install plan."
+      });
+      return;
+    }
+    applyMcpInstallPlanToForm(result);
+    setPreflightState(mcpInstallPlanState, "ok", "Plan ready. Install is not executed here.");
+  } catch (error) {
+    setPreflightState(mcpInstallPlanState, "err", `Failed: ${error.message}`);
+  }
+});
 
 mcpInstallPreviewBtn?.addEventListener("click", async () => {
   clearFieldErrors(mcpServerForm);
@@ -6364,6 +6418,11 @@ mcpServerForm?.addEventListener("submit", async (event) => {
     mcpServerName.value = "";
     mcpCommand.value = "";
     mcpArgs.value = "";
+    if (mcpInstallSource) mcpInstallSource.value = "";
+    if (mcpInstallPlanSummary) {
+      mcpInstallPlanSummary.hidden = true;
+      mcpInstallPlanSummary.textContent = "";
+    }
     if (mcpInstallPackageDir) mcpInstallPackageDir.value = "";
     if (mcpInstallPreviewSummary) {
       mcpInstallPreviewSummary.hidden = true;

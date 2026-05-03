@@ -1775,6 +1775,15 @@
               </div>
               <div id="mcpServerFormWrap" hidden>
                 <form id="mcpServerForm" class="stack" style="gap:10px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);margin-bottom:10px;">
+                  <div class="mcp-install-preview" data-preflight-field="mcp-source">
+                    <label for="mcpInstallSource">Install source</label>
+                    <div class="mcp-install-preview-row">
+                      <input id="mcpInstallSource" type="text" placeholder="npm package or https://github.com/owner/repo">
+                      <button type="button" id="mcpInstallPlanBtn" class="btn btn-sm btn-ghost">Plan</button>
+                    </div>
+                    <div id="mcpInstallPlanSummary" class="mcp-install-preview-summary" hidden></div>
+                    <span id="mcpInstallPlanState" class="muted" style="font-size:12px;"></span>
+                  </div>
                   <div class="mcp-install-preview" data-preflight-field="mcp-packageDir">
                     <label for="mcpInstallPackageDir">Package directory</label>
                     <div class="mcp-install-preview-row">
