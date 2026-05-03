@@ -1775,6 +1775,15 @@
               </div>
               <div id="mcpServerFormWrap" hidden>
                 <form id="mcpServerForm" class="stack" style="gap:10px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);margin-bottom:10px;">
+                  <div class="mcp-install-preview" data-preflight-field="mcp-packageDir">
+                    <label for="mcpInstallPackageDir">Package directory</label>
+                    <div class="mcp-install-preview-row">
+                      <input id="mcpInstallPackageDir" type="text" placeholder="e.g. C:\\tools\\my-mcp-package">
+                      <button type="button" id="mcpInstallPreviewBtn" class="btn btn-sm btn-ghost">Preview</button>
+                    </div>
+                    <div id="mcpInstallPreviewSummary" class="mcp-install-preview-summary" hidden></div>
+                    <span id="mcpInstallPreviewState" class="muted" style="font-size:12px;"></span>
+                  </div>
                   <div class="row" style="gap:8px;">
                     <div style="flex:1;" data-preflight-field="mcp-id">
                       <label for="mcpServerId">Server ID</label>

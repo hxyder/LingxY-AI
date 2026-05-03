@@ -184,6 +184,10 @@ const mcpServerState = document.querySelector("#mcpServerState");
 const mcpServerList = document.querySelector("#mcpServerList");
 const mcpServerRefreshBtn = document.querySelector("#mcpServerRefreshBtn");
 const mcpServerTestBtn = document.querySelector("#mcpServerTestBtn");
+const mcpInstallPackageDir = document.querySelector("#mcpInstallPackageDir");
+const mcpInstallPreviewBtn = document.querySelector("#mcpInstallPreviewBtn");
+const mcpInstallPreviewSummary = document.querySelector("#mcpInstallPreviewSummary");
+const mcpInstallPreviewState = document.querySelector("#mcpInstallPreviewState");
 const skillRegistryCount = document.querySelector("#skillRegistryCount");
 const skillRegistryForm = document.querySelector("#skillRegistryForm");
 const skillRegistryId = document.querySelector("#skillRegistryId");
@@ -6176,6 +6180,7 @@ function setPreflightState(el, kind, text) {
 const PREFLIGHT_FIELD_KEYS = {
   mcp: {
     id: "mcp-id",
+    packageDir: "mcp-packageDir",
     transport: "mcp-transport",
     command: "mcp-command",
     url: "mcp-command"
@@ -6262,6 +6267,59 @@ async function preflightMcpServerConfig() {
   });
 }
 
+async function previewMcpInstallCandidate() {
+  return fetchJson("/config/mcp/install/preview", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      packageDir: mcpInstallPackageDir?.value?.trim() ?? "",
+      id: mcpServerId?.value?.trim() ?? ""
+    })
+  });
+}
+
+function applyMcpInstallPreviewToForm(result = {}) {
+  const server = result.server ?? {};
+  const transport = server.transport ?? "stdio";
+  mcpServerId.value = server.id ?? "";
+  mcpServerName.value = server.displayName ?? server.id ?? "";
+  mcpTransport.value = transport;
+  mcpCommand.value = transport === "stdio" ? (server.command ?? "") : (server.url ?? "");
+  mcpArgs.value = Array.isArray(server.args) ? server.args.join(" ") : "";
+  if (mcpInstallPreviewSummary) {
+    const source = result.source ? `source: ${result.source}` : "source: unknown";
+    const argsSource = result.detection?.sourceOfArgs ? `args: ${result.detection.sourceOfArgs}` : "args: review";
+    mcpInstallPreviewSummary.textContent = `Preview ready (${source}; ${argsSource}). Review fields before saving.`;
+    mcpInstallPreviewSummary.hidden = false;
+  }
+}
+
+mcpInstallPreviewBtn?.addEventListener("click", async () => {
+  clearFieldErrors(mcpServerForm);
+  if (mcpInstallPreviewSummary) {
+    mcpInstallPreviewSummary.hidden = true;
+    mcpInstallPreviewSummary.textContent = "";
+  }
+  setPreflightState(mcpInstallPreviewState, "pending", "Previewing...");
+  try {
+    const result = await previewMcpInstallCandidate();
+    if (!result.ok) {
+      showPreflightErrors({
+        formEl: mcpServerForm,
+        kind: "mcp",
+        stateEl: mcpInstallPreviewState,
+        errors: result.errors,
+        fallback: "Could not detect an MCP server from this package."
+      });
+      return;
+    }
+    applyMcpInstallPreviewToForm(result);
+    setPreflightState(mcpInstallPreviewState, "ok", "Preview ready. Review fields before saving.");
+  } catch (error) {
+    setPreflightState(mcpInstallPreviewState, "err", `Failed: ${error.message}`);
+  }
+});
+
 mcpServerTestBtn?.addEventListener("click", async () => {
   clearFieldErrors(mcpServerForm);
   setPreflightState(mcpServerState, "pending", "Testing...");
@@ -6306,6 +6364,11 @@ mcpServerForm?.addEventListener("submit", async (event) => {
     mcpServerName.value = "";
     mcpCommand.value = "";
     mcpArgs.value = "";
+    if (mcpInstallPackageDir) mcpInstallPackageDir.value = "";
+    if (mcpInstallPreviewSummary) {
+      mcpInstallPreviewSummary.hidden = true;
+      mcpInstallPreviewSummary.textContent = "";
+    }
     await refreshWorkspace();
     closeMcpServerFormSoon();
   } catch (error) {

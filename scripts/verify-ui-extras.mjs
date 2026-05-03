@@ -72,6 +72,14 @@ assert.ok(/mcp-install-btn/.test(consoleJs) && /mcp-install-btn/.test(sharedCss)
   "mcp install: .mcp-install-btn class or CSS missing");
 assert.ok(/id="mcpServerTestBtn"/.test(consoleHtml), "mcp preflight: test button missing");
 assert.ok(/\/config\/mcp\/test/.test(consoleJs), "mcp preflight: console must call /config/mcp/test");
+assert.ok(/id="mcpInstallPackageDir"/.test(consoleHtml) && /id="mcpInstallPreviewBtn"/.test(consoleHtml),
+  "mcp install preview: packageDir input and preview button missing");
+assert.ok(/\/config\/mcp\/install\/preview/.test(consoleJs),
+  "mcp install preview: console must call dry-run preview endpoint");
+assert.ok(/applyMcpInstallPreviewToForm/.test(consoleJs) && /Review fields before saving/.test(consoleJs),
+  "mcp install preview: preview must fill manual form and require review before saving");
+assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
+  "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");
 assert.ok(/\/config\/skills\/test/.test(consoleJs), "skill preflight: console must call /config/skills/test");
 assert.ok(/function setPreflightState\s*\(/.test(consoleJs), "preflight state: helper missing");
