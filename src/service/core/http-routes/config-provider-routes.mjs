@@ -457,6 +457,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "POST" && url.pathname === "/skills/save") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console", "desktop_overlay"] })) return true;
     const body = await readJsonBody(request);
     const skillsDir = runtime.paths?.skillsDir ?? null;
     const skillPatternsPath = runtime.paths?.skillPatternsPath ?? null;
@@ -492,6 +493,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "POST" && url.pathname === "/skills/write") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const body = await readJsonBody(request);
     const entryPath = resolveSkillEntryPath(runtime, body.entryPath);
     if (!entryPath) {

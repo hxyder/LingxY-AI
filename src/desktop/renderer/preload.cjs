@@ -319,6 +319,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteSkillRegistry(id) {
     return ipcRenderer.invoke("uca:skill-registry-delete", id ?? "");
   },
+  saveAutoSkill(payload) {
+    return ipcRenderer.invoke("uca:auto-skill-save", payload ?? {});
+  },
+  writeSkillMarkdown(payload) {
+    return ipcRenderer.invoke("uca:skill-markdown-write", payload ?? {});
+  },
   updateRoutingConfig(payload) {
     return ipcRenderer.invoke("uca:routing-config-update", payload ?? {});
   },

@@ -6441,6 +6441,16 @@ async function deleteSkillRegistryViaShell(registryId) {
   );
 }
 
+async function writeSkillMarkdownViaShell(entryPath, markdown) {
+  if (typeof window.ucaShell?.writeSkillMarkdown !== "function") {
+    throw new Error("Desktop skill editor bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.writeSkillMarkdown({ entryPath, markdown }),
+    "Could not save skill markdown."
+  );
+}
+
 async function updateRoutingConfigViaShell(routing) {
   if (typeof window.ucaShell?.updateRoutingConfig !== "function") {
     throw new Error("Desktop routing config bridge unavailable.");
@@ -6890,11 +6900,7 @@ skillEditSaveBtn?.addEventListener("click", async () => {
   if (!editingSkillPath || !skillEditText) return;
   skillEditState.textContent = "Saving...";
   try {
-    await fetchJson("/skills/write", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entryPath: editingSkillPath, markdown: skillEditText.value })
-    });
+    await writeSkillMarkdownViaShell(editingSkillPath, skillEditText.value);
     skillEditState.textContent = "Saved.";
     await refreshWorkspace();
   } catch (error) {

@@ -240,6 +240,14 @@ assert.ok(!/skillRegistryState\.textContent\s*=\s*["'`]Looks valid/.test(console
 assert.ok(/showFieldError\s*\(/.test(consoleJs) && /clearFieldErrors\s*\(/.test(consoleJs),
   "preflight field errors: console must render inline field errors");
 assert.ok(/\.field-error\b/.test(sharedCss), "preflight field errors: .field-error CSS missing");
+assert.ok(/writeSkillMarkdownViaShell/.test(consoleJs) && /window\.ucaShell\.writeSkillMarkdown/.test(consoleJs),
+  "skill editor write: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/skills\/write["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "skill editor write: console must not POST /skills/write directly");
+assert.ok(/saveAutoSkillViaShell/.test(overlayJs) && /window\.ucaShell\.saveAutoSkill/.test(overlayJs),
+  "auto skill save: overlay must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/skills\/save["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(overlayJs),
+  "auto skill save: overlay must not POST /skills/save directly");
 
 // ── Per-user-message ↑/↓ nav ───────────────────────────────────────────
 assert.ok(/chat-msg-nav\b/.test(sharedCss) && /chat-msg-nav-btn/.test(consoleJs),

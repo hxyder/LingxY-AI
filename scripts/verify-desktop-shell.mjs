@@ -68,6 +68,8 @@ for (const channel of [
   "uca:code-cli-adapter-delete",
   "uca:skill-registry-save",
   "uca:skill-registry-delete",
+  "uca:auto-skill-save",
+  "uca:skill-markdown-write",
   "uca:routing-config-update",
   "uca:output-config-update",
   "uca:feature-config-update",

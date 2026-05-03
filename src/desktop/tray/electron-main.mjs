@@ -209,6 +209,18 @@ function normalizeSkillRegistryId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
 
+function normalizeAutoSkillPayload(payload = {}) {
+  return normalizePlainObject(payload) ?? {};
+}
+
+function normalizeSkillMarkdownWritePayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    entryPath: typeof source.entryPath === "string" ? source.entryPath : "",
+    markdown: source.markdown == null ? "" : `${source.markdown}`
+  };
+}
+
 function normalizeRuntimeConfigPayload(payload = {}) {
   return normalizePlainObject(payload) ?? {};
 }
@@ -2503,6 +2515,42 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "skill_registry_delete_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.autoSkillSave, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/skills/save",
+            body: normalizeAutoSkillPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "auto_skill_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillMarkdownWrite, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/skills/write",
+            body: normalizeSkillMarkdownWritePayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_markdown_write_failed",
             message: error?.message ?? String(error)
           };
         }

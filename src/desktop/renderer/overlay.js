@@ -1945,6 +1945,16 @@ async function saveTemplateViaShell(template) {
   );
 }
 
+async function saveAutoSkillViaShell(proposal) {
+  if (typeof window.ucaShell?.saveAutoSkill !== "function") {
+    throw new Error("Desktop skill save bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveAutoSkill(proposal),
+    "Could not save this skill."
+  );
+}
+
 async function cancelTaskViaShell(taskId, options = {}) {
   if (typeof window.ucaShell?.cancelTask !== "function") {
     throw new Error("Desktop task control bridge unavailable.");
@@ -2609,11 +2619,7 @@ async function handleTaskEventFrame(rawEvent) {
             label: "保存为技能",
             onClick: async () => {
               try {
-                const resp = await fetchJson("/skills/save", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(proposal)
-                });
+                const resp = await saveAutoSkillViaShell(proposal);
                 addSystemBubble(`✅ 技能「${resp.suggestedName ?? proposal.suggestedName ?? resp.skillId}」已保存。`);
               } catch (err) {
                 addSystemBubble(`保存技能失败：${err.message}`);

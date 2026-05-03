@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -82,6 +82,23 @@ function makeEmailDigestRuntime(initialConfig = {}) {
       load() {
         calls.push({ method: "config.load" });
         return initialConfig;
+      }
+    }
+  };
+}
+
+function makeSkillRuntime({ skillsDir, skillPatternsPath, config = {} } = {}) {
+  const calls = [];
+  return {
+    calls,
+    paths: {
+      skillsDir,
+      skillPatternsPath
+    },
+    configStore: {
+      load() {
+        calls.push({ method: "config.load" });
+        return config;
       }
     }
   };
@@ -508,6 +525,98 @@ test("email digest manual check requires console or shell actor before reading l
       { method: "config.load" }
     ]);
   }
+});
+
+test("skills file mutation routes reject disallowed actors before local file writes", async (t) => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "uca-skills-guard-"));
+  t.after(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+  const skillsDir = path.join(tempRoot, "skills");
+  const skillPatternsPath = path.join(tempRoot, "skill-patterns.json");
+  await mkdir(path.join(skillsDir, "editable"), { recursive: true });
+  const editablePath = path.join(skillsDir, "editable", "SKILL.md");
+  await writeFile(editablePath, "# Original\n", "utf8");
+
+  const saveRuntime = makeSkillRuntime({ skillsDir, skillPatternsPath });
+  const blockedSave = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/save",
+    actor: "browser_page",
+    runtime: saveRuntime,
+    body: {
+      patternKey: "tool_a,tool_b",
+      tools: ["tool_a", "tool_b"],
+      examples: [{ command: "demo" }],
+      suggestedId: "blocked-skill",
+      suggestedName: "Blocked Skill"
+    }
+  });
+  assert.equal(blockedSave.statusCode, 403);
+  assert.equal(blockedSave.payload.error, "desktop_actor_required");
+  await assert.rejects(readFile(path.join(skillsDir, "blocked-skill", "SKILL.md"), "utf8"), /ENOENT/);
+
+  const writeRuntime = makeSkillRuntime({ skillsDir, skillPatternsPath });
+  const blockedWrite = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/write",
+    actor: "desktop_overlay",
+    runtime: writeRuntime,
+    body: {
+      entryPath: editablePath,
+      markdown: "# Mutated\n"
+    }
+  });
+  assert.equal(blockedWrite.statusCode, 403);
+  assert.equal(blockedWrite.payload.error, "desktop_actor_required");
+  assert.deepEqual(writeRuntime.calls, []);
+  assert.equal(await readFile(editablePath, "utf8"), "# Original\n");
+});
+
+test("skills file mutation routes allow their intended desktop actors", async (t) => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "uca-skills-guard-"));
+  t.after(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+  const skillsDir = path.join(tempRoot, "skills");
+  const skillPatternsPath = path.join(tempRoot, "skill-patterns.json");
+  const saveRuntime = makeSkillRuntime({ skillsDir, skillPatternsPath });
+  const saved = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/save",
+    actor: "desktop_overlay",
+    runtime: saveRuntime,
+    body: {
+      patternKey: "tool_a,tool_b",
+      tools: ["tool_a", "tool_b"],
+      examples: [{ command: "demo" }],
+      suggestedId: "demo-skill",
+      suggestedName: "Demo Skill"
+    }
+  });
+  assert.equal(saved.statusCode, 200);
+  assert.equal(saved.payload.skillId, "demo-skill");
+  const savedMarkdown = await readFile(path.join(skillsDir, "demo-skill", "SKILL.md"), "utf8");
+  assert.match(savedMarkdown, /# Demo Skill/);
+
+  const editableDir = path.join(skillsDir, "editable");
+  await mkdir(editableDir, { recursive: true });
+  const editablePath = path.join(editableDir, "SKILL.md");
+  await writeFile(editablePath, "# Original\n", "utf8");
+  const writeRuntime = makeSkillRuntime({ skillsDir, skillPatternsPath });
+  const written = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/write",
+    actor: "desktop_console",
+    runtime: writeRuntime,
+    body: {
+      entryPath: editablePath,
+      markdown: "# Updated\n"
+    }
+  });
+  assert.equal(written.statusCode, 200);
+  assert.equal(written.payload.entryPath, editablePath);
+  assert.equal(await readFile(editablePath, "utf8"), "# Updated\n");
 });
 
 test("approval mutation routes trust the desktop actor header over any body actor", async () => {

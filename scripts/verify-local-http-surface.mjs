@@ -209,14 +209,14 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "POST", "/skills/save", {
     domain: "skills_config",
     effect: "config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "POST", "/skills/write", {
     domain: "skills_config",
     effect: "local_file_write",
-    boundary: "local_ui_pending_guard",
-    migration: "config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
 
   surface("connector-routes.mjs", "DELETE", "/^\\/connectors\\/accounts\\/(microsoft|google)$/", {
