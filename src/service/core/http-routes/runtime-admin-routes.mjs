@@ -91,6 +91,9 @@ export async function tryHandleRuntimeAdminRoute({ request, response, method, ur
   }
 
   if (method === "POST" && url.pathname === "/security/state") {
+    if (!requireDesktopActor({ request, response })) {
+      return true;
+    }
     const body = await readJsonBody(request);
     const security = runtime.persistSecurityConfig(body);
     sendJson(response, 200, { security });
@@ -105,6 +108,9 @@ export async function tryHandleRuntimeAdminRoute({ request, response, method, ur
   }
 
   if (method === "POST" && url.pathname === "/budget") {
+    if (!requireDesktopActor({ request, response })) {
+      return true;
+    }
     const body = await readJsonBody(request);
     sendJson(response, 200, {
       budget: runtime.platform.budgetManager.setLimits(body.limits ?? body)

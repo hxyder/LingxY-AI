@@ -130,6 +130,15 @@ function buildApprovalDecisionBody(payload, actor, action) {
   return body;
 }
 
+function normalizeSecurityStatePatch(payload = {}) {
+  return normalizePlainObject(payload) ?? {};
+}
+
+function normalizeBudgetUpdatePayload(payload = {}) {
+  const limits = normalizePlainObject(payload.limits ?? payload) ?? {};
+  return { limits };
+}
+
 async function requestDesktopServiceJson({
   base,
   pathname,
@@ -2018,6 +2027,42 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "approval_reject_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.securityStateUpdate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/security/state",
+            body: normalizeSecurityStatePatch(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "security_state_update_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.budgetUpdate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/budget",
+            body: normalizeBudgetUpdatePayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "budget_update_failed",
             message: error?.message ?? String(error)
           };
         }

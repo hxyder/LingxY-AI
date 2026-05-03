@@ -382,8 +382,8 @@ const expectedSurfaces = [
   surface("runtime-admin-routes.mjs", "POST", "/budget", {
     domain: "budget",
     effect: "config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "admin_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("runtime-admin-routes.mjs", "POST", "/history/search", {
     domain: "history",
@@ -394,8 +394,8 @@ const expectedSurfaces = [
   surface("runtime-admin-routes.mjs", "POST", "/security/state", {
     domain: "security",
     effect: "security_policy_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "admin_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
 
   surface("scheduler-template-routes.mjs", "DELETE", "/^\\/schedules\\/([^/]+)$/", {
@@ -615,7 +615,13 @@ function assertDesktopActorGuard(surfaceEntry) {
   } else if (surfaceEntry.matcher.endsWith("*")) {
     routeIndex = source.indexOf(`url.pathname.startsWith("${surfaceEntry.matcher.slice(0, -1)}")`);
   } else {
-    routeIndex = source.indexOf(`url.pathname === "${surfaceEntry.matcher}"`);
+    routeIndex = source.indexOf(`if (method === "${surfaceEntry.method}" && url.pathname === "${surfaceEntry.matcher}")`);
+    if (routeIndex < 0) {
+      routeIndex = source.indexOf(`if (url.pathname === "${surfaceEntry.matcher}" && method === "${surfaceEntry.method}")`);
+    }
+    if (routeIndex < 0) {
+      routeIndex = source.indexOf(`url.pathname === "${surfaceEntry.matcher}"`);
+    }
   }
   assert.ok(routeIndex >= 0, `${signature(surfaceEntry)} must have a source matcher`);
   const nextRouteIndex = source.indexOf("\n  if (", routeIndex + 1);

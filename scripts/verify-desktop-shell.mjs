@@ -51,7 +51,9 @@ for (const channel of [
   "uca:mcp-server-toggle",
   "uca:mcp-server-config",
   "uca:approval-approve",
-  "uca:approval-reject"
+  "uca:approval-reject",
+  "uca:security-state-update",
+  "uca:budget-update"
 ]) {
   if (!bootstrap.manifest.ipcChannels.includes(channel)) {
     throw new Error(`Desktop guarded mutation IPC channel is missing: ${channel}`);

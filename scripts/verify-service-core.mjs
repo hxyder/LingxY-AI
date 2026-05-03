@@ -194,8 +194,8 @@ if (!runtimeAdminRouteSource.includes('url.pathname === "/health"')
     || !runtimeAdminRouteSource.includes('/^\\/approvals\\/([^/]+)\\/reject$/')) {
   throw new Error("runtime-admin-routes.mjs must own health, metrics, approvals, audit, security, budget, and history endpoints.");
 }
-if ((runtimeAdminRouteSource.match(/requireDesktopActor/g) ?? []).length < 2) {
-  throw new Error("Approval approve/reject routes must require the shared desktop actor guard.");
+if ((runtimeAdminRouteSource.match(/requireDesktopActor/g) ?? []).length < 4) {
+  throw new Error("Runtime admin mutation routes must require the shared desktop actor guard.");
 }
 
 if (service.store.engine !== "sqlite") {

@@ -118,6 +118,14 @@ assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:appr
   "approval mutation: console must not call approval mutation routes directly");
 assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:approve|reject)/.test(overlayJs),
   "approval mutation: overlay must not call approval mutation routes directly");
+assert.ok(/updateSecurityState/.test(consoleJs) && /window\.ucaShell\.updateSecurityState/.test(consoleJs),
+  "security settings: console must use desktop shell bridge");
+assert.ok(/updateBudget/.test(consoleJs) && /window\.ucaShell\.updateBudget/.test(consoleJs),
+  "budget settings: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/security\/state["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "security settings: console must not POST /security/state directly");
+assert.ok(!/fetchJson\(\s*["'`]\/budget["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "budget settings: console must not POST /budget directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

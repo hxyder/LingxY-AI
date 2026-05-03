@@ -55,7 +55,9 @@ export const IPC_CHANNELS = Object.freeze({
   mcpServerToggle: "uca:mcp-server-toggle",
   mcpServerConfig: "uca:mcp-server-config",
   approvalApprove: "uca:approval-approve",
-  approvalReject: "uca:approval-reject"
+  approvalReject: "uca:approval-reject",
+  securityStateUpdate: "uca:security-state-update",
+  budgetUpdate: "uca:budget-update"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

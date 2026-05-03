@@ -271,6 +271,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   rejectApproval(payload) {
     return ipcRenderer.invoke("uca:approval-reject", payload ?? {});
   },
+  updateSecurityState(payload) {
+    return ipcRenderer.invoke("uca:security-state-update", payload ?? {});
+  },
+  updateBudget(payload) {
+    return ipcRenderer.invoke("uca:budget-update", payload ?? {});
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

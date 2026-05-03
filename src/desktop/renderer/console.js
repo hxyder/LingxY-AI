@@ -5303,7 +5303,13 @@ async function updateSecurityConfig(patch, label) {
   state.updatingSecurity = true;
   renderPrivacy();
   try {
-    const payload = await fetchJson("/security/state", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(patch) });
+    if (typeof window.ucaShell?.updateSecurityState !== "function") {
+      throw new Error("Desktop security settings bridge unavailable.");
+    }
+    const payload = assertShellResult(
+      await window.ucaShell.updateSecurityState(patch),
+      "Could not update security settings."
+    );
     state.workspace.security = payload.security ?? state.workspace.security;
     privacyState.textContent = `${label} updated`;
     renderPrivacy();
@@ -6023,7 +6029,13 @@ budgetForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   budgetState.textContent = "Updating...";
   try {
-    await fetchJson("/budget", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ limits: { monthly_usd_limit: Number(monthlyBudgetInput.value || 0) } }) });
+    if (typeof window.ucaShell?.updateBudget !== "function") {
+      throw new Error("Desktop budget bridge unavailable.");
+    }
+    await assertShellResult(
+      await window.ucaShell.updateBudget({ limits: { monthly_usd_limit: Number(monthlyBudgetInput.value || 0) } }),
+      "Could not update budget."
+    );
     budgetState.textContent = "Updated";
     await refreshWorkspace();
   } catch (error) {

@@ -68,7 +68,8 @@ assert.equal(metricsText.includes("uca_task_total"), true);
 const securityPatchResponse = await fetch(`${listening.baseUrl}/security/state`, {
   method: "POST",
   headers: {
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "X-Lingxy-Desktop-Actor": "desktop_console"
   },
   body: JSON.stringify({
     offline_mode: true
