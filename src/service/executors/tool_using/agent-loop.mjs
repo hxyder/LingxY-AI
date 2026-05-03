@@ -36,7 +36,6 @@ import {
   formatWaitingActionFinal
 } from "../../core/policy/obligation-evaluator.mjs";
 import {
-  applySideEffectContractToToolArgs,
   renderSideEffectContractPrompt
 } from "../../core/policy/side-effect-contracts.mjs";
 import { createErrorBudget } from "../../core/runtime/error-budget.mjs";
@@ -79,10 +78,6 @@ import {
   shouldUseLeanChatMode
 } from "./planner-mode.mjs";
 import { buildConversationMessages } from "./conversation-messages.mjs";
-import {
-  isSideEffectTool,
-  transcriptHasSuccessfulToolCall
-} from "./tool-call-guards.mjs";
 import { repairToolArgs } from "./tool-arg-repair.mjs";
 import {
   buildHallucinatedClaimBanner,
@@ -113,6 +108,10 @@ import {
   errorBudgetResultPayload,
   errorBudgetSignalPayload
 } from "./error-budget-gate.mjs";
+import {
+  applySideEffectContractToDecisionArgs,
+  planRedundantSideEffectGuard
+} from "./side-effect-gate.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
@@ -1101,7 +1100,7 @@ async function _runToolAgentLoopCore({
 
     if (decision?.type === "tool_call") {
       decision.args = repairToolArgs(decision, task, transcript, tool);
-      decision.args = applySideEffectContractToToolArgs(tool.id, decision.args, { task, runtime });
+      decision.args = applySideEffectContractToDecisionArgs({ decision, tool, task, runtime });
     }
 
     // Dedupe: if the planner repeats the same tool+args, ask it to
@@ -1145,21 +1144,18 @@ async function _runToolAgentLoopCore({
     // in the wild). The action-obligation engine already says the
     // group is "satisfied" — push a synthesis hint and ask the
     // planner to finalize instead.
-    if (isSideEffectTool(tool, registry) && transcriptHasSuccessfulToolCall(transcript, tool.id)) {
-      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+    const redundantSideEffect = planRedundantSideEffectGuard({
+      tool,
+      registry,
+      transcript,
+      synthesisRetriesUsed,
+      maxSynthesisRetries: MAX_SYNTHESIS_RETRIES
+    });
+    if (redundantSideEffect) {
+      if (redundantSideEffect.action === "retry") {
         synthesisRetriesUsed += 1;
-        transcript.push({
-          type: "synthesis_retry",
-          violations: [{
-            kind: "redundant_side_effect_call",
-            message: `${tool.id} already succeeded earlier in this run; do not re-fire side-effect tools — finalize from the existing result.`
-          }]
-        });
-        runtime?.emitTaskEvent?.("synthesis_retry", {
-          attempt: synthesisRetriesUsed,
-          reason: "redundant_side_effect_call",
-          tool_id: tool.id
-        });
+        transcript.push(redundantSideEffect.transcriptEntry);
+        runtime?.emitTaskEvent?.("synthesis_retry", redundantSideEffect.eventPayload);
         continue;
       }
       return {
@@ -1168,7 +1164,7 @@ async function _runToolAgentLoopCore({
           task,
           transcript,
           runtime,
-          reason: "redundant_side_effect_call"
+          reason: redundantSideEffect.reason
         }),
         transcript
       };
