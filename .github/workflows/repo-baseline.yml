@@ -19,5 +19,6 @@ jobs:
       - run: npm ci
       - run: npm run verify:github-readiness
       - run: npm run verify:structure
+      - run: npm run verify:doc-references
       - run: npm run verify:local-http-surface
       - run: npm run verify:behavior-tests

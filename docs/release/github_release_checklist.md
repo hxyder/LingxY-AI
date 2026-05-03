@@ -44,7 +44,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
   path from `README.md`.
 - Check the Repo Baseline GitHub Actions run: it should execute
   `npm ci`, `verify:github-readiness`, `verify:structure`,
-  `verify:local-http-surface`, and `verify:behavior-tests`.
+  `verify:doc-references`, `verify:local-http-surface`, and
+  `verify:behavior-tests`.
 - Check the Release Gate GitHub Actions run before any release: it should
   execute `npm ci` and the full `npm run check`.
 - Only publish GitHub Pages after checking the final URLs and contact emails.
