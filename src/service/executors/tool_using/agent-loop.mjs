@@ -101,6 +101,11 @@ import {
   resolveTaskMaxIterations,
   shouldCheckSaturation
 } from "./loop-policy.mjs";
+import {
+  createPendingToolApproval,
+  resolveInteractiveConfirmation,
+  shouldBlockHighRiskUnattended
+} from "./confirmation-gate.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
@@ -611,40 +616,6 @@ function appendAuditLog(runtime, task, subtype, payload) {
     event_subtype: subtype,
     payload
   });
-}
-
-async function resolveInteractiveConfirmation({ runtime, task, tool, args, risk }) {
-  // Caller (the unified gate above) only invokes this when
-  // `runtime.confirmationHandler` is a function — the previous
-  // silent auto-confirm fallback used to swallow real user prompts.
-  const decision = await runtime.confirmationHandler({
-    task,
-    tool,
-    args,
-    risk
-  });
-
-  if (decision?.decision === "edit") {
-    return {
-      status: "confirm",
-      args: decision.args ?? args
-    };
-  }
-
-  if (decision?.decision === "deny") {
-    appendAuditLog(runtime, task, "tool.denied", {
-      tool_id: tool.id
-    });
-    return {
-      status: "deny",
-      args
-    };
-  }
-
-  return {
-    status: "confirm",
-    args: decision?.args ?? args
-  };
 }
 
 /**
@@ -1273,7 +1244,8 @@ async function _runToolAgentLoopCore({
           task,
           tool,
           args: decision.args,
-          risk
+          risk,
+          appendAuditLog: (subtype, payload) => appendAuditLog(runtime, task, subtype, payload)
         });
 
         if (interactiveDecision.status === "deny") {
@@ -1290,26 +1262,12 @@ async function _runToolAgentLoopCore({
 
         decision.args = interactiveDecision.args;
       } else if (task.execution_mode !== "unattended_safe") {
-        const approval = runtime.pendingApprovals.create({
-          sourceType: "agent_tool_call",
-          sourceId: task.task_id,
-          proposedAction: "action_tool",
-          proposedTarget: tool.id,
-          proposedParams: decision.args,
-          previewText: `Pending tool ${tool.id}`,
-          // metadata.task_id is what pending-approvals.approve() reads to
-          // bridge the resulting tool execution back to THIS task — without
-          // it the original task is orphaned in waiting_external_decision
-          // and the UI shows "运行中…" forever.
-          metadata: {
-            task_id: task.task_id,
-            tool_id: tool.id,
-            risk_level: risk.risk_level ?? "high"
-          }
-        });
-        runtime.emitTaskEvent?.("pending_approval_created", {
-          approval_id: approval.approval_id,
-          tool_id: tool.id
+        const approval = createPendingToolApproval({
+          runtime,
+          task,
+          tool,
+          args: decision.args,
+          risk
         });
         transcript.push({
           type: "pending_approval",
@@ -1338,7 +1296,7 @@ async function _runToolAgentLoopCore({
       }
     }
 
-    if (task.execution_mode === "unattended_safe" && risk.risk_level === "high") {
+    if (shouldBlockHighRiskUnattended({ task, risk })) {
       runtime.emitTaskEvent?.("tool_call_denied", {
         tool_id: tool.id,
         reason: "high_risk_blocked_in_unattended_safe"
