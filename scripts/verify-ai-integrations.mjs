@@ -37,6 +37,21 @@ async function patchJson(baseUrl, pathname, body) {
   return response.json();
 }
 
+async function patchJsonResponse(baseUrl, pathname, body) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  return { response, payload };
+}
+
 async function postJsonResponse(baseUrl, pathname, body) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: "POST",
@@ -84,6 +99,19 @@ try {
     command: process.execPath,
     args: ["--version"]
   });
+  await writeFile(
+    path.join(runtime.paths.mcpDir, "readonly-mcp.json"),
+    JSON.stringify({
+      servers: [{
+        id: "readonly-mcp",
+        displayName: "Readonly MCP",
+        transport: "stdio",
+        command: process.execPath,
+        args: ["--version"]
+      }]
+    }),
+    "utf8"
+  );
 
   const legacySkillPath = await postJsonResponse(listening.baseUrl, "/config/skills/registries", {
     id: "legacy-path-field",
@@ -128,6 +156,11 @@ try {
   const reenabledMockMcp = reenabledMcpPayload.servers.find((server) => server.id === "mock-mcp");
   assert.equal(reenabledMockMcp.enabled, true);
   assert.equal(reenabledMockMcp.available, true);
+
+  const readonlyToggle = await patchJsonResponse(listening.baseUrl, "/ai/mcp/readonly-mcp/toggle", { enabled: false });
+  assert.equal(readonlyToggle.response.status, 409, "JSON-declared MCP servers must not report persisted toggle success");
+  assert.equal(readonlyToggle.payload?.error, "mcp_server_read_only");
+  assert.equal(readonlyToggle.payload?.serverId, "readonly-mcp");
 
   const skillsPayload = await fetch(`${listening.baseUrl}/ai/skills`).then((response) => response.json());
   assert.ok(skillsPayload.registries.some((registry) => registry.id === "scratch-skills" && registry.available));

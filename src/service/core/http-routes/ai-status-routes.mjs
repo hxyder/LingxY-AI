@@ -1,11 +1,14 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 
-function updateMcpEnabled(currentConfig, serverId, enabled) {
+const WRITABLE_BUILTIN_MCP_SOURCES = new Set(["builtin", "builtin_mit", "lingxy_internal"]);
+
+function updateMcpEnabled(currentConfig, serverId, enabled, registeredServer = null) {
   const mcpConfig = currentConfig.ai?.mcp ?? {};
   const configuredServers = Array.isArray(mcpConfig.servers) ? mcpConfig.servers : [];
   const configuredIndex = configuredServers.findIndex((server) => server?.id === serverId);
   if (configuredIndex >= 0) {
     return {
+      status: 200,
       source: "runtime_config",
       config: {
         ...currentConfig,
@@ -22,7 +25,26 @@ function updateMcpEnabled(currentConfig, serverId, enabled) {
     };
   }
 
+  if (!registeredServer) {
+    return {
+      status: 404,
+      source: "missing",
+      error: "mcp_server_not_found",
+      config: currentConfig
+    };
+  }
+
+  if (!WRITABLE_BUILTIN_MCP_SOURCES.has(registeredServer.source)) {
+    return {
+      status: 409,
+      source: registeredServer.source ?? "read_only",
+      error: "mcp_server_read_only",
+      config: currentConfig
+    };
+  }
+
   return {
+    status: 200,
     source: "builtin_toggle",
     config: {
       ...currentConfig,
@@ -87,7 +109,17 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
     const { enabled } = body ?? {};
     const currentConfig = runtime.configStore?.load?.() ?? {};
     const nextEnabled = Boolean(enabled);
-    const { config: updatedConfig, source } = updateMcpEnabled(currentConfig, serverId, nextEnabled);
+    const registeredServer = runtime.platform?.mcpServers?.get?.(serverId) ?? null;
+    const { config: updatedConfig, source, status, error } = updateMcpEnabled(
+      currentConfig,
+      serverId,
+      nextEnabled,
+      registeredServer
+    );
+    if (status !== 200) {
+      sendJson(response, status, { ok: false, error, serverId, source });
+      return true;
+    }
     runtime.configStore?.save?.(updatedConfig);
     // Also invalidate any cached MCP client connection so it picks up the new state.
     try {
