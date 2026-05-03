@@ -367,6 +367,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   setupOfficeAddins(payload) {
     return ipcRenderer.invoke("uca:office-addins-setup", payload ?? {});
   },
+  detectEchoKeyword(payload) {
+    return ipcRenderer.invoke("uca:echo-kws-detect", payload ?? {});
+  },
+  enrollEchoKeyword(payload) {
+    return ipcRenderer.invoke("uca:echo-keyword-enroll", payload ?? {});
+  },
   renameConnectedAccount(accountId, displayName) {
     return ipcRenderer.invoke("uca:connected-account-rename", { accountId, displayName });
   },

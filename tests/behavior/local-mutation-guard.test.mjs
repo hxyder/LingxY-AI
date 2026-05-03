@@ -5,6 +5,7 @@ import path from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
 
+import { tryHandleAudioRoute } from "../../src/service/core/http-routes/audio-routes.mjs";
 import { tryHandleConfigProviderRoute } from "../../src/service/core/http-routes/config-provider-routes.mjs";
 import { tryHandleConnectorRoute } from "../../src/service/core/http-routes/connector-routes.mjs";
 import { tryHandleNoteProjectConversationRoute } from "../../src/service/core/http-routes/note-project-conversation-routes.mjs";
@@ -548,6 +549,94 @@ async function officeRoute({
   const request = rawBody === null ? jsonRequest(body, headers) : rawRequest(rawBody, headers);
   const handled = await tryHandleOfficeRoute({
     request,
+    response,
+    method,
+    url: new URL(`http://127.0.0.1${pathname}`),
+    runtime
+  });
+  return {
+    handled,
+    statusCode: response.statusCode,
+    payload: parsePayload(response),
+    runtime
+  };
+}
+
+function makeEchoAudioRuntime({ keywordDir = null } = {}) {
+  const calls = [];
+  return {
+    calls,
+    audio: {
+      async hasUserEnrollment() {
+        calls.push({ method: "audio.hasUserEnrollment" });
+        return true;
+      },
+      async detectWakeKeywordLocally(audioBuffer, options = {}) {
+        calls.push({
+          method: "audio.detectWakeKeywordLocally",
+          bytes: audioBuffer.length,
+          options
+        });
+        return {
+          ok: true,
+          matched: true,
+          keyword: "linxi",
+          audio_seconds: 1.5
+        };
+      },
+      async transcribeAudioLocally(audioBuffer, options = {}) {
+        calls.push({
+          method: "audio.transcribeAudioLocally",
+          bytes: audioBuffer.length,
+          options
+        });
+        return {
+          ok: true,
+          transcript: "linxi",
+          language: "zh",
+          provider: { model: "fake-whisper" }
+        };
+      },
+      async writeEnrollmentSample(record = {}) {
+        calls.push({
+          method: "audio.writeEnrollmentSample",
+          record
+        });
+        return {
+          enabled: true,
+          completed: true,
+          matchedCount: 3,
+          sampleCount: 3,
+          requiredMatches: 2,
+          requiredSamples: 3,
+          profile: { personalized: true }
+        };
+      },
+      getUserKeywordDir() {
+        calls.push({ method: "audio.getUserKeywordDir" });
+        return keywordDir ?? path.join(os.tmpdir(), "uca-audio-guard-unused");
+      }
+    }
+  };
+}
+
+async function audioRoute({
+  method,
+  pathname,
+  actor = "desktop_shell",
+  rawBody = "fake-audio",
+  contentType = "audio/webm",
+  runtime = makeEchoAudioRuntime()
+}) {
+  const response = captureResponse();
+  const headers = actor ? {
+    [ACTOR_HEADER]: actor,
+    "content-type": contentType
+  } : {
+    "content-type": contentType
+  };
+  const handled = await tryHandleAudioRoute({
+    request: rawRequest(rawBody, headers),
     response,
     method,
     url: new URL(`http://127.0.0.1${pathname}`),
@@ -1258,4 +1347,89 @@ test("office add-in setup allows the console actor through the setup runner", as
   assert.equal(result.payload.ok, true);
   assert.equal(result.payload.elevate, true);
   assert.equal(result.payload.resetCache, true);
+});
+
+test("echo KWS rejects non-shell actors before local audio processing", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "POST",
+    pathname: "/echo/kws",
+    actor: "browser_page",
+    rawBody: "",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.payload.error, "desktop_actor_required");
+  assert.deepEqual(runtime.calls, []);
+});
+
+test("echo KWS allows the dock shell actor through the injected audio runtime", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "POST",
+    pathname: "/echo/kws",
+    actor: "desktop_shell",
+    rawBody: "abc",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.matched, true);
+  assert.equal(result.payload.personalized, true);
+  assert.deepEqual(runtime.calls.map((call) => call.method), [
+    "audio.hasUserEnrollment",
+    "audio.detectWakeKeywordLocally"
+  ]);
+  assert.equal(runtime.calls[1].bytes, 3);
+  assert.equal(runtime.calls[1].options.personalized, true);
+});
+
+test("echo enrollment rejects non-shell actors before writing samples", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "POST",
+    pathname: "/echo/enroll-keyword?sample=1&session=s1",
+    actor: "desktop_overlay",
+    rawBody: "",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.payload.error, "desktop_actor_required");
+  assert.deepEqual(runtime.calls, []);
+});
+
+test("echo enrollment allows the dock shell actor and writes through injected audio runtime", async (t) => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "uca-echo-enroll-guard-"));
+  t.after(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+  const runtime = makeEchoAudioRuntime({ keywordDir: tempRoot });
+  const result = await audioRoute({
+    method: "POST",
+    pathname: "/echo/enroll-keyword?sample=2&session=s1",
+    actor: "desktop_shell",
+    rawBody: "voice",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.transcript, "linxi");
+  assert.equal(result.payload.savedAudio, "sample-02.webm");
+  assert.equal(await readFile(path.join(tempRoot, "sample-02.webm"), "utf8"), "voice");
+  assert.deepEqual(runtime.calls.map((call) => call.method), [
+    "audio.getUserKeywordDir",
+    "audio.transcribeAudioLocally",
+    "audio.detectWakeKeywordLocally",
+    "audio.writeEnrollmentSample"
+  ]);
+  assert.equal(runtime.calls[3].record.sampleKey, "2");
+  assert.equal(runtime.calls[3].record.sessionId, "s1");
 });

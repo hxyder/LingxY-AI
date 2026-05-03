@@ -88,6 +88,8 @@ export const IPC_CHANNELS = Object.freeze({
   projectStoreSave: "uca:project-store-save",
   previewCacheClear: "uca:preview-cache-clear",
   officeAddinsSetup: "uca:office-addins-setup",
+  echoKwsDetect: "uca:echo-kws-detect",
+  echoKeywordEnroll: "uca:echo-keyword-enroll",
   connectedAccountRename: "uca:connected-account-rename",
   connectedAccountDefaultSet: "uca:connected-account-default-set",
   connectedAccountDisconnect: "uca:connected-account-disconnect",

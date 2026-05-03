@@ -8,10 +8,12 @@ import { promisify } from "node:util";
 import { SSE_HEADERS } from "../../events/sse.mjs";
 import { resolveProviderForTask } from "../../executors/shared/provider-resolver.mjs";
 import { readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_LOCAL_WHISPER_MODEL = "base";
 const DEFAULT_LOCAL_WHISPER_BEAM_SIZE = "5";
+const ECHO_AUDIO_ACTORS = ["desktop_shell"];
 
 function readApiKey(env, ...keys) {
   for (const key of keys) {
@@ -456,6 +458,27 @@ async function transcribeAudioLocallyStream(audioBuffer, { mimeType = "audio/web
   }
 }
 
+function resolveAudioRuntime(runtime) {
+  const injected = runtime?.audio;
+  return {
+    detectWakeKeywordLocally: typeof injected?.detectWakeKeywordLocally === "function"
+      ? injected.detectWakeKeywordLocally
+      : detectWakeKeywordLocally,
+    transcribeAudioLocally: typeof injected?.transcribeAudioLocally === "function"
+      ? injected.transcribeAudioLocally
+      : transcribeAudioLocally,
+    hasUserEnrollment: typeof injected?.hasUserEnrollment === "function"
+      ? injected.hasUserEnrollment
+      : hasUserEnrollment,
+    writeEnrollmentSample: typeof injected?.writeEnrollmentSample === "function"
+      ? injected.writeEnrollmentSample
+      : writeEnrollmentSample,
+    getUserKeywordDir: typeof injected?.getUserKeywordDir === "function"
+      ? injected.getUserKeywordDir
+      : getUserKeywordDir
+  };
+}
+
 export async function tryHandleAudioRoute({ request, response, method, url, runtime }) {
   if (method === "GET" && url.pathname === "/echo/kws/status") {
     sendJson(response, 200, await getLocalKeywordSpottingStatus());
@@ -463,6 +486,8 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
   }
 
   if (method === "POST" && url.pathname === "/echo/kws") {
+    if (!requireDesktopActor({ request, response, allowedActors: ECHO_AUDIO_ACTORS })) return true;
+    const audioRuntime = resolveAudioRuntime(runtime);
     const contentType = String(request.headers["content-type"] ?? "application/octet-stream").trim();
     let audioBuffer = Buffer.alloc(0);
     let mimeType = "audio/webm";
@@ -484,8 +509,8 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       return true;
     }
 
-    const personalized = await hasUserEnrollment();
-    const result = await detectWakeKeywordLocally(audioBuffer, {
+    const personalized = await audioRuntime.hasUserEnrollment();
+    const result = await audioRuntime.detectWakeKeywordLocally(audioBuffer, {
       mimeType,
       personalized,
       templateFallback: process.env.UCA_ECHO_TEMPLATE_WAKE_FALLBACK !== "0"
@@ -496,7 +521,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       && result.audio_seconds >= Number(process.env.UCA_ECHO_WHISPER_WAKE_MIN_SECONDS ?? 1.2)
       && process.env.UCA_ECHO_WHISPER_WAKE_FALLBACK !== "0"
     ) {
-      const localWake = await transcribeAudioLocally(audioBuffer, { mimeType, lang: "zh", noVad: true });
+      const localWake = await audioRuntime.transcribeAudioLocally(audioBuffer, { mimeType, lang: "zh", noVad: true });
       const transcript = `${localWake.transcript ?? ""}`.trim();
       result.wakeFallback = {
         engine: "local-whisper-wake-fallback",
@@ -526,6 +551,8 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
   }
 
   if (method === "POST" && url.pathname === "/echo/enroll-keyword") {
+    if (!requireDesktopActor({ request, response, allowedActors: ECHO_AUDIO_ACTORS })) return true;
+    const audioRuntime = resolveAudioRuntime(runtime);
     const contentType = String(request.headers["content-type"] ?? "application/octet-stream").trim();
     const sampleIndex = String(url.searchParams.get("sample") ?? "").trim();
     const sessionId = String(url.searchParams.get("session") ?? "").trim();
@@ -545,9 +572,9 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       return true;
     }
 
-    const userKwDir = getUserKeywordDir();
+    const userKwDir = audioRuntime.getUserKeywordDir();
     await mkdir(userKwDir, { recursive: true });
-    const local = await transcribeAudioLocally(audioBuffer, { mimeType, lang: "zh", noVad: true });
+    const local = await audioRuntime.transcribeAudioLocally(audioBuffer, { mimeType, lang: "zh", noVad: true });
     const transcript = (local.transcript ?? "").trim();
     const ext = mimeType.includes("wav") ? ".wav" : ".webm";
     const stamp = Date.now();
@@ -557,7 +584,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     const savedAudio = `${baseName}${ext}`;
     await writeFile(path.join(userKwDir, savedAudio), audioBuffer);
 
-    const kwsResult = await detectWakeKeywordLocally(audioBuffer, { mimeType, personalized: true });
+    const kwsResult = await audioRuntime.detectWakeKeywordLocally(audioBuffer, { mimeType, personalized: true });
     const kwsSelfCheck = {
       ok: Boolean(kwsResult?.ok),
       matched: Boolean(kwsResult?.matched),
@@ -568,7 +595,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       profile: getPersonalizedKwsProfile()
     };
     const sampleKey = sampleIndex || `${stamp}`;
-    const enrollment = await writeEnrollmentSample({
+    const enrollment = await audioRuntime.writeEnrollmentSample({
       sessionId,
       sampleKey,
       savedAudio,

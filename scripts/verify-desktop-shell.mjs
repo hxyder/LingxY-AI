@@ -84,6 +84,8 @@ for (const channel of [
   "uca:project-store-save",
   "uca:preview-cache-clear",
   "uca:office-addins-setup",
+  "uca:echo-kws-detect",
+  "uca:echo-keyword-enroll",
   "uca:connected-account-rename",
   "uca:connected-account-default-set",
   "uca:connected-account-disconnect",

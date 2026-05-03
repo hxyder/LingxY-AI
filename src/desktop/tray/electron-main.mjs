@@ -368,6 +368,44 @@ async function postDesktopServiceJson({ base, pathname, body, actor = DESKTOP_CO
   return requestDesktopServiceJson({ base, pathname, method: "POST", body, actor });
 }
 
+function bufferFromIpcBinary(value) {
+  if (value instanceof ArrayBuffer) return Buffer.from(value);
+  if (ArrayBuffer.isView(value)) {
+    return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  }
+  if (Array.isArray(value)) return Buffer.from(value);
+  return Buffer.alloc(0);
+}
+
+async function postDesktopServiceBinary({
+  base,
+  pathname,
+  search = "",
+  body,
+  contentType = "application/octet-stream",
+  actor = "desktop_shell"
+}) {
+  const response = await fetch(`${base}${pathname}${search}`, {
+    method: "POST",
+    headers: {
+      [DESKTOP_ACTOR_HEADER]: actor,
+      "Content-Type": contentType || "application/octet-stream"
+    },
+    body: bufferFromIpcBinary(body)
+  });
+  const result = await readServiceJson(response);
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: result.error ?? "desktop_service_request_failed",
+      message: result.message ?? `Desktop service request failed with HTTP ${response.status}.`,
+      status: response.status,
+      ...result
+    };
+  }
+  return result;
+}
+
 function buildWindowUrl(windowDef, serviceBaseUrl) {
   const filePath = path.join(RENDERER_DIR, `${windowDef.id}.html`);
   const url = new URL(pathToFileURL(filePath).toString());
@@ -2844,6 +2882,49 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "office_addins_setup_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.echoKwsDetect, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceBinary({
+            base,
+            actor,
+            pathname: "/echo/kws",
+            body: payload?.audio,
+            contentType: payload?.mimeType || "audio/webm"
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "echo_kws_detect_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.echoKeywordEnroll, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const params = new URLSearchParams();
+        if (payload?.sample) params.set("sample", `${payload.sample}`);
+        if (payload?.session) params.set("session", `${payload.session}`);
+        const search = params.toString() ? `?${params}` : "";
+        try {
+          return await postDesktopServiceBinary({
+            base,
+            actor,
+            pathname: "/echo/enroll-keyword",
+            search,
+            body: payload?.audio,
+            contentType: payload?.mimeType || "audio/webm"
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "echo_keyword_enroll_failed",
             message: error?.message ?? String(error)
           };
         }

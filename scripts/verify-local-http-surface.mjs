@@ -52,14 +52,14 @@ const expectedSurfaces = [
   surface("audio-routes.mjs", "POST", "/echo/enroll-keyword", {
     domain: "audio",
     effect: "local_audio_training",
-    boundary: "audio_session_guard_pending",
-    migration: "needs_stream_safe_audio_authorization"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("audio-routes.mjs", "POST", "/echo/kws", {
     domain: "audio",
     effect: "local_audio_processing",
-    boundary: "audio_session_guard_pending",
-    migration: "needs_stream_safe_audio_authorization"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("audio-routes.mjs", "POST", "/note/transcribe", {
     domain: "audio",

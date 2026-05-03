@@ -25,6 +25,7 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
+const dockJs = read("src/desktop/renderer/dock.js");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const sharedCss = read("src/desktop/renderer/shared.css");
@@ -97,6 +98,14 @@ assert.ok(/setupOfficeAddinsViaShell/.test(consoleJs) && /window\.ucaShell\.setu
   "office add-in setup: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/setup\/office-addins["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
   "office add-in setup: console must not POST /setup/office-addins directly");
+assert.ok(/detectEchoKeywordViaShell/.test(dockJs) && /window\.ucaShell\.detectEchoKeyword/.test(dockJs),
+  "echo KWS: dock must use desktop shell bridge");
+assert.ok(/enrollEchoKeywordViaShell/.test(dockJs) && /window\.ucaShell\.enrollEchoKeyword/.test(dockJs),
+  "echo enrollment: dock must use desktop shell bridge");
+assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/kws`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(dockJs),
+  "echo KWS: dock must not POST /echo/kws directly");
+assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/enroll-keyword\?/.test(dockJs),
+  "echo enrollment: dock must not POST /echo/enroll-keyword directly");
 
 // ── MCP explicit install button ────────────────────────────────────────
 assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");

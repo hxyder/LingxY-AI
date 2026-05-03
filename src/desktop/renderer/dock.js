@@ -30,6 +30,28 @@ dockButton.addEventListener("mouseenter", () => setDockMouseIgnoring(false));
 dockButton.addEventListener("mouseleave", (event) => syncDockMouseRegion(event));
 window.addEventListener("blur", () => setDockMouseIgnoring(false));
 
+async function detectEchoKeywordViaShell(blob) {
+  if (typeof window.ucaShell?.detectEchoKeyword !== "function") {
+    throw new Error("Desktop Echo KWS bridge unavailable.");
+  }
+  return await window.ucaShell.detectEchoKeyword({
+    audio: await blob.arrayBuffer(),
+    mimeType: blob.type || "audio/webm"
+  });
+}
+
+async function enrollEchoKeywordViaShell(blob, { sample, session } = {}) {
+  if (typeof window.ucaShell?.enrollEchoKeyword !== "function") {
+    throw new Error("Desktop Echo enrollment bridge unavailable.");
+  }
+  return await window.ucaShell.enrollEchoKeyword({
+    audio: await blob.arrayBuffer(),
+    mimeType: blob.type || "audio/webm",
+    sample,
+    session
+  });
+}
+
 function applyNoteRecordingState(payload = {}) {
   noteRecordingActive = Boolean(payload.active);
   if (noteRecordingActive) lastRecordingHeartbeat = Date.now();
@@ -556,18 +578,8 @@ async function startEchoFallback() {
       echoFallbackBusy = true;
       const snapshot = echoFallbackChunks.slice();
       const blob = new Blob(snapshot, { type: mimeType });
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10_000);
       try {
-        const resp = await fetch(`${serviceBaseUrl}/echo/kws`, {
-          method: "POST",
-          headers: { "Content-Type": blob.type },
-          body: await blob.arrayBuffer(),
-          signal: controller.signal,
-          keepalive: false
-        });
-        if (!resp.ok) return;
-        const payload = await resp.json();
+        const payload = await detectEchoKeywordViaShell(blob);
         if (payload?.ok === false) {
           const reason = payload.reason ?? payload.error ?? "transcribe_failed";
           // Only fall back to Web Speech on *configuration* failures that
@@ -637,11 +649,8 @@ async function startEchoFallback() {
           }
         }
       } catch (err) {
-        if (err?.name !== "AbortError") {
-          console.debug("[echo] local KWS fetch error:", err?.message ?? err);
-        }
+        console.debug("[echo] local KWS bridge error:", err?.message ?? err);
       } finally {
-        clearTimeout(timer);
         echoFallbackBusy = false;
       }
     }, ECHO_LOCAL_KWS_POLL_MS);
@@ -807,16 +816,10 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       }
       let result;
       try {
-        const params = new URLSearchParams({
+        result = await enrollEchoKeywordViaShell(blob, {
           sample: String(i),
           session: enrollmentSession
         });
-        const resp = await fetch(`${serviceBaseUrl}/echo/enroll-keyword?${params}`, {
-          method: "POST",
-          headers: { "Content-Type": blob.type || "audio/webm" },
-          body: await blob.arrayBuffer()
-        });
-        result = await resp.json();
       } catch (err) {
         console.warn("[echo] enrollment upload failed:", err);
         window.ucaShell?.showEchoBubble?.({
