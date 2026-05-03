@@ -163,6 +163,7 @@
     "verify:dag-streaming": "node scripts/verify-dag-streaming.mjs",
     "verify:llm-first-cleanup": "node scripts/verify-llm-first-cleanup.mjs",
     "verify:github-readiness": "node scripts/verify-github-readiness.mjs",
+    "verify:github-pages-readiness": "node scripts/verify-github-pages-readiness.mjs",
     "verify:release-readiness": "node scripts/verify-release-readiness.mjs",
     "verify:trial-launch": "node scripts/verify-trial-launch.mjs",
     "verify:page-source-extractor": "node scripts/verify-page-source-extractor.mjs",

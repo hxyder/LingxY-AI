@@ -26,10 +26,6 @@ const requiredPublicFiles = [
   "package.json",
   "package-lock.json",
   "THIRD_PARTY_LICENSES.md",
-  "docs/public/README.md",
-  "docs/public/index.html",
-  "docs/public/privacy.html",
-  "docs/public/terms.html",
   "docs/release/github_release_checklist.md"
 ];
 

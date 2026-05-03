@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 const requiredPaths = [
   "README.md",
   ".github/workflows/repo-baseline.yml",
+  ".github/workflows/release-gate.yml",
   "index.cjs",
   "package.json",
   "phases/README.md",
@@ -345,6 +346,7 @@ const requiredPaths = [
   "scripts/verify-ai-integrations.mjs",
   "scripts/verify-behavior-tests.mjs",
   "scripts/verify-github-readiness.mjs",
+  "scripts/verify-github-pages-readiness.mjs",
   "scripts/verify-external-call-boundary.mjs",
   "scripts/verify-submission-policy-boundary.mjs",
   "scripts/verify-local-http-surface.mjs",
