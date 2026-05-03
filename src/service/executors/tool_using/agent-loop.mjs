@@ -25,10 +25,7 @@ import { renderBackgroundContextsBlock } from "../../core/intent/background-cont
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { extractEvidence, detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
-import {
-  validateSuccessContract,
-  validateStepGate
-} from "../../core/policy/success-contract-validator.mjs";
+import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
 import {
   actionObligationsWithStatus,
   buildActionObligationGuidance,
@@ -42,7 +39,6 @@ import {
   applySideEffectContractToToolArgs,
   renderSideEffectContractPrompt
 } from "../../core/policy/side-effect-contracts.mjs";
-import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
 import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
 // UCA-077 P3-01: deterministic / connector planners + their helpers moved
@@ -75,9 +71,7 @@ import {
 } from "./tool-surface.mjs";
 import {
   actionOnlyToolIds,
-  buildRequiredActionGuidance,
-  filterToolsForActionOnlyGuidance,
-  shouldInjectRequiredActionGuidance
+  filterToolsForActionOnlyGuidance
 } from "./action-guidance.mjs";
 import {
   buildLeanChatSystemPrompt,
@@ -106,6 +100,15 @@ import {
   resolveInteractiveConfirmation,
   shouldBlockHighRiskUnattended
 } from "./confirmation-gate.mjs";
+import {
+  buildPhaseGateStop,
+  DEFAULT_PHASE_GATE_GUIDANCE_LIMITS,
+  evaluatePhaseGate,
+  phaseGateAuditPayload,
+  phaseGateSignalPayload,
+  planContractActionHandoff,
+  planRunbookGuidance
+} from "./phase-gate.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
@@ -705,8 +708,8 @@ async function _runToolAgentLoopCore({
   const firedRunbooks = new Set();
   let contractActionGuidanceCount = 0;
   let terminalContractActionGuidanceCount = 0;
-  const MAX_CONTRACT_ACTION_GUIDANCE = 2;
-  const MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE = 1;
+  const MAX_CONTRACT_ACTION_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxContractActionGuidance;
+  const MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxTerminalContractActionGuidance;
   // Soft saturation nudge for multi_source / deep_research tasks. Fires
   // once per task — if the model heeds the hint and changes angle, no
   // further nudges; if it ignores, the existing research-quality
@@ -1475,58 +1478,40 @@ async function _runToolAgentLoopCore({
       // (e.g. research budget tightened, web access opened up), the
       // next iteration should respect that. The gate is forward-only
       // and never retroactively invalidates work already done.
-      const stepGateSpec = task.task_spec ?? task.task_spec_initial;
-      const stepGate = validateStepGate(stepGateSpec, transcript, {
+      const stepGate = evaluatePhaseGate({
+        task,
+        transcript,
         iteration,
         maxIterations
       });
       // Emit SSE + audit so inspect-routing can render the gate decision
       // alongside tool_call events. Compact payload — no full violations
       // dump on the wire.
-      runtime.emitTaskEvent?.("phase_gate_signal", {
-        iteration,
-        next_action: stepGate.next_action,
-        violation_kinds: (stepGate.violations ?? []).map((v) => v.kind),
-        satisfied: stepGate.satisfied
-      });
-      appendAuditLog(runtime, task, "tool_loop.phase_gate", {
-        iteration,
-        next_action: stepGate.next_action,
-        satisfied: stepGate.satisfied,
-        violation_count: (stepGate.violations ?? []).length
-      });
+      runtime.emitTaskEvent?.("phase_gate_signal", phaseGateSignalPayload({ iteration, stepGate }));
+      appendAuditLog(runtime, task, "tool_loop.phase_gate", phaseGateAuditPayload({ iteration, stepGate }));
 
-      const actionGroups = shouldInjectRequiredActionGuidance(stepGate, transcript, { allowTerminal: true });
-      const terminalActionOnly = ["escalate", "abort"].includes(stepGate.next_action);
-      const canInjectNormalActionGuidance = contractActionGuidanceCount < MAX_CONTRACT_ACTION_GUIDANCE;
-      const actionOnlyHandoff = terminalActionOnly || !canInjectNormalActionGuidance;
-      const canInjectTerminalActionGuidance = actionOnlyHandoff
-        && terminalContractActionGuidanceCount < MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE;
-      if ((canInjectNormalActionGuidance || canInjectTerminalActionGuidance)
-          && actionGroups.length > 0
-          && iteration < maxIterations - 1) {
-        if (actionOnlyHandoff) {
+      const actionHandoff = planContractActionHandoff({
+        stepGate,
+        transcript,
+        iteration,
+        maxIterations,
+        contractActionGuidanceCount,
+        terminalContractActionGuidanceCount,
+        limits: {
+          maxContractActionGuidance: MAX_CONTRACT_ACTION_GUIDANCE,
+          maxTerminalContractActionGuidance: MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE
+        }
+      });
+      if (actionHandoff) {
+        if (actionHandoff.incrementTerminal) {
           terminalContractActionGuidanceCount += 1;
-        } else {
+        }
+        if (actionHandoff.incrementNormal) {
           contractActionGuidanceCount += 1;
         }
-        const instruction = buildRequiredActionGuidance(actionGroups, { actionOnly: actionOnlyHandoff });
-        transcript.push({
-          type: "contract_guidance",
-          groups: actionGroups,
-          instruction,
-          action_only: actionOnlyHandoff
-        });
-        runtime.emitTaskEvent?.("contract_action_handoff", {
-          iteration,
-          required_policy_groups: actionGroups,
-          action_only: actionOnlyHandoff
-        });
-        appendAuditLog(runtime, task, "tool_loop.contract_action_handoff", {
-          iteration,
-          required_policy_groups: actionGroups,
-          action_only: actionOnlyHandoff
-        });
+        transcript.push(actionHandoff.transcriptEntry);
+        runtime.emitTaskEvent?.("contract_action_handoff", actionHandoff.eventPayload);
+        appendAuditLog(runtime, task, "tool_loop.contract_action_handoff", actionHandoff.eventPayload);
         continue;
       }
 
@@ -1534,7 +1519,13 @@ async function _runToolAgentLoopCore({
       // Acting on the runbook (executing its steps) is a follow-up
       // commit; for now we just record the recommendation so production
       // traces show what the recovery path would have been.
-      const runbook = suggestRunbookForStepGate(stepGate);
+      const runbookPlan = planRunbookGuidance({
+        stepGate,
+        firedRunbooks,
+        iteration,
+        maxIterations
+      });
+      const runbook = runbookPlan.runbook;
       if (runbook) {
         appendAuditLog(runtime, task, "tool_loop.runbook_suggested", {
           iteration,
@@ -1544,21 +1535,10 @@ async function _runToolAgentLoopCore({
         });
       }
 
-      if (runbook && !firedRunbooks.has(runbook.id) && iteration < maxIterations - 1) {
-        const instruction = runbook.steps
-          .map((step, index) => `${index + 1}. ${step.description}`)
-          .join("\n");
+      if (runbookPlan.transcriptEntry) {
         firedRunbooks.add(runbook.id);
-        transcript.push({
-          type: "runbook_guidance",
-          runbook_id: runbook.id,
-          instruction: `${instruction}\n\nExecute the recovery with a different tool call or different arguments now. Do not repeat a failed identical tool+args pair.`
-        });
-        runtime.emitTaskEvent?.("runbook_signal", {
-          iteration,
-          runbook_id: runbook.id,
-          terminal_action: runbook.terminal_action
-        });
+        transcript.push(runbookPlan.transcriptEntry);
+        runtime.emitTaskEvent?.("runbook_signal", runbookPlan.eventPayload);
         appendAuditLog(runtime, task, "tool_loop.runbook_executed", {
           iteration,
           runbook_id: runbook.id,
@@ -1572,30 +1552,19 @@ async function _runToolAgentLoopCore({
       // produces the proper downgrade reason — same path as the
       // existing maxIterations-exhaustion finalize, just earlier.
       // retry / continue keep iterating.
-      if (stepGate.next_action === "abort" || stepGate.next_action === "escalate") {
-        const violationSummary = (stepGate.violations ?? [])
-          .map((v) => v.kind)
-          .filter(Boolean)
-          .join(", ");
-        const reasonText = stepGate.next_action === "abort"
-          ? `Phase gate aborted at iteration ${iteration}: ${violationSummary || "iteration ceiling reached without satisfying contract"}`
-          : `Phase gate escalated at iteration ${iteration}: ${violationSummary || "no specific violation"}`;
+      const phaseGateStop = buildPhaseGateStop({ stepGate, iteration, runbook });
+      if (phaseGateStop) {
         return {
           status: "partial_success",
           final_text: await composeFinalAnswer({
             task,
             transcript,
             runtime,
-            reason: reasonText
+            reason: phaseGateStop.reasonText
           }),
           transcript,
           artifacts: result.artifact_paths ?? [],
-          phase_gate: {
-            next_action: stepGate.next_action,
-            iteration,
-            violations: stepGate.violations ?? [],
-            runbook_suggested: runbook?.id ?? null
-          }
+          phase_gate: phaseGateStop.phaseGate
         };
       }
     }
