@@ -83,6 +83,7 @@ for (const channel of [
   "uca:note-append-chip",
   "uca:project-store-save",
   "uca:preview-cache-clear",
+  "uca:office-addins-setup",
   "uca:connected-account-rename",
   "uca:connected-account-default-set",
   "uca:connected-account-disconnect",

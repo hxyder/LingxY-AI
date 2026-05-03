@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 
 const execFileAsync = promisify(execFile);
+const OFFICE_ADDIN_SETUP_ACTORS = ["desktop_console"];
 
 async function runOfficeAddinSetup({ statusOnly = false, elevate = false, resetCache = false } = {}) {
   const scriptPath = path.join(process.cwd(), "scripts", "setup-office-addins.ps1");
@@ -73,20 +75,33 @@ async function tryServeOfficeStaticFile({ response, method, url }) {
   }
 }
 
-export async function tryHandleOfficeRoute({ request, response, method, url }) {
+function resolveOfficeAddinSetupRunner(runtime) {
+  if (typeof runtime?.officeAddinSetup?.runOfficeAddinSetup === "function") {
+    return runtime.officeAddinSetup.runOfficeAddinSetup;
+  }
+  if (typeof runtime?.runOfficeAddinSetup === "function") {
+    return runtime.runOfficeAddinSetup;
+  }
+  return runOfficeAddinSetup;
+}
+
+export async function tryHandleOfficeRoute({ request, response, method, url, runtime }) {
   if (await tryServeOfficeStaticFile({ response, method, url })) {
     return true;
   }
 
   if (method === "GET" && url.pathname === "/setup/office-addins/status") {
-    const result = await runOfficeAddinSetup({ statusOnly: true });
+    const runSetup = resolveOfficeAddinSetupRunner(runtime);
+    const result = await runSetup({ statusOnly: true });
     sendJson(response, 200, result.status);
     return true;
   }
 
   if (method === "POST" && url.pathname === "/setup/office-addins") {
+    if (!requireDesktopActor({ request, response, allowedActors: OFFICE_ADDIN_SETUP_ACTORS })) return true;
+    const runSetup = resolveOfficeAddinSetupRunner(runtime);
     const body = await readJsonBody(request);
-    const result = await runOfficeAddinSetup({
+    const result = await runSetup({
       elevate: body.elevate !== false,
       resetCache: body.resetCache === true
     });

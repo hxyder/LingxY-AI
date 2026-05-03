@@ -8,6 +8,7 @@ import test from "node:test";
 import { tryHandleConfigProviderRoute } from "../../src/service/core/http-routes/config-provider-routes.mjs";
 import { tryHandleConnectorRoute } from "../../src/service/core/http-routes/connector-routes.mjs";
 import { tryHandleNoteProjectConversationRoute } from "../../src/service/core/http-routes/note-project-conversation-routes.mjs";
+import { tryHandleOfficeRoute } from "../../src/service/core/http-routes/office-routes.mjs";
 import { tryHandlePreviewFileRoute } from "../../src/service/core/http-routes/preview-file-routes.mjs";
 import { tryHandleRuntimeAdminRoute } from "../../src/service/core/http-routes/runtime-admin-routes.mjs";
 import { tryHandleTaskRoute } from "../../src/service/core/http-routes/task-routes.mjs";
@@ -16,6 +17,12 @@ const ACTOR_HEADER = "x-lingxy-desktop-actor";
 
 function jsonRequest(body, headers = {}) {
   const request = Readable.from([Buffer.from(JSON.stringify(body ?? {}), "utf8")]);
+  request.headers = headers;
+  return request;
+}
+
+function rawRequest(text, headers = {}) {
+  const request = Readable.from([Buffer.from(text ?? "", "utf8")]);
   request.headers = headers;
   return request;
 }
@@ -496,6 +503,51 @@ async function previewFileRoute({
   const response = captureResponse();
   const handled = await tryHandlePreviewFileRoute({
     request: jsonRequest({}, actor ? { [ACTOR_HEADER]: actor } : {}),
+    response,
+    method,
+    url: new URL(`http://127.0.0.1${pathname}`),
+    runtime
+  });
+  return {
+    handled,
+    statusCode: response.statusCode,
+    payload: parsePayload(response),
+    runtime
+  };
+}
+
+function makeOfficeSetupRuntime() {
+  const calls = [];
+  return {
+    calls,
+    officeAddinSetup: {
+      async runOfficeAddinSetup(options = {}) {
+        calls.push(options);
+        return {
+          status: {
+            ok: true,
+            elevate: options.elevate === true,
+            resetCache: options.resetCache === true
+          }
+        };
+      }
+    }
+  };
+}
+
+async function officeRoute({
+  method,
+  pathname,
+  actor = "desktop_console",
+  body = {},
+  rawBody = null,
+  runtime = makeOfficeSetupRuntime()
+}) {
+  const response = captureResponse();
+  const headers = actor ? { [ACTOR_HEADER]: actor } : {};
+  const request = rawBody === null ? jsonRequest(body, headers) : rawRequest(rawBody, headers);
+  const handled = await tryHandleOfficeRoute({
+    request,
     response,
     method,
     url: new URL(`http://127.0.0.1${pathname}`),
@@ -1172,4 +1224,38 @@ test("preview cache clear allows the console actor", async (t) => {
   assert.equal(result.statusCode, 200);
   assert.equal(result.payload.removed, 1);
   await assert.rejects(readFile(cacheFile, "utf8"), /ENOENT/);
+});
+
+test("office add-in setup rejects non-console actors before parsing or running setup", async () => {
+  const runtime = makeOfficeSetupRuntime();
+  const result = await officeRoute({
+    method: "POST",
+    pathname: "/setup/office-addins",
+    actor: "browser_page",
+    rawBody: "{not-json",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.payload.error, "desktop_actor_required");
+  assert.deepEqual(runtime.calls, []);
+});
+
+test("office add-in setup allows the console actor through the setup runner", async () => {
+  const runtime = makeOfficeSetupRuntime();
+  const result = await officeRoute({
+    method: "POST",
+    pathname: "/setup/office-addins",
+    actor: "desktop_console",
+    body: { elevate: true, resetCache: true },
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 200);
+  assert.deepEqual(runtime.calls, [{ elevate: true, resetCache: true }]);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.elevate, true);
+  assert.equal(result.payload.resetCache, true);
 });

@@ -3297,15 +3297,9 @@ async function configureOfficeAddins() {
   setupOfficeAddinsButton.disabled = true;
   officeAddinSetupState.textContent = "Configuring... You may see a Windows administrator prompt.";
   try {
-    const status = await fetchJson("/setup/office-addins", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        elevate: true,
-        resetCache: true
-      })
+    const status = await setupOfficeAddinsViaShell({
+      elevate: true,
+      resetCache: true
     });
     renderOfficeAddinSetupStatus(status);
   } catch (error) {
@@ -6571,6 +6565,17 @@ async function clearPreviewCacheViaShell() {
     await window.ucaShell.clearPreviewCache(),
     "Could not clear preview cache."
   );
+}
+
+async function setupOfficeAddinsViaShell(payload) {
+  if (typeof window.ucaShell?.setupOfficeAddins !== "function") {
+    throw new Error("Desktop Office add-in setup bridge unavailable.");
+  }
+  const result = await window.ucaShell.setupOfficeAddins(payload ?? {});
+  if (result?.ok === false && result?.error) {
+    throw new Error(result.message ?? result.error ?? "Could not configure Office add-ins.");
+  }
+  return result ?? {};
 }
 
 async function renameConnectedAccountViaShell(accountId, displayName) {

@@ -357,8 +357,8 @@ const expectedSurfaces = [
   surface("office-routes.mjs", "POST", "/setup/office-addins", {
     domain: "office_setup",
     effect: "local_app_setup",
-    boundary: "local_ui_pending_guard",
-    migration: "office_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("preview-file-routes.mjs", "POST", "/preview/cache/clear", {
     domain: "preview_cache",

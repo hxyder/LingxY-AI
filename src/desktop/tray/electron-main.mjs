@@ -2830,6 +2830,24 @@ export function createElectronShellRuntime({
           };
         }
       });
+      ipcMain.handle(IPC_CHANNELS.officeAddinsSetup, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/setup/office-addins",
+            body: payload ?? {}
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "office_addins_setup_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
       ipcMain.handle(IPC_CHANNELS.connectedAccountRename, async (event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
         const actor = desktopActorForSender(event.sender);

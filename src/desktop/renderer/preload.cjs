@@ -364,6 +364,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   clearPreviewCache() {
     return ipcRenderer.invoke("uca:preview-cache-clear");
   },
+  setupOfficeAddins(payload) {
+    return ipcRenderer.invoke("uca:office-addins-setup", payload ?? {});
+  },
   renameConnectedAccount(accountId, displayName) {
     return ipcRenderer.invoke("uca:connected-account-rename", { accountId, displayName });
   },
