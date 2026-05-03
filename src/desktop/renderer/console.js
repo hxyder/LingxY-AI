@@ -192,6 +192,7 @@ const skillRegistryPath = document.querySelector("#skillRegistryPath");
 const skillRegistryState = document.querySelector("#skillRegistryState");
 const skillRegistryList = document.querySelector("#skillRegistryList");
 const skillRegistryRefreshBtn = document.querySelector("#skillRegistryRefreshBtn");
+const skillRegistryTestBtn = document.querySelector("#skillRegistryTestBtn");
 const codeCliAdapterCount = document.querySelector("#codeCliAdapterCount");
 const codeCliAdapterForm = document.querySelector("#codeCliAdapterForm");
 const codeCliAdapterId = document.querySelector("#codeCliAdapterId");
@@ -6228,23 +6229,54 @@ mcpServerForm?.addEventListener("submit", async (event) => {
   }
 });
 
-skillRegistryForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
+function buildSkillRegistryPayloadFromForm() {
   const id = skillRegistryId.value.trim();
   const displayName = skillRegistryName.value.trim();
   const rootPath = skillRegistryPath.value.trim();
-  if (!id || !rootPath) {
-    skillRegistryState.textContent = "ID and root path required.";
-    return;
-  }
-  const payload = {
+  return {
     id,
     displayName: displayName || id,
     rootPath
   };
-  skillRegistryState.textContent = "Saving...";
+}
+
+function formatSkillPreflightErrors(errors = []) {
+  return errors.length ? errors.join("; ") : "Invalid skill registry.";
+}
+
+async function preflightSkillRegistryConfig() {
+  return fetchJson("/config/skills/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildSkillRegistryPayloadFromForm())
+  });
+}
+
+skillRegistryTestBtn?.addEventListener("click", async () => {
+  skillRegistryState.textContent = "Checking...";
   try {
-    await fetchJson("/config/skills/registries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const result = await preflightSkillRegistryConfig();
+    if (!result.ok) {
+      skillRegistryState.textContent = `Invalid: ${formatSkillPreflightErrors(result.errors)}`;
+      return;
+    }
+    skillRegistryState.textContent = `Looks valid. ${result.skillCount ?? 0} skills found.`;
+  } catch (error) {
+    skillRegistryState.textContent = `Failed: ${error.message}`;
+  }
+});
+
+skillRegistryForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  skillRegistryState.textContent = "Checking...";
+  try {
+    const result = await preflightSkillRegistryConfig();
+    if (!result.ok) {
+      skillRegistryState.textContent = `Invalid: ${formatSkillPreflightErrors(result.errors)}`;
+      return;
+    }
+    skillRegistryState.textContent = "Saving...";
+    await fetchJson("/config/skills/registries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result.registry) });
     skillRegistryState.textContent = "Saved.";
     skillRegistryId.value = "";
     skillRegistryName.value = "";
