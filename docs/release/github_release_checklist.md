@@ -7,6 +7,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 ## Required Before Push
 
 - Run `npm run verify:github-readiness`.
+- Review all advisory warnings from `verify:github-readiness`, especially
+  root Markdown docs and phase/task planning docs that would become public.
 - If using GitHub Pages for OAuth verification, run
   `npm run verify:github-pages-readiness`.
 - Run `npm run check`.
@@ -36,6 +38,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 
 - Search GitHub's web UI after push for obvious private terms, machine paths,
   and credentials.
+- Review root-level planning/design Markdown docs and `phases/` before making
+  the repo public.
 - Create a fresh clone and run `npm install` plus the documented quick-start
   path from `README.md`.
 - Check the Repo Baseline GitHub Actions run: it should execute

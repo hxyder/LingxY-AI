@@ -114,6 +114,20 @@ if (!pkg.license) {
   warnings.push("package.json has no license field. Match it to the eventual root LICENSE decision.");
 }
 
+const rootReviewMarkdown = tracked.filter((file) =>
+  !file.includes("/")
+  && /\.md$/iu.test(file)
+  && !["README.md", "THIRD_PARTY_LICENSES.md", "LICENSE.md", "LICENCE.md"].includes(file)
+);
+if (rootReviewMarkdown.length > 0) {
+  warnings.push(`Tracked root Markdown docs need manual public review: ${rootReviewMarkdown.join(", ")}`);
+}
+
+const phasePlanDocs = tracked.filter((file) => file.startsWith("phases/") && /\.md$/iu.test(file));
+if (phasePlanDocs.length > 0) {
+  warnings.push(`Tracked phase/task planning docs need manual public review before a public push: ${phasePlanDocs.length} files under phases/`);
+}
+
 console.log("GitHub readiness verification passed.");
 if (warnings.length > 0) {
   console.log("Advisory warnings:");
