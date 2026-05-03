@@ -290,18 +290,22 @@ export async function tryHandleSchedulerTemplateRoute({ request, response, metho
   }
 
   if (method === "POST" && url.pathname === "/templates") {
+    const actor = requireDesktopActor({ request, response });
+    if (!actor) return true;
     const body = await readJsonBody(request);
     const result = runtime.platform.templateRegistry.save(body.template ?? body, {
-      actor: body.actor ?? "console"
+      actor
     });
     sendJson(response, result.ok ? 200 : 400, result);
     return true;
   }
 
   if (method === "POST" && url.pathname === "/templates/import") {
+    const actor = requireDesktopActor({ request, response });
+    if (!actor) return true;
     const body = await readJsonBody(request);
     const result = runtime.platform.templateRegistry.import(body.template ?? body.raw ?? body, {
-      actor: body.actor ?? "console_import"
+      actor
     });
     sendJson(response, result.ok ? 200 : 400, result);
     return true;
@@ -333,6 +337,7 @@ export async function tryHandleSchedulerTemplateRoute({ request, response, metho
   }
 
   if (templateMatch && method === "DELETE") {
+    if (!requireDesktopActor({ request, response })) return true;
     const templateId = decodeURIComponent(templateMatch[1]);
     const removed = runtime.platform.templateRegistry.remove(templateId);
     if (!removed) {
@@ -382,6 +387,7 @@ export async function tryHandleSchedulerTemplateRoute({ request, response, metho
   }
 
   if (dagResumeMatch && method === "POST") {
+    if (!requireDesktopActor({ request, response })) return true;
     const executionId = decodeURIComponent(dagResumeMatch[1]);
     const execution = runtime.platform.dagCheckpointStore.get(executionId);
     if (!execution) {

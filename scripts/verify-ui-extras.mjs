@@ -144,6 +144,26 @@ assert.ok(!/fetchJson\(\s*`\/schedules\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s
   "scheduler mutation: console must not PATCH/DELETE /schedules/:id directly");
 assert.ok(!/fetchJson\(\s*`\/schedules\/\$\{encodeURIComponent\([^)]*\)\}\/runs`\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "scheduler run-now: console must not POST /schedules/:id/runs directly");
+assert.ok(/saveTemplateViaShell/.test(consoleJs) && /window\.ucaShell\.saveTemplate/.test(consoleJs),
+  "template save: console must use desktop shell bridge");
+assert.ok(/importTemplateViaShell/.test(consoleJs) && /window\.ucaShell\.importTemplate/.test(consoleJs),
+  "template import: console must use desktop shell bridge");
+assert.ok(/deleteTemplateViaShell/.test(consoleJs) && /window\.ucaShell\.deleteTemplate/.test(consoleJs),
+  "template delete: console must use desktop shell bridge");
+assert.ok(/resumeDagExecutionViaShell/.test(consoleJs) && /window\.ucaShell\.resumeDagExecution/.test(consoleJs),
+  "DAG resume: console must use desktop shell bridge");
+assert.ok(/saveTemplateViaShell/.test(overlayJs) && /window\.ucaShell\.saveTemplate/.test(overlayJs),
+  "template save: overlay must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/templates["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "template save: console must not POST /templates directly");
+assert.ok(!/fetchJson\(\s*["'`]\/templates["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(overlayJs),
+  "template save: overlay must not POST /templates directly");
+assert.ok(!/fetchJson\(\s*["'`]\/templates\/import["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "template import: console must not POST /templates/import directly");
+assert.ok(!/fetchJson\(\s*`\/templates\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
+  "template delete: console must not DELETE /templates/:id directly");
+assert.ok(!/fetchJson\(\s*`\/dag\/executions\/\$\{encodeURIComponent\([^)]*\)\}\/resume`\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "DAG resume: console must not POST /dag/executions/:id/resume directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

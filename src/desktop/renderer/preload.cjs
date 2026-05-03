@@ -289,6 +289,18 @@ contextBridge.exposeInMainWorld("ucaShell", {
   runSchedule(payload) {
     return ipcRenderer.invoke("uca:schedule-run", payload ?? {});
   },
+  saveTemplate(payload) {
+    return ipcRenderer.invoke("uca:template-save", payload ?? {});
+  },
+  importTemplate(payload) {
+    return ipcRenderer.invoke("uca:template-import", payload ?? {});
+  },
+  deleteTemplate(id) {
+    return ipcRenderer.invoke("uca:template-delete", id ?? "");
+  },
+  resumeDagExecution(id) {
+    return ipcRenderer.invoke("uca:dag-resume", id ?? "");
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

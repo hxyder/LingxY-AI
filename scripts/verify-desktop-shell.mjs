@@ -57,7 +57,11 @@ for (const channel of [
   "uca:schedule-create",
   "uca:schedule-update",
   "uca:schedule-delete",
-  "uca:schedule-run"
+  "uca:schedule-run",
+  "uca:template-save",
+  "uca:template-import",
+  "uca:template-delete",
+  "uca:dag-resume"
 ]) {
   if (!bootstrap.manifest.ipcChannels.includes(channel)) {
     throw new Error(`Desktop guarded mutation IPC channel is missing: ${channel}`);

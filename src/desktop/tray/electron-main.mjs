@@ -163,6 +163,28 @@ function normalizeScheduleRunPayload(payload = {}) {
   };
 }
 
+function normalizeTemplateSavePayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    template: normalizePlainObject(source.template ?? source) ?? {}
+  };
+}
+
+function normalizeTemplateImportPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    raw: source.raw ?? source.template ?? source
+  };
+}
+
+function normalizeTemplateId(id) {
+  return typeof id === "string" ? id.trim() : "";
+}
+
+function normalizeDagExecutionId(id) {
+  return typeof id === "string" ? id.trim() : "";
+}
+
 async function requestDesktopServiceJson({
   base,
   pathname,
@@ -2173,6 +2195,86 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "schedule_run_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.templateSave, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/templates",
+            body: normalizeTemplateSavePayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "template_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.templateImport, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/templates/import",
+            body: normalizeTemplateImportPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "template_import_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.templateDelete, async (event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const templateId = normalizeTemplateId(id);
+        if (!templateId) {
+          return { ok: false, error: "template_id_required", message: "Template id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "DELETE",
+            actor,
+            pathname: `/templates/${encodeURIComponent(templateId)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "template_delete_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.dagResume, async (event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const executionId = normalizeDagExecutionId(id);
+        if (!executionId) {
+          return { ok: false, error: "dag_execution_id_required", message: "DAG execution id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            actor,
+            pathname: `/dag/executions/${encodeURIComponent(executionId)}/resume`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "dag_resume_failed",
             message: error?.message ?? String(error)
           };
         }

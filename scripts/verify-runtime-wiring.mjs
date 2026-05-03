@@ -138,6 +138,49 @@ const scheduleDeleteResponse = await fetch(`${listening.baseUrl}/schedules/${enc
 });
 assert.equal(scheduleDeleteResponse.ok, true);
 
+const templateWithoutActorResponse = await fetch(`${listening.baseUrl}/templates`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    template: {
+      schema_version: "1.0",
+      id: "user.blocked.template",
+      name: "Blocked Template",
+      version: "1.0.0",
+      steps: [{ id: "draft", kind: "executor", target: "fast", inputs: { prompt: "blocked" } }]
+    }
+  })
+});
+assert.equal(templateWithoutActorResponse.status, 403);
+
+const templateSaveResponse = await fetch(`${listening.baseUrl}/templates`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Lingxy-Desktop-Actor": "desktop_console"
+  },
+  body: JSON.stringify({
+    template: {
+      schema_version: "1.0",
+      id: "user.runtime.template",
+      name: "Runtime Template",
+      version: "1.0.0",
+      steps: [{ id: "draft", kind: "executor", target: "fast", inputs: { prompt: "runtime" } }]
+    }
+  })
+});
+assert.equal(templateSaveResponse.ok, true);
+
+const templateDeleteResponse = await fetch(`${listening.baseUrl}/templates/user.runtime.template`, {
+  method: "DELETE",
+  headers: {
+    "X-Lingxy-Desktop-Actor": "desktop_console"
+  }
+});
+assert.equal(templateDeleteResponse.ok, true);
+
 const providerCreateResponse = await fetch(`${listening.baseUrl}/config/providers`, {
   method: "POST",
   headers: {

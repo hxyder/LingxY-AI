@@ -4983,7 +4983,7 @@ function renderDagExecutions() {
     btn.addEventListener("click", async () => {
       dagPreview.textContent = "Resuming...";
       try {
-        const result = await fetchJson(`/dag/executions/${encodeURIComponent(btn.dataset.resumeDagId)}/resume`, { method: "POST" });
+        const result = await resumeDagExecutionViaShell(btn.dataset.resumeDagId);
         dagPreview.textContent = JSON.stringify(result.execution ?? result, null, 2);
         await refreshWorkspace();
       } catch (error) {
@@ -5971,7 +5971,7 @@ templateForm.addEventListener("submit", async (event) => {
     const prompt = templatePromptInput.value.trim();
     const id = active?.template_origin === "user" && active?.id ? active.id : `user.${slugify(name)}`;
     const template = { schema_version: "1.0", id, name: name || "Unnamed", version: active?.version ?? "1.0.0", steps: [{ id: "draft", kind: "executor", target: "fast", inputs: { prompt } }] };
-    await fetchJson("/templates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actor: "desktop_console", template }) });
+    await saveTemplateViaShell(template);
     templateState.textContent = `Saved ${template.id}`;
     state.selectedTemplateId = template.id;
     await refreshWorkspace();
@@ -5985,7 +5985,7 @@ importTemplateButton.addEventListener("click", async () => {
   if (!raw) { templateState.textContent = "Paste JSON first"; return; }
   templateState.textContent = "Importing...";
   try {
-    await fetchJson("/templates/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actor: "desktop_console", raw }) });
+    await importTemplateViaShell(raw);
     templateState.textContent = "Imported";
     templateImportInput.value = "";
     await refreshWorkspace();
@@ -5997,7 +5997,7 @@ importTemplateButton.addEventListener("click", async () => {
 deleteTemplateButton.addEventListener("click", async () => {
   if (!state.selectedTemplateId) return;
   try {
-    await fetchJson(`/templates/${encodeURIComponent(state.selectedTemplateId)}`, { method: "DELETE" });
+    await deleteTemplateViaShell(state.selectedTemplateId);
     templateState.textContent = "Deleted";
     state.selectedTemplateId = null;
     templateNameInput.value = "";
@@ -6366,6 +6366,46 @@ async function runScheduleNow(scheduleId, triggerPayload = {}) {
   return assertShellResult(
     await window.ucaShell.runSchedule({ scheduleId, triggerPayload }),
     "Could not run schedule."
+  );
+}
+
+async function saveTemplateViaShell(template) {
+  if (typeof window.ucaShell?.saveTemplate !== "function") {
+    throw new Error("Desktop template bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveTemplate({ template }),
+    "Could not save template."
+  );
+}
+
+async function importTemplateViaShell(raw) {
+  if (typeof window.ucaShell?.importTemplate !== "function") {
+    throw new Error("Desktop template bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.importTemplate({ raw }),
+    "Could not import template."
+  );
+}
+
+async function deleteTemplateViaShell(templateId) {
+  if (typeof window.ucaShell?.deleteTemplate !== "function") {
+    throw new Error("Desktop template bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteTemplate(templateId),
+    "Could not delete template."
+  );
+}
+
+async function resumeDagExecutionViaShell(executionId) {
+  if (typeof window.ucaShell?.resumeDagExecution !== "function") {
+    throw new Error("Desktop DAG bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.resumeDagExecution(executionId),
+    "Could not resume DAG execution."
   );
 }
 

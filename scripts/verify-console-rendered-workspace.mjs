@@ -42,7 +42,7 @@ const taskEventControllerJs = await read("src/desktop/renderer/console-task-even
 assert.equal(consoleJs.includes('fetchJson("/approvals")'), true);
 assert.equal(consoleJs.includes('fetchJson("/schedules")'), true);
 assert.equal(consoleJs.includes('fetchJson("/templates")'), true);
-assert.equal(consoleJs.includes('fetchJson("/templates/import"'), true);
+assert.equal(consoleJs.includes("importTemplateViaShell"), true);
 assert.equal(consoleJs.includes('fetchJson("/budget")'), true);
 assert.equal(consoleJs.includes('fetchJson("/dag/executions")'), true);
 assert.equal(consoleJs.includes('fetchJson("/dag/preview"'), true);

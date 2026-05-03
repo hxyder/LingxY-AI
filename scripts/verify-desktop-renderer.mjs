@@ -43,6 +43,14 @@ assert.equal(preload.includes("deleteSchedule"), true);
 assert.equal(preload.includes(IPC_CHANNELS.scheduleDelete), true);
 assert.equal(preload.includes("runSchedule"), true);
 assert.equal(preload.includes(IPC_CHANNELS.scheduleRun), true);
+assert.equal(preload.includes("saveTemplate"), true);
+assert.equal(preload.includes(IPC_CHANNELS.templateSave), true);
+assert.equal(preload.includes("importTemplate"), true);
+assert.equal(preload.includes(IPC_CHANNELS.templateImport), true);
+assert.equal(preload.includes("deleteTemplate"), true);
+assert.equal(preload.includes(IPC_CHANNELS.templateDelete), true);
+assert.equal(preload.includes("resumeDagExecution"), true);
+assert.equal(preload.includes(IPC_CHANNELS.dagResume), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
 // Brand renamed: UCA → LingxY. Accept either the old title (still
@@ -146,6 +154,10 @@ assert.equal(mainProcess.includes("IPC_CHANNELS.scheduleCreate"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.scheduleUpdate"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.scheduleDelete"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.scheduleRun"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.templateSave"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.templateImport"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.templateDelete"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.dagResume"), true);
 assert.equal(mainProcess.includes("X-Lingxy-Desktop-Actor"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/preview"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/run"), true);
@@ -157,6 +169,8 @@ assert.equal(mainProcess.includes("/reject"), true);
 assert.equal(mainProcess.includes("/security/state"), true);
 assert.equal(mainProcess.includes("/budget"), true);
 assert.equal(mainProcess.includes("/schedules"), true);
+assert.equal(mainProcess.includes("/templates"), true);
+assert.equal(mainProcess.includes("/dag/executions"), true);
 assert.equal(mainProcess.includes("showDesktopNotification"), true);
 // Permission handler for the Web Speech API mic access
 assert.equal(mainProcess.includes("setPermissionRequestHandler"), true);

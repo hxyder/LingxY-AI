@@ -88,7 +88,8 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
       return fetchJson("/templates", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-Lingxy-Desktop-Actor": "desktop_console"
         },
         body: JSON.stringify({
           actor,
@@ -100,7 +101,8 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
       return fetchJson("/templates/import", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-Lingxy-Desktop-Actor": "desktop_console"
         },
         body: JSON.stringify({
           actor,
@@ -113,7 +115,10 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
     },
     deleteTemplate(templateId) {
       return fetchJson(`/templates/${encodeURIComponent(templateId)}`, {
-        method: "DELETE"
+        method: "DELETE",
+        headers: {
+          "X-Lingxy-Desktop-Actor": "desktop_console"
+        }
       });
     },
     validateTemplate(template) {
@@ -146,7 +151,10 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
     },
     resumeDagExecution(executionId) {
       return fetchJson(`/dag/executions/${encodeURIComponent(executionId)}/resume`, {
-        method: "POST"
+        method: "POST",
+        headers: {
+          "X-Lingxy-Desktop-Actor": "desktop_console"
+        }
       });
     },
     getProviders() {

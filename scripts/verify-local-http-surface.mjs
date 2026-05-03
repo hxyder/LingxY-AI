@@ -407,8 +407,8 @@ const expectedSurfaces = [
   surface("scheduler-template-routes.mjs", "DELETE", "/^\\/templates\\/([^/]+)$/", {
     domain: "templates",
     effect: "template_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "template_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("scheduler-template-routes.mjs", "PATCH", "/^\\/schedules\\/([^/]+)$/", {
     domain: "scheduler",
@@ -419,8 +419,8 @@ const expectedSurfaces = [
   surface("scheduler-template-routes.mjs", "POST", "/^\\/dag\\/executions\\/([^/]+)\\/resume$/", {
     domain: "dag",
     effect: "manual_execution",
-    boundary: "local_ui_pending_guard",
-    migration: "dag_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("scheduler-template-routes.mjs", "POST", "/^\\/schedules\\/([^/]+)\\/runs$/", {
     domain: "scheduler",
@@ -443,14 +443,14 @@ const expectedSurfaces = [
   surface("scheduler-template-routes.mjs", "POST", "/templates", {
     domain: "templates",
     effect: "template_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "template_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("scheduler-template-routes.mjs", "POST", "/templates/import", {
     domain: "templates",
     effect: "template_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "template_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("scheduler-template-routes.mjs", "POST", "/templates/validate", {
     domain: "templates",

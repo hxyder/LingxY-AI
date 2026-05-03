@@ -203,8 +203,8 @@ if (!schedulerTemplateRouteSource.includes('url.pathname === "/schedules"')
     || !schedulerTemplateRouteSource.includes('/^\\/schedules\\/([^/]+)\\/runs$/')) {
   throw new Error("scheduler-template-routes.mjs must own schedule create/update/delete/run endpoints.");
 }
-if ((schedulerTemplateRouteSource.match(/requireDesktopActor/g) ?? []).length < 4) {
-  throw new Error("Schedule mutation routes must require the shared desktop actor guard.");
+if ((schedulerTemplateRouteSource.match(/requireDesktopActor/g) ?? []).length < 8) {
+  throw new Error("Schedule, template, and DAG execution mutation routes must require the shared desktop actor guard.");
 }
 
 if (service.store.engine !== "sqlite") {

@@ -1938,6 +1938,16 @@ async function createScheduleViaShell(payload) {
   );
 }
 
+async function saveTemplateViaShell(template) {
+  if (typeof window.ucaShell?.saveTemplate !== "function") {
+    throw new Error("Desktop template bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveTemplate({ template }),
+    "Could not save template."
+  );
+}
+
 async function surfaceApprovalPopup(approvalLike = {}, { taskId = null } = {}) {
   const approvalId = approvalIdOf(approvalLike);
   if (!approvalId || surfacedApprovalPopupIds.has(approvalId) || surfacingApprovalPopupIds.has(approvalId)) return;
@@ -6763,19 +6773,12 @@ function showTemplateConfirmCard(userText) {
     confirmBtn.textContent = "Saving...";
     try {
       const templateId = `user.${name.toLowerCase().replace(/[^a-z0-9]+/g, "_").slice(0, 30)}`;
-      await fetchJson("/templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          actor: "overlay",
-          template: {
-            schema_version: "1.0",
-            id: templateId,
-            name,
-            version: "1.0.0",
-            steps: [{ id: "draft", kind: "executor", target: "fast", inputs: { prompt: userText } }]
-          }
-        })
+      await saveTemplateViaShell({
+        schema_version: "1.0",
+        id: templateId,
+        name,
+        version: "1.0.0",
+        steps: [{ id: "draft", kind: "executor", target: "fast", inputs: { prompt: userText } }]
       });
       addBubble("assistant", `Template saved: "${name}"`);
     } catch (error) {
