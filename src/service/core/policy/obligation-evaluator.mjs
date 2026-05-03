@@ -21,7 +21,7 @@ const GROUP_HINTS = Object.freeze({
   email_send: "Use the transcript/context to fill recipient, subject, and body. Prefer connector_workflow_run with a Gmail/Outlook send workflow when available so the user receives the normal confirmation card.",
   calendar_create: "Use title, start/end time, attendees, description, and location from the request/context. Prefer connector_workflow_run with a calendar create workflow when available; otherwise call account_create_event or a provider create-event tool.",
   file_upload: "Use an absolute local path from attachments/artifacts/context. Call account_upload_file or a provider Drive/OneDrive upload tool; ask for the smallest missing file/path/destination detail only if it cannot be inferred.",
-  schedule_create: "Call create_scheduled_task with a name, a trigger ({natural_language:'5 分钟后'} / {type:'at',run_at:'<ISO>'} / {type:'cron',expression:'0 9 * * *'}), and an action ({type:'task',target:'<label>',params:{userCommand:'<full natural-language instruction>'}}). Do NOT execute the work now — schedule it and let the firing path do the work."
+  schedule_create: "Call create_scheduled_task with a name, a trigger ({natural_language:'5 分钟后'} / {type:'at',run_at:'<ISO>'} for one-shot / {type:'cron',expression:'0 9 * * *'} for recurring), and an action ({type:'task',target:'<label>',params:{userCommand:'<full natural-language instruction>'}}). Do NOT execute the work now — schedule it and let the firing path do the work."
 });
 
 const MISSING_INPUT_PATTERNS = Object.freeze({

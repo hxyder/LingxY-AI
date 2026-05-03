@@ -2,7 +2,7 @@ import { appendAuditLog } from "../security/audit-log.mjs";
 import { evaluateToolRisk } from "../action_tools/risk_matrix.mjs";
 import { executeProposedAction } from "./execute-action.mjs";
 import { applyScheduleRunOutcome } from "./failure_guard.mjs";
-import { computeNextRunAt } from "./misfire.mjs";
+import { advanceScheduleAfterRun, claimScheduleForRun } from "./lifecycle.mjs";
 import { getUserLocation, locationMatches } from "../utils/location.mjs";
 import {
   buildScheduleActionPreview,
@@ -66,12 +66,7 @@ function updateScheduleAfterRun(runtime, schedule, runStatus, now, taskId = null
   // UCA-046: reset reminder_sent_at so the next cycle's lead-time window
   // produces a fresh reminder instead of being suppressed by a stale stamp.
   schedule.reminder_sent_at = null;
-  if (schedule.metadata?.one_shot) {
-    schedule.enabled = false;
-    schedule.next_run_at = null;
-  } else {
-    schedule.next_run_at = computeNextRunAt(schedule, { after: now });
-  }
+  advanceScheduleAfterRun(schedule, { now });
 
   const outcome = applyScheduleRunOutcome(schedule, runStatus);
   runtime.store.updateSchedule(schedule.schedule_id, schedule);
@@ -122,15 +117,10 @@ export function isScheduleInFlight(scheduleId) {
 function claimInFlight(runtime, schedule, now) {
   IN_FLIGHT_SCHEDULES.add(schedule.schedule_id);
   // Advance next_run_at synchronously so a concurrent tick sees the
-  // schedule as "not due right now". For one-shot at-triggers we clear
-  // it entirely; for recurring triggers we compute the next occurrence.
-  const claimed = { ...schedule };
-  if (claimed.metadata?.one_shot) {
-    claimed.next_run_at = null;
-  } else {
-    claimed.next_run_at = computeNextRunAt(claimed, { after: now });
-  }
-  claimed.updated_at = now;
+  // schedule as "not due right now". One-shot lifecycle lives in
+  // lifecycle.mjs, so both metadata.one_shot interval reminders and native
+  // trigger_type=at tasks close consistently.
+  const claimed = claimScheduleForRun(schedule, { now });
   runtime.store.updateSchedule(claimed.schedule_id, claimed);
   return claimed;
 }
@@ -146,7 +136,7 @@ export async function dispatchSchedule({
   triggerPayload = {}
 }) {
   const schedule = runtime.store.getSchedule(scheduleId);
-  if (!schedule || !schedule.enabled) {
+  if (!schedule || (!schedule.enabled && reason !== "manual")) {
     return null;
   }
 

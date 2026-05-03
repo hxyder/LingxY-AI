@@ -1,6 +1,7 @@
 import { appendAuditLog } from "../security/audit-log.mjs";
 import { parseNaturalLanguageTrigger } from "./nl_to_cron.mjs";
 import { applyMisfirePolicy, computeMissedRunTimes, computeNextRunAt } from "./misfire.mjs";
+import { normalizeTerminalOneShotSchedule, resumeSchedule } from "./lifecycle.mjs";
 import { createPendingApprovalService } from "./pending-approvals.mjs";
 import { dispatchSchedule } from "./dispatch.mjs";
 import { executeProposedAction } from "./execute-action.mjs";
@@ -84,6 +85,18 @@ function ensureTrigger(trigger) {
   throw new Error("Schedule trigger is required.");
 }
 
+function applyTriggerToSchedule(schedule, trigger) {
+  const triggerType = trigger.type ?? trigger.kind ?? trigger.trigger_type;
+  const {
+    type: _type,
+    kind: _kind,
+    trigger_type: _triggerType,
+    ...triggerConfig
+  } = trigger;
+  schedule.trigger_type = triggerType;
+  schedule.trigger_config = triggerConfig;
+}
+
 export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_COUNT } = {}) {
   runtime.pendingApprovals = createPendingApprovalService({
     runtime,
@@ -137,6 +150,7 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
         createdBy
       });
       schedule.next_run_at = computeNextRunAt(schedule, { after: schedule.created_at });
+      normalizeTerminalOneShotSchedule(schedule, { now: schedule.created_at });
       runtime.store.insertSchedule(schedule);
       appendAuditLog(runtime, "tool.call", {
         tool_id: "create_scheduled_task",
@@ -168,10 +182,11 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
         return null;
       }
 
-      schedule.enabled = enabled;
       schedule.updated_at = new Date().toISOString();
       if (enabled) {
-        schedule.next_run_at = computeNextRunAt(schedule, { after: schedule.updated_at });
+        resumeSchedule(schedule, { now: schedule.updated_at });
+      } else {
+        schedule.enabled = false;
       }
       runtime.store.updateSchedule(scheduleId, schedule);
       appendAuditLog(runtime, "tool.call", {
@@ -192,9 +207,10 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
         return null;
       }
       const nextTrigger = ensureTrigger(triggerInput);
-      schedule.trigger = nextTrigger;
       schedule.updated_at = new Date().toISOString();
+      applyTriggerToSchedule(schedule, nextTrigger);
       schedule.next_run_at = computeNextRunAt(schedule, { after: schedule.updated_at });
+      normalizeTerminalOneShotSchedule(schedule, { now: schedule.updated_at });
       runtime.store.updateSchedule(scheduleId, schedule);
       appendAuditLog(runtime, "tool.call", {
         tool_id: "reschedule_scheduled_task",
@@ -228,6 +244,11 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
     async recoverSchedules({ now = new Date().toISOString() } = {}) {
       const runs = [];
       for (const schedule of runtime.store.listSchedules().filter((item) => item.enabled)) {
+        if (normalizeTerminalOneShotSchedule(schedule, { now })) {
+          runtime.store.updateSchedule(schedule.schedule_id, schedule);
+          continue;
+        }
+
         const missed = computeMissedRunTimes(schedule, { now });
         const selected = applyMisfirePolicy(schedule, missed);
         if (missed.length > 0) {
@@ -250,6 +271,7 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
 
         if (missed.length > 0 && selected.length === 0) {
           schedule.next_run_at = computeNextRunAt(schedule, { after: now });
+          normalizeTerminalOneShotSchedule(schedule, { now });
           schedule.updated_at = now;
           runtime.store.updateSchedule(schedule.schedule_id, schedule);
         }

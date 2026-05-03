@@ -71,16 +71,35 @@ assert.match(css, /\.cal-entry:hover/, "shared.css must style .cal-entry hover (
 
 // Exercise helpers via isolated eval.
 const helperSource = js.slice(
-  js.indexOf("function scheduleBucket("),
+  js.indexOf("function isOneShotScheduleRow("),
   js.indexOf("function renderSchedules(")
 );
 const exec = new Function(`${helperSource}; return { scheduleBucket, scheduleMatchesSearch };`);
 const { scheduleBucket, scheduleMatchesSearch } = exec();
 
-assert.equal(scheduleBucket({ enabled: true }), "active");
+assert.equal(scheduleBucket({ enabled: true, next_run_at: "2026-04-20T09:00:00Z" }), "active");
 assert.equal(scheduleBucket({ enabled: false }), "paused");
 assert.equal(scheduleBucket({ enabled: true, completed_at: "2026-04-20T00:00:00Z" }), "completed");
 assert.equal(scheduleBucket({ enabled: false, completed_at: "2026-04-20T00:00:00Z" }), "completed");
+assert.equal(
+  scheduleBucket({
+    enabled: true,
+    trigger_type: "at",
+    next_run_at: null,
+    last_run_at: "2026-04-20T09:00:00Z"
+  }),
+  "completed"
+);
+assert.equal(
+  scheduleBucket({
+    enabled: true,
+    trigger_type: "interval",
+    metadata: { one_shot: true },
+    next_run_at: null,
+    run_count: 1
+  }),
+  "completed"
+);
 
 assert.equal(scheduleMatchesSearch({ name: "Morning digest" }, ""), true);
 assert.equal(scheduleMatchesSearch({ name: "Morning digest" }, "morning"), true);

@@ -119,7 +119,7 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       description: { type: "string" },
       trigger: {
         type: "object",
-        description: "Schedule trigger. Pick ONE form:\n- type=\"at\" + run_at=ISO8601 for a ONE-SHOT fire at a specific moment (preferred for '5 分钟后' / '明天早上 9 点' / 'in 10 minutes').\n- type=\"cron\" + expression for recurring (e.g. '0 9 * * *' daily 9am).\n- type=\"interval\" + seconds for recurring every-N-seconds.\n- type=\"file_watch\" + path for filesystem triggers.\nOr pass {natural_language: '5 分钟后' / 'tomorrow 9am' / 'every day at 9am'} and the backend parses it into one of the above.",
+        description: "Schedule trigger. Pick ONE form:\n- type=\"at\" + run_at=ISO8601 for a ONE-SHOT fire at a specific moment (for '5 分钟后' / '明天早上 9 点' / 'in 10 minutes'). After it fires, it is complete and will not run again.\n- type=\"cron\" + expression for recurring work (e.g. '0 9 * * *' daily 9am). Use this when the user says 每天/每周/every day/every week/recurring.\n- type=\"interval\" + seconds for recurring every-N-seconds, unless metadata.one_shot is explicitly set by the caller.\n- type=\"file_watch\" + path for filesystem triggers.\nOr pass {natural_language: '5 分钟后' / 'tomorrow 9am' / 'every day at 9am'} and the backend parses it into one of the above.",
         properties: {
           type: { type: "string", enum: ["cron", "interval", "at", "file_watch"] },
           expression: { type: "string", description: "Cron expression, required when type=cron." },

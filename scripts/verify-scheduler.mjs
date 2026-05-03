@@ -95,6 +95,47 @@ try {
     }
   });
   assert.equal(sqliteStore.getSchedule(atSchedule.schedule_id).next_run_at, futureRunAt);
+
+  const nativeAtSchedule = sqliteService.runtime.scheduler.createSchedule({
+    name: "Native at reminder",
+    trigger: {
+      type: "at",
+      run_at: futureRunAt
+    },
+    action: {
+      type: "action_tool",
+      target: "notify",
+      params: {
+        title: "Native At",
+        body: "Run once because trigger_type=at"
+      }
+    }
+  });
+  const nativeAtRun = await sqliteService.runtime.scheduler.dispatch(nativeAtSchedule.schedule_id, "manual");
+  assert.equal(nativeAtRun.status, "success");
+  const nativeAtAfterRun = sqliteStore.getSchedule(nativeAtSchedule.schedule_id);
+  assert.equal(nativeAtAfterRun.enabled, false, "native trigger_type=at must close after one run");
+  assert.equal(nativeAtAfterRun.next_run_at, null);
+
+  const pausedRecurring = sqliteService.runtime.scheduler.createSchedule({
+    name: "Paused recurring",
+    trigger: {
+      type: "interval",
+      seconds: 60
+    },
+    action: {
+      type: "action_tool",
+      target: "notify",
+      params: {
+        title: "Paused",
+        body: "Manual run should still work"
+      }
+    }
+  });
+  sqliteService.runtime.scheduler.pauseSchedule(pausedRecurring.schedule_id, false);
+  const pausedManualRun = await sqliteService.runtime.scheduler.dispatch(pausedRecurring.schedule_id, "manual");
+  assert.equal(pausedManualRun.status, "success", "manual Run now should work for paused schedules");
+  assert.equal(sqliteStore.getSchedule(pausedRecurring.schedule_id).enabled, false);
 } finally {
   sqliteStore.close();
   await rm(sqliteTempDir, { recursive: true, force: true });
@@ -295,6 +336,50 @@ const recovered = await runtime.scheduler.recoverSchedules({
   now: "2026-04-08T08:05:00.000Z"
 });
 assert.equal(recovered.length >= 1, true);
+
+const legacyExpiredAt = runtime.scheduler.createSchedule({
+  name: "Legacy expired at",
+  trigger: {
+    type: "at",
+    run_at: "2026-04-08T08:00:00.000Z"
+  },
+  action: {
+    type: "action_tool",
+    target: "notify",
+    params: {
+      title: "Expired",
+      body: "Should be normalized disabled"
+    }
+  },
+  enabled: true
+});
+assert.equal(legacyExpiredAt.enabled, false, "new expired at schedules should not stay enabled");
+
+const legacyTerminalAt = runtime.scheduler.createSchedule({
+  name: "Legacy terminal at",
+  trigger: {
+    type: "at",
+    run_at: "2026-04-08T09:00:00.000Z"
+  },
+  action: {
+    type: "action_tool",
+    target: "notify",
+    params: {
+      title: "Legacy",
+      body: "Legacy row"
+    }
+  }
+});
+const legacyTerminalRecord = runtime.store.getSchedule(legacyTerminalAt.schedule_id);
+legacyTerminalRecord.enabled = true;
+legacyTerminalRecord.next_run_at = null;
+legacyTerminalRecord.last_run_at = "2026-04-08T09:00:00.000Z";
+legacyTerminalRecord.run_count = 1;
+runtime.store.updateSchedule(legacyTerminalRecord.schedule_id, legacyTerminalRecord);
+await runtime.scheduler.recoverSchedules({
+  now: "2026-04-08T10:00:00.000Z"
+});
+assert.equal(runtime.store.getSchedule(legacyTerminalAt.schedule_id).enabled, false);
 
 const failingSchedule = runtime.scheduler.createSchedule({
   name: "Broken Schedule",

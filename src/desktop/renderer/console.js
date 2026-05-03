@@ -4403,8 +4403,28 @@ function focusScheduleInList(scheduleId) {
 }
 
 // UCA-125 Phase 7b helpers
+function isOneShotScheduleRow(s) {
+  return s?.trigger_type === "at" || s?.metadata?.one_shot === true;
+}
+
+function scheduleRunAtIsPast(s) {
+  const ts = Date.parse(s?.trigger_config?.run_at ?? s?.trigger_config?.at ?? "");
+  return Number.isFinite(ts) && ts <= Date.now();
+}
+
+function isTerminalOneShotScheduleRow(s) {
+  return isOneShotScheduleRow(s)
+    && !s.next_run_at
+    && (Boolean(s.last_run_at) || Number(s.run_count ?? 0) > 0 || !s.enabled || scheduleRunAtIsPast(s));
+}
+
+function terminalOneShotLabel(s) {
+  if (!isTerminalOneShotScheduleRow(s)) return null;
+  return s.last_run_at || Number(s.run_count ?? 0) > 0 ? "completed" : "expired";
+}
+
 function scheduleBucket(s) {
-  if (s.completed_at) return "completed";
+  if (s.completed_at || isTerminalOneShotScheduleRow(s)) return "completed";
   if (!s.enabled) return "paused";
   return "active";
 }
@@ -4542,8 +4562,9 @@ function renderScheduleRow(s) {
   const bucket = scheduleBucket(s);
   const stateClass = bucket === "completed" ? " is-completed" : (bucket === "paused" ? " is-paused" : "");
   const runLabel = bucket === "completed" ? "Re-run" : "Run now";
+  const terminalLabel = terminalOneShotLabel(s);
   const statePill = bucket === "completed"
-    ? `<span class="pill pill-neutral">completed</span>`
+    ? `<span class="pill pill-neutral">${escapeHtml(terminalLabel ?? "completed")}</span>`
     : (bucket === "paused" ? `<span class="pill pill-neutral">paused</span>` : "");
   return `
     <div class="sched-row${stateClass}" data-schedule-row="${escapeHtml(s.schedule_id)}" style="${color ? `border-left:3px solid ${escapeHtml(color)};` : ""}">

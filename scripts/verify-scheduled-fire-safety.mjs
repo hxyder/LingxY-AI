@@ -232,9 +232,14 @@ const { runtime } = service;
   // actually runs.
   const target = fireRuntime.scheduler.createSchedule({
     name: "test lock",
-    trigger: { type: "at", run_at: new Date(Date.now() - 1000).toISOString() },
+    trigger: { type: "at", run_at: new Date(Date.now() + 60_000).toISOString() },
     action: { type: "action_tool", target: "notify", params: { title: "x", body: "y" } }
   });
+  const dueTarget = fireRuntime.store.getSchedule(target.schedule_id);
+  dueTarget.trigger_config.run_at = new Date(Date.now() - 1000).toISOString();
+  dueTarget.next_run_at = dueTarget.trigger_config.run_at;
+  dueTarget.enabled = true;
+  fireRuntime.store.updateSchedule(dueTarget.schedule_id, dueTarget);
   assert.ok(!isScheduleInFlight(target.schedule_id), "schedule should not be in-flight before dispatch");
 
   // Kick off first dispatch (don't await yet) — should claim the lock.
