@@ -1776,7 +1776,7 @@
               <div id="mcpServerFormWrap" hidden>
                 <form id="mcpServerForm" class="stack" style="gap:10px;padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);margin-bottom:10px;">
                   <div class="row" style="gap:8px;">
-                    <div style="flex:1;">
+                    <div style="flex:1;" data-preflight-field="mcp-id">
                       <label for="mcpServerId">Server ID</label>
                       <input id="mcpServerId" type="text" placeholder="e.g. my-mcp" required>
                     </div>
@@ -1786,7 +1786,7 @@
                     </div>
                   </div>
                   <div class="row" style="gap:8px;">
-                    <div style="flex:1;">
+                    <div style="flex:1;" data-preflight-field="mcp-transport">
                       <label for="mcpTransport">Transport</label>
                       <select id="mcpTransport">
                         <option value="stdio">stdio</option>
@@ -1794,7 +1794,7 @@
                         <option value="ws">ws</option>
                       </select>
                     </div>
-                    <div style="flex:1;">
+                    <div style="flex:1;" data-preflight-field="mcp-command">
                       <label for="mcpCommand">Command / URL</label>
                       <input id="mcpCommand" type="text" placeholder="stdio: node ...  http: https://host">
                     </div>
@@ -1948,7 +1948,7 @@
           </div>
           <form id="skillRegistryForm" class="stack" style="gap:10px;margin-bottom:12px;">
             <div class="row" style="gap:8px;">
-              <div style="flex:1;">
+              <div style="flex:1;" data-preflight-field="skill-id">
                 <label for="skillRegistryId">Registry ID</label>
                 <input id="skillRegistryId" type="text" placeholder="e.g. team-skills" required>
               </div>
@@ -1957,7 +1957,7 @@
                 <input id="skillRegistryName" type="text" placeholder="e.g. Team Skills">
               </div>
             </div>
-            <div>
+            <div data-preflight-field="skill-rootPath">
               <label for="skillRegistryPath">Root Path</label>
               <input id="skillRegistryPath" type="text" placeholder="e.g. C:\\skills">
             </div>

@@ -17,6 +17,15 @@ const runtime = createPersistentRuntime({
   pipeName: `\\\\.\\pipe\\uca-helper-ai-integrations-${crypto.randomUUID()}`
 });
 
+function assertStructuredError(payload, field, pattern) {
+  const errors = payload?.errors ?? [];
+  const error = errors.find((entry) => entry?.field === field);
+  assert.ok(error, `expected structured error for field ${field}`);
+  assert.equal(typeof error.message, "string");
+  assert.ok(error.message.length >= 30, `error message for ${field} must be descriptive`);
+  assert.match(error.message, pattern);
+}
+
 async function postJson(baseUrl, pathname, body) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: "POST",
@@ -99,7 +108,7 @@ try {
   });
   assert.equal(invalidMcp.response.status, 400, "stdio MCP server config must require a command");
   assert.equal(invalidMcp.payload?.error, "mcp_server_invalid");
-  assert.ok(invalidMcp.payload?.errors?.includes("command required for stdio transport"));
+  assertStructuredError(invalidMcp.payload, "command", /Stdio transport requires a command/);
 
   const invalidMcpPreflight = await postJsonResponse(listening.baseUrl, "/config/mcp/test", {
     id: "bad-mcp",
@@ -108,7 +117,7 @@ try {
   });
   assert.equal(invalidMcpPreflight.response.status, 200, "MCP preflight should return structured validation, not throw");
   assert.equal(invalidMcpPreflight.payload?.ok, false);
-  assert.ok(invalidMcpPreflight.payload?.errors?.includes("url required for http/ws transport"));
+  assertStructuredError(invalidMcpPreflight.payload, "url", /transport requires a URL/);
 
   const validMcpPreflight = await postJsonResponse(listening.baseUrl, "/config/mcp/test", {
     id: "mock-mcp",
@@ -158,7 +167,7 @@ try {
   });
   assert.equal(invalidSkillRegistry.response.status, 400, "skill registry config must reject missing rootPath");
   assert.equal(invalidSkillRegistry.payload?.error, "skill_registry_invalid");
-  assert.ok(invalidSkillRegistry.payload?.errors?.includes("rootPath does not exist"));
+  assertStructuredError(invalidSkillRegistry.payload, "rootPath", /Path does not exist on disk/);
 
   const invalidSkillPreflight = await postJsonResponse(listening.baseUrl, "/config/skills/test", {
     id: "missing-skills",
@@ -167,7 +176,7 @@ try {
   });
   assert.equal(invalidSkillPreflight.response.status, 200);
   assert.equal(invalidSkillPreflight.payload?.ok, false);
-  assert.ok(invalidSkillPreflight.payload?.errors?.includes("rootPath does not exist"));
+  assertStructuredError(invalidSkillPreflight.payload, "rootPath", /Path does not exist on disk/);
 
   const validSkillPreflight = await postJsonResponse(listening.baseUrl, "/config/skills/test", {
     id: "scratch-skills",

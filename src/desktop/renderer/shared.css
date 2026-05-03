@@ -275,6 +275,12 @@ button.primary, button.secondary, button.ghost {
   border-color: var(--line);
   color: var(--muted);
 }
+.field-error {
+  margin-top: 4px;
+  color: var(--err);
+  font-size: 12px;
+  line-height: 1.35;
+}
 
 /* Legacy chip-classes used by many renderers — map to pill */
 .chip.ready   { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 10px; font-weight: 600; background: var(--ok-soft); color: var(--ok); border: 1px solid transparent; }

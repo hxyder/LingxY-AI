@@ -6173,6 +6173,66 @@ function setPreflightState(el, kind, text) {
   el.textContent = `${label} ${text}`;
 }
 
+const PREFLIGHT_FIELD_KEYS = {
+  mcp: {
+    id: "mcp-id",
+    transport: "mcp-transport",
+    command: "mcp-command",
+    url: "mcp-command"
+  },
+  skill: {
+    id: "skill-id",
+    rootPath: "skill-rootPath"
+  }
+};
+
+function normalizePreflightError(error) {
+  if (!error || typeof error === "string") {
+    return { field: null, message: error || "Invalid configuration." };
+  }
+  return {
+    field: error.field ?? null,
+    message: error.message ?? "Invalid configuration."
+  };
+}
+
+function clearFieldErrors(formEl) {
+  formEl?.querySelectorAll(".field-error").forEach((el) => el.remove());
+}
+
+function showFieldError(fieldKey, message) {
+  const wrapper = document.querySelector(`[data-preflight-field="${fieldKey}"]`);
+  if (!wrapper) return false;
+  let errEl = wrapper.querySelector(".field-error");
+  if (!errEl) {
+    errEl = document.createElement("div");
+    errEl.className = "field-error";
+    wrapper.appendChild(errEl);
+  }
+  errEl.textContent = message;
+  return true;
+}
+
+function showPreflightErrors({ formEl, kind, stateEl, errors, fallback }) {
+  clearFieldErrors(formEl);
+  const globalMessages = [];
+  let fieldErrorCount = 0;
+  for (const rawError of errors ?? []) {
+    const error = normalizePreflightError(rawError);
+    const fieldKey = PREFLIGHT_FIELD_KEYS[kind]?.[error.field];
+    if (fieldKey && showFieldError(fieldKey, error.message)) {
+      fieldErrorCount += 1;
+      continue;
+    }
+    globalMessages.push(error.message);
+  }
+  if (fieldErrorCount > 0 && globalMessages.length === 0) {
+    setPreflightState(stateEl, "err", "Invalid: fix highlighted fields.");
+    return;
+  }
+  setPreflightState(stateEl, "err", `Invalid: ${globalMessages.join("; ") || fallback}`);
+}
+
 function buildMcpServerPayloadFromForm() {
   const id = mcpServerId.value.trim();
   const displayName = mcpServerName.value.trim();
@@ -6189,7 +6249,9 @@ function buildMcpServerPayloadFromForm() {
 }
 
 function formatMcpPreflightErrors(errors = []) {
-  return errors.length ? errors.join("; ") : "Invalid MCP server config.";
+  return errors.length
+    ? errors.map((error) => normalizePreflightError(error).message).join("; ")
+    : "Invalid MCP server config.";
 }
 
 async function preflightMcpServerConfig() {
@@ -6201,11 +6263,18 @@ async function preflightMcpServerConfig() {
 }
 
 mcpServerTestBtn?.addEventListener("click", async () => {
+  clearFieldErrors(mcpServerForm);
   setPreflightState(mcpServerState, "pending", "Testing...");
   try {
     const result = await preflightMcpServerConfig();
     if (!result.ok) {
-      setPreflightState(mcpServerState, "err", `Invalid: ${formatMcpPreflightErrors(result.errors)}`);
+      showPreflightErrors({
+        formEl: mcpServerForm,
+        kind: "mcp",
+        stateEl: mcpServerState,
+        errors: result.errors,
+        fallback: formatMcpPreflightErrors(result.errors)
+      });
       return;
     }
     setPreflightState(mcpServerState, "ok", "Valid configuration. Actual startup tested when MCP first starts.");
@@ -6216,11 +6285,18 @@ mcpServerTestBtn?.addEventListener("click", async () => {
 
 mcpServerForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
+  clearFieldErrors(mcpServerForm);
   setPreflightState(mcpServerState, "pending", "Testing...");
   try {
     const result = await preflightMcpServerConfig();
     if (!result.ok) {
-      setPreflightState(mcpServerState, "err", `Invalid: ${formatMcpPreflightErrors(result.errors)}`);
+      showPreflightErrors({
+        formEl: mcpServerForm,
+        kind: "mcp",
+        stateEl: mcpServerState,
+        errors: result.errors,
+        fallback: formatMcpPreflightErrors(result.errors)
+      });
       return;
     }
     setPreflightState(mcpServerState, "pending", "Saving...");
@@ -6249,7 +6325,9 @@ function buildSkillRegistryPayloadFromForm() {
 }
 
 function formatSkillPreflightErrors(errors = []) {
-  return errors.length ? errors.join("; ") : "Invalid skill registry.";
+  return errors.length
+    ? errors.map((error) => normalizePreflightError(error).message).join("; ")
+    : "Invalid skill registry.";
 }
 
 async function preflightSkillRegistryConfig() {
@@ -6261,11 +6339,18 @@ async function preflightSkillRegistryConfig() {
 }
 
 skillRegistryTestBtn?.addEventListener("click", async () => {
+  clearFieldErrors(skillRegistryForm);
   setPreflightState(skillRegistryState, "pending", "Testing...");
   try {
     const result = await preflightSkillRegistryConfig();
     if (!result.ok) {
-      setPreflightState(skillRegistryState, "err", `Invalid: ${formatSkillPreflightErrors(result.errors)}`);
+      showPreflightErrors({
+        formEl: skillRegistryForm,
+        kind: "skill",
+        stateEl: skillRegistryState,
+        errors: result.errors,
+        fallback: formatSkillPreflightErrors(result.errors)
+      });
       return;
     }
     setPreflightState(skillRegistryState, "ok", `Valid. ${result.skillCount ?? 0} skill(s) found at this path.`);
@@ -6276,11 +6361,18 @@ skillRegistryTestBtn?.addEventListener("click", async () => {
 
 skillRegistryForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
+  clearFieldErrors(skillRegistryForm);
   setPreflightState(skillRegistryState, "pending", "Testing...");
   try {
     const result = await preflightSkillRegistryConfig();
     if (!result.ok) {
-      setPreflightState(skillRegistryState, "err", `Invalid: ${formatSkillPreflightErrors(result.errors)}`);
+      showPreflightErrors({
+        formEl: skillRegistryForm,
+        kind: "skill",
+        stateEl: skillRegistryState,
+        errors: result.errors,
+        fallback: formatSkillPreflightErrors(result.errors)
+      });
       return;
     }
     setPreflightState(skillRegistryState, "pending", "Saving...");

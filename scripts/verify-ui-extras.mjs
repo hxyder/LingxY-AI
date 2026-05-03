@@ -87,6 +87,9 @@ assert.ok(!/mcpServerState\.textContent\s*=\s*["'`]Looks valid/.test(consoleJs),
   "mcp preflight: raw Looks valid text must use state helper");
 assert.ok(!/skillRegistryState\.textContent\s*=\s*["'`]Looks valid/.test(consoleJs),
   "skill preflight: raw Looks valid text must use state helper");
+assert.ok(/showFieldError\s*\(/.test(consoleJs) && /clearFieldErrors\s*\(/.test(consoleJs),
+  "preflight field errors: console must render inline field errors");
+assert.ok(/\.field-error\b/.test(sharedCss), "preflight field errors: .field-error CSS missing");
 
 // ── Per-user-message ↑/↓ nav ───────────────────────────────────────────
 assert.ok(/chat-msg-nav\b/.test(sharedCss) && /chat-msg-nav-btn/.test(consoleJs),
