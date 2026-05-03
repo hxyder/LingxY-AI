@@ -8,6 +8,7 @@ import { listEmailAccounts, upsertEmailAccount, deleteEmailAccount } from "../..
 import { createImapClient } from "../../email/imap-client.mjs";
 import { getCredential } from "../../email/credential-store.mjs";
 import { maybeRunMorningDigest } from "../../email/digest.mjs";
+import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
 import { sanitizeProviderConfig } from "../../../shared/provider-catalog.mjs";
 import { isFeatureEnabled } from "../feature-flags.mjs";
@@ -491,22 +492,21 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     return true;
   }
 
+  if (method === "POST" && url.pathname === "/config/mcp/test") {
+    const body = await readJsonBody(request);
+    const result = validateMcpServerDescriptor(body);
+    sendJson(response, 200, result);
+    return true;
+  }
+
   if (method === "POST" && url.pathname === "/config/mcp/servers") {
     const body = await readJsonBody(request);
-    if (!body.id) {
-      sendJson(response, 400, { error: "id required" });
+    const result = validateMcpServerDescriptor(body);
+    if (!result.ok) {
+      sendJson(response, 400, { error: "mcp_server_invalid", errors: result.errors });
       return true;
     }
-    const entry = {
-      id: body.id,
-      displayName: body.displayName ?? body.name ?? body.id,
-      transport: body.transport ?? "stdio",
-      command: body.command ?? null,
-      args: Array.isArray(body.args) ? body.args : [],
-      url: body.url ?? null,
-      env: body.env ?? null,
-      enabled: body.enabled !== false
-    };
+    const entry = result.server;
     saveRuntimeConfig(runtime, (currentConfig) => ({
       ...currentConfig,
       ai: {

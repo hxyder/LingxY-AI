@@ -17,6 +17,7 @@ When `baseDir` is passed to `createPersistentRuntime`, the same structure is cre
 The runtime accepts hot-reloadable configuration through:
 
 - `GET /config/integrations`
+- `POST /config/mcp/test`
 - `POST /config/mcp/servers`
 - `DELETE /config/mcp/servers/:id`
 - `POST /config/skills/registries`

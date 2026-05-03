@@ -92,6 +92,35 @@ try {
     defaultModel: "mock-model"
   });
 
+  const invalidMcp = await postJsonResponse(listening.baseUrl, "/config/mcp/servers", {
+    id: "bad-mcp",
+    displayName: "Bad MCP",
+    transport: "stdio"
+  });
+  assert.equal(invalidMcp.response.status, 400, "stdio MCP server config must require a command");
+  assert.equal(invalidMcp.payload?.error, "mcp_server_invalid");
+  assert.ok(invalidMcp.payload?.errors?.includes("command required for stdio transport"));
+
+  const invalidMcpPreflight = await postJsonResponse(listening.baseUrl, "/config/mcp/test", {
+    id: "bad-mcp",
+    displayName: "Bad MCP",
+    transport: "http"
+  });
+  assert.equal(invalidMcpPreflight.response.status, 200, "MCP preflight should return structured validation, not throw");
+  assert.equal(invalidMcpPreflight.payload?.ok, false);
+  assert.ok(invalidMcpPreflight.payload?.errors?.includes("url required for http/ws transport"));
+
+  const validMcpPreflight = await postJsonResponse(listening.baseUrl, "/config/mcp/test", {
+    id: "mock-mcp",
+    displayName: "Mock MCP",
+    transport: "stdio",
+    command: process.execPath,
+    args: ["--version"]
+  });
+  assert.equal(validMcpPreflight.response.status, 200);
+  assert.equal(validMcpPreflight.payload?.ok, true);
+  assert.equal(validMcpPreflight.payload?.server?.command, process.execPath);
+
   await postJson(listening.baseUrl, "/config/mcp/servers", {
     id: "mock-mcp",
     displayName: "Mock MCP",
