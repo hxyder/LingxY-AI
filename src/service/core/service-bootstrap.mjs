@@ -241,6 +241,7 @@ export function createServiceBootstrap({
       getBudget: "/budget",
       postBudget: "/budget",
       postExportBundle: "/export/bundle",
+      postDiagnosticBundle: "/diagnostics/bundle",
       postHistorySearch: "/history/search",
       getProjectStore: "/projects/store",
       postProjectStore: "/projects/store",

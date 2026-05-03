@@ -481,6 +481,14 @@ if (service.endpoints.getBudget !== "/budget") {
   throw new Error("Budget endpoint manifest is invalid.");
 }
 
+if (service.endpoints.postExportBundle !== "/export/bundle") {
+  throw new Error("Export bundle endpoint manifest is invalid.");
+}
+
+if (service.endpoints.postDiagnosticBundle !== "/diagnostics/bundle") {
+  throw new Error("Diagnostic bundle endpoint manifest is invalid.");
+}
+
 if (service.endpoints.postHistorySearch !== "/history/search") {
   throw new Error("History search endpoint manifest is invalid.");
 }

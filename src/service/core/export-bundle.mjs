@@ -27,6 +27,10 @@ function redactValue(value, key = "") {
   return value;
 }
 
+export function redactForExport(value) {
+  return redactValue(cloneJson(value));
+}
+
 function providerRequiresKey(provider = {}) {
   if (!provider || provider.kind === "code_cli" || provider.kind === "ollama") return false;
   return Boolean(provider.apiKey || provider.apiKeyRef || provider.apiKeyConfigured);

@@ -1,6 +1,53 @@
 const { contextBridge, ipcRenderer, clipboard, shell, webUtils } = require("electron");
 const { promises: fs } = require("node:fs");
 
+function serializeErrorLike(value) {
+  if (!value) return { message: "" };
+  if (value instanceof Error) {
+    return {
+      name: value.name,
+      message: value.message,
+      stack: value.stack
+    };
+  }
+  if (typeof value === "object") {
+    return {
+      message: value.message == null ? String(value) : String(value.message),
+      stack: value.stack == null ? null : String(value.stack)
+    };
+  }
+  return { message: String(value) };
+}
+
+function reportRendererError(kind, detail = {}) {
+  try {
+    ipcRenderer.invoke("uca:renderer-error", {
+      kind,
+      ts: new Date().toISOString(),
+      url: globalThis.location?.href ?? "",
+      ...detail
+    }).catch(() => {});
+  } catch {
+    // Diagnostic capture must never break renderer startup.
+  }
+}
+
+globalThis.addEventListener?.("error", (event) => {
+  reportRendererError("renderer_error", {
+    message: event?.message ?? "",
+    filename: event?.filename ?? "",
+    lineno: event?.lineno ?? null,
+    colno: event?.colno ?? null,
+    error: serializeErrorLike(event?.error)
+  });
+});
+
+globalThis.addEventListener?.("unhandledrejection", (event) => {
+  reportRendererError("renderer_unhandled_rejection", {
+    reason: serializeErrorLike(event?.reason)
+  });
+});
+
 contextBridge.exposeInMainWorld("ucaShell", {
   getShellStatus() {
     return ipcRenderer.invoke("uca:shell-status");
@@ -279,6 +326,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   },
   exportBundle(payload) {
     return ipcRenderer.invoke("uca:export-bundle", payload ?? {});
+  },
+  diagnosticBundle(payload) {
+    return ipcRenderer.invoke("uca:diagnostic-bundle", payload ?? {});
   },
   createSchedule(payload) {
     return ipcRenderer.invoke("uca:schedule-create", payload ?? {});

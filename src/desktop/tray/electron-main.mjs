@@ -1,5 +1,6 @@
 import path from "node:path";
-import { mkdir, readdir, readFile, unlink, watch, writeFile } from "node:fs/promises";
+import { mkdirSync } from "node:fs";
+import { appendFile, mkdir, readdir, readFile, unlink, watch, writeFile } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -29,6 +30,74 @@ const RENDERER_DIR = path.join(__dirname, "..", "renderer");
 const PRELOAD_PATH = path.join(RENDERER_DIR, "preload.cjs");
 const DESKTOP_ACTOR_HEADER = "X-Lingxy-Desktop-Actor";
 const DESKTOP_CONSOLE_ACTOR = "desktop_console";
+let desktopDiagnosticsInstalled = false;
+
+function desktopLogsDir() {
+  return path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "UCA", "logs");
+}
+
+function serializeDiagnosticError(error) {
+  if (!error) return { message: "" };
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    };
+  }
+  if (typeof error === "object") {
+    return {
+      message: error.message == null ? String(error) : String(error.message),
+      stack: error.stack == null ? null : String(error.stack)
+    };
+  }
+  return { message: String(error) };
+}
+
+async function appendDesktopDiagnosticError(kind, error, metadata = {}) {
+  try {
+    const dir = desktopLogsDir();
+    await mkdir(dir, { recursive: true });
+    await appendFile(
+      path.join(dir, "desktop-errors.jsonl"),
+      `${JSON.stringify({
+        ts: new Date().toISOString(),
+        kind,
+        error: serializeDiagnosticError(error),
+        metadata
+      })}\n`,
+      "utf8"
+    );
+  } catch (err) {
+    safeWarn("[UCA] failed to write desktop diagnostic error:", err?.message ?? err);
+  }
+}
+
+function installDesktopDiagnostics({ app, crashReporter } = {}) {
+  if (desktopDiagnosticsInstalled) return;
+  desktopDiagnosticsInstalled = true;
+  process.on("uncaughtExceptionMonitor", (error, origin) => {
+    void appendDesktopDiagnosticError("main_uncaught_exception", error, { origin });
+  });
+  process.on("unhandledRejection", (reason) => {
+    void appendDesktopDiagnosticError("main_unhandled_rejection", reason, {});
+  });
+  if (!app || !crashReporter?.start) return;
+  try {
+    const crashDir = path.join(desktopLogsDir(), "crash-dumps");
+    mkdirSync(crashDir, { recursive: true });
+    app.setPath?.("crashDumps", crashDir);
+    crashReporter.start({
+      uploadToServer: false,
+      compress: false,
+      globalExtra: {
+        app: "LingxY"
+      }
+    });
+  } catch (error) {
+    void appendDesktopDiagnosticError("crash_reporter_start_failed", error, {});
+  }
+}
 
 async function readServiceJson(response) {
   const text = await response.text();
@@ -570,7 +639,8 @@ export function createElectronShellRuntime({
     throw new Error("Electron bindings are required to create the shell runtime.");
   }
 
-  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session, desktopCapturer } = electron;
+  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session, desktopCapturer, crashReporter } = electron;
+  installDesktopDiagnostics({ app, crashReporter });
   const windows = new Map();
   const readyWindows = new Set();
   const pendingWindowMessages = new Map();
@@ -2418,6 +2488,30 @@ export function createElectronShellRuntime({
             message: error?.message ?? String(error)
           };
         }
+      });
+      ipcMain.handle(IPC_CHANNELS.diagnosticBundle, async (event) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/diagnostics/bundle"
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "diagnostic_bundle_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.rendererErrorReport, async (event, payload = {}) => {
+        await appendDesktopDiagnosticError("renderer_report", null, {
+          actor: desktopActorForSender(event.sender),
+          payload: normalizePlainObject(payload) ?? {}
+        });
+        return { ok: true };
       });
       ipcMain.handle(IPC_CHANNELS.scheduleCreate, async (event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";

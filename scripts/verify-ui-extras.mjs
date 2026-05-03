@@ -178,16 +178,36 @@ assert.ok(!/fetchJson\(\s*["'`]\/budget["'`]\s*,\s*\{\s*method:\s*["'`]POST/.tes
   "budget settings: console must not POST /budget directly");
 assert.ok(/id="dataExportPanel"/.test(consoleHtml) && /id="exportBundleBtn"/.test(consoleHtml),
   "data export: settings panel and export button missing");
+assert.ok(/id="diagnosticBundleBtn"/.test(consoleHtml),
+  "diagnostics: diagnostic bundle button missing");
 assert.ok(/exportBundleViaShell/.test(consoleJs) && /window\.ucaShell\.exportBundle/.test(consoleJs),
   "data export: console must use desktop shell bridge");
+assert.ok(/diagnosticBundleViaShell/.test(consoleJs) && /window\.ucaShell\.diagnosticBundle/.test(consoleJs),
+  "diagnostics: console must use desktop shell bridge");
 assert.ok(/exportBundle:\s*["']uca:export-bundle["']/.test(desktopManifest),
   "data export: IPC channel missing from desktop manifest");
+assert.ok(/diagnosticBundle:\s*["']uca:diagnostic-bundle["']/.test(desktopManifest),
+  "diagnostics: IPC channel missing from desktop manifest");
+assert.ok(/rendererErrorReport:\s*["']uca:renderer-error["']/.test(desktopManifest),
+  "diagnostics: renderer error IPC channel missing from desktop manifest");
 assert.ok(/exportBundle\(payload\)/.test(consolePreload) && /ipcRenderer\.invoke\("uca:export-bundle"/.test(consolePreload),
   "data export: preload bridge missing");
+assert.ok(/diagnosticBundle\(payload\)/.test(consolePreload) && /ipcRenderer\.invoke\("uca:diagnostic-bundle"/.test(consolePreload),
+  "diagnostics: preload bridge missing");
+assert.ok(/addEventListener\?\.\("error"/.test(consolePreload) && /addEventListener\?\.\("unhandledrejection"/.test(consolePreload),
+  "diagnostics: preload must capture renderer errors locally");
 assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.exportBundle/.test(electronMain) && /\/export\/bundle/.test(electronMain),
   "data export: electron main handler must call /export/bundle");
+assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.diagnosticBundle/.test(electronMain) && /\/diagnostics\/bundle/.test(electronMain),
+  "diagnostics: electron main handler must call /diagnostics/bundle");
+assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.rendererErrorReport/.test(electronMain) && /desktop-errors\.jsonl/.test(electronMain),
+  "diagnostics: electron main must persist renderer error reports locally");
+assert.ok(/crashReporter\.start\(\{[\s\S]{0,220}uploadToServer:\s*false/.test(electronMain),
+  "diagnostics: crashReporter must be local-only");
 assert.ok(!/fetchJson\(\s*["'`]\/export\/bundle["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "data export: console must not POST /export/bundle directly");
+assert.ok(!/fetchJson\(\s*["'`]\/diagnostics\/bundle["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "diagnostics: console must not POST /diagnostics/bundle directly");
 assert.ok(/createSchedule/.test(consoleJs) && /window\.ucaShell\.createSchedule/.test(consoleJs),
   "scheduler create: console must use desktop shell bridge");
 assert.ok(/updateSchedule/.test(consoleJs) && /window\.ucaShell\.updateSchedule/.test(consoleJs),

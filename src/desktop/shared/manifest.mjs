@@ -23,6 +23,7 @@ export const IPC_CHANNELS = Object.freeze({
   shellSetIgnoreMouseEvents: "uca:shell-set-ignore-mouse-events",
   shellClipboardChanged: "uca:shell-clipboard-changed",
   shellNavigateConsole: "uca:shell-navigate-console",
+  rendererErrorReport: "uca:renderer-error",
   overlayToggle: "uca:overlay-toggle",
   // Sent main → overlay renderer when the overlay window blurs and focus
   // has left the application entirely. The renderer runs the same
@@ -59,6 +60,7 @@ export const IPC_CHANNELS = Object.freeze({
   securityStateUpdate: "uca:security-state-update",
   budgetUpdate: "uca:budget-update",
   exportBundle: "uca:export-bundle",
+  diagnosticBundle: "uca:diagnostic-bundle",
   scheduleCreate: "uca:schedule-create",
   scheduleUpdate: "uca:schedule-update",
   scheduleDelete: "uca:schedule-delete",

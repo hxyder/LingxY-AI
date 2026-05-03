@@ -1,5 +1,6 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
+import { buildRuntimeDiagnosticBundle } from "../diagnostic-bundle.mjs";
 import { buildRuntimeExportBundle } from "../export-bundle.mjs";
 
 export async function tryHandleRuntimeAdminRoute({ request, response, method, url, runtime, paths }) {
@@ -91,6 +92,16 @@ export async function tryHandleRuntimeAdminRoute({ request, response, method, ur
     const includeTaskEvents = !["0", "false", "no"].includes(`${url.searchParams.get("includeTaskEvents") ?? ""}`.toLowerCase());
     sendJson(response, 200, {
       bundle: buildRuntimeExportBundle(runtime, { includeTaskEvents })
+    });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/diagnostics/bundle") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) {
+      return true;
+    }
+    sendJson(response, 200, {
+      bundle: await buildRuntimeDiagnosticBundle(runtime)
     });
     return true;
   }

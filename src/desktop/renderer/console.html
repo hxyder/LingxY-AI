@@ -2219,9 +2219,13 @@
               <h3 class="settings-group-title" style="margin:0;">Data Export</h3>
               <p class="muted" style="font-size:12px;margin:6px 0 0;">Notes, conversations, tasks, schedules, and a redacted config bundle.</p>
             </div>
-            <button id="exportBundleBtn" class="btn btn-primary" type="button">Export JSON</button>
+            <div class="toolbar" style="gap:8px;justify-content:flex-end;">
+              <button id="diagnosticBundleBtn" class="btn" type="button">Diagnostics JSON</button>
+              <button id="exportBundleBtn" class="btn btn-primary" type="button">Export JSON</button>
+            </div>
           </div>
           <div id="exportBundleState" class="muted" style="font-size:12px;margin-top:10px;"></div>
+          <div id="diagnosticBundleState" class="muted" style="font-size:12px;margin-top:6px;"></div>
         </div>
 
         <!-- ── UCA-048: Default Output Path ── -->

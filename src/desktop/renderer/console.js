@@ -170,6 +170,8 @@ const redactionRuleList = document.querySelector("#redactionRuleList");
 const retentionList = document.querySelector("#retentionList");
 const exportBundleBtn = document.querySelector("#exportBundleBtn");
 const exportBundleState = document.querySelector("#exportBundleState");
+const diagnosticBundleBtn = document.querySelector("#diagnosticBundleBtn");
+const diagnosticBundleState = document.querySelector("#diagnosticBundleState");
 const auditCount = document.querySelector("#auditCount");
 const auditList = document.querySelector("#auditList");
 const officeAddinSetupState = document.querySelector("#officeAddinSetupState");
@@ -1099,6 +1101,14 @@ function runtimeExportFilename(bundle = {}) {
     .replace(/[^\w-]+/g, "_")
     .slice(0, 40);
   return `lingxy-export-${stamp || Date.now()}.json`;
+}
+
+function diagnosticBundleFilename(bundle = {}) {
+  const stamp = `${bundle.generated_at ?? new Date().toISOString()}`
+    .replace(/[:.]/g, "-")
+    .replace(/[^\w-]+/g, "_")
+    .slice(0, 40);
+  return `lingxy-diagnostics-${stamp || Date.now()}.json`;
 }
 
 // UCA-126 Phase 7d: rich message cards (user / ai / system / tool_call).
@@ -6066,6 +6076,33 @@ exportBundleBtn?.addEventListener("click", async () => {
   }
 });
 
+diagnosticBundleBtn?.addEventListener("click", async () => {
+  const originalLabel = diagnosticBundleBtn.textContent;
+  diagnosticBundleBtn.disabled = true;
+  diagnosticBundleBtn.textContent = "Preparing...";
+  if (diagnosticBundleState) diagnosticBundleState.textContent = "Collecting local diagnostics...";
+  try {
+    const result = await diagnosticBundleViaShell();
+    const bundle = result.bundle ?? result;
+    downloadTextFile(
+      JSON.stringify(bundle, null, 2),
+      diagnosticBundleFilename(bundle),
+      "application/json"
+    );
+    if (diagnosticBundleState) {
+      const counts = bundle?.counts ?? {};
+      diagnosticBundleState.textContent = `Diagnostics ready: ${counts.tasks ?? 0} tasks, ${counts.failedTasks ?? 0} failed, ${bundle?.desktopErrors?.length ?? 0} desktop errors. No telemetry sent.`;
+    }
+    showConsoleToast("已生成本地诊断 JSON", { kind: "ok" });
+  } catch (error) {
+    if (diagnosticBundleState) diagnosticBundleState.textContent = `Failed: ${error.message}`;
+    showConsoleToast(`诊断包失败：${error.message}`, { kind: "err" });
+  } finally {
+    diagnosticBundleBtn.disabled = false;
+    diagnosticBundleBtn.textContent = originalLabel;
+  }
+});
+
 // UCA-121: historyForm submit handler retired (form removed from DOM).
 
 // UCA-125 Phase 3-4: page-head "+ New project" button focuses the
@@ -6556,6 +6593,16 @@ async function exportBundleViaShell(options = {}) {
   return assertShellResult(
     await window.ucaShell.exportBundle(options),
     "Could not export data bundle."
+  );
+}
+
+async function diagnosticBundleViaShell(options = {}) {
+  if (typeof window.ucaShell?.diagnosticBundle !== "function") {
+    throw new Error("Desktop diagnostics bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.diagnosticBundle(options),
+    "Could not build diagnostics bundle."
   );
 }
 
