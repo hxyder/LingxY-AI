@@ -380,6 +380,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("runtime-admin-routes.mjs", "POST", "/export/bundle", {
+    domain: "data_export",
+    effect: "privacy_sensitive_read",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("runtime-admin-routes.mjs", "POST", "/budget", {
     domain: "budget",
     effect: "config_mutation",

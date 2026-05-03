@@ -1,5 +1,6 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
+import { buildRuntimeExportBundle } from "../export-bundle.mjs";
 
 export async function tryHandleRuntimeAdminRoute({ request, response, method, url, runtime, paths }) {
   if (method === "GET" && url.pathname === "/health") {
@@ -79,6 +80,17 @@ export async function tryHandleRuntimeAdminRoute({ request, response, method, ur
   if (method === "GET" && url.pathname === "/audit-log") {
     sendJson(response, 200, {
       entries: runtime.store.listAuditLogs()
+    });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/export/bundle") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) {
+      return true;
+    }
+    const includeTaskEvents = !["0", "false", "no"].includes(`${url.searchParams.get("includeTaskEvents") ?? ""}`.toLowerCase());
+    sendJson(response, 200, {
+      bundle: buildRuntimeExportBundle(runtime, { includeTaskEvents })
     });
     return true;
   }

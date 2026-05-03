@@ -240,6 +240,7 @@ export function createServiceBootstrap({
       postDagResume: "/dag/executions/:id/resume",
       getBudget: "/budget",
       postBudget: "/budget",
+      postExportBundle: "/export/bundle",
       postHistorySearch: "/history/search",
       getProjectStore: "/projects/store",
       postProjectStore: "/projects/store",
