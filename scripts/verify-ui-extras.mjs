@@ -204,6 +204,18 @@ assert.ok(/updateEmailSettingsViaShell/.test(consoleJs) && /window\.ucaShell\.up
   "email settings: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/email\/settings["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "email settings: console must not POST /config/email/settings directly");
+assert.ok(/saveEmailAccountViaShell/.test(consoleJs) && /window\.ucaShell\.saveEmailAccount/.test(consoleJs),
+  "email account save: console must use desktop shell bridge");
+assert.ok(/deleteEmailAccountViaShell/.test(consoleJs) && /window\.ucaShell\.deleteEmailAccount/.test(consoleJs),
+  "email account delete: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/email\/accounts["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "email account save: console must not POST /config/email/accounts directly via fetchJson");
+assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/config\/email\/accounts`\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "email account save: console must not POST /config/email/accounts directly via fetch");
+assert.ok(!/fetchJson\(\s*`\/config\/email\/accounts\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
+  "email account delete: console must not DELETE /config/email/accounts/:id directly via fetchJson");
+assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/config\/email\/accounts\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
+  "email account delete: console must not DELETE /config/email/accounts/:id directly via fetch");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

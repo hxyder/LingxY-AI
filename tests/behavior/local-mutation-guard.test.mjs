@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
 
@@ -52,6 +55,25 @@ function makeConfigRuntime() {
   };
 }
 
+function makeEmailAccountRuntime(initialConfig = {}) {
+  const calls = [];
+  let config = initialConfig;
+  return {
+    calls,
+    paths: {},
+    configStore: {
+      load() {
+        calls.push({ method: "config.load" });
+        return config;
+      },
+      save(value) {
+        calls.push({ method: "config.save", value });
+        config = value;
+      }
+    }
+  };
+}
+
 async function postConfigRoute({ pathname, body = {}, actor = "desktop_console", runtime = makeConfigRuntime() }) {
   const response = captureResponse();
   const headers = actor ? { [ACTOR_HEADER]: actor } : {};
@@ -59,6 +81,33 @@ async function postConfigRoute({ pathname, body = {}, actor = "desktop_console",
     request: jsonRequest(body, headers),
     response,
     method: "POST",
+    url: new URL(`http://127.0.0.1${pathname}`),
+    runtime,
+    saveRuntimeConfig(targetRuntime, updater) {
+      targetRuntime.configStore.save(updater(targetRuntime.configStore.load()));
+    }
+  });
+  return {
+    handled,
+    statusCode: response.statusCode,
+    payload: parsePayload(response),
+    runtime
+  };
+}
+
+async function configProviderRoute({
+  method,
+  pathname,
+  body = {},
+  actor = "desktop_console",
+  runtime = makeConfigRuntime()
+}) {
+  const response = captureResponse();
+  const headers = actor ? { [ACTOR_HEADER]: actor } : {};
+  const handled = await tryHandleConfigProviderRoute({
+    request: jsonRequest(body, headers),
+    response,
+    method,
     url: new URL(`http://127.0.0.1${pathname}`),
     runtime,
     saveRuntimeConfig(targetRuntime, updater) {
@@ -327,6 +376,89 @@ test("console-only config mutations reject other trusted desktop surfaces", asyn
   assert.deepEqual(allowed.runtime.patches, [
     { output: { defaultDir: "E:/linxiDoc", autoCreateDirs: false } }
   ]);
+});
+
+test("email account credential mutations reject non-console actors before local state changes", async () => {
+  const cases = [
+    { method: "POST", pathname: "/config/email/accounts", body: { id: "demo", email: "demo@example.com" } },
+    { method: "DELETE", pathname: "/config/email/accounts/demo" }
+  ];
+
+  for (const entry of cases) {
+    const runtime = makeEmailAccountRuntime({
+      email: {
+        accounts: [
+          {
+            id: "demo",
+            email: "demo@example.com",
+            provider: "imap"
+          }
+        ]
+      }
+    });
+    const result = await configProviderRoute({
+      ...entry,
+      actor: "desktop_overlay",
+      runtime
+    });
+    assert.equal(result.handled, true, `${entry.method} ${entry.pathname} should be handled`);
+    assert.equal(result.statusCode, 403, `${entry.method} ${entry.pathname} should reject`);
+    assert.equal(result.payload.error, "desktop_actor_required");
+    assert.deepEqual(runtime.calls, [], `${entry.method} ${entry.pathname} must not touch email config`);
+  }
+});
+
+test("email account credential mutations allow the console actor", async (t) => {
+  const dataDir = await mkdtemp(path.join(os.tmpdir(), "uca-email-guard-"));
+  t.after(async () => {
+    await rm(dataDir, { recursive: true, force: true });
+  });
+
+  const saveRuntime = makeEmailAccountRuntime();
+  saveRuntime.paths.dataDir = dataDir;
+  const save = await configProviderRoute({
+    method: "POST",
+    pathname: "/config/email/accounts",
+    actor: "desktop_console",
+    runtime: saveRuntime,
+    body: {
+      id: "demo",
+      email: "demo@example.com",
+      displayName: "Demo Mail",
+      provider: "imap",
+      credentials: null
+    }
+  });
+  assert.equal(save.statusCode, 200);
+  assert.equal(save.payload.account.id, "demo");
+  assert.equal(save.payload.account.email, "demo@example.com");
+  assert.equal(saveRuntime.calls[0].method, "config.load");
+  assert.equal(saveRuntime.calls[1].method, "config.save");
+  assert.deepEqual(saveRuntime.calls[1].value.email.accounts.map((account) => account.id), ["demo"]);
+
+  const deleteRuntime = makeEmailAccountRuntime({
+    email: {
+      accounts: [
+        {
+          id: "demo",
+          email: "demo@example.com",
+          provider: "imap"
+        }
+      ]
+    }
+  });
+  deleteRuntime.paths.dataDir = dataDir;
+  const deletion = await configProviderRoute({
+    method: "DELETE",
+    pathname: "/config/email/accounts/demo",
+    actor: "desktop_console",
+    runtime: deleteRuntime
+  });
+  assert.equal(deletion.statusCode, 200);
+  assert.equal(deletion.payload.deleted, "demo");
+  assert.equal(deleteRuntime.calls[0].method, "config.load");
+  assert.equal(deleteRuntime.calls[1].method, "config.save");
+  assert.deepEqual(deleteRuntime.calls[1].value.email.accounts, []);
 });
 
 test("approval mutation routes trust the desktop actor header over any body actor", async () => {

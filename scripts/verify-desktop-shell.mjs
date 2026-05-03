@@ -72,6 +72,8 @@ for (const channel of [
   "uca:output-config-update",
   "uca:feature-config-update",
   "uca:email-settings-update",
+  "uca:email-account-save",
+  "uca:email-account-delete",
   "uca:connected-account-rename",
   "uca:connected-account-default-set",
   "uca:connected-account-disconnect",

@@ -331,6 +331,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   updateEmailSettings(payload) {
     return ipcRenderer.invoke("uca:email-settings-update", payload ?? {});
   },
+  saveEmailAccount(payload) {
+    return ipcRenderer.invoke("uca:email-account-save", payload ?? {});
+  },
+  deleteEmailAccount(id) {
+    return ipcRenderer.invoke("uca:email-account-delete", id ?? "");
+  },
   renameConnectedAccount(accountId, displayName) {
     return ipcRenderer.invoke("uca:connected-account-rename", { accountId, displayName });
   },

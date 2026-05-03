@@ -113,8 +113,8 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "DELETE", "/config/email/accounts/*", {
     domain: "email_config",
     effect: "credential_config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "DELETE", "/config/mcp/servers/*", {
     domain: "mcp_config",
@@ -143,8 +143,8 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "POST", "/config/email/accounts", {
     domain: "email_config",
     effect: "credential_config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "POST", "/config/email/settings", {
     domain: "email_config",

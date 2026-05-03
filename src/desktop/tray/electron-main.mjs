@@ -213,6 +213,14 @@ function normalizeRuntimeConfigPayload(payload = {}) {
   return normalizePlainObject(payload) ?? {};
 }
 
+function normalizeEmailAccountPayload(payload = {}) {
+  return normalizePlainObject(payload) ?? {};
+}
+
+function normalizeEmailAccountId(id) {
+  return typeof id === "string" ? id.trim() : "";
+}
+
 function normalizeConnectedAccountId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
@@ -2554,6 +2562,46 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "email_settings_update_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.emailAccountSave, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/config/email/accounts",
+            body: normalizeEmailAccountPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "email_account_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.emailAccountDelete, async (event, accountId = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const id = normalizeEmailAccountId(accountId);
+        if (!id) {
+          return { ok: false, error: "email_account_id_required", message: "Email account id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "DELETE",
+            actor,
+            pathname: `/config/email/accounts/${encodeURIComponent(id)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "email_account_delete_failed",
             message: error?.message ?? String(error)
           };
         }

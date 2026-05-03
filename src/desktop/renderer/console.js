@@ -2470,7 +2470,7 @@ function renderEmailAccounts() {
       if (!id) return;
       emailAccountState.textContent = "Deleting...";
       try {
-        await fetchJson(`/config/email/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await deleteEmailAccountViaShell(id);
         emailAccountState.textContent = "Deleted.";
         await refreshWorkspace();
       } catch (error) {
@@ -6481,6 +6481,26 @@ async function updateEmailSettingsViaShell(settings) {
   );
 }
 
+async function saveEmailAccountViaShell(account) {
+  if (typeof window.ucaShell?.saveEmailAccount !== "function") {
+    throw new Error("Desktop email account bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveEmailAccount(account),
+    "Could not save email account."
+  );
+}
+
+async function deleteEmailAccountViaShell(accountId) {
+  if (typeof window.ucaShell?.deleteEmailAccount !== "function") {
+    throw new Error("Desktop email account bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteEmailAccount(accountId),
+    "Could not delete email account."
+  );
+}
+
 async function renameConnectedAccountViaShell(accountId, displayName) {
   if (typeof window.ucaShell?.renameConnectedAccount !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
@@ -6934,7 +6954,7 @@ emailAccountForm?.addEventListener("submit", async (event) => {
   };
   emailAccountState.textContent = "Saving...";
   try {
-    await fetchJson("/config/email/accounts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    await saveEmailAccountViaShell(payload);
     emailAccountState.textContent = "Saved.";
     emailAccountId.value = "";
     emailAccountEmail.value = "";
@@ -7139,7 +7159,7 @@ function renderConnEmailAccounts(accounts) {
       ev.stopPropagation();
       const id = btn.dataset.deleteEmail;
       try {
-        await fetch(`${state.serviceBaseUrl}/config/email/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await deleteEmailAccountViaShell(id);
         await loadConnectorsTab();
       } catch (err) {
         if (connEmailState) connEmailState.textContent = `Error: ${err.message}`;
@@ -8580,19 +8600,15 @@ document.getElementById("connEmailConnectBtn")?.addEventListener("click", async 
   if (document.getElementById("connEmailConnectBtn")) document.getElementById("connEmailConnectBtn").disabled = true;
   try {
     const id = email.replace(/[^a-z0-9]/gi, "-").toLowerCase().slice(0, 40);
-    const resp = await fetch(`${state.serviceBaseUrl}/config/email/accounts`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        id, email, provider: provider === "other" ? "imap" : provider === "outlook" ? "imap" : provider === "gmail" ? "imap" : provider === "qq" ? "imap" : provider === "163" ? "imap" : "imap",
-        displayName: email,
-        imapHost: host,
-        imapPort: preset.port,
-        credentials: { username: email, password }
-      })
+    await saveEmailAccountViaShell({
+      id,
+      email,
+      provider: provider === "other" ? "imap" : provider === "outlook" ? "imap" : provider === "gmail" ? "imap" : provider === "qq" ? "imap" : provider === "163" ? "imap" : "imap",
+      displayName: email,
+      imapHost: host,
+      imapPort: preset.port,
+      credentials: { username: email, password }
     });
-    const data = await resp.json();
-    if (!resp.ok) throw new Error(data.error ?? resp.statusText);
     const picker = document.getElementById("connEmailPicker");
     const inlineForm = document.getElementById("connEmailInlineForm");
     if (picker) picker.style.display = "";

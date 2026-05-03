@@ -346,6 +346,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "POST" && url.pathname === "/config/email/accounts") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const body = await readJsonBody(request);
     if (!body.id || !body.email) {
       sendJson(response, 400, { error: "id and email required" });
@@ -394,6 +395,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "DELETE" && url.pathname.startsWith("/config/email/accounts/")) {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const id = decodeURIComponent(url.pathname.replace(/^\/config\/email\/accounts\//, ""));
     const removed = await deleteEmailAccount(runtime, id);
     sendJson(response, 200, { ok: true, deleted: id, account: removed });
