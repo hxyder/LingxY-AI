@@ -18,6 +18,7 @@ const browserContextRouteSource = await readFile(new URL("../src/service/core/ht
 const officeRouteSource = await readFile(new URL("../src/service/core/http-routes/office-routes.mjs", import.meta.url), "utf8");
 const previewFileRouteSource = await readFile(new URL("../src/service/core/http-routes/preview-file-routes.mjs", import.meta.url), "utf8");
 const runtimeAdminRouteSource = await readFile(new URL("../src/service/core/http-routes/runtime-admin-routes.mjs", import.meta.url), "utf8");
+const mcpInstallRouteSource = await readFile(new URL("../src/service/core/http-routes/mcp-install-routes.mjs", import.meta.url), "utf8");
 const taskRouteSource = await readFile(new URL("../src/service/core/http-routes/task-routes.mjs", import.meta.url), "utf8");
 
 if (!httpServerSource.includes("const routeGroups = [") || !httpServerSource.includes("tryHandleRouteGroups")) {
@@ -38,6 +39,9 @@ if (!httpServerSource.includes("tryHandleOfficeRoute")) {
 if (!httpServerSource.includes("tryHandleRuntimeAdminRoute")) {
   throw new Error("HTTP server must delegate runtime admin routes through routeGroups.");
 }
+if (!httpServerSource.includes("tryHandleMcpInstallRoute")) {
+  throw new Error("HTTP server must delegate MCP install preview routes through routeGroups.");
+}
 if (httpServerSource.includes('url.pathname === "/config"')) {
   throw new Error("Config read route must live in config-provider-routes.mjs, not http-server.mjs.");
 }
@@ -45,6 +49,14 @@ const configProviderRouteSource = await readFile(new URL("../src/service/core/ht
 if (!configProviderRouteSource.includes('url.pathname === "/config"')
     || !configProviderRouteSource.includes("runtime.configStore?.load")) {
   throw new Error("config-provider-routes.mjs must own GET /config.");
+}
+if (configProviderRouteSource.includes('url.pathname === "/config/mcp/install/preview"')) {
+  throw new Error("MCP install preview route must live in mcp-install-routes.mjs, not config-provider-routes.mjs.");
+}
+if (!mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/preview"')
+    || !mcpInstallRouteSource.includes("detectMcpInstallCandidate")
+    || mcpInstallRouteSource.includes("saveRuntimeConfig")) {
+  throw new Error("mcp-install-routes.mjs must own dry-run MCP install preview without writing config.");
 }
 if (httpServerSource.includes('url.pathname === "/note/transcribe"') || httpServerSource.includes('url.pathname === "/echo/kws"')) {
   throw new Error("Audio, Echo KWS, and note transcription routes must live in audio-routes.mjs, not http-server.mjs.");

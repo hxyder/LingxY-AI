@@ -171,6 +171,7 @@ const requiredPaths = [
   "src/service/core/http-routes/audio-routes.mjs",
   "src/service/core/http-routes/browser-context-routes.mjs",
   "src/service/core/http-routes/config-provider-routes.mjs",
+  "src/service/core/http-routes/mcp-install-routes.mjs",
   "src/service/core/http-routes/note-project-conversation-routes.mjs",
   "src/service/core/http-routes/office-routes.mjs",
   "src/service/core/http-routes/preview-file-routes.mjs",

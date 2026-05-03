@@ -77,6 +77,7 @@ test("MCP install detection can use package bin as a reviewed fallback", async (
       displayName: "Bin Only MCP",
       bin: { "bin-only-mcp": "dist/index.js" }
     },
+    "dist/index.js": "console.log('mcp');\n",
     "README.md": "Run with totally-different-command --do-not-parse"
   }, async (dir) => {
     const result = await detectMcpInstallCandidate({ packageDir: dir });
@@ -86,6 +87,30 @@ test("MCP install detection can use package bin as a reviewed fallback", async (
     assert.equal(result.detected.command, process.execPath);
     assert.equal(result.detected.args[0], path.join(dir, "dist", "index.js"));
     assert.equal(result.detected.sourceOfArgs, "bin");
+  });
+});
+
+test("MCP install detection rejects invalid package json without throwing", async () => {
+  await withPackage({
+    "package.json": "{ not-json"
+  }, async (dir) => {
+    const result = await detectMcpInstallCandidate({ packageDir: dir });
+    assert.equal(result.ok, false);
+    assert.equal(result.errors[0].field, "packageDir");
+    assert.match(result.errors[0].message, /Invalid JSON in package\.json/);
+  });
+});
+
+test("MCP install detection does not return missing package bin targets", async () => {
+  await withPackage({
+    "package.json": {
+      name: "missing-bin-mcp",
+      bin: "dist/missing.js"
+    }
+  }, async (dir) => {
+    const result = await detectMcpInstallCandidate({ packageDir: dir });
+    assert.equal(result.ok, false);
+    assert.match(result.errors[0].message, /No MCP manifest or package\.json bin entry/);
   });
 });
 

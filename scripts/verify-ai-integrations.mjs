@@ -130,6 +130,34 @@ try {
   assert.equal(validMcpPreflight.payload?.ok, true);
   assert.equal(validMcpPreflight.payload?.server?.command, process.execPath);
 
+  const previewPackageDir = path.join(runtimeDir, "preview-mcp-package");
+  await mkdir(path.join(previewPackageDir, "dist"), { recursive: true });
+  await writeFile(path.join(previewPackageDir, "dist", "index.js"), "console.log('preview mcp');\n", "utf8");
+  await writeFile(
+    path.join(previewPackageDir, "package.json"),
+    JSON.stringify({
+      name: "preview-mcp",
+      displayName: "Preview MCP",
+      bin: { "preview-mcp": "dist/index.js" }
+    }),
+    "utf8"
+  );
+  const installPreview = await postJsonResponse(listening.baseUrl, "/config/mcp/install/preview", {
+    packageDir: previewPackageDir
+  });
+  assert.equal(installPreview.response.status, 200);
+  assert.equal(installPreview.payload?.ok, true);
+  assert.equal(installPreview.payload?.source, "package_bin");
+  assert.equal(installPreview.payload?.server?.id, "preview-mcp");
+  assert.equal(installPreview.payload?.server?.command, process.execPath);
+  assert.equal(installPreview.payload?.detection?.sourceOfArgs, "bin");
+  const previewMcpPayload = await fetch(`${listening.baseUrl}/ai/mcp`).then((response) => response.json());
+  assert.equal(
+    previewMcpPayload.servers.some((server) => server.id === "preview-mcp"),
+    false,
+    "MCP install preview must not write runtime config"
+  );
+
   await postJson(listening.baseUrl, "/config/mcp/servers", {
     id: "mock-mcp",
     displayName: "Mock MCP",

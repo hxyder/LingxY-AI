@@ -4,11 +4,22 @@ import path from "node:path";
 
 const MANIFEST_FILENAMES = ["mcp.json", "mcp-manifest.json"];
 
-async function readJsonIfExists(filePath) {
+async function readJsonIfExists(filePath, field = "packageDir") {
   if (!existsSync(filePath)) {
-    return null;
+    return { found: false, value: null, error: null };
   }
-  return JSON.parse(await readFile(filePath, "utf8"));
+  try {
+    return { found: true, value: JSON.parse(await readFile(filePath, "utf8")), error: null };
+  } catch (error) {
+    return {
+      found: true,
+      value: null,
+      error: {
+        field,
+        message: `Invalid JSON in ${path.basename(filePath)}: ${error.message}`
+      }
+    };
+  }
 }
 
 function firstArrayValue(value) {
@@ -52,10 +63,15 @@ function normalizeManifestDescriptor(raw, { id, displayName, manifestSource }) {
 
 function normalizePackageBin(bin, packageDir) {
   if (!bin) return null;
-  if (typeof bin === "string") return path.resolve(packageDir, bin);
+  if (typeof bin === "string") {
+    const resolved = path.resolve(packageDir, bin);
+    return existsSync(resolved) ? resolved : null;
+  }
   if (typeof bin === "object" && !Array.isArray(bin)) {
     const first = Object.values(bin).find((entry) => typeof entry === "string");
-    return first ? path.resolve(packageDir, first) : null;
+    if (!first) return null;
+    const resolved = path.resolve(packageDir, first);
+    return existsSync(resolved) ? resolved : null;
   }
   return null;
 }
@@ -66,10 +82,14 @@ export async function detectMcpInstallCandidate({ packageDir, packageName = "", 
   }
 
   const packageJsonPath = path.join(packageDir, "package.json");
-  const packageJson = await readJsonIfExists(packageJsonPath);
-  if (!packageJson) {
+  const packageJsonRead = await readJsonIfExists(packageJsonPath);
+  if (packageJsonRead.error) {
+    return { ok: false, errors: [packageJsonRead.error] };
+  }
+  if (!packageJsonRead.found) {
     return { ok: false, errors: [{ field: "packageDir", message: "package.json was not found in the package directory." }] };
   }
+  const packageJson = packageJsonRead.value;
 
   const resolvedId = id || packageJson.name || packageName || path.basename(packageDir);
   const displayName = packageJson.displayName ?? packageJson.name ?? resolvedId;
@@ -87,8 +107,11 @@ export async function detectMcpInstallCandidate({ packageDir, packageName = "", 
 
   for (const fileName of MANIFEST_FILENAMES) {
     const manifestPath = path.join(packageDir, fileName);
-    const manifest = await readJsonIfExists(manifestPath);
-    const detected = normalizeManifestDescriptor(manifest, {
+    const manifestRead = await readJsonIfExists(manifestPath);
+    if (manifestRead.error) {
+      return { ok: false, errors: [manifestRead.error] };
+    }
+    const detected = normalizeManifestDescriptor(manifestRead.value, {
       id: resolvedId,
       displayName,
       manifestSource: fileName
