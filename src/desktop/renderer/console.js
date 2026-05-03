@@ -30,6 +30,9 @@ import {
   formatRelativeTime
 } from "./shared-ui.mjs";
 import {
+  getMcpSourceView
+} from "./mcp-source-view.mjs";
+import {
   renderChatSidebarListHtml
 } from "./console-chat-sidebar.mjs";
 import {
@@ -6577,9 +6580,10 @@ function renderConnectorsMcpServers(servers) {
   // live in a hover-revealed action row to keep the card quiet at rest.
   for (const s of servers ?? []) {
     const meta = MCP_SERVER_META[s.id] ?? { title: s.displayName ?? s.id, desc: s.id, logoClass: "imap" };
+    const sourceView = getMcpSourceView(s);
     const status = getMcpStatusView(s);
-    const statusLabel = status.label;
-    const statusClass = status.className;
+    const statusLabel = sourceView.readOnly ? sourceView.label : status.label;
+    const statusClass = sourceView.readOnly ? sourceView.className : status.className;
     const hasCfg = !!meta.configKey;
     const needsConfig = hasCfg && !s.enabled;
     const canInstall = Boolean(s.configured || s.available || needsConfig);
@@ -6603,7 +6607,9 @@ function renderConnectorsMcpServers(servers) {
     // it was the install action. The primary button is the
     // unambiguous affordance; the toggle still appears for already-
     // installed servers as the on/off control.
-    const headlineAction = installed
+    const headlineAction = sourceView.readOnly
+      ? `<span class="pill pill-neutral" title="Declared in a local JSON file">${escapeHtml(statusLabel)}</span>`
+      : installed
       ? `<label class="toggle" title="禁用">
            <input type="checkbox" checked data-mcp-install="${escapeHtml(s.id)}" data-mcp-enabled="false">
            <span class="toggle-track"></span>
