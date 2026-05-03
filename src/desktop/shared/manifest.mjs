@@ -80,7 +80,10 @@ export const IPC_CHANNELS = Object.freeze({
   connectedAccountDefaultSet: "uca:connected-account-default-set",
   connectedAccountDisconnect: "uca:connected-account-disconnect",
   connectorAccountDisconnect: "uca:connector-account-disconnect",
-  connectorAccountConfigSave: "uca:connector-account-config-save"
+  connectorAccountConfigSave: "uca:connector-account-config-save",
+  taskCancel: "uca:task-cancel",
+  taskRetry: "uca:task-retry",
+  taskDelete: "uca:task-delete"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

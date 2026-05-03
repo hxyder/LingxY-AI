@@ -462,20 +462,20 @@ const expectedSurfaces = [
   surface("task-routes.mjs", "DELETE", "/^\\/task\\/([^/]+)$/", {
     domain: "tasks",
     effect: "task_control",
-    boundary: "local_ui_pending_guard",
-    migration: "task_control_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("task-routes.mjs", "POST", "/^\\/task\\/([^/]+)\\/cancel$/", {
     domain: "tasks",
     effect: "task_control",
-    boundary: "local_ui_pending_guard",
-    migration: "task_control_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("task-routes.mjs", "POST", "/^\\/task\\/([^/]+)\\/retry$/", {
     domain: "tasks",
     effect: "task_control",
-    boundary: "local_ui_pending_guard",
-    migration: "task_control_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("task-routes.mjs", "POST", "/context", {
     domain: "tasks",

@@ -960,9 +960,10 @@ function showEmptyState() {
 }
 
 // Build the per-assistant-bubble action row: "+ Note" (existing) and
-// "↻ 重新生成" (new — hits /task/:taskId/retry to regenerate the same
-// answer). Both buttons live in the same row so the layout stays
-// compact. Idempotent: removes any prior action row before appending.
+// "↻ 重新生成" (new — asks the desktop shell to retry the task so the
+// main process can attach the local actor header). Both buttons live in
+// the same row so the layout stays compact. Idempotent: removes any
+// prior action row before appending.
 async function regenerateTask(taskId, btn) {
   if (!taskId) return;
   const original = btn?.textContent;
@@ -971,11 +972,7 @@ async function regenerateTask(taskId, btn) {
     btn.textContent = "重新生成中…";
   }
   try {
-    await fetchJson(`/task/${encodeURIComponent(taskId)}/retry`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "retry_same" })
-    });
+    await retryTaskViaShell(taskId, { mode: "retry_same" });
     if (btn) btn.textContent = "已发起";
     setTimeout(() => {
       if (btn) { btn.disabled = false; btn.textContent = original ?? "↻ 重新生成"; }
@@ -1948,6 +1945,26 @@ async function saveTemplateViaShell(template) {
   );
 }
 
+async function cancelTaskViaShell(taskId, options = {}) {
+  if (typeof window.ucaShell?.cancelTask !== "function") {
+    throw new Error("Desktop task control bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.cancelTask(taskId, { force: options.force === true }),
+    "Could not cancel task."
+  );
+}
+
+async function retryTaskViaShell(taskId, options = {}) {
+  if (typeof window.ucaShell?.retryTask !== "function") {
+    throw new Error("Desktop task control bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.retryTask(taskId, options),
+    "Could not retry task."
+  );
+}
+
 async function surfaceApprovalPopup(approvalLike = {}, { taskId = null } = {}) {
   const approvalId = approvalIdOf(approvalLike);
   if (!approvalId || surfacedApprovalPopupIds.has(approvalId) || surfacingApprovalPopupIds.has(approvalId)) return;
@@ -2727,11 +2744,7 @@ async function retryActiveTaskFromOverlay() {
 
   addSystemBubble("Retrying previous task...");
   try {
-    const result = await fetchJson(`/task/${encodeURIComponent(taskId)}/retry`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "retry_same", background: true })
-    });
+    const result = await retryTaskViaShell(taskId, { mode: "retry_same", background: true });
     if (result.task?.task_id) {
       activeTaskId = result.task.task_id;
       lastTask = result.task;
@@ -6862,11 +6875,7 @@ async function cancelActiveTask({ silent = false } = {}) {
   const force = cancellationRequestedTaskId === taskId;
   cancellationRequestedTaskId = taskId;
   try {
-    await fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force })
-    });
+    await cancelTaskViaShell(taskId, { force });
     if (!silent) {
       addSystemBubble(force
         ? "强制取消已发出。任务状态已置为已取消。"

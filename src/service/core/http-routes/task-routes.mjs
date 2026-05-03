@@ -14,6 +14,7 @@ import { submitFileTask } from "../file-submission.mjs";
 import { submitImageTask } from "../image-submission.mjs";
 import { submitOfficeTask } from "../office-submission.mjs";
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 
 function listTaskSummaries(runtime) {
   return runtime.store.listTasks().map((task) => ({
@@ -453,6 +454,7 @@ export async function tryHandleTaskRoute({ request, response, method, url, runti
   }
 
   if (cancelMatch && method === "POST") {
+    if (!requireDesktopActor({ request, response })) return true;
     // Body may carry { force: true } — used by the renderer when the user
     // double-clicks the stop button to escape an executor that's not honouring
     // the polite cancel signal.
@@ -472,6 +474,7 @@ export async function tryHandleTaskRoute({ request, response, method, url, runti
   }
 
   if (taskMatch && method === "DELETE") {
+    if (!requireDesktopActor({ request, response })) return true;
     const taskId = taskMatch[1];
     const task = runtime.store.getTask(taskId);
     if (!task) {
@@ -484,6 +487,7 @@ export async function tryHandleTaskRoute({ request, response, method, url, runti
   }
 
   if (retryMatch && method === "POST") {
+    if (!requireDesktopActor({ request, response })) return true;
     const body = await readJsonBody(request);
     const result = await retryTask({
       taskId: retryMatch[1],

@@ -738,11 +738,7 @@ async function cancelConsoleChatActiveTask() {
   consoleChatCancellationRequestedTaskId = taskId;
   refreshConsoleChatSendBtnMode();
   try {
-    await fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force })
-    });
+    await cancelTaskViaShell(taskId, { force });
     showConsoleToast(force ? "已强制取消" : "已请求取消任务", { kind: force ? "ok" : "info" });
   } catch (error) {
     showConsoleToast(`取消失败：${error?.message ?? error}`, { kind: "err" });
@@ -1209,11 +1205,7 @@ async function regenerateConsoleChatTask(taskId, btn) {
     btn.textContent = "重新生成中…";
   }
   try {
-    await fetchJson(`/task/${encodeURIComponent(taskId)}/retry`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ mode: "retry_same" })
-    });
+    await retryTaskViaShell(taskId, { mode: "retry_same" });
     if (btn) btn.textContent = "已发起";
     setTimeout(() => {
       if (btn) { btn.disabled = false; btn.textContent = original ?? "↻ 重新生成"; }
@@ -5889,7 +5881,7 @@ consoleChatInput?.addEventListener("keydown", (event) => {
 
 retryTaskButton.addEventListener("click", async () => {
   if (!state.selectedTaskId) return;
-  await fetchJson(`/task/${encodeURIComponent(state.selectedTaskId)}/retry`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "retry_same" }) });
+  await retryTaskViaShell(state.selectedTaskId, { mode: "retry_same" });
   await refreshWorkspace();
 });
 
@@ -5903,11 +5895,7 @@ cancelTaskButton.addEventListener("click", async () => {
   const force = consoleTaskCancellationRequestedId === taskId;
   consoleTaskCancellationRequestedId = taskId;
   try {
-    await fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force })
-    });
+    await cancelTaskViaShell(taskId, { force });
     showConsoleToast(force ? "已强制取消" : "已请求取消任务", { kind: force ? "ok" : "info" });
   } catch (error) {
     showConsoleToast(`取消失败：${error?.message ?? error}`, { kind: "err" });
@@ -5918,7 +5906,7 @@ cancelTaskButton.addEventListener("click", async () => {
 const deleteTaskButton = document.getElementById("deleteTaskButton");
 deleteTaskButton?.addEventListener("click", async () => {
   if (!state.selectedTaskId) return;
-  await fetchJson(`/task/${encodeURIComponent(state.selectedTaskId)}`, { method: "DELETE" });
+  await deleteTaskViaShell(state.selectedTaskId);
   state.selectedTaskId = null;
   await refreshWorkspace();
 });
@@ -6540,6 +6528,36 @@ async function saveConnectorAccountConfigViaShell(type, config) {
   return assertShellResult(
     await window.ucaShell.saveConnectorAccountConfig(type, config),
     "Could not save connector account config."
+  );
+}
+
+async function cancelTaskViaShell(taskId, options = {}) {
+  if (typeof window.ucaShell?.cancelTask !== "function") {
+    throw new Error("Desktop task control bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.cancelTask(taskId, { force: options.force === true }),
+    "Could not cancel task."
+  );
+}
+
+async function retryTaskViaShell(taskId, options = {}) {
+  if (typeof window.ucaShell?.retryTask !== "function") {
+    throw new Error("Desktop task control bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.retryTask(taskId, options),
+    "Could not retry task."
+  );
+}
+
+async function deleteTaskViaShell(taskId) {
+  if (typeof window.ucaShell?.deleteTask !== "function") {
+    throw new Error("Desktop task control bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteTask(taskId),
+    "Could not delete task."
   );
 }
 

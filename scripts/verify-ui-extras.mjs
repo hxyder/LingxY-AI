@@ -264,6 +264,23 @@ assert.ok(/consoleChatActiveTaskId/.test(consoleJs),
   "stop button: console must track consoleChatActiveTaskId");
 assert.ok(/btn-stop\b/.test(consoleJs) && /\.btn\.btn-stop/.test(sharedCss),
   "stop button: console btn-stop class wiring missing");
+assert.ok(/cancelTaskViaShell/.test(consoleJs) && /window\.ucaShell\.cancelTask/.test(consoleJs),
+  "task cancel: console must use desktop shell bridge");
+assert.ok(/retryTaskViaShell/.test(consoleJs) && /window\.ucaShell\.retryTask/.test(consoleJs),
+  "task retry: console must use desktop shell bridge");
+assert.ok(/deleteTaskViaShell/.test(consoleJs) && /window\.ucaShell\.deleteTask/.test(consoleJs),
+  "task delete: console must use desktop shell bridge");
+assert.ok(/cancelTaskViaShell/.test(overlayJs) && /window\.ucaShell\.cancelTask/.test(overlayJs),
+  "task cancel: overlay must use desktop shell bridge");
+assert.ok(/retryTaskViaShell/.test(overlayJs) && /window\.ucaShell\.retryTask/.test(overlayJs),
+  "task retry: overlay must use desktop shell bridge");
+const taskControlSources = `${consoleJs}\n${overlayJs}`;
+assert.ok(!/fetchJson\(\s*`\/task\/\$\{[^}]+\}\/cancel`\s*,\s*\{[\s\S]{0,220}method:\s*["'`]POST/.test(taskControlSources),
+  "task cancel: renderers must not POST /task/:id/cancel directly");
+assert.ok(!/fetchJson\(\s*`\/task\/\$\{[^}]+\}\/retry`\s*,\s*\{[\s\S]{0,220}method:\s*["'`]POST/.test(taskControlSources),
+  "task retry: renderers must not POST /task/:id/retry directly");
+assert.ok(!/fetchJson\(\s*`\/task\/\$\{[^}]+\}`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]DELETE/.test(consoleJs),
+  "task delete: console must not DELETE /task/:id directly");
 
 // ── Recent conversations panel in Tasks empty state ────────────────────
 assert.ok(/id="taskRecentConversationsPanel"/.test(consoleHtml),

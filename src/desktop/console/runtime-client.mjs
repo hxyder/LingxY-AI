@@ -178,9 +178,14 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
         body: JSON.stringify({ query, limit })
       });
     },
-    cancelTask(taskId) {
+    cancelTask(taskId, { force = false } = {}) {
       return fetchJson(`/task/${encodeURIComponent(taskId)}/cancel`, {
-        method: "POST"
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Lingxy-Desktop-Actor": "desktop_console"
+        },
+        body: JSON.stringify({ force: force === true })
       });
     },
     retryTask(taskId, {
@@ -190,7 +195,8 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
       return fetchJson(`/task/${encodeURIComponent(taskId)}/retry`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-Lingxy-Desktop-Actor": "desktop_console"
         },
         body: JSON.stringify({
           mode,

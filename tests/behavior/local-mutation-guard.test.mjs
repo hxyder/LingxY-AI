@@ -5,6 +5,7 @@ import test from "node:test";
 import { tryHandleConfigProviderRoute } from "../../src/service/core/http-routes/config-provider-routes.mjs";
 import { tryHandleConnectorRoute } from "../../src/service/core/http-routes/connector-routes.mjs";
 import { tryHandleRuntimeAdminRoute } from "../../src/service/core/http-routes/runtime-admin-routes.mjs";
+import { tryHandleTaskRoute } from "../../src/service/core/http-routes/task-routes.mjs";
 
 const ACTOR_HEADER = "x-lingxy-desktop-actor";
 
@@ -219,6 +220,81 @@ async function connectorAccountRoute({
   };
 }
 
+function makeTaskControlRuntime() {
+  const calls = [];
+  const task = {
+    task_id: "task_demo",
+    status: "running",
+    sub_status: "running",
+    progress: 0,
+    user_command: "demo task",
+    context_packet: {
+      source_type: "clipboard",
+      source_app: "test",
+      capture_mode: "manual",
+      text: "demo",
+      selection_metadata: {}
+    },
+    created_at: "2026-01-01T00:00:00.000Z",
+    updated_at: "2026-01-01T00:00:00.000Z"
+  };
+  return {
+    calls,
+    activeExecutions: new Map(),
+    paths: {},
+    queue: {
+      markFinished(taskId) {
+        calls.push({ method: "queue.markFinished", taskId });
+      }
+    },
+    eventBus: {
+      publish(event) {
+        calls.push({ method: "eventBus.publish", eventType: event.event_type });
+      }
+    },
+    store: {
+      getTask(taskId) {
+        calls.push({ method: "store.getTask", taskId });
+        return taskId === task.task_id && task.deleted !== true ? task : null;
+      },
+      updateTask(taskId, next) {
+        calls.push({ method: "store.updateTask", taskId, status: next.status, subStatus: next.sub_status });
+        Object.assign(task, next);
+      },
+      appendEvent(event) {
+        calls.push({ method: "store.appendEvent", eventType: event.event_type });
+      },
+      deleteTask(taskId) {
+        calls.push({ method: "store.deleteTask", taskId });
+        if (taskId === task.task_id) task.deleted = true;
+      }
+    }
+  };
+}
+
+async function taskControlRoute({
+  method,
+  pathname,
+  actor = "desktop_console",
+  body = {},
+  runtime = makeTaskControlRuntime()
+}) {
+  const response = captureResponse();
+  const handled = await tryHandleTaskRoute({
+    request: jsonRequest(body, actor ? { [ACTOR_HEADER]: actor } : {}),
+    response,
+    method,
+    url: new URL(`http://127.0.0.1${pathname}`),
+    runtime
+  });
+  return {
+    handled,
+    statusCode: response.statusCode,
+    payload: parsePayload(response),
+    runtime
+  };
+}
+
 test("local mutation guard rejects misspelled desktop actors before mutating config", async () => {
   const result = await postConfigRoute({
     pathname: "/config/output",
@@ -382,4 +458,47 @@ test("connector account mutation routes allow trusted desktop actors", async () 
   assert.equal(rename.runtime.calls[0].method, "store.getConnectedAccount");
   assert.equal(rename.runtime.calls[1].method, "store.getConnectedAccount");
   assert.equal(rename.runtime.calls[2].method, "store.upsertConnectedAccount");
+});
+
+test("task control routes reject unknown desktop actors before task state changes", async () => {
+  const cases = [
+    { method: "POST", pathname: "/task/task_demo/cancel", body: { force: true } },
+    { method: "POST", pathname: "/task/task_demo/retry", body: { mode: "retry_same" } },
+    { method: "DELETE", pathname: "/task/task_demo" }
+  ];
+
+  for (const entry of cases) {
+    const result = await taskControlRoute({
+      ...entry,
+      actor: "browser_page"
+    });
+    assert.equal(result.handled, true, `${entry.method} ${entry.pathname} should be handled`);
+    assert.equal(result.statusCode, 403, `${entry.method} ${entry.pathname} should reject`);
+    assert.equal(result.payload.error, "desktop_actor_required");
+    assert.deepEqual(result.runtime.calls, [], `${entry.method} ${entry.pathname} must not touch task state`);
+  }
+});
+
+test("task control routes allow trusted desktop actors for cancel and delete", async () => {
+  const cancel = await taskControlRoute({
+    method: "POST",
+    pathname: "/task/task_demo/cancel",
+    actor: "desktop_overlay",
+    body: { force: true }
+  });
+  assert.equal(cancel.statusCode, 200);
+  assert.equal(cancel.payload.task.status, "cancelled");
+  assert.ok(cancel.runtime.calls.some((entry) => entry.method === "store.updateTask" && entry.status === "cancelled"));
+  assert.ok(cancel.runtime.calls.some((entry) => entry.method === "queue.markFinished"));
+
+  const deletionRuntime = makeTaskControlRuntime();
+  const deletion = await taskControlRoute({
+    method: "DELETE",
+    pathname: "/task/task_demo",
+    actor: "desktop_console",
+    runtime: deletionRuntime
+  });
+  assert.equal(deletion.statusCode, 200);
+  assert.equal(deletion.payload.deleted, true);
+  assert.ok(deletion.runtime.calls.some((entry) => entry.method === "store.deleteTask" && entry.taskId === "task_demo"));
 });

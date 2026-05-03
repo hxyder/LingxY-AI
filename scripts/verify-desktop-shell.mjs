@@ -76,7 +76,10 @@ for (const channel of [
   "uca:connected-account-default-set",
   "uca:connected-account-disconnect",
   "uca:connector-account-disconnect",
-  "uca:connector-account-config-save"
+  "uca:connector-account-config-save",
+  "uca:task-cancel",
+  "uca:task-retry",
+  "uca:task-delete"
 ]) {
   if (!bootstrap.manifest.ipcChannels.includes(channel)) {
     throw new Error(`Desktop guarded mutation IPC channel is missing: ${channel}`);

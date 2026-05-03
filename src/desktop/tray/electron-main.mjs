@@ -250,6 +250,28 @@ function normalizeConnectorAccountConfigPayload(payload = {}) {
   };
 }
 
+function normalizeTaskId(id) {
+  return typeof id === "string" ? id.trim() : "";
+}
+
+function normalizeTaskCancelPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    taskId: normalizeTaskId(source.taskId ?? source.task_id ?? source.id),
+    force: source.force === true
+  };
+}
+
+function normalizeTaskRetryPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    taskId: normalizeTaskId(source.taskId ?? source.task_id ?? source.id),
+    mode: `${source.mode ?? "retry_same"}`.trim() || "retry_same",
+    overrides: normalizePlainObject(source.overrides) ?? {},
+    background: source.background === true || source.returnImmediately === true
+  };
+}
+
 async function requestDesktopServiceJson({
   base,
   pathname,
@@ -2649,6 +2671,78 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "connector_account_config_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.taskCancel, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const body = normalizeTaskCancelPayload(payload);
+        if (!body.taskId) {
+          return { ok: false, error: "task_id_required", message: "Task id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            actor,
+            pathname: `/task/${encodeURIComponent(body.taskId)}/cancel`,
+            body: { force: body.force }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "task_cancel_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.taskRetry, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const body = normalizeTaskRetryPayload(payload);
+        if (!body.taskId) {
+          return { ok: false, error: "task_id_required", message: "Task id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            actor,
+            pathname: `/task/${encodeURIComponent(body.taskId)}/retry`,
+            body: {
+              mode: body.mode,
+              overrides: body.overrides,
+              background: body.background
+            }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "task_retry_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.taskDelete, async (event, taskId = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const id = normalizeTaskId(taskId);
+        if (!id) {
+          return { ok: false, error: "task_id_required", message: "Task id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "DELETE",
+            actor,
+            pathname: `/task/${encodeURIComponent(id)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "task_delete_failed",
             message: error?.message ?? String(error)
           };
         }

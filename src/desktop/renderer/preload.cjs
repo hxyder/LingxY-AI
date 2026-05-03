@@ -346,6 +346,15 @@ contextBridge.exposeInMainWorld("ucaShell", {
   saveConnectorAccountConfig(type, config) {
     return ipcRenderer.invoke("uca:connector-account-config-save", { type, config: config ?? {} });
   },
+  cancelTask(taskId, options = {}) {
+    return ipcRenderer.invoke("uca:task-cancel", { taskId, force: options?.force === true });
+  },
+  retryTask(taskId, options = {}) {
+    return ipcRenderer.invoke("uca:task-retry", { taskId, ...(options ?? {}) });
+  },
+  deleteTask(taskId) {
+    return ipcRenderer.invoke("uca:task-delete", taskId ?? "");
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);
