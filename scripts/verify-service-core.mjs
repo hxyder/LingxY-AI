@@ -19,6 +19,7 @@ const officeRouteSource = await readFile(new URL("../src/service/core/http-route
 const previewFileRouteSource = await readFile(new URL("../src/service/core/http-routes/preview-file-routes.mjs", import.meta.url), "utf8");
 const runtimeAdminRouteSource = await readFile(new URL("../src/service/core/http-routes/runtime-admin-routes.mjs", import.meta.url), "utf8");
 const mcpInstallRouteSource = await readFile(new URL("../src/service/core/http-routes/mcp-install-routes.mjs", import.meta.url), "utf8");
+const mcpInstallExecutionSource = await readFile(new URL("../src/service/ai/mcp/install-execution.mjs", import.meta.url), "utf8");
 const taskRouteSource = await readFile(new URL("../src/service/core/http-routes/task-routes.mjs", import.meta.url), "utf8");
 
 if (!httpServerSource.includes("const routeGroups = [") || !httpServerSource.includes("tryHandleRouteGroups")) {
@@ -59,6 +60,12 @@ if (!mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/previ
     || !mcpInstallRouteSource.includes("createMcpInstallSandboxPlan")
     || mcpInstallRouteSource.includes("saveRuntimeConfig")) {
   throw new Error("mcp-install-routes.mjs must own dry-run MCP install plan/preview without writing config.");
+}
+if (!mcpInstallExecutionSource.includes("spawnExternal")
+    || /\bspawn\s*\(/.test(mcpInstallExecutionSource)
+    || /\bexecFile\s*\(/.test(mcpInstallExecutionSource)
+    || mcpInstallExecutionSource.includes("saveRuntimeConfig")) {
+  throw new Error("MCP install execution must use external-call spawn wrapper and must not write config.");
 }
 if (httpServerSource.includes('url.pathname === "/note/transcribe"') || httpServerSource.includes('url.pathname === "/echo/kws"')) {
   throw new Error("Audio, Echo KWS, and note transcription routes must live in audio-routes.mjs, not http-server.mjs.");
