@@ -183,18 +183,26 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
       return fetchJson(`/approvals/${encodeURIComponent(approvalId)}/approve`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-Lingxy-Desktop-Actor": "desktop_console"
         },
-        body: JSON.stringify(options)
+        body: JSON.stringify({
+          actor: "desktop_console",
+          ...options
+        })
       });
     },
     rejectApproval(approvalId, options = {}) {
       return fetchJson(`/approvals/${encodeURIComponent(approvalId)}/reject`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-Lingxy-Desktop-Actor": "desktop_console"
         },
-        body: JSON.stringify(options)
+        body: JSON.stringify({
+          actor: "desktop_console",
+          ...options
+        })
       });
     },
     runScheduleNow(scheduleId, triggerPayload = {}) {

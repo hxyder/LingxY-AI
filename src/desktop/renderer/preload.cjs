@@ -265,6 +265,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   saveMcpServerConfig(payload) {
     return ipcRenderer.invoke("uca:mcp-server-config", payload ?? {});
   },
+  approveApproval(payload) {
+    return ipcRenderer.invoke("uca:approval-approve", payload ?? {});
+  },
+  rejectApproval(payload) {
+    return ipcRenderer.invoke("uca:approval-reject", payload ?? {});
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

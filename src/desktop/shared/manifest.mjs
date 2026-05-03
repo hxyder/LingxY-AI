@@ -53,7 +53,9 @@ export const IPC_CHANNELS = Object.freeze({
   mcpServerSave: "uca:mcp-server-save",
   mcpServerDelete: "uca:mcp-server-delete",
   mcpServerToggle: "uca:mcp-server-toggle",
-  mcpServerConfig: "uca:mcp-server-config"
+  mcpServerConfig: "uca:mcp-server-config",
+  approvalApprove: "uca:approval-approve",
+  approvalReject: "uca:approval-reject"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

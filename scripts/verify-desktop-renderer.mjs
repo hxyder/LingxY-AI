@@ -27,6 +27,10 @@ assert.equal(preload.includes("toggleMcpServer"), true);
 assert.equal(preload.includes(IPC_CHANNELS.mcpServerToggle), true);
 assert.equal(preload.includes("saveMcpServerConfig"), true);
 assert.equal(preload.includes(IPC_CHANNELS.mcpServerConfig), true);
+assert.equal(preload.includes("approveApproval"), true);
+assert.equal(preload.includes(IPC_CHANNELS.approvalApprove), true);
+assert.equal(preload.includes("rejectApproval"), true);
+assert.equal(preload.includes(IPC_CHANNELS.approvalReject), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
 // Brand renamed: UCA → LingxY. Accept either the old title (still
@@ -122,12 +126,16 @@ assert.equal(mainProcess.includes("IPC_CHANNELS.mcpServerSave"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.mcpServerDelete"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.mcpServerToggle"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.mcpServerConfig"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.approvalApprove"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.approvalReject"), true);
 assert.equal(mainProcess.includes("X-Lingxy-Desktop-Actor"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/preview"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/run"), true);
 assert.equal(mainProcess.includes("/config/mcp/servers"), true);
 assert.equal(mainProcess.includes("/toggle"), true);
 assert.equal(mainProcess.includes("/config"), true);
+assert.equal(mainProcess.includes("/approve"), true);
+assert.equal(mainProcess.includes("/reject"), true);
 assert.equal(mainProcess.includes("showDesktopNotification"), true);
 // Permission handler for the Web Speech API mic access
 assert.equal(mainProcess.includes("setPermissionRequestHandler"), true);

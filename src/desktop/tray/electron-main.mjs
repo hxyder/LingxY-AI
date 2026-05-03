@@ -107,6 +107,29 @@ function normalizeMcpServerConfigPayload(payload = {}) {
   };
 }
 
+function normalizePlainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : null;
+}
+
+function normalizeApprovalDecisionPayload(payload = {}) {
+  return {
+    approvalId: `${payload.approvalId ?? payload.approval_id ?? payload.id ?? ""}`.trim(),
+    overrides: normalizePlainObject(payload.overrides),
+    reason: `${payload.reason ?? ""}`.trim()
+  };
+}
+
+function buildApprovalDecisionBody(payload, actor, action) {
+  const body = { actor };
+  if (action === "approve" && payload.overrides) {
+    body.overrides = payload.overrides;
+  }
+  if (action === "reject" && payload.reason) {
+    body.reason = payload.reason;
+  }
+  return body;
+}
+
 async function requestDesktopServiceJson({
   base,
   pathname,
@@ -235,6 +258,22 @@ export function createElectronShellRuntime({
   // so apps that never preview a file don't pay the memory cost.
   let previewWindow = null;
   let previewWindowPinned = false;
+
+  function desktopActorForWindowId(windowId) {
+    if (windowId === "overlay") return "desktop_overlay";
+    if (windowId === "popup-card") return "popup_card";
+    if (windowId === "dock" || windowId === "echo-bubble") return "desktop_shell";
+    return DESKTOP_CONSOLE_ACTOR;
+  }
+
+  function desktopActorForSender(sender) {
+    for (const [windowId, windowRef] of windows) {
+      if (windowRef?.webContents === sender) {
+        return desktopActorForWindowId(windowId);
+      }
+    }
+    return "desktop_shell";
+  }
 
   // Desktop shell settings (echo mode, future flags). Persisted as JSON in
   // AppData/Local/UCA/settings.json. Loaded lazily on first access; callers
@@ -1647,10 +1686,17 @@ export function createElectronShellRuntime({
               const action = card.action === "approve" ? "approve" : card.action === "reject" ? "reject" : null;
               if (!action) return;
               const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
-              await fetch(`${base}/approvals/${approvalId}/${action}`, {
+              const actor = "popup_card";
+              await requestDesktopServiceJson({
+                base,
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ actor: "popup-card" })
+                actor,
+                pathname: `/approvals/${encodeURIComponent(approvalId)}/${action}`,
+                body: buildApprovalDecisionBody(
+                  normalizeApprovalDecisionPayload(card.payload),
+                  actor,
+                  action
+                )
               }).catch((err) => safeWarn("[UCA] approval resolve failed:", err?.message ?? err));
             }
             if (card.action === "open_overlay") {
@@ -1926,6 +1972,52 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "mcp_server_config_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.approvalApprove, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const body = normalizeApprovalDecisionPayload(payload);
+        if (!body.approvalId) {
+          return { ok: false, error: "approval_id_required", message: "Approval id is required." };
+        }
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            actor,
+            pathname: `/approvals/${encodeURIComponent(body.approvalId)}/approve`,
+            body: buildApprovalDecisionBody(body, actor, "approve")
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "approval_approve_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.approvalReject, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const body = normalizeApprovalDecisionPayload(payload);
+        if (!body.approvalId) {
+          return { ok: false, error: "approval_id_required", message: "Approval id is required." };
+        }
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            actor,
+            pathname: `/approvals/${encodeURIComponent(body.approvalId)}/reject`,
+            body: buildApprovalDecisionBody(body, actor, "reject")
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "approval_reject_failed",
             message: error?.message ?? String(error)
           };
         }

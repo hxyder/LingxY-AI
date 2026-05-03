@@ -1895,6 +1895,39 @@ async function fetchApprovalRecord(approvalId) {
   }
 }
 
+function assertShellResult(result, fallback) {
+  if (result?.ok === false) {
+    throw new Error(result.message ?? result.error ?? fallback);
+  }
+  return result ?? {};
+}
+
+async function approveApproval(approvalId, options = {}) {
+  if (typeof window.ucaShell?.approveApproval !== "function") {
+    throw new Error("Desktop approval bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.approveApproval({
+      approvalId,
+      overrides: options.overrides ?? null
+    }),
+    "Could not approve this action."
+  );
+}
+
+async function rejectApproval(approvalId, options = {}) {
+  if (typeof window.ucaShell?.rejectApproval !== "function") {
+    throw new Error("Desktop approval bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.rejectApproval({
+      approvalId,
+      reason: options.reason ?? ""
+    }),
+    "Could not reject this action."
+  );
+}
+
 async function surfaceApprovalPopup(approvalLike = {}, { taskId = null } = {}) {
   const approvalId = approvalIdOf(approvalLike);
   if (!approvalId || surfacedApprovalPopupIds.has(approvalId) || surfacingApprovalPopupIds.has(approvalId)) return;
@@ -2343,11 +2376,7 @@ async function renderInlineApproval(frame) {
     const overrides = collectOverrides();
     await disableButtons();
     try {
-      const resp = await fetchJson(`/approvals/${encodeURIComponent(approvalId)}/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(overrides ? { actor: "overlay", overrides } : { actor: "overlay" })
-      });
+      const resp = await approveApproval(approvalId, overrides ? { overrides } : {});
       showResult("✓ 已确认，正在执行…", true);
       // Subscribe to the resume task's event stream so the user sees send_email
       // completion / failure inline in this conversation.
@@ -2385,11 +2414,7 @@ async function renderInlineApproval(frame) {
   rejectBtn.addEventListener("click", async () => {
     await disableButtons();
     try {
-      await fetchJson(`/approvals/${encodeURIComponent(approvalId)}/reject`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ actor: "overlay", reason: "rejected_in_overlay" })
-      });
+      await rejectApproval(approvalId, { reason: "rejected_in_overlay" });
       showResult("✕ 已拒绝。", false);
       await closeApprovalPopupCard();
     } catch (error) {

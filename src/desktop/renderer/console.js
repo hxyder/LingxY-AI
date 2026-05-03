@@ -1782,6 +1782,32 @@ function surfaceNewWorkspaceApprovals(approvals = []) {
   }
 }
 
+async function approveApproval(approvalId, options = {}) {
+  if (typeof window.ucaShell?.approveApproval !== "function") {
+    throw new Error("Desktop approval bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.approveApproval({
+      approvalId,
+      overrides: options.overrides ?? null
+    }),
+    "Could not approve this action."
+  );
+}
+
+async function rejectApproval(approvalId, options = {}) {
+  if (typeof window.ucaShell?.rejectApproval !== "function") {
+    throw new Error("Desktop approval bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.rejectApproval({
+      approvalId,
+      reason: options.reason ?? ""
+    }),
+    "Could not reject this action."
+  );
+}
+
 function buildScheduleRunCompletionCopy(task = {}) {
   const status = task.status ?? "unknown";
   const artifacts = Array.isArray(task.artifacts) ? task.artifacts : [];
@@ -4159,13 +4185,13 @@ function renderApprovals() {
   // Plain Approve (no overrides).
   for (const btn of approvalList.querySelectorAll("[data-approve-id]")) {
     btn.addEventListener("click", async () => {
-      await fetchJson(`/approvals/${encodeURIComponent(btn.dataset.approveId)}/approve`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actor: "desktop_console" }) });
+      await approveApproval(btn.dataset.approveId);
       await refreshWorkspace();
     });
   }
   for (const btn of approvalList.querySelectorAll("[data-reject-id]")) {
     btn.addEventListener("click", async () => {
-      await fetchJson(`/approvals/${encodeURIComponent(btn.dataset.rejectId)}/reject`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actor: "desktop_console", reason: "rejected_in_console" }) });
+      await rejectApproval(btn.dataset.rejectId, { reason: "rejected_in_console" });
       await refreshWorkspace();
     });
   }
@@ -4185,11 +4211,7 @@ function renderApprovals() {
           overrides[key] = value;
         }
       }
-      await fetchJson(`/approvals/${encodeURIComponent(id)}/approve`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ actor: "desktop_console", overrides })
-      });
+      await approveApproval(id, { overrides });
       await refreshWorkspace();
     });
   }

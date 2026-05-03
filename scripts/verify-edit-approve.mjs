@@ -35,13 +35,12 @@ assert.ok(
   "Save & Approve click handler must build overrides from input fields"
 );
 assert.ok(
-  /"\/approvals\/"\s*\+|approvals\/\$\{encodeURIComponent\(id\)\}\/approve/.test(consoleJs)
-    || /approvals\/\$\{encodeURIComponent\(.+\)\}\/approve/.test(consoleJs),
-  "Save & Approve click handler must POST to /approvals/:id/approve"
+  /approveApproval\(id,\s*\{\s*overrides\s*\}\)/.test(consoleJs),
+  "Save & Approve click handler must call the guarded approval bridge with overrides"
 );
 assert.ok(
-  /body: JSON\.stringify\(\{\s*actor:\s*"desktop_console",\s*overrides\s*\}\)/.test(consoleJs),
-  "approve POST body must include actor + overrides"
+  /window\.ucaShell\.approveApproval/.test(consoleJs),
+  "approve flow must use the desktop shell bridge instead of direct HTTP"
 );
 
 // ── field derivation helper: run it on a fake approval and inspect ──────

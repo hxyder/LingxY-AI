@@ -1,4 +1,5 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 
 export async function tryHandleRuntimeAdminRoute({ request, response, method, url, runtime, paths }) {
   if (method === "GET" && url.pathname === "/health") {
@@ -39,8 +40,15 @@ export async function tryHandleRuntimeAdminRoute({ request, response, method, ur
 
   const approvalApproveMatch = url.pathname.match(/^\/approvals\/([^/]+)\/approve$/);
   if (approvalApproveMatch && method === "POST") {
+    const actor = requireDesktopActor({ request, response });
+    if (!actor) {
+      return true;
+    }
     const body = await readJsonBody(request);
-    const result = await runtime.scheduler.approvePendingApproval(approvalApproveMatch[1], body);
+    const result = await runtime.scheduler.approvePendingApproval(approvalApproveMatch[1], {
+      ...body,
+      actor
+    });
     if (!result) {
       sendJson(response, 404, { error: "approval_not_found" });
       return true;
@@ -51,8 +59,15 @@ export async function tryHandleRuntimeAdminRoute({ request, response, method, ur
 
   const approvalRejectMatch = url.pathname.match(/^\/approvals\/([^/]+)\/reject$/);
   if (approvalRejectMatch && method === "POST") {
+    const actor = requireDesktopActor({ request, response });
+    if (!actor) {
+      return true;
+    }
     const body = await readJsonBody(request);
-    const result = runtime.scheduler.rejectPendingApproval(approvalRejectMatch[1], body);
+    const result = runtime.scheduler.rejectPendingApproval(approvalRejectMatch[1], {
+      ...body,
+      actor
+    });
     if (!result) {
       sendJson(response, 404, { error: "approval_not_found" });
       return true;

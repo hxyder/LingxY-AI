@@ -106,6 +106,18 @@ assert.ok(!/fetchJson\(\s*["'`]\/config\/mcp\/servers/.test(consoleJs),
   "mcp config save: console must not call /config/mcp/servers directly");
 assert.ok(!/fetch\(`\$\{state\.serviceBaseUrl\}\/ai\/mcp\/\$\{encodeURIComponent\(id\)\}\/(?:toggle|config)/.test(consoleJs),
   "mcp runtime mutation: console must not call /ai/mcp/:id/toggle or /config directly");
+assert.ok(/approveApproval/.test(consoleJs) && /window\.ucaShell\.approveApproval/.test(consoleJs),
+  "approval approve: console must use desktop shell bridge");
+assert.ok(/rejectApproval/.test(consoleJs) && /window\.ucaShell\.rejectApproval/.test(consoleJs),
+  "approval reject: console must use desktop shell bridge");
+assert.ok(/approveApproval/.test(overlayJs) && /window\.ucaShell\.approveApproval/.test(overlayJs),
+  "approval approve: overlay must use desktop shell bridge");
+assert.ok(/rejectApproval/.test(overlayJs) && /window\.ucaShell\.rejectApproval/.test(overlayJs),
+  "approval reject: overlay must use desktop shell bridge");
+assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:approve|reject)/.test(consoleJs),
+  "approval mutation: console must not call approval mutation routes directly");
+assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:approve|reject)/.test(overlayJs),
+  "approval mutation: overlay must not call approval mutation routes directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

@@ -370,14 +370,14 @@ const expectedSurfaces = [
   surface("runtime-admin-routes.mjs", "POST", "/^\\/approvals\\/([^/]+)\\/approve$/", {
     domain: "approvals",
     effect: "side_effect_authorization",
-    boundary: "local_ui_pending_guard",
-    migration: "approval_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("runtime-admin-routes.mjs", "POST", "/^\\/approvals\\/([^/]+)\\/reject$/", {
     domain: "approvals",
     effect: "side_effect_authorization",
-    boundary: "local_ui_pending_guard",
-    migration: "approval_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("runtime-admin-routes.mjs", "POST", "/budget", {
     domain: "budget",
@@ -593,11 +593,25 @@ function diffSets(actual, expected) {
   };
 }
 
+function escapeRegExp(value) {
+  return `${value}`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function assertDesktopActorGuard(surfaceEntry) {
   const source = readFileSync(path.join(routeDir, surfaceEntry.file), "utf8");
   let routeIndex = -1;
   if (surfaceEntry.matcher.startsWith("/^")) {
-    routeIndex = source.indexOf(surfaceEntry.matcher);
+    const variableMatch = source.match(new RegExp(
+      `const\\s+(\\w+)\\s*=\\s*url\\.pathname\\.match\\(${escapeRegExp(surfaceEntry.matcher)}\\)`
+    ));
+    if (variableMatch) {
+      routeIndex = source.indexOf(`if (${variableMatch[1]} && method === "${surfaceEntry.method}"`);
+      if (routeIndex < 0) {
+        routeIndex = source.indexOf(`if (method === "${surfaceEntry.method}" && ${variableMatch[1]}`);
+      }
+    } else {
+      routeIndex = source.indexOf(surfaceEntry.matcher);
+    }
   } else if (surfaceEntry.matcher.endsWith("*")) {
     routeIndex = source.indexOf(`url.pathname.startsWith("${surfaceEntry.matcher.slice(0, -1)}")`);
   } else {
