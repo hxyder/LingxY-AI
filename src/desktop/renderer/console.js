@@ -183,6 +183,7 @@ const mcpArgs = document.querySelector("#mcpArgs");
 const mcpServerState = document.querySelector("#mcpServerState");
 const mcpServerList = document.querySelector("#mcpServerList");
 const mcpServerRefreshBtn = document.querySelector("#mcpServerRefreshBtn");
+const mcpServerTestBtn = document.querySelector("#mcpServerTestBtn");
 const skillRegistryCount = document.querySelector("#skillRegistryCount");
 const skillRegistryForm = document.querySelector("#skillRegistryForm");
 const skillRegistryId = document.querySelector("#skillRegistryId");
@@ -6154,20 +6155,21 @@ emailAccountRefreshBtn?.addEventListener("click", () => void refreshWorkspace())
   };
   toggleBtn.addEventListener("click", () => setOpen(wrap.hasAttribute("hidden")));
   cancelBtn?.addEventListener("click", () => setOpen(false));
-  mcpServerForm?.addEventListener("submit", () => setTimeout(() => setOpen(false), 400));
 })();
 
-mcpServerForm?.addEventListener("submit", async (event) => {
-  event.preventDefault();
+function closeMcpServerFormSoon() {
+  setTimeout(() => {
+    document.querySelector("#mcpServerFormWrap")?.setAttribute("hidden", "");
+    document.querySelector("#mcpServerAddToggle")?.setAttribute("aria-expanded", "false");
+  }, 400);
+}
+
+function buildMcpServerPayloadFromForm() {
   const id = mcpServerId.value.trim();
   const displayName = mcpServerName.value.trim();
   const transport = mcpTransport.value;
   const commandOrUrl = mcpCommand.value.trim();
-  if (!id || !commandOrUrl) {
-    mcpServerState.textContent = "ID and command/url required.";
-    return;
-  }
-  const payload = {
+  return {
     id,
     displayName: displayName || id,
     transport,
@@ -6175,15 +6177,52 @@ mcpServerForm?.addEventListener("submit", async (event) => {
     args: transport === "stdio" ? mcpArgs.value.trim().split(/\s+/).filter(Boolean) : [],
     url: transport !== "stdio" ? commandOrUrl : null
   };
-  mcpServerState.textContent = "Saving...";
+}
+
+function formatMcpPreflightErrors(errors = []) {
+  return errors.length ? errors.join("; ") : "Invalid MCP server config.";
+}
+
+async function preflightMcpServerConfig() {
+  return fetchJson("/config/mcp/test", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(buildMcpServerPayloadFromForm())
+  });
+}
+
+mcpServerTestBtn?.addEventListener("click", async () => {
+  mcpServerState.textContent = "Checking...";
   try {
-    await fetchJson("/config/mcp/servers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const result = await preflightMcpServerConfig();
+    if (!result.ok) {
+      mcpServerState.textContent = `Invalid: ${formatMcpPreflightErrors(result.errors)}`;
+      return;
+    }
+    mcpServerState.textContent = "Looks valid.";
+  } catch (error) {
+    mcpServerState.textContent = `Failed: ${error.message}`;
+  }
+});
+
+mcpServerForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  mcpServerState.textContent = "Checking...";
+  try {
+    const result = await preflightMcpServerConfig();
+    if (!result.ok) {
+      mcpServerState.textContent = `Invalid: ${formatMcpPreflightErrors(result.errors)}`;
+      return;
+    }
+    mcpServerState.textContent = "Saving...";
+    await fetchJson("/config/mcp/servers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result.server) });
     mcpServerState.textContent = "Saved.";
     mcpServerId.value = "";
     mcpServerName.value = "";
     mcpCommand.value = "";
     mcpArgs.value = "";
     await refreshWorkspace();
+    closeMcpServerFormSoon();
   } catch (error) {
     mcpServerState.textContent = `Failed: ${error.message}`;
   }

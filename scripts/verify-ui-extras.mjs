@@ -70,6 +70,8 @@ assert.ok(/title\s*=\s*null\s*\}\s*\)/.test(notesStore) || /title\s*=\s*null/.te
 assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");
 assert.ok(/mcp-install-btn/.test(consoleJs) && /mcp-install-btn/.test(sharedCss),
   "mcp install: .mcp-install-btn class or CSS missing");
+assert.ok(/id="mcpServerTestBtn"/.test(consoleHtml), "mcp preflight: test button missing");
+assert.ok(/\/config\/mcp\/test/.test(consoleJs), "mcp preflight: console must call /config/mcp/test");
 
 // ── Per-user-message ↑/↓ nav ───────────────────────────────────────────
 assert.ok(/chat-msg-nav\b/.test(sharedCss) && /chat-msg-nav-btn/.test(consoleJs),
