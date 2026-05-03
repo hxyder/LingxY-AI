@@ -27,6 +27,16 @@ async function postJson(baseUrl, pathname, body) {
   return response.json();
 }
 
+async function patchJson(baseUrl, pathname, body) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  assert.equal(response.ok, true, `PATCH ${pathname} failed with ${response.status}`);
+  return response.json();
+}
+
 async function postJsonResponse(baseUrl, pathname, body) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: "POST",
@@ -105,6 +115,19 @@ try {
   const mockMcp = mcpPayload.servers.find((server) => server.id === "mock-mcp");
   assert.equal(mockMcp.available, true);
   assert.equal(mockMcp.transport, "stdio");
+  assert.equal(mockMcp.enabled, true);
+
+  await patchJson(listening.baseUrl, "/ai/mcp/mock-mcp/toggle", { enabled: false });
+  const disabledMcpPayload = await fetch(`${listening.baseUrl}/ai/mcp`).then((response) => response.json());
+  const disabledMockMcp = disabledMcpPayload.servers.find((server) => server.id === "mock-mcp");
+  assert.equal(disabledMockMcp.enabled, false, "runtime-config MCP servers must toggle through the card endpoint");
+  assert.equal(disabledMockMcp.detail, "disabled");
+
+  await patchJson(listening.baseUrl, "/ai/mcp/mock-mcp/toggle", { enabled: true });
+  const reenabledMcpPayload = await fetch(`${listening.baseUrl}/ai/mcp`).then((response) => response.json());
+  const reenabledMockMcp = reenabledMcpPayload.servers.find((server) => server.id === "mock-mcp");
+  assert.equal(reenabledMockMcp.enabled, true);
+  assert.equal(reenabledMockMcp.available, true);
 
   const skillsPayload = await fetch(`${listening.baseUrl}/ai/skills`).then((response) => response.json());
   assert.ok(skillsPayload.registries.some((registry) => registry.id === "scratch-skills" && registry.available));

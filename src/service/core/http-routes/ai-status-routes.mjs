@@ -1,5 +1,45 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 
+function updateMcpEnabled(currentConfig, serverId, enabled) {
+  const mcpConfig = currentConfig.ai?.mcp ?? {};
+  const configuredServers = Array.isArray(mcpConfig.servers) ? mcpConfig.servers : [];
+  const configuredIndex = configuredServers.findIndex((server) => server?.id === serverId);
+  if (configuredIndex >= 0) {
+    return {
+      source: "runtime_config",
+      config: {
+        ...currentConfig,
+        ai: {
+          ...(currentConfig.ai ?? {}),
+          mcp: {
+            ...mcpConfig,
+            servers: configuredServers.map((server, index) => (
+              index === configuredIndex ? { ...server, enabled } : server
+            ))
+          }
+        }
+      }
+    };
+  }
+
+  return {
+    source: "builtin_toggle",
+    config: {
+      ...currentConfig,
+      ai: {
+        ...(currentConfig.ai ?? {}),
+        mcp: {
+          ...mcpConfig,
+          builtinToggles: {
+            ...(mcpConfig.builtinToggles ?? {}),
+            [serverId]: { enabled }
+          }
+        }
+      }
+    }
+  };
+}
+
 export async function tryHandleAiStatusRoute({ request, response, method, url, runtime }) {
   if (method === "GET" && url.pathname === "/executors") {
     sendJson(response, 200, {
@@ -46,25 +86,15 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
     const body = await readJsonBody(request);
     const { enabled } = body ?? {};
     const currentConfig = runtime.configStore?.load?.() ?? {};
-    const toggles = currentConfig.ai?.mcp?.builtinToggles ?? {};
-    toggles[serverId] = { enabled: Boolean(enabled) };
-    const updatedConfig = {
-      ...currentConfig,
-      ai: {
-        ...(currentConfig.ai ?? {}),
-        mcp: {
-          ...(currentConfig.ai?.mcp ?? {}),
-          builtinToggles: toggles
-        }
-      }
-    };
+    const nextEnabled = Boolean(enabled);
+    const { config: updatedConfig, source } = updateMcpEnabled(currentConfig, serverId, nextEnabled);
     runtime.configStore?.save?.(updatedConfig);
     // Also invalidate any cached MCP client connection so it picks up the new state.
     try {
       const { disconnectAll } = await import("../../ai/mcp/client-bridge.mjs");
       await disconnectAll();
     } catch { /* bridge may not be loaded yet */ }
-    sendJson(response, 200, { ok: true, serverId, enabled: Boolean(enabled) });
+    sendJson(response, 200, { ok: true, serverId, enabled: nextEnabled, source });
     return true;
   }
 
