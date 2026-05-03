@@ -94,6 +94,18 @@ assert.ok(!/fetchJson\(\s*["'`]\/config\/mcp\/install\/preview/.test(consoleJs),
   "mcp install preview: console must not call file-reading preview route directly");
 assert.ok(/applyMcpInstallPreviewToForm/.test(consoleJs) && /Review fields before saving/.test(consoleJs),
   "mcp install preview: preview must fill manual form and require review before saving");
+assert.ok(/saveMcpServer/.test(consoleJs) && /window\.ucaShell\.saveMcpServer/.test(consoleJs),
+  "mcp config save: console must use desktop shell bridge");
+assert.ok(/deleteMcpServer/.test(consoleJs) && /window\.ucaShell\.deleteMcpServer/.test(consoleJs),
+  "mcp config delete: console must use desktop shell bridge");
+assert.ok(/toggleMcpServer/.test(consoleJs) && /window\.ucaShell\.toggleMcpServer/.test(consoleJs),
+  "mcp runtime toggle: console must use desktop shell bridge");
+assert.ok(/saveMcpServerConfig/.test(consoleJs) && /window\.ucaShell\.saveMcpServerConfig/.test(consoleJs),
+  "mcp runtime config: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/mcp\/servers/.test(consoleJs),
+  "mcp config save: console must not call /config/mcp/servers directly");
+assert.ok(!/fetch\(`\$\{state\.serviceBaseUrl\}\/ai\/mcp\/\$\{encodeURIComponent\(id\)\}\/(?:toggle|config)/.test(consoleJs),
+  "mcp runtime mutation: console must not call /ai/mcp/:id/toggle or /config directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

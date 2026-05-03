@@ -52,6 +52,11 @@ if (!configProviderRouteSource.includes('url.pathname === "/config"')
     || !configProviderRouteSource.includes("runtime.configStore?.load")) {
   throw new Error("config-provider-routes.mjs must own GET /config.");
 }
+if (!configProviderRouteSource.includes('url.pathname === "/config/mcp/servers"')
+    || !configProviderRouteSource.includes('url.pathname.startsWith("/config/mcp/servers/")')
+    || (configProviderRouteSource.match(/requireDesktopActor/g) ?? []).length < 2) {
+  throw new Error("MCP config mutation routes must live in config-provider-routes.mjs and require the shared desktop actor guard.");
+}
 if (configProviderRouteSource.includes('url.pathname === "/config/mcp/install/preview"')) {
   throw new Error("MCP install preview route must live in mcp-install-routes.mjs, not config-provider-routes.mjs.");
 }
@@ -131,6 +136,9 @@ if (!aiStatusRouteSource.includes('url.pathname === "/executors"')
     || !aiStatusRouteSource.includes('/^\\/ai\\/mcp\\/[^/]+\\/toggle$/')
     || !aiStatusRouteSource.includes('/^\\/ai\\/mcp\\/[^/]+\\/config$/')) {
   throw new Error("ai-status-routes.mjs must own executor catalog and AI provider/code-cli/MCP/skill status endpoints.");
+}
+if ((aiStatusRouteSource.match(/requireDesktopActor/g) ?? []).length < 2) {
+  throw new Error("MCP runtime mutation routes must require the shared desktop actor guard.");
 }
 if (httpServerSource.includes('url.pathname === "/task"')
     || httpServerSource.includes('url.pathname === "/task/clarify"')

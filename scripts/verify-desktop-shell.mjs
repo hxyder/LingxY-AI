@@ -45,4 +45,15 @@ if (!bootstrap.manifest.ipcChannels.includes("uca:mcp-install-preview")) {
   throw new Error("MCP install preview IPC channel is missing.");
 }
 
+for (const channel of [
+  "uca:mcp-server-save",
+  "uca:mcp-server-delete",
+  "uca:mcp-server-toggle",
+  "uca:mcp-server-config"
+]) {
+  if (!bootstrap.manifest.ipcChannels.includes(channel)) {
+    throw new Error(`MCP server config IPC channel is missing: ${channel}`);
+  }
+}
+
 console.log("Desktop shell scaffold verification passed.");

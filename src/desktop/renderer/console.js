@@ -2503,7 +2503,7 @@ function renderMcpServers() {
       if (!id) return;
       mcpServerState.textContent = "Deleting...";
       try {
-        await fetchJson(`/config/mcp/servers/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await deleteMcpServer(id);
         mcpServerState.textContent = "Deleted.";
         await refreshWorkspace();
       } catch (error) {
@@ -6305,6 +6305,53 @@ async function previewMcpInstallCandidate() {
   });
 }
 
+function assertShellResult(result, fallback) {
+  if (result?.ok === false) {
+    throw new Error(result.message ?? result.error ?? fallback);
+  }
+  return result ?? {};
+}
+
+async function saveMcpServer(server) {
+  if (typeof window.ucaShell?.saveMcpServer !== "function") {
+    throw new Error("Desktop MCP config bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveMcpServer(server),
+    "Could not save MCP server."
+  );
+}
+
+async function deleteMcpServer(id) {
+  if (typeof window.ucaShell?.deleteMcpServer !== "function") {
+    throw new Error("Desktop MCP config bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteMcpServer(id),
+    "Could not delete MCP server."
+  );
+}
+
+async function toggleMcpServer(id, enabled) {
+  if (typeof window.ucaShell?.toggleMcpServer !== "function") {
+    throw new Error("Desktop MCP runtime bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.toggleMcpServer({ id, enabled }),
+    "Could not update MCP server."
+  );
+}
+
+async function saveMcpServerConfig({ id, key, value }) {
+  if (typeof window.ucaShell?.saveMcpServerConfig !== "function") {
+    throw new Error("Desktop MCP runtime bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveMcpServerConfig({ id, key, value }),
+    "Could not save MCP server config."
+  );
+}
+
 function applyMcpInstallPreviewToForm(result = {}, { label = "Preview ready" } = {}) {
   const server = result.server ?? {};
   const transport = server.transport ?? "stdio";
@@ -6455,7 +6502,7 @@ mcpServerForm?.addEventListener("submit", async (event) => {
       return;
     }
     setPreflightState(mcpServerState, "pending", "Saving...");
-    await fetchJson("/config/mcp/servers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result.server) });
+    await saveMcpServer(result.server);
     setPreflightState(mcpServerState, "ok", "Saved.");
     mcpServerId.value = "";
     mcpServerName.value = "";
@@ -7027,11 +7074,7 @@ function renderConnectorsMcpServers(servers) {
       }
       input.disabled = true;
       try {
-        await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/toggle`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled: wantEnabled })
-        });
+        await toggleMcpServer(id, wantEnabled);
         await loadConnectorsTab();
       } catch {
         input.disabled = false;
@@ -7060,11 +7103,7 @@ function renderConnectorsMcpServers(servers) {
       const original = btn.textContent;
       btn.textContent = "安装中…";
       try {
-        await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/toggle`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled: true })
-        });
+        await toggleMcpServer(id, true);
         await loadConnectorsTab();
         showConsoleToast(`已安装：${meta.title ?? id}`, { kind: "ok" });
       } catch (error) {
@@ -7100,17 +7139,10 @@ function renderConnectorsMcpServers(servers) {
       if (!val) { if (stateEl) stateEl.textContent = "请输入值"; return; }
       if (stateEl) stateEl.textContent = "保存中…";
       try {
-        await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/config`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ key: MCP_SERVER_META[id]?.configKey, value: val })
-        });
+        await saveMcpServerConfig({ id, key: MCP_SERVER_META[id]?.configKey, value: val });
         if (stateEl) { stateEl.textContent = "已保存 ✓"; setTimeout(() => { stateEl.textContent = ""; }, 2000); }
         // Also enable the server after saving API key
-        await fetch(`${state.serviceBaseUrl}/ai/mcp/${encodeURIComponent(id)}/toggle`, {
-          method: "PATCH", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ enabled: true })
-        });
+        await toggleMcpServer(id, true);
         await loadConnectorsTab();
       } catch (err) {
         if (stateEl) stateEl.textContent = `Error: ${err.message}`;

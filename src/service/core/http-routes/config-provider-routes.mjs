@@ -14,6 +14,7 @@ import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../.
 import { sanitizeProviderConfig } from "../../../shared/provider-catalog.mjs";
 import { isFeatureEnabled } from "../feature-flags.mjs";
 import { readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 import { saveAutoSkill } from "../skill-pattern-tracker.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -501,6 +502,9 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "POST" && url.pathname === "/config/mcp/servers") {
+    if (!requireDesktopActor({ request, response })) {
+      return true;
+    }
     const body = await readJsonBody(request);
     const result = validateMcpServerDescriptor(body);
     if (!result.ok) {
@@ -523,6 +527,9 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "DELETE" && url.pathname.startsWith("/config/mcp/servers/")) {
+    if (!requireDesktopActor({ request, response })) {
+      return true;
+    }
     const id = decodeURIComponent(url.pathname.replace(/^\/config\/mcp\/servers\//, ""));
     saveRuntimeConfig(runtime, (currentConfig) => ({
       ...currentConfig,

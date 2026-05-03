@@ -26,30 +26,32 @@ function assertStructuredError(payload, field, pattern) {
   assert.match(error.message, pattern);
 }
 
-async function postJson(baseUrl, pathname, body) {
+const desktopActorHeaders = { "X-Lingxy-Desktop-Actor": "desktop_console" };
+
+async function postJson(baseUrl, pathname, body, headers = {}) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body)
   });
   assert.equal(response.ok, true, `${pathname} should succeed`);
   return response.json();
 }
 
-async function patchJson(baseUrl, pathname, body) {
+async function patchJson(baseUrl, pathname, body, headers = {}) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body)
   });
   assert.equal(response.ok, true, `PATCH ${pathname} failed with ${response.status}`);
   return response.json();
 }
 
-async function patchJsonResponse(baseUrl, pathname, body) {
+async function patchJsonResponse(baseUrl, pathname, body, headers = {}) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body)
   });
   let payload = null;
@@ -102,11 +104,20 @@ try {
     defaultModel: "mock-model"
   });
 
+  const unauthorizedMcpSave = await postJsonResponse(listening.baseUrl, "/config/mcp/servers", {
+    id: "blocked-mcp",
+    displayName: "Blocked MCP",
+    transport: "stdio",
+    command: process.execPath
+  });
+  assert.equal(unauthorizedMcpSave.response.status, 403, "MCP server save must require desktop actor");
+  assert.equal(unauthorizedMcpSave.payload?.error, "desktop_actor_required");
+
   const invalidMcp = await postJsonResponse(listening.baseUrl, "/config/mcp/servers", {
     id: "bad-mcp",
     displayName: "Bad MCP",
     transport: "stdio"
-  });
+  }, desktopActorHeaders);
   assert.equal(invalidMcp.response.status, 400, "stdio MCP server config must require a command");
   assert.equal(invalidMcp.payload?.error, "mcp_server_invalid");
   assertStructuredError(invalidMcp.payload, "command", /Stdio transport requires a command/);
@@ -183,7 +194,7 @@ try {
     transport: "stdio",
     command: process.execPath,
     args: ["--version"]
-  });
+  }, desktopActorHeaders);
   await writeFile(
     path.join(runtime.paths.mcpDir, "readonly-mcp.json"),
     JSON.stringify({
@@ -260,19 +271,23 @@ try {
   const readonlyMcp = mcpPayload.servers.find((server) => server.id === "readonly-mcp");
   assert.ok(readonlyMcp.sourcePath?.endsWith(path.join("integrations", "mcp", "readonly-mcp.json")));
 
-  await patchJson(listening.baseUrl, "/ai/mcp/mock-mcp/toggle", { enabled: false });
+  const unauthorizedMcpToggle = await patchJsonResponse(listening.baseUrl, "/ai/mcp/mock-mcp/toggle", { enabled: false });
+  assert.equal(unauthorizedMcpToggle.response.status, 403, "MCP runtime toggle must require desktop actor");
+  assert.equal(unauthorizedMcpToggle.payload?.error, "desktop_actor_required");
+
+  await patchJson(listening.baseUrl, "/ai/mcp/mock-mcp/toggle", { enabled: false }, desktopActorHeaders);
   const disabledMcpPayload = await fetch(`${listening.baseUrl}/ai/mcp`).then((response) => response.json());
   const disabledMockMcp = disabledMcpPayload.servers.find((server) => server.id === "mock-mcp");
   assert.equal(disabledMockMcp.enabled, false, "runtime-config MCP servers must toggle through the card endpoint");
   assert.equal(disabledMockMcp.detail, "disabled");
 
-  await patchJson(listening.baseUrl, "/ai/mcp/mock-mcp/toggle", { enabled: true });
+  await patchJson(listening.baseUrl, "/ai/mcp/mock-mcp/toggle", { enabled: true }, desktopActorHeaders);
   const reenabledMcpPayload = await fetch(`${listening.baseUrl}/ai/mcp`).then((response) => response.json());
   const reenabledMockMcp = reenabledMcpPayload.servers.find((server) => server.id === "mock-mcp");
   assert.equal(reenabledMockMcp.enabled, true);
   assert.equal(reenabledMockMcp.available, true);
 
-  const readonlyToggle = await patchJsonResponse(listening.baseUrl, "/ai/mcp/readonly-mcp/toggle", { enabled: false });
+  const readonlyToggle = await patchJsonResponse(listening.baseUrl, "/ai/mcp/readonly-mcp/toggle", { enabled: false }, desktopActorHeaders);
   assert.equal(readonlyToggle.response.status, 409, "JSON-declared MCP servers must not report persisted toggle success");
   assert.equal(readonlyToggle.payload?.error, "mcp_server_read_only");
   assert.equal(readonlyToggle.payload?.serverId, "readonly-mcp");

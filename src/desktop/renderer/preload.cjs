@@ -253,6 +253,18 @@ contextBridge.exposeInMainWorld("ucaShell", {
   runMcpInstall(payload) {
     return ipcRenderer.invoke("uca:mcp-install-run", payload ?? {});
   },
+  saveMcpServer(payload) {
+    return ipcRenderer.invoke("uca:mcp-server-save", payload ?? {});
+  },
+  deleteMcpServer(id) {
+    return ipcRenderer.invoke("uca:mcp-server-delete", id ?? "");
+  },
+  toggleMcpServer(payload) {
+    return ipcRenderer.invoke("uca:mcp-server-toggle", payload ?? {});
+  },
+  saveMcpServerConfig(payload) {
+    return ipcRenderer.invoke("uca:mcp-server-config", payload ?? {});
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

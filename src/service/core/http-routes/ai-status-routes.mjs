@@ -1,4 +1,5 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 
 const WRITABLE_BUILTIN_MCP_SOURCES = new Set(["builtin", "builtin_mit", "lingxy_internal"]);
 
@@ -104,6 +105,9 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
 
   // PATCH /ai/mcp/:id/toggle — enable or disable a builtin MCP server.
   if (method === "PATCH" && /^\/ai\/mcp\/[^/]+\/toggle$/.test(url.pathname)) {
+    if (!requireDesktopActor({ request, response })) {
+      return true;
+    }
     const serverId = decodeURIComponent(url.pathname.replace(/^\/ai\/mcp\//, "").replace(/\/toggle$/, ""));
     const body = await readJsonBody(request);
     const { enabled } = body ?? {};
@@ -132,6 +136,9 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
 
   // PATCH /ai/mcp/:id/config — save env-var config (e.g. Brave API Key).
   if (method === "PATCH" && /^\/ai\/mcp\/[^/]+\/config$/.test(url.pathname)) {
+    if (!requireDesktopActor({ request, response })) {
+      return true;
+    }
     const serverId = decodeURIComponent(url.pathname.replace(/^\/ai\/mcp\//, "").replace(/\/config$/, ""));
     const body = await readJsonBody(request);
     const { key, value } = body ?? {};

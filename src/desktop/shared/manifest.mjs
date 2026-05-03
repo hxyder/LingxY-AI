@@ -49,7 +49,11 @@ export const IPC_CHANNELS = Object.freeze({
   previewWindowDelta: "uca:preview-window-delta",
   previewWindowCommitted: "uca:preview-window-committed",
   mcpInstallPreview: "uca:mcp-install-preview",
-  mcpInstallRun: "uca:mcp-install-run"
+  mcpInstallRun: "uca:mcp-install-run",
+  mcpServerSave: "uca:mcp-server-save",
+  mcpServerDelete: "uca:mcp-server-delete",
+  mcpServerToggle: "uca:mcp-server-toggle",
+  mcpServerConfig: "uca:mcp-server-config"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

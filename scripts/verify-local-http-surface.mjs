@@ -38,14 +38,14 @@ const expectedSurfaces = [
   surface("ai-status-routes.mjs", "PATCH", "/^\\/ai\\/mcp\\/[^/]+\\/config$/", {
     domain: "mcp_runtime",
     effect: "config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "mcp_runtime_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("ai-status-routes.mjs", "PATCH", "/^\\/ai\\/mcp\\/[^/]+\\/toggle$/", {
     domain: "mcp_runtime",
     effect: "config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "mcp_runtime_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
 
   surface("audio-routes.mjs", "POST", "/echo/enroll-keyword", {
@@ -119,8 +119,8 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "DELETE", "/config/mcp/servers/*", {
     domain: "mcp_config",
     effect: "config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "mcp_config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "DELETE", "/config/providers/*", {
     domain: "provider_config",
@@ -161,8 +161,8 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "POST", "/config/mcp/servers", {
     domain: "mcp_config",
     effect: "config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "mcp_config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "POST", "/config/mcp/test", {
     domain: "mcp_config",
@@ -598,6 +598,8 @@ function assertDesktopActorGuard(surfaceEntry) {
   let routeIndex = -1;
   if (surfaceEntry.matcher.startsWith("/^")) {
     routeIndex = source.indexOf(surfaceEntry.matcher);
+  } else if (surfaceEntry.matcher.endsWith("*")) {
+    routeIndex = source.indexOf(`url.pathname.startsWith("${surfaceEntry.matcher.slice(0, -1)}")`);
   } else {
     routeIndex = source.indexOf(`url.pathname === "${surfaceEntry.matcher}"`);
   }

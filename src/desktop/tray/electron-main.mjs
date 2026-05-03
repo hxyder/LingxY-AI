@@ -58,14 +58,72 @@ function normalizeMcpInstallPreviewPayload(payload = {}) {
   };
 }
 
-async function postDesktopServiceJson({ base, pathname, body, actor = DESKTOP_CONSOLE_ACTOR }) {
+function normalizeStringArray(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => `${item ?? ""}`.trim())
+    .filter(Boolean);
+}
+
+function normalizeStringMap(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, item]) => [`${key}`.trim(), `${item ?? ""}`])
+      .filter(([key]) => Boolean(key))
+  );
+}
+
+function normalizeMcpServerDescriptorPayload(payload = {}) {
+  const transport = `${payload.transport ?? "stdio"}`.trim() || "stdio";
+  return {
+    id: `${payload.id ?? ""}`.trim(),
+    displayName: `${payload.displayName ?? payload.name ?? payload.id ?? ""}`.trim(),
+    transport,
+    command: payload.command == null ? null : `${payload.command}`.trim(),
+    args: normalizeStringArray(payload.args),
+    url: payload.url == null ? null : `${payload.url}`.trim(),
+    env: normalizeStringMap(payload.env),
+    enabled: payload.enabled !== false
+  };
+}
+
+function normalizeMcpServerId(value) {
+  return `${value ?? ""}`.trim();
+}
+
+function normalizeMcpServerTogglePayload(payload = {}) {
+  return {
+    id: normalizeMcpServerId(payload.id),
+    enabled: payload.enabled === true
+  };
+}
+
+function normalizeMcpServerConfigPayload(payload = {}) {
+  return {
+    id: normalizeMcpServerId(payload.id),
+    key: `${payload.key ?? ""}`.trim(),
+    value: payload.value == null ? "" : `${payload.value}`
+  };
+}
+
+async function requestDesktopServiceJson({
+  base,
+  pathname,
+  method = "POST",
+  body,
+  actor = DESKTOP_CONSOLE_ACTOR
+}) {
+  const headers = {
+    [DESKTOP_ACTOR_HEADER]: actor
+  };
+  const requestInit = { method, headers };
+  if (body !== undefined) {
+    headers["Content-Type"] = "application/json";
+    requestInit.body = JSON.stringify(body ?? {});
+  }
   const response = await fetch(`${base}${pathname}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      [DESKTOP_ACTOR_HEADER]: actor
-    },
-    body: JSON.stringify(body ?? {})
+    ...requestInit
   });
   const result = await readServiceJson(response);
   if (!response.ok) {
@@ -78,6 +136,10 @@ async function postDesktopServiceJson({ base, pathname, body, actor = DESKTOP_CO
     };
   }
   return result;
+}
+
+async function postDesktopServiceJson({ base, pathname, body, actor = DESKTOP_CONSOLE_ACTOR }) {
+  return requestDesktopServiceJson({ base, pathname, method: "POST", body, actor });
 }
 
 function buildWindowUrl(windowDef, serviceBaseUrl) {
@@ -1786,6 +1848,84 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "mcp_install_request_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.mcpServerSave, async (_event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        try {
+          return await postDesktopServiceJson({
+            base,
+            pathname: "/config/mcp/servers",
+            body: normalizeMcpServerDescriptorPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "mcp_server_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.mcpServerDelete, async (_event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const serverId = normalizeMcpServerId(id);
+        if (!serverId) {
+          return { ok: false, error: "mcp_server_id_required", message: "MCP server id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "DELETE",
+            pathname: `/config/mcp/servers/${encodeURIComponent(serverId)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "mcp_server_delete_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.mcpServerToggle, async (_event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const body = normalizeMcpServerTogglePayload(payload);
+        if (!body.id) {
+          return { ok: false, error: "mcp_server_id_required", message: "MCP server id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "PATCH",
+            pathname: `/ai/mcp/${encodeURIComponent(body.id)}/toggle`,
+            body: { enabled: body.enabled }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "mcp_server_toggle_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.mcpServerConfig, async (_event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const body = normalizeMcpServerConfigPayload(payload);
+        if (!body.id || !body.key) {
+          return { ok: false, error: "mcp_server_config_required", message: "MCP server id and config key are required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "PATCH",
+            pathname: `/ai/mcp/${encodeURIComponent(body.id)}/config`,
+            body: { key: body.key, value: body.value }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "mcp_server_config_failed",
             message: error?.message ?? String(error)
           };
         }
