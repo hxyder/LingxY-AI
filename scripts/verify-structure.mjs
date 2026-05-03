@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 
 const requiredPaths = [
   "README.md",
+  ".github/workflows/repo-baseline.yml",
   "index.cjs",
   "package.json",
   "phases/README.md",

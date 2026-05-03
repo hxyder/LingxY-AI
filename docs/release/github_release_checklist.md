@@ -9,6 +9,7 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 - Run `npm run verify:github-readiness`.
 - Run `npm run check`.
 - Confirm `git status --short` contains only intentional changes.
+- Confirm `.github/workflows/repo-baseline.yml` passes after push.
 - Confirm local files under `models/`, `dist/`, `logs/`, `artifacts/`,
   `outputs/`, `.tmp/`, and `.claude/settings.local.json` are not tracked.
 - Confirm `.env` files and runtime config files are not tracked.
@@ -33,4 +34,7 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
   and credentials.
 - Create a fresh clone and run `npm install` plus the documented quick-start
   path from `README.md`.
+- Check the Repo Baseline GitHub Actions run: it should execute
+  `npm ci`, `verify:github-readiness`, `verify:structure`,
+  `verify:local-http-surface`, and `verify:behavior-tests`.
 - Only publish GitHub Pages after checking the final URLs and contact emails.
