@@ -169,18 +169,24 @@ function createFakeEmailTool() {
   assert.equal(after.status, "rejected");
 }
 
-// --- 4. Planner source wiring sanity check --------------------------
+// --- 4. Agentic tool-execution source wiring sanity check ------------
 {
-  const src = await (await import("node:fs/promises")).readFile(
+  const planner = await (await import("node:fs/promises")).readFile(
     new URL("../src/service/executors/agentic/planner.mjs", import.meta.url),
     "utf8"
   );
+  const src = await (await import("node:fs/promises")).readFile(
+    new URL("../src/service/executors/agentic/tool-execution.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.ok(planner.includes("executeAgenticToolCall"),
+    "planner.mjs must delegate tool execution to tool-execution.mjs");
   assert.ok(src.includes("evaluateToolRisk"),
-    "planner.mjs must import evaluateToolRisk for the gate");
+    "tool-execution.mjs must import evaluateToolRisk for the gate");
   assert.ok(src.includes("runtime.pendingApprovals.create"),
-    "planner.mjs must create a pending approval on risk.requires_confirmation");
+    "tool-execution.mjs must create a pending approval on risk.requires_confirmation");
   assert.ok(src.includes("waiting_approval: true"),
-    "planner.mjs must flag the tool result as waiting_approval so the agent stops chaining");
+    "tool-execution.mjs must flag the tool result as waiting_approval so the agent stops chaining");
 
   const runtimeServices = await (await import("node:fs/promises")).readFile(
     new URL("../src/service/core/task-runtime/runtime-services.mjs", import.meta.url),

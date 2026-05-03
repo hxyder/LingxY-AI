@@ -13,7 +13,7 @@
  *   3. Loop up to `maxIterations` (default 8):
  *        a. Call `adapter.generate({ messages, tools })`.
  *        b. If the adapter returns `tool_calls`, run each one through
- *           `executeToolCall` and append the observation as a `tool` role
+ *           `executeAgenticToolCall` and append the observation as a `tool` role
  *           message in the transcript.
  *        c. If the adapter returns pure text, record it as the final reply
  *           and break.
@@ -32,6 +32,7 @@
 import { buildAgenticSystemPrompt, isAudioNoteSingleMarkdownTask } from "./prompt-builder.mjs";
 import { createProviderAdapter } from "./provider-adapter.mjs";
 import { finalizeAgenticPlannerRun } from "./finalization.mjs";
+import { executeAgenticToolCall } from "./tool-execution.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
@@ -46,10 +47,8 @@ import { processAgenticToolResultForControls } from "./tool-result-controls.mjs"
 import {
   isScheduleRegistryTool,
   isScheduledFireTask,
-  isSideEffectTool,
   taskNeedsCurrentWebData,
-  toolDescriptorForAdapter,
-  transcriptHasSuccessfulToolCall
+  toolDescriptorForAdapter
 } from "./tool-surface.mjs";
 import { detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 // J1: per-iteration parity. Pre-J1 agentic ran for the full
@@ -59,7 +58,6 @@ import { detectSearchSaturation } from "../../core/policy/evidence-normalizer.mj
 // 1 empty external_web_read) and runs validateStepGate to catch
 // same-tool failure streaks; agentic now does the same.
 import { createErrorBudget } from "../../core/runtime/error-budget.mjs";
-import { applySideEffectContractToToolArgs } from "../../core/policy/side-effect-contracts.mjs";
 import {
   actionObligationsWithStatus,
   buildActionObligationGuidance,
@@ -97,148 +95,6 @@ function buildUserMessage(task) {
     parts.push(untrusted);
   }
   return parts.join("\n");
-}
-
-/**
- * Execute a single tool call against the action tool registry.
- * Also checks `mcpToolById` for MCP-sourced tools that aren't in the registry.
- * The caller is expected to pass the runtime's registry + toolContext;
- * no risk-matrix gating happens here — that's the executor's job.
- */
-async function executeToolCall({ registry, mcpToolById, toolContext, call, runtime, task, transcript = [] }) {
-  const tool = registry?.get?.(call.name) ?? mcpToolById?.get?.(call.name);
-  if (!tool) {
-    return {
-      success: false,
-      observation: `Tool ${call.name} is not registered.`,
-      metadata: { tool_id: call.name }
-    };
-  }
-  const callArgs = applySideEffectContractToToolArgs(tool.id, call.arguments ?? {}, { task, runtime });
-  call.arguments = callArgs;
-
-  // UCA-181 follow-up: defense-in-depth recursion guard. Even when the
-  // prompt's tool list omits schedule-registry tools (filtered upstream
-  // for scheduled_task_fire context), the LLM occasionally hallucinates
-  // a familiar id. Refuse fast — BEFORE the confirmation gate — so the
-  // user does not see a pointless approval popup for a call that would
-  // have been refused anyway by the tool's own UCA-096 guard.
-  if (isScheduleRegistryTool(tool) && isScheduledFireTask(task)) {
-    return {
-      success: false,
-      observation: `${tool.id} is unavailable inside a scheduled task fire — execute the action directly (notify / send_email / etc.) instead of creating another schedule.`,
-      metadata: {
-        tool_id: tool.id,
-        reason: "scheduled_fire_cannot_modify_schedule_registry"
-      }
-    };
-  }
-
-  // UCA-181 follow-up: redundant side-effect block. After a side-effect
-  // tool already succeeded in this run, refuse further calls to the
-  // SAME tool. Agents that varied a single field (description ordering,
-  // attendee list) were bypassing args-based dedupe and double-firing
-  // real-world side effects.
-  if (isSideEffectTool(tool) && transcriptHasSuccessfulToolCall(transcript, tool.id)) {
-    return {
-      success: false,
-      observation: `${tool.id} already succeeded earlier in this run; do not re-fire side-effect tools — finalize from the existing result.`,
-      metadata: {
-        tool_id: tool.id,
-        reason: "redundant_side_effect_call"
-      }
-    };
-  }
-
-  // UCA-182 Phase 20: risk-matrix gate. Before this change the
-  // agentic planner called tool.execute() unconditionally, which
-  // meant account_send_email / delete / any tool flagged with
-  // requires_confirmation=true ran silently even in interactive
-  // mode. Now every call passes through evaluateToolRisk: if
-  // confirmation is required we create a pending_approval, surface
-  // it to the caller via the runtime's pendingApprovals service,
-  // and return a tool-level failure so the agent stops the chain.
-  // The UI popup-card (kind="approval") drives the actual approve
-  // / reject; on approve the pendingApprovals service re-runs the
-  // tool via executeApprovedAction (see task-runtime.mjs).
-  try {
-    const { evaluateToolRisk } = await import("../../action_tools/risk_matrix.mjs");
-    const risk = evaluateToolRisk(tool, callArgs, toolContext ?? {});
-    if (risk.requires_confirmation && runtime?.pendingApprovals?.create) {
-      const approval = runtime.pendingApprovals.create({
-        sourceType: "agent_tool_call",
-        sourceId: task?.task_id ?? call.id ?? call.name,
-        proposedAction: "action_tool",
-        proposedTarget: tool.id,
-        proposedParams: callArgs,
-        previewText: buildApprovalPreview(tool, callArgs),
-        metadata: {
-          tool_id: tool.id,
-          risk_level: risk.risk_level ?? tool.risk_level ?? "high",
-          reason: risk.reason ?? "requires_confirmation",
-          tool_call_id: call.id ?? null,
-          task_id: task?.task_id ?? null
-        }
-      });
-      return {
-        success: false,
-        observation: `🔒 Tool ${tool.id} requires user approval before running. An approval card has been surfaced to the user (approval_id=${approval.approval_id}). Stop chaining further tools — the system will re-run ${tool.id} automatically once the user approves.`,
-        metadata: {
-          tool_id: tool.id,
-          waiting_approval: true,
-          approval_id: approval.approval_id,
-          risk_level: risk.risk_level ?? tool.risk_level ?? "high"
-        },
-        artifact_paths: [],
-        error: null
-      };
-    }
-  } catch (gateError) {
-    // If the risk matrix itself throws, don't silently bypass — fail
-    // closed: surface as a tool error so the agent stops.
-    return {
-      success: false,
-      observation: `Risk gate failed for ${tool.id}: ${gateError.message}`,
-      metadata: { tool_id: tool.id, gate_error: true }
-    };
-  }
-
-  try {
-    const result = await tool.execute(callArgs, toolContext ?? {});
-    // Normalise shape: action_tools/types createActionResult returns
-    // `{ success, observation, metadata, artifact_paths, error }`.
-    return {
-      success: Boolean(result?.success),
-      observation: result?.observation ?? "",
-      metadata: result?.metadata ?? {},
-      artifact_paths: result?.artifact_paths ?? [],
-      error: result?.error ?? null
-    };
-  } catch (error) {
-    return {
-      success: false,
-      observation: `Tool ${call.name} threw: ${error.message}`,
-      metadata: { tool_id: call.name }
-    };
-  }
-}
-
-/** Short human-readable preview shown inside the approval popup card. */
-function buildApprovalPreview(tool, args = {}) {
-  if (tool.id === "account_send_email" || tool.id === "send_email_smtp") {
-    const to = Array.isArray(args.to) ? args.to.join(", ") : String(args.to ?? "");
-    const subject = String(args.subject ?? "").slice(0, 80);
-    const bodyPreview = String(args.body ?? "").replace(/\s+/g, " ").slice(0, 160);
-    return `发送邮件 → ${to || "(未指定收件人)"}\n主题: ${subject || "(无主题)"}\n${bodyPreview}`;
-  }
-  if (tool.id === "file_op" && args.operation === "delete") {
-    return `删除文件: ${args.path ?? "(未指定)"}`;
-  }
-  if (tool.id === "launch_app") {
-    return `启动应用: ${args.app ?? "(未指定)"}`;
-  }
-  const argsPreview = JSON.stringify(args).slice(0, 180);
-  return `${tool.name ?? tool.id}\n${argsPreview}`;
 }
 
 /**
@@ -389,7 +245,7 @@ export async function runAgenticPlanner({
       event_type: "tool_call_started",
       payload: { tool_id: searchCall.name, arguments: searchCall.arguments, preflight: true }
     });
-    const searchResult = await executeToolCall({
+    const searchResult = await executeAgenticToolCall({
       registry: runtime?.actionToolRegistry,
       mcpToolById,
       toolContext: {
@@ -641,7 +497,7 @@ export async function runAgenticPlanner({
         payload: { tool_id: call.name, arguments: call.arguments ?? {} }
       });
 
-      const result = await executeToolCall({
+      const result = await executeAgenticToolCall({
         registry: runtime?.actionToolRegistry,
         mcpToolById,
         toolContext: {
