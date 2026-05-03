@@ -164,6 +164,14 @@ assert.ok(!/fetchJson\(\s*`\/templates\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s
   "template delete: console must not DELETE /templates/:id directly");
 assert.ok(!/fetchJson\(\s*`\/dag\/executions\/\$\{encodeURIComponent\([^)]*\)\}\/resume`\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "DAG resume: console must not POST /dag/executions/:id/resume directly");
+assert.ok(/saveProviderViaShell/.test(consoleJs) && /window\.ucaShell\.saveProvider/.test(consoleJs),
+  "provider save: console must use desktop shell bridge");
+assert.ok(/deleteProviderViaShell/.test(consoleJs) && /window\.ucaShell\.deleteProvider/.test(consoleJs),
+  "provider delete: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/providers["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "provider save: console must not POST /config/providers directly");
+assert.ok(!/fetchJson\(\s*`\/config\/providers\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
+  "provider delete: console must not DELETE /config/providers/:id directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

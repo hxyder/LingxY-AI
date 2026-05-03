@@ -184,7 +184,8 @@ assert.equal(templateDeleteResponse.ok, true);
 const providerCreateResponse = await fetch(`${listening.baseUrl}/config/providers`, {
   method: "POST",
   headers: {
-    "Content-Type": "application/json"
+    "Content-Type": "application/json",
+    "X-Lingxy-Desktop-Actor": "desktop_console"
   },
   body: JSON.stringify({
     id: "codex-options-test",

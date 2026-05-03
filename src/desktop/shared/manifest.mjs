@@ -65,7 +65,9 @@ export const IPC_CHANNELS = Object.freeze({
   templateSave: "uca:template-save",
   templateImport: "uca:template-import",
   templateDelete: "uca:template-delete",
-  dagResume: "uca:dag-resume"
+  dagResume: "uca:dag-resume",
+  providerSave: "uca:provider-save",
+  providerDelete: "uca:provider-delete"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

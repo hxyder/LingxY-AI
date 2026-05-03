@@ -301,6 +301,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   resumeDagExecution(id) {
     return ipcRenderer.invoke("uca:dag-resume", id ?? "");
   },
+  saveProvider(payload) {
+    return ipcRenderer.invoke("uca:provider-save", payload ?? {});
+  },
+  deleteProvider(id) {
+    return ipcRenderer.invoke("uca:provider-delete", id ?? "");
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

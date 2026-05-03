@@ -185,6 +185,14 @@ function normalizeDagExecutionId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
 
+function normalizeProviderConfigPayload(payload = {}) {
+  return normalizePlainObject(payload) ?? {};
+}
+
+function normalizeProviderId(id) {
+  return typeof id === "string" ? id.trim() : "";
+}
+
 async function requestDesktopServiceJson({
   base,
   pathname,
@@ -2275,6 +2283,46 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "dag_resume_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.providerSave, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/config/providers",
+            body: normalizeProviderConfigPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "provider_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.providerDelete, async (event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const providerId = normalizeProviderId(id);
+        if (!providerId) {
+          return { ok: false, error: "provider_id_required", message: "Provider id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "DELETE",
+            actor,
+            pathname: `/config/providers/${encodeURIComponent(providerId)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "provider_delete_failed",
             message: error?.message ?? String(error)
           };
         }

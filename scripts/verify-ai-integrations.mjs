@@ -102,7 +102,7 @@ try {
     baseUrl: "https://example.invalid/v1",
     apiKey: "sk-test",
     defaultModel: "mock-model"
-  });
+  }, desktopActorHeaders);
 
   const unauthorizedMcpSave = await postJsonResponse(listening.baseUrl, "/config/mcp/servers", {
     id: "blocked-mcp",

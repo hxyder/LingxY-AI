@@ -125,8 +125,8 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "DELETE", "/config/providers/*", {
     domain: "provider_config",
     effect: "credential_config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "DELETE", "/config/skills/registries/*", {
     domain: "skills_config",
@@ -179,8 +179,8 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "POST", "/config/providers", {
     domain: "provider_config",
     effect: "credential_config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "POST", "/config/routing", {
     domain: "runtime_config",

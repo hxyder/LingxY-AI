@@ -2879,7 +2879,7 @@ function renderProvidersList() {
   for (const btn of el.querySelectorAll("[data-delete-provider]")) {
     btn.addEventListener("click", async () => {
       if (!confirm("Delete this provider?")) return;
-      await fetchJson(`/config/providers/${encodeURIComponent(btn.dataset.deleteProvider)}`, { method: "DELETE" });
+      await deleteProviderViaShell(btn.dataset.deleteProvider);
       await loadProvidersAndRouting();
     });
   }
@@ -3247,11 +3247,7 @@ document.getElementById("providerEditForm")?.addEventListener("submit", async (e
     payload.apiKey = document.getElementById("provApiKey").value.trim();
   }
 
-  await fetchJson("/config/providers", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  });
+  await saveProviderViaShell(payload);
   closeProviderModal();
   await loadProvidersAndRouting();
 });
@@ -6406,6 +6402,26 @@ async function resumeDagExecutionViaShell(executionId) {
   return assertShellResult(
     await window.ucaShell.resumeDagExecution(executionId),
     "Could not resume DAG execution."
+  );
+}
+
+async function saveProviderViaShell(provider) {
+  if (typeof window.ucaShell?.saveProvider !== "function") {
+    throw new Error("Desktop provider config bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveProvider(provider),
+    "Could not save provider."
+  );
+}
+
+async function deleteProviderViaShell(providerId) {
+  if (typeof window.ucaShell?.deleteProvider !== "function") {
+    throw new Error("Desktop provider config bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteProvider(providerId),
+    "Could not delete provider."
   );
 }
 

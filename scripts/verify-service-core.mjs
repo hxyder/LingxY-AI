@@ -58,6 +58,11 @@ if (!configProviderRouteSource.includes('url.pathname === "/config/mcp/servers"'
     || (configProviderRouteSource.match(/requireDesktopActor/g) ?? []).length < 2) {
   throw new Error("MCP config mutation routes must live in config-provider-routes.mjs and require the shared desktop actor guard.");
 }
+if (!configProviderRouteSource.includes('url.pathname === "/config/providers"')
+    || !configProviderRouteSource.includes('url.pathname.startsWith("/config/providers/")')
+    || (configProviderRouteSource.match(/requireDesktopActor/g) ?? []).length < 4) {
+  throw new Error("Provider config mutation routes must live in config-provider-routes.mjs and require the shared desktop actor guard.");
+}
 if (configProviderRouteSource.includes('url.pathname === "/config/mcp/install/preview"')) {
   throw new Error("MCP install preview route must live in mcp-install-routes.mjs, not config-provider-routes.mjs.");
 }

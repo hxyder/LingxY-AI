@@ -222,6 +222,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "POST" && url.pathname === "/config/providers") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const body = await readJsonBody(request);
     if (!body.id || !body.kind) {
       sendJson(response, 400, { error: "id and kind required" });
@@ -267,6 +268,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "DELETE" && url.pathname.startsWith("/config/providers/")) {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const id = decodeURIComponent(url.pathname.replace(/^\/config\/providers\//, ""));
     const config = runtime.configStore?.load?.() ?? {};
     const currentState = sanitizeProviderState(config.ai ?? {});
