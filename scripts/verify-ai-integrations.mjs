@@ -27,6 +27,21 @@ async function postJson(baseUrl, pathname, body) {
   return response.json();
 }
 
+async function postJsonResponse(baseUrl, pathname, body) {
+  const response = await fetch(`${baseUrl}${pathname}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+  return { response, payload };
+}
+
 const skillDir = path.join(runtime.paths.skillsDir, "scratch-skill");
 await mkdir(skillDir, { recursive: true });
 await writeFile(
@@ -59,6 +74,14 @@ try {
     command: process.execPath,
     args: ["--version"]
   });
+
+  const legacySkillPath = await postJsonResponse(listening.baseUrl, "/config/skills/registries", {
+    id: "legacy-path-field",
+    displayName: "Legacy Path Field",
+    path: runtime.paths.skillsDir
+  });
+  assert.equal(legacySkillPath.response.status, 400, "skill registry config must require rootPath, not legacy path");
+  assert.equal(legacySkillPath.payload?.error, "id and rootPath required");
 
   await postJson(listening.baseUrl, "/config/skills/registries", {
     id: "scratch-skills",

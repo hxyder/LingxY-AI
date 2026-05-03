@@ -539,14 +539,14 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
 
   if (method === "POST" && url.pathname === "/config/skills/registries") {
     const body = await readJsonBody(request);
-    if (!body.id || !(body.rootPath ?? body.path)) {
+    if (!body.id || !body.rootPath) {
       sendJson(response, 400, { error: "id and rootPath required" });
       return true;
     }
     const entry = {
       id: body.id,
       displayName: body.displayName ?? body.name ?? body.id,
-      rootPath: body.rootPath ?? body.path,
+      rootPath: body.rootPath,
       enabled: body.enabled !== false
     };
     saveRuntimeConfig(runtime, (currentConfig) => ({
