@@ -20,6 +20,7 @@ The runtime accepts hot-reloadable configuration through:
 - `POST /config/mcp/test`
 - `POST /config/mcp/servers`
 - `DELETE /config/mcp/servers/:id`
+- `POST /config/skills/test`
 - `POST /config/skills/registries`
 - `DELETE /config/skills/registries/:id`
 - `POST /config/code-cli/adapters`

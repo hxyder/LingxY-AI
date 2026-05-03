@@ -150,6 +150,34 @@ try {
   assert.equal(legacySkillPath.response.status, 400, "skill registry config must require rootPath, not legacy path");
   assert.equal(legacySkillPath.payload?.error, "id and rootPath required");
 
+  const missingSkillRegistryPath = path.join(runtimeDir, "missing-skills");
+  const invalidSkillRegistry = await postJsonResponse(listening.baseUrl, "/config/skills/registries", {
+    id: "missing-skills",
+    displayName: "Missing Skills",
+    rootPath: missingSkillRegistryPath
+  });
+  assert.equal(invalidSkillRegistry.response.status, 400, "skill registry config must reject missing rootPath");
+  assert.equal(invalidSkillRegistry.payload?.error, "skill_registry_invalid");
+  assert.ok(invalidSkillRegistry.payload?.errors?.includes("rootPath does not exist"));
+
+  const invalidSkillPreflight = await postJsonResponse(listening.baseUrl, "/config/skills/test", {
+    id: "missing-skills",
+    displayName: "Missing Skills",
+    rootPath: missingSkillRegistryPath
+  });
+  assert.equal(invalidSkillPreflight.response.status, 200);
+  assert.equal(invalidSkillPreflight.payload?.ok, false);
+  assert.ok(invalidSkillPreflight.payload?.errors?.includes("rootPath does not exist"));
+
+  const validSkillPreflight = await postJsonResponse(listening.baseUrl, "/config/skills/test", {
+    id: "scratch-skills",
+    displayName: "Scratch Skills",
+    rootPath: runtime.paths.skillsDir
+  });
+  assert.equal(validSkillPreflight.response.status, 200);
+  assert.equal(validSkillPreflight.payload?.ok, true);
+  assert.equal(validSkillPreflight.payload?.skillCount, 1);
+
   await postJson(listening.baseUrl, "/config/skills/registries", {
     id: "scratch-skills",
     displayName: "Scratch Skills",
