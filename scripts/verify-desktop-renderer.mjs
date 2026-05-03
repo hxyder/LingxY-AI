@@ -15,6 +15,10 @@ const preload = await read("src/desktop/renderer/preload.cjs");
 assert.equal(preload.includes(IPC_CHANNELS.shellStatus), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellShowWindow), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellHideWindow), true);
+assert.equal(preload.includes("previewMcpInstall"), true);
+assert.equal(preload.includes(IPC_CHANNELS.mcpInstallPreview), true);
+assert.equal(preload.includes("runMcpInstall"), true);
+assert.equal(preload.includes(IPC_CHANNELS.mcpInstallRun), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
 // Brand renamed: UCA → LingxY. Accept either the old title (still
@@ -104,6 +108,11 @@ const mainProcess = await read("src/desktop/tray/electron-main.mjs");
 assert.equal(mainProcess.includes("preload: PRELOAD_PATH"), true);
 assert.equal(mainProcess.includes("buildWindowUrl"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.shellSubmitDroppedFiles"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.mcpInstallPreview"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.mcpInstallRun"), true);
+assert.equal(mainProcess.includes("X-Lingxy-Desktop-Actor"), true);
+assert.equal(mainProcess.includes("/config/mcp/install/preview"), true);
+assert.equal(mainProcess.includes("/config/mcp/install/run"), true);
 assert.equal(mainProcess.includes("showDesktopNotification"), true);
 // Permission handler for the Web Speech API mic access
 assert.equal(mainProcess.includes("setPermissionRequestHandler"), true);

@@ -65,6 +65,9 @@ if (!mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/previ
     || mcpInstallRouteSource.includes("saveRuntimeConfig")) {
   throw new Error("mcp-install-routes.mjs must own MCP install plan/preview/run without writing config.");
 }
+if ((mcpInstallRouteSource.match(/requireDesktopActor/g) ?? []).length < 2) {
+  throw new Error("MCP install preview and run routes must both require the shared desktop actor guard.");
+}
 if (!httpRouteGuardSource.includes("DESKTOP_ACTOR_HEADER")
     || !httpRouteGuardSource.includes("desktop_actor_required")
     || !httpRouteGuardSource.includes("requireDesktopActor")) {

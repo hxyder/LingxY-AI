@@ -37,4 +37,12 @@ if (!bootstrap.manifest.ipcChannels.includes("uca:shell-set-ignore-mouse-events"
   throw new Error("Dock click-through IPC channel is missing.");
 }
 
+if (!bootstrap.manifest.ipcChannels.includes("uca:mcp-install-run")) {
+  throw new Error("MCP install run IPC channel is missing.");
+}
+
+if (!bootstrap.manifest.ipcChannels.includes("uca:mcp-install-preview")) {
+  throw new Error("MCP install preview IPC channel is missing.");
+}
+
 console.log("Desktop shell scaffold verification passed.");

@@ -247,6 +247,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   setPreviewWindowAlwaysOnTop(flag) {
     return ipcRenderer.invoke("uca:preview-window-pin", Boolean(flag));
   },
+  previewMcpInstall(payload) {
+    return ipcRenderer.invoke("uca:mcp-install-preview", payload ?? {});
+  },
+  runMcpInstall(payload) {
+    return ipcRenderer.invoke("uca:mcp-install-run", payload ?? {});
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

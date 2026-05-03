@@ -27,6 +27,58 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RENDERER_DIR = path.join(__dirname, "..", "renderer");
 const PRELOAD_PATH = path.join(RENDERER_DIR, "preload.cjs");
+const DESKTOP_ACTOR_HEADER = "X-Lingxy-Desktop-Actor";
+const DESKTOP_CONSOLE_ACTOR = "desktop_console";
+
+async function readServiceJson(response) {
+  const text = await response.text();
+  if (!text) return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { ok: false, error: "invalid_json_response", message: text.slice(0, 400) };
+  }
+}
+
+function normalizeMcpInstallPayload(payload = {}) {
+  const timeoutMs = Number(payload.timeoutMs);
+  return {
+    source: `${payload.source ?? ""}`.trim(),
+    id: `${payload.id ?? ""}`.trim(),
+    allowScripts: payload.allowScripts === true,
+    ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeoutMs: Math.floor(timeoutMs) } : {})
+  };
+}
+
+function normalizeMcpInstallPreviewPayload(payload = {}) {
+  return {
+    packageDir: `${payload.packageDir ?? ""}`.trim(),
+    packageName: `${payload.packageName ?? ""}`.trim(),
+    id: `${payload.id ?? ""}`.trim()
+  };
+}
+
+async function postDesktopServiceJson({ base, pathname, body, actor = DESKTOP_CONSOLE_ACTOR }) {
+  const response = await fetch(`${base}${pathname}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      [DESKTOP_ACTOR_HEADER]: actor
+    },
+    body: JSON.stringify(body ?? {})
+  });
+  const result = await readServiceJson(response);
+  if (!response.ok) {
+    return {
+      ok: false,
+      error: result.error ?? "desktop_service_request_failed",
+      message: result.message ?? `Desktop service request failed with HTTP ${response.status}.`,
+      status: response.status,
+      ...result
+    };
+  }
+  return result;
+}
 
 function buildWindowUrl(windowDef, serviceBaseUrl) {
   const filePath = path.join(RENDERER_DIR, `${windowDef.id}.html`);
@@ -1705,6 +1757,38 @@ export function createElectronShellRuntime({
           try { previewWindow.setAlwaysOnTop(previewWindowPinned, "screen-saver"); } catch { /* ignore */ }
         }
         return previewWindowPinned;
+      });
+      ipcMain.handle(IPC_CHANNELS.mcpInstallPreview, async (_event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        try {
+          return await postDesktopServiceJson({
+            base,
+            pathname: "/config/mcp/install/preview",
+            body: normalizeMcpInstallPreviewPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "mcp_install_preview_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.mcpInstallRun, async (_event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        try {
+          return await postDesktopServiceJson({
+            base,
+            pathname: "/config/mcp/install/run",
+            body: normalizeMcpInstallPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "mcp_install_request_failed",
+            message: error?.message ?? String(error)
+          };
+        }
       });
 
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({

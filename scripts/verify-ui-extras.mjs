@@ -76,12 +76,22 @@ assert.ok(/id="mcpInstallPackageDir"/.test(consoleHtml) && /id="mcpInstallPrevie
   "mcp install preview: packageDir input and preview button missing");
 assert.ok(/id="mcpInstallSource"/.test(consoleHtml) && /id="mcpInstallPlanBtn"/.test(consoleHtml),
   "mcp install plan: source input and plan button missing");
+assert.ok(/id="mcpInstallRunBtn"/.test(consoleHtml) && /id="mcpInstallRunState"/.test(consoleHtml),
+  "mcp install run: install button and state missing");
 assert.ok(/\/config\/mcp\/install\/plan/.test(consoleJs),
   "mcp install plan: console must call dry-run plan endpoint");
 assert.ok(/applyMcpInstallPlanToForm/.test(consoleJs) && /Install is not executed here/.test(consoleJs),
   "mcp install plan: plan must populate packageDir without executing install");
-assert.ok(/\/config\/mcp\/install\/preview/.test(consoleJs),
-  "mcp install preview: console must call dry-run preview endpoint");
+assert.ok(/runMcpInstallSource/.test(consoleJs) && /window\.ucaShell\.runMcpInstall/.test(consoleJs),
+  "mcp install run: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/mcp\/install\/run/.test(consoleJs),
+  "mcp install run: console must not call execution route directly");
+assert.ok(/Installed\. Review fields before saving/.test(consoleJs),
+  "mcp install run: install result must still require review before saving");
+assert.ok(/previewMcpInstallCandidate/.test(consoleJs) && /window\.ucaShell\.previewMcpInstall/.test(consoleJs),
+  "mcp install preview: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/mcp\/install\/preview/.test(consoleJs),
+  "mcp install preview: console must not call file-reading preview route directly");
 assert.ok(/applyMcpInstallPreviewToForm/.test(consoleJs) && /Review fields before saving/.test(consoleJs),
   "mcp install preview: preview must fill manual form and require review before saving");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),

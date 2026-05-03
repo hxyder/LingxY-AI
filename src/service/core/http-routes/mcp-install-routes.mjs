@@ -64,6 +64,9 @@ export async function tryHandleMcpInstallRoute({ request, response, method, url,
   }
 
   if (method === "POST" && url.pathname === "/config/mcp/install/preview") {
+    if (!requireDesktopActor({ request, response })) {
+      return true;
+    }
     const body = await readJsonBody(request);
     const result = await detectMcpInstallCandidate({
       packageDir: body.packageDir,

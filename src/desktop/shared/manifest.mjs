@@ -47,7 +47,9 @@ export const IPC_CHANNELS = Object.freeze({
   previewWindowClose: "uca:preview-window-close",
   previewWindowInit: "uca:preview-window-init",
   previewWindowDelta: "uca:preview-window-delta",
-  previewWindowCommitted: "uca:preview-window-committed"
+  previewWindowCommitted: "uca:preview-window-committed",
+  mcpInstallPreview: "uca:mcp-install-preview",
+  mcpInstallRun: "uca:mcp-install-run"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

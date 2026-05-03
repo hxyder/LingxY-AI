@@ -186,8 +186,10 @@ const mcpServerRefreshBtn = document.querySelector("#mcpServerRefreshBtn");
 const mcpServerTestBtn = document.querySelector("#mcpServerTestBtn");
 const mcpInstallSource = document.querySelector("#mcpInstallSource");
 const mcpInstallPlanBtn = document.querySelector("#mcpInstallPlanBtn");
+const mcpInstallRunBtn = document.querySelector("#mcpInstallRunBtn");
 const mcpInstallPlanSummary = document.querySelector("#mcpInstallPlanSummary");
 const mcpInstallPlanState = document.querySelector("#mcpInstallPlanState");
+const mcpInstallRunState = document.querySelector("#mcpInstallRunState");
 const mcpInstallPackageDir = document.querySelector("#mcpInstallPackageDir");
 const mcpInstallPreviewBtn = document.querySelector("#mcpInstallPreviewBtn");
 const mcpInstallPreviewSummary = document.querySelector("#mcpInstallPreviewSummary");
@@ -6283,18 +6285,27 @@ async function planMcpInstallSource() {
   });
 }
 
-async function previewMcpInstallCandidate() {
-  return fetchJson("/config/mcp/install/preview", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      packageDir: mcpInstallPackageDir?.value?.trim() ?? "",
-      id: mcpServerId?.value?.trim() ?? ""
-    })
+async function runMcpInstallSource() {
+  if (typeof window.ucaShell?.runMcpInstall !== "function") {
+    throw new Error("Desktop install bridge unavailable.");
+  }
+  return window.ucaShell.runMcpInstall({
+    source: mcpInstallSource?.value?.trim() ?? "",
+    id: mcpServerId?.value?.trim() ?? ""
   });
 }
 
-function applyMcpInstallPreviewToForm(result = {}) {
+async function previewMcpInstallCandidate() {
+  if (typeof window.ucaShell?.previewMcpInstall !== "function") {
+    throw new Error("Desktop preview bridge unavailable.");
+  }
+  return window.ucaShell.previewMcpInstall({
+    packageDir: mcpInstallPackageDir?.value?.trim() ?? "",
+    id: mcpServerId?.value?.trim() ?? ""
+  });
+}
+
+function applyMcpInstallPreviewToForm(result = {}, { label = "Preview ready" } = {}) {
   const server = result.server ?? {};
   const transport = server.transport ?? "stdio";
   mcpServerId.value = server.id ?? "";
@@ -6305,7 +6316,7 @@ function applyMcpInstallPreviewToForm(result = {}) {
   if (mcpInstallPreviewSummary) {
     const source = result.source ? `source: ${result.source}` : "source: unknown";
     const argsSource = result.detection?.sourceOfArgs ? `args: ${result.detection.sourceOfArgs}` : "args: review";
-    mcpInstallPreviewSummary.textContent = `Preview ready (${source}; ${argsSource}). Review fields before saving.`;
+    mcpInstallPreviewSummary.textContent = `${label} (${source}; ${argsSource}). Review fields before saving.`;
     mcpInstallPreviewSummary.hidden = false;
   }
 }
@@ -6345,6 +6356,38 @@ mcpInstallPlanBtn?.addEventListener("click", async () => {
     setPreflightState(mcpInstallPlanState, "ok", "Plan ready. Install is not executed here.");
   } catch (error) {
     setPreflightState(mcpInstallPlanState, "err", `Failed: ${error.message}`);
+  }
+});
+
+mcpInstallRunBtn?.addEventListener("click", async () => {
+  clearFieldErrors(mcpServerForm);
+  if (mcpInstallPreviewSummary) {
+    mcpInstallPreviewSummary.hidden = true;
+    mcpInstallPreviewSummary.textContent = "";
+  }
+  setPreflightState(mcpInstallRunState, "pending", "Installing...");
+  mcpInstallRunBtn.disabled = true;
+  try {
+    const result = await runMcpInstallSource();
+    if (!result.ok) {
+      showPreflightErrors({
+        formEl: mcpServerForm,
+        kind: "mcp",
+        stateEl: mcpInstallRunState,
+        errors: result.errors,
+        fallback: result.message ?? result.error ?? "Could not install this MCP package."
+      });
+      return;
+    }
+    if (mcpInstallPackageDir && result.packageDir) {
+      mcpInstallPackageDir.value = result.packageDir;
+    }
+    applyMcpInstallPreviewToForm(result, { label: "Installed package detected" });
+    setPreflightState(mcpInstallRunState, "ok", "Installed. Review fields before saving.");
+  } catch (error) {
+    setPreflightState(mcpInstallRunState, "err", `Failed: ${error.message}`);
+  } finally {
+    mcpInstallRunBtn.disabled = false;
   }
 });
 
@@ -6422,6 +6465,10 @@ mcpServerForm?.addEventListener("submit", async (event) => {
     if (mcpInstallPlanSummary) {
       mcpInstallPlanSummary.hidden = true;
       mcpInstallPlanSummary.textContent = "";
+    }
+    if (mcpInstallRunState) {
+      mcpInstallRunState.textContent = "";
+      mcpInstallRunState.classList.remove("preflight-state--ok", "preflight-state--err", "preflight-state--pending");
     }
     if (mcpInstallPackageDir) mcpInstallPackageDir.value = "";
     if (mcpInstallPreviewSummary) {

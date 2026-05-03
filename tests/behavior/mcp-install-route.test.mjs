@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
 import { tryHandleMcpInstallRoute } from "../../src/service/core/http-routes/mcp-install-routes.mjs";
@@ -25,13 +28,18 @@ function captureResponse() {
   return response;
 }
 
-async function postMcpInstallRun({ body, runtime, headers = { "x-lingxy-desktop-actor": "desktop_console" } }) {
+async function postMcpInstallRoute({
+  pathname = "/config/mcp/install/run",
+  body,
+  runtime,
+  headers = { "x-lingxy-desktop-actor": "desktop_console" }
+}) {
   const response = captureResponse();
   const handled = await tryHandleMcpInstallRoute({
     request: jsonRequest(body, headers),
     response,
     method: "POST",
-    url: new URL("http://127.0.0.1/config/mcp/install/run"),
+    url: new URL(`http://127.0.0.1${pathname}`),
     runtime
   });
   return {
@@ -39,6 +47,28 @@ async function postMcpInstallRun({ body, runtime, headers = { "x-lingxy-desktop-
     statusCode: response.statusCode,
     payload: JSON.parse(response.body)
   };
+}
+
+async function postMcpInstallRun(options) {
+  return postMcpInstallRoute({
+    ...options,
+    pathname: "/config/mcp/install/run"
+  });
+}
+
+async function withPackageDir(fn) {
+  const dir = path.join(os.tmpdir(), `linxi-mcp-preview-route-${Date.now()}-${Math.random().toString(16).slice(2)}`);
+  await mkdir(dir, { recursive: true });
+  try {
+    await writeFile(path.join(dir, "server.js"), "console.log('mcp');\n", "utf8");
+    await writeFile(path.join(dir, "package.json"), JSON.stringify({
+      name: "preview-route-mcp",
+      bin: { "preview-route-mcp": "server.js" }
+    }), "utf8");
+    return await fn(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }
 
 test("MCP install run route executes through the runtime sandbox and does not accept body paths", async () => {
@@ -117,6 +147,30 @@ test("MCP install run route requires a trusted desktop actor before reading the 
   assert.equal(result.payload.ok, false);
   assert.equal(result.payload.error, "desktop_actor_required");
   assert.equal(called, false);
+});
+
+test("MCP install preview route requires a trusted desktop actor before reading package files", async () => {
+  await withPackageDir(async (packageDir) => {
+    const blocked = await postMcpInstallRoute({
+      pathname: "/config/mcp/install/preview",
+      runtime: {},
+      headers: {},
+      body: { packageDir }
+    });
+    assert.equal(blocked.handled, true);
+    assert.equal(blocked.statusCode, 403);
+    assert.equal(blocked.payload.error, "desktop_actor_required");
+
+    const allowed = await postMcpInstallRoute({
+      pathname: "/config/mcp/install/preview",
+      runtime: {},
+      body: { packageDir, id: "preview-route-mcp" }
+    });
+    assert.equal(allowed.handled, true);
+    assert.equal(allowed.statusCode, 200);
+    assert.equal(allowed.payload.ok, true);
+    assert.equal(allowed.payload.server.id, "preview-route-mcp");
+  });
 });
 
 test("MCP install run route returns structured failures without throwing", async () => {

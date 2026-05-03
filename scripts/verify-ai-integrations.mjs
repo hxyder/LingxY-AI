@@ -61,10 +61,10 @@ async function patchJsonResponse(baseUrl, pathname, body) {
   return { response, payload };
 }
 
-async function postJsonResponse(baseUrl, pathname, body) {
+async function postJsonResponse(baseUrl, pathname, body, headers = {}) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body)
   });
   let payload = null;
@@ -161,6 +161,8 @@ try {
   );
   const installPreview = await postJsonResponse(listening.baseUrl, "/config/mcp/install/preview", {
     packageDir: previewPackageDir
+  }, {
+    "X-Lingxy-Desktop-Actor": "desktop_console"
   });
   assert.equal(installPreview.response.status, 200);
   assert.equal(installPreview.payload?.ok, true);
