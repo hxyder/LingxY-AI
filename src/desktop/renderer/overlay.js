@@ -370,11 +370,7 @@ async function syncProjectStoreFromService({ render = false } = {}) {
       updateConversationPointerFromStore();
       projectStoreRemoteReady = true;
       localStorage.setItem(STORAGE_KEY_V3, JSON.stringify(projectStore));
-      await fetchJson("/projects/store", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ store: projectStore })
-      });
+      await saveProjectStoreViaShell(projectStore);
       if (render) {
         renderProjectPanel();
         if (conversationState?.turns?.length) renderConversationState();
@@ -392,11 +388,7 @@ async function syncProjectStoreFromService({ render = false } = {}) {
 
 function persistProjectStoreToService() {
   if (!projectStore) return;
-  void fetchJson("/projects/store", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ store: projectStore })
-  }).then(() => {
+  void saveProjectStoreViaShell(projectStore).then(() => {
     projectStoreRemoteReady = true;
     updateProjectSyncIndicator(true);
   }).catch(() => {
@@ -1962,6 +1954,16 @@ async function appendNoteChipViaShell(payload) {
   return assertShellResult(
     await window.ucaShell.appendNoteChip(payload),
     "Could not append note chip."
+  );
+}
+
+async function saveProjectStoreViaShell(store) {
+  if (typeof window.ucaShell?.saveProjectStore !== "function") {
+    throw new Error("Desktop project store bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveProjectStore(store),
+    "Could not save project store."
   );
 }
 

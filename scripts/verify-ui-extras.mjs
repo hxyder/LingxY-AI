@@ -81,6 +81,14 @@ assert.ok(!/fetchJson\(\s*["'`]\/notes\/append-chip["'`]\s*,\s*\{[\s\S]{0,160}me
   "notes append-chip: overlay must not POST /notes/append-chip directly via fetchJson");
 assert.ok(!/fetch\(\s*`\$\{runtimeBaseUrl\}\/notes(?:\/(?:upsert|delete|append-chip))?`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
   "notes editor: console must not POST notes mutation routes directly via fetch");
+assert.ok(/saveProjectStoreViaShell/.test(consoleJs) && /window\.ucaShell\.saveProjectStore/.test(consoleJs),
+  "project store: console must use desktop shell bridge for saves");
+assert.ok(/saveProjectStoreViaShell/.test(overlayJs) && /window\.ucaShell\.saveProjectStore/.test(overlayJs),
+  "project store: overlay must use desktop shell bridge for saves");
+assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
+  "project store: console must not POST /projects/store directly via fetchJson");
+assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(overlayJs),
+  "project store: overlay must not POST /projects/store directly via fetchJson");
 
 // ── MCP explicit install button ────────────────────────────────────────
 assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");

@@ -6,6 +6,7 @@ import {
 
 const NOTES_EDITOR_ACTORS = ["desktop_console"];
 const NOTES_CHIP_ACTORS = ["desktop_console", "desktop_overlay"];
+const PROJECT_STORE_ACTORS = ["desktop_console", "desktop_overlay"];
 
 function normalizeProjectStore(store) {
   return normalizeProjectStoreBase(store, { withUpdatedAt: false });
@@ -87,6 +88,7 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   if (method === "POST" && url.pathname === "/projects/store") {
+    if (!requireDesktopActor({ request, response, allowedActors: PROJECT_STORE_ACTORS })) return true;
     const body = await readJsonBody(request);
     const store = normalizeProjectStore(body.store ?? body);
     saveRuntimeConfig(runtime, (currentConfig) => ({

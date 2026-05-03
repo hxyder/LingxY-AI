@@ -5024,11 +5024,7 @@ function saveConsoleProjectStore(store) {
 
 async function saveConsoleProjectStoreToService(store) {
   try {
-    await fetchJson("/projects/store", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ store: normalizeProjectStore(store) })
-    });
+    await saveProjectStoreViaShell(normalizeProjectStore(store));
     state.projectStoreRemoteReady = true;
   } catch {
     state.projectStoreRemoteReady = false;
@@ -6554,6 +6550,16 @@ async function appendNoteChipViaShell(payload) {
   return assertShellResult(
     await window.ucaShell.appendNoteChip(payload),
     "Could not append note chip."
+  );
+}
+
+async function saveProjectStoreViaShell(store) {
+  if (typeof window.ucaShell?.saveProjectStore !== "function") {
+    throw new Error("Desktop project store bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveProjectStore(store),
+    "Could not save project store."
   );
 }
 

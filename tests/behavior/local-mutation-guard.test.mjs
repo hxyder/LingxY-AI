@@ -411,6 +411,24 @@ function makeNotesRuntime() {
   };
 }
 
+function makeProjectStoreRuntime(initialConfig = {}) {
+  const calls = [];
+  let config = initialConfig;
+  return {
+    calls,
+    configStore: {
+      load() {
+        calls.push({ method: "config.load" });
+        return config;
+      },
+      save(value) {
+        calls.push({ method: "config.save", value });
+        config = value;
+      }
+    }
+  };
+}
+
 async function noteProjectConversationRoute({
   method,
   pathname,
@@ -933,4 +951,60 @@ test("notes mutation routes allow console and overlay note writers", async () =>
       }
     }
   ]);
+});
+
+test("project store mutation rejects non-desktop actors before config writes", async () => {
+  const runtime = makeProjectStoreRuntime({
+    ui: {
+      projectStore: {
+        currentProjectId: "proj_existing",
+        projects: [{ id: "proj_existing", name: "Existing" }],
+        conversations: []
+      }
+    }
+  });
+  const result = await noteProjectConversationRoute({
+    method: "POST",
+    pathname: "/projects/store",
+    actor: "browser_page",
+    runtime,
+    body: {
+      store: {
+        currentProjectId: "proj_mutated",
+        projects: [{ id: "proj_mutated", name: "Mutated" }],
+        conversations: []
+      }
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.payload.error, "desktop_actor_required");
+  assert.deepEqual(runtime.calls, []);
+});
+
+test("project store mutation allows console and overlay project writers", async () => {
+  for (const actor of ["desktop_console", "desktop_overlay"]) {
+    const runtime = makeProjectStoreRuntime();
+    const result = await noteProjectConversationRoute({
+      method: "POST",
+      pathname: "/projects/store",
+      actor,
+      runtime,
+      body: {
+        store: {
+          currentProjectId: "proj_demo",
+          projects: [{ id: "proj_demo", name: "Demo" }],
+          conversations: []
+        }
+      }
+    });
+
+    assert.equal(result.statusCode, 200, `${actor} should be allowed`);
+    assert.equal(result.payload.ok, true);
+    assert.equal(result.payload.store.currentProjectId, "proj_demo");
+    assert.deepEqual(runtime.calls.map((entry) => entry.method), ["config.load", "config.save"]);
+    assert.equal(runtime.calls[1].value.ui.projectStore.currentProjectId, "proj_demo");
+    assert.ok(runtime.calls[1].value.ui.projectStore.projects.some((project) => project.id === "proj_demo"));
+  }
 });

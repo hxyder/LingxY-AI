@@ -81,6 +81,7 @@ for (const channel of [
   "uca:note-upsert",
   "uca:note-delete",
   "uca:note-append-chip",
+  "uca:project-store-save",
   "uca:connected-account-rename",
   "uca:connected-account-default-set",
   "uca:connected-account-disconnect",

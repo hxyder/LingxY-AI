@@ -267,6 +267,13 @@ function normalizeNoteAppendChipPayload(payload = {}) {
   };
 }
 
+function normalizeProjectStoreSavePayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    store: normalizePlainObject(source.store ?? source) ?? {}
+  };
+}
+
 function normalizeConnectedAccountId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
@@ -2784,6 +2791,24 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "note_append_chip_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.projectStoreSave, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/projects/store",
+            body: normalizeProjectStoreSavePayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "project_store_save_failed",
             message: error?.message ?? String(error)
           };
         }

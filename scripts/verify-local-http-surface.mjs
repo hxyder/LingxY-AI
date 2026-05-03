@@ -350,8 +350,8 @@ const expectedSurfaces = [
   surface("note-project-conversation-routes.mjs", "POST", "/projects/store", {
     domain: "projects",
     effect: "config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "projects_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
 
   surface("office-routes.mjs", "POST", "/setup/office-addins", {

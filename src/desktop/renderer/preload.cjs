@@ -358,6 +358,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   appendNoteChip(payload) {
     return ipcRenderer.invoke("uca:note-append-chip", payload ?? {});
   },
+  saveProjectStore(store) {
+    return ipcRenderer.invoke("uca:project-store-save", store ?? {});
+  },
   renameConnectedAccount(accountId, displayName) {
     return ipcRenderer.invoke("uca:connected-account-rename", { accountId, displayName });
   },
