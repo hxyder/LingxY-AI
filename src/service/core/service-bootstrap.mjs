@@ -165,13 +165,11 @@ export function createServiceBootstrap({
   // so users don't have to hunt for the Connectors toggle on a clean install.
   try { runMcpAutoInstall({ runtime }); } catch { /* non-fatal */ }
 
-  // UCA-182 Phase 22b: scrub stale AI config at boot. Earlier
-  // versions wrote provider.defaultModel="deepseek-chat" (now
-  // deprecated, auto-upgraded to deepseek-v4-flash) and sometimes
-  // leaked a reasoningEffort in the wrong format (e.g. Qwen's
-  // "enable_thinking:true" on a DeepSeek route). Without this pass,
-  // a user's runtime.json kept feeding stale settings into the
-  // resolver every launch; the only fix was manual edit or reset.
+  // Scrub stale AI config at boot. Earlier versions sometimes saved
+  // provider/model pairs or reasoning flags that belonged to a different
+  // endpoint (for example Qwen's "enable_thinking:true" on a DeepSeek
+  // route). Without this pass, runtime.json could keep feeding invalid
+  // settings into the resolver every launch.
   try {
     const cfg = runtime.configStore?.load?.() ?? {};
     const providersRaw = cfg.ai?.customProviders ?? [];

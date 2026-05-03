@@ -24,7 +24,7 @@ assert.equal(estimated.executorId, "kimi.k2");
 assert.equal(estimated.usd > 0, true);
 
 const cheapTask = estimateTaskCost({
-  executorId: "openai.gpt-5.4-mini",
+  executorId: "openai.gpt-5-mini",
   tokensIn: 10000,
   tokensOut: 2000
 });

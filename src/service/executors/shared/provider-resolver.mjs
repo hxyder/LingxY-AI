@@ -115,11 +115,8 @@ function providerToResolved(provider, route, taskType) {
       mode: sanitizedRoute.mode ?? "",
       reasoningEffort,
       providerName: sanitizedProvider.name,
-      // Codex follow-up: parity with the api-key branch. multi_modal
-      // currently ignores supportsVision:false for routed CLI vision
-      // providers because this field was being dropped here too.
-      // vision_analyze refuses code_cli outright (different concern),
-      // but multi_modal needs the flag to honour an explicit opt-out.
+      // Keep parity with the api-key branch: downstream vision paths need
+      // the explicit opt-out flag even for routed CLI providers.
       supportsVision: sanitizedProvider.supportsVision
     };
   }
@@ -210,7 +207,7 @@ export function resolveProviderForTask(taskType, env = process.env) {
       kind: "anthropic",
       apiKey: anthropicKey,
       baseUrl: env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com",
-      model: (taskType === "vision" ? env.UCA_VISION_MODEL : env.UCA_FAST_MODEL) ?? "claude-sonnet-4-5-20250514",
+      model: (taskType === "vision" ? env.UCA_VISION_MODEL : env.UCA_FAST_MODEL) ?? "claude-sonnet-4-20250514",
       providerName: "Anthropic (env)"
     };
   }
@@ -223,7 +220,7 @@ export function resolveProviderForTask(taskType, env = process.env) {
       kind: "openai",
       apiKey: openaiKey,
       baseUrl: env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-      model: (taskType === "vision" ? env.UCA_VISION_MODEL : env.UCA_FAST_MODEL) ?? "gpt-4o-mini",
+      model: (taskType === "vision" ? env.UCA_VISION_MODEL : env.UCA_FAST_MODEL) ?? "gpt-5-mini",
       embeddingModel: env.UCA_EMBEDDING_MODEL ?? "text-embedding-3-small",
       providerName: "OpenAI (env)"
     };
@@ -237,7 +234,7 @@ export function resolveProviderForTask(taskType, env = process.env) {
       kind: "openai",
       apiKey: kimiKey,
       baseUrl: env.KIMI_BASE_URL ?? "https://api.moonshot.cn/v1",
-      model: env.UCA_FAST_MODEL ?? "kimi-k2",
+      model: env.UCA_FAST_MODEL ?? "kimi-k2.6",
       embeddingModel: env.UCA_EMBEDDING_MODEL ?? null,
       providerName: "Kimi (env)"
     };
@@ -259,8 +256,8 @@ export function resolveProviderForTask(taskType, env = process.env) {
 }
 
 function getDefaultModelForKind(kind, taskType) {
-  if (kind === "anthropic") return "claude-sonnet-4-5-20250514";
-  if (kind === "openai") return taskType === "vision" ? "gpt-4o" : "gpt-4o-mini";
+  if (kind === "anthropic") return "claude-sonnet-4-20250514";
+  if (kind === "openai") return taskType === "vision" ? "gpt-5-mini" : "gpt-5-mini";
   if (kind === "ollama") return "llama3.2";
   return "";
 }

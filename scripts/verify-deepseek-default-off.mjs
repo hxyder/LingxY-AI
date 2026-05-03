@@ -1,9 +1,9 @@
 // Phase 22b verifier (UCA-182) — thinking must actually be OFF by
 // default. The user's question was: if I never ticked the thinking
 // switch, why did the API even return reasoning_content (triggering
-// the echo 400)? Answer: the saved provider config was dragging three
-// stale bits forward — legacy model id, Qwen-format reasoning leftover,
-// and no positive "disabled" signal on the wire. This test locks each.
+// the echo 400)? Answer: the saved route could drag stale reasoning
+// format forward and v4's upstream default can enable thinking unless
+// we send a positive "disabled" signal on the wire. This test locks each.
 
 import assert from "node:assert/strict";
 import {
@@ -20,21 +20,21 @@ const deepseekProvider = {
   defaultModel: "deepseek-chat"   // saved legacy
 };
 
-// --- 1. legacy deepseek-chat / deepseek-reasoner are flagged stale --
+// --- 1. compatibility aliases stay supported, v4 stays preferred ----
 {
-  assert.equal(modelLooksStaleForProvider(deepseekProvider, "deepseek-chat"), true,
-    "saved deepseek-chat must be treated as stale so config auto-upgrades");
-  assert.equal(modelLooksStaleForProvider(deepseekProvider, "deepseek-reasoner"), true,
-    "saved deepseek-reasoner must be treated as stale");
+  assert.equal(modelLooksStaleForProvider(deepseekProvider, "deepseek-chat"), false,
+    "deepseek-chat is still a documented compatibility alias");
+  assert.equal(modelLooksStaleForProvider(deepseekProvider, "deepseek-reasoner"), false,
+    "deepseek-reasoner is still a documented compatibility alias");
   assert.equal(modelLooksStaleForProvider(deepseekProvider, "deepseek-v4-flash"), false);
   assert.equal(modelLooksStaleForProvider(deepseekProvider, "deepseek-v4-pro"), false);
 }
 
-// --- 2. sanitizeProviderConfig upgrades legacy → v4-flash ----------
+// --- 2. sanitizeProviderConfig does not break saved aliases ---------
 {
-  const upgraded = sanitizeProviderConfig(deepseekProvider, "chat");
-  assert.equal(upgraded.defaultModel, "deepseek-v4-flash",
-    "sanitize must upgrade saved legacy provider to v4-flash");
+  const sanitized = sanitizeProviderConfig(deepseekProvider, "chat");
+  assert.equal(sanitized.defaultModel, "deepseek-chat",
+    "sanitize must preserve still-supported DeepSeek compatibility aliases");
 }
 
 // --- 3. stale Qwen-format reasoning leak is scrubbed on DeepSeek ---
@@ -56,10 +56,10 @@ const deepseekProvider = {
 
 // --- 4. empty/absent selection → explicit thinking.disabled ---------
 {
-  // Legacy ids: no thinking field; body untouched.
+  // Compatibility ids: no implicit thinking field; body untouched.
   const legacyBody = applyReasoningSelectionToBody({}, deepseekProvider, "deepseek-chat", "");
   assert.deepEqual(legacyBody, {},
-    "legacy deepseek-chat must NOT get thinking field — the model doesn't accept it");
+    "deepseek-chat alias must not get an implicit thinking field");
 
   // v4 with empty selection → explicit disabled
   const v4Body = applyReasoningSelectionToBody({}, deepseekProvider, "deepseek-v4-flash", "");
@@ -75,7 +75,8 @@ const deepseekProvider = {
   // User explicitly picked enabled → we honour that, no disabled override.
   const onBody = applyReasoningSelectionToBody({}, deepseekProvider, "deepseek-v4-flash", "thinking:enabled|medium");
   assert.deepEqual(onBody.thinking, { type: "enabled" });
-  assert.equal(onBody.reasoning_effort, "medium");
+  assert.equal(onBody.reasoning_effort, undefined,
+    "DeepSeek thinking mode does not support OpenAI-style reasoning_effort");
 
   // User explicitly picked disabled → emits disabled (same as default now).
   const offBody = applyReasoningSelectionToBody({}, deepseekProvider, "deepseek-v4-flash", "thinking:disabled");

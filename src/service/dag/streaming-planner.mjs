@@ -16,6 +16,7 @@
  */
 
 import { createJsonLinesParser, readOpenAiStyleSseStream } from "./stream-parser.mjs";
+import { buildOpenAIChatCompletionBody } from "../../shared/provider-catalog.mjs";
 
 const STREAMING_SYSTEM_PROMPT = `You are the LingxY DAG planner in STREAMING mode. Emit JSON LINES — each line is one complete JSON object. Stream order:
 
@@ -140,15 +141,16 @@ export async function planDagStreaming({
           "Content-Type": "application/json",
           Authorization: `Bearer ${provider.apiKey}`
         },
-        body: JSON.stringify({
+        body: JSON.stringify(buildOpenAIChatCompletionBody({
+          provider,
           model: provider.model,
-          max_tokens: 2048,
-          stream: true,
           messages: [
             { role: "system", content: STREAMING_SYSTEM_PROMPT },
             { role: "user", content: userMessage }
-          ]
-        })
+          ],
+          maxTokens: 2048,
+          stream: true
+        }))
       });
       if (!response.ok) {
         return { ok: false, reason: `http_${response.status}` };

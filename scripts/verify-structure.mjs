@@ -84,6 +84,7 @@ const requiredPaths = [
   "tests/behavior/mcp-install-route.test.mjs",
   "tests/behavior/mcp-install-sandbox.test.mjs",
   "tests/behavior/multi-modal-external-call.test.mjs",
+  "tests/behavior/provider-catalog-models.test.mjs",
   "tests/behavior/task-runtime-event-emitter.test.mjs",
   "tests/behavior/task-runtime-event-log.test.mjs",
   "tests/behavior/task-runtime-composite.test.mjs",

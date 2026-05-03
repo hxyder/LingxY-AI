@@ -30,7 +30,7 @@
 
 import { describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { runCodeCliChat } from "./code-cli-bridge.mjs";
-import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
+import { applyReasoningSelectionToBody, buildOpenAIChatCompletionBody } from "../../../shared/provider-catalog.mjs";
 
 function isAborted(signal) {
   return Boolean(signal?.aborted);
@@ -378,12 +378,13 @@ async function generateOpenAI(resolved, { messages, tools, tool_choice, maxToken
 
   const baseUrl = resolved.baseUrl || "https://api.openai.com/v1";
   const streaming = typeof onTextDelta === "function";
-  const body = {
+  const body = buildOpenAIChatCompletionBody({
+    provider: resolved,
     model: resolved.model,
     messages: convertMessagesForOpenAI(messages),
-    max_tokens: maxTokens ?? 2048,
-    ...(streaming ? { stream: true } : {})
-  };
+    maxTokens: maxTokens ?? 2048,
+    stream: streaming
+  });
   const oaTools = buildOpenAITools(tools);
   if (oaTools) body.tools = oaTools;
   // P4-03 follow-up: forward tool_choice. OpenAI uses a slightly

@@ -159,13 +159,13 @@ async function buildKimiProviderStatus({ config = {}, env = process.env } = {}) 
 
   return {
     id: "kimi.k2",
-    displayName: "Kimi K2",
+    displayName: "Kimi K2.6",
     kind: "cloud",
     available: configured,
     configured,
     authSource: config.apiKey ? "runtime_config" : envKey ? `env:${envKey.key}` : null,
     baseUrl: firstNonEmpty(config.baseUrl, "https://api.moonshot.cn/v1"),
-    model: firstNonEmpty(config.model, "kimi-k2"),
+    model: firstNonEmpty(config.model, "kimi-k2.6"),
     detail: configured ? "api_key_present" : "api_key_missing",
     codeCliLinked: kimiCodeCli.available
   };
@@ -183,19 +183,19 @@ export async function getBuiltinProviderStatus(providerId, {
       config,
       apiKeyNames: ["ANTHROPIC_API_KEY", "UCA_ANTHROPIC_API_KEY"],
       defaultBaseUrl: "https://api.anthropic.com",
-      model: "claude-sonnet-4-5"
+      model: "claude-sonnet-4-20250514"
     });
   }
 
-  if (providerId === "openai.gpt-5.4-mini") {
+  if (providerId === "openai.gpt-5-mini") {
     return buildCloudStatus({
       id: providerId,
-      displayName: "OpenAI GPT-5.4 Mini",
+      displayName: "OpenAI GPT-5 Mini",
       env,
       config,
       apiKeyNames: ["OPENAI_API_KEY", "UCA_OPENAI_API_KEY"],
       defaultBaseUrl: "https://api.openai.com/v1",
-      model: "gpt-5.4-mini"
+      model: "gpt-5-mini"
     });
   }
 

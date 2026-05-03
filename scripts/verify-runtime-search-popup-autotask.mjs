@@ -13,7 +13,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (rel) => readFileSync(path.join(root, rel), "utf8");
 
-// 1. Runtime config load/save migrates stale DeepSeek reasoning.
+// 1. Runtime config load/save scrubs stale DeepSeek reasoning.
 {
   const dir = mkdtempSync(path.join(os.tmpdir(), "uca-085-config-"));
   try {
@@ -26,7 +26,7 @@ const read = (rel) => readFileSync(path.join(root, rel), "utf8");
           kind: "openai",
           baseUrl: "https://api.deepseek.com/v1",
           apiKey: "sk-test",
-          defaultModel: "deepseek-chat"
+          defaultModel: "deepseek-v4-flash"
         }],
         taskRouting: {
           chat: {

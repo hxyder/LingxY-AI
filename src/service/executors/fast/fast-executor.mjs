@@ -13,7 +13,7 @@ import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.
 import { buildSynthesisGuidance } from "../shared/synthesis-prompt.mjs";
 import { executeKimiTask } from "../kimi/kimi-cli-executor.mjs";
 import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
-import { applyReasoningSelectionToBody } from "../../../shared/provider-catalog.mjs";
+import { applyReasoningSelectionToBody, buildOpenAIChatCompletionBody } from "../../../shared/provider-catalog.mjs";
 import { fetchExternal } from "../../core/external-call.mjs";
 import { emitTaskEvent as emitRuntimeTaskEvent } from "../../core/task-runtime.mjs";
 
@@ -110,12 +110,13 @@ async function callAnthropic({ apiKey, baseUrl, model, messages, signal }) {
 }
 
 async function callOpenAICompatible({ provider, apiKey, baseUrl, model, messages, signal, onTextDelta }) {
-  const body = {
+  const body = buildOpenAIChatCompletionBody({
+    provider,
     model,
     messages,
-    max_tokens: 2048,
+    maxTokens: 2048,
     stream: typeof onTextDelta === "function"
-  };
+  });
   applyReasoningSelectionToBody(body, provider, model, provider?.reasoningEffort ?? "");
   const response = await fetchExternal(`${baseUrl}/chat/completions`, {
     method: "POST",

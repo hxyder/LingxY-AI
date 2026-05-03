@@ -78,7 +78,7 @@ Code CLI example in `data/integrations/code_cli/codex-local.json`:
       "command": "codex",
       "args": [],
       "transport": "stream_json_print",
-      "defaultModel": "gpt-5.4-mini",
+      "defaultModel": "gpt-5-mini",
       "mcpConfigFiles": ["C:/team/mcp/servers.json"]
     }
   ]

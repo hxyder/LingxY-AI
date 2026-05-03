@@ -50,9 +50,9 @@ export const BUILTIN_AI_PROVIDERS = Object.freeze([
     }
   }),
   createBuiltinProvider({
-    id: "openai.gpt-5.4-mini",
+    id: "openai.gpt-5-mini",
     kind: "cloud",
-    displayName: "OpenAI GPT-5.4 Mini",
+    displayName: "OpenAI GPT-5 Mini",
     capabilities: {
       supportsStreaming: true,
       supportsToolUse: true,
@@ -63,7 +63,7 @@ export const BUILTIN_AI_PROVIDERS = Object.freeze([
   createBuiltinProvider({
     id: "kimi.k2",
     kind: "cloud",
-    displayName: "Kimi K2",
+    displayName: "Kimi K2.6",
     capabilities: {
       supportsStreaming: true,
       supportsToolUse: false,

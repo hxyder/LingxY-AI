@@ -10,6 +10,7 @@
  * streaming for interleaved execution.
  */
 
+import { buildOpenAIChatCompletionBody } from "../../shared/provider-catalog.mjs";
 import { NODE_KINDS, validateDagPlan } from "./schema.mjs";
 
 function summariseTools(tools, limit = 30) {
@@ -111,14 +112,15 @@ async function callPlannerLLM({ userCommand, systemMessage, userMessage }) {
           "Content-Type": "application/json",
           Authorization: `Bearer ${provider.apiKey}`
         },
-        body: JSON.stringify({
+        body: JSON.stringify(buildOpenAIChatCompletionBody({
+          provider,
           model: provider.model,
-          max_tokens: 2048,
           messages: [
             { role: "system", content: systemMessage },
             { role: "user", content: userMessage }
-          ]
-        })
+          ],
+          maxTokens: 2048
+        }))
       });
       const data = await response.json();
       text = data.choices?.[0]?.message?.content ?? "";

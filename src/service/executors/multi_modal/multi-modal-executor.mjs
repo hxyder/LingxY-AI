@@ -13,6 +13,7 @@ import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
 import { mkdir } from "node:fs/promises";
 import os from "node:os";
 import { fetchExternal } from "../../core/external-call.mjs";
+import { buildOpenAIChatCompletionBody } from "../../../shared/provider-catalog.mjs";
 
 const MULTI_MODAL_API_FETCH_TIMEOUT_MS = 120_000;
 
@@ -31,7 +32,7 @@ export function providerCanVision(provider) {
   if (provider.kind === "anthropic" && provider.apiKey) return true;
   if (provider.kind === "openai" && provider.apiKey) {
     const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""} ${provider.name ?? ""}`.toLowerCase();
-    return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus|doubao|ark|volces/.test(fp);
+    return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-5|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus|doubao|ark|volces/.test(fp);
   }
   // All code_cli providers go through the agent-loop with a Read
   // tool. Trust them — if the CLI genuinely can't (e.g. a stripped-
@@ -74,7 +75,7 @@ function findFallbackVisionProvider(currentProvider = null) {
     const visionOpenai = providers.find((p) => {
       if (p.kind !== "openai" || !p.apiKey) return false;
       const fp = `${p.baseUrl ?? ""} ${p.defaultModel ?? ""} ${p.name ?? ""}`.toLowerCase();
-      return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|doubao|ark|volces/.test(fp);
+      return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-5|gpt-4o|gpt-4-vision|doubao|ark|volces/.test(fp);
     });
     if (visionOpenai) return visionOpenai;
     const cli = providers.find((p) => p.kind === "code_cli");
@@ -92,14 +93,14 @@ function findFallbackVisionProvider(currentProvider = null) {
 
 function defaultVisionModelForProvider(provider) {
   const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""}`.toLowerCase();
-  if (provider.kind === "anthropic") return provider.defaultModel || "claude-sonnet-4-5-20250514";
-  if (/generativelanguage|gemini/.test(fp)) return provider.defaultModel || "gemini-2.0-flash";
+  if (provider.kind === "anthropic") return provider.defaultModel || "claude-sonnet-4-20250514";
+  if (/generativelanguage|gemini/.test(fp)) return provider.defaultModel || "gemini-2.5-flash";
   if (/glm|bigmodel|zhipu/.test(fp)) return provider.defaultModel || "glm-4v-plus";
   if (/qwen|dashscope/.test(fp)) return provider.defaultModel || "qwen-vl-max";
   if (/doubao|ark|volces/.test(fp)) return provider.defaultModel || "doubao-seed-2-0-lite-260215";
   if (/mistral/.test(fp)) return provider.defaultModel || "pixtral-large-latest";
-  if (/openrouter/.test(fp)) return provider.defaultModel || "openai/gpt-4o";
-  return provider.defaultModel || "gpt-4o";
+  if (/openrouter/.test(fp)) return provider.defaultModel || "openrouter/auto";
+  return provider.defaultModel || "gpt-5-mini";
 }
 
 function guessMimeType(filePath) {
@@ -191,11 +192,12 @@ export async function callOpenAIVision({ apiKey, baseUrl, model, userCommand, im
       "Content-Type": "application/json",
       "Authorization": `Bearer ${apiKey}`
     },
-    body: JSON.stringify({
+    body: JSON.stringify(buildOpenAIChatCompletionBody({
+      provider: { kind: "openai", baseUrl },
       model,
-      max_tokens: 2048,
-      messages: [{ role: "user", content }]
-    }),
+      messages: [{ role: "user", content }],
+      maxTokens: 2048
+    })),
     signal
   }, {
     timeoutMs: MULTI_MODAL_API_FETCH_TIMEOUT_MS,

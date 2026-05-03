@@ -77,11 +77,11 @@ await writeConfig({
         kind: "openai",
         baseUrl: "https://api.deepseek.com/v1",
         apiKey: "sk-test-deepseek",
-        defaultModel: "deepseek-chat"
+        defaultModel: "deepseek-v4-flash"
       }
     ],
     taskRouting: {
-      chat: { providerId: "deepseek", model: "deepseek-chat", mode: "default" }
+      chat: { providerId: "deepseek", model: "deepseek-v4-flash", mode: "default" }
     }
   }
 });
@@ -91,10 +91,6 @@ await writeConfig({
   assert.ok(provider, "DeepSeek provider should resolve for chat.");
   assert.equal(provider.kind, "openai");
   assert.equal(provider.configId, "deepseek");
-  // UCA-182 Phase 22b: saved "deepseek-chat" is now stale and the
-  // resolver auto-upgrades to the v4-flash default. Users who want
-  // the legacy chat endpoint must pick the "chat-legacy" mode
-  // explicitly (sanitizeRouteMode alias keeps that working).
   assert.equal(provider.model, "deepseek-v4-flash");
   assert.equal(provider.baseUrl, "https://api.deepseek.com/v1");
 
@@ -111,7 +107,7 @@ await writeConfig({
   const cliRuntime = resolveCodeCliRuntimeForTask("chat", {
     command: "kimi",
     args: [],
-    model: "kimi-k2",
+    model: "kimi-k2.6",
     transport: "stream_json_print"
   });
   assert.equal(cliRuntime, null, "DeepSeek routing must NOT fall back to boot-time Kimi CLI runtime.");
@@ -141,7 +137,6 @@ await writeConfig({
     fetchImpl: fakeFetch
   });
   assert.equal(capturedUrl, "https://api.deepseek.com/v1/chat/completions");
-  // UCA-182 Phase 22b: saved legacy deepseek-chat is now auto-upgraded.
   assert.equal(capturedBody.model, "deepseek-v4-flash");
   assert.equal(capturedBody.messages[0].content, "hi");
   assert.equal(capturedAuth, "Bearer sk-test-deepseek");
@@ -150,8 +145,8 @@ await writeConfig({
 
   // UCA-096 follow-up: task types without explicit routing must inherit the
   // chat routing's model, NOT fall back to getDefaultModelForKind which
-  // picks "gpt-4o-mini" for every openai-compatible provider. The symptom
-  // was `resolveProviderForTask("planner")` returning `model: "gpt-4o-mini"`
+  // picks a generic OpenAI model for every openai-compatible provider. The symptom
+  // was `resolveProviderForTask("planner")` returning an OpenAI model
   // against DeepSeek's baseUrl, so the DAG planner got back
   // `{"error":"Model Not Exist"}` and silently turned into parse_failed.
   const plannerProvider = resolveProviderForTask("planner");
@@ -160,7 +155,7 @@ await writeConfig({
   assert.equal(
     plannerProvider.model,
     "deepseek-v4-flash",
-    "unrouted task types must inherit the chat routing's model (auto-upgraded)"
+    "unrouted task types must inherit the chat routing's model"
   );
   const summaryProvider = resolveProviderForTask("summary");
   assert.equal(summaryProvider?.model, "deepseek-v4-flash");
@@ -180,11 +175,11 @@ await writeConfig({
         command: "C:/Program Files/Kimi/kimi.exe",
         args: ["--json"],
         transport: "stream_json_print",
-        defaultModel: "kimi-k2"
+        defaultModel: "kimi-k2.6"
       }
     ],
     taskRouting: {
-      chat: { providerId: "my-kimi-cli", model: "kimi-k2", mode: "default" }
+      chat: { providerId: "my-kimi-cli", model: "kimi-k2.6", mode: "default" }
     }
   }
 });
@@ -194,7 +189,7 @@ await writeConfig({
   assert.ok(provider, "Kimi CLI should resolve for chat.");
   assert.equal(provider.kind, "code_cli");
   assert.equal(provider.configId, "my-kimi-cli");
-  assert.equal(provider.model, "kimi-k2");
+  assert.equal(provider.model, "kimi-k2.6");
   assert.equal(provider.command, "C:/Program Files/Kimi/kimi.exe");
 
   const descriptor = describeResolvedProvider(provider);
@@ -202,7 +197,7 @@ await writeConfig({
     provider_id: "my-kimi-cli",
     provider_kind: "code_cli",
     provider_name: "Kimi CLI",
-    model: "kimi-k2",
+    model: "kimi-k2.6",
     transport: "subprocess"
   });
 
@@ -211,7 +206,7 @@ await writeConfig({
   assert.ok(cliRuntime, "code_cli runtime must resolve when user routes chat to a code_cli provider.");
   assert.equal(cliRuntime.command, "C:/Program Files/Kimi/kimi.exe");
   assert.deepEqual(cliRuntime.args, ["--json"]);
-  assert.equal(cliRuntime.model, "kimi-k2");
+  assert.equal(cliRuntime.model, "kimi-k2.6");
   assert.equal(cliRuntime.transport, "stream_json_print");
 
   const runtimeDescriptor = describeCodeCliRuntime(cliRuntime);
@@ -247,11 +242,11 @@ await writeConfig({
         kind: "anthropic",
         baseUrl: "https://api.anthropic.com",
         apiKey: "sk-ant-test",
-        defaultModel: "claude-sonnet-4-5-20250514"
+        defaultModel: "claude-sonnet-4-20250514"
       }
     ],
     taskRouting: {
-      chat: { providerId: "claude", model: "claude-sonnet-4-5-20250514", mode: "default" }
+      chat: { providerId: "claude", model: "claude-sonnet-4-20250514", mode: "default" }
     }
   }
 });
@@ -294,7 +289,7 @@ await writeConfig({
   });
   assert.equal(capturedUrl, "https://api.anthropic.com/v1/messages");
   assert.equal(capturedApiKeyHeader, "sk-ant-test");
-  assert.equal(capturedBody.model, "claude-sonnet-4-5-20250514");
+  assert.equal(capturedBody.model, "claude-sonnet-4-20250514");
   assert.equal(capturedBody.system, "You are UCA.");
   assert.equal(capturedBody.messages[0].content, "say hello");
   assert.equal(result.text, "hello from claude");
@@ -361,9 +356,9 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "deepseek", name: "DeepSeek", kind: "openai", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-1", defaultModel: "deepseek-chat" }
+        { id: "deepseek", name: "DeepSeek", kind: "openai", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-1", defaultModel: "deepseek-v4-flash" }
       ],
-      taskRouting: { chat: { providerId: "deepseek", model: "deepseek-chat", mode: "default" } }
+      taskRouting: { chat: { providerId: "deepseek", model: "deepseek-v4-flash", mode: "default" } }
     }
   });
   let provider = resolveProviderForTask("chat");
@@ -373,9 +368,9 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "claude", name: "Claude", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-2", defaultModel: "claude-sonnet-4-5-20250514" }
+        { id: "claude", name: "Claude", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-2", defaultModel: "claude-sonnet-4-20250514" }
       ],
-      taskRouting: { chat: { providerId: "claude", model: "claude-sonnet-4-5-20250514", mode: "default" } }
+      taskRouting: { chat: { providerId: "claude", model: "claude-sonnet-4-20250514", mode: "default" } }
     }
   });
   provider = resolveProviderForTask("chat");
@@ -391,11 +386,11 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-5-20250514" },
+        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-20250514" },
         { id: "router", name: "Router Model", kind: "openai", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-router", defaultModel: "deepseek-v4-flash" }
       ],
       taskRouting: {
-        chat: { providerId: "qa", model: "claude-sonnet-4-5-20250514", mode: "default" }
+        chat: { providerId: "qa", model: "claude-sonnet-4-20250514", mode: "default" }
       }
     }
   });
@@ -407,11 +402,11 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-5-20250514" },
+        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-20250514" },
         { id: "router", name: "Router Model", kind: "openai", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-router", defaultModel: "deepseek-v4-flash" }
       ],
       taskRouting: {
-        chat: { providerId: "qa", model: "claude-sonnet-4-5-20250514", mode: "default" },
+        chat: { providerId: "qa", model: "claude-sonnet-4-20250514", mode: "default" },
         router: { providerId: "router", model: "deepseek-v4-flash", mode: "default" }
       }
     }
@@ -431,11 +426,11 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-4o", embeddingModel: "text-embedding-3-large" },
+        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-5-mini", embeddingModel: "text-embedding-3-large" },
         { id: "embed", name: "Embedding Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-embed", defaultModel: "text-embedding-3-small" }
       ],
       taskRouting: {
-        chat: { providerId: "qa", model: "gpt-4o", mode: "default" }
+        chat: { providerId: "qa", model: "gpt-5-mini", mode: "default" }
       }
     }
   });
@@ -447,11 +442,11 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-4o" },
+        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-5-mini" },
         { id: "embed", name: "Embedding Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-embed", defaultModel: "text-embedding-3-small" }
       ],
       taskRouting: {
-        chat: { providerId: "qa", model: "gpt-4o", mode: "default" },
+        chat: { providerId: "qa", model: "gpt-5-mini", mode: "default" },
         embedding: { providerId: "embed", model: "text-embedding-3-small", mode: "default" }
       }
     }
@@ -471,9 +466,9 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "my-kimi-cli", name: "Kimi CLI", kind: "code_cli", command: "kimi.exe", transport: "stream_json_print", defaultModel: "kimi-k2" }
+        { id: "my-kimi-cli", name: "Kimi CLI", kind: "code_cli", command: "kimi.exe", transport: "stream_json_print", defaultModel: "kimi-k2.6" }
       ],
-      taskRouting: { chat: { providerId: "my-kimi-cli", model: "kimi-k2" } }
+      taskRouting: { chat: { providerId: "my-kimi-cli", model: "kimi-k2.6" } }
     }
   });
   const active = resolveActiveProviderForTask("chat", null);

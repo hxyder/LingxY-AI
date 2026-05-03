@@ -2677,7 +2677,7 @@ function providerCanVisionFrontend(provider) {
   if (provider.kind === "anthropic" && provider.apiKey) return true;
   if (provider.kind === "openai" && provider.apiKey) {
     const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""} ${provider.name ?? ""}`.toLowerCase();
-    return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus|doubao|ark|volces/.test(fp);
+    return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-5|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus|doubao|ark|volces/.test(fp);
   }
   if (provider.kind === "code_cli") return true;
   if (provider.kind === "ollama") {
