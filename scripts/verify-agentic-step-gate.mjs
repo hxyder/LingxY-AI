@@ -105,20 +105,23 @@ function makeEmptySearchRuntime() {
 }
 
 // ── 1. Source-level lock-in ────────────────────────────────────────
-await it("planner imports validateStepGate + chargeBudget + groupsOfTool", () => {
+await it("planner delegates per-tool controls to the agentic control seam", () => {
   const planner = loadFile("../src/service/executors/agentic/planner.mjs");
-  assert.match(planner, /import \{[^}]*\bvalidateStepGate\b[^}]*\} from "\.\.\/\.\.\/core\/policy\/success-contract-validator\.mjs"/,
-    "planner must import validateStepGate");
-  assert.match(planner, /from "\.\.\/\.\.\/core\/runtime\/error-budget\.mjs"/,
-    "planner must import from error-budget.mjs");
-  assert.match(planner, /\bchargeBudget\b/,
-    "planner must use chargeBudget");
+  const controls = loadFile("../src/service/executors/agentic/tool-result-controls.mjs");
+  assert.match(planner, /processAgenticToolResultForControls[^;]+from "\.\/tool-result-controls\.mjs"/,
+    "planner must import the per-tool control seam");
+  assert.match(controls, /import \{[^}]*\bvalidateStepGate\b[^}]*\} from "\.\.\/\.\.\/core\/policy\/success-contract-validator\.mjs"/,
+    "control seam must import validateStepGate");
+  assert.match(controls, /from "\.\.\/\.\.\/core\/runtime\/error-budget\.mjs"/,
+    "control seam must import from error-budget.mjs");
+  assert.match(controls, /\bchargeBudget\b/,
+    "control seam must use chargeBudget");
   assert.match(planner, /\bcreateErrorBudget\b/,
     "planner must initialise the budget via createErrorBudget");
-  assert.match(planner, /\bgroupsOfTool\b/,
-    "planner must use groupsOfTool to detect external_web_read calls");
-  assert.match(planner, /\bsuggestRunbookForStepGate\b/,
-    "planner must call suggestRunbookForStepGate");
+  assert.match(controls, /\bgroupsOfTool\b/,
+    "control seam must use groupsOfTool to detect external_web_read calls");
+  assert.match(controls, /\bsuggestRunbookForStepGate\b/,
+    "control seam must call suggestRunbookForStepGate");
 });
 
 // ── 2. Tool-failure budget exhaustion ──────────────────────────────
@@ -504,8 +507,8 @@ await it("J2: execution_constraints.error_budget tightens — single failure exh
 // ── 10. J2 source-level lock-in ──────────────────────────────────
 await it("J2 source: planner uses the shared helper for preflight AND main loop", () => {
   const planner = loadFile("../src/service/executors/agentic/planner.mjs");
-  assert.match(planner, /function processAgenticToolResultForControls/,
-    "planner must define the shared helper");
+  assert.match(planner, /processAgenticToolResultForControls[^;]+from "\.\/tool-result-controls\.mjs"/,
+    "planner must import the shared helper");
   // Helper is called at TWO sites: preflight and main loop. The
   // preflight site passes preflight: true; the main loop passes
   // preflight: false. Match both.

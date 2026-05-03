@@ -40,17 +40,14 @@ import {
   shouldCheckSaturation
 } from "../shared/loop-policy.mjs";
 import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
-import {
-  agenticToolResultHasSubstance,
-  transcriptForValidator
-} from "./validator-transcript.mjs";
+import { transcriptForValidator } from "./validator-transcript.mjs";
+import { processAgenticToolResultForControls } from "./tool-result-controls.mjs";
 // H1: parity with tool_using — run the same SuccessContract validator
 // and evidence normalizer at planner exit. Pre-H1 agentic skipped both,
 // so D3 research_quality coverage and required_policy_groups were never
 // enforced for agentic tasks.
 import {
   validateSuccessContract,
-  validateStepGate,
   validateAnswerSynthesis,
   detectUnbackedActionClaims
 } from "../../core/policy/success-contract-validator.mjs";
@@ -61,8 +58,7 @@ import { extractEvidence, detectSearchSaturation } from "../../core/policy/evide
 // charges an error budget after each tool result (max 2 tool failures /
 // 1 empty external_web_read) and runs validateStepGate to catch
 // same-tool failure streaks; agentic now does the same.
-import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
-import { createErrorBudget, chargeBudget, snapshotBudget } from "../../core/runtime/error-budget.mjs";
+import { createErrorBudget } from "../../core/runtime/error-budget.mjs";
 import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
 import { applySideEffectContractToToolArgs } from "../../core/policy/side-effect-contracts.mjs";
 import {
@@ -93,131 +89,6 @@ function claimsCompletion(text = "") {
 
 function anyToolSucceeded(transcript = []) {
   return transcript.some((entry) => entry.role === "tool" && entry.success === true);
-}
-
-/**
- * J2: shared per-tool control helper used by BOTH the preflight call
- * (`taskNeedsCurrentWebData` web_search_fetch) and the main loop's
- * tool calls. Pre-J2 only the main loop ran the budget + step-gate
- * checks; the preflight transcript entry was completely outside the
- * controls. This meant a preflight that returned an empty external
- * search result OR a preflight failure was invisible to error-budget /
- * phase-gate, so the planner kept iterating with one strike already on
- * the wall but no metadata to act on. tool_using has no preflight, so
- * its J1 wiring caught everything; agentic was the asymmetric case.
- *
- * Returns:
- *   { errorBudget: <updated state>, earlyExit: null | { kind, error_budget?, phase_gate? } }
- *
- * Caller is responsible for breaking out of its loop when earlyExit
- * is non-null. The same earlyExitState shape is reused so the
- * post-loop validator block produces a single consistent diagnostic
- * surface regardless of which code path detected the early exit.
- *
- * @param {{
- *   call:          { name: string },
- *   result:        { success: boolean, observation?: string, metadata?: object },
- *   transcript:    object[],   // already includes the just-pushed entry for `call`
- *   errorBudget:   object,
- *   iteration:     number,
- *   maxIterations: number,
- *   taskSpec:      object | undefined,
- *   onEvent:       function | undefined,
- *   preflight:     boolean     // set true for the preflight call site
- * }} ctx
- */
-function processAgenticToolResultForControls(ctx) {
-  const { call, result, transcript, iteration, maxIterations, taskSpec, onEvent, preflight } = ctx;
-  let errorBudget = ctx.errorBudget;
-
-  // 1. Charge error budget. tool_failure for outright failures;
-  //    empty_search_result when the call is in the external_web_read
-  //    group AND the success result has no substance. Same predicates
-  //    as tool_using/agent-loop:1226-1230.
-  let budgetEvent = null;
-  if (result.success === false) {
-    budgetEvent = "tool_failure";
-  } else if (groupsOfTool(call.name).includes("external_web_read")
-      && !agenticToolResultHasSubstance(result)) {
-    budgetEvent = "empty_search_result";
-  }
-  if (budgetEvent) {
-    const charge = chargeBudget(errorBudget, budgetEvent);
-    errorBudget = charge.state;
-    onEvent?.({
-      event_type: "log",
-      payload: {
-        message: `error_budget_charge ${budgetEvent} (exhausted=${charge.exhausted}${preflight ? ", preflight" : ""})`
-      }
-    });
-    if (charge.exhausted) {
-      // Parity with tool_using/agent-loop:1242-1247 — emit a separate
-      // observability event so SSE consumers can render "budget burned"
-      // distinctly from a phase_gate decision.
-      onEvent?.({
-        event_type: "error_budget_signal",
-        payload: {
-          iteration,
-          preflight: Boolean(preflight),
-          event: budgetEvent,
-          reason: charge.reason,
-          snapshot: snapshotBudget(errorBudget)
-        }
-      });
-      return {
-        errorBudget,
-        earlyExit: {
-          kind: "error_budget_exhausted",
-          error_budget: {
-            event: budgetEvent,
-            reason: charge.reason,
-            iteration,
-            preflight: Boolean(preflight),
-            snapshot: snapshotBudget(errorBudget)
-          }
-        }
-      };
-    }
-  }
-
-  // 2. Phase gate. Walks the validator-shape transcript and decides
-  //    continue / retry / escalate / abort. Always runs (regardless of
-  //    budgetEvent) so a preflight that returned substance still gets
-  //    its same-tool-streak / contract-unreachable signal recorded.
-  const validatorTx = transcriptForValidator(transcript);
-  const stepGate = validateStepGate(taskSpec, validatorTx, {
-    iteration,
-    maxIterations
-  });
-  const runbook = suggestRunbookForStepGate(stepGate);
-  onEvent?.({
-    event_type: "phase_gate_signal",
-    payload: {
-      iteration,
-      preflight: Boolean(preflight),
-      next_action: stepGate.next_action,
-      satisfied: stepGate.satisfied,
-      violation_kinds: (stepGate.violations ?? []).map((v) => v.kind),
-      runbook_suggested: runbook?.id ?? null
-    }
-  });
-  if (stepGate.next_action === "abort" || stepGate.next_action === "escalate") {
-    return {
-      errorBudget,
-      earlyExit: {
-        kind: `phase_gate_${stepGate.next_action}`,
-        phase_gate: {
-          next_action: stepGate.next_action,
-          iteration,
-          preflight: Boolean(preflight),
-          violations: stepGate.violations ?? [],
-          runbook_suggested: runbook?.id ?? null
-        }
-      }
-    };
-  }
-
-  return { errorBudget, earlyExit: null };
 }
 
 function toolDescriptorForAdapter(tool) {
