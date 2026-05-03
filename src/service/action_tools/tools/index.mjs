@@ -14,6 +14,7 @@ import { searchWeb, formatResultsForAssistant, normalizeSearchRecency } from "..
 import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggregator.mjs";
 import { MEMORY_TOOLS } from "./memory-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
+import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2026,7 +2027,7 @@ function buildPdfHtml(outline) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+${renderMermaidScriptTag()}
 <style>
   * { box-sizing: border-box; }
   body {
@@ -2158,10 +2159,14 @@ Example code:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Diagram</title>
-<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+${renderMermaidScriptTag()}
 <style>
   body { margin: 0; padding: 24px; background: #fff; font-family: system-ui, sans-serif; }
   .mermaid { max-width: 100%; }
+  pre.mermaid-fallback {
+    background: #F1F5F9; border: 1px solid #E2E8F0;
+    padding: 12px; border-radius: 4px; white-space: pre-wrap; color: #475569;
+  }
 </style>
 </head>
 <body>
@@ -2169,7 +2174,16 @@ Example code:
 ${escapeHtml(code)}
 </div>
 <script>
-  mermaid.initialize({ startOnLoad: true, theme: "default", securityLevel: "loose" });
+  if (typeof mermaid !== "undefined") {
+    mermaid.initialize({ startOnLoad: true, theme: "default", securityLevel: "loose" });
+  } else {
+    document.querySelectorAll(".mermaid").forEach(el => {
+      const pre = document.createElement("pre");
+      pre.className = "mermaid-fallback";
+      pre.textContent = el.textContent;
+      el.replaceWith(pre);
+    });
+  }
 </script>
 </body>
 </html>`;
