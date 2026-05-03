@@ -63,7 +63,6 @@ import {
 } from "./planner-formatting.mjs";
 import {
   filterToolsForTask,
-  isScheduleRegistryTool,
   isScheduledFireTask,
   shouldRenderWorkflowHint
 } from "./tool-surface.mjs";
@@ -112,6 +111,7 @@ import {
   applySideEffectContractToDecisionArgs,
   planRedundantSideEffectGuard
 } from "./side-effect-gate.mjs";
+import { planScheduledFireRegistryGuard } from "./scheduled-fire-gate.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
@@ -956,6 +956,29 @@ async function _runToolAgentLoopCore({
       }
     }
 
+    const scheduledFireGuard = decision?.type === "tool_call"
+      ? planScheduledFireRegistryGuard({
+          task,
+          toolOrId: decision.tool,
+          synthesisRetriesUsed,
+          maxSynthesisRetries: MAX_SYNTHESIS_RETRIES
+        })
+      : null;
+    if (scheduledFireGuard) {
+      runtime.emitTaskEvent?.("tool_call_denied", scheduledFireGuard.deniedEventPayload);
+      transcript.push(scheduledFireGuard.deniedTranscriptEntry);
+      if (scheduledFireGuard.action === "retry") {
+        synthesisRetriesUsed += 1;
+        transcript.push(scheduledFireGuard.retryTranscriptEntry);
+        continue;
+      }
+      return {
+        status: "partial_success",
+        final_text: scheduledFireGuard.finalText,
+        transcript
+      };
+    }
+
     if (decision?.type === "tool_call" && !visibleToolIds.has(decision.tool)) {
       const sample = [...visibleToolIds].slice(0, 12).join(", ");
       const more = visibleToolIds.size > 12 ? `, … +${visibleToolIds.size - 12} more` : "";
@@ -1060,40 +1083,6 @@ async function _runToolAgentLoopCore({
       return {
         status: "partial_success",
         final_text: `调用了未知工具 "${decision.tool}"。请重新发起，或换一种更明确的说法。`,
-        transcript
-      };
-    }
-
-    // UCA-181 defense-in-depth: even when the planner prompt's tool
-    // list omitted schedule-registry tools (filterToolsForTask above),
-    // the LLM occasionally hallucinates a familiar id. Refuse fast,
-    // BEFORE the confirmation gate, so the user does not see a
-    // pointless approval popup for a call that would have been
-    // refused by the tool's own recursion guard anyway.
-    if (isScheduleRegistryTool(tool) && isScheduledFireTask(task)) {
-      runtime.emitTaskEvent?.("tool_call_denied", {
-        tool_id: tool.id,
-        reason: "scheduled_fire_cannot_modify_schedule_registry"
-      });
-      transcript.push({
-        type: "tool_denied",
-        tool: tool.id,
-        reason: "scheduled_fire_cannot_modify_schedule_registry"
-      });
-      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
-        synthesisRetriesUsed += 1;
-        transcript.push({
-          type: "synthesis_retry",
-          violations: [{
-            kind: "scheduled_fire_recursion_blocked",
-            message: `${tool.id} is unavailable inside a scheduled task fire — execute the action directly (notify / send_email / etc.) instead of creating another schedule.`
-          }]
-        });
-        continue;
-      }
-      return {
-        status: "partial_success",
-        final_text: "无法在已触发的定时任务内部继续创建/修改定时任务。请直接执行原本要做的动作（比如 notify / 发邮件）。",
         transcript
       };
     }
