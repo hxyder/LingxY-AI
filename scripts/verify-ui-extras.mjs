@@ -65,6 +65,22 @@ assert.ok(/title:\s*body\.title/.test(noteProjectConversationRoutes) || /body\.t
   "+note title: /notes/append-chip handler must forward title");
 assert.ok(/title\s*=\s*null\s*\}\s*\)/.test(notesStore) || /title\s*=\s*null/.test(notesStore),
   "+note title: notes-store appendChip must accept title arg");
+assert.ok(/saveNotesViaShell/.test(consoleJs) && /window\.ucaShell\.saveNotes/.test(consoleJs),
+  "notes save: console must use desktop shell bridge");
+assert.ok(/upsertNoteViaShell/.test(consoleJs) && /window\.ucaShell\.upsertNote/.test(consoleJs),
+  "notes upsert: console must use desktop shell bridge");
+assert.ok(/deleteNoteViaShell/.test(consoleJs) && /window\.ucaShell\.deleteNote/.test(consoleJs),
+  "notes delete: console must use desktop shell bridge");
+assert.ok(/appendNoteChipViaShell/.test(consoleJs) && /window\.ucaShell\.appendNoteChip/.test(consoleJs),
+  "notes append-chip: console must use desktop shell bridge");
+assert.ok(/appendNoteChipViaShell/.test(overlayJs) && /window\.ucaShell\.appendNoteChip/.test(overlayJs),
+  "notes append-chip: overlay must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/notes\/append-chip["'`]\s*,\s*\{[\s\S]{0,160}method:\s*["'`]POST/.test(consoleJs),
+  "notes append-chip: console must not POST /notes/append-chip directly via fetchJson");
+assert.ok(!/fetchJson\(\s*["'`]\/notes\/append-chip["'`]\s*,\s*\{[\s\S]{0,160}method:\s*["'`]POST/.test(overlayJs),
+  "notes append-chip: overlay must not POST /notes/append-chip directly via fetchJson");
+assert.ok(!/fetch\(\s*`\$\{runtimeBaseUrl\}\/notes(?:\/(?:upsert|delete|append-chip))?`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
+  "notes editor: console must not POST notes mutation routes directly via fetch");
 
 // ── MCP explicit install button ────────────────────────────────────────
 assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");

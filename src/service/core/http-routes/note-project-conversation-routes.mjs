@@ -1,7 +1,11 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 import {
   normalizeProjectStore as normalizeProjectStoreBase
 } from "../../../shared/project-store.mjs";
+
+const NOTES_EDITOR_ACTORS = ["desktop_console"];
+const NOTES_CHIP_ACTORS = ["desktop_console", "desktop_overlay"];
 
 function normalizeProjectStore(store) {
   return normalizeProjectStoreBase(store, { withUpdatedAt: false });
@@ -22,6 +26,7 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   if (method === "POST" && url.pathname === "/notes") {
+    if (!requireDesktopActor({ request, response, allowedActors: NOTES_EDITOR_ACTORS })) return true;
     if (!runtime.notesStore) {
       sendJson(response, 503, { error: "notes store unavailable" });
       return true;
@@ -33,6 +38,7 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   if (method === "POST" && url.pathname === "/notes/upsert") {
+    if (!requireDesktopActor({ request, response, allowedActors: NOTES_EDITOR_ACTORS })) return true;
     if (!runtime.notesStore) {
       sendJson(response, 503, { error: "notes store unavailable" });
       return true;
@@ -44,6 +50,7 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   if (method === "POST" && url.pathname === "/notes/delete") {
+    if (!requireDesktopActor({ request, response, allowedActors: NOTES_EDITOR_ACTORS })) return true;
     if (!runtime.notesStore) {
       sendJson(response, 503, { error: "notes store unavailable" });
       return true;
@@ -55,6 +62,7 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   if (method === "POST" && url.pathname === "/notes/append-chip") {
+    if (!requireDesktopActor({ request, response, allowedActors: NOTES_CHIP_ACTORS })) return true;
     if (!runtime.notesStore) {
       sendJson(response, 503, { error: "notes store unavailable" });
       return true;

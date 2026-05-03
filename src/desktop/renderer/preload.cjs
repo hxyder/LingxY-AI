@@ -346,6 +346,18 @@ contextBridge.exposeInMainWorld("ucaShell", {
   checkEmailDigest(payload) {
     return ipcRenderer.invoke("uca:email-digest-check", payload ?? {});
   },
+  saveNotes(notes) {
+    return ipcRenderer.invoke("uca:notes-save", Array.isArray(notes) ? notes : []);
+  },
+  upsertNote(note) {
+    return ipcRenderer.invoke("uca:note-upsert", note ?? {});
+  },
+  deleteNote(id) {
+    return ipcRenderer.invoke("uca:note-delete", id ?? "");
+  },
+  appendNoteChip(payload) {
+    return ipcRenderer.invoke("uca:note-append-chip", payload ?? {});
+  },
   renameConnectedAccount(accountId, displayName) {
     return ipcRenderer.invoke("uca:connected-account-rename", { accountId, displayName });
   },

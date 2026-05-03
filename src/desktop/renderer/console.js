@@ -1359,11 +1359,7 @@ async function openNoteTargetPicker(text, anchorEl) {
   // new-note title prompt below.
   const submitToNote = async (noteId, title = null) => {
     try {
-      const result = await fetchJson("/notes/append-chip", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ noteId, text, sourceLabel: "From chat", title })
-      });
+      const result = await appendNoteChipViaShell({ noteId, text, sourceLabel: "From chat", title });
       const target = result?.note?.title || "笔记";
       showConsoleToast(result?.created ? `已新建：${target}` : `已添加到：${target}`, { kind: "ok" });
       try { window.lingxyNotes?.refresh?.({ preserveSelection: true }); } catch { /* ignore */ }
@@ -6521,6 +6517,46 @@ async function checkEmailDigestViaShell(payload = {}) {
   );
 }
 
+async function saveNotesViaShell(notes) {
+  if (typeof window.ucaShell?.saveNotes !== "function") {
+    throw new Error("Desktop notes bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveNotes(notes),
+    "Could not save notes."
+  );
+}
+
+async function upsertNoteViaShell(note) {
+  if (typeof window.ucaShell?.upsertNote !== "function") {
+    throw new Error("Desktop notes bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.upsertNote(note),
+    "Could not save note."
+  );
+}
+
+async function deleteNoteViaShell(noteId) {
+  if (typeof window.ucaShell?.deleteNote !== "function") {
+    throw new Error("Desktop notes bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteNote(noteId),
+    "Could not delete note."
+  );
+}
+
+async function appendNoteChipViaShell(payload) {
+  if (typeof window.ucaShell?.appendNoteChip !== "function") {
+    throw new Error("Desktop notes bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.appendNoteChip(payload),
+    "Could not append note chip."
+  );
+}
+
 async function renameConnectedAccountViaShell(accountId, displayName) {
   if (typeof window.ucaShell?.renameConnectedAccount !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
@@ -9084,23 +9120,13 @@ function initQuickNotes() {
   }
   async function seedNotesToServer(notes) {
     try {
-      await fetch(`${runtimeBaseUrl}/notes`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ notes })
-      });
+      await saveNotesViaShell(notes);
     } catch { /* offline — localStorage cache still kept for next boot */ }
   }
 
   async function upsertNoteOnServer(note) {
     try {
-      const resp = await fetch(`${runtimeBaseUrl}/notes/upsert`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ note })
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json();
+      const data = await upsertNoteViaShell(note);
       return data?.note ?? note;
     } catch {
       return note;
@@ -9109,22 +9135,12 @@ function initQuickNotes() {
 
   async function deleteNoteOnServer(id) {
     try {
-      await fetch(`${runtimeBaseUrl}/notes/delete`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id })
-      });
+      await deleteNoteViaShell(id);
     } catch { /* ignore */ }
   }
 
   async function appendChipOnServer({ noteId, text, sourceLabel = null }) {
-    const resp = await fetch(`${runtimeBaseUrl}/notes/append-chip`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ noteId, text, sourceLabel })
-    });
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    return resp.json();
+    return appendNoteChipViaShell({ noteId, text, sourceLabel });
   }
 
   // ── Storage ────────────────────────────────────────────────────────────

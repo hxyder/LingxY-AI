@@ -326,26 +326,26 @@ const expectedSurfaces = [
   surface("note-project-conversation-routes.mjs", "POST", "/notes", {
     domain: "notes",
     effect: "local_state_write",
-    boundary: "local_ui_pending_guard",
-    migration: "notes_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("note-project-conversation-routes.mjs", "POST", "/notes/append-chip", {
     domain: "notes",
     effect: "local_state_write",
-    boundary: "local_ui_pending_guard",
-    migration: "notes_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("note-project-conversation-routes.mjs", "POST", "/notes/delete", {
     domain: "notes",
     effect: "local_state_write",
-    boundary: "local_ui_pending_guard",
-    migration: "notes_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("note-project-conversation-routes.mjs", "POST", "/notes/upsert", {
     domain: "notes",
     effect: "local_state_write",
-    boundary: "local_ui_pending_guard",
-    migration: "notes_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("note-project-conversation-routes.mjs", "POST", "/projects/store", {
     domain: "projects",

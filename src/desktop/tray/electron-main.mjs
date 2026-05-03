@@ -240,6 +240,33 @@ function normalizeEmailDigestCheckPayload(payload = {}) {
   };
 }
 
+function normalizeNotesSavePayload(payload = {}) {
+  if (Array.isArray(payload)) return payload;
+  const source = normalizePlainObject(payload) ?? {};
+  return Array.isArray(source.notes) ? source.notes : [];
+}
+
+function normalizeNoteUpsertPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    note: normalizePlainObject(source.note ?? source) ?? {}
+  };
+}
+
+function normalizeNoteId(id) {
+  return typeof id === "string" ? id.trim() : "";
+}
+
+function normalizeNoteAppendChipPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    noteId: `${source.noteId ?? source.note_id ?? "__new__"}`.trim() || "__new__",
+    text: source.text == null ? "" : `${source.text}`,
+    sourceLabel: source.sourceLabel ?? source.source_label ?? null,
+    title: source.title ?? null
+  };
+}
+
 function normalizeConnectedAccountId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
@@ -2681,6 +2708,82 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "email_digest_check_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.notesSave, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/notes",
+            body: { notes: normalizeNotesSavePayload(payload) }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "notes_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.noteUpsert, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/notes/upsert",
+            body: normalizeNoteUpsertPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "note_upsert_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.noteDelete, async (event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const noteId = normalizeNoteId(id);
+        if (!noteId) {
+          return { ok: false, error: "note_id_required", message: "Note id is required." };
+        }
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/notes/delete",
+            body: { id: noteId }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "note_delete_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.noteAppendChip, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/notes/append-chip",
+            body: normalizeNoteAppendChipPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "note_append_chip_failed",
             message: error?.message ?? String(error)
           };
         }

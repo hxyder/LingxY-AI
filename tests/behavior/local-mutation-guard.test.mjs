@@ -7,6 +7,7 @@ import test from "node:test";
 
 import { tryHandleConfigProviderRoute } from "../../src/service/core/http-routes/config-provider-routes.mjs";
 import { tryHandleConnectorRoute } from "../../src/service/core/http-routes/connector-routes.mjs";
+import { tryHandleNoteProjectConversationRoute } from "../../src/service/core/http-routes/note-project-conversation-routes.mjs";
 import { tryHandleRuntimeAdminRoute } from "../../src/service/core/http-routes/runtime-admin-routes.mjs";
 import { tryHandleTaskRoute } from "../../src/service/core/http-routes/task-routes.mjs";
 
@@ -365,6 +366,68 @@ async function taskControlRoute({
     method,
     url: new URL(`http://127.0.0.1${pathname}`),
     runtime
+  });
+  return {
+    handled,
+    statusCode: response.statusCode,
+    payload: parsePayload(response),
+    runtime
+  };
+}
+
+function makeNotesRuntime() {
+  const calls = [];
+  const notes = [];
+  return {
+    calls,
+    notesStore: {
+      listNotes() {
+        calls.push({ method: "notes.listNotes" });
+        return notes;
+      },
+      saveNotes(nextNotes) {
+        calls.push({ method: "notes.saveNotes", notes: nextNotes });
+        notes.splice(0, notes.length, ...nextNotes);
+        return notes;
+      },
+      upsertNote(note) {
+        calls.push({ method: "notes.upsertNote", note });
+        notes.unshift(note);
+        return note;
+      },
+      deleteNote(id) {
+        calls.push({ method: "notes.deleteNote", id });
+        return true;
+      },
+      appendChip(payload) {
+        calls.push({ method: "notes.appendChip", payload });
+        const note = {
+          id: payload.noteId === "__new__" ? "note_created" : payload.noteId,
+          title: payload.title ?? "Demo Note"
+        };
+        return { ok: true, created: payload.noteId === "__new__", note };
+      }
+    }
+  };
+}
+
+async function noteProjectConversationRoute({
+  method,
+  pathname,
+  actor = "desktop_console",
+  body = {},
+  runtime = makeNotesRuntime()
+}) {
+  const response = captureResponse();
+  const handled = await tryHandleNoteProjectConversationRoute({
+    request: jsonRequest(body, actor ? { [ACTOR_HEADER]: actor } : {}),
+    response,
+    method,
+    url: new URL(`http://127.0.0.1${pathname}`),
+    runtime,
+    saveRuntimeConfig(targetRuntime, updater) {
+      targetRuntime.configStore.save(updater(targetRuntime.configStore.load()));
+    }
   });
   return {
     handled,
@@ -791,4 +854,83 @@ test("task control routes allow trusted desktop actors for cancel and delete", a
   assert.equal(deletion.statusCode, 200);
   assert.equal(deletion.payload.deleted, true);
   assert.ok(deletion.runtime.calls.some((entry) => entry.method === "store.deleteTask" && entry.taskId === "task_demo"));
+});
+
+test("notes mutation routes reject unknown desktop actors before local note writes", async () => {
+  const cases = [
+    { method: "POST", pathname: "/notes", body: { notes: [{ id: "n1" }] } },
+    { method: "POST", pathname: "/notes/upsert", body: { note: { id: "n2", title: "Demo" } } },
+    { method: "POST", pathname: "/notes/delete", body: { id: "n2" } },
+    { method: "POST", pathname: "/notes/append-chip", body: { noteId: "__new__", text: "clip" } }
+  ];
+
+  for (const entry of cases) {
+    const result = await noteProjectConversationRoute({
+      ...entry,
+      actor: "browser_page"
+    });
+    assert.equal(result.handled, true, `${entry.method} ${entry.pathname} should be handled`);
+    assert.equal(result.statusCode, 403, `${entry.method} ${entry.pathname} should reject`);
+    assert.equal(result.payload.error, "desktop_actor_required");
+    assert.deepEqual(result.runtime.calls, [], `${entry.method} ${entry.pathname} must not touch notes store`);
+  }
+});
+
+test("notes editor routes are console-only while append-chip allows overlay", async () => {
+  for (const entry of [
+    { method: "POST", pathname: "/notes", body: { notes: [{ id: "n1" }] } },
+    { method: "POST", pathname: "/notes/upsert", body: { note: { id: "n2", title: "Demo" } } },
+    { method: "POST", pathname: "/notes/delete", body: { id: "n2" } }
+  ]) {
+    const result = await noteProjectConversationRoute({
+      ...entry,
+      actor: "desktop_overlay"
+    });
+    assert.equal(result.statusCode, 403, `${entry.pathname} should reject overlay`);
+    assert.equal(result.payload.error, "desktop_actor_required");
+    assert.deepEqual(result.runtime.calls, [], `${entry.pathname} must not touch notes store`);
+  }
+
+  const append = await noteProjectConversationRoute({
+    method: "POST",
+    pathname: "/notes/append-chip",
+    actor: "desktop_overlay",
+    body: { noteId: "__new__", text: "clip", sourceLabel: "From overlay" }
+  });
+  assert.equal(append.statusCode, 200);
+  assert.equal(append.payload.created, true);
+  assert.equal(append.runtime.calls[0].method, "notes.appendChip");
+});
+
+test("notes mutation routes allow console and overlay note writers", async () => {
+  const save = await noteProjectConversationRoute({
+    method: "POST",
+    pathname: "/notes",
+    actor: "desktop_console",
+    body: { notes: [{ id: "n1", title: "Seed" }] }
+  });
+  assert.equal(save.statusCode, 200);
+  assert.deepEqual(save.runtime.calls, [
+    { method: "notes.saveNotes", notes: [{ id: "n1", title: "Seed" }] }
+  ]);
+
+  const append = await noteProjectConversationRoute({
+    method: "POST",
+    pathname: "/notes/append-chip",
+    actor: "desktop_overlay",
+    body: { noteId: "__new__", text: "clip", sourceLabel: "From overlay", title: "Clip Note" }
+  });
+  assert.equal(append.statusCode, 200);
+  assert.equal(append.payload.note.title, "Clip Note");
+  assert.deepEqual(append.runtime.calls, [
+    {
+      method: "notes.appendChip",
+      payload: {
+        noteId: "__new__",
+        text: "clip",
+        sourceLabel: "From overlay",
+        title: "Clip Note"
+      }
+    }
+  ]);
 });

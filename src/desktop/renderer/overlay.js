@@ -1955,6 +1955,16 @@ async function saveAutoSkillViaShell(proposal) {
   );
 }
 
+async function appendNoteChipViaShell(payload) {
+  if (typeof window.ucaShell?.appendNoteChip !== "function") {
+    throw new Error("Desktop notes bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.appendNoteChip(payload),
+    "Could not append note chip."
+  );
+}
+
 async function cancelTaskViaShell(taskId, options = {}) {
   if (typeof window.ucaShell?.cancelTask !== "function") {
     throw new Error("Desktop task control bridge unavailable.");
@@ -3254,11 +3264,7 @@ async function openOverlayNotePicker(text, anchorEl) {
   setTimeout(() => document.addEventListener("mousedown", outside, true), 0);
   const submitToNote = async (noteId, title = null) => {
     try {
-      const result = await fetchJson("/notes/append-chip", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ noteId, text, sourceLabel: "From overlay", title })
-      });
+      const result = await appendNoteChipViaShell({ noteId, text, sourceLabel: "From overlay", title });
       if (anchorEl) {
         const target = result?.note?.title || "笔记";
         anchorEl.textContent = result?.created ? `已新建 ✓ ${target}` : `已添加 ✓ ${target}`;
