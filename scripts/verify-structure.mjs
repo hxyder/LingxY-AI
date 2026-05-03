@@ -74,6 +74,7 @@ const requiredPaths = [
   "tests/behavior/executor-selection.test.mjs",
   "tests/behavior/fast-executor-external-call.test.mjs",
   "tests/behavior/kimi-executor-external-call.test.mjs",
+  "tests/behavior/local-mutation-guard.test.mjs",
   "tests/behavior/mermaid-local-assets.test.mjs",
   "tests/behavior/mcp-install-detection.test.mjs",
   "tests/behavior/mcp-install-execution.test.mjs",

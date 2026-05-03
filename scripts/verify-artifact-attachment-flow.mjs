@@ -32,7 +32,8 @@ const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const agentic = read("src/service/executors/agentic/planner.mjs");
-const toolUsing = read("src/service/executors/tool_using/agent-loop.mjs");
+const toolUsingAgentLoop = read("src/service/executors/tool_using/agent-loop.mjs");
+const toolUsingMessages = read("src/service/executors/tool_using/conversation-messages.mjs");
 const writeTools = read("src/service/connectors/tools/write-tools.mjs");
 const msConnector = read("src/service/connectors/microsoft/microsoft-connector.mjs");
 const contextSubmission = read("src/service/core/context-submission.mjs");
@@ -58,14 +59,16 @@ assert.match(agentic, /__lastArtifactPathsHash/,
   "agentic planner must avoid duplicating the reminder each iteration");
 
 // ── tool_using/agent-loop: transcript + conversation rollup. ──────────
-assert.match(toolUsing, /artifact_paths:\s*Array\.isArray\(result\.artifact_paths\)/,
+assert.match(toolUsingAgentLoop, /artifact_paths:\s*Array\.isArray\(result\.artifact_paths\)/,
   "tool_using agent-loop must store artifact_paths on the transcript entry");
-assert.match(toolUsing, /function buildConversationMessages\(prefixMessages,\s*transcript,\s*initialFilePaths/,
+assert.match(toolUsingMessages, /function buildConversationMessages\(prefixMessages,\s*transcript,\s*initialFilePaths/,
   "buildConversationMessages must accept initial file paths from the context packet");
-assert.match(toolUsing, /Artifacts available so far/,
+assert.match(toolUsingMessages, /Artifacts available so far/,
   "buildConversationMessages must roll up artifacts into each tool observation");
-assert.match(toolUsing, /context_packet\?\.file_paths/,
+assert.match(toolUsingAgentLoop, /context_packet\?\.file_paths/,
   "agent-loop must pass context_packet.file_paths into buildConversationMessages");
+assert.match(toolUsingAgentLoop, /context_packet\?\.image_paths/,
+  "agent-loop must pass context_packet.image_paths into buildConversationMessages");
 
 // ── submission persistence: terminal artifact_paths. ─────────────────
 for (const [name, source] of [
