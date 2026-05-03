@@ -3,6 +3,7 @@ import { executeMcpInstall } from "../../ai/mcp/install-execution.mjs";
 import { createMcpInstallSandboxPlan } from "../../ai/mcp/install-sandbox.mjs";
 import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 
 function buildPreviewPayload(result) {
   if (!result.ok) {
@@ -74,6 +75,9 @@ export async function tryHandleMcpInstallRoute({ request, response, method, url,
   }
 
   if (method === "POST" && url.pathname === "/config/mcp/install/run") {
+    if (!requireDesktopActor({ request, response })) {
+      return true;
+    }
     const body = await readJsonBody(request);
     const executor = runtime?.mcpInstallExecutor ?? executeMcpInstall;
     const result = await executor({

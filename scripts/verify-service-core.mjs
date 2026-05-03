@@ -19,6 +19,7 @@ const officeRouteSource = await readFile(new URL("../src/service/core/http-route
 const previewFileRouteSource = await readFile(new URL("../src/service/core/http-routes/preview-file-routes.mjs", import.meta.url), "utf8");
 const runtimeAdminRouteSource = await readFile(new URL("../src/service/core/http-routes/runtime-admin-routes.mjs", import.meta.url), "utf8");
 const mcpInstallRouteSource = await readFile(new URL("../src/service/core/http-routes/mcp-install-routes.mjs", import.meta.url), "utf8");
+const httpRouteGuardSource = await readFile(new URL("../src/service/core/http-route-guards.mjs", import.meta.url), "utf8");
 const mcpInstallExecutionSource = await readFile(new URL("../src/service/ai/mcp/install-execution.mjs", import.meta.url), "utf8");
 const taskRouteSource = await readFile(new URL("../src/service/core/http-routes/task-routes.mjs", import.meta.url), "utf8");
 
@@ -60,8 +61,17 @@ if (!mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/previ
     || !mcpInstallRouteSource.includes("detectMcpInstallCandidate")
     || !mcpInstallRouteSource.includes("createMcpInstallSandboxPlan")
     || !mcpInstallRouteSource.includes("executeMcpInstall")
+    || !mcpInstallRouteSource.includes("requireDesktopActor")
     || mcpInstallRouteSource.includes("saveRuntimeConfig")) {
   throw new Error("mcp-install-routes.mjs must own MCP install plan/preview/run without writing config.");
+}
+if (!httpRouteGuardSource.includes("DESKTOP_ACTOR_HEADER")
+    || !httpRouteGuardSource.includes("desktop_actor_required")
+    || !httpRouteGuardSource.includes("requireDesktopActor")) {
+  throw new Error("High-effect local mutation routes must use the shared desktop actor guard.");
+}
+if (/Access-Control-Allow-Headers[^\n]+x-lingxy-desktop-actor/i.test(httpServerSource)) {
+  throw new Error("Desktop actor header must not be allowed through generic browser CORS.");
 }
 if (!mcpInstallExecutionSource.includes("spawnExternal")
     || /\bspawn\s*\(/.test(mcpInstallExecutionSource)

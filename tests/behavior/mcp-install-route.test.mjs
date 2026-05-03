@@ -3,8 +3,10 @@ import { Readable } from "node:stream";
 import test from "node:test";
 import { tryHandleMcpInstallRoute } from "../../src/service/core/http-routes/mcp-install-routes.mjs";
 
-function jsonRequest(body) {
-  return Readable.from([Buffer.from(JSON.stringify(body), "utf8")]);
+function jsonRequest(body, headers = {}) {
+  const request = Readable.from([Buffer.from(JSON.stringify(body), "utf8")]);
+  request.headers = headers;
+  return request;
 }
 
 function captureResponse() {
@@ -23,10 +25,10 @@ function captureResponse() {
   return response;
 }
 
-async function postMcpInstallRun({ body, runtime }) {
+async function postMcpInstallRun({ body, runtime, headers = { "x-lingxy-desktop-actor": "desktop_console" } }) {
   const response = captureResponse();
   const handled = await tryHandleMcpInstallRoute({
-    request: jsonRequest(body),
+    request: jsonRequest(body, headers),
     response,
     method: "POST",
     url: new URL("http://127.0.0.1/config/mcp/install/run"),
@@ -92,6 +94,29 @@ test("MCP install run route executes through the runtime sandbox and does not ac
   assert.equal(calls[0].timeoutMs, 321);
   assert.deepEqual(calls[0].paths, { mcpInstallDir: "E:/linxi/.tmp/mcp-packages" });
   assert.equal(saved, false, "MCP install run must not persist config; user review/save remains a separate step.");
+});
+
+test("MCP install run route requires a trusted desktop actor before reading the body", async () => {
+  let called = false;
+  const result = await postMcpInstallRun({
+    runtime: {
+      paths: { mcpInstallDir: "E:/linxi/.tmp/mcp-packages" },
+      async mcpInstallExecutor() {
+        called = true;
+        return { ok: true };
+      }
+    },
+    headers: {},
+    body: {
+      source: "demo-mcp"
+    }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.payload.ok, false);
+  assert.equal(result.payload.error, "desktop_actor_required");
+  assert.equal(called, false);
 });
 
 test("MCP install run route returns structured failures without throwing", async () => {

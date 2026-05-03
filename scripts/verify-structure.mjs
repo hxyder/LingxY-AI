@@ -172,6 +172,7 @@ const requiredPaths = [
   "src/service/core/service-bootstrap.mjs",
   "src/service/core/persistent-runtime.mjs",
   "src/service/core/http-server.mjs",
+  "src/service/core/http-route-guards.mjs",
   "src/service/core/http-routes/ai-status-routes.mjs",
   "src/service/core/http-routes/audio-routes.mjs",
   "src/service/core/http-routes/browser-context-routes.mjs",
