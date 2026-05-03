@@ -101,6 +101,8 @@ try {
   assert.ok(html.includes('id="previewStrategyInfo"'));
   const js = readFileSync(path.join(ROOT, "src/desktop/renderer/console.js"), "utf8");
   assert.ok(js.includes("renderPreviewSettings"));
+  assert.ok(js.includes("clearPreviewCacheViaShell"));
+  assert.ok(js.includes("window.ucaShell.clearPreviewCache"));
 }
 
 rmSync(tmpRoot, { recursive: true, force: true });

@@ -363,8 +363,8 @@ const expectedSurfaces = [
   surface("preview-file-routes.mjs", "POST", "/preview/cache/clear", {
     domain: "preview_cache",
     effect: "cache_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "preview_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
 
   surface("runtime-admin-routes.mjs", "POST", "/^\\/approvals\\/([^/]+)\\/approve$/", {

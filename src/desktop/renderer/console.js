@@ -6563,6 +6563,16 @@ async function saveProjectStoreViaShell(store) {
   );
 }
 
+async function clearPreviewCacheViaShell() {
+  if (typeof window.ucaShell?.clearPreviewCache !== "function") {
+    throw new Error("Desktop preview cache bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.clearPreviewCache(),
+    "Could not clear preview cache."
+  );
+}
+
 async function renameConnectedAccountViaShell(accountId, displayName) {
   if (typeof window.ucaShell?.renameConnectedAccount !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
@@ -10007,7 +10017,7 @@ document.getElementById("previewRefreshBtn")?.addEventListener("click", () => {
 });
 document.getElementById("previewCacheClearBtn")?.addEventListener("click", async () => {
   try {
-    await fetchJson("/preview/cache/clear", { method: "POST" });
+    await clearPreviewCacheViaShell();
   } catch (error) {
     console.warn("preview cache clear failed", error);
   }

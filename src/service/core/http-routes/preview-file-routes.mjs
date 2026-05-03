@@ -3,6 +3,9 @@ import { readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
+
+const PREVIEW_CACHE_CLEAR_ACTORS = ["desktop_console"];
 
 export async function tryHandlePreviewFileRoute({ request, response, method, url, runtime }) {
   if (method === "GET" && url.pathname === "/file/render-preview-html") {
@@ -107,6 +110,7 @@ export async function tryHandlePreviewFileRoute({ request, response, method, url
   }
 
   if (method === "POST" && url.pathname === "/preview/cache/clear") {
+    if (!requireDesktopActor({ request, response, allowedActors: PREVIEW_CACHE_CLEAR_ACTORS })) return true;
     const cacheDir = runtime.paths?.previewCacheDir;
     if (!cacheDir) {
       sendJson(response, 400, { error: "previewCacheDir not configured" });

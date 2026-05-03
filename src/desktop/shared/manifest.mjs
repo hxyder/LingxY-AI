@@ -86,6 +86,7 @@ export const IPC_CHANNELS = Object.freeze({
   noteDelete: "uca:note-delete",
   noteAppendChip: "uca:note-append-chip",
   projectStoreSave: "uca:project-store-save",
+  previewCacheClear: "uca:preview-cache-clear",
   connectedAccountRename: "uca:connected-account-rename",
   connectedAccountDefaultSet: "uca:connected-account-default-set",
   connectedAccountDisconnect: "uca:connected-account-disconnect",

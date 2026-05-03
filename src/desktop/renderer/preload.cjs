@@ -361,6 +361,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   saveProjectStore(store) {
     return ipcRenderer.invoke("uca:project-store-save", store ?? {});
   },
+  clearPreviewCache() {
+    return ipcRenderer.invoke("uca:preview-cache-clear");
+  },
   renameConnectedAccount(accountId, displayName) {
     return ipcRenderer.invoke("uca:connected-account-rename", { accountId, displayName });
   },

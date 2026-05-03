@@ -89,6 +89,10 @@ assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}metho
   "project store: console must not POST /projects/store directly via fetchJson");
 assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(overlayJs),
   "project store: overlay must not POST /projects/store directly via fetchJson");
+assert.ok(/clearPreviewCacheViaShell/.test(consoleJs) && /window\.ucaShell\.clearPreviewCache/.test(consoleJs),
+  "preview cache clear: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/preview\/cache\/clear["'`]\s*,\s*\{[\s\S]{0,120}method:\s*["'`]POST/.test(consoleJs),
+  "preview cache clear: console must not POST /preview/cache/clear directly");
 
 // ── MCP explicit install button ────────────────────────────────────────
 assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");

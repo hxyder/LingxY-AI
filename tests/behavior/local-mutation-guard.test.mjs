@@ -8,6 +8,7 @@ import test from "node:test";
 import { tryHandleConfigProviderRoute } from "../../src/service/core/http-routes/config-provider-routes.mjs";
 import { tryHandleConnectorRoute } from "../../src/service/core/http-routes/connector-routes.mjs";
 import { tryHandleNoteProjectConversationRoute } from "../../src/service/core/http-routes/note-project-conversation-routes.mjs";
+import { tryHandlePreviewFileRoute } from "../../src/service/core/http-routes/preview-file-routes.mjs";
 import { tryHandleRuntimeAdminRoute } from "../../src/service/core/http-routes/runtime-admin-routes.mjs";
 import { tryHandleTaskRoute } from "../../src/service/core/http-routes/task-routes.mjs";
 
@@ -477,6 +478,28 @@ async function noteProjectConversationRoute({
     saveRuntimeConfig(targetRuntime, updater) {
       targetRuntime.configStore.save(updater(targetRuntime.configStore.load()));
     }
+  });
+  return {
+    handled,
+    statusCode: response.statusCode,
+    payload: parsePayload(response),
+    runtime
+  };
+}
+
+async function previewFileRoute({
+  method,
+  pathname,
+  actor = "desktop_console",
+  runtime
+}) {
+  const response = captureResponse();
+  const handled = await tryHandlePreviewFileRoute({
+    request: jsonRequest({}, actor ? { [ACTOR_HEADER]: actor } : {}),
+    response,
+    method,
+    url: new URL(`http://127.0.0.1${pathname}`),
+    runtime
   });
   return {
     handled,
@@ -1105,4 +1128,48 @@ test("conversation mutation routes allow console actor for metadata and deletes"
   assert.deepEqual(hardRuntime.calls, [
     { method: "store.hardDeleteConversation", conversationId: "conv_demo" }
   ]);
+});
+
+test("preview cache clear rejects non-console actors before deleting cache files", async (t) => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "uca-preview-cache-guard-"));
+  t.after(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+  const cacheFile = path.join(tempRoot, "preview.html");
+  await writeFile(cacheFile, "<p>cached</p>", "utf8");
+
+  for (const actor of ["browser_page", "desktop_overlay"]) {
+    await writeFile(cacheFile, "<p>cached</p>", "utf8");
+    const result = await previewFileRoute({
+      method: "POST",
+      pathname: "/preview/cache/clear",
+      actor,
+      runtime: { paths: { previewCacheDir: tempRoot } }
+    });
+    assert.equal(result.handled, true);
+    assert.equal(result.statusCode, 403);
+    assert.equal(result.payload.error, "desktop_actor_required");
+    assert.equal(await readFile(cacheFile, "utf8"), "<p>cached</p>");
+  }
+});
+
+test("preview cache clear allows the console actor", async (t) => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "uca-preview-cache-guard-"));
+  t.after(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+  const cacheFile = path.join(tempRoot, "preview.html");
+  await writeFile(cacheFile, "<p>cached</p>", "utf8");
+
+  const result = await previewFileRoute({
+    method: "POST",
+    pathname: "/preview/cache/clear",
+    actor: "desktop_console",
+    runtime: { paths: { previewCacheDir: tempRoot } }
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.payload.removed, 1);
+  await assert.rejects(readFile(cacheFile, "utf8"), /ENOENT/);
 });
