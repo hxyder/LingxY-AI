@@ -1,278 +1,408 @@
-# UCA — Universal Context Agent
+# LingxY Desktop
 
-UCA 是一款运行在 Windows 桌面的 AI 助手。它通过悬浮 Overlay 随时响应你的指令，能感知当前活跃窗口的内容（网页 URL、文件路径、选中文本），并通过可扩展的工具体系完成各种自动化任务。
+LingxY is a Windows desktop AI workspace that can understand the window you are working in, choose tools, and complete tasks through your own model providers.
 
----
+It is not meant to be just another chat box. The goal is a local-first assistant for everyday knowledge work: reading pages and files, generating documents, launching apps, creating scheduled jobs, drafting emails for approval, and keeping a searchable task history on your machine.
 
-## 功能概览
+The project is currently in active pre-1.0 development. It is usable for local development and trials, but release packaging, automatic updates, encrypted provider-key migration, export, crash diagnostics, and soft-delete recovery are still being completed before a wider public release.
 
-### 核心能力
+## Feature Overview
 
-| 功能 | 说明 |
-|---|---|
-| **悬浮 Overlay** | 全局快捷键唤起，悬浮在任意窗口之上，不打断当前工作 |
-| **活跃窗口感知** | 自动捕获 Chrome/Edge 当前 URL、资源管理器路径、选中文字，作为任务上下文 |
-| **多 AI 提供商** | 支持 Anthropic Claude、OpenAI/兼容接口、Ollama 本地模型、DeepSeek、Kimi CLI |
-| **工具调用（Agentic）** | AI 可主动调用 30+ 内置工具完成文件操作、网页搜索、代码执行、日程管理等 |
-| **MCP 工具集成** | 通过 Model Context Protocol 接入文件系统、记忆存储、网页搜索、浏览器自动化 |
-| **GUI 自动化** | 通过 Windows UIAutomation 查找 UI 元素、模拟点击和键盘输入 |
-| **定时任务** | 支持 cron、间隔、文件监视触发器，可在后台自动执行任务 |
-| **邮件监控** | 接入 IMAP / Microsoft Graph，自动生成晨间摘要，将重要邮件转为任务 |
-| **技能系统** | 支持 SKILL.md 自定义技能，可自动识别重复操作并提议保存为可复用技能 |
-| **历史语义搜索** | 本地历史任务支持语义向量搜索（配置向量 API 后生效），默认回退到 TF-IDF |
+LingxY is built around concrete desktop jobs, not only chat. This section is intentionally specific so you can tell what is already implemented and where the boundaries are.
 
-### 当前稳定能力与限制
+### Desktop Entry Points
 
-稳定可用：
+**Overlay**
 
-- `npm run pack` 可生成本地目录包到 `dist\win-unpacked`，并在打包后自动恢复 Node 侧 `better-sqlite3` ABI。
-- `generate_document` 可生成 DOCX / XLSX / PPTX；PDF 会优先通过 Edge/Chrome headless 转换，失败时返回明确 HTML fallback。
-- 浏览器图片/链接捕获会写入真实 artifact，不再生成文本占位文件。
-- 图片 OCR 会优先使用 Windows OCR，随后尝试 Tesseract；失败时返回空 OCR 结果供 Vision 模型处理。
+- Opens above the current app, so you can ask about the thing you are already viewing.
+- Sends text commands, attachments, selected text, screenshots, browser context, and active-window metadata into the task runtime.
+- Supports fast commands such as "open Excel", research commands such as "analyze this page", and artifact commands such as "make this into a PPT".
+- Keeps running tasks visible without forcing you into the full console.
 
-仍有限制：
+**Dock**
 
-- `npm run dist` 的 NSIS/release 打包在当前 Windows 会话会卡在 electron-builder `winCodeSign` 解压阶段；需要具备创建符号链接权限的环境。
-- 扫描版 PDF 会在安装 `pdftoppm` 时尝试渲染页面并走图片 OCR；没有可用 raster OCR 路径时返回 `pdf_ocr_unavailable`，不会返回合成 OCR 文本。
-- `local-fs` / `figma` MCP 条目是 legacy/external-plugin 状态；推荐使用 `mcp-filesystem`，Figma 需要外部 MCP 插件。
-- Kimi real runtime 验证依赖账号额度；额度耗尽时验证会跳过真实调用。
+- Sits at the screen edge as the lightweight home for LingxY.
+- Opens the overlay, shows running task state, and can surface clipboard/task hints.
+- Integrates with the voice path when wake-word or transcription features are enabled locally.
 
-### 内置工具（供 AI 调用）
+**Console**
 
-**信息获取**
-- `web_search_fetch` — DuckDuckGo 免费网页搜索 + 内容抓取
-- `translate_text` — 免费翻译（无需 API Key）
-- `take_screenshot` — 截图
+- Full management window for tasks, conversations, artifacts, schedules, notes, providers, connectors, MCP servers, plugins, skills, privacy controls, and audit/debug views.
+- Lets you inspect task timelines, tool calls, generated files, failures, approvals, and schedule runs.
+- Includes provider/model settings so you can switch between cloud providers, compatible APIs, local Ollama, and CLI-based agents.
 
-**文件与文档**
-- `write_file` / `read_file` — 文件读写
-- `list_files` / `glob_files` / `find_recent_files` — 文件查找
-- `generate_document` — 生成 pptx / docx / xlsx / pdf 文档
-- `open_file` / `reveal_in_explorer` — 打开文件或在资源管理器中显示
+**Popup Cards**
 
-**系统操作**
-- `launch_app` — 启动应用（支持微信、钉钉、腾讯会议、Chrome 等）
-- `open_url` — 打开网页
-- `run_script` — 执行 PowerShell / Node.js / Python 脚本
-- `copy_to_clipboard` / `read_clipboard` — 剪贴板读写
-- `notify` — 系统通知
+- Non-blocking desktop cards for completions, approvals, schedule fires, connector decisions, and warnings.
+- High-risk actions such as sending email, mutating connected accounts, installing MCP packages, or running local commands can stop here until you approve.
+- Cards are designed for "AI drafts, user confirms" workflows.
 
-**日程管理**
-- `create_scheduled_task` / `list_scheduled_tasks` / `delete_scheduled_task`
+**Preview Window**
 
-**GUI 自动化**（需用户逐步确认）
-- `gui_find_element` — 通过 Windows UIAutomation 查找 UI 元素
-- `gui_click` — 模拟鼠标点击
-- `gui_type_text` — 向 UI 元素输入文字
+- Anchored preview for generated documents and reports.
+- Shows progress and output for document generation paths instead of hiding everything until the task ends.
+- Supports artifacts such as HTML reports, generated Office documents, screenshots, and extracted files.
 
-**MCP 工具**（通过 client-bridge 自动发现）
-- `mcp_filesystem__*` — 文件系统操作（内置，默认开启）
-- `mcp_memory__*` — 跨会话 KV 记忆（内置，默认开启）
-- `mcp_brave_search__*` — Brave 网页搜索（需配置 API Key 后启用）
-- `mcp_puppeteer__*` — 浏览器自动化（需手动启用）
+### Context Understanding
 
----
+LingxY can combine several local context sources:
 
-## 安装与运行
+- Browser page URL/title from the browser extension or active-window probe.
+- File paths from Explorer, Office add-ins, drag/drop, or explicit attachments.
+- Selected text and clipboard content.
+- Screenshots and image attachments.
+- Prior conversation/task context when you continue an existing task.
+- Schedule context when a background job fires.
 
-### 环境要求
+The runtime keeps provenance separate from intent. For example, an attached resume does not automatically mean "only use local files"; if the user explicitly asks to search current jobs, the policy layer can allow web search while still treating the resume as local input.
 
-- **操作系统**: Windows 10 / 11 (x64)
-- **Node.js**: v18+（推荐 v22）
-- **PowerShell**: 5.1+（系统自带）
+### Model Providers And Routing
 
-### 开发模式运行
+Supported provider families include:
 
-```bash
-# 安装依赖
+- Anthropic Claude.
+- OpenAI and OpenAI-compatible APIs.
+- DeepSeek.
+- Kimi/Moonshot.
+- xAI.
+- Mistral.
+- Ollama for local models.
+- Code/agent CLIs such as Claude Code CLI, Codex CLI, and Kimi CLI.
+
+Provider settings support:
+
+- Base URL, API key, model, reasoning options, and provider health checks.
+- Per-task routing through executor selection.
+- Fast lightweight responses for simple turns.
+- Tool-using execution for tasks that need tools, search, files, or connectors.
+- Multimodal/image-capable paths for screenshot or image tasks.
+- CLI-backed execution when a local coding agent should handle the job.
+
+Important: this repo does not proxy your model calls through a LingxY server. Your machine calls the provider or CLI you configure.
+
+### Tool-Using Tasks
+
+The agent can call tools during a task instead of merely describing what you should do. Built-in tool families include:
+
+- Web/search: search the web, fetch pages, extract readable content, and gather evidence.
+- Files: read files, write files, list folders, glob paths, find recent files, open files, and reveal files in Explorer.
+- Documents: generate DOCX, XLSX, PPTX, PDF/HTML reports, and Mermaid diagrams.
+- Screenshots/images: capture screenshots, pass images to vision-capable models, and extract image context.
+- Clipboard: read and write clipboard content.
+- Apps/system: launch apps, open URLs, and run approved local scripts.
+- Notifications: send desktop notifications and popup cards.
+- Scheduling: create, list, run, pause, resume, and delete schedules.
+- Connectors: execute email/calendar/file workflows through configured account connectors.
+- MCP/plugin tools: expose tools from installed MCP servers and plugins.
+
+Every task records the important steps: planner decisions, proposed tool calls, tool results, failures, generated artifact paths, and final output. Console uses that record to explain what happened after the fact.
+
+### Documents And Artifacts
+
+LingxY can produce actual files, not only Markdown answers:
+
+- PPTX: slide decks with structured sections, tables, and generated layout.
+- DOCX: reports, summaries, drafts, meeting notes, and formatted documents.
+- XLSX: extracted tables, comparisons, invoice summaries, and structured data.
+- PDF/HTML: printable reports through browser rendering when available.
+- Mermaid diagrams: flowcharts, sequence diagrams, and architecture diagrams embedded in generated HTML reports.
+- Screenshot/image artifacts: captured images and derived files saved into task output folders.
+
+Artifacts are stored locally and surfaced in Console/Preview. The system avoids pretending a file exists: if generation fails, the task reports the fallback or failure path instead of inventing a fake artifact.
+
+### Email, Calendar, And Drive Workflows
+
+Connector workflows are built for reviewable side effects:
+
+- Local IMAP/SMTP accounts can read mail and send approved drafts.
+- Google Workspace can connect Gmail, Calendar, and Drive-style workflows.
+- Microsoft 365 can connect Outlook, Calendar, and OneDrive-style workflows.
+- Email sending follows a draft/confirmation model where possible.
+- Approval cards can let the user review recipients, subject, body, and workflow details before execution.
+- Schedules can run email/calendar workflows later, while preserving side-effect authorization rules.
+
+The target model is "AI prepares the work; the user approves risky effects."
+
+### Scheduling And Automation
+
+The scheduler supports several trigger types:
+
+- `cron`: recurring schedules such as every day at 9:00 or every Friday afternoon.
+- `at`: one-shot absolute time schedules such as tomorrow at 15:00.
+- `interval`: repeated every-N-seconds/minutes/hours; also supports UI-created one-shot reminders.
+- `file_watch`: run when a watched folder/path changes.
+- `clipboard_watch`: poll clipboard changes for automation flows.
+
+Scheduler behavior includes:
+
+- Natural-language schedule creation.
+- Timezone-aware cron handling.
+- Misfire recovery when the app starts after a scheduled time.
+- `catchup_policy` options for missed recurring runs.
+- Run history and last task linkage.
+- Manual Run Now for paused or completed schedules without silently re-enabling automatic firing.
+- Approval gates for high-risk scheduled actions.
+
+Example:
+
+```text
+Every weekday at 9:00, summarize important email from the last 24 hours and show me a popup.
+```
+
+This becomes a recurring schedule. A one-shot command such as "tomorrow at 3 PM remind me to prepare slides" becomes a completed one-shot after it fires.
+
+### Notes, Conversations, And History
+
+LingxY stores local task and conversation history so work can continue across turns:
+
+- Tasks keep status, sub-status, timeline events, artifacts, and final results.
+- Conversations link user turns, assistant outcomes, and task outputs.
+- Notes can be created and browsed in the desktop console.
+- Local search can find prior tasks and notes; semantic search can be enabled when embeddings are configured.
+- Follow-up routing can attach a short "continue this" request to the right prior task/conversation.
+
+This is meant to support ordinary workflows such as "where was that report from yesterday?" or "continue the previous analysis and export it as Excel."
+
+### Browser And Office Integration
+
+Browser integration:
+
+- Captures current page URL/title and selected page context.
+- Supports page analysis and handoff into desktop tasks.
+- Helps the agent fetch or summarize the page you are viewing.
+
+Office integration:
+
+- Office add-in paths can provide selected content or document context to the desktop runtime.
+- Generated Word/Excel/PowerPoint artifacts can be previewed and opened locally.
+- Office workflows remain local-first; connector/cloud calls only happen when configured.
+
+### MCP, Plugins, And Skills
+
+LingxY has three extension paths:
+
+- MCP servers: expose external toolsets such as filesystem, memory, search, browser automation, Figma, or other MCP-compatible packages.
+- Plugins: package skills/tools/apps into a local plugin registry.
+- Skills: plain `SKILL.md` instructions for repeatable workflows.
+
+MCP install has a sandboxed install path, manifest detection, actor guards, and verifier coverage so package installs do not become an unreviewed local mutation surface.
+
+### Voice And Transcription
+
+Voice-related features are local-first where possible:
+
+- Wake-word enrollment and detection for the dock/overlay path.
+- Audio note transcription.
+- Whisper/local sidecar support where configured.
+- Cloud speech paths only when a compatible provider is configured.
+
+Voice features can depend on local model files and OS audio permissions, so they are treated as optional rather than required for core use.
+
+### Privacy And Safety Controls
+
+Safety features include:
+
+- Desktop actor boundaries for local HTTP mutation routes.
+- Side-effect policy groups and approval requirements.
+- Audit logs for important tool and schedule actions.
+- Privacy redaction rules for sensitive fields.
+- Presenter mode for demos or screen sharing.
+- Offline mode and global kill switch controls.
+- Explicit no-search/local-only constraints.
+- Behavior tests and verifier scripts for routing, submission boundaries, external calls, scheduler behavior, and local HTTP surfaces.
+
+Current limitation: provider API keys still need a complete Secret Store migration for all provider paths before a broad public v1.0 release.
+
+## How It Works
+
+LingxY has two local parts:
+
+- Desktop shell: Electron tray, dock, overlay, console, popup cards, preview windows, active-window probe, and native Windows integrations.
+- Local service: HTTP/SSE runtime, task queue, executors, action tools, connectors, scheduler, storage, and policy/security layers.
+
+Your prompts and captured context stay local until a task needs a model provider or an external connector. When that happens, requests go directly from your machine to the provider or service you configured with your own credentials. There is no LingxY-hosted account service in this repo.
+
+## Current Status
+
+Stable enough for local trials:
+
+- `npm run check` runs the full verifier suite.
+- `npm run pack` builds a local unpacked Windows desktop package.
+- Core task execution, document generation, scheduler, connector workflows, MCP/plugin registry, and desktop renderer verification are covered by scripts and behavior tests.
+- Third-party license inventory is generated in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), with the previous `buffers@0.1.1` unknown-license dependency removed.
+
+Known release gaps:
+
+- Automatic updates are not wired to a GitHub Releases channel yet.
+- Provider/API keys are still stored in local runtime config for some provider paths; OS credential-store migration is a v1.0 blocker.
+- Export/import bundle and soft-delete/trash recovery are not finished.
+- Crash/error diagnostics are local-only work in progress; no telemetry is sent by default.
+- `npm run dist` can require Windows symlink/signing support, depending on the machine.
+- Real Kimi CLI verification may skip when local credentials are invalid or quota is exhausted.
+
+## Requirements
+
+- Windows 10/11 x64.
+- Node.js 22.12 or newer recommended.
+- PowerShell 5.1 or newer.
+- Optional: Chrome or Edge for browser context and PDF rendering.
+- Optional: Microsoft Office for Office add-in workflows.
+- Optional: your own API keys or local model runtimes.
+
+## Quick Start
+
+Install dependencies:
+
+```powershell
 npm install
+```
 
-# 启动后台服务（HTTP / SSE 接口）
+Start the local runtime service:
+
+```powershell
 npm run start:runtime
+```
 
-# 启动 Electron 桌面应用（另开终端）
+In another terminal, start the Electron desktop shell:
+
+```powershell
 npm run start:desktop
 ```
 
-`start:desktop` 会清理当前终端里可能残留的 `ELECTRON_RUN_AS_NODE`，避免 Electron 被当成普通 Node 进程启动，导致托盘图标和全局快捷键不生效。
+Run the verifier suite:
 
-### 打包
-
-```bash
-# 本地目录包，输出到 dist/win-unpacked
-npm run pack
-
-# 生成 NSIS 安装程序到 dist/ 目录
-# 当前机器需要具备创建符号链接权限，否则 winCodeSign 解压会失败
-npm run dist
-```
-
----
-
-## 配置说明
-
-### AI 提供商配置
-
-打开 **Overlay → 右下角设置图标 → Console**，在 **Settings → Providers** 中添加提供商：
-
-| 提供商类型 | 配置项 |
-|---|---|
-| Anthropic Claude | API Key |
-| OpenAI / 兼容接口 | Base URL + API Key |
-| Ollama | Base URL（默认 http://localhost:11434） |
-| Code CLI（Claude Code / Kimi CLI） | 可执行文件路径 |
-
-配置文件保存在 `%APPDATA%\UCA\config\runtime.json`，支持热重载（无需重启）。
-
-### MCP 服务器管理
-
-在 Console → **Connectors → MCP 服务器** 中可以：
-- 查看内置 MCP 服务器状态（已安装 / 已启用 / 不可用）
-- 开启 / 关闭各服务器
-- 为 Brave Search 配置 API Key
-
-所有已启用的 MCP 服务器工具会在下次任务运行时自动注入到 AI 的工具列表中，**Anthropic/OpenAI 等原生 API 提供商同样可以调用**。
-
-### 邮件 Connector
-
-在 Console → **Connectors → 邮件账户** 中：
-- 添加 IMAP 账户（服务器、端口、用户名、密码）
-- 或添加 Microsoft 365 账户（Graph API Token）
-- 开启「自动创建 Schedule」、「晨间摘要」等选项
-
-晨间摘要在每天 6:00–10:00 之间程序启动后 5 分钟内自动推送到 Overlay。
-
-### 技能（Skills）
-
-将自定义技能目录放到：
-```
-%APPDATA%\UCA\data\integrations\skills\<技能ID>\SKILL.md
-```
-
-`SKILL.md` 格式：
-```markdown
----
-id: my-skill
-name: 我的技能
-description: 技能的简要描述
----
-
-## 使用场景
-...
-
-## 操作步骤
-1. web_search_fetch
-2. write_file
-```
-
-AI 在每次任务开始时会自动发现并读取所有技能。
-
-当你重复执行相同的操作流程 **3 次以上**，UCA 会自动识别并提示是否保存为技能，点击「保存为技能」即可自动生成 SKILL.md。
-
----
-
-## 使用方法
-
-### 唤起 Overlay
-
-- **快捷键**（默认）: `Alt + Space` 或系统托盘图标点击
-- Overlay 浮在当前活跃窗口上方，输入框直接输入指令
-
-### 基本用法示例
-
-```
-打开微信
-搜索最新的 AI 新闻并总结
-把这个网页的内容翻译成英文
-帮我写一份今天的工作总结，保存为 docx
-每天早上 9 点提醒我查看邮件
-```
-
-### 分析当前页面
-
-在 Chrome/Edge 中浏览网页时，Overlay 顶部会显示当前 URL 预览卡片，点击「分析此页面」即可让 AI 抓取并分析当前网页内容。
-
-### 定时任务
-
-```
-每周一早上 9 点生成本周工作计划
-每天下午 6 点检查未完成的任务并发送提醒
-```
-
-任务会在后台静默执行，完成后通过 Overlay 气泡通知你。
-
-### 任务历史
-
-Console → **History** 可查看所有历史任务、搜索记录，支持语义搜索。
-
----
-
-## 数据存储位置
-
-所有运行时数据存储在：
-
-```
-%APPDATA%\UCA\
-├── config\
-│   └── runtime.json          AI 提供商、邮件账户等配置
-├── data\
-│   ├── uca.db                SQLite 数据库（任务、日程、指标）
-│   ├── integrations\
-│   │   ├── mcp\              自定义 MCP 服务器配置
-│   │   └── skills\           技能文件
-│   ├── history\
-│   │   └── embeddings.json   历史任务语义索引
-│   └── skill-patterns.json   重复操作识别记录
-├── logs\                     运行日志
-└── outputs\                  AI 生成的文件（默认输出目录）
-```
-
----
-
-## 验证与调试
-
-```bash
-# 运行所有验证脚本（约 30 秒）
+```powershell
 npm run check
-
-# 运行单个子系统验证
-node scripts/verify-platform-foundation.mjs
-node scripts/verify-action-tools.mjs
-node scripts/verify-agentic-planner.mjs
 ```
 
----
+Build a local unpacked desktop package:
 
-## 开源许可
-
-本项目使用的第三方开源软件及其许可证见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
-
----
-
-## 目录结构
-
+```powershell
+npm run pack
 ```
+
+Create a trial sideload package:
+
+```powershell
+npm run build:trial-package
+```
+
+## First Configuration
+
+Open Console from the overlay or tray, then configure:
+
+1. Providers: add at least one model provider or CLI adapter.
+2. Privacy controls: review redaction, offline mode, presenter mode, and kill switch.
+3. Connectors: optionally connect email, Google, Microsoft, browser extension, Office add-in, MCP servers, and plugins.
+4. Scheduler: create recurring or one-shot tasks and check approval behavior.
+5. Skills: add reusable `SKILL.md` folders or let repeated workflows become suggested skills.
+
+Provider keys are local to your machine. Until the Secret Store migration lands, review `%APPDATA%\UCA\config\runtime.json` handling before putting sensitive production credentials into a public or shared machine.
+
+## Data Locations
+
+Runtime data is stored under `%APPDATA%\UCA\` by default:
+
+```text
+%APPDATA%\UCA\
+  config\
+    runtime.json
+  data\
+    uca.db
+    integrations\
+    history\
+  logs\
+  outputs\
+```
+
+Generated documents and artifacts are written to the configured outputs directory. Logs and task event files are local and are used for diagnostics and replay.
+
+## Typical Commands
+
+```text
+Open Excel and Word.
+Search recent AI agent papers and make a comparison table.
+Summarize this PDF into a Word document.
+Translate the selected text into Japanese.
+Every weekday at 9:00, summarize important email from the last 24 hours.
+Tomorrow at 3 PM, remind me to prepare for the meeting.
+Find suitable jobs based on my resume and current postings.
+```
+
+LingxY tries to separate local context, external search, side effects, and output artifacts. For example, attaching a resume does not automatically open it unless the task requires file reading, and explicit search requests can combine local documents with current web results.
+
+## Scheduler Semantics
+
+- `cron` means recurring work, such as daily or weekly tasks.
+- `at` means one-shot work at an absolute time. After it fires, it is complete.
+- `interval` means repeated every-N-seconds unless the caller explicitly marks it as one-shot.
+- Startup recovery catches missed recurring runs according to each schedule's `catchup_policy`.
+- Completed one-shot schedules can be run manually without re-enabling automatic firing.
+
+## Safety Model
+
+LingxY treats dangerous work as side effects:
+
+- Sending email, writing files, running external commands, installing MCP packages, uploading files, or mutating connected services can require approval.
+- The desktop actor boundary limits local HTTP mutation routes to trusted shell surfaces.
+- The tool loop records decisions, tool calls, results, and failures into task events.
+- Redaction, offline mode, presenter mode, and a global network kill switch are available from settings.
+- Verifiers lock important boundaries so regressions fail locally and in CI.
+
+This is still a local development project. Review generated actions before trusting unattended workflows with high-risk operations.
+
+## Repository Map
+
+```text
 src/
   desktop/
-    tray/               主进程（Electron main、系统托盘、活跃窗口检测）
-    renderer/
-      overlay.js        悬浮助手 UI 逻辑
-      console.js        设置面板（提供商、Connectors、历史）
-      dock.js           任务计数徽章 + 呼吸动效
+    renderer/             overlay, console, dock, preview UI
+    tray/                 Electron main process and native shell wiring
   service/
-    core/               HTTP/SSE 服务器、任务运行时、调度器
-    executors/
-      agentic/          通用 Agentic 执行器（任意提供商）
-      fast/             轻量 LLM 调用执行器
-      kimi/             Kimi CLI 执行器
-    action_tools/       30+ 内置工具（定义 + 执行 + Schema）
-    ai/
-      mcp/              MCP 注册表 + 内置服务器 + 客户端 Bridge
-      skills/           技能注册表
-    email/              邮件监控 + 晨间摘要
-    embeddings/         语义向量存储
-    scheduler/          定时任务引擎
-    security/           安全代理、审计日志、隐私保护
+    core/                 HTTP routes, runtime, storage, submission shell
+    executors/            tool-using, agentic, fast, multimodal, CLI executors
+    action_tools/         built-in tools and schemas
+    connectors/           account connectors and workflows
+    scheduler/            schedule lifecycle, misfire, dispatch, approvals
+    security/             broker, audit, privacy controls
+docs/
+  architecture/
+  privacy/
+  release/
+  runtime/
 scripts/
-  verify-*.mjs          子系统验证脚本（共 32 个）
+  verify-*.mjs            subsystem verifiers
 ```
+
+## Release Notes And Public Readiness
+
+Release planning lives in [docs/release/](docs/release/README.md). The current release gate checks:
+
+- required public files,
+- forbidden tracked local/runtime files,
+- third-party license inventory,
+- trial package contents,
+- installer launch smoke checks,
+- source Markdown references,
+- public/release readiness verifiers.
+
+Run:
+
+```powershell
+node scripts/verify-github-readiness.mjs
+node scripts/verify-release-readiness.mjs
+```
+
+## License
+
+LingxY is licensed under [MIT](LICENSE). Third-party dependency notices are generated in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+## Contributing
+
+This repo is still being prepared for broader public collaboration. Before opening a PR, run:
+
+```powershell
+npm run check
+```
+
+Please keep changes framework-level rather than one-off patches for a single prompt or test case. Add behavior tests or verifier coverage when changing routing, scheduler, security, connectors, or executor behavior.
