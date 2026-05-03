@@ -71,7 +71,12 @@ for (const channel of [
   "uca:routing-config-update",
   "uca:output-config-update",
   "uca:feature-config-update",
-  "uca:email-settings-update"
+  "uca:email-settings-update",
+  "uca:connected-account-rename",
+  "uca:connected-account-default-set",
+  "uca:connected-account-disconnect",
+  "uca:connector-account-disconnect",
+  "uca:connector-account-config-save"
 ]) {
   if (!bootstrap.manifest.ipcChannels.includes(channel)) {
     throw new Error(`Desktop guarded mutation IPC channel is missing: ${channel}`);

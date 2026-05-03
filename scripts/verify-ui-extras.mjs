@@ -276,6 +276,26 @@ assert.ok(/data-connected-edit/.test(consoleJs),
   "connector edit: data-connected-edit button missing on connected cards");
 assert.ok(/function handleConnectedAccountEdit/.test(consoleJs),
   "connector edit: handler missing");
+assert.ok(/renameConnectedAccountViaShell/.test(consoleJs) && /window\.ucaShell\.renameConnectedAccount/.test(consoleJs),
+  "connector edit: console must use desktop shell bridge");
+assert.ok(/setConnectedAccountDefaultViaShell/.test(consoleJs) && /window\.ucaShell\.setConnectedAccountDefault/.test(consoleJs),
+  "connector default: console must use desktop shell bridge");
+assert.ok(/disconnectConnectedAccountViaShell/.test(consoleJs) && /window\.ucaShell\.disconnectConnectedAccount/.test(consoleJs),
+  "connected account disconnect: console must use desktop shell bridge");
+assert.ok(/disconnectConnectorAccountViaShell/.test(consoleJs) && /window\.ucaShell\.disconnectConnectorAccount/.test(consoleJs),
+  "connector account disconnect: console must use desktop shell bridge");
+assert.ok(/saveConnectorAccountConfigViaShell/.test(consoleJs) && /window\.ucaShell\.saveConnectorAccountConfig/.test(consoleJs),
+  "connector account config: console must use desktop shell bridge");
+assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/connectors\/connected-accounts\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]PATCH/.test(consoleJs),
+  "connector edit: console must not PATCH /connectors/connected-accounts/:id directly");
+assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/connectors\/connected-accounts\/\$\{encodeURIComponent\([^)]*\)\}\/defaults`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]PATCH/.test(consoleJs),
+  "connector default: console must not PATCH /connectors/connected-accounts/:id/defaults directly");
+assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/connectors\/connected-accounts\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]DELETE/.test(consoleJs),
+  "connected account disconnect: console must not DELETE /connectors/connected-accounts/:id directly");
+assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/connectors\/accounts\/\$\{[^}]+\}`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]DELETE/.test(consoleJs),
+  "connector account disconnect: console must not DELETE /connectors/accounts/:type directly");
+assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/connectors\/accounts\/\$\{[^}]+\}\/config`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]PATCH/.test(consoleJs),
+  "connector account config: console must not PATCH /connectors/accounts/:type/config directly");
 assert.ok(/PATCH.*connected-accounts.*\$/m.test(connectorRoutes)
   || /method === "PATCH" && \/\^\\\/connectors\\\/connected-accounts\\\/\[\^\\\/\]\+\$/.test(connectorRoutes)
   || /connected-accounts\/\[\^\\\/\]\+\$/.test(connectorRoutes),

@@ -71,6 +71,16 @@ assert.equal(preload.includes("updateFeatureConfig"), true);
 assert.equal(preload.includes(IPC_CHANNELS.featureConfigUpdate), true);
 assert.equal(preload.includes("updateEmailSettings"), true);
 assert.equal(preload.includes(IPC_CHANNELS.emailSettingsUpdate), true);
+assert.equal(preload.includes("renameConnectedAccount"), true);
+assert.equal(preload.includes(IPC_CHANNELS.connectedAccountRename), true);
+assert.equal(preload.includes("setConnectedAccountDefault"), true);
+assert.equal(preload.includes(IPC_CHANNELS.connectedAccountDefaultSet), true);
+assert.equal(preload.includes("disconnectConnectedAccount"), true);
+assert.equal(preload.includes(IPC_CHANNELS.connectedAccountDisconnect), true);
+assert.equal(preload.includes("disconnectConnectorAccount"), true);
+assert.equal(preload.includes(IPC_CHANNELS.connectorAccountDisconnect), true);
+assert.equal(preload.includes("saveConnectorAccountConfig"), true);
+assert.equal(preload.includes(IPC_CHANNELS.connectorAccountConfigSave), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
 // Brand renamed: UCA → LingxY. Accept either the old title (still
@@ -188,6 +198,11 @@ assert.equal(mainProcess.includes("IPC_CHANNELS.routingConfigUpdate"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.outputConfigUpdate"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.featureConfigUpdate"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.emailSettingsUpdate"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.connectedAccountRename"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.connectedAccountDefaultSet"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.connectedAccountDisconnect"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.connectorAccountDisconnect"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.connectorAccountConfigSave"), true);
 assert.equal(mainProcess.includes("X-Lingxy-Desktop-Actor"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/preview"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/run"), true);
@@ -208,6 +223,8 @@ assert.equal(mainProcess.includes("/config/routing"), true);
 assert.equal(mainProcess.includes("/config/output"), true);
 assert.equal(mainProcess.includes("/config/features"), true);
 assert.equal(mainProcess.includes("/config/email/settings"), true);
+assert.equal(mainProcess.includes("/connectors/connected-accounts/"), true);
+assert.equal(mainProcess.includes("/connectors/accounts/"), true);
 assert.equal(mainProcess.includes("showDesktopNotification"), true);
 // Permission handler for the Web Speech API mic access
 assert.equal(mainProcess.includes("setPermissionRequestHandler"), true);

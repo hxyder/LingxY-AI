@@ -6493,6 +6493,56 @@ async function updateEmailSettingsViaShell(settings) {
   );
 }
 
+async function renameConnectedAccountViaShell(accountId, displayName) {
+  if (typeof window.ucaShell?.renameConnectedAccount !== "function") {
+    throw new Error("Desktop connector account bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.renameConnectedAccount(accountId, displayName),
+    "Could not rename connected account."
+  );
+}
+
+async function setConnectedAccountDefaultViaShell(accountId, purpose) {
+  if (typeof window.ucaShell?.setConnectedAccountDefault !== "function") {
+    throw new Error("Desktop connector account bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.setConnectedAccountDefault(accountId, purpose),
+    "Could not update connected account default."
+  );
+}
+
+async function disconnectConnectedAccountViaShell(accountId) {
+  if (typeof window.ucaShell?.disconnectConnectedAccount !== "function") {
+    throw new Error("Desktop connector account bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.disconnectConnectedAccount(accountId),
+    "Could not disconnect connected account."
+  );
+}
+
+async function disconnectConnectorAccountViaShell(type) {
+  if (typeof window.ucaShell?.disconnectConnectorAccount !== "function") {
+    throw new Error("Desktop connector account bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.disconnectConnectorAccount(type),
+    "Could not disconnect connector account."
+  );
+}
+
+async function saveConnectorAccountConfigViaShell(type, config) {
+  if (typeof window.ucaShell?.saveConnectorAccountConfig !== "function") {
+    throw new Error("Desktop connector account bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveConnectorAccountConfig(type, config),
+    "Could not save connector account config."
+  );
+}
+
 async function saveMcpServer(server) {
   if (typeof window.ucaShell?.saveMcpServer !== "function") {
     throw new Error("Desktop MCP config bridge unavailable.");
@@ -7732,8 +7782,8 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
 }
 
 // In-place rename: replace the row's title with an input + save / cancel
-// buttons. Submit hits PATCH /connectors/connected-accounts/:id with the
-// new displayName; success refreshes the connectors tab.
+// buttons. Submit goes through the desktop shell bridge so the main process
+// can attach the local desktop actor header.
 function handleConnectedAccountEdit(accountId, anchorBtn) {
   if (!accountId) return;
   const row = anchorBtn?.closest?.(".conn-row");
@@ -7767,12 +7817,7 @@ function handleConnectedAccountEdit(accountId, anchorBtn) {
     saveBtn.disabled = true;
     saveBtn.textContent = "保存中…";
     try {
-      const res = await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts/${encodeURIComponent(accountId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ displayName: value })
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await renameConnectedAccountViaShell(accountId, value);
       showConsoleToast("已更新显示名", { kind: "ok" });
       // Tear down the inline rename BEFORE the loadConnectorsTab
       // re-render runs — otherwise the skip-render guard on
@@ -7790,21 +7835,25 @@ function handleConnectedAccountEdit(accountId, anchorBtn) {
 
 async function handleConnectedAccountDefault(accountId, purpose) {
   if (!accountId || !purpose) return;
-  await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts/${encodeURIComponent(accountId)}/defaults`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ purpose })
-  });
-  void loadConnectorsTab();
+  try {
+    await setConnectedAccountDefaultViaShell(accountId, purpose);
+    showConsoleToast("已更新默认账户", { kind: "ok" });
+    void loadConnectorsTab();
+  } catch (err) {
+    showConsoleToast(`更新失败：${err?.message ?? err}`, { kind: "err" });
+  }
 }
 
 async function handleConnectedAccountDisconnect(accountId) {
   if (!accountId) return;
   if (!confirm("断开这个已连接账户？已缓存的 token 将被删除。")) return;
-  await fetch(`${state.serviceBaseUrl}/connectors/connected-accounts/${encodeURIComponent(accountId)}`, {
-    method: "DELETE"
-  });
-  void loadConnectorsTab();
+  try {
+    await disconnectConnectedAccountViaShell(accountId);
+    showConsoleToast("已断开账户", { kind: "ok" });
+    void loadConnectorsTab();
+  } catch (err) {
+    showConsoleToast(`断开失败：${err?.message ?? err}`, { kind: "err" });
+  }
 }
 
 async function handleConnectedAccountReauth(accountId) {
@@ -7861,8 +7910,13 @@ async function handleAccountConnect(type) {
 
 async function handleAccountDisconnect(type) {
   if (!confirm(`断开 ${ACCOUNT_CONNECTOR_META[type]?.label ?? type} 连接？已缓存的 token 将被删除。`)) return;
-  await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}`, { method: "DELETE" });
-  void loadConnectorsTab();
+  try {
+    await disconnectConnectorAccountViaShell(type);
+    showConsoleToast("已断开连接", { kind: "ok" });
+    void loadConnectorsTab();
+  } catch (err) {
+    showConsoleToast(`断开失败：${err?.message ?? err}`, { kind: "err" });
+  }
 }
 
 async function handleAccountConfigSave(type, panel) {
@@ -7872,17 +7926,9 @@ async function handleAccountConfigSave(type, panel) {
   const body = { clientId };
   if (clientSecret) body.clientSecret = clientSecret;
   try {
-    const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}/config`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
-    });
-    if (r.ok) {
-      if (status) { status.textContent = "✓ 已保存"; setTimeout(() => { if (status) status.textContent = ""; }, 2000); }
-      void loadConnectorsTab();
-    } else {
-      if (status) status.textContent = "保存失败";
-    }
+    await saveConnectorAccountConfigViaShell(type, body);
+    if (status) { status.textContent = "✓ 已保存"; setTimeout(() => { if (status) status.textContent = ""; }, 2000); }
+    void loadConnectorsTab();
   } catch (err) {
     if (status) status.textContent = `Error: ${err.message}`;
   }

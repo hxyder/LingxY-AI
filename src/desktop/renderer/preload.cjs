@@ -331,6 +331,21 @@ contextBridge.exposeInMainWorld("ucaShell", {
   updateEmailSettings(payload) {
     return ipcRenderer.invoke("uca:email-settings-update", payload ?? {});
   },
+  renameConnectedAccount(accountId, displayName) {
+    return ipcRenderer.invoke("uca:connected-account-rename", { accountId, displayName });
+  },
+  setConnectedAccountDefault(accountId, purpose) {
+    return ipcRenderer.invoke("uca:connected-account-default-set", { accountId, purpose });
+  },
+  disconnectConnectedAccount(accountId) {
+    return ipcRenderer.invoke("uca:connected-account-disconnect", accountId ?? "");
+  },
+  disconnectConnectorAccount(type) {
+    return ipcRenderer.invoke("uca:connector-account-disconnect", type ?? "");
+  },
+  saveConnectorAccountConfig(type, config) {
+    return ipcRenderer.invoke("uca:connector-account-config-save", { type, config: config ?? {} });
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

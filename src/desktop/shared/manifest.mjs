@@ -75,7 +75,12 @@ export const IPC_CHANNELS = Object.freeze({
   routingConfigUpdate: "uca:routing-config-update",
   outputConfigUpdate: "uca:output-config-update",
   featureConfigUpdate: "uca:feature-config-update",
-  emailSettingsUpdate: "uca:email-settings-update"
+  emailSettingsUpdate: "uca:email-settings-update",
+  connectedAccountRename: "uca:connected-account-rename",
+  connectedAccountDefaultSet: "uca:connected-account-default-set",
+  connectedAccountDisconnect: "uca:connected-account-disconnect",
+  connectorAccountDisconnect: "uca:connector-account-disconnect",
+  connectorAccountConfigSave: "uca:connector-account-config-save"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([
