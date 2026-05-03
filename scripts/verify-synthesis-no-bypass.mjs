@@ -50,6 +50,7 @@ async function read(p) { return readFile(path.join(repoRoot, p), "utf8"); }
 
 const toolUsing = await read("src/service/executors/tool_using/agent-loop.mjs");
 const agentic   = await read("src/service/executors/agentic/planner.mjs");
+const agenticFinalization = await read("src/service/executors/agentic/finalization.mjs");
 const agenticPB = await read("src/service/executors/agentic/prompt-builder.mjs");
 const fastExec  = await read("src/service/executors/fast/fast-executor.mjs");
 
@@ -63,14 +64,15 @@ await it("agentic prompt-builder imports + uses buildSynthesisGuidance", () => {
   assert.match(agenticPB, /buildSynthesisGuidance\(task\?\.task_spec\)/);
 });
 
-await it("agentic planner imports validateAnswerSynthesis", () => {
-  assert.match(agentic, /validateAnswerSynthesis/);
+await it("agentic finalization imports validateAnswerSynthesis", () => {
+  assert.match(agenticFinalization, /validateAnswerSynthesis/);
+  assert.match(agentic, /finalizeAgenticPlannerRun/);
 });
 
-await it("agentic finalize calls validateAnswerSynthesis on the final text", () => {
+await it("agentic finalization calls validateAnswerSynthesis on the final text", () => {
   assert.match(
-    agentic,
-    /validateAnswerSynthesis\([\s\S]{0,160}finalText/,
+    agenticFinalization,
+    /validateAnswerSynthesis\([\s\S]{0,180}outputText/,
     "agentic must run validateAnswerSynthesis with the final text before returning"
   );
 });

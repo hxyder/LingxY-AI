@@ -31,6 +31,7 @@
 
 import { buildAgenticSystemPrompt, isAudioNoteSingleMarkdownTask } from "./prompt-builder.mjs";
 import { createProviderAdapter } from "./provider-adapter.mjs";
+import { finalizeAgenticPlannerRun } from "./finalization.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
@@ -50,16 +51,7 @@ import {
   toolDescriptorForAdapter,
   transcriptHasSuccessfulToolCall
 } from "./tool-surface.mjs";
-// H1: parity with tool_using — run the same SuccessContract validator
-// and evidence normalizer at planner exit. Pre-H1 agentic skipped both,
-// so D3 research_quality coverage and required_policy_groups were never
-// enforced for agentic tasks.
-import {
-  validateSuccessContract,
-  validateAnswerSynthesis,
-  detectUnbackedActionClaims
-} from "../../core/policy/success-contract-validator.mjs";
-import { extractEvidence, detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
+import { detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 // J1: per-iteration parity. Pre-J1 agentic ran for the full
 // maxIterations even when the same tool failed repeatedly OR when the
 // success contract was already known to be unreachable. tool_using
@@ -84,19 +76,6 @@ const DEFAULT_MAX_ITERATIONS = 8;
 // keeps the SSE bus from carrying every partial JSON token (e.g. for
 // arguments to search / lookup tools where a live preview is meaningless).
 const FILE_GEN_TOOLS = new Set(["write_file", "generate_document", "edit_file"]);
-
-const COMPLETION_CLAIM_PATTERNS = [
-  /\b(?:done|finished|completed|saved|written|created|generated|launched|opened|executed|ran|published|sent)\b/i,
-  /(?:已完成|已保存|已生成|已写入|已创建|已启动|已打开|已运行|已执行|已发送|完成了|创建了|生成了|写好了)/
-];
-
-function claimsCompletion(text = "") {
-  return COMPLETION_CLAIM_PATTERNS.some((pattern) => pattern.test(text));
-}
-
-function anyToolSucceeded(transcript = []) {
-  return transcript.some((entry) => entry.role === "tool" && entry.success === true);
-}
 
 function buildUserMessage(task) {
   const parts = [];
@@ -857,143 +836,13 @@ export async function runAgenticPlanner({
     }
   }
 
-  // Truthfulness guard (UCA-049 §B + UCA-181): the original `anyToolSucceeded`
-  // form was too loose — a successful web_search would mask a fabricated
-  // "邮件已发送" because *some* tool succeeded. We now also run
-  // `detectUnbackedActionClaims`, which ties the claim verb (sent /
-  // created / uploaded) to the policy group's actual success tools. If
-  // either guard fires, prepend a banner so the user sees the
-  // correction before the body.
-  let downgraded = false;
-  let violations = null;
-  const validatorTranscript = transcriptForValidator(transcript);
-  const actionObligationTerminal = earlyExitState?.kind === "action_obligation_terminal"
-    ? earlyExitState.obligations
-    : null;
-  const waitingObligation = earlyExitState?.kind === "waiting_external_decision"
-    ? earlyExitState.obligation
-    : findWaitingActionApprovalInTranscript(validatorTranscript);
-  const waitingExternalDecision = Boolean(waitingObligation);
-  if (waitingExternalDecision) {
-    finalText = formatWaitingActionFinal({ task, obligation: waitingObligation });
-  }
-  if (actionObligationTerminal?.length > 0) {
-    downgraded = true;
-    violations = (violations ?? []).concat(actionObligationTerminal.map((obligation) => ({
-      kind: `${obligation.group}_${obligation.status}`,
-      message: `Required action obligation ${obligation.group} ended as ${obligation.status}: ${obligation.reason ?? ""}`.trim()
-    })));
-  }
-
-  if (!waitingExternalDecision && finalText && claimsCompletion(finalText) && !anyToolSucceeded(transcript)) {
-    downgraded = true;
-    finalText = `⚠️ The model claimed the task was completed, but no tool in this run returned success. The claim has been downgraded to "partial". See the transcript for what actually happened.\n\n---\n\n${finalText}`;
-  }
-  const actionClaimViolations = waitingExternalDecision
-    ? []
-    : detectUnbackedActionClaims(validatorTranscript, finalText);
-  if (actionClaimViolations.length > 0) {
-    downgraded = true;
-    violations = (violations ?? []).concat(actionClaimViolations);
-    const banners = actionClaimViolations.map((v) => {
-      const group = v.kind.replace(/_claim_unsupported$/, "");
-      if (group === "email_send") {
-        return "⚠️ 邮件实际并未发送。系统未检测到任何成功的邮件发送工具调用，下面的文字是模型自述。";
-      }
-      if (group === "calendar_create") {
-        return "⚠️ 日程/事件实际并未创建。下面的文字仅为模型自述。";
-      }
-      if (group === "file_upload") {
-        return "⚠️ 文件实际并未上传。下面的文字仅为模型自述。";
-      }
-      return "⚠️ 模型声称完成了一项操作，但系统未检测到对应工具的成功调用。下面的文字是模型自述。";
-    });
-    finalText = `${banners.join("\n")}\n\n---\n\n${finalText || ""}`;
-  }
-
-  // H1: SuccessContract enforcement (parity with tool_using's
-  // validateSuccessContract call). Walks the transcript and checks every
-  // entry on `task_spec.success_contract.required_policy_groups`, plus
-  // research_quality coverage thresholds (D3). If unsatisfied, downgrade
-  // — independent from the truthfulness guard above; both can fire and
-  // both messages are surfaced.
-  const contract = (waitingExternalDecision || actionObligationTerminal?.length > 0)
-    ? { satisfied: true, violations: [] }
-    : validateSuccessContract(task?.task_spec, validatorTranscript);
-  if (!contract.satisfied) {
-    downgraded = true;
-    violations = (violations ?? []).concat(contract.violations);
-    const reasons = contract.violations.map((v) => v.message).join(" ");
-    finalText = `[UCA] 注意：未通过 SuccessContract 校验：${reasons}\n\n${finalText || ""}`;
-  }
-
-  // PT2: post-tool synthesis check. When expected_output is a synthesis
-  // kind (summary/comparison/recommendation/analysis/action_items) and
-  // the final text is a raw dump or missing the expected shape, mark
-  // the task as not synthesised and surface the violation alongside the
-  // contract message. The agentic loop has already exited; we don't
-  // retry here (the upstream user can re-prompt). The transcript-retry
-  // shape used by tool_using is not symmetrical to agentic, which uses
-  // a single LLM finalize step — so for agentic the v1 behaviour is
-  // "downgrade + visible reason", not "regenerate".
-  const synthesisViolations = waitingExternalDecision
-    ? []
-    : validateAnswerSynthesis(
-      task?.task_spec,
-      validatorTranscript,
-      finalText
-    );
-  if (synthesisViolations.length > 0) {
-    downgraded = true;
-    violations = (violations ?? []).concat(synthesisViolations);
-    const reason = synthesisViolations[0].message;
-    finalText = `[UCA] 注意：${reason}\n\n${finalText || ""}`;
-  }
-
-  // H1: evidence_summary stamp for observability — same as tool_using's
-  // finaliseWithEvidence. Audit-only.
-  const evidenceSummary = extractEvidence(validatorTranscript);
-
-  // J1: surface per-iteration early-exit diagnostics. When the planner
-  // broke out of the loop on a budget/gate signal, downgrade and prepend
-  // an explanation; the validator above may have already flagged the
-  // same task (no successful web tool, etc.), and that's fine — both
-  // messages stack and tell the user what happened.
-  let phaseGate = null;
-  let errorBudgetDiag = null;
-  if (earlyExitState
-      && earlyExitState.kind !== "waiting_external_decision"
-      && earlyExitState.kind !== "action_obligation_terminal") {
-    downgraded = true;
-    if (earlyExitState.kind === "error_budget_exhausted") {
-      errorBudgetDiag = earlyExitState.error_budget;
-      finalText = `[UCA] 阶段提前结束：error_budget exhausted (${errorBudgetDiag.event} at iteration ${errorBudgetDiag.iteration}). ${errorBudgetDiag.reason}\n\n${finalText || ""}`;
-    } else if (earlyExitState.kind === "phase_gate_abort"
-        || earlyExitState.kind === "phase_gate_escalate") {
-      phaseGate = earlyExitState.phase_gate;
-      const kindLabel = phaseGate.next_action;
-      const violationKinds = (phaseGate.violations ?? []).map((v) => v.kind).join(", ") || "(none)";
-      const runbookHint = phaseGate.runbook_suggested
-        ? ` Runbook recommended: ${phaseGate.runbook_suggested}.`
-        : "";
-      finalText = `[UCA] 阶段提前结束：phase_gate ${kindLabel} at iteration ${phaseGate.iteration} (violations: ${violationKinds}).${runbookHint}\n\n${finalText || ""}`;
-    }
-  }
-
-  return {
-    success: !waitingExternalDecision && !downgraded && Boolean(finalText),
-    finalText: finalText || "(no response from agentic planner)",
-    toolCalls: transcript.filter((entry) => entry.role === "tool"),
+  return finalizeAgenticPlannerRun({
+    task,
+    finalText,
+    transcript,
+    earlyExitState,
     artifactPaths,
-    provider_descriptor: descriptor,
-    iterations: iterations + 1,
-    downgraded,
-    waiting_external_decision: waitingExternalDecision,
-    pendingApproval: waitingObligation?.approval ?? null,
-    obligations: waitingObligation ? [waitingObligation] : null,
-    violations,
-    evidence_summary: evidenceSummary,
-    phase_gate: phaseGate,
-    error_budget: errorBudgetDiag
-  };
+    descriptor,
+    iterations
+  });
 }

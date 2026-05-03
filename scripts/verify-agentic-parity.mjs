@@ -139,19 +139,20 @@ function makeRuntime({
   return { actionToolRegistry: createActionToolRegistry(tools), toolContext: {} };
 }
 
-// ── 1. Source-level lock-in: planner imports the validator + evidence ──
-await it("planner imports validateSuccessContract + extractEvidence", () => {
+// ── 1. Source-level lock-in: finalization imports the validator + evidence ──
+await it("agentic finalization imports validateSuccessContract + extractEvidence", () => {
   const planner = loadFile("../src/service/executors/agentic/planner.mjs");
-  // J1 combined the H1 import with validateStepGate into a single
-  // destructured import statement; accept either single or combined form.
-  assert.match(planner, /import \{[^}]*\bvalidateSuccessContract\b[^}]*\} from "\.\.\/\.\.\/core\/policy\/success-contract-validator\.mjs"/,
-    "planner must import validateSuccessContract");
-  assert.match(planner, /import \{[^}]*\bextractEvidence\b[^}]*\} from "\.\.\/\.\.\/core\/policy\/evidence-normalizer\.mjs"/,
-    "planner must import extractEvidence");
-  assert.match(planner, /transcriptForValidator/,
-    "planner must define the transcript translation helper");
-  assert.match(planner, /validateSuccessContract\(task\?\.task_spec, validatorTranscript\)/,
-    "planner must invoke validateSuccessContract with translated transcript");
+  const finalization = loadFile("../src/service/executors/agentic/finalization.mjs");
+  assert.match(planner, /finalizeAgenticPlannerRun[^;]+from "\.\/finalization\.mjs"/,
+    "planner must delegate final result assembly to finalization.mjs");
+  assert.match(finalization, /import \{[^}]*\bvalidateSuccessContract\b[^}]*\} from "\.\.\/\.\.\/core\/policy\/success-contract-validator\.mjs"/,
+    "finalization must import validateSuccessContract");
+  assert.match(finalization, /import \{[^}]*\bextractEvidence\b[^}]*\} from "\.\.\/\.\.\/core\/policy\/evidence-normalizer\.mjs"/,
+    "finalization must import extractEvidence");
+  assert.match(finalization, /transcriptForValidator/,
+    "finalization must use the transcript translation seam");
+  assert.match(finalization, /validateSuccessContract\(task\?\.task_spec, validatorTranscript\)/,
+    "finalization must invoke validateSuccessContract with translated transcript");
 });
 
 // ── 2. Source-level lock-in: executor picks event_type from downgraded ──
