@@ -14,6 +14,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_LOCAL_WHISPER_MODEL = "base";
 const DEFAULT_LOCAL_WHISPER_BEAM_SIZE = "5";
 const ECHO_AUDIO_ACTORS = ["desktop_shell"];
+const NOTE_TRANSCRIBE_ACTORS = ["desktop_overlay"];
 
 function readApiKey(env, ...keys) {
   for (const key of keys) {
@@ -467,6 +468,9 @@ function resolveAudioRuntime(runtime) {
     transcribeAudioLocally: typeof injected?.transcribeAudioLocally === "function"
       ? injected.transcribeAudioLocally
       : transcribeAudioLocally,
+    transcribeAudioLocallyStream: typeof injected?.transcribeAudioLocallyStream === "function"
+      ? injected.transcribeAudioLocallyStream
+      : transcribeAudioLocallyStream,
     hasUserEnrollment: typeof injected?.hasUserEnrollment === "function"
       ? injected.hasUserEnrollment
       : hasUserEnrollment,
@@ -624,6 +628,8 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
   }
 
   if (method === "POST" && url.pathname === "/note/transcribe") {
+    if (!requireDesktopActor({ request, response, allowedActors: NOTE_TRANSCRIBE_ACTORS })) return true;
+    const audioRuntime = resolveAudioRuntime(runtime);
     const contentType = String(request.headers["content-type"] ?? "application/json").trim();
     let audioBuffer = Buffer.alloc(0);
     let mimeType = "audio/webm";
@@ -689,7 +695,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       }
 
       if (!providerHandled && !closed) {
-        const result = await transcribeAudioLocallyStream(
+        const result = await audioRuntime.transcribeAudioLocallyStream(
           audioBuffer,
           { mimeType, lang },
           (event) => { if (!closed) writeFrame(event); }
@@ -705,7 +711,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     const chatProvider = resolveProviderForTask("chat");
     const provider = resolveAudioTranscriptionProvider(runtime);
     if (!provider) {
-      const localResult = await transcribeAudioLocally(audioBuffer, { mimeType, lang });
+      const localResult = await audioRuntime.transcribeAudioLocally(audioBuffer, { mimeType, lang });
       if (localResult.ok) {
         sendJson(response, 200, {
           ok: true,
@@ -757,7 +763,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
 
       if (!apiResp.ok) {
         const errText = await apiResp.text().catch(() => "");
-        const localResult = await transcribeAudioLocally(audioBuffer, { mimeType, lang });
+        const localResult = await audioRuntime.transcribeAudioLocally(audioBuffer, { mimeType, lang });
         if (localResult.ok) {
           sendJson(response, 200, {
             ok: true,
@@ -797,7 +803,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       });
       return true;
     } catch (err) {
-      const localResult = await transcribeAudioLocally(audioBuffer, { mimeType, lang });
+      const localResult = await audioRuntime.transcribeAudioLocally(audioBuffer, { mimeType, lang });
       if (localResult.ok) {
         sendJson(response, 200, {
           ok: true,

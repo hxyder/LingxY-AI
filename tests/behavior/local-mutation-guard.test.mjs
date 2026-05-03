@@ -1433,3 +1433,40 @@ test("echo enrollment allows the dock shell actor and writes through injected au
   assert.equal(runtime.calls[3].record.sampleKey, "2");
   assert.equal(runtime.calls[3].record.sessionId, "s1");
 });
+
+test("note transcription rejects non-overlay actors before reading audio", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "POST",
+    pathname: "/note/transcribe",
+    actor: "browser_page",
+    rawBody: "",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.payload.error, "desktop_actor_required");
+  assert.deepEqual(runtime.calls, []);
+});
+
+test("note transcription allows the overlay actor through the injected audio runtime", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "POST",
+    pathname: "/note/transcribe?lang=zh",
+    actor: "desktop_overlay",
+    rawBody: "note-audio",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.transcript, "linxi");
+  assert.deepEqual(runtime.calls.map((call) => call.method), [
+    "audio.transcribeAudioLocally"
+  ]);
+  assert.equal(runtime.calls[0].bytes, "note-audio".length);
+  assert.equal(runtime.calls[0].options.lang, "zh");
+});

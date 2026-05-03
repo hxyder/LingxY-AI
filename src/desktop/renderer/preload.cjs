@@ -373,6 +373,23 @@ contextBridge.exposeInMainWorld("ucaShell", {
   enrollEchoKeyword(payload) {
     return ipcRenderer.invoke("uca:echo-keyword-enroll", payload ?? {});
   },
+  transcribeNoteAudio(payload) {
+    return ipcRenderer.invoke("uca:note-transcribe", payload ?? {});
+  },
+  transcribeNoteAudioStreaming(payload, callback) {
+    const streamId = payload?.streamId
+      || `note-transcribe-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const listener = (_event, event) => {
+      if (event?.streamId === streamId) callback(event);
+    };
+    ipcRenderer.on("uca:note-transcribe-stream-event", listener);
+    return ipcRenderer.invoke("uca:note-transcribe-stream", {
+      ...(payload ?? {}),
+      streamId
+    }).finally(() => {
+      ipcRenderer.removeListener("uca:note-transcribe-stream-event", listener);
+    });
+  },
   renameConnectedAccount(accountId, displayName) {
     return ipcRenderer.invoke("uca:connected-account-rename", { accountId, displayName });
   },

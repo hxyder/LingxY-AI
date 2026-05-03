@@ -6225,16 +6225,15 @@ function exitNoteMode(options = {}) {
 }
 
 async function transcribeAudioBlob(blob, { lang = "auto" } = {}) {
-  const body = await blob.arrayBuffer();
-  const response = await fetch(`${serviceBaseUrl}/note/transcribe?lang=${encodeURIComponent(lang || "auto")}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": blob.type || "audio/webm"
-    },
-    body
+  if (typeof window.ucaShell?.transcribeNoteAudio !== "function") {
+    throw new Error("Desktop note transcription bridge unavailable.");
+  }
+  const payload = await window.ucaShell.transcribeNoteAudio({
+    audio: await blob.arrayBuffer(),
+    mimeType: blob.type || "audio/webm",
+    lang: lang || "auto"
   });
-  const payload = await response.json();
-  if (!response.ok) {
+  if (payload?.ok === false && payload?.error) {
     throw new Error(payload.message ?? payload.error ?? "/note/transcribe");
   }
   return payload;
@@ -6250,50 +6249,28 @@ async function transcribeAudioBlob(blob, { lang = "auto" } = {}) {
 // server reports an error — the caller falls back to the non-streaming path.
 async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
   const FIRST_FRAME_TIMEOUT_MS = 30_000;
-  const body = await blob.arrayBuffer();
-  const controller = new AbortController();
-  const firstFrameTimer = setTimeout(() => controller.abort(), FIRST_FRAME_TIMEOUT_MS);
-  let response;
-  try {
-    response = await fetch(`${serviceBaseUrl}/note/transcribe?stream=1&lang=${encodeURIComponent(lang || "auto")}`, {
-      method: "POST",
-      headers: { "Content-Type": blob.type || "audio/webm" },
-      body,
-      signal: controller.signal
-    });
-  } catch (err) {
-    clearTimeout(firstFrameTimer);
-    console.warn("[voice] stream transcribe fetch failed:", err);
+  if (typeof window.ucaShell?.transcribeNoteAudioStreaming !== "function") {
+    console.warn("[voice] stream transcribe bridge unavailable");
     return { ok: false };
   }
-  if (!response.ok || !response.body) {
-    clearTimeout(firstFrameTimer);
-    return { ok: false };
-  }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let assembled = "";
   let finalTranscript = "";
   let gotAnyFrame = false;
   let sawError = false;
+  let firstFrameTimer = null;
+  const clearFirstFrameTimer = () => {
+    if (firstFrameTimer) clearTimeout(firstFrameTimer);
+    firstFrameTimer = null;
+  };
   try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buffer.indexOf("\n\n")) !== -1) {
-        const frame = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 2);
-        const dataLine = frame.split(/\r?\n/).find((line) => line.startsWith("data:"));
-        if (!dataLine) continue;
-        let event;
-        try { event = JSON.parse(dataLine.slice(5).trim()); }
-        catch { continue; }
+    const streamPromise = window.ucaShell.transcribeNoteAudioStreaming({
+      audio: await blob.arrayBuffer(),
+      mimeType: blob.type || "audio/webm",
+      lang: lang || "auto"
+    }, (event) => {
         if (!gotAnyFrame) {
           gotAnyFrame = true;
-          clearTimeout(firstFrameTimer);
+          clearFirstFrameTimer();
         }
         if (event.type === "segment" && event.text) {
           assembled += (assembled ? "\n" : "") + event.text;
@@ -6305,13 +6282,23 @@ async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
           console.warn("[voice] stream transcribe error frame:", event);
           sawError = true;
         }
-      }
+    });
+    firstFrameTimer = setTimeout(() => {
+      console.warn("[voice] stream transcribe first frame timeout");
+      sawError = true;
+    }, FIRST_FRAME_TIMEOUT_MS);
+    const result = await streamPromise;
+    if (result?.transcript && !finalTranscript) {
+      finalTranscript = `${result.transcript}`.trim();
+    }
+    if (result?.ok === false) {
+      sawError = true;
     }
   } catch (err) {
     console.warn("[voice] stream transcribe reader aborted:", err);
     return { ok: false };
   } finally {
-    clearTimeout(firstFrameTimer);
+    clearFirstFrameTimer();
   }
   if (!gotAnyFrame || sawError) return { ok: false };
   return { ok: true, transcript: finalTranscript || assembled };

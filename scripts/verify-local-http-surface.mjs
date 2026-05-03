@@ -64,8 +64,8 @@ const expectedSurfaces = [
   surface("audio-routes.mjs", "POST", "/note/transcribe", {
     domain: "audio",
     effect: "local_file_processing",
-    boundary: "audio_session_guard_pending",
-    migration: "needs_stream_safe_audio_authorization"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
 
   surface("browser-context-routes.mjs", "DELETE", "/location", {

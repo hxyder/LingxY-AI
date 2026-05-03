@@ -106,6 +106,12 @@ assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/kws`\s*,\s*\{[\s\S]{0,180}met
   "echo KWS: dock must not POST /echo/kws directly");
 assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/enroll-keyword\?/.test(dockJs),
   "echo enrollment: dock must not POST /echo/enroll-keyword directly");
+assert.ok(/window\.ucaShell\.transcribeNoteAudio/.test(overlayJs),
+  "note transcribe: overlay must use desktop shell bridge");
+assert.ok(/window\.ucaShell\.transcribeNoteAudioStreaming/.test(overlayJs),
+  "note transcribe stream: overlay must use desktop shell streaming bridge");
+assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/note\/transcribe/.test(overlayJs),
+  "note transcribe: overlay must not POST /note/transcribe directly");
 
 // ── MCP explicit install button ────────────────────────────────────────
 assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");
