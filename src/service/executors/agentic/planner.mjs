@@ -35,6 +35,10 @@ import { resolveProviderForTask, describeResolvedProvider } from "../shared/prov
 import { formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
+import {
+  agenticToolResultHasSubstance,
+  transcriptForValidator
+} from "./validator-transcript.mjs";
 // H1: parity with tool_using — run the same SuccessContract validator
 // and evidence normalizer at planner exit. Pre-H1 agentic skipped both,
 // so D3 research_quality coverage and required_policy_groups were never
@@ -102,58 +106,6 @@ function claimsCompletion(text = "") {
 
 function anyToolSucceeded(transcript = []) {
   return transcript.some((entry) => entry.role === "tool" && entry.success === true);
-}
-
-/**
- * H1: translate the agentic planner's transcript shape
- * (`{role:"tool", name, success, observation, artifact_paths}`) into the
- * shape `validateSuccessContract` / `extractEvidence` expect
- * (`{type:"tool_result", tool, success, observation, artifact_paths}`).
- * tool_using already uses the validator shape natively; agentic kept
- * its own shape for adapter-replay compatibility, so the translation
- * lives at the validator seam rather than touching the planner's
- * internal state.
- */
-function transcriptForValidator(plannerTranscript = []) {
-  const out = [];
-  for (const entry of plannerTranscript) {
-    if (!entry || entry.role !== "tool") continue;
-    out.push({
-      type: "tool_result",
-      tool: entry.name,
-      success: entry.success,
-      observation: entry.observation ?? "",
-      // metadata is what evidence-normalizer reads (results[].url for
-      // web_search_fetch, url for fetch_url_content); preserve it
-      // through the translation.
-      metadata: entry.metadata ?? {},
-      artifact_paths: entry.artifact_paths ?? []
-    });
-  }
-  return out;
-}
-
-/**
- * J1: locally-mirrored substance check from tool_using/agent-loop's
- * `toolResultHasSubstance`. Used by the per-iteration error budget to
- * decide whether an external_web_read success "actually returned
- * something" — a 200-OK call with empty results still consumes the
- * empty_search_result budget. Kept as a local copy (small, stable)
- * rather than refactoring tool_using's private helper into a shared
- * module; matches the H1 transcriptForValidator pattern of putting
- * cross-executor parity logic at each executor's seam.
- */
-function agenticToolResultHasSubstance(result) {
-  if (!result || typeof result !== "object") return false;
-  if (Array.isArray(result.results) && result.results.length > 0) return true;
-  if (Array.isArray(result.sources) && result.sources.length > 0) return true;
-  if (typeof result.observation === "string" && result.observation.trim().length > 32) return true;
-  if (Array.isArray(result.metadata?.results) && result.metadata.results.length > 0) return true;
-  for (const value of Object.values(result)) {
-    if (Array.isArray(value) && value.length > 0) return true;
-    if (typeof value === "string" && value.trim().length > 32) return true;
-  }
-  return false;
 }
 
 /**
