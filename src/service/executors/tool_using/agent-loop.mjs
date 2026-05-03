@@ -24,7 +24,7 @@ import {
 import { renderBackgroundContextsBlock } from "../../core/intent/background-contexts.mjs";
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
-import { extractEvidence, detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
+import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
 import {
   actionObligationsWithStatus,
@@ -84,8 +84,7 @@ import {
 } from "./truthfulness-guard.mjs";
 import {
   inferSearchRecencyFromText,
-  resolveTaskMaxIterations,
-  shouldCheckSaturation
+  resolveTaskMaxIterations
 } from "./loop-policy.mjs";
 import {
   createPendingToolApproval,
@@ -112,6 +111,7 @@ import {
   planRedundantSideEffectGuard
 } from "./side-effect-gate.mjs";
 import { planScheduledFireRegistryGuard } from "./scheduled-fire-gate.mjs";
+import { planSaturationHint } from "./saturation-gate.mjs";
 
 export { shouldInjectRequiredActionGuidance } from "./action-guidance.mjs";
 
@@ -1375,27 +1375,23 @@ async function _runToolAgentLoopCore({
       }
     }
 
-    if (!saturationHintFired && shouldCheckSaturation(task)) {
-      const sat = detectSearchSaturation(transcript, 3);
-      if (sat.saturated) {
-        saturationHintFired = true;
-        transcript.push({
-          type: "saturation_hint",
-          window_size: sat.window_size,
-          repeated_domains: sat.repeated_domains
-        });
-        runtime.emitTaskEvent?.("saturation_hint", {
-          iteration,
-          window_size: sat.window_size,
-          repeated_domains: sat.repeated_domains,
-          baseline_domain_count: sat.baseline_domain_count
-        });
-        appendAuditLog(runtime, task, "tool_loop.saturation_hint", {
-          iteration,
-          window_size: sat.window_size,
-          repeated_domains: sat.repeated_domains
-        });
-      }
+    const saturationHint = planSaturationHint({
+      task,
+      transcript,
+      alreadyFired: saturationHintFired,
+      windowSize: 3
+    });
+    if (saturationHint) {
+      saturationHintFired = true;
+      transcript.push(saturationHint.transcriptEntry);
+      runtime.emitTaskEvent?.("saturation_hint", {
+        iteration,
+        ...saturationHint.eventPayload
+      });
+      appendAuditLog(runtime, task, "tool_loop.saturation_hint", {
+        iteration,
+        ...saturationHint.auditPayload
+      });
     }
 
     // P4-EB wire-up: charge the aggregate error budget. Skip the
