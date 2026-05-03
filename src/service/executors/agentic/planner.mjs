@@ -34,6 +34,11 @@ import { createProviderAdapter } from "./provider-adapter.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
+import {
+  inferSearchRecencyFromText,
+  resolveTaskMaxIterations,
+  shouldCheckSaturation
+} from "../shared/loop-policy.mjs";
 import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 import {
   agenticToolResultHasSubstance,
@@ -76,24 +81,6 @@ const DEFAULT_MAX_ITERATIONS = 8;
 // keeps the SSE bus from carrying every partial JSON token (e.g. for
 // arguments to search / lookup tools where a live preview is meaningless).
 const FILE_GEN_TOOLS = new Set(["write_file", "generate_document", "edit_file"]);
-
-function resolveTaskMaxIterations(task, fallback = DEFAULT_MAX_ITERATIONS) {
-  const configured = task?.task_spec?.execution_constraints?.max_iterations;
-  if (Number.isFinite(configured) && configured > 0) {
-    // execution_constraints is an exact per-task budget, not merely an
-    // upward override. This lets single_lookup cap a generic executor at 8
-    // while multi/deep research can opt into 12/16.
-    return Math.min(24, Math.max(1, Math.floor(configured)));
-  }
-  return fallback;
-}
-
-// Mirror of tool_using/agent-loop's shouldCheckSaturation: only fire the
-// saturation hint for tasks that expect multiple independent sources.
-function shouldCheckSaturation(task) {
-  const profile = task?.task_spec?.research_quality?.profile;
-  return profile === "multi_source_research" || profile === "deep_research";
-}
 
 const COMPLETION_CLAIM_PATTERNS = [
   /\b(?:done|finished|completed|saved|written|created|generated|launched|opened|executed|ran|published|sent)\b/i,
@@ -266,13 +253,6 @@ function buildUserMessage(task) {
 function taskNeedsCurrentWebData(task) {
   return Boolean(task?.task_spec?.needs_current_web_data)
     || task?.task_spec?.success_contract?.required_tool_names?.includes?.("web_search_fetch");
-}
-
-function inferPreflightSearchRecency(command = "") {
-  const text = String(command ?? "");
-  if (/(今天|今日|24\s*小时|today|breaking)/i.test(text)) return "day";
-  if (/(本周|一周|近\s*7\s*天|week|最新|最近|新闻|消息|动态|资讯|latest|recent|current|news)/i.test(text)) return "week";
-  return "month";
 }
 
 /**
@@ -612,7 +592,7 @@ export async function runAgenticPlanner({
       name: "web_search_fetch",
       arguments: {
         query: task.user_command ?? "",
-        recency: inferPreflightSearchRecency(task.user_command),
+        recency: inferSearchRecencyFromText(task.user_command, { recentBucket: "week", fallback: "month" }),
         limit: 6
       }
     };
