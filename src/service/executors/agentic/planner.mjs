@@ -33,8 +33,8 @@ import { buildAgenticSystemPrompt, isAudioNoteSingleMarkdownTask } from "./promp
 import { createProviderAdapter } from "./provider-adapter.mjs";
 import { finalizeAgenticPlannerRun } from "./finalization.mjs";
 import { executeAgenticToolCall } from "./tool-execution.mjs";
+import { buildAgenticUserMessage } from "./user-message.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
-import { formatUntrustedSourceMaterial } from "../shared/resource-context.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import {
   inferSearchRecencyFromText,
@@ -74,28 +74,6 @@ const DEFAULT_MAX_ITERATIONS = 8;
 // keeps the SSE bus from carrying every partial JSON token (e.g. for
 // arguments to search / lookup tools where a live preview is meaningless).
 const FILE_GEN_TOOLS = new Set(["write_file", "generate_document", "edit_file"]);
-
-function buildUserMessage(task) {
-  const parts = [];
-  parts.push(task.user_command ?? "(no user command)");
-
-  const filePaths = task.context_packet?.file_paths ?? [];
-  if (filePaths.length > 0) {
-    parts.push("");
-    parts.push(`Attached files:\n${filePaths.join("\n")}`);
-  }
-  // P4-00.5 trust split: ctx.text and ctx.url come from third-party pages
-  // / selections and may carry prompt-injection payloads. Wrap them in
-  // <untrusted_source> with a guard sentence so the LLM treats them as
-  // data, not policy. Block placement is the user role (this function's
-  // return) — never the system prompt.
-  const untrusted = formatUntrustedSourceMaterial(task);
-  if (untrusted) {
-    parts.push("");
-    parts.push(untrusted);
-  }
-  return parts.join("\n");
-}
 
 /**
  * Main entry point for the agentic planner.
@@ -313,7 +291,7 @@ export async function runAgenticPlanner({
     ].join("\n");
   }
 
-  const userContent = [buildUserMessage(task), preflightSearchText].filter(Boolean).join("\n\n---\n\n");
+  const userContent = [buildAgenticUserMessage(task), preflightSearchText].filter(Boolean).join("\n\n---\n\n");
   const modelContextWindow = provider?.model?.context_window
     ?? provider?.model?.context_length
     ?? provider?.context_window
