@@ -234,8 +234,8 @@ const expectedSurfaces = [
   surface("connector-routes.mjs", "DELETE", "/^\\/plugins\\/[^/]+$/", {
     domain: "plugins",
     effect: "plugin_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "plugin_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("connector-routes.mjs", "PATCH", "/^\\/connectors\\/accounts\\/(microsoft|google)\\/config$/", {
     domain: "connector_accounts",
@@ -258,8 +258,8 @@ const expectedSurfaces = [
   surface("connector-routes.mjs", "PATCH", "/^\\/plugins\\/[^/]+\\/enabled$/", {
     domain: "plugins",
     effect: "plugin_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "plugin_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("connector-routes.mjs", "POST", "/^\\/connectors\\/accounts\\/(microsoft|google)\\/auth\\/start$/", {
     domain: "connector_accounts",
@@ -282,14 +282,14 @@ const expectedSurfaces = [
   surface("connector-routes.mjs", "POST", "/plugins/install", {
     domain: "plugins",
     effect: "plugin_install",
-    boundary: "local_ui_pending_guard",
-    migration: "plugin_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("connector-routes.mjs", "POST", "/plugins/reload", {
     domain: "plugins",
     effect: "plugin_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "plugin_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
 
   surface("mcp-install-routes.mjs", "POST", "/config/mcp/install/plan", {

@@ -23,6 +23,7 @@ import {
 } from "../../connectors/core/account-registry.mjs";
 import { submitConnectorWorkflowTask } from "../../connectors/core/workflow-submission.mjs";
 import { sendJson, sendHtml, readJsonBody } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 
 async function sendConnectorReadToolResult(response, tool, args, dataKey, runtime) {
   const result = await tool.execute(args, { runtime });
@@ -121,6 +122,7 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
     }
 
     if (method === "POST" && url.pathname === "/plugins/install") {
+      if (!requireDesktopActor({ request, response })) return true;
       const body = await readJsonBody(request);
       try {
         const plugin = await runtime.pluginRegistry.install(body);
@@ -132,6 +134,7 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
     }
 
     if (method === "DELETE" && /^\/plugins\/[^/]+$/.test(url.pathname)) {
+      if (!requireDesktopActor({ request, response })) return true;
       const pluginId = decodeURIComponent(url.pathname.split("/")[2]);
       try {
         const removed = await runtime.pluginRegistry.uninstall(pluginId);
@@ -143,6 +146,7 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
     }
 
     if (method === "PATCH" && /^\/plugins\/[^/]+\/enabled$/.test(url.pathname)) {
+      if (!requireDesktopActor({ request, response })) return true;
       const pluginId = decodeURIComponent(url.pathname.split("/")[2]);
       const body = await readJsonBody(request);
       try {
@@ -155,6 +159,7 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
     }
 
     if (method === "POST" && url.pathname === "/plugins/reload") {
+      if (!requireDesktopActor({ request, response })) return true;
       runtime.pluginRegistry.reload();
       sendJson(response, 200, { ok: true, plugins: runtime.pluginRegistry.list() });
       return true;
