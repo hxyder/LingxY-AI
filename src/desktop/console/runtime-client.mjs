@@ -220,7 +220,8 @@ export function createConsoleRuntimeClient(serviceBaseUrl) {
       return fetchJson(`/schedules/${encodeURIComponent(scheduleId)}/runs`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "X-Lingxy-Desktop-Actor": "desktop_console"
         },
         body: JSON.stringify({
           triggerPayload

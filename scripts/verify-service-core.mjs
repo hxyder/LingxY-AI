@@ -18,6 +18,7 @@ const browserContextRouteSource = await readFile(new URL("../src/service/core/ht
 const officeRouteSource = await readFile(new URL("../src/service/core/http-routes/office-routes.mjs", import.meta.url), "utf8");
 const previewFileRouteSource = await readFile(new URL("../src/service/core/http-routes/preview-file-routes.mjs", import.meta.url), "utf8");
 const runtimeAdminRouteSource = await readFile(new URL("../src/service/core/http-routes/runtime-admin-routes.mjs", import.meta.url), "utf8");
+const schedulerTemplateRouteSource = await readFile(new URL("../src/service/core/http-routes/scheduler-template-routes.mjs", import.meta.url), "utf8");
 const mcpInstallRouteSource = await readFile(new URL("../src/service/core/http-routes/mcp-install-routes.mjs", import.meta.url), "utf8");
 const httpRouteGuardSource = await readFile(new URL("../src/service/core/http-route-guards.mjs", import.meta.url), "utf8");
 const mcpInstallExecutionSource = await readFile(new URL("../src/service/ai/mcp/install-execution.mjs", import.meta.url), "utf8");
@@ -196,6 +197,14 @@ if (!runtimeAdminRouteSource.includes('url.pathname === "/health"')
 }
 if ((runtimeAdminRouteSource.match(/requireDesktopActor/g) ?? []).length < 4) {
   throw new Error("Runtime admin mutation routes must require the shared desktop actor guard.");
+}
+if (!schedulerTemplateRouteSource.includes('url.pathname === "/schedules"')
+    || !schedulerTemplateRouteSource.includes('/^\\/schedules\\/([^/]+)$/')
+    || !schedulerTemplateRouteSource.includes('/^\\/schedules\\/([^/]+)\\/runs$/')) {
+  throw new Error("scheduler-template-routes.mjs must own schedule create/update/delete/run endpoints.");
+}
+if ((schedulerTemplateRouteSource.match(/requireDesktopActor/g) ?? []).length < 4) {
+  throw new Error("Schedule mutation routes must require the shared desktop actor guard.");
 }
 
 if (service.store.engine !== "sqlite") {

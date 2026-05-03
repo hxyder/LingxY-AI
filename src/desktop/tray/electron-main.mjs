@@ -139,6 +139,30 @@ function normalizeBudgetUpdatePayload(payload = {}) {
   return { limits };
 }
 
+function normalizeScheduleMutationPayload(payload = {}) {
+  return normalizePlainObject(payload) ?? {};
+}
+
+function normalizeScheduleId(id) {
+  return typeof id === "string" ? id.trim() : "";
+}
+
+function normalizeScheduleIdPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    id: normalizeScheduleId(source.id ?? source.scheduleId ?? source.schedule_id),
+    body: normalizePlainObject(source.body ?? source.patch ?? source.payload ?? source) ?? {}
+  };
+}
+
+function normalizeScheduleRunPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    id: normalizeScheduleId(source.id ?? source.scheduleId ?? source.schedule_id),
+    triggerPayload: normalizePlainObject(source.triggerPayload ?? source.trigger_payload ?? {}) ?? {}
+  };
+}
+
 async function requestDesktopServiceJson({
   base,
   pathname,
@@ -2063,6 +2087,92 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "budget_update_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.scheduleCreate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/schedules",
+            body: normalizeScheduleMutationPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "schedule_create_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.scheduleUpdate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const { id, body } = normalizeScheduleIdPayload(payload);
+        if (!id) {
+          return { ok: false, error: "schedule_id_required", message: "Schedule id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "PATCH",
+            actor,
+            pathname: `/schedules/${encodeURIComponent(id)}`,
+            body
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "schedule_update_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.scheduleDelete, async (event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const scheduleId = normalizeScheduleId(id);
+        if (!scheduleId) {
+          return { ok: false, error: "schedule_id_required", message: "Schedule id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "DELETE",
+            actor,
+            pathname: `/schedules/${encodeURIComponent(scheduleId)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "schedule_delete_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.scheduleRun, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const { id, triggerPayload } = normalizeScheduleRunPayload(payload);
+        if (!id) {
+          return { ok: false, error: "schedule_id_required", message: "Schedule id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            actor,
+            pathname: `/schedules/${encodeURIComponent(id)}/runs`,
+            body: { triggerPayload }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "schedule_run_failed",
             message: error?.message ?? String(error)
           };
         }

@@ -126,6 +126,24 @@ assert.ok(!/fetchJson\(\s*["'`]\/security\/state["'`]\s*,\s*\{\s*method:\s*["'`]
   "security settings: console must not POST /security/state directly");
 assert.ok(!/fetchJson\(\s*["'`]\/budget["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "budget settings: console must not POST /budget directly");
+assert.ok(/createSchedule/.test(consoleJs) && /window\.ucaShell\.createSchedule/.test(consoleJs),
+  "scheduler create: console must use desktop shell bridge");
+assert.ok(/updateSchedule/.test(consoleJs) && /window\.ucaShell\.updateSchedule/.test(consoleJs),
+  "scheduler update: console must use desktop shell bridge");
+assert.ok(/deleteSchedule/.test(consoleJs) && /window\.ucaShell\.deleteSchedule/.test(consoleJs),
+  "scheduler delete: console must use desktop shell bridge");
+assert.ok(/runScheduleNow/.test(consoleJs) && /window\.ucaShell\.runSchedule/.test(consoleJs),
+  "scheduler run-now: console must use desktop shell bridge");
+assert.ok(/createScheduleViaShell/.test(overlayJs) && /window\.ucaShell\.createSchedule/.test(overlayJs),
+  "scheduler create: overlay must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/schedules["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "scheduler create: console must not POST /schedules directly");
+assert.ok(!/fetchJson\(\s*["'`]\/schedules["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(overlayJs),
+  "scheduler create: overlay must not POST /schedules directly");
+assert.ok(!/fetchJson\(\s*`\/schedules\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`](PATCH|DELETE)/.test(consoleJs),
+  "scheduler mutation: console must not PATCH/DELETE /schedules/:id directly");
+assert.ok(!/fetchJson\(\s*`\/schedules\/\$\{encodeURIComponent\([^)]*\)\}\/runs`\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "scheduler run-now: console must not POST /schedules/:id/runs directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

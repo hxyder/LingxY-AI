@@ -401,8 +401,8 @@ const expectedSurfaces = [
   surface("scheduler-template-routes.mjs", "DELETE", "/^\\/schedules\\/([^/]+)$/", {
     domain: "scheduler",
     effect: "scheduler_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "scheduler_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("scheduler-template-routes.mjs", "DELETE", "/^\\/templates\\/([^/]+)$/", {
     domain: "templates",
@@ -413,8 +413,8 @@ const expectedSurfaces = [
   surface("scheduler-template-routes.mjs", "PATCH", "/^\\/schedules\\/([^/]+)$/", {
     domain: "scheduler",
     effect: "scheduler_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "scheduler_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("scheduler-template-routes.mjs", "POST", "/^\\/dag\\/executions\\/([^/]+)\\/resume$/", {
     domain: "dag",
@@ -425,8 +425,8 @@ const expectedSurfaces = [
   surface("scheduler-template-routes.mjs", "POST", "/^\\/schedules\\/([^/]+)\\/runs$/", {
     domain: "scheduler",
     effect: "manual_execution",
-    boundary: "local_ui_pending_guard",
-    migration: "scheduler_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("scheduler-template-routes.mjs", "POST", "/dag/preview", {
     domain: "dag",
@@ -437,8 +437,8 @@ const expectedSurfaces = [
   surface("scheduler-template-routes.mjs", "POST", "/schedules", {
     domain: "scheduler",
     effect: "scheduler_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "scheduler_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("scheduler-template-routes.mjs", "POST", "/templates", {
     domain: "templates",

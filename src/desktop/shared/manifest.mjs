@@ -57,7 +57,11 @@ export const IPC_CHANNELS = Object.freeze({
   approvalApprove: "uca:approval-approve",
   approvalReject: "uca:approval-reject",
   securityStateUpdate: "uca:security-state-update",
-  budgetUpdate: "uca:budget-update"
+  budgetUpdate: "uca:budget-update",
+  scheduleCreate: "uca:schedule-create",
+  scheduleUpdate: "uca:schedule-update",
+  scheduleDelete: "uca:schedule-delete",
+  scheduleRun: "uca:schedule-run"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

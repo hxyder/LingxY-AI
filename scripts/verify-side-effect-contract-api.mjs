@@ -59,7 +59,10 @@ async function fetchJson(url, opts = {}) {
 function json(method, body) {
   return {
     method,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Lingxy-Desktop-Actor": "desktop_console"
+    },
     body: JSON.stringify(body)
   };
 }

@@ -1928,6 +1928,16 @@ async function rejectApproval(approvalId, options = {}) {
   );
 }
 
+async function createScheduleViaShell(payload) {
+  if (typeof window.ucaShell?.createSchedule !== "function") {
+    throw new Error("Desktop schedule bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.createSchedule(payload),
+    "Could not create schedule."
+  );
+}
+
 async function surfaceApprovalPopup(approvalLike = {}, { taskId = null } = {}) {
   const approvalId = approvalIdOf(approvalLike);
   if (!approvalId || surfacedApprovalPopupIds.has(approvalId) || surfacingApprovalPopupIds.has(approvalId)) return;
@@ -4686,28 +4696,23 @@ scheduleSaveBtn?.addEventListener("click", async () => {
   scheduleSaveBtn.disabled = true;
   scheduleSaveBtn.textContent = "创建中...";
   try {
-    const result = await fetchJson("/schedules", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name,
-        trigger: {
-          type: "at",
-          run_at: runAt.toISOString(),
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC",
-          oneShot: true,
-          label: runAt.toLocaleString()
-        },
+    const result = await createScheduleViaShell({
+      name,
+      trigger: {
+        type: "at",
+        run_at: runAt.toISOString(),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC",
         oneShot: true,
-        title: name,
-        message: command,
-        userCommand: command,
-        executionMode: "interactive",
-        createdBy: "overlay-form",
-        category,
-        leadTimeMs,
-        userTodo: category === "reminder"
-      })
+        label: runAt.toLocaleString()
+      },
+      oneShot: true,
+      title: name,
+      message: command,
+      userCommand: command,
+      executionMode: "interactive",
+      category,
+      leadTimeMs,
+      userTodo: category === "reminder"
     });
     addBubble("assistant", `定时任务已创建：${name}\n下次触发：${result.schedule?.next_run_at ?? runAt.toLocaleString()}`);
     setPanelOpen(schedulePanel, false);
@@ -6644,23 +6649,18 @@ function isDirectScheduleIntentText(text = "") {
 async function createScheduleFromText(userText, trigger = parseScheduleTriggerFromText(userText)) {
   const name = userText.slice(0, 40);
   const scheduledAction = buildScheduleActionFromText(userText);
-  const result = await fetchJson("/schedules", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name,
-      trigger,
-      action: scheduledAction.action,
-      executionMode: scheduledAction.executionMode,
-      oneShot: Boolean(trigger.oneShot),
-      title: "UCA 提醒",
-      message: userText,
-      userCommand: userText,
-      createdBy: "overlay",
-      category: "reminder",
-      leadTimeMs: 0,
-      userTodo: true
-    })
+  const result = await createScheduleViaShell({
+    name,
+    trigger,
+    action: scheduledAction.action,
+    executionMode: scheduledAction.executionMode,
+    oneShot: Boolean(trigger.oneShot),
+    title: "UCA 提醒",
+    message: userText,
+    userCommand: userText,
+    category: "reminder",
+    leadTimeMs: 0,
+    userTodo: true
   });
   return result.schedule;
 }
@@ -6690,23 +6690,19 @@ function showScheduleConfirmCard(userText) {
     confirmBtn.disabled = true;
     confirmBtn.textContent = "创建中…";
     try {
-      const result = await fetchJson("/schedules", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name,
-          trigger,
-          action: buildScheduleActionFromText(userText).action,
-          executionMode: buildScheduleActionFromText(userText).executionMode,
-          oneShot: Boolean(trigger.oneShot),
-          title: "UCA 提醒",
-          message: userText,
-          userCommand: userText,
-          createdBy: "overlay",
-          category: "reminder",
-          leadTimeMs: 0,
-          userTodo: true
-        })
+      const scheduledAction = buildScheduleActionFromText(userText);
+      const result = await createScheduleViaShell({
+        name,
+        trigger,
+        action: scheduledAction.action,
+        executionMode: scheduledAction.executionMode,
+        oneShot: Boolean(trigger.oneShot),
+        title: "UCA 提醒",
+        message: userText,
+        userCommand: userText,
+        category: "reminder",
+        leadTimeMs: 0,
+        userTodo: true
       });
       const schedule = result.schedule;
       const timeInfo = result.timeInfo;

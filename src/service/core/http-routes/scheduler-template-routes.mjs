@@ -1,4 +1,5 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
+import { requireDesktopActor } from "../http-route-guards.mjs";
 import { resumeDagGraph, validateDagDefinition } from "../../dag/scheduler.mjs";
 import { normalizeTemplateDocument } from "../../templates/parser.mjs";
 import { validateTemplateDocument } from "../../templates/schema.mjs";
@@ -83,6 +84,8 @@ export async function tryHandleSchedulerTemplateRoute({ request, response, metho
   }
 
   if (method === "POST" && url.pathname === "/schedules") {
+    const actor = requireDesktopActor({ request, response });
+    if (!actor) return true;
     const body = await readJsonBody(request);
     try {
       const trigger = body.trigger?.natural_language
@@ -108,7 +111,7 @@ export async function tryHandleSchedulerTemplateRoute({ request, response, metho
           ...(body.metadata ?? {}),
           one_shot: Boolean(body.oneShot ?? body.one_shot ?? trigger.oneShot)
         }
-      }, { createdBy: body.createdBy ?? "overlay" });
+      }, { createdBy: actor });
 
       const now = new Date();
       let timeInfo = null;
@@ -134,6 +137,7 @@ export async function tryHandleSchedulerTemplateRoute({ request, response, metho
   }
 
   if (scheduleMatch && method === "DELETE") {
+    if (!requireDesktopActor({ request, response })) return true;
     const deleted = runtime.scheduler.deleteSchedule(scheduleMatch[1]);
     if (!deleted) {
       sendJson(response, 404, { error: "schedule_not_found" });
@@ -144,6 +148,7 @@ export async function tryHandleSchedulerTemplateRoute({ request, response, metho
   }
 
   if (scheduleMatch && method === "PATCH") {
+    if (!requireDesktopActor({ request, response })) return true;
     const body = await readJsonBody(request);
     const scheduleId = scheduleMatch[1];
     let schedule = null;
@@ -266,6 +271,7 @@ export async function tryHandleSchedulerTemplateRoute({ request, response, metho
   }
 
   if (scheduleRunsMatch && method === "POST") {
+    if (!requireDesktopActor({ request, response })) return true;
     const body = await readJsonBody(request);
     const result = await runtime.scheduler.dispatch(scheduleRunsMatch[1], "manual", body.triggerPayload ?? {});
     if (!result) {

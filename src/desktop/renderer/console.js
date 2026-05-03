@@ -1051,20 +1051,15 @@ async function createScheduleFromConsole() {
   const scheduledAction = buildScheduleActionFromText(commandText);
   scheduleCreateState.textContent = "Creating...";
   try {
-    const result = await fetchJson("/schedules", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: commandText.slice(0, 40),
-        trigger,
-        action: scheduledAction.action,
-        executionMode: scheduledAction.executionMode,
-        oneShot: Boolean(trigger.oneShot),
-        title: "UCA 提醒",
-        message: commandText,
-        userCommand: commandText,
-        createdBy: "desktop_console"
-      })
+    const result = await createSchedule({
+      name: commandText.slice(0, 40),
+      trigger,
+      action: scheduledAction.action,
+      executionMode: scheduledAction.executionMode,
+      oneShot: Boolean(trigger.oneShot),
+      title: "UCA 提醒",
+      message: commandText,
+      userCommand: commandText
     });
     scheduleCreateState.textContent = `Created · next ${formatDateTime(result.schedule?.next_run_at)}`;
     // Reset the picker by re-rendering it
@@ -4691,11 +4686,7 @@ function handleScheduleRowEdit(scheduleId, anchorBtn) {
     saveBtn.disabled = true;
     saveBtn.textContent = "保存中…";
     try {
-      await fetchJson(`/schedules/${encodeURIComponent(scheduleId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch)
-      });
+      await updateSchedule(scheduleId, patch);
       const labels = [];
       if (patch.name) labels.push("名称");
       if (patch.userCommand) labels.push("执行内容");
@@ -4834,11 +4825,7 @@ function renderSchedules() {
       btn.disabled = true;
       btn.textContent = "Running...";
       try {
-        const result = await fetchJson(`/schedules/${encodeURIComponent(btn.dataset.runScheduleId)}/runs`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ triggerPayload: { source: "desktop_console", bypassDedupe: true } })
-        });
+        const result = await runScheduleNow(btn.dataset.runScheduleId, { source: "desktop_console", bypassDedupe: true });
         watchScheduleRunTask(result?.task ?? null);
         if (result?.status === "pending_approval") {
           try {
@@ -4862,18 +4849,14 @@ function renderSchedules() {
 
   for (const input of scheduleList.querySelectorAll("[data-toggle-schedule-id]")) {
     input.addEventListener("click", async () => {
-      await fetchJson(`/schedules/${encodeURIComponent(input.dataset.toggleScheduleId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: input.dataset.enabled === "true" })
-      });
+      await updateSchedule(input.dataset.toggleScheduleId, { enabled: input.dataset.enabled === "true" });
       await refreshWorkspace();
     });
   }
 
   for (const btn of scheduleList.querySelectorAll("[data-delete-schedule-id]")) {
     btn.addEventListener("click", async () => {
-      await fetchJson(`/schedules/${encodeURIComponent(btn.dataset.deleteScheduleId)}`, { method: "DELETE" });
+      await deleteSchedule(btn.dataset.deleteScheduleId);
       await refreshWorkspace();
     });
   }
@@ -6344,6 +6327,46 @@ function assertShellResult(result, fallback) {
     throw new Error(result.message ?? result.error ?? fallback);
   }
   return result ?? {};
+}
+
+async function createSchedule(payload) {
+  if (typeof window.ucaShell?.createSchedule !== "function") {
+    throw new Error("Desktop schedule bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.createSchedule(payload),
+    "Could not create schedule."
+  );
+}
+
+async function updateSchedule(scheduleId, patch) {
+  if (typeof window.ucaShell?.updateSchedule !== "function") {
+    throw new Error("Desktop schedule bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.updateSchedule({ scheduleId, patch }),
+    "Could not update schedule."
+  );
+}
+
+async function deleteSchedule(scheduleId) {
+  if (typeof window.ucaShell?.deleteSchedule !== "function") {
+    throw new Error("Desktop schedule bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteSchedule(scheduleId),
+    "Could not delete schedule."
+  );
+}
+
+async function runScheduleNow(scheduleId, triggerPayload = {}) {
+  if (typeof window.ucaShell?.runSchedule !== "function") {
+    throw new Error("Desktop schedule bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.runSchedule({ scheduleId, triggerPayload }),
+    "Could not run schedule."
+  );
 }
 
 async function saveMcpServer(server) {

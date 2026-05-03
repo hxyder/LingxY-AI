@@ -277,6 +277,18 @@ contextBridge.exposeInMainWorld("ucaShell", {
   updateBudget(payload) {
     return ipcRenderer.invoke("uca:budget-update", payload ?? {});
   },
+  createSchedule(payload) {
+    return ipcRenderer.invoke("uca:schedule-create", payload ?? {});
+  },
+  updateSchedule(payload) {
+    return ipcRenderer.invoke("uca:schedule-update", payload ?? {});
+  },
+  deleteSchedule(id) {
+    return ipcRenderer.invoke("uca:schedule-delete", id ?? "");
+  },
+  runSchedule(payload) {
+    return ipcRenderer.invoke("uca:schedule-run", payload ?? {});
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

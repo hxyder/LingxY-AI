@@ -79,6 +79,65 @@ assert.equal(securityPatchResponse.ok, true);
 const securityPayload = await securityPatchResponse.json();
 assert.equal(securityPayload.security.offline_mode, true);
 
+const scheduleWithoutActorResponse = await fetch(`${listening.baseUrl}/schedules`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    name: "unguarded schedule",
+    trigger: { type: "interval", seconds: 60 },
+    message: "should not be created"
+  })
+});
+assert.equal(scheduleWithoutActorResponse.status, 403);
+
+const scheduleCreateResponse = await fetch(`${listening.baseUrl}/schedules`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Lingxy-Desktop-Actor": "desktop_console"
+  },
+  body: JSON.stringify({
+    name: "runtime schedule",
+    trigger: { type: "interval", seconds: 60 },
+    message: "runtime smoke reminder",
+    oneShot: true
+  })
+});
+assert.equal(scheduleCreateResponse.ok, true);
+const scheduleCreatePayload = await scheduleCreateResponse.json();
+const scheduleId = scheduleCreatePayload.schedule.schedule_id;
+assert.equal(scheduleCreatePayload.schedule.created_by, "desktop_console");
+
+const schedulePatchResponse = await fetch(`${listening.baseUrl}/schedules/${encodeURIComponent(scheduleId)}`, {
+  method: "PATCH",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Lingxy-Desktop-Actor": "desktop_console"
+  },
+  body: JSON.stringify({ name: "runtime schedule updated" })
+});
+assert.equal(schedulePatchResponse.ok, true);
+
+const scheduleRunResponse = await fetch(`${listening.baseUrl}/schedules/${encodeURIComponent(scheduleId)}/runs`, {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "X-Lingxy-Desktop-Actor": "desktop_console"
+  },
+  body: JSON.stringify({ triggerPayload: { source: "verify-runtime-wiring" } })
+});
+assert.equal(scheduleRunResponse.ok, true);
+
+const scheduleDeleteResponse = await fetch(`${listening.baseUrl}/schedules/${encodeURIComponent(scheduleId)}`, {
+  method: "DELETE",
+  headers: {
+    "X-Lingxy-Desktop-Actor": "desktop_console"
+  }
+});
+assert.equal(scheduleDeleteResponse.ok, true);
+
 const providerCreateResponse = await fetch(`${listening.baseUrl}/config/providers`, {
   method: "POST",
   headers: {
@@ -105,7 +164,7 @@ assert.equal(modelOptionsPayload.option.reasoningEfforts.some((effort) => effort
 const listResponse = await fetch(`${listening.baseUrl}/tasks`);
 assert.equal(listResponse.ok, true);
 const listPayload = await listResponse.json();
-assert.equal(listPayload.tasks.length, 1);
+assert.equal(listPayload.tasks.length >= 1, true);
 
 await runtime.stop();
 
