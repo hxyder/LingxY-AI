@@ -9,6 +9,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 const routeDir = path.join(repoRoot, "src", "service", "core", "http-routes");
 
 const ALLOWED_BOUNDARIES = new Set([
+  "audio_session_guard_pending",
   "guarded_desktop_actor",
   "read_probe_no_guard",
   "task_entrypoint",
@@ -51,20 +52,20 @@ const expectedSurfaces = [
   surface("audio-routes.mjs", "POST", "/echo/enroll-keyword", {
     domain: "audio",
     effect: "local_audio_training",
-    boundary: "local_ui_pending_guard",
-    migration: "audio_bridge_review"
+    boundary: "audio_session_guard_pending",
+    migration: "needs_stream_safe_audio_authorization"
   }),
   surface("audio-routes.mjs", "POST", "/echo/kws", {
     domain: "audio",
     effect: "local_audio_processing",
-    boundary: "local_ui_pending_guard",
-    migration: "audio_bridge_review"
+    boundary: "audio_session_guard_pending",
+    migration: "needs_stream_safe_audio_authorization"
   }),
   surface("audio-routes.mjs", "POST", "/note/transcribe", {
     domain: "audio",
     effect: "local_file_processing",
-    boundary: "local_ui_pending_guard",
-    migration: "audio_bridge_review"
+    boundary: "audio_session_guard_pending",
+    migration: "needs_stream_safe_audio_authorization"
   }),
 
   surface("browser-context-routes.mjs", "DELETE", "/location", {
