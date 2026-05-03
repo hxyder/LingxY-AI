@@ -242,11 +242,11 @@ await writeConfig({
         kind: "anthropic",
         baseUrl: "https://api.anthropic.com",
         apiKey: "sk-ant-test",
-        defaultModel: "claude-sonnet-4-20250514"
+        defaultModel: "claude-sonnet-4-6"
       }
     ],
     taskRouting: {
-      chat: { providerId: "claude", model: "claude-sonnet-4-20250514", mode: "default" }
+      chat: { providerId: "claude", model: "claude-sonnet-4-6", mode: "default" }
     }
   }
 });
@@ -289,7 +289,7 @@ await writeConfig({
   });
   assert.equal(capturedUrl, "https://api.anthropic.com/v1/messages");
   assert.equal(capturedApiKeyHeader, "sk-ant-test");
-  assert.equal(capturedBody.model, "claude-sonnet-4-20250514");
+  assert.equal(capturedBody.model, "claude-sonnet-4-6");
   assert.equal(capturedBody.system, "You are UCA.");
   assert.equal(capturedBody.messages[0].content, "say hello");
   assert.equal(result.text, "hello from claude");
@@ -368,9 +368,9 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "claude", name: "Claude", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-2", defaultModel: "claude-sonnet-4-20250514" }
+        { id: "claude", name: "Claude", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-2", defaultModel: "claude-sonnet-4-6" }
       ],
-      taskRouting: { chat: { providerId: "claude", model: "claude-sonnet-4-20250514", mode: "default" } }
+      taskRouting: { chat: { providerId: "claude", model: "claude-sonnet-4-6", mode: "default" } }
     }
   });
   provider = resolveProviderForTask("chat");
@@ -386,11 +386,11 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-20250514" },
+        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-6" },
         { id: "router", name: "Router Model", kind: "openai", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-router", defaultModel: "deepseek-v4-flash" }
       ],
       taskRouting: {
-        chat: { providerId: "qa", model: "claude-sonnet-4-20250514", mode: "default" }
+        chat: { providerId: "qa", model: "claude-sonnet-4-6", mode: "default" }
       }
     }
   });
@@ -402,11 +402,11 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-20250514" },
+        { id: "qa", name: "QA Model", kind: "anthropic", baseUrl: "https://api.anthropic.com", apiKey: "sk-qa", defaultModel: "claude-sonnet-4-6" },
         { id: "router", name: "Router Model", kind: "openai", baseUrl: "https://api.deepseek.com/v1", apiKey: "sk-router", defaultModel: "deepseek-v4-flash" }
       ],
       taskRouting: {
-        chat: { providerId: "qa", model: "claude-sonnet-4-20250514", mode: "default" },
+        chat: { providerId: "qa", model: "claude-sonnet-4-6", mode: "default" },
         router: { providerId: "router", model: "deepseek-v4-flash", mode: "default" }
       }
     }
@@ -426,11 +426,11 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-5-mini", embeddingModel: "text-embedding-3-large" },
+        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-5.4-mini", embeddingModel: "text-embedding-3-large" },
         { id: "embed", name: "Embedding Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-embed", defaultModel: "text-embedding-3-small" }
       ],
       taskRouting: {
-        chat: { providerId: "qa", model: "gpt-5-mini", mode: "default" }
+        chat: { providerId: "qa", model: "gpt-5.4-mini", mode: "default" }
       }
     }
   });
@@ -442,11 +442,11 @@ await writeConfig({
   await writeConfig({
     ai: {
       customProviders: [
-        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-5-mini" },
+        { id: "qa", name: "QA Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-qa", defaultModel: "gpt-5.4-mini" },
         { id: "embed", name: "Embedding Model", kind: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "sk-embed", defaultModel: "text-embedding-3-small" }
       ],
       taskRouting: {
-        chat: { providerId: "qa", model: "gpt-5-mini", mode: "default" },
+        chat: { providerId: "qa", model: "gpt-5.4-mini", mode: "default" },
         embedding: { providerId: "embed", model: "text-embedding-3-small", mode: "default" }
       }
     }

@@ -53,6 +53,10 @@ export function normalizeCodexReasoningEffort(value = "") {
 function normalizeKnownDisplayModel(value = "") {
   const model = `${value ?? ""}`.trim();
   const lookup = new Map([
+    ["gpt-5.5", "gpt-5.5"],
+    ["gpt-5.4", "gpt-5.4"],
+    ["gpt-5.4 mini", "gpt-5.4-mini"],
+    ["gpt-5.4 nano", "gpt-5.4-nano"],
     ["gpt-5", "gpt-5"],
     ["gpt-5.2", "gpt-5.2"],
     ["gpt-5.2 codex", "gpt-5.2-codex"],
@@ -88,7 +92,8 @@ export function normalizeCodeCliModel({ command = "", model = "" } = {}) {
   if (family === "claude") {
     normalized = normalized
       .replace(/^claude-(sonnet|opus|haiku)-4-5-\d{8}$/i, "claude-$1-4-5")
-      .replace(/^claude-(sonnet|opus|haiku)-4-6-\d{8}$/i, "claude-$1-4-6");
+      .replace(/^claude-(sonnet|opus|haiku)-4-6-\d{8}$/i, "claude-$1-4-6")
+      .replace(/^claude-(sonnet|opus|haiku)-4-7-\d{8}$/i, "claude-$1-4-7");
   }
 
   return normalized;

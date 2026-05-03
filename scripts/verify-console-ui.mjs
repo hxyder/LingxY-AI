@@ -39,8 +39,8 @@ const tasks = [
     retry_count: 1,
     retryable: true,
     executor: "fast",
-    provider_id: "openai.gpt-5-mini",
-    model_id: "gpt-5-mini",
+    provider_id: "openai.gpt-5.4-mini",
+    model_id: "gpt-5.4-mini",
     cost_usd: 0.012,
     usage_summary: {
       tokens_in: 1200,
@@ -81,8 +81,8 @@ const consoleVm = createConsoleViewModel({
   ],
   providers: [
     {
-      id: "openai.gpt-5-mini",
-      displayName: "OpenAI GPT-5 Mini",
+      id: "openai.gpt-5.4-mini",
+      displayName: "OpenAI GPT-5.4 Mini",
       available: true,
       configured: true
     }
@@ -130,7 +130,7 @@ const detailVm = buildTaskDetailViewModel(tasks[1], [
   }
 ], []);
 
-assert.equal(detailVm.provider, "openai.gpt-5-mini");
+assert.equal(detailVm.provider, "openai.gpt-5.4-mini");
 assert.equal(detailVm.cost.usd, 0.012);
 assert.equal(detailVm.canRetry, true);
 assert.equal(detailVm.canCancel, false);

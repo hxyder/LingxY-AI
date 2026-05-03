@@ -1,9 +1,7 @@
 """Disambiguation rules for the launcher.
 
 Given a candidate list (from :mod:`matcher`), pick the best one or escalate
-to "ask the user" when no rule produces a confident decision. The order
-matches the strategy documented in
-``phases/tasks/83_polish_launcher_cards_notifications.md`` §4.3.
+to "ask the user" when no rule produces a confident decision.
 """
 from __future__ import annotations
 

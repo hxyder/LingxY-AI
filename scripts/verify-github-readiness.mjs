@@ -22,6 +22,7 @@ function gitTrackedFiles() {
 
 const requiredPublicFiles = [
   ".gitignore",
+  "LICENSE",
   "README.md",
   "package.json",
   "package-lock.json",
@@ -43,6 +44,8 @@ for (const relativePath of requiredPublicFiles) {
 const forbiddenTrackedPathRules = [
   [/^\.env(?:\.|$)/u, "environment files must not be tracked"],
   [/^\.claude\/settings\.local\.json$/u, "local Claude settings must not be tracked"],
+  [/^internal\//u, "internal planning/audit files must not be tracked"],
+  [/^phases\//u, "phase/task planning docs must live under local internal/ before public push"],
   [/^models\//u, "local model/enrollment data must not be tracked"],
   [/^(?:dist|build|coverage|node_modules)\//u, "generated build output/dependencies must not be tracked"],
   [/^(?:logs|artifacts|outputs|tmp|temp|\.tmp|\.cache)\//u, "runtime output must not be tracked"],
@@ -101,17 +104,12 @@ for (const file of tracked) {
 
 assert.deepEqual(secretHits, [], `potential secrets in tracked files:\n${secretHits.join("\n")}`);
 
-const warnings = [];
-if (!existsSync(repoPath("LICENSE")) && !existsSync(repoPath("LICENCE"))) {
-  warnings.push("No root LICENSE/LICENCE file found. Choose a license before making the repository public/open-source.");
-}
-
 const pkg = JSON.parse(readFileSync(repoPath("package.json"), "utf8"));
+assert.equal(pkg.license, "MIT", "package.json license must match root LICENSE");
+
+const warnings = [];
 if (pkg.private !== true) {
   warnings.push("package.json private=true is recommended unless npm publication is intentional.");
-}
-if (!pkg.license) {
-  warnings.push("package.json has no license field. Match it to the eventual root LICENSE decision.");
 }
 
 const rootReviewMarkdown = tracked.filter((file) =>
@@ -121,11 +119,6 @@ const rootReviewMarkdown = tracked.filter((file) =>
 );
 if (rootReviewMarkdown.length > 0) {
   warnings.push(`Tracked root Markdown docs need manual public review: ${rootReviewMarkdown.join(", ")}`);
-}
-
-const phasePlanDocs = tracked.filter((file) => file.startsWith("phases/") && /\.md$/iu.test(file));
-if (phasePlanDocs.length > 0) {
-  warnings.push(`Tracked phase/task planning docs need manual public review before a public push: ${phasePlanDocs.length} files under phases/`);
 }
 
 console.log("GitHub readiness verification passed.");

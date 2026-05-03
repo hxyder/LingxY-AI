@@ -14,19 +14,19 @@ import {
 
 test("provider catalog exposes current official OpenAI defaults and Chat body shape", () => {
   const provider = { id: "openai", kind: "openai", baseUrl: "https://api.openai.com/v1" };
-  assert.equal(BUILTIN_API_TEMPLATES.find((entry) => entry.id === "openai")?.defaultModel, "gpt-5-mini");
-  assert.equal(catalogDefaultModelForProvider(provider, "chat"), "gpt-5-mini");
+  assert.equal(BUILTIN_API_TEMPLATES.find((entry) => entry.id === "openai")?.defaultModel, "gpt-5.4-mini");
+  assert.equal(catalogDefaultModelForProvider(provider, "chat"), "gpt-5.4-mini");
 
   const presets = providerModelPresets(provider, "chat");
-  assert.ok(presets.includes("gpt-5.2"));
-  assert.ok(presets.includes("gpt-5.2-pro"));
-  assert.ok(presets.includes("gpt-5-mini"));
-  assert.equal(presets.includes("gpt-5.4"), false);
-  assert.equal(presets.includes("gpt-5.5"), false);
+  assert.ok(presets.includes("gpt-5.5"));
+  assert.ok(presets.includes("gpt-5.4"));
+  assert.ok(presets.includes("gpt-5.4-mini"));
+  assert.equal(presets.includes("gpt-5.2-pro"), false);
+  assert.equal(presets.includes("gpt-5-mini"), false);
 
   const body = buildOpenAIChatCompletionBody({
     provider,
-    model: "gpt-5.2",
+    model: "gpt-5.5",
     messages: [
       { role: "system", content: "Follow instructions." },
       { role: "user", content: "Hi" }
@@ -66,11 +66,12 @@ test("DeepSeek catalog prefers v4 while preserving documented compatibility alia
 });
 
 test("major provider presets use public model ids instead of stale local guesses", () => {
-  assert.ok(providerModelPresets({ kind: "anthropic", baseUrl: "https://api.anthropic.com" }, "chat").includes("claude-sonnet-4-20250514"));
-  assert.equal(providerModelPresets({ kind: "anthropic", baseUrl: "https://api.anthropic.com" }, "chat").includes("claude-sonnet-4-6"), false);
+  assert.ok(providerModelPresets({ kind: "anthropic", baseUrl: "https://api.anthropic.com" }, "chat").includes("claude-sonnet-4-6"));
+  assert.ok(providerModelPresets({ kind: "anthropic", baseUrl: "https://api.anthropic.com" }, "chat").includes("claude-opus-4-7"));
+  assert.equal(providerModelPresets({ kind: "anthropic", baseUrl: "https://api.anthropic.com" }, "chat").includes("claude-sonnet-4-20250514"), false);
 
-  assert.ok(providerModelPresets({ kind: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" }, "chat").includes("gemini-3-pro-preview"));
+  assert.ok(providerModelPresets({ kind: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai" }, "chat").includes("gemini-3.1-pro-preview"));
   assert.ok(providerModelPresets({ kind: "openai", baseUrl: "https://api.moonshot.cn/v1" }, "chat").includes("kimi-k2.6"));
-  assert.ok(providerModelPresets({ kind: "openai", baseUrl: "https://api.x.ai/v1" }, "chat").includes("grok-4.20-reasoning"));
-  assert.ok(providerModelPresets({ kind: "openai", baseUrl: "https://api.mistral.ai/v1" }, "chat").includes("mistral-large-latest"));
+  assert.ok(providerModelPresets({ kind: "openai", baseUrl: "https://api.x.ai/v1" }, "chat").includes("grok-4.3"));
+  assert.ok(providerModelPresets({ kind: "openai", baseUrl: "https://api.mistral.ai/v1" }, "chat").includes("mistral-medium-3-5"));
 });

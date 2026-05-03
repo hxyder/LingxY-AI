@@ -207,7 +207,7 @@ export function resolveProviderForTask(taskType, env = process.env) {
       kind: "anthropic",
       apiKey: anthropicKey,
       baseUrl: env.ANTHROPIC_BASE_URL ?? "https://api.anthropic.com",
-      model: (taskType === "vision" ? env.UCA_VISION_MODEL : env.UCA_FAST_MODEL) ?? "claude-sonnet-4-20250514",
+      model: (taskType === "vision" ? env.UCA_VISION_MODEL : env.UCA_FAST_MODEL) ?? "claude-sonnet-4-6",
       providerName: "Anthropic (env)"
     };
   }
@@ -220,7 +220,7 @@ export function resolveProviderForTask(taskType, env = process.env) {
       kind: "openai",
       apiKey: openaiKey,
       baseUrl: env.OPENAI_BASE_URL ?? "https://api.openai.com/v1",
-      model: (taskType === "vision" ? env.UCA_VISION_MODEL : env.UCA_FAST_MODEL) ?? "gpt-5-mini",
+      model: (taskType === "vision" ? env.UCA_VISION_MODEL : env.UCA_FAST_MODEL) ?? "gpt-5.4-mini",
       embeddingModel: env.UCA_EMBEDDING_MODEL ?? "text-embedding-3-small",
       providerName: "OpenAI (env)"
     };
@@ -256,8 +256,8 @@ export function resolveProviderForTask(taskType, env = process.env) {
 }
 
 function getDefaultModelForKind(kind, taskType) {
-  if (kind === "anthropic") return "claude-sonnet-4-20250514";
-  if (kind === "openai") return taskType === "vision" ? "gpt-5-mini" : "gpt-5-mini";
+  if (kind === "anthropic") return "claude-sonnet-4-6";
+  if (kind === "openai") return taskType === "vision" ? "gpt-5.4-mini" : "gpt-5.4-mini";
   if (kind === "ollama") return "llama3.2";
   return "";
 }

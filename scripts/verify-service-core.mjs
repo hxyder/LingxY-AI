@@ -587,9 +587,9 @@ const anthropicProvider = {
   id: "claude",
   name: "Claude",
   kind: "anthropic",
-  defaultModel: "claude-sonnet-4-20250514"
+  defaultModel: "claude-sonnet-4-6"
 };
-if (resolveRoutedModel(anthropicProvider, { model: "claude-sonnet-4-20250514", mode: "fast" }, "chat") !== "claude-3-5-haiku-20241022") {
+if (resolveRoutedModel(anthropicProvider, { model: "claude-sonnet-4-6", mode: "fast" }, "chat") !== "claude-haiku-4-5") {
   throw new Error("Anthropic mode routing did not resolve fast model.");
 }
 
@@ -636,7 +636,7 @@ if (descriptorOfCli?.transport !== "subprocess"
 // The agentic provider adapter must at least instantiate for all 4 kinds
 // without throwing; commit 2 will exercise generate() more thoroughly.
 for (const stubResolved of [
-  { id: "openai", configId: "test", kind: "openai", model: "gpt-5-mini", apiKey: "x", baseUrl: "https://example/v1", providerName: "OpenAI" },
+  { id: "openai", configId: "test", kind: "openai", model: "gpt-5.4-mini", apiKey: "x", baseUrl: "https://example/v1", providerName: "OpenAI" },
   { id: "anthropic", configId: "test", kind: "anthropic", model: "claude-sonnet", apiKey: "x", baseUrl: "https://example", providerName: "Claude" },
   { id: "ollama", configId: "test", kind: "ollama", model: "llama3.2", baseUrl: "http://localhost", providerName: "Ollama" },
   { id: "code_cli", configId: "test", kind: "code_cli", model: "kimi-k2.6", command: "kimi.exe", providerName: "Kimi CLI" }

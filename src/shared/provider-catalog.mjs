@@ -1,6 +1,6 @@
 export const BUILTIN_API_TEMPLATES = Object.freeze([
-  { id: "anthropic", label: "Anthropic", kind: "anthropic", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-20250514" },
-  { id: "openai", label: "OpenAI", kind: "openai", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-5-mini" },
+  { id: "anthropic", label: "Anthropic", kind: "anthropic", baseUrl: "https://api.anthropic.com", defaultModel: "claude-sonnet-4-6" },
+  { id: "openai", label: "OpenAI", kind: "openai", baseUrl: "https://api.openai.com/v1", defaultModel: "gpt-5.4-mini" },
   { id: "deepseek", label: "DeepSeek", kind: "openai", baseUrl: "https://api.deepseek.com/v1", defaultModel: "deepseek-v4-flash" },
   { id: "doubao", label: "豆包 (火山方舟 Ark)", kind: "openai", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", defaultModel: "doubao-seed-2-0-lite-260215" },
   { id: "moonshot", label: "Moonshot (Kimi)", kind: "openai", baseUrl: "https://api.moonshot.cn/v1", defaultModel: "kimi-k2.6" },
@@ -8,12 +8,12 @@ export const BUILTIN_API_TEMPLATES = Object.freeze([
   { id: "zhipu", label: "Zhipu (GLM)", kind: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4", defaultModel: "glm-4-plus" },
   { id: "minimax", label: "MiniMax", kind: "openai", baseUrl: "https://api.minimax.chat/v1", defaultModel: "abab6.5s-chat" },
   { id: "siliconflow", label: "SiliconFlow", kind: "openai", baseUrl: "https://api.siliconflow.cn/v1", defaultModel: "Qwen/Qwen2.5-72B-Instruct" },
-  { id: "xai", label: "xAI (Grok)", kind: "openai", baseUrl: "https://api.x.ai/v1", defaultModel: "grok-4.20-reasoning" },
+  { id: "xai", label: "xAI (Grok)", kind: "openai", baseUrl: "https://api.x.ai/v1", defaultModel: "grok-4.3" },
   { id: "openrouter", label: "OpenRouter", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", defaultModel: "openrouter/auto" },
   { id: "groq", label: "Groq", kind: "openai", baseUrl: "https://api.groq.com/openai/v1", defaultModel: "llama-3.3-70b-versatile" },
   { id: "together", label: "Together AI", kind: "openai", baseUrl: "https://api.together.xyz/v1", defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
   { id: "fireworks", label: "Fireworks", kind: "openai", baseUrl: "https://api.fireworks.ai/inference/v1", defaultModel: "accounts/fireworks/models/llama-v3p3-70b-instruct" },
-  { id: "mistral", label: "Mistral", kind: "openai", baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral-large-latest" },
+  { id: "mistral", label: "Mistral", kind: "openai", baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral-medium-3-5" },
   { id: "gemini", label: "Google Gemini", kind: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModel: "gemini-2.5-flash" },
   { id: "ollama", label: "Ollama (local)", kind: "ollama", baseUrl: "http://127.0.0.1:11434", defaultModel: "llama3.2" }
 ]);
@@ -156,13 +156,13 @@ export function catalogDefaultModelForProvider(provider = {}, taskType = "chat")
   if (taskType === "embedding" && family === "openai") return "text-embedding-3-small";
   if (taskType === "embedding" && family !== "openai") return "";
   if (taskType === "vision") {
-    if (family === "anthropic") return "claude-sonnet-4-20250514";
-    if (family === "openai") return "gpt-5-mini";
+    if (family === "anthropic") return "claude-sonnet-4-6";
+    if (family === "openai") return "gpt-5.4-mini";
   }
 
   switch (family) {
-    case "anthropic": return "claude-sonnet-4-20250514";
-    case "openai": return "gpt-5-mini";
+    case "anthropic": return "claude-sonnet-4-6";
+    case "openai": return "gpt-5.4-mini";
     case "deepseek": return "deepseek-v4-flash";
     case "doubao": return "doubao-seed-2-0-lite-260215";
     case "moonshot": return "kimi-k2.6";
@@ -170,12 +170,12 @@ export function catalogDefaultModelForProvider(provider = {}, taskType = "chat")
     case "zhipu": return "glm-4-plus";
     case "minimax": return "abab6.5s-chat";
     case "siliconflow": return "Qwen/Qwen2.5-72B-Instruct";
-    case "xai": return "grok-4.20-reasoning";
+    case "xai": return "grok-4.3";
     case "openrouter": return "openrouter/auto";
     case "groq": return "llama-3.3-70b-versatile";
     case "together": return "meta-llama/Llama-3.3-70B-Instruct-Turbo";
     case "fireworks": return "accounts/fireworks/models/llama-v3p3-70b-instruct";
-    case "mistral": return "mistral-large-latest";
+    case "mistral": return "mistral-medium-3-5";
     case "gemini": return "gemini-2.5-flash";
     case "ollama": return "llama3.2";
     case "codex_cli":
@@ -223,17 +223,17 @@ export function codeCliModelChoices(provider = {}) {
     case "kimi_cli":
       return [cliManaged, ...preferredChoice, { id: "kimi-code/kimi-for-coding", label: "Kimi Code" }, { id: "kimi-k2.6", label: "Kimi K2.6" }, { id: "kimi-k2.5", label: "Kimi K2.5" }, { id: "kimi-k2-turbo-preview", label: "Kimi K2 Turbo" }, { id: "kimi-k2-thinking", label: "Kimi K2 Thinking" }, { id: "moonshot-v1-128k", label: "Moonshot 128K" }];
     case "codex_cli":
-      return [cliManaged, ...preferredChoice, { id: "gpt-5.2-codex", label: "GPT-5.2-Codex" }, { id: "gpt-5.1-codex-max", label: "GPT-5.1-Codex-Max" }, { id: "gpt-5.1-codex-mini", label: "GPT-5.1-Codex-Mini" }, { id: "gpt-5.2", label: "GPT-5.2" }, { id: "gpt-5-mini", label: "GPT-5 Mini" }, { id: "gpt-5-nano", label: "GPT-5 Nano" }];
+      return [cliManaged, ...preferredChoice, { id: "gpt-5.5", label: "GPT-5.5" }, { id: "gpt-5.4", label: "GPT-5.4" }, { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" }, { id: "gpt-5.4-nano", label: "GPT-5.4 Nano" }, { id: "gpt-5.2-codex", label: "GPT-5.2-Codex" }, { id: "gpt-5.1-codex-max", label: "GPT-5.1-Codex-Max" }, { id: "gpt-5.1-codex-mini", label: "GPT-5.1-Codex-Mini" }];
     case "gemini_cli":
-      return [cliManaged, ...preferredChoice, { id: "gemini-3-pro-preview", label: "Gemini 3 Pro Preview" }, { id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" }, { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" }, { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" }];
+      return [cliManaged, ...preferredChoice, { id: "gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" }, { id: "gemini-3-flash-preview", label: "Gemini 3 Flash Preview" }, { id: "gemini-3.1-flash-lite-preview", label: "Gemini 3.1 Flash-Lite Preview" }, { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" }, { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" }];
     case "aider_cli":
       return [cliManaged, ...preferredChoice, { id: "sonnet", label: "Sonnet (shorthand)" }, { id: "opus", label: "Opus (shorthand)" }, { id: "gpt-5", label: "GPT-5" }, { id: "deepseek/deepseek-chat", label: "DeepSeek Chat" }];
     case "opencode_cli":
-      return [cliManaged, ...preferredChoice, { id: "anthropic/claude-sonnet-4", label: "Claude Sonnet 4" }, { id: "openai/gpt-5.2", label: "GPT-5.2" }, { id: "google/gemini-3-pro-preview", label: "Gemini 3 Pro Preview" }];
+      return [cliManaged, ...preferredChoice, { id: "anthropic/claude-sonnet-4.6", label: "Claude Sonnet 4.6" }, { id: "openai/gpt-5.5", label: "GPT-5.5" }, { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" }];
     case "claude_cli":
-      return [cliManaged, ...preferredChoice, { id: "sonnet", label: "Sonnet (shorthand)" }, { id: "opus", label: "Opus (shorthand)" }, { id: "haiku", label: "Haiku (shorthand)" }, { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4 (pinned)" }, { id: "claude-opus-4-1-20250805", label: "Claude Opus 4.1 (pinned)" }, { id: "claude-3-5-haiku-20241022", label: "Claude Haiku 3.5 (pinned)" }];
+      return [cliManaged, ...preferredChoice, { id: "sonnet", label: "Sonnet (shorthand)" }, { id: "opus", label: "Opus (shorthand)" }, { id: "haiku", label: "Haiku (shorthand)" }, { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }, { id: "claude-opus-4-7", label: "Claude Opus 4.7" }, { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" }];
     case "cursor_cli":
-      return [cliManaged, ...preferredChoice, { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4" }, { id: "gpt-5.2", label: "GPT-5.2" }];
+      return [cliManaged, ...preferredChoice, { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }, { id: "gpt-5.5", label: "GPT-5.5" }];
     default:
       return [cliManaged, ...preferredChoice];
   }
@@ -254,9 +254,9 @@ export function providerModelPresets(provider = {}, taskType = "chat") {
 
   switch (family) {
     case "anthropic":
-      return uniqueNonEmpty([preferred, "claude-sonnet-4-20250514", "claude-opus-4-1-20250805", "claude-opus-4-20250514", "claude-3-5-haiku-20241022", "claude-3-5-haiku-latest"]);
+      return uniqueNonEmpty([preferred, "claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5-20251001", "claude-haiku-4-5"]);
     case "openai":
-      return uniqueNonEmpty([preferred, "gpt-5.2", "gpt-5.2-pro", "gpt-5", "gpt-5-mini", "gpt-5-nano", "gpt-4.1", "gpt-4o"]);
+      return uniqueNonEmpty([preferred, "gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5", "gpt-4.1", "gpt-4o"]);
     case "deepseek":
       return uniqueNonEmpty([preferred, "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"]);
     case "doubao":
@@ -278,9 +278,9 @@ export function providerModelPresets(provider = {}, taskType = "chat") {
     case "siliconflow":
       return uniqueNonEmpty([preferred, "Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3", "meta-llama/Meta-Llama-3.1-405B-Instruct"]);
     case "xai":
-      return uniqueNonEmpty([preferred, "grok-4.20-reasoning", "grok-4-fast", "grok-4", "grok-3-mini"]);
+      return uniqueNonEmpty([preferred, "grok-4.3", "grok-4.3-latest", "grok-4", "grok-4-latest", "grok-3-mini"]);
     case "openrouter":
-      return uniqueNonEmpty([preferred, "openrouter/auto", "openai/gpt-5.2", "anthropic/claude-sonnet-4", "google/gemini-3-pro-preview", "deepseek/deepseek-v4-flash"]);
+      return uniqueNonEmpty([preferred, "openrouter/auto", "openai/gpt-5.5", "openai/gpt-5.5-pro", "anthropic/claude-sonnet-4.6", "google/gemini-3.1-pro-preview", "x-ai/grok-4.3", "deepseek/deepseek-v4-flash"]);
     case "groq":
       return uniqueNonEmpty([preferred, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]);
     case "together":
@@ -288,9 +288,9 @@ export function providerModelPresets(provider = {}, taskType = "chat") {
     case "fireworks":
       return uniqueNonEmpty([preferred, "accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/deepseek-v3"]);
     case "mistral":
-      return uniqueNonEmpty([preferred, "mistral-large-latest", "mistral-medium-latest", "mistral-small-latest", "devstral-medium-latest", "codestral-latest", "pixtral-large-latest"]);
+      return uniqueNonEmpty([preferred, "mistral-medium-3-5", "mistral-large-2512", "mistral-small-2603", "devstral-2512", "mistral-large-latest", "mistral-small-latest", "codestral-latest"]);
     case "gemini":
-      return uniqueNonEmpty([preferred, "gemini-3-pro-preview", "gemini-3-flash-preview", "gemini-3-pro-image-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]);
+      return uniqueNonEmpty([preferred, "gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-3.1-flash-live-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]);
     case "ollama":
       return uniqueNonEmpty([preferred, "llama3.2", "qwen2.5", "mistral", "phi3"]);
     default:
@@ -316,13 +316,13 @@ export function modeOptionsForProvider(provider = {}, model = "") {
     ];
   }
   if (family === "anthropic") {
-    return [...defaultOption, { id: "balanced", label: "Balanced", model: "claude-sonnet-4-20250514" }, { id: "deep", label: "Deep", model: "claude-opus-4-1-20250805" }, { id: "fast", label: "Fast", model: "claude-3-5-haiku-20241022" }];
+    return [...defaultOption, { id: "balanced", label: "Balanced", model: "claude-sonnet-4-6" }, { id: "deep", label: "Deep", model: "claude-opus-4-7" }, { id: "fast", label: "Fast", model: "claude-haiku-4-5" }];
   }
   if (family === "moonshot") {
     return [...defaultOption, { id: "latest", label: "Kimi Latest", model: "kimi-latest" }, { id: "k26", label: "Kimi K2.6", model: "kimi-k2.6" }, { id: "k25", label: "Kimi K2.5", model: "kimi-k2.5" }, { id: "thinking", label: "Kimi Thinking", model: "kimi-k2-thinking" }, { id: "8k", label: "8K", model: "moonshot-v1-8k" }, { id: "32k", label: "32K", model: "moonshot-v1-32k" }, { id: "128k", label: "128K", model: "moonshot-v1-128k" }];
   }
   if (family === "openai") {
-    return [...defaultOption, { id: "latest", label: "Latest", model: "gpt-5.2" }, { id: "deep", label: "Deep", model: "gpt-5.2-pro" }, { id: "fast", label: "Fast", model: "gpt-5-mini" }, { id: "nano", label: "Nano", model: "gpt-5-nano" }, { id: "transcribe", label: "Transcribe", model: "gpt-4o-transcribe" }];
+    return [...defaultOption, { id: "latest", label: "Latest", model: "gpt-5.5" }, { id: "deep", label: "Deep", model: "gpt-5.5" }, { id: "fast", label: "Fast", model: "gpt-5.4-mini" }, { id: "nano", label: "Nano", model: "gpt-5.4-nano" }, { id: "transcribe", label: "Transcribe", model: "gpt-4o-transcribe" }];
   }
   return defaultOption;
 }

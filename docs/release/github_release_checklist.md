@@ -8,7 +8,7 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 
 - Run `npm run verify:github-readiness`.
 - Review all advisory warnings from `verify:github-readiness`, especially
-  root Markdown docs and phase/task planning docs that would become public.
+  root Markdown docs that would become public.
 - If using GitHub Pages for OAuth verification, run
   `npm run verify:github-pages-readiness`.
 - Run `npm run check`.
@@ -17,15 +17,17 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 - Before release branches or public announcement, run the `Release Gate`
   workflow or push through a `release/**` branch.
 - Confirm local files under `models/`, `dist/`, `logs/`, `artifacts/`,
-  `outputs/`, `.tmp/`, and `.claude/settings.local.json` are not tracked.
+  `outputs/`, `.tmp/`, `internal/`, and `.claude/settings.local.json` are
+  not tracked.
 - Confirm `.env` files and runtime config files are not tracked.
 - Review `docs/public/privacy.html` and `docs/public/terms.html` before using
   GitHub Pages for OAuth verification.
 
-## Public/Open-Source Decision
+## Public/Open-Source License
 
-- Choose a root `LICENSE` before presenting the repo as open source.
-- Add the matching `license` field to `package.json`.
+- Keep the root `LICENSE` and matching `package.json` license in sync.
+- Preserve third-party notices in `THIRD_PARTY_LICENSES.md` when distributing
+  source or packaged builds.
 - Keep `package.json` as `"private": true` unless npm publication is intended.
 
 ## Allowed Placeholder Exceptions
@@ -38,8 +40,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 
 - Search GitHub's web UI after push for obvious private terms, machine paths,
   and credentials.
-- Review root-level planning/design Markdown docs and `phases/` before making
-  the repo public.
+- Review root-level planning/design Markdown docs before making the repo public.
+- Confirm `git ls-files internal phases` returns no files.
 - Create a fresh clone and run `npm install` plus the documented quick-start
   path from `README.md`.
 - Check the Repo Baseline GitHub Actions run: it should execute

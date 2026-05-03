@@ -202,7 +202,7 @@ assert.equal(providerCreateResponse.ok, true);
 const modelOptionsResponse = await fetch(`${listening.baseUrl}/config/provider-model-options?providerId=codex-options-test`);
 assert.equal(modelOptionsResponse.ok, true);
 const modelOptionsPayload = await modelOptionsResponse.json();
-assert.equal(modelOptionsPayload.option.models.some((model) => model.id === "gpt-5.2"), true);
+assert.equal(modelOptionsPayload.option.models.some((model) => model.id === "gpt-5.5"), true);
 assert.equal(modelOptionsPayload.option.reasoningEfforts.some((effort) => effort.id === "xhigh"), true);
 
 const listResponse = await fetch(`${listening.baseUrl}/tasks`);

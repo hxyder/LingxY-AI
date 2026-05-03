@@ -37,6 +37,21 @@ async function readPackageJson(packageName) {
   }
 }
 
+async function inferLicenseFromLicenseFile(packageName) {
+  const packageDir = path.join(repoRoot, "node_modules", ...packageName.split("/"));
+  for (const filename of ["LICENSE", "LICENSE.md", "LICENSE.txt", "license", "license.md", "license.txt"]) {
+    try {
+      const text = await readFile(path.join(packageDir, filename), "utf8");
+      if (/MIT License|The MIT License/i.test(text)) return "MIT";
+      if (/Apache License[\s\S]{0,120}Version 2\.0/i.test(text)) return "Apache-2.0";
+      if (/BSD 2-Clause|Redistribution and use in source and binary forms/i.test(text)) return "BSD";
+    } catch {
+      // try the next common license filename
+    }
+  }
+  return "";
+}
+
 const lock = JSON.parse(await readFile(lockPath, "utf8"));
 const packages = lock.packages ?? {};
 const rows = [];
@@ -47,10 +62,11 @@ for (const [lockPackagePath, lockInfo] of Object.entries(packages)) {
   if (!name) continue;
   const packageJson = await readPackageJson(name);
   const version = lockInfo.version ?? packageJson.version ?? "";
+  const inferredLicense = await inferLicenseFromLicenseFile(name);
   rows.push({
     name,
     version,
-    license: normalizeLicense(lockInfo.license ?? packageJson.license),
+    license: normalizeLicense(lockInfo.license ?? packageJson.license ?? inferredLicense),
     homepage: lockInfo.homepage ?? packageJson.homepage ?? "",
     repository: normalizeRepository(lockInfo.repository ?? packageJson.repository),
     dev: Boolean(lockInfo.dev),

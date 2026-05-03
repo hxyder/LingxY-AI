@@ -77,7 +77,7 @@ returns `{final:"..."}` when no tool is appropriate.
 
 - `scripts/verify-intent-plan.mjs` covers the single-brain plan-executor
 - `scripts/verify-agentic-planner.mjs` covers the agent-loop prompt
-- Manual smoke tests after this change (tracked in 未完成任务.md Part B):
+- Manual smoke tests after this change:
   - `task_0093fed1` replay → should now call list_files + open_file
   - `task_18c16ede` replay → should now call account_create_event
   - `task_c5de2c8a` replay (scheduled residual) → should search + draft

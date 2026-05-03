@@ -25,7 +25,7 @@ try {
   assert.ok(Array.isArray(providersPayload.providers));
   assert.equal(providersPayload.providers.length, 4);
 
-  const openai = providersPayload.providers.find((provider) => provider.id === "openai.gpt-5-mini");
+  const openai = providersPayload.providers.find((provider) => provider.id === "openai.gpt-5.4-mini");
   const anthropic = providersPayload.providers.find((provider) => provider.id === "anthropic.claude-sonnet");
   const kimi = providersPayload.providers.find((provider) => provider.id === "kimi.k2");
   const ollama = providersPayload.providers.find((provider) => provider.id === "ollama.local");

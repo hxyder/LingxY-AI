@@ -93,14 +93,14 @@ function findFallbackVisionProvider(currentProvider = null) {
 
 function defaultVisionModelForProvider(provider) {
   const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""}`.toLowerCase();
-  if (provider.kind === "anthropic") return provider.defaultModel || "claude-sonnet-4-20250514";
+  if (provider.kind === "anthropic") return provider.defaultModel || "claude-sonnet-4-6";
   if (/generativelanguage|gemini/.test(fp)) return provider.defaultModel || "gemini-2.5-flash";
   if (/glm|bigmodel|zhipu/.test(fp)) return provider.defaultModel || "glm-4v-plus";
   if (/qwen|dashscope/.test(fp)) return provider.defaultModel || "qwen-vl-max";
   if (/doubao|ark|volces/.test(fp)) return provider.defaultModel || "doubao-seed-2-0-lite-260215";
   if (/mistral/.test(fp)) return provider.defaultModel || "pixtral-large-latest";
   if (/openrouter/.test(fp)) return provider.defaultModel || "openrouter/auto";
-  return provider.defaultModel || "gpt-5-mini";
+  return provider.defaultModel || "gpt-5.4-mini";
 }
 
 function guessMimeType(filePath) {

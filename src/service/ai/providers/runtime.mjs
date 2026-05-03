@@ -183,19 +183,19 @@ export async function getBuiltinProviderStatus(providerId, {
       config,
       apiKeyNames: ["ANTHROPIC_API_KEY", "UCA_ANTHROPIC_API_KEY"],
       defaultBaseUrl: "https://api.anthropic.com",
-      model: "claude-sonnet-4-20250514"
+      model: "claude-sonnet-4-6"
     });
   }
 
-  if (providerId === "openai.gpt-5-mini") {
+  if (providerId === "openai.gpt-5.4-mini") {
     return buildCloudStatus({
       id: providerId,
-      displayName: "OpenAI GPT-5 Mini",
+      displayName: "OpenAI GPT-5.4 Mini",
       env,
       config,
       apiKeyNames: ["OPENAI_API_KEY", "UCA_OPENAI_API_KEY"],
       defaultBaseUrl: "https://api.openai.com/v1",
-      model: "gpt-5-mini"
+      model: "gpt-5.4-mini"
     });
   }
 
