@@ -59,6 +59,10 @@ assert.equal(preload.includes("saveCodeCliAdapter"), true);
 assert.equal(preload.includes(IPC_CHANNELS.codeCliAdapterSave), true);
 assert.equal(preload.includes("deleteCodeCliAdapter"), true);
 assert.equal(preload.includes(IPC_CHANNELS.codeCliAdapterDelete), true);
+assert.equal(preload.includes("saveSkillRegistry"), true);
+assert.equal(preload.includes(IPC_CHANNELS.skillRegistrySave), true);
+assert.equal(preload.includes("deleteSkillRegistry"), true);
+assert.equal(preload.includes(IPC_CHANNELS.skillRegistryDelete), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
 // Brand renamed: UCA → LingxY. Accept either the old title (still
@@ -170,6 +174,8 @@ assert.equal(mainProcess.includes("IPC_CHANNELS.providerSave"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.providerDelete"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.codeCliAdapterSave"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.codeCliAdapterDelete"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.skillRegistrySave"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.skillRegistryDelete"), true);
 assert.equal(mainProcess.includes("X-Lingxy-Desktop-Actor"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/preview"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/run"), true);
@@ -185,6 +191,7 @@ assert.equal(mainProcess.includes("/templates"), true);
 assert.equal(mainProcess.includes("/dag/executions"), true);
 assert.equal(mainProcess.includes("/config/providers"), true);
 assert.equal(mainProcess.includes("/config/code-cli/adapters"), true);
+assert.equal(mainProcess.includes("/config/skills/registries"), true);
 assert.equal(mainProcess.includes("showDesktopNotification"), true);
 // Permission handler for the Web Speech API mic access
 assert.equal(mainProcess.includes("setPermissionRequestHandler"), true);

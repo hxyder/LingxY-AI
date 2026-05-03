@@ -69,7 +69,9 @@ export const IPC_CHANNELS = Object.freeze({
   providerSave: "uca:provider-save",
   providerDelete: "uca:provider-delete",
   codeCliAdapterSave: "uca:code-cli-adapter-save",
-  codeCliAdapterDelete: "uca:code-cli-adapter-delete"
+  codeCliAdapterDelete: "uca:code-cli-adapter-delete",
+  skillRegistrySave: "uca:skill-registry-save",
+  skillRegistryDelete: "uca:skill-registry-delete"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

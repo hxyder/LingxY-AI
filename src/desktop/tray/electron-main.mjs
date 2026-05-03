@@ -201,6 +201,14 @@ function normalizeCodeCliAdapterId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
 
+function normalizeSkillRegistryPayload(payload = {}) {
+  return normalizePlainObject(payload) ?? {};
+}
+
+function normalizeSkillRegistryId(id) {
+  return typeof id === "string" ? id.trim() : "";
+}
+
 async function requestDesktopServiceJson({
   base,
   pathname,
@@ -2371,6 +2379,46 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "code_cli_adapter_delete_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillRegistrySave, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/config/skills/registries",
+            body: normalizeSkillRegistryPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_registry_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillRegistryDelete, async (event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const registryId = normalizeSkillRegistryId(id);
+        if (!registryId) {
+          return { ok: false, error: "skill_registry_id_required", message: "Skill registry id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "DELETE",
+            actor,
+            pathname: `/config/skills/registries/${encodeURIComponent(registryId)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_registry_delete_failed",
             message: error?.message ?? String(error)
           };
         }

@@ -555,6 +555,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "POST" && url.pathname === "/config/skills/registries") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const body = await readJsonBody(request);
     if (!body.id || !body.rootPath) {
       sendJson(response, 400, { error: "id and rootPath required" });
@@ -581,6 +582,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "DELETE" && url.pathname.startsWith("/config/skills/registries/")) {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const id = decodeURIComponent(url.pathname.replace(/^\/config\/skills\/registries\//, ""));
     saveRuntimeConfig(runtime, (currentConfig) => ({
       ...currentConfig,

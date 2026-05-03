@@ -65,7 +65,9 @@ for (const channel of [
   "uca:provider-save",
   "uca:provider-delete",
   "uca:code-cli-adapter-save",
-  "uca:code-cli-adapter-delete"
+  "uca:code-cli-adapter-delete",
+  "uca:skill-registry-save",
+  "uca:skill-registry-delete"
 ]) {
   if (!bootstrap.manifest.ipcChannels.includes(channel)) {
     throw new Error(`Desktop guarded mutation IPC channel is missing: ${channel}`);

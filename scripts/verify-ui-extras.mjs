@@ -180,6 +180,14 @@ assert.ok(!/fetchJson\(\s*["'`]\/config\/code-cli\/adapters["'`]\s*,\s*\{\s*meth
   "Code CLI adapter save: console must not POST /config/code-cli/adapters directly");
 assert.ok(!/fetchJson\(\s*`\/config\/code-cli\/adapters\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
   "Code CLI adapter delete: console must not DELETE /config/code-cli/adapters/:id directly");
+assert.ok(/saveSkillRegistryViaShell/.test(consoleJs) && /window\.ucaShell\.saveSkillRegistry/.test(consoleJs),
+  "skill registry save: console must use desktop shell bridge");
+assert.ok(/deleteSkillRegistryViaShell/.test(consoleJs) && /window\.ucaShell\.deleteSkillRegistry/.test(consoleJs),
+  "skill registry delete: console must use desktop shell bridge");
+assert.ok(!/fetchJson\(\s*["'`]\/config\/skills\/registries["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "skill registry save: console must not POST /config/skills/registries directly");
+assert.ok(!/fetchJson\(\s*`\/config\/skills\/registries\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
+  "skill registry delete: console must not DELETE /config/skills/registries/:id directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

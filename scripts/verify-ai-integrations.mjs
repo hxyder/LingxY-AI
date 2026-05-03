@@ -209,11 +209,19 @@ try {
     "utf8"
   );
 
+  const unauthorizedSkillRegistry = await postJsonResponse(listening.baseUrl, "/config/skills/registries", {
+    id: "blocked-skills",
+    displayName: "Blocked Skills",
+    rootPath: runtime.paths.skillsDir
+  });
+  assert.equal(unauthorizedSkillRegistry.response.status, 403, "skill registry save must require desktop actor");
+  assert.equal(unauthorizedSkillRegistry.payload?.error, "desktop_actor_required");
+
   const legacySkillPath = await postJsonResponse(listening.baseUrl, "/config/skills/registries", {
     id: "legacy-path-field",
     displayName: "Legacy Path Field",
     path: runtime.paths.skillsDir
-  });
+  }, desktopActorHeaders);
   assert.equal(legacySkillPath.response.status, 400, "skill registry config must require rootPath, not legacy path");
   assert.equal(legacySkillPath.payload?.error, "id and rootPath required");
 
@@ -222,7 +230,7 @@ try {
     id: "missing-skills",
     displayName: "Missing Skills",
     rootPath: missingSkillRegistryPath
-  });
+  }, desktopActorHeaders);
   assert.equal(invalidSkillRegistry.response.status, 400, "skill registry config must reject missing rootPath");
   assert.equal(invalidSkillRegistry.payload?.error, "skill_registry_invalid");
   assertStructuredError(invalidSkillRegistry.payload, "rootPath", /Path does not exist on disk/);
@@ -249,7 +257,7 @@ try {
     id: "scratch-skills",
     displayName: "Scratch Skills",
     rootPath: runtime.paths.skillsDir
-  });
+  }, desktopActorHeaders);
 
   await postJson(listening.baseUrl, "/config/code-cli/adapters", {
     id: "mock-code-cli",

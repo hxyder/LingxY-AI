@@ -2582,7 +2582,7 @@ function renderSkillRegistries() {
       if (!id) return;
       skillRegistryState.textContent = "Deleting...";
       try {
-        await fetchJson(`/config/skills/registries/${encodeURIComponent(id)}`, { method: "DELETE" });
+        await deleteSkillRegistryViaShell(id);
         skillRegistryState.textContent = "Deleted.";
         await refreshWorkspace();
       } catch (error) {
@@ -6445,6 +6445,26 @@ async function deleteCodeCliAdapterViaShell(adapterId) {
   );
 }
 
+async function saveSkillRegistryViaShell(registry) {
+  if (typeof window.ucaShell?.saveSkillRegistry !== "function") {
+    throw new Error("Desktop skill registry bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.saveSkillRegistry(registry),
+    "Could not save skill registry."
+  );
+}
+
+async function deleteSkillRegistryViaShell(registryId) {
+  if (typeof window.ucaShell?.deleteSkillRegistry !== "function") {
+    throw new Error("Desktop skill registry bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.deleteSkillRegistry(registryId),
+    "Could not delete skill registry."
+  );
+}
+
 async function saveMcpServer(server) {
   if (typeof window.ucaShell?.saveMcpServer !== "function") {
     throw new Error("Desktop MCP config bridge unavailable.");
@@ -6725,7 +6745,7 @@ skillRegistryForm?.addEventListener("submit", async (event) => {
       return;
     }
     setPreflightState(skillRegistryState, "pending", "Saving...");
-    await fetchJson("/config/skills/registries", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result.registry) });
+    await saveSkillRegistryViaShell(result.registry);
     setPreflightState(skillRegistryState, "ok", "Saved.");
     skillRegistryId.value = "";
     skillRegistryName.value = "";

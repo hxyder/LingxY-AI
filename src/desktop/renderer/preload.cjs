@@ -313,6 +313,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteCodeCliAdapter(id) {
     return ipcRenderer.invoke("uca:code-cli-adapter-delete", id ?? "");
   },
+  saveSkillRegistry(payload) {
+    return ipcRenderer.invoke("uca:skill-registry-save", payload ?? {});
+  },
+  deleteSkillRegistry(id) {
+    return ipcRenderer.invoke("uca:skill-registry-delete", id ?? "");
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

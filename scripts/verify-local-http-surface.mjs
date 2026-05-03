@@ -131,8 +131,8 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "DELETE", "/config/skills/registries/*", {
     domain: "skills_config",
     effect: "config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "POST", "/config/code-cli/adapters", {
     domain: "code_cli_config",
@@ -191,8 +191,8 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "POST", "/config/skills/registries", {
     domain: "skills_config",
     effect: "config_mutation",
-    boundary: "local_ui_pending_guard",
-    migration: "config_bridge"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "POST", "/config/skills/test", {
     domain: "skills_config",

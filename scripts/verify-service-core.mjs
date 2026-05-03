@@ -68,6 +68,11 @@ if (!configProviderRouteSource.includes('url.pathname === "/config/code-cli/adap
     || (configProviderRouteSource.match(/requireDesktopActor/g) ?? []).length < 6) {
   throw new Error("Code CLI adapter mutation routes must live in config-provider-routes.mjs and require the shared desktop actor guard.");
 }
+if (!configProviderRouteSource.includes('url.pathname === "/config/skills/registries"')
+    || !configProviderRouteSource.includes('url.pathname.startsWith("/config/skills/registries/")')
+    || (configProviderRouteSource.match(/requireDesktopActor/g) ?? []).length < 8) {
+  throw new Error("Skill registry mutation routes must live in config-provider-routes.mjs and require the shared desktop actor guard.");
+}
 if (configProviderRouteSource.includes('url.pathname === "/config/mcp/install/preview"')) {
   throw new Error("MCP install preview route must live in mcp-install-routes.mjs, not config-provider-routes.mjs.");
 }
