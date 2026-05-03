@@ -42,6 +42,14 @@ import {
 import { getMcpActionTools } from "../../ai/mcp/client-bridge.mjs";
 import { transcriptForValidator } from "./validator-transcript.mjs";
 import { processAgenticToolResultForControls } from "./tool-result-controls.mjs";
+import {
+  isScheduleRegistryTool,
+  isScheduledFireTask,
+  isSideEffectTool,
+  taskNeedsCurrentWebData,
+  toolDescriptorForAdapter,
+  transcriptHasSuccessfulToolCall
+} from "./tool-surface.mjs";
 // H1: parity with tool_using — run the same SuccessContract validator
 // and evidence normalizer at planner exit. Pre-H1 agentic skipped both,
 // so D3 research_quality coverage and required_policy_groups were never
@@ -59,7 +67,6 @@ import { extractEvidence, detectSearchSaturation } from "../../core/policy/evide
 // 1 empty external_web_read) and runs validateStepGate to catch
 // same-tool failure streaks; agentic now does the same.
 import { createErrorBudget } from "../../core/runtime/error-budget.mjs";
-import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
 import { applySideEffectContractToToolArgs } from "../../core/policy/side-effect-contracts.mjs";
 import {
   actionObligationsWithStatus,
@@ -91,14 +98,6 @@ function anyToolSucceeded(transcript = []) {
   return transcript.some((entry) => entry.role === "tool" && entry.success === true);
 }
 
-function toolDescriptorForAdapter(tool) {
-  return {
-    name: tool.id,
-    description: tool.description ?? tool.name ?? "",
-    input_schema: tool.parameters ?? { type: "object", properties: {} }
-  };
-}
-
 function buildUserMessage(task) {
   const parts = [];
   parts.push(task.user_command ?? "(no user command)");
@@ -121,72 +120,12 @@ function buildUserMessage(task) {
   return parts.join("\n");
 }
 
-function taskNeedsCurrentWebData(task) {
-  return Boolean(task?.task_spec?.needs_current_web_data)
-    || task?.task_spec?.success_contract?.required_tool_names?.includes?.("web_search_fetch");
-}
-
 /**
  * Execute a single tool call against the action tool registry.
  * Also checks `mcpToolById` for MCP-sourced tools that aren't in the registry.
  * The caller is expected to pass the runtime's registry + toolContext;
  * no risk-matrix gating happens here — that's the executor's job.
  */
-// UCA-181 follow-up: tools that mutate the schedule registry. Inside a
-// real scheduler fire, these MUST NOT run — calling create_scheduled_task
-// from the firing of a previous schedule produces an infinite-loop of
-// clones. tool_using/agent-loop has the same set; keep them aligned.
-const SCHEDULE_REGISTRY_TOOL_IDS = new Set([
-  "create_scheduled_task",
-  "delete_scheduled_task",
-  "pause_scheduled_task"
-]);
-
-function isScheduledFireTask(task) {
-  return task?.context_packet?.selection_metadata?.scheduled_task_fire === true;
-}
-
-function isScheduleRegistryTool(tool) {
-  const id = typeof tool === "string" ? tool : tool?.id;
-  const mcpToolName = typeof tool === "object" ? tool?._mcpToolName : null;
-  return SCHEDULE_REGISTRY_TOOL_IDS.has(id) || SCHEDULE_REGISTRY_TOOL_IDS.has(mcpToolName);
-}
-
-// Tools whose success has irreversible side-effects (email send,
-// calendar create, file upload, schedule create). Once one has
-// succeeded in this run, refuse re-fires that vary args slightly to
-// dodge the args-based dedupe (the wild 4-event repro).
-const SIDE_EFFECT_OBLIGATION_GROUPS = new Set([
-  "email_send",
-  "calendar_create",
-  "file_upload",
-  "schedule_create"
-]);
-
-function isSideEffectTool(tool) {
-  if (!tool) return false;
-  const groupSet = new Set(groupsOfTool(tool.id));
-  if (typeof tool.policy_group === "string") groupSet.add(tool.policy_group);
-  if (Array.isArray(tool.policy_groups)) {
-    for (const group of tool.policy_groups) {
-      if (typeof group === "string") groupSet.add(group);
-    }
-  }
-  for (const g of groupSet) {
-    if (SIDE_EFFECT_OBLIGATION_GROUPS.has(g)) return true;
-  }
-  return tool.risk_level === "high" || tool.requires_confirmation === true;
-}
-
-function transcriptHasSuccessfulToolCall(transcript = [], toolId) {
-  if (!toolId) return false;
-  return (transcript ?? []).some((entry) =>
-    entry?.role === "tool"
-    && entry.name === toolId
-    && entry.success === true
-  );
-}
-
 async function executeToolCall({ registry, mcpToolById, toolContext, call, runtime, task, transcript = [] }) {
   const tool = registry?.get?.(call.name) ?? mcpToolById?.get?.(call.name);
   if (!tool) {
