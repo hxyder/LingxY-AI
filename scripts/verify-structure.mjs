@@ -345,6 +345,7 @@ const requiredPaths = [
   "scripts/verify-runtime-wiring.mjs",
   "scripts/verify-ai-integrations.mjs",
   "scripts/verify-behavior-tests.mjs",
+  "scripts/verify-doc-references.mjs",
   "scripts/verify-github-readiness.mjs",
   "scripts/verify-github-pages-readiness.mjs",
   "scripts/verify-external-call-boundary.mjs",

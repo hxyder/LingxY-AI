@@ -135,12 +135,11 @@ function providerToResolved(provider, route, taskType) {
     mode: sanitizedRoute.mode ?? "",
     reasoningEffort: cleanReasoning,
     providerName: sanitizedProvider.name,
-    // 架构思路.md §12 (Codex review): preserve the explicit
-    // supportsVision flag so callers like the vision_analyze action
-    // tool can honour an opt-out without re-reading runtime.json. The
-    // multi_modal executor already consumes this field; before this
-    // line it was being silently dropped here for every consumer
-    // downstream of resolveProviderForTask.
+    // Preserve the explicit supportsVision flag so callers like the
+    // vision_analyze action tool can honour an opt-out without
+    // re-reading runtime.json. The multi_modal executor already
+    // consumes this field; before this line it was being silently
+    // dropped here for every consumer downstream of resolveProviderForTask.
     supportsVision: sanitizedProvider.supportsVision
   };
 }

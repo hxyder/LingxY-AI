@@ -1056,7 +1056,7 @@ export async function submitContextTask({
       // main executor LLM wait ~1-2s on SR before it could even start
       // thinking — that was the actual user-visible latency.
       //
-      // Hard constraints (phase1_llm_first_plan.md §"Hard constraints" #1):
+      // Hard constraints for the parallel Semantic Router patch:
       //   1. task_spec_initial is NEVER touched here — validators use it
       //      to avoid retroactive failure when SR arrives late and tightens
       //      the bar.

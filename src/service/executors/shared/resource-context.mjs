@@ -138,13 +138,12 @@ export function formatResourceContext(task) {
     lines.push(`- User's location: UNKNOWN_LOCATION. No city or coordinates are available. For any location-dependent request without a location in the user's message or history, ask for the city or ask them to click "📍 启用精确定位" in the LingxY side panel before using tools. Do NOT infer a city from timezone, locale, IP, search defaults, or examples.`);
   }
 
-  // 架构思路.md §12.3.4: surface attached images as their own line so
-  // the planner can pass image_paths to vision_analyze without first
-  // having to disentangle them from regular file_paths. Files and
-  // images are distinct affordances — files go to open_file /
-  // edit_file / connector upload; images go to vision_analyze (or are
-  // already inline if the chat provider has vision and runtime
-  // attached an image block).
+  // Surface attached images as their own line so the planner can pass
+  // image_paths to vision_analyze without first having to disentangle
+  // them from regular file_paths. Files and images are distinct
+  // affordances: files go to open_file / edit_file / connector upload;
+  // images go to vision_analyze, or are already inline if the chat
+  // provider has vision and runtime attached an image block.
   const attachedFiles = (ctx.file_paths ?? []).filter(Boolean);
   const attachedImages = (ctx.image_paths ?? []).filter(Boolean);
   // We DO surface absolute paths the user pasted into the request — paths

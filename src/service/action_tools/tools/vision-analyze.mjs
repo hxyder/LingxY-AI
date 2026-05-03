@@ -1,17 +1,17 @@
 /**
  * vision_analyze — tool-backed specialist for image understanding.
  *
- * 架构思路.md §12.3.1. Lets the tool_using orchestrator stay a single
- * brain: when the user asks something visual ("这是什么", "读出图里的字",
- * "比较这两张图"), the planner calls this tool with the absolute paths
- * of the attached images. We resolve the routed Vision provider, load
- * the bytes, hit the right Vision API (Anthropic vs OpenAI-compat),
- * and return text the orchestrator can then weave into its answer or
- * feed to a follow-up tool (compose_email, write_file, …).
+ * Lets the tool_using orchestrator stay a single brain: when the user
+ * asks something visual ("这是什么", "读出图里的字", "比较这两张图"),
+ * the planner calls this tool with the absolute paths of the attached
+ * images. We resolve the routed Vision provider, load the bytes, hit
+ * the right Vision API (Anthropic vs OpenAI-compat), and return text
+ * the orchestrator can then weave into its answer or feed to a
+ * follow-up tool (compose_email, write_file, …).
  *
  * NOT a generic subagent framework. When a second specialist of the
  * same shape exists (file_deep_analysis, code_review) we'll extract
- * the common surface from real duplication. See §12.5.
+ * the common surface from real duplication.
  */
 
 import path from "node:path";
@@ -94,8 +94,7 @@ function buildAttachedAllowlist(ctx) {
 // Ollama serving a non-vision model) cannot receive image bytes
 // just because the resolver routed `vision` to it. The tool refuses
 // rather than auto-falling-back; multi_modal still performs the
-// fallback dance for users who rely on it (see 架构思路.md §12.3.6
-// — the forced multi_modal route stays for at least a week).
+// fallback dance for users who rely on legacy direct vision routing.
 async function callVisionProvider({ provider, prompt, images, signal }) {
   if (!provider) {
     throw new Error("No Vision-capable provider configured. Open Console → Settings → Routing → Vision and pick a provider that supports images (GPT-4o, Gemini, Qwen-VL, Claude vision, 豆包, GLM-4V, Pixtral …).");

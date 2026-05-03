@@ -2,13 +2,11 @@
  * UCA-077 P4-RQ E1 (Layer 2 signal): user explicitly forbids web
  * browsing for this task.
  *
- * The reference doc (SEMANTIC_ROUTER_RE_LAYERING_PLAN.md §3) calls
- * out "Explicit '不联网 / do not browse' must override the router
- * and force `external_search=forbidden`." Pre-this-signal there was
- * no detector for the user's explicit no-search constraint — even a
- * literal "不要联网，解释一下 X" with X being an external entity
- * (weather / news) would route to web=required because
- * topic_hint won the chain.
+ * Explicit "不联网 / do not browse" must override the router and force
+ * `external_search=forbidden`. Pre-this-signal there was no detector
+ * for the user's explicit no-search constraint — even a literal
+ * "不要联网，解释一下 X" with X being an external entity (weather / news)
+ * would route to web=required because topic_hint won the chain.
  *
  * Design:
  *   - kind: "fact" — the user said this verbatim. SR's

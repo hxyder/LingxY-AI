@@ -117,9 +117,9 @@ function guessMimeType(filePath) {
 }
 
 // Exported so the `vision_analyze` action tool can reuse the exact same
-// base64 + MIME-detection path without duplicating it. See 架构思路.md
-// §12.3.1 — the tool is a tool-backed specialist that delegates the
-// transport plumbing to these helpers; it is NOT a generic abstraction.
+// base64 + MIME-detection path without duplicating it. The tool-backed
+// specialist delegates transport plumbing to these helpers; it is NOT a
+// generic abstraction.
 export async function loadImageAsBase64(imagePath) {
   const buffer = await readFile(imagePath);
   return {

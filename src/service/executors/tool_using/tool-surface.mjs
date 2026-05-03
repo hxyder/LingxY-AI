@@ -23,11 +23,11 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
     /^(compose_email|send_email_smtp|account_|connector_)/.test(tool.id),
   desktop_action: (tool) =>
     /^(launch_app|gui_|open_file|reveal_in_explorer|copy_to_clipboard|notify|read_clipboard)/.test(tool.id),
-  // 架构思路.md §12.3.3: vision_analyze is the tool-backed specialist
-  // for image understanding. Without this match the IntentRoute filter
-  // would strip it whenever needed_capabilities=["image_understanding"]
-  // — which is exactly the path image-bearing tasks now take when they
-  // reach tool_using instead of multi_modal.
+  // vision_analyze is the tool-backed specialist for image
+  // understanding. Without this match the IntentRoute filter would
+  // strip it whenever needed_capabilities=["image_understanding"],
+  // which is the path image-bearing tasks take when they reach
+  // tool_using instead of multi_modal.
   image_understanding: (tool) => tool.id === "vision_analyze",
   image_generation: (tool) => ["generate_document", "write_file"].includes(tool.id),
   none: () => false

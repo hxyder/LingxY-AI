@@ -2962,9 +2962,8 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   GUI_FIND_ELEMENT_TOOL,
   GUI_CLICK_TOOL,
   GUI_TYPE_TEXT_TOOL,
-  // 架构思路.md §12: tool-backed vision specialist. Lets tool_using
-  // handle "what's in this image" without bouncing the task to the
-  // multi_modal executor.
+  // Tool-backed vision specialist. Lets tool_using handle "what's in
+  // this image" without bouncing the task to the multi_modal executor.
   VISION_ANALYZE_TOOL,
   // UCA-182 Phase 21: memory introspection tools so the planner can
   // ask for prior-task context on its own, replacing the earlier
