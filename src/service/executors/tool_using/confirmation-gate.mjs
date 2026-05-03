@@ -1,3 +1,5 @@
+import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
+
 export async function resolveInteractiveConfirmation({
   runtime,
   task,
@@ -36,6 +38,32 @@ export async function resolveInteractiveConfirmation({
   };
 }
 
+export function resolveScheduledSideEffectAuthorization({ task, tool }) {
+  const metadata = task?.context_packet?.selection_metadata ?? {};
+  if (metadata.scheduled_task_fire !== true) {
+    return { authorized: false };
+  }
+  const authorization = metadata.side_effect_authorization;
+  if (authorization?.kind !== "scheduled_fire" || authorization.decision !== "preauthorized") {
+    return { authorized: false };
+  }
+  const authorizedGroups = new Set(authorization.groups ?? []);
+  const contractGroups = new Set(Object.keys(metadata.side_effect_contract?.groups ?? {}));
+  const toolGroups = groupsOfTool(tool?.id);
+  const group = toolGroups.find((candidate) =>
+    authorizedGroups.has(candidate) && contractGroups.has(candidate)
+  );
+  if (!group) {
+    return { authorized: false };
+  }
+  return {
+    authorized: true,
+    group,
+    source: authorization.source ?? "schedule_definition",
+    schedule_id: authorization.schedule_id ?? null
+  };
+}
+
 export function createPendingToolApproval({ runtime, task, tool, args, risk }) {
   const approval = runtime.pendingApprovals.create({
     sourceType: "agent_tool_call",
@@ -60,6 +88,9 @@ export function createPendingToolApproval({ runtime, task, tool, args, risk }) {
   return approval;
 }
 
-export function shouldBlockHighRiskUnattended({ task, risk }) {
+export function shouldBlockHighRiskUnattended({ task, risk, tool }) {
+  if (resolveScheduledSideEffectAuthorization({ task, tool }).authorized) {
+    return false;
+  }
   return task.execution_mode === "unattended_safe" && risk.risk_level === "high";
 }

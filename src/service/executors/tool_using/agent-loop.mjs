@@ -89,6 +89,7 @@ import {
 import {
   createPendingToolApproval,
   resolveInteractiveConfirmation,
+  resolveScheduledSideEffectAuthorization,
   shouldBlockHighRiskUnattended
 } from "./confirmation-gate.mjs";
 import {
@@ -1229,7 +1230,21 @@ async function _runToolAgentLoopCore({
     // execution_mode, which silently auto-confirmed in interactive
     // chat when no handler was registered (the email-send no-prompt
     // bug). Keep this single gate.
-    if (risk.requires_confirmation) {
+    const scheduledAuthorization = resolveScheduledSideEffectAuthorization({ task, tool });
+    if (risk.requires_confirmation && scheduledAuthorization.authorized) {
+      runtime.emitTaskEvent?.("side_effect_authorization_applied", {
+        tool_id: tool.id,
+        group: scheduledAuthorization.group,
+        source: scheduledAuthorization.source,
+        schedule_id: scheduledAuthorization.schedule_id
+      });
+      appendAuditLog(runtime, task, "tool.side_effect_authorized", {
+        tool_id: tool.id,
+        group: scheduledAuthorization.group,
+        source: scheduledAuthorization.source,
+        schedule_id: scheduledAuthorization.schedule_id
+      });
+    } else if (risk.requires_confirmation) {
       if (typeof runtime.confirmationHandler === "function") {
         const interactiveDecision = await resolveInteractiveConfirmation({
           runtime,
@@ -1288,7 +1303,7 @@ async function _runToolAgentLoopCore({
       }
     }
 
-    if (shouldBlockHighRiskUnattended({ task, risk })) {
+    if (shouldBlockHighRiskUnattended({ task, risk, tool })) {
       runtime.emitTaskEvent?.("tool_call_denied", {
         tool_id: tool.id,
         reason: "high_risk_blocked_in_unattended_safe"

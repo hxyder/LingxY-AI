@@ -343,6 +343,10 @@ function groupsForToolCall(toolId, args = {}) {
   return unique(groups);
 }
 
+export function policyGroupsForConnectorWorkflow(workflowId) {
+  return groupsForToolCall("connector_workflow_run", { workflowId });
+}
+
 export function applySideEffectContractToToolArgs(toolId, args = {}, {
   task = null,
   runtime = null,

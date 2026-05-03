@@ -43,12 +43,13 @@ function makeTask(overrides = {}) {
 }
 
 function makeRuntime(overrides = {}) {
+  const { tools = null, ...runtimeOverrides } = overrides;
   const calls = [];
   const events = [];
   const auditLog = [];
   const approvals = [];
   const runtime = {
-    actionToolRegistry: createActionToolRegistry([makeRiskyTool({ calls })]),
+    actionToolRegistry: createActionToolRegistry(tools ?? [makeRiskyTool({ calls })]),
     toolContext: {},
     toolOutputDir: null,
     securityBroker: {
@@ -78,7 +79,7 @@ function makeRuntime(overrides = {}) {
       const result = transcript.find((entry) => entry.type === "tool_result");
       return result?.observation ?? "no result";
     },
-    ...overrides
+    ...runtimeOverrides
   };
   return { runtime, calls, events, auditLog, approvals };
 }
@@ -182,5 +183,96 @@ test("confirmation gate blocks high-risk tools in unattended mode without creati
   assert.ok(auditLog.some((entry) =>
     entry.event_subtype === "tool.denied"
     && entry.payload?.reason === "high_risk_blocked_in_unattended_safe"
+  ));
+});
+
+test("scheduled side-effect authorization runs a matching high-risk tool without per-fire approval", async () => {
+  const emailCalls = [];
+  const emailTool = {
+    id: "account_send_email",
+    name: "Fake Account Send Email",
+    description: "Fake email sender for scheduled authorization.",
+    risk_level: "high",
+    requires_confirmation: true,
+    parameters: {
+      type: "object",
+      properties: {
+        to: {},
+        subject: { type: "string" },
+        body: { type: "string" }
+      }
+    },
+    async execute(args) {
+      emailCalls.push(args);
+      return {
+        success: true,
+        observation: "email sent",
+        metadata: { connector_status: "success" }
+      };
+    }
+  };
+  const { runtime, events, approvals, auditLog } = makeRuntime({ tools: [emailTool] });
+
+  const result = await runToolAgentLoop({
+    task: makeTask({
+      execution_mode: "single",
+      context_packet: {
+        selection_metadata: {
+          scheduled_task_fire: true,
+          side_effect_contract: {
+            version: 1,
+            kind: "side_effect_contract",
+            groups: {
+              email_send: {
+                slots: {
+                  to: {
+                    entity: "email_address",
+                    values: ["ops@example.com"],
+                    mode: "preserve"
+                  }
+                }
+              }
+            }
+          },
+          side_effect_authorization: {
+            kind: "scheduled_fire",
+            decision: "preauthorized",
+            source: "schedule_definition",
+            schedule_id: "sched_email",
+            groups: ["email_send"]
+          }
+        }
+      }
+    }),
+    runtime,
+    planner: async ({ iteration }) => {
+      if (iteration === 0) {
+        return {
+          type: "tool_call",
+          tool: "account_send_email",
+          args: {
+            to: ["ops@example.com"],
+            subject: "Scheduled report",
+            body: "Body"
+          }
+        };
+      }
+      return { type: "final", text: "done" };
+    },
+    maxIterations: 2
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(emailCalls.length, 1);
+  assert.equal(approvals.length, 0);
+  assert.ok(events.some((event) =>
+    event.eventType === "side_effect_authorization_applied"
+    && event.payload?.tool_id === "account_send_email"
+    && event.payload?.group === "email_send"
+  ));
+  assert.ok(auditLog.some((entry) =>
+    entry.event_subtype === "tool.side_effect_authorized"
+    && entry.payload?.tool_id === "account_send_email"
+    && entry.payload?.group === "email_send"
   ));
 });

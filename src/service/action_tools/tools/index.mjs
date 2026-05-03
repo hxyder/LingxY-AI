@@ -15,6 +15,7 @@ import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggre
 import { MEMORY_TOOLS } from "./memory-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
 import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
+import { buildSideEffectContract } from "../../core/policy/side-effect-contracts.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1114,13 +1115,29 @@ export const CREATE_SCHEDULED_TASK_TOOL = {
     }
 
     const scheduler = getSchedulerRuntime(ctx);
+    const actionParams = args.action?.params ?? args.action?.args ?? {};
+    const sideEffectContract = buildSideEffectContract({
+      runtime: ctx.runtime,
+      inferPolicyGroups: true,
+      includeEntityValues: true,
+      sources: [
+        args.name,
+        args.description,
+        args.action?.target,
+        args.action?.tool,
+        actionParams.userCommand,
+        actionParams.command,
+        actionParams.contextText
+      ].filter(Boolean)
+    });
     const schedule = scheduler.createSchedule({
       name: args.name,
       description: args.description ?? "",
       trigger: args.trigger,
       action: args.action,
       executionMode: args.execution_mode ?? "unattended_safe",
-      catchupPolicy: args.catchup_policy ?? "skip"
+      catchupPolicy: args.catchup_policy ?? "skip",
+      metadata: sideEffectContract ? { side_effect_contract: sideEffectContract } : {}
     }, {
       createdBy: ctx.task ? "agent" : "user"
     });

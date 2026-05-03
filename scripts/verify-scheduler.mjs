@@ -122,6 +122,29 @@ assert.equal(createResult.success, true);
 const scheduleId = createResult.metadata.schedule_id;
 assert.ok(runtime.store.getSchedule(scheduleId));
 
+const emailScheduleResult = await runtime.actionToolRegistry.call("create_scheduled_task", {
+  name: "Daily Email",
+  trigger: {
+    natural_language: "每天 9 点发送邮件",
+    timezone: "Asia/Shanghai"
+  },
+  action: {
+    type: "task",
+    target: "daily email",
+    params: {
+      userCommand: "整理日报并发送邮件到 ops@example.com"
+    }
+  },
+  execution_mode: "unattended_safe"
+}, {
+  runtime
+});
+const emailSchedule = runtime.store.getSchedule(emailScheduleResult.metadata.schedule_id);
+assert.equal(
+  emailSchedule.metadata?.side_effect_contract?.groups?.email_send?.slots?.to?.values?.[0],
+  "ops@example.com"
+);
+
 const listResult = await runtime.actionToolRegistry.call("list_scheduled_tasks", {
   includeDisabled: true
 }, {

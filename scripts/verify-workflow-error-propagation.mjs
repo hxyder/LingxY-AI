@@ -103,6 +103,38 @@ function makeRuntime({ toolResult, validation = { ok: true, failures: [] } }) {
 }
 
 // ---------------------------------------------------------------------
+// 1b. Tool returns success:false and the connector output contract also
+//     fails validation → workflow still surfaces the tool-layer follow-up
+//     reason. This matches reauth_required / account_selection_required:
+//     those are user-action failures, not schema bugs.
+// ---------------------------------------------------------------------
+{
+  const runtime = makeRuntime({
+    toolResult: {
+      success: false,
+      observation: "account_send_email requires follow-up: reauth_required",
+      metadata: { tool_id: "account_send_email", connector_status: "reauth_required" }
+    },
+    validation: {
+      ok: false,
+      failures: [{ path: "sent", message: "sent must be true" }]
+    }
+  });
+
+  const result = await runConnectorWorkflow({
+    runtime,
+    workflowId: "google.calendar.create_confirm",
+    input: { title: "Test", startTime: "2026-04-30T15:00:00", endTime: "2026-04-30T15:30:00" },
+    state: { confirmation: { approved: true } }
+  });
+
+  check("tool-failure-validation: surfaces reauth_required",
+    typeof result.error === "string" && /reauth_required/.test(result.error));
+  check("tool-failure-validation: does NOT replace follow-up with output validation",
+    !/输出校验失败|validation/i.test(result.error));
+}
+
+// ---------------------------------------------------------------------
 // 2. Tool returns success:false with no observation but metadata.message
 //    → workflow uses metadata.message as fallback.
 // ---------------------------------------------------------------------

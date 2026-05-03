@@ -1,6 +1,9 @@
 import { createActionResult } from "../../action_tools/types.mjs";
 import { evaluateToolRisk } from "../../action_tools/risk_matrix.mjs";
-import { applySideEffectContractToWorkflowInput } from "../../core/policy/side-effect-contracts.mjs";
+import {
+  applySideEffectContractToWorkflowInput,
+  policyGroupsForConnectorWorkflow
+} from "../../core/policy/side-effect-contracts.mjs";
 
 function nowMs() {
   return Date.now();
@@ -119,6 +122,32 @@ function normalizeActionOutput(toolId, result = {}) {
     observation: result.observation ?? "",
     ...(result.metadata ?? {}),
     tool_id: toolId
+  };
+}
+
+function resolveScheduledWorkflowAuthorization({ workflowId, task }) {
+  const metadata = task?.context_packet?.selection_metadata ?? {};
+  if (metadata.scheduled_task_fire !== true) {
+    return { authorized: false };
+  }
+  const authorization = metadata.side_effect_authorization;
+  if (authorization?.kind !== "scheduled_fire" || authorization.decision !== "preauthorized") {
+    return { authorized: false };
+  }
+  const authorizedGroups = new Set(authorization.groups ?? []);
+  const contractGroups = new Set(Object.keys(metadata.side_effect_contract?.groups ?? {}));
+  const workflowGroups = policyGroupsForConnectorWorkflow(workflowId);
+  const group = workflowGroups.find((candidate) =>
+    authorizedGroups.has(candidate) && contractGroups.has(candidate)
+  );
+  if (!group) {
+    return { authorized: false };
+  }
+  return {
+    authorized: true,
+    group,
+    source: authorization.source ?? "schedule_definition",
+    schedule_id: authorization.schedule_id ?? null
   };
 }
 
@@ -298,12 +327,15 @@ async function executeConnectorTool({ runtime, workflow, step, tool, input, task
   // failures get a structured prefix; tool-layer failures get the
   // raw observation (which already includes the API error message).
   const failureError = !success
-    ? (validation.ok === false
-      ? `${tool.id} 输出校验失败：${(validation.failures ?? []).map((f) => f.path ?? f.message ?? f).join("; ") || "missing required fields"}`
-      : (result.observation
+    ? (result.success !== true
+      ? (result.observation
         || result.metadata?.message
         || result.metadata?.errorCode
-        || `${tool.id} 调用失败。`))
+        || result.metadata?.connector_status
+        || `${tool.id} 调用失败。`)
+      : (validation.ok === false
+        ? `${tool.id} 输出校验失败：${(validation.failures ?? []).map((f) => f.path ?? f.message ?? f).join("; ") || "missing required fields"}`
+        : `${tool.id} 调用失败。`))
     : null;
   return {
     status: success ? "success" : "failed",
@@ -362,9 +394,18 @@ export async function runConnectorWorkflow({
   const outputs = {
     ...(state.outputs ?? {})
   };
+  const scheduledAuthorization = resolveScheduledWorkflowAuthorization({ workflowId, task });
   let nextState = {
     ...state,
-    confirmation: state.confirmation ?? (state.confirmationApproved ? { approved: true } : undefined)
+    confirmation: state.confirmation
+      ?? (state.confirmationApproved ? { approved: true } : undefined)
+      ?? (scheduledAuthorization.authorized
+        ? {
+            approved: true,
+            source: scheduledAuthorization.source,
+            group: scheduledAuthorization.group
+          }
+        : undefined)
   };
   const timeline = [];
 
@@ -374,6 +415,14 @@ export async function runConnectorWorkflow({
     provider: workflow.provider,
     service: workflow.service
   });
+  if (scheduledAuthorization.authorized && !isApproved(state)) {
+    emit(emitTaskEvent, "side_effect_authorization_applied", {
+      workflow_id: workflow.id,
+      group: scheduledAuthorization.group,
+      source: scheduledAuthorization.source,
+      schedule_id: scheduledAuthorization.schedule_id
+    });
+  }
 
   for (const step of workflow.steps ?? []) {
     if (!step?.id || isCompleted(nextState, step.id)) {

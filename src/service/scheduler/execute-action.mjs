@@ -270,6 +270,30 @@ function buildDirectReminderNotifyArgs({ userCommand, actionTarget, actionParams
   };
 }
 
+export function buildScheduledSideEffectAuthorization({
+  scheduleContext,
+  sideEffectContract
+}) {
+  if (!scheduleContext?.schedule_id) {
+    return null;
+  }
+  if (scheduleContext?.execution_mode === "approval_required") {
+    return null;
+  }
+  const groups = Object.keys(sideEffectContract?.groups ?? {});
+  if (groups.length === 0) {
+    return null;
+  }
+  return {
+    kind: "scheduled_fire",
+    decision: "preauthorized",
+    source: "schedule_definition",
+    schedule_id: scheduleContext?.schedule_id ?? null,
+    execution_mode: scheduleContext?.execution_mode ?? null,
+    groups
+  };
+}
+
 async function executeScheduledTask({
   runtime,
   actionTarget,
@@ -322,6 +346,10 @@ async function executeScheduledTask({
           }
         }
   });
+  const sideEffectAuthorization = buildScheduledSideEffectAuthorization({
+    scheduleContext,
+    sideEffectContract
+  });
   const directReminder = buildDirectReminderNotifyArgs({
     userCommand,
     actionTarget,
@@ -357,7 +385,8 @@ async function executeScheduledTask({
         schedule_name: scheduleContext?.name ?? null,
         schedule_description: scheduleContext?.description ?? null,
         schedule_action_target: scheduleContext?.action_target ?? actionTarget,
-        ...(sideEffectContract ? { side_effect_contract: sideEffectContract } : {})
+        ...(sideEffectContract ? { side_effect_contract: sideEffectContract } : {}),
+        ...(sideEffectAuthorization ? { side_effect_authorization: sideEffectAuthorization } : {})
       }
     }),
     userCommand,
