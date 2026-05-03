@@ -24,8 +24,11 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
+const consolePreload = read("src/desktop/renderer/preload.cjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const dockJs = read("src/desktop/renderer/dock.js");
+const electronMain = read("src/desktop/tray/electron-main.mjs");
+const desktopManifest = read("src/desktop/shared/manifest.mjs");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const sharedCss = read("src/desktop/renderer/shared.css");
@@ -173,6 +176,18 @@ assert.ok(!/fetchJson\(\s*["'`]\/security\/state["'`]\s*,\s*\{\s*method:\s*["'`]
   "security settings: console must not POST /security/state directly");
 assert.ok(!/fetchJson\(\s*["'`]\/budget["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "budget settings: console must not POST /budget directly");
+assert.ok(/id="dataExportPanel"/.test(consoleHtml) && /id="exportBundleBtn"/.test(consoleHtml),
+  "data export: settings panel and export button missing");
+assert.ok(/exportBundleViaShell/.test(consoleJs) && /window\.ucaShell\.exportBundle/.test(consoleJs),
+  "data export: console must use desktop shell bridge");
+assert.ok(/exportBundle:\s*["']uca:export-bundle["']/.test(desktopManifest),
+  "data export: IPC channel missing from desktop manifest");
+assert.ok(/exportBundle\(payload\)/.test(consolePreload) && /ipcRenderer\.invoke\("uca:export-bundle"/.test(consolePreload),
+  "data export: preload bridge missing");
+assert.ok(/ipcMain\.handle\(IPC_CHANNELS\.exportBundle/.test(electronMain) && /\/export\/bundle/.test(electronMain),
+  "data export: electron main handler must call /export/bundle");
+assert.ok(!/fetchJson\(\s*["'`]\/export\/bundle["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "data export: console must not POST /export/bundle directly");
 assert.ok(/createSchedule/.test(consoleJs) && /window\.ucaShell\.createSchedule/.test(consoleJs),
   "scheduler create: console must use desktop shell bridge");
 assert.ok(/updateSchedule/.test(consoleJs) && /window\.ucaShell\.updateSchedule/.test(consoleJs),

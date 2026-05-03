@@ -277,6 +277,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   updateBudget(payload) {
     return ipcRenderer.invoke("uca:budget-update", payload ?? {});
   },
+  exportBundle(payload) {
+    return ipcRenderer.invoke("uca:export-bundle", payload ?? {});
+  },
   createSchedule(payload) {
     return ipcRenderer.invoke("uca:schedule-create", payload ?? {});
   },

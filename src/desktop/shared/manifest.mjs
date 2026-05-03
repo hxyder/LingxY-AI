@@ -58,6 +58,7 @@ export const IPC_CHANNELS = Object.freeze({
   approvalReject: "uca:approval-reject",
   securityStateUpdate: "uca:security-state-update",
   budgetUpdate: "uca:budget-update",
+  exportBundle: "uca:export-bundle",
   scheduleCreate: "uca:schedule-create",
   scheduleUpdate: "uca:schedule-update",
   scheduleDelete: "uca:schedule-delete",

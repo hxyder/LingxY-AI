@@ -2399,6 +2399,26 @@ export function createElectronShellRuntime({
           };
         }
       });
+      ipcMain.handle(IPC_CHANNELS.exportBundle, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const params = new URLSearchParams();
+        if (payload?.includeTaskEvents === false) params.set("includeTaskEvents", "false");
+        const suffix = params.toString() ? `?${params}` : "";
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: `/export/bundle${suffix}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "export_bundle_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
       ipcMain.handle(IPC_CHANNELS.scheduleCreate, async (event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
         const actor = desktopActorForSender(event.sender);

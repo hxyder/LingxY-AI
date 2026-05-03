@@ -168,6 +168,8 @@ const offlineModeToggle = document.querySelector("#offlineModeToggle");
 const presenterModeToggle = document.querySelector("#presenterModeToggle");
 const redactionRuleList = document.querySelector("#redactionRuleList");
 const retentionList = document.querySelector("#retentionList");
+const exportBundleBtn = document.querySelector("#exportBundleBtn");
+const exportBundleState = document.querySelector("#exportBundleState");
 const auditCount = document.querySelector("#auditCount");
 const auditList = document.querySelector("#auditList");
 const officeAddinSetupState = document.querySelector("#officeAddinSetupState");
@@ -1077,6 +1079,26 @@ async function fetchJson(pathname, options = {}) {
   const payload = payloadText ? JSON.parse(payloadText) : {};
   if (!response.ok) throw new Error(payload.message ?? payload.error ?? pathname);
   return payload;
+}
+
+function downloadTextFile(content, name, mime = "text/plain") {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function runtimeExportFilename(bundle = {}) {
+  const stamp = `${bundle.exported_at ?? new Date().toISOString()}`
+    .replace(/[:.]/g, "-")
+    .replace(/[^\w-]+/g, "_")
+    .slice(0, 40);
+  return `lingxy-export-${stamp || Date.now()}.json`;
 }
 
 // UCA-126 Phase 7d: rich message cards (user / ai / system / tool_call).
@@ -6011,6 +6033,39 @@ budgetForm.addEventListener("submit", async (event) => {
   }
 });
 
+exportBundleBtn?.addEventListener("click", async () => {
+  const originalLabel = exportBundleBtn.textContent;
+  exportBundleBtn.disabled = true;
+  exportBundleBtn.textContent = "Exporting...";
+  if (exportBundleState) exportBundleState.textContent = "Preparing redacted export...";
+  try {
+    const result = await exportBundleViaShell({ includeTaskEvents: true });
+    const bundle = result.bundle ?? result;
+    downloadTextFile(
+      JSON.stringify(bundle, null, 2),
+      runtimeExportFilename(bundle),
+      "application/json"
+    );
+    if (exportBundleState) {
+      const counts = bundle?.manifest?.counts ?? {};
+      const summary = [
+        `${counts.notes ?? 0} notes`,
+        `${counts.conversations ?? 0} conversations`,
+        `${counts.tasks ?? 0} tasks`,
+        `${counts.schedules ?? 0} schedules`
+      ].join(", ");
+      exportBundleState.textContent = `Export ready: ${summary}. Secrets were excluded.`;
+    }
+    showConsoleToast("已导出数据 JSON", { kind: "ok" });
+  } catch (error) {
+    if (exportBundleState) exportBundleState.textContent = `Failed: ${error.message}`;
+    showConsoleToast(`导出失败：${error.message}`, { kind: "err" });
+  } finally {
+    exportBundleBtn.disabled = false;
+    exportBundleBtn.textContent = originalLabel;
+  }
+});
+
 // UCA-121: historyForm submit handler retired (form removed from DOM).
 
 // UCA-125 Phase 3-4: page-head "+ New project" button focuses the
@@ -6491,6 +6546,16 @@ async function updateFeatureConfigViaShell(features) {
   return assertShellResult(
     await window.ucaShell.updateFeatureConfig(features),
     "Could not save feature config."
+  );
+}
+
+async function exportBundleViaShell(options = {}) {
+  if (typeof window.ucaShell?.exportBundle !== "function") {
+    throw new Error("Desktop export bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.exportBundle(options),
+    "Could not export data bundle."
   );
 }
 

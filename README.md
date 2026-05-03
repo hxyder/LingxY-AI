@@ -235,7 +235,7 @@ Known release gaps:
 
 - Automatic updates are not wired to a GitHub Releases channel yet.
 - Provider/API keys are stored outside `runtime.json` in the local Secret Store; OS credential-store/keychain backing is still pending.
-- Redacted JSON export bundle exists; import, packaged zip export, and soft-delete/trash recovery are not finished.
+- Console Settings can export a redacted JSON data bundle; import, packaged zip export, and soft-delete/trash recovery are not finished.
 - Crash/error diagnostics are local-only work in progress; no telemetry is sent by default.
 - `npm run dist` can require Windows symlink/signing support, depending on the machine.
 - Real Kimi CLI verification may skip when local credentials are invalid or quota is exhausted.
