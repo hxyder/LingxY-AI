@@ -131,6 +131,22 @@ try {
   assert.equal(validMcpPreflight.payload?.ok, true);
   assert.equal(validMcpPreflight.payload?.server?.command, process.execPath);
 
+  const installPlan = await postJsonResponse(listening.baseUrl, "/config/mcp/install/plan", {
+    source: "@modelcontextprotocol/server-filesystem"
+  });
+  assert.equal(installPlan.response.status, 200);
+  assert.equal(installPlan.payload?.ok, true);
+  assert.equal(installPlan.payload?.sourceType, "npm");
+  assert.equal(installPlan.payload?.id, "modelcontextprotocol-server-filesystem");
+  assert.equal(installPlan.payload?.args?.includes("--ignore-scripts"), true);
+  assert.equal(installPlan.payload?.installRoot?.startsWith(runtime.paths.mcpInstallDir), true);
+  const installPlanMcpPayload = await fetch(`${listening.baseUrl}/ai/mcp`).then((response) => response.json());
+  assert.equal(
+    installPlanMcpPayload.servers.some((server) => server.id === "modelcontextprotocol-server-filesystem"),
+    false,
+    "MCP install plan must not write runtime config"
+  );
+
   const previewPackageDir = path.join(runtimeDir, "preview-mcp-package");
   await mkdir(path.join(previewPackageDir, "dist"), { recursive: true });
   await writeFile(path.join(previewPackageDir, "dist", "index.js"), "console.log('preview mcp');\n", "utf8");

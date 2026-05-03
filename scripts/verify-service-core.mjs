@@ -54,9 +54,11 @@ if (configProviderRouteSource.includes('url.pathname === "/config/mcp/install/pr
   throw new Error("MCP install preview route must live in mcp-install-routes.mjs, not config-provider-routes.mjs.");
 }
 if (!mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/preview"')
+    || !mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/plan"')
     || !mcpInstallRouteSource.includes("detectMcpInstallCandidate")
+    || !mcpInstallRouteSource.includes("createMcpInstallSandboxPlan")
     || mcpInstallRouteSource.includes("saveRuntimeConfig")) {
-  throw new Error("mcp-install-routes.mjs must own dry-run MCP install preview without writing config.");
+  throw new Error("mcp-install-routes.mjs must own dry-run MCP install plan/preview without writing config.");
 }
 if (httpServerSource.includes('url.pathname === "/note/transcribe"') || httpServerSource.includes('url.pathname === "/echo/kws"')) {
   throw new Error("Audio, Echo KWS, and note transcription routes must live in audio-routes.mjs, not http-server.mjs.");
