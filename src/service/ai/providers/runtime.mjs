@@ -99,7 +99,7 @@ function buildCloudStatus({
   model = null
 }) {
   const envKey = readEnvKey(env, ...apiKeyNames);
-  const configured = Boolean(config.apiKey || envKey);
+  const configured = Boolean(config.apiKey || config.apiKeyRef || config.apiKeyConfigured || envKey);
   const baseUrl = firstNonEmpty(config.baseUrl, defaultBaseUrl);
 
   return {
@@ -108,7 +108,7 @@ function buildCloudStatus({
     kind: "cloud",
     available: configured,
     configured,
-    authSource: config.apiKey ? "runtime_config" : envKey ? `env:${envKey.key}` : null,
+    authSource: (config.apiKey || config.apiKeyRef || config.apiKeyConfigured) ? "runtime_config" : envKey ? `env:${envKey.key}` : null,
     baseUrl,
     model: firstNonEmpty(config.model, model),
     detail: configured ? "api_key_present" : "api_key_missing"
@@ -155,7 +155,7 @@ async function buildOllamaStatus({ config = {}, env = process.env } = {}) {
 async function buildKimiProviderStatus({ config = {}, env = process.env } = {}) {
   const envKey = readEnvKey(env, "MOONSHOT_API_KEY", "KIMI_API_KEY", "UCA_KIMI_API_KEY");
   const kimiCodeCli = getKimiRuntimeStatus({ config: config.codeCli ?? {}, env });
-  const configured = Boolean(config.apiKey || envKey);
+  const configured = Boolean(config.apiKey || config.apiKeyRef || config.apiKeyConfigured || envKey);
 
   return {
     id: "kimi.k2",
@@ -163,7 +163,7 @@ async function buildKimiProviderStatus({ config = {}, env = process.env } = {}) 
     kind: "cloud",
     available: configured,
     configured,
-    authSource: config.apiKey ? "runtime_config" : envKey ? `env:${envKey.key}` : null,
+    authSource: (config.apiKey || config.apiKeyRef || config.apiKeyConfigured) ? "runtime_config" : envKey ? `env:${envKey.key}` : null,
     baseUrl: firstNonEmpty(config.baseUrl, "https://api.moonshot.cn/v1"),
     model: firstNonEmpty(config.model, "kimi-k2.6"),
     detail: configured ? "api_key_present" : "api_key_missing",

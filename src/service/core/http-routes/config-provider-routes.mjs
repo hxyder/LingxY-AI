@@ -12,6 +12,13 @@ import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.
 import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
 import { sanitizeProviderConfig } from "../../../shared/provider-catalog.mjs";
+import {
+  createProviderApiKeySecretRef,
+  deleteProviderApiKeySecretSync,
+  hydrateProviderApiKeySecretSync,
+  migrateProviderApiKeySecretsSync,
+  redactProviderSecret
+} from "../../security/secret-store.mjs";
 import { isFeatureEnabled } from "../feature-flags.mjs";
 import { readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
@@ -71,8 +78,27 @@ function sanitizeTaskRouting(taskRouting = {}, providers = []) {
   return next;
 }
 
-function sanitizeProviderState(ai = {}) {
-  const customProviders = (ai.customProviders ?? []).map((provider) => sanitizeProviderConfig(provider));
+function secretOptionsForRuntime(runtime) {
+  return {
+    secretStore: runtime?.secretStore ?? null,
+    paths: runtime?.paths ?? null,
+    configPath: runtime?.configStore?.configPath ?? null
+  };
+}
+
+function sanitizeProviderState(ai = {}, {
+  runtime = null,
+  hydrateSecrets = false,
+  redactSecrets = false
+} = {}) {
+  const secretOptions = secretOptionsForRuntime(runtime);
+  const rawProviders = runtime?.secretStore
+    ? migrateProviderApiKeySecretsSync(ai.customProviders ?? [], secretOptions)
+    : (ai.customProviders ?? []);
+  const customProviders = rawProviders
+    .map((provider) => hydrateSecrets ? hydrateProviderApiKeySecretSync(provider, secretOptions) : provider)
+    .map((provider) => sanitizeProviderConfig(provider))
+    .map((provider) => redactSecrets ? redactProviderSecret(provider, secretOptions) : provider);
   const taskRouting = sanitizeTaskRouting(ai.taskRouting ?? {}, customProviders);
   return { customProviders, taskRouting };
 }
@@ -182,8 +208,8 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
 
   if (method === "GET" && url.pathname === "/config/providers") {
     const config = runtime.configStore?.load?.() ?? {};
-    const sanitized = sanitizeProviderState(config.ai ?? {});
-    const providers = sanitized.customProviders;
+    const sanitized = sanitizeProviderState(config.ai ?? {}, { runtime });
+    const providers = sanitized.customProviders.map((provider) => redactProviderSecret(provider, secretOptionsForRuntime(runtime)));
     if (JSON.stringify(sanitized) !== JSON.stringify({
       customProviders: config.ai?.customProviders ?? [],
       taskRouting: config.ai?.taskRouting ?? {}
@@ -199,7 +225,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
 
   if (method === "GET" && url.pathname === "/config/provider-model-options") {
     const config = runtime.configStore?.load?.() ?? {};
-    const providers = sanitizeProviderState(config.ai ?? {}).customProviders;
+    const providers = sanitizeProviderState(config.ai ?? {}, { runtime, hydrateSecrets: true }).customProviders;
     const providerId = url.searchParams.get("providerId");
     const forceRefresh = ["1", "true", "yes"].includes(`${url.searchParams.get("refresh") ?? ""}`.toLowerCase());
     const selected = providerId
@@ -229,9 +255,10 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       return true;
     }
     const config = runtime.configStore?.load?.() ?? {};
-    const currentState = sanitizeProviderState(config.ai ?? {});
+    const currentState = sanitizeProviderState(config.ai ?? {}, { runtime });
     const list = currentState.customProviders;
     const idx = list.findIndex((provider) => provider.id === body.id);
+    const existing = idx >= 0 ? list[idx] : null;
     let entry = {
       id: body.id,
       name: body.name ?? body.id,
@@ -244,7 +271,21 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       entry.transport = body.transport ?? "stream_json_print";
     } else {
       entry.baseUrl = body.baseUrl ?? "";
-      entry.apiKey = body.apiKey ?? "";
+      const apiKey = `${body.apiKey ?? ""}`.trim();
+      if (runtime.secretStore) {
+        if (apiKey) {
+          const ref = createProviderApiKeySecretRef(entry.id);
+          runtime.secretStore.setSync(ref, apiKey, {
+            kind: "provider_api_key",
+            providerId: entry.id
+          });
+          entry.apiKeyRef = ref;
+        } else if (existing?.apiKeyRef) {
+          entry.apiKeyRef = existing.apiKeyRef;
+        }
+      } else {
+        entry.apiKey = apiKey || existing?.apiKey || "";
+      }
     }
     entry = sanitizeProviderConfig(entry);
     const currentConfig = runtime.configStore?.load?.() ?? {};
@@ -253,7 +294,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       ...(currentConfig.ai ?? {}),
       customProviders: nextList,
       taskRouting: currentState.taskRouting
-    });
+    }, { runtime });
     runtime.configStore?.save?.({
       ...currentConfig,
       ai: {
@@ -263,7 +304,10 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       }
     });
     providerModelDiscovery.invalidate(entry);
-    sendJson(response, 200, { ok: true, provider: entry });
+    sendJson(response, 200, {
+      ok: true,
+      provider: redactProviderSecret(entry, secretOptionsForRuntime(runtime))
+    });
     return true;
   }
 
@@ -271,9 +315,13 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const id = decodeURIComponent(url.pathname.replace(/^\/config\/providers\//, ""));
     const config = runtime.configStore?.load?.() ?? {};
-    const currentState = sanitizeProviderState(config.ai ?? {});
+    const currentState = sanitizeProviderState(config.ai ?? {}, { runtime });
+    const removed = currentState.customProviders.filter((provider) => provider.id === id);
+    for (const provider of removed) {
+      deleteProviderApiKeySecretSync(provider, secretOptionsForRuntime(runtime));
+    }
     const nextList = currentState.customProviders.filter((provider) => provider.id !== id);
-    runtime.configStore?.patch?.({ ai: sanitizeProviderState({ ...currentState, customProviders: nextList }) });
+    runtime.configStore?.patch?.({ ai: sanitizeProviderState({ ...currentState, customProviders: nextList }, { runtime }) });
     providerModelDiscovery.invalidate({ id });
     sendJson(response, 200, { ok: true, deleted: id });
     return true;
@@ -283,7 +331,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const body = await readJsonBody(request);
     const config = runtime.configStore?.load?.() ?? {};
-    const currentState = sanitizeProviderState(config.ai ?? {});
+    const currentState = sanitizeProviderState(config.ai ?? {}, { runtime });
     const sanitized = sanitizeTaskRouting(body, currentState.customProviders);
     runtime.configStore?.patch?.({ ai: { customProviders: currentState.customProviders, taskRouting: sanitized } });
     sendJson(response, 200, { ok: true, taskRouting: sanitized });

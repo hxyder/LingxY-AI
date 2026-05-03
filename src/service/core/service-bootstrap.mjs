@@ -67,7 +67,8 @@ export function createServiceBootstrap({
   configStore = null,
   securityConfig = {},
   kimiRuntime = null,
-  paths = null
+  paths = null,
+  secretStore = null
 } = {}) {
   // Ensure configStore is always available — verify scripts and email monitor
   // need load()/save()/patch() even when no disk-backed store is provided.
@@ -94,6 +95,7 @@ export function createServiceBootstrap({
     executors,
     kimiRuntime,
     configStore,
+    secretStore,
     paths,
     metrics: createMetricsRegistry({
       store: storeAdapter,

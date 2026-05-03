@@ -2672,10 +2672,11 @@ const TASK_TYPES = [
 // models genuinely lack a vision layer.
 function providerCanVisionFrontend(provider) {
   if (!provider) return false;
+  const hasApiKey = Boolean(provider.apiKey || provider.apiKeyRef || provider.apiKeyConfigured);
   if (provider.supportsVision === true) return true;
   if (provider.supportsVision === false) return false;
-  if (provider.kind === "anthropic" && provider.apiKey) return true;
-  if (provider.kind === "openai" && provider.apiKey) {
+  if (provider.kind === "anthropic" && hasApiKey) return true;
+  if (provider.kind === "openai" && hasApiKey) {
     const fp = `${provider.baseUrl ?? ""} ${provider.defaultModel ?? ""} ${provider.name ?? ""}`.toLowerCase();
     return /api\.openai\.com|generativelanguage|gemini|glm|qwen|pixtral|mistral|openrouter|siliconflow|gpt-5|gpt-4o|gpt-4-vision|claude-3|claude-sonnet|claude-opus|doubao|ark|volces/.test(fp);
   }
@@ -2840,7 +2841,7 @@ function renderProvidersList() {
 
   el.innerHTML = customProviders.map((p) => {
     const isCli = p.kind === "code_cli";
-    const isActive = isCli ? Boolean(p.command) : Boolean(p.apiKey);
+    const isActive = isCli ? Boolean(p.command) : (p.kind === "ollama" || Boolean(p.apiKey || p.apiKeyRef || p.apiKeyConfigured));
     const kindLabel = { anthropic: "Anthropic", openai: "OpenAI compat", ollama: "Ollama local", code_cli: "Code CLI" }[p.kind] ?? p.kind;
     const subtitle = isCli ? (p.command || "no command") : (p.baseUrl || "default URL");
     return `
@@ -3116,6 +3117,9 @@ function openProviderModal(editId = null) {
       kind.value = existing.kind ?? "anthropic";
       baseUrl.value = existing.baseUrl ?? "";
       apiKey.value = existing.apiKey ?? "";
+      apiKey.placeholder = (existing.apiKey || existing.apiKeyRef || existing.apiKeyConfigured)
+        ? "Stored key configured; leave blank to keep"
+        : "sk-...";
       command.value = existing.command ?? "";
       args.value = (existing.args ?? []).join(" ");
       transport.value = existing.transport ?? "stream_json_print";
@@ -3127,6 +3131,7 @@ function openProviderModal(editId = null) {
     kind.value = "anthropic";
     baseUrl.value = "https://api.anthropic.com";
     apiKey.value = "";
+    apiKey.placeholder = "sk-...";
     command.value = "";
     args.value = "";
     transport.value = "stream_json_print";
@@ -3232,7 +3237,8 @@ document.getElementById("providerEditForm")?.addEventListener("submit", async (e
     payload.transport = document.getElementById("provTransport").value;
   } else {
     payload.baseUrl = document.getElementById("provBaseUrl").value.trim();
-    payload.apiKey = document.getElementById("provApiKey").value.trim();
+    const apiKey = document.getElementById("provApiKey").value.trim();
+    if (apiKey) payload.apiKey = apiKey;
   }
 
   await saveProviderViaShell(payload);

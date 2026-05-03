@@ -4,6 +4,7 @@ import { createRuntimeConfigStore } from "./config-store.mjs";
 import { createServiceHttpServer } from "./http-server.mjs";
 import { resolveRuntimePaths, ensureRuntimePaths } from "./runtime-paths.mjs";
 import { createServiceBootstrap } from "./service-bootstrap.mjs";
+import { createLocalSecretStore } from "../security/secret-store.mjs";
 import { createSqliteStore } from "./store/sqlite-store.mjs";
 import { createExplorerSelectionPipeServer, DEFAULT_EXPLORER_PIPE_NAME } from "./windows-pipe-server.mjs";
 import { getKimiRuntimeStatus, resolveKimiRuntime } from "../ai/code_cli/kimi/runtime.mjs";
@@ -68,8 +69,10 @@ export function createPersistentRuntime({
   pipeName = DEFAULT_EXPLORER_PIPE_NAME
 } = {}) {
   const paths = ensureRuntimePaths(resolveRuntimePaths({ baseDir }));
+  const secretStore = createLocalSecretStore({ paths });
   const configStore = createRuntimeConfigStore({
     configPath: paths.configPath,
+    secretStore,
     defaults: {
       security: {}
     }
@@ -100,7 +103,8 @@ export function createPersistentRuntime({
     configStore,
     securityConfig: config.security ?? {},
     kimiRuntime: resolvedKimiRuntime,
-    paths
+    paths,
+    secretStore
   });
   service.runtime.kimiRuntimeStatus = kimiRuntimeStatus;
   const server = createServiceHttpServer({

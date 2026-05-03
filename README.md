@@ -4,7 +4,7 @@ LingxY is a Windows desktop AI workspace that can understand the window you are 
 
 It is not meant to be just another chat box. The goal is a local-first assistant for everyday knowledge work: reading pages and files, generating documents, launching apps, creating scheduled jobs, drafting emails for approval, and keeping a searchable task history on your machine.
 
-The project is currently in active pre-1.0 development. It is usable for local development and trials, but release packaging, automatic updates, encrypted provider-key migration, export, crash diagnostics, and soft-delete recovery are still being completed before a wider public release.
+The project is currently in active pre-1.0 development. It is usable for local development and trials, but release packaging, automatic updates, OS keychain-backed secrets, export, crash diagnostics, and soft-delete recovery are still being completed before a wider public release.
 
 ## Feature Overview
 
@@ -211,7 +211,7 @@ Safety features include:
 - Explicit no-search/local-only constraints.
 - Behavior tests and verifier scripts for routing, submission boundaries, external calls, scheduler behavior, and local HTTP surfaces.
 
-Current limitation: provider API keys still need a complete Secret Store migration for all provider paths before a broad public v1.0 release.
+Provider API keys are now removed from `runtime.json` and stored behind local `apiKeyRef` entries. OS credential-store/keychain backing is still a v1.0 hardening item.
 
 ## How It Works
 
@@ -234,7 +234,7 @@ Stable enough for local trials:
 Known release gaps:
 
 - Automatic updates are not wired to a GitHub Releases channel yet.
-- Provider/API keys are still stored in local runtime config for some provider paths; OS credential-store migration is a v1.0 blocker.
+- Provider/API keys are stored outside `runtime.json` in the local Secret Store; OS credential-store/keychain backing is still pending.
 - Export/import bundle and soft-delete/trash recovery are not finished.
 - Crash/error diagnostics are local-only work in progress; no telemetry is sent by default.
 - `npm run dist` can require Windows symlink/signing support, depending on the machine.
@@ -297,7 +297,7 @@ Open Console from the overlay or tray, then configure:
 4. Scheduler: create recurring or one-shot tasks and check approval behavior.
 5. Skills: add reusable `SKILL.md` folders or let repeated workflows become suggested skills.
 
-Provider keys are local to your machine. Until the Secret Store migration lands, review `%APPDATA%\UCA\config\runtime.json` handling before putting sensitive production credentials into a public or shared machine.
+Provider keys are local to your machine. Runtime provider config stores `apiKeyRef` values in `%APPDATA%\UCA\config\runtime.json`; the local Secret Store keeps the corresponding key material under the runtime data directory. OS keychain backing is still planned before a broad v1.0 release.
 
 ## Data Locations
 
@@ -308,6 +308,7 @@ Runtime data is stored under `%APPDATA%\UCA\` by default:
   config\
     runtime.json
   data\
+    secrets.json
     uca.db
     integrations\
     history\

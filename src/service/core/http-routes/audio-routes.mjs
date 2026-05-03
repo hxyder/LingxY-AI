@@ -7,6 +7,7 @@ import readline from "node:readline";
 import { promisify } from "node:util";
 import { SSE_HEADERS } from "../../events/sse.mjs";
 import { resolveProviderForTask } from "../../executors/shared/provider-resolver.mjs";
+import { hydrateProviderApiKeySecretSync } from "../../security/secret-store.mjs";
 import { readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 
@@ -73,7 +74,13 @@ function resolveAudioTranscriptionProvider(runtime, env = process.env) {
   }
 
   const config = runtime.configStore?.load?.() ?? {};
-  const providers = config.ai?.customProviders ?? [];
+  const secretOptions = {
+    secretStore: runtime?.secretStore ?? null,
+    paths: runtime?.paths ?? null,
+    configPath: runtime?.configStore?.configPath ?? null
+  };
+  const providers = (config.ai?.customProviders ?? [])
+    .map((provider) => hydrateProviderApiKeySecretSync(provider, secretOptions));
   const audioRoute = config.ai?.taskRouting?.audio_transcription;
   if (audioRoute?.providerId) {
     const routed = providers.find((provider) => provider.id === audioRoute.providerId);

@@ -14,6 +14,10 @@ import {
   sanitizeProviderConfig,
   sanitizeTaskRouteForProvider
 } from "../../../shared/provider-catalog.mjs";
+import {
+  hydrateProviderApiKeySecretSync,
+  providerHasConfiguredApiKey
+} from "../../security/secret-store.mjs";
 
 export { sanitizeTaskRouteForProvider } from "../../../shared/provider-catalog.mjs";
 
@@ -43,6 +47,17 @@ function loadConfig() {
   } catch {
     return {};
   }
+}
+
+function secretOptions() {
+  return { configPath: getConfigPath() };
+}
+
+function hydrateProvider(provider, taskType) {
+  return sanitizeProviderConfig(
+    hydrateProviderApiKeySecretSync(provider, secretOptions()),
+    taskType
+  );
 }
 
 function readApiKey(env, ...keys) {
@@ -148,7 +163,7 @@ function providerToResolved(provider, route, taskType) {
  */
 export function resolveProviderForTask(taskType, env = process.env) {
   const config = loadConfig();
-  const customProviders = (config.ai?.customProviders ?? []).map((provider) => sanitizeProviderConfig(provider, taskType));
+  const customProviders = (config.ai?.customProviders ?? []).map((provider) => hydrateProvider(provider, taskType));
   const routing = Object.fromEntries(
     Object.entries(config.ai?.taskRouting ?? {}).map(([routeTaskType, route]) => {
       const provider = route?.providerId
@@ -407,7 +422,11 @@ export function resolveActiveProviderForTask(taskType, fallbackRuntime = null) {
 export function hasAnyConfiguredProvider() {
   const config = loadConfig();
   const customProviders = config.ai?.customProviders ?? [];
-  if (customProviders.some((p) => (p.kind === "code_cli" ? p.command : p.apiKey))) return true;
+  if (customProviders.some((p) => {
+    if (p.kind === "code_cli") return Boolean(p.command);
+    if (p.kind === "ollama") return true;
+    return providerHasConfiguredApiKey(p, secretOptions());
+  })) return true;
 
   const env = process.env;
   return Boolean(

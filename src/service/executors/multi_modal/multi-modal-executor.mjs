@@ -13,6 +13,7 @@ import { buildKimiTaskPackage } from "../kimi/task-package-builder.mjs";
 import { mkdir } from "node:fs/promises";
 import os from "node:os";
 import { fetchExternal } from "../../core/external-call.mjs";
+import { hydrateProviderApiKeySecretSync } from "../../security/secret-store.mjs";
 import { buildOpenAIChatCompletionBody } from "../../../shared/provider-catalog.mjs";
 
 const MULTI_MODAL_API_FETCH_TIMEOUT_MS = 120_000;
@@ -65,7 +66,9 @@ function findFallbackVisionProvider(currentProvider = null) {
       ?? path.join(os.homedir(), "AppData", "Roaming", "UCA", "config", "runtime.json");
     if (!existsSync(configPath)) return null;
     const config = JSON.parse(readFileSync(configPath, "utf8"));
+    const secretOptions = { configPath };
     const providers = (config.ai?.customProviders ?? [])
+      .map((p) => hydrateProviderApiKeySecretSync(p, secretOptions))
       .filter((p) => p?.supportsVision !== false)
       .filter((p) => !sameProvider(p, currentProvider));
     const override = providers.find((p) => p.supportsVision === true);

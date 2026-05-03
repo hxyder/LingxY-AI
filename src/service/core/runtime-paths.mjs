@@ -21,6 +21,7 @@ export function resolveRuntimePaths({ baseDir = null } = {}) {
     configPath: path.join(resolvedBaseDir, "config", "runtime.json"),
     dataDir: path.join(resolvedBaseDir, "data"),
     dbPath: path.join(resolvedBaseDir, "data", "uca.db"),
+    secretsPath: path.join(resolvedBaseDir, "data", "secrets.json"),
     templatesDir: path.join(resolvedBaseDir, "data", "templates"),
     integrationsDir: path.join(resolvedBaseDir, "data", "integrations"),
     mcpDir: path.join(resolvedBaseDir, "data", "integrations", "mcp"),

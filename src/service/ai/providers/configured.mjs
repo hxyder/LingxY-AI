@@ -76,6 +76,10 @@ function normalizeProviderKind(kind) {
   return "openai";
 }
 
+function providerHasApiCredential(provider = {}) {
+  return Boolean(provider.apiKey || provider.apiKeyRef || provider.apiKeyConfigured);
+}
+
 export function createConfiguredAIProvider(provider = {}) {
   const id = provider.id;
   const kind = normalizeProviderKind(provider.kind);
@@ -95,7 +99,7 @@ export function createConfiguredAIProvider(provider = {}) {
       if (kind === "code_cli") {
         return Boolean(provider.command);
       }
-      return kind === "ollama" || Boolean(provider.apiKey);
+      return kind === "ollama" || providerHasApiCredential(provider);
     },
     async validateConfig() {
       const configured = await this.isConfigured();
@@ -124,7 +128,7 @@ export function createConfiguredAIProvider(provider = {}) {
         };
       }
 
-      const configured = kind === "ollama" || Boolean(provider.apiKey);
+      const configured = kind === "ollama" || providerHasApiCredential(provider);
       return {
         id,
         displayName,

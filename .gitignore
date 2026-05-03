@@ -43,9 +43,11 @@ artifacts/
 outputs/
 
 # Local app/runtime
+.uca-runtime/
 external/paddle_ocr_runtime/
 models/
 internal/
+**/secrets.json
 
 # Git task leftovers
 *.orig
