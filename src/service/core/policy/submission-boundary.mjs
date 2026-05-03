@@ -4,6 +4,7 @@ const KNOWN_SUBMISSION_KINDS = Object.freeze(new Set([
   "action_tool",
   "browser",
   "composite",
+  "connector_workflow",
   "context",
   "file",
   "image",
@@ -14,6 +15,7 @@ const KNOWN_SUBMISSION_KINDS = Object.freeze(new Set([
 
 const EXECUTOR_OVERRIDE_RISK = Object.freeze(new Map([
   ["code_cli", "medium"],
+  ["connector_workflow", "medium"],
   ["tool_using", "medium"],
   ["composite", "low"],
   ["multi_modal", "low"]
@@ -56,6 +58,15 @@ function normalizeRequestedToolIds(boundaryContext) {
   if (!Array.isArray(raw)) return [];
   return [...new Set(raw
     .map((toolId) => `${toolId ?? ""}`.trim())
+    .filter(Boolean))]
+    .sort();
+}
+
+function normalizeRequestedWorkflowIds(boundaryContext) {
+  const raw = boundaryContext?.requestedWorkflowIds ?? boundaryContext?.requested_workflow_ids ?? [];
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw
+    .map((workflowId) => `${workflowId ?? ""}`.trim())
     .filter(Boolean))]
     .sort();
 }
@@ -110,6 +121,7 @@ export function evaluateSubmissionBoundary({
   const normalizedKind = normalizeSubmissionKind(submissionKind);
   const taskSpec = task?.task_spec ?? null;
   const requestedToolIds = normalizeRequestedToolIds(boundaryContext);
+  const requestedWorkflowIds = normalizeRequestedWorkflowIds(boundaryContext);
   const reasons = [];
   const requiredGuards = [];
   let risk = "low";
@@ -166,6 +178,7 @@ export function evaluateSubmissionBoundary({
     reasons,
     required_guards: uniqueRequiredGuards,
     requested_tools: requestedToolIds,
+    requested_workflows: requestedWorkflowIds,
     blocked_tools: blockedTools,
     audit_payload: {
       decision,
@@ -175,6 +188,7 @@ export function evaluateSubmissionBoundary({
       reasons,
       required_guards: uniqueRequiredGuards,
       requested_tools: requestedToolIds,
+      requested_workflows: requestedWorkflowIds,
       blocked_tools: blockedTools,
       executor: task?.executor ?? null,
       goal: taskSpec?.goal ?? null

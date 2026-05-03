@@ -67,6 +67,7 @@ const requiredPaths = [
   "tests/behavior/agentic-user-message.test.mjs",
   "tests/behavior/account-connectors-external-call.test.mjs",
   "tests/behavior/code-cli-bridge-external-call.test.mjs",
+  "tests/behavior/connector-workflow-submission-boundary.test.mjs",
   "tests/behavior/executor-loop-policy.test.mjs",
   "tests/behavior/external-call.test.mjs",
   "tests/behavior/executor-selection.test.mjs",

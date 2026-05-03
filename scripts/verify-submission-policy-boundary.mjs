@@ -7,6 +7,11 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const coreDir = path.join(repoRoot, "src", "service", "core");
+const connectorWorkflowSubmission = {
+  name: "workflow-submission.mjs",
+  relativePath: "src/service/connectors/core/workflow-submission.mjs",
+  fullPath: path.join(repoRoot, "src", "service", "connectors", "core", "workflow-submission.mjs")
+};
 
 const expectedSubmissionFiles = new Set([
   "action-tool-submission.mjs",
@@ -99,6 +104,16 @@ const expectedClassifications = Object.freeze({
     declaresBoundaryContext: false,
     submissionKind: ["screenshot"],
     executorOverride: []
+  },
+  "workflow-submission.mjs": {
+    directPolicyGuard: false,
+    usesActionToolRegistry: false,
+    usesSecurityBroker: false,
+    runsToolAgentLoop: false,
+    submitsTaskWithConversation: false,
+    declaresBoundaryContext: true,
+    submissionKind: ["connector_workflow"],
+    executorOverride: ["connector_workflow"]
   }
 });
 
@@ -112,21 +127,37 @@ assert.deepEqual(
   "submission policy boundary audit must classify every core *-submission.mjs file"
 );
 
-const report = files.map((name) => {
-  const relativePath = `src/service/core/${name}`;
-  const source = readFileSync(path.join(coreDir, name), "utf8");
-  return {
-    file: relativePath,
-    directPolicyGuard: /\bapplyPolicyGuard\b|\bpolicyGuard\b|\briskTier\b/.test(source),
-    usesActionToolRegistry: /\bactionToolRegistry\b|\bcreateActionToolRegistry\b/.test(source),
-    usesSecurityBroker: /\bsecurityBroker\b|\binspectContext\b/.test(source),
-    runsToolAgentLoop: /\brunToolAgentLoop\b/.test(source),
-    submitsTaskWithConversation: /\bsubmitTaskWithConversation\b/.test(source),
-    declaresBoundaryContext: /\bboundaryContext\b/.test(source),
-    submissionKind: [...source.matchAll(/submissionKind(?:\s*:\s*|\s*=\s*)"([^"]+)"/g)].map((match) => match[1]),
-    executorOverride: [...source.matchAll(/executorOverride:\s*"([^"]+)"/g)].map((match) => match[1])
-  };
-});
+const report = [
+  ...files.map((name) => {
+    const relativePath = `src/service/core/${name}`;
+    const source = readFileSync(path.join(coreDir, name), "utf8");
+    return {
+      file: relativePath,
+      directPolicyGuard: /\bapplyPolicyGuard\b|\bpolicyGuard\b|\briskTier\b/.test(source),
+      usesActionToolRegistry: /\bactionToolRegistry\b|\bcreateActionToolRegistry\b/.test(source),
+      usesSecurityBroker: /\bsecurityBroker\b|\binspectContext\b/.test(source),
+      runsToolAgentLoop: /\brunToolAgentLoop\b/.test(source),
+      submitsTaskWithConversation: /\bsubmitTaskWithConversation\b/.test(source),
+      declaresBoundaryContext: /\bboundaryContext\b/.test(source),
+      submissionKind: [...source.matchAll(/submissionKind(?:\s*:\s*|\s*=\s*)"([^"]+)"/g)].map((match) => match[1]),
+      executorOverride: [...source.matchAll(/executorOverride:\s*"([^"]+)"/g)].map((match) => match[1])
+    };
+  }),
+  (() => {
+    const source = readFileSync(connectorWorkflowSubmission.fullPath, "utf8");
+    return {
+      file: connectorWorkflowSubmission.relativePath,
+      directPolicyGuard: /\bapplyPolicyGuard\b|\bpolicyGuard\b|\briskTier\b/.test(source),
+      usesActionToolRegistry: /\bactionToolRegistry\b|\bcreateActionToolRegistry\b/.test(source),
+      usesSecurityBroker: /\bsecurityBroker\b|\binspectContext\b/.test(source),
+      runsToolAgentLoop: /\brunToolAgentLoop\b/.test(source),
+      submitsTaskWithConversation: /\bsubmitTaskWithConversation\b/.test(source),
+      declaresBoundaryContext: /\bboundaryContext\b/.test(source),
+      submissionKind: [...source.matchAll(/submissionKind(?:\s*:\s*|\s*=\s*)"([^"]+)"/g)].map((match) => match[1]),
+      executorOverride: [...source.matchAll(/executorOverride:\s*"([^"]+)"/g)].map((match) => match[1])
+    };
+  })()
+];
 
 for (const entry of report) {
   const name = path.basename(entry.file);

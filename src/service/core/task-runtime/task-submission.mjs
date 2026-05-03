@@ -6,7 +6,7 @@ import {
 } from "./conversation-lifecycle.mjs";
 import { createTaskRecord } from "./task-record.mjs";
 
-function auditSubmissionBoundary(runtime, task) {
+export function auditSubmissionBoundary(runtime, task) {
   if (!runtime || !task?.submission_boundary) return null;
   try {
     return appendAuditLog(

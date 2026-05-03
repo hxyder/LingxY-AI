@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import {
+  auditSubmissionBoundary,
   createTaskRecord,
   emitTaskEvent,
   ensureRuntimeServices,
@@ -24,6 +25,31 @@ function buildContextPacket({ workflowId, userCommand = "" }) {
   };
 }
 
+function buildWorkflowBoundaryContext({ workflowId, workflow }) {
+  const requestedToolIds = new Set(["connector_workflow_run"]);
+  for (const step of workflow?.steps ?? []) {
+    if (typeof step?.tool === "string" && step.tool.trim()) {
+      requestedToolIds.add(step.tool.trim());
+    }
+  }
+  return {
+    requestedToolIds: [...requestedToolIds].sort(),
+    requestedWorkflowIds: workflowId ? [workflowId] : []
+  };
+}
+
+function summarizeSubmissionBoundaryBlock(boundary) {
+  const tools = Array.isArray(boundary?.blocked_tools)
+    ? boundary.blocked_tools.map((tool) => tool.tool_id).filter(Boolean)
+    : [];
+  const workflows = Array.isArray(boundary?.requested_workflows)
+    ? boundary.requested_workflows.filter(Boolean)
+    : [];
+  const workflowText = workflows.length > 0 ? `workflow "${workflows.join(", ")}"` : "the requested workflow";
+  const toolText = tools.length > 0 ? ` because it would call forbidden tool "${tools.join(", ")}"` : "";
+  return `Submission blocked by policy: ${workflowText}${toolText}.`;
+}
+
 export async function submitConnectorWorkflowTask({
   runtime,
   workflowId,
@@ -34,6 +60,7 @@ export async function submitConnectorWorkflowTask({
   bypassDedupe = false
 }) {
   ensureRuntimeServices(runtime);
+  const workflow = runtime.connectorCatalog?.getWorkflow?.(workflowId) ?? null;
   const route = {
     intent: "connector_workflow",
     executor: "connector_workflow",
@@ -45,10 +72,30 @@ export async function submitConnectorWorkflowTask({
     userCommand: userCommand || `Run connector workflow ${workflowId}`,
     executionMode,
     bypassDedupe,
-    executorOverride: "connector_workflow"
+    executorOverride: "connector_workflow",
+    submissionKind: "connector_workflow",
+    boundaryContext: buildWorkflowBoundaryContext({ workflowId, workflow })
   });
 
   runtime.store.insertTask(task);
+  auditSubmissionBoundary(runtime, task);
+  if (task.submission_boundary?.blocking) {
+    const finalText = summarizeSubmissionBoundaryBlock(task.submission_boundary);
+    markTaskFailed(runtime, task, {
+      code: "submission_boundary_blocked",
+      message: finalText
+    });
+    return {
+      task,
+      taskEvents: runtime.store.getTaskEvents(task.task_id),
+      blocked: true,
+      final_text: finalText,
+      workflowResult: {
+        status: "failed",
+        error: finalText
+      }
+    };
+  }
   runtime.queue.enqueue(task);
   emitTaskEvent({
     runtime,

@@ -13,7 +13,10 @@ export {
 export { emitTaskEvent } from "./task-runtime/event-emitter.mjs";
 export { createTaskRecord } from "./task-runtime/task-record.mjs";
 export { ensureRuntimeServices } from "./task-runtime/runtime-services.mjs";
-export { submitTaskWithConversation } from "./task-runtime/task-submission.mjs";
+export {
+  auditSubmissionBoundary,
+  submitTaskWithConversation
+} from "./task-runtime/task-submission.mjs";
 export { cancelTask } from "./task-runtime/task-cancellation.mjs";
 export {
   applyExecutorEvent,
