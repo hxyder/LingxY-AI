@@ -74,6 +74,7 @@ for (const channel of [
   "uca:email-settings-update",
   "uca:email-account-save",
   "uca:email-account-delete",
+  "uca:email-digest-check",
   "uca:connected-account-rename",
   "uca:connected-account-default-set",
   "uca:connected-account-disconnect",

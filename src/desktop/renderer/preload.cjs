@@ -337,6 +337,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteEmailAccount(id) {
     return ipcRenderer.invoke("uca:email-account-delete", id ?? "");
   },
+  checkEmailDigest(payload) {
+    return ipcRenderer.invoke("uca:email-digest-check", payload ?? {});
+  },
   renameConnectedAccount(accountId, displayName) {
     return ipcRenderer.invoke("uca:connected-account-rename", { accountId, displayName });
   },

@@ -221,6 +221,13 @@ function normalizeEmailAccountId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
 
+function normalizeEmailDigestCheckPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    force: source.force === true
+  };
+}
+
 function normalizeConnectedAccountId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
@@ -1014,7 +1021,13 @@ export function createElectronShellRuntime({
       return;
     }
     try {
-      await fetch(`${resolvedServiceBaseUrl}/email/digest/check`, { method: "POST" });
+      await requestDesktopServiceJson({
+        base: resolvedServiceBaseUrl ?? "http://127.0.0.1:4310",
+        actor: "desktop_shell",
+        method: "POST",
+        pathname: "/email/digest/check",
+        body: {}
+      });
     } catch (error) {
       safeWarn("Morning digest check failed", error?.message ?? error);
     }
@@ -2602,6 +2615,24 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "email_account_delete_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.emailDigestCheck, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/email/digest/check",
+            body: normalizeEmailDigestCheckPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "email_digest_check_failed",
             message: error?.message ?? String(error)
           };
         }

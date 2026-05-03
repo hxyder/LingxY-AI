@@ -74,6 +74,19 @@ function makeEmailAccountRuntime(initialConfig = {}) {
   };
 }
 
+function makeEmailDigestRuntime(initialConfig = {}) {
+  const calls = [];
+  return {
+    calls,
+    configStore: {
+      load() {
+        calls.push({ method: "config.load" });
+        return initialConfig;
+      }
+    }
+  };
+}
+
 async function postConfigRoute({ pathname, body = {}, actor = "desktop_console", runtime = makeConfigRuntime() }) {
   const response = captureResponse();
   const headers = actor ? { [ACTOR_HEADER]: actor } : {};
@@ -459,6 +472,42 @@ test("email account credential mutations allow the console actor", async (t) => 
   assert.equal(deleteRuntime.calls[0].method, "config.load");
   assert.equal(deleteRuntime.calls[1].method, "config.save");
   assert.deepEqual(deleteRuntime.calls[1].value.email.accounts, []);
+});
+
+test("email digest manual check requires console or shell actor before reading local config", async () => {
+  const blockedRuntime = makeEmailDigestRuntime({
+    features: { morning_digest: { enabled: false } }
+  });
+  const blocked = await configProviderRoute({
+    method: "POST",
+    pathname: "/email/digest/check",
+    actor: "desktop_overlay",
+    runtime: blockedRuntime,
+    body: { force: true }
+  });
+  assert.equal(blocked.handled, true);
+  assert.equal(blocked.statusCode, 403);
+  assert.equal(blocked.payload.error, "desktop_actor_required");
+  assert.deepEqual(blockedRuntime.calls, []);
+
+  for (const actor of ["desktop_console", "desktop_shell"]) {
+    const runtime = makeEmailDigestRuntime({
+      features: { morning_digest: { enabled: false } }
+    });
+    const allowed = await configProviderRoute({
+      method: "POST",
+      pathname: "/email/digest/check",
+      actor,
+      runtime,
+      body: {}
+    });
+    assert.equal(allowed.statusCode, 200, `${actor} should be allowed`);
+    assert.equal(allowed.payload.reason, "feature_disabled");
+    assert.deepEqual(runtime.calls, [
+      { method: "config.load" },
+      { method: "config.load" }
+    ]);
+  }
 });
 
 test("approval mutation routes trust the desktop actor header over any body actor", async () => {

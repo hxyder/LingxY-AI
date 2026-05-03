@@ -203,8 +203,8 @@ const expectedSurfaces = [
   surface("config-provider-routes.mjs", "POST", "/email/digest/check", {
     domain: "email",
     effect: "local_probe",
-    boundary: "local_ui_pending_guard",
-    migration: "email_bridge_review"
+    boundary: "guarded_desktop_actor",
+    migration: "done"
   }),
   surface("config-provider-routes.mjs", "POST", "/skills/save", {
     domain: "skills_config",

@@ -216,6 +216,10 @@ assert.ok(!/fetchJson\(\s*`\/config\/email\/accounts\/\$\{encodeURIComponent\([^
   "email account delete: console must not DELETE /config/email/accounts/:id directly via fetchJson");
 assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/config\/email\/accounts\/\$\{encodeURIComponent\([^)]*\)\}`\s*,\s*\{\s*method:\s*["'`]DELETE/.test(consoleJs),
   "email account delete: console must not DELETE /config/email/accounts/:id directly via fetch");
+assert.ok(/checkEmailDigestViaShell/.test(consoleJs) && /window\.ucaShell\.checkEmailDigest/.test(consoleJs),
+  "email digest check: console must use desktop shell bridge");
+assert.ok(!/fetch\(\s*`\$\{state\.serviceBaseUrl\}\/email\/digest\/check`\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
+  "email digest check: console must not POST /email/digest/check directly");
 assert.ok(/\.mcp-install-preview\b/.test(sharedCss),
   "mcp install preview: CSS wrapper missing");
 assert.ok(/id="skillRegistryTestBtn"/.test(consoleHtml), "skill preflight: test button missing");

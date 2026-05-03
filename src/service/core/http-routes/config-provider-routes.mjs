@@ -436,6 +436,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "POST" && url.pathname === "/email/digest/check") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console", "desktop_shell"] })) return true;
     const rawBody = await readRawBody(request);
     let body = {};
     const rawText = Buffer.isBuffer(rawBody) ? rawBody.toString("utf8") : `${rawBody ?? ""}`;

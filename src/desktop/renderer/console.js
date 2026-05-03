@@ -6501,6 +6501,16 @@ async function deleteEmailAccountViaShell(accountId) {
   );
 }
 
+async function checkEmailDigestViaShell(payload = {}) {
+  if (typeof window.ucaShell?.checkEmailDigest !== "function") {
+    throw new Error("Desktop email digest bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.checkEmailDigest(payload),
+    "Could not run email digest check."
+  );
+}
+
 async function renameConnectedAccountViaShell(accountId, displayName) {
   if (typeof window.ucaShell?.renameConnectedAccount !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
@@ -8626,18 +8636,11 @@ document.getElementById("connEmailConnectBtn")?.addEventListener("click", async 
 connDigestTestBtn?.addEventListener("click", async () => {
   if (connDigestTestState) connDigestTestState.textContent = "Sending digest…";
   try {
-    const resp = await fetch(`${state.serviceBaseUrl}/email/digest/check`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ force: true })
-    });
-    const data = await resp.json();
+    const data = await checkEmailDigestViaShell({ force: true });
     if (connDigestTestState) {
-      connDigestTestState.textContent = resp.ok
-        ? (data.sent
-            ? (data.forced ? "Digest sent (manual test)." : "Digest sent!")
-            : (data.reason ?? "No digest sent."))
-        : (data.message ?? data.error ?? "Digest test failed.");
+      connDigestTestState.textContent = data.sent
+        ? (data.forced ? "Digest sent (manual test)." : "Digest sent!")
+        : (data.reason ?? "No digest sent.");
       setTimeout(() => { connDigestTestState.textContent = ""; }, 4000);
     }
   } catch (err) {
