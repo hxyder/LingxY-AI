@@ -89,6 +89,7 @@ const listening = await runtime.start();
 try {
   const config = await fetch(`${listening.baseUrl}/config/integrations`).then((response) => response.json());
   assert.equal(config.paths.mcpDir.endsWith(path.join("integrations", "mcp")), true);
+  assert.equal(config.paths.mcpInstallDir.endsWith(path.join("integrations", "mcp-packages")), true);
   assert.equal(config.paths.skillsDir.endsWith(path.join("integrations", "skills")), true);
   assert.equal(config.paths.codeCliDir.endsWith(path.join("integrations", "code_cli")), true);
 

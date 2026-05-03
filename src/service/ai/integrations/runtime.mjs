@@ -235,6 +235,7 @@ export function createAIIntegrationRuntime({ configStore = null, paths = null } 
     integrationPaths: {
       baseDir: paths?.integrationsDir ?? null,
       mcpDir: paths?.mcpDir ?? null,
+      mcpInstallDir: paths?.mcpInstallDir ?? null,
       skillsDir: paths?.skillsDir ?? null,
       codeCliDir: paths?.codeCliDir ?? null
     }
