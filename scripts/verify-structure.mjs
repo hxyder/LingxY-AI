@@ -343,6 +343,7 @@ const requiredPaths = [
   "scripts/verify-behavior-tests.mjs",
   "scripts/verify-external-call-boundary.mjs",
   "scripts/verify-submission-policy-boundary.mjs",
+  "scripts/verify-local-http-surface.mjs",
   "scripts/verify-native-integrations.mjs",
   "scripts/create-ooxml-fixture.ps1",
   "scripts/render-document.ps1",
