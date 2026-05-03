@@ -34,6 +34,19 @@ function isInsideDirectory(candidatePath, rootPath) {
   return relative === "" || Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
+function npmSpawnPlanArgs(args) {
+  if (process.platform !== "win32") {
+    return {
+      command: "npm",
+      args
+    };
+  }
+  return {
+    command: "cmd.exe",
+    args: ["/d", "/s", "/c", "npm.cmd", ...args]
+  };
+}
+
 export function classifyMcpInstallSource(source) {
   const value = `${source ?? ""}`.trim();
   if (!value) {
@@ -110,6 +123,7 @@ export function createMcpInstallSandboxPlan({
     installArgs.push("--ignore-scripts");
   }
   installArgs.push(classified.source);
+  const spawnPlan = npmSpawnPlanArgs(installArgs);
 
   return {
     ok: true,
@@ -120,8 +134,8 @@ export function createMcpInstallSandboxPlan({
     packageDir,
     packageJsonPath: path.join(packageDir, "package.json"),
     lockfilePath,
-    command: process.platform === "win32" ? "npm.cmd" : "npm",
-    args: installArgs,
+    command: spawnPlan.command,
+    args: spawnPlan.args,
     allowScripts: Boolean(allowScripts),
     cleanupOnFailure: true
   };

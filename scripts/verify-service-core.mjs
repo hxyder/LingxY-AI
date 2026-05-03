@@ -56,10 +56,12 @@ if (configProviderRouteSource.includes('url.pathname === "/config/mcp/install/pr
 }
 if (!mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/preview"')
     || !mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/plan"')
+    || !mcpInstallRouteSource.includes('url.pathname === "/config/mcp/install/run"')
     || !mcpInstallRouteSource.includes("detectMcpInstallCandidate")
     || !mcpInstallRouteSource.includes("createMcpInstallSandboxPlan")
+    || !mcpInstallRouteSource.includes("executeMcpInstall")
     || mcpInstallRouteSource.includes("saveRuntimeConfig")) {
-  throw new Error("mcp-install-routes.mjs must own dry-run MCP install plan/preview without writing config.");
+  throw new Error("mcp-install-routes.mjs must own MCP install plan/preview/run without writing config.");
 }
 if (!mcpInstallExecutionSource.includes("spawnExternal")
     || /\bspawn\s*\(/.test(mcpInstallExecutionSource)

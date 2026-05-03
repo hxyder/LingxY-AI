@@ -77,6 +77,7 @@ const requiredPaths = [
   "tests/behavior/mermaid-local-assets.test.mjs",
   "tests/behavior/mcp-install-detection.test.mjs",
   "tests/behavior/mcp-install-execution.test.mjs",
+  "tests/behavior/mcp-install-route.test.mjs",
   "tests/behavior/mcp-install-sandbox.test.mjs",
   "tests/behavior/multi-modal-external-call.test.mjs",
   "tests/behavior/task-runtime-event-emitter.test.mjs",

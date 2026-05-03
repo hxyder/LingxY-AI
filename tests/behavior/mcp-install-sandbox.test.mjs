@@ -22,6 +22,22 @@ test("MCP install sandbox plans scoped npm packages inside the sandbox", () => {
   assert.equal(plan.cleanupOnFailure, true);
 });
 
+test("MCP install sandbox emits a spawn-compatible npm command on Windows", () => {
+  const plan = createMcpInstallSandboxPlan({
+    source: "demo-mcp",
+    paths: { mcpInstallDir: installDir }
+  });
+  assert.equal(plan.ok, true);
+  if (process.platform === "win32") {
+    assert.equal(plan.command, "cmd.exe");
+    assert.deepEqual(plan.args.slice(0, 4), ["/d", "/s", "/c", "npm.cmd"]);
+  } else {
+    assert.equal(plan.command, "npm");
+  }
+  assert.equal(plan.args.includes("install"), true);
+  assert.equal(plan.args.includes("demo-mcp"), true);
+});
+
 test("MCP install sandbox can derive a deterministic GitHub install id", () => {
   const plan = createMcpInstallSandboxPlan({
     source: "https://github.com/example/my-mcp-server.git",

@@ -1,4 +1,5 @@
 import { detectMcpInstallCandidate } from "../../ai/mcp/install-detection.mjs";
+import { executeMcpInstall } from "../../ai/mcp/install-execution.mjs";
 import { createMcpInstallSandboxPlan } from "../../ai/mcp/install-sandbox.mjs";
 import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
@@ -34,6 +35,18 @@ function buildPreviewPayload(result) {
   };
 }
 
+function resolveMcpInstallDir(runtime) {
+  return runtime?.paths?.mcpInstallDir ?? runtime?.platform?.integrationPaths?.mcpInstallDir ?? null;
+}
+
+function normalizeTimeoutMs(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return undefined;
+  }
+  return Math.floor(parsed);
+}
+
 export async function tryHandleMcpInstallRoute({ request, response, method, url, runtime }) {
   if (method === "POST" && url.pathname === "/config/mcp/install/plan") {
     const body = await readJsonBody(request);
@@ -42,7 +55,7 @@ export async function tryHandleMcpInstallRoute({ request, response, method, url,
       id: body.id,
       allowScripts: body.allowScripts === true,
       paths: {
-        mcpInstallDir: runtime?.paths?.mcpInstallDir ?? runtime?.platform?.integrationPaths?.mcpInstallDir ?? null
+        mcpInstallDir: resolveMcpInstallDir(runtime)
       }
     });
     sendJson(response, 200, result);
@@ -57,6 +70,22 @@ export async function tryHandleMcpInstallRoute({ request, response, method, url,
       id: body.id
     });
     sendJson(response, 200, buildPreviewPayload(result));
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/config/mcp/install/run") {
+    const body = await readJsonBody(request);
+    const executor = runtime?.mcpInstallExecutor ?? executeMcpInstall;
+    const result = await executor({
+      source: body.source,
+      id: body.id,
+      allowScripts: body.allowScripts === true,
+      timeoutMs: normalizeTimeoutMs(body.timeoutMs),
+      paths: {
+        mcpInstallDir: resolveMcpInstallDir(runtime)
+      }
+    });
+    sendJson(response, 200, result);
     return true;
   }
 
