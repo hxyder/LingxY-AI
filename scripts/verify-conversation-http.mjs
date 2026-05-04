@@ -164,6 +164,74 @@ await it("GET /conversation/{id}: returns conversation + messages + task links",
   } finally { await srv.close(); }
 });
 
+await it("GET /conversation/{id}/artifacts: returns scoped generated files newest first", async () => {
+  const runtime = makeRuntime();
+  runtime.store.insertConversation({ conversation_id: "c_art" });
+  runtime.store.insertConversation({ conversation_id: "c_other_art" });
+  runtime.store.insertTask({
+    task_id: "task_art_old",
+    conversation_id: "c_art",
+    created_at: "2026-05-01T10:00:00.000Z",
+    updated_at: "2026-05-01T10:00:00.000Z",
+    status: "success",
+    user_command: "make old file"
+  });
+  runtime.store.insertTask({
+    task_id: "task_art_new",
+    conversation_id: "c_art",
+    created_at: "2026-05-01T10:01:00.000Z",
+    updated_at: "2026-05-01T10:01:00.000Z",
+    status: "success",
+    user_command: "make new file"
+  });
+  runtime.store.insertTask({
+    task_id: "task_art_other",
+    conversation_id: "c_other_art",
+    created_at: "2026-05-01T10:02:00.000Z",
+    updated_at: "2026-05-01T10:02:00.000Z",
+    status: "success",
+    user_command: "other file"
+  });
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_old",
+    task_id: "task_art_old",
+    path: "E:\\out\\old.docx",
+    created_at: "2026-05-01T10:03:00.000Z"
+  });
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_new",
+    task_id: "task_art_new",
+    path: "E:\\out\\new.pdf",
+    created_at: "2026-05-01T10:04:00.000Z"
+  });
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_other",
+    task_id: "task_art_other",
+    path: "E:\\out\\other.pdf",
+    created_at: "2026-05-01T10:05:00.000Z"
+  });
+  const srv = await startServer(runtime);
+  try {
+    const r = await fetchJson(`${srv.url}/conversation/c_art/artifacts?limit=10`);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.conversation_id, "c_art");
+    assert.deepEqual(r.body.artifacts.map((artifact) => artifact.path), [
+      "E:\\out\\new.pdf",
+      "E:\\out\\old.docx"
+    ]);
+    assert.ok(r.body.artifacts.every((artifact) => artifact.conversation_id === "c_art"));
+  } finally { await srv.close(); }
+});
+
+await it("GET /conversation/{id}/artifacts: 404 when conversation is missing", async () => {
+  const runtime = makeRuntime();
+  const srv = await startServer(runtime);
+  try {
+    const r = await fetchJson(`${srv.url}/conversation/c_missing_artifacts/artifacts`);
+    assert.equal(r.status, 404);
+  } finally { await srv.close(); }
+});
+
 await it("GET /conversation/{id}: 404 when missing", async () => {
   const runtime = makeRuntime();
   const srv = await startServer(runtime);

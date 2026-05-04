@@ -1917,6 +1917,108 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   /* Anchor for the absolutely positioned scroll-to-bottom button. */
   position: relative;
 }
+.conversation-artifacts {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 92%, var(--panel-2));
+  flex-shrink: 0;
+  min-width: 0;
+}
+.conversation-artifacts[hidden] { display: none; }
+.conversation-artifacts-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+.conversation-artifacts-head span:last-child {
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--ink-2);
+  font-size: 10.5px;
+}
+.conversation-artifacts-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.conversation-artifact {
+  display: grid;
+  grid-template-columns: 26px minmax(96px, 1fr) 24px;
+  align-items: center;
+  gap: 7px;
+  width: min(260px, 42vw);
+  min-width: 170px;
+  padding: 4px 5px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.conversation-artifact .artifact-icon {
+  width: 26px;
+  height: 26px;
+  font-size: 9px;
+}
+.conversation-artifact-main {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.conversation-artifact-main:hover .conversation-artifact-name {
+  color: var(--accent-strong);
+}
+.conversation-artifact-name,
+.conversation-artifact-meta {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.conversation-artifact-name {
+  color: var(--ink);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+.conversation-artifact-meta {
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.conversation-artifact-action {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.conversation-artifact-action:hover {
+  background: var(--panel-2);
+  color: var(--ink);
+}
 
 /* IA Phase 2 — Chat tab two-column layout: 280px conversation
    sidebar (left) + main chat shell (right). The grid takes the

@@ -249,6 +249,7 @@ const emailDigestState = document.querySelector("#emailDigestState");
 const consoleChatForm = document.querySelector("#consoleChatForm");
 const consoleChatInput = document.querySelector("#consoleChatInput");
 const consoleChatMessages = document.querySelector("#consoleChatMessages");
+const consoleChatArtifacts = document.querySelector("#consoleChatArtifacts");
 const consoleChatScrollDownBtn = document.querySelector("#consoleChatScrollDown");
 const consoleChatState = document.querySelector("#consoleChatState");
 const consoleChatAttachBtn = document.querySelector("#consoleChatAttachBtn");
@@ -793,6 +794,7 @@ let consoleChatEvidenceByTaskId = new Map();
 // conversation_id on every submit, so back-and-forth in the same
 // conversation hangs together server-side. New chat clears it.
 let consoleActiveConversation = null;
+let consoleChatArtifactsConversationId = null;
 const scheduleRunTaskWatchers = new Map();
 const completedScheduleRunTaskIds = new Set();
 const surfacedApprovalPopupIds = new Set();
@@ -1750,6 +1752,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
       evidence: payload.evidence_summary ?? null
     });
     consoleChatResultTaskIds.add(taskId);
+    void refreshConsoleChatArtifacts({ force: true });
     return;
   }
   try {
@@ -1767,6 +1770,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
       evidence: extractEvidenceSummaryFromTaskDetail(detail)
     });
     consoleChatResultTaskIds.add(taskId);
+    void refreshConsoleChatArtifacts({ force: true });
   } catch {
     /* optional */
   }
@@ -2141,6 +2145,95 @@ function renderConsoleChatEmptyState() {
   `;
 }
 
+function renderConsoleChatArtifacts(artifacts = []) {
+  if (!consoleChatArtifacts) return;
+  const files = Array.isArray(artifacts)
+    ? artifacts.filter((artifact) => `${artifact?.path ?? ""}`.trim())
+    : [];
+  if (files.length === 0) {
+    consoleChatArtifacts.hidden = true;
+    setHtmlIfChanged(consoleChatArtifacts, "");
+    return;
+  }
+  const rows = files.slice(0, 8).map((artifact) => {
+    const filePath = `${artifact.path ?? ""}`;
+    const label = formatArtifactLabel(filePath);
+    const ext = artifactExtension(filePath);
+    const createdAt = artifact.created_at ? formatDateTime(artifact.created_at) : "";
+    return `
+      <div class="conversation-artifact" title="${escapeHtml(filePath)}">
+        <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
+        <button type="button" class="conversation-artifact-main" data-conversation-artifact-open="${escapeHtml(filePath)}">
+          <span class="conversation-artifact-name">${escapeHtml(label)}</span>
+          ${createdAt ? `<span class="conversation-artifact-meta">${escapeHtml(createdAt)}</span>` : ""}
+        </button>
+        <button type="button" class="conversation-artifact-action" data-conversation-artifact-reveal="${escapeHtml(filePath)}" aria-label="Reveal ${escapeHtml(label)}" title="Reveal in folder">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
+        </button>
+      </div>
+    `;
+  }).join("");
+  setHtmlIfChanged(consoleChatArtifacts, `
+    <div class="conversation-artifacts-head">
+      <span>Files</span>
+      <span>${files.length}</span>
+    </div>
+    <div class="conversation-artifacts-list">${rows}</div>
+  `);
+  consoleChatArtifacts.hidden = false;
+}
+
+async function fetchConsoleConversationArtifacts(conversationId, { limit = 8 } = {}) {
+  if (!conversationId) return [];
+  const safeLimit = Math.max(1, Math.min(Number(limit) || 8, 100));
+  const data = await fetchJson(`/conversation/${encodeURIComponent(conversationId)}/artifacts?limit=${safeLimit}`);
+  return Array.isArray(data?.artifacts) ? data.artifacts : [];
+}
+
+async function refreshConsoleChatArtifacts({ force = false } = {}) {
+  const conversationId = consoleActiveConversation?.conversation_id ?? null;
+  if (!conversationId) {
+    consoleChatArtifactsConversationId = null;
+    renderConsoleChatArtifacts([]);
+    return;
+  }
+  const previousId = consoleChatArtifactsConversationId;
+  if (!force && previousId === conversationId) return;
+  consoleChatArtifactsConversationId = conversationId;
+  if (previousId !== conversationId) renderConsoleChatArtifacts([]);
+  try {
+    const artifacts = await fetchConsoleConversationArtifacts(conversationId, { limit: 8 });
+    if (consoleActiveConversation?.conversation_id !== conversationId) return;
+    renderConsoleChatArtifacts(artifacts);
+  } catch {
+    if (consoleActiveConversation?.conversation_id === conversationId) renderConsoleChatArtifacts([]);
+  }
+}
+
+async function openConversationArtifactPath(filePath) {
+  if (!filePath) return;
+  try {
+    if (window.livePreview?.openForFile?.({ filePath })) return;
+  } catch { /* fall through to native open */ }
+  if (typeof window.ucaShell?.openPath !== "function") {
+    showConsoleToast("Open path bridge unavailable.", { kind: "err" });
+    return;
+  }
+  const result = await window.ucaShell.openPath(filePath);
+  if (result) showConsoleToast(`打开失败：${result}`, { kind: "err" });
+}
+
+async function revealConversationArtifactPath(filePath) {
+  if (!filePath) return;
+  try {
+    if (typeof window.ucaShell?.showItemInFolder === "function") {
+      await window.ucaShell.showItemInFolder(filePath);
+      return;
+    }
+  } catch { /* fallback to open */ }
+  await openConversationArtifactPath(filePath);
+}
+
 async function submitConsoleChat() {
   const text = consoleChatInput?.value?.trim() ?? "";
   if (!text) return;
@@ -2157,6 +2250,7 @@ async function submitConsoleChat() {
       project_id: chatSidebarProjectId ?? null
     });
     renderConsoleChatHeader();
+    renderConsoleChatArtifacts([]);
   }
   // No history is re-injected — backend already has it.
   const conversationId = consoleActiveConversation?.conversation_id ?? null;
@@ -2201,6 +2295,7 @@ async function submitConsoleChat() {
     if (replyConvId && replyConvId !== consoleActiveConversation?.conversation_id) {
       consoleActiveConversation = cacheEnsureBackendFields({ conversation_id: replyConvId });
       renderConsoleChatHeader();
+      renderConsoleChatArtifacts([]);
     }
     // Phase 2: surface the new conversation in the sidebar
     // immediately. ensureConversationsCache() refetches from backend
@@ -2329,6 +2424,7 @@ async function loadConsoleConversationFromBackend(conversationId) {
   }
   cacheApplyBatch(consoleActiveConversation, detail, consoleChatMessageAdapter);
   renderConsoleChatHeader();
+  void refreshConsoleChatArtifacts();
   switchTab("chat");
   // Update the sidebar's active highlight to track the just-loaded
   // conversation.
@@ -2338,6 +2434,7 @@ async function loadConsoleConversationFromBackend(conversationId) {
 function clearConsoleActiveConversation() {
   consoleActiveConversation = null;
   renderConsoleChatHeader();
+  renderConsoleChatArtifacts([]);
   renderChatSidebar();
 }
 
@@ -6762,6 +6859,22 @@ consoleChatInput?.addEventListener("keydown", (event) => {
       return;
     }
     void submitConsoleChat();
+  }
+});
+consoleChatArtifacts?.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const revealBtn = target?.closest?.("[data-conversation-artifact-reveal]");
+  if (revealBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    void revealConversationArtifactPath(revealBtn.dataset.conversationArtifactReveal ?? "");
+    return;
+  }
+  const openBtn = target?.closest?.("[data-conversation-artifact-open]");
+  if (openBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    void openConversationArtifactPath(openBtn.dataset.conversationArtifactOpen ?? "");
   }
 });
 

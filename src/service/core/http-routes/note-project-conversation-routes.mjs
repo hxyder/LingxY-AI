@@ -171,6 +171,7 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   const conversationMessagesMatch = url.pathname.match(/^\/conversation\/([^/]+)\/messages$/);
+  const conversationArtifactsMatch = url.pathname.match(/^\/conversation\/([^/]+)\/artifacts$/);
   if (method === "GET" && conversationMessagesMatch) {
     const conversationId = conversationMessagesMatch[1];
     if (typeof runtime.store?.getConversationMessages !== "function") {
@@ -198,6 +199,28 @@ export async function tryHandleNoteProjectConversationRoute({
       since_seq: sinceSeq,
       messages,
       message_task_links: links
+    });
+    return true;
+  }
+
+  if (method === "GET" && conversationArtifactsMatch) {
+    const conversationId = conversationArtifactsMatch[1];
+    if (typeof runtime.store?.getConversation !== "function"
+        || typeof runtime.store?.getArtifactsForConversation !== "function") {
+      sendJson(response, 404, { error: "conversation artifact store not available" });
+      return true;
+    }
+    const conv = runtime.store.getConversation(conversationId);
+    if (!conv) {
+      sendJson(response, 404, { error: "conversation not found" });
+      return true;
+    }
+    const limitParam = parseInt(url.searchParams.get("limit") ?? "50", 10);
+    const limit = Number.isFinite(limitParam) ? Math.max(1, Math.min(limitParam, 500)) : 50;
+    const artifacts = runtime.store.getArtifactsForConversation(conversationId, { limit });
+    sendJson(response, 200, {
+      conversation_id: conversationId,
+      artifacts
     });
     return true;
   }

@@ -196,6 +196,16 @@ assert.ok(/function\s+getConsoleChatSubmitProjectId/.test(consoleJs) && /project
   "chat projects: /task submit must carry structured project_id when scoped");
 assert.ok(/function\s+renderConsoleChatEmptyState/.test(consoleJs) && !/consoleChatMessages\.innerHTML\s*=\s*`<div class="console-chat-empty">没有对话/.test(consoleJs),
   "chat empty: New chat must use the rich empty-state renderer instead of plain text");
+assert.ok(/id="consoleChatArtifacts"/.test(consoleHtml) && /\.conversation-artifacts\b/.test(sharedCss),
+  "chat artifacts: console must expose a conversation-scoped file strip");
+assert.ok(/conversationArtifactsMatch/.test(noteProjectConversationRoutes) && /getArtifactsForConversation/.test(noteProjectConversationRoutes),
+  "chat artifacts: conversation route must expose getArtifactsForConversation");
+assert.ok(/function\s+refreshConsoleChatArtifacts/.test(consoleJs) && /\/conversation\/\$\{encodeURIComponent\(conversationId\)\}\/artifacts/.test(consoleJs),
+  "chat artifacts: console must fetch the current conversation artifact index");
+assert.ok(/setHtmlIfChanged\(consoleChatArtifacts/.test(consoleJs),
+  "chat artifacts: renderer must avoid unnecessary innerHTML churn");
+assert.ok(/data-conversation-artifact-open/.test(consoleJs) && /data-conversation-artifact-reveal/.test(consoleJs),
+  "chat artifacts: file strip must expose open and reveal actions");
 assert.ok(/function\s+currentOverlayProjectIdForSubmission/.test(overlayJs) && /function\s+attachOverlayProjectScope/.test(overlayJs),
   "overlay projects: overlay task submissions must use a shared project-scope helper");
 assert.ok(/project_id:\s*projectId/.test(overlayJs) && /selectionMetadata:\s*\{[\s\S]{0,140}project_id:\s*projectId/.test(overlayJs),
