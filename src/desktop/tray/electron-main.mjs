@@ -461,6 +461,16 @@ function normalizeProjectStoreSavePayload(payload = {}) {
   };
 }
 
+function normalizeProjectFilesAttachPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    paths: Array.isArray(source.paths)
+      ? source.paths.filter((filePath) => typeof filePath === "string" && filePath.trim()).map((filePath) => filePath.trim())
+      : [],
+    projectId: typeof source.projectId === "string" ? source.projectId.trim() : ""
+  };
+}
+
 function normalizeConnectedAccountId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
@@ -759,7 +769,7 @@ export function createElectronShellRuntime({
     throw new Error("Electron bindings are required to create the shell runtime.");
   }
 
-  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session, desktopCapturer, crashReporter } = electron;
+  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session, desktopCapturer, crashReporter, dialog } = electron;
   installDesktopDiagnostics({ app, crashReporter });
   const windows = new Map();
   const readyWindows = new Set();
@@ -3524,6 +3534,43 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "project_store_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.projectFilesPick, async (event, options = {}) => {
+        const owner = BrowserWindow.fromWebContents(event.sender);
+        const properties = ["openFile", "openDirectory", "multiSelections"];
+        const normalizedOptions = normalizePlainObject(options) ?? {};
+        const result = await dialog.showOpenDialog(owner ?? undefined, {
+          ...normalizedOptions,
+          title: "Add files or folders to this project",
+          buttonLabel: "Add to Project",
+          properties
+        });
+        return {
+          canceled: result.canceled === true,
+          paths: Array.isArray(result.filePaths) ? result.filePaths : []
+        };
+      });
+      ipcMain.handle(IPC_CHANNELS.projectFilesAttach, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const body = normalizeProjectFilesAttachPayload(payload);
+        if (!body.projectId) {
+          return { ok: false, error: "project_id_required", message: "Project id required." };
+        }
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: `/projects/${encodeURIComponent(body.projectId)}/files/attach`,
+            body: { paths: body.paths }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "project_files_attach_failed",
             message: error?.message ?? String(error)
           };
         }

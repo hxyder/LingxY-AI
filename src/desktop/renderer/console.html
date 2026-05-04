@@ -1489,9 +1489,12 @@
           <header class="panel-head projects-col-head">
             <div class="panel-head-main">
               <h3 class="panel-title">Files<span class="zh">文件</span></h3>
-              <span class="panel-sub">当前项目的会话产物</span>
+              <span class="panel-sub">当前项目的会话产物和索引文件</span>
             </div>
-            <span id="projectArtifactCount" class="pill pill-neutral">0</span>
+            <div class="toolbar" style="gap:6px;">
+              <button id="projectAttachFilesBtn" class="btn btn-sm btn-ghost" type="button" title="Add local files or folders to this project">Add</button>
+              <span id="projectArtifactCount" class="pill pill-neutral">0</span>
+            </div>
           </header>
           <div class="projects-col-body">
             <div id="projectArtifactList" class="item-list"></div>

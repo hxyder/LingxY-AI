@@ -16,6 +16,7 @@ import {
   buildCapabilityGapSuggestions,
   mergeCapabilityGapSuggestions
 } from "../../ai/onboarding/capability-gap-suggestions.mjs";
+import { attachProjectFiles } from "../project-file-attachments.mjs";
 
 const NOTES_EDITOR_ACTORS = ["desktop_console"];
 const NOTES_CHIP_ACTORS = ["desktop_console", "desktop_overlay"];
@@ -135,6 +136,21 @@ export async function tryHandleNoteProjectConversationRoute({
       }
     }));
     sendJson(response, 200, { ok: true, store });
+    return true;
+  }
+
+  const projectFilesAttachMatch = url.pathname.match(/^\/projects\/([^/]+)\/files\/attach$/);
+  if (method === "POST" && projectFilesAttachMatch) {
+    if (!requireDesktopActor({ request, response, allowedActors: PROJECT_STORE_ACTORS })) return true;
+    const body = await readJsonBody(request);
+    const result = await attachProjectFiles({
+      runtime,
+      saveRuntimeConfig,
+      projectId: decodeURIComponent(projectFilesAttachMatch[1]),
+      paths: body.paths ?? body.filePaths ?? []
+    });
+    const status = result.ok === false ? 400 : 200;
+    sendJson(response, status, result);
     return true;
   }
 

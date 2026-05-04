@@ -149,6 +149,8 @@ for (const channel of [
   "uca:note-delete",
   "uca:note-append-chip",
   "uca:project-store-save",
+  "uca:project-files-pick",
+  "uca:project-files-attach",
   "uca:preview-cache-clear",
   "uca:office-addins-setup",
   "uca:echo-kws-detect",

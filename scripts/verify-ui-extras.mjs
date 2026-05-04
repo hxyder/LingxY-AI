@@ -110,10 +110,16 @@ assert.ok(/saveProjectStoreViaShell/.test(consoleJs) && /window\.ucaShell\.saveP
   "project store: console must use desktop shell bridge for saves");
 assert.ok(/saveProjectStoreViaShell/.test(overlayJs) && /window\.ucaShell\.saveProjectStore/.test(overlayJs),
   "project store: overlay must use desktop shell bridge for saves");
+assert.ok(/attachProjectFilesViaShell/.test(consoleJs) && /window\.ucaShell\.attachProjectFiles/.test(consoleJs),
+  "project files: console must use desktop shell bridge for attach/index");
+assert.ok(/projectAttachFilesBtn/.test(consoleJs) && /pickProjectFiles/.test(consoleJs),
+  "project files: console must expose an explicit picker before attach/index");
 assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
   "project store: console must not POST /projects/store directly via fetchJson");
 assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(overlayJs),
   "project store: overlay must not POST /projects/store directly via fetchJson");
+assert.ok(!/fetchJson\(\s*`\/projects\/[^`]+\/files\/attach`/.test(consoleJs),
+  "project files: console must not POST project file attach route directly via fetchJson");
 assert.ok(/clearPreviewCacheViaShell/.test(consoleJs) && /window\.ucaShell\.clearPreviewCache/.test(consoleJs),
   "preview cache clear: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/preview\/cache\/clear["'`]\s*,\s*\{[\s\S]{0,120}method:\s*["'`]POST/.test(consoleJs),

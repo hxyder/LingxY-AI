@@ -444,6 +444,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   saveProjectStore(store) {
     return ipcRenderer.invoke("uca:project-store-save", store ?? {});
   },
+  pickProjectFiles(options = {}) {
+    return ipcRenderer.invoke("uca:project-files-pick", options ?? {});
+  },
+  attachProjectFiles(payload) {
+    return ipcRenderer.invoke("uca:project-files-attach", payload ?? {});
+  },
   clearPreviewCache() {
     return ipcRenderer.invoke("uca:preview-cache-clear");
   },

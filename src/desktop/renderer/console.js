@@ -197,6 +197,7 @@ const projectConversationCount = document.querySelector("#projectConversationCou
 const projectConversationList = document.querySelector("#projectConversationList");
 const projectArtifactCount = document.querySelector("#projectArtifactCount");
 const projectArtifactList = document.querySelector("#projectArtifactList");
+const projectAttachFilesBtn = document.querySelector("#projectAttachFilesBtn");
 const projectConversationPreview = document.querySelector("#projectConversationPreview");
 const projectCreateForm = document.querySelector("#projectCreateForm");
 const projectNameInput = document.querySelector("#projectNameInput");
@@ -6178,6 +6179,13 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
     projectBackendConversationDetailId === selectedConversation?.id && projectBackendConversationDetail
       ? projectBackendConversationDetail
       : selectedConversation;
+  if (projectAttachFilesBtn) {
+    const canAttachFiles = Boolean(selectedProject?.id && selectedProject.id !== DEFAULT_PROJECT_ID);
+    projectAttachFilesBtn.disabled = !canAttachFiles;
+    projectAttachFilesBtn.title = canAttachFiles
+      ? "Add local files or folders to this project"
+      : "Create or select a non-default project before adding files";
+  }
 
   projectCount.textContent = `${projects.length}`;
   projectConversationCount.textContent = `${conversations.length}`;
@@ -7195,6 +7203,47 @@ consoleChatArtifacts?.addEventListener("click", (event) => {
     void openConversationArtifactPath(openBtn.dataset.conversationArtifactOpen ?? "");
   }
 });
+
+projectAttachFilesBtn?.addEventListener("click", async () => {
+  const store = state.projectStore ?? loadConsoleProjectStore();
+  const projectId = state.selectedProjectId || store.currentProjectId || "";
+  if (!projectId || projectId === DEFAULT_PROJECT_ID) {
+    showConsoleToast("Select a project before adding files.", { kind: "info" });
+    return;
+  }
+  if (typeof window.ucaShell?.pickProjectFiles !== "function") {
+    showConsoleToast("Desktop file picker is unavailable.", { kind: "error" });
+    return;
+  }
+  try {
+    projectAttachFilesBtn.disabled = true;
+    const picked = await window.ucaShell.pickProjectFiles();
+    const paths = Array.isArray(picked?.paths) ? picked.paths.filter(Boolean) : [];
+    if (picked?.canceled || paths.length === 0) return;
+    showConsoleToast("Indexing selected project files...", { kind: "info" });
+    const result = await attachProjectFilesViaShell({ projectId, paths });
+    const nextStore = normalizeProjectStore(result.store ?? store);
+    nextStore.updatedAt = Date.now();
+    state.projectStore = nextStore;
+    localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(nextStore));
+    state.projectStoreRemoteReady = true;
+    renderProjectsWorkspace({ skipFetch: true });
+    const indexed = Number(result.indexed_count ?? 0);
+    const attached = Array.isArray(result.attached_paths) ? result.attached_paths.length : paths.length;
+    const failed = Array.isArray(result.failed_paths) ? result.failed_paths.length : 0;
+    showConsoleToast(
+      failed > 0
+        ? `Attached ${attached} path(s), indexed ${indexed} chunk(s), ${failed} failed.`
+        : `Attached ${attached} path(s), indexed ${indexed} chunk(s).`,
+      { kind: failed > 0 ? "warning" : "success" }
+    );
+  } catch (error) {
+    showConsoleToast(error?.message ?? "Could not attach project files.", { kind: "error" });
+  } finally {
+    renderProjectsWorkspace({ skipFetch: true });
+  }
+});
+
 projectArtifactList?.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
   const detachBtn = target?.closest?.("[data-project-file-detach]");
@@ -8119,6 +8168,16 @@ async function saveProjectStoreViaShell(store) {
   return assertShellResult(
     await window.ucaShell.saveProjectStore(store),
     "Could not save project store."
+  );
+}
+
+async function attachProjectFilesViaShell(payload) {
+  if (typeof window.ucaShell?.attachProjectFiles !== "function") {
+    throw new Error("Desktop project file bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.attachProjectFiles(payload ?? {}),
+    "Could not attach project files."
   );
 }
 

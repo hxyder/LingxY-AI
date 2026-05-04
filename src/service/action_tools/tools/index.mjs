@@ -31,6 +31,10 @@ import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 import { resolveFileReadBudgetFromTask } from "../../core/file-read-budget.mjs";
 import { buildFileContentIndexRecords } from "../../core/file-content-index-records.mjs";
+import {
+  collectPathReadableFiles,
+  extractReadableFileText
+} from "../../core/local-file-collection.mjs";
 import { EMBEDDING_NAMESPACES } from "../../embeddings/store.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -2783,104 +2787,10 @@ export const READ_FILE_TEXT_TOOL = {
   }
 };
 
-const DEFAULT_FOLDER_EXCLUDES = new Set([
-  ".git",
-  ".hg",
-  ".svn",
-  "node_modules",
-  ".venv",
-  "venv",
-  "dist",
-  "build",
-  "out"
-]);
-
 function clampNumber(value, { min, max, fallback }) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
-}
-
-function shouldSkipFolderEntry(entry) {
-  if (!entry?.name) return true;
-  if (entry.name.startsWith(".") && entry.name !== ".") return true;
-  return DEFAULT_FOLDER_EXCLUDES.has(entry.name);
-}
-
-async function collectReadableFiles(rootPath, {
-  patternRegex = null,
-  maxDepth = 3,
-  maxFiles = 20
-} = {}) {
-  const files = [];
-  let fileLimitHit = false;
-  let depthLimitHit = false;
-
-  async function walk(dir, depth = 0) {
-    if (files.length >= maxFiles) {
-      fileLimitHit = true;
-      return;
-    }
-    if (depth > maxDepth) {
-      depthLimitHit = true;
-      return;
-    }
-    let entries = [];
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    entries.sort((left, right) => left.name.localeCompare(right.name));
-    for (const entry of entries) {
-      if (files.length >= maxFiles) {
-        fileLimitHit = true;
-        return;
-      }
-      const fullPath = path.join(dir, entry.name);
-      const relPath = path.relative(rootPath, fullPath).replace(/\\/g, "/");
-      if (entry.isDirectory()) {
-        if (!shouldSkipFolderEntry(entry)) {
-          if (depth + 1 > maxDepth) {
-            depthLimitHit = true;
-            continue;
-          }
-          await walk(fullPath, depth + 1);
-        }
-        continue;
-      }
-      if (!entry.isFile()) continue;
-      if (patternRegex && !patternRegex.test(relPath) && !patternRegex.test(entry.name)) continue;
-      files.push(fullPath);
-    }
-  }
-
-  await walk(rootPath, 0);
-  return { files, fileLimitHit, depthLimitHit };
-}
-
-async function extractFolderTextFile(filePath, maxCharsPerFile) {
-  try {
-    const extracted = await extractFileContent(filePath);
-    const text = String(extracted.text ?? "");
-    const clipped = text.slice(0, maxCharsPerFile);
-    return {
-      path: filePath,
-      success: true,
-      mime: extracted.mime ?? null,
-      extraction_mode: extracted.extraction_mode ?? null,
-      text: clipped,
-      chars_extracted: clipped.length,
-      chars_total: text.length,
-      truncated: text.length > clipped.length
-    };
-  } catch (error) {
-    return {
-      path: filePath,
-      success: false,
-      error: error.message
-    };
-  }
 }
 
 export const READ_FOLDER_TEXT_TOOL = {
@@ -2902,10 +2812,7 @@ export const READ_FOLDER_TEXT_TOOL = {
     const patternRegex = args.pattern ? globToRegex(String(args.pattern)) : null;
 
     try {
-      const rootInfo = await lstat(rootPath);
-      const collection = rootInfo.isDirectory()
-        ? await collectReadableFiles(rootPath, { patternRegex, maxDepth, maxFiles })
-        : { files: [rootPath], fileLimitHit: false, depthLimitHit: false };
+      const collection = await collectPathReadableFiles(rootPath, { patternRegex, maxDepth, maxFiles });
       const candidateFiles = collection.files;
       const chunks = [];
       const records = [];
@@ -2918,7 +2825,7 @@ export const READ_FOLDER_TEXT_TOOL = {
           break;
         }
         const remaining = maxTotalChars - totalChars;
-        const extracted = await extractFolderTextFile(filePath, Math.min(maxCharsPerFile, remaining));
+        const extracted = await extractReadableFileText(filePath, Math.min(maxCharsPerFile, remaining));
         records.push(extracted);
         if (!extracted.success) continue;
         totalChars += extracted.chars_extracted;
