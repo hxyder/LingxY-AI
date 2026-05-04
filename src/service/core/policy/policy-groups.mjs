@@ -31,6 +31,17 @@ export const POLICY_GROUPS = Object.freeze({
   ]),
 
   /**
+   * Tools that freshly extract local file text during the current task.
+   * Deliberately excludes `search_file_content`, `list_files`, `stat_file`,
+   * and `index_file_content`: indexed hits and metadata can locate a likely
+   * file, but they do not prove the executor read the source text this run.
+   */
+  local_file_text_read: Object.freeze([
+    "read_file_text",
+    "read_folder_text"
+  ]),
+
+  /**
    * Tools/workflows that actually send email. Draft-only helpers are excluded:
    * a user-visible "sent" contract should be satisfied only by a delivery
    * path, or by a connector workflow whose metadata reports success.

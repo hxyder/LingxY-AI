@@ -84,6 +84,7 @@ function isLaunchTaskText(text) {
  * @property {boolean} artifact_registered - artifact must be in the manifest
  * @property {boolean} tool_called        - at least one tool call must appear in transcript
  * @property {string[]} required_tool_names - specific tools that must be called
+ * @property {string[]} required_policy_groups - capability groups that must be satisfied
  */
 
 /**
@@ -320,6 +321,7 @@ export function classifyGoal(text, signals = null) {
 }
 
 const NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE = new Set([
+  "local_file_text_read",
   "email_send",
   "calendar_create",
   "file_upload",

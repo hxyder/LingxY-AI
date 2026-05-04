@@ -30,11 +30,16 @@ import {
 } from "./obligation-evaluator.mjs";
 import { extractEvidence } from "./evidence-normalizer.mjs";
 import { SYNTHESIS_REQUIRED_OUTPUTS } from "../intent/semantic-router.mjs";
+import {
+  isDeepFileTextCoverageScope,
+  isFileTextCoverageScope
+} from "../file-evidence-coverage.mjs";
 
 const SYNTHESIS_OVERLAP_THRESHOLD = 0.6;
 const SYNTHESIS_MIN_OBSERVATION_CHARS = 80;
 const SYNTHESIS_MIN_FINAL_RAW_DUMP_CHARS = 120;
 const SYNTHESIS_BIGRAM_SAMPLE_CAP = 4000;
+const LOCAL_FILE_TEXT_READ_GROUP = "local_file_text_read";
 
 function normaliseForOverlap(text) {
   return String(text ?? "")
@@ -568,6 +573,16 @@ export function validateSuccessContract(taskSpec, transcript = []) {
       (entry) => entry?.type === "tool_result" && memberSet.has(entry?.tool)
     );
     const successfulHits = allCalls.filter(isSuccessfulHit);
+    if (group === LOCAL_FILE_TEXT_READ_GROUP) {
+      const violation = validateLocalFileTextReadRequirement({
+        taskSpec,
+        members,
+        allCalls,
+        successfulHits
+      });
+      if (violation) violations.push(violation);
+      continue;
+    }
     if (successfulHits.length === 0) {
       // Distinguish "never called" from "called but every call failed" so
       // the user / audit log can see what actually went wrong.
@@ -721,6 +736,52 @@ function groupHitSatisfies(group, entry) {
     return actionGroupHitSatisfies(group, entry);
   }
   return resultHasSubstance(entry);
+}
+
+function requiresDeepLocalTextRead(taskSpec) {
+  return taskSpec?.file_read?.depth === "deep";
+}
+
+function metadataOfToolHit(entry) {
+  if (entry?.metadata && typeof entry.metadata === "object") return entry.metadata;
+  if (entry?.result?.metadata && typeof entry.result.metadata === "object") return entry.result.metadata;
+  return {};
+}
+
+function localFileTextReadHitSatisfies(entry, taskSpec) {
+  const metadata = metadataOfToolHit(entry);
+  if (metadata.content_extracted !== true) return false;
+  const scope = metadata.coverage_scope;
+  if (requiresDeepLocalTextRead(taskSpec)) {
+    return isDeepFileTextCoverageScope(scope);
+  }
+  return isFileTextCoverageScope(scope);
+}
+
+function validateLocalFileTextReadRequirement({ taskSpec, members, allCalls, successfulHits }) {
+  if (successfulHits.length === 0) {
+    const kind = allCalls.length === 0
+      ? `${LOCAL_FILE_TEXT_READ_GROUP}_required_not_called`
+      : `${LOCAL_FILE_TEXT_READ_GROUP}_required_all_failed`;
+    const message = allCalls.length === 0
+      ? `success_contract.required_policy_groups includes "${LOCAL_FILE_TEXT_READ_GROUP}" but the executor never invoked any of: ${members.join(", ")}.`
+      : `success_contract.required_policy_groups includes "${LOCAL_FILE_TEXT_READ_GROUP}"; tools were called (${allCalls.map((h) => h.tool).join(", ")}) but every call failed (errors: ${allCalls.map((h) => h.error ?? "(none)").join(", ")}).`;
+    return { kind, message };
+  }
+
+  if (successfulHits.some((hit) => localFileTextReadHitSatisfies(hit, taskSpec))) {
+    return null;
+  }
+
+  const deep = requiresDeepLocalTextRead(taskSpec);
+  return {
+    kind: deep
+      ? `${LOCAL_FILE_TEXT_READ_GROUP}_required_deep_insufficient`
+      : `${LOCAL_FILE_TEXT_READ_GROUP}_required_no_fresh_text`,
+    message: deep
+      ? `success_contract.required_policy_groups includes "${LOCAL_FILE_TEXT_READ_GROUP}" and file_read.depth=deep; tools succeeded (${successfulHits.map((h) => h.tool).join(", ")}) but none produced recursive folder text coverage.`
+      : `success_contract.required_policy_groups includes "${LOCAL_FILE_TEXT_READ_GROUP}"; tools succeeded (${successfulHits.map((h) => h.tool).join(", ")}) but none produced fresh local file text. Indexed search, listing, and metadata do not satisfy this contract.`
+  };
 }
 
 /**

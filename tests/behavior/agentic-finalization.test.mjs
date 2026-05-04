@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { FILE_EVIDENCE_COVERAGE } from "../../src/service/core/file-evidence-coverage.mjs";
 import { finalizeAgenticPlannerRun } from "../../src/service/executors/agentic/finalization.mjs";
 
 function requiredWebTask() {
@@ -69,6 +70,70 @@ test("agentic finalization downgrades unsatisfied success contracts", () => {
   assert.equal(result.downgraded, true);
   assert.ok(result.violations.some((violation) => violation.kind === "external_web_read_required_not_called"));
   assert.match(result.finalText, /SuccessContract/);
+});
+
+test("agentic finalization does not accept indexed file hits as fresh local file reads", () => {
+  const result = finalizeAgenticPlannerRun({
+    task: {
+      task_id: "task_local_file_read",
+      task_spec: {
+        success_contract: {
+          required_policy_groups: ["local_file_text_read"]
+        }
+      }
+    },
+    finalText: "I analyzed the document from the indexed match.",
+    transcript: [
+      {
+        role: "tool",
+        name: "search_file_content",
+        success: true,
+        observation: "Found matching indexed file content.",
+        metadata: {
+          indexed_file_search: true,
+          content_extracted: true,
+          coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT
+        }
+      }
+    ],
+    iterations: 1
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.downgraded, true);
+  assert.ok(result.violations.some((violation) => violation.kind === "local_file_text_read_required_not_called"));
+  assert.match(result.finalText, /SuccessContract/);
+});
+
+test("agentic finalization accepts fresh read_file_text evidence for local_file_text_read", () => {
+  const result = finalizeAgenticPlannerRun({
+    task: {
+      task_id: "task_local_file_read_success",
+      task_spec: {
+        success_contract: {
+          required_policy_groups: ["local_file_text_read"]
+        }
+      }
+    },
+    finalText: "Here is a summary from the file text.",
+    transcript: [
+      {
+        role: "tool",
+        name: "read_file_text",
+        success: true,
+        observation: "Extracted readable file text.",
+        metadata: {
+          content_extracted: true,
+          coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT
+        }
+      }
+    ],
+    iterations: 1
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.downgraded, false);
+  assert.equal(result.violations, null);
 });
 
 test("agentic finalization surfaces error-budget early exits", () => {

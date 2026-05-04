@@ -78,7 +78,7 @@ test("agent planner mode renders required contract members for prompt evidence",
     task_spec: {
       success_contract: {
         required_tool_names: ["account_send_email"],
-        required_policy_groups: ["email_send"]
+        required_policy_groups: ["email_send", "local_file_text_read"]
       }
     }
   });
@@ -86,6 +86,9 @@ test("agent planner mode renders required contract members for prompt evidence",
   assert.match(block, /required_tools: account_send_email/);
   assert.match(block, /email_send/);
   assert.match(block, /any of: .*account_send_email/);
+  assert.match(block, /local_file_text_read/);
+  assert.match(block, /any of: .*read_file_text.*read_folder_text/);
+  assert.doesNotMatch(block, /search_file_content/);
 });
 
 test("agent lean chat prompt preserves roleplay and phantom attachment rules", () => {
