@@ -3,6 +3,13 @@ import path from "node:path";
 import { embedTextLocal } from "./bge_local.mjs";
 import { embedTextSemantic, cosineSimilarity } from "./semantic.mjs";
 
+export const EMBEDDING_NAMESPACES = Object.freeze({
+  TASK_MEMORY: "task_memory",
+  FILE_CONTENT: "file_content"
+});
+
+const KNOWN_NAMESPACES = new Set(Object.values(EMBEDDING_NAMESPACES));
+
 // ─── Embedding format discriminator ───────────────────────────────────────────
 // Records on disk can be in one of three shapes:
 //   - Legacy Map format  : [[term, count], ...]  (old TF-IDF)
@@ -70,6 +77,21 @@ function deserializeEmbedding(raw) {
   return normalizeEmbedding(raw);
 }
 
+function normalizeNamespace(value, fallback = EMBEDDING_NAMESPACES.TASK_MEMORY) {
+  const namespace = String(value ?? "").trim();
+  if (!namespace) return fallback;
+  return KNOWN_NAMESPACES.has(namespace) ? namespace : namespace;
+}
+
+function namespaceOf(record) {
+  return normalizeNamespace(record?.namespace ?? record?.metadata?.namespace);
+}
+
+function matchesNamespace(record, namespace) {
+  if (namespace === null || namespace === "all") return true;
+  return namespaceOf(record) === namespace;
+}
+
 // ─── Persistence helpers ────────────────────────────────────────────────────────
 
 function loadRecords(filePath) {
@@ -124,13 +146,18 @@ export function createEmbeddingStore({ filePath = null } = {}) {
      * never silently score zero). Call sites do NOT need to await —
      * fire-and-forget is safe.
      */
-    add({ id, text, metadata = {} }) {
+    add({ id, text, metadata = {}, namespace = metadata?.namespace }) {
+      const recordNamespace = normalizeNamespace(namespace);
       const tfidfMap = embedTextLocal(text);
       const tfidf = [...tfidfMap.entries()];
       const record = {
         id,
         text,
-        metadata,
+        namespace: recordNamespace,
+        metadata: {
+          ...metadata,
+          namespace: recordNamespace
+        },
         embedding: { type: "tfidf", data: tfidf },
         tfidf  // UCA-182 Phase 18: always retain TF-IDF even after vector upgrade
       };
@@ -159,11 +186,15 @@ export function createEmbeddingStore({ filePath = null } = {}) {
      * post-Phase-18). Never returns an all-zero result set when the
      * records contain matching terms.
      */
-    async search(text, limit = 5) {
+    async search(text, limit = 5, options = {}) {
+      const namespace = options?.namespace === undefined
+        ? EMBEDDING_NAMESPACES.TASK_MEMORY
+        : normalizeNamespace(options.namespace, null);
       const tfidfQueryEntries = [...embedTextLocal(text).entries()];
       const vec = await embedTextSemantic(text);
 
       return records
+        .filter((record) => matchesNamespace(record, namespace))
         .map((record) => {
           const lexicalScore = record.embedding?.type === "tfidf"
             ? jaccardSimilarity(tfidfQueryEntries, record.embedding.data)
@@ -193,11 +224,15 @@ export function createEmbeddingStore({ filePath = null } = {}) {
         .slice(0, limit);
     },
 
-    list() {
-      return records.map((r) => ({
+    list(options = {}) {
+      const namespace = options?.namespace === undefined
+        ? "all"
+        : normalizeNamespace(options.namespace, null);
+      return records.filter((record) => matchesNamespace(record, namespace)).map((r) => ({
         id: r.id,
         text: r.text,
         metadata: r.metadata,
+        namespace: namespaceOf(r),
         embeddingType: r.embedding?.type ?? "tfidf"
       }));
     }
