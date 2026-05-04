@@ -93,6 +93,54 @@ test("runtime services approval hook executes agent tool calls through the runti
   assert.equal(calls[0].ctx.outputDir, "out-dir");
 });
 
+test("runtime services approval hook replays deferred transcript context", async () => {
+  const calls = [];
+  const deferredTranscript = [{
+    type: "tool_result",
+    tool: "read_file_text",
+    success: true,
+    observation: "Indexed later.",
+    metadata: { path: "E:\\docs\\later.md" }
+  }];
+  const runtime = makeRuntime({
+    actionToolRegistry: {
+      get(toolId) {
+        if (toolId !== "index_file_content") return null;
+        return {
+          id: "index_file_content",
+          async execute(args, ctx) {
+            calls.push({ args, ctx });
+            return { success: true, observation: `ctx:${ctx.transcript.length}` };
+          }
+        };
+      },
+      list() { return []; },
+      register() {},
+      evaluate() {},
+      async call() {}
+    }
+  });
+
+  ensureRuntimeServices(runtime);
+  const approval = runtime.pendingApprovals.create({
+    sourceType: "agent_tool_call",
+    sourceId: "task_origin",
+    proposedAction: "execute",
+    proposedTarget: "index_file_content",
+    proposedParams: { max_records: 5 },
+    metadata: {
+      tool_id: "index_file_content",
+      deferred_tool_context: { transcript: deferredTranscript }
+    }
+  });
+
+  const result = await runtime.pendingApprovals.approve(approval.approval_id);
+
+  assert.equal(result.executionResult.success, true);
+  assert.equal(result.executionResult.observation, "ctx:1");
+  assert.deepEqual(calls[0].ctx.transcript, deferredTranscript);
+});
+
 test("runtime services approval hook reports missing agent tools without throwing", async () => {
   const runtime = makeRuntime({
     actionToolRegistry: {

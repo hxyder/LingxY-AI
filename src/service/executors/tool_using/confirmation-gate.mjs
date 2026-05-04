@@ -1,4 +1,8 @@
 import { groupsOfTool } from "../../core/policy/policy-groups.mjs";
+import {
+  buildDeferredToolContext,
+  buildToolApprovalPreview
+} from "../shared/tool-approval-context.mjs";
 
 export async function resolveInteractiveConfirmation({
   runtime,
@@ -64,21 +68,23 @@ export function resolveScheduledSideEffectAuthorization({ task, tool }) {
   };
 }
 
-export function createPendingToolApproval({ runtime, task, tool, args, risk }) {
+export function createPendingToolApproval({ runtime, task, tool, args, risk, transcript = [] }) {
+  const deferredToolContext = buildDeferredToolContext({ tool, args, task, transcript });
   const approval = runtime.pendingApprovals.create({
     sourceType: "agent_tool_call",
     sourceId: task.task_id,
     proposedAction: "action_tool",
     proposedTarget: tool.id,
     proposedParams: args,
-    previewText: `Pending tool ${tool.id}`,
+    previewText: buildToolApprovalPreview(tool, args, { deferredContext: deferredToolContext }),
     // metadata.task_id is what pending-approvals.approve() reads to bridge
     // the resulting tool execution back to THIS task. Without it, the
     // original task is orphaned in waiting_external_decision.
     metadata: {
       task_id: task.task_id,
       tool_id: tool.id,
-      risk_level: risk.risk_level ?? "high"
+      risk_level: risk.risk_level ?? "high",
+      ...(deferredToolContext ? { deferred_tool_context: deferredToolContext } : {})
     }
   });
   runtime.emitTaskEvent?.("pending_approval_created", {

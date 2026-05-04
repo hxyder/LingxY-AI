@@ -151,6 +151,51 @@ test("agentic tool execution creates pending approval instead of running high-ri
   assert.match(approvals[0].previewText, /a@b\.test/);
 });
 
+test("agentic tool execution stores deferred context for index approvals", async () => {
+  const approvals = [];
+  const tool = {
+    id: "index_file_content",
+    name: "Index File Content",
+    risk_level: "high",
+    requires_confirmation: true,
+    async execute() {
+      return { success: true, observation: "indexed" };
+    }
+  };
+
+  const result = await executeAgenticToolCall({
+    registry: registryFor(tool),
+    call: {
+      id: "call_index",
+      name: tool.id,
+      arguments: { max_records: 5 }
+    },
+    runtime: {
+      pendingApprovals: {
+        create(record) {
+          approvals.push(record);
+          return { approval_id: "appr_index" };
+        }
+      }
+    },
+    task: { task_id: "task_index" },
+    transcript: [{
+      role: "tool",
+      name: "read_file_text",
+      success: true,
+      observation: "File content",
+      metadata: { path: "E:\\docs\\indexed.md", content_extracted: true }
+    }],
+    toolContext: {}
+  });
+
+  assert.equal(result.metadata.waiting_approval, true);
+  assert.equal(approvals.length, 1);
+  assert.match(approvals[0].previewText, /indexed\.md/);
+  assert.equal(approvals[0].metadata.deferred_tool_context.transcript.length, 1);
+  assert.equal(approvals[0].metadata.deferred_tool_context.transcript[0].tool, "read_file_text");
+});
+
 test("agentic approval preview formats common tool families", () => {
   assert.match(
     buildApprovalPreview({ id: "account_send_email" }, { to: ["a@b.test"], subject: "Hello", body: "Body text" }),
@@ -158,5 +203,13 @@ test("agentic approval preview formats common tool families", () => {
   );
   assert.match(buildApprovalPreview({ id: "file_op" }, { operation: "delete", path: "E:/x.txt" }), /删除文件/);
   assert.match(buildApprovalPreview({ id: "launch_app" }, { app: "Excel" }), /启动应用: Excel/);
+  assert.match(
+    buildApprovalPreview({ id: "index_file_content" }, {}, {
+      deferredContext: {
+        transcript: [{ metadata: { path: "E:/docs/index.md" } }]
+      }
+    }),
+    /index\.md/
+  );
   assert.match(buildApprovalPreview({ id: "custom", name: "Custom" }, { a: 1 }), /Custom/);
 });

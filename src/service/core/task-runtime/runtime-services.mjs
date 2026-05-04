@@ -35,11 +35,15 @@ export function ensureRuntimeServices(runtime) {
         return { executed: false, reason: "tool_not_found", tool_id: toolId };
       }
       try {
+        const deferredToolContext = approval.metadata?.deferred_tool_context ?? {};
         const result = await tool.execute(approval.proposed_params ?? {}, {
           ...(runtime.toolContext ?? {}),
           runtime,
           task: approval.metadata?.task_id ? runtime.store?.getTask?.(approval.metadata.task_id) : null,
-          outputDir: runtime.toolContext?.outputDir ?? null
+          outputDir: runtime.toolContext?.outputDir ?? null,
+          transcript: Array.isArray(deferredToolContext.transcript)
+            ? deferredToolContext.transcript
+            : []
         });
         return {
           executed: true,

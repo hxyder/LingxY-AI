@@ -116,6 +116,62 @@ test("confirmation gate creates pending approval instead of executing without a 
   ));
 });
 
+test("confirmation gate stores deferred file-read context for index approvals", async () => {
+  const readTool = {
+    id: "read_file_text",
+    name: "Read File Text",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: [],
+      properties: { path: { type: "string" } }
+    },
+    async execute() {
+      return {
+        success: true,
+        observation: "Project notes content.",
+        metadata: {
+          path: "E:\\docs\\project-notes.md",
+          coverage_scope: "single_file_text",
+          content_extracted: true
+        }
+      };
+    }
+  };
+  const indexTool = {
+    id: "index_file_content",
+    name: "Index File Content",
+    risk_level: "high",
+    requires_confirmation: true,
+    parameters: {
+      type: "object",
+      required: [],
+      properties: { max_records: { type: "number" } }
+    },
+    async execute() {
+      return { success: true, observation: "indexed" };
+    }
+  };
+  const { runtime, approvals } = makeRuntime({ tools: [readTool, indexTool] });
+
+  const result = await runToolAgentLoop({
+    task: makeTask(),
+    runtime,
+    planner: async ({ iteration }) => iteration === 0
+      ? { type: "tool_call", tool: "read_file_text", args: { path: "E:\\docs\\project-notes.md" } }
+      : { type: "tool_call", tool: "index_file_content", args: { max_records: 5 } },
+    maxIterations: 2
+  });
+
+  assert.equal(result.status, "waiting_external_decision");
+  assert.equal(approvals.length, 1);
+  assert.match(approvals[0].previewText, /project-notes\.md/);
+  assert.equal(approvals[0].metadata.deferred_tool_context.transcript.length, 1);
+  assert.equal(approvals[0].metadata.deferred_tool_context.transcript[0].tool, "read_file_text");
+  assert.equal(approvals[0].metadata.deferred_tool_context.transcript[0].metadata.path, "E:\\docs\\project-notes.md");
+});
+
 test("confirmation gate applies edited args from confirmation handler before execution", async () => {
   const { runtime, calls, events } = makeRuntime({
     confirmationHandler: async ({ args }) => ({

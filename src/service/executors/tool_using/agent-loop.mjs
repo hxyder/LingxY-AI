@@ -1299,7 +1299,8 @@ async function _runToolAgentLoopCore({
           task,
           tool,
           args: decision.args,
-          risk
+          risk,
+          transcript
         });
         transcript.push({
           type: "pending_approval",
