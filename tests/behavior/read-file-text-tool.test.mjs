@@ -8,6 +8,8 @@ import { createActionToolRegistry } from "../../src/service/action_tools/registr
 import { BUILTIN_ACTION_TOOLS } from "../../src/service/action_tools/tools/index.mjs";
 import { filterToolsForTask } from "../../src/service/executors/tool_using/tool-surface.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../src/service/core/file-evidence-coverage.mjs";
+import { FILE_READ_DEPTHS } from "../../src/service/core/file-read-budget.mjs";
+import { createTaskSpec } from "../../src/service/core/task-spec.mjs";
 
 test("read_file_text extracts text from an attached local file", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "uca-read-file-text-"));
@@ -129,4 +131,95 @@ test("file_read capability exposes read_folder_text to the planner", () => {
     }
   });
   assert.ok(tools.some((tool) => tool.id === "read_folder_text"));
+});
+
+test("TaskSpec derives deep file_read budget from framework research depth", () => {
+  const spec = createTaskSpec("Analyze the attached project materials", {
+    file_paths: ["E:\\project"],
+    semantic_router_decision: {
+      source_scope: "uploaded_files",
+      source_mode: "deep_research",
+      web_policy: "forbidden",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "tool_using",
+      research_depth: "deep_research",
+      confidence: 0.9,
+      reason: "local project context with explicit depth"
+    }
+  });
+
+  assert.equal(spec.file_read?.depth, FILE_READ_DEPTHS.DEEP);
+  assert.equal(spec.file_read.max_depth, 6);
+  assert.equal(spec.file_read.max_files, 60);
+  assert.ok(spec.decision_trace.some((entry) => entry.stage === "file-read-budget"));
+});
+
+test("read_file_text directory delegation consumes task file_read budget when args omit limits", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "uca-read-depth-deep-"));
+  try {
+    const deepDir = path.join(dir, "a", "b", "c", "d", "e");
+    await mkdir(deepDir, { recursive: true });
+    await writeFile(path.join(deepDir, "leaf.md"), "Deep nested project finding.", "utf8");
+
+    const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+    const result = await registry.call("read_file_text", { path: dir }, {
+      task: {
+        task_spec: {
+          file_read: {
+            depth: FILE_READ_DEPTHS.DEEP,
+            max_depth: 6,
+            max_files: 60,
+            max_total_chars: 90000,
+            max_chars_per_file: 12000,
+            max_chars: 18000
+          }
+        }
+      }
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.metadata.tool_id, "read_folder_text");
+    assert.equal(result.metadata.file_read_depth, FILE_READ_DEPTHS.DEEP);
+    assert.equal(result.metadata.max_depth, 6);
+    assert.match(result.observation, /Deep nested project finding/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("explicit read_folder_text args override task file_read budget", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "uca-read-depth-override-"));
+  try {
+    await mkdir(path.join(dir, "child"), { recursive: true });
+    await writeFile(path.join(dir, "child", "hidden.md"), "Nested text that requires depth.", "utf8");
+
+    const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+    const result = await registry.call("read_folder_text", {
+      path: dir,
+      max_depth: 0,
+      max_files: 10,
+      max_total_chars: 90000
+    }, {
+      task: {
+        task_spec: {
+          file_read: {
+            depth: FILE_READ_DEPTHS.DEEP,
+            max_depth: 6,
+            max_files: 60,
+            max_total_chars: 90000,
+            max_chars_per_file: 12000,
+            max_chars: 18000
+          }
+        }
+      }
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.metadata.max_depth, 0);
+    assert.equal(result.metadata.files_read, 0);
+    assert.doesNotMatch(result.observation, /Nested text that requires depth/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

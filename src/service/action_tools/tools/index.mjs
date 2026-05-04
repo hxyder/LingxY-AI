@@ -19,6 +19,7 @@ import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
 import { buildSideEffectContract } from "../../core/policy/side-effect-contracts.mjs";
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
+import { resolveFileReadBudgetFromTask } from "../../core/file-read-budget.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2695,21 +2696,22 @@ export const READ_FILE_TEXT_TOOL = {
   risk_level: "low",
   required_capabilities: ["file_read"],
   requires_confirmation: false,
-  async execute(args = {}) {
+  async execute(args = {}, ctx = {}) {
     const filePath = args.path ? path.resolve(String(args.path).replace(/^~/, os.homedir())) : "";
     if (!filePath) return createActionResult({ success: false, observation: "path required" });
-    const maxChars = Math.max(500, Math.min(20000, Number(args.max_chars) || 8000));
+    const fileReadBudget = resolveFileReadBudgetFromTask(ctx?.task);
+    const maxChars = clampNumber(args.max_chars, { min: 500, max: 20000, fallback: fileReadBudget.max_chars });
     try {
       const info = await lstat(filePath);
       if (info.isDirectory()) {
         return READ_FOLDER_TEXT_TOOL.execute({
           path: filePath,
           pattern: args.pattern ?? "*.{md,markdown,txt,pdf,docx,doc,pptx,xlsx,csv,json,html,htm}",
-          max_depth: args.max_depth ?? 4,
-          max_files: args.max_files ?? 30,
-          max_total_chars: args.max_total_chars ?? Math.max(maxChars, 30000),
-          max_chars_per_file: args.max_chars_per_file ?? maxChars
-        });
+          max_depth: args.max_depth ?? fileReadBudget.max_depth,
+          max_files: args.max_files ?? fileReadBudget.max_files,
+          max_total_chars: args.max_total_chars ?? Math.max(maxChars, fileReadBudget.max_total_chars),
+          max_chars_per_file: args.max_chars_per_file ?? fileReadBudget.max_chars_per_file
+        }, ctx);
       }
       const extracted = await extractFileContent(filePath);
       const text = String(extracted.text ?? "");
@@ -2731,6 +2733,7 @@ export const READ_FILE_TEXT_TOOL = {
           chars_extracted: clipped.length,
           chars_total: text.length,
           truncated,
+          file_read_depth: fileReadBudget.depth,
           coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
           content_extracted: true,
           recursive: false
@@ -2838,13 +2841,14 @@ export const READ_FOLDER_TEXT_TOOL = {
   risk_level: "low",
   required_capabilities: ["file_read"],
   requires_confirmation: false,
-  async execute(args = {}) {
+  async execute(args = {}, ctx = {}) {
     const rootPath = args.path ? path.resolve(String(args.path).replace(/^~/, os.homedir())) : "";
     if (!rootPath) return createActionResult({ success: false, observation: "path required" });
-    const maxDepth = clampNumber(args.max_depth, { min: 0, max: 8, fallback: 3 });
-    const maxFiles = clampNumber(args.max_files, { min: 1, max: 80, fallback: 20 });
-    const maxCharsPerFile = clampNumber(args.max_chars_per_file, { min: 500, max: 20000, fallback: 6000 });
-    const maxTotalChars = clampNumber(args.max_total_chars, { min: 1000, max: 100000, fallback: 30000 });
+    const fileReadBudget = resolveFileReadBudgetFromTask(ctx?.task);
+    const maxDepth = clampNumber(args.max_depth, { min: 0, max: 8, fallback: fileReadBudget.max_depth });
+    const maxFiles = clampNumber(args.max_files, { min: 1, max: 80, fallback: fileReadBudget.max_files });
+    const maxCharsPerFile = clampNumber(args.max_chars_per_file, { min: 500, max: 20000, fallback: fileReadBudget.max_chars_per_file });
+    const maxTotalChars = clampNumber(args.max_total_chars, { min: 1000, max: 100000, fallback: fileReadBudget.max_total_chars });
     const patternRegex = args.pattern ? globToRegex(String(args.pattern)) : null;
 
     try {
@@ -2893,6 +2897,7 @@ export const READ_FOLDER_TEXT_TOOL = {
           pattern: args.pattern ?? null,
           max_depth: maxDepth,
           max_files: maxFiles,
+          file_read_depth: fileReadBudget.depth,
           files_seen: candidateFiles.length,
           files_read: successful.length,
           chars_extracted: totalChars,

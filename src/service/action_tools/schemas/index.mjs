@@ -452,7 +452,12 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     required: [],
     properties: {
       path: { type: "string" },
-      max_chars: { type: "number" }
+      pattern: { type: "string" },
+      max_depth: { type: "number" },
+      max_files: { type: "number" },
+      max_chars: { type: "number" },
+      max_chars_per_file: { type: "number" },
+      max_total_chars: { type: "number" }
     }
   },
   read_folder_text: {

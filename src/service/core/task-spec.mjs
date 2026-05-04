@@ -16,6 +16,7 @@ import { resolveToolPolicy, buildExternalWebReadPolicy, shouldConsultSemanticRou
 import { intentRouteNeedsConnector } from "./policy/evidence-policy.mjs";
 import { enforcePolicyInvariants } from "./policy/policy-invariants.mjs";
 import { inferResearchQuality, RESEARCH_PROFILES } from "./policy/research-quality.mjs";
+import { inferFileReadBudget } from "./file-read-budget.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
 import { resolveExecutor } from "./planning/executor-resolver.mjs";
 import { createTracker, STAGES } from "./contracts/decision-trace.mjs";
@@ -105,6 +106,10 @@ function isLaunchTaskText(text) {
  *     gated to run); `sr_<code>` when the SR preflight returned a
  *     rejection. Read by audit traces to distinguish "SR said no"
  *     from "SR couldn't answer".
+ * @property {{ depth: "focused"|"standard"|"deep", max_depth: number, max_files: number, max_total_chars: number, max_chars_per_file: number, max_chars: number, reason: string } | null} file_read
+ *   - Local evidence budget consumed by file-read tools when planner args
+ *     omit explicit limits. Derived from framework routing state, not topic
+ *     regexes.
  * @property {boolean} routing_degraded
  *   - P4-RQ G6b: derived from routing_status. true when SR was
  *     consulted but failed operationally
@@ -793,6 +798,26 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     srResearchDepth: enrichedContext?.semantic_router_decision?.research_depth ?? null,
     srSourceMode: enrichedContext?.semantic_router_decision?.source_mode ?? null
   });
+  const fileReadBudget = inferFileReadBudget({
+    contextSources,
+    contextPacket: enrichedContext,
+    researchQuality,
+    srDecision: enrichedContext?.semantic_router_decision ?? null
+  });
+  if (fileReadBudget) {
+    tracker.record(STAGES.FILE_READ_BUDGET, {
+      output: {
+        depth: fileReadBudget.depth,
+        max_depth: fileReadBudget.max_depth,
+        max_files: fileReadBudget.max_files,
+        max_total_chars: fileReadBudget.max_total_chars,
+        max_chars_per_file: fileReadBudget.max_chars_per_file,
+        max_chars: fileReadBudget.max_chars
+      },
+      reason: fileReadBudget.reason,
+      evidence: [{ type: "context", source: "file-read-budget", reason: fileReadBudget.reason }]
+    });
+  }
 
   // P4-RQ G4: routing_status — propagate SR availability to
   // downstream consumers (executor-resolver Rule 5 ext., fast-
@@ -893,6 +918,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     needs_current_web_data: toolPolicy.web_search_fetch.mode === "required",
     tool_policy: toolPolicy,
     research_quality: researchQuality,
+    file_read: fileReadBudget,
     ...(executionConstraints ? { execution_constraints: executionConstraints } : {}),
     synthesis,
     // G4: framework-state flags read by executor-resolver Rule 5
