@@ -257,8 +257,11 @@ const skillEditModal = document.querySelector("#skillEditModal");
 const skillEditText = document.querySelector("#skillEditText");
 const skillEditPath = document.querySelector("#skillEditPath");
 const skillEditState = document.querySelector("#skillEditState");
+const skillEditValidation = document.querySelector("#skillEditValidation");
 const skillEditSaveBtn = document.querySelector("#skillEditSaveBtn");
 const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
+const skillEditOpenBtn = document.querySelector("#skillEditOpenBtn");
+const skillEditRevealBtn = document.querySelector("#skillEditRevealBtn");
 
 const consoleChatPin = createBottomPinController(consoleChatMessages, {
   button: consoleChatScrollDownBtn
@@ -2709,19 +2712,38 @@ function renderSkillRegistries() {
       </div>
     </div>
   `).join("");
-  const skillCards = skills.map((skill) => `
+  const skillCards = skills.map((skill) => {
+    const entryPath = skill.entryPath ?? skill.filePath ?? skill.path ?? "";
+    const errors = Array.isArray(skill.errors) ? skill.errors : [];
+    const validity = skill.valid === false || errors.length > 0
+      ? { chip: "danger", label: `${errors.length || 1} issue${errors.length === 1 ? "" : "s"}` }
+      : skill.valid === true
+        ? { chip: "ready", label: "valid" }
+        : { chip: "muted", label: "skill" };
+    return `
     <div class="surface" style="padding:10px 12px;">
       <div class="row">
         <strong style="font-size:13px;">${escapeHtml(skill.displayName ?? skill.name ?? skill.id ?? "Unnamed skill")}</strong>
-        <span class="chip ready">skill</span>
+        <span class="chip ${validity.chip}">${escapeHtml(validity.label)}</span>
       </div>
       <p class="muted" style="margin-top:4px;font-size:12px;">
-        ${escapeHtml(skill.tags?.[0] ?? skill.registryId ?? "local")} · ${escapeHtml(skill.entryPath ?? skill.filePath ?? skill.path ?? "n/a")}
+        ${escapeHtml(skill.tags?.[0] ?? skill.registryId ?? "local")} · ${escapeHtml(entryPath || "n/a")}
       </p>
       ${skill.description ? `<p style="margin-top:6px;font-size:12px;">${escapeHtml(skill.description)}</p>` : ""}
-      ${skill.entryPath ? `<div class="toolbar" style="margin-top:8px;"><button class="btn" data-skill-edit="${escapeHtml(skill.entryPath)}" type="button">Edit</button></div>` : ""}
+      ${errors.length ? `
+        <div class="muted" style="font-size:11.5px;margin-top:6px;color:#b45309;">
+          ${errors.slice(0, 3).map((error) => `<div>${escapeHtml(error.field ?? "skill")}: ${escapeHtml(error.message ?? error)}</div>`).join("")}
+          ${errors.length > 3 ? `<div>+${errors.length - 3} more issue${errors.length - 3 === 1 ? "" : "s"}</div>` : ""}
+        </div>` : ""}
+      ${entryPath ? `
+        <div class="toolbar" style="margin-top:8px;">
+          <button class="btn" data-skill-edit="${escapeHtml(entryPath)}" type="button">Edit</button>
+          <button class="btn btn-ghost" data-skill-open="${escapeHtml(entryPath)}" type="button">Open</button>
+          <button class="btn btn-ghost" data-skill-reveal="${escapeHtml(entryPath)}" type="button">Reveal</button>
+        </div>` : ""}
     </div>
-  `).join("");
+  `;
+  }).join("");
   skillRegistryList.innerHTML = `
     ${registryCards}
     ${skills.length ? `
@@ -2748,6 +2770,52 @@ function renderSkillRegistries() {
   for (const btn of skillRegistryList.querySelectorAll("[data-skill-edit]")) {
     btn.addEventListener("click", () => void openSkillEditor(btn.dataset.skillEdit));
   }
+  for (const btn of skillRegistryList.querySelectorAll("[data-skill-open]")) {
+    btn.addEventListener("click", () => void openSkillPath(btn.dataset.skillOpen));
+  }
+  for (const btn of skillRegistryList.querySelectorAll("[data-skill-reveal]")) {
+    btn.addEventListener("click", () => void revealSkillPath(btn.dataset.skillReveal));
+  }
+}
+
+function renderSkillValidation(target, validation) {
+  if (!target) return;
+  const errors = Array.isArray(validation?.errors) ? validation.errors : [];
+  if (validation?.valid === true || validation?.ok === true) {
+    target.innerHTML = `<span class="chip ready">valid</span>`;
+    return;
+  }
+  if (errors.length > 0 || validation?.valid === false || validation?.ok === false) {
+    target.innerHTML = `
+      <div><span class="chip danger">needs attention</span></div>
+      <div style="margin-top:6px;">
+        ${errors.map((error) => `<div>${escapeHtml(error.field ?? "skill")}: ${escapeHtml(error.message ?? error)}</div>`).join("") || "Skill descriptor is invalid."}
+      </div>
+    `;
+    return;
+  }
+  target.innerHTML = "";
+}
+
+async function openSkillPath(entryPath) {
+  if (!entryPath) return;
+  if (typeof window.ucaShell?.openPath !== "function") {
+    showConsoleToast("Open path bridge unavailable.", { kind: "err" });
+    return;
+  }
+  const result = await window.ucaShell.openPath(entryPath);
+  if (result) showConsoleToast(`打开失败：${result}`, { kind: "err" });
+}
+
+async function revealSkillPath(entryPath) {
+  if (!entryPath) return;
+  try {
+    if (typeof window.ucaShell?.showItemInFolder === "function") {
+      await window.ucaShell.showItemInFolder(entryPath);
+      return;
+    }
+  } catch { /* fallback to openPath */ }
+  await openSkillPath(entryPath);
 }
 
 async function openSkillEditor(entryPath) {
@@ -2755,6 +2823,10 @@ async function openSkillEditor(entryPath) {
   editingSkillPath = entryPath;
   skillEditState.textContent = "Loading...";
   skillEditPath.textContent = entryPath;
+  renderSkillValidation(
+    skillEditValidation,
+    (state.workspace.skills ?? []).find((skill) => (skill.entryPath ?? skill.filePath ?? skill.path) === entryPath)
+  );
   skillEditModal.style.display = "flex";
   try {
     const payload = await fetchJson(`/skills/read?entryPath=${encodeURIComponent(entryPath)}`);
@@ -2772,6 +2844,7 @@ function closeSkillEditor() {
   if (skillEditText) skillEditText.value = "";
   if (skillEditPath) skillEditPath.textContent = "";
   if (skillEditState) skillEditState.textContent = "";
+  if (skillEditValidation) skillEditValidation.innerHTML = "";
 }
 
 function renderCodeCliAdapters() {
@@ -7630,6 +7703,12 @@ skillRegistryForm?.addEventListener("submit", async (event) => {
 });
 
 skillEditCloseBtn?.addEventListener("click", closeSkillEditor);
+skillEditOpenBtn?.addEventListener("click", () => {
+  if (editingSkillPath) void openSkillPath(editingSkillPath);
+});
+skillEditRevealBtn?.addEventListener("click", () => {
+  if (editingSkillPath) void revealSkillPath(editingSkillPath);
+});
 skillEditModal?.addEventListener("click", (event) => {
   if (event.target === skillEditModal) closeSkillEditor();
 });
@@ -7637,8 +7716,9 @@ skillEditSaveBtn?.addEventListener("click", async () => {
   if (!editingSkillPath || !skillEditText) return;
   skillEditState.textContent = "Saving...";
   try {
-    await writeSkillMarkdownViaShell(editingSkillPath, skillEditText.value);
-    skillEditState.textContent = "Saved.";
+    const result = await writeSkillMarkdownViaShell(editingSkillPath, skillEditText.value);
+    renderSkillValidation(skillEditValidation, result.validation);
+    skillEditState.textContent = result.validation?.ok === false ? "Saved with validation issues." : "Saved.";
     await refreshWorkspace();
   } catch (error) {
     skillEditState.textContent = `Failed: ${error.message}`;

@@ -2466,9 +2466,14 @@
             <h3 style="margin:0;font-size:16px;">Edit Skill</h3>
             <p id="skillEditPath" class="muted" style="margin:4px 0 0;font-size:12px;"></p>
           </div>
-          <button id="skillEditCloseBtn" type="button" class="btn btn-ghost">Close</button>
+          <div class="toolbar" style="margin-left:auto;">
+            <button id="skillEditOpenBtn" type="button" class="btn btn-ghost">Open</button>
+            <button id="skillEditRevealBtn" type="button" class="btn btn-ghost">Reveal</button>
+            <button id="skillEditCloseBtn" type="button" class="btn btn-ghost">Close</button>
+          </div>
         </div>
         <textarea id="skillEditText" rows="18" class="skill-editor" spellcheck="false"></textarea>
+        <div id="skillEditValidation" class="muted" style="font-size:12px;margin-top:8px;"></div>
         <div class="toolbar" style="justify-content:flex-end;margin-top:12px;">
           <span id="skillEditState" class="muted" style="font-size:12px;"></span>
           <button id="skillEditSaveBtn" type="button" class="btn btn-primary">Save Skill</button>

@@ -170,6 +170,14 @@ assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:appr
   "approval mutation: console must not call approval mutation routes directly");
 assert.ok(!/fetchJson\(`?\/approvals\/\$\{encodeURIComponent\([^)]*\)\}\/(?:approve|reject)/.test(overlayJs),
   "approval mutation: overlay must not call approval mutation routes directly");
+assert.ok(/id="skillEditValidation"/.test(consoleHtml),
+  "skills: edit modal must expose validation feedback");
+assert.ok(/data-skill-reveal/.test(consoleJs) && /data-skill-open/.test(consoleJs),
+  "skills: discovered skill cards must expose open and reveal actions");
+assert.ok(/renderSkillValidation/.test(consoleJs) && /skill\.errors/.test(consoleJs),
+  "skills: console must render descriptor validation errors");
+assert.ok(/window\.ucaShell\.openPath/.test(consoleJs) && /window\.ucaShell\?\.showItemInFolder/.test(consoleJs),
+  "skills: console skill file actions must use the desktop shell bridge");
 assert.ok(/updateSecurityState/.test(consoleJs) && /window\.ucaShell\.updateSecurityState/.test(consoleJs),
   "security settings: console must use desktop shell bridge");
 assert.ok(/updateBudget/.test(consoleJs) && /window\.ucaShell\.updateBudget/.test(consoleJs),
