@@ -4,6 +4,7 @@ import test from "node:test";
 import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
 import { createLaunchAmbiguityResult } from "../../src/service/action_tools/tools/index.mjs";
 import { createTaskSpec } from "../../src/service/core/task-spec.mjs";
+import { FILE_EVIDENCE_COVERAGE } from "../../src/service/core/file-evidence-coverage.mjs";
 import { runToolAgentLoop } from "../../src/service/executors/tool_using/agent-loop.mjs";
 
 function makeLookupTool() {
@@ -51,6 +52,37 @@ function makeReadFileTextTool() {
         metadata: {
           tool_id: "read_file_text",
           path: args.path
+        }
+      };
+    }
+  };
+}
+
+function makeListFilesTool() {
+  return {
+    id: "list_files",
+    name: "List Files",
+    description: "Returns deterministic shallow file enumeration for behavior tests.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["dir"],
+      properties: {
+        dir: { type: "string" }
+      }
+    },
+    async execute(args) {
+      return {
+        success: true,
+        observation: `listed:${args.dir}`,
+        metadata: {
+          tool_id: "list_files",
+          dir: args.dir,
+          files: [`${args.dir}\\a.md`, `${args.dir}\\b.md`],
+          coverage_scope: FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW,
+          content_extracted: false,
+          recursive: false
         }
       };
     }
@@ -194,6 +226,9 @@ test("agent loop emits evidence summary for local file reads", async () => {
 
   assert.equal(result.status, "success");
   assert.equal(result.evidence_summary.local_source_count, 1);
+  assert.equal(result.evidence_summary.local_text_source_count, 1);
+  assert.equal(result.evidence_summary.local_shallow_source_count, 0);
+  assert.equal(result.evidence_summary.local_coverage_scope_counts.single_file_text, 1);
   assert.deepEqual(result.evidence_summary.local_sources, ["E:\\docs\\resume.md"]);
   assert.ok(events.some((entry) =>
     entry.eventType === "evidence_summary"
@@ -202,6 +237,53 @@ test("agent loop emits evidence summary for local file reads", async () => {
   assert.ok(auditLog.some((entry) =>
     entry.event_subtype === "tool_loop.evidence_summary"
     && entry.payload?.local_source_count === 1
+  ));
+});
+
+test("agent loop emits shallow file coverage without counting it as content evidence", async () => {
+  const { runtime, events, auditLog } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([makeListFilesTool()])
+  });
+  const task = {
+    ...makeTask(),
+    task_id: "task_agent_loop_shallow_file_evidence",
+    user_command: "List files in this folder.",
+    task_spec: {
+      goal: "inspect local folder",
+      synthesis: { expected_output: "summary", user_goal: "inspect local folder" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } }
+    }
+  };
+
+  const planner = async ({ iteration }) => {
+    if (iteration === 0) {
+      return { type: "tool_call", tool: "list_files", args: { dir: "E:\\docs" } };
+    }
+    return { type: "final", text: "Listed local files." };
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner,
+    maxIterations: 3
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.evidence_summary.local_source_count, 0);
+  assert.equal(result.evidence_summary.local_shallow_source_count, 2);
+  assert.deepEqual(result.evidence_summary.local_shallow_sources, [
+    "E:\\docs\\a.md",
+    "E:\\docs\\b.md"
+  ]);
+  assert.ok(events.some((entry) =>
+    entry.eventType === "evidence_summary"
+    && entry.payload?.local_shallow_source_count === 2
+  ));
+  assert.ok(auditLog.some((entry) =>
+    entry.event_subtype === "tool_loop.evidence_summary"
+    && entry.payload?.local_source_count === 0
+    && entry.payload?.local_shallow_source_count === 2
   ));
 });
 

@@ -25,6 +25,8 @@ assert.match(tools, /LIST_FILES_TOOL[\s\S]{0,1600}DIRECTORY_LISTING_SHALLOW/,
   "list_files must mark shallow directory listing coverage");
 assert.match(tools, /GLOB_FILES_TOOL[\s\S]{0,2600}FILE_ENUMERATION_RECURSIVE/,
   "glob_files must mark recursive enumeration coverage");
+assert.match(tools, /FIND_RECENT_FILES_TOOL[\s\S]{0,2600}FILE_ENUMERATION_RECURSIVE/,
+  "find_recent_files must mark recursive enumeration coverage");
 assert.match(tools, /READ_FILE_TEXT_TOOL[\s\S]{0,2400}SINGLE_FILE_TEXT/,
   "read_file_text must mark single-file text coverage");
 assert.match(tools, /READ_FILE_TEXT_TOOL[\s\S]{0,1800}READ_FOLDER_TEXT_TOOL\.execute/,

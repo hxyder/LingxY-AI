@@ -2570,14 +2570,26 @@ export const FIND_RECENT_FILES_TOOL = {
         return createActionResult({
           success: true,
           observation: `No ${kind || "any"} files found in the last ${sinceHours}h under ${searchDir}`,
-          metadata: { tool_id: "find_recent_files", files: [] }
+          metadata: {
+            tool_id: "find_recent_files",
+            files: [],
+            coverage_scope: FILE_EVIDENCE_COVERAGE.FILE_ENUMERATION_RECURSIVE,
+            content_extracted: false,
+            recursive: true
+          }
         });
       }
       const lines = found.map((f) => `${f.path} (${Math.round(f.size / 1024)}KB, ${new Date(f.mtime).toLocaleString()})`);
       return createActionResult({
         success: true,
         observation: `Found ${found.length} recent ${kind || "any"} file(s):\n${lines.join("\n")}`,
-        metadata: { tool_id: "find_recent_files", files: found.map((f) => f.path) }
+        metadata: {
+          tool_id: "find_recent_files",
+          files: found.map((f) => f.path),
+          coverage_scope: FILE_EVIDENCE_COVERAGE.FILE_ENUMERATION_RECURSIVE,
+          content_extracted: false,
+          recursive: true
+        }
       });
     } catch (error) {
       return createActionResult({

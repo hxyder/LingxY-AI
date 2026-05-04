@@ -1,3 +1,10 @@
+import {
+  FILE_EVIDENCE_COVERAGE,
+  isDeepFileTextCoverageScope,
+  isFileTextCoverageScope,
+  normalizeFileCoverageScope
+} from "../file-evidence-coverage.mjs";
+
 /**
  * UCA-077 P4-RQ C3: post-loop evidence summary for search/research
  * tasks.
@@ -95,6 +102,13 @@ const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
  * @property {string[]} urls                  - sorted list of unique URLs
  * @property {number}   local_source_count    - count of unique local files/images read
  * @property {string[]} local_sources         - sorted list of local file/image paths
+ * @property {number}   local_text_source_count - count of local sources with extracted text/content
+ * @property {number}   local_deep_text_source_count - count of local sources read through recursive folder extraction
+ * @property {number}   local_shallow_source_count - count of local paths enumerated or statted without extracted content
+ * @property {string[]} local_shallow_sources - sorted list of local paths observed without content extraction
+ * @property {Object.<string, number>} local_coverage_scope_counts - source counts grouped by coverage scope
+ * @property {number}   local_truncated_source_count - count of local sources whose extracted content was truncated
+ * @property {string[]} local_truncated_sources - sorted list of truncated local paths
  * @property {number}   blended_source_count  - web URL count + local source count
  * @property {number}   blended_origin_count  - distinct web domains + distinct local sources
  * @property {boolean}  is_single_roundup     - P4-RQ D2: true when distinct_domain_count===1
@@ -114,12 +128,20 @@ export function extractEvidence(transcript) {
   const urls = new Set();
   const domains = new Set();
   const localSources = new Set();
+  const localDeepTextSources = new Set();
+  const localShallowSources = new Set();
+  const localTruncatedSources = new Set();
+  const localCoverageSources = new Map();
   const titles = [];   // collected for roundup detection
   if (!Array.isArray(transcript)) {
     return {
       source_count: 0, distinct_domain_count: 0,
       domains: [], urls: [],
       local_source_count: 0, local_sources: [],
+      local_text_source_count: 0, local_deep_text_source_count: 0,
+      local_shallow_source_count: 0, local_shallow_sources: [],
+      local_coverage_scope_counts: {},
+      local_truncated_source_count: 0, local_truncated_sources: [],
       blended_source_count: 0, blended_origin_count: 0,
       is_single_roundup: false, roundup_markers: []
     };
@@ -141,20 +163,82 @@ export function extractEvidence(transcript) {
       const u = typeof entry.metadata?.url === "string" ? entry.metadata.url : null;
       if (u) urls.add(u);
     } else if (entry.tool === "read_file_text") {
-      addLocalSource(localSources, entry.metadata?.path);
-    } else if (entry.tool === "read_folder_text") {
-      const files = entry.metadata?.files;
-      if (Array.isArray(files)) {
-        for (const file of files) {
-          if (file?.success !== false) addLocalSource(localSources, file?.path);
-        }
+      if (Array.isArray(entry.metadata?.files)) {
+        addFolderTextCoverage({
+          metadata: entry.metadata,
+          localSources,
+          localDeepTextSources,
+          localShallowSources,
+          localTruncatedSources,
+          localCoverageSources
+        });
+      } else {
+        addLocalCoverageSource({
+          path: entry.metadata?.path,
+          scope: entry.metadata?.coverage_scope ?? FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+          contentExtracted: entry.metadata?.content_extracted !== false,
+          truncated: entry.metadata?.truncated === true,
+          localSources,
+          localDeepTextSources,
+          localShallowSources,
+          localTruncatedSources,
+          localCoverageSources
+        });
       }
-      if (localSources.size === 0) addLocalSource(localSources, entry.metadata?.path);
+    } else if (entry.tool === "read_folder_text") {
+      addFolderTextCoverage({
+        metadata: entry.metadata,
+        localSources,
+        localDeepTextSources,
+        localShallowSources,
+        localTruncatedSources,
+        localCoverageSources
+      });
     } else if (entry.tool === "vision_analyze") {
       const imagePaths = entry.metadata?.image_paths;
       if (Array.isArray(imagePaths)) {
-        for (const imagePath of imagePaths) addLocalSource(localSources, imagePath);
+        for (const imagePath of imagePaths) {
+          addLocalCoverageSource({
+            path: imagePath,
+            scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+            contentExtracted: true,
+            localSources,
+            localDeepTextSources,
+            localShallowSources,
+            localTruncatedSources,
+            localCoverageSources
+          });
+        }
       }
+    } else if (entry.tool === "list_files" || entry.tool === "glob_files" || entry.tool === "find_recent_files") {
+      const files = Array.isArray(entry.metadata?.files) ? entry.metadata.files : [];
+      const scope = entry.metadata?.coverage_scope
+        ?? (entry.tool === "list_files"
+          ? FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW
+          : FILE_EVIDENCE_COVERAGE.FILE_ENUMERATION_RECURSIVE);
+      for (const filePath of files) {
+        addLocalCoverageSource({
+          path: typeof filePath === "string" ? filePath : filePath?.path,
+          scope,
+          contentExtracted: false,
+          localSources,
+          localDeepTextSources,
+          localShallowSources,
+          localTruncatedSources,
+          localCoverageSources
+        });
+      }
+    } else if (entry.tool === "stat_file") {
+      addLocalCoverageSource({
+        path: entry.metadata?.path,
+        scope: entry.metadata?.coverage_scope ?? FILE_EVIDENCE_COVERAGE.FILE_METADATA,
+        contentExtracted: false,
+        localSources,
+        localDeepTextSources,
+        localShallowSources,
+        localTruncatedSources,
+        localCoverageSources
+      });
     }
   }
   for (const u of urls) {
@@ -181,6 +265,13 @@ export function extractEvidence(transcript) {
     urls: [...urls].sort(),
     local_source_count: localSources.size,
     local_sources: [...localSources].sort(),
+    local_text_source_count: localSources.size,
+    local_deep_text_source_count: localDeepTextSources.size,
+    local_shallow_source_count: localShallowSources.size,
+    local_shallow_sources: [...localShallowSources].sort(),
+    local_coverage_scope_counts: localCoverageScopeCounts(localCoverageSources),
+    local_truncated_source_count: localTruncatedSources.size,
+    local_truncated_sources: [...localTruncatedSources].sort(),
     blended_source_count: urls.size + localSources.size,
     blended_origin_count: domains.size + localSources.size,
     is_single_roundup: isSingleRoundup,
@@ -193,6 +284,88 @@ function addLocalSource(out, value) {
   const normalized = value.trim();
   if (!normalized) return;
   out.add(normalized);
+}
+
+function addCoverageSource(map, scope, path) {
+  const normalizedScope = normalizeFileCoverageScope(scope);
+  if (!normalizedScope || typeof path !== "string" || !path.trim()) return;
+  if (!map.has(normalizedScope)) map.set(normalizedScope, new Set());
+  map.get(normalizedScope).add(path.trim());
+}
+
+function addLocalCoverageSource({
+  path,
+  scope,
+  contentExtracted,
+  truncated = false,
+  localSources,
+  localDeepTextSources,
+  localShallowSources,
+  localTruncatedSources,
+  localCoverageSources
+}) {
+  const normalizedPath = typeof path === "string" ? path.trim() : "";
+  if (!normalizedPath) return;
+  const normalizedScope = normalizeFileCoverageScope(scope)
+    ?? (contentExtracted ? FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT : FILE_EVIDENCE_COVERAGE.FILE_METADATA);
+  addCoverageSource(localCoverageSources, normalizedScope, normalizedPath);
+  if (contentExtracted && isFileTextCoverageScope(normalizedScope)) {
+    addLocalSource(localSources, normalizedPath);
+    if (isDeepFileTextCoverageScope(normalizedScope)) addLocalSource(localDeepTextSources, normalizedPath);
+    if (truncated) addLocalSource(localTruncatedSources, normalizedPath);
+    return;
+  }
+  addLocalSource(localShallowSources, normalizedPath);
+}
+
+function addFolderTextCoverage({
+  metadata = {},
+  localSources,
+  localDeepTextSources,
+  localShallowSources,
+  localTruncatedSources,
+  localCoverageSources
+}) {
+  const files = metadata?.files;
+  let added = false;
+  if (Array.isArray(files)) {
+    for (const file of files) {
+      if (file?.success === false) continue;
+      addLocalCoverageSource({
+        path: file?.path,
+        scope: metadata.coverage_scope ?? FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+        contentExtracted: metadata.content_extracted !== false,
+        truncated: file?.truncated === true,
+        localSources,
+        localDeepTextSources,
+        localShallowSources,
+        localTruncatedSources,
+        localCoverageSources
+      });
+      added = true;
+    }
+  }
+  if (!added) {
+    addLocalCoverageSource({
+      path: metadata?.path,
+      scope: metadata?.coverage_scope ?? FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+      contentExtracted: metadata?.content_extracted !== false,
+      truncated: metadata?.truncated === true,
+      localSources,
+      localDeepTextSources,
+      localShallowSources,
+      localTruncatedSources,
+      localCoverageSources
+    });
+  }
+}
+
+function localCoverageScopeCounts(map) {
+  const out = {};
+  for (const [scope, sources] of [...map.entries()].sort(([a], [b]) => a.localeCompare(b))) {
+    out[scope] = sources.size;
+  }
+  return out;
 }
 
 /**

@@ -663,7 +663,8 @@ function finaliseWithEvidence(result, { runtime, task } = {}) {
   // no web URL was fetched.
   if ((evidence.blended_source_count ?? 0) === 0
       && evidence.source_count === 0
-      && evidence.local_source_count === 0) {
+      && evidence.local_source_count === 0
+      && (evidence.local_shallow_source_count ?? 0) === 0) {
     return { ...result, evidence_summary: evidence };
   }
   try {

@@ -30,6 +30,7 @@ import {
   extractEvidence,
   registrableDomain
 } from "../src/service/core/policy/evidence-normalizer.mjs";
+import { FILE_EVIDENCE_COVERAGE } from "../src/service/core/file-evidence-coverage.mjs";
 import { STAGES } from "../src/service/core/contracts/decision-trace.mjs";
 
 let pass = 0;
@@ -170,14 +171,34 @@ it("extract: mixed web_search_fetch + fetch_url_content cross-tool dedupe", () =
 it("extract: local file reads contribute blended evidence without changing web counts", () => {
   const transcript = [
     { type: "tool_result", tool: "read_file_text", success: true, metadata: {
-      path: "E:\\docs\\resume.pdf"
+      path: "E:\\docs\\resume.pdf",
+      coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+      content_extracted: true,
+      truncated: true
     } },
     { type: "tool_result", tool: "read_folder_text", success: true, metadata: {
+      coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+      content_extracted: true,
       files: [
         { path: "E:\\docs\\notes\\a.md", success: true },
-        { path: "E:\\docs\\notes\\b.md", success: true },
+        { path: "E:\\docs\\notes\\b.md", success: true, truncated: true },
         { path: "E:\\docs\\notes\\failed.md", success: false }
       ]
+    } },
+    { type: "tool_result", tool: "list_files", success: true, metadata: {
+      files: ["E:\\docs\\draft.docx"],
+      coverage_scope: FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW,
+      content_extracted: false
+    } },
+    { type: "tool_result", tool: "glob_files", success: true, metadata: {
+      files: ["E:\\docs\\nested\\raw.csv"],
+      coverage_scope: FILE_EVIDENCE_COVERAGE.FILE_ENUMERATION_RECURSIVE,
+      content_extracted: false
+    } },
+    { type: "tool_result", tool: "stat_file", success: true, metadata: {
+      path: "E:\\docs\\archive.zip",
+      coverage_scope: FILE_EVIDENCE_COVERAGE.FILE_METADATA,
+      content_extracted: false
     } },
     { type: "tool_result", tool: "vision_analyze", success: true, metadata: {
       image_paths: ["E:\\docs\\diagram.png"]
@@ -190,11 +211,29 @@ it("extract: local file reads contribute blended evidence without changing web c
   assert.equal(ev.source_count, 1);
   assert.equal(ev.distinct_domain_count, 1);
   assert.equal(ev.local_source_count, 4);
+  assert.equal(ev.local_text_source_count, 4);
+  assert.equal(ev.local_deep_text_source_count, 2);
+  assert.equal(ev.local_shallow_source_count, 3);
+  assert.equal(ev.local_truncated_source_count, 2);
+  assert.equal(ev.local_coverage_scope_counts[FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT], 2);
+  assert.equal(ev.local_coverage_scope_counts[FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT], 2);
+  assert.equal(ev.local_coverage_scope_counts[FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW], 1);
+  assert.equal(ev.local_coverage_scope_counts[FILE_EVIDENCE_COVERAGE.FILE_ENUMERATION_RECURSIVE], 1);
+  assert.equal(ev.local_coverage_scope_counts[FILE_EVIDENCE_COVERAGE.FILE_METADATA], 1);
   assert.equal(ev.blended_source_count, 5);
   assert.equal(ev.blended_origin_count, 5);
   assert.deepEqual(ev.local_sources, [
     "E:\\docs\\diagram.png",
     "E:\\docs\\notes\\a.md",
+    "E:\\docs\\notes\\b.md",
+    "E:\\docs\\resume.pdf"
+  ]);
+  assert.deepEqual(ev.local_shallow_sources, [
+    "E:\\docs\\archive.zip",
+    "E:\\docs\\draft.docx",
+    "E:\\docs\\nested\\raw.csv"
+  ]);
+  assert.deepEqual(ev.local_truncated_sources, [
     "E:\\docs\\notes\\b.md",
     "E:\\docs\\resume.pdf"
   ]);

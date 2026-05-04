@@ -194,6 +194,8 @@ assert.ok(/function\s+renderTaskEvidenceSummary/.test(consoleJs) && /renderEvide
   "task detail: console must render structured evidence summaries through the shared renderer");
 assert.ok(/data-evidence-url/.test(evidenceSourcesView) && /data-evidence-path/.test(evidenceSourcesView),
   "task detail: evidence sources must expose web open and local reveal actions");
+assert.ok(/local_shallow_source_count/.test(evidenceSourcesView) && /listed only/.test(evidenceSourcesView),
+  "task detail: evidence sources must distinguish shallow file enumeration from content evidence");
 assert.ok(/appendConsoleChatEvidenceSources/.test(consoleJs) && /data-chat-evidence-sources/.test(consoleJs),
   "chat: console must append structured evidence summaries to assistant messages");
 assert.ok(/from\s+["']\.\/chat-blocks\.mjs["']/.test(consoleJs) && /from\s+["']\.\/chat-blocks\.mjs["']/.test(overlayJs),
