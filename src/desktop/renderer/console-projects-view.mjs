@@ -5,12 +5,14 @@ import {
 
 export function formatProjectConversationPreview(conversation) {
   if (!conversation) return "Select a conversation.";
+  const turns = Array.isArray(conversation.turns) ? conversation.turns : [];
+  const updatedAt = conversation.updatedAt ?? conversation.updated_at ?? conversation.startedAt ?? conversation.created_at;
   const lines = [
-    conversation.title || conversation.seedCommand || conversation.id,
-    `Updated: ${formatDateTime(conversation.updatedAt)}`,
+    conversation.title || conversation.seedCommand || conversation.id || conversation.conversation_id,
+    `Updated: ${formatDateTime(updatedAt)}`,
     ""
   ];
-  for (const turn of (conversation.turns ?? []).slice(-12)) {
+  for (const turn of turns.slice(-12)) {
     const label = turn.role === "user" ? "User" : turn.role === "assistant" ? "Assistant" : "System";
     lines.push(`${label}: ${turn.content ?? ""}`);
     lines.push("");
@@ -48,17 +50,21 @@ export function renderProjectConversationListHtml({
   if (rows.length === 0) {
     return `<p class="muted" style="font-size:12px;">No conversations in this project.</p>`;
   }
-  return rows.map((conversation) => `
-      <div class="history-item-row ${conversation.id === selectedConversationId ? "active" : ""}">
-        <button class="history-item history-item--main" data-project-conversation-id="${escapeHtml(conversation.id)}" style="text-align:left;">
+  return rows.map((conversation) => {
+    const conversationId = conversation.id ?? conversation.conversation_id ?? "";
+    const turnCount = conversation.messageCount ?? conversation.message_count ?? (conversation.turns ?? []).length;
+    const updatedAt = conversation.updatedAt ?? conversation.updated_at ?? conversation.startedAt ?? conversation.created_at;
+    return `
+      <div class="history-item-row ${conversationId === selectedConversationId ? "active" : ""}">
+        <button class="history-item history-item--main" data-project-conversation-id="${escapeHtml(conversationId)}" style="text-align:left;">
           <div class="row">
             <strong style="font-size:13px;">${escapeHtml(conversation.title || conversation.seedCommand || "新会话")}</strong>
-            <span class="muted" style="font-size:11px;">${escapeHtml((conversation.turns ?? []).length)}</span>
+            <span class="muted" style="font-size:11px;">${escapeHtml(turnCount)}</span>
           </div>
-          <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(formatDateTime(conversation.updatedAt ?? conversation.startedAt))}</p>
+          <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(formatDateTime(updatedAt))}</p>
         </button>
         <button class="history-item-resume" type="button"
-                data-resume-project-conversation-id="${escapeHtml(conversation.id)}"
+                data-resume-project-conversation-id="${escapeHtml(conversationId)}"
                 title="在 Chat 标签继续此对话" aria-label="继续对话">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -66,5 +72,6 @@ export function renderProjectConversationListHtml({
           </svg>
         </button>
       </div>
-    `).join("");
+    `;
+  }).join("");
 }

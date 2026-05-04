@@ -5673,7 +5673,99 @@ async function syncConsoleProjectStoreFromService({ rerender = false } = {}) {
   }
 }
 
-function renderProjectsWorkspace() {
+let projectBackendConversationProjectId = null;
+let projectBackendConversationStatus = "idle";
+let projectBackendConversations = [];
+let projectBackendConversationDetailId = null;
+let projectBackendConversationDetail = null;
+
+function toProjectConversationSummary(conversation = {}) {
+  const id = conversation.conversation_id ?? conversation.id ?? "";
+  return {
+    id,
+    conversation_id: id,
+    projectId: conversation.project_id ?? conversation.projectId ?? null,
+    title: conversation.title ?? null,
+    seedCommand: conversation.title ?? id,
+    updatedAt: conversation.updated_at ?? conversation.updatedAt ?? conversation.created_at ?? null,
+    startedAt: conversation.created_at ?? conversation.startedAt ?? null,
+    messageCount: conversation.message_count ?? conversation.messageCount ?? 0,
+    taskCount: conversation.task_count ?? conversation.taskCount ?? 0,
+    turns: []
+  };
+}
+
+function toProjectConversationDetail(detail = {}) {
+  const conversation = detail.conversation ?? {};
+  const summary = toProjectConversationSummary(conversation);
+  const messages = Array.isArray(detail.messages) ? detail.messages : [];
+  return {
+    ...summary,
+    turns: messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      ts: message.ts
+    }))
+  };
+}
+
+function legacyProjectConversations(store, projectId) {
+  return (store.conversations ?? [])
+    .filter((conversation) => conversation.projectId === projectId)
+    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+}
+
+function currentProjectConversations(store, projectId) {
+  if (projectBackendConversationProjectId === projectId && projectBackendConversationStatus === "ready") {
+    return projectBackendConversations;
+  }
+  if (projectBackendConversationProjectId === projectId
+      && projectBackendConversationStatus === "loading"
+      && projectBackendConversations.length > 0) {
+    return projectBackendConversations;
+  }
+  return legacyProjectConversations(store, projectId);
+}
+
+async function refreshProjectConversationSummaries(projectId, { force = false } = {}) {
+  if (!projectId) return;
+  if (!force && projectBackendConversationProjectId === projectId && projectBackendConversationStatus === "ready") {
+    return;
+  }
+  const sameProject = projectBackendConversationProjectId === projectId;
+  projectBackendConversationProjectId = projectId;
+  projectBackendConversationStatus = "loading";
+  if (!sameProject) {
+    projectBackendConversations = [];
+    projectBackendConversationDetailId = null;
+    projectBackendConversationDetail = null;
+  }
+  try {
+    const items = await fetchConversationsList({ limit: 200, archived: "0", projectId });
+    projectBackendConversations = items.map(toProjectConversationSummary);
+    projectBackendConversationStatus = "ready";
+  } catch {
+    projectBackendConversationStatus = "error";
+  }
+  renderProjectsWorkspace({ skipFetch: true });
+}
+
+async function loadProjectConversationDetail(conversationId) {
+  if (!conversationId || projectBackendConversationDetailId === conversationId) return;
+  projectBackendConversationDetailId = conversationId;
+  projectBackendConversationDetail = null;
+  try {
+    const detail = await cacheFetchConversationDetail(fetch.bind(globalThis), state.serviceBaseUrl, conversationId);
+    if (detail?.conversation) {
+      projectBackendConversationDetail = toProjectConversationDetail(detail);
+    }
+  } catch {
+    projectBackendConversationDetail = null;
+  }
+  renderProjectsWorkspace({ skipFetch: true });
+}
+
+function renderProjectsWorkspace({ skipFetch = false } = {}) {
   if (!projectList || !projectConversationList) return;
   const store = state.projectStore ?? loadConsoleProjectStore();
   state.projectStore = store;
@@ -5682,21 +5774,35 @@ function renderProjectsWorkspace() {
     state.selectedProjectId = store.currentProjectId || projects[0]?.id || DEFAULT_PROJECT_ID;
   }
   const selectedProject = projects.find((project) => project.id === state.selectedProjectId) ?? projects[0] ?? null;
-  const conversations = (store.conversations ?? [])
-    .filter((conversation) => conversation.projectId === selectedProject?.id)
-    .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+  if (selectedProject?.id && !skipFetch) {
+    void refreshProjectConversationSummaries(selectedProject.id);
+  }
+  const conversations = currentProjectConversations(store, selectedProject?.id);
   if (!state.selectedProjectConversationId || !conversations.some((conversation) => conversation.id === state.selectedProjectConversationId)) {
     state.selectedProjectConversationId = conversations[0]?.id ?? null;
   }
   const selectedConversation = conversations.find((conversation) => conversation.id === state.selectedProjectConversationId) ?? null;
+  const selectedPreviewConversation =
+    projectBackendConversationDetailId === selectedConversation?.id && projectBackendConversationDetail
+      ? projectBackendConversationDetail
+      : selectedConversation;
 
   projectCount.textContent = `${projects.length}`;
   projectConversationCount.textContent = `${conversations.length}`;
-  projectConversationPreview.textContent = formatProjectConversationPreview(selectedConversation);
+  projectConversationPreview.textContent = projectBackendConversationStatus === "loading" && conversations.length === 0
+    ? "Loading project conversations..."
+    : formatProjectConversationPreview(selectedPreviewConversation);
+  const projectListConversationCounts = [
+    ...(store.conversations ?? []).filter((conversation) => conversation.projectId !== selectedProject?.id),
+    ...conversations.map((conversation) => ({
+      ...conversation,
+      projectId: selectedProject?.id
+    }))
+  ];
 
   projectList.innerHTML = renderProjectListHtml({
     projects,
-    conversations: store.conversations ?? [],
+    conversations: projectListConversationCounts,
     selectedProjectId: selectedProject?.id,
     defaultColor: PROJECT_COLORS[0]
   });
@@ -5710,6 +5816,8 @@ function renderProjectsWorkspace() {
     btn.addEventListener("click", () => {
       state.selectedProjectId = btn.dataset.projectId;
       state.selectedProjectConversationId = null;
+      projectBackendConversationDetailId = null;
+      projectBackendConversationDetail = null;
       store.currentProjectId = state.selectedProjectId;
       store.currentConversationId = null;
       saveConsoleProjectStore(store);
@@ -5720,6 +5828,8 @@ function renderProjectsWorkspace() {
   for (const btn of projectConversationList.querySelectorAll("[data-project-conversation-id]")) {
     btn.addEventListener("click", () => {
       state.selectedProjectConversationId = btn.dataset.projectConversationId;
+      projectBackendConversationDetailId = null;
+      projectBackendConversationDetail = null;
       store.currentConversationId = state.selectedProjectConversationId;
       store.currentProjectId = state.selectedProjectId || store.currentProjectId;
       saveConsoleProjectStore(store);
@@ -5734,6 +5844,9 @@ function renderProjectsWorkspace() {
       void loadConsoleConversationFromBackend(convId);
       showConsoleToast("已加载对话，可继续输入", { kind: "ok" });
     });
+  }
+  if (selectedConversation?.conversation_id) {
+    void loadProjectConversationDetail(selectedConversation.conversation_id);
   }
 }
 

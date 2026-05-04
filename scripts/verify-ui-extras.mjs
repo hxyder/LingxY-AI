@@ -26,6 +26,7 @@ const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
 const consolePreload = read("src/desktop/renderer/preload.cjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
+const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs");
 const evidenceSourcesView = read("src/desktop/renderer/evidence-sources-view.mjs");
 const dockJs = read("src/desktop/renderer/dock.js");
 const electronMain = read("src/desktop/tray/electron-main.mjs");
@@ -195,6 +196,12 @@ assert.ok(/function\s+getConsoleChatSubmitProjectId/.test(consoleJs) && /project
   "chat projects: /task submit must carry structured project_id when scoped");
 assert.ok(/function\s+renderConsoleChatEmptyState/.test(consoleJs) && !/consoleChatMessages\.innerHTML\s*=\s*`<div class="console-chat-empty">没有对话/.test(consoleJs),
   "chat empty: New chat must use the rich empty-state renderer instead of plain text");
+assert.ok(/refreshProjectConversationSummaries/.test(consoleJs) && /fetchConversationsList\(\{\s*limit:\s*200,\s*archived:\s*["']0["'],\s*projectId\s*\}/.test(consoleJs),
+  "projects: project tab must read SQL conversation summaries by project_id");
+assert.ok(/legacyProjectConversations/.test(consoleJs) && /projectStore\.conversations|store\.conversations/.test(consoleJs),
+  "projects: legacy projectStore conversations must remain as fallback only");
+assert.ok(/conversation\.conversation_id/.test(consoleProjectsView) && /conversation\.message_count/.test(consoleProjectsView),
+  "projects: project conversation renderer must accept SQL conversation summaries");
 assert.ok(/updateSecurityState/.test(consoleJs) && /window\.ucaShell\.updateSecurityState/.test(consoleJs),
   "security settings: console must use desktop shell bridge");
 assert.ok(/updateBudget/.test(consoleJs) && /window\.ucaShell\.updateBudget/.test(consoleJs),
