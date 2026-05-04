@@ -13,7 +13,7 @@ export const BUILTIN_API_TEMPLATES = Object.freeze([
   { id: "groq", label: "Groq", kind: "openai", baseUrl: "https://api.groq.com/openai/v1", defaultModel: "llama-3.3-70b-versatile" },
   { id: "together", label: "Together AI", kind: "openai", baseUrl: "https://api.together.xyz/v1", defaultModel: "meta-llama/Llama-3.3-70B-Instruct-Turbo" },
   { id: "fireworks", label: "Fireworks", kind: "openai", baseUrl: "https://api.fireworks.ai/inference/v1", defaultModel: "accounts/fireworks/models/llama-v3p3-70b-instruct" },
-  { id: "mistral", label: "Mistral", kind: "openai", baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral-medium-3-5" },
+  { id: "mistral", label: "Mistral", kind: "openai", baseUrl: "https://api.mistral.ai/v1", defaultModel: "mistral-medium-3.5" },
   { id: "gemini", label: "Google Gemini", kind: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", defaultModel: "gemini-2.5-flash" },
   { id: "ollama", label: "Ollama (local)", kind: "ollama", baseUrl: "http://127.0.0.1:11434", defaultModel: "llama3.2" }
 ]);
@@ -98,6 +98,37 @@ function detectModelFamily(model = "") {
   return "unknown";
 }
 
+export const STALE_MODEL_IDS_BY_FAMILY = Object.freeze({
+  moonshot: Object.freeze(["kimi-latest", "kimi-thinking-preview"]),
+  kimi_cli: Object.freeze(["kimi-latest", "kimi-thinking-preview"]),
+  mistral: Object.freeze(["mistral-medium-3-5"])
+});
+
+export function isKnownStaleModelForProviderFamily(providerFamily = "", model = "") {
+  const family = `${providerFamily ?? ""}`.trim();
+  const normalized = `${model ?? ""}`.trim().toLowerCase();
+  if (!family || !normalized) return false;
+  return (STALE_MODEL_IDS_BY_FAMILY[family] ?? []).includes(normalized);
+}
+
+const CLAUDE_CLI_ALIASES = new Set([
+  "default",
+  "best",
+  "sonnet",
+  "opus",
+  "haiku",
+  "opusplan",
+  "sonnet[1m]",
+  "opus[1m]"
+]);
+
+function claudeCliSupportsModel(model = "") {
+  const normalized = `${model ?? ""}`.trim().toLowerCase();
+  if (!normalized) return true;
+  if (CLAUDE_CLI_ALIASES.has(normalized)) return true;
+  return /^claude-[a-z0-9.-]+(?:\[1m\])?$/.test(normalized);
+}
+
 function providerSupportsModel(providerFamily, model = "") {
   const normalized = `${model ?? ""}`.trim().toLowerCase();
   if (!normalized) return true;
@@ -119,6 +150,7 @@ function providerSupportsModel(providerFamily, model = "") {
       return /^(doubao-|ep-)/.test(normalized);
     case "moonshot":
     case "kimi_cli":
+      if (isKnownStaleModelForProviderFamily(providerFamily, normalized)) return false;
       return /^(kimi-code\/kimi-for-coding|kimi-|moonshot-)/.test(normalized);
     case "dashscope":
       return /^qwen/i.test(normalized);
@@ -132,13 +164,15 @@ function providerSupportsModel(providerFamily, model = "") {
     case "codex_cli":
       return /^gpt-5(?:[.-]|$)|^o[1-9](?:-|$)/.test(normalized);
     case "claude_cli":
-      return /^(sonnet|opus|haiku|claude-)/.test(normalized);
+      return claudeCliSupportsModel(normalized);
     case "siliconflow":
       return !["openai", "anthropic", "gemini", "doubao", "moonshot", "minimax"].includes(detectModelFamily(normalized));
+    case "mistral":
+      if (isKnownStaleModelForProviderFamily(providerFamily, normalized)) return false;
+      return /^(mistral-|magistral-|ministral-|codestral-|devstral-|voxtral-|pixtral-)/.test(normalized);
     case "groq":
     case "together":
     case "fireworks":
-    case "mistral":
     case "xai":
     case "ollama":
     case "openai_compatible":
@@ -175,7 +209,7 @@ export function catalogDefaultModelForProvider(provider = {}, taskType = "chat")
     case "groq": return "llama-3.3-70b-versatile";
     case "together": return "meta-llama/Llama-3.3-70B-Instruct-Turbo";
     case "fireworks": return "accounts/fireworks/models/llama-v3p3-70b-instruct";
-    case "mistral": return "mistral-medium-3-5";
+    case "mistral": return "mistral-medium-3.5";
     case "gemini": return "gemini-2.5-flash";
     case "ollama": return "llama3.2";
     case "codex_cli":
@@ -231,7 +265,7 @@ export function codeCliModelChoices(provider = {}) {
     case "opencode_cli":
       return [cliManaged, ...preferredChoice, { id: "anthropic/claude-sonnet-4.6", label: "Claude Sonnet 4.6" }, { id: "openai/gpt-5.5", label: "GPT-5.5" }, { id: "google/gemini-3.1-pro-preview", label: "Gemini 3.1 Pro Preview" }];
     case "claude_cli":
-      return [cliManaged, ...preferredChoice, { id: "sonnet", label: "Sonnet (shorthand)" }, { id: "opus", label: "Opus (shorthand)" }, { id: "haiku", label: "Haiku (shorthand)" }, { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }, { id: "claude-opus-4-7", label: "Claude Opus 4.7" }, { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" }];
+      return [cliManaged, ...preferredChoice, { id: "best", label: "Best (alias)" }, { id: "sonnet", label: "Sonnet (alias)" }, { id: "opus", label: "Opus (alias)" }, { id: "haiku", label: "Haiku (alias)" }, { id: "opus[1m]", label: "Opus 1M (alias)" }, { id: "sonnet[1m]", label: "Sonnet 1M (alias)" }, { id: "claude-opus-4-7", label: "Claude Opus 4.7" }, { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }, { id: "claude-haiku-4-5", label: "Claude Haiku 4.5" }];
     case "cursor_cli":
       return [cliManaged, ...preferredChoice, { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }, { id: "gpt-5.5", label: "GPT-5.5" }];
     default:
@@ -268,7 +302,7 @@ export function providerModelPresets(provider = {}, taskType = "chat") {
         "doubao-seed-2-0-thinking-1216"
       ]);
     case "moonshot":
-      return uniqueNonEmpty([preferred, "kimi-k2.6", "kimi-k2.5", "kimi-k2-turbo-preview", "kimi-k2-thinking", "kimi-latest", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]);
+      return uniqueNonEmpty([preferred, "kimi-k2.6", "kimi-k2.5", "kimi-k2-turbo-preview", "kimi-k2-thinking", "kimi-k2-thinking-turbo", "moonshot-v1-8k", "moonshot-v1-32k", "moonshot-v1-128k"]);
     case "dashscope":
       return uniqueNonEmpty([preferred, "qwen3.6-plus", "qwen-plus", "qwen-turbo", "qwen-coder-plus", "qwen-vl-max"]);
     case "zhipu":
@@ -288,7 +322,7 @@ export function providerModelPresets(provider = {}, taskType = "chat") {
     case "fireworks":
       return uniqueNonEmpty([preferred, "accounts/fireworks/models/llama-v3p3-70b-instruct", "accounts/fireworks/models/deepseek-v3"]);
     case "mistral":
-      return uniqueNonEmpty([preferred, "mistral-medium-3-5", "mistral-large-2512", "mistral-small-2603", "devstral-2512", "mistral-large-latest", "mistral-small-latest", "codestral-latest"]);
+      return uniqueNonEmpty([preferred, "mistral-medium-3.5", "mistral-large-2512", "mistral-small-2603", "devstral-2512", "mistral-large-latest", "mistral-small-latest", "codestral-latest"]);
     case "gemini":
       return uniqueNonEmpty([preferred, "gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-3.1-flash-live-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"]);
     case "ollama":
@@ -319,7 +353,7 @@ export function modeOptionsForProvider(provider = {}, model = "") {
     return [...defaultOption, { id: "balanced", label: "Balanced", model: "claude-sonnet-4-6" }, { id: "deep", label: "Deep", model: "claude-opus-4-7" }, { id: "fast", label: "Fast", model: "claude-haiku-4-5" }];
   }
   if (family === "moonshot") {
-    return [...defaultOption, { id: "latest", label: "Kimi Latest", model: "kimi-latest" }, { id: "k26", label: "Kimi K2.6", model: "kimi-k2.6" }, { id: "k25", label: "Kimi K2.5", model: "kimi-k2.5" }, { id: "thinking", label: "Kimi Thinking", model: "kimi-k2-thinking" }, { id: "8k", label: "8K", model: "moonshot-v1-8k" }, { id: "32k", label: "32K", model: "moonshot-v1-32k" }, { id: "128k", label: "128K", model: "moonshot-v1-128k" }];
+    return [...defaultOption, { id: "k26", label: "Kimi K2.6", model: "kimi-k2.6" }, { id: "k25", label: "Kimi K2.5", model: "kimi-k2.5" }, { id: "thinking", label: "Kimi Thinking", model: "kimi-k2-thinking" }, { id: "thinking_turbo", label: "Kimi Thinking Turbo", model: "kimi-k2-thinking-turbo" }, { id: "8k", label: "8K", model: "moonshot-v1-8k" }, { id: "32k", label: "32K", model: "moonshot-v1-32k" }, { id: "128k", label: "128K", model: "moonshot-v1-128k" }];
   }
   if (family === "openai") {
     return [...defaultOption, { id: "latest", label: "Latest", model: "gpt-5.5" }, { id: "deep", label: "Deep", model: "gpt-5.5" }, { id: "fast", label: "Fast", model: "gpt-5.4-mini" }, { id: "nano", label: "Nano", model: "gpt-5.4-nano" }, { id: "transcribe", label: "Transcribe", model: "gpt-4o-transcribe" }];
@@ -343,6 +377,15 @@ const CODEX_REASONING_OPTIONS = Object.freeze([
   { id: "medium", label: "Medium" },
   { id: "high", label: "High (深思)" },
   { id: "xhigh", label: "Extra High (最深)" }
+]);
+
+const CLAUDE_CODE_REASONING_OPTIONS = Object.freeze([
+  { id: "", label: "(不指定)" },
+  { id: "low", label: "Low (快速)" },
+  { id: "medium", label: "Medium" },
+  { id: "high", label: "High (深思)" },
+  { id: "xhigh", label: "Extra High (最深)" },
+  { id: "max", label: "Max (Claude Code)" }
 ]);
 
 const OPENAI_REASONING_OPTIONS = Object.freeze([
@@ -393,7 +436,9 @@ export function reasoningOptionsForProvider(provider = {}, model = "") {
   const family = detectProviderFamily(provider);
 
   if (provider.kind === "code_cli") {
-    return /codex/.test(fp) ? cloneOptionList(CODEX_REASONING_OPTIONS) : [];
+    if (family === "codex_cli") return cloneOptionList(CODEX_REASONING_OPTIONS);
+    if (family === "claude_cli") return cloneOptionList(CLAUDE_CODE_REASONING_OPTIONS);
+    return [];
   }
 
   if (family === "doubao" || /doubao|volces|ark/.test(fp)) {
@@ -472,6 +517,7 @@ export function normalizeReasoningSelection(provider = {}, model = "", value = "
   }
 
   if (provider.kind === "code_cli") {
+    if (family === "claude_cli" && normalized === "max") return "max";
     return ["low", "medium", "high", "xhigh"].includes(normalized) ? normalized : "";
   }
 

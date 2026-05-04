@@ -5,13 +5,13 @@ export const PROVIDER_GROUPS = Object.freeze([
     label: "国际",
     providers: [
       { id: "anthropic", label: "Anthropic (Claude)", kind: "anthropic", baseUrl: "https://api.anthropic.com", endpoint: "https://api.anthropic.com/v1/messages", defaultModel: "claude-sonnet-4-6" },
-      { id: "openai", label: "OpenAI", kind: "openai", baseUrl: "https://api.openai.com/v1", endpoint: "https://api.openai.com/v1/chat/completions", defaultModel: "gpt-4o" },
-      { id: "gemini", label: "Google Gemini", kind: "gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta", endpoint: "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", defaultModel: "gemini-2.0-flash" },
-      { id: "xai", label: "xAI (Grok)", kind: "openai", baseUrl: "https://api.x.ai/v1", endpoint: "https://api.x.ai/v1/chat/completions", defaultModel: "grok-2-latest" },
-      { id: "mistral", label: "Mistral", kind: "openai", baseUrl: "https://api.mistral.ai/v1", endpoint: "https://api.mistral.ai/v1/chat/completions", defaultModel: "mistral-large-latest" },
+      { id: "openai", label: "OpenAI", kind: "openai", baseUrl: "https://api.openai.com/v1", endpoint: "https://api.openai.com/v1/chat/completions", defaultModel: "gpt-5.4-mini" },
+      { id: "gemini", label: "Google Gemini", kind: "gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta", endpoint: "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", defaultModel: "gemini-2.5-flash" },
+      { id: "xai", label: "xAI (Grok)", kind: "openai", baseUrl: "https://api.x.ai/v1", endpoint: "https://api.x.ai/v1/chat/completions", defaultModel: "grok-4.3" },
+      { id: "mistral", label: "Mistral", kind: "openai", baseUrl: "https://api.mistral.ai/v1", endpoint: "https://api.mistral.ai/v1/chat/completions", defaultModel: "mistral-medium-3.5" },
       { id: "groq", label: "Groq", kind: "openai", baseUrl: "https://api.groq.com/openai/v1", endpoint: "https://api.groq.com/openai/v1/chat/completions", defaultModel: "llama-3.3-70b-versatile" },
       { id: "perplexity", label: "Perplexity", kind: "openai", baseUrl: "https://api.perplexity.ai", endpoint: "https://api.perplexity.ai/chat/completions", defaultModel: "sonar" },
-      { id: "openrouter", label: "OpenRouter（聚合）", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", endpoint: "https://openrouter.ai/api/v1/chat/completions", defaultModel: "anthropic/claude-sonnet-4-5" }
+      { id: "openrouter", label: "OpenRouter（聚合）", kind: "openai", baseUrl: "https://openrouter.ai/api/v1", endpoint: "https://openrouter.ai/api/v1/chat/completions", defaultModel: "anthropic/claude-sonnet-4.6" }
     ]
   },
   {
@@ -19,7 +19,7 @@ export const PROVIDER_GROUPS = Object.freeze([
     providers: [
       { id: "deepseek", label: "DeepSeek", kind: "openai", baseUrl: "https://api.deepseek.com/v1", endpoint: "https://api.deepseek.com/chat/completions", defaultModel: "deepseek-v4-flash" },
       { id: "doubao", label: "豆包（火山方舟 Ark）", kind: "openai", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", endpoint: "https://ark.cn-beijing.volces.com/api/v3/chat/completions", defaultModel: "doubao-seed-2-0-lite-260215" },
-      { id: "moonshot", label: "Moonshot (Kimi)", kind: "openai", baseUrl: "https://api.moonshot.cn/v1", endpoint: "https://api.moonshot.cn/v1/chat/completions", defaultModel: "moonshot-v1-8k" },
+      { id: "moonshot", label: "Moonshot (Kimi)", kind: "openai", baseUrl: "https://api.moonshot.cn/v1", endpoint: "https://api.moonshot.cn/v1/chat/completions", defaultModel: "kimi-k2.6" },
       { id: "qwen", label: "通义千问 (DashScope)", kind: "openai", baseUrl: "https://dashscope-us.aliyuncs.com/compatible-mode/v1", endpoint: "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions", defaultModel: "qwen3.6-plus" },
       { id: "zhipu", label: "智谱 GLM", kind: "openai", baseUrl: "https://open.bigmodel.cn/api/paas/v4", endpoint: "https://open.bigmodel.cn/api/paas/v4/chat/completions", defaultModel: "glm-4-plus" },
       { id: "siliconflow", label: "硅基流动 SiliconFlow", kind: "openai", baseUrl: "https://api.siliconflow.cn/v1", endpoint: "https://api.siliconflow.cn/v1/chat/completions", defaultModel: "Qwen/Qwen2.5-72B-Instruct" },
@@ -50,17 +50,17 @@ export const PROVIDER_CONFIGS = Object.freeze(
 );
 
 export const PROVIDER_MODEL_PRESETS = Object.freeze({
-  anthropic: ["claude-sonnet-4-6", "claude-opus-4-5-20250514", "claude-haiku-4-5-20250514"],
-  openai: ["gpt-4o", "gpt-4o-mini", "gpt-5"],
-  gemini: ["gemini-2.0-flash", "gemini-2.0-pro", "gemini-1.5-flash"],
-  xai: ["grok-2-latest", "grok-vision-beta"],
-  mistral: ["mistral-large-latest", "pixtral-large-latest"],
+  anthropic: ["claude-opus-4-7", "claude-sonnet-4-6", "claude-haiku-4-5-20251001", "claude-haiku-4-5"],
+  openai: ["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano", "gpt-5", "gpt-4.1"],
+  gemini: ["gemini-3.1-pro-preview", "gemini-3-flash-preview", "gemini-3.1-flash-lite-preview", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+  xai: ["grok-4.3", "grok-4.3-latest", "grok-4", "grok-4-latest"],
+  mistral: ["mistral-medium-3.5", "mistral-large-2512", "mistral-small-2603", "mistral-large-latest", "mistral-small-latest"],
   groq: ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"],
   perplexity: ["sonar", "sonar-pro"],
-  openrouter: ["openai/gpt-4o", "anthropic/claude-sonnet-4-5", "google/gemini-2.0-flash"],
+  openrouter: ["openai/gpt-5.5", "anthropic/claude-sonnet-4.6", "google/gemini-3.1-pro-preview", "x-ai/grok-4.3"],
   deepseek: ["deepseek-v4-flash", "deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
   doubao: ["doubao-seed-2-0-lite-260215", "doubao-seed-2-0-pro-260215", "doubao-seed-2-0-mini-260215"],
-  moonshot: ["moonshot-v1-8k", "moonshot-v1-32k", "kimi-k2-0711-preview"],
+  moonshot: ["kimi-k2.6", "kimi-k2.5", "kimi-k2-thinking", "kimi-k2-thinking-turbo", "moonshot-v1-128k"],
   qwen: ["qwen3.6-plus", "qwen-plus", "qwen-turbo", "qwen-vl-max"],
   zhipu: ["glm-4-plus", "glm-4-flash", "glm-4v-plus"],
   siliconflow: ["Qwen/Qwen2.5-72B-Instruct", "deepseek-ai/DeepSeek-V3", "deepseek-ai/DeepSeek-V2.5"],
@@ -118,6 +118,18 @@ function detectModelFamily(model = "") {
   return "unknown";
 }
 
+export const STALE_MODEL_IDS_BY_FAMILY = Object.freeze({
+  moonshot: Object.freeze(["kimi-latest", "kimi-thinking-preview"]),
+  mistral: Object.freeze(["mistral-medium-3-5"])
+});
+
+function isKnownStaleModelForProvider(provider = "", model = "") {
+  const normalizedProvider = `${provider ?? ""}`.trim();
+  const normalizedModel = `${model ?? ""}`.trim().toLowerCase();
+  if (!normalizedProvider || !normalizedModel) return false;
+  return (STALE_MODEL_IDS_BY_FAMILY[normalizedProvider] ?? []).includes(normalizedModel);
+}
+
 function providerSupportsModel(provider = "", model = "") {
   const normalizedProvider = `${provider ?? ""}`.trim();
   const normalizedModel = `${model ?? ""}`.trim().toLowerCase();
@@ -132,10 +144,15 @@ function providerSupportsModel(provider = "", model = "") {
       if (normalizedModel === "deepseek-chat" || normalizedModel === "deepseek-reasoner") return false;
       return /^deepseek-/.test(normalizedModel);
     case "doubao": return /^(doubao-|ep-)/.test(normalizedModel);
-    case "moonshot": return /^(kimi-|moonshot-)/.test(normalizedModel);
+    case "moonshot":
+      if (isKnownStaleModelForProvider(normalizedProvider, normalizedModel)) return false;
+      return /^(kimi-|moonshot-)/.test(normalizedModel);
     case "qwen": return /^qwen/i.test(normalizedModel);
     case "zhipu": return /^glm-/.test(normalizedModel);
     case "siliconflow": return !["openai", "anthropic", "gemini", "doubao", "moonshot"].includes(detectModelFamily(normalizedModel));
+    case "mistral":
+      if (isKnownStaleModelForProvider(normalizedProvider, normalizedModel)) return false;
+      return /^(mistral-|magistral-|ministral-|codestral-|devstral-|voxtral-|pixtral-)/.test(normalizedModel);
     default: return detectModelFamily(normalizedModel) !== "openai";
   }
 }

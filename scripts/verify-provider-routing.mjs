@@ -519,10 +519,9 @@ await writeConfig({
 }
 
 {
-  // (c) reasoningEffort on a non-Codex CLI is preserved in the runtime (server
-  //     accepts it) but the subprocess bridge won't inject Codex-specific
-  //     config. The bridge-level filter is tested via direct buildInvocationArgs
-  //     checks.
+  // (c) reasoningEffort on a non-Codex CLI is preserved in the runtime. The
+  //     subprocess bridge maps it per CLI family: Claude gets `--effort`,
+  //     Kimi gets no effort flag, and Codex gets config overrides.
   await writeConfig({
     ai: {
       customProviders: [
@@ -539,6 +538,7 @@ await writeConfig({
   if (typeof __testBuildInvocationArgs === "function") {
     const kimiArgs = __testBuildInvocationArgs({ baseArgs: [], transport: "stream_json_print", command: "kimi.exe", reasoningEffort: "high" });
     assert.equal(kimiArgs.includes("--reasoning-effort"), false, "Kimi invocation must NOT receive --reasoning-effort flag");
+    assert.equal(kimiArgs.includes("--effort"), false, "Kimi invocation must NOT receive Claude Code --effort flag");
     assert.equal(kimiArgs.includes("-c"), false, "Kimi invocation must NOT receive Codex config overrides");
     assert.equal(kimiArgs.includes("--mcp-config-file"), false, "Kimi invocation should only receive MCP files when configured");
     const claudeArgs = __testBuildInvocationArgs({
@@ -555,6 +555,29 @@ await writeConfig({
     assert.equal(claudeArgs.includes("--mcp-config-file"), false, "Claude invocation must not receive Kimi's --mcp-config-file");
     assert.equal(claudeArgs.includes("--settings"), true, "Claude config files should map to --settings");
     assert.equal(claudeArgs.includes("--reasoning-effort"), false, "Claude invocation must NOT receive Codex reasoning flags");
+    assert.equal(claudeArgs.includes("--effort"), true, "Claude invocation should receive Claude Code's --effort flag");
+    assert.equal(claudeArgs[claudeArgs.indexOf("--effort") + 1], "high");
+    const claudeNoEffortArgs = __testBuildInvocationArgs({
+      baseArgs: [],
+      transport: "stream_json_print",
+      command: "claude.exe",
+      reasoningEffort: ""
+    });
+    assert.equal(claudeNoEffortArgs.includes("--effort"), false, "Claude invocation must not receive --effort when no effort is selected");
+    const claudeInvalidEffortArgs = __testBuildInvocationArgs({
+      baseArgs: [],
+      transport: "stream_json_print",
+      command: "claude.exe",
+      reasoningEffort: "unsupported"
+    });
+    assert.equal(claudeInvalidEffortArgs.includes("--effort"), false, "Claude invocation must drop unsupported effort values");
+    const claudeXhighArgs = __testBuildInvocationArgs({
+      baseArgs: [],
+      transport: "stream_json_print",
+      command: "claude.exe",
+      reasoningEffort: "extra_high"
+    });
+    assert.equal(claudeXhighArgs[claudeXhighArgs.indexOf("--effort") + 1], "xhigh");
     const codexArgs = __testBuildInvocationArgs({ baseArgs: [], transport: "stream_json_print", command: "codex.exe", reasoningEffort: "high" });
     assert.equal(codexArgs[0], "exec", "Codex invocation must use `codex exec`");
     assert.equal(codexArgs.includes("--json"), true, "Codex invocation must request JSONL output");
@@ -584,6 +607,7 @@ await writeConfig({
     const claudeFileArgs = __testBuildPrintInvocationArgs({
       command: "claude.exe",
       args: [],
+      reasoningEffort: "extra_high",
       workDir: "C:\\Users\\der\\Desktop",
       addDirs: ["C:\\Users\\der\\Documents"],
       mcpConfigFiles: ["mcp.json"]
@@ -594,6 +618,7 @@ await writeConfig({
     assert.equal(claudeFileArgs.includes("--work-dir"), false, "Claude must not receive Kimi's --work-dir flag");
     assert.equal(claudeFileArgs.includes("--mcp-config"), true, "Claude file executor should use --mcp-config");
     assert.equal(claudeFileArgs.includes("--mcp-config-file"), false, "Claude file executor must not receive Kimi's MCP flag");
+    assert.equal(claudeFileArgs[claudeFileArgs.indexOf("--effort") + 1], "xhigh", "Claude file executor should map extra_high to --effort xhigh");
     const kimiFileArgs = __testBuildPrintInvocationArgs({
       command: "kimi.exe",
       args: [],

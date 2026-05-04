@@ -15,5 +15,8 @@ For `stream_json_print` adapters, the agentic bridge passes print/JSONL flags an
 CLI-family-specific flags are intentionally split:
 
 - Kimi gets `--print --output-format stream-json --input-format text`, `-w`, `--config-file`, and `--mcp-config-file`.
-- Claude Code gets `--print --output-format stream-json --input-format text`, process `cwd`, `--settings`, and `--mcp-config`.
+- Claude Code gets `--print --output-format stream-json --input-format text`, process `cwd`, `--settings`, `--mcp-config`, and `--effort <low|medium|high|xhigh|max>` when the route selects an effort.
 - Codex gets `exec --json`, `-C`, `--add-dir`, and `-c model_reasoning_effort="..."`.
+
+`max` effort is Claude Code-specific. Codex routes keep the smaller
+`low|medium|high|xhigh` set and Kimi routes do not receive an effort flag.

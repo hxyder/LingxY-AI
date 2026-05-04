@@ -50,6 +50,14 @@ export function normalizeCodexReasoningEffort(value = "") {
   return "";
 }
 
+export function normalizeClaudeEffort(value = "") {
+  const normalized = `${value ?? ""}`.trim().toLowerCase();
+  if (!normalized) return "";
+  if (normalized === "extra_high" || normalized === "extra-high") return "xhigh";
+  if (["low", "medium", "high", "xhigh", "max"].includes(normalized)) return normalized;
+  return "";
+}
+
 function normalizeKnownDisplayModel(value = "") {
   const model = `${value ?? ""}`.trim();
   const lookup = new Map([
@@ -72,7 +80,16 @@ function normalizeKnownDisplayModel(value = "") {
     ["opus", "opus"],
     ["claude opus", "opus"],
     ["haiku", "haiku"],
-    ["claude haiku", "haiku"]
+    ["claude haiku", "haiku"],
+    ["best", "best"],
+    ["claude best", "best"],
+    ["default", "default"],
+    ["opusplan", "opusplan"],
+    ["opus 1m", "opus[1m]"],
+    ["sonnet 1m", "sonnet[1m]"],
+    ["claude opus 4.7", "claude-opus-4-7"],
+    ["claude sonnet 4.6", "claude-sonnet-4-6"],
+    ["claude haiku 4.5", "claude-haiku-4-5"]
   ]);
   return lookup.get(model.toLowerCase()) ?? model;
 }
@@ -118,6 +135,10 @@ function pushPrintFlags(args) {
 
 function pushClaudePrintCompatibilityFlags(args) {
   if (!hasAnyFlag(args, "--verbose")) args.push("--verbose");
+}
+
+function pushClaudeEffortFlag(args, value = "") {
+  pushFlagValue(args, "--effort", normalizeClaudeEffort(value));
 }
 
 function pushGeminiLikeHeadlessFlags(args) {
@@ -177,6 +198,7 @@ export function buildCodeCliInvocationArgs({
 
   if (family === "claude") {
     pushClaudePrintCompatibilityFlags(invocationArgs);
+    pushClaudeEffortFlag(invocationArgs, reasoningEffort);
   }
 
   if (family === "kimi" && !hasAnyFlag(invocationArgs, "-w", "--work-dir") && workDir) {
