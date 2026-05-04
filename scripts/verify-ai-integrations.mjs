@@ -95,7 +95,7 @@ try {
   assert.equal(config.paths.skillsDir.endsWith(path.join("integrations", "skills")), true);
   assert.equal(config.paths.codeCliDir.endsWith(path.join("integrations", "code_cli")), true);
 
-  await postJson(listening.baseUrl, "/config/providers", {
+  const providerSave = await postJson(listening.baseUrl, "/config/providers", {
     id: "mock-openai",
     name: "Mock OpenAI",
     kind: "openai",
@@ -103,6 +103,20 @@ try {
     apiKey: "sk-test",
     defaultModel: "mock-model"
   }, desktopActorHeaders);
+  assert.ok(
+    providerSave.onboarding?.pendingSuggestions?.some((suggestion) => suggestion.id === "provider:mock-openai:skills:review-skill-library"),
+    "saving a configured provider should surface skill onboarding suggestions"
+  );
+  assert.ok(
+    providerSave.onboarding?.pendingSuggestions?.some((suggestion) => suggestion.id === "provider:mock-openai:mcp:web-research"),
+    "saving a configured provider should surface MCP/web research onboarding suggestions"
+  );
+  assert.doesNotMatch(JSON.stringify(providerSave.onboarding), /sk-test/u, "onboarding suggestions must not echo provider secrets");
+  const integrationsAfterProviderSave = await fetch(`${listening.baseUrl}/config/integrations`).then((response) => response.json());
+  assert.ok(
+    integrationsAfterProviderSave.onboarding?.pendingSuggestions?.some((suggestion) => suggestion.id === "provider:mock-openai:skills:review-skill-library"),
+    "integration config should expose pending onboarding suggestions"
+  );
 
   const unauthorizedMcpSave = await postJsonResponse(listening.baseUrl, "/config/mcp/servers", {
     id: "blocked-mcp",

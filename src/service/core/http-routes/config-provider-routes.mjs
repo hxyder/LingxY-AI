@@ -9,6 +9,11 @@ import { createImapClient } from "../../email/imap-client.mjs";
 import { getCredential } from "../../email/credential-store.mjs";
 import { maybeRunMorningDigest } from "../../email/digest.mjs";
 import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
+import {
+  buildProviderOnboardingSuggestions,
+  mergeProviderOnboardingSuggestions,
+  removeProviderOnboardingSuggestions
+} from "../../ai/onboarding/provider-suggestions.mjs";
 import { validateSkillDescriptorMarkdown } from "../../ai/skills/discovery.mjs";
 import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
@@ -296,18 +301,38 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       customProviders: nextList,
       taskRouting: currentState.taskRouting
     }, { runtime });
-    runtime.configStore?.save?.({
+    const savedConfigWithoutOnboarding = {
       ...currentConfig,
       ai: {
         ...(currentConfig.ai ?? {}),
         customProviders: sanitizedAi.customProviders,
         taskRouting: sanitizedAi.taskRouting
       }
+    };
+    const providerSuggestions = buildProviderOnboardingSuggestions(entry, {
+      config: savedConfigWithoutOnboarding,
+      previousProvider: existing
+    });
+    const onboarding = mergeProviderOnboardingSuggestions(
+      currentConfig.ai?.onboarding ?? {},
+      providerSuggestions
+    );
+    runtime.configStore?.save?.({
+      ...savedConfigWithoutOnboarding,
+      ai: {
+        ...(savedConfigWithoutOnboarding.ai ?? {}),
+        onboarding
+      }
     });
     providerModelDiscovery.invalidate(entry);
     sendJson(response, 200, {
       ok: true,
-      provider: redactProviderSecret(entry, secretOptionsForRuntime(runtime))
+      provider: redactProviderSecret(entry, secretOptionsForRuntime(runtime)),
+      onboarding: {
+        suggestions: providerSuggestions,
+        pendingSuggestions: onboarding.pendingSuggestions,
+        archivedSuggestions: onboarding.archivedSuggestions
+      }
     });
     return true;
   }
@@ -322,7 +347,13 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       deleteProviderApiKeySecretSync(provider, secretOptionsForRuntime(runtime));
     }
     const nextList = currentState.customProviders.filter((provider) => provider.id !== id);
-    runtime.configStore?.patch?.({ ai: sanitizeProviderState({ ...currentState, customProviders: nextList }, { runtime }) });
+    const nextState = sanitizeProviderState({ ...currentState, customProviders: nextList }, { runtime });
+    runtime.configStore?.patch?.({
+      ai: {
+        ...nextState,
+        onboarding: removeProviderOnboardingSuggestions(config.ai?.onboarding ?? {}, id)
+      }
+    });
     providerModelDiscovery.invalidate({ id });
     sendJson(response, 200, { ok: true, deleted: id });
     return true;
@@ -370,6 +401,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
         ...(config.ai?.codeCli ?? {}),
         adapters: config.ai?.codeCli?.adapters ?? []
       },
+      onboarding: config.ai?.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] },
       email: config.email ?? { accounts: [] }
     });
     return true;
