@@ -54,6 +54,7 @@ test("agent conversation messages render guidance and retry transcript entries",
       { type: "prose_trap_retry", assistantProse: "I will do it.", retryHint: "Call a tool." },
       { type: "runbook_guidance", runbook_id: "recover_search", instruction: "Try another source." },
       { type: "contract_guidance", groups: ["email_send"], instruction: "Send the email now." },
+      { type: "local_file_read_guidance", instruction: "Call read_file_text on E:/linxi/docs/brief.md." },
       { type: "saturation_hint", repeated_domains: ["example.com", "example.org"], window_size: 4 },
       {
         type: "synthesis_retry",
@@ -70,9 +71,11 @@ test("agent conversation messages render guidance and retry transcript entries",
   assert.equal(messages[5].content, "Call a tool.");
   assert.match(messages[6].content, /\[Runbook recovery: recover_search\]/);
   assert.match(messages[7].content, /\[Required action handoff: email_send\]/);
-  assert.match(messages[8].content, /last 4 web fetches/);
-  assert.match(messages[8].content, /example\.com, example\.org/);
-  assert.equal(messages[9].content, "Raw draft");
-  assert.match(messages[10].content, /\[Synthesis required\]/);
-  assert.match(messages[10].content, /missing_summary: No summary/);
+  assert.match(messages[8].content, /\[Fresh local file read required\]/);
+  assert.match(messages[8].content, /read_file_text/);
+  assert.match(messages[9].content, /last 4 web fetches/);
+  assert.match(messages[9].content, /example\.com, example\.org/);
+  assert.equal(messages[10].content, "Raw draft");
+  assert.match(messages[11].content, /\[Synthesis required\]/);
+  assert.match(messages[11].content, /missing_summary: No summary/);
 });

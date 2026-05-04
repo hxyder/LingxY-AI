@@ -85,3 +85,37 @@ test("agentic tool-result controls emit phase gate signals when budget continues
   assert.equal(phaseEvent.payload.satisfied, false);
   assert.ok(phaseEvent.payload.violation_kinds.includes("external_web_read_required_not_called"));
 });
+
+test("agentic tool-result controls nudge indexed file hits toward fresh reads", () => {
+  const { earlyExit, localFileReadGuidance } = runControl({
+    call: { name: "search_file_content" },
+    result: {
+      success: true,
+      observation: "Found matching indexed file content.",
+      metadata: {
+        results: [{ path: "E:/linxi/docs/brief.md", score: 0.91, coverage_scope: "single_file_text" }]
+      }
+    },
+    transcript: [
+      {
+        role: "tool",
+        name: "search_file_content",
+        success: true,
+        observation: "Found matching indexed file content.",
+        metadata: {
+          results: [{ path: "E:/linxi/docs/brief.md", score: 0.91, coverage_scope: "single_file_text" }]
+        }
+      }
+    ],
+    taskSpec: {
+      success_contract: {
+        required_policy_groups: ["local_file_text_read"]
+      }
+    }
+  });
+
+  assert.equal(earlyExit, null);
+  assert.ok(localFileReadGuidance);
+  assert.match(localFileReadGuidance.instruction, /read_file_text/);
+  assert.match(localFileReadGuidance.instruction, /E:\/linxi\/docs\/brief\.md/);
+});

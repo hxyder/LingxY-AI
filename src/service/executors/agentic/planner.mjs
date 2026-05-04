@@ -51,6 +51,7 @@ import {
   toolDescriptorForAdapter
 } from "./tool-surface.mjs";
 import { detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
+import { appendAuditLog } from "../../security/audit-log.mjs";
 // J1: per-iteration parity. Pre-J1 agentic ran for the full
 // maxIterations even when the same tool failed repeatedly OR when the
 // success contract was already known to be unreachable. tool_using
@@ -193,6 +194,7 @@ export async function runAgenticPlanner({
   );
   let earlyExitState = null;
   let contractActionGuidanceCount = 0;
+  let localFileReadGuidanceCount = 0;
   const MAX_CONTRACT_ACTION_GUIDANCE = 2;
   // Soft saturation nudge for multi_source / deep_research tasks. Same
   // shape as tool_using's hint — fires once per task as a system note in
@@ -558,11 +560,31 @@ export async function runAgenticPlanner({
         maxIterations,
         taskSpec: task?.task_spec,
         onEvent,
-        preflight: false
+        preflight: false,
+        localFileReadGuidanceCount
       });
       errorBudget = ctrl.errorBudget;
       if (ctrl.earlyExit) {
         earlyExitState = ctrl.earlyExit;
+        break;
+      }
+      if (ctrl.localFileReadGuidance) {
+        localFileReadGuidanceCount += 1;
+        const guidancePayload = {
+          ...ctrl.localFileReadGuidance.eventPayload,
+          guidance_count: localFileReadGuidanceCount
+        };
+        messages.push({
+          role: "user",
+          content: `[Fresh local file read required]\n${ctrl.localFileReadGuidance.instruction}`
+        });
+        onEvent?.({
+          event_type: "local_file_read_guidance",
+          payload: guidancePayload
+        });
+        if (runtime?.store?.appendAuditLog) {
+          appendAuditLog(runtime, "tool_loop.local_file_read_guidance", guidancePayload, task?.task_id ?? null);
+        }
         break;
       }
 

@@ -101,6 +101,7 @@ import {
   phaseGateAuditPayload,
   phaseGateSignalPayload,
   planContractActionHandoff,
+  planLocalFileTextReadGuidance,
   planRunbookGuidance
 } from "./phase-gate.mjs";
 import {
@@ -734,6 +735,7 @@ async function _runToolAgentLoopCore({
   const firedRunbooks = new Set();
   let contractActionGuidanceCount = 0;
   let terminalContractActionGuidanceCount = 0;
+  let localFileReadGuidanceCount = 0;
   const MAX_CONTRACT_ACTION_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxContractActionGuidance;
   const MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxTerminalContractActionGuidance;
   // Soft saturation nudge for multi_source / deep_research tasks. Fires
@@ -1516,6 +1518,28 @@ async function _runToolAgentLoopCore({
       // dump on the wire.
       runtime.emitTaskEvent?.("phase_gate_signal", phaseGateSignalPayload({ iteration, stepGate }));
       appendAuditLog(runtime, task, "tool_loop.phase_gate", phaseGateAuditPayload({ iteration, stepGate }));
+
+      const localFileReadGuidance = planLocalFileTextReadGuidance({
+        stepGate,
+        transcript,
+        taskSpec: task.task_spec ?? task.task_spec_initial,
+        iteration,
+        maxIterations,
+        localFileReadGuidanceCount
+      });
+      if (localFileReadGuidance) {
+        localFileReadGuidanceCount += 1;
+        const guidancePayload = {
+          ...localFileReadGuidance.eventPayload,
+          guidance_count: localFileReadGuidanceCount
+        };
+        transcript.push(localFileReadGuidance.transcriptEntry);
+        runtime.emitTaskEvent?.("local_file_read_guidance", guidancePayload);
+        appendAuditLog(runtime, task, "tool_loop.local_file_read_guidance", {
+          ...guidancePayload
+        });
+        continue;
+      }
 
       const actionHandoff = planContractActionHandoff({
         stepGate,

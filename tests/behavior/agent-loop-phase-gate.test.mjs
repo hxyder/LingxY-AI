@@ -85,6 +85,82 @@ function makeRuntime({ outcomes }) {
   return { runtime, calls, events, auditLog };
 }
 
+function makeFileReadRuntime() {
+  const calls = [];
+  const events = [];
+  const auditLog = [];
+  const tools = [
+    {
+      id: "search_file_content",
+      name: "Search File Content Fixture",
+      description: "fixture",
+      risk_level: "low",
+      requires_confirmation: false,
+      required_capabilities: ["file_read"],
+      parameters: { type: "object", properties: { query: { type: "string" } } },
+      async execute(args) {
+        calls.push({ tool: "search_file_content", args });
+        return {
+          success: true,
+          observation: "Found indexed file-content match.",
+          metadata: {
+            tool_id: "search_file_content",
+            results: [
+              {
+                path: "E:/linxi/docs/brief.md",
+                score: 0.93,
+                coverage_scope: "single_file_text"
+              }
+            ]
+          }
+        };
+      }
+    },
+    {
+      id: "read_file_text",
+      name: "Read File Text Fixture",
+      description: "fixture",
+      risk_level: "low",
+      requires_confirmation: false,
+      required_capabilities: ["file_read"],
+      parameters: { type: "object", properties: { path: { type: "string" } } },
+      async execute(args) {
+        calls.push({ tool: "read_file_text", args });
+        return {
+          success: true,
+          observation: "Fresh local file text extracted.",
+          metadata: {
+            tool_id: "read_file_text",
+            path: args.path,
+            content_extracted: true,
+            coverage_scope: "single_file_text"
+          }
+        };
+      }
+    }
+  ];
+  const runtime = {
+    actionToolRegistry: createActionToolRegistry(tools),
+    toolContext: {},
+    toolOutputDir: null,
+    securityBroker: {
+      authorizeToolCall() {
+        return { allowed: true, reason: null };
+      }
+    },
+    store: {
+      appendAuditLog(entry) {
+        auditLog.push(entry);
+      }
+    },
+    emitTaskEvent(eventType, payload) {
+      events.push({ eventType, payload });
+    },
+    finalAnswerComposer: async () => "fresh file summary"
+  };
+  return { runtime, calls, events, auditLog };
+}
+
 test("phase gate emits retry after one failed required tool and continues after success", async () => {
   const { runtime, calls, events, auditLog } = makeRuntime({
     outcomes: [
@@ -176,5 +252,63 @@ test("phase gate injects runbook guidance after repeated same-tool failures", as
   assert.ok(auditLog.some((entry) =>
     entry.event_subtype === "tool_loop.runbook_executed"
     && entry.payload?.runbook_id === "TOOL_REPEATED_FAILURE"
+  ));
+});
+
+test("phase gate nudges indexed file matches toward fresh local reads", async () => {
+  const { runtime, calls, events, auditLog } = makeFileReadRuntime();
+  const task = makeTask({
+    user_command: "Summarize the indexed local file content.",
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["file_read"]
+      }
+    },
+    task_spec: {
+      goal: "qa",
+      synthesis: { expected_output: "summary", user_goal: "summarize local file" },
+      success_contract: {
+        required_policy_groups: ["local_file_text_read"],
+        required_tool_names: []
+      }
+    }
+  });
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ iteration, transcript }) => {
+      if (iteration === 0) {
+        return {
+          type: "tool_call",
+          tool: "search_file_content",
+          args: { query: "brief" }
+        };
+      }
+      if (iteration === 1) {
+        const guidance = transcript.find((entry) => entry.type === "local_file_read_guidance");
+        assert.ok(guidance);
+        assert.match(guidance.instruction, /read_file_text/);
+        assert.match(guidance.instruction, /E:\/linxi\/docs\/brief\.md/);
+        return {
+          type: "tool_call",
+          tool: "read_file_text",
+          args: { path: "E:/linxi/docs/brief.md" }
+        };
+      }
+      return { type: "final", text: "done" };
+    },
+    maxIterations: 4
+  });
+
+  assert.equal(result.status, "success");
+  assert.deepEqual(calls.map((call) => call.tool), ["search_file_content", "read_file_text"]);
+  assert.ok(events.some((event) =>
+    event.eventType === "local_file_read_guidance"
+    && event.payload?.candidate_count === 1
+  ));
+  assert.ok(auditLog.some((entry) =>
+    entry.event_subtype === "tool_loop.local_file_read_guidance"
+    && entry.payload?.candidate_count === 1
   ));
 });

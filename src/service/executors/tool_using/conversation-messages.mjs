@@ -88,6 +88,11 @@ export function buildConversationMessages(prefixMessages, transcript, initialFil
         role: "user",
         content: `[Required action handoff: ${(entry.groups ?? []).join(", ")}]\n${entry.instruction}`
       });
+    } else if (entry.type === "local_file_read_guidance") {
+      messages.push({
+        role: "user",
+        content: `[Fresh local file read required]\n${entry.instruction}`
+      });
     } else if (entry.type === "saturation_hint") {
       const repeated = Array.isArray(entry.repeated_domains) && entry.repeated_domains.length > 0
         ? entry.repeated_domains.slice(0, 4).join(", ")

@@ -4,6 +4,10 @@ import {
   buildRequiredActionGuidance,
   shouldInjectRequiredActionGuidance
 } from "./action-guidance.mjs";
+import {
+  DEFAULT_LOCAL_FILE_READ_GUIDANCE_LIMITS,
+  planLocalFileTextReadGuidance as planSharedLocalFileTextReadGuidance
+} from "../shared/local-file-read-guidance.mjs";
 
 export const DEFAULT_PHASE_GATE_GUIDANCE_LIMITS = Object.freeze({
   maxContractActionGuidance: 2,
@@ -74,6 +78,26 @@ export function planContractActionHandoff({
       action_only: actionOnlyHandoff
     }
   };
+}
+
+export function planLocalFileTextReadGuidance({
+  stepGate,
+  transcript,
+  taskSpec,
+  iteration,
+  maxIterations,
+  localFileReadGuidanceCount,
+  limits = DEFAULT_LOCAL_FILE_READ_GUIDANCE_LIMITS
+}) {
+  return planSharedLocalFileTextReadGuidance({
+    stepGate,
+    transcript,
+    taskSpec,
+    iteration,
+    maxIterations,
+    guidanceCount: localFileReadGuidanceCount,
+    limits
+  });
 }
 
 export function planRunbookGuidance({ stepGate, firedRunbooks, iteration, maxIterations }) {

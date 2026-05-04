@@ -6,6 +6,7 @@ import {
   agenticToolResultHasSubstance,
   transcriptForValidator
 } from "./validator-transcript.mjs";
+import { planLocalFileTextReadGuidance } from "../shared/local-file-read-guidance.mjs";
 
 /**
  * Per-tool control helper used by both the agentic preflight call and the
@@ -65,6 +66,14 @@ export function processAgenticToolResultForControls(ctx) {
     maxIterations
   });
   const runbook = suggestRunbookForStepGate(stepGate);
+  const localFileReadGuidance = planLocalFileTextReadGuidance({
+    stepGate,
+    transcript: validatorTx,
+    taskSpec,
+    iteration,
+    maxIterations,
+    guidanceCount: ctx.localFileReadGuidanceCount ?? 0
+  });
   onEvent?.({
     event_type: "phase_gate_signal",
     payload: {
@@ -92,5 +101,5 @@ export function processAgenticToolResultForControls(ctx) {
     };
   }
 
-  return { errorBudget, earlyExit: null };
+  return { errorBudget, earlyExit: null, localFileReadGuidance };
 }
