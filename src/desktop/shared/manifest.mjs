@@ -77,6 +77,7 @@ export const IPC_CHANNELS = Object.freeze({
   skillRegistrySave: "uca:skill-registry-save",
   skillRegistryDelete: "uca:skill-registry-delete",
   autoSkillSave: "uca:auto-skill-save",
+  skillMarkdownRead: "uca:skill-markdown-read",
   skillMarkdownWrite: "uca:skill-markdown-write",
   routingConfigUpdate: "uca:routing-config-update",
   outputConfigUpdate: "uca:output-config-update",

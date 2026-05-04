@@ -607,6 +607,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "GET" && url.pathname === "/skills/read") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const entryPath = resolveSkillEntryPath(runtime, url.searchParams.get("entryPath"));
     if (!entryPath) {
       sendJson(response, 403, { error: "skill_path_not_allowed" });

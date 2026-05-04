@@ -846,6 +846,16 @@ test("skills file mutation routes reject disallowed actors before local file wri
   assert.equal(blockedSave.payload.error, "desktop_actor_required");
   await assert.rejects(readFile(path.join(skillsDir, "blocked-skill", "SKILL.md"), "utf8"), /ENOENT/);
 
+  const readRuntime = makeSkillRuntime({ skillsDir, skillPatternsPath });
+  const blockedRead = await configProviderRoute({
+    method: "GET",
+    pathname: `/skills/read?entryPath=${encodeURIComponent(editablePath)}`,
+    actor: "browser_page",
+    runtime: readRuntime
+  });
+  assert.equal(blockedRead.statusCode, 403);
+  assert.equal(blockedRead.payload.error, "desktop_actor_required");
+
   const writeRuntime = makeSkillRuntime({ skillsDir, skillPatternsPath });
   const blockedWrite = await configProviderRoute({
     method: "POST",
@@ -893,6 +903,16 @@ test("skills file mutation routes allow their intended desktop actors", async (t
   await mkdir(editableDir, { recursive: true });
   const editablePath = path.join(editableDir, "SKILL.md");
   await writeFile(editablePath, "# Original\n", "utf8");
+  const readRuntime = makeSkillRuntime({ skillsDir, skillPatternsPath });
+  const read = await configProviderRoute({
+    method: "GET",
+    pathname: `/skills/read?entryPath=${encodeURIComponent(editablePath)}`,
+    actor: "desktop_console",
+    runtime: readRuntime
+  });
+  assert.equal(read.statusCode, 200);
+  assert.equal(read.payload.markdown, "# Original\n");
+
   const writeRuntime = makeSkillRuntime({ skillsDir, skillPatternsPath });
   const written = await configProviderRoute({
     method: "POST",

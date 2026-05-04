@@ -378,6 +378,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   saveAutoSkill(payload) {
     return ipcRenderer.invoke("uca:auto-skill-save", payload ?? {});
   },
+  readSkillMarkdown(payload) {
+    return ipcRenderer.invoke("uca:skill-markdown-read", payload ?? {});
+  },
   writeSkillMarkdown(payload) {
     return ipcRenderer.invoke("uca:skill-markdown-write", payload ?? {});
   },

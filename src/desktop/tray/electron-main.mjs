@@ -306,6 +306,13 @@ function normalizeSkillMarkdownWritePayload(payload = {}) {
   };
 }
 
+function normalizeSkillMarkdownReadPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    entryPath: typeof source.entryPath === "string" ? source.entryPath : ""
+  };
+}
+
 function normalizeRuntimeConfigPayload(payload = {}) {
   return normalizePlainObject(payload) ?? {};
 }
@@ -3001,6 +3008,25 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "auto_skill_save_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillMarkdownRead, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const body = normalizeSkillMarkdownReadPayload(payload);
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "GET",
+            actor,
+            pathname: `/skills/read?entryPath=${encodeURIComponent(body.entryPath)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_markdown_read_failed",
             message: error?.message ?? String(error)
           };
         }

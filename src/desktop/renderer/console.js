@@ -2972,7 +2972,7 @@ async function openSkillEditor(entryPath) {
   );
   skillEditModal.style.display = "flex";
   try {
-    const payload = await fetchJson(`/skills/read?entryPath=${encodeURIComponent(entryPath)}`);
+    const payload = await readSkillMarkdownViaShell(entryPath);
     skillEditText.value = payload.markdown ?? "";
     skillEditState.textContent = "Loaded.";
     skillEditText.focus();
@@ -7592,6 +7592,16 @@ async function writeSkillMarkdownViaShell(entryPath, markdown) {
   return assertShellResult(
     await window.ucaShell.writeSkillMarkdown({ entryPath, markdown }),
     "Could not save skill markdown."
+  );
+}
+
+async function readSkillMarkdownViaShell(entryPath) {
+  if (typeof window.ucaShell?.readSkillMarkdown !== "function") {
+    throw new Error("Desktop skill editor bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.readSkillMarkdown({ entryPath }),
+    "Could not read skill markdown."
   );
 }
 

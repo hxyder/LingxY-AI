@@ -461,8 +461,12 @@ assert.ok(/showFieldError\s*\(/.test(consoleJs) && /clearFieldErrors\s*\(/.test(
 assert.ok(/\.field-error\b/.test(sharedCss), "preflight field errors: .field-error CSS missing");
 assert.ok(/writeSkillMarkdownViaShell/.test(consoleJs) && /window\.ucaShell\.writeSkillMarkdown/.test(consoleJs),
   "skill editor write: console must use desktop shell bridge");
+assert.ok(/readSkillMarkdownViaShell/.test(consoleJs) && /window\.ucaShell\.readSkillMarkdown/.test(consoleJs),
+  "skill editor read: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/skills\/write["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "skill editor write: console must not POST /skills/write directly");
+assert.ok(!/fetchJson\(\s*[`'"]\/skills\/read\b/.test(consoleJs),
+  "skill editor read: console must not GET /skills/read directly");
 assert.ok(/saveAutoSkillViaShell/.test(overlayJs) && /window\.ucaShell\.saveAutoSkill/.test(overlayJs),
   "auto skill save: overlay must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/skills\/save["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(overlayJs),

@@ -219,6 +219,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "GET", "/skills/read", {
+    domain: "skills_config",
+    effect: "local_file_read",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("config-provider-routes.mjs", "POST", "/skills/write", {
     domain: "skills_config",
     effect: "local_file_write",
