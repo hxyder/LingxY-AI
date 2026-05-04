@@ -428,6 +428,18 @@ const expectedSurfaces = [
     boundary: "read_probe_no_guard",
     migration: "not_needed_read_probe"
   }),
+  surface("runtime-admin-routes.mjs", "GET", "/history/file-content", {
+    domain: "history",
+    effect: "privacy_sensitive_read",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("runtime-admin-routes.mjs", "DELETE", "/^\\/history\\/file-content\\/([^/]+)$/", {
+    domain: "history",
+    effect: "local_index_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("runtime-admin-routes.mjs", "POST", "/security/state", {
     domain: "security",
     effect: "security_policy_mutation",
@@ -540,6 +552,12 @@ const expectedSurfaces = [
   })
 ];
 
+const explicitlyInventoriedGetSignatures = new Set(
+  expectedSurfaces
+    .filter((entry) => entry.method === "GET")
+    .map(signature)
+);
+
 function readRegexLiteral(text, start) {
   if (text[start] !== "/") return null;
   let escaped = false;
@@ -576,6 +594,12 @@ function discoverFile(file) {
   const lines = source.split(/\r?\n/);
   const matchVariables = new Map();
   const discovered = [];
+  const pushDiscovered = (entry) => {
+    if (entry.method === "GET" && !explicitlyInventoriedGetSignatures.has(signature(entry))) {
+      return;
+    }
+    discovered.push(entry);
+  };
 
   for (const line of lines) {
     const matchCall = line.match(/const\s+(\w+)\s*=\s*url\.pathname\.match\(/);
@@ -588,30 +612,30 @@ function discoverFile(file) {
   }
 
   for (const line of lines) {
-    const methodMatch = line.match(/method\s*===\s*"(POST|PATCH|DELETE)"/);
+    const methodMatch = line.match(/method\s*===\s*"(GET|POST|PATCH|DELETE)"/);
     if (!methodMatch) continue;
     const method = methodMatch[1];
     const literalMatch = line.match(/url\.pathname\s*===\s*"([^"]+)"/);
     if (literalMatch) {
-      discovered.push({ file, method, matcher: literalMatch[1] });
+      pushDiscovered({ file, method, matcher: literalMatch[1] });
     }
 
     const prefixMatch = line.match(/url\.pathname\.startsWith\("([^"]+)"\)/);
     if (prefixMatch) {
-      discovered.push({ file, method, matcher: `${prefixMatch[1]}*` });
+      pushDiscovered({ file, method, matcher: `${prefixMatch[1]}*` });
     }
 
     if (line.includes(".test(url.pathname)")) {
       const slashIndex = line.indexOf("/");
       const matcher = readRegexLiteral(line, slashIndex);
       if (matcher) {
-        discovered.push({ file, method, matcher });
+        pushDiscovered({ file, method, matcher });
       }
     }
 
     for (const [variable, matcher] of matchVariables) {
       if (!line.includes("url.pathname.match") && new RegExp(`\\b${variable}\\b`).test(line)) {
-        discovered.push({ file, method, matcher });
+        pushDiscovered({ file, method, matcher });
       }
     }
   }
@@ -695,8 +719,8 @@ const actual = sortedSignatures(actualSurfaces);
 const expected = sortedSignatures(expectedSurfaces);
 const diff = diffSets(actual, expected);
 assert.deepEqual(diff, { unexpected: [], missing: [] }, [
-  "Local HTTP POST/PATCH/DELETE surface inventory drifted.",
-  "Classify new routes here before landing them; do not add local mutation routes anonymously.",
+  "Local HTTP side-effect and explicitly inventoried sensitive-read surface drifted.",
+  "Classify new routes here before landing them; do not add local mutation or sensitive-read routes anonymously.",
   `Unexpected: ${diff.unexpected.join(", ") || "none"}`,
   `Missing: ${diff.missing.join(", ") || "none"}`
 ].join("\n"));

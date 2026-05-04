@@ -138,6 +138,26 @@ export function createEmbeddingStore({ filePath = null } = {}) {
     }
   }
 
+  function removeRecord(id, { namespace = EMBEDDING_NAMESPACES.TASK_MEMORY } = {}) {
+    const targetId = String(id ?? "").trim();
+    if (!targetId) return null;
+    const normalizedNamespace = normalizeNamespace(namespace, EMBEDDING_NAMESPACES.TASK_MEMORY);
+    const index = records.findIndex((record) =>
+      record.id === targetId
+      && matchesNamespace(record, normalizedNamespace)
+    );
+    if (index === -1) return null;
+    const [removed] = records.splice(index, 1);
+    persist();
+    return {
+      id: removed.id,
+      text: removed.text,
+      metadata: removed.metadata,
+      namespace: namespaceOf(removed),
+      embeddingType: removed.embedding?.type ?? "tfidf"
+    };
+  }
+
   return {
     /**
      * Add or update a record. Always persists TF-IDF so search has a
@@ -235,6 +255,14 @@ export function createEmbeddingStore({ filePath = null } = {}) {
         namespace: namespaceOf(r),
         embeddingType: r.embedding?.type ?? "tfidf"
       }));
+    },
+
+    /**
+     * Remove a record from a namespace. Defaults to task_memory so a caller
+     * that forgets to pass a namespace cannot delete across namespaces.
+     */
+    remove(id, options = {}) {
+      return removeRecord(id, options);
     }
   };
 }

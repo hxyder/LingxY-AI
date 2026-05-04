@@ -2,6 +2,18 @@ import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 import { buildRuntimeDiagnosticBundle } from "../diagnostic-bundle.mjs";
 import { buildRuntimeExportBundle } from "../export-bundle.mjs";
+import { EMBEDDING_NAMESPACES } from "../../embeddings/store.mjs";
+import { appendAuditLog } from "../../security/audit-log.mjs";
+
+function summarizeEmbeddingRecord(record = {}) {
+  return {
+    id: record.id,
+    namespace: record.namespace ?? record.metadata?.namespace ?? null,
+    text_preview: String(record.text ?? "").slice(0, 500),
+    metadata: record.metadata ?? {},
+    embeddingType: record.embeddingType ?? null
+  };
+}
 
 export async function tryHandleRuntimeAdminRoute({ request, response, method, url, runtime, paths }) {
   if (method === "GET" && url.pathname === "/health") {
@@ -145,6 +157,65 @@ export async function tryHandleRuntimeAdminRoute({ request, response, method, ur
     const body = await readJsonBody(request);
     const results = await runtime.platform.embeddingStore.search(body.query ?? "", body.limit ?? 5);
     sendJson(response, 200, { results });
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/history/file-content") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) {
+      return true;
+    }
+    const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") ?? 50) || 50));
+    const records = runtime.platform.embeddingStore
+      .list({ namespace: EMBEDDING_NAMESPACES.FILE_CONTENT })
+      .slice(0, limit)
+      .map(summarizeEmbeddingRecord);
+    sendJson(response, 200, {
+      namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+      records
+    });
+    return true;
+  }
+
+  const fileContentDeleteMatch = url.pathname.match(/^\/history\/file-content\/([^/]+)$/);
+  if (fileContentDeleteMatch && method === "DELETE") {
+    const actor = requireDesktopActor({ request, response, allowedActors: ["desktop_console"] });
+    if (!actor) {
+      return true;
+    }
+    if (typeof runtime.store?.appendAuditLog !== "function") {
+      sendJson(response, 503, {
+        ok: false,
+        error: "audit_log_unavailable",
+        message: "File content index deletion requires an audit log."
+      });
+      return true;
+    }
+    const recordId = decodeURIComponent(fileContentDeleteMatch[1]);
+    const target = runtime.platform.embeddingStore
+      .list({ namespace: EMBEDDING_NAMESPACES.FILE_CONTENT })
+      .find((record) => record.id === recordId);
+    if (!target) {
+      sendJson(response, 404, {
+        ok: false,
+        error: "file_content_record_not_found",
+        message: "No indexed file-content record matched that id."
+      });
+      return true;
+    }
+    appendAuditLog(runtime, "file_content_index.deleted", {
+      id: target.id,
+      namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+      path: target.metadata?.path ?? null,
+      actor
+    });
+    const removed = runtime.platform.embeddingStore.remove(recordId, {
+      namespace: EMBEDDING_NAMESPACES.FILE_CONTENT
+    });
+    sendJson(response, 200, {
+      ok: true,
+      deleted: removed.id,
+      record: summarizeEmbeddingRecord(removed)
+    });
     return true;
   }
 

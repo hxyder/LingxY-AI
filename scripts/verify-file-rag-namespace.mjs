@@ -50,6 +50,17 @@ try {
   const fileInventory = store.list({ namespace: EMBEDDING_NAMESPACES.FILE_CONTENT });
   assert.deepEqual(fileInventory.map((record) => record.id), ["file_content_1"]);
 
+  assert.equal(store.remove("task_memory_1", { namespace: EMBEDDING_NAMESPACES.FILE_CONTENT }), null,
+    "namespace-scoped removal must not delete task_memory records");
+  assert.equal(store.list().some((record) => record.id === "task_memory_1"), true,
+    "task_memory record should remain after a file_content-scoped miss");
+
+  const removed = store.remove("file_content_1", { namespace: EMBEDDING_NAMESPACES.FILE_CONTENT });
+  assert.equal(removed?.id, "file_content_1");
+  assert.equal(removed?.namespace, EMBEDDING_NAMESPACES.FILE_CONTENT);
+  assert.equal(store.list({ namespace: EMBEDDING_NAMESPACES.FILE_CONTENT }).length, 0);
+  assert.equal(store.list({ namespace: EMBEDDING_NAMESPACES.TASK_MEMORY }).length, 1);
+
   console.log("file RAG namespace verification passed");
 } finally {
   rmSync(tmpRoot, { recursive: true, force: true });
