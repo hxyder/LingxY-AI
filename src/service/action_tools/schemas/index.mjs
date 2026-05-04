@@ -472,6 +472,14 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       max_total_chars: { type: "number" }
     }
   },
+  search_file_content: {
+    type: "object",
+    required: [],
+    properties: {
+      query: { type: "string" },
+      limit: { type: "number" }
+    }
+  },
   verify_file_exists: {
     type: "object",
     required: [],

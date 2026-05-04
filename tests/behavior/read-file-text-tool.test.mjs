@@ -133,6 +133,59 @@ test("file_read capability exposes read_folder_text to the planner", () => {
   assert.ok(tools.some((tool) => tool.id === "read_folder_text"));
 });
 
+test("file_read capability exposes search_file_content to the planner", () => {
+  const tools = filterToolsForTask(BUILTIN_ACTION_TOOLS, {
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["file_read"]
+      }
+    }
+  });
+  assert.ok(tools.some((tool) => tool.id === "search_file_content"));
+});
+
+test("search_file_content queries the file_content namespace only", async () => {
+  const calls = [];
+  const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+  const result = await registry.call("search_file_content", {
+    query: "budget notes",
+    limit: 3
+  }, {
+    runtime: {
+      platform: {
+        embeddingStore: {
+          async search(query, limit, options) {
+            calls.push({ query, limit, options });
+            return [{
+              id: "file_content_1",
+              text: "Budget notes from indexed file.",
+              score: 0.77,
+              metadata: {
+                path: "E:\\workspace\\budget.md",
+                coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+                artifact_id: "artifact_budget",
+                revision_of: null,
+                truncated: false
+              }
+            }];
+          }
+        }
+      }
+    }
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.metadata.tool_id, "search_file_content");
+  assert.equal(result.metadata.namespace, "file_content");
+  assert.equal(result.metadata.result_count, 1);
+  assert.equal(result.metadata.results[0].path, "E:\\workspace\\budget.md");
+  assert.deepEqual(calls, [{
+    query: "budget notes",
+    limit: 3,
+    options: { namespace: "file_content" }
+  }]);
+});
+
 test("TaskSpec derives deep file_read budget from framework research depth", () => {
   const spec = createTaskSpec("Analyze the attached project materials", {
     file_paths: ["E:\\project"],

@@ -20,6 +20,7 @@ import { buildSideEffectContract } from "../../core/policy/side-effect-contracts
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 import { resolveFileReadBudgetFromTask } from "../../core/file-read-budget.mjs";
+import { EMBEDDING_NAMESPACES } from "../../embeddings/store.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2924,6 +2925,67 @@ export const READ_FOLDER_TEXT_TOOL = {
   }
 };
 
+export const SEARCH_FILE_CONTENT_TOOL = {
+  id: "search_file_content",
+  name: "Search File Content",
+  description: "Search the file-content RAG namespace for previously indexed local file text. This does not read disk; use read_file_text/read_folder_text for fresh extraction.",
+  parameters: ACTION_TOOL_SCHEMAS.search_file_content,
+  risk_level: "low",
+  required_capabilities: ["file_read"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const query = String(args.query ?? "").trim();
+    if (!query) return createActionResult({ success: false, observation: "query required" });
+    const store = ctx?.runtime?.platform?.embeddingStore ?? ctx?.embeddingStore ?? null;
+    if (!store || typeof store.search !== "function") {
+      return createActionResult({
+        success: false,
+        observation: "file content index is not available",
+        metadata: {
+          tool_id: "search_file_content",
+          namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+          unavailable: true
+        }
+      });
+    }
+    const limit = clampNumber(args.limit, { min: 1, max: 20, fallback: 5 });
+    const matches = await store.search(query, limit, {
+      namespace: EMBEDDING_NAMESPACES.FILE_CONTENT
+    });
+    const results = (Array.isArray(matches) ? matches : []).map((match) => ({
+      id: match.id,
+      score: Number.isFinite(Number(match.score)) ? Number(match.score) : 0,
+      path: match.metadata?.path ?? null,
+      coverage_scope: match.metadata?.coverage_scope ?? null,
+      artifact_id: match.metadata?.artifact_id ?? null,
+      revision_of: match.metadata?.revision_of ?? null,
+      truncated: match.metadata?.truncated === true,
+      text: String(match.text ?? "").slice(0, 1200)
+    }));
+    const observation = results.length > 0
+      ? [
+        `Found ${results.length} file-content match(es) for query: ${query}`,
+        ...results.map((result, index) => [
+          `${index + 1}. ${result.path ?? result.id} score=${result.score.toFixed(3)}`,
+          `coverage=${result.coverage_scope ?? "unknown"} artifact=${result.artifact_id ?? "none"}`,
+          result.text
+        ].join("\n"))
+      ].join("\n\n")
+      : `No indexed file-content matches for query: ${query}`;
+    return createActionResult({
+      success: true,
+      observation,
+      metadata: {
+        tool_id: "search_file_content",
+        namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+        query,
+        result_count: results.length,
+        results
+      }
+    });
+  }
+};
+
 export const VERIFY_FILE_EXISTS_TOOL = {
   id: "verify_file_exists",
   name: "Verify File Exists",
@@ -3358,6 +3420,7 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   STAT_FILE_TOOL,
   READ_FILE_TEXT_TOOL,
   READ_FOLDER_TEXT_TOOL,
+  SEARCH_FILE_CONTENT_TOOL,
   VERIFY_FILE_EXISTS_TOOL,
   REGISTER_ARTIFACT_TOOL,
   RESOLVE_OUTPUT_PATH_TOOL,

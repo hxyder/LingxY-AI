@@ -14,7 +14,7 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
     tool.policy_group === "external_web_read"
     || ["web_search", "web_search_fetch", "fetch_url_content", "open_url"].includes(tool.id),
   file_read: (tool) =>
-    /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|read_file_text|read_folder_text|verify_file_exists|file_op)$/.test(tool.id),
+    /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|read_file_text|read_folder_text|search_file_content|verify_file_exists|file_op)$/.test(tool.id),
   artifact_generation: (tool) =>
     /^(write_file|generate_document|edit_file|render_diagram|resolve_output_path|register_artifact|verify_file_exists)$/.test(tool.id),
   code_execution: (tool) => tool.id === "run_script",
