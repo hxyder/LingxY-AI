@@ -151,6 +151,7 @@ for (const channel of [
   "uca:project-store-save",
   "uca:project-files-pick",
   "uca:project-files-attach",
+  "uca:project-files-remove-index",
   "uca:preview-cache-clear",
   "uca:office-addins-setup",
   "uca:echo-kws-detect",

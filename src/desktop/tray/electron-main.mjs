@@ -471,6 +471,17 @@ function normalizeProjectFilesAttachPayload(payload = {}) {
   };
 }
 
+function normalizeProjectFilesRemoveIndexPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    paths: Array.isArray(source.paths)
+      ? source.paths.filter((filePath) => typeof filePath === "string" && filePath.trim()).map((filePath) => filePath.trim())
+      : [],
+    projectId: typeof source.projectId === "string" ? source.projectId.trim() : "",
+    detach: source.detach === true
+  };
+}
+
 function normalizeConnectedAccountId(id) {
   return typeof id === "string" ? id.trim() : "";
 }
@@ -3571,6 +3582,28 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "project_files_attach_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.projectFilesRemoveIndex, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const body = normalizeProjectFilesRemoveIndexPayload(payload);
+        if (!body.projectId) {
+          return { ok: false, error: "project_id_required", message: "Project id required." };
+        }
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: `/projects/${encodeURIComponent(body.projectId)}/files/remove-index`,
+            body: { paths: body.paths, detach: body.detach }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "project_files_remove_index_failed",
             message: error?.message ?? String(error)
           };
         }

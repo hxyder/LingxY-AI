@@ -101,6 +101,7 @@ export const IPC_CHANNELS = Object.freeze({
   projectStoreSave: "uca:project-store-save",
   projectFilesPick: "uca:project-files-pick",
   projectFilesAttach: "uca:project-files-attach",
+  projectFilesRemoveIndex: "uca:project-files-remove-index",
   previewCacheClear: "uca:preview-cache-clear",
   officeAddinsSetup: "uca:office-addins-setup",
   echoKwsDetect: "uca:echo-kws-detect",

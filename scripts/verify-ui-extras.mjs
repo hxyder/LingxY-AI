@@ -112,6 +112,8 @@ assert.ok(/saveProjectStoreViaShell/.test(overlayJs) && /window\.ucaShell\.saveP
   "project store: overlay must use desktop shell bridge for saves");
 assert.ok(/attachProjectFilesViaShell/.test(consoleJs) && /window\.ucaShell\.attachProjectFiles/.test(consoleJs),
   "project files: console must use desktop shell bridge for attach/index");
+assert.ok(/removeProjectFileIndexViaShell/.test(consoleJs) && /window\.ucaShell\.removeProjectFileIndex/.test(consoleJs),
+  "project files: console must use desktop shell bridge for index removal");
 assert.ok(/projectAttachFilesBtn/.test(consoleJs) && /pickProjectFiles/.test(consoleJs),
   "project files: console must expose an explicit picker before attach/index");
 assert.ok(/Context files/.test(consoleJs) && /data-chat-project-files-manage/.test(consoleJs),
@@ -124,6 +126,8 @@ assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}metho
   "project store: overlay must not POST /projects/store directly via fetchJson");
 assert.ok(!/fetchJson\(\s*`\/projects\/[^`]+\/files\/attach`/.test(consoleJs),
   "project files: console must not POST project file attach route directly via fetchJson");
+assert.ok(!/fetchJson\(\s*`\/projects\/[^`]+\/files\/remove-index`/.test(consoleJs),
+  "project files: console must not POST project file remove-index route directly via fetchJson");
 assert.ok(/clearPreviewCacheViaShell/.test(consoleJs) && /window\.ucaShell\.clearPreviewCache/.test(consoleJs),
   "preview cache clear: console must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/preview\/cache\/clear["'`]\s*,\s*\{[\s\S]{0,120}method:\s*["'`]POST/.test(consoleJs),
@@ -318,8 +322,10 @@ assert.ok(/artifactStatusInfo\(artifact\.status\)/.test(consoleProjectsView),
   "projects: scoped artifact list must render artifact.status metadata");
 assert.ok(/attachedFilePaths\s*=\s*\[\]/.test(consoleProjectsView) && /Attached project file/.test(consoleProjectsView),
   "projects: Files column must show durable attached project files separately from generated artifacts");
-assert.ok(/data-project-file-detach/.test(consoleProjectsView) && /setProjectAttachedFilePath/.test(consoleJs),
-  "projects: attached project files must be removable through the shared project-store helper");
+assert.ok(/data-project-file-detach/.test(consoleProjectsView) && /removeProjectFileIndexViaShell/.test(consoleJs),
+  "projects: attached project files must be removable through the guarded index-management route");
+assert.ok(/data-project-file-clear-index/.test(consoleProjectsView) && /removeProjectFileIndexViaShell/.test(consoleJs),
+  "projects: attached project file indexes must be clearable without detaching the file");
 assert.ok(/data-project-file-reindex/.test(consoleProjectsView) && /attachProjectFilesViaShell/.test(consoleJs),
   "projects: attached project files must be reindexable through the desktop shell bridge");
 assert.ok(/attachedProjectFilePaths/.test(consoleJs) && /projectArtifacts\.length\s*\+\s*attachedProjectFilePaths\.length/.test(consoleJs),

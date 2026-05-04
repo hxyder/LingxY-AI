@@ -110,6 +110,9 @@ export function renderProjectArtifactListHtml({
           ${projectId ? `<button class="project-artifact-action" type="button" data-project-file-reindex="${escapeHtml(filePath)}" data-project-file-reindex-project-id="${escapeHtml(projectId)}" title="Reindex for project search" aria-label="Reindex ${escapeHtml(label)} for project search">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
           </button>` : ""}
+          ${projectId ? `<button class="project-artifact-action project-artifact-action--danger" type="button" data-project-file-clear-index="${escapeHtml(filePath)}" data-project-file-clear-index-project-id="${escapeHtml(projectId)}" title="Clear project search index only" aria-label="Clear project search index for ${escapeHtml(label)}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M4 7h16"/><path d="M6 7l1 14h10l1-14"/><path d="M9 7V4h6v3"/></svg>
+          </button>` : ""}
           <button class="project-artifact-action" type="button" data-project-artifact-reveal="${escapeHtml(filePath)}" title="Reveal in folder" aria-label="Reveal ${escapeHtml(label)}">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
           </button>

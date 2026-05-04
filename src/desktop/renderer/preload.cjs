@@ -450,6 +450,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   attachProjectFiles(payload) {
     return ipcRenderer.invoke("uca:project-files-attach", payload ?? {});
   },
+  removeProjectFileIndex(payload) {
+    return ipcRenderer.invoke("uca:project-files-remove-index", payload ?? {});
+  },
   clearPreviewCache() {
     return ipcRenderer.invoke("uca:preview-cache-clear");
   },

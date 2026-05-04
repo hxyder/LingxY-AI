@@ -16,11 +16,15 @@ import {
   buildCapabilityGapSuggestions,
   mergeCapabilityGapSuggestions
 } from "../../ai/onboarding/capability-gap-suggestions.mjs";
-import { attachProjectFiles } from "../project-file-attachments.mjs";
+import {
+  attachProjectFiles,
+  removeProjectFileIndex
+} from "../project-file-attachments.mjs";
 
 const NOTES_EDITOR_ACTORS = ["desktop_console"];
 const NOTES_CHIP_ACTORS = ["desktop_console", "desktop_overlay"];
 const PROJECT_STORE_ACTORS = ["desktop_console", "desktop_overlay"];
+const PROJECT_FILE_INDEX_ACTORS = ["desktop_console"];
 const CONVERSATION_MUTATION_ACTORS = ["desktop_console"];
 
 function normalizeProjectStore(store) {
@@ -29,6 +33,13 @@ function normalizeProjectStore(store) {
 
 function integrationPathsForRuntime(runtime = {}) {
   return runtime.platform?.integrationPaths ?? runtime.paths ?? null;
+}
+
+function statusForProjectFileResult(result) {
+  if (result?.ok !== false) return 200;
+  if (result.error === "audit_log_unavailable" || result.error === "embedding_store_unavailable") return 503;
+  if (result.error === "project_not_found") return 404;
+  return 400;
 }
 
 export async function tryHandleNoteProjectConversationRoute({
@@ -149,8 +160,24 @@ export async function tryHandleNoteProjectConversationRoute({
       projectId: decodeURIComponent(projectFilesAttachMatch[1]),
       paths: body.paths ?? body.filePaths ?? []
     });
-    const status = result.ok === false ? 400 : 200;
-    sendJson(response, status, result);
+    sendJson(response, statusForProjectFileResult(result), result);
+    return true;
+  }
+
+  const projectFilesRemoveIndexMatch = url.pathname.match(/^\/projects\/([^/]+)\/files\/remove-index$/);
+  if (method === "POST" && projectFilesRemoveIndexMatch) {
+    const actor = requireDesktopActor({ request, response, allowedActors: PROJECT_FILE_INDEX_ACTORS });
+    if (!actor) return true;
+    const body = await readJsonBody(request);
+    const result = await removeProjectFileIndex({
+      runtime,
+      saveRuntimeConfig,
+      projectId: decodeURIComponent(projectFilesRemoveIndexMatch[1]),
+      paths: body.paths ?? body.filePaths ?? [],
+      detach: body.detach === true,
+      actor
+    });
+    sendJson(response, statusForProjectFileResult(result), result);
     return true;
   }
 

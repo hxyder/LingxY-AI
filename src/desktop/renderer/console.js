@@ -127,8 +127,7 @@ import {
   createProjectId,
   buildDefaultProjectStore as buildDefaultProjectStoreBase,
   normalizeProjectStore as normalizeProjectStoreBase,
-  mergeProjectStores as mergeProjectStoresBase,
-  setProjectAttachedFilePath
+  mergeProjectStores as mergeProjectStoresBase
 } from "../../shared/project-store.mjs";
 
 const runtimeState = document.querySelector("#runtimeState");
@@ -7314,16 +7313,48 @@ projectArtifactList?.addEventListener("click", (event) => {
     });
     return;
   }
+  const clearIndexBtn = target?.closest?.("[data-project-file-clear-index]");
+  if (clearIndexBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    const filePath = clearIndexBtn.dataset.projectFileClearIndex ?? "";
+    const projectId = clearIndexBtn.dataset.projectFileClearIndexProjectId ?? state.selectedProjectId ?? "";
+    if (!filePath || !projectId) return;
+    clearIndexBtn.setAttribute("disabled", "true");
+    showConsoleToast("Clearing project search index...", { kind: "info" });
+    void removeProjectFileIndexViaShell({ projectId, paths: [filePath], detach: false }).then((result) => {
+      renderProjectsWorkspace({ skipFetch: true });
+      renderConsoleChatArtifacts([]);
+      showConsoleToast(`Cleared ${Number(result.removed_count ?? 0)} indexed chunk(s).`, { kind: "success" });
+    }).catch((error) => {
+      showConsoleToast(error?.message ?? "Could not clear project search index.", { kind: "error" });
+    }).finally(() => {
+      clearIndexBtn.removeAttribute("disabled");
+    });
+    return;
+  }
   const detachBtn = target?.closest?.("[data-project-file-detach]");
   if (detachBtn instanceof HTMLElement) {
     event.preventDefault();
     event.stopPropagation();
-    const path = detachBtn.dataset.projectFileDetach ?? "";
+    const filePath = detachBtn.dataset.projectFileDetach ?? "";
     const projectId = detachBtn.dataset.projectFileDetachProjectId ?? state.selectedProjectId ?? "";
-    const store = state.projectStore ?? loadConsoleProjectStore();
-    saveConsoleProjectStore(setProjectAttachedFilePath(store, projectId, path, false, { defaultColor: PROJECT_COLORS[0] }));
-    renderProjectsWorkspace({ skipFetch: true });
-    showConsoleToast("已从项目文件范围移出", { kind: "ok" });
+    if (!filePath || !projectId) return;
+    detachBtn.setAttribute("disabled", "true");
+    void removeProjectFileIndexViaShell({ projectId, paths: [filePath], detach: true }).then((result) => {
+      const store = normalizeProjectStore(result.store ?? state.projectStore ?? loadConsoleProjectStore());
+      store.updatedAt = Date.now();
+      state.projectStore = store;
+      localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(store));
+      state.projectStoreRemoteReady = true;
+      renderProjectsWorkspace({ skipFetch: true });
+      renderConsoleChatArtifacts([]);
+      showConsoleToast("已从项目文件范围移出，并清理该项目索引", { kind: "ok" });
+    }).catch((error) => {
+      showConsoleToast(error?.message ?? "Could not remove project file.", { kind: "error" });
+    }).finally(() => {
+      detachBtn.removeAttribute("disabled");
+    });
     return;
   }
   const revealBtn = target?.closest?.("[data-project-artifact-reveal]");
@@ -8249,6 +8280,16 @@ async function attachProjectFilesViaShell(payload) {
   return assertShellResult(
     await window.ucaShell.attachProjectFiles(payload ?? {}),
     "Could not attach project files."
+  );
+}
+
+async function removeProjectFileIndexViaShell(payload) {
+  if (typeof window.ucaShell?.removeProjectFileIndex !== "function") {
+    throw new Error("Desktop project file index bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.removeProjectFileIndex(payload ?? {}),
+    "Could not remove project file index."
   );
 }
 

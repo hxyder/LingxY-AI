@@ -3,6 +3,7 @@ import path from "node:path";
 import { lstat } from "node:fs/promises";
 
 import { EMBEDDING_NAMESPACES } from "../embeddings/store.mjs";
+import { appendAuditLog } from "../security/audit-log.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "./file-evidence-coverage.mjs";
 import { buildFileContentIndexRecords } from "./file-content-index-records.mjs";
 import {
@@ -67,17 +68,22 @@ function stableAttachTaskId(projectId, filePath) {
   return `project_file_attach_${hash}`;
 }
 
-function removeExistingProjectPathRecords(store, { projectId, targetPath }) {
-  if (typeof store?.list !== "function" || typeof store?.remove !== "function") return 0;
+function listProjectPathRecords(store, { projectId, targetPath }) {
+  if (typeof store?.list !== "function") return [];
   const records = store.list({
     namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
     projectId
   });
-  let removed = 0;
+  return records.filter((record) => record?.metadata?.path === targetPath);
+}
+
+function removeExistingProjectPathRecords(store, { projectId, targetPath }) {
+  if (typeof store?.remove !== "function") return [];
+  const removed = [];
+  const records = listProjectPathRecords(store, { projectId, targetPath });
   for (const record of records) {
-    if (record?.metadata?.path !== targetPath) continue;
     const deleted = store.remove(record.id, { namespace: EMBEDDING_NAMESPACES.FILE_CONTENT });
-    if (deleted) removed += 1;
+    if (deleted) removed.push(deleted);
   }
   return removed;
 }
@@ -207,7 +213,7 @@ export async function attachProjectFiles({
         result,
         createdAt
       });
-      removedRecords += removeExistingProjectPathRecords(embeddingStore, { projectId: id, targetPath: inputPath });
+      removedRecords += removeExistingProjectPathRecords(embeddingStore, { projectId: id, targetPath: inputPath }).length;
       for (const record of records) {
         embeddingStore.add(record);
         indexedRecords.push(record);
@@ -241,6 +247,79 @@ export async function attachProjectFiles({
     indexed_count: indexedRecords.length,
     removed_count: removedRecords,
     failed_paths: failures,
+    store: normalizeProjectStore(store, { withUpdatedAt: false })
+  };
+}
+
+export async function removeProjectFileIndex({
+  runtime,
+  saveRuntimeConfig,
+  projectId,
+  paths,
+  detach = false,
+  actor = "desktop_console"
+} = {}) {
+  const id = typeof projectId === "string" ? projectId.trim() : "";
+  if (!id) return { ok: false, error: "project_id_required" };
+  const normalizedPaths = normalizePathList(paths);
+  if (normalizedPaths.length === 0) return { ok: false, error: "paths_required" };
+  const embeddingStore = runtime?.platform?.embeddingStore ?? null;
+  if (typeof embeddingStore?.list !== "function" || typeof embeddingStore?.remove !== "function") {
+    return { ok: false, error: "embedding_store_unavailable" };
+  }
+  if (typeof runtime?.store?.appendAuditLog !== "function") {
+    return {
+      ok: false,
+      error: "audit_log_unavailable",
+      message: "Project file index deletion requires an audit log."
+    };
+  }
+  if (detach === true && typeof saveRuntimeConfig !== "function") {
+    return { ok: false, error: "config_store_unavailable" };
+  }
+  let store = normalizeProjectStore(runtime?.configStore?.load?.()?.ui?.projectStore, { withUpdatedAt: false });
+  if (!store.projects.some((project) => project.id === id)) {
+    return { ok: false, error: "project_not_found" };
+  }
+
+  const removedRecords = [];
+  const missingPaths = [];
+  for (const inputPath of normalizedPaths) {
+    const removed = removeExistingProjectPathRecords(embeddingStore, { projectId: id, targetPath: inputPath });
+    if (removed.length === 0) missingPaths.push(inputPath);
+    for (const record of removed) {
+      removedRecords.push(record);
+      appendAuditLog(runtime, "project_file_index.deleted", {
+        id: record.id,
+        namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+        project_id: id,
+        path: record.metadata?.path ?? inputPath,
+        actor
+      });
+    }
+    if (detach === true) {
+      store = setProjectAttachedFilePath(store, id, inputPath, false, { withUpdatedAt: false });
+    }
+  }
+
+  if (detach === true) {
+    store = saveRuntimeConfig(runtime, (currentConfig) => ({
+      ...currentConfig,
+      ui: {
+        ...(currentConfig.ui ?? {}),
+        projectStore: store
+      }
+    }))?.ui?.projectStore ?? store;
+  }
+
+  return {
+    ok: true,
+    project_id: id,
+    paths: normalizedPaths,
+    removed_count: removedRecords.length,
+    removed_ids: removedRecords.map((record) => record.id),
+    missing_paths: missingPaths,
+    detached: detach === true,
     store: normalizeProjectStore(store, { withUpdatedAt: false })
   };
 }

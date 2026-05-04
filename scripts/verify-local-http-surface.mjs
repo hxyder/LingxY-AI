@@ -432,6 +432,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("note-project-conversation-routes.mjs", "POST", "/^\\/projects\\/([^/]+)\\/files\\/remove-index$/", {
+    domain: "projects",
+    effect: "local_file_index_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
 
   surface("office-routes.mjs", "POST", "/setup/office-addins", {
     domain: "office_setup",
