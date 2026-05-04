@@ -46,6 +46,55 @@ test("generate_document renders structured diagram components in PDF HTML", asyn
   }
 });
 
+test("generate_document renders structured components in standalone HTML artifact", async () => {
+  const outputDir = await mkdtemp(path.join(os.tmpdir(), "uca-doc-html-"));
+  try {
+    const result = await GENERATE_DOCUMENT_TOOL.execute({
+      kind: "html",
+      filename: "report.html",
+      outline: {
+        title: "Structured HTML Artifact",
+        sections: [
+          {
+            heading: "Evidence Table",
+            body: "Standalone HTML can carry richer, refreshable previews.",
+            table: {
+              headers: ["Component", "Purpose"],
+              rows: [["Table", "Comparison"], ["Diagram", "Flow"]]
+            },
+            diagram: {
+              code: "flowchart TD\n  A[Input] --> B[Process]\n  B --> C[Output]",
+              caption: "System flow"
+            },
+            svg: {
+              markup: "<svg viewBox=\"0 0 80 40\"><rect width=\"80\" height=\"40\" rx=\"6\" fill=\"#0f766e\"/><text x=\"40\" y=\"24\" text-anchor=\"middle\" fill=\"white\">SVG</text></svg>",
+              caption: "Vector block"
+            }
+          }
+        ]
+      }
+    }, {
+      outputDir,
+      task: { task_id: "task_document_html_component" }
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(path.extname(result.artifact_paths?.[0] ?? ""), ".html");
+    assert.equal(result.metadata?.preview_html_path, result.artifact_paths?.[0]);
+
+    const html = await readFile(path.join(outputDir, "report.html"), "utf8");
+    assert.match(html, /Structured HTML Artifact/);
+    assert.match(html, /class="doc-table"/);
+    assert.match(html, /class="doc-diagram"/);
+    assert.match(html, /class="mermaid"/);
+    assert.match(html, /<svg viewBox="0 0 80 40"/);
+    assert.match(html, /node_modules\/mermaid\/dist\/mermaid\.min\.js/);
+    assert.doesNotMatch(html, /cdn\.jsdelivr/i);
+  } finally {
+    await rm(outputDir, { recursive: true, force: true });
+  }
+});
+
 test("document preview renderer supports structured diagram components", () => {
   const html = renderDocumentPreviewHtml({
     kind: "docx",

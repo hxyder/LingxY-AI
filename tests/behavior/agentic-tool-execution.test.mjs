@@ -55,6 +55,105 @@ test("agentic tool execution normalizes successful tool results", async () => {
   assert.equal(result.metadata.ok, true);
 });
 
+test("agentic tool execution rejects thin artifact outlines before execution", async () => {
+  let executed = false;
+  const tool = {
+    id: "generate_document",
+    name: "Generate Document",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["kind", "outline"],
+      properties: {
+        kind: { type: "string" },
+        outline: {}
+      }
+    },
+    async execute() {
+      executed = true;
+      return { success: true, observation: "generated" };
+    }
+  };
+
+  const result = await executeAgenticToolCall({
+    registry: registryFor(tool),
+    call: {
+      id: "call_doc",
+      name: tool.id,
+      arguments: {
+        kind: "html",
+        outline: {
+          title: "Research Guide",
+          sections: [{ heading: "Overview", body: "Too short." }]
+        }
+      }
+    },
+    task: {
+      task_id: "task_rich_artifact",
+      user_command: "调研公开资料，生成 HTML 报告",
+      task_spec: {
+        artifact: { required: true, kind: "html" },
+        research_quality: { profile: "multi_source_research" }
+      }
+    },
+    toolContext: {}
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.metadata.validation_error, true);
+  assert.equal(result.metadata.artifact_preflight, true);
+  assert.match(result.observation, /outline_quality_failed/);
+  assert.equal(executed, false);
+});
+
+test("agentic artifact preflight repairs missing document kind from task contract", async () => {
+  const calls = [];
+  const tool = {
+    id: "generate_document",
+    name: "Generate Document",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["kind", "outline"],
+      properties: {
+        kind: { type: "string" },
+        outline: {}
+      }
+    },
+    async execute(args) {
+      calls.push(args);
+      return { success: true, observation: "generated", metadata: { tool_id: "generate_document" } };
+    }
+  };
+
+  const result = await executeAgenticToolCall({
+    registry: registryFor(tool),
+    call: {
+      id: "call_doc",
+      name: tool.id,
+      arguments: {
+        outline: {
+          title: "Report",
+          sections: [{ heading: "Summary", body: "A concise report." }]
+        }
+      }
+    },
+    task: {
+      task_id: "task_html_artifact",
+      task_spec: {
+        artifact: { required: true, kind: "html" }
+      }
+    },
+    toolContext: {}
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].kind, "html");
+});
+
 test("agentic tool execution blocks schedule registry mutation inside scheduled fires before approval", async () => {
   let executed = false;
   let approvals = 0;

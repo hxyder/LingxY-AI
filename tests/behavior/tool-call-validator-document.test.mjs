@@ -17,6 +17,21 @@ const generateDocumentTool = {
   }
 };
 
+const editFileTool = {
+  id: "edit_file",
+  parameters: {
+    type: "object",
+    required: [],
+    properties: {
+      path: { type: "string" },
+      kind: { type: "string" },
+      outline: {},
+      content: { type: "string" },
+      text: { type: "string" }
+    }
+  }
+};
+
 const renderDiagramTool = {
   id: "render_diagram",
   parameters: {
@@ -75,6 +90,18 @@ test("generate_document validation accepts structured rich outlines", () => {
   assert.equal(result.ok, true);
 });
 
+test("generate_document validation accepts html document kind", () => {
+  const result = validateToolCall(generateDocumentTool, {
+    kind: "html",
+    outline: {
+      title: "Interactive Report",
+      sections: [{ heading: "Summary", body: "A standalone HTML report." }]
+    }
+  });
+
+  assert.equal(result.ok, true);
+});
+
 test("generate_document validation asks the planner to enrich thin research artifacts", () => {
   const result = validateToolCall(generateDocumentTool, {
     kind: "pdf",
@@ -94,6 +121,28 @@ test("generate_document validation asks the planner to enrich thin research arti
 
   assert.equal(result.ok, false);
   assert.match(result.error, /outline_quality_failed/);
+});
+
+test("edit_file validation applies artifact quality to existing document updates", () => {
+  const result = validateToolCall(editFileTool, {
+    path: "E:/linxiDoc/task/report.html",
+    kind: "html",
+    outline: {
+      title: "Research Guide",
+      sections: [{ heading: "Overview", body: "Too short." }]
+    }
+  }, {
+    task: {
+      user_command: "把刚才的调研报告改丰富一点",
+      task_spec: {
+        artifact: { required: true, kind: "html" },
+        research_quality: { profile: "multi_source_research" }
+      }
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.error, /edit_file_outline_quality_failed/);
 });
 
 test("render_diagram validation rejects empty diagram source before execution", () => {

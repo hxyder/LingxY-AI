@@ -52,7 +52,25 @@ function validateAgainstSchema(schema, args) {
   return { ok: true };
 }
 
-const DOCUMENT_KINDS = new Set(["pptx", "docx", "xlsx", "pdf"]);
+const DOCUMENT_KINDS = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
+
+function normalizeDocumentKind(value) {
+  const raw = String(value ?? "").toLowerCase().trim();
+  if (raw === "word") return "docx";
+  if (raw === "excel") return "xlsx";
+  if (raw === "ppt" || raw === "powerpoint") return "pptx";
+  return DOCUMENT_KINDS.has(raw) ? raw : "";
+}
+
+function documentKindFromPath(value) {
+  const ext = path.extname(String(value ?? "")).toLowerCase();
+  if (ext === ".pptx") return "pptx";
+  if (ext === ".docx") return "docx";
+  if (ext === ".xlsx") return "xlsx";
+  if (ext === ".pdf") return "pdf";
+  if (ext === ".html" || ext === ".htm") return "html";
+  return "";
+}
 
 function hasNonEmptyOutline(value, depth = 0) {
   if (typeof value === "string") return value.trim().length > 0;
@@ -64,11 +82,11 @@ function hasNonEmptyOutline(value, depth = 0) {
 }
 
 function validateGenerateDocumentArgs(args = {}, ctx = {}) {
-  const kind = String(args.kind ?? "").toLowerCase().trim();
+  const kind = normalizeDocumentKind(args.kind);
   if (!DOCUMENT_KINDS.has(kind)) {
     return {
       ok: false,
-      error: "generate_document requires kind to be one of: pptx, docx, xlsx, pdf"
+      error: "generate_document requires kind to be one of: pptx, docx, xlsx, pdf, html"
     };
   }
   if (!hasNonEmptyOutline(args.outline)) {
@@ -86,6 +104,41 @@ function validateGenerateDocumentArgs(args = {}, ctx = {}) {
     return {
       ok: false,
       error: formatDocumentQualityError(quality)
+    };
+  }
+  return { ok: true };
+}
+
+function validateEditFileArgs(args = {}, ctx = {}) {
+  if (typeof args?.path !== "string" || !args.path.trim()) {
+    return {
+      ok: false,
+      error: "edit_file_path_required"
+    };
+  }
+
+  const kind = normalizeDocumentKind(args.kind) || documentKindFromPath(args.path);
+  if (!DOCUMENT_KINDS.has(kind)) {
+    return { ok: true };
+  }
+
+  const outline = args.outline ?? args.content ?? args.text ?? {};
+  if (!hasNonEmptyOutline(outline)) {
+    return {
+      ok: false,
+      error: "edit_file_outline_required"
+    };
+  }
+
+  const quality = evaluateDocumentOutlineQuality({
+    kind,
+    outline,
+    task: ctx.task ?? null
+  });
+  if (!quality.ok) {
+    return {
+      ok: false,
+      error: formatDocumentQualityError(quality, "edit_file")
     };
   }
   return { ok: true };
@@ -115,6 +168,10 @@ export function validateToolCall(tool, args, ctx = {}) {
   if (tool.id === "generate_document") {
     const documentResult = validateGenerateDocumentArgs(args, ctx);
     if (!documentResult.ok) return documentResult;
+  }
+  if (tool.id === "edit_file") {
+    const editResult = validateEditFileArgs(args, ctx);
+    if (!editResult.ok) return editResult;
   }
   if (tool.id === "render_diagram") {
     const diagramResult = validateRenderDiagramArgs(args);

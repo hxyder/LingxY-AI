@@ -22,7 +22,7 @@ function cleanupLaunchTarget(value = "") {
   if (!candidate || /^(一个)?(应用|软件|程序|app|application|文件|文档|something)$/i.test(candidate)) {
     return "";
   }
-  if (/(网页|网站|链接|网址|url|web\s*page|website|文档|文件|格式|\.docx|\.pptx|\.xlsx|\.pdf|^docx$|^pptx$|^xlsx$|^pdf$)/i.test(candidate)) {
+  if (/(网页|网站|链接|网址|url|web\s*page|website|文档|文件|格式|\.docx|\.pptx|\.xlsx|\.pdf|\.html|^docx$|^pptx$|^xlsx$|^pdf$|^html$)/i.test(candidate)) {
     return "";
   }
   if (/https?:\/\/|www\./i.test(candidate)) return "";
@@ -69,7 +69,7 @@ export function extractPureLaunchApp(text) {
   if (!candidate || /^(应用|软件|程序|app|application|文件|something)$/i.test(candidate)) {
     return null;
   }
-  if (/(文档|文件|格式|\.docx|\.pptx|\.xlsx|\.pdf|^docx$|^pptx$|^xlsx$|^pdf$)/i.test(candidate)) {
+  if (/(文档|文件|格式|\.docx|\.pptx|\.xlsx|\.pdf|\.html|^docx$|^pptx$|^xlsx$|^pdf$|^html$)/i.test(candidate)) {
     return null;
   }
   // Reject if candidate looks like a URL

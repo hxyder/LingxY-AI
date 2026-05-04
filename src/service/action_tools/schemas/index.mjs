@@ -236,7 +236,7 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     type: "object",
     required: ["kind", "outline"],
     properties: {
-      kind: { type: "string" },       // pptx | docx | xlsx | pdf
+      kind: { type: "string" },       // pptx | docx | xlsx | pdf | html
       outline: {},                    // structured outline; shape depends on kind (see tool description)
       filename: { type: "string" },   // optional; defaults to result.<ext>
       path: { type: "string" }        // optional absolute/relative path to overwrite in place

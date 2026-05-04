@@ -97,7 +97,7 @@ const FORMAT_PATTERNS = [
   { format: "txt", patterns: [/(\.txt|txt|纯文本|文本文件)/i] }
 ];
 
-const FILE_PRODUCING_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf"]);
+const FILE_PRODUCING_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
 const AGENTIC_TRIGGERING_TAGS = new Set([
   "act",
   "analyze",

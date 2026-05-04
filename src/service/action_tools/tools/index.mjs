@@ -1233,7 +1233,7 @@ export const PAUSE_SCHEDULED_TASK_TOOL = {
 /*                                                                           */
 /*   - write_file:        sandbox-checked file writing                       */
 /*   - run_script:        whitelisted language execution with timeout        */
-/*   - generate_document: pptx / docx / xlsx / pdf via render-document       */
+/*   - generate_document: pptx / docx / xlsx / pdf / html via render-document */
 /*                                                                           */
 /* All three tools sandbox inside the task's output_dir. Symlink traversal   */
 /* and `..` path segments are rejected explicitly so the LLM can't escape    */
@@ -1531,13 +1531,14 @@ async function resolveDocumentRendererScript() {
   return candidates[0];
 }
 
-const OUTLINE_KINDS = new Set(["pptx", "docx", "xlsx", "pdf"]);
-const KIND_EXTENSIONS = { pptx: ".pptx", docx: ".docx", xlsx: ".xlsx", pdf: ".pdf" };
+const OUTLINE_KINDS = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
+const KIND_EXTENSIONS = { pptx: ".pptx", docx: ".docx", xlsx: ".xlsx", pdf: ".pdf", html: ".html" };
 const KIND_MIMES = {
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  pdf: "application/pdf"
+  pdf: "application/pdf",
+  html: "text/html"
 };
 
 function artifactKindFromTarget(targetPath = "") {
@@ -1793,19 +1794,18 @@ async function invokeDocumentRenderer({ kind, targetPath, outline }) {
 export const GENERATE_DOCUMENT_TOOL = {
   id: "generate_document",
   name: "Generate Document",
-  description: `Produce a professionally styled pptx / docx / xlsx / pdf artifact from a structured outline.
+  description: `Produce a professionally styled pptx / docx / xlsx / pdf / html artifact from a structured outline.
 
 Outline shapes:
 • pptx → { title, subtitle?, author?, date?, slides: [{ heading, bullets?: string[], body?: string, table?: { headers: string[], rows: any[][] }, layout?: "section" }] }
-• docx → { title, subtitle?, author?, date?, sections: [{ heading, level?: 1|2, body?: string, bullets?: string[], table?: { headers: string[], rows: any[][] } }] }
+• docx/pdf/html → { title, subtitle?, author?, date?, sections: [{ heading, level?: 1|2, body?: string, bullets?: string[], table?: { headers: string[], rows: any[][] }, diagram?: { code, caption? }, svg?: { markup, caption? } }] }
 • xlsx → { headers: string[], rows: any[][] }  OR  { sheets: [{ name, headers, rows }] }
-• pdf  → same shape as docx (rendered to HTML then printed)
 
 Preferred calling convention:
 • Pass \`outline\` as a native object, not a stringified JSON string.
 • The tool will still normalize stringified JSON or plain-text outlines as a fallback, but object input is more reliable across models.
 
-For reports with charts: include Mermaid diagram code in body text wrapped in triple-backtick mermaid blocks — they render automatically in HTML/PDF output.`,
+For reports with charts: include Mermaid diagram code in body text wrapped in triple-backtick mermaid blocks or as \`diagram\` components. SVG components are sanitized before rendering. HTML output is a first-class artifact, not a fallback.`,
   parameters: ACTION_TOOL_SCHEMAS.generate_document,
   risk_level: "low",
   required_capabilities: ["file_write"],
@@ -1815,7 +1815,7 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
     if (!OUTLINE_KINDS.has(kind)) {
       return createActionResult({
         success: false,
-        observation: `generate_document rejected: kind must be one of pptx/docx/xlsx/pdf. Got "${args.kind}".`,
+        observation: `generate_document rejected: kind must be one of pptx/docx/xlsx/pdf/html. Got "${args.kind}".`,
         metadata: { tool_id: "generate_document" }
       });
     }
@@ -1828,6 +1828,23 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
           : `result${KIND_EXTENSIONS[kind]}`);
       const absTarget = await resolveSandboxedTarget(outputDir, targetArg);
       const outline   = normalizeDocumentOutline(kind, args.outline ?? {});
+
+      if (kind === "html") {
+        const htmlContent = buildPdfHtml(outline);
+        await writeFile(absTarget, htmlContent, "utf8");
+        return createActionResult({
+          success: true,
+          observation: `generate_document produced HTML at ${path.relative(outputDir, absTarget) || path.basename(absTarget)}`,
+          metadata: {
+            tool_id: "generate_document",
+            kind,
+            path: absTarget,
+            mime_type: KIND_MIMES[kind],
+            preview_html_path: absTarget
+          },
+          artifactPaths: [absTarget]
+        });
+      }
 
       if (kind === "pdf") {
         const htmlPath = absTarget.replace(/\.pdf$/i, ".html");
@@ -1888,7 +1905,7 @@ For reports with charts: include Mermaid diagram code in body text wrapped in tr
 export const EDIT_FILE_TOOL = {
   id: "edit_file",
   name: "Edit File",
-  description: "Update an existing file in place. For pptx/docx/xlsx/pdf pass a full updated outline and the existing absolute path; for text-like files pass the full replacement content.",
+  description: "Update an existing file in place. For pptx/docx/xlsx/pdf/html pass a full updated outline and the existing absolute path; for text-like files pass the full replacement content.",
   parameters: ACTION_TOOL_SCHEMAS.edit_file,
   risk_level: "medium",
   required_capabilities: ["file_write"],
@@ -1915,7 +1932,10 @@ export const EDIT_FILE_TOOL = {
             metadata: { tool_id: "edit_file", path: absTarget, kind }
           });
         }
-        if (kind === "pdf") {
+        if (kind === "html") {
+          const htmlContent = buildPdfHtml(outline);
+          await writeFile(absTarget, htmlContent, "utf8");
+        } else if (kind === "pdf") {
           const htmlPath = absTarget.replace(/\.pdf$/i, ".html");
           const htmlContent = buildPdfHtml(outline);
           await writeFile(htmlPath, htmlContent, "utf8");
@@ -1923,7 +1943,9 @@ export const EDIT_FILE_TOOL = {
         } else {
           await invokeDocumentRenderer({ kind, targetPath: absTarget, outline });
         }
-        const previewPath = await writeDocumentPreviewSidecar({ kind, targetPath: absTarget, outline });
+        const previewPath = kind === "html"
+          ? absTarget
+          : await writeDocumentPreviewSidecar({ kind, targetPath: absTarget, outline });
         return createActionResult({
           success: true,
           observation: `edit_file updated ${path.basename(absTarget)} in place.`,
@@ -2197,7 +2219,7 @@ function renderHtmlSvg(svg) {
 function renderHtmlTable(table) {
   const headers = Array.isArray(table.headers) ? table.headers : [];
   const rows    = Array.isArray(table.rows)    ? table.rows    : [];
-  const lines   = ["<table>"];
+  const lines   = ['<table class="doc-table">'];
   if (headers.length) {
     lines.push("  <thead><tr>");
     for (const h of headers) lines.push(`    <th>${escapeHtml(String(h ?? ""))}</th>`);

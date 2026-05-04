@@ -461,7 +461,7 @@ const genBad = await registry.call("generate_document", {
   kind: "epub",
   outline: { title: "x" }
 }, { outputDir: toolSandbox });
-assert.equal(genBad.success, false, "generate_document must reject kinds outside pptx/docx/xlsx/pdf");
+assert.equal(genBad.success, false, "generate_document must reject kinds outside pptx/docx/xlsx/pdf/html");
 
 // Skip real PowerShell-based ooxml generation on non-Windows so the test
 // runs in CI across platforms; on Windows we actually produce a .pptx.

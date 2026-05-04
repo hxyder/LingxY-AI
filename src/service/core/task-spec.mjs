@@ -613,7 +613,7 @@ const FORMAT_PATTERNS = [
   { format: "txt",  pattern: /(\.txt|txt|纯文本)/i }
 ];
 
-const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf"]);
+const FILE_ARTIFACT_FORMATS = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
 
 function detectFormats(text) {
   if (isLaunchTaskText(text)) {

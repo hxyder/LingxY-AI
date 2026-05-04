@@ -22,7 +22,7 @@ export function repairSchemaArgAliases(args = {}, tool = null) {
   return repaired;
 }
 
-const DOCUMENT_KINDS = new Set(["pptx", "docx", "xlsx", "pdf"]);
+const DOCUMENT_KINDS = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
 
 function normalizeDocumentKind(value) {
   const raw = String(value ?? "").toLowerCase().trim();

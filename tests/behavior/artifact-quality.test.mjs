@@ -104,3 +104,24 @@ test("artifact quality accepts rich research outlines with table and Mermaid", (
 
   assert.equal(result.ok, true);
 });
+
+test("artifact quality applies the rich document bar to html artifacts", () => {
+  const result = evaluateDocumentOutlineQuality({
+    kind: "html",
+    outline: {
+      title: "Thin HTML",
+      sections: [{ heading: "Only one section", body: "Too short." }]
+    },
+    task: {
+      user_command: "调研公开资料，生成 HTML 报告",
+      task_spec: {
+        artifact: { required: true, kind: "html" },
+        research_quality: { profile: "multi_source_research" }
+      }
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.ok(result.issues.includes("too_few_sections"));
+  assert.ok(result.issues.includes("missing_structured_component"));
+});

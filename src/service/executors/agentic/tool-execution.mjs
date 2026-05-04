@@ -1,4 +1,5 @@
 import { applySideEffectContractToToolArgs } from "../../core/policy/side-effect-contracts.mjs";
+import { prepareArtifactToolCall } from "../shared/artifact-tool-preflight.mjs";
 import {
   buildDeferredToolContext,
   buildToolApprovalPreview
@@ -27,7 +28,30 @@ export async function executeAgenticToolCall({
       metadata: { tool_id: call.name }
     };
   }
-  const callArgs = applySideEffectContractToToolArgs(tool.id, call.arguments ?? {}, { task, runtime });
+  const artifactPreflight = prepareArtifactToolCall({
+    tool,
+    call,
+    task,
+    transcript,
+    toolContext
+  });
+  if (!artifactPreflight.ok) {
+    call.arguments = artifactPreflight.args;
+    return {
+      success: false,
+      observation: artifactPreflight.error,
+      metadata: {
+        tool_id: tool.id,
+        validation_error: true,
+        artifact_preflight: true,
+        reason: artifactPreflight.error
+      },
+      artifact_paths: [],
+      error: artifactPreflight.error
+    };
+  }
+
+  const callArgs = applySideEffectContractToToolArgs(tool.id, artifactPreflight.args, { task, runtime });
   call.arguments = callArgs;
 
   if (isScheduleRegistryTool(tool) && isScheduledFireTask(task)) {

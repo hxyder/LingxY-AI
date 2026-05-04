@@ -83,7 +83,7 @@ export function evaluateDocumentOutlineQuality({ kind = "", outline = {}, task =
     issues.push("missing_title");
   }
 
-  if (requirements.richResearch && (normalizedKind === "pdf" || normalizedKind === "docx")) {
+  if (requirements.richResearch && (normalizedKind === "pdf" || normalizedKind === "docx" || normalizedKind === "html")) {
     if (metrics.sectionCount < 2) issues.push("too_few_sections");
     if (metrics.bodyChars < 500) issues.push("too_little_body_detail");
     if (metrics.tableCount === 0 && metrics.mermaidCount === 0 && metrics.svgCount === 0) issues.push("missing_structured_component");
@@ -102,7 +102,7 @@ export function evaluateDocumentOutlineQuality({ kind = "", outline = {}, task =
   };
 }
 
-export function formatDocumentQualityError(result = {}) {
+export function formatDocumentQualityError(result = {}, toolId = "generate_document") {
   const issues = Array.isArray(result.issues) ? result.issues : [];
   const labels = {
     missing_title: "add a title",
@@ -111,5 +111,5 @@ export function formatDocumentQualityError(result = {}) {
     missing_structured_component: "include at least one structured component",
     too_few_slides: "include at least three slides"
   };
-  return `generate_document_outline_quality_failed: ${issues.map((issue) => labels[issue] ?? issue).join("; ")}`;
+  return `${toolId}_outline_quality_failed: ${issues.map((issue) => labels[issue] ?? issue).join("; ")}`;
 }

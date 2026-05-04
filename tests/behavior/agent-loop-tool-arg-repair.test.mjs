@@ -92,6 +92,17 @@ test("agent tool arg repair can infer missing document kind from task contract",
   assert.deepEqual(repaired.outline, { title: "Report" });
 });
 
+test("agent tool arg repair can infer html document kind from task contract", () => {
+  const repaired = repairToolArgs(
+    { tool: "generate_document", args: { outline: { title: "Report" } } },
+    { task_spec: { artifact: { required: true, kind: "html" } } },
+    []
+  );
+
+  assert.equal(repaired.kind, "html");
+  assert.deepEqual(repaired.outline, { title: "Report" });
+});
+
 test("agent tool arg repair normalizes SVG markup aliases", () => {
   const repaired = repairToolArgs(
     { tool: "render_svg", args: { markup: "<svg viewBox=\"0 0 1 1\"></svg>" } },

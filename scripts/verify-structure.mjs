@@ -254,6 +254,7 @@ const requiredPaths = [
   "src/service/executors/kimi/task-package-builder.mjs",
   "src/service/executors/shared/local-file-read-guidance.mjs",
   "src/service/executors/shared/loop-policy.mjs",
+  "src/service/executors/shared/artifact-tool-preflight.mjs",
   "src/service/executors/tool_using/README.md",
   "src/service/executors/tool_using/action-guidance.mjs",
   "src/service/executors/tool_using/agent-loop.mjs",

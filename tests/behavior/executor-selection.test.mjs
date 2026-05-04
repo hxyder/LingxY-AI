@@ -123,6 +123,14 @@ test("createTaskSpec records executor-selection behavior in the decision trace",
   assert.ok(spec.decision_trace.some((entry) => entry.stage === "executor-selection"));
 });
 
+test("createTaskSpec treats html as a first-class generated artifact format", () => {
+  const spec = createTaskSpec("生成一个 HTML 报告");
+
+  assert.equal(spec.artifact.required, true);
+  assert.equal(spec.artifact.kind, "html");
+  assert.equal(spec.suggested_executor, "tool_using");
+});
+
 test("createTaskSpec composes image understanding with external search tools", () => {
   const spec = createTaskSpec("结合这张产品图搜索外部竞品", {
     image_paths: ["product.png"],
