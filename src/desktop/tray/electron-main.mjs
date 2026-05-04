@@ -586,6 +586,7 @@ function resolveWindowOptions(windowDef) {
       frame: false,
       transparent: true,
       resizable: false,
+      useContentSize: true,
       fullscreenable: false,
       skipTaskbar: true,
       maximizable: false,
@@ -769,7 +770,10 @@ export function createElectronShellRuntime({
       width,
       height
     };
-    const workArea = screen.getDisplayMatching?.(tentative)?.workArea ?? fallbackWorkArea;
+    const matchingDisplay = screen.getDisplayMatching?.(tentative) ?? screen.getPrimaryDisplay();
+    const workArea = windowId === "dock"
+      ? (matchingDisplay.bounds ?? matchingDisplay.workArea ?? fallbackWorkArea)
+      : (matchingDisplay.workArea ?? fallbackWorkArea);
     const overlayMove = windowId === "overlay" && options.mode === "move";
     const dockMove = windowId === "dock" && options.mode === "move";
     const visibleMargin = overlayMove ? 96 : 0;
