@@ -598,5 +598,18 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       config: {},                         // skill: { instructions[] }; mcp: { transport, command/args/url }
       confirmation: { type: "boolean" }  // explicit confirmation toggle for one-shot intake
     }
+  },
+  // UCA-077: Persist a capability draft. High-risk + confirmation-required.
+  // Skill drafts are written via createEditableSkill under the runtime
+  // skills root; MCP drafts are written as a JSON file under a runtime-local
+  // drafts directory. The tool never installs an MCP server, never mutates
+  // runtime config, and never persists literal secret values.
+  save_capability_draft: {
+    type: "object",
+    required: [],
+    properties: {
+      draft: {},   // draft object returned by draft_capability metadata.draft
+      state: {}    // alternative: completed interview state; draft is rebuilt internally
+    }
   }
 });

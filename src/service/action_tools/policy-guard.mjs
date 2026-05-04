@@ -7,7 +7,8 @@ const DEFAULT_RATE_LIMITS = Object.freeze({
   generate_document: 2,
   edit_file: 4,
   write_file: 6,
-  run_script: 4
+  run_script: 4,
+  save_capability_draft: 3
 });
 
 /**

@@ -72,6 +72,7 @@ const requiredPaths = [
   "tests/behavior/capability-checklist.test.mjs",
   "tests/behavior/capability-creator.test.mjs",
   "tests/behavior/capability-draft-tool.test.mjs",
+  "tests/behavior/capability-save-tool.test.mjs",
   "tests/behavior/connector-workflow-scheduled-authorization.test.mjs",
   "tests/behavior/connector-workflow-submission-boundary.test.mjs",
   "tests/behavior/document-diagram-components.test.mjs",

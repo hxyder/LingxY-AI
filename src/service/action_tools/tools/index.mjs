@@ -24,6 +24,7 @@ import {
   buildCapabilityRecoveryProposal,
   validateCapabilityDraft
 } from "../../core/capability-creator/index.mjs";
+import { createEditableSkill, slugifySkillId } from "../../ai/skills/lifecycle.mjs";
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 import { resolveFileReadBudgetFromTask } from "../../core/file-read-budget.mjs";
@@ -3746,6 +3747,172 @@ export const DRAFT_CAPABILITY_TOOL = {
   }
 };
 
+// UCA-077: persist a capability draft. High-risk + confirmation-required.
+// Skill drafts go through createEditableSkill (runtime-bound path safety);
+// MCP drafts are written as a JSON file under a runtime-local drafts dir.
+// The tool never installs an MCP server, never mutates runtime config, and
+// never persists literal secret values; descriptor.enabled is always false
+// and env values must already be ${env:NAME} / ${secret_ref:NAME} refs.
+function resolveMcpDraftsDir(runtime) {
+  const explicit = runtime?.paths?.mcpDraftsDir;
+  if (typeof explicit === "string" && explicit.trim()) return explicit;
+  const baseDir = runtime?.paths?.baseDir;
+  if (typeof baseDir === "string" && baseDir.trim()) {
+    return path.join(baseDir, "data", "mcp-drafts");
+  }
+  return null;
+}
+
+async function saveCapabilityDraftSkill(runtime, draft) {
+  const created = await createEditableSkill(runtime, {
+    id: draft.id,
+    name: draft.name,
+    description: draft.purpose,
+    markdown: draft.entry?.markdown ?? ""
+  });
+  return {
+    kind: "skill",
+    id: created.id,
+    path: created.entryPath,
+    validation: created.validation
+  };
+}
+
+async function saveCapabilityDraftMcp(runtime, draft) {
+  const draftsDir = resolveMcpDraftsDir(runtime);
+  await mkdir(draftsDir, { recursive: true });
+  const safeId = slugifySkillId(draft.id || draft.name || "mcp-draft");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const filename = `${safeId}-${stamp}.json`;
+  const targetPath = path.join(draftsDir, filename);
+  // Defensively force enabled=false; descriptor.env was already validated as
+  // reference-only by validateCapabilityDraft.
+  const descriptor = { ...(draft.descriptor ?? {}), enabled: false };
+  const payload = {
+    kind: "mcp",
+    status: "draft",
+    id: draft.id,
+    name: draft.name,
+    purpose: draft.purpose,
+    permissions: draft.permissions,
+    secrets: draft.secrets,
+    descriptor,
+    saved_at: new Date().toISOString()
+  };
+  await writeFile(targetPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  return {
+    kind: "mcp",
+    id: draft.id,
+    path: targetPath
+  };
+}
+
+export const SAVE_CAPABILITY_DRAFT_TOOL = {
+  id: "save_capability_draft",
+  name: "Save Capability Draft",
+  description: "Persist a capability draft from draft_capability. Skill drafts write SKILL.md under the runtime skills root. MCP drafts write a disabled JSON draft and never edit live runtime config. High-risk: requires user confirmation.",
+  parameters: ACTION_TOOL_SCHEMAS.save_capability_draft,
+  risk_level: "high",
+  required_capabilities: ["file_write"],
+  requires_confirmation: true,
+  async execute(args = {}, ctx = {}) {
+    const runtime = ctx?.runtime ?? null;
+    if (!runtime || !isPlainObject(runtime?.paths)) {
+      return createActionResult({
+        success: false,
+        observation: "save_capability_draft requires a runtime with configured paths.",
+        error: "runtime_unavailable",
+        metadata: { tool_id: "save_capability_draft", status: "runtime_unavailable" }
+      });
+    }
+
+    let draft = isPlainObject(args.draft) ? args.draft : null;
+    if (!draft && isPlainObject(args.state)) {
+      try {
+        draft = buildCapabilityDraft(args.state);
+      } catch (error) {
+        return createActionResult({
+          success: false,
+          observation: `save_capability_draft could not rebuild a draft from the provided state: ${error.message}`,
+          error: error.message,
+          metadata: { tool_id: "save_capability_draft", status: "invalid_state" }
+        });
+      }
+    }
+    if (!draft) {
+      return createActionResult({
+        success: false,
+        observation: "save_capability_draft requires a draft (from draft_capability) or a completed interview state.",
+        error: "draft_missing",
+        metadata: { tool_id: "save_capability_draft", status: "draft_missing" }
+      });
+    }
+
+    const validation = validateCapabilityDraft(draft);
+    if (!validation.ok) {
+      const recovery = buildCapabilityRecoveryProposal(validation);
+      return createActionResult({
+        success: false,
+        observation: summarizeRecoveryForObservation(recovery),
+        error: "capability_draft_invalid",
+        metadata: {
+          tool_id: "save_capability_draft",
+          status: "recovery_required",
+          validation,
+          recovery
+        }
+      });
+    }
+
+    try {
+      if (draft.kind === "skill" && typeof runtime.paths.skillsDir !== "string") {
+        return createActionResult({
+          success: false,
+          observation: "save_capability_draft cannot save a skill because runtime.paths.skillsDir is not configured.",
+          error: "skillsDir_not_configured",
+          metadata: { tool_id: "save_capability_draft", status: "runtime_unavailable", kind: "skill" }
+        });
+      }
+      if (draft.kind === "mcp" && !resolveMcpDraftsDir(runtime)) {
+        return createActionResult({
+          success: false,
+          observation: "save_capability_draft cannot save an MCP draft because runtime.paths.baseDir or runtime.paths.mcpDraftsDir is not configured.",
+          error: "mcp_drafts_dir_not_configured",
+          metadata: { tool_id: "save_capability_draft", status: "runtime_unavailable", kind: "mcp" }
+        });
+      }
+      const saved = draft.kind === "skill"
+        ? await saveCapabilityDraftSkill(runtime, draft)
+        : await saveCapabilityDraftMcp(runtime, draft);
+      const observation = saved.kind === "skill"
+        ? `Saved editable skill "${draft.name}" to ${saved.path}. Review or test it before relying on it.`
+        : `Saved MCP draft "${draft.name}" to ${saved.path}. The server stays disabled and is not registered until reviewed.`;
+      return createActionResult({
+        success: true,
+        observation,
+        artifactPaths: [saved.path],
+        metadata: {
+          tool_id: "save_capability_draft",
+          status: "saved",
+          kind: saved.kind,
+          id: saved.id,
+          path: saved.path,
+          enabled: saved.kind === "mcp" ? false : null,
+          validation: saved.validation ?? null,
+          review_required: true
+        }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `save_capability_draft failed to persist draft: ${error.message}`,
+        error: error.message,
+        metadata: { tool_id: "save_capability_draft", status: "save_failed" }
+      });
+    }
+  }
+};
+
 export const BUILTIN_ACTION_TOOLS = Object.freeze([
   OPEN_URL_TOOL,
   WEB_SEARCH_TOOL,
@@ -3798,6 +3965,9 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   ...MEMORY_TOOLS,
   // UCA-077: Capability creator (skill / MCP), draft-only and read-only.
   DRAFT_CAPABILITY_TOOL,
+  // UCA-077: Save the capability draft. High-risk + confirmation-required;
+  // never enables an MCP server or mutates runtime config.
+  SAVE_CAPABILITY_DRAFT_TOOL,
   // Connector catalog + provider account tools (single aggregation point)
   ...CONNECTOR_ACTION_TOOLS
 ]);
