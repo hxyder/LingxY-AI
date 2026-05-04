@@ -14,7 +14,9 @@ const tools = [
   { id: "reveal_in_explorer" },
   { id: "launch_app" },
   { id: "create_scheduled_task" },
-  { id: "account_send_email" }
+  { id: "account_send_email" },
+  { id: "draft_capability" },
+  { id: "save_capability_draft" }
 ];
 
 test("agent tool surface composes image understanding with external web tools", () => {
@@ -74,6 +76,54 @@ test("agent tool surface hides schedule registry tools inside scheduled fires", 
 
   assert.ok(!visible.includes("create_scheduled_task"));
   assert.ok(visible.includes("launch_app"));
+});
+
+test("agent tool surface exposes capability tools when capability_management is needed", () => {
+  const task = {
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["capability_management"]
+      }
+    },
+    task_spec: {}
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.deepEqual(visible.sort(), ["draft_capability", "save_capability_draft"].sort());
+});
+
+test("capability_management still hides direct file open tools when not required", () => {
+  const task = {
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["capability_management"]
+      }
+    },
+    task_spec: {}
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(!visible.includes("open_file"));
+  assert.ok(!visible.includes("reveal_in_explorer"));
+});
+
+test("capability_management still hides schedule registry tools inside scheduled fires", () => {
+  const task = {
+    context_packet: {
+      selection_metadata: { scheduled_task_fire: true },
+      semantic_router_decision: {
+        needed_capabilities: ["capability_management"]
+      }
+    },
+    task_spec: {}
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(!visible.includes("create_scheduled_task"));
+  assert.ok(visible.includes("draft_capability"));
 });
 
 test("agent workflow hint follows connector capabilities and intent tags", () => {

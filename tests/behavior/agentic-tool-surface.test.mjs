@@ -9,6 +9,7 @@ import {
   toolDescriptorForAdapter,
   transcriptHasSuccessfulToolCall
 } from "../../src/service/executors/agentic/tool-surface.mjs";
+import { BUILTIN_ACTION_TOOLS } from "../../src/service/action_tools/tools/index.mjs";
 
 test("agentic tool surface renders adapter descriptors with safe defaults", () => {
   assert.deepEqual(
@@ -46,6 +47,23 @@ test("agentic tool surface classifies side-effect tools by group, risk, and conf
   assert.equal(isSideEffectTool({ id: "approval_tool", requires_confirmation: true }), true);
   assert.equal(isSideEffectTool({ id: "read_only" }), false);
   assert.equal(isSideEffectTool(null), false);
+});
+
+test("agentic dynamic tool descriptors include capability management tools", () => {
+  const ids = new Set(BUILTIN_ACTION_TOOLS.map((tool) => tool.id));
+  assert.ok(ids.has("draft_capability"));
+  assert.ok(ids.has("save_capability_draft"));
+
+  const draft = BUILTIN_ACTION_TOOLS.find((tool) => tool.id === "draft_capability");
+  const save = BUILTIN_ACTION_TOOLS.find((tool) => tool.id === "save_capability_draft");
+  const draftDescriptor = toolDescriptorForAdapter(draft);
+  const saveDescriptor = toolDescriptorForAdapter(save);
+
+  assert.equal(draftDescriptor.name, "draft_capability");
+  assert.equal(typeof draftDescriptor.description, "string");
+  assert.ok(draftDescriptor.input_schema && typeof draftDescriptor.input_schema === "object");
+  assert.equal(saveDescriptor.name, "save_capability_draft");
+  assert.ok(saveDescriptor.input_schema && typeof saveDescriptor.input_schema === "object");
 });
 
 test("agentic tool surface only counts successful prior tool calls", () => {

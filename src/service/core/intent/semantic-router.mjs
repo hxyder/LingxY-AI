@@ -123,6 +123,7 @@ const TOOL_CAPABILITIES = Object.freeze([
   "desktop_action",
   "image_understanding",
   "image_generation",
+  "capability_management",
   "none"
 ]);
 const REQUIRED_POLICY_GROUPS = Object.freeze([

@@ -30,6 +30,11 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
   // tool_using instead of multi_modal.
   image_understanding: (tool) => tool.id === "vision_analyze",
   image_generation: (tool) => ["generate_document", "write_file"].includes(tool.id),
+  // First-class lane for the "create / configure a capability" intent.
+  // Exposes the draft + save tools so the planner can run the interview
+  // and persist the result without per-case keyword routing.
+  capability_management: (tool) =>
+    ["draft_capability", "save_capability_draft"].includes(tool.id),
   none: () => false
 });
 
