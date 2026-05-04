@@ -482,12 +482,15 @@ assert.ok(/duplicateSkillViaShell/.test(consoleJs) && /window\.ucaShell\.duplica
   "skill lifecycle duplicate: console must use desktop shell bridge");
 assert.ok(/rollbackSkillViaShell/.test(consoleJs) && /window\.ucaShell\.rollbackSkill/.test(consoleJs),
   "skill lifecycle rollback: console must use desktop shell bridge");
+assert.ok(/listSkillHistoryViaShell/.test(consoleJs) && /window\.ucaShell\.listSkillHistory/.test(consoleJs),
+  "skill lifecycle history: console must use desktop shell bridge");
 assert.ok(/testSkillViaShell/.test(consoleJs) && /window\.ucaShell\.testSkill/.test(consoleJs),
   "skill lifecycle test: console must use desktop shell bridge");
 assert.ok(/id="skillCreateBtn"/.test(consoleHtml)
     && /id="skillEditRollbackBtn"/.test(consoleHtml)
-    && /id="skillEditTestBtn"/.test(consoleHtml),
-  "skill lifecycle: create, rollback, and test controls missing");
+    && /id="skillEditTestBtn"/.test(consoleHtml)
+    && /id="skillEditHistorySelect"/.test(consoleHtml),
+  "skill lifecycle: create, history, rollback, and test controls missing");
 assert.ok(/data-skill-duplicate/.test(consoleJs),
   "skill lifecycle: discovered skill cards must expose duplicate action");
 assert.ok(!/fetchJson\(\s*["'`]\/skills\/write["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),

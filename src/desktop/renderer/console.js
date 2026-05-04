@@ -290,6 +290,7 @@ const skillEditOpenBtn = document.querySelector("#skillEditOpenBtn");
 const skillEditRevealBtn = document.querySelector("#skillEditRevealBtn");
 const skillEditRollbackBtn = document.querySelector("#skillEditRollbackBtn");
 const skillEditTestBtn = document.querySelector("#skillEditTestBtn");
+const skillEditHistorySelect = document.querySelector("#skillEditHistorySelect");
 
 const consoleChatPin = createBottomPinController(consoleChatMessages, {
   button: consoleChatScrollDownBtn
@@ -3079,6 +3080,7 @@ async function openSkillEditor(entryPath) {
   try {
     const payload = await readSkillMarkdownViaShell(entryPath);
     skillEditText.value = payload.markdown ?? "";
+    await refreshSkillHistoryOptions(entryPath);
     skillEditState.textContent = "Loaded.";
     skillEditText.focus();
   } catch (error) {
@@ -3093,6 +3095,10 @@ function closeSkillEditor() {
   if (skillEditPath) skillEditPath.textContent = "";
   if (skillEditState) skillEditState.textContent = "";
   if (skillEditValidation) skillEditValidation.innerHTML = "";
+  if (skillEditHistorySelect) {
+    skillEditHistorySelect.innerHTML = "";
+    skillEditHistorySelect.disabled = true;
+  }
 }
 
 function renderCodeCliAdapters() {
@@ -7730,13 +7736,23 @@ async function duplicateSkillViaShell(entryPath) {
   );
 }
 
-async function rollbackSkillViaShell(entryPath) {
+async function rollbackSkillViaShell(entryPath, historyId = "") {
   if (typeof window.ucaShell?.rollbackSkill !== "function") {
     throw new Error("Desktop skill lifecycle bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.rollbackSkill({ entryPath }),
+    await window.ucaShell.rollbackSkill({ entryPath, historyId }),
     "Could not rollback skill."
+  );
+}
+
+async function listSkillHistoryViaShell(entryPath) {
+  if (typeof window.ucaShell?.listSkillHistory !== "function") {
+    throw new Error("Desktop skill history bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.listSkillHistory({ entryPath }),
+    "Could not list skill history."
   );
 }
 
@@ -7749,6 +7765,32 @@ async function testSkillViaShell(payload = {}) {
     throw new Error(result.message ?? result.error ?? "Could not test skill.");
   }
   return result ?? {};
+}
+
+function formatSkillHistoryLabel(entry = {}, index = 0) {
+  const rawId = String(entry.id ?? "");
+  const label = rawId
+    .replace(/^backup-/i, "")
+    .replace(/-(?=\d{2}(?:-|$))/g, ":")
+    .replace(/-/g, " ");
+  return `${index === 0 ? "Latest" : "Backup"} ${label || rawId || index + 1}`.trim();
+}
+
+async function refreshSkillHistoryOptions(entryPath) {
+  if (!skillEditHistorySelect || !entryPath) return;
+  skillEditHistorySelect.disabled = true;
+  skillEditHistorySelect.innerHTML = `<option value="">No backups</option>`;
+  try {
+    const payload = await listSkillHistoryViaShell(entryPath);
+    const history = Array.isArray(payload.history) ? payload.history : [];
+    if (!history.length) return;
+    skillEditHistorySelect.innerHTML = history.map((entry, index) =>
+      `<option value="${escapeHtml(entry.id ?? "")}">${escapeHtml(formatSkillHistoryLabel(entry, index))}</option>`
+    ).join("");
+    skillEditHistorySelect.disabled = false;
+  } catch {
+    skillEditHistorySelect.innerHTML = `<option value="">History unavailable</option>`;
+  }
 }
 
 async function updateRoutingConfigViaShell(routing) {
@@ -8325,13 +8367,20 @@ skillEditRevealBtn?.addEventListener("click", () => {
 });
 skillEditRollbackBtn?.addEventListener("click", async () => {
   if (!editingSkillPath || !skillEditText) return;
-  if (!confirm("Restore the latest saved backup for this skill?")) return;
+  const historyId = skillEditHistorySelect?.value ?? "";
+  const targetLabel = skillEditHistorySelect?.selectedOptions?.[0]?.textContent ?? "latest backup";
+  if (!historyId) {
+    skillEditState.textContent = "No backup is available.";
+    return;
+  }
+  if (!confirm(`Restore ${targetLabel} for this skill?`)) return;
   skillEditState.textContent = "Restoring...";
   try {
-    const result = await rollbackSkillViaShell(editingSkillPath);
+    const result = await rollbackSkillViaShell(editingSkillPath, historyId);
     skillEditText.value = result.markdown ?? skillEditText.value;
     renderSkillValidation(skillEditValidation, result.validation);
     skillEditState.textContent = `Restored ${result.restoredHistoryId ?? "latest backup"}.`;
+    await refreshSkillHistoryOptions(editingSkillPath);
     await refreshWorkspace({ mode: "background" });
   } catch (error) {
     skillEditState.textContent = `Failed: ${error.message}`;
@@ -8361,6 +8410,7 @@ skillEditSaveBtn?.addEventListener("click", async () => {
     const result = await writeSkillMarkdownViaShell(editingSkillPath, skillEditText.value);
     renderSkillValidation(skillEditValidation, result.validation);
     skillEditState.textContent = result.validation?.ok === false ? "Saved with validation issues." : "Saved.";
+    await refreshSkillHistoryOptions(editingSkillPath);
     await refreshWorkspace();
   } catch (error) {
     skillEditState.textContent = `Failed: ${error.message}`;
