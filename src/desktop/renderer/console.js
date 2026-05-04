@@ -77,6 +77,7 @@ import {
   extractEvidenceSummaryFromTaskDetail,
   renderEvidenceSourcesHtml,
   renderToolCallSourcesHtml,
+  revealEvidenceSource,
   wireEvidenceSourceActions
 } from "./evidence-sources-view.mjs";
 import {
@@ -893,6 +894,12 @@ async function openConsoleChatExternalLink(anchor) {
 
 consoleChatMessages?.addEventListener("click", (ev) => {
   const target = ev.target instanceof Element ? ev.target : null;
+  const citeChip = target?.closest?.(".cite-chip[data-source-id]");
+  if (citeChip && consoleChatMessages.contains(citeChip)) {
+    ev.preventDefault();
+    revealEvidenceSource(consoleChatMessages, citeChip.dataset.sourceId);
+    return;
+  }
   const capabilityAction = target?.closest?.("[data-capability-action]");
   if (capabilityAction && consoleChatMessages.contains(capabilityAction)) {
     ev.preventDefault();

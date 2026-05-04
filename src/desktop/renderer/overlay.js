@@ -36,6 +36,7 @@ import {
 import {
   renderEvidenceSourcesHtml,
   renderToolCallSourcesHtml,
+  revealEvidenceSource,
   wireEvidenceSourceActions
 } from "./evidence-sources-view.mjs";
 import {
@@ -4671,6 +4672,13 @@ function markUserEngaged() {
 commandInput.addEventListener("focus", markUserEngaged);
 commandInput.addEventListener("pointerdown", markUserEngaged);
 bubbleArea?.addEventListener("pointerdown", markUserEngaged);
+bubbleArea?.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const citeChip = target?.closest?.(".cite-chip[data-source-id]");
+  if (!citeChip || !bubbleArea.contains(citeChip)) return;
+  event.preventDefault();
+  revealEvidenceSource(bubbleArea, citeChip.dataset.sourceId);
+});
 
 popOpenBtn?.addEventListener("click", () => {
   markUserEngaged();

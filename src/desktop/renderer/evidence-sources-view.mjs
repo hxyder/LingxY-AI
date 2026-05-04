@@ -33,6 +33,12 @@ const COVERAGE_SCOPE_LABELS = Object.freeze({
   file_metadata: "metadata only"
 });
 
+const SHALLOW_SOURCE_SCOPES = new Set([
+  "directory_listing_shallow",
+  "file_enumeration_recursive",
+  "file_metadata"
+]);
+
 function renderCoverageScopeChips(counts = {}, { className = "chip muted", prefix = "" } = {}) {
   if (!counts || typeof counts !== "object") return "";
   return Object.entries(counts)
@@ -47,7 +53,8 @@ function renderCoverageScopeChips(counts = {}, { className = "chip muted", prefi
 export function renderEvidenceSourcesHtml(evidence, {
   className = "task-answer task-evidence",
   title = "Evidence",
-  zh = "来源"
+  zh = "来源",
+  citations = evidence?.citations
 } = {}) {
   const webCount = Number(evidence?.source_count ?? 0);
   const domainCount = Number(evidence?.distinct_domain_count ?? 0);
@@ -59,17 +66,33 @@ export function renderEvidenceSourcesHtml(evidence, {
   const localDeepCount = Number(evidence?.local_deep_text_source_count ?? 0);
   const localScopeChips = renderCoverageScopeChips(evidence?.local_coverage_scope_counts, { className: "chip ready" });
   const indexedScopeChips = renderCoverageScopeChips(evidence?.indexed_file_coverage_scope_counts, { className: "chip muted", prefix: "indexed" });
-  const blendedCount = Number(evidence?.blended_source_count ?? (webCount + localCount + indexedCount));
-  if (!evidence || (blendedCount <= 0 && shallowCount <= 0)) return "";
-  const urls = Array.isArray(evidence.urls) ? evidence.urls.slice(0, 6) : [];
+  const sources = normalizeEvidenceSourcesForView(evidence);
+  const ledgerCount = sources.length;
+  const blendedCount = Number(evidence?.blended_source_count ?? (ledgerCount || (webCount + localCount + indexedCount)));
+  if (!evidence || (blendedCount <= 0 && shallowCount <= 0 && ledgerCount <= 0)) return "";
+  const hasSourceLedger = sources.length > 0;
+  const webSources = hasSourceLedger
+    ? sources.filter((source) => source.kind === "web")
+    : legacySources(evidence?.urls, "web");
+  const localSourcesForRows = hasSourceLedger
+    ? sources.filter((source) => (source.kind === "file" || source.kind === "image") && !SHALLOW_SOURCE_SCOPES.has(source.scope))
+    : legacySources(evidence?.local_sources, "file");
+  const indexedSourcesForRows = hasSourceLedger
+    ? sources.filter((source) => source.kind === "chunk")
+    : legacySources(evidence?.indexed_file_sources, "chunk");
+  const shallowSourcesForRows = hasSourceLedger
+    ? sources.filter((source) => source.kind === "file" && SHALLOW_SOURCE_SCOPES.has(source.scope))
+    : legacySources(evidence?.local_shallow_sources, "listed");
   const domains = Array.isArray(evidence.domains) ? evidence.domains.slice(0, 6) : [];
-  const localSources = Array.isArray(evidence.local_sources) ? evidence.local_sources.slice(0, 6) : [];
-  const indexedSources = Array.isArray(evidence.indexed_file_sources) ? evidence.indexed_file_sources.slice(0, 6) : [];
-  const shallowSources = Array.isArray(evidence.local_shallow_sources) ? evidence.local_shallow_sources.slice(0, 6) : [];
-  const moreWeb = Math.max(0, webCount - urls.length);
-  const moreLocal = Math.max(0, localCount - localSources.length);
-  const moreIndexed = Math.max(0, indexedCount - indexedSources.length);
-  const moreShallow = Math.max(0, shallowCount - shallowSources.length);
+  const missingCitations = Array.isArray(citations?.missing) ? citations.missing.filter(Boolean) : [];
+  const shownWebSources = webSources.slice(0, 6);
+  const shownLocalSources = localSourcesForRows.slice(0, 6);
+  const shownIndexedSources = indexedSourcesForRows.slice(0, 6);
+  const shownShallowSources = shallowSourcesForRows.slice(0, 6);
+  const moreWeb = Math.max(0, (hasSourceLedger ? webSources.length : webCount) - shownWebSources.length);
+  const moreLocal = Math.max(0, (hasSourceLedger ? localSourcesForRows.length : localCount) - shownLocalSources.length);
+  const moreIndexed = Math.max(0, (hasSourceLedger ? indexedSourcesForRows.length : indexedCount) - shownIndexedSources.length);
+  const moreShallow = Math.max(0, (hasSourceLedger ? shallowSourcesForRows.length : shallowCount) - shownShallowSources.length);
   return `
     <div class="${escapeHtml(className)}" data-evidence-sources>
       <div class="task-answer-label">${escapeHtml(title)}<span class="zh">${escapeHtml(zh)}</span></div>
@@ -81,56 +104,79 @@ export function renderEvidenceSourcesHtml(evidence, {
         ${indexedCount ? `<span class="chip muted">${escapeHtml(indexedCount)} indexed file</span>` : ""}
         ${shallowCount ? `<span class="chip warning">${escapeHtml(shallowCount)} listed only</span>` : ""}
         ${truncatedCount + indexedTruncatedCount ? `<span class="chip warning">${escapeHtml(truncatedCount + indexedTruncatedCount)} truncated</span>` : ""}
+        ${missingCitations.length ? `<span class="chip warning" data-citation-diagnostic="unresolved" title="${escapeHtml(missingCitations.join(", "))}">${escapeHtml(missingCitations.length)} unresolved citation${missingCitations.length === 1 ? "" : "s"}</span>` : ""}
         ${localScopeChips}
         ${indexedScopeChips}
       </div>
       ${domains.length ? `<div class="muted" style="font-size:11px;margin-bottom:6px;">Domains: ${domains.map(escapeHtml).join(", ")}</div>` : ""}
-      ${urls.length ? `
+      ${shownWebSources.length ? `
         <div class="stack" style="gap:4px;margin-top:6px;">
-          ${urls.map((url) => `
-            <div class="row" style="gap:6px;align-items:center;font-size:11.5px;">
-              <span class="tag">web</span>
-              <span class="muted" style="overflow-wrap:anywhere;min-width:0;flex:1;" title="${escapeHtml(url)}">${escapeHtml(shortEvidenceLabel(url))}</span>
-              <button class="btn btn-sm btn-ghost" type="button" data-evidence-url="${escapeHtml(url)}">Open</button>
-            </div>
-          `).join("")}
+          ${shownWebSources.map((source) => renderEvidenceSourceRow(source, { tag: "web", action: "Open", actionAttr: "data-evidence-url" })).join("")}
           ${moreWeb ? `<div class="muted" style="font-size:11px;">+${escapeHtml(moreWeb)} more web source${moreWeb === 1 ? "" : "s"}</div>` : ""}
         </div>` : ""}
-      ${localSources.length ? `
+      ${shownLocalSources.length ? `
         <div class="stack" style="gap:4px;margin-top:8px;">
-          ${localSources.map((filePath) => `
-            <div class="row" style="gap:6px;align-items:center;font-size:11.5px;">
-              <span class="tag">local</span>
-              <span class="muted" style="overflow-wrap:anywhere;min-width:0;flex:1;" title="${escapeHtml(filePath)}">${escapeHtml(shortEvidenceLabel(filePath))}</span>
-              <button class="btn btn-sm btn-ghost" type="button" data-evidence-path="${escapeHtml(filePath)}">Reveal</button>
-            </div>
-          `).join("")}
+          ${shownLocalSources.map((source) => renderEvidenceSourceRow(source, { tag: source.kind === "image" ? "image" : "local", action: "Reveal", actionAttr: "data-evidence-path" })).join("")}
           ${moreLocal ? `<div class="muted" style="font-size:11px;">+${escapeHtml(moreLocal)} more local source${moreLocal === 1 ? "" : "s"}</div>` : ""}
         </div>` : ""}
-      ${indexedSources.length ? `
+      ${shownIndexedSources.length ? `
         <div class="stack" style="gap:4px;margin-top:8px;">
-          ${indexedSources.map((filePath) => `
-            <div class="row" style="gap:6px;align-items:center;font-size:11.5px;">
-              <span class="tag">indexed</span>
-              <span class="muted" style="overflow-wrap:anywhere;min-width:0;flex:1;" title="${escapeHtml(filePath)}">${escapeHtml(shortEvidenceLabel(filePath))}</span>
-              <button class="btn btn-sm btn-ghost" type="button" data-evidence-path="${escapeHtml(filePath)}">Reveal</button>
-            </div>
-          `).join("")}
+          ${shownIndexedSources.map((source) => renderEvidenceSourceRow(source, { tag: "indexed", action: "Reveal", actionAttr: "data-evidence-path" })).join("")}
           ${moreIndexed ? `<div class="muted" style="font-size:11px;">+${escapeHtml(moreIndexed)} more indexed file source${moreIndexed === 1 ? "" : "s"}</div>` : ""}
         </div>` : ""}
-      ${shallowSources.length ? `
+      ${shownShallowSources.length ? `
         <div class="stack" style="gap:4px;margin-top:8px;">
-          ${shallowSources.map((filePath) => `
-            <div class="row" style="gap:6px;align-items:center;font-size:11.5px;">
-              <span class="tag">listed</span>
-              <span class="muted" style="overflow-wrap:anywhere;min-width:0;flex:1;" title="${escapeHtml(filePath)}">${escapeHtml(shortEvidenceLabel(filePath))}</span>
-              <button class="btn btn-sm btn-ghost" type="button" data-evidence-path="${escapeHtml(filePath)}">Reveal</button>
-            </div>
-          `).join("")}
+          ${shownShallowSources.map((source) => renderEvidenceSourceRow(source, { tag: "listed", action: "Reveal", actionAttr: "data-evidence-path" })).join("")}
           ${moreShallow ? `<div class="muted" style="font-size:11px;">+${escapeHtml(moreShallow)} more listed-only local path${moreShallow === 1 ? "" : "s"}</div>` : ""}
         </div>` : ""}
     </div>
   `;
+}
+
+function normalizeEvidenceSourcesForView(evidence) {
+  const sources = Array.isArray(evidence?.sources) ? evidence.sources : [];
+  return sources
+    .map((source) => ({
+      id: typeof source?.id === "string" ? source.id.trim() : "",
+      kind: typeof source?.kind === "string" ? source.kind.trim() : "",
+      locator: typeof source?.locator === "string" ? source.locator.trim() : "",
+      title: typeof source?.title === "string" ? source.title.trim() : "",
+      scope: typeof source?.scope === "string" ? source.scope.trim() : ""
+    }))
+    .filter((source) => source.locator);
+}
+
+function legacySources(values, kind) {
+  return Array.isArray(values)
+    ? values.filter(Boolean).map((locator) => ({ kind, locator: String(locator), title: "", id: "", scope: "" }))
+    : [];
+}
+
+function renderEvidenceSourceRow(source, { tag, action, actionAttr }) {
+  const locator = source.locator ?? "";
+  const idAttr = source.id ? ` data-source-id="${escapeHtml(source.id)}"` : "";
+  const label = source.title || shortEvidenceLabel(locator);
+  return `
+    <div class="row evidence-source-row" data-evidence-source-row${idAttr} style="gap:6px;align-items:center;font-size:11.5px;">
+      <span class="tag">${escapeHtml(tag)}</span>
+      <span class="muted" style="overflow-wrap:anywhere;min-width:0;flex:1;" title="${escapeHtml(locator)}">${escapeHtml(label)}</span>
+      <button class="btn btn-sm btn-ghost" type="button" ${actionAttr}="${escapeHtml(locator)}">${escapeHtml(action)}</button>
+    </div>
+  `;
+}
+
+export function revealEvidenceSource(container, sourceId, { flashMs = 1500 } = {}) {
+  const cleanId = typeof sourceId === "string" ? sourceId.trim() : "";
+  if (!container || !cleanId) return false;
+  const rows = container.querySelectorAll?.("[data-evidence-source-row][data-source-id]") ?? [];
+  const target = Array.from(rows).find((row) => row.getAttribute("data-source-id") === cleanId);
+  if (!target) return false;
+  target.scrollIntoView?.({ behavior: "smooth", block: "center" });
+  target.classList.remove("cite-source-row--flash");
+  void target.offsetWidth;
+  target.classList.add("cite-source-row--flash");
+  setTimeout(() => target.classList.remove("cite-source-row--flash"), flashMs);
+  return true;
 }
 
 export function renderToolCallSourcesHtml(sources = []) {

@@ -253,7 +253,7 @@ assert.ok(/data-evidence-url/.test(evidenceSourcesView) && /data-evidence-path/.
   "task detail: evidence sources must expose web open and local reveal actions");
 assert.ok(/local_shallow_source_count/.test(evidenceSourcesView) && /listed only/.test(evidenceSourcesView),
   "task detail: evidence sources must distinguish shallow file enumeration from content evidence");
-assert.ok(/indexed_file_source_count/.test(evidenceSourcesView) && />indexed</.test(evidenceSourcesView),
+assert.ok(/indexed_file_source_count/.test(evidenceSourcesView) && /tag:\s*"indexed"/.test(evidenceSourcesView),
   "task detail: evidence sources must distinguish indexed file hits from fresh local reads");
 assert.ok(/local_deep_text_source_count/.test(evidenceSourcesView) && /folder_recursive_text/.test(evidenceSourcesView),
   "task detail: evidence sources must surface deep local file coverage");
@@ -279,6 +279,15 @@ assert.ok(/\.md-table\b/.test(sharedCss) && /\.md-svg-figure\b/.test(sharedCss),
   "chat blocks: shared CSS must style rich table and SVG blocks");
 assert.ok(/cite-chip/.test(chatBlocks) && /data-source-id/.test(chatBlocks) && /\.cite-chip\b/.test(sharedCss),
   "chat blocks: source citation ids must render as shared citation chips");
+assert.ok(/revealEvidenceSource/.test(evidenceSourcesView) && /data-evidence-source-row/.test(evidenceSourcesView)
+    && /data-citation-diagnostic="unresolved"/.test(evidenceSourcesView),
+  "citations: evidence renderer must expose source rows and advisory unresolved-citation diagnostics");
+assert.ok(/revealEvidenceSource/.test(consoleJs) && /\.cite-chip\[data-source-id\]/.test(consoleJs),
+  "citations: console must reveal evidence rows when citation chips are clicked");
+assert.ok(/revealEvidenceSource/.test(overlayJs) && /\.cite-chip\[data-source-id\]/.test(overlayJs),
+  "citations: overlay must reveal evidence rows when citation chips are clicked");
+assert.ok(/cite-source-row--flash/.test(sharedCss) && /cursor:\s*pointer/.test(sharedCss),
+  "citations: citation chips and revealed source rows must have interactive styling");
 assert.ok(/id="chatSidebarProjectFilter"/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
   "chat projects: sidebar must expose a project/all conversation scope selector");
 assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),

@@ -473,5 +473,18 @@ it("lock-in: finalizers attach advisory citation diagnostics", () => {
     "agentic finalization must record unresolved citations as advisory violations");
 });
 
+it("lock-in: renderer surfaces citation diagnostics and source row anchors", () => {
+  const evidenceSourcesView = readFileSync(
+    new URL("../src/desktop/renderer/evidence-sources-view.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.match(evidenceSourcesView, /data-evidence-source-row/,
+    "evidence source rows must be addressable by citation chips");
+  assert.match(evidenceSourcesView, /data-citation-diagnostic="unresolved"/,
+    "unresolved citation diagnostics must surface as advisory UI chips");
+  assert.match(evidenceSourcesView, /function\s+revealEvidenceSource/,
+    "renderer must expose a shared citation-to-source reveal helper");
+});
+
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
 if (fail > 0) process.exit(1);

@@ -3641,8 +3641,27 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font: inherit;
   font-size: 0.86em;
   font-family: var(--font-mono);
-  cursor: default;
+  cursor: pointer;
   vertical-align: baseline;
+}
+.cite-chip:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
+}
+.cite-chip:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 2px;
+}
+.evidence-source-row {
+  border-radius: var(--radius-sm);
+  padding: 2px 3px;
+}
+.cite-source-row--flash {
+  animation: cite-source-row-flash 1.5s ease-out;
+}
+@keyframes cite-source-row-flash {
+  0% { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  100% { background: transparent; }
 }
 .capability-tool-view {
   margin-top: 4px;
