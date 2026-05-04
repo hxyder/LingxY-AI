@@ -3279,6 +3279,7 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .model-picker-choice {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-height: 30px;
   padding: 6px 9px;
   border: 1px solid transparent;
@@ -3291,10 +3292,51 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-size: var(--fs-sm);
   overflow: hidden;
 }
-.model-picker-choice span {
+.model-picker-choice-main {
+  flex: 1 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.model-picker-choice-badges {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+  max-width: 52%;
+  overflow: hidden;
+}
+.model-picker-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  white-space: nowrap;
+}
+.model-picker-badge--available {
+  border-color: color-mix(in srgb, var(--ok) 35%, var(--line));
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.model-picker-badge--default,
+.model-picker-badge--active {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--line));
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.model-picker-badge--stale {
+  border-color: color-mix(in srgb, var(--warn) 35%, var(--line));
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 .model-picker-choice:hover,
 .model-picker-choice.active {

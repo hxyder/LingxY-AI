@@ -3071,18 +3071,91 @@ function providerCanVisionFrontend(provider) {
 }
 
 function uniqueModelChoices(choices = []) {
-  const seen = new Set();
   const out = [];
+  const byId = new Map();
   for (const choice of choices) {
     const id = `${choice?.id ?? choice ?? ""}`.trim();
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push({
+    const sources = [
+      ...(Array.isArray(choice?.sources) ? choice.sources : []),
+      choice?.source
+    ].filter((source) => source && source !== "unknown");
+    const normalized = {
+      ...(choice && typeof choice === "object" ? choice : {}),
       id,
-      label: `${choice?.label ?? (id || "(CLI 自行管理)")}`.trim()
-    });
+      label: `${choice?.label ?? (id || "(CLI 自行管理)")}`.trim(),
+      source: modelChoicePrimarySource(choice?.source, sources[0]),
+      sources: [...new Set(sources)],
+      configuredDefault: Boolean(choice?.configuredDefault),
+      activeRoute: Boolean(choice?.activeRoute),
+      recommended: Boolean(choice?.recommended),
+      available: Boolean(choice?.available),
+      stale: Boolean(choice?.stale)
+    };
+    if (byId.has(id)) {
+      const existing = byId.get(id);
+      const mergedSources = [...new Set([
+        ...(existing.sources ?? []),
+        ...(normalized.sources ?? [])
+      ])];
+      const merged = {
+        ...normalized,
+        ...existing,
+        sources: mergedSources,
+        source: modelChoicePrimarySource(existing.source, normalized.source, mergedSources[0]),
+        configuredDefault: Boolean(existing.configuredDefault || normalized.configuredDefault),
+        activeRoute: Boolean(existing.activeRoute || normalized.activeRoute),
+        recommended: Boolean(existing.recommended || normalized.recommended),
+        available: Boolean(existing.available || normalized.available),
+        stale: Boolean(existing.stale || normalized.stale)
+      };
+      byId.set(id, merged);
+      out[out.findIndex((entry) => entry.id === id)] = merged;
+      continue;
+    }
+    byId.set(id, normalized);
+    out.push(normalized);
   }
   return out;
+}
+
+function curatedModelChoice(id) {
+  return {
+    id,
+    label: id,
+    source: "curated",
+    sources: ["curated"],
+    recommended: true
+  };
+}
+
+function modelChoicePrimarySource(...sources) {
+  return sources.find((source) => source && source !== "unknown") ?? "unknown";
+}
+
+function modelChoiceBadges(choice = {}) {
+  const badges = [];
+  if (choice.activeRoute) badges.push({ label: "Active", kind: "active" });
+  if (choice.configuredDefault) badges.push({ label: "Default", kind: "default" });
+  if (choice.available) badges.push({ label: "Available", kind: "available" });
+  if (choice.recommended) badges.push({ label: "Recommended", kind: "recommended" });
+  if (choice.stale) badges.push({ label: "Stale", kind: "stale" });
+  return badges;
+}
+
+function modelChoiceTitle(choice = {}) {
+  const bits = [];
+  const label = `${choice.label || choice.id || "(CLI default)"}`.trim();
+  if (label) bits.push(label);
+  if (choice.sources?.length) bits.push(`Sources: ${choice.sources.join(", ")}`);
+  const badges = modelChoiceBadges(choice).map((badge) => badge.label);
+  if (badges.length) bits.push(`Status: ${badges.join(", ")}`);
+  return bits.join(" · ");
+}
+
+function renderModelChoiceBadges(choice = {}) {
+  return modelChoiceBadges(choice).map((badge) => (
+    `<span class="model-picker-badge model-picker-badge--${escapeHtml(badge.kind)}">${escapeHtml(badge.label)}</span>`
+  )).join("");
 }
 
 function cachedModelChoicesForProvider(provider) {
@@ -3152,12 +3225,19 @@ function modelChoicesForProvider(provider, taskType = "chat") {
     }
     return uniqueModelChoices([
       ...cachedChoices,
-      ...providerModelPresets(provider, taskType).map((id) => ({ id, label: id }))
+      ...providerModelPresets(provider, taskType).map(curatedModelChoice)
     ]);
   }
 
-  if (provider.kind === "code_cli") return codeCliModelChoices(provider);
-  return providerModelPresets(provider, taskType).map((id) => ({ id, label: id }));
+  if (provider.kind === "code_cli") {
+    return uniqueModelChoices(codeCliModelChoices(provider).map((choice) => ({
+      ...choice,
+      source: "curated",
+      sources: ["curated"],
+      recommended: true
+    })));
+  }
+  return providerModelPresets(provider, taskType).map(curatedModelChoice);
 }
 
 function modeOptionsForModel(provider, model = "") {
@@ -10366,8 +10446,9 @@ async function renderConsoleModelPicker(popover, providers, selectedProviderId) 
         </label>
         <div class="model-picker-list" aria-label="Model suggestions">
           ${choices.slice(0, 16).map((choice) => `
-            <button type="button" class="model-picker-choice ${choice.id === fallbackModel ? "active" : ""}" data-model-choice="${escapeHtml(choice.id)}">
-              <span>${escapeHtml(choice.label || choice.id || "(CLI default)")}</span>
+            <button type="button" class="model-picker-choice ${choice.id === fallbackModel ? "active" : ""}" data-model-choice="${escapeHtml(choice.id)}" title="${escapeHtml(modelChoiceTitle(choice))}">
+              <span class="model-picker-choice-main">${escapeHtml(choice.label || choice.id || "(CLI default)")}</span>
+              <span class="model-picker-choice-badges">${renderModelChoiceBadges(choice)}</span>
             </button>
           `).join("") || `<div class="model-picker-empty">No published list available. Enter a model ID manually.</div>`}
         </div>

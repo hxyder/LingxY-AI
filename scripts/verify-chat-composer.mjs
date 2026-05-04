@@ -44,6 +44,8 @@ assert.match(css, /\.console-chat-attachments\s*\{/, "shared.css missing .consol
 assert.match(css, /\.console-chat-toolbar\s+\.model-chip\s*\{/, "shared.css missing toolbar model-chip rule");
 assert.match(css, /\.model-picker-popover\s*\{/, "shared.css missing conversation model picker popover");
 assert.match(css, /\.model-picker-provider\.active/, "shared.css missing active provider state for model picker");
+assert.match(css, /\.model-picker-badge--available/, "model picker must style account-available model badges");
+assert.match(css, /\.model-picker-badge--stale/, "model picker must style stale model badges");
 assert.match(css, /\.chat-msg-bubble\s+a,\s*\n\.console-chat-message-body\s+a\s*\{/, "shared.css must style clickable chat links");
 
 // User / AI / system distinction styled.
@@ -66,6 +68,9 @@ assert.match(js, /function appendConsoleChatToolCall\(/, "console.js missing app
 assert.match(js, /function renderChatAttachments\(/, "console.js missing renderChatAttachments");
 assert.match(js, /function updateChatModelChip\(/, "console.js missing updateChatModelChip");
 assert.match(js, /function renderConsoleModelPicker\(/, "console.js missing model picker renderer");
+assert.match(js, /function modelChoiceBadges\(/, "console.js must preserve provider model discovery metadata");
+assert.match(js, /renderModelChoiceBadges\(choice\)/, "model picker choices must render discovery status badges");
+assert.match(js, /configuredDefault[\s\S]{0,220}available[\s\S]{0,220}stale/, "model choices must carry default, availability, and stale flags");
 assert.match(js, /function isProviderConfiguredForConversationModel\(/, "console.js must gate conversation model picker to configured providers");
 assert.match(js, /configuredConversationModelProviders\(\)/, "conversation model chip must use configured provider availability");
 assert.match(js, /openProviderModal\(allProviders\[0\]\?\.id\)/, "unconfigured providers should route users to the provider editor");
