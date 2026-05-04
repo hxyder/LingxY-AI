@@ -140,7 +140,7 @@ export function buildKimiPrintPrompt({ taskPackage }) {
 
   return sanitizeUtf16(
     [
-      "You are running inside Universal Context Agent.",
+      "You are running inside LingxY.",
       `Task ID: ${taskPackage.task_id}`,
       `Task Type: ${taskPackage.task_type}`,
       timeBanner,

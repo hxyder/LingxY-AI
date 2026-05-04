@@ -91,7 +91,7 @@ export function finalizeAgenticPlannerRun({
     downgraded = true;
     violations = (violations ?? []).concat(contract.violations);
     const reasons = contract.violations.map((violation) => violation.message).join(" ");
-    outputText = `[UCA] 注意：未通过 SuccessContract 校验：${reasons}\n\n${outputText || ""}`;
+    outputText = `[LingxY] 注意：未通过 SuccessContract 校验：${reasons}\n\n${outputText || ""}`;
   }
 
   const synthesisViolations = waitingExternalDecision
@@ -105,7 +105,7 @@ export function finalizeAgenticPlannerRun({
     downgraded = true;
     violations = (violations ?? []).concat(synthesisViolations);
     const reason = synthesisViolations[0].message;
-    outputText = `[UCA] 注意：${reason}\n\n${outputText || ""}`;
+    outputText = `[LingxY] 注意：${reason}\n\n${outputText || ""}`;
   }
 
   const extractedEvidence = extractEvidence(validatorTranscript);
@@ -127,7 +127,7 @@ export function finalizeAgenticPlannerRun({
     downgraded = true;
     if (earlyExitState.kind === "error_budget_exhausted") {
       errorBudgetDiag = earlyExitState.error_budget;
-      outputText = `[UCA] 阶段提前结束：error_budget exhausted (${errorBudgetDiag.event} at iteration ${errorBudgetDiag.iteration}). ${errorBudgetDiag.reason}\n\n${outputText || ""}`;
+      outputText = `[LingxY] 阶段提前结束：error_budget exhausted (${errorBudgetDiag.event} at iteration ${errorBudgetDiag.iteration}). ${errorBudgetDiag.reason}\n\n${outputText || ""}`;
     } else if (earlyExitState.kind === "phase_gate_abort"
         || earlyExitState.kind === "phase_gate_escalate") {
       phaseGate = earlyExitState.phase_gate;
@@ -136,7 +136,7 @@ export function finalizeAgenticPlannerRun({
       const runbookHint = phaseGate.runbook_suggested
         ? ` Runbook recommended: ${phaseGate.runbook_suggested}.`
         : "";
-      outputText = `[UCA] 阶段提前结束：phase_gate ${kindLabel} at iteration ${phaseGate.iteration} (violations: ${violationKinds}).${runbookHint}\n\n${outputText || ""}`;
+      outputText = `[LingxY] 阶段提前结束：phase_gate ${kindLabel} at iteration ${phaseGate.iteration} (violations: ${violationKinds}).${runbookHint}\n\n${outputText || ""}`;
     }
   }
 

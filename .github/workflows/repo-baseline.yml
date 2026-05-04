@@ -22,6 +22,7 @@ jobs:
       - run: npm ci
       - run: npm run verify:github-readiness
       - run: npm run verify:dependency-hygiene
+      - run: npm run verify:public-branding
       - run: npm run verify:security-policy
       - run: npm run verify:code-of-conduct
       - run: npm run verify:issue-templates

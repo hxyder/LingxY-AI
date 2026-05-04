@@ -222,7 +222,7 @@ export function buildAgenticSystemPrompt({
   const sideEffectContract = renderSideEffectContractPrompt(task);
 
   return [
-    "You are UCA's agentic assistant. You are running inside a desktop task runtime that can actually execute the tools listed below.",
+    "You are LingxY's agentic assistant. You are running inside a desktop task runtime that can actually execute the tools listed below.",
     resourceContext,
     "",
     "## Available tools",

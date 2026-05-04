@@ -1,4 +1,4 @@
-// UCA Office task pane — chat-first UI.
+// LingxY Office task pane — chat-first UI.
 //
 // Design intent (post-redesign): act like Copilot / Claude in Office. One
 // conversation scrollback, one composer with a single scope chip, no pile of
@@ -296,7 +296,7 @@ function buildCommandWithHistory(latestCommand) {
   if (prior.length === 0) return latestCommand;
 
   const lines = prior.map((m) => {
-    const tag = m.role === "user" ? "用户" : "UCA";
+    const tag = m.role === "user" ? "用户" : "LingxY";
     // Truncate each prior turn so context doesn't explode.
     const snippet = m.text.length > 600 ? `${m.text.slice(0, 600)}…` : m.text;
     return `[${tag}] ${snippet}`;
@@ -457,7 +457,7 @@ function streamTask(taskId, assistantMsg) {
     // we stop streaming but leave the message in-place; user can open the
     // console for details.
     setTimeout(() => {
-      if (!done) finish(latestInline || "等待结果超时。打开 UCA 主控制台查看任务详情。", false);
+      if (!done) finish(latestInline || "等待结果超时。打开 LingxY 主控制台查看任务详情。", false);
     }, 180_000);
   });
 }

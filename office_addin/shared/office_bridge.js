@@ -318,7 +318,7 @@ export async function writeOfficeResult(officeApi, text, { mode = "replace_selec
   }
 
   const value = mode === "insert_with_label"
-    ? `\n\nUCA result:\n${text}`
+    ? `\n\nLingxY result:\n${text}`
     : text;
   return setSelectedDataAsync(officeApi, value, officeApi.CoercionType.Text);
 }
@@ -383,7 +383,7 @@ export async function insertWordReviewComment(commentText) {
         return { ok: true, mode: "comment" };
       }
       // Fallback: append a highlighted review block right after the selection.
-      selection.insertText(`\n[UCA 建议] ${body}`, "After");
+      selection.insertText(`\n[LingxY 建议] ${body}`, "After");
       await context.sync();
       return { ok: true, mode: "inline_marker" };
     });

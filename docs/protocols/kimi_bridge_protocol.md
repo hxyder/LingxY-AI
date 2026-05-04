@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Define the normalized contract between UCA and a code-oriented CLI executor such as Kimi Code CLI.
+Define the normalized contract between LingxY and a code-oriented CLI executor such as Kimi Code CLI.
 
 ## Transport
 
@@ -53,8 +53,8 @@ Supported event types:
 
 ## Cancellation
 
-- UCA first requests graceful shutdown
-- if the process does not exit within grace period, UCA force-kills it
+- LingxY first requests graceful shutdown
+- if the process does not exit within grace period, LingxY force-kills it
 - partial logs and artifacts must remain attached to the parent task
 
 ## Recovery Notes

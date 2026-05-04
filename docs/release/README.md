@@ -1,12 +1,12 @@
 # Release Readiness
 
-This section tracks the trial release baseline for UCA.
+This section tracks the trial release baseline for LingxY.
 
 Current positioning:
 
 - The current output is a repo-local trial kit for Windows, not a standalone signed installer
 - The preferred launch path is the desktop shell via `scripts/start-trial.ps1`
-- The generated bundle in `dist/trial/<version>/` now includes `Check UCA Desktop Trial.cmd`, `Setup UCA Desktop Trial.cmd`, plus one-click launchers for starting and stopping the desktop app from the same workspace
+- The generated bundle in `dist/trial/<version>/` now includes `Check LingxY Desktop Trial.cmd`, `Setup LingxY Desktop Trial.cmd`, plus one-click launchers for starting and stopping the desktop app from the same workspace
 - The generated bundle also includes `TRIAL_READINESS_REPORT.md` / `.json` to capture the local machine's current preflight and release validation snapshot
 - Release verification now includes a desktop smoke launch via `scripts/verify-trial-launch.mjs`, so the Electron shell startup path is part of the trial readiness baseline
 

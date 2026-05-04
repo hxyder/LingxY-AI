@@ -14,7 +14,7 @@
  *     aborts/escalates) and `error_budget` (populated when the budget
  *     exhausts).
  *   - planner result.downgraded === true on either early exit.
- *   - planner.finalText is prepended with a `[UCA] 阶段提前结束: …`
+ *   - planner.finalText is prepended with a `[LingxY] 阶段提前结束: …`
  *     diagnostic line so the user sees what happened.
  *   - onEvent receives a `phase_gate_signal` event after every tool
  *     call (parity with tool_using's emitTaskEvent).

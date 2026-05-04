@@ -17,5 +17,5 @@
 
 ## Data Notes
 
-- Runtime user data lives under `%APPDATA%\\UCA` unless overridden.
+- Runtime user data currently lives under the legacy `%APPDATA%\\UCA` namespace unless overridden. Keep this path stable until a migration plan is explicit and tested.
 - Before rollback, copy `config/`, `data/`, and `logs/` if task history or templates need to be preserved.

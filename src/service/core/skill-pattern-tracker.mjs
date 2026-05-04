@@ -2,7 +2,7 @@
  * UCA-075: Auto-classify repeated tool sequences as reusable skills.
  *
  * When the same ordered tool sequence succeeds 3+ times, this module
- * proposes saving a SKILL.md file to the UCA skills directory so the
+ * proposes saving a SKILL.md file to the LingxY skills directory so the
  * agentic executor can reference it in future tasks.
  */
 

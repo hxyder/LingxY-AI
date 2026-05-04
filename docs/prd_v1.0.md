@@ -1,8 +1,8 @@
-# UCA PRD v1.0
+# LingxY PRD v1.0
 
 ## 1. Product Summary
 
-UCA is a system-level, context-driven execution entry for desktop work. It detects or accepts user context such as clipboard text, selected files, browser selections, Office selections, links, images, and screenshots, then routes the user request into an appropriate execution path with clear task tracking.
+LingxY is a system-level, context-driven execution entry for desktop work. It detects or accepts user context such as clipboard text, selected files, browser selections, Office selections, links, images, and screenshots, then routes the user request into an appropriate execution path with clear task tracking.
 
 The product is not positioned as a chat client. Its core value is:
 
@@ -58,8 +58,8 @@ The product is not positioned as a chat client. Its core value is:
 
 ## 6. Primary User Scenarios
 
-1. A user selects files in Explorer and asks UCA to generate a report.
-2. A user selects browser text and asks UCA to summarize or translate it.
+1. A user selects files in Explorer and asks LingxY to generate a report.
+2. A user selects browser text and asks LingxY to summarize or translate it.
 3. A user opens the fixed overlay, reads clipboard text, and runs a quick explanation task.
 4. A user selects content in Word or Excel and sends it into a task flow.
 5. A user triggers a screenshot OCR flow for content that is visible but not directly selectable.

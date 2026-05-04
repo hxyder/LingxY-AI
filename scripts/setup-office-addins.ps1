@@ -144,7 +144,7 @@ try {
 
 if ($existingShare) {
   if ([string]$existingShare.Path -ne $CatalogPath) {
-    throw "SMB share '$ShareName' already exists at '$($existingShare.Path)'. Please remove or rename it before running UCA Office setup."
+    throw "SMB share '$ShareName' already exists at '$($existingShare.Path)'. Please remove or rename it before running LingxY Office setup."
   }
 } else {
   New-SmbShare -Name $ShareName -Path $CatalogPath -ChangeAccess $env:USERNAME | Out-Null

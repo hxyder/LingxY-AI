@@ -73,7 +73,7 @@ try {
         $trimmed = $block.Trim()
         if ($trimmed.Length -gt 0) { $slideBlocks += ,$trimmed }
       }
-      if ($slideBlocks.Count -eq 0) { $slideBlocks = ,"UCA generated pptx (empty)" }
+      if ($slideBlocks.Count -eq 0) { $slideBlocks = ,"LingxY generated pptx (empty)" }
 
       $contentTypes = New-Object System.Text.StringBuilder
       [void]$contentTypes.Append('<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">')

@@ -1,6 +1,6 @@
 # AI Integrations
 
-UCA has one runtime integration surface for model providers, code CLIs, MCP servers, and skills.
+LingxY has one runtime integration surface for model providers, code CLIs, MCP servers, and skills.
 
 ## Runtime Paths
 

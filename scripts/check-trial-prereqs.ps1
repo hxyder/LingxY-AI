@@ -69,7 +69,7 @@ if ($Json) {
   exit 0
 }
 
-Write-Host "UCA Desktop Trial Preflight"
+Write-Host "LingxY Desktop Trial Preflight"
 Write-Host "Workspace: $RepoRoot"
 Write-Host ""
 

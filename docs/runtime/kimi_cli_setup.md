@@ -8,13 +8,13 @@
 
 ## Expected Contract
 
-- UCA resolves Kimi from this precedence order:
+- LingxY resolves Kimi from this precedence order:
   - injected runtime in code
   - `config.runtime.json` under `ai.codeCli.kimi`
   - env vars such as `UCA_KIMI_COMMAND`
   - `kimi` found on `PATH`
-- For mock and fixture execution, UCA still supports the legacy JSONL task-package mode.
-- For the real Kimi CLI, UCA uses print mode with `--output-format stream-json`, scopes the workspace to the selected files, captures the final markdown reply, and writes `report.md` into the task output directory.
+- For mock and fixture execution, LingxY still supports the legacy JSONL task-package mode.
+- For the real Kimi CLI, LingxY uses print mode with `--output-format stream-json`, scopes the workspace to the selected files, captures the final markdown reply, and writes `report.md` into the task output directory.
 
 ## Supported Configuration
 

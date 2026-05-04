@@ -10,7 +10,7 @@ Clipboard text -> overlay -> summarize -> task history
 
 ## Steps
 
-1. Launch UCA and verify tray is running.
+1. Launch LingxY and verify tray is running.
 2. Copy a paragraph of text into the clipboard.
 3. Trigger the fixed overlay with the configured hotkey.
 4. Click "Read Clipboard".

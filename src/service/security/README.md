@@ -1,6 +1,6 @@
 # Security
 
-Security Broker and privacy controls for UCA.
+Security Broker and privacy controls for LingxY.
 
 Current scope:
 

@@ -243,7 +243,7 @@ const repoRoot = path.resolve(__dirname, "..");
   //     appends the JSON tool-call protocol at the end.
   const prompt = buildCodeCliChatPrompt({
     messages: [
-      { role: "system", content: "You are UCA. Tools: web_search_fetch / write_file / generate_document." },
+      { role: "system", content: "You are LingxY. Tools: web_search_fetch / write_file / generate_document." },
       { role: "user", content: "Tell me about AI trends" },
       {
         role: "assistant",

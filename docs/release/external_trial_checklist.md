@@ -14,9 +14,9 @@ Trial channel baseline: `0.1.0-trial.1`
 ## Install Pass
 
 1. Open the trial bundle directory.
-2. Run `Check UCA Desktop Trial.cmd`.
+2. Run `Check LingxY Desktop Trial.cmd`.
 3. Record any prerequisite failures or warnings.
-4. Run `Setup UCA Desktop Trial.cmd`.
+4. Run `Setup LingxY Desktop Trial.cmd`.
 5. Record any SmartScreen / Defender / permission prompts.
 6. Confirm the desktop shell launches.
 
@@ -30,7 +30,7 @@ Trial channel baseline: `0.1.0-trial.1`
 ## File Entry Pass
 
 1. Right-click a local file.
-2. Confirm the UCA entry appears.
+2. Confirm the LingxY entry appears.
 3. Trigger the entry.
 4. Confirm a desktop prompt / input surface appears.
 5. Enter a short instruction.
@@ -50,7 +50,7 @@ Trial channel baseline: `0.1.0-trial.1`
 1. Sideload one Office add-in manifest.
 2. Open the task pane.
 3. Select content in the document.
-4. Submit to UCA.
+4. Submit to LingxY.
 5. Record whether the selection reaches the runtime.
 
 ## Risk Capture

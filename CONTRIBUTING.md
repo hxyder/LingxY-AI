@@ -107,16 +107,16 @@ Be respectful. Disagreements are fine; personal attacks are not. We
 follow the [LingxY Code of Conduct](CODE_OF_CONDUCT.md), which is adapted
 from the spirit of the [Contributor Covenant](https://www.contributor-covenant.org/).
 
-If you experience or witness unacceptable behavior, please email the
-maintainer (see git log for current maintainer contact).
+If you experience or witness unacceptable behavior, please email
+hxy94045@gmail.com.
 
 ---
 
 ## Security
 
-Do not file public issues for security vulnerabilities. Email the maintainer
-directly with details. We will respond within a reasonable timeframe and
-coordinate disclosure.
+Do not file public issues for security vulnerabilities. Email
+hxy94045@gmail.com directly with details. We will respond within a reasonable
+timeframe and coordinate disclosure.
 
 For non-sensitive security improvements (e.g. tightening a CSP rule, fixing
 a CORS misconfiguration), a normal pull request is fine.

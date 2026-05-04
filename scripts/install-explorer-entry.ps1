@@ -14,7 +14,7 @@ $shellKey = "HKCU:\Software\Classes\*\shell\UCA.Analyze"
 $commandKey = Join-Path $shellKey "command"
 
 New-Item -Path $shellKey -Force | Out-Null
-New-ItemProperty -Path $shellKey -Name "MUIVerb" -Value "用 UCA 分析" -PropertyType String -Force | Out-Null
+New-ItemProperty -Path $shellKey -Name "MUIVerb" -Value "用 LingxY 分析" -PropertyType String -Force | Out-Null
 New-ItemProperty -Path $shellKey -Name "MultiSelectModel" -Value "Player" -PropertyType String -Force | Out-Null
 New-Item -Path $commandKey -Force | Out-Null
 New-ItemProperty -Path $commandKey -Name "(default)" -Value $command -PropertyType String -Force | Out-Null

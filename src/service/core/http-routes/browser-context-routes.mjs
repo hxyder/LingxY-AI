@@ -55,15 +55,15 @@ function buildExplainPagePayload(capturePayload, extraction) {
       const reason = extraction.reason ?? "unknown";
       let userHint;
       if (/transcript_unavailable|transcript_button_not_found/.test(reason)) {
-        userHint = "UCA 无法自动打开这个视频的「显示转录 / Show transcript」面板。你可以：\n1) 手动展开视频描述，点击「显示转录」按钮，然后重试 Ctrl+Shift+E；\n2) 或切换到 UCA「录音笔记」模式录制 2-3 分钟音频做转写。";
+        userHint = "LingxY 无法自动打开这个视频的「显示转录 / Show transcript」面板。你可以：\n1) 手动展开视频描述，点击「显示转录」按钮，然后重试 Ctrl+Shift+E；\n2) 或切换到 LingxY「录音笔记」模式录制 2-3 分钟音频做转写。";
       } else if (/transcript_panel_timeout/.test(reason)) {
         userHint = "字幕面板打开了但加载超时。请手动确认面板已出现后重试 Ctrl+Shift+E，或改用录音笔记。";
       } else if (/no_captions_available/.test(reason)) {
-        userHint = "该视频没有上传官方字幕，YouTube 也没有生成自动字幕。建议使用 UCA「录音笔记」录制视频音频再转写。";
+        userHint = "该视频没有上传官方字幕，YouTube 也没有生成自动字幕。建议使用 LingxY「录音笔记」录制视频音频再转写。";
       } else if (/http_200_empty|caption_fetch_empty/.test(reason)) {
         userHint = "YouTube 拒绝了字幕接口（PoT 反爬），DOM 抓取也没成功。手动展开描述并点一下「显示转录」后重试 Ctrl+Shift+E，或改用录音笔记。";
       } else {
-        userHint = "抓取字幕失败。可手动打开视频下方的「显示转录」面板后重试，或使用 UCA 录音笔记。";
+        userHint = "抓取字幕失败。可手动打开视频下方的「显示转录」面板后重试，或使用 LingxY 录音笔记。";
       }
       captureText = [
         `视频标题：${extraction.title ?? ""}`,

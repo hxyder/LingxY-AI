@@ -57,7 +57,7 @@ spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the maintainer. See `git log` for the current maintainer contact.
+reported to hxy94045@gmail.com.
 
 Reports should include:
 

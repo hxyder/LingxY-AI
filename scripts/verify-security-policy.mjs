@@ -25,6 +25,8 @@ assert.equal(tracked.has("SECURITY.md"), true, "SECURITY.md must be tracked");
 assert.equal(tracked.has(".github/dependabot.yml"), true, ".github/dependabot.yml must be tracked");
 
 const security = read("SECURITY.md");
+assert.match(security, /hxy94045@gmail\.com/u,
+  "SECURITY.md must include the public security contact email");
 const headings = new Set(
   security
     .split(/\r?\n/u)

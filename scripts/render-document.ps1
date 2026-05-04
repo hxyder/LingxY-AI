@@ -64,7 +64,7 @@ function Get-TextLines {
     }
   }
   if ($lines.Count -eq 0) {
-    $lines.Add("UCA generated document")
+    $lines.Add("LingxY generated document")
   }
   return $lines
 }
@@ -116,7 +116,7 @@ function Write-Pptx {
     }
   }
   if ($blocks.Count -eq 0) {
-    $blocks.Add("UCA generated presentation")
+    $blocks.Add("LingxY generated presentation")
   }
 
   $contentTypes = New-Object System.Text.StringBuilder

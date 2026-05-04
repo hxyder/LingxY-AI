@@ -7,6 +7,7 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 ## Required Before Push
 
 - Run `npm run verify:github-readiness`.
+- Run `npm run verify:public-branding`.
 - Run `npm run verify:security-policy`.
 - Review all advisory warnings from `verify:github-readiness`, especially
   root Markdown docs that would become public.
@@ -32,7 +33,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
   not tracked.
 - Confirm `.env` files and runtime config files are not tracked.
 - Review `docs/public/privacy.html` and `docs/public/terms.html` before using
-  GitHub Pages for OAuth verification.
+  GitHub Pages for OAuth verification; contact email must stay
+  `hxy94045@gmail.com`.
 
 ## Public/Open-Source License
 
@@ -59,7 +61,7 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
   path from `README.md`.
 - Check the Repo Baseline GitHub Actions run: it should execute
   `npm ci`, `verify:github-readiness`, `verify:dependency-hygiene`,
-  `verify:security-policy`, `verify:codeql-workflow`,
+  `verify:public-branding`, `verify:security-policy`, `verify:codeql-workflow`,
   `verify:structure`, `verify:doc-references`,
   `verify:local-http-surface`, and
   `verify:behavior-tests`.

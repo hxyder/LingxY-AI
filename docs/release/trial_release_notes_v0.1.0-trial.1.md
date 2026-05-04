@@ -1,8 +1,8 @@
-# UCA Trial Release Notes — 0.1.0-trial.1
+# LingxY Trial Release Notes — 0.1.0-trial.1
 
 ## Focus
 
-This trial release packages the local-first UCA runtime around `Kimi Code CLI`, native Windows entry points, browser capture, Office bridge scaffolds, template persistence, and DAG resume.
+This trial release packages the local-first LingxY runtime around `Kimi Code CLI`, native Windows entry points, browser capture, Office bridge scaffolds, template persistence, and DAG resume.
 
 ## Included Highlights
 

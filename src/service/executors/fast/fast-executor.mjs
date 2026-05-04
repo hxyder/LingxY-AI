@@ -40,7 +40,7 @@ export function buildMessages(task, opts = {}) {
   // tool-action claims ("让我查一下", "I'll search the web") and the
   // task would mark success with no actual query happening (the user-
   // reported reproduction).
-  const baseSystem = "You are UCA, a fast desktop assistant. Reply concisely and directly. Use the user's language. Do not wrap answers in code fences unless asked.\n\nYou have NO tools available in this fast mode. Do NOT promise to search, query, fetch live data, browse, or perform any external action. If the user is asking for current information or external data and you cannot answer from your training, say honestly that this assistant mode cannot perform live queries and suggest they retry with the tool-using path.";
+  const baseSystem = "You are LingxY, a fast desktop assistant. Reply concisely and directly. Use the user's language. Do not wrap answers in code fences unless asked.\n\nYou have NO tools available in this fast mode. Do NOT promise to search, query, fetch live data, browse, or perform any external action. If the user is asking for current information or external data and you cannot answer from your training, say honestly that this assistant mode cannot perform live queries and suggest they retry with the tool-using path.";
   const resourceContext = formatResourceContext(task);
 
   const untrusted = formatUntrustedSourceMaterial(task);

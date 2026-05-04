@@ -5,7 +5,7 @@ const runtime = createPersistentRuntime({
 });
 
 const listening = await runtime.start();
-console.log(`UCA runtime listening at ${listening.baseUrl}`);
+console.log(`LingxY runtime listening at ${listening.baseUrl}`);
 console.log(`Runtime directory: ${runtime.paths.baseDir}`);
 
 const shutdown = async () => {

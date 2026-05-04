@@ -6,8 +6,8 @@ issue.
 
 ## Reporting a Vulnerability
 
-Do not file public issues for vulnerabilities. Email the maintainer directly;
-see git log for the current maintainer contact.
+Do not file public issues for vulnerabilities. Email the maintainer directly at
+hxy94045@gmail.com.
 
 Please include:
 

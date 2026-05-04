@@ -83,8 +83,9 @@ async function run() {
     assert.match(baseBlock, /Current local date and time: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} \([^)]+\)/);
   });
   it("block: location line says unknown when no fix granted", () => {
-    assert.match(baseBlock, /User's location: unknown \(not yet granted\)/);
-    assert.match(baseBlock, /Do NOT guess from timezone/);
+    assert.match(baseBlock, /User's location: UNKNOWN_LOCATION/);
+    assert.match(baseBlock, /No city or coordinates are available/);
+    assert.match(baseBlock, /Do NOT infer a city from timezone/);
   });
   it("block: attached files line shows (none) when no attachments", () => {
     assert.match(baseBlock, /Attached files: \(none\)/);
@@ -235,7 +236,7 @@ async function run() {
   });
   it("fast: messages[0] is system, carries trusted resource context", () => {
     assert.equal(fastWithText[0].role, "system");
-    assert.match(fastWithText[0].content, /You are UCA, a fast desktop assistant/);
+    assert.match(fastWithText[0].content, /You are LingxY, a fast desktop assistant/);
     assert.match(fastWithText[0].content, /Resources you can use right now:/);
     assert.match(fastWithText[0].content, /Current local date and time:/);
   });

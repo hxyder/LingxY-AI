@@ -148,11 +148,10 @@ assert.equal(preload.includes("restoreTask"), true);
 assert.equal(preload.includes(IPC_CHANNELS.taskRestore), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
-// Brand renamed: UCA → LingxY. Accept either the old title (still
-// shipped in older builds) or the new LingxY title.
+// Brand renamed: UCA -> LingxY. New renderer builds must carry LingxY.
 assert.ok(
-  consoleHtml.includes("LingxY Console") || consoleHtml.includes("UCA Console"),
-  "console must carry a LingxY Console (or legacy UCA Console) title"
+  consoleHtml.includes("LingxY Console"),
+  "console must carry a LingxY Console title"
 );
 assert.equal(consoleHtml.includes("Tasks"), true);
 assert.equal(consoleHtml.includes("Settings"), true);

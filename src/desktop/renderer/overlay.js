@@ -6473,7 +6473,7 @@ ${sourceAssistRequirement}`;
     addBubble("assistant", "Processing in background...");
     if (shouldSurfaceTaskPopupCards()) {
       await window.ucaShell.notify({
-        title: "UCA processing",
+        title: "LingxY processing",
         body: "录音笔记正在整理。",
         taskId: activeTaskId
       });

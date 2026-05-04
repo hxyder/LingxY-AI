@@ -1,6 +1,6 @@
-# LingxY Desktop
+# LingxY AI Desktop
 
-LingxY is a Windows desktop AI workspace that can understand the window you are working in, choose tools, and complete tasks through your own model providers.
+LingxY AI is a Windows desktop AI workspace that can understand the window you are working in, choose tools, and complete tasks through your own model providers. The desktop app name is LingxY.
 
 It is not meant to be just another chat box. The goal is a local-first assistant for everyday knowledge work: reading pages and files, generating documents, launching apps, creating scheduled jobs, drafting emails for approval, and keeping a searchable task history on your machine.
 
@@ -304,11 +304,11 @@ Open Console from the overlay or tray, then configure:
 4. Scheduler: create recurring or one-shot tasks and check approval behavior.
 5. Skills: add reusable `SKILL.md` folders or let repeated workflows become suggested skills.
 
-Provider keys are local to your machine. Runtime provider config stores `apiKeyRef` values in `%APPDATA%\UCA\config\runtime.json`; the local Secret Store keeps the corresponding key material under the runtime data directory. OS keychain backing is still planned before a broad v1.0 release.
+Provider keys are local to your machine. Runtime provider config stores `apiKeyRef` values in `%APPDATA%\UCA\config\runtime.json`; the local Secret Store keeps the corresponding key material under the runtime data directory. `%APPDATA%\UCA\` is the current legacy runtime namespace and is intentionally kept stable until a data-directory migration is designed. OS keychain backing is still planned before a broad v1.0 release.
 
 ## Data Locations
 
-Runtime data is stored under `%APPDATA%\UCA\` by default:
+Runtime data is stored under the legacy `%APPDATA%\UCA\` namespace by default:
 
 ```text
 %APPDATA%\UCA\

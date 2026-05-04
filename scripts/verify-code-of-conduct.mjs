@@ -43,7 +43,7 @@ for (const heading of [
 
 assert.match(codeOfConduct, /Contributor Covenant version 2\.1/u,
   "CODE_OF_CONDUCT.md must retain Contributor Covenant attribution");
-assert.match(codeOfConduct, /git log/u,
-  "CODE_OF_CONDUCT.md must use the current maintainer contact convention");
+assert.match(codeOfConduct, /hxy94045@gmail\.com/u,
+  "CODE_OF_CONDUCT.md must include the public maintainer contact email");
 
 console.log("ok verify-code-of-conduct");

@@ -51,7 +51,7 @@ if (-not (Test-Path (Join-Path $RepoRoot "node_modules"))) {
 
 $kimiCommand = Get-Command kimi -ErrorAction SilentlyContinue
 
-Write-Host "UCA Desktop Trial Setup"
+Write-Host "LingxY Desktop Trial Setup"
 Write-Host "Workspace: $RepoRoot"
 Write-Host "Explorer entry: $(-not $SkipExplorerEntry)"
 Write-Host "Browser native host: $InstallBrowserNativeHost"
@@ -79,7 +79,7 @@ if (-not $SkipLaunch) {
 Write-Host ""
 Write-Host "Setup complete."
 Write-Host "Recommended next steps:"
-Write-Host "1. Right-click a file and use the UCA Explorer menu entry to test the desktop overlay."
+Write-Host "1. Right-click a file and use the LingxY Explorer menu entry to test the desktop overlay."
 if (-not $kimiCommand) {
   Write-Host "2. Install and sign in to Kimi CLI before submitting real tasks."
 } else {

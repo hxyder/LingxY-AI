@@ -58,7 +58,7 @@ function Test-ElectronShellReady {
   }
 
   $overlayWindow = Get-Process electron -ErrorAction SilentlyContinue |
-    Where-Object { $_.MainWindowTitle -eq "UCA Overlay" } |
+    Where-Object { $_.MainWindowTitle -eq "LingxY Overlay" } |
     Select-Object -First 1
 
   return ($null -ne $overlayWindow)

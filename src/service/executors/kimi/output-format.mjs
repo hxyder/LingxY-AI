@@ -225,7 +225,7 @@ function extractMarkdownTitle(text = "") {
   const heading = String(text ?? "").match(/^\s*#\s+(.+)$/m);
   if (heading?.[1]) return heading[1].trim();
   const firstLine = String(text ?? "").split(/\r?\n/).find((line) => line.trim());
-  return firstLine ? stripMarkdownSyntax(firstLine).slice(0, 80) : "UCA Result";
+  return firstLine ? stripMarkdownSyntax(firstLine).slice(0, 80) : "LingxY Result";
 }
 
 async function renderMarkdownDocumentHtml(text, { title = "" } = {}) {
@@ -398,8 +398,8 @@ function parsePptxOutlineFromText(text) {
   }
   if (current) slides.push(current);
   return {
-    title: slides[0]?.heading ?? "UCA Presentation",
-    slides: slides.length > 0 ? slides : [{ heading: "UCA Presentation", bullets: [stripMarkdownSyntax(text).slice(0, 200)] }]
+    title: slides[0]?.heading ?? "LingxY Presentation",
+    slides: slides.length > 0 ? slides : [{ heading: "LingxY Presentation", bullets: [stripMarkdownSyntax(text).slice(0, 200)] }]
   };
 }
 
@@ -415,7 +415,7 @@ function renderPptxOutlineToPlainText(outline) {
     }
     if (parts.length > 0) blocks.push(parts.join("\n"));
   }
-  return blocks.join("\n\n").trim() || "UCA generated pptx (empty).";
+  return blocks.join("\n\n").trim() || "LingxY generated pptx (empty).";
 }
 
 async function writePptxArtifact(targetPath, plainText) {
@@ -454,12 +454,12 @@ export async function writeRequestedArtifacts({
   preferredFileName = null
 }) {
   const artifacts = [];
-  const baseText = assistantText?.trim() || "UCA completed without returning content.";
+  const baseText = assistantText?.trim() || "LingxY completed without returning content.";
 
   if (requestedFormat.id === "docx") {
     const docxPath = path.join(outputDir, "result.docx");
     const previewPath = path.join(outputDir, "result-preview.txt");
-    const previewText = stripMarkdownSyntax(baseText) || "UCA completed without returning content.";
+    const previewText = stripMarkdownSyntax(baseText) || "LingxY completed without returning content.";
     await writeDocxArtifact(docxPath, previewText);
     await writeFile(previewPath, `${previewText}\n`, "utf8");
     await writeStructuredPreviewHtml({ kind: "docx", outputPath: docxPath, plainText: previewText });
@@ -491,7 +491,7 @@ export async function writeRequestedArtifacts({
   if (requestedFormat.id === "xlsx") {
     const xlsxPath = path.join(outputDir, "result.xlsx");
     const previewPath = path.join(outputDir, "result-preview.txt");
-    const previewText = stripMarkdownSyntax(baseText) || "UCA completed without returning content.";
+    const previewText = stripMarkdownSyntax(baseText) || "LingxY completed without returning content.";
     await writeXlsxArtifact(xlsxPath, previewText);
     await writeFile(previewPath, `${previewText}\n`, "utf8");
     await writeStructuredPreviewHtml({ kind: "xlsx", outputPath: xlsxPath, plainText: previewText });

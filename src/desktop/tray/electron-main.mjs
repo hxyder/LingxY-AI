@@ -113,7 +113,7 @@ async function appendDesktopDiagnosticError(kind, error, metadata = {}) {
       "utf8"
     );
   } catch (err) {
-    safeWarn("[UCA] failed to write desktop diagnostic error:", err?.message ?? err);
+    safeWarn("[LingxY] failed to write desktop diagnostic error:", err?.message ?? err);
   }
 }
 
@@ -864,7 +864,7 @@ export function createElectronShellRuntime({
       await mkdir(path.dirname(settingsPath), { recursive: true });
       await writeFile(settingsPath, JSON.stringify(settingsCache ?? {}, null, 2), "utf8");
     } catch (err) {
-      safeError("[UCA] failed to persist settings:", err?.message ?? err);
+      safeError("[LingxY] failed to persist settings:", err?.message ?? err);
     }
   }
   async function updateSettings(patch) {
@@ -1232,7 +1232,7 @@ export function createElectronShellRuntime({
         });
       }
     } catch (err) {
-      safeWarn("[UCA] batched popup-card flush failed:", err?.message ?? err);
+      safeWarn("[LingxY] batched popup-card flush failed:", err?.message ?? err);
     }
   }
 
@@ -1291,7 +1291,7 @@ export function createElectronShellRuntime({
         queueBatchedNotification(payload);
         return { shown: true, delivery: "popup_card_batched" };
       } catch (err) {
-        safeWarn("[UCA] popup-card notify failed, falling back:", err?.message ?? err);
+        safeWarn("[LingxY] popup-card notify failed, falling back:", err?.message ?? err);
       }
     }
 
@@ -1719,7 +1719,7 @@ export function createElectronShellRuntime({
       // UCA-050: surface renderer load failures so they're not silent
       browserWindow.webContents.on("did-fail-load", (_event, errorCode, errorDescription) => {
         if (errorCode !== -3) { // -3 = ERR_ABORTED (normal on hide/navigate)
-          safeError(`[UCA] Window "${windowDef.id}" failed to load: ${errorDescription} (${errorCode})`);
+          safeError(`[LingxY] Window "${windowDef.id}" failed to load: ${errorDescription} (${errorCode})`);
         }
       });
       browserWindow.loadURL(buildWindowUrl(windowDef, resolvedServiceBaseUrl));
@@ -1732,7 +1732,7 @@ export function createElectronShellRuntime({
     if (!dock || dock.isDestroyed?.()) return;
     const nextBounds = enforceDockWindowInvariants(dock);
     if (nextBounds) {
-      safeWarn(`[UCA] repaired dock HUD bounds after ${reason}`);
+      safeWarn(`[LingxY] repaired dock HUD bounds after ${reason}`);
       persistWindowPreferences(DOCK_WINDOW_ID, { bounds: nextBounds });
     }
   }
@@ -1951,7 +1951,7 @@ export function createElectronShellRuntime({
                 file_paths: [screenshotPath]
               });
             } else {
-              safeError("[UCA] capture-screenshot: PowerShell returned ok=false", result);
+              safeError("[LingxY] capture-screenshot: PowerShell returned ok=false", result);
               showWindow("overlay");
               enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
                 targetWindow: "overlay",
@@ -1964,7 +1964,7 @@ export function createElectronShellRuntime({
               bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
             }
           }).catch((err) => {
-            safeError("[UCA] capture-screenshot: PowerShell failed", err?.message ?? err);
+            safeError("[LingxY] capture-screenshot: PowerShell failed", err?.message ?? err);
             showWindow("overlay");
             enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, {
               targetWindow: "overlay",
@@ -1987,7 +1987,7 @@ export function createElectronShellRuntime({
         }
       });
       if (!registered) {
-        safeError(`[UCA] Failed to register shortcut ${shortcut.id} (${shortcut.accelerator}). It may be used by another app.`);
+        safeError(`[LingxY] Failed to register shortcut ${shortcut.id} (${shortcut.accelerator}). It may be used by another app.`);
       }
     }
   }
@@ -2275,7 +2275,7 @@ export function createElectronShellRuntime({
                   });
                 }
               } catch (err) {
-                safeWarn("[UCA] clear-user-keywords failed:", err?.message ?? err);
+                safeWarn("[LingxY] clear-user-keywords failed:", err?.message ?? err);
               }
             }
           },
@@ -2370,7 +2370,7 @@ export function createElectronShellRuntime({
             enqueueWindowMessage("echo-bubble", "uca:echo-bubble-show", payload);
           }
         } catch (err) {
-          safeWarn("[UCA] echo-bubble-show failed:", err?.message ?? err);
+          safeWarn("[LingxY] echo-bubble-show failed:", err?.message ?? err);
         }
         return { accepted: true };
       });
@@ -2401,13 +2401,13 @@ export function createElectronShellRuntime({
                   actor,
                   action
                 )
-              }).catch((err) => safeWarn("[UCA] approval resolve failed:", err?.message ?? err));
+              }).catch((err) => safeWarn("[LingxY] approval resolve failed:", err?.message ?? err));
             }
             if (card.action === "open_overlay") {
               showWindow("overlay");
             }
           } catch (err) {
-            safeWarn("[UCA] popup-card onResolve failed:", err?.message ?? err);
+            safeWarn("[LingxY] popup-card onResolve failed:", err?.message ?? err);
           }
           // Broadcast the resolution so the overlay (which may be showing an
           // inline twin of the same approval) can mark its copy as handled.
@@ -2431,7 +2431,7 @@ export function createElectronShellRuntime({
               });
             }
           } catch (err) {
-            safeWarn("[UCA] popup-card resolved-broadcast failed:", err?.message ?? err);
+            safeWarn("[LingxY] popup-card resolved-broadcast failed:", err?.message ?? err);
           }
         }
       });

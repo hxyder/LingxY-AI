@@ -1,6 +1,6 @@
 # Action Tools
 
-Action tools are the controlled OS-facing capability layer for UCA.
+Action tools are the controlled OS-facing capability layer for LingxY.
 
 Current scope:
 

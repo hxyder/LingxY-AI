@@ -21,5 +21,5 @@
 
 - Run `scripts/install-explorer-entry.ps1`
 - The script publishes `UcaExplorerSelectionHelper` under `%LOCALAPPDATA%/UCA/helper/explorer-selection`
-- Explorer right-click currently registers under `HKCU\Software\Classes\*\shell\UCA.Analyze`
+- Explorer right-click currently uses the legacy registry key `HKCU\Software\Classes\*\shell\UCA.Analyze`, while the visible menu label is LingxY.
 - Right-click now targets the desktop overlay prompt instead of direct CLI submission

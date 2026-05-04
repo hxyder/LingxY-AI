@@ -46,7 +46,7 @@ assert.equal(overlayJs.includes("parseScheduleTriggerFromText"), true);
 assert.equal(overlayJs.includes("onWindowFocused"), true);
 assert.equal(overlayJs.includes("ucaShell.notify"), true);
 assert.equal(overlayJs.includes("selectedFormatInstruction"), true);
-assert.equal(overlayJs.includes("UCA processing"), true);
+assert.equal(overlayJs.includes("LingxY processing"), true);
 assert.equal(overlayJs.includes("pendingCapture"), true);
 assert.equal(overlayJs.includes("applyShellHandoff"), true);
 assert.equal(overlayJs.includes("subscribeTaskEvents"), true);

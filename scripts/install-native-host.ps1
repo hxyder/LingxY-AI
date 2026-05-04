@@ -47,7 +47,7 @@ New-Item -Path $manifestDir -ItemType Directory -Force | Out-Null
 
 $manifest = @{
   name = "com.uca.host"
-  description = "UCA Native Messaging Host"
+  description = "LingxY Native Messaging Host"
   path = $exePath
   type = "stdio"
   allowed_origins = $origins

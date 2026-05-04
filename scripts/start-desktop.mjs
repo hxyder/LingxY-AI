@@ -41,7 +41,7 @@ if (!(await isRuntimeReady())) {
   runtimeChild.on("exit", (code, signal) => {
     runtimeChild = null;
     if (code && code !== 0) {
-      console.error(`UCA runtime exited before desktop shutdown (code ${code}${signal ? `, signal ${signal}` : ""}).`);
+      console.error(`LingxY runtime exited before desktop shutdown (code ${code}${signal ? `, signal ${signal}` : ""}).`);
     }
   });
   // Start Electron immediately instead of blocking the desktop shell on the
@@ -49,10 +49,10 @@ if (!(await isRuntimeReady())) {
   // so this restores the fast "window appears first, service catches up" feel.
   waitForRuntime().then((ready) => {
     if (!ready) {
-      console.error(`UCA runtime did not become ready at ${serviceBaseUrl}`);
+      console.error(`LingxY runtime did not become ready at ${serviceBaseUrl}`);
     }
   }).catch((error) => {
-    console.error(`UCA runtime readiness check failed: ${error.message}`);
+    console.error(`LingxY runtime readiness check failed: ${error.message}`);
   });
 }
 

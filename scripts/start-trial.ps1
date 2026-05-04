@@ -150,7 +150,7 @@ if ($LaunchShell) {
   }
 }
 
-Write-Host "UCA started."
+Write-Host "LingxY started."
 Write-Host "Runtime: $RuntimeUrl"
 Write-Host "Runtime out log: $RuntimeLog"
 Write-Host "Runtime err log: $RuntimeErrorLog"

@@ -1,6 +1,6 @@
 # Kimi Code CLI Adapter
 
-This directory now contains the runtime-side Kimi CLI adapter logic used by UCA.
+This directory now contains the runtime-side Kimi CLI adapter logic used by LingxY.
 
 Current responsibilities:
 

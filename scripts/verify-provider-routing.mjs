@@ -282,7 +282,7 @@ await writeConfig({
   assert.equal(adapter.kind, "anthropic");
   const result = await adapter.generate({
     messages: [
-      { role: "system", content: "You are UCA." },
+      { role: "system", content: "You are LingxY." },
       { role: "user", content: "say hello" }
     ],
     fetchImpl: fakeFetch
@@ -290,7 +290,7 @@ await writeConfig({
   assert.equal(capturedUrl, "https://api.anthropic.com/v1/messages");
   assert.equal(capturedApiKeyHeader, "sk-ant-test");
   assert.equal(capturedBody.model, "claude-sonnet-4-6");
-  assert.equal(capturedBody.system, "You are UCA.");
+  assert.equal(capturedBody.system, "You are LingxY.");
   assert.equal(capturedBody.messages[0].content, "say hello");
   assert.equal(result.text, "hello from claude");
 }
