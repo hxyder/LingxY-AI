@@ -9,6 +9,9 @@ import {
   formatTaskEventSummary
 } from "../../src/desktop/renderer/task-event-stream.js";
 import {
+  renderTimelineEntry
+} from "../../src/desktop/renderer/console-task-timeline.mjs";
+import {
   renderEvidenceSourcesHtml
 } from "../../src/desktop/renderer/evidence-sources-view.mjs";
 
@@ -17,6 +20,32 @@ test("renderer tool display names hide implementation ids for local file tools",
   assert.equal(formatToolDisplayName("read_folder_text"), "读取文件夹原文");
   assert.equal(formatToolDisplayName("search_file_content"), "检索文件索引");
   assert.equal(formatToolArgsPreview("read_file_text", { path: "E:/linxi/docs/resume.md" }), "E:/linxi/docs/resume.md");
+});
+
+test("renderer tool display names capability tools and keeps timeline args compact", () => {
+  assert.equal(formatToolDisplayName("draft_capability"), "起草能力");
+  assert.equal(formatToolDisplayName("save_capability_draft"), "保存能力草稿");
+  assert.equal(
+    formatToolArgsPreview("draft_capability", { kind: "skill", name: "Inbox Helper" }),
+    "skill · Inbox Helper"
+  );
+
+  const html = renderTimelineEntry({
+    event: "tool_call_proposed",
+    ts: "2026-05-04T00:00:00.000Z",
+    data: {
+      tool_id: "save_capability_draft",
+      args: {
+        draft: {
+          kind: "skill",
+          name: "Inbox Helper",
+          entry: { markdown: "# Inbox Helper\n\ndescription: very long markdown should not be dumped raw" }
+        }
+      }
+    }
+  });
+  assert.match(html, /skill · Inbox Helper/);
+  assert.doesNotMatch(html, /very long markdown should not be dumped raw/);
 });
 
 test("task event summaries render user-facing tool labels and local-read guidance", () => {

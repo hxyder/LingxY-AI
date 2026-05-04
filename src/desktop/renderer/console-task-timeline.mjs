@@ -5,6 +5,9 @@ import {
   escapeHtml,
   formatDateTime
 } from "./shared-ui.mjs";
+import {
+  formatToolArgsPreview
+} from "./tool-display.mjs";
 
 // Pull provider visibility info out of the task event stream so the
 // task detail panel can show the resolved provider and downgrade warning
@@ -93,8 +96,14 @@ export function renderTimelineEntry(event, context = {}) {
 
   const detailLines = [];
   if (hasToolArgs) {
-    const argsJson = escapeHtml(JSON.stringify(payload.args, null, 2));
-    detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">args</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:auto;">${argsJson}</pre>`);
+    const toolId = payload.tool_id ?? payload.tool ?? "";
+    const preview = formatToolArgsPreview(toolId, payload.args);
+    if (preview) {
+      detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">args</div><div class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(preview)}</div>`);
+    } else {
+      const argsJson = escapeHtml(JSON.stringify(payload.args, null, 2));
+      detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">args</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:auto;">${argsJson}</pre>`);
+    }
   }
   if (hasObservation) {
     const raw = typeof payload.observation === "string" ? payload.observation

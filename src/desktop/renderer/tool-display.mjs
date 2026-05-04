@@ -24,7 +24,9 @@ export const TOOL_DISPLAY_LABELS = Object.freeze({
   account_send_email: "发送邮件",
   account_upload_file: "上传文件",
   account_list_emails: "读取邮件",
-  account_list_files: "读取文件"
+  account_list_files: "读取文件",
+  draft_capability: "起草能力",
+  save_capability_draft: "保存能力草稿"
 });
 
 export function compactToolText(value = "", max = 96) {
@@ -80,6 +82,19 @@ export function formatToolArgsPreview(toolName = "", args = {}) {
   }
   if (toolName === "launch_app") return value.app ? compactToolText(value.app, 80) : "";
   if (toolName === "open_url") return value.url ? compactToolText(value.url, 92) : "";
+  if (toolName === "draft_capability") {
+    const kind = value.kind ?? value.state?.kind ?? "capability";
+    const name = value.name ?? value.state?.name ?? "";
+    if (value.answer?.field) return compactToolText(`${kind} · answer ${value.answer.field}`, 92);
+    return compactToolText(`${kind}${name ? ` · ${name}` : ""}`, 92);
+  }
+  if (toolName === "save_capability_draft") {
+    const draft = value.draft && typeof value.draft === "object" ? value.draft : {};
+    const state = value.state && typeof value.state === "object" ? value.state : {};
+    const kind = draft.kind ?? state.kind ?? "capability";
+    const name = draft.name ?? state.name ?? "";
+    return compactToolText(`${kind}${name ? ` · ${name}` : ""}`, 92);
+  }
   const raw = typeof args === "string"
     ? args
     : (args == null ? "" : JSON.stringify(args, null, 0));
