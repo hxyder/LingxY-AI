@@ -1,4 +1,5 @@
 import { detectUnbackedActionClaims } from "../../core/policy/success-contract-validator.mjs";
+import { isFileTextCoverageScope } from "../../core/file-evidence-coverage.mjs";
 
 /**
  * Truthfulness guard for connector-write hallucinations. Delegates to the
@@ -20,6 +21,11 @@ function hasSuccessfulLocalRead(transcript = []) {
     entry?.type === "tool_result"
     && entry.success === true
     && LOCAL_FILE_READ_TOOLS.has(entry.tool)
+    && (
+      entry.tool === "vision_analyze"
+      || !entry.metadata?.coverage_scope
+      || isFileTextCoverageScope(entry.metadata.coverage_scope)
+    )
   );
 }
 

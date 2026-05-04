@@ -6,6 +6,7 @@ import {
   detectUnbackedConnectorClaim,
   detectUnbackedLocalFileClaim
 } from "../../src/service/executors/tool_using/truthfulness-guard.mjs";
+import { FILE_EVIDENCE_COVERAGE } from "../../src/service/core/file-evidence-coverage.mjs";
 
 test("agent truthfulness guard detects connector write claims without tool evidence", () => {
   const violation = detectUnbackedConnectorClaim({
@@ -69,4 +70,28 @@ test("agent truthfulness guard allows local-file claims after read_file_text", (
   });
 
   assert.equal(violation, null);
+});
+
+test("agent truthfulness guard rejects shallow file enumeration as content evidence", () => {
+  const violation = detectUnbackedLocalFileClaim({
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "read_file_text",
+        success: true,
+        observation: "Found files",
+        metadata: {
+          coverage_scope: FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW,
+          content_extracted: false
+        }
+      }
+    ],
+    final_text: "我已经分析了你的文件夹，下面是总结。"
+  }, {
+    context_packet: {
+      file_paths: ["C:\\Users\\demo\\project"]
+    }
+  });
+
+  assert.equal(violation?.kind, "local_file_read_claim_unsupported");
 });

@@ -7,6 +7,7 @@ import path from "node:path";
 import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../../src/service/action_tools/tools/index.mjs";
 import { filterToolsForTask } from "../../src/service/executors/tool_using/tool-surface.mjs";
+import { FILE_EVIDENCE_COVERAGE } from "../../src/service/core/file-evidence-coverage.mjs";
 
 test("read_file_text extracts text from an attached local file", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "uca-read-file-text-"));
@@ -21,6 +22,9 @@ test("read_file_text extracts text from an attached local file", async () => {
     assert.match(result.observation, /Productivity tooling/);
     assert.equal(result.metadata.tool_id, "read_file_text");
     assert.equal(result.metadata.truncated, false);
+    assert.equal(result.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT);
+    assert.equal(result.metadata.content_extracted, true);
+    assert.equal(result.metadata.recursive, false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -61,6 +65,9 @@ test("read_folder_text recursively extracts bounded text from a folder", async (
     assert.equal(result.metadata.tool_id, "read_folder_text");
     assert.equal(result.metadata.files_read, 2);
     assert.equal(result.metadata.truncated, false);
+    assert.equal(result.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT);
+    assert.equal(result.metadata.content_extracted, true);
+    assert.equal(result.metadata.recursive, true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -82,9 +89,32 @@ test("read_file_text delegates directory paths to recursive folder extraction", 
 
     assert.equal(result.success, true);
     assert.equal(result.metadata.tool_id, "read_folder_text");
+    assert.equal(result.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT);
     assert.match(result.observation, /Root folder brief/);
     assert.match(result.observation, /Nested implementation details/);
     assert.equal(result.metadata.files_read, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("file enumeration tools mark shallow coverage without claiming content extraction", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "uca-file-coverage-"));
+  try {
+    await writeFile(path.join(dir, "one.md"), "One", "utf8");
+    const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+
+    const listed = await registry.call("list_files", { dir, limit: 5 });
+    assert.equal(listed.success, true);
+    assert.equal(listed.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW);
+    assert.equal(listed.metadata.content_extracted, false);
+    assert.equal(listed.metadata.recursive, false);
+
+    const globbed = await registry.call("glob_files", { pattern: path.join(dir, "**", "*.md") });
+    assert.equal(globbed.success, true);
+    assert.equal(globbed.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.FILE_ENUMERATION_RECURSIVE);
+    assert.equal(globbed.metadata.content_extracted, false);
+    assert.equal(globbed.metadata.recursive, true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

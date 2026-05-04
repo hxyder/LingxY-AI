@@ -18,6 +18,7 @@ import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
 import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
 import { buildSideEffectContract } from "../../core/policy/side-effect-contracts.mjs";
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
+import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -2436,13 +2437,26 @@ export const LIST_FILES_TOOL = {
         observation: files.length > 0
           ? `Found ${files.length} file(s) in ${dir}:\n${files.join("\n")}`
           : `No files found in ${dir}${args.pattern ? ` matching "${args.pattern}"` : ""}`,
-        metadata: { tool_id: "list_files", dir, files }
+        metadata: {
+          tool_id: "list_files",
+          dir,
+          files,
+          coverage_scope: FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW,
+          content_extracted: false,
+          recursive: false
+        }
       });
     } catch (error) {
       return createActionResult({
         success: false,
         observation: `list_files failed: ${error.message}`,
-        metadata: { tool_id: "list_files", dir }
+        metadata: {
+          tool_id: "list_files",
+          dir,
+          coverage_scope: FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW,
+          content_extracted: false,
+          recursive: false
+        }
       });
     }
   }
@@ -2492,7 +2506,14 @@ export const GLOB_FILES_TOOL = {
         observation: files.length > 0
           ? `Found ${files.length} file(s) matching "${args.pattern}":\n${files.join("\n")}`
           : `No files found matching "${args.pattern}"`,
-        metadata: { tool_id: "glob_files", pattern, files }
+        metadata: {
+          tool_id: "glob_files",
+          pattern,
+          files,
+          coverage_scope: FILE_EVIDENCE_COVERAGE.FILE_ENUMERATION_RECURSIVE,
+          content_extracted: false,
+          recursive: true
+        }
       });
     } catch (error) {
       return createActionResult({
@@ -2631,14 +2652,24 @@ export const STAT_FILE_TOOL = {
           path: filePath,
           size: info.size,
           mtime: info.mtime.toISOString(),
-          isFile: info.isFile()
+          isFile: info.isFile(),
+          coverage_scope: FILE_EVIDENCE_COVERAGE.FILE_METADATA,
+          content_extracted: false,
+          recursive: false
         }
       });
     } catch (error) {
       return createActionResult({
         success: false,
         observation: error.code === "ENOENT" ? `File not found: ${filePath}` : `stat_file failed: ${error.message}`,
-        metadata: { tool_id: "stat_file", path: filePath, exists: false }
+        metadata: {
+          tool_id: "stat_file",
+          path: filePath,
+          exists: false,
+          coverage_scope: FILE_EVIDENCE_COVERAGE.FILE_METADATA,
+          content_extracted: false,
+          recursive: false
+        }
       });
     }
   }
@@ -2687,7 +2718,10 @@ export const READ_FILE_TEXT_TOOL = {
           extraction_mode: extracted.extraction_mode ?? null,
           chars_extracted: clipped.length,
           chars_total: text.length,
-          truncated
+          truncated,
+          coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+          content_extracted: true,
+          recursive: false
         }
       });
     } catch (error) {
@@ -2851,6 +2885,9 @@ export const READ_FOLDER_TEXT_TOOL = {
           files_read: successful.length,
           chars_extracted: totalChars,
           truncated: stoppedByBudget || records.some((record) => record.truncated),
+          coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+          content_extracted: true,
+          recursive: true,
           files: records.map((record) => ({
             path: record.path,
             success: record.success,
