@@ -196,6 +196,19 @@ assert.ok(/function\s+getConsoleChatSubmitProjectId/.test(consoleJs) && /project
   "chat projects: /task submit must carry structured project_id when scoped");
 assert.ok(/function\s+renderConsoleChatEmptyState/.test(consoleJs) && !/consoleChatMessages\.innerHTML\s*=\s*`<div class="console-chat-empty">没有对话/.test(consoleJs),
   "chat empty: New chat must use the rich empty-state renderer instead of plain text");
+assert.ok(/function\s+currentOverlayProjectIdForSubmission/.test(overlayJs) && /function\s+attachOverlayProjectScope/.test(overlayJs),
+  "overlay projects: overlay task submissions must use a shared project-scope helper");
+assert.ok(/project_id:\s*projectId/.test(overlayJs) && /selectionMetadata:\s*\{[\s\S]{0,140}project_id:\s*projectId/.test(overlayJs),
+  "overlay projects: task payloads must include project_id and selectionMetadata.project_id");
+assert.ok(/selection_metadata:\s*\{[\s\S]{0,140}project_id:\s*projectId/.test(overlayJs),
+  "overlay projects: contextPacket.selection_metadata must carry project_id");
+assert.ok(/const\s+taskBody\s*=\s*attachOverlayProjectScope\(\{\s*[\s\S]{0,180}\.\.\.payload/.test(overlayJs)
+    && /body:\s*JSON\.stringify\(taskBody\)/.test(overlayJs),
+  "overlay projects: main /task submission must wrap the request body with project scope");
+assert.ok(/const\s+clarifyPayload\s*=\s*attachOverlayProjectScope\(\{/.test(overlayJs),
+  "overlay projects: /task/clarify submissions must preserve project scope");
+assert.ok(/const\s+taskBody\s*=\s*attachOverlayProjectScope\(payload\)/.test(overlayJs),
+  "overlay projects: note transcription task submission must preserve project scope");
 assert.ok(/refreshProjectConversationSummaries/.test(consoleJs) && /fetchConversationsList\(\{\s*limit:\s*200,\s*archived:\s*["']0["'],\s*projectId\s*\}/.test(consoleJs),
   "projects: project tab must read SQL conversation summaries by project_id");
 assert.ok(/legacyProjectConversations/.test(consoleJs) && /projectStore\.conversations|store\.conversations/.test(consoleJs),

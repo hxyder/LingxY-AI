@@ -541,6 +541,37 @@ function ensureConversation(seedCapture = null, seedCommand = null) {
   return conversationState;
 }
 
+function currentOverlayProjectIdForSubmission() {
+  if (!projectStore) loadProjectStore();
+  return conversationState?.projectId
+    ?? projectStore?.currentProjectId
+    ?? DEFAULT_PROJECT_ID
+    ?? null;
+}
+
+function attachOverlayProjectScope(payload = {}) {
+  const projectId = currentOverlayProjectIdForSubmission();
+  if (!projectId) return payload;
+  const next = {
+    ...payload,
+    project_id: projectId,
+    selectionMetadata: {
+      ...(payload.selectionMetadata ?? {}),
+      project_id: projectId
+    }
+  };
+  if (next.contextPacket && typeof next.contextPacket === "object") {
+    next.contextPacket = {
+      ...next.contextPacket,
+      selection_metadata: {
+        ...(next.contextPacket.selection_metadata ?? {}),
+        project_id: projectId
+      }
+    };
+  }
+  return next;
+}
+
 function appendTurn(role, content, opts = {}) {
   if (!content || typeof content !== "string") return null;
   ensureConversation();
@@ -1681,13 +1712,13 @@ function showClarificationBubble(originalCommand, question, originalPayload) {
     const answerClientMessageId = createClientMessageId();
     markPendingUserMessage(answerClientMessageId, answer);
     try {
-      const clarifyPayload = {
+      const clarifyPayload = attachOverlayProjectScope({
         ...originalPayload,
         originalCommand,
         clarificationAnswer: answer,
         conversation_id: conversationState?.id ?? originalPayload?.conversation_id ?? null,
         client_message_id: answerClientMessageId
-      };
+      });
       delete clarifyPayload.userCommand;
       const result = await fetchJson("/task/clarify", {
         method: "POST",
@@ -3720,16 +3751,17 @@ async function submitTask() {
 
     let result;
     try {
+      const taskBody = attachOverlayProjectScope({
+        ...payload,
+        background: true,
+        parent_task_id: parentTaskId,
+        conversation_id: conversationState?.id ?? null,
+        client_message_id: clientMessageId
+      });
       result = await fetchJson("/task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...payload,
-          background: true,
-          parent_task_id: parentTaskId,
-          conversation_id: conversationState?.id ?? null,
-          client_message_id: clientMessageId
-        })
+        body: JSON.stringify(taskBody)
       });
     } catch (err) {
       markPendingMessageFailed(clientMessageId, err);
@@ -6409,14 +6441,15 @@ ${sourceAssistRequirement}`;
   };
 
   try {
+    const taskBody = attachOverlayProjectScope(payload);
     const result = await fetchJson("/task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(taskBody)
     });
 
     if (result.type === "clarification_needed") {
-      showClarificationBubble(userVisibleCommand, result.question, payload);
+      showClarificationBubble(userVisibleCommand, result.question, taskBody);
       return;
     }
 
