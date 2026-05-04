@@ -117,3 +117,86 @@ test("capability checklist treats ready MCP servers and CLI adapters as capabili
   assert.equal(byId.get("skills")?.status, "ready");
   assert.equal(byId.get("approval-policy")?.status, "ready");
 });
+
+test("capability checklist surfaces MCP missing_config as action_needed and names the missing refs", () => {
+  const items = buildCapabilityChecklist({
+    workspace: {
+      providers: [{ id: "openai-main", configured: true, available: true }],
+      codeCliAdapters: [],
+      mcpServers: [
+        {
+          id: "mcp-brave-search",
+          enabled: true,
+          available: false,
+          detail: "missing_config",
+          missingEnv: [
+            { envKey: "BRAVE_API_KEY", type: "env", name: "BRAVE_API_KEY" }
+          ]
+        }
+      ],
+      skills: [],
+      skillRegistries: [],
+      onboarding: { pendingSuggestions: [] }
+    }
+  });
+  const byId = new Map(items.map((entry) => [entry.id, entry]));
+
+  const web = byId.get("web-research");
+  assert.equal(web?.status, "action_needed");
+  // Detail must name the env reference, never echo a value.
+  assert.match(web?.detail ?? "", /BRAVE_API_KEY/);
+  assert.doesNotMatch(web?.detail ?? "", /value|secret/i);
+});
+
+test("capability checklist missing_config wins over a pending suggestion (action_needed > recommended)", () => {
+  const items = buildCapabilityChecklist({
+    workspace: {
+      providers: [{ id: "openai-main", configured: true, available: true }],
+      codeCliAdapters: [],
+      mcpServers: [
+        {
+          id: "mcp-filesystem",
+          enabled: true,
+          available: false,
+          detail: "missing_config",
+          missingEnv: [
+            { envKey: "FS_ROOTS", type: "env", name: "FS_ROOTS" }
+          ]
+        }
+      ],
+      skills: [],
+      skillRegistries: [],
+      onboarding: {
+        pendingSuggestions: [{
+          id: "provider:openai-main:mcp:enable-mcp-filesystem",
+          status: "pending",
+          priority: "recommended",
+          action: { type: "enable_builtin_mcp", serverId: "mcp-filesystem" }
+        }]
+      }
+    }
+  });
+  const byId = new Map(items.map((entry) => [entry.id, entry]));
+
+  const local = byId.get("local-files");
+  assert.equal(local?.status, "action_needed");
+  assert.match(local?.detail ?? "", /FS_ROOTS/);
+});
+
+test("capability checklist falls through to suggestion fallback when missingEnv is empty", () => {
+  const items = buildCapabilityChecklist({
+    workspace: {
+      providers: [{ id: "openai-main", configured: true, available: true }],
+      codeCliAdapters: [],
+      // disabled server, no missing_config — should remain suggestion/fallback driven
+      mcpServers: [{ id: "mcp-memory", enabled: false, available: false, detail: "disabled" }],
+      skills: [],
+      skillRegistries: [],
+      onboarding: { pendingSuggestions: [] }
+    }
+  });
+  const byId = new Map(items.map((entry) => [entry.id, entry]));
+
+  const memory = byId.get("memory");
+  assert.equal(memory?.status, "optional");
+});

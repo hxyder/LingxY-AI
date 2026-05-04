@@ -37,6 +37,10 @@ import {
   getMcpSourceView
 } from "./mcp-source-view.mjs";
 import {
+  describeMcpMissingConfig,
+  isMcpMissingConfig
+} from "./mcp-missing-config.mjs";
+import {
   buildCapabilityChecklist,
   capabilityChecklistSummary
 } from "./capability-checklist.mjs";
@@ -2880,18 +2884,26 @@ function renderMcpServers() {
     renderEmpty(mcpServerList, "No MCP servers configured.");
     return;
   }
-  mcpServerList.innerHTML = servers.map((server) => `
+  mcpServerList.innerHTML = servers.map((server) => {
+    const statusView = getMcpStatusView(server);
+    const missingConfig = describeMcpMissingConfig(server);
+    const missingHint = missingConfig.missing && missingConfig.summary
+      ? `<p class="muted" style="margin-top:4px;font-size:12px;color:#b45309;">需配置: ${escapeHtml(missingConfig.summary)}</p>`
+      : "";
+    return `
     <div class="surface" style="padding:10px 12px;">
       <div class="row">
         <strong style="font-size:13px;">${escapeHtml(server.displayName ?? server.id)}</strong>
-        <span class="chip ${getMcpStatusView(server).className}">${escapeHtml(getMcpStatusView(server).label)}</span>
+        <span class="chip ${statusView.className}">${escapeHtml(statusView.label)}</span>
       </div>
       <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(server.transport ?? "stdio")} · ${escapeHtml(server.command ?? server.url ?? "n/a")}</p>
+      ${missingHint}
       <div class="toolbar" style="margin-top:6px;">
         <button class="btn btn-sm btn-danger" data-mcp-delete="${escapeHtml(server.id)}">Delete</button>
       </div>
     </div>
-  `).join("");
+  `;
+  }).join("");
 
   for (const btn of mcpServerList.querySelectorAll("[data-mcp-delete]")) {
     btn.addEventListener("click", async () => {
@@ -8844,6 +8856,9 @@ function getMcpStatusView(server) {
   if (server.available && server.enabled) {
     return { label: "运行中", className: "ready" };
   }
+  if (isMcpMissingConfig(server)) {
+    return { label: "需配置", className: "warning" };
+  }
   if (server.detail === "disabled" || (server.configured && !server.enabled)) {
     return { label: "可安装", className: "muted" };
   }
@@ -8874,9 +8889,18 @@ function renderConnectorsMcpServers(servers) {
     const statusLabel = sourceView.readOnly ? sourceView.label : status.label;
     const statusClass = sourceView.readOnly ? sourceView.className : status.className;
     const hasCfg = !!meta.configKey;
-    const needsConfig = hasCfg && !s.enabled;
+    const missingConfig = describeMcpMissingConfig(s);
+    // `needsConfig` covers two reasons the user must act before this MCP
+    // works: (a) we know a configKey for it but the server is still off,
+    // (b) the backend reports `missing_config` / `missingEnv` for any
+    // server (known or custom). Custom MCPs without a meta configKey
+    // still surface the badge + names via `missingConfig.summary`; the
+    // Configure button only appears when we actually have a config write
+    // path (hasCfg).
+    const needsConfig = (hasCfg && !s.enabled) || missingConfig.missing;
+    const customMissingConfig = missingConfig.missing && !hasCfg;
     const packageMissing = Boolean(s.installRequired && s.installSource);
-    const canInstall = Boolean(s.configured || s.available || needsConfig || packageMissing);
+    const canInstall = Boolean(s.configured || s.available || (hasCfg && needsConfig) || packageMissing);
     const installed = s.available && s.enabled;
     const cardId = `mcp-card-${s.id}`;
     const logoClass = meta.logoClass ?? "imap";
@@ -8890,7 +8914,12 @@ function renderConnectorsMcpServers(servers) {
     card.id = cardId;
     const configBtn = hasCfg ? `<button class="btn btn-sm btn-ghost" data-mcp-config="${escapeHtml(s.id)}">${needsConfig ? "Configure" : "Configure"}</button>` : "";
     const guideBtn = meta.guideUrl ? `<button class="btn btn-sm btn-ghost" data-plugin-guide="${escapeHtml(meta.guideUrl)}">Guide</button>` : "";
-    const needsConfigBadge = needsConfig ? `<span class="pill pill-warn mcp-needs-config">需配置</span>` : "";
+    const needsConfigLabel = missingConfig.summary
+      ? `需配置 · ${missingConfig.summary}`
+      : "需配置";
+    const needsConfigBadge = needsConfig
+      ? `<span class="pill pill-warn mcp-needs-config" title="${escapeHtml(needsConfigLabel)}">${escapeHtml(needsConfigLabel)}</span>`
+      : "";
     // Headline action: when not yet installed, render an explicit
     // "安装" button instead of (only) a toggle. The toggle was being
     // misread as a "settings switch" — users didn't realise flipping
@@ -8904,6 +8933,8 @@ function renderConnectorsMcpServers(servers) {
            <input type="checkbox" checked data-mcp-install="${escapeHtml(s.id)}" data-mcp-enabled="false">
            <span class="toggle-track"></span>
          </label>`
+      : customMissingConfig
+        ? `<span class="pill pill-warn" title="${escapeHtml(needsConfigLabel)}">${escapeHtml("需配置")}</span>`
       : packageMissing
         ? `<button class="btn btn-sm btn-primary mcp-install-btn"
                    data-mcp-install-source-click="${escapeHtml(s.installSource)}"

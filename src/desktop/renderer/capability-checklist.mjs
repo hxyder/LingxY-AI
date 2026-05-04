@@ -1,3 +1,8 @@
+import {
+  describeMcpMissingConfig,
+  isMcpMissingConfig
+} from "./mcp-missing-config.mjs";
+
 const BUILTIN_MCP_LABELS = Object.freeze({
   "mcp-filesystem": "Local file tools",
   "mcp-memory": "Memory tools",
@@ -33,6 +38,26 @@ function isMcpReady(server = {}) {
 
 function mcpById(workspace = {}, serverId = "") {
   return (workspace.mcpServers ?? []).find((server) => normalizeId(server.id) === serverId) ?? null;
+}
+
+function missingConfigDetail(server) {
+  const { summary } = describeMcpMissingConfig(server);
+  return summary
+    ? `Configuration missing: ${summary}.`
+    : "Configuration missing — open Configure to provide the required value.";
+}
+
+function evaluateMcpItem({ server, suggestion, fallback, readyDetail, pendingDetail }) {
+  if (isMcpReady(server)) {
+    return { status: "ready", detail: readyDetail };
+  }
+  if (server && isMcpMissingConfig(server)) {
+    return { status: "action_needed", detail: missingConfigDetail(server) };
+  }
+  return {
+    status: statusFromSuggestion(suggestion, fallback),
+    detail: pendingDetail
+  };
 }
 
 function findSuggestion(workspace = {}, predicate) {
@@ -96,6 +121,40 @@ export function buildCapabilityChecklist({ workspace = {}, serviceBaseUrl = "" }
   const skillsSuggestion = suggestionForAction(workspace, "open_skills_library");
   const cliMcpSuggestion = suggestionForAction(workspace, "configure_provider_mcp_files");
 
+  const filesystemServer = mcpById(workspace, "mcp-filesystem");
+  const memoryServer = mcpById(workspace, "mcp-memory");
+  const webServer = mcpById(workspace, "mcp-brave-search");
+  const browserServer = mcpById(workspace, "mcp-puppeteer");
+
+  const filesystemState = evaluateMcpItem({
+    server: filesystemServer,
+    suggestion: filesystemSuggestion,
+    fallback: hasReadyModelRuntime ? "recommended" : "optional",
+    readyDetail: "Local file access is available through the policy and approval layer.",
+    pendingDetail: "Enable when the assistant should inspect local project files through managed tools."
+  });
+  const memoryState = evaluateMcpItem({
+    server: memoryServer,
+    suggestion: memorySuggestion,
+    fallback: "optional",
+    readyDetail: "Reusable workspace memory is available.",
+    pendingDetail: "Optional durable memory can be enabled when a workflow needs it."
+  });
+  const webState = evaluateMcpItem({
+    server: webServer,
+    suggestion: webSuggestion,
+    fallback: "optional",
+    readyDetail: "Structured web research MCP is configured.",
+    pendingDetail: "Built-in search can still work; add a search MCP for provider-managed research."
+  });
+  const browserState = evaluateMcpItem({
+    server: browserServer,
+    suggestion: browserSuggestion,
+    fallback: "optional",
+    readyDetail: "Browser automation is available for interactive web tasks.",
+    pendingDetail: "Keep explicit; enable only when login-bound or interactive sites require it."
+  });
+
   const checklist = [
     item({
       id: "ai-provider",
@@ -122,11 +181,9 @@ export function buildCapabilityChecklist({ workspace = {}, serviceBaseUrl = "" }
     item({
       id: "local-files",
       title: BUILTIN_MCP_LABELS["mcp-filesystem"],
-      status: isMcpReady(mcpById(workspace, "mcp-filesystem")) ? "ready" : statusFromSuggestion(filesystemSuggestion, hasReadyModelRuntime ? "recommended" : "optional"),
+      status: filesystemState.status,
       priority: 30,
-      detail: isMcpReady(mcpById(workspace, "mcp-filesystem"))
-        ? "Local file access is available through the policy and approval layer."
-        : "Enable when the assistant should inspect local project files through managed tools.",
+      detail: filesystemState.detail,
       action: actionFromSuggestion(filesystemSuggestion) ?? connectorAction("mcp-filesystem")
     }),
     item({
@@ -144,31 +201,25 @@ export function buildCapabilityChecklist({ workspace = {}, serviceBaseUrl = "" }
     item({
       id: "memory",
       title: BUILTIN_MCP_LABELS["mcp-memory"],
-      status: isMcpReady(mcpById(workspace, "mcp-memory")) ? "ready" : statusFromSuggestion(memorySuggestion, "optional"),
+      status: memoryState.status,
       priority: 45,
-      detail: isMcpReady(mcpById(workspace, "mcp-memory"))
-        ? "Reusable workspace memory is available."
-        : "Optional durable memory can be enabled when a workflow needs it.",
+      detail: memoryState.detail,
       action: actionFromSuggestion(memorySuggestion) ?? connectorAction("mcp-memory")
     }),
     item({
       id: "web-research",
       title: BUILTIN_MCP_LABELS["mcp-brave-search"],
-      status: isMcpReady(mcpById(workspace, "mcp-brave-search")) ? "ready" : statusFromSuggestion(webSuggestion, "optional"),
+      status: webState.status,
       priority: 50,
-      detail: isMcpReady(mcpById(workspace, "mcp-brave-search"))
-        ? "Structured web research MCP is configured."
-        : "Built-in search can still work; add a search MCP for provider-managed research.",
+      detail: webState.detail,
       action: actionFromSuggestion(webSuggestion) ?? connectorAction("mcp-brave-search")
     }),
     item({
       id: "browser-automation",
       title: BUILTIN_MCP_LABELS["mcp-puppeteer"],
-      status: isMcpReady(mcpById(workspace, "mcp-puppeteer")) ? "ready" : statusFromSuggestion(browserSuggestion, "optional"),
+      status: browserState.status,
       priority: 60,
-      detail: isMcpReady(mcpById(workspace, "mcp-puppeteer"))
-        ? "Browser automation is available for interactive web tasks."
-        : "Keep explicit; enable only when login-bound or interactive sites require it.",
+      detail: browserState.detail,
       action: actionFromSuggestion(browserSuggestion) ?? connectorAction("mcp-puppeteer")
     }),
     item({
