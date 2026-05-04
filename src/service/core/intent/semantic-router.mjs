@@ -158,6 +158,15 @@ const RESEARCH_DEPTHS = Object.freeze([
   "deep_research",
   "unknown"
 ]);
+// Local file-reading depth is intentionally separate from web research
+// depth. A task can need deep local evidence with no web, or shallow
+// local anchoring plus multi-source web research.
+const FILE_READ_DEPTHS = Object.freeze([
+  "shallow",
+  "focused",
+  "standard",
+  "deep"
+]);
 // Front-classifier merge: SR also subsumes the schedule/clarify/immediate
 // decision that the legacy `understand.mjs` LLM call made. `immediate` is
 // the default when no time-defer or clarify pattern fits — this matches
@@ -183,6 +192,7 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
       artifact_required: { type: "boolean" },
       executor: { type: "string", enum: [...EXECUTORS] },
       research_depth: { type: "string", enum: [...RESEARCH_DEPTHS] },
+      file_read_depth: { type: "string", enum: [...FILE_READ_DEPTHS] },
       primary_intent: { type: "string", enum: [...PRIMARY_INTENTS] },
       domain: { type: "string", enum: [...DOMAINS] },
       user_goal: { type: "string", maxLength: 400 },
@@ -219,7 +229,7 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
     },
     required: [
       "source_scope", "web_policy", "output_kind", "artifact_required",
-      "executor", "research_depth", "primary_intent", "domain",
+      "executor", "research_depth", "file_read_depth", "primary_intent", "domain",
       "user_goal", "expected_output", "needs_external_info",
       "needs_current_information", "needs_user_files", "needs_tool_use",
       "needed_capabilities", "required_policy_groups", "source_mode", "complexity", "risk_level",
@@ -236,6 +246,7 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
  * @property {boolean}                          artifact_required
  * @property {typeof EXECUTORS[number]}         executor
  * @property {typeof RESEARCH_DEPTHS[number]}   research_depth
+ * @property {typeof FILE_READ_DEPTHS[number]}  file_read_depth
  * @property {typeof PRIMARY_INTENTS[number]}   primary_intent
  * @property {typeof DOMAINS[number]}           domain
  * @property {string}                           user_goal
@@ -501,6 +512,7 @@ function buildMessages({ text, contextPacket, signals }) {
     "- output_kind: conversation for chat replies; pick the file kind (docx/pptx/xlsx/pdf/markdown/...) when the user asked for a document.",
     "- executor: fast for short conversational answers; tool_using for tool-driven actions; agentic for multi-step planning with artifacts; multi_modal for image-led tasks.",
     "- research_depth: `single_lookup` when the user asks for one fact / one URL / one article (weather, stock price, a specific page they shared, single-fact recall). `multi_source` when independent sources matter — news, current events, competitor research, open-source surveys, comparison shopping, fact-checking, market/price scans. `deep_research` ONLY when the user explicitly asks for thorough / comprehensive / in-depth / exhaustive coverage (e.g. \"深入调研\", \"全面对比\", \"彻底搜一下\", \"comprehensive review\", \"exhaustive comparison\", \"deep dive\"). Do NOT pick deep_research just because the topic is broad — the user must have asked for depth verbatim. `unknown` only when web_policy is `forbidden` or you genuinely cannot tell.",
+    "- file_read_depth: classify LOCAL file-reading depth separately from web research. `shallow` for metadata/listing/quick preview only; `focused` for one known file or a narrow named section; `standard` for normal attached-file/folder analysis; `deep` when the user asks to audit/review/analyze a folder/project/material set thoroughly or needs recursive evidence across many files. Do not use topic keywords; judge the required evidence coverage.",
     "- primary_intent/domain/user_goal: classify what the user is trying to accomplish in plain terms. Domain is context for audit, not an execution command.",
     "- expected_output: classify what the user expects to RECEIVE. Use synthesis kinds (`summary`, `comparison`, `recommendation`, `analysis`, `action_items`) when the user wants tool results transformed; use form kinds (`direct_answer`, `step_by_step`, `code`, `markdown_doc`, `table`, `email_draft`, `ppt`, `image`, `plan`, `execution`, `artifact`) when the form itself is the request; use `raw_results` ONLY when the user verbatim asked for raw / unmodified records.",
     "- needs_external_info / needs_current_information: true when the answer depends on information outside the current context, especially volatile/current facts. A topic label alone is not a hard rule; use semantic judgement.",
@@ -792,6 +804,9 @@ function validateDecision(decision) {
   if (!RESEARCH_DEPTHS.includes(decision.research_depth)) {
     return { ok: false, reason: `research_depth=${decision.research_depth} not in enum` };
   }
+  if (!FILE_READ_DEPTHS.includes(decision.file_read_depth)) {
+    return { ok: false, reason: `file_read_depth=${decision.file_read_depth} not in enum` };
+  }
   if (!PRIMARY_INTENTS.includes(decision.primary_intent)) {
     return { ok: false, reason: `primary_intent=${decision.primary_intent} not in enum` };
   }
@@ -948,6 +963,7 @@ export {
   WEB_POLICY_MODES,
   OUTPUT_KINDS,
   EXECUTORS,
+  FILE_READ_DEPTHS,
   SIGNAL_KINDS,
   PRIMARY_INTENTS,
   DOMAINS,

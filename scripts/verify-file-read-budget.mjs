@@ -37,6 +37,19 @@ assert.equal(inferFileReadBudget({
   srDecision: { source_mode: "deep_research", research_depth: "deep_research" }
 }).depth, FILE_READ_DEPTHS.DEEP);
 
+assert.equal(inferFileReadBudget({
+  contextSources: { uploaded_files: true },
+  contextPacket: { file_paths: ["E:\\local\\folder"] },
+  researchQuality: null,
+  srDecision: { source_mode: "provided_context", research_depth: "unknown", file_read_depth: "deep" }
+}).depth, FILE_READ_DEPTHS.DEEP);
+assert.equal(inferFileReadBudget({
+  contextSources: { uploaded_files: true },
+  contextPacket: { file_paths: ["E:\\local\\folder"] },
+  researchQuality: null,
+  srDecision: { source_mode: "deep_research", research_depth: "deep_research", file_read_depth: "focused" }
+}).depth, FILE_READ_DEPTHS.FOCUSED);
+
 assert.equal(resolveFileReadBudgetFromTask({
   task_spec: {
     file_read: { depth: FILE_READ_DEPTHS.DEEP, max_depth: 5 }

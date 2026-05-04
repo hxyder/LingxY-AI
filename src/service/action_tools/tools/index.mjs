@@ -2781,9 +2781,18 @@ async function collectReadableFiles(rootPath, {
   maxFiles = 20
 } = {}) {
   const files = [];
+  let fileLimitHit = false;
+  let depthLimitHit = false;
 
   async function walk(dir, depth = 0) {
-    if (files.length >= maxFiles || depth > maxDepth) return;
+    if (files.length >= maxFiles) {
+      fileLimitHit = true;
+      return;
+    }
+    if (depth > maxDepth) {
+      depthLimitHit = true;
+      return;
+    }
     let entries = [];
     try {
       entries = await readdir(dir, { withFileTypes: true });
@@ -2792,11 +2801,18 @@ async function collectReadableFiles(rootPath, {
     }
     entries.sort((left, right) => left.name.localeCompare(right.name));
     for (const entry of entries) {
-      if (files.length >= maxFiles) return;
+      if (files.length >= maxFiles) {
+        fileLimitHit = true;
+        return;
+      }
       const fullPath = path.join(dir, entry.name);
       const relPath = path.relative(rootPath, fullPath).replace(/\\/g, "/");
       if (entry.isDirectory()) {
         if (!shouldSkipFolderEntry(entry)) {
+          if (depth + 1 > maxDepth) {
+            depthLimitHit = true;
+            continue;
+          }
           await walk(fullPath, depth + 1);
         }
         continue;
@@ -2808,7 +2824,7 @@ async function collectReadableFiles(rootPath, {
   }
 
   await walk(rootPath, 0);
-  return files;
+  return { files, fileLimitHit, depthLimitHit };
 }
 
 async function extractFolderTextFile(filePath, maxCharsPerFile) {
@@ -2855,9 +2871,10 @@ export const READ_FOLDER_TEXT_TOOL = {
 
     try {
       const rootInfo = await lstat(rootPath);
-      const candidateFiles = rootInfo.isDirectory()
+      const collection = rootInfo.isDirectory()
         ? await collectReadableFiles(rootPath, { patternRegex, maxDepth, maxFiles })
-        : [rootPath];
+        : { files: [rootPath], fileLimitHit: false, depthLimitHit: false };
+      const candidateFiles = collection.files;
       const chunks = [];
       const records = [];
       let totalChars = 0;
@@ -2883,6 +2900,7 @@ export const READ_FOLDER_TEXT_TOOL = {
       }
 
       const successful = records.filter((record) => record.success);
+      const truncated = stoppedByBudget || records.some((record) => record.truncated);
       return createActionResult({
         success: true,
         observation: successful.length > 0
@@ -2903,7 +2921,13 @@ export const READ_FOLDER_TEXT_TOOL = {
           files_seen: candidateFiles.length,
           files_read: successful.length,
           chars_extracted: totalChars,
-          truncated: stoppedByBudget || records.some((record) => record.truncated),
+          truncated,
+          file_limit_hit: collection.fileLimitHit === true,
+          depth_limit_hit: collection.depthLimitHit === true,
+          coverage_complete: successful.length > 0
+            && !truncated
+            && collection.fileLimitHit !== true
+            && collection.depthLimitHit !== true,
           coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
           content_extracted: true,
           recursive: true,

@@ -41,6 +41,7 @@ import {
   SOURCE_SCOPES,
   WEB_POLICY_MODES,
   EXECUTORS,
+  FILE_READ_DEPTHS,
   DEFAULT_TIMEOUT_MS,
   DEFAULT_CACHE_TTL_MS,
   DEFAULT_CONFIDENCE_THRESHOLD
@@ -66,6 +67,7 @@ const validDecision = Object.freeze({
   artifact_required: false,
   executor: "tool_using",
   research_depth: "multi_source",
+  file_read_depth: "standard",
   primary_intent: "research",
   domain: "software",
   user_goal: "Understand current AI news.",
@@ -651,7 +653,7 @@ async function run() {
     assert.equal(SEMANTIC_DECISION_TOOL.input_schema.additionalProperties, false);
     for (const f of [
       "source_scope", "web_policy", "output_kind", "artifact_required",
-      "executor", "research_depth", "primary_intent", "domain",
+      "executor", "research_depth", "file_read_depth", "primary_intent", "domain",
       "user_goal", "expected_output", "needs_external_info",
       "needs_current_information", "needs_user_files", "needs_tool_use",
       "needed_capabilities", "required_policy_groups", "source_mode", "complexity", "risk_level",
@@ -692,6 +694,12 @@ async function run() {
       ["deep_research", "multi_source", "single_lookup", "unknown"]);
     assert.ok(SEMANTIC_DECISION_TOOL.input_schema.required.includes("research_depth"));
   });
+  await it("public surface: file_read_depth enum includes shallow / focused / standard / deep", () => {
+    const enumDef = SEMANTIC_DECISION_TOOL.input_schema.properties.file_read_depth.enum;
+    assert.deepEqual([...enumDef].sort(), ["deep", "focused", "shallow", "standard"]);
+    assert.deepEqual([...FILE_READ_DEPTHS].sort(), ["deep", "focused", "shallow", "standard"]);
+    assert.ok(SEMANTIC_DECISION_TOOL.input_schema.required.includes("file_read_depth"));
+  });
 
   // ── P4-RQ C2: research_depth schema + plumbing ────────────────────────
   await it("research_depth: invalid enum value rejected by validator", async () => {
@@ -718,6 +726,46 @@ async function run() {
     const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "今天有什么 AI 新闻" });
     assert.equal(out.kind, "decision");
     assert.equal(out.decision.research_depth, "multi_source");
+  });
+  await it("file_read_depth: invalid enum value rejected by validator", async () => {
+    const adapter = decisionAdapter({ ...validDecision, file_read_depth: "folder_keyword_patch" });
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "x" });
+    assert.equal(out.kind, "rejection");
+    assert.equal(out.code, "schema_invalid");
+    assert.match(out.reason, /file_read_depth=folder_keyword_patch/);
+  });
+  await it("file_read_depth: missing field treated as schema_invalid (required)", async () => {
+    const adapter = {
+      async generate() {
+        const { file_read_depth: _frd, ...withoutDepth } = validDecision;
+        return { tool_calls: [{ name: "route_task", arguments: withoutDepth }] };
+      }
+    };
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "x" });
+    assert.equal(out.kind, "rejection");
+    assert.equal(out.code, "schema_invalid");
+    assert.match(out.reason, /file_read_depth/);
+  });
+  await it("file_read_depth: valid value preserved end-to-end on the decision", async () => {
+    const adapter = decisionAdapter({ ...validDecision, file_read_depth: "deep" });
+    const out = await makeRouter({ adapter }).resolveSemanticDecision({ text: "deeply review these local files" });
+    assert.equal(out.kind, "decision");
+    assert.equal(out.decision.file_read_depth, "deep");
+  });
+  await it("file_read_depth: system prompt teaches local depth as separate from web research", async () => {
+    let captured = null;
+    const probeAdapter = {
+      async generate(payload) {
+        captured = payload;
+        return { tool_calls: [{ name: "route_task", arguments: { ...validDecision } }] };
+      }
+    };
+    const router = makeRouter({ adapter: probeAdapter });
+    await router.resolveSemanticDecision({ text: "x" });
+    const systemMessage = captured.messages.find((m) => m.role === "system").content;
+    assert.match(systemMessage, /file_read_depth/);
+    assert.match(systemMessage, /LOCAL file-reading depth/);
+    assert.match(systemMessage, /separately from web research/);
   });
   await it("research_depth: system prompt teaches single_lookup vs multi_source", async () => {
     let captured = null;

@@ -663,20 +663,14 @@ function checkResearchCoverage(taskSpec, transcript, requiredGroups) {
   // active profile name so the user sees the real bar
   // ("deep_research requires ..." vs "multi_source_research requires ...").
   const profileLabel = rq.profile;
-  const sourceCount = evidence.blended_source_count ?? evidence.source_count;
-  const originCount = evidence.blended_origin_count ?? evidence.distinct_domain_count;
+  const sourceCount = evidence.source_count;
+  const originCount = evidence.distinct_domain_count;
   const indexedCount = evidence.indexed_file_source_count ?? 0;
-  const originLabel = evidence.local_source_count > 0 || indexedCount > 0
-    ? [
-      `${evidence.distinct_domain_count} web domain(s)`,
-      `${evidence.local_source_count} fresh local source(s)`,
-      `${indexedCount} indexed file source(s)`
-    ].join(" + ")
-    : `${evidence.distinct_domain_count} web domain(s)`;
+  const localLabel = evidence.local_source_count > 0 || indexedCount > 0
+    ? `; local evidence observed separately (${evidence.local_source_count} fresh local + ${indexedCount} indexed file)`
+    : "";
 
   if (evidence.is_single_roundup
-      && evidence.local_source_count === 0
-      && indexedCount === 0
       && rq.single_source_digest_satisfies === false) {
     violations.push({
       kind: "external_web_read_single_roundup_only",
@@ -685,14 +679,14 @@ function checkResearchCoverage(taskSpec, transcript, requiredGroups) {
   } else if (originCount < rq.min_distinct_domains) {
     violations.push({
       kind: "external_web_read_single_domain_only",
-      message: `${profileLabel} requires at least ${rq.min_distinct_domains} distinct evidence origins; got ${originCount} (${originLabel}; web domains=${evidence.domains.join(", ") || "none"}; local sources=${evidence.local_sources?.join(", ") || "none"}).`
+      message: `${profileLabel} requires at least ${rq.min_distinct_domains} distinct web domains; got ${originCount} web domain(s) (${evidence.domains.join(", ") || "none"}${localLabel}). Local files can inform synthesis but cannot satisfy external web-source coverage.`
     });
   }
 
   if (sourceCount < rq.min_sources) {
     violations.push({
       kind: "external_web_read_insufficient_sources",
-      message: `${profileLabel} requires at least ${rq.min_sources} distinct sources; got ${sourceCount} (${evidence.source_count} web + ${evidence.local_source_count ?? 0} fresh local + ${indexedCount} indexed file).`
+      message: `${profileLabel} requires at least ${rq.min_sources} distinct web sources; got ${sourceCount} web source(s) (${evidence.local_source_count ?? 0} fresh local + ${indexedCount} indexed file observed separately). Local files can inform synthesis but cannot satisfy external web-source coverage.`
     });
   }
 
@@ -753,9 +747,36 @@ function localFileTextReadHitSatisfies(entry, taskSpec) {
   if (metadata.content_extracted !== true) return false;
   const scope = metadata.coverage_scope;
   if (requiresDeepLocalTextRead(taskSpec)) {
-    return isDeepFileTextCoverageScope(scope);
+    return deepLocalFileTextReadHitSatisfies(metadata, taskSpec);
   }
   return isFileTextCoverageScope(scope);
+}
+
+function numberOrNull(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function countSuccessfulFiles(metadata) {
+  const direct = numberOrNull(metadata?.files_read);
+  if (direct != null) return direct;
+  const files = Array.isArray(metadata?.files) ? metadata.files : [];
+  return files.filter((file) => file?.success !== false).length;
+}
+
+function deepLocalFileTextReadHitSatisfies(metadata, taskSpec) {
+  if (!isDeepFileTextCoverageScope(metadata.coverage_scope)) return false;
+  if (metadata.recursive !== true) return false;
+  if (countSuccessfulFiles(metadata) <= 0) return false;
+  if (metadata.coverage_complete === true) return true;
+  if (metadata.truncated === true) return false;
+  if (metadata.file_limit_hit === true || metadata.depth_limit_hit === true) return false;
+
+  const requiredDepth = numberOrNull(taskSpec?.file_read?.max_depth);
+  const actualDepth = numberOrNull(metadata.max_depth);
+  if (requiredDepth != null && actualDepth != null && actualDepth < requiredDepth) return false;
+
+  return true;
 }
 
 function validateLocalFileTextReadRequirement({ taskSpec, members, allCalls, successfulHits }) {
@@ -779,7 +800,7 @@ function validateLocalFileTextReadRequirement({ taskSpec, members, allCalls, suc
       ? `${LOCAL_FILE_TEXT_READ_GROUP}_required_deep_insufficient`
       : `${LOCAL_FILE_TEXT_READ_GROUP}_required_no_fresh_text`,
     message: deep
-      ? `success_contract.required_policy_groups includes "${LOCAL_FILE_TEXT_READ_GROUP}" and file_read.depth=deep; tools succeeded (${successfulHits.map((h) => h.tool).join(", ")}) but none produced recursive folder text coverage.`
+      ? `success_contract.required_policy_groups includes "${LOCAL_FILE_TEXT_READ_GROUP}" and file_read.depth=deep; tools succeeded (${successfulHits.map((h) => h.tool).join(", ")}) but none produced complete recursive folder text coverage.`
       : `success_contract.required_policy_groups includes "${LOCAL_FILE_TEXT_READ_GROUP}"; tools succeeded (${successfulHits.map((h) => h.tool).join(", ")}) but none produced fresh local file text. Indexed search, listing, and metadata do not satisfy this contract.`
   };
 }

@@ -67,6 +67,9 @@ test("read_folder_text recursively extracts bounded text from a folder", async (
     assert.equal(result.metadata.tool_id, "read_folder_text");
     assert.equal(result.metadata.files_read, 2);
     assert.equal(result.metadata.truncated, false);
+    assert.equal(result.metadata.file_limit_hit, false);
+    assert.equal(result.metadata.depth_limit_hit, false);
+    assert.equal(result.metadata.coverage_complete, true);
     assert.equal(result.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT);
     assert.equal(result.metadata.content_extracted, true);
     assert.equal(result.metadata.recursive, true);
@@ -399,6 +402,8 @@ test("explicit read_folder_text args override task file_read budget", async () =
     assert.equal(result.success, true);
     assert.equal(result.metadata.max_depth, 0);
     assert.equal(result.metadata.files_read, 0);
+    assert.equal(result.metadata.depth_limit_hit, true);
+    assert.equal(result.metadata.coverage_complete, false);
     assert.doesNotMatch(result.observation, /Nested text that requires depth/);
   } finally {
     await rm(dir, { recursive: true, force: true });

@@ -109,7 +109,12 @@ test("deep local_file_text_read is satisfied by recursive folder text coverage",
       metadata: {
         path: "E:/linxi/docs",
         content_extracted: true,
-        coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT
+        coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+        recursive: true,
+        files_read: 2,
+        max_depth: 6,
+        truncated: false,
+        coverage_complete: true
       },
       observation: "Extracted 15 files recursively."
     })
@@ -117,6 +122,54 @@ test("deep local_file_text_read is satisfied by recursive folder text coverage",
 
   assert.equal(out.satisfied, true);
   assert.deepEqual(out.violations, []);
+});
+
+test("deep local_file_text_read rejects shallow recursive folder metadata", () => {
+  const out = validateSuccessContract({
+    file_read: { depth: "deep", max_depth: 6 },
+    success_contract: {
+      required_policy_groups: ["local_file_text_read"]
+    }
+  }, [
+    toolResult({
+      tool: "read_folder_text",
+      metadata: {
+        path: "E:/linxi/docs",
+        content_extracted: true,
+        coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+        recursive: true,
+        files_read: 1,
+        max_depth: 0,
+        truncated: false
+      },
+      observation: "Extracted one top-level file."
+    })
+  ]);
+
+  assert.equal(out.satisfied, false);
+  assert.equal(out.violations[0]?.kind, "local_file_text_read_required_deep_insufficient");
+});
+
+test("deep local_file_text_read rejects truncated folder extraction", () => {
+  const out = validateSuccessContract(taskSpec({ depth: "deep" }), [
+    toolResult({
+      tool: "read_folder_text",
+      metadata: {
+        path: "E:/linxi/docs",
+        content_extracted: true,
+        coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+        recursive: true,
+        files_read: 4,
+        max_depth: 6,
+        truncated: true,
+        coverage_complete: false
+      },
+      observation: "Extracted text but stopped at budget."
+    })
+  ]);
+
+  assert.equal(out.satisfied, false);
+  assert.equal(out.violations[0]?.kind, "local_file_text_read_required_deep_insufficient");
 });
 
 test("TaskSpec preserves SemanticRouter local_file_text_read contract", () => {
@@ -193,6 +246,48 @@ test("TaskSpec combines fresh local read and external web read for hybrid eviden
   assert.ok(spec.success_contract.required_policy_groups.includes("external_web_read"));
   assert.equal(spec.tool_policy.policy_groups.external_web_read.mode, "required");
   assert.equal(spec.success_contract.tool_called, true);
+});
+
+test("external_web_read research coverage ignores local files when counting web sources", () => {
+  const out = validateSuccessContract({
+    success_contract: { required_policy_groups: ["external_web_read"] },
+    research_quality: {
+      profile: "multi_source_research",
+      min_sources: 3,
+      min_distinct_domains: 2,
+      single_source_digest_satisfies: false
+    }
+  }, [
+    toolResult({
+      tool: "read_folder_text",
+      metadata: {
+        files: [
+          { path: "E:/linxi/resume.md", success: true },
+          { path: "E:/linxi/portfolio.md", success: true }
+        ],
+        content_extracted: true,
+        coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+        recursive: true,
+        files_read: 2,
+        coverage_complete: true
+      },
+      observation: "Read two local files."
+    }),
+    toolResult({
+      tool: "web_search_fetch",
+      metadata: {
+        results: [
+          { url: "https://example.com/current-source", title: "External source" }
+        ]
+      },
+      observation: "Found one external source."
+    })
+  ]);
+
+  assert.equal(out.satisfied, false);
+  const kinds = out.violations.map((violation) => violation.kind);
+  assert.ok(kinds.includes("external_web_read_insufficient_sources"));
+  assert.ok(kinds.includes("external_web_read_single_domain_only"));
 });
 
 test("real read_file_text registry result satisfies the fresh-read contract", async () => {

@@ -193,7 +193,7 @@ it("validateSuccessContract: deep_research + 5 sources / 3 domains → satisfied
     `should be satisfied at 5/3; violations=${JSON.stringify(violations)}`);
 });
 
-it("validateSuccessContract: local files + web source satisfy blended multi-source coverage", () => {
+it("validateSuccessContract: local files do not satisfy web multi-source coverage", () => {
   const taskSpec = {
     success_contract: { required_policy_groups: ["external_web_read"] },
     research_quality: {
@@ -217,8 +217,11 @@ it("validateSuccessContract: local files + web source satisfy blended multi-sour
       ] } }
   ];
   const { satisfied, violations } = validateSuccessContract(taskSpec, transcript);
-  assert.equal(satisfied, true,
-    `2 local files + 1 web source should satisfy 3-source / 2-origin blended coverage; got ${JSON.stringify(violations)}`);
+  assert.equal(satisfied, false,
+    `web coverage must count web sources/domains only; got ${JSON.stringify(violations)}`);
+  const kinds = violations.map((v) => v.kind);
+  assert.ok(kinds.includes("external_web_read_insufficient_sources"));
+  assert.ok(kinds.includes("external_web_read_single_domain_only"));
 });
 
 it("validateSuccessContract: deep_research + roundup page on single domain → roundup violation", () => {

@@ -27,6 +27,7 @@
  *                  Per the SignalKind taxonomy: hint = pattern +
  *                  conventional implication.
  *   hint         — { web_policy, source_scope, research_depth,
+ *                    file_read_depth,
  *                    output_kind, executor, primary_intent,
  *                    source_mode, needed_capabilities,
  *                    required_policy_groups, confidence } —
@@ -69,6 +70,7 @@ export function detect(_text, contextPacket = {}) {
       web_policy: decision.web_policy,
       source_scope: decision.source_scope ?? null,
       research_depth: decision.research_depth ?? null,
+      file_read_depth: decision.file_read_depth ?? null,
       output_kind: decision.output_kind ?? null,
       executor: decision.executor ?? null,
       primary_intent: decision.primary_intent ?? null,
