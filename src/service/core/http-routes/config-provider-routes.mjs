@@ -9,6 +9,7 @@ import { createImapClient } from "../../email/imap-client.mjs";
 import { getCredential } from "../../email/credential-store.mjs";
 import { maybeRunMorningDigest } from "../../email/digest.mjs";
 import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
+import { validateSkillDescriptorMarkdown } from "../../ai/skills/discovery.mjs";
 import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
 import { sanitizeProviderConfig } from "../../../shared/provider-catalog.mjs";
@@ -548,8 +549,10 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       sendJson(response, 403, { error: "skill_path_not_allowed" });
       return true;
     }
-    await writeFile(entryPath, `${body.markdown ?? ""}`, "utf8");
-    sendJson(response, 200, { ok: true, entryPath });
+    const markdown = `${body.markdown ?? ""}`;
+    await writeFile(entryPath, markdown, "utf8");
+    const validation = validateSkillDescriptorMarkdown(markdown);
+    sendJson(response, 200, { ok: true, entryPath, validation });
     return true;
   }
 

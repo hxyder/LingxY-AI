@@ -27,20 +27,58 @@ export function readSkillDescription(markdown) {
     ?? "";
 }
 
+function descriptorError(field, message) {
+  return { field, message };
+}
+
+export function validateSkillDescriptorMarkdown(markdown = "") {
+  const errors = [];
+  const text = String(markdown ?? "");
+  const heading = text.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? "";
+  const description = readSkillDescription(text);
+  if (!heading) {
+    errors.push(descriptorError("heading", "SKILL.md should start with a level-1 heading, for example \"# My Skill\"."));
+  }
+  if (!description) {
+    errors.push(descriptorError("description", "SKILL.md should include a short description or frontmatter description field."));
+  }
+  return {
+    ok: errors.length === 0,
+    errors,
+    heading,
+    description
+  };
+}
+
 export function readSkillDescriptor(skillDir, registryId) {
   const entryPath = path.join(skillDir, "SKILL.md");
+  const id = path.basename(skillDir);
   if (!existsSync(entryPath)) {
     return null;
   }
-  const markdown = readFileSync(entryPath, "utf8");
-  const heading = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim();
-  const id = path.basename(skillDir);
+  let markdown = "";
+  try {
+    markdown = readFileSync(entryPath, "utf8");
+  } catch (error) {
+    return {
+      id,
+      displayName: id,
+      description: "",
+      entryPath,
+      tags: [registryId],
+      valid: false,
+      errors: [descriptorError("entryPath", `Could not read SKILL.md: ${error.message}`)]
+    };
+  }
+  const validation = validateSkillDescriptorMarkdown(markdown);
   return {
     id,
-    displayName: heading ?? id,
-    description: readSkillDescription(markdown),
+    displayName: validation.heading || id,
+    description: validation.description,
     entryPath,
-    tags: [registryId]
+    tags: [registryId],
+    valid: validation.ok,
+    errors: validation.errors
   };
 }
 
