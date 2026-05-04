@@ -389,5 +389,22 @@ it("lock-in: agent-loop wraps runToolAgentLoop with finaliseWithEvidence", () =>
     "public runToolAgentLoop must call finaliseWithEvidence(result, ...)");
 });
 
+it("lock-in: final composer receives structured evidence summary", () => {
+  const src = readFileSync(
+    new URL("../src/service/executors/tool_using/final-composer.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.match(src, /import\s+\{[^}]*\bextractEvidence\b[^}]*\}\s+from\s+["']\.\.\/\.\.\/core\/policy\/evidence-normalizer\.mjs["']/,
+    "final composer must import extractEvidence");
+  assert.match(src, /function\s+formatEvidenceSummaryForComposer\s*\(/,
+    "final composer must format structured evidence for prompt and injected composers");
+  assert.match(src, /evidence_summary:\s*evidenceSummary/,
+    "injected final composers must receive evidence_summary");
+  assert.match(src, /\[Evidence summary\]/,
+    "provider final composer prompt must include compact evidence summary when evidence exists");
+  assert.match(src, /locator evidence, not proof/,
+    "final composer must distinguish indexed/listed locators from fresh file reads");
+});
+
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);
 if (fail > 0) process.exit(1);
