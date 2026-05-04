@@ -17,6 +17,10 @@ const HISTORY_TEXT_CAP = 2000;
 const HISTORY_CTX_TEXT_CAP = 600;
 const HISTORY_ANSWER_CAP = 800;
 
+function isIndexableArtifactPath(artifactPath) {
+  return artifactPath && !artifactPath.endsWith("-preview.html") && !artifactPath.endsWith("-preview.txt");
+}
+
 function buildHistoryRecord(task, runtime) {
   const parts = [
     task.user_command,
@@ -42,6 +46,16 @@ function buildHistoryRecord(task, runtime) {
 
   let answerText = "";
   let artifactPaths = [];
+  if (runtime?.store?.getArtifactsForTask) {
+    try {
+      artifactPaths = (runtime.store.getArtifactsForTask(task.task_id) ?? [])
+        .map((artifact) => String(artifact?.path ?? ""))
+        .filter(isIndexableArtifactPath)
+        .slice(0, 6);
+    } catch {
+      artifactPaths = [];
+    }
+  }
   if (runtime?.store?.getTaskEvents) {
     try {
       const events = runtime.store.getTaskEvents(task.task_id) ?? [];
@@ -49,11 +63,13 @@ function buildHistoryRecord(task, runtime) {
         event.event_type === "success" || event.event_type === "inline_result"
       );
       answerText = String(finalEvent?.payload?.text ?? "").slice(0, HISTORY_ANSWER_CAP);
-      artifactPaths = events
-        .filter((event) => event.event_type === "artifact_created")
-        .map((event) => String(event.payload?.path ?? ""))
-        .filter((artifactPath) => artifactPath && !artifactPath.endsWith("-preview.html") && !artifactPath.endsWith("-preview.txt"))
-        .slice(0, 6);
+      if (artifactPaths.length === 0) {
+        artifactPaths = events
+          .filter((event) => event.event_type === "artifact_created")
+          .map((event) => String(event.payload?.path ?? ""))
+          .filter(isIndexableArtifactPath)
+          .slice(0, 6);
+      }
     } catch {
       // History indexing is best-effort and must not affect task completion.
     }

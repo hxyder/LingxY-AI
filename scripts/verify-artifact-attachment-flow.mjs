@@ -34,6 +34,7 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 const agentic = read("src/service/executors/agentic/planner.mjs");
 const toolUsingAgentLoop = read("src/service/executors/tool_using/agent-loop.mjs");
 const toolUsingMessages = read("src/service/executors/tool_using/conversation-messages.mjs");
+const actionTools = read("src/service/action_tools/tools/index.mjs");
 const writeTools = read("src/service/connectors/tools/write-tools.mjs");
 const msConnector = read("src/service/connectors/microsoft/microsoft-connector.mjs");
 const contextSubmission = read("src/service/core/context-submission.mjs");
@@ -61,6 +62,8 @@ assert.match(agentic, /__lastArtifactPathsHash/,
 // ── tool_using/agent-loop: transcript + conversation rollup. ──────────
 assert.match(toolUsingAgentLoop, /artifact_paths:\s*Array\.isArray\(result\.artifact_paths\)/,
   "tool_using agent-loop must store artifact_paths on the transcript entry");
+assert.match(toolUsingAgentLoop, /collectArtifactPathsFromTranscript/,
+  "tool_using agent-loop terminal success must surface transcript artifact_paths");
 assert.match(toolUsingMessages, /function buildConversationMessages\(prefixMessages,\s*transcript,\s*initialFilePaths/,
   "buildConversationMessages must accept initial file paths from the context packet");
 assert.match(toolUsingMessages, /Artifacts available so far/,
@@ -88,5 +91,7 @@ assert.match(taskRoutes, /Array\.isArray\(payload\.artifact_paths\)[\s\S]{0,120}
   "task detail must recover artifact_paths from historical events");
 assert.match(taskRoutes, /derived_from_event:\s*true/,
   "event-derived artifacts must be marked for observability");
+assert.match(actionTools, /REGISTER_ARTIFACT_TOOL[\s\S]{0,1800}artifactPaths:\s*\[filePath\]/,
+  "register_artifact must return artifactPaths so core submissions can persist it");
 
 console.log("ok verify-artifact-attachment-flow");

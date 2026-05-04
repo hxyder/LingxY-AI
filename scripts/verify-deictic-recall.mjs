@@ -17,17 +17,18 @@ import {
   RECALL_MEMORY_TOOL,
   LIST_RECENT_TASKS_TOOL,
   GET_TASK_DETAIL_TOOL,
+  LIST_CONVERSATION_ARTIFACTS_TOOL,
   MEMORY_TOOLS
 } from "../src/service/action_tools/tools/memory-tools.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 
-// --- 0. MEMORY_TOOLS is an array of 3 with stable ids ---------------
-assert.equal(MEMORY_TOOLS.length, 3);
+// --- 0. MEMORY_TOOLS is an array of 4 with stable ids ---------------
+assert.equal(MEMORY_TOOLS.length, 4);
 assert.deepEqual(
   MEMORY_TOOLS.map((t) => t.id).sort(),
-  ["get_task_detail", "list_recent_tasks", "recall_memory"]
+  ["get_task_detail", "list_conversation_artifacts", "list_recent_tasks", "recall_memory"]
 );
 for (const tool of MEMORY_TOOLS) {
   assert.equal(tool.risk_level, "low");
@@ -74,7 +75,10 @@ for (const tool of MEMORY_TOOLS) {
   ];
   const runtime = {
     store: {
-      listTasks: () => [...mockTasks]
+      listTasks: () => [...mockTasks],
+      getArtifactsForTask: (taskId) => taskId === "task_fresh_1"
+        ? [{ path: "E:\\fresh.docx" }]
+        : []
     }
   };
 
@@ -113,6 +117,7 @@ for (const tool of MEMORY_TOOLS) {
         result_summary: "done",
         artifacts: [{ path: "E:\\out.pptx" }]
       } : null,
+      getArtifactsForTask: (id) => id === "task_X" ? [{ path: "E:\\store-out.pptx" }] : [],
       getTaskEvents: (id) => id === "task_X" ? [
         { event_type: "started", payload: {} },
         { event_type: "inline_result", payload: { text: "报告完成，三个章节" } },
@@ -124,15 +129,39 @@ for (const tool of MEMORY_TOOLS) {
   assert.equal(result.success, true);
   assert.ok(result.observation.includes("task_X"));
   assert.ok(result.observation.includes("FINAL TEXT"), "must surface the last success event's text");
-  assert.ok(result.observation.includes("E:\\out.pptx"));
-  assert.deepEqual(result.metadata.artifact_paths, ["E:\\out.pptx"]);
+  assert.ok(result.observation.includes("E:\\store-out.pptx"));
+  assert.deepEqual(result.metadata.artifact_paths, ["E:\\store-out.pptx", "E:\\out.pptx"]);
 
   // missing id
   const miss = await GET_TASK_DETAIL_TOOL.execute({ task_id: "task_missing" }, { runtime });
   assert.equal(miss.success, false);
 }
 
-// --- 4. System prompts tell the model about these tools ------------
+// --- 4. list_conversation_artifacts scopes to the current thread ----
+{
+  const runtime = {
+    store: {
+      getArtifactsForConversation: (conversationId) => conversationId === "conv_A"
+        ? [
+          { task_id: "task_A", path: "E:\\convA-latest.docx", created_at: "2026-04-24T12:00:00Z" },
+          { task_id: "task_A", path: "E:\\convA-old.pdf", created_at: "2026-04-24T11:00:00Z" }
+        ]
+        : []
+    }
+  };
+  const result = await LIST_CONVERSATION_ARTIFACTS_TOOL.execute(
+    { limit: 2 },
+    { runtime, task: { conversation_id: "conv_A" } }
+  );
+  assert.equal(result.success, true);
+  assert.ok(result.observation.includes("conv_A"));
+  assert.deepEqual(result.metadata.artifact_paths, ["E:\\convA-latest.docx", "E:\\convA-old.pdf"]);
+
+  const missingScope = await LIST_CONVERSATION_ARTIFACTS_TOOL.execute({}, { runtime, task: {} });
+  assert.equal(missingScope.success, false);
+}
+
+// --- 5. System prompts tell the model about these tools ------------
 {
   const ag = await readFile(path.join(ROOT, "src/service/executors/agentic/prompt-builder.mjs"), "utf8");
   assert.ok(ag.includes("list_recent_tasks"),
@@ -141,6 +170,8 @@ for (const tool of MEMORY_TOOLS) {
     "agentic system prompt must reference recall_memory");
   assert.ok(ag.includes("get_task_detail"),
     "agentic system prompt must reference get_task_detail");
+  assert.ok(ag.includes("list_conversation_artifacts"),
+    "agentic system prompt must reference list_conversation_artifacts");
   assert.ok(ag.includes("上个问题"),
     "agentic prompt must call out the deictic-reference case explicitly");
 
@@ -148,18 +179,19 @@ for (const tool of MEMORY_TOOLS) {
   assert.ok(tu.includes("list_recent_tasks"));
   assert.ok(tu.includes("recall_memory"));
   assert.ok(tu.includes("get_task_detail"));
+  assert.ok(tu.includes("list_conversation_artifacts"));
 }
 
-// --- 5. Tools are registered in BUILTIN_ACTION_TOOLS ---------------
+// --- 6. Tools are registered in BUILTIN_ACTION_TOOLS ---------------
 {
   const { BUILTIN_ACTION_TOOLS } = await import("../src/service/action_tools/tools/index.mjs");
   const ids = BUILTIN_ACTION_TOOLS.map((t) => t.id);
-  for (const mid of ["recall_memory", "list_recent_tasks", "get_task_detail"]) {
+  for (const mid of ["recall_memory", "list_recent_tasks", "get_task_detail", "list_conversation_artifacts"]) {
     assert.ok(ids.includes(mid), `BUILTIN_ACTION_TOOLS must include ${mid}`);
   }
 }
 
-// --- 6. Patch-era regex is gone -----------------------------------
+// --- 7. Patch-era regex is gone -----------------------------------
 {
   const ctx = await readFile(path.join(ROOT, "src/service/core/context-submission.mjs"), "utf8");
   assert.ok(!ctx.includes("DEICTIC_PATTERN"),

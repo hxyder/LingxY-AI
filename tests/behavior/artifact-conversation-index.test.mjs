@@ -1,0 +1,106 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+import { createSqliteStore } from "../../src/service/core/store/sqlite-store.mjs";
+import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
+
+function withSqlite(fn) {
+  const dir = mkdtempSync(path.join(tmpdir(), "artifact-conv-index-"));
+  const store = createSqliteStore({ dbPath: path.join(dir, "uca.db") });
+  try {
+    fn(store);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function runForBoth(label, fn) {
+  test(`sqlite: ${label}`, () => withSqlite(fn));
+  test(`memory: ${label}`, () => fn(createInMemoryStoreScaffold()));
+}
+
+function taskRecord(taskId, conversationId, createdAt = "2026-05-01T10:00:00.000Z") {
+  return {
+    task_id: taskId,
+    conversation_id: conversationId,
+    created_at: createdAt,
+    updated_at: createdAt,
+    status: "success",
+    sub_status: "completed",
+    intent: "general",
+    executor: "tool_using",
+    user_command: `task ${taskId}`,
+    execution_mode: "interactive",
+    context_packet: { source_type: "clipboard" },
+    completed_steps: [],
+    executor_history: []
+  };
+}
+
+runForBoth("appendArtifact derives conversation_id from the task row", (store) => {
+  store.insertTask(taskRecord("task_a", "conv_a"));
+  const saved = store.appendArtifact({
+    artifact_id: "artifact_a",
+    task_id: "task_a",
+    path: "E:\\out\\a.docx",
+    mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    created_at: "2026-05-01T10:05:00.000Z"
+  });
+  assert.equal(saved.conversation_id, "conv_a");
+  assert.equal(store.getArtifactsForTask("task_a")[0].conversation_id, "conv_a");
+  assert.deepEqual(
+    store.getArtifactsForConversation("conv_a").map((artifact) => artifact.path),
+    ["E:\\out\\a.docx"]
+  );
+});
+
+runForBoth("getArtifactsForConversation is scoped and newest first", (store) => {
+  store.insertTask(taskRecord("task_a1", "conv_a"));
+  store.insertTask(taskRecord("task_a2", "conv_a"));
+  store.insertTask(taskRecord("task_b1", "conv_b"));
+  store.appendArtifact({
+    artifact_id: "artifact_old",
+    task_id: "task_a1",
+    path: "E:\\out\\old.docx",
+    created_at: "2026-05-01T10:01:00.000Z"
+  });
+  store.appendArtifact({
+    artifact_id: "artifact_new",
+    task_id: "task_a2",
+    path: "E:\\out\\new.docx",
+    created_at: "2026-05-01T10:02:00.000Z"
+  });
+  store.appendArtifact({
+    artifact_id: "artifact_other",
+    task_id: "task_b1",
+    path: "E:\\out\\other.docx",
+    created_at: "2026-05-01T10:03:00.000Z"
+  });
+  assert.deepEqual(
+    store.getArtifactsForConversation("conv_a", { limit: 10 }).map((artifact) => artifact.path),
+    ["E:\\out\\new.docx", "E:\\out\\old.docx"]
+  );
+  assert.deepEqual(
+    store.getArtifactsForConversation("conv_a", { limit: 1 }).map((artifact) => artifact.path),
+    ["E:\\out\\new.docx"]
+  );
+});
+
+runForBoth("soft-deleting a task keeps conversation artifact index rows", (store) => {
+  store.insertTask(taskRecord("task_soft", "conv_soft"));
+  store.appendArtifact({
+    artifact_id: "artifact_soft",
+    task_id: "task_soft",
+    path: "E:\\out\\soft.pdf",
+    created_at: "2026-05-01T10:04:00.000Z"
+  });
+  store.softDeleteTask("task_soft", { deletedBy: "test" });
+  assert.deepEqual(
+    store.getArtifactsForConversation("conv_soft").map((artifact) => artifact.path),
+    ["E:\\out\\soft.pdf"]
+  );
+});

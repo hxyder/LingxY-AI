@@ -550,5 +550,13 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     properties: {
       task_id: { type: "string" }
     }
+  },
+  list_conversation_artifacts: {
+    type: "object",
+    required: [],
+    properties: {
+      conversation_id: { type: "string" },
+      limit: { type: "number" }
+    }
   }
 });

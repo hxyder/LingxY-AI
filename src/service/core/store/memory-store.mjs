@@ -81,11 +81,27 @@ export function createInMemoryStoreScaffold() {
       return index === -1 ? events : events.slice(index + 1);
     },
     appendArtifact(artifact) {
-      this.artifacts.push(artifact);
-      return artifact;
+      const conversationId = artifact.conversation_id
+        ?? artifact.conversationId
+        ?? this.tasks.get(artifact.task_id)?.conversation_id
+        ?? null;
+      const record = {
+        ...artifact,
+        conversation_id: conversationId,
+        created_at: artifact.created_at ?? memNowIso()
+      };
+      this.artifacts.push(record);
+      return record;
     },
     getArtifactsForTask(taskId) {
       return this.artifacts.filter((artifact) => artifact.task_id === taskId);
+    },
+    getArtifactsForConversation(conversationId, { limit = 100 } = {}) {
+      if (!conversationId) return [];
+      return this.artifacts
+        .filter((artifact) => artifact.conversation_id === conversationId)
+        .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+        .slice(0, Math.max(1, Math.min(limit ?? 100, 500)));
     },
     appendPendingApproval(approval) {
       this.pendingApprovals.push(approval);

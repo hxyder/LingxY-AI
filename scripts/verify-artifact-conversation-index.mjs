@@ -1,0 +1,135 @@
+#!/usr/bin/env node
+import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import Database from "better-sqlite3";
+
+import { createSqliteStore } from "../src/service/core/store/sqlite-store.mjs";
+import { SQLITE_SCHEMA_SQL } from "../src/service/core/store/sqlite-schema.mjs";
+import {
+  applyArtifactConversationIndexV1,
+  MIGRATION_ID
+} from "../src/service/core/store/migrations/artifact_conversation_index_v1.mjs";
+
+let pass = 0;
+let fail = 0;
+function it(label, fn) {
+  try {
+    fn();
+    process.stdout.write(`PASS  ${label}\n`);
+    pass += 1;
+  } catch (err) {
+    process.stdout.write(`FAIL  ${label}\n  ${err.message}\n`);
+    fail += 1;
+  }
+}
+
+function disposeDb(db, dir) {
+  try { db.close(); } catch { /* ignore */ }
+  rmSync(dir, { recursive: true, force: true });
+}
+
+function seedTask(db, { taskId, conversationId, createdAt = "2026-05-01T10:00:00.000Z" }) {
+  const taskJson = JSON.stringify({
+    task_id: taskId,
+    conversation_id: conversationId,
+    status: "success",
+    user_command: `task ${taskId}`
+  });
+  db.prepare(`INSERT INTO tasks
+    (task_id, created_at, updated_at, status, sub_status, intent, executor,
+     source_type, user_command, execution_mode, source_dedupe_key,
+     context_packet_json, task_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    taskId, createdAt, createdAt, "success", "completed",
+    "general", "tool_using", "clipboard", `task ${taskId}`,
+    "interactive", null, "{}", taskJson
+  );
+}
+
+function createOldArtifactSchemaDb() {
+  const dir = mkdtempSync(path.join(tmpdir(), "verify-artifact-conv-index-"));
+  const dbPath = path.join(dir, "uca.db");
+  const db = new Database(dbPath);
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+  db.exec(SQLITE_SCHEMA_SQL.tasks);
+  db.exec(`CREATE TABLE IF NOT EXISTS artifacts (
+    artifact_id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    path TEXT NOT NULL,
+    mime_type TEXT,
+    created_at TEXT NOT NULL
+  );`);
+  db.exec(SQLITE_SCHEMA_SQL.schemaMigrations);
+  return { db, dir, dbPath };
+}
+
+it("migration upgrades old artifacts table, backfills conversation_id, and is idempotent", () => {
+  const { db, dir } = createOldArtifactSchemaDb();
+  try {
+    seedTask(db, { taskId: "task_a", conversationId: "conv_a" });
+    seedTask(db, { taskId: "task_b", conversationId: null });
+    db.prepare(`INSERT INTO artifacts
+      (artifact_id, task_id, path, mime_type, created_at)
+      VALUES (?, ?, ?, ?, ?)`
+    ).run("artifact_a", "task_a", "E:\\out\\a.docx", null, "2026-05-01T10:01:00.000Z");
+    db.prepare(`INSERT INTO artifacts
+      (artifact_id, task_id, path, mime_type, created_at)
+      VALUES (?, ?, ?, ?, ?)`
+    ).run("artifact_b", "task_b", "E:\\out\\b.docx", null, "2026-05-01T10:02:00.000Z");
+
+    const result = applyArtifactConversationIndexV1(db);
+    assert.equal(result.applied, true);
+    assert.equal(result.backfilled, 1);
+    const columns = db.prepare("PRAGMA table_info(artifacts)").all().map((column) => column.name);
+    assert.ok(columns.includes("conversation_id"), "conversation_id column must be added");
+    assert.equal(
+      db.prepare("SELECT conversation_id FROM artifacts WHERE artifact_id = ?").get("artifact_a").conversation_id,
+      "conv_a"
+    );
+    assert.equal(
+      db.prepare("SELECT conversation_id FROM artifacts WHERE artifact_id = ?").get("artifact_b").conversation_id,
+      null
+    );
+    const index = db.prepare("PRAGMA index_list(artifacts)").all()
+      .find((row) => row.name === "idx_artifacts_conversation_created");
+    assert.ok(index, "conversation artifact index must exist");
+    assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE migration_id = ?").get(MIGRATION_ID));
+    assert.equal(applyArtifactConversationIndexV1(db).applied, false);
+  } finally {
+    disposeDb(db, dir);
+  }
+});
+
+it("createSqliteStore can open an old DB and expose getArtifactsForConversation", () => {
+  const { db, dir, dbPath } = createOldArtifactSchemaDb();
+  try {
+    seedTask(db, { taskId: "task_open", conversationId: "conv_open" });
+    db.prepare(`INSERT INTO artifacts
+      (artifact_id, task_id, path, mime_type, created_at)
+      VALUES (?, ?, ?, ?, ?)`
+    ).run("artifact_open", "task_open", "E:\\out\\open.pdf", null, "2026-05-01T10:03:00.000Z");
+    db.close();
+
+    const store = createSqliteStore({ dbPath });
+    try {
+      assert.deepEqual(
+        store.getArtifactsForConversation("conv_open").map((artifact) => artifact.path),
+        ["E:\\out\\open.pdf"]
+      );
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+if (fail > 0) {
+  console.error(`${fail} artifact conversation index verification(s) failed.`);
+  process.exit(1);
+}
+console.log(`${pass} artifact conversation index verification(s) passed.`);

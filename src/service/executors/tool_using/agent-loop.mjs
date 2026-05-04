@@ -121,6 +121,16 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function collectArtifactPathsFromTranscript(transcript = []) {
+  const paths = new Set();
+  for (const entry of transcript ?? []) {
+    for (const artifactPath of entry?.artifact_paths ?? []) {
+      if (artifactPath) paths.add(artifactPath);
+    }
+  }
+  return [...paths];
+}
+
 function defaultPlanner({ task, runtime: plannerRuntime = null }) {
   const catalog = plannerRuntime?.connectorCatalog ?? task.__runtime?.connectorCatalog ?? null;
   const deterministic = planDeterministicToolCall(task.user_command, catalog);
@@ -310,7 +320,7 @@ Guidance (not a rigid checklist — apply judgment):
 - **Phantom attachments.** If the user refers to an image / file / screenshot / 图片 / 这张 / 这张照片 / 这个文件 / 上传的 but Resources shows BOTH \`Attached files: (none)\` AND \`Attached images: (none)\`, ASK them to attach or paste it. Never describe, summarize, or analyze a fictional attachment. If the conversation history mentions a concrete path, pass that path to a tool argument; do not pretend to "see" it as an inline attachment.
 - **Vision questions go through \`vision_analyze\`.** When the user asks what is in an attached image, to read text / OCR / 提取文字 from a screenshot, to compare images, or to summarise visual content, call \`vision_analyze\` with the absolute paths from \`Attached images\` (and a short prompt). Do NOT call \`vision_analyze\` for sending / forwarding / uploading / opening / revealing the image — those are connector or file-tool jobs (compose_email, account_send_email, account_upload_file, open_file, reveal_in_explorer). If this turn already includes the image as an inline block (your provider supports vision and the runtime attached it), just answer directly without calling \`vision_analyze\`.
 - **Contracts are boundaries, not dead ends.** If a policy, risk gate, or missing approval blocks the action you think is necessary, do not give up and do not pretend success. Ask the user for the smallest permission or missing detail needed, then stop.
-- **Memory recall.** If the user refers to earlier work with a pronoun ("上个问题" / "刚才" / "之前那份" / "last one" / "that report") or asks you to continue / revise something done before, call list_recent_tasks first (or recall_memory with a topic query if the reference is thematic) and then get_task_detail on the matching task_id. Never reply "I don't remember prior work" while these tools exist.
+- **Memory recall.** If the user refers to earlier work with a pronoun ("上个问题" / "刚才" / "之前那份" / "last one" / "that report") or asks you to continue / revise something done before, call list_recent_tasks first (or recall_memory with a topic query if the reference is thematic) and then get_task_detail on the matching task_id. If they are continuing a file from the current chat, call list_conversation_artifacts first. Never reply "I don't remember prior work" while these tools exist.
 - **No placeholder content.** If drafting an email, write an actual greeting / body in the user's language based on what they said — never emit literal "邮件主题" or "lorem ipsum" strings.
 - **Compound requests = chain tool calls.** When the user asks for multiple actions in one message ("打开 AppA 和 AppB"，"open A then B"，"启动这三个 app"), call ONE tool per turn but KEEP CALLING tools across turns until every requested action is done. Do NOT return a final answer after the first launch_app — the second / third are still pending. Only return final after every requested action shows success in the transcript.
 - **Don't repeat failed tool+args pairs.** You have at most ${maxIter} tool calls; end early once the goal is met.
@@ -521,6 +531,7 @@ export function createToolUsingExecutorScaffold() {
           runtime: runtimeWithEmit,
           planner: llmPlanner
         });
+        const terminalArtifactPaths = collectArtifactPathsFromTranscript(result.transcript ?? []);
 
         // UCA-077 P1-08: shared SuccessContract validator. Replaces the old
         // inline "did web_search_fetch fire?" check with a centralised module
@@ -541,8 +552,8 @@ export function createToolUsingExecutorScaffold() {
             const reasons = violations.map((v) => v.message).join(" ");
             const warningNote = `\n\n注意：这次执行没有完全满足任务要求：${reasons}`;
             yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-            yield { event_type: "inline_result", payload: { text: (result.final_text || "任务没有生成最终答复。") + warningNote } };
-            yield { event_type: "partial_success", payload: { text: (result.final_text || "任务没有生成最终答复。") + warningNote, violations } };
+            yield { event_type: "inline_result", payload: { text: (result.final_text || "任务没有生成最终答复。") + warningNote, artifact_paths: terminalArtifactPaths } };
+            yield { event_type: "partial_success", payload: { text: (result.final_text || "任务没有生成最终答复。") + warningNote, violations, artifact_paths: terminalArtifactPaths } };
             return;
           }
         }
@@ -561,8 +572,8 @@ export function createToolUsingExecutorScaffold() {
           const body = result.final_text || "任务没有生成最终答复。";
           const text = `${banner}\n\n---\n\n${body}`;
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text } };
-          yield { event_type: "partial_success", payload: { text, violations: [connectorClaimGuard] } };
+          yield { event_type: "inline_result", payload: { text, artifact_paths: terminalArtifactPaths } };
+          yield { event_type: "partial_success", payload: { text, violations: [connectorClaimGuard], artifact_paths: terminalArtifactPaths } };
           return;
         }
 
@@ -572,38 +583,40 @@ export function createToolUsingExecutorScaffold() {
           const body = result.final_text || "任务没有生成最终答复。";
           const text = `${banner}\n\n---\n\n${body}`;
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text } };
-          yield { event_type: "partial_success", payload: { text, violations: [localFileClaimGuard] } };
+          yield { event_type: "inline_result", payload: { text, artifact_paths: terminalArtifactPaths } };
+          yield { event_type: "partial_success", payload: { text, violations: [localFileClaimGuard], artifact_paths: terminalArtifactPaths } };
           return;
         }
 
         if (result.status === "success") {
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text: result.final_text || "任务已完成，但没有生成可显示的答复。" } };
-          yield { event_type: "success", payload: { text: result.final_text || "任务已完成，但没有生成可显示的答复。" } };
+          yield { event_type: "inline_result", payload: { text: result.final_text || "任务已完成，但没有生成可显示的答复。", artifact_paths: terminalArtifactPaths } };
+          yield { event_type: "success", payload: { text: result.final_text || "任务已完成，但没有生成可显示的答复。", artifact_paths: terminalArtifactPaths } };
         } else if (result.status === "waiting_external_decision") {
           const text = result.final_text || "已创建待确认操作，等待你的确认。";
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text } };
+          yield { event_type: "inline_result", payload: { text, artifact_paths: terminalArtifactPaths } };
           yield {
             event_type: "partial_success",
             payload: {
               text,
               sub_status: "waiting_external_decision",
               pendingApproval: result.approval ?? null,
-              obligations: result.obligations ?? null
+              obligations: result.obligations ?? null,
+              artifact_paths: terminalArtifactPaths
             }
           };
         } else if (result.status === "partial_success") {
           const text = result.final_text || result.error || "任务已停止，但没有完全满足成功条件。";
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
-          yield { event_type: "inline_result", payload: { text } };
+          yield { event_type: "inline_result", payload: { text, artifact_paths: terminalArtifactPaths } };
           yield {
             event_type: "partial_success",
             payload: {
               text,
               phase_gate: result.phase_gate ?? null,
-              error_budget: result.error_budget ?? null
+              error_budget: result.error_budget ?? null,
+              artifact_paths: terminalArtifactPaths
             }
           };
         } else {

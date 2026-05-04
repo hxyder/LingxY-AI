@@ -24,6 +24,7 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   artifacts: `CREATE TABLE IF NOT EXISTS artifacts (
   artifact_id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL,
+  conversation_id TEXT,
   path TEXT NOT NULL,
   mime_type TEXT,
   created_at TEXT NOT NULL

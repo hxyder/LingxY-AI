@@ -21,12 +21,13 @@ export function createArtifactStore({ baseDir } = {}) {
       await mkdir(taskDir, { recursive: true });
       return taskDir;
     },
-    registerArtifact(taskId, artifactPath, mimeType) {
+    registerArtifact(taskId, artifactPath, mimeType, { conversationId = null, createdAt = null } = {}) {
       return {
         artifact_id: `${taskId}:${path.basename(artifactPath)}`,
         task_id: taskId,
+        conversation_id: conversationId ?? null,
         path: artifactPath,
-        created_at: new Date().toISOString(),
+        created_at: createdAt ?? new Date().toISOString(),
         mime_type: mimeType
       };
     }

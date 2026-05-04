@@ -4,6 +4,7 @@ import crypto from "node:crypto";
 import Database from "better-sqlite3";
 import { SQLITE_SCHEMA_SQL, SQLITE_INDEX_SQL } from "./sqlite-schema.mjs";
 import { applyConversationV1 } from "./migrations/conversation_v1.mjs";
+import { applyArtifactConversationIndexV1 } from "./migrations/artifact_conversation_index_v1.mjs";
 import {
   filterDeletedRecords,
   markRecordDeleted,
@@ -86,6 +87,7 @@ function mapArtifact(row) {
   return {
     artifact_id: row.artifact_id,
     task_id: row.task_id,
+    conversation_id: row.conversation_id ?? null,
     path: row.path,
     mime_type: row.mime_type,
     created_at: row.created_at
@@ -256,6 +258,7 @@ export function createSqliteStore({ dbPath }) {
   }
 
   applyConversationV1(db);
+  applyArtifactConversationIndexV1(db);
 
   const statements = {
     upsertTask: db.prepare(`INSERT INTO tasks (
@@ -285,11 +288,18 @@ export function createSqliteStore({ dbPath }) {
     )`),
     getEventsForTask: db.prepare("SELECT event_id, task_id, ts, event_type, payload_json FROM task_events WHERE task_id = ? ORDER BY ts ASC"),
     insertArtifact: db.prepare(`INSERT OR REPLACE INTO artifacts (
-      artifact_id, task_id, path, mime_type, created_at
+      artifact_id, task_id, conversation_id, path, mime_type, created_at
     ) VALUES (
-      @artifact_id, @task_id, @path, @mime_type, @created_at
+      @artifact_id, @task_id, @conversation_id, @path, @mime_type, @created_at
     )`),
-    getArtifactsForTask: db.prepare("SELECT artifact_id, task_id, path, mime_type, created_at FROM artifacts WHERE task_id = ? ORDER BY created_at ASC"),
+    getArtifactsForTask: db.prepare("SELECT artifact_id, task_id, conversation_id, path, mime_type, created_at FROM artifacts WHERE task_id = ? ORDER BY created_at ASC"),
+    getArtifactsForConversation: db.prepare(`
+      SELECT artifact_id, task_id, conversation_id, path, mime_type, created_at
+        FROM artifacts
+       WHERE conversation_id = @conversation_id
+       ORDER BY created_at DESC
+       LIMIT @limit
+    `),
     upsertPendingApproval: db.prepare(`INSERT INTO pending_approvals (
       approval_id, created_at, expires_at, source_type, source_id, proposed_action, proposed_target, proposed_params_json, preview_text, status, decided_at, decided_by, resulting_task_id, metadata_json
     ) VALUES (
@@ -622,17 +632,30 @@ export function createSqliteStore({ dbPath }) {
       return index === -1 ? events : events.slice(index + 1);
     },
     appendArtifact(artifact) {
-      statements.insertArtifact.run({
+      const conversationId = artifact.conversation_id
+        ?? artifact.conversationId
+        ?? mapTask(statements.getTask.get(artifact.task_id))?.conversation_id
+        ?? null;
+      const record = {
         artifact_id: artifact.artifact_id,
         task_id: artifact.task_id,
+        conversation_id: conversationId,
         path: artifact.path,
         mime_type: artifact.mime_type ?? null,
-        created_at: artifact.created_at
-      });
-      return clone(artifact);
+        created_at: artifact.created_at ?? nowIso()
+      };
+      statements.insertArtifact.run(record);
+      return clone(record);
     },
     getArtifactsForTask(taskId) {
       return statements.getArtifactsForTask.all(taskId).map(mapArtifact);
+    },
+    getArtifactsForConversation(conversationId, { limit = 100 } = {}) {
+      if (!conversationId) return [];
+      return statements.getArtifactsForConversation.all({
+        conversation_id: conversationId,
+        limit: Math.max(1, Math.min(limit ?? 100, 500))
+      }).map(mapArtifact);
     },
     appendPendingApproval(approval) {
       return upsertPendingApproval(approval);

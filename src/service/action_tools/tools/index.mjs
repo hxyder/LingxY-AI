@@ -2921,6 +2921,7 @@ export const REGISTER_ARTIFACT_TOOL = {
       return createActionResult({
         success: true,
         observation: `Registered ${kind} artifact: ${filePath}${alreadyRegistered ? " (already registered)" : ""}`,
+        artifactPaths: [filePath],
         metadata: { tool_id: "register_artifact", path: filePath, kind }
       });
     } catch (error) {

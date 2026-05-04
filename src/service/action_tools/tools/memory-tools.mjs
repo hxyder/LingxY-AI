@@ -11,8 +11,9 @@
 //   recall_memory(query, limit)     — semantic search the task store
 //   list_recent_tasks(minutes, limit) — freshest successful tasks
 //   get_task_detail(task_id)        — full context for a specific id
+//   list_conversation_artifacts(conversation_id?, limit) — files from this thread
 //
-// All three are low-risk (read-only), run against runtime.store and
+// All four are low-risk (read-only), run against runtime.store and
 // runtime.platform.embeddingStore, and return a compact observation
 // the planner can reason over. The agent's system prompt tells it to
 // call recall_memory whenever the user refers to a prior turn by
@@ -32,7 +33,7 @@ function clampLimit(raw, fallback, max = MAX_LIMIT) {
   return Math.min(Math.floor(n), max);
 }
 
-function summariseTaskRow(task) {
+function summariseTaskRow(task, runtime = null) {
   if (!task) return null;
   const summary = task.result_summary ?? null;
   return {
@@ -43,12 +44,21 @@ function summariseTaskRow(task) {
     created_at: task.created_at ?? null,
     updated_at: task.updated_at ?? null,
     result_summary: summary ? String(summary).slice(0, 400) : null,
-    artifact_paths: extractArtifactPaths(task)
+    artifact_paths: extractArtifactPaths(task, runtime)
   };
 }
 
-function extractArtifactPaths(task) {
+function extractArtifactPaths(task, runtime = null) {
   const paths = new Set();
+  if (runtime?.store?.getArtifactsForTask && task?.task_id) {
+    try {
+      for (const artifact of runtime.store.getArtifactsForTask(task.task_id) ?? []) {
+        if (artifact?.path) paths.add(artifact.path);
+      }
+    } catch {
+      // Fall back to the task JSON shape below.
+    }
+  }
   const list = Array.isArray(task.artifacts) ? task.artifacts : [];
   for (const a of list) {
     if (a?.path) paths.add(a.path);
@@ -181,7 +191,7 @@ export const LIST_RECENT_TASKS_TOOL = {
       if (t.result_summary) {
         lines.push(`    result: ${String(t.result_summary).replace(/\s+/g, " ").slice(0, 240)}`);
       }
-      const artifacts = extractArtifactPaths(t);
+      const artifacts = extractArtifactPaths(t, runtime);
       if (artifacts.length) {
         lines.push(`    artifacts: ${artifacts.slice(0, 3).join(" · ")}`);
       }
@@ -229,7 +239,7 @@ export const GET_TASK_DETAIL_TOOL = {
       const final = [...events].reverse().find((e) => e.event_type === "success" || e.event_type === "inline_result");
       answer = final?.payload?.text ?? null;
     } catch { /* best-effort */ }
-    const summary = summariseTaskRow(task);
+    const summary = summariseTaskRow(task, runtime);
     const lines = [
       `task_id=${summary.task_id}`,
       `status=${summary.status}`,
@@ -249,8 +259,61 @@ export const GET_TASK_DETAIL_TOOL = {
   }
 };
 
+// ──────────────────────────────────────────────────────────────────
+// list_conversation_artifacts
+// ──────────────────────────────────────────────────────────────────
+export const LIST_CONVERSATION_ARTIFACTS_TOOL = {
+  id: "list_conversation_artifacts",
+  name: "List Conversation Artifacts",
+  description: `List files produced in the current conversation. Use this before revising, emailing, comparing, or continuing work on an artifact from this same chat. Defaults to the active conversation_id and does not search unrelated conversations.`,
+  parameters: {
+    type: "object",
+    required: [],
+    properties: {
+      conversation_id: { type: "string", description: "Optional. Defaults to the current task's conversation_id." },
+      limit: { type: "number", description: `Max results (default ${DEFAULT_RECENT_LIMIT}, capped at ${MAX_LIMIT}).` }
+    }
+  },
+  risk_level: "low",
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const runtime = ctx.runtime;
+    const conversationId = String(args.conversation_id ?? ctx.task?.conversation_id ?? "").trim();
+    if (!runtime?.store?.getArtifactsForConversation) {
+      return createActionResult({ success: false, observation: "Conversation artifact index is not available in this runtime." });
+    }
+    if (!conversationId) {
+      return createActionResult({ success: false, observation: "list_conversation_artifacts requires an active conversation_id." });
+    }
+    const limit = clampLimit(args.limit, DEFAULT_RECENT_LIMIT);
+    let artifacts;
+    try {
+      artifacts = runtime.store.getArtifactsForConversation(conversationId, { limit });
+    } catch (error) {
+      return createActionResult({ success: false, observation: `Conversation artifact lookup failed: ${error.message}` });
+    }
+    if (!artifacts.length) {
+      return createActionResult({ success: true, observation: `No artifacts found for conversation_id=${conversationId}.` });
+    }
+    const lines = [`Artifacts for conversation_id=${conversationId}:`];
+    for (const artifact of artifacts) {
+      lines.push(`- ${artifact.path}`);
+      lines.push(`    task_id=${artifact.task_id} created_at=${artifact.created_at ?? "(unknown)"}`);
+    }
+    return createActionResult({
+      success: true,
+      observation: formatObservation(lines),
+      metadata: {
+        conversation_id: conversationId,
+        artifact_paths: artifacts.map((artifact) => artifact.path)
+      }
+    });
+  }
+};
+
 export const MEMORY_TOOLS = Object.freeze([
   RECALL_MEMORY_TOOL,
   LIST_RECENT_TASKS_TOOL,
-  GET_TASK_DETAIL_TOOL
+  GET_TASK_DETAIL_TOOL,
+  LIST_CONVERSATION_ARTIFACTS_TOOL
 ]);
