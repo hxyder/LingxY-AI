@@ -83,6 +83,7 @@ export function renderProjectConversationListHtml({
 export function renderProjectArtifactListHtml({
   artifacts = [],
   attachedFilePaths = [],
+  projectId = null,
   labelForPath = (value) => value
 } = {}) {
   const rows = Array.isArray(artifacts) ? artifacts.filter((artifact) => artifact?.path) : [];
@@ -105,9 +106,14 @@ export function renderProjectArtifactListHtml({
             <span class="artifact-status artifact-status--project">Project scope</span>
           </span>
         </button>
-        <button class="project-artifact-action" type="button" data-project-artifact-reveal="${escapeHtml(filePath)}" title="Reveal in folder" aria-label="Reveal ${escapeHtml(label)}">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
-        </button>
+        <div class="project-artifact-actions">
+          <button class="project-artifact-action" type="button" data-project-artifact-reveal="${escapeHtml(filePath)}" title="Reveal in folder" aria-label="Reveal ${escapeHtml(label)}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
+          </button>
+          ${projectId ? `<button class="project-artifact-action project-artifact-action--danger" type="button" data-project-file-detach="${escapeHtml(filePath)}" data-project-file-detach-project-id="${escapeHtml(projectId)}" title="Remove from project" aria-label="Remove ${escapeHtml(label)} from project">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>` : ""}
+        </div>
       </div>
     `;
   }).join("");
@@ -127,9 +133,11 @@ export function renderProjectArtifactListHtml({
             ${status ? `<span class="artifact-status ${status.className}">${escapeHtml(status.label)}</span>` : ""}
           </span>
         </button>
-        <button class="project-artifact-action" type="button" data-project-artifact-reveal="${escapeHtml(filePath)}" title="Reveal in folder" aria-label="Reveal ${escapeHtml(label)}">
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
-        </button>
+        <div class="project-artifact-actions">
+          <button class="project-artifact-action" type="button" data-project-artifact-reveal="${escapeHtml(filePath)}" title="Reveal in folder" aria-label="Reveal ${escapeHtml(label)}">
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
+          </button>
+        </div>
       </div>
     `;
   }).join("");

@@ -127,7 +127,8 @@ import {
   createProjectId,
   buildDefaultProjectStore as buildDefaultProjectStoreBase,
   normalizeProjectStore as normalizeProjectStoreBase,
-  mergeProjectStores as mergeProjectStoresBase
+  mergeProjectStores as mergeProjectStoresBase,
+  setProjectAttachedFilePath
 } from "../../shared/project-store.mjs";
 
 const runtimeState = document.querySelector("#runtimeState");
@@ -6209,6 +6210,7 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
       : renderProjectArtifactListHtml({
         artifacts: projectArtifacts,
         attachedFilePaths: attachedProjectFilePaths,
+        projectId: selectedProject?.id ?? null,
         labelForPath: formatArtifactLabel
       });
     setHtmlIfChanged(projectArtifactList, artifactHtml);
@@ -7195,6 +7197,18 @@ consoleChatArtifacts?.addEventListener("click", (event) => {
 });
 projectArtifactList?.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
+  const detachBtn = target?.closest?.("[data-project-file-detach]");
+  if (detachBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    const path = detachBtn.dataset.projectFileDetach ?? "";
+    const projectId = detachBtn.dataset.projectFileDetachProjectId ?? state.selectedProjectId ?? "";
+    const store = state.projectStore ?? loadConsoleProjectStore();
+    saveConsoleProjectStore(setProjectAttachedFilePath(store, projectId, path, false, { defaultColor: PROJECT_COLORS[0] }));
+    renderProjectsWorkspace({ skipFetch: true });
+    showConsoleToast("已从项目文件范围移出", { kind: "ok" });
+    return;
+  }
   const revealBtn = target?.closest?.("[data-project-artifact-reveal]");
   if (revealBtn instanceof HTMLElement) {
     event.preventDefault();

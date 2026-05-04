@@ -736,7 +736,7 @@ label, .field-label {
 }
 .project-artifact-row {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) 28px;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   padding: 8px;
@@ -871,6 +871,18 @@ label, .field-label {
 .project-artifact-action:hover {
   background: var(--panel);
   color: var(--ink);
+}
+.project-artifact-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.project-artifact-action--danger {
+  color: var(--err);
+}
+.project-artifact-action--danger:hover {
+  background: var(--err-soft);
+  color: var(--err);
 }
 .panel-section-body.compact { padding: 12px 18px; }
 .panel-foot {

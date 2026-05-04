@@ -8,6 +8,7 @@ import {
 test("project files view renders durable attached files separately from generated artifacts", () => {
   const html = renderProjectArtifactListHtml({
     attachedFilePaths: ["E:\\project\\brief.md"],
+    projectId: "project_docs",
     artifacts: [
       {
         path: "E:\\project\\report.docx",
@@ -24,6 +25,8 @@ test("project files view renders durable attached files separately from generate
   assert.match(html, /brief\.md/);
   assert.match(html, /Attached project file/);
   assert.match(html, /Project scope/);
+  assert.match(html, /data-project-file-detach="E:\\project\\brief\.md"/);
+  assert.match(html, /data-project-file-detach-project-id="project_docs"/);
   assert.match(html, /report\.docx/);
   assert.match(html, /Report task/);
 });
@@ -31,6 +34,7 @@ test("project files view renders durable attached files separately from generate
 test("project files view treats attached paths as openable local files", () => {
   const html = renderProjectArtifactListHtml({
     attachedFilePaths: ["E:\\project\\brief.md"],
+    projectId: "project_docs",
     artifacts: [],
     labelForPath: (path) => path
   });

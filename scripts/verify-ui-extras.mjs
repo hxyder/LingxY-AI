@@ -308,6 +308,8 @@ assert.ok(/artifactStatusInfo\(artifact\.status\)/.test(consoleProjectsView),
   "projects: scoped artifact list must render artifact.status metadata");
 assert.ok(/attachedFilePaths\s*=\s*\[\]/.test(consoleProjectsView) && /Attached project file/.test(consoleProjectsView),
   "projects: Files column must show durable attached project files separately from generated artifacts");
+assert.ok(/data-project-file-detach/.test(consoleProjectsView) && /setProjectAttachedFilePath/.test(consoleJs),
+  "projects: attached project files must be removable through the shared project-store helper");
 assert.ok(/attachedProjectFilePaths/.test(consoleJs) && /projectArtifacts\.length\s*\+\s*attachedProjectFilePaths\.length/.test(consoleJs),
   "projects: Files count must include durable attached project files");
 assert.ok(/setHtmlIfChanged\(projectArtifactList/.test(consoleJs),
