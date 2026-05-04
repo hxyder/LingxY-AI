@@ -2131,6 +2131,13 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   overflow-x: auto;
   scrollbar-width: thin;
 }
+.conversation-artifacts-section {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+}
 .conversation-artifact {
   display: grid;
   grid-template-columns: 26px minmax(96px, 1fr) 24px;
@@ -2142,6 +2149,9 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--panel);
+}
+.conversation-artifact--project-file {
+  background: color-mix(in srgb, var(--accent-soft) 35%, var(--panel));
 }
 .conversation-artifact .artifact-icon {
   width: 26px;
@@ -2182,6 +2192,21 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   display: flex;
   align-items: center;
   gap: 6px;
+}
+.conversation-artifacts-manage {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.conversation-artifacts-manage:hover {
+  color: var(--accent-strong);
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
 }
 .conversation-artifact-action {
   width: 24px;

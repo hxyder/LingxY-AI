@@ -114,6 +114,10 @@ assert.ok(/attachProjectFilesViaShell/.test(consoleJs) && /window\.ucaShell\.att
   "project files: console must use desktop shell bridge for attach/index");
 assert.ok(/projectAttachFilesBtn/.test(consoleJs) && /pickProjectFiles/.test(consoleJs),
   "project files: console must expose an explicit picker before attach/index");
+assert.ok(/Context files/.test(consoleJs) && /data-chat-project-files-manage/.test(consoleJs),
+  "project files: chat must surface project-scoped context files and a management path");
+assert.ok(/conversation-artifact--project-file/.test(sharedCss) && /conversation-artifacts-manage/.test(sharedCss),
+  "project files: chat context file strip must have dedicated styling");
 assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
   "project store: console must not POST /projects/store directly via fetchJson");
 assert.ok(!/fetchJson\(\s*["'`]\/projects\/store["'`]\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(overlayJs),
