@@ -32,6 +32,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run check
+      - run: npm run verify:audit-high
       - run: npm run licenses
       - run: npm run dist
       - name: Copy release notices

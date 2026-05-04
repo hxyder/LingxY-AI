@@ -20,6 +20,9 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
   Confirm it uses Node 22.12.0, runs `npm run check`, refreshes
   `THIRD_PARTY_LICENSES.md`, generates `checksums.sha256`, and uploads the
   Windows installer artifacts.
+- Confirm release workflows run `npm run verify:audit-high`. Current policy
+  blocks high/critical advisories; documented moderate advisories must be
+  reviewed in `docs/release/known_issues.md` instead of force-fixed blindly.
 - For local `npm run pack` smoke on Windows, confirm Visual Studio Build Tools
   with the Desktop development with C++ workload is installed; Electron 39
   rebuilds native modules such as `better-sqlite3` during packaging.

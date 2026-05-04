@@ -23,6 +23,7 @@ assert.match(workflow, /node-version:\s+"22\.12\.0"/, "release artifacts must pi
 assert.match(workflow, /CSC_IDENTITY_AUTO_DISCOVERY:\s+"false"/, "unsigned CI builds must not auto-discover signing identities");
 assert.match(workflow, /npm ci/, "release workflow must install from lockfile");
 assert.match(workflow, /npm run check/, "release workflow must run full check before packaging");
+assert.match(workflow, /npm run verify:audit-high/, "release workflow must block high/critical npm advisories");
 assert.match(workflow, /npm run licenses/, "release workflow must refresh third-party notices before packaging");
 assert.match(workflow, /npm run dist/, "release workflow must build installer artifacts");
 assert.match(workflow, /THIRD_PARTY_LICENSES\.md/, "release workflow must ship third-party notices");
@@ -34,9 +35,11 @@ assert.match(workflow, /gh release upload/, "release workflow must support updat
 assert.match(repoBaseline, /node-version:\s+"22\.12\.0"/, "repo baseline must use the documented Node baseline");
 assert.match(repoBaseline, /verify:dependency-hygiene/, "repo baseline must run dependency hygiene verification");
 assert.match(releaseGate, /node-version:\s+"22\.12\.0"/, "release gate must use the documented Node baseline");
+assert.match(releaseGate, /npm run verify:audit-high/, "release gate must block high/critical npm advisories");
 
 assert.equal(packageJson.scripts["verify:release-artifact-workflow"], "node scripts/verify-release-artifact-workflow.mjs");
 assert.equal(packageJson.scripts["verify:dependency-hygiene"], "node scripts/verify-dependency-hygiene.mjs");
+assert.equal(packageJson.scripts["verify:audit-high"], "npm audit --audit-level=high");
 assert.match(packageJson.scripts.check, /verify-release-artifact-workflow\.mjs/, "npm run check must include release artifact workflow verification");
 assert.match(packageJson.scripts.check, /verify-dependency-hygiene\.mjs/, "npm run check must include dependency hygiene verification");
 

@@ -178,6 +178,7 @@
     "verify:doc-references": "node scripts/verify-doc-references.mjs",
     "verify:github-readiness": "node scripts/verify-github-readiness.mjs",
     "verify:dependency-hygiene": "node scripts/verify-dependency-hygiene.mjs",
+    "verify:audit-high": "npm audit --audit-level=high",
     "verify:github-pages-readiness": "node scripts/verify-github-pages-readiness.mjs",
     "verify:release-artifact-workflow": "node scripts/verify-release-artifact-workflow.mjs",
     "verify:release-readiness": "node scripts/verify-release-readiness.mjs",

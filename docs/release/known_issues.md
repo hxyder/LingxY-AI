@@ -10,6 +10,7 @@
 - Scanned PDFs without a text layer use `pdftoppm` + image OCR when available; otherwise they return `pdf_ocr_unavailable`.
 - `npm run dist` can fail while electron-builder extracts `winCodeSign` if the Windows session lacks symlink creation privilege; `npm run pack` remains available for local directory packaging.
 - Legacy MCP descriptors `local-fs` and `figma` are status-only entries. Use `mcp-filesystem`; Figma requires an external MCP plugin.
+- `npm audit` currently reports moderate `uuid` advisories through `exceljs` and `mermaid`. Release workflows block high/critical advisories with `npm run verify:audit-high`; do not run `npm audit fix --force` for this item because npm proposes breaking downgrades rather than a safe patch upgrade.
 
 ## Operator Notes
 
