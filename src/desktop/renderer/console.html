@@ -2242,6 +2242,20 @@
             <strong style="font-size:12px;">Data Retention</strong>
             <div id="retentionList" class="retention-list" style="margin-top:6px;"></div>
           </div>
+          <div id="fileContentIndexPanel" style="margin-top:12px;">
+            <div class="row" style="justify-content:space-between;align-items:center;gap:12px;">
+              <div>
+                <strong style="font-size:12px;">Indexed file content</strong>
+                <p class="muted" style="font-size:12px;margin:4px 0 0;">Manage searchable file-content records. Deleting an index entry does not delete the source file.</p>
+              </div>
+              <div class="toolbar" style="gap:8px;justify-content:flex-end;">
+                <span id="fileContentIndexCount" class="tag">0</span>
+                <button id="fileContentIndexRefreshBtn" class="btn btn-sm btn-ghost" type="button">Load indexed files</button>
+              </div>
+            </div>
+            <div id="fileContentIndexState" class="muted" style="font-size:12px;margin-top:8px;"></div>
+            <div id="fileContentIndexList" class="retention-list" style="margin-top:8px;"></div>
+          </div>
         </div>
 
         <div id="dataExportPanel" class="settings-group">

@@ -88,6 +88,9 @@ import {
   renderProjectListHtml
 } from "./console-projects-view.mjs";
 import {
+  createFileContentIndexPanel
+} from "./console-file-content-index-panel.mjs";
+import {
   BUILTIN_API_TEMPLATES,
   codeCliModelChoices,
   modeOptionsForProvider as catalogModeOptionsForProvider,
@@ -740,6 +743,10 @@ const state = {
 
 let consoleChatEventStream = null;
 let consoleChatResultTaskIds = new Set();
+const fileContentIndexPanel = createFileContentIndexPanel({
+  getServiceBaseUrl: () => state.serviceBaseUrl,
+  toast: showConsoleToast
+});
 // Track the in-flight chat task so the composer can flip the Send
 // button to a Stop button while events stream. Cleared on terminal
 // events (success / failed / cancelled / partial_success).
