@@ -865,6 +865,17 @@ export function createElectronShellRuntime({
     browserWindow.setBounds(bounds);
   }
 
+  function lockWindowRendererZoom(windowDef, browserWindow) {
+    if (!windowDef?.locksRendererZoom || !browserWindow?.webContents || browserWindow.webContents.isDestroyed?.()) {
+      return;
+    }
+    // Tiny HUD windows are sized by Electron content bounds. If Chromium
+    // restores or accepts page zoom above 100%, CSS boxes can exceed the
+    // content viewport and native scrollbars appear.
+    try { browserWindow.webContents.setZoomFactor?.(1); } catch { /* ignore */ }
+    try { void browserWindow.webContents.setVisualZoomLevelLimits?.(1, 1); } catch { /* ignore */ }
+  }
+
   function applyWindowPresentation(windowId, browserWindow) {
     const alwaysOnTop = isWindowAlwaysOnTop(windowId);
     browserWindow.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? "screen-saver" : "normal");
@@ -1425,11 +1436,13 @@ export function createElectronShellRuntime({
         webPreferences: {
           sandbox: false,
           contextIsolation: true,
-          preload: PRELOAD_PATH
+          preload: PRELOAD_PATH,
+          ...(windowDef.locksRendererZoom ? { zoomFactor: 1 } : {})
         }
       });
       const initialBounds = resolveWindowBounds(windowDef, browserWindow);
       setManagedWindowBounds(windowDef.id, browserWindow, initialBounds);
+      lockWindowRendererZoom(windowDef, browserWindow);
       applyWindowPresentation(windowDef.id, browserWindow);
       browserWindow.on("close", (event) => {
         if (!quitting) {
@@ -1481,7 +1494,14 @@ export function createElectronShellRuntime({
       };
       browserWindow.on("move", scheduleBoundsPersist);
       browserWindow.on("resize", scheduleBoundsPersist);
+      if (windowDef.locksRendererZoom) {
+        browserWindow.webContents.on("zoom-changed", (event) => {
+          event.preventDefault?.();
+          lockWindowRendererZoom(windowDef, browserWindow);
+        });
+      }
       browserWindow.webContents.on("did-finish-load", () => {
+        lockWindowRendererZoom(windowDef, browserWindow);
         readyWindows.add(windowDef.id);
         browserWindow.webContents.send(IPC_CHANNELS.shellReady, {
           windowId: windowDef.id,

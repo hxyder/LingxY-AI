@@ -157,14 +157,13 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
       route: "/dock",
       singleton: true,
       startsHidden: false,
-      // The visible orb is 48×48; the window must match so the user can
-      // drag the orb fully into a screen edge/corner without invisible
-      // padding blocking the move. Hover scale(1.06) → 50.88px overflows
-      // the window slightly, but transparent windows clip the overflow
-      // gracefully and the trade-off is correct: edge alignment matters
-      // more than a 100% complete hover animation.
+      // The dock content bounds stay exactly 48x48 so the user can drag the
+      // orb fully into a screen edge/corner without invisible padding. The
+      // renderer uses viewport-relative sizing so page zoom cannot create
+      // scrollbars inside the tiny HUD window.
       width: 48,
-      height: 48
+      height: 48,
+      locksRendererZoom: true
     },
     {
       id: WINDOW_IDS.overlay,

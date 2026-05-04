@@ -202,10 +202,11 @@ assert.equal(overlayHtml.includes("sendBtn"), true);
 
 const dockHtml = await read("src/desktop/renderer/dock.html");
 assert.equal(dockHtml.includes("dockButton"), true);
-assert.equal(/html\s*\{[\s\S]{0,180}position:\s*fixed;[\s\S]{0,120}width:\s*48px/.test(dockHtml), true);
+assert.equal(/html\s*\{[\s\S]{0,220}position:\s*fixed;[\s\S]{0,160}width:\s*100vw/.test(dockHtml), true);
 assert.equal(/body\s*\{[\s\S]{0,520}overflow:\s*hidden/.test(dockHtml), true);
 assert.equal(dockHtml.includes("html::-webkit-scrollbar"), true);
-assert.equal(/#dockButton\s*\{[\s\S]{0,180}position:\s*fixed;[\s\S]{0,160}width:\s*48px/.test(dockHtml), true);
+assert.equal(/#dockButton\s*\{[\s\S]{0,220}position:\s*fixed;[\s\S]{0,180}width:\s*100vw/.test(dockHtml), true);
+assert.equal(/canvas\s*\{[\s\S]{0,180}width:\s*100%;[\s\S]{0,80}height:\s*100%;/.test(dockHtml), true);
 
 // UCA-182 Phase 8: notification.html retired. In-app toasts now render
 // inside the popup-card window (popup-card.html); assert that file
@@ -218,6 +219,9 @@ assert.equal(mainProcess.includes("preload: PRELOAD_PATH"), true);
 assert.equal(mainProcess.includes("useContentSize: true"), true);
 assert.equal(mainProcess.includes('windowId === "dock"'), true);
 assert.equal(mainProcess.includes("matchingDisplay.bounds"), true);
+assert.equal(mainProcess.includes("lockWindowRendererZoom"), true);
+assert.equal(mainProcess.includes("setZoomFactor?.(1)"), true);
+assert.equal(mainProcess.includes('"zoom-changed"'), true);
 assert.equal(mainProcess.includes("setManagedWindowBounds"), true);
 assert.equal(mainProcess.includes("setContentBounds"), true);
 assert.equal(mainProcess.includes("buildWindowUrl"), true);

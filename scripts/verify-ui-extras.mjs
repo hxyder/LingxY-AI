@@ -121,6 +121,10 @@ assert.ok(/body\s*\{[\s\S]{0,360}position:\s*fixed;[\s\S]{0,80}inset:\s*0;[\s\S]
   "dock: body must be fixed and non-scrollable");
 assert.ok(/function\s+setManagedWindowBounds/.test(electronMain) && /setContentBounds/.test(electronMain) && /getContentBounds/.test(electronMain),
   "dock: main process must manage the fixed orb by content bounds");
+assert.ok(/width:\s*100vw/.test(dockHtml) && /height:\s*100vh/.test(dockHtml)
+    && /setZoomFactor\?\.\(1\)/.test(electronMain)
+    && /"zoom-changed"/.test(electronMain),
+  "dock: renderer must be viewport-sized and zoom-locked to avoid HUD scrollbars");
 assert.ok(/window\.ucaShell\.transcribeNoteAudio/.test(overlayJs),
   "note transcribe: overlay must use desktop shell bridge");
 assert.ok(/window\.ucaShell\.transcribeNoteAudioStreaming/.test(overlayJs),
