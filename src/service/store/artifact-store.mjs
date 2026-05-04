@@ -2,7 +2,10 @@ import { statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { resolveRuntimeBaseDir } from "../core/runtime-paths.mjs";
-import { normalizeArtifactMetadata } from "../core/store/artifact-metadata.mjs";
+import {
+  normalizeArtifactMetadata,
+  normalizeArtifactVersionMetadata
+} from "../core/store/artifact-metadata.mjs";
 
 function resolveBaseDir(baseDir) {
   if (baseDir) {
@@ -35,12 +38,24 @@ export function createArtifactStore({ baseDir } = {}) {
       await mkdir(taskDir, { recursive: true });
       return taskDir;
     },
-    registerArtifact(taskId, artifactPath, mimeType, { conversationId = null, createdAt = null, source = "generated" } = {}) {
+    registerArtifact(taskId, artifactPath, mimeType, {
+      conversationId = null,
+      createdAt = null,
+      source = "generated",
+      parentArtifactId = null,
+      revisionOf = null,
+      versionLabel = null
+    } = {}) {
       const metadata = normalizeArtifactMetadata({
         path: artifactPath,
         mime_type: mimeType,
         source,
         ...inspectArtifactPath(artifactPath)
+      });
+      const version = normalizeArtifactVersionMetadata({
+        parentArtifactId,
+        revisionOf,
+        versionLabel
       });
       return {
         artifact_id: `${taskId}:${path.basename(artifactPath)}`,
@@ -49,7 +64,8 @@ export function createArtifactStore({ baseDir } = {}) {
         path: artifactPath,
         created_at: createdAt ?? new Date().toISOString(),
         mime_type: mimeType,
-        ...metadata
+        ...metadata,
+        ...version
       };
     }
   };

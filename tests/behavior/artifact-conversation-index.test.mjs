@@ -121,6 +121,9 @@ runForBoth("appendArtifact preserves supplied stable artifact metadata", (store)
     bytes: 42.9,
     sha256: "a".repeat(64),
     status: "available",
+    parent_artifact_id: "artifact_root",
+    revision_of: "artifact_previous",
+    version_label: "v2",
     created_at: "2026-05-01T10:06:00.000Z"
   });
   assert.equal(saved.kind, "data");
@@ -128,6 +131,9 @@ runForBoth("appendArtifact preserves supplied stable artifact metadata", (store)
   assert.equal(saved.bytes, 42);
   assert.equal(saved.sha256, "a".repeat(64));
   assert.equal(saved.status, "available");
+  assert.equal(saved.parent_artifact_id, "artifact_root");
+  assert.equal(saved.revision_of, "artifact_previous");
+  assert.equal(saved.version_label, "v2");
   assert.deepEqual(
     store.getArtifactsForConversation("conv_meta").map((artifact) => ({
       path: artifact.path,
@@ -135,7 +141,10 @@ runForBoth("appendArtifact preserves supplied stable artifact metadata", (store)
       source: artifact.source,
       bytes: artifact.bytes,
       sha256: artifact.sha256,
-      status: artifact.status
+      status: artifact.status,
+      parent_artifact_id: artifact.parent_artifact_id,
+      revision_of: artifact.revision_of,
+      version_label: artifact.version_label
     })),
     [{
       path: "E:\\out\\meta.json",
@@ -143,7 +152,10 @@ runForBoth("appendArtifact preserves supplied stable artifact metadata", (store)
       source: "imported",
       bytes: 42,
       sha256: "a".repeat(64),
-      status: "available"
+      status: "available",
+      parent_artifact_id: "artifact_root",
+      revision_of: "artifact_previous",
+      version_label: "v2"
     }]
   );
 });
@@ -195,11 +207,17 @@ test("artifact store registerArtifact records file size, source, and status with
     const artifactStore = createArtifactStore({ baseDir: dir });
     const saved = artifactStore.registerArtifact("task_file_meta", artifactPath, "text/markdown", {
       conversationId: "conv_file_meta",
-      createdAt: "2026-05-01T10:07:00.000Z"
+      createdAt: "2026-05-01T10:07:00.000Z",
+      revisionOf: "artifact_previous",
+      parentArtifactId: "artifact_root",
+      versionLabel: "v2"
     });
     assert.equal(saved.conversation_id, "conv_file_meta");
     assert.equal(saved.kind, "markdown");
     assert.equal(saved.source, "generated");
+    assert.equal(saved.revision_of, "artifact_previous");
+    assert.equal(saved.parent_artifact_id, "artifact_root");
+    assert.equal(saved.version_label, "v2");
     assert.equal(saved.bytes, Buffer.byteLength(body));
     assert.equal(saved.sha256, null);
     assert.equal(saved.status, "available");

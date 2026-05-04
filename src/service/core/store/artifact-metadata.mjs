@@ -59,6 +59,11 @@ function normalizeSha256(value) {
   return /^[a-f0-9]{64}$/.test(text) ? text : null;
 }
 
+function normalizedOptionalText(value) {
+  const text = `${value ?? ""}`.trim();
+  return text || null;
+}
+
 export function inferArtifactKind({ path: artifactPath = "", mime_type = "", mimeType = "" } = {}) {
   const mime = normalizedText(mime_type || mimeType, "");
   if (mime.includes("pdf")) return "pdf";
@@ -90,5 +95,13 @@ export function normalizeArtifactMetadata(artifact = {}) {
     bytes: normalizeBytes(artifact.bytes),
     sha256: normalizeSha256(artifact.sha256),
     status: KNOWN_STATUSES.has(status) ? status : "unknown"
+  };
+}
+
+export function normalizeArtifactVersionMetadata(artifact = {}) {
+  return {
+    parent_artifact_id: normalizedOptionalText(artifact.parent_artifact_id ?? artifact.parentArtifactId),
+    revision_of: normalizedOptionalText(artifact.revision_of ?? artifact.revisionOf),
+    version_label: normalizedOptionalText(artifact.version_label ?? artifact.versionLabel)
   };
 }

@@ -6,7 +6,11 @@ import { SQLITE_SCHEMA_SQL, SQLITE_INDEX_SQL } from "./sqlite-schema.mjs";
 import { applyConversationV1 } from "./migrations/conversation_v1.mjs";
 import { applyArtifactConversationIndexV1 } from "./migrations/artifact_conversation_index_v1.mjs";
 import { applyArtifactMetadataV1 } from "./migrations/artifact_metadata_v1.mjs";
-import { normalizeArtifactMetadata } from "./artifact-metadata.mjs";
+import { applyArtifactVersioningV1 } from "./migrations/artifact_versioning_v1.mjs";
+import {
+  normalizeArtifactMetadata,
+  normalizeArtifactVersionMetadata
+} from "./artifact-metadata.mjs";
 import {
   filterDeletedRecords,
   markRecordDeleted,
@@ -87,6 +91,7 @@ function mapArtifact(row) {
     return null;
   }
   const metadata = normalizeArtifactMetadata(row);
+  const version = normalizeArtifactVersionMetadata(row);
   return {
     artifact_id: row.artifact_id,
     task_id: row.task_id,
@@ -100,6 +105,9 @@ function mapArtifact(row) {
     bytes: metadata.bytes,
     sha256: metadata.sha256,
     status: metadata.status,
+    parent_artifact_id: version.parent_artifact_id,
+    revision_of: version.revision_of,
+    version_label: version.version_label,
     created_at: row.created_at
   };
 }
@@ -270,6 +278,7 @@ export function createSqliteStore({ dbPath }) {
   applyConversationV1(db);
   applyArtifactConversationIndexV1(db);
   applyArtifactMetadataV1(db);
+  applyArtifactVersioningV1(db);
 
   const statements = {
     upsertTask: db.prepare(`INSERT INTO tasks (
@@ -299,13 +308,16 @@ export function createSqliteStore({ dbPath }) {
     )`),
     getEventsForTask: db.prepare("SELECT event_id, task_id, ts, event_type, payload_json FROM task_events WHERE task_id = ? ORDER BY ts ASC"),
     insertArtifact: db.prepare(`INSERT OR REPLACE INTO artifacts (
-      artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, created_at
+      artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status,
+      parent_artifact_id, revision_of, version_label, created_at
     ) VALUES (
-      @artifact_id, @task_id, @conversation_id, @path, @mime_type, @kind, @source, @bytes, @sha256, @status, @created_at
+      @artifact_id, @task_id, @conversation_id, @path, @mime_type, @kind, @source, @bytes, @sha256, @status,
+      @parent_artifact_id, @revision_of, @version_label, @created_at
     )`),
-    getArtifactsForTask: db.prepare("SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, created_at FROM artifacts WHERE task_id = ? ORDER BY created_at ASC"),
+    getArtifactsForTask: db.prepare("SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, parent_artifact_id, revision_of, version_label, created_at FROM artifacts WHERE task_id = ? ORDER BY created_at ASC"),
     getArtifactsForConversation: db.prepare(`
-      SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, created_at
+      SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status,
+             parent_artifact_id, revision_of, version_label, created_at
         FROM artifacts
        WHERE conversation_id = @conversation_id
        ORDER BY created_at DESC
@@ -315,7 +327,9 @@ export function createSqliteStore({ dbPath }) {
       SELECT artifacts.artifact_id, artifacts.task_id, artifacts.conversation_id,
              conversations.project_id, conversations.title AS conversation_title,
              artifacts.path, artifacts.mime_type, artifacts.kind, artifacts.source,
-             artifacts.bytes, artifacts.sha256, artifacts.status, artifacts.created_at
+             artifacts.bytes, artifacts.sha256, artifacts.status,
+             artifacts.parent_artifact_id, artifacts.revision_of, artifacts.version_label,
+             artifacts.created_at
         FROM artifacts
         JOIN conversations ON conversations.conversation_id = artifacts.conversation_id
        WHERE conversations.project_id = @project_id
@@ -660,6 +674,7 @@ export function createSqliteStore({ dbPath }) {
         ?? mapTask(statements.getTask.get(artifact.task_id))?.conversation_id
         ?? null;
       const metadata = normalizeArtifactMetadata(artifact);
+      const version = normalizeArtifactVersionMetadata(artifact);
       const record = {
         artifact_id: artifact.artifact_id,
         task_id: artifact.task_id,
@@ -671,6 +686,9 @@ export function createSqliteStore({ dbPath }) {
         bytes: metadata.bytes,
         sha256: metadata.sha256,
         status: metadata.status,
+        parent_artifact_id: version.parent_artifact_id,
+        revision_of: version.revision_of,
+        version_label: version.version_label,
         created_at: artifact.created_at ?? nowIso()
       };
       statements.insertArtifact.run(record);

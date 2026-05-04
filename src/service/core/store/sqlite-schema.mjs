@@ -32,6 +32,9 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   bytes INTEGER,
   sha256 TEXT,
   status TEXT,
+  parent_artifact_id TEXT,
+  revision_of TEXT,
+  version_label TEXT,
   created_at TEXT NOT NULL
 );`,
   schedules: `CREATE TABLE IF NOT EXISTS schedules (

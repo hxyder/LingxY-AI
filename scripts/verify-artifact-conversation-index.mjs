@@ -15,6 +15,10 @@ import {
   applyArtifactMetadataV1,
   MIGRATION_ID as ARTIFACT_METADATA_MIGRATION_ID
 } from "../src/service/core/store/migrations/artifact_metadata_v1.mjs";
+import {
+  applyArtifactVersioningV1,
+  MIGRATION_ID as ARTIFACT_VERSIONING_MIGRATION_ID
+} from "../src/service/core/store/migrations/artifact_versioning_v1.mjs";
 
 let pass = 0;
 let fail = 0;
@@ -144,6 +148,37 @@ it("artifact metadata migration adds stable metadata columns and defaults", () =
   }
 });
 
+it("artifact versioning migration adds lineage columns and index", () => {
+  const { db, dir } = createOldArtifactSchemaDb();
+  try {
+    seedTask(db, { taskId: "task_version_migration", conversationId: "conv_version_migration" });
+    db.prepare(`INSERT INTO artifacts
+      (artifact_id, task_id, path, mime_type, created_at)
+      VALUES (?, ?, ?, ?, ?)`
+    ).run(
+      "artifact_version_migration",
+      "task_version_migration",
+      "E:\\out\\versioned.md",
+      "text/markdown",
+      "2026-05-01T10:08:00.000Z"
+    );
+
+    const result = applyArtifactVersioningV1(db);
+    assert.equal(result.applied, true);
+    const columns = db.prepare("PRAGMA table_info(artifacts)").all().map((column) => column.name);
+    for (const column of ["parent_artifact_id", "revision_of", "version_label"]) {
+      assert.ok(columns.includes(column), `${column} column must be added`);
+    }
+    const index = db.prepare("PRAGMA index_list(artifacts)").all()
+      .find((row) => row.name === "idx_artifacts_revision_of_created");
+    assert.ok(index, "artifact revision lookup index must exist");
+    assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE migration_id = ?").get(ARTIFACT_VERSIONING_MIGRATION_ID));
+    assert.equal(applyArtifactVersioningV1(db).applied, false);
+  } finally {
+    disposeDb(db, dir);
+  }
+});
+
 it("registerArtifact does not hash artifact contents on the synchronous hot path", () => {
   const source = readFileSync(path.join(process.cwd(), "src/service/store/artifact-store.mjs"), "utf8");
   assert.ok(/statSync/.test(source), "registerArtifact may stat generated files for size/status");
@@ -171,6 +206,21 @@ it("createSqliteStore can open an old DB and expose getArtifactsForConversation"
       assert.equal(artifact.kind, "file");
       assert.equal(artifact.source, "generated");
       assert.equal(artifact.status, "unknown");
+      assert.equal(artifact.revision_of, null);
+      store.appendArtifact({
+        artifact_id: "artifact_revision",
+        task_id: "task_open",
+        path: "E:\\out\\open-v2.pdf",
+        revision_of: "artifact_open",
+        parent_artifact_id: "artifact_open",
+        version_label: "v2",
+        created_at: "2026-05-01T10:05:00.000Z"
+      });
+      const revision = store.getArtifactsForTask("task_open")
+        .find((row) => row.artifact_id === "artifact_revision");
+      assert.equal(revision.revision_of, "artifact_open");
+      assert.equal(revision.parent_artifact_id, "artifact_open");
+      assert.equal(revision.version_label, "v2");
     } finally {
       store.close();
     }

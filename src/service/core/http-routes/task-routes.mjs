@@ -20,6 +20,7 @@ import {
   artifactSourceFromEventPayload,
   normalizeArtifactSource
 } from "../artifact-action-contract.mjs";
+import { normalizeArtifactVersionMetadata } from "../store/artifact-metadata.mjs";
 
 function taskDeletedFilterFromUrl(url) {
   return normalizeDeletedFilter(url.searchParams.get("deleted") ?? false);
@@ -135,6 +136,13 @@ function artifactSourceFromValue(value, payload) {
   return artifactSourceFromEventPayload(payload);
 }
 
+function artifactVersionFromValue(value, payload) {
+  return normalizeArtifactVersionMetadata({
+    ...(payload && typeof payload === "object" ? payload : {}),
+    ...(value && typeof value === "object" ? value : {})
+  });
+}
+
 function artifactsFromEvent(taskId, event) {
   const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
   const candidates = [];
@@ -161,6 +169,7 @@ function artifactsFromEvent(taskId, event) {
         path: artifactPath,
         mime_type: artifactMimeFromValue(candidate),
         source: artifactSourceFromValue(candidate, payload),
+        ...artifactVersionFromValue(candidate, payload),
         created_at: event?.ts ?? new Date(0).toISOString(),
         derived_from_event: true
       };

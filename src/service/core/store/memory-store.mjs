@@ -4,7 +4,10 @@ import {
   markRecordDeleted,
   restoreDeletedRecord
 } from "../deletion-lifecycle.mjs";
-import { normalizeArtifactMetadata } from "./artifact-metadata.mjs";
+import {
+  normalizeArtifactMetadata,
+  normalizeArtifactVersionMetadata
+} from "./artifact-metadata.mjs";
 
 function memNowIso() { return new Date().toISOString(); }
 function memNewId(prefix) { return `${prefix}_${crypto.randomUUID()}`; }
@@ -87,6 +90,7 @@ export function createInMemoryStoreScaffold() {
         ?? this.tasks.get(artifact.task_id)?.conversation_id
         ?? null;
       const metadata = normalizeArtifactMetadata(artifact);
+      const version = normalizeArtifactVersionMetadata(artifact);
       const record = {
         ...artifact,
         conversation_id: conversationId,
@@ -95,6 +99,9 @@ export function createInMemoryStoreScaffold() {
         bytes: metadata.bytes,
         sha256: metadata.sha256,
         status: metadata.status,
+        parent_artifact_id: version.parent_artifact_id,
+        revision_of: version.revision_of,
+        version_label: version.version_label,
         created_at: artifact.created_at ?? memNowIso()
       };
       this.artifacts.push(record);
