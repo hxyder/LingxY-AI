@@ -32,10 +32,13 @@ assert.match(workflow, /gh release create/, "release workflow must support draft
 assert.match(workflow, /gh release upload/, "release workflow must support updating an existing release");
 
 assert.match(repoBaseline, /node-version:\s+"22\.12\.0"/, "repo baseline must use the documented Node baseline");
+assert.match(repoBaseline, /verify:dependency-hygiene/, "repo baseline must run dependency hygiene verification");
 assert.match(releaseGate, /node-version:\s+"22\.12\.0"/, "release gate must use the documented Node baseline");
 
 assert.equal(packageJson.scripts["verify:release-artifact-workflow"], "node scripts/verify-release-artifact-workflow.mjs");
+assert.equal(packageJson.scripts["verify:dependency-hygiene"], "node scripts/verify-dependency-hygiene.mjs");
 assert.match(packageJson.scripts.check, /verify-release-artifact-workflow\.mjs/, "npm run check must include release artifact workflow verification");
+assert.match(packageJson.scripts.check, /verify-dependency-hygiene\.mjs/, "npm run check must include dependency hygiene verification");
 
 assert.match(releaseChecklist, /Release Artifacts/, "release checklist must mention the release artifact workflow");
 assert.match(releaseChecklist, /checksums\.sha256/, "release checklist must require checksum review");

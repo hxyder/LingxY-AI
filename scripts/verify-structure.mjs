@@ -362,6 +362,7 @@ const requiredPaths = [
   "scripts/verify-behavior-tests.mjs",
   "scripts/verify-doc-references.mjs",
   "scripts/verify-github-readiness.mjs",
+  "scripts/verify-dependency-hygiene.mjs",
   "scripts/verify-github-pages-readiness.mjs",
   "scripts/verify-external-call-boundary.mjs",
   "scripts/verify-submission-policy-boundary.mjs",
