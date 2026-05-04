@@ -10212,7 +10212,7 @@ function updateChatModelChip() {
   const label = chatTask?.model || routing.default_model || "auto";
   consoleChatModelChipLabel.textContent = String(label).slice(0, 28);
   if (consoleChatModelChip) {
-    consoleChatModelChip.title = customProviders.length > 0
+    consoleChatModelChip.title = configuredConversationModelProviders().length > 0
       ? "Change model for this conversation"
       : "Configure an AI provider to choose models";
   }
@@ -10261,6 +10261,17 @@ async function ensureConsoleConversationForModelOverride() {
 }
 
 let consoleModelPickerEl = null;
+
+function isProviderConfiguredForConversationModel(provider = {}) {
+  if (!provider?.id) return false;
+  if (provider.kind === "code_cli") return Boolean(provider.command);
+  if (provider.kind === "ollama") return true;
+  return Boolean(provider.apiKey || provider.apiKeyRef || provider.apiKeyConfigured);
+}
+
+function configuredConversationModelProviders() {
+  return customProviders.filter(isProviderConfiguredForConversationModel);
+}
 
 function mergeOnboardingSuggestionsIntoWorkspace(suggestions = []) {
   const pending = state.workspace.onboarding?.pendingSuggestions ?? [];
@@ -10434,12 +10445,18 @@ async function renderConsoleModelPicker(popover, providers, selectedProviderId) 
 
 async function chooseConsoleConversationModel() {
   await loadProvidersAndRouting();
-  const providers = customProviders.filter((provider) => provider?.id);
+  const allProviders = customProviders.filter((provider) => provider?.id);
+  const providers = configuredConversationModelProviders();
   if (providers.length === 0) {
-    showConsoleToast("先添加一个 AI Provider，然后就可以给当前对话切模型。", { kind: "info" });
+    showConsoleToast(
+      allProviders.length
+        ? "先补全 Provider 的 API key 或 CLI command，然后就可以给当前对话切模型。"
+        : "先添加一个 AI Provider，然后就可以给当前对话切模型。",
+      { kind: "info" }
+    );
     switchTab("settings");
     document.querySelector('[data-settings-nav="providerSettingsPanel"]')?.click?.();
-    openProviderModal();
+    openProviderModal(allProviders[0]?.id);
     return;
   }
 

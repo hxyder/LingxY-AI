@@ -66,6 +66,9 @@ assert.match(js, /function appendConsoleChatToolCall\(/, "console.js missing app
 assert.match(js, /function renderChatAttachments\(/, "console.js missing renderChatAttachments");
 assert.match(js, /function updateChatModelChip\(/, "console.js missing updateChatModelChip");
 assert.match(js, /function renderConsoleModelPicker\(/, "console.js missing model picker renderer");
+assert.match(js, /function isProviderConfiguredForConversationModel\(/, "console.js must gate conversation model picker to configured providers");
+assert.match(js, /configuredConversationModelProviders\(\)/, "conversation model chip must use configured provider availability");
+assert.match(js, /openProviderModal\(allProviders\[0\]\?\.id\)/, "unconfigured providers should route users to the provider editor");
 assert.match(js, /model-picker-popover/, "console.js must render model picker as app UI");
 assert.match(js, /opensAbove[\s\S]{0,260}translateY\(-100%\)/, "model picker must open above the bottom composer when needed");
 assert.match(js, /mergeOnboardingSuggestionsIntoWorkspace\(saved\.onboarding\.suggestions\)/, "model picker must surface capability gap suggestions from the backend");
