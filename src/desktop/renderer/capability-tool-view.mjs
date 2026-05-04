@@ -157,6 +157,19 @@ export function buildCapabilityToolView(toolName = "", metadata = {}) {
         actions
       };
     }
+    if (status === "discarded") {
+      const state = data.state && typeof data.state === "object" ? data.state : {};
+      return {
+        title: "能力草案已放弃",
+        badge: "未保存",
+        tone: "warn",
+        rows: [
+          { label: "类型", value: asText(state.kind) || "capability" },
+          { label: "名称", value: asText(state.name) || "未命名" }
+        ],
+        question: "没有写入 skill、MCP 配置或密钥。"
+      };
+    }
   }
 
   if (toolId === "save_capability_draft") {

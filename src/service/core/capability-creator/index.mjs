@@ -4,6 +4,7 @@ import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.
 
 const SUPPORTED_KINDS = new Set(["skill", "mcp"]);
 const REQUIRED_FIELDS = ["purpose", "permissions", "config", "confirmation"];
+const CONTROL_FIELDS = new Set(["discard"]);
 const FILESYSTEM_SCOPES = new Set(["none", "read", "write"]);
 const TRANSPORTS = new Set(["stdio", "http", "ws"]);
 const SECRET_SOURCES = new Set(["env", "secret_ref"]);
@@ -190,8 +191,11 @@ export function applyCapabilityInterviewAnswer(state, answer = {}) {
     throw new Error("capability_interview_state_invalid");
   }
   const field = typeof answer.field === "string" ? answer.field : "";
-  if (field !== "name" && !REQUIRED_FIELDS.includes(field)) {
+  if (field !== "name" && !REQUIRED_FIELDS.includes(field) && !CONTROL_FIELDS.has(field)) {
     throw new Error("capability_interview_answer_field_unknown");
+  }
+  if (field === "discard") {
+    return answer.value === false ? freezeState(state) : discardCapabilityInterviewState(state);
   }
   const next = {
     kind: state.kind,
@@ -216,6 +220,20 @@ export function applyCapabilityInterviewAnswer(state, answer = {}) {
     next.collected.confirmed = answer.value === true && nonConfirmationReady;
   }
   return freezeState(next);
+}
+
+export function discardCapabilityInterviewState(state) {
+  if (!state || !SUPPORTED_KINDS.has(state.kind)) {
+    throw new Error("capability_interview_state_invalid");
+  }
+  return {
+    kind: state.kind,
+    name: state.name ?? "",
+    collected: { ...(state.collected ?? emptyCollected()), confirmed: false },
+    missing_fields: [],
+    next_question: null,
+    status: "discarded"
+  };
 }
 
 function buildSkillDraft(state) {

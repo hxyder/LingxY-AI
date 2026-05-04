@@ -593,6 +593,7 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       name: { type: "string" },          // human-friendly capability name
       state: {},                          // optional prior interview state from a previous call
       answer: {},                         // optional { field, value } answer to apply against state
+      discard: { type: "boolean" },       // discard a prior interview state without writing anything
       purpose: { type: "string" },       // user-facing goal, one or two sentences
       permissions: {},                    // { network, filesystem, secrets[] }
       config: {},                         // skill: { instructions[] }; mcp: { transport, command/args/url }

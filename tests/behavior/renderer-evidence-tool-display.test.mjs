@@ -201,6 +201,20 @@ test("saved capability view exposes review actions without enabling live capabil
   assert.doesNotMatch(mcpHtml, /data-capability-path=/);
 });
 
+test("discarded capability view is terminal and has no action buttons", () => {
+  const view = buildCapabilityToolView("draft_capability", {
+    status: "discarded",
+    state: { kind: "mcp", name: "Search Bridge" }
+  });
+  assert.equal(view.title, "能力草案已放弃");
+  assert.equal(view.badge, "未保存");
+  assert.deepEqual(view.actions ?? [], []);
+
+  const html = renderCapabilityToolViewHtml(view, { interactive: true });
+  assert.match(html, /没有写入 skill、MCP 配置或密钥/);
+  assert.doesNotMatch(html, /<button|data-capability-action=/i);
+});
+
 test("timeline entry shows capability recovery card from metadata", () => {
   const html = renderTimelineEntry({
     event: "tool_call_completed",

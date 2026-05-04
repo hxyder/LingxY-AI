@@ -68,6 +68,35 @@ test("draft_capability advances through state + answer iterations", async () => 
   assert.equal(afterPurpose.metadata.state.collected.purpose, "Help the user triage their inbox quickly.");
 });
 
+test("draft_capability can discard a prior interview state without writing anything", async () => {
+  const registry = createRegistry();
+  const first = await registry.call(
+    "draft_capability",
+    { kind: "skill", name: "Triage Inbox" },
+    {}
+  );
+
+  const discarded = await registry.call(
+    "draft_capability",
+    { state: first.metadata.state, discard: true },
+    {}
+  );
+
+  assert.equal(discarded.success, true);
+  assert.equal(discarded.metadata.status, "discarded");
+  assert.equal(discarded.metadata.state.status, "discarded");
+  assert.equal(discarded.artifact_paths.length, 0);
+  assert.match(discarded.observation, /discarded/i);
+  assert.match(discarded.observation, /No files, MCP config, or secrets were changed/i);
+
+  const discardedViaAnswer = await registry.call(
+    "draft_capability",
+    { state: first.metadata.state, answer: { field: "discard", value: true } },
+    {}
+  );
+  assert.equal(discardedViaAnswer.metadata.status, "discarded");
+});
+
 test("draft_capability returns ready_to_save with a valid skill draft when one-shot intake is complete", async () => {
   const registry = createRegistry();
   const result = await registry.call(

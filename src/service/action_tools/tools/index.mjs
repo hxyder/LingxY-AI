@@ -22,6 +22,7 @@ import {
   buildCapabilityDraft,
   buildCapabilityInterviewState,
   buildCapabilityRecoveryProposal,
+  discardCapabilityInterviewState,
   validateCapabilityDraft
 } from "../../core/capability-creator/index.mjs";
 import { resolveMcpDraftsDir } from "../../ai/mcp/drafts.mjs";
@@ -3634,10 +3635,15 @@ function summarizeRecoveryForObservation(proposal) {
   return lines.join("\n");
 }
 
+function summarizeDiscardForObservation(state) {
+  const name = state?.name ? ` "${state.name}"` : "";
+  return `Capability draft${name} was discarded. No files, MCP config, or secrets were changed.`;
+}
+
 export const DRAFT_CAPABILITY_TOOL = {
   id: "draft_capability",
   name: "Draft Capability",
-  description: "Draft a skill or MCP capability through an interview. Read-only: never installs, writes files, edits runtime config, or stores secrets. Use {state, answer} to continue, or one-shot kind/name/purpose/permissions/config/confirmation. Secret values must be env or secret_ref references.",
+  description: "Draft a skill or MCP capability through an interview. Read-only: never installs, writes files, edits runtime config, or stores secrets. Use {state, answer} to continue, {state, discard:true} to discard, or one-shot kind/name/purpose/permissions/config/confirmation. Secret values must be env or secret_ref references.",
   parameters: ACTION_TOOL_SCHEMAS.draft_capability,
   risk_level: "low",
   requires_confirmation: false,
@@ -3652,6 +3658,18 @@ export const DRAFT_CAPABILITY_TOOL = {
           observation: "draft_capability could not rehydrate the provided state. Re-send {kind, name, purpose, permissions, config, confirmation} or call again with a valid state.",
           error: "capability_state_invalid",
           metadata: { tool_id: "draft_capability", status: "invalid_state" }
+        });
+      }
+      if (args.discard === true || (isPlainObject(args.answer) && args.answer.field === "discard" && args.answer.value !== false)) {
+        const discarded = discardCapabilityInterviewState(state);
+        return createActionResult({
+          success: true,
+          observation: summarizeDiscardForObservation(discarded),
+          metadata: {
+            tool_id: "draft_capability",
+            status: "discarded",
+            state: discarded
+          }
         });
       }
       if (isPlainObject(args.answer)) {

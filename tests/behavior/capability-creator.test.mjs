@@ -6,6 +6,7 @@ import {
   buildCapabilityDraft,
   buildCapabilityInterviewState,
   buildCapabilityRecoveryProposal,
+  discardCapabilityInterviewState,
   validateCapabilityDraft
 } from "../../src/service/core/capability-creator/index.mjs";
 
@@ -94,6 +95,20 @@ test("capability creator requires a fresh confirmation after draft inputs change
   assert.equal(state.collected.confirmed, false);
   assert.deepEqual(state.missing_fields, ["confirmation"]);
   assert.equal(buildCapabilityDraft(state).status, "needs_more_input");
+});
+
+test("capability creator can discard an interview state without preserving ready status", () => {
+  const state = applyCapabilityInterviewAnswer(fillSkillState(), { field: "confirmation", value: true });
+  assert.equal(state.status, "ready_to_save");
+
+  const discarded = discardCapabilityInterviewState(state);
+  assert.equal(discarded.status, "discarded");
+  assert.equal(discarded.collected.confirmed, false);
+  assert.deepEqual(discarded.missing_fields, []);
+  assert.equal(discarded.next_question, null);
+
+  const viaAnswer = applyCapabilityInterviewAnswer(state, { field: "discard", value: true });
+  assert.equal(viaAnswer.status, "discarded");
 });
 
 test("capability creator builds a valid skill draft once the interview is confirmed", () => {
