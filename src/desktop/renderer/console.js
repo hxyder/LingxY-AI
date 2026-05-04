@@ -234,6 +234,7 @@ const skillRegistryState = document.querySelector("#skillRegistryState");
 const skillRegistryList = document.querySelector("#skillRegistryList");
 const skillRegistryRefreshBtn = document.querySelector("#skillRegistryRefreshBtn");
 const skillRegistryTestBtn = document.querySelector("#skillRegistryTestBtn");
+const skillCreateBtn = document.querySelector("#skillCreateBtn");
 const codeCliAdapterCount = document.querySelector("#codeCliAdapterCount");
 const codeCliAdapterForm = document.querySelector("#codeCliAdapterForm");
 const codeCliAdapterId = document.querySelector("#codeCliAdapterId");
@@ -287,6 +288,7 @@ const skillEditSaveBtn = document.querySelector("#skillEditSaveBtn");
 const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
 const skillEditOpenBtn = document.querySelector("#skillEditOpenBtn");
 const skillEditRevealBtn = document.querySelector("#skillEditRevealBtn");
+const skillEditRollbackBtn = document.querySelector("#skillEditRollbackBtn");
 
 const consoleChatPin = createBottomPinController(consoleChatMessages, {
   button: consoleChatScrollDownBtn
@@ -2947,6 +2949,7 @@ function renderSkillRegistries() {
       ${entryPath ? `
         <div class="toolbar" style="margin-top:8px;">
           <button class="btn" data-skill-edit="${escapeHtml(entryPath)}" type="button">Edit</button>
+          <button class="btn btn-ghost" data-skill-duplicate="${escapeHtml(entryPath)}" type="button">Duplicate</button>
           <button class="btn btn-ghost" data-skill-open="${escapeHtml(entryPath)}" type="button">Open</button>
           <button class="btn btn-ghost" data-skill-reveal="${escapeHtml(entryPath)}" type="button">Reveal</button>
         </div>` : ""}
@@ -2978,6 +2981,23 @@ function renderSkillRegistries() {
 
   for (const btn of skillRegistryList.querySelectorAll("[data-skill-edit]")) {
     btn.addEventListener("click", () => void openSkillEditor(btn.dataset.skillEdit));
+  }
+  for (const btn of skillRegistryList.querySelectorAll("[data-skill-duplicate]")) {
+    btn.addEventListener("click", async () => {
+      const entryPath = btn.dataset.skillDuplicate;
+      if (!entryPath) return;
+      btn.disabled = true;
+      try {
+        const result = await duplicateSkillViaShell(entryPath);
+        await refreshWorkspace({ mode: "background" });
+        showConsoleToast("Skill duplicated.", { kind: "ok" });
+        if (result.entryPath) await openSkillEditor(result.entryPath);
+      } catch (error) {
+        showConsoleToast(`复制 skill 失败：${error.message}`, { kind: "err" });
+      } finally {
+        btn.disabled = false;
+      }
+    });
   }
   for (const btn of skillRegistryList.querySelectorAll("[data-skill-open]")) {
     btn.addEventListener("click", () => void openSkillPath(btn.dataset.skillOpen));
@@ -7671,6 +7691,36 @@ async function readSkillMarkdownViaShell(entryPath) {
   );
 }
 
+async function createSkillViaShell(payload = {}) {
+  if (typeof window.ucaShell?.createSkill !== "function") {
+    throw new Error("Desktop skill lifecycle bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.createSkill(payload),
+    "Could not create skill."
+  );
+}
+
+async function duplicateSkillViaShell(entryPath) {
+  if (typeof window.ucaShell?.duplicateSkill !== "function") {
+    throw new Error("Desktop skill lifecycle bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.duplicateSkill({ entryPath }),
+    "Could not duplicate skill."
+  );
+}
+
+async function rollbackSkillViaShell(entryPath) {
+  if (typeof window.ucaShell?.rollbackSkill !== "function") {
+    throw new Error("Desktop skill lifecycle bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.rollbackSkill({ entryPath }),
+    "Could not rollback skill."
+  );
+}
+
 async function updateRoutingConfigViaShell(routing) {
   if (typeof window.ucaShell?.updateRoutingConfig !== "function") {
     throw new Error("Desktop routing config bridge unavailable.");
@@ -8195,6 +8245,19 @@ skillRegistryTestBtn?.addEventListener("click", async () => {
   }
 });
 
+skillCreateBtn?.addEventListener("click", async () => {
+  if (!skillRegistryState) return;
+  skillRegistryState.textContent = "Creating skill...";
+  try {
+    const result = await createSkillViaShell({ name: "New Skill" });
+    skillRegistryState.textContent = "Created.";
+    await refreshWorkspace({ mode: "background" });
+    if (result.entryPath) await openSkillEditor(result.entryPath);
+  } catch (error) {
+    skillRegistryState.textContent = `Failed: ${error.message}`;
+  }
+});
+
 skillRegistryForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
   clearFieldErrors(skillRegistryForm);
@@ -8229,6 +8292,20 @@ skillEditOpenBtn?.addEventListener("click", () => {
 });
 skillEditRevealBtn?.addEventListener("click", () => {
   if (editingSkillPath) void revealSkillPath(editingSkillPath);
+});
+skillEditRollbackBtn?.addEventListener("click", async () => {
+  if (!editingSkillPath || !skillEditText) return;
+  if (!confirm("Restore the latest saved backup for this skill?")) return;
+  skillEditState.textContent = "Restoring...";
+  try {
+    const result = await rollbackSkillViaShell(editingSkillPath);
+    skillEditText.value = result.markdown ?? skillEditText.value;
+    renderSkillValidation(skillEditValidation, result.validation);
+    skillEditState.textContent = `Restored ${result.restoredHistoryId ?? "latest backup"}.`;
+    await refreshWorkspace({ mode: "background" });
+  } catch (error) {
+    skillEditState.textContent = `Failed: ${error.message}`;
+  }
 });
 skillEditModal?.addEventListener("click", (event) => {
   if (event.target === skillEditModal) closeSkillEditor();

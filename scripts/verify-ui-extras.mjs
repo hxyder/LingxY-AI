@@ -476,10 +476,22 @@ assert.ok(/writeSkillMarkdownViaShell/.test(consoleJs) && /window\.ucaShell\.wri
   "skill editor write: console must use desktop shell bridge");
 assert.ok(/readSkillMarkdownViaShell/.test(consoleJs) && /window\.ucaShell\.readSkillMarkdown/.test(consoleJs),
   "skill editor read: console must use desktop shell bridge");
+assert.ok(/createSkillViaShell/.test(consoleJs) && /window\.ucaShell\.createSkill/.test(consoleJs),
+  "skill lifecycle create: console must use desktop shell bridge");
+assert.ok(/duplicateSkillViaShell/.test(consoleJs) && /window\.ucaShell\.duplicateSkill/.test(consoleJs),
+  "skill lifecycle duplicate: console must use desktop shell bridge");
+assert.ok(/rollbackSkillViaShell/.test(consoleJs) && /window\.ucaShell\.rollbackSkill/.test(consoleJs),
+  "skill lifecycle rollback: console must use desktop shell bridge");
+assert.ok(/id="skillCreateBtn"/.test(consoleHtml) && /id="skillEditRollbackBtn"/.test(consoleHtml),
+  "skill lifecycle: create and rollback controls missing");
+assert.ok(/data-skill-duplicate/.test(consoleJs),
+  "skill lifecycle: discovered skill cards must expose duplicate action");
 assert.ok(!/fetchJson\(\s*["'`]\/skills\/write["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(consoleJs),
   "skill editor write: console must not POST /skills/write directly");
 assert.ok(!/fetchJson\(\s*[`'"]\/skills\/read\b/.test(consoleJs),
   "skill editor read: console must not GET /skills/read directly");
+assert.ok(!/fetchJson\(\s*[`'"]\/skills\/(?:create|duplicate|rollback|history)\b/.test(consoleJs),
+  "skill lifecycle: console must not call skill lifecycle routes directly");
 assert.ok(/saveAutoSkillViaShell/.test(overlayJs) && /window\.ucaShell\.saveAutoSkill/.test(overlayJs),
   "auto skill save: overlay must use desktop shell bridge");
 assert.ok(!/fetchJson\(\s*["'`]\/skills\/save["'`]\s*,\s*\{\s*method:\s*["'`]POST/.test(overlayJs),

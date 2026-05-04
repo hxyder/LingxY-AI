@@ -871,6 +871,36 @@ test("skills file mutation routes reject disallowed actors before local file wri
   assert.equal(blockedWrite.payload.error, "desktop_actor_required");
   assert.deepEqual(writeRuntime.calls, []);
   assert.equal(await readFile(editablePath, "utf8"), "# Original\n");
+
+  const blockedCreate = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/create",
+    actor: "browser_page",
+    runtime: makeSkillRuntime({ skillsDir, skillPatternsPath }),
+    body: { name: "Blocked Skill" }
+  });
+  assert.equal(blockedCreate.statusCode, 403);
+  assert.equal(blockedCreate.payload.error, "desktop_actor_required");
+
+  const blockedDuplicate = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/duplicate",
+    actor: "desktop_overlay",
+    runtime: makeSkillRuntime({ skillsDir, skillPatternsPath }),
+    body: { entryPath: editablePath }
+  });
+  assert.equal(blockedDuplicate.statusCode, 403);
+  assert.equal(blockedDuplicate.payload.error, "desktop_actor_required");
+
+  const blockedRollback = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/rollback",
+    actor: "desktop_overlay",
+    runtime: makeSkillRuntime({ skillsDir, skillPatternsPath }),
+    body: { entryPath: editablePath }
+  });
+  assert.equal(blockedRollback.statusCode, 403);
+  assert.equal(blockedRollback.payload.error, "desktop_actor_required");
 });
 
 test("skills file mutation routes allow their intended desktop actors", async (t) => {
@@ -927,6 +957,45 @@ test("skills file mutation routes allow their intended desktop actors", async (t
   assert.equal(written.statusCode, 200);
   assert.equal(written.payload.entryPath, editablePath);
   assert.equal(await readFile(editablePath, "utf8"), "# Updated\n");
+
+  const created = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/create",
+    actor: "desktop_console",
+    runtime: makeSkillRuntime({ skillsDir, skillPatternsPath }),
+    body: { name: "Created Skill", description: "Created from console." }
+  });
+  assert.equal(created.statusCode, 200);
+  assert.equal(created.payload.id, "created-skill");
+
+  const duplicated = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/duplicate",
+    actor: "desktop_console",
+    runtime: makeSkillRuntime({ skillsDir, skillPatternsPath }),
+    body: { entryPath: editablePath, name: "Editable Copy" }
+  });
+  assert.equal(duplicated.statusCode, 200);
+  assert.match(await readFile(duplicated.payload.entryPath, "utf8"), /# Editable Copy/);
+
+  const history = await configProviderRoute({
+    method: "GET",
+    pathname: `/skills/history?entryPath=${encodeURIComponent(editablePath)}`,
+    actor: "desktop_console",
+    runtime: makeSkillRuntime({ skillsDir, skillPatternsPath })
+  });
+  assert.equal(history.statusCode, 200);
+  assert.ok(history.payload.history.length >= 1);
+
+  const rolledBack = await configProviderRoute({
+    method: "POST",
+    pathname: "/skills/rollback",
+    actor: "desktop_console",
+    runtime: makeSkillRuntime({ skillsDir, skillPatternsPath }),
+    body: { entryPath: editablePath }
+  });
+  assert.equal(rolledBack.statusCode, 200);
+  assert.match(rolledBack.payload.markdown, /# Original/);
 });
 
 test("approval mutation routes trust the desktop actor header over any body actor", async () => {

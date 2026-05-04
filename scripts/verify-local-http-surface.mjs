@@ -231,6 +231,30 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "POST", "/skills/create", {
+    domain: "skills_config",
+    effect: "local_file_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("config-provider-routes.mjs", "POST", "/skills/duplicate", {
+    domain: "skills_config",
+    effect: "local_file_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("config-provider-routes.mjs", "GET", "/skills/history", {
+    domain: "skills_config",
+    effect: "local_file_read",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("config-provider-routes.mjs", "POST", "/skills/rollback", {
+    domain: "skills_config",
+    effect: "local_file_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
 
   surface("connector-routes.mjs", "DELETE", "/^\\/connectors\\/accounts\\/(microsoft|google)$/", {
     domain: "connector_accounts",

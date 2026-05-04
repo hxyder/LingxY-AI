@@ -313,6 +313,40 @@ function normalizeSkillMarkdownReadPayload(payload = {}) {
   };
 }
 
+function normalizeSkillCreatePayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    id: typeof source.id === "string" ? source.id : "",
+    name: typeof source.name === "string" ? source.name : "New Skill",
+    description: typeof source.description === "string" ? source.description : "",
+    markdown: typeof source.markdown === "string" ? source.markdown : ""
+  };
+}
+
+function normalizeSkillDuplicatePayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    entryPath: typeof source.entryPath === "string" ? source.entryPath : "",
+    id: typeof source.id === "string" ? source.id : "",
+    name: typeof source.name === "string" ? source.name : ""
+  };
+}
+
+function normalizeSkillHistoryPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    entryPath: typeof source.entryPath === "string" ? source.entryPath : ""
+  };
+}
+
+function normalizeSkillRollbackPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  return {
+    entryPath: typeof source.entryPath === "string" ? source.entryPath : "",
+    historyId: typeof source.historyId === "string" ? source.historyId : ""
+  };
+}
+
 function normalizeRuntimeConfigPayload(payload = {}) {
   return normalizePlainObject(payload) ?? {};
 }
@@ -3045,6 +3079,79 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "skill_markdown_write_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillCreate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/skills/create",
+            body: normalizeSkillCreatePayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_create_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillDuplicate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/skills/duplicate",
+            body: normalizeSkillDuplicatePayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_duplicate_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillHistory, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const body = normalizeSkillHistoryPayload(payload);
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "GET",
+            actor,
+            pathname: `/skills/history?entryPath=${encodeURIComponent(body.entryPath)}`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_history_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillRollback, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/skills/rollback",
+            body: normalizeSkillRollbackPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_rollback_failed",
             message: error?.message ?? String(error)
           };
         }

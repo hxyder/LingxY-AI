@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { execFile } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -18,7 +18,14 @@ import {
   buildCapabilityGapSuggestions,
   mergeCapabilityGapSuggestions
 } from "../../ai/onboarding/capability-gap-suggestions.mjs";
-import { validateSkillDescriptorMarkdown } from "../../ai/skills/discovery.mjs";
+import {
+  createEditableSkill,
+  duplicateEditableSkill,
+  listSkillHistory,
+  resolveEditableSkillEntryPath,
+  rollbackSkillMarkdown,
+  writeSkillMarkdownWithBackup
+} from "../../ai/skills/lifecycle.mjs";
 import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
 import { sanitizeProviderConfig } from "../../../shared/provider-catalog.mjs";
@@ -35,34 +42,6 @@ import { requireDesktopActor } from "../http-route-guards.mjs";
 import { saveAutoSkill } from "../skill-pattern-tracker.mjs";
 
 const execFileAsync = promisify(execFile);
-
-function expandLocalPath(value) {
-  if (!value) return null;
-  return `${value}`
-    .replaceAll("%CODEX_HOME%", process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"))
-    .replaceAll("%USERPROFILE%", os.homedir())
-    .replace(/^~(?=$|[\\/])/, os.homedir());
-}
-
-function isPathInside(candidatePath, rootPath) {
-  const candidate = path.resolve(candidatePath).toLowerCase();
-  const root = path.resolve(rootPath).toLowerCase();
-  return candidate === root || candidate.startsWith(`${root}${path.sep}`);
-}
-
-function resolveSkillEntryPath(runtime, entryPath) {
-  if (!entryPath || path.basename(entryPath) !== "SKILL.md") {
-    return null;
-  }
-  const config = runtime.configStore?.load?.() ?? {};
-  const roots = [
-    runtime.paths?.skillsDir,
-    path.join(process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex"), "skills"),
-    ...(config.ai?.skills?.registries ?? []).map((registry) => expandLocalPath(registry.rootPath ?? registry.path))
-  ].filter(Boolean);
-  const resolved = path.resolve(entryPath);
-  return roots.some((root) => isPathInside(resolved, root)) ? resolved : null;
-}
 
 function upsertById(list = [], entry) {
   const index = list.findIndex((item) => item.id === entry.id);
@@ -614,7 +593,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
 
   if (method === "GET" && url.pathname === "/skills/read") {
     if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
-    const entryPath = resolveSkillEntryPath(runtime, url.searchParams.get("entryPath"));
+    const entryPath = resolveEditableSkillEntryPath(runtime, url.searchParams.get("entryPath"));
     if (!entryPath) {
       sendJson(response, 403, { error: "skill_path_not_allowed" });
       return true;
@@ -627,15 +606,66 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   if (method === "POST" && url.pathname === "/skills/write") {
     if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
     const body = await readJsonBody(request);
-    const entryPath = resolveSkillEntryPath(runtime, body.entryPath);
-    if (!entryPath) {
-      sendJson(response, 403, { error: "skill_path_not_allowed" });
-      return true;
+    try {
+      const result = await writeSkillMarkdownWithBackup(runtime, {
+        entryPath: body.entryPath,
+        markdown: body.markdown
+      });
+      sendJson(response, 200, result);
+    } catch (error) {
+      const status = error.message === "skill_path_not_allowed" ? 403 : 400;
+      sendJson(response, status, { error: error.message });
     }
-    const markdown = `${body.markdown ?? ""}`;
-    await writeFile(entryPath, markdown, "utf8");
-    const validation = validateSkillDescriptorMarkdown(markdown);
-    sendJson(response, 200, { ok: true, entryPath, validation });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/skills/create") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const body = await readJsonBody(request);
+    try {
+      const result = await createEditableSkill(runtime, body ?? {});
+      sendJson(response, 200, result);
+    } catch (error) {
+      sendJson(response, 400, { error: error.message });
+    }
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/skills/duplicate") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const body = await readJsonBody(request);
+    try {
+      const result = await duplicateEditableSkill(runtime, body ?? {});
+      sendJson(response, 200, result);
+    } catch (error) {
+      const status = error.message === "skill_path_not_allowed" ? 403 : 400;
+      sendJson(response, status, { error: error.message });
+    }
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/skills/history") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    try {
+      const result = await listSkillHistory(runtime, url.searchParams.get("entryPath"));
+      sendJson(response, 200, result);
+    } catch (error) {
+      const status = error.message === "skill_path_not_allowed" ? 403 : 400;
+      sendJson(response, status, { error: error.message });
+    }
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/skills/rollback") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const body = await readJsonBody(request);
+    try {
+      const result = await rollbackSkillMarkdown(runtime, body ?? {});
+      sendJson(response, 200, result);
+    } catch (error) {
+      const status = error.message === "skill_path_not_allowed" ? 403 : 400;
+      sendJson(response, status, { error: error.message });
+    }
     return true;
   }
 

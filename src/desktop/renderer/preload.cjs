@@ -384,6 +384,18 @@ contextBridge.exposeInMainWorld("ucaShell", {
   writeSkillMarkdown(payload) {
     return ipcRenderer.invoke("uca:skill-markdown-write", payload ?? {});
   },
+  createSkill(payload) {
+    return ipcRenderer.invoke("uca:skill-create", payload ?? {});
+  },
+  duplicateSkill(payload) {
+    return ipcRenderer.invoke("uca:skill-duplicate", payload ?? {});
+  },
+  listSkillHistory(payload) {
+    return ipcRenderer.invoke("uca:skill-history", payload ?? {});
+  },
+  rollbackSkill(payload) {
+    return ipcRenderer.invoke("uca:skill-rollback", payload ?? {});
+  },
   updateRoutingConfig(payload) {
     return ipcRenderer.invoke("uca:routing-config-update", payload ?? {});
   },
