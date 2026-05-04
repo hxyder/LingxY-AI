@@ -98,7 +98,9 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
     sendJson(response, 200, {
       servers: await runtime.platform.mcpServers.listStatus({
         runtime,
-        config: runtime.configStore?.load?.() ?? {}
+        config: runtime.configStore?.load?.() ?? {},
+        secretStore: runtime.secretStore ?? null,
+        processEnv: process.env
       })
     });
     return true;

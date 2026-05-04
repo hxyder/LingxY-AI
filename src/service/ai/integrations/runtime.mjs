@@ -9,6 +9,7 @@ import { createConfiguredCodeCliAdapter } from "../code_cli/configured.mjs";
 import { createMCPRegistry } from "../mcp/registry.mjs";
 import { BUILTIN_MCP_SERVERS } from "../mcp/builtin.mjs";
 import { createConfiguredMCPServer } from "../mcp/configured.mjs";
+import { describeMcpEnvRequirements, resolveMcpEnv } from "../mcp/env-resolver.mjs";
 import { createSkillRegistry } from "../skills/registry.mjs";
 import { BUILTIN_SKILL_REGISTRIES, createConfiguredSkillRegistry } from "../skills/builtin.mjs";
 
@@ -121,21 +122,48 @@ export function buildAIIntegrationRegistries({ config = {}, paths = null, manual
     const toggle = builtinToggles[server.id];
     const envPatch = envOverrides[server.id];
     if (!toggle && !envPatch) return server;
+    const patchedEnabled = toggle ? toggle.enabled : server.enabled;
+    const patchedEnv = envPatch ? { ...(server.env ?? {}), ...envPatch } : server.env;
     // Shallow-clone the server object with patched enabled / env fields
     return {
       ...server,
-      enabled: toggle ? toggle.enabled : server.enabled,
-      env: envPatch ? { ...(server.env ?? {}), ...envPatch } : server.env,
-      // Re-bind async methods that read from `enabled` closure to use the patched value
-      async isAvailable() {
-        const eff = toggle ? toggle.enabled : server.enabled;
-        const orig = await server.isAvailable?.();
-        return eff && orig !== false;
+      enabled: patchedEnabled,
+      env: patchedEnv,
+      // Re-bind async methods that read from `enabled` / `env` closure to use
+      // the patched values from runtime config.
+      async isAvailable(context = {}) {
+        const envCheck = resolveMcpEnv(patchedEnv, {
+          processEnv: context.processEnv ?? process.env,
+          secretStore: context.secretStore ?? null
+        });
+        if (!patchedEnabled || !envCheck.ok) return false;
+        const orig = await server.isAvailable?.(context);
+        return orig !== false;
       },
-      async getStatus() {
-        const base = await server.getStatus?.() ?? {};
-        const eff = toggle ? toggle.enabled : server.enabled;
-        return { ...base, enabled: eff, available: eff && (base.available !== false) };
+      async getStatus(context = {}) {
+        const base = await server.getStatus?.(context) ?? {};
+        const envCheck = resolveMcpEnv(patchedEnv, {
+          processEnv: context.processEnv ?? process.env,
+          secretStore: context.secretStore ?? null
+        });
+        const requirements = describeMcpEnvRequirements(patchedEnv);
+        const baseAvailable = base.available !== false;
+        const available = patchedEnabled && envCheck.ok && baseAvailable;
+        let detail = base.detail ?? (baseAvailable ? "ready" : "not_available");
+        if (!patchedEnabled) {
+          detail = "disabled";
+        } else if (!envCheck.ok) {
+          detail = "missing_config";
+        }
+        return {
+          ...base,
+          enabled: patchedEnabled,
+          env: patchedEnv,
+          available,
+          detail,
+          ...(requirements.hasReferences ? { envRequirements: requirements.references } : {}),
+          ...(envCheck.missing.length > 0 ? { missingEnv: envCheck.missing } : {})
+        };
       }
     };
   });

@@ -231,7 +231,10 @@ async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
   try {
     const mcpServers = task.__runtime?.platform?.mcpServers;
     if (mcpServers) {
-      const statuses = await mcpServers.listStatus();
+      const statuses = await mcpServers.listStatus({
+        secretStore: task.__runtime?.secretStore ?? null,
+        processEnv: process.env
+      });
       const enabledServers = statuses.filter((s) => s.enabled && s.available);
       if (enabledServers.length > 0) {
         mcpCapabilitiesNote = `\n\nRegistered MCP capabilities (not directly callable via tool JSON — mention them to the user if relevant):\n${enabledServers.map((s) => `- ${s.id}: ${s.displayName}`).join("\n")}`;

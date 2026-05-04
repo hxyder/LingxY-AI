@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
+import { describeMcpEnvRequirements, resolveMcpEnv } from "./env-resolver.mjs";
 
 const DEFAULT_TIMEOUT_MS = 3_000;
 const TRANSPORTS = new Set(["stdio", "http", "ws"]);
@@ -32,6 +33,13 @@ function resolveSourcePath(source) {
     : null;
 }
 
+function resolveContext(context = {}) {
+  return {
+    processEnv: context.processEnv ?? process.env,
+    secretStore: context.secretStore ?? null
+  };
+}
+
 export function createConfiguredMCPServer(server = {}) {
   const id = server.id;
   const transport = normalizeTransport(server.transport);
@@ -49,8 +57,13 @@ export function createConfiguredMCPServer(server = {}) {
     env: server.env ?? null,
     enabled: server.enabled !== false,
     source,
-    async isAvailable() {
+    async isAvailable(context = {}) {
       if (server.enabled === false) {
+        return false;
+      }
+      const { processEnv, secretStore } = resolveContext(context);
+      const envCheck = resolveMcpEnv(server.env, { processEnv, secretStore });
+      if (!envCheck.ok) {
         return false;
       }
       if (transport === "stdio") {
@@ -58,13 +71,30 @@ export function createConfiguredMCPServer(server = {}) {
       }
       return Boolean(server.url);
     },
-    async getStatus() {
-      const available = await this.isAvailable();
+    async getStatus(context = {}) {
+      const { processEnv, secretStore } = resolveContext(context);
+      const envCheck = resolveMcpEnv(server.env, { processEnv, secretStore });
+      const requirements = describeMcpEnvRequirements(server.env);
+      const baseAvailable = transport === "stdio"
+        ? commandExists(server.command)
+        : Boolean(server.url);
+      const enabled = server.enabled !== false;
+      const available = enabled && envCheck.ok && baseAvailable;
+      let detail;
+      if (!enabled) {
+        detail = "disabled";
+      } else if (!envCheck.ok) {
+        detail = "missing_config";
+      } else if (!baseAvailable) {
+        detail = "not_available";
+      } else {
+        detail = "ready";
+      }
       return {
         id,
         displayName,
         transport,
-        enabled: server.enabled !== false,
+        enabled,
         available,
         configured: transport === "stdio" ? Boolean(server.command) : Boolean(server.url),
         command: server.command ?? null,
@@ -72,7 +102,13 @@ export function createConfiguredMCPServer(server = {}) {
         url: server.url ?? null,
         source,
         ...(sourcePath ? { sourcePath } : {}),
-        detail: available ? "ready" : server.enabled === false ? "disabled" : "not_available"
+        detail,
+        ...(requirements.hasReferences
+          ? { envRequirements: requirements.references }
+          : {}),
+        ...(envCheck.missing.length > 0
+          ? { missingEnv: envCheck.missing }
+          : {})
       };
     },
     async listResources() {

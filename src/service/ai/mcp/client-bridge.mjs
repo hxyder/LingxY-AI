@@ -20,6 +20,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { createActionResult } from "../../action_tools/types.mjs";
+import { resolveMcpEnv } from "./env-resolver.mjs";
 
 const _require = createRequire(import.meta.url);
 
@@ -47,19 +48,45 @@ async function getSdkClient() {
 // ── Per-server connection cache ────────────────────────────────────────────────
 
 const _clients = new Map(); // serverId → { client, tools: McpTool[] }
+const _lastSkipReason = new Map(); // serverId → { reason, missing? } for status surfacing
+
+/**
+ * If the most recent connect attempt for `serverId` was skipped (missing env
+ * refs, etc.), return its structured reason. Used by status reporters to
+ * surface a concrete cause instead of a generic "not_available".
+ */
+export function getMcpSkipReason(serverId) {
+  return _lastSkipReason.get(serverId) ?? null;
+}
 
 /**
  * Connect to an MCP server and return its tool list.
  * Results are cached: a second call for the same serverId returns the cache.
  * Pass refresh=true to force reconnection.
+ *
+ * Env resolution: if the descriptor uses ${env:NAME} or ${secret_ref:NAME}
+ * references and any of them are unresolved given the supplied processEnv /
+ * secretStore, we do NOT spawn the process — the resolver's missing list is
+ * recorded for status callers and an empty tools array is returned.
  */
-export async function connectMcpServer(serverConfig, { refresh = false } = {}) {
+export async function connectMcpServer(serverConfig, {
+  refresh = false,
+  processEnv = process.env,
+  secretStore = null
+} = {}) {
   const { id, command, args = [], env = null } = serverConfig;
   if (!id || !command) return [];
 
   if (!refresh && _clients.has(id)) {
     return _clients.get(id).tools;
   }
+
+  const resolved = resolveMcpEnv(env, { processEnv, secretStore });
+  if (!resolved.ok) {
+    _lastSkipReason.set(id, { reason: "missing_config", missing: resolved.missing });
+    return [];
+  }
+  _lastSkipReason.delete(id);
 
   let sdk;
   try {
@@ -70,11 +97,13 @@ export async function connectMcpServer(serverConfig, { refresh = false } = {}) {
 
   const { Client, StdioClientTransport } = sdk;
 
-  // Merge safe env defaults → process.env → server-specific overrides
+  // Merge safe env defaults → process.env → resolved descriptor env.
   // Server-specific env is set via Console → Connectors → ⚙ 配置 (e.g. BRAVE_API_KEY)
+  // or expressed in the descriptor as ${env:...} / ${secret_ref:...} which
+  // resolveMcpEnv has already substituted.
   const mergedEnv = {
-    ...process.env,
-    ...(env ?? {})
+    ...processEnv,
+    ...resolved.env
   };
 
   const transport = new StdioClientTransport({
@@ -113,8 +142,8 @@ export async function disconnectAll() {
  * by the connector workflow dispatcher to invoke `tools/call` on external
  * MCP servers after going through local risk/confirmation policy.
  */
-export async function getMcpClient(serverConfig) {
-  await connectMcpServer(serverConfig);
+export async function getMcpClient(serverConfig, { processEnv, secretStore } = {}) {
+  await connectMcpServer(serverConfig, { processEnv, secretStore });
   const cached = _clients.get(serverConfig.id);
   return cached?.client ?? null;
 }
@@ -193,9 +222,15 @@ function wrapMcpTool(serverId, serverDisplayName, mcpTool) {
  * @param {object} mcpRegistry  – registry returned by createMCPRegistry()
  * @param {object} [opts]
  * @param {boolean} [opts.refresh]  – force reconnect all servers
+ * @param {Record<string,string>} [opts.processEnv]  – env to expand ${env:...} refs
+ * @param {{ getSync(ref: string): string|null }} [opts.secretStore]  – store for ${secret_ref:...}
  * @returns {Promise<object[]>}  array of action-tool objects
  */
-export async function getMcpActionTools(mcpRegistry, { refresh = false } = {}) {
+export async function getMcpActionTools(mcpRegistry, {
+  refresh = false,
+  processEnv = process.env,
+  secretStore = null
+} = {}) {
   if (!mcpRegistry) return [];
 
   const servers = mcpRegistry.list().filter((s) => s.enabled !== false);
@@ -206,13 +241,16 @@ export async function getMcpActionTools(mcpRegistry, { refresh = false } = {}) {
       // Only stdio servers with a command can be connected as clients
       if (server.transport !== "stdio" || !server.command) return;
 
-      // Skip if not available on disk
+      // Skip if not available on disk OR if env refs are missing. The
+      // configured-server isAvailable now consults the same resolver, so a
+      // descriptor with unresolved ${env:...} / ${secret_ref:...} reports
+      // available=false and we never try to spawn it here.
       const available = typeof server.isAvailable === "function"
-        ? await server.isAvailable()
+        ? await server.isAvailable({ processEnv, secretStore })
         : true;
       if (!available) return;
 
-      const mcpTools = await connectMcpServer(server, { refresh });
+      const mcpTools = await connectMcpServer(server, { refresh, processEnv, secretStore });
       for (const tool of mcpTools) {
         actionTools.push(wrapMcpTool(server.id, server.displayName ?? server.id, tool));
       }

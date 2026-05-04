@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
+import { describeMcpEnvRequirements, resolveMcpEnv } from "./env-resolver.mjs";
 
 const _require = createRequire(import.meta.url);
 
@@ -27,25 +28,44 @@ function makeStdioServer({ id, displayName, packageName, binFile, args = [], env
     env,
     enabled,
     source,
-    async isAvailable() {
-      return enabled && available;
+    async isAvailable(context = {}) {
+      const envCheck = resolveMcpEnv(env, {
+        processEnv: context.processEnv ?? process.env,
+        secretStore: context.secretStore ?? null
+      });
+      return enabled && available && envCheck.ok;
     },
-    async getStatus() {
+    async getStatus(context = {}) {
       const packageMissing = !available;
+      const envCheck = resolveMcpEnv(env, {
+        processEnv: context.processEnv ?? process.env,
+        secretStore: context.secretStore ?? null
+      });
+      const requirements = describeMcpEnvRequirements(env);
+      let detail = "ready";
+      if (packageMissing) {
+        detail = "package_not_found";
+      } else if (!enabled) {
+        detail = "disabled";
+      } else if (!envCheck.ok) {
+        detail = "missing_config";
+      }
       return {
         id,
         displayName,
         transport: "stdio",
         enabled,
-        available: enabled && available,
+        available: enabled && available && envCheck.ok,
         configured: available,
         command: "node",
         args: binPath ? [binPath, ...args] : args,
         env,
         source,
-        detail: packageMissing ? "package_not_found" : !enabled ? "disabled" : "ready",
+        detail,
         installSource: packageMissing ? packageName : null,
-        installRequired: packageMissing
+        installRequired: packageMissing,
+        ...(requirements.hasReferences ? { envRequirements: requirements.references } : {}),
+        ...(envCheck.missing.length > 0 ? { missingEnv: envCheck.missing } : {})
       };
     },
     async listResources() {

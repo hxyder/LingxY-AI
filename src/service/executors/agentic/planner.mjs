@@ -124,7 +124,10 @@ export async function runAgenticPlanner({
   const mcpRegistry = runtime?.platform?.mcpServers;
   let mcpTools = [];
   try {
-    mcpTools = await getMcpActionTools(mcpRegistry);
+    mcpTools = await getMcpActionTools(mcpRegistry, {
+      secretStore: runtime?.secretStore ?? null,
+      processEnv: process.env
+    });
   } catch { /* MCP unavailable — continue without it */ }
   if (insideScheduledFire) {
     mcpTools = mcpTools.filter((tool) => !isScheduleRegistryTool(tool));
