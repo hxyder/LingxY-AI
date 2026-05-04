@@ -3628,6 +3628,22 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.cite-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 6px;
+  margin: 0 1px;
+  background: color-mix(in srgb, var(--accent) 9%, var(--panel));
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.86em;
+  font-family: var(--font-mono);
+  cursor: default;
+  vertical-align: baseline;
+}
 .capability-tool-view {
   margin-top: 4px;
   padding: 8px;

@@ -244,6 +244,9 @@ function renderInline(text = "") {
     if (!safeUrl) return `${prefix}${escapeHtml(url)}`;
     return `${prefix}${hold(`<a href="${escapeHtml(safeUrl)}" data-open-url="${escapeHtml(safeUrl)}" class="md-link">${escapeHtml(clean)}</a>`)}${escapeHtml(trailing)}`;
   });
+  working = working.replace(/\[([wfci]_[0-9a-f]{8})\]/g, (_m, sourceId) => {
+    return hold(`<button type="button" class="cite-chip" data-source-id="${escapeHtml(sourceId)}" title="Evidence source ${escapeHtml(sourceId)}">${escapeHtml(sourceId)}</button>`);
+  });
 
   working = escapeHtml(working)
     .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")

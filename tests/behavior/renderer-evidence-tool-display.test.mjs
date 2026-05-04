@@ -6,6 +6,9 @@ import {
   formatToolDisplayName
 } from "../../src/desktop/renderer/tool-display.mjs";
 import {
+  renderChatMessageBlocksHtml
+} from "../../src/desktop/renderer/chat-blocks.mjs";
+import {
   formatTaskEventSummary
 } from "../../src/desktop/renderer/task-event-stream.js";
 import {
@@ -272,4 +275,11 @@ test("tool call source renderer shows compact per-tool source chips", () => {
   assert.match(html, /web · Forecast/);
   assert.match(html, /indexed · resume\.md/);
   assert.match(html, /data-source-id="w_abcd1234"/);
+});
+
+test("chat markdown renders framework citation ids as chips", () => {
+  const html = renderChatMessageBlocksHtml("Answer grounded in source [w_abcd1234].");
+  assert.match(html, /class="cite-chip"/);
+  assert.match(html, /data-source-id="w_abcd1234"/);
+  assert.doesNotMatch(html, /\[w_abcd1234\]/);
 });

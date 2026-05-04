@@ -277,6 +277,8 @@ assert.ok(/renderChatMessageBlocksHtml/.test(chatBlocks) && /md-table/.test(chat
   "chat blocks: renderer must support tables, diagram blocks, and sanitized SVG");
 assert.ok(/\.md-table\b/.test(sharedCss) && /\.md-svg-figure\b/.test(sharedCss),
   "chat blocks: shared CSS must style rich table and SVG blocks");
+assert.ok(/cite-chip/.test(chatBlocks) && /data-source-id/.test(chatBlocks) && /\.cite-chip\b/.test(sharedCss),
+  "chat blocks: source citation ids must render as shared citation chips");
 assert.ok(/id="chatSidebarProjectFilter"/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
   "chat projects: sidebar must expose a project/all conversation scope selector");
 assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),
