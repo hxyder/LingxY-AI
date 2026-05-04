@@ -25,6 +25,7 @@ import { renderBackgroundContextsBlock } from "../../core/intent/background-cont
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
+import { normalizeSources } from "../../core/evidence/source-envelope.mjs";
 import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
 import {
   actionObligationsWithStatus,
@@ -1363,10 +1364,20 @@ async function _runToolAgentLoopCore({
       transcript: transcript.slice()
     });
 
+    const transcriptEntry = {
+      type: "tool_result",
+      tool: tool.id,
+      args: decision.args,
+      success: result.success,
+      observation: result.observation,
+      metadata: result.metadata,
+      artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
+    };
     runtime.emitTaskEvent?.("tool_call_completed", {
       tool_id: tool.id,
       success: result.success,
       observation: result.observation,
+      sources: normalizeSources(transcriptEntry),
       ...artifactEventFieldsForToolResult(tool.id, result)
     });
     // UCA-054: Record args and success so buildConversationMessages can inject
@@ -1375,15 +1386,7 @@ async function _runToolAgentLoopCore({
     // account_send_email / account_upload_file turn can pick them up as
     // absolute paths — otherwise the model drops the attachment because it
     // never saw a structural path, only prose in the observation.
-    transcript.push({
-      type: "tool_result",
-      tool: tool.id,
-      args: decision.args,
-      success: result.success,
-      observation: result.observation,
-      metadata: result.metadata,
-      artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
-    });
+    transcript.push(transcriptEntry);
 
     {
       const actionObligationSpec = task.task_spec ?? task.task_spec_initial;

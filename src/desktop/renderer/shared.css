@@ -3616,6 +3616,18 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chat-tool-card .ttc-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+.chat-tool-card .ttc-sources .tag {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .capability-tool-view {
   margin-top: 4px;
   padding: 8px;

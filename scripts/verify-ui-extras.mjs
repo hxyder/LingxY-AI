@@ -259,6 +259,12 @@ assert.ok(/local_deep_text_source_count/.test(evidenceSourcesView) && /folder_re
   "task detail: evidence sources must surface deep local file coverage");
 assert.ok(/appendConsoleChatEvidenceSources/.test(consoleJs) && /data-chat-evidence-sources/.test(consoleJs),
   "chat: console must append structured evidence summaries to assistant messages");
+assert.ok(/renderToolCallSourcesHtml/.test(evidenceSourcesView) && /data-tool-call-sources/.test(evidenceSourcesView),
+  "chat tools: evidence source chips must be rendered by the shared evidence helper");
+assert.ok(/payload\.sources/.test(consoleJs) && /renderToolCallSourcesHtml/.test(consoleJs),
+  "chat tools: console tool cards must render per-tool evidence sources from event payloads");
+assert.ok(/renderEvidenceSourcesHtml/.test(overlayJs) && /appendOverlayEvidenceSources/.test(overlayJs) && /evidence_summary/.test(overlayJs),
+  "overlay: runtime evidence summaries must render through the shared evidence source helper");
 assert.ok(/formatToolDisplayName/.test(toolDisplayView) && /read_file_text/.test(toolDisplayView)
     && /from\s+["']\.\/tool-display\.mjs["']/.test(consoleJs)
     && /from\s+["']\.\/tool-display\.mjs["']/.test(overlayJs),

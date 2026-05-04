@@ -30,6 +30,7 @@ import {
   extractEvidence,
   registrableDomain
 } from "../src/service/core/policy/evidence-normalizer.mjs";
+import { normalizeSources } from "../src/service/core/evidence/source-envelope.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../src/service/core/file-evidence-coverage.mjs";
 import { STAGES } from "../src/service/core/contracts/decision-trace.mjs";
 
@@ -61,6 +62,8 @@ it("extract: 3 web_search_fetch hits across 3 distinct domains", () => {
   assert.equal(ev.source_count, 3);
   assert.equal(ev.distinct_domain_count, 3);
   assert.deepEqual(ev.domains, ["nature.com", "reuters.com", "wired.com"]);
+  assert.equal(ev.sources.length, 3);
+  assert.ok(ev.sources.every((source) => source.kind === "web" && source.id.startsWith("w_")));
 });
 
 it("extract: ScienceNet roundup → many internal links but ONE domain", () => {
@@ -90,6 +93,20 @@ it("extract: empty transcript → 0 / 0", () => {
   assert.equal(ev.blended_origin_count, 0);
   assert.deepEqual(ev.domains, []);
   assert.deepEqual(ev.urls, []);
+  assert.deepEqual(ev.sources, []);
+});
+
+it("extract: source envelope provides stable ids for mixed evidence", () => {
+  const transcript = [
+    { type: "tool_result", tool: "read_file_text", success: true, observation: "Resume text", metadata: { path: "E:\\docs\\resume.md", coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT, content_extracted: true } },
+    { type: "tool_result", tool: "search_file_content", success: true, metadata: { results: [{ path: "E:\\docs\\resume.md", text: "ML project", score: 0.9, char_start: 10, char_end: 40, coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT }] } }
+  ];
+  const first = transcript.flatMap((entry) => normalizeSources(entry));
+  const second = transcript.flatMap((entry) => normalizeSources(entry));
+  assert.deepEqual(second.map((source) => source.id), first.map((source) => source.id));
+  const ev = extractEvidence(transcript);
+  assert.equal(ev.sources.length, 2);
+  assert.deepEqual(ev.sources.map((source) => source.kind), ["file", "chunk"]);
 });
 
 it("extract: non-array transcript tolerated (returns 0/0)", () => {
@@ -404,6 +421,27 @@ it("lock-in: final composer receives structured evidence summary", () => {
     "provider final composer prompt must include compact evidence summary when evidence exists");
   assert.match(src, /locator evidence, not proof/,
     "final composer must distinguish indexed/listed locators from fresh file reads");
+  assert.match(src, /renderEvidenceLedgerFromSummary/,
+    "final composer must render the unified source ledger for synthesis");
+  assert.match(src, /source_ledger:/,
+    "final composer evidence block must expose addressable source ids");
+});
+
+it("lock-in: agentic planner refreshes evidence ledger before provider calls", () => {
+  const promptBuilder = readFileSync(
+    new URL("../src/service/executors/agentic/prompt-builder.mjs", import.meta.url),
+    "utf8"
+  );
+  const planner = readFileSync(
+    new URL("../src/service/executors/agentic/planner.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.match(promptBuilder, /## Evidence ledger/,
+    "agentic prompt builder must have an evidence ledger section");
+  assert.match(planner, /renderEvidenceLedger/,
+    "agentic planner must render evidence ledger from transcript sources");
+  assert.match(planner, /messages\[0\]\.content\s*=\s*buildSystemPrompt/,
+    "agentic planner must refresh the system prompt before each provider call");
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

@@ -230,6 +230,13 @@ test("agent loop emits evidence summary for local file reads", async () => {
   assert.equal(result.evidence_summary.local_shallow_source_count, 0);
   assert.equal(result.evidence_summary.local_coverage_scope_counts.single_file_text, 1);
   assert.deepEqual(result.evidence_summary.local_sources, ["E:\\docs\\resume.md"]);
+  assert.equal(result.evidence_summary.sources.length, 1);
+  assert.equal(result.evidence_summary.sources[0].kind, "file");
+  assert.ok(events.some((entry) =>
+    entry.eventType === "tool_call_completed"
+    && entry.payload?.sources?.[0]?.kind === "file"
+    && entry.payload.sources[0].locator === "E:\\docs\\resume.md"
+  ));
   assert.ok(events.some((entry) =>
     entry.eventType === "evidence_summary"
     && entry.payload?.local_source_count === 1

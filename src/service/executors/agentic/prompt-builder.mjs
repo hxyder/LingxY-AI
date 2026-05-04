@@ -165,7 +165,8 @@ export function buildAgenticSystemPrompt({
   skills = [],
   task = null,
   requestedFormat = null,
-  language = "auto"
+  language = "auto",
+  evidenceLedger = ""
 } = {}) {
   const toolBlocks = tools.map((tool) => renderToolBlock(tool)).join("\n\n");
   const skillBlocks = skills.slice(0, 20).map((skill) => renderSkillBlock(skill)).join("\n\n");
@@ -232,6 +233,14 @@ export function buildAgenticSystemPrompt({
     "",
     skillBlocks || "(none)",
     "",
+    ...(evidenceLedger ? [
+      "## Evidence ledger",
+      "",
+      evidenceLedger,
+      "",
+      "Use source ids from this ledger when grounding factual claims. Do not invent source ids.",
+      ""
+    ] : []),
     "## Task contract",
     "",
     renderTaskContract(task),

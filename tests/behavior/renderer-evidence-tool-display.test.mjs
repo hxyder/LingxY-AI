@@ -16,7 +16,8 @@ import {
   renderCapabilityToolViewHtml
 } from "../../src/desktop/renderer/capability-tool-view.mjs";
 import {
-  renderEvidenceSourcesHtml
+  renderEvidenceSourcesHtml,
+  renderToolCallSourcesHtml
 } from "../../src/desktop/renderer/evidence-sources-view.mjs";
 
 test("renderer tool display names hide implementation ids for local file tools", () => {
@@ -260,4 +261,15 @@ test("evidence source renderer surfaces fresh, deep, indexed, and shallow file c
   assert.match(html, /indexed fresh file text/);
   assert.match(html, />listed</);
   assert.match(html, /data-evidence-path/);
+});
+
+test("tool call source renderer shows compact per-tool source chips", () => {
+  const html = renderToolCallSourcesHtml([
+    { id: "w_abcd1234", kind: "web", locator: "https://weather.gov/rah", title: "Forecast" },
+    { id: "c_deadbeef", kind: "chunk", locator: "E:/linxi/docs/resume.md", title: "resume.md" }
+  ]);
+  assert.match(html, /data-tool-call-sources/);
+  assert.match(html, /web · Forecast/);
+  assert.match(html, /indexed · resume\.md/);
+  assert.match(html, /data-source-id="w_abcd1234"/);
 });

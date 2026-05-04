@@ -4,6 +4,7 @@ import {
   isFileTextCoverageScope,
   normalizeFileCoverageScope
 } from "../file-evidence-coverage.mjs";
+import { normalizeSources } from "../evidence/source-envelope.mjs";
 
 /**
  * UCA-077 P4-RQ C3: post-loop evidence summary for search/research
@@ -121,6 +122,7 @@ const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
  *                                              marker. Validator uses this to emit the more
  *                                              specific single_roundup_only violation.
  * @property {string[]} roundup_markers       - which markers matched (for trace / debug)
+ * @property {object[]} sources               - unified source ledger entries for web, local, indexed chunks, and images
  */
 
 /**
@@ -140,6 +142,7 @@ export function extractEvidence(transcript) {
   const indexedFileSources = new Set();
   const indexedFileTruncatedSources = new Set();
   const indexedFileCoverageSources = new Map();
+  const ledgerSources = [];
   const titles = [];   // collected for roundup detection
   if (!Array.isArray(transcript)) {
     return {
@@ -154,13 +157,15 @@ export function extractEvidence(transcript) {
       indexed_file_coverage_scope_counts: {},
       indexed_file_truncated_source_count: 0, indexed_file_truncated_sources: [],
       blended_source_count: 0, blended_origin_count: 0,
-      is_single_roundup: false, roundup_markers: []
+      is_single_roundup: false, roundup_markers: [],
+      sources: []
     };
   }
   for (const entry of transcript) {
     if (!entry || typeof entry !== "object") continue;
     if (entry.type !== "tool_result") continue;
     if (entry.success === false) continue;
+    ledgerSources.push(...normalizeSources(entry));
     if (entry.tool === "web_search_fetch") {
       const results = entry.metadata?.results;
       if (Array.isArray(results)) {
@@ -303,8 +308,36 @@ export function extractEvidence(transcript) {
     blended_source_count: urls.size + localSources.size + indexedFileSources.size,
     blended_origin_count: domains.size + localSources.size + indexedFileSources.size,
     is_single_roundup: isSingleRoundup,
-    roundup_markers: matchedMarkers
+    roundup_markers: matchedMarkers,
+    sources: sortEvidenceSources(dedupeEvidenceSources(ledgerSources))
   };
+}
+
+function dedupeEvidenceSources(sources = []) {
+  const byId = new Map();
+  for (const source of sources) {
+    if (!source?.id || byId.has(source.id)) continue;
+    byId.set(source.id, source);
+  }
+  return [...byId.values()];
+}
+
+function sortEvidenceSources(sources = []) {
+  const kindOrder = new Map([
+    ["web", 0],
+    ["file", 1],
+    ["chunk", 2],
+    ["image", 3]
+  ]);
+  return [...sources].sort((a, b) => {
+    const kindDiff = (kindOrder.get(a.kind) ?? 9) - (kindOrder.get(b.kind) ?? 9);
+    if (kindDiff) return kindDiff;
+    const scoreA = Number.isFinite(Number(a.score)) ? Number(a.score) : -1;
+    const scoreB = Number.isFinite(Number(b.score)) ? Number(b.score) : -1;
+    const scoreDiff = scoreB - scoreA;
+    if (scoreDiff !== 0) return scoreDiff;
+    return String(a.locator ?? "").localeCompare(String(b.locator ?? ""));
+  });
 }
 
 function addLocalSource(out, value) {

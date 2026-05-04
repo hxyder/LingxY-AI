@@ -34,6 +34,7 @@ import { createProviderAdapter } from "./provider-adapter.mjs";
 import { finalizeAgenticPlannerRun } from "./finalization.mjs";
 import { executeAgenticToolCall } from "./tool-execution.mjs";
 import { buildAgenticUserMessage } from "./user-message.mjs";
+import { renderEvidenceLedger } from "../shared/evidence-ledger.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
 import { loadStructuredHistoryFor } from "../shared/conversation-history-loader.mjs";
 import {
@@ -51,6 +52,7 @@ import {
   toolDescriptorForAdapter
 } from "./tool-surface.mjs";
 import { detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
+import { normalizeSources } from "../../core/evidence/source-envelope.mjs";
 import { appendAuditLog } from "../../security/audit-log.mjs";
 // J1: per-iteration parity. Pre-J1 agentic ran for the full
 // maxIterations even when the same tool failed repeatedly OR when the
@@ -167,11 +169,12 @@ export async function runAgenticPlanner({
   // openai / ollama) and for code_cli providers — only the adapter layer
   // differs.
 
-  const systemPrompt = buildAgenticSystemPrompt({
+  const buildSystemPrompt = (validatorTranscript = []) => buildAgenticSystemPrompt({
     tools: effectiveTools,
     skills: effectiveSkills,
     task,
-    requestedFormat
+    requestedFormat,
+    evidenceLedger: renderEvidenceLedger(validatorTranscript)
   });
 
   const transcript = [];
@@ -246,6 +249,14 @@ export async function runAgenticPlanner({
       task,
       transcript
     });
+    const searchTranscriptEntry = {
+      type: "tool_result",
+      tool: searchCall.name,
+      success: searchResult.success,
+      observation: searchResult.observation ?? "",
+      metadata: searchResult.metadata ?? {},
+      artifact_paths: searchResult.artifact_paths ?? []
+    };
     onEvent?.({
       event_type: "tool_call_completed",
       payload: {
@@ -253,6 +264,7 @@ export async function runAgenticPlanner({
         success: searchResult.success,
         observation: (searchResult.observation ?? "").slice(0, 500),
         metadata: searchResult.metadata ?? {},
+        sources: normalizeSources(searchTranscriptEntry),
         preflight: true,
         ...artifactEventFieldsForToolResult(searchCall.name, searchResult)
       }
@@ -310,7 +322,7 @@ export async function runAgenticPlanner({
     ? loadStructuredHistoryFor({ runtime, task, executor: "agentic", modelContextWindow })
     : { mode: "legacy_fallback", historyMessages: [], currentMessageRendered: null };
 
-  const messages = [{ role: "system", content: systemPrompt }];
+  const messages = [{ role: "system", content: buildSystemPrompt(transcriptForValidator(transcript)) }];
   if (historyResult.mode === "structured" && historyResult.currentMessageRendered) {
     for (const m of historyResult.historyMessages) messages.push(m);
     messages.push({ role: historyResult.currentMessageRendered.role, content: userContent });
@@ -347,6 +359,7 @@ export async function runAgenticPlanner({
 
     let response;
     try {
+      messages[0].content = buildSystemPrompt(transcriptForValidator(transcript));
       // Stream planner text live so the user sees output flow in real time.
       // Pre-fix this was disabled to stop providers from leaking control JSON
       // (`{iteration,next_action,…}`) into the bubble; that also killed
@@ -499,6 +512,14 @@ export async function runAgenticPlanner({
         task,
         transcript
       });
+      const transcriptEntry = {
+        type: "tool_result",
+        tool: call.name,
+        success: result.success,
+        observation: result.observation ?? "",
+        metadata: result.metadata ?? {},
+        artifact_paths: result.artifact_paths ?? []
+      };
       // Phase 20: if the gate created an approval, emit a visible
       // event so the overlay popup-card can surface the approval
       // card. The agent sees the tool failure in its transcript and
@@ -521,6 +542,7 @@ export async function runAgenticPlanner({
           success: result.success,
           observation: (result.observation ?? "").slice(0, 500),
           metadata: result.metadata ?? {},
+          sources: normalizeSources(transcriptEntry),
           ...artifactEventFieldsForToolResult(call.name, result)
         }
       });

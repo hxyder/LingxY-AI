@@ -133,6 +133,23 @@ export function renderEvidenceSourcesHtml(evidence, {
   `;
 }
 
+export function renderToolCallSourcesHtml(sources = []) {
+  const items = Array.isArray(sources) ? sources.filter((source) => source?.id && source?.locator).slice(0, 4) : [];
+  if (items.length === 0) return "";
+  return `
+    <div class="ttc-sources" data-tool-call-sources>
+      ${items.map((source) => {
+        const kind = source.kind === "chunk" ? "indexed" : source.kind;
+        const label = source.title || shortEvidenceLabel(source.locator);
+        return `<span class="tag" data-source-id="${escapeHtml(source.id)}" title="${escapeHtml(source.locator)}">${escapeHtml(kind)} · ${escapeHtml(label)}</span>`;
+      }).join("")}
+      ${Array.isArray(sources) && sources.length > items.length
+        ? `<span class="tag">+${escapeHtml(sources.length - items.length)} more</span>`
+        : ""}
+    </div>
+  `;
+}
+
 export function wireEvidenceSourceActions(container, shell) {
   if (!container || !shell) return;
   for (const btn of container.querySelectorAll("[data-evidence-url]")) {

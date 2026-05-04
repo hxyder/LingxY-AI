@@ -34,6 +34,10 @@ import {
   formatToolDisplayName
 } from "./tool-display.mjs";
 import {
+  renderEvidenceSourcesHtml,
+  wireEvidenceSourceActions
+} from "./evidence-sources-view.mjs";
+import {
   DEFAULT_PROJECT_ID,
   buildProject,
   createProjectId
@@ -216,6 +220,7 @@ let renderedTimelineEventIds = new Set();
 let streamingBubble = null;
 let streamingBubbleRawText = "";
 let pendingToolStepBubbles = {}; // { toolId: [stepEl, ...] } — updated by tool_call_completed
+let renderedEvidenceSummaryTaskIds = new Set();
 let activeClarificationBubble = null;
 const approvalPopupCardIds = new Map(); // approvalId -> popup card id
 const surfacedApprovalPopupIds = new Set();
@@ -1388,7 +1393,7 @@ function eventToPhase(eventType) {
   ].includes(eventType)) return "EXECUTING";
   if ([
     "final_composer_started", "text_delta", "inline_result",
-    "artifact_created"
+    "artifact_created", "evidence_summary"
   ].includes(eventType)) return "FINALIZING";
   return null;
 }
@@ -2048,6 +2053,7 @@ function closeActiveTaskEventStream() {
   streamingBubble = null;
   streamingBubbleRawText = "";
   pendingToolStepBubbles = {};
+  renderedEvidenceSummaryTaskIds = new Set();
   // The new task may not arrive immediately, but resetting here means the
   // first step_started we see for it always increments from 0 — never
   // appearing as "第 5 步" because the previous task's counter leaked.
@@ -2082,6 +2088,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     "pending_approval_created",
     "log",
     "artifact_created",
+    "evidence_summary",
     "failed",
     "cancelled"
   ]);
@@ -2195,6 +2202,25 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
   if (frame.event === "failed" || frame.event === "cancelled") {
     timelineAddStep(summary.body, "fail");
   }
+}
+
+function appendOverlayEvidenceSources(taskId, evidence) {
+  if (!evidence || typeof evidence !== "object") return;
+  const key = taskId || "active";
+  if (renderedEvidenceSummaryTaskIds.has(key)) return;
+  const html = renderEvidenceSourcesHtml(evidence, {
+    className: "task-answer task-evidence overlay-evidence",
+    title: "Evidence",
+    zh: "来源"
+  });
+  if (!html) return;
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = html;
+  const node = wrapper.firstElementChild;
+  if (!node) return;
+  addBubble("assistant", node, { taskId });
+  wireEvidenceSourceActions(node, window.ucaShell);
+  renderedEvidenceSummaryTaskIds.add(key);
 }
 
 // Track approval bubbles so SSE duplicates don't stack cards, and so we can
@@ -2607,6 +2633,10 @@ async function handleTaskEventFrame(rawEvent) {
     if (isForActiveConv) addBubble("assistant", `Artifact created: ${summary.body}`);
   }
 
+  if (frame.event === "evidence_summary" && isForActiveConv) {
+    appendOverlayEvidenceSources(frameTaskId, frame.data ?? {});
+  }
+
   // UCA-075: Skill proposal — user can save the repeated tool sequence as a skill
   if (frame.event === "skill_proposal") {
     const proposal = frame.data?.proposal;
@@ -2644,6 +2674,9 @@ async function handleTaskEventFrame(rawEvent) {
       // also stamp it with the final character count as a residual hint.
       closeActiveThinkingCard();
       await refreshActiveTask();
+      if ((frame.event === "success" || frame.event === "partial_success") && frame.data?.evidence_summary) {
+        appendOverlayEvidenceSources(frameTaskId, frame.data.evidence_summary);
+      }
     }
     // Close any background stream for this task — it's done, no more events.
     if (frameTaskId) {
@@ -3025,6 +3058,7 @@ async function attachLatestActiveTaskToOverlay() {
   notifiedTaskId = null;
   notifiedInlineResultTaskId = null;
   pendingToolStepBubbles = {};
+  renderedEvidenceSummaryTaskIds = new Set();
   ensureActiveTaskEventStream(activeTaskId);
   await refreshActiveTask();
   return true;

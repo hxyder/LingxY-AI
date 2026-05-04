@@ -7,6 +7,7 @@ import {
   formatWaitingActionFinal
 } from "../../core/policy/obligation-evaluator.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
+import { renderEvidenceLedgerFromSummary } from "../shared/evidence-ledger.mjs";
 import {
   compactTranscriptForComposer,
   localFallbackFinal
@@ -51,6 +52,11 @@ export function formatEvidenceSummaryForComposer(evidence = null) {
   if (Number(evidence.local_truncated_source_count ?? 0) > 0
       || Number(evidence.indexed_file_truncated_source_count ?? 0) > 0) {
     lines.push(`truncated_sources=${Number(evidence.local_truncated_source_count ?? 0) + Number(evidence.indexed_file_truncated_source_count ?? 0)}`);
+  }
+  const ledger = renderEvidenceLedgerFromSummary(evidence, { limit: 12 });
+  if (ledger) {
+    lines.push("source_ledger:");
+    lines.push(ledger);
   }
   lines.push("Use fresh local text and web evidence together when both are present. Indexed hits or listed-only paths are locator evidence, not proof that the file contents were read in this run.");
   return lines.join("\n");
