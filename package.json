@@ -204,7 +204,7 @@
     "pptxgenjs": "^4.0.1"
   },
   "devDependencies": {
-    "electron": "^35.3.0",
+    "electron": "^39.8.9",
     "electron-builder": "^26.0.0"
   },
   "overrides": {

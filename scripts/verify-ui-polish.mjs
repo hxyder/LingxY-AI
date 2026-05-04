@@ -17,6 +17,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
 
+function readSection(source, startMarker, endMarker) {
+  const start = source.indexOf(startMarker);
+  assert.notEqual(start, -1, `missing section start: ${startMarker}`);
+  const end = source.indexOf(endMarker, start + startMarker.length);
+  assert.notEqual(end, -1, `missing section end after ${startMarker}: ${endMarker}`);
+  return source.slice(start, end);
+}
+
 // ── skeleton loader CSS ────────────────────────────────────────────────
 const shared = read("src/desktop/renderer/shared.css");
 assert.ok(/\.skeleton\s*\{/.test(shared), "shared.css must define .skeleton");
@@ -30,8 +38,13 @@ assert.ok(
 );
 
 const consoleJs = read("src/desktop/renderer/console.js");
+const refreshTaskDetail = readSection(
+  consoleJs,
+  "async function refreshTaskDetail",
+  "\nfunction renderApprovals"
+);
 assert.ok(
-  /refreshTaskDetail[\s\S]{0,400}skeleton/.test(consoleJs),
+  /showLoading/.test(refreshTaskDetail) && /skeleton/.test(refreshTaskDetail),
   "refreshTaskDetail must render a skeleton loader while fetching"
 );
 

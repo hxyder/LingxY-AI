@@ -374,10 +374,32 @@ function shouldRequireLocalFileTextRead({ decision = null, signals = null, conte
     || sourceSignalRequiresLocalFileText(signals);
 }
 
-function requiredPolicyGroupsFromIntentRoute(decision = null, { text = "", contextPacket = null, signals = null } = {}) {
-  const groups = decision && typeof decision === "object" && Array.isArray(decision.required_policy_groups)
+const REQUIRED_POLICY_GROUP_GATES = Object.freeze({
+  [LOCAL_FILE_TEXT_READ_GROUP]: Object.freeze({
+    accepts: ({ contextPacket }) => contextHasLocalFileEvidence(contextPacket),
+    reason: "local_file_text_read requires attached file_paths/uploaded_files; inline clipboard/selection text is already available context, not a file target."
+  })
+});
+
+function normalizeDecisionRequiredPolicyGroups(groups = [], { contextPacket = null } = {}) {
+  const accepted = [];
+  const rejected = [];
+  for (const group of groups) {
+    const gate = REQUIRED_POLICY_GROUP_GATES[group];
+    if (gate && !gate.accepts({ contextPacket })) {
+      rejected.push({ candidate: group, reason: gate.reason });
+      continue;
+    }
+    accepted.push(group);
+  }
+  return { groups: accepted, rejected };
+}
+
+function resolveRequiredPolicyGroupsFromIntentRoute(decision = null, { text = "", contextPacket = null, signals = null } = {}) {
+  const decisionGroups = decision && typeof decision === "object" && Array.isArray(decision.required_policy_groups)
     ? decision.required_policy_groups
     : [];
+  const normalizedDecisionGroups = normalizeDecisionRequiredPolicyGroups(decisionGroups, { contextPacket });
   const inferredGroups = inferSideEffectPolicyGroups({
     sources: [
       text,
@@ -395,8 +417,14 @@ function requiredPolicyGroupsFromIntentRoute(decision = null, { text = "", conte
   const localFileGroups = shouldRequireLocalFileTextRead({ decision, signals, contextPacket })
     ? [LOCAL_FILE_TEXT_READ_GROUP]
     : [];
-  return [...new Set([...groups, ...inferredGroups, ...localFileGroups]
-    .filter((group) => NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE.has(group)))];
+  return {
+    groups: [...new Set([
+      ...normalizedDecisionGroups.groups,
+      ...inferredGroups,
+      ...localFileGroups
+    ].filter((group) => NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE.has(group)))],
+    rejected: normalizedDecisionGroups.rejected
+  };
 }
 
 function expectedOutputFromIntentRoute(decision = null, requiredPolicyGroups = []) {
@@ -940,11 +968,20 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
     || toolPolicy?.policy_groups?.external_web_read?.mode === "required"
   );
 
-  const srRequiredPolicyGroups = requiredPolicyGroupsFromIntentRoute(srDecision, {
+  const srPolicyGroupResolution = resolveRequiredPolicyGroupsFromIntentRoute(srDecision, {
     text,
     contextPacket: enrichedContext,
     signals
   });
+  const srRequiredPolicyGroups = srPolicyGroupResolution.groups;
+  if (srPolicyGroupResolution.rejected.length > 0) {
+    tracker.record(STAGES.SUCCESS_CONTRACT, {
+      output: { required_policy_groups: srRequiredPolicyGroups },
+      reason: "SemanticRouter required policy groups were normalized against available context evidence.",
+      evidence: [{ type: "context", source: "required-policy-group-gates", reason: "policy group evidence gate" }],
+      rejected: srPolicyGroupResolution.rejected
+    });
+  }
   const synthesis = {
     user_goal: typeof srDecision?.user_goal === "string" && srDecision.user_goal.trim()
       ? srDecision.user_goal.trim()

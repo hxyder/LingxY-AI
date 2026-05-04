@@ -133,6 +133,31 @@ test("TaskSpec preserves SemanticRouter local_file_text_read contract", () => {
   assert.equal(spec.success_contract.tool_called, true);
 });
 
+test("TaskSpec does not force fresh file reads for inline clipboard text", () => {
+  const spec = createTaskSpec("请总结这段内容", {
+    source_type: "clipboard",
+    source_app: "verify-runtime",
+    text: "This is direct inline text that is already available to the executor.",
+    semantic_router_decision: {
+      source_scope: "selection",
+      source_mode: "provided_context",
+      expected_output: "summary",
+      user_goal: "请总结这段内容",
+      needed_capabilities: ["file_read"],
+      required_policy_groups: ["local_file_text_read"],
+      confidence: 0.86,
+      reason: "The text is local input, but it is not an attached file."
+    }
+  });
+
+  assert.ok(!spec.success_contract.required_policy_groups.includes("local_file_text_read"));
+  assert.equal(spec.success_contract.tool_called, false);
+  assert.ok(spec.decision_trace.some((entry) =>
+    entry.stage === "success-contract"
+    && entry.rejected?.some((item) => item.candidate === "local_file_text_read")
+  ));
+});
+
 test("TaskSpec requires fresh local read when the user references an attached document", () => {
   const spec = createTaskSpec("总结这份文档", {
     file_paths: ["E:/linxi/report.md"]

@@ -282,6 +282,11 @@ Build a local unpacked desktop package:
 npm run pack
 ```
 
+On Windows, local packaging rebuilds native modules such as `better-sqlite3`
+against Electron's Node ABI. Install Visual Studio Build Tools with the
+Desktop development with C++ workload before running `npm run pack` locally.
+The GitHub Release Artifacts workflow runs on `windows-latest`.
+
 Create a trial sideload package:
 
 ```powershell
