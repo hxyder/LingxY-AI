@@ -35,6 +35,7 @@ const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const sharedCss = read("src/desktop/renderer/shared.css");
 const sharedUi = read("src/desktop/renderer/shared-ui.mjs");
+const chatBlocks = read("src/desktop/renderer/chat-blocks.mjs");
 const taskRuntime = read("src/service/core/task-runtime.mjs");
 const conversationLifecycle = read("src/service/core/task-runtime/conversation-lifecycle.mjs");
 const taskSubmission = read("src/service/core/task-runtime/task-submission.mjs");
@@ -188,6 +189,12 @@ assert.ok(/data-evidence-url/.test(evidenceSourcesView) && /data-evidence-path/.
   "task detail: evidence sources must expose web open and local reveal actions");
 assert.ok(/appendConsoleChatEvidenceSources/.test(consoleJs) && /data-chat-evidence-sources/.test(consoleJs),
   "chat: console must append structured evidence summaries to assistant messages");
+assert.ok(/from\s+["']\.\/chat-blocks\.mjs["']/.test(consoleJs) && /from\s+["']\.\/chat-blocks\.mjs["']/.test(overlayJs),
+  "chat blocks: console and overlay must share the rich block renderer");
+assert.ok(/renderChatMessageBlocksHtml/.test(chatBlocks) && /md-table/.test(chatBlocks) && /md-diagram/.test(chatBlocks) && /sanitizeSvgMarkup/.test(chatBlocks),
+  "chat blocks: renderer must support tables, diagram blocks, and sanitized SVG");
+assert.ok(/\.md-table\b/.test(sharedCss) && /\.md-svg-figure\b/.test(sharedCss),
+  "chat blocks: shared CSS must style rich table and SVG blocks");
 assert.ok(/id="chatSidebarProjectFilter"/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
   "chat projects: sidebar must expose a project/all conversation scope selector");
 assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),

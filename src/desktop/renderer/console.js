@@ -31,6 +31,9 @@ import {
   formatRelativeTime
 } from "./shared-ui.mjs";
 import {
+  renderChatMessageBlocks
+} from "./chat-blocks.mjs";
+import {
   getMcpSourceView
 } from "./mcp-source-view.mjs";
 import {
@@ -810,10 +813,6 @@ const workspaceRenderSignatures = new Map();
    HELPERS
    ═══════════════════════════════════════════════ */
 
-const CHAT_MARKDOWN_LINK_RE = /\[([^\]\n]{1,240})\]\((https?:\/\/[^\s<>"']{1,2000}?)\)/gi;
-const CHAT_BARE_URL_RE = /https?:\/\/[^\s<>"']+/gi;
-const CHAT_TRAILING_URL_PUNCTUATION = new Set([".", ",", "!", "?", ";", ":", "，", "。", "！", "？", "；", "：", "、"]);
-
 function normalizeExternalUrl(value) {
   try {
     const url = new URL(String(value ?? "").trim());
@@ -824,79 +823,10 @@ function normalizeExternalUrl(value) {
   }
 }
 
-function countChars(value, char) {
-  return Array.from(String(value ?? "")).filter((c) => c === char).length;
-}
-
-function splitTrailingUrlPunctuation(rawUrl = "") {
-  let url = String(rawUrl ?? "");
-  let trailing = "";
-  while (url) {
-    const last = url.at(-1);
-    const shouldTrimBracket =
-      (last === ")" && countChars(url, ")") > countChars(url, "("))
-      || (last === "]" && countChars(url, "]") > countChars(url, "["))
-      || (last === "）" && countChars(url, "）") > countChars(url, "（"));
-    if (!CHAT_TRAILING_URL_PUNCTUATION.has(last) && !shouldTrimBracket) break;
-    trailing = last + trailing;
-    url = url.slice(0, -1);
-  }
-  return { url, trailing };
-}
-
-function appendChatExternalLink(parent, href, label) {
-  const normalized = normalizeExternalUrl(href);
-  if (!normalized) {
-    parent.appendChild(document.createTextNode(label ?? href ?? ""));
-    return;
-  }
-  const a = document.createElement("a");
-  a.href = normalized;
-  a.textContent = label || href;
-  a.target = "_blank";
-  a.rel = "noopener noreferrer";
-  a.className = "chat-link";
-  parent.appendChild(a);
-}
-
-function appendChatLinkifiedText(parent, text = "") {
-  const source = String(text ?? "");
-  let lastIndex = 0;
-  CHAT_BARE_URL_RE.lastIndex = 0;
-  for (const match of source.matchAll(CHAT_BARE_URL_RE)) {
-    const index = match.index ?? 0;
-    if (index > lastIndex) {
-      parent.appendChild(document.createTextNode(source.slice(lastIndex, index)));
-    }
-    const { url, trailing } = splitTrailingUrlPunctuation(match[0]);
-    appendChatExternalLink(parent, url, url);
-    if (trailing) parent.appendChild(document.createTextNode(trailing));
-    lastIndex = index + match[0].length;
-  }
-  if (lastIndex < source.length) {
-    parent.appendChild(document.createTextNode(source.slice(lastIndex)));
-  }
-}
-
 function renderConsoleChatBubbleContent(bubble, text = "") {
   if (!bubble) return;
   const source = String(text ?? "");
-  bubble.dataset.rawText = source;
-  bubble.replaceChildren();
-
-  let lastIndex = 0;
-  CHAT_MARKDOWN_LINK_RE.lastIndex = 0;
-  for (const match of source.matchAll(CHAT_MARKDOWN_LINK_RE)) {
-    const index = match.index ?? 0;
-    if (index > lastIndex) {
-      appendChatLinkifiedText(bubble, source.slice(lastIndex, index));
-    }
-    appendChatExternalLink(bubble, match[2], match[1]);
-    lastIndex = index + match[0].length;
-  }
-  if (lastIndex < source.length) {
-    appendChatLinkifiedText(bubble, source.slice(lastIndex));
-  }
+  renderChatMessageBlocks(bubble, source);
 }
 
 async function openConsoleChatExternalLink(anchor) {
@@ -917,6 +847,16 @@ async function openConsoleChatExternalLink(anchor) {
 
 consoleChatMessages?.addEventListener("click", (ev) => {
   const target = ev.target instanceof Element ? ev.target : null;
+  const copyButton = target?.closest?.("[data-md-copy]");
+  if (copyButton && consoleChatMessages.contains(copyButton)) {
+    ev.preventDefault();
+    const codeEl = copyButton.parentElement?.querySelector("pre code");
+    const code = codeEl?.textContent ?? "";
+    try { navigator.clipboard?.writeText?.(code); } catch { /* ignore */ }
+    copyButton.textContent = "已复制";
+    setTimeout(() => { copyButton.textContent = "复制"; }, 1200);
+    return;
+  }
   const anchor = target?.closest?.("a[href]");
   if (!anchor || !consoleChatMessages.contains(anchor)) return;
   ev.preventDefault();

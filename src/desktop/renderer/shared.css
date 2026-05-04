@@ -2747,6 +2747,217 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   font-size: 13px;
   line-height: 1.6;
 }
+.chat-msg-bubble .md-h1,
+.bubble.assistant .md-h1 {
+  font-size: 17px;
+  font-weight: var(--fw-semibold);
+  margin: 10px 0 6px;
+  color: var(--ink);
+}
+.chat-msg-bubble .md-h2,
+.bubble.assistant .md-h2 {
+  font-size: 15px;
+  font-weight: var(--fw-semibold);
+  margin: 9px 0 5px;
+  color: var(--ink);
+}
+.chat-msg-bubble .md-h3,
+.chat-msg-bubble .md-h4,
+.bubble.assistant .md-h3,
+.bubble.assistant .md-h4 {
+  font-size: 14px;
+  font-weight: var(--fw-semibold);
+  margin: 8px 0 4px;
+  color: var(--ink);
+}
+.chat-msg-bubble .md-list,
+.bubble.assistant .md-list {
+  margin: 8px 0;
+  padding-left: 22px;
+}
+.chat-msg-bubble .md-list li,
+.bubble.assistant .md-list li {
+  margin: 3px 0;
+  line-height: 1.55;
+}
+.chat-msg-bubble .md-inline-code,
+.bubble.assistant .md-inline-code {
+  background: color-mix(in srgb, var(--panel-2) 82%, var(--accent-soft));
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: .92em;
+  font-family: "SF Mono", "Consolas", monospace;
+}
+.chat-msg-bubble .md-link,
+.bubble.assistant .md-link {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.chat-msg-bubble .md-image-link,
+.bubble.assistant .md-image-link {
+  display: block;
+  margin: 8px 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+.chat-msg-bubble .md-image,
+.bubble.assistant .md-image {
+  display: block;
+  max-width: 100%;
+  max-height: 280px;
+  object-fit: contain;
+}
+.chat-msg-bubble .md-code,
+.bubble.assistant .md-code {
+  position: relative;
+  margin: 9px 0;
+  border-radius: var(--radius-sm);
+  background: #111827;
+  color: #f8fafc;
+  overflow: hidden;
+}
+.chat-msg-bubble .md-code-lang,
+.bubble.assistant .md-code-lang {
+  position: absolute;
+  top: 6px;
+  left: 9px;
+  color: rgba(248, 250, 252, .66);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+.chat-msg-bubble .md-code pre,
+.bubble.assistant .md-code pre {
+  margin: 0;
+  padding: 24px 12px 10px;
+  max-height: 300px;
+  overflow-x: auto;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.chat-msg-bubble .md-code:not([data-lang]) pre,
+.bubble.assistant .md-code:not([data-lang]) pre {
+  padding-top: 10px;
+}
+.chat-msg-bubble .md-code pre code,
+.bubble.assistant .md-code pre code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+}
+.chat-msg-bubble .md-code-copy,
+.bubble.assistant .md-code-copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: rgba(255, 255, 255, .08);
+  color: #e2e8f0;
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-standard), background-color var(--duration-fast) var(--ease-standard);
+}
+.chat-msg-bubble .md-code:hover .md-code-copy,
+.bubble.assistant .md-code:hover .md-code-copy {
+  opacity: 1;
+}
+.chat-msg-bubble .md-code-copy:hover,
+.bubble.assistant .md-code-copy:hover {
+  background: rgba(255, 255, 255, .18);
+}
+.chat-msg-bubble .md-table-wrap,
+.bubble.assistant .md-table-wrap {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  overflow: auto;
+  max-width: 100%;
+}
+.chat-msg-bubble .md-table,
+.bubble.assistant .md-table {
+  width: 100%;
+  min-width: 360px;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+.chat-msg-bubble .md-table th,
+.chat-msg-bubble .md-table td,
+.bubble.assistant .md-table th,
+.bubble.assistant .md-table td {
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.chat-msg-bubble .md-table th,
+.bubble.assistant .md-table th {
+  background: var(--panel-2);
+  color: var(--ink);
+  font-weight: var(--fw-semibold);
+}
+.chat-msg-bubble .md-table tr:last-child td,
+.bubble.assistant .md-table tr:last-child td {
+  border-bottom: 0;
+}
+.chat-msg-bubble .md-diagram,
+.bubble.assistant .md-diagram,
+.chat-msg-bubble .md-svg-figure,
+.bubble.assistant .md-svg-figure {
+  margin: 10px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  overflow: hidden;
+}
+.chat-msg-bubble .md-diagram-head,
+.bubble.assistant .md-diagram-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+.chat-msg-bubble .md-mermaid-source,
+.bubble.assistant .md-mermaid-source {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  color: var(--ink-2);
+  overflow-x: auto;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: 12px;
+}
+.chat-msg-bubble .md-svg-figure,
+.bubble.assistant .md-svg-figure {
+  padding: 10px;
+  text-align: center;
+}
+.chat-msg-bubble .md-svg-figure svg,
+.bubble.assistant .md-svg-figure svg {
+  max-width: 100%;
+  height: auto;
+}
+.chat-msg-bubble .md-svg-rejected,
+.bubble.assistant .md-svg-rejected {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--warn-soft);
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--fs-xs);
+}
 /* Per-user-message ↑/↓ jump nav. Hover-only so the chrome doesn't
    crowd the column when the user isn't actively navigating. The
    target prompt briefly flashes via .chat-msg--flash so the user

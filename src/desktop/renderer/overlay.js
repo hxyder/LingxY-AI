@@ -27,6 +27,10 @@ import {
   formatRelativeTime
 } from "./shared-ui.mjs";
 import {
+  hasStructuredChatBlocks,
+  renderChatMessageBlocksHtml
+} from "./chat-blocks.mjs";
+import {
   DEFAULT_PROJECT_ID,
   buildProject,
   createProjectId
@@ -868,63 +872,7 @@ function seedCaptureMatches(newText) {
    ═══════════════════════════════════════════════ */
 
 function renderMarkdown(text) {
-  // Safer, slightly-richer Markdown renderer for assistant bubbles.
-  // Supports: fenced code blocks, h1-h3 headings, bold, inline code,
-  // ordered/unordered lists, links, bare URLs. Kept intentionally small —
-  // we pull in no library so the escaping boundary is easy to audit.
-  const escape = (s) => s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
-  // First pass: extract fenced code blocks so their interior isn't touched
-  // by the rest of the Markdown transforms.
-  const codeBlocks = [];
-  let working = text.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, body) => {
-    const idx = codeBlocks.length;
-    codeBlocks.push({ lang: (lang || "").trim(), body: body.replace(/\n$/, "") });
-    return `\u0000CODEBLOCK_${idx}\u0000`;
-  });
-
-  working = escape(working);
-
-  working = working
-    // Headings (must be line-anchored). h1/h2/h3 only.
-    .replace(/^###\s+(.+)$/gm, "<div class=\"md-h3\">$1</div>")
-    .replace(/^##\s+(.+)$/gm, "<div class=\"md-h2\">$1</div>")
-    .replace(/^#\s+(.+)$/gm, "<div class=\"md-h1\">$1</div>")
-    // Numbered list items: "1. text"
-    .replace(/^(\d+)\.\s+(.+)$/gm, "<div class=\"md-list-item\"><span class=\"md-list-num\">$1.</span> $2</div>")
-    // Bullet points: "- text" or "• text" or "* text"
-    .replace(/^[-•*]\s+(.+)$/gm, "<div class=\"md-list-item\"><span class=\"md-bullet\">•</span> $1</div>")
-    // Bold: **text**
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    // Italic: *text* (non-greedy, avoid matching across newlines to stop it
-    // from eating list markers)
-    .replace(/(^|[^\*])\*([^\*\n]+)\*(?!\*)/g, "$1<em>$2</em>")
-    // Inline code: `code`
-    .replace(/`([^`]+)`/g, "<code class=\"md-inline-code\">$1</code>")
-    // Images: ![alt](url). Keep them clickable so visual results can open full-size.
-    .replace(/!\[([^\]]*)\]\((https?:\/\/[^\)]+)\)/g, "<a href=\"#\" data-open-url=\"$2\" class=\"md-image-link\"><img src=\"$2\" alt=\"$1\" class=\"md-image\"></a>")
-    // Links: [text](url)
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, "<a href=\"#\" data-open-url=\"$2\" class=\"md-link\">$1</a>")
-    // Bare URLs
-    .replace(/(^|[\s(（])((?:https?:\/\/)[^\s<>"]+)/g, "$1<a href=\"#\" data-open-url=\"$2\" class=\"md-link\">$2</a>");
-
-  // Convert blank lines to paragraph breaks, remaining newlines to <br>.
-  working = working
-    .replace(/\n\n+/g, "<div class=\"md-gap\"></div>")
-    .replace(/\n/g, "<br>");
-
-  // Restore code blocks (they carry their own structure + a copy button).
-  working = working.replace(/\u0000CODEBLOCK_(\d+)\u0000/g, (_, i) => {
-    const block = codeBlocks[Number(i)];
-    if (!block) return "";
-    const langAttr = block.lang ? ` data-lang="${escape(block.lang)}"` : "";
-    return `<div class="md-code"${langAttr}><pre><code>${escape(block.body)}</code></pre><button type="button" class="md-code-copy" data-md-copy>复制</button></div>`;
-  });
-
-  return working;
+  return renderChatMessageBlocksHtml(text);
 }
 
 function imageMimeForPath(filePath = "") {
@@ -1084,9 +1032,12 @@ function addBubble(role, content, options) {
       const hasMarkdownStructure =
         rendered.includes("md-h") ||
         rendered.includes("md-code") ||
+        rendered.includes("md-table") ||
+        rendered.includes("md-diagram") ||
+        rendered.includes("md-svg") ||
         rendered.includes("md-list-item") ||
         rendered.includes("md-gap");
-      const isStructured = hasMarkdownStructure || content.length > 80;
+      const isStructured = hasMarkdownStructure || hasStructuredChatBlocks(content) || content.length > 80;
       if (isStructured) bubble.classList.add("bubble--answer");
       // Wire clickable links to open_url
       for (const anchor of bubble.querySelectorAll("[data-open-url]")) {
