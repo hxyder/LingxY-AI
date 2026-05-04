@@ -3263,12 +3263,40 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .model-picker-provider.active {
   box-shadow: inset 3px 0 0 var(--accent);
 }
+.model-picker-provider--unconfigured {
+  color: var(--muted);
+}
+.model-picker-provider--unconfigured small {
+  color: var(--warn);
+}
 .model-picker-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 12px;
   min-width: 0;
+}
+.model-picker-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 180px;
+  justify-content: center;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+}
+.model-picker-setup-title {
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+.model-picker-setup p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
 }
 .model-picker-field {
   display: flex;

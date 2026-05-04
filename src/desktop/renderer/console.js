@@ -41,6 +41,11 @@ import {
   capabilityChecklistSummary
 } from "./capability-checklist.mjs";
 import {
+  buildModelPickerProviderItems,
+  configuredModelPickerProviders,
+  isModelPickerProviderConfigured
+} from "./model-picker-view-model.mjs";
+import {
   renderChatSidebarListHtml
 } from "./console-chat-sidebar.mjs";
 import {
@@ -10612,14 +10617,11 @@ async function ensureConsoleConversationForModelOverride() {
 let consoleModelPickerEl = null;
 
 function isProviderConfiguredForConversationModel(provider = {}) {
-  if (!provider?.id) return false;
-  if (provider.kind === "code_cli") return Boolean(provider.command);
-  if (provider.kind === "ollama") return true;
-  return Boolean(provider.apiKey || provider.apiKeyRef || provider.apiKeyConfigured);
+  return isModelPickerProviderConfigured(provider);
 }
 
 function configuredConversationModelProviders() {
-  return customProviders.filter(isProviderConfiguredForConversationModel);
+  return configuredModelPickerProviders(customProviders);
 }
 
 function mergeOnboardingSuggestionsIntoWorkspace(suggestions = []) {
@@ -10677,38 +10679,27 @@ function positionConsoleModelPicker(popover) {
 }
 
 async function renderConsoleModelPicker(popover, providers, selectedProviderId) {
-  const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? providers[0];
+  const providerItems = buildModelPickerProviderItems(providers, selectedProviderId);
+  const selectedItem = providerItems.find((item) => item.selected) ?? providerItems[0];
+  const selectedProvider = selectedItem?.provider;
   if (!selectedProvider) return;
-  await loadProviderModelOptions(selectedProvider.id);
+  if (selectedItem.configured) {
+    await loadProviderModelOptions(selectedProvider.id);
+  }
   const currentOverride = consoleActiveConversation?.metadata?.modelOverride ?? null;
   const currentModel = currentOverride?.providerId === selectedProvider.id
     ? currentOverride?.model ?? ""
     : "";
-  const choices = modelChoicesForProvider(selectedProvider, "chat");
-  const fallbackModel = currentModel || defaultModelForProvider(selectedProvider, "chat") || choices[0]?.id || "";
-  const reasonOptions = reasoningEffortOptions(selectedProvider, fallbackModel);
+  const choices = selectedItem.configured ? modelChoicesForProvider(selectedProvider, "chat") : [];
+  const fallbackModel = selectedItem.configured
+    ? currentModel || defaultModelForProvider(selectedProvider, "chat") || choices[0]?.id || ""
+    : "";
+  const reasonOptions = selectedItem.configured ? reasoningEffortOptions(selectedProvider, fallbackModel) : [];
   const currentReasoning = currentOverride?.providerId === selectedProvider.id
     ? currentOverride?.reasoningEffort ?? ""
     : "";
-
-  popover.innerHTML = `
-    <div class="model-picker-head">
-      <div>
-        <div class="model-picker-title">Conversation model</div>
-        <div class="model-picker-sub">Applies only to the current chat</div>
-      </div>
-      <button class="icon-btn" type="button" data-model-picker-close aria-label="Close">×</button>
-    </div>
-    <div class="model-picker-body">
-      <div class="model-picker-providers" role="listbox" aria-label="Providers">
-        ${providers.map((provider) => `
-          <button type="button" class="model-picker-provider ${provider.id === selectedProvider.id ? "active" : ""}" data-model-provider="${escapeHtml(provider.id)}">
-            <span>${escapeHtml(provider.name ?? provider.id)}</span>
-            <small>${escapeHtml(provider.kind ?? "provider")}</small>
-          </button>
-        `).join("")}
-      </div>
-      <div class="model-picker-panel">
+  const selectedPanelHtml = selectedItem.configured
+    ? `
         <label class="model-picker-field">
           <span>Model</span>
           <input data-model-custom-input type="text" value="${escapeHtml(fallbackModel)}" placeholder="${selectedProvider.kind === "code_cli" ? "(CLI default)" : "model id"}">
@@ -10730,9 +10721,40 @@ async function renderConsoleModelPicker(popover, providers, selectedProviderId) 
             `).join("")}
           </select>
         </label>
+      `
+    : `
+        <div class="model-picker-setup">
+          <div class="model-picker-setup-title">Finish provider setup</div>
+          <p>${escapeHtml(selectedItem.setupReason || "Finish this provider before using it for a conversation.")}</p>
+          <button class="btn btn-primary btn-sm" type="button" data-model-configure-provider="${escapeHtml(selectedProvider.id)}">Configure provider</button>
+        </div>
+      `;
+  const saveButtonHtml = selectedItem.configured
+    ? `<button class="btn btn-primary btn-sm" type="button" data-model-save>Use for this chat</button>`
+    : "";
+
+  popover.innerHTML = `
+    <div class="model-picker-head">
+      <div>
+        <div class="model-picker-title">Conversation model</div>
+        <div class="model-picker-sub">Applies only to the current chat</div>
+      </div>
+      <button class="icon-btn" type="button" data-model-picker-close aria-label="Close">×</button>
+    </div>
+    <div class="model-picker-body">
+      <div class="model-picker-providers" role="listbox" aria-label="Providers">
+        ${providerItems.map((item) => `
+          <button type="button" class="model-picker-provider ${item.selected ? "active" : ""} ${item.configured ? "" : "model-picker-provider--unconfigured"}" data-model-provider="${escapeHtml(item.id)}" aria-pressed="${item.selected ? "true" : "false"}">
+            <span>${escapeHtml(item.label)}</span>
+            <small>${escapeHtml(item.kind)} · ${escapeHtml(item.statusLabel)}</small>
+          </button>
+        `).join("")}
+      </div>
+      <div class="model-picker-panel">
+        ${selectedPanelHtml}
         <div class="model-picker-actions">
           <button class="btn btn-ghost btn-sm" type="button" data-model-clear>Use global routing</button>
-          <button class="btn btn-primary btn-sm" type="button" data-model-save>Use for this chat</button>
+          ${saveButtonHtml}
         </div>
       </div>
     </div>
@@ -10750,6 +10772,14 @@ async function renderConsoleModelPicker(popover, providers, selectedProviderId) 
       if (input) input.value = btn.dataset.modelChoice ?? "";
       popover.querySelectorAll(".model-picker-choice").forEach((entry) => entry.classList.remove("active"));
       btn.classList.add("active");
+    });
+  });
+  popover.querySelectorAll("[data-model-configure-provider]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      closeConsoleModelPicker();
+      switchTab("settings");
+      document.querySelector('[data-settings-nav="providerSettingsPanel"]')?.click?.();
+      openProviderModal(btn.dataset.modelConfigureProvider || selectedProvider.id);
     });
   });
   popover.querySelector("[data-model-clear]")?.addEventListener("click", async () => {
@@ -10796,21 +10826,18 @@ async function renderConsoleModelPicker(popover, providers, selectedProviderId) 
 async function chooseConsoleConversationModel() {
   await loadProvidersAndRouting();
   const allProviders = customProviders.filter((provider) => provider?.id);
-  const providers = configuredConversationModelProviders();
-  if (providers.length === 0) {
-    showConsoleToast(
-      allProviders.length
-        ? "先补全 Provider 的 API key 或 CLI command，然后就可以给当前对话切模型。"
-        : "先添加一个 AI Provider，然后就可以给当前对话切模型。",
-      { kind: "info" }
-    );
+  if (allProviders.length === 0) {
+    showConsoleToast("先添加一个 AI Provider，然后就可以给当前对话切模型。", { kind: "info" });
     switchTab("settings");
     document.querySelector('[data-settings-nav="providerSettingsPanel"]')?.click?.();
-    openProviderModal(allProviders[0]?.id);
+    openProviderModal();
     return;
   }
 
   const currentOverride = consoleActiveConversation?.metadata?.modelOverride ?? null;
+  const selectedProviderId = currentOverride?.providerId
+    ?? configuredConversationModelProviders()[0]?.id
+    ?? allProviders[0]?.id;
   closeConsoleModelPicker();
   const popover = document.createElement("div");
   popover.className = "model-picker-popover";
@@ -10823,8 +10850,8 @@ async function chooseConsoleConversationModel() {
   document.addEventListener("keydown", handleConsoleModelPickerKeydown, true);
   await renderConsoleModelPicker(
     popover,
-    providers,
-    currentOverride?.providerId ?? providers[0]?.id
+    allProviders,
+    selectedProviderId
   );
 }
 
