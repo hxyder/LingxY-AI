@@ -29,6 +29,9 @@ assert.match(workflow, /npm run dist/, "release workflow must build installer ar
 assert.match(workflow, /THIRD_PARTY_LICENSES\.md/, "release workflow must ship third-party notices");
 assert.match(workflow, /Get-FileHash\s+-Algorithm\s+SHA256/, "release workflow must generate SHA256 checksums");
 assert.match(workflow, /actions\/upload-artifact@v4/, "release workflow must upload build artifacts");
+assert.match(workflow, /dist\/\*\*/, "release workflow must upload the same dist scope covered by checksums");
+assert.match(workflow, /!dist\/win-unpacked\/\*\*/, "release workflow must exclude unpacked build output from uploaded artifacts");
+assert.match(workflow, /LINGXY_RELEASE_REF_NAME/, "release workflow must pass GitHub context to PowerShell through env");
 assert.match(workflow, /gh release create/, "release workflow must support draft GitHub Release creation");
 assert.match(workflow, /gh release upload/, "release workflow must support updating an existing release");
 

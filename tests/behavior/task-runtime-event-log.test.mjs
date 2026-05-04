@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { readdir, stat, utimes } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -12,18 +12,7 @@ import {
   resetTaskLogStateForTests,
   rotateTaskLogs
 } from "../../src/service/core/task-runtime/event-log.mjs";
-
-async function removeTempDir(root) {
-  for (let attempt = 0; attempt < 5; attempt += 1) {
-    try {
-      rmSync(root, { recursive: true, force: true });
-      return;
-    } catch (error) {
-      if (attempt === 4) throw error;
-      await new Promise((resolve) => setTimeout(resolve, 25 * (attempt + 1)));
-    }
-  }
-}
+import { removeTempDirWithRetry } from "./helpers/temp-dir.mjs";
 
 function withTempLogsDir() {
   const root = mkdtempSync(path.join(tmpdir(), "lingxy-event-log-"));
@@ -33,7 +22,7 @@ function withTempLogsDir() {
     async cleanup() {
       await flushTaskLogs();
       resetTaskLogStateForTests();
-      await removeTempDir(root);
+      await removeTempDirWithRetry(root);
     }
   };
 }
