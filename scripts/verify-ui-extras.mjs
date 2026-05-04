@@ -306,6 +306,10 @@ assert.ok(/renderProjectArtifactListHtml/.test(consoleProjectsView) && /data-pro
   "projects: renderer must show artifact open/reveal actions");
 assert.ok(/artifactStatusInfo\(artifact\.status\)/.test(consoleProjectsView),
   "projects: scoped artifact list must render artifact.status metadata");
+assert.ok(/attachedFilePaths\s*=\s*\[\]/.test(consoleProjectsView) && /Attached project file/.test(consoleProjectsView),
+  "projects: Files column must show durable attached project files separately from generated artifacts");
+assert.ok(/attachedProjectFilePaths/.test(consoleJs) && /projectArtifacts\.length\s*\+\s*attachedProjectFilePaths\.length/.test(consoleJs),
+  "projects: Files count must include durable attached project files");
 assert.ok(/setHtmlIfChanged\(projectArtifactList/.test(consoleJs),
   "projects: project artifact list must avoid unnecessary innerHTML churn");
 assert.ok(/updateSecurityState/.test(consoleJs) && /window\.ucaShell\.updateSecurityState/.test(consoleJs),

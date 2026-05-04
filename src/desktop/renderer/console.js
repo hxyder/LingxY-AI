@@ -6166,6 +6166,9 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
   }
   const conversations = currentProjectConversations(store, selectedProject?.id);
   const projectArtifacts = currentProjectArtifacts(selectedProject?.id);
+  const attachedProjectFilePaths = Array.isArray(selectedProject?.attachedFilePaths)
+    ? selectedProject.attachedFilePaths
+    : [];
   if (!state.selectedProjectConversationId || !conversations.some((conversation) => conversation.id === state.selectedProjectConversationId)) {
     state.selectedProjectConversationId = conversations[0]?.id ?? null;
   }
@@ -6177,7 +6180,7 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
 
   projectCount.textContent = `${projects.length}`;
   projectConversationCount.textContent = `${conversations.length}`;
-  if (projectArtifactCount) projectArtifactCount.textContent = `${projectArtifacts.length}`;
+  if (projectArtifactCount) projectArtifactCount.textContent = `${projectArtifacts.length + attachedProjectFilePaths.length}`;
   projectConversationPreview.textContent = projectBackendConversationStatus === "loading" && conversations.length === 0
     ? "Loading project conversations..."
     : formatProjectConversationPreview(selectedPreviewConversation);
@@ -6205,6 +6208,7 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
       ? `<p class="muted" style="font-size:12px;">Loading files...</p>`
       : renderProjectArtifactListHtml({
         artifacts: projectArtifacts,
+        attachedFilePaths: attachedProjectFilePaths,
         labelForPath: formatArtifactLabel
       });
     setHtmlIfChanged(projectArtifactList, artifactHtml);

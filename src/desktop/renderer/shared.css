@@ -841,6 +841,21 @@ label, .field-label {
   background: var(--warn-soft);
   color: var(--warn);
 }
+.artifact-status--project {
+  background: var(--info-soft);
+  color: var(--info);
+}
+.project-file-section-label {
+  margin: 8px 2px 5px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+.project-file-section-label:first-child {
+  margin-top: 0;
+}
 .project-artifact-action {
   width: 28px;
   height: 28px;
