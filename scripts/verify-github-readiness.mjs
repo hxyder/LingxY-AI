@@ -23,6 +23,9 @@ function gitTrackedFiles() {
 const requiredPublicFiles = [
   ".gitignore",
   ".github/dependabot.yml",
+  ".github/ISSUE_TEMPLATE/bug_report.yml",
+  ".github/ISSUE_TEMPLATE/config.yml",
+  ".github/ISSUE_TEMPLATE/feature_request.yml",
   ".github/PULL_REQUEST_TEMPLATE.md",
   "CODE_OF_CONDUCT.md",
   "CONTRIBUTING.md",
