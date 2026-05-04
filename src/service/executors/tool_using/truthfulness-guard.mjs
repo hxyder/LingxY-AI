@@ -42,6 +42,16 @@ function hasSuccessfulDeepLocalRead(transcript = []) {
   );
 }
 
+function hasIndexedFileHit(transcript = []) {
+  return transcript.some((entry) =>
+    entry?.type === "tool_result"
+    && entry.success === true
+    && entry.tool === "search_file_content"
+    && Array.isArray(entry.metadata?.results)
+    && entry.metadata.results.length > 0
+  );
+}
+
 function requiresDeepLocalRead(task = {}) {
   const depth = task?.task_spec?.file_read?.depth ?? task?.task_spec_initial?.file_read?.depth;
   return depth === "deep";
@@ -68,15 +78,18 @@ function claimsLocalFileContent(finalText = "") {
 
 export function detectUnbackedLocalFileClaim(result, task = null) {
   const filePaths = task?.context_packet?.file_paths;
-  if (!Array.isArray(filePaths) || filePaths.length === 0) return null;
+  const transcript = result?.transcript ?? [];
+  const hasLocalFileContext = (Array.isArray(filePaths) && filePaths.length > 0)
+    || hasIndexedFileHit(transcript);
+  if (!hasLocalFileContext) return null;
   if (!claimsLocalFileContent(result?.final_text ?? "")) return null;
-  if (requiresDeepLocalRead(task) && !hasSuccessfulDeepLocalRead(result?.transcript ?? [])) {
+  if (requiresDeepLocalRead(task) && !hasSuccessfulDeepLocalRead(transcript)) {
     return {
       kind: "local_file_deep_read_insufficient",
       message: "Final answer claims local file analysis for a deep file-read task, but only shallow or single-file evidence was available."
     };
   }
-  if (hasEmbeddedFileText(task) || hasSuccessfulLocalRead(result?.transcript ?? [])) return null;
+  if (hasEmbeddedFileText(task) || hasSuccessfulLocalRead(transcript)) return null;
   return {
     kind: "local_file_read_claim_unsupported",
     message: "Final answer claims local file contents were read or analyzed, but no file-content extraction was available or called."
@@ -86,7 +99,7 @@ export function detectUnbackedLocalFileClaim(result, task = null) {
 export function buildHallucinatedClaimBanner(violation) {
   const group = String(violation?.kind ?? "").replace(/_claim_unsupported$/, "");
   if (group === "local_file_read") {
-    return "⚠️ 文件内容实际并未读取。系统只看到了文件路径/元数据，没有检测到成功的文件正文抽取；下面的文字可能是模型猜测。请重新执行或先读取文件内容。";
+    return "⚠️ 文件内容实际并未读取。系统只看到了文件路径/元数据或索引命中，没有检测到本轮成功的文件正文抽取；下面的文字可能是模型猜测。请重新执行或先读取文件内容。";
   }
   if (group === "local_file_deep_read_insufficient") {
     return "⚠️ 文件读取深度不足。系统没有检测到递归文件夹正文抽取，不能支持“已深入分析整个文件夹/项目”的结论。请重新执行深度读取。";

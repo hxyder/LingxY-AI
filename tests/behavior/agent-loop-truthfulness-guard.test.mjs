@@ -72,6 +72,65 @@ test("agent truthfulness guard allows local-file claims after read_file_text", (
   assert.equal(violation, null);
 });
 
+test("agent truthfulness guard treats indexed file hits as locator evidence, not fresh reads", () => {
+  const violation = detectUnbackedLocalFileClaim({
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "search_file_content",
+        success: true,
+        observation: "Found 1 indexed file hit.",
+        metadata: {
+          results: [
+            {
+              path: "E:\\docs\\indexed.md",
+              coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT
+            }
+          ]
+        }
+      }
+    ],
+    final_text: "I have reviewed the document and summarized the file below."
+  }, {
+    context_packet: {}
+  });
+
+  assert.equal(violation?.kind, "local_file_read_claim_unsupported");
+  assert.match(buildHallucinatedClaimBanner(violation), /索引命中/);
+});
+
+test("agent truthfulness guard allows indexed hits after a fresh file read", () => {
+  const violation = detectUnbackedLocalFileClaim({
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "search_file_content",
+        success: true,
+        observation: "Found indexed file hit.",
+        metadata: {
+          results: [{ path: "E:\\docs\\indexed.md" }]
+        }
+      },
+      {
+        type: "tool_result",
+        tool: "read_file_text",
+        success: true,
+        observation: "Fresh document text",
+        metadata: {
+          path: "E:\\docs\\indexed.md",
+          coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+          content_extracted: true
+        }
+      }
+    ],
+    final_text: "I reviewed the document and summarized the file below."
+  }, {
+    context_packet: {}
+  });
+
+  assert.equal(violation, null);
+});
+
 test("agent truthfulness guard rejects shallow file enumeration as content evidence", () => {
   const violation = detectUnbackedLocalFileClaim({
     transcript: [
