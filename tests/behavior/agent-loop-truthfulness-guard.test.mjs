@@ -95,3 +95,59 @@ test("agent truthfulness guard rejects shallow file enumeration as content evide
 
   assert.equal(violation?.kind, "local_file_read_claim_unsupported");
 });
+
+test("agent truthfulness guard rejects single-file evidence for deep file-read tasks", () => {
+  const violation = detectUnbackedLocalFileClaim({
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "read_file_text",
+        success: true,
+        observation: "One file text",
+        metadata: {
+          coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+          content_extracted: true
+        }
+      }
+    ],
+    final_text: "我已经分析了这个文件夹，下面是总结。"
+  }, {
+    context_packet: {
+      file_paths: ["C:\\Users\\demo\\project"]
+    },
+    task_spec: {
+      file_read: { depth: "deep" }
+    }
+  });
+
+  assert.equal(violation?.kind, "local_file_deep_read_insufficient");
+  assert.match(buildHallucinatedClaimBanner(violation), /文件读取深度不足/);
+});
+
+test("agent truthfulness guard allows deep file-read claims after recursive folder text", () => {
+  const violation = detectUnbackedLocalFileClaim({
+    transcript: [
+      {
+        type: "tool_result",
+        tool: "read_folder_text",
+        success: true,
+        observation: "Folder text",
+        metadata: {
+          coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+          content_extracted: true,
+          recursive: true
+        }
+      }
+    ],
+    final_text: "我已经分析了这个文件夹，下面是总结。"
+  }, {
+    context_packet: {
+      file_paths: ["C:\\Users\\demo\\project"]
+    },
+    task_spec: {
+      file_read: { depth: "deep" }
+    }
+  });
+
+  assert.equal(violation, null);
+});

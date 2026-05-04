@@ -1,5 +1,5 @@
 import { detectUnbackedActionClaims } from "../../core/policy/success-contract-validator.mjs";
-import { isFileTextCoverageScope } from "../../core/file-evidence-coverage.mjs";
+import { isDeepFileTextCoverageScope, isFileTextCoverageScope } from "../../core/file-evidence-coverage.mjs";
 
 /**
  * Truthfulness guard for connector-write hallucinations. Delegates to the
@@ -29,6 +29,24 @@ function hasSuccessfulLocalRead(transcript = []) {
   );
 }
 
+function hasSuccessfulDeepLocalRead(transcript = []) {
+  return transcript.some((entry) =>
+    entry?.type === "tool_result"
+    && entry.success === true
+    && LOCAL_FILE_READ_TOOLS.has(entry.tool)
+    && (
+      entry.tool === "vision_analyze"
+      || (entry.tool === "read_folder_text" && !entry.metadata?.coverage_scope)
+      || isDeepFileTextCoverageScope(entry.metadata?.coverage_scope)
+    )
+  );
+}
+
+function requiresDeepLocalRead(task = {}) {
+  const depth = task?.task_spec?.file_read?.depth ?? task?.task_spec_initial?.file_read?.depth;
+  return depth === "deep";
+}
+
 function hasEmbeddedFileText(task = {}) {
   const context = task?.context_packet ?? {};
   if (context?.context_sources?.file_text === true) return true;
@@ -52,6 +70,12 @@ export function detectUnbackedLocalFileClaim(result, task = null) {
   const filePaths = task?.context_packet?.file_paths;
   if (!Array.isArray(filePaths) || filePaths.length === 0) return null;
   if (!claimsLocalFileContent(result?.final_text ?? "")) return null;
+  if (requiresDeepLocalRead(task) && !hasSuccessfulDeepLocalRead(result?.transcript ?? [])) {
+    return {
+      kind: "local_file_deep_read_insufficient",
+      message: "Final answer claims local file analysis for a deep file-read task, but only shallow or single-file evidence was available."
+    };
+  }
   if (hasEmbeddedFileText(task) || hasSuccessfulLocalRead(result?.transcript ?? [])) return null;
   return {
     kind: "local_file_read_claim_unsupported",
@@ -63,6 +87,9 @@ export function buildHallucinatedClaimBanner(violation) {
   const group = String(violation?.kind ?? "").replace(/_claim_unsupported$/, "");
   if (group === "local_file_read") {
     return "⚠️ 文件内容实际并未读取。系统只看到了文件路径/元数据，没有检测到成功的文件正文抽取；下面的文字可能是模型猜测。请重新执行或先读取文件内容。";
+  }
+  if (group === "local_file_deep_read_insufficient") {
+    return "⚠️ 文件读取深度不足。系统没有检测到递归文件夹正文抽取，不能支持“已深入分析整个文件夹/项目”的结论。请重新执行深度读取。";
   }
   if (group === "email_send") {
     return "⚠️ 邮件实际并未发送。系统未检测到任何成功的邮件发送工具调用，下面的文字是模型自述。请重新发起或人工确认。";
