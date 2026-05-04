@@ -5,6 +5,10 @@ import {
 } from "../../core/policy/success-contract-validator.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import {
+  citationViolations,
+  verifyCitations
+} from "../../core/evidence/citation-verifier.mjs";
+import {
   findWaitingActionApprovalInTranscript,
   formatWaitingActionFinal
 } from "../../core/policy/obligation-evaluator.mjs";
@@ -104,7 +108,16 @@ export function finalizeAgenticPlannerRun({
     outputText = `[UCA] 注意：${reason}\n\n${outputText || ""}`;
   }
 
-  const evidenceSummary = extractEvidence(validatorTranscript);
+  const extractedEvidence = extractEvidence(validatorTranscript);
+  const citations = verifyCitations(outputText, extractedEvidence.sources);
+  const evidenceSummary = {
+    ...extractedEvidence,
+    citations
+  };
+  const advisoryCitationViolations = citationViolations(citations);
+  if (advisoryCitationViolations.length > 0) {
+    violations = (violations ?? []).concat(advisoryCitationViolations);
+  }
 
   let phaseGate = null;
   let errorBudgetDiag = null;

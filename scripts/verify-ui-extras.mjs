@@ -265,6 +265,8 @@ assert.ok(/payload\.sources/.test(consoleJs) && /renderToolCallSourcesHtml/.test
   "chat tools: console tool cards must render per-tool evidence sources from event payloads");
 assert.ok(/renderEvidenceSourcesHtml/.test(overlayJs) && /appendOverlayEvidenceSources/.test(overlayJs) && /evidence_summary/.test(overlayJs),
   "overlay: runtime evidence summaries must render through the shared evidence source helper");
+assert.ok(/renderToolCallSourcesHtml/.test(overlayJs) && /frame\.data\?\.sources/.test(overlayJs),
+  "overlay: tool-step bubbles must render per-call evidence sources from event payloads");
 assert.ok(/formatToolDisplayName/.test(toolDisplayView) && /read_file_text/.test(toolDisplayView)
     && /from\s+["']\.\/tool-display\.mjs["']/.test(consoleJs)
     && /from\s+["']\.\/tool-display\.mjs["']/.test(overlayJs),

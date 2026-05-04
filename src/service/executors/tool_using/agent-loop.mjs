@@ -25,6 +25,7 @@ import { renderBackgroundContextsBlock } from "../../core/intent/background-cont
 import { renderToolPolicyForPrompt } from "../../core/policy/policy-groups.mjs";
 import { renderResearchPrinciples, renderResearchBudget } from "../shared/research-principles.mjs";
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
+import { verifyCitations } from "../../core/evidence/citation-verifier.mjs";
 import { normalizeSources } from "../../core/evidence/source-envelope.mjs";
 import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
 import {
@@ -661,7 +662,11 @@ export async function runToolAgentLoop(opts = {}) {
 function finaliseWithEvidence(result, { runtime, task } = {}) {
   if (!result || typeof result !== "object") return result;
   if (!Array.isArray(result.transcript)) return result;
-  const evidence = extractEvidence(result.transcript);
+  const extractedEvidence = extractEvidence(result.transcript);
+  const evidence = {
+    ...extractedEvidence,
+    citations: verifyCitations(result.final_text ?? result.finalText ?? "", extractedEvidence.sources)
+  };
   // Skip the audit/event noise when the loop produced no evidence.
   // The typical "launch_app" flow has zero coverage to report, but
   // local file/image reads are evidence and should be visible even when

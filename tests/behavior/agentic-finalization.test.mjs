@@ -44,6 +44,28 @@ test("agentic finalization returns success when tool evidence satisfies the cont
   assert.equal(result.evidence_summary.source_count, 1);
 });
 
+test("agentic finalization records unresolved citations as advisory violations", () => {
+  const result = finalizeAgenticPlannerRun({
+    task: requiredWebTask(),
+    finalText: "Here is a sourced summary [w_deadbeef].",
+    transcript: [
+      {
+        role: "tool",
+        name: "web_search_fetch",
+        success: true,
+        observation: "Found a detailed source with enough extracted text and concrete facts for the synthesis validator.",
+        metadata: { results: [{ title: "A", url: "https://example.test/a" }] }
+      }
+    ],
+    iterations: 1
+  });
+
+  assert.equal(result.success, true, "citation advisories should not downgrade successful tasks");
+  assert.equal(result.downgraded, false);
+  assert.deepEqual(result.evidence_summary.citations.missing, ["w_deadbeef"]);
+  assert.ok(result.violations.some((violation) => violation.kind === "citation_unresolved"));
+});
+
 test("agentic finalization downgrades completion claims that have no successful tool", () => {
   const result = finalizeAgenticPlannerRun({
     task: { task_id: "task_claim" },

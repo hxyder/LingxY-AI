@@ -31,6 +31,10 @@ import {
   registrableDomain
 } from "../src/service/core/policy/evidence-normalizer.mjs";
 import { normalizeSources } from "../src/service/core/evidence/source-envelope.mjs";
+import {
+  citationViolations,
+  verifyCitations
+} from "../src/service/core/evidence/citation-verifier.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../src/service/core/file-evidence-coverage.mjs";
 import { STAGES } from "../src/service/core/contracts/decision-trace.mjs";
 
@@ -107,6 +111,16 @@ it("extract: source envelope provides stable ids for mixed evidence", () => {
   const ev = extractEvidence(transcript);
   assert.equal(ev.sources.length, 2);
   assert.deepEqual(ev.sources.map((source) => source.kind), ["file", "chunk"]);
+});
+
+it("extract: citation verifier is advisory and structural", () => {
+  const citations = verifyCitations("Uses one real [w_11111111] and one missing [f_deadbeef].", [
+    { id: "w_11111111", kind: "web", locator: "https://example.test" }
+  ]);
+  assert.deepEqual(citations.claimed, ["w_11111111", "f_deadbeef"]);
+  assert.deepEqual(citations.missing, ["f_deadbeef"]);
+  assert.equal(citationViolations(citations)[0].kind, "citation_unresolved");
+  assert.deepEqual(verifyCitations("No citation id here.", []).missing, []);
 });
 
 it("extract: non-array transcript tolerated (returns 0/0)", () => {
@@ -442,6 +456,21 @@ it("lock-in: agentic planner refreshes evidence ledger before provider calls", (
     "agentic planner must render evidence ledger from transcript sources");
   assert.match(planner, /messages\[0\]\.content\s*=\s*buildSystemPrompt/,
     "agentic planner must refresh the system prompt before each provider call");
+});
+
+it("lock-in: finalizers attach advisory citation diagnostics", () => {
+  const agentLoop = readFileSync(
+    new URL("../src/service/executors/tool_using/agent-loop.mjs", import.meta.url),
+    "utf8"
+  );
+  const agenticFinalization = readFileSync(
+    new URL("../src/service/executors/agentic/finalization.mjs", import.meta.url),
+    "utf8"
+  );
+  assert.match(agentLoop, /verifyCitations/,
+    "tool_using finaliseWithEvidence must add citation diagnostics to evidence_summary");
+  assert.match(agenticFinalization, /citationViolations/,
+    "agentic finalization must record unresolved citations as advisory violations");
 });
 
 process.stdout.write(`\n${pass} pass / ${fail} fail\n`);

@@ -35,6 +35,7 @@ import {
 } from "./tool-display.mjs";
 import {
   renderEvidenceSourcesHtml,
+  renderToolCallSourcesHtml,
   wireEvidenceSourceActions
 } from "./evidence-sources-view.mjs";
 import {
@@ -1459,7 +1460,7 @@ const TOOL_STEP_ICONS = {
 const STEP_CHEVRON =
   '<svg class="step-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 6 15 12 9 18"/></svg>';
 
-function buildToolStepInner(toolId, state, args, observation) {
+function buildToolStepInner(toolId, state, args, observation, sources = []) {
   const icon = TOOL_STEP_ICONS[state] ?? TOOL_STEP_ICONS.pending;
   const displayName = formatToolDisplayName(toolId);
   const argsText = args == null ? "" : (typeof args === "string" ? args : JSON.stringify(args, null, 2));
@@ -1472,7 +1473,8 @@ function buildToolStepInner(toolId, state, args, observation) {
   const summaryText = compactObs
     ? compactObs.slice(0, 80)
     : (state === "pending" ? "运行中…" : "");
-  const hasBody = Boolean(argsText || obsText);
+  const sourcesHtml = renderToolCallSourcesHtml(sources);
+  const hasBody = Boolean(argsText || obsText || sourcesHtml);
   const truncatedHint = isTruncated
     ? `<span class="step-more">… 查看全部</span>`
     : "";
@@ -1496,6 +1498,7 @@ function buildToolStepInner(toolId, state, args, observation) {
     <div class="step-body"${hasBody ? "" : " hidden"}>
       ${argsText ? `<div class="step-args">${escapeHtml(argsText)}</div>` : ""}
       ${obsText ? `<div class="step-outcome">${escapeHtml(obsText)}</div>` : ""}
+      ${sourcesHtml}
     </div>
   `;
 }
@@ -1567,7 +1570,7 @@ function appendToolStepBubble(toolId, state = "pending", detailText = "", { anch
   return stepEl;
 }
 
-function markToolStepBubble(toolId, ok, observation = "") {
+function markToolStepBubble(toolId, ok, observation = "", sources = []) {
   if (!toolId) return;
   const queue = pendingToolStepBubbles[toolId];
   const stepEl = queue?.length ? queue.shift() : appendToolStepBubble(toolId, ok ? "done" : "fail");
@@ -1578,7 +1581,7 @@ function markToolStepBubble(toolId, ok, observation = "") {
   // dataset by appendToolStepBubble's caller, if any) so the body shows
   // both the call shape and the result.
   const preservedArgs = stepEl.dataset.args ? safeJsonParseForOverlay(stepEl.dataset.args) : null;
-  stepEl.innerHTML = buildToolStepInner(toolId, nextState, preservedArgs, observation);
+  stepEl.innerHTML = buildToolStepInner(toolId, nextState, preservedArgs, observation, sources);
   bindToolStepToggle(stepEl);
   setToolStepOpen(stepEl, false);
   bubbleAreaPin.maybeScrollToBottom();
@@ -2174,7 +2177,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     const ok = frame.data?.success !== false;
     if (toolId) {
       if (!showOverlay) timelineAddStep(formatToolDisplayName(toolId), ok ? "done" : "fail");
-      markToolStepBubble(toolId, ok, frame.data?.observation ?? "");
+      markToolStepBubble(toolId, ok, frame.data?.observation ?? "", frame.data?.sources ?? []);
       if (window.livePreview?.isFileGenTool?.(toolId)) {
         window.livePreview.commit({
           toolName: toolId,

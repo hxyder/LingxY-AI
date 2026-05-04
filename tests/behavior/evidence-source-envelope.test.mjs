@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { normalizeSources } from "../../src/service/core/evidence/source-envelope.mjs";
+import {
+  citationViolations,
+  verifyCitations
+} from "../../src/service/core/evidence/citation-verifier.mjs";
 import { extractEvidence } from "../../src/service/core/policy/evidence-normalizer.mjs";
 import { renderEvidenceLedger } from "../../src/service/executors/shared/evidence-ledger.mjs";
 
@@ -100,4 +104,23 @@ test("source envelope skips failed tool results", () => {
     success: false,
     metadata: { url: "https://example.com" }
   }), []);
+});
+
+test("citation verifier reports unresolved framework source ids without requiring citations", () => {
+  const sources = [
+    { id: "w_11111111", kind: "web", locator: "https://example.com" },
+    { id: "f_22222222", kind: "file", locator: "E:\\docs\\resume.md" }
+  ];
+  const ok = verifyCitations("The answer cites one source [w_11111111].", sources);
+  assert.deepEqual(ok.claimed, ["w_11111111"]);
+  assert.deepEqual(ok.missing, []);
+  assert.deepEqual(citationViolations(ok), []);
+
+  const missing = verifyCitations("This cites a missing source [c_deadbeef].", sources);
+  assert.deepEqual(missing.missing, ["c_deadbeef"]);
+  assert.equal(citationViolations(missing)[0].kind, "citation_unresolved");
+
+  const none = verifyCitations("No citation markers here.", sources);
+  assert.deepEqual(none.claimed, []);
+  assert.deepEqual(none.missing, []);
 });
