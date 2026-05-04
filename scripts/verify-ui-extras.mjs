@@ -186,6 +186,14 @@ assert.ok(/exportBundleViaShell/.test(consoleJs) && /window\.ucaShell\.exportBun
   "data export: console must use desktop shell bridge");
 assert.ok(/diagnosticBundleViaShell/.test(consoleJs) && /window\.ucaShell\.diagnosticBundle/.test(consoleJs),
   "diagnostics: console must use desktop shell bridge");
+assert.ok(/id="trashList"/.test(consoleHtml) && /id="trashRefreshBtn"/.test(consoleHtml),
+  "trash: settings data panel must expose a Trash restore list");
+assert.ok(/fetchJson\("\/tasks\?deleted=only"\)/.test(consoleJs) && /fetchJson\("\/notes\?deleted=only"\)/.test(consoleJs),
+  "trash: console must read deleted tasks and notes explicitly");
+assert.ok(/data-trash-restore-task/.test(consoleJs) && /restoreTaskViaShell/.test(consoleJs),
+  "trash: task restore must use desktop shell bridge");
+assert.ok(/data-trash-restore-note/.test(consoleJs) && /restoreNoteViaShell/.test(consoleJs),
+  "trash: note restore must use desktop shell bridge");
 assert.ok(/exportBundle:\s*["']uca:export-bundle["']/.test(desktopManifest),
   "data export: IPC channel missing from desktop manifest");
 assert.ok(/diagnosticBundle:\s*["']uca:diagnostic-bundle["']/.test(desktopManifest),

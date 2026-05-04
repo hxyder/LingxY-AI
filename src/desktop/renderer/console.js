@@ -172,6 +172,9 @@ const exportBundleBtn = document.querySelector("#exportBundleBtn");
 const exportBundleState = document.querySelector("#exportBundleState");
 const diagnosticBundleBtn = document.querySelector("#diagnosticBundleBtn");
 const diagnosticBundleState = document.querySelector("#diagnosticBundleState");
+const trashRefreshBtn = document.querySelector("#trashRefreshBtn");
+const trashState = document.querySelector("#trashState");
+const trashList = document.querySelector("#trashList");
 const auditCount = document.querySelector("#auditCount");
 const auditList = document.querySelector("#auditList");
 const officeAddinSetupState = document.querySelector("#officeAddinSetupState");
@@ -5326,6 +5329,101 @@ document.getElementById("failedTasksRefreshBtn")?.addEventListener("click", () =
   void renderFailedTasks();
 });
 
+function renderTrashItem({ kind, id, title, deletedAt, restoreUntil }) {
+  const kindLabel = kind === "task" ? "Task" : "Note";
+  const restoreAttr = kind === "task" ? "data-trash-restore-task" : "data-trash-restore-note";
+  return `
+    <div class="surface" style="padding:8px 10px;">
+      <div class="row" style="justify-content:space-between;gap:8px;align-items:flex-start;">
+        <div style="min-width:0;">
+          <div class="row" style="gap:6px;">
+            <span class="tag">${kindLabel}</span>
+            <strong style="font-size:12px;overflow-wrap:anywhere;">${escapeHtml(title || id)}</strong>
+          </div>
+          <div class="muted" style="font-size:11px;margin-top:4px;">
+            Deleted ${escapeHtml(formatDateTime(deletedAt))}
+            ${restoreUntil ? ` · Restore until ${escapeHtml(formatDateTime(restoreUntil))}` : ""}
+          </div>
+        </div>
+        <button class="btn btn-sm btn-ghost" type="button" ${restoreAttr}="${escapeHtml(id)}">Restore</button>
+      </div>
+    </div>
+  `;
+}
+
+async function renderTrashList() {
+  if (!trashList) return;
+  if (trashState) trashState.textContent = "Loading Trash...";
+  trashList.innerHTML = "";
+  try {
+    const [tasksPayload, notesPayload] = await Promise.all([
+      fetchJson("/tasks?deleted=only"),
+      fetchJson("/notes?deleted=only")
+    ]);
+    const taskItems = (tasksPayload.tasks ?? []).map((task) => ({
+      kind: "task",
+      id: task.task_id,
+      title: task.user_command,
+      deletedAt: task.deleted_at,
+      restoreUntil: task.restore_until
+    }));
+    const noteItems = (notesPayload.notes ?? []).map((note) => ({
+      kind: "note",
+      id: note.id,
+      title: note.title || stripTags(note.body_html || "").slice(0, 80),
+      deletedAt: note.deleted_at,
+      restoreUntil: note.restore_until
+    }));
+    const items = [...taskItems, ...noteItems]
+      .sort((left, right) => `${right.deletedAt ?? ""}`.localeCompare(`${left.deletedAt ?? ""}`));
+    if (trashState) trashState.textContent = `${items.length} deleted item${items.length === 1 ? "" : "s"}.`;
+    if (items.length === 0) {
+      trashList.innerHTML = `<div class="muted" style="font-size:12px;">Trash is empty.</div>`;
+      return;
+    }
+    trashList.innerHTML = items.map(renderTrashItem).join("");
+    for (const button of trashList.querySelectorAll("[data-trash-restore-task]")) {
+      button.addEventListener("click", async () => {
+        const taskId = button.getAttribute("data-trash-restore-task");
+        if (!taskId) return;
+        button.disabled = true;
+        try {
+          await restoreTaskViaShell(taskId);
+          showConsoleToast("任务已恢复", { kind: "ok" });
+          await refreshWorkspace();
+          await renderTrashList();
+        } catch (error) {
+          showConsoleToast(`恢复失败：${error.message}`, { kind: "err" });
+          button.disabled = false;
+        }
+      });
+    }
+    for (const button of trashList.querySelectorAll("[data-trash-restore-note]")) {
+      button.addEventListener("click", async () => {
+        const noteId = button.getAttribute("data-trash-restore-note");
+        if (!noteId) return;
+        button.disabled = true;
+        try {
+          await restoreNoteViaShell(noteId);
+          try { window.lingxyNotes?.refresh?.({ preserveSelection: true }); } catch { /* ignore */ }
+          showConsoleToast("笔记已恢复", { kind: "ok" });
+          await renderTrashList();
+        } catch (error) {
+          showConsoleToast(`恢复失败：${error.message}`, { kind: "err" });
+          button.disabled = false;
+        }
+      });
+    }
+  } catch (error) {
+    if (trashState) trashState.textContent = `Failed: ${error.message}`;
+    trashList.innerHTML = "";
+  }
+}
+
+trashRefreshBtn?.addEventListener("click", () => {
+  void renderTrashList();
+});
+
 async function updateSecurityConfig(patch, label) {
   privacyState.textContent = `Updating ${label}...`;
   state.updatingSecurity = true;
@@ -5504,6 +5602,7 @@ async function refreshWorkspace() {
     renderAudit();
     void renderPreviewSettings();
     void renderFailedTasks();
+    void renderTrashList();
     renderMcpServers();
     renderSkillRegistries();
     renderCodeCliAdapters();

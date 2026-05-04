@@ -2226,6 +2226,17 @@
           </div>
           <div id="exportBundleState" class="muted" style="font-size:12px;margin-top:10px;"></div>
           <div id="diagnosticBundleState" class="muted" style="font-size:12px;margin-top:6px;"></div>
+          <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px;">
+            <div class="row" style="justify-content:space-between;align-items:center;gap:12px;">
+              <div>
+                <strong style="font-size:12px;">Trash & Undo</strong>
+                <p class="muted" style="font-size:12px;margin:4px 0 0;">Restore recently deleted tasks and notes. Schedules/templates will join this view after their lifecycle is unified.</p>
+              </div>
+              <button id="trashRefreshBtn" class="btn btn-sm btn-ghost" type="button">Refresh</button>
+            </div>
+            <div id="trashState" class="muted" style="font-size:12px;margin-top:8px;"></div>
+            <div id="trashList" class="retention-list" style="margin-top:8px;"></div>
+          </div>
         </div>
 
         <!-- ── UCA-048: Default Output Path ── -->
