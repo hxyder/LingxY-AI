@@ -15,12 +15,20 @@ import { submitImageTask } from "../image-submission.mjs";
 import { submitOfficeTask } from "../office-submission.mjs";
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
+import { normalizeDeletedFilter } from "../deletion-lifecycle.mjs";
 
-function listTaskSummaries(runtime) {
-  return runtime.store.listTasks().map((task) => ({
+function taskDeletedFilterFromUrl(url) {
+  return normalizeDeletedFilter(url.searchParams.get("deleted") ?? false);
+}
+
+function listTaskSummaries(runtime, { deleted = false } = {}) {
+  return runtime.store.listTasks({ deleted }).map((task) => ({
     task_id: task.task_id,
     created_at: task.created_at,
     updated_at: task.updated_at,
+    deleted_at: task.deleted_at ?? null,
+    deleted_by: task.deleted_by ?? null,
+    restore_until: task.restore_until ?? null,
     status: task.status,
     sub_status: task.sub_status,
     progress: task.progress ?? 0,
@@ -339,6 +347,7 @@ export async function tryHandleTaskRoute({ request, response, method, url, runti
   const taskMatch = url.pathname.match(/^\/task\/([^/]+)$/);
   const cancelMatch = url.pathname.match(/^\/task\/([^/]+)\/cancel$/);
   const retryMatch = url.pathname.match(/^\/task\/([^/]+)\/retry$/);
+  const restoreMatch = url.pathname.match(/^\/task\/([^/]+)\/restore$/);
 
   // UCA-182 Phase 11: per-task event log — reads the jsonl log persist_ed by
   // task-runtime.emitTaskEvent. Used by the console Settings "最近失败任务"
@@ -420,7 +429,7 @@ export async function tryHandleTaskRoute({ request, response, method, url, runti
 
   if (method === "GET" && url.pathname === "/tasks") {
     sendJson(response, 200, {
-      tasks: listTaskSummaries(runtime)
+      tasks: listTaskSummaries(runtime, { deleted: taskDeletedFilterFromUrl(url) })
     });
     return true;
   }
@@ -474,15 +483,47 @@ export async function tryHandleTaskRoute({ request, response, method, url, runti
   }
 
   if (taskMatch && method === "DELETE") {
-    if (!requireDesktopActor({ request, response })) return true;
+    const actor = requireDesktopActor({ request, response });
+    if (!actor) return true;
     const taskId = taskMatch[1];
     const task = runtime.store.getTask(taskId);
     if (!task) {
       sendJson(response, 404, { error: "task_not_found" });
       return true;
     }
-    runtime.store.deleteTask(taskId);
-    sendJson(response, 200, { deleted: true, task_id: taskId });
+    const hard = url.searchParams.get("hard") === "true";
+    if (hard) {
+      if (!runtime.config?.allowHardDelete) {
+        sendJson(response, 403, { error: "hard delete is disabled" });
+        return true;
+      }
+      runtime.store.deleteTask(taskId);
+      sendJson(response, 200, { deleted: true, hard: true, task_id: taskId });
+      return true;
+    }
+    if (typeof runtime.store.softDeleteTask !== "function") {
+      sendJson(response, 503, { error: "task_soft_delete_unavailable" });
+      return true;
+    }
+    const deleted = runtime.store.softDeleteTask(taskId, { actor });
+    sendJson(response, 200, { deleted: true, soft: true, task_id: taskId, task: deleted });
+    return true;
+  }
+
+  if (restoreMatch && method === "POST") {
+    const actor = requireDesktopActor({ request, response });
+    if (!actor) return true;
+    const taskId = restoreMatch[1];
+    if (typeof runtime.store.restoreTask !== "function") {
+      sendJson(response, 503, { error: "task_restore_unavailable" });
+      return true;
+    }
+    const restored = runtime.store.restoreTask(taskId, { actor });
+    if (!restored) {
+      sendJson(response, 404, { error: "task_not_found" });
+      return true;
+    }
+    sendJson(response, 200, { restored: true, task_id: taskId, task: restored });
     return true;
   }
 

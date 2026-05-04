@@ -3378,6 +3378,28 @@ export function createElectronShellRuntime({
           };
         }
       });
+      ipcMain.handle(IPC_CHANNELS.taskRestore, async (event, taskId = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const id = normalizeTaskId(taskId);
+        if (!id) {
+          return { ok: false, error: "task_id_required", message: "Task id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            actor,
+            pathname: `/task/${encodeURIComponent(id)}/restore`
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "task_restore_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
 
       ipcMain.handle(IPC_CHANNELS.shellStatus, () => ({
         serviceBaseUrl: resolvedServiceBaseUrl,

@@ -103,7 +103,8 @@ export const IPC_CHANNELS = Object.freeze({
   connectorAccountConfigSave: "uca:connector-account-config-save",
   taskCancel: "uca:task-cancel",
   taskRetry: "uca:task-retry",
-  taskDelete: "uca:task-delete"
+  taskDelete: "uca:task-delete",
+  taskRestore: "uca:task-restore"
 });
 
 export const DEFAULT_SHORTCUTS = Object.freeze([

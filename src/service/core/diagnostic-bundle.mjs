@@ -64,6 +64,7 @@ function taskDiagnosticSummary(task = {}) {
     source_type: task.context_packet?.source_type ?? null,
     created_at: task.created_at ?? null,
     updated_at: task.updated_at ?? null,
+    deleted_at: task.deleted_at ?? null,
     parent_task_id: task.parent_task_id ?? null,
     user_command_preview: redactTextPreview(task.user_command),
     failure_user_message: redactTextPreview(task.failure_user_message)
@@ -146,7 +147,7 @@ export async function buildRuntimeDiagnosticBundle(runtime, options = {}) {
   const limits = { ...DEFAULT_LIMITS, ...(options.limits ?? {}) };
   const store = runtime?.store ?? runtime?.storeAdapter ?? null;
   const config = runtime?.configStore?.load?.() ?? {};
-  const tasks = sortByTimeDesc(safeList(() => store?.listTasks?.()));
+  const tasks = sortByTimeDesc(safeList(() => store?.listTasks?.({ deleted: "any" })));
   const schedules = sortByTimeDesc(safeList(() => store?.listSchedules?.()), "updated_at");
   const auditLogs = sortByTimeDesc(safeList(() => store?.listAuditLogs?.()), "ts");
   const conversations = safeList(() => store?.listConversations?.({ archived: "any", limit: 5000 }));

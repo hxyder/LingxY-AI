@@ -120,6 +120,8 @@ assert.equal(preload.includes("retryTask"), true);
 assert.equal(preload.includes(IPC_CHANNELS.taskRetry), true);
 assert.equal(preload.includes("deleteTask"), true);
 assert.equal(preload.includes(IPC_CHANNELS.taskDelete), true);
+assert.equal(preload.includes("restoreTask"), true);
+assert.equal(preload.includes(IPC_CHANNELS.taskRestore), true);
 
 const consoleHtml = await read("src/desktop/renderer/console.html");
 // Brand renamed: UCA → LingxY. Accept either the old title (still
@@ -262,6 +264,7 @@ assert.equal(mainProcess.includes("IPC_CHANNELS.connectorAccountConfigSave"), tr
 assert.equal(mainProcess.includes("IPC_CHANNELS.taskCancel"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.taskRetry"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.taskDelete"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.taskRestore"), true);
 assert.equal(mainProcess.includes("X-Lingxy-Desktop-Actor"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/preview"), true);
 assert.equal(mainProcess.includes("/config/mcp/install/run"), true);
@@ -299,6 +302,7 @@ assert.equal(mainProcess.includes("/connectors/connected-accounts/"), true);
 assert.equal(mainProcess.includes("/connectors/accounts/"), true);
 assert.equal(mainProcess.includes("/cancel"), true);
 assert.equal(mainProcess.includes("/retry"), true);
+assert.equal(mainProcess.includes("/restore"), true);
 assert.equal(mainProcess.includes("showDesktopNotification"), true);
 // Permission handler for the Web Speech API mic access
 assert.equal(mainProcess.includes("setPermissionRequestHandler"), true);

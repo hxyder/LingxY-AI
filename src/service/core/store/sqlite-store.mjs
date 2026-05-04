@@ -4,6 +4,11 @@ import crypto from "node:crypto";
 import Database from "better-sqlite3";
 import { SQLITE_SCHEMA_SQL, SQLITE_INDEX_SQL } from "./sqlite-schema.mjs";
 import { applyConversationV1 } from "./migrations/conversation_v1.mjs";
+import {
+  filterDeletedRecords,
+  markRecordDeleted,
+  restoreDeletedRecord
+} from "../deletion-lifecycle.mjs";
 
 function nowIso() {
   return new Date().toISOString();
@@ -568,14 +573,31 @@ export function createSqliteStore({ dbPath }) {
     getTask(taskId) {
       return mapTask(statements.getTask.get(taskId));
     },
+    softDeleteTask(taskId, options = {}) {
+      const existing = this.getTask(taskId);
+      if (!existing) {
+        return null;
+      }
+      return upsertTask(markRecordDeleted(existing, options));
+    },
+    restoreTask(taskId, options = {}) {
+      const existing = this.getTask(taskId);
+      if (!existing) {
+        return null;
+      }
+      return upsertTask(restoreDeletedRecord(existing, options));
+    },
     deleteTask(taskId) {
       db.prepare("DELETE FROM task_events WHERE task_id = ?").run(taskId);
       db.prepare("DELETE FROM artifacts WHERE task_id = ?").run(taskId);
       const result = db.prepare("DELETE FROM tasks WHERE task_id = ?").run(taskId);
       return result.changes > 0;
     },
-    listTasks() {
-      return statements.listTasks.all().map((row) => decodeJson(row.task_json, null));
+    listTasks(options = {}) {
+      return filterDeletedRecords(
+        statements.listTasks.all().map((row) => decodeJson(row.task_json, null)),
+        options
+      );
     },
     appendEvent(event) {
       statements.insertEvent.run({

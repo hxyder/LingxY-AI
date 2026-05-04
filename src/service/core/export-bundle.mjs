@@ -84,7 +84,7 @@ function collectArtifacts(store, taskId) {
 }
 
 function collectTasks(store, { includeTaskEvents = true } = {}) {
-  const tasks = typeof store?.listTasks === "function" ? store.listTasks() : [];
+  const tasks = typeof store?.listTasks === "function" ? store.listTasks({ deleted: "any" }) : [];
   return tasks.map((task) => {
     const taskId = task?.task_id;
     return {

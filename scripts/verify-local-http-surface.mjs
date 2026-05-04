@@ -490,6 +490,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("task-routes.mjs", "POST", "/^\\/task\\/([^/]+)\\/restore$/", {
+    domain: "tasks",
+    effect: "task_control",
+    boundary: "guarded_desktop_actor",
+    migration: "soft_delete_restore"
+  }),
   surface("task-routes.mjs", "POST", "/context", {
     domain: "tasks",
     effect: "security_context_probe",

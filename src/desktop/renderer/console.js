@@ -270,7 +270,7 @@ const consoleToastHost = document.querySelector("#consoleToastHost");
 // flash messages into consoleChatState/.textContent — that text was
 // easy to miss and fought with composer status. kind: "info" | "ok" |
 // "err". Auto-dismisses; click to dismiss early.
-function showConsoleToast(message, { kind = "info", durationMs = 3200 } = {}) {
+function showConsoleToast(message, { kind = "info", durationMs = 3200, actionLabel = "", onAction = null } = {}) {
   if (!consoleToastHost || !message) return;
   const toast = document.createElement("div");
   toast.className = `toast toast--${kind}`;
@@ -283,8 +283,24 @@ function showConsoleToast(message, { kind = "info", durationMs = 3200 } = {}) {
   toast.innerHTML = `
     <span class="toast-glyph">${glyphMap[kind] ?? "i"}</span>
     <span class="toast-body"></span>
+    ${actionLabel && typeof onAction === "function" ? `<button type="button" class="toast-action"></button>` : ""}
   `;
   toast.querySelector(".toast-body").textContent = String(message);
+  const actionButton = toast.querySelector(".toast-action");
+  if (actionButton) {
+    actionButton.textContent = actionLabel;
+    actionButton.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      actionButton.disabled = true;
+      try {
+        await onAction();
+        dismiss();
+      } catch (error) {
+        actionButton.disabled = false;
+        showConsoleToast(`操作失败：${error?.message ?? error}`, { kind: "err" });
+      }
+    });
+  }
   consoleToastHost.appendChild(toast);
   let timer = setTimeout(dismiss, durationMs);
   function dismiss() {
@@ -5951,9 +5967,22 @@ cancelTaskButton.addEventListener("click", async () => {
 const deleteTaskButton = document.getElementById("deleteTaskButton");
 deleteTaskButton?.addEventListener("click", async () => {
   if (!state.selectedTaskId) return;
-  await deleteTaskViaShell(state.selectedTaskId);
+  const taskId = state.selectedTaskId;
+  await deleteTaskViaShell(taskId);
   state.selectedTaskId = null;
   await refreshWorkspace();
+  showConsoleToast("任务已移到 Trash", {
+    kind: "ok",
+    durationMs: 7000,
+    actionLabel: "Undo",
+    onAction: async () => {
+      await restoreTaskViaShell(taskId);
+      state.selectedTaskId = taskId;
+      await refreshWorkspace();
+      await refreshTaskDetail();
+      showConsoleToast("任务已恢复", { kind: "ok" });
+    }
+  });
 });
 
 openTaskArtifactButton.addEventListener("click", async () => {
@@ -6794,6 +6823,16 @@ async function deleteTaskViaShell(taskId) {
   return assertShellResult(
     await window.ucaShell.deleteTask(taskId),
     "Could not delete task."
+  );
+}
+
+async function restoreTaskViaShell(taskId) {
+  if (typeof window.ucaShell?.restoreTask !== "function") {
+    throw new Error("Desktop task restore bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.restoreTask(taskId),
+    "Could not restore task."
   );
 }
 

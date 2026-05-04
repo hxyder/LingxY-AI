@@ -467,6 +467,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteTask(taskId) {
     return ipcRenderer.invoke("uca:task-delete", taskId ?? "");
   },
+  restoreTask(taskId) {
+    return ipcRenderer.invoke("uca:task-restore", taskId ?? "");
+  },
   onPreviewWindowInit(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:preview-window-init", listener);

@@ -1,4 +1,9 @@
 import crypto from "node:crypto";
+import {
+  filterDeletedRecords,
+  markRecordDeleted,
+  restoreDeletedRecord
+} from "../deletion-lifecycle.mjs";
 
 function memNowIso() { return new Date().toISOString(); }
 function memNewId(prefix) { return `${prefix}_${crypto.randomUUID()}`; }
@@ -31,6 +36,24 @@ export function createInMemoryStoreScaffold() {
     getTask(taskId) {
       return this.tasks.get(taskId) ?? null;
     },
+    softDeleteTask(taskId, options = {}) {
+      const existing = this.getTask(taskId);
+      if (!existing) {
+        return null;
+      }
+      const deleted = markRecordDeleted(existing, options);
+      this.tasks.set(taskId, deleted);
+      return { ...deleted };
+    },
+    restoreTask(taskId, options = {}) {
+      const existing = this.getTask(taskId);
+      if (!existing) {
+        return null;
+      }
+      const restored = restoreDeletedRecord(existing, options);
+      this.tasks.set(taskId, restored);
+      return { ...restored };
+    },
     deleteTask(taskId) {
       const existed = this.tasks.has(taskId);
       this.tasks.delete(taskId);
@@ -38,8 +61,8 @@ export function createInMemoryStoreScaffold() {
       this.artifacts = this.artifacts.filter((a) => a.task_id !== taskId);
       return existed;
     },
-    listTasks() {
-      return [...this.tasks.values()];
+    listTasks(options = {}) {
+      return filterDeletedRecords([...this.tasks.values()], options);
     },
     appendEvent(event) {
       this.taskEvents.push(event);

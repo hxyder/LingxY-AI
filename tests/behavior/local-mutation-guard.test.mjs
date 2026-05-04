@@ -353,6 +353,16 @@ function makeTaskControlRuntime() {
       appendEvent(event) {
         calls.push({ method: "store.appendEvent", eventType: event.event_type });
       },
+      softDeleteTask(taskId, options) {
+        calls.push({ method: "store.softDeleteTask", taskId, options });
+        if (taskId === task.task_id) task.deleted = true;
+        return { ...task, deleted_at: "2026-01-01T00:00:00.000Z", deleted_by: options?.actor ?? null };
+      },
+      restoreTask(taskId, options) {
+        calls.push({ method: "store.restoreTask", taskId, options });
+        if (taskId === task.task_id) task.deleted = false;
+        return { ...task, restored_at: "2026-01-01T00:00:00.000Z", restored_by: options?.actor ?? null };
+      },
       deleteTask(taskId) {
         calls.push({ method: "store.deleteTask", taskId });
         if (taskId === task.task_id) task.deleted = true;
@@ -1030,6 +1040,7 @@ test("task control routes reject unknown desktop actors before task state change
   const cases = [
     { method: "POST", pathname: "/task/task_demo/cancel", body: { force: true } },
     { method: "POST", pathname: "/task/task_demo/retry", body: { mode: "retry_same" } },
+    { method: "POST", pathname: "/task/task_demo/restore" },
     { method: "DELETE", pathname: "/task/task_demo" }
   ];
 
@@ -1066,7 +1077,19 @@ test("task control routes allow trusted desktop actors for cancel and delete", a
   });
   assert.equal(deletion.statusCode, 200);
   assert.equal(deletion.payload.deleted, true);
-  assert.ok(deletion.runtime.calls.some((entry) => entry.method === "store.deleteTask" && entry.taskId === "task_demo"));
+  assert.equal(deletion.payload.soft, true);
+  assert.ok(deletion.runtime.calls.some((entry) => entry.method === "store.softDeleteTask" && entry.taskId === "task_demo"));
+
+  const restoreRuntime = makeTaskControlRuntime();
+  const restored = await taskControlRoute({
+    method: "POST",
+    pathname: "/task/task_demo/restore",
+    actor: "desktop_console",
+    runtime: restoreRuntime
+  });
+  assert.equal(restored.statusCode, 200);
+  assert.equal(restored.payload.restored, true);
+  assert.ok(restored.runtime.calls.some((entry) => entry.method === "store.restoreTask" && entry.taskId === "task_demo"));
 });
 
 test("notes mutation routes reject unknown desktop actors before local note writes", async () => {
