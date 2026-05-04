@@ -48,6 +48,14 @@ const ROOT = path.resolve(__dirname, "..");
     "submitContextTask must NOT await semantic recall in the pre-task path (Phase 1.11 — moved to post-task)");
   assert.ok(/computeMemoryRecallEntry\s*\(\s*\{/.test(ctx),
     "post-task patcher must invoke computeMemoryRecallEntry");
+  assert.ok(ctx.includes("export async function computeFileContentRecallEntry"),
+    "context-submission must define the file-content recall helper");
+  assert.ok(/computeFileContentRecallEntry\s*\(\s*\{/.test(ctx),
+    "post-task patcher must invoke computeFileContentRecallEntry");
+  assert.ok(ctx.includes("__fileContentPatchPromise"),
+    "file-content recall must be tracked as a non-enumerable task promise");
+  assert.ok(ctx.includes("file_content_recall_injected"),
+    "file-content recall must stamp structured selection metadata");
   assert.ok(/pushBackgroundContextInPlace/.test(ctx),
     "post-task patcher must push the recall entry into background_contexts");
   assert.ok(ctx.includes("[memory_background · 语义召回"),

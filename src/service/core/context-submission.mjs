@@ -11,6 +11,7 @@ import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
 import { pushBackgroundContextInPlace } from "./intent/background-contexts.mjs";
+import { EMBEDDING_NAMESPACES } from "../embeddings/store.mjs";
 import {
   createFileGenerationAttemptState,
   recordArtifactGenerated,
@@ -255,11 +256,59 @@ const MEMORY_RECALL_K = 3;
 // (see embeddings/store.mjs:186).
 const MEMORY_RECALL_MIN_SCORE_TFIDF = 0.25;
 const MEMORY_RECALL_MIN_SCORE_VECTOR = 0.05;
+const FILE_CONTENT_RECALL_K = 3;
+const FILE_CONTENT_RECALL_TIMEOUT_MS = 700;
+const FILE_CONTENT_RECALL_MIN_SCORE_TFIDF = 0.08;
+const FILE_CONTENT_RECALL_MIN_SCORE_VECTOR = 0.03;
 
 function passesHitThreshold(hit) {
   const score = hit?.score ?? 0;
   if (hit?.embeddingType === "tfidf") return score > MEMORY_RECALL_MIN_SCORE_TFIDF;
   return score > MEMORY_RECALL_MIN_SCORE_VECTOR;
+}
+
+function passesFileContentRecallThreshold(hit) {
+  const score = hit?.score ?? 0;
+  if (hit?.embeddingType === "tfidf") return score > FILE_CONTENT_RECALL_MIN_SCORE_TFIDF;
+  return score > FILE_CONTENT_RECALL_MIN_SCORE_VECTOR;
+}
+
+function hasCurrentFileInput(contextPacket = {}) {
+  return Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0;
+}
+
+function needsFileReadFromStructure(task = {}) {
+  const taskSpecGroups = task?.task_spec?.success_contract?.required_policy_groups;
+  if (Array.isArray(taskSpecGroups) && taskSpecGroups.includes("local_file_text_read")) return true;
+  const initialGroups = task?.task_spec_initial?.success_contract?.required_policy_groups;
+  if (Array.isArray(initialGroups) && initialGroups.includes("local_file_text_read")) return true;
+  const decision = task?.context_packet?.semantic_router_decision;
+  if (Array.isArray(decision?.needed_capabilities) && decision.needed_capabilities.includes("file_read")) return true;
+  if (Array.isArray(decision?.required_policy_groups) && decision.required_policy_groups.includes("local_file_text_read")) return true;
+  return false;
+}
+
+function fileContentProjectIdForTask(task = {}) {
+  const projectId = task?.project_id ?? task?.context_packet?.selection_metadata?.project_id ?? null;
+  const normalized = String(projectId ?? "").trim();
+  return normalized || null;
+}
+
+function formatFileContentRecallLine(hit, index) {
+  const meta = hit?.metadata ?? {};
+  const pathLabel = meta.path ?? hit.id;
+  const score = Number(hit?.score ?? 0).toFixed(2);
+  const chunk = Number.isFinite(Number(meta.chunk_index)) && Number.isFinite(Number(meta.chunk_count))
+    ? ` chunk=${Number(meta.chunk_index) + 1}/${Number(meta.chunk_count)}`
+    : "";
+  const chars = Number.isFinite(Number(meta.char_start)) && Number.isFinite(Number(meta.char_end))
+    ? ` chars=${Number(meta.char_start)}-${Number(meta.char_end)}`
+    : "";
+  const preview = String(hit?.text ?? "").slice(0, 360).replace(/\n+/g, " ");
+  return [
+    `${index + 1}. ${pathLabel} score=${score}${chunk}${chars}`,
+    `   ${preview}`
+  ].join("\n");
 }
 
 function isUsableMemoryHit(hit) {
@@ -269,6 +318,57 @@ function isUsableMemoryHit(hit) {
   const answer = String(meta.answer_excerpt ?? "");
   if (/Unknown tool requested|执行器出错|Task failed:/i.test(answer)) return false;
   return true;
+}
+
+export async function computeFileContentRecallEntry({ runtime, userCommand, task = null } = {}) {
+  const store = runtime?.platform?.embeddingStore;
+  const contextPacket = task?.context_packet ?? {};
+  if (!store?.search || !userCommand || !task) return null;
+  if (hasCurrentFileInput(contextPacket)) return null;
+  if (!needsFileReadFromStructure(task)) return null;
+  const projectId = fileContentProjectIdForTask(task);
+  let results;
+  try {
+    results = await Promise.race([
+      store.search(userCommand, FILE_CONTENT_RECALL_K + 2, {
+        namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+        projectId
+      }),
+      new Promise((resolve) => setTimeout(() => resolve([]), FILE_CONTENT_RECALL_TIMEOUT_MS))
+    ]);
+  } catch {
+    return null;
+  }
+  const hits = (Array.isArray(results) ? results : [])
+    .filter((hit) => hit?.id)
+    .filter(passesFileContentRecallThreshold)
+    .slice(0, FILE_CONTENT_RECALL_K);
+  if (hits.length === 0) return null;
+  const lines = [
+    "Candidate indexed file-content chunks. These are retrieval hints only; if the final answer depends on local file text, call read_file_text/read_folder_text on the source path for fresh evidence before claiming the file was read.",
+    ...hits.map(formatFileContentRecallLine)
+  ];
+  return {
+    kind: "rag_background",
+    priority: "background",
+    origin: "post_task_patch",
+    content: lines.join("\n"),
+    metadata: {
+      project_id: projectId,
+      file_content_recall_ids: hits.map((hit) => hit.id),
+      file_content_recall_scores: hits.map((hit) => Number((hit.score ?? 0).toFixed(3))),
+      results: hits.map((hit) => ({
+        id: hit.id,
+        score: Number(hit.score ?? 0),
+        path: hit.metadata?.path ?? null,
+        project_id: hit.metadata?.project_id ?? null,
+        chunk_index: Number.isFinite(Number(hit.metadata?.chunk_index)) ? Number(hit.metadata.chunk_index) : null,
+        chunk_count: Number.isFinite(Number(hit.metadata?.chunk_count)) ? Number(hit.metadata.chunk_count) : null,
+        char_start: Number.isFinite(Number(hit.metadata?.char_start)) ? Number(hit.metadata.char_start) : null,
+        char_end: Number.isFinite(Number(hit.metadata?.char_end)) ? Number(hit.metadata.char_end) : null
+      }))
+    }
+  };
 }
 
 /**
@@ -1238,8 +1338,35 @@ export async function submitContextTask({
           return result.entry;
         } catch { return null; }
       })();
+      const fileContentPatchPromise = (async () => {
+        try {
+          const entry = await computeFileContentRecallEntry({
+            runtime,
+            userCommand,
+            task
+          });
+          if (!entry) return null;
+          task.context_packet = pushBackgroundContextInPlace(task.context_packet, entry);
+          task.context_packet.selection_metadata = {
+            ...(task.context_packet.selection_metadata ?? {}),
+            file_content_recall_ids: entry.metadata.file_content_recall_ids,
+            file_content_recall_scores: entry.metadata.file_content_recall_scores,
+            file_content_recall_project_id: entry.metadata.project_id,
+            file_content_recall_injected: true
+          };
+          store.updateTask(task.task_id, task);
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: "background_context_added",
+            payload: { kind: "file_content_recall", count: entry.metadata.file_content_recall_ids.length }
+          });
+          return entry;
+        } catch { return null; }
+      })();
       setInternalTaskPromise(task, "__memoryPatchPromise", memoryPatchPromise);
       setInternalTaskPromise(task, "__recentArtifactPatchPromise", artifactPatchPromise);
+      setInternalTaskPromise(task, "__fileContentPatchPromise", fileContentPatchPromise);
     }
 
     // Route to code_cli (Kimi/Claude CLI/etc.) only when explicitly selected
