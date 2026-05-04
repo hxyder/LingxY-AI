@@ -12,7 +12,7 @@ function read(relPath) {
 }
 
 const [record] = buildFileContentIndexRecords({
-  task: { task_id: "task_verify", conversation_id: "conv_verify" },
+  task: { task_id: "task_verify", conversation_id: "conv_verify", project_id: "project_verify" },
   toolId: "read_file_text",
   result: {
     success: true,
@@ -32,6 +32,7 @@ assert.equal(record.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.SINGLE_FILE_
 assert.equal(record.metadata.path, "E:\\workspace\\verify.md");
 assert.equal(record.metadata.task_id, "task_verify");
 assert.equal(record.metadata.conversation_id, "conv_verify");
+assert.equal(record.metadata.project_id, "project_verify");
 
 assert.deepEqual(buildFileContentIndexRecords({
   toolId: "glob_files",

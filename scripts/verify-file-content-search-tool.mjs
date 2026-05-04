@@ -19,8 +19,10 @@ const searchTool = tools.slice(toolStart, toolEnd);
 assert.match(schemas, /search_file_content/);
 assert.match(searchTool, /SEARCH_FILE_CONTENT_TOOL/);
 assert.match(searchTool, /EMBEDDING_NAMESPACES\.FILE_CONTENT/);
-assert.match(searchTool, /store\.search\(query,\s*limit,\s*\{\s*namespace:\s*EMBEDDING_NAMESPACES\.FILE_CONTENT\s*\}\)/,
-  "search_file_content must query only the file_content namespace");
+assert.match(searchTool, /store\.search\(query,\s*limit,\s*\{[\s\S]*namespace:\s*EMBEDDING_NAMESPACES\.FILE_CONTENT[\s\S]*projectId[\s\S]*\}\)/,
+  "search_file_content must query the file_content namespace within the current project scope");
+assert.match(searchTool, /project_id:\s*projectId/,
+  "search_file_content metadata must expose the project scope used for retrieval");
 assert.match(surface, /search_file_content/,
   "file_read capability tool surface must expose search_file_content");
 assert.match(searchTool, /This does not read disk/,

@@ -10,6 +10,7 @@ import { filterToolsForTask } from "../../src/service/executors/tool_using/tool-
 import { FILE_EVIDENCE_COVERAGE } from "../../src/service/core/file-evidence-coverage.mjs";
 import { FILE_READ_DEPTHS } from "../../src/service/core/file-read-budget.mjs";
 import { createTaskSpec } from "../../src/service/core/task-spec.mjs";
+import { createEmbeddingStore, EMBEDDING_NAMESPACES } from "../../src/service/embeddings/store.mjs";
 
 test("read_file_text extracts text from an attached local file", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "uca-read-file-text-"));
@@ -167,6 +168,9 @@ test("search_file_content queries the file_content namespace only", async () => 
     query: "budget notes",
     limit: 3
   }, {
+    task: {
+      project_id: "project_budget"
+    },
     runtime: {
       platform: {
         embeddingStore: {
@@ -198,8 +202,48 @@ test("search_file_content queries the file_content namespace only", async () => 
   assert.deepEqual(calls, [{
     query: "budget notes",
     limit: 3,
-    options: { namespace: "file_content" }
+    options: { namespace: "file_content", projectId: "project_budget" }
   }]);
+});
+
+test("file content embedding search can isolate project and global records", async () => {
+  const store = createEmbeddingStore();
+  store.add({
+    id: "file_global",
+    namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+    text: "shared alpha reference",
+    metadata: { namespace: EMBEDDING_NAMESPACES.FILE_CONTENT, project_id: null, path: "E:\\global.md" }
+  });
+  store.add({
+    id: "file_project_a",
+    namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+    text: "alpha project a strategy",
+    metadata: { namespace: EMBEDDING_NAMESPACES.FILE_CONTENT, project_id: "project_a", path: "E:\\a.md" }
+  });
+  store.add({
+    id: "file_project_b",
+    namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+    text: "alpha project b strategy",
+    metadata: { namespace: EMBEDDING_NAMESPACES.FILE_CONTENT, project_id: "project_b", path: "E:\\b.md" }
+  });
+
+  const projectA = await store.search("alpha strategy", 10, {
+    namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+    projectId: "project_a"
+  });
+  assert.deepEqual(projectA.map((record) => record.id), ["file_project_a"]);
+
+  const globalOnly = await store.search("alpha", 10, {
+    namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+    projectId: null
+  });
+  assert.deepEqual(globalOnly.map((record) => record.id), ["file_global"]);
+
+  const all = await store.search("alpha", 10, {
+    namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+    projectId: "all"
+  });
+  assert.deepEqual(new Set(all.map((record) => record.id)), new Set(["file_global", "file_project_a", "file_project_b"]));
 });
 
 test("index_file_content persists prior file-read evidence into file_content namespace", async () => {
@@ -214,7 +258,8 @@ test("index_file_content persists prior file-read evidence into file_content nam
   }, {
     task: {
       task_id: "task_index_file_content",
-      conversation_id: "conv_index_file_content"
+      conversation_id: "conv_index_file_content",
+      project_id: "project_index_file_content"
     },
     runtime: {
       platform: {
@@ -248,6 +293,7 @@ test("index_file_content persists prior file-read evidence into file_content nam
   assert.equal(adds[0].namespace, "file_content");
   assert.equal(adds[0].metadata.task_id, "task_index_file_content");
   assert.equal(adds[0].metadata.conversation_id, "conv_index_file_content");
+  assert.equal(adds[0].metadata.project_id, "project_index_file_content");
   assert.equal(adds[0].metadata.path, "E:\\workspace\\notes.md");
   assert.equal(adds[0].metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT);
 });

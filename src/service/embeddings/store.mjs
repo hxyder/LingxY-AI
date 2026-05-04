@@ -92,6 +92,28 @@ function matchesNamespace(record, namespace) {
   return namespaceOf(record) === namespace;
 }
 
+function normalizeProjectFilter(value) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  const projectId = String(value ?? "").trim();
+  if (!projectId) return null;
+  if (projectId === "all") return "all";
+  return projectId;
+}
+
+function projectIdOf(record) {
+  const value = record?.metadata?.project_id ?? record?.metadata?.projectId ?? record?.project_id ?? null;
+  const projectId = String(value ?? "").trim();
+  return projectId || null;
+}
+
+function matchesProject(record, projectFilter) {
+  if (projectFilter === undefined || projectFilter === "all") return true;
+  const recordProjectId = projectIdOf(record);
+  if (projectFilter === null) return recordProjectId === null;
+  return recordProjectId === projectFilter;
+}
+
 // ─── Persistence helpers ────────────────────────────────────────────────────────
 
 function loadRecords(filePath) {
@@ -210,11 +232,15 @@ export function createEmbeddingStore({ filePath = null } = {}) {
       const namespace = options?.namespace === undefined
         ? EMBEDDING_NAMESPACES.TASK_MEMORY
         : normalizeNamespace(options.namespace, null);
+      const projectFilter = normalizeProjectFilter(options?.projectId);
       const tfidfQueryEntries = [...embedTextLocal(text).entries()];
       const vec = await embedTextSemantic(text);
 
       return records
-        .filter((record) => matchesNamespace(record, namespace))
+        .filter((record) =>
+          matchesNamespace(record, namespace)
+          && matchesProject(record, projectFilter)
+        )
         .map((record) => {
           const lexicalScore = record.embedding?.type === "tfidf"
             ? jaccardSimilarity(tfidfQueryEntries, record.embedding.data)
@@ -248,7 +274,13 @@ export function createEmbeddingStore({ filePath = null } = {}) {
       const namespace = options?.namespace === undefined
         ? "all"
         : normalizeNamespace(options.namespace, null);
-      return records.filter((record) => matchesNamespace(record, namespace)).map((r) => ({
+      const projectFilter = normalizeProjectFilter(options?.projectId);
+      return records
+        .filter((record) =>
+          matchesNamespace(record, namespace)
+          && matchesProject(record, projectFilter)
+        )
+        .map((r) => ({
         id: r.id,
         text: r.text,
         metadata: r.metadata,

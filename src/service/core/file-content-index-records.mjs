@@ -70,6 +70,7 @@ export function buildFileContentIndexRecords({
   const seed = [
     task?.task_id,
     task?.conversation_id,
+    task?.project_id,
     toolId,
     primaryPath,
     metadata.coverage_scope,
@@ -87,6 +88,7 @@ export function buildFileContentIndexRecords({
       namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
       task_id: task?.task_id ?? null,
       conversation_id: task?.conversation_id ?? null,
+      project_id: task?.project_id ?? metadata.project_id ?? null,
       tool_id: toolId,
       path: primaryPath,
       coverage_scope: metadata.coverage_scope ?? (

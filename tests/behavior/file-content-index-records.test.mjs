@@ -7,7 +7,7 @@ import { EMBEDDING_NAMESPACES } from "../../src/service/embeddings/store.mjs";
 
 test("file content index records preserve coverage and lineage metadata", () => {
   const [record] = buildFileContentIndexRecords({
-    task: { task_id: "task_a", conversation_id: "conv_a" },
+    task: { task_id: "task_a", conversation_id: "conv_a", project_id: "project_a" },
     toolId: "read_folder_text",
     result: {
       success: true,
@@ -36,6 +36,7 @@ test("file content index records preserve coverage and lineage metadata", () => 
   assert.equal(record.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT);
   assert.equal(record.metadata.task_id, "task_a");
   assert.equal(record.metadata.conversation_id, "conv_a");
+  assert.equal(record.metadata.project_id, "project_a");
   assert.equal(record.metadata.artifact_id, "artifact_a");
   assert.equal(record.metadata.revision_of, "artifact_root");
   assert.equal(record.metadata.files[0].path, "E:\\workspace\\a.md");

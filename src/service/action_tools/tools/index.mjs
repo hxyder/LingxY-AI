@@ -3006,12 +3006,17 @@ export const SEARCH_FILE_CONTENT_TOOL = {
       });
     }
     const limit = clampNumber(args.limit, { min: 1, max: 20, fallback: 5 });
+    const projectId = typeof ctx?.task?.project_id === "string" && ctx.task.project_id.trim()
+      ? ctx.task.project_id.trim()
+      : null;
     const matches = await store.search(query, limit, {
-      namespace: EMBEDDING_NAMESPACES.FILE_CONTENT
+      namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+      projectId
     });
     const results = (Array.isArray(matches) ? matches : []).map((match) => ({
       id: match.id,
       score: Number.isFinite(Number(match.score)) ? Number(match.score) : 0,
+      project_id: match.metadata?.project_id ?? null,
       path: match.metadata?.path ?? null,
       coverage_scope: match.metadata?.coverage_scope ?? null,
       artifact_id: match.metadata?.artifact_id ?? null,
@@ -3035,6 +3040,7 @@ export const SEARCH_FILE_CONTENT_TOOL = {
       metadata: {
         tool_id: "search_file_content",
         namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+        project_id: projectId,
         query,
         result_count: results.length,
         results
