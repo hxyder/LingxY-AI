@@ -132,7 +132,7 @@ Generated from `package-lock.json` and installed package metadata.
 | @types/verror | 1.10.11 | MIT | dev, optional | https://registry.npmjs.org/@types/verror/-/verror-1.10.11.tgz |
 | @types/yauzl | 2.10.3 | MIT | dev, optional | https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/yauzl |
 | @upsetjs/venn.js | 2.0.0 | MIT | prod | https://github.com/upsetjs/venn.js |
-| @xmldom/xmldom | 0.8.12 | MIT | prod | https://github.com/xmldom/xmldom |
+| @xmldom/xmldom | 0.8.13 | MIT | prod | https://github.com/xmldom/xmldom |
 | @zone-eu/mailsplit | 5.4.9 | (MIT OR EUPL-1.1+) | prod | https://github.com/zone-eu/mailsplit.git |
 | 7zip-bin | 5.2.0 | MIT | dev | develar/7zip-bin |
 | abbrev | 3.0.1 | ISC | dev | git+https://github.com/npm/abbrev-js.git |
