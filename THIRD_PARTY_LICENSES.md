@@ -2,15 +2,15 @@
 
 Generated from `package-lock.json` and installed package metadata.
 
-- Total packages: 818
-- Production packages: 551
+- Total packages: 819
+- Production packages: 552
 - Development-only packages: 267
 
 ## License Summary
 
 | License | Count |
 |---|---:|
-| MIT | 603 |
+| MIT | 604 |
 | ISC | 117 |
 | Apache-2.0 | 31 |
 | BSD-2-Clause | 24 |
@@ -459,7 +459,7 @@ Generated from `package-lock.json` and installed package metadata.
 | iconv-lite | 0.7.2 | MIT | prod | https://github.com/ashtuchkin/iconv-lite |
 | ieee754 | 1.2.1 | BSD-3-Clause | prod | git://github.com/feross/ieee754.git |
 | image-size | 1.2.1 | MIT | prod | git://github.com/image-size/image-size.git |
-| imapflow | 1.3.2 | MIT | prod | https://imapflow.com/ |
+| imapflow | 1.3.3 | MIT | prod | https://imapflow.com/ |
 | immediate | 3.0.6 | MIT | prod | git://github.com/calvinmetcalf/immediate.git |
 | import-fresh | 3.3.1 | MIT | prod | sindresorhus/import-fresh |
 | imurmurhash | 0.1.4 | MIT | dev | https://github.com/jensyt/imurmurhash-js |
@@ -469,6 +469,7 @@ Generated from `package-lock.json` and installed package metadata.
 | internmap | 1.0.1 | ISC | prod | https://github.com/mbostock/internmap/ |
 | internmap | 2.0.3 | ISC | prod | https://github.com/mbostock/internmap/ |
 | ip-address | 10.1.0 | MIT | prod | git://github.com/beaugunderson/ip-address.git |
+| ip-address | 10.2.0 | MIT | prod | git://github.com/beaugunderson/ip-address.git |
 | ipaddr.js | 1.9.1 | MIT | prod | git://github.com/whitequark/ipaddr.js |
 | is-arrayish | 0.2.1 | MIT | prod | https://github.com/qix-/node-is-arrayish.git |
 | is-fullwidth-code-point | 3.0.0 | MIT | prod | sindresorhus/is-fullwidth-code-point |
@@ -606,7 +607,7 @@ Generated from `package-lock.json` and installed package metadata.
 | node-api-version | 0.2.1 | MIT | dev | https://github.com/timfish/node-api-version |
 | node-gyp | 11.5.0 | MIT | dev | git://github.com/nodejs/node-gyp.git |
 | node-int64 | 0.4.0 | MIT | prod | https://github.com/broofa/node-int64 |
-| nodemailer | 8.0.5 | MIT-0 | prod | https://nodemailer.com/ |
+| nodemailer | 8.0.7 | MIT-0 | prod | https://nodemailer.com/ |
 | nopt | 8.1.0 | ISC | dev | git+https://github.com/npm/nopt.git |
 | normalize-path | 3.0.0 | MIT | prod | https://github.com/jonschlinkert/normalize-path |
 | normalize-url | 6.1.0 | MIT | dev | sindresorhus/normalize-url |
@@ -737,7 +738,7 @@ Generated from `package-lock.json` and installed package metadata.
 | simple-update-notifier | 2.0.0 | MIT | dev | https://github.com/alexbrazier/simple-update-notifier.git |
 | slice-ansi | 3.0.0 | MIT | dev, optional | https://registry.npmjs.org/slice-ansi/-/slice-ansi-3.0.0.tgz |
 | smart-buffer | 4.2.0 | MIT | prod | https://github.com/JoshGlazebrook/smart-buffer/ |
-| socks | 2.8.7 | MIT | prod | https://github.com/JoshGlazebrook/socks/ |
+| socks | 2.8.8 | MIT | prod | https://github.com/JoshGlazebrook/socks/ |
 | socks-proxy-agent | 8.0.5 | MIT | prod | https://github.com/TooTallNate/proxy-agents.git |
 | sonic-boom | 4.2.1 | MIT | prod | https://github.com/pinojs/sonic-boom#readme |
 | source-map | 0.6.1 | BSD-3-Clause | prod | https://github.com/mozilla/source-map |
