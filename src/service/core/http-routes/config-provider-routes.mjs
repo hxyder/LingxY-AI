@@ -96,6 +96,10 @@ function secretOptionsForRuntime(runtime) {
   };
 }
 
+function integrationPathsForRuntime(runtime = {}) {
+  return runtime.platform?.integrationPaths ?? runtime.paths ?? null;
+}
+
 function sanitizeProviderState(ai = {}, {
   runtime = null,
   hydrateSecrets = false,
@@ -316,6 +320,7 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     const providerSuggestions = buildCapabilityGapSuggestions({
       provider: entry,
       config: savedConfigWithoutOnboarding,
+      paths: integrationPathsForRuntime(runtime),
       trigger: "provider_saved"
     });
     const onboarding = mergeCapabilityGapSuggestions(
@@ -429,13 +434,14 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
 
   if (method === "GET" && url.pathname === "/config/integrations") {
     const config = runtime.configStore?.load?.() ?? {};
-    const capabilitySuggestions = buildCapabilityGapSuggestions({ config });
+    const integrationPaths = integrationPathsForRuntime(runtime);
+    const capabilitySuggestions = buildCapabilityGapSuggestions({ config, paths: integrationPaths });
     const onboarding = mergeCapabilityGapSuggestions(
       config.ai?.onboarding ?? {},
       capabilitySuggestions
     );
     sendJson(response, 200, {
-      paths: runtime.platform.integrationPaths ?? {},
+      paths: integrationPaths ?? {},
       mcp: config.ai?.mcp ?? { servers: [] },
       skills: config.ai?.skills ?? { registries: [] },
       codeCli: {

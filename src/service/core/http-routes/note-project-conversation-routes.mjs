@@ -22,6 +22,10 @@ function normalizeProjectStore(store) {
   return normalizeProjectStoreBase(store, { withUpdatedAt: false });
 }
 
+function integrationPathsForRuntime(runtime = {}) {
+  return runtime.platform?.integrationPaths ?? runtime.paths ?? null;
+}
+
 export async function tryHandleNoteProjectConversationRoute({
   request,
   response,
@@ -305,7 +309,8 @@ export async function tryHandleNoteProjectConversationRoute({
       ? buildCapabilityGapSuggestions({
           config,
           conversationModelOverride: override,
-          conversationId
+          conversationId,
+          paths: integrationPathsForRuntime(runtime)
         })
       : [];
     const onboarding = override

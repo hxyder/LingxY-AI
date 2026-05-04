@@ -40,11 +40,18 @@ test("capability gap suggestions derive from every configured provider without l
         }
       }
     },
+    paths: {
+      skillsDir: "E:/linxi/data/integrations/skills"
+    },
     env: {}
   });
 
   assert.ok(suggestions.some((suggestion) => suggestion.id === "provider:openai-main:mcp:enable-mcp-filesystem"));
   assert.ok(suggestions.some((suggestion) => suggestion.id === "provider:claude-cli:mcp:code-cli-mcp-config"));
+  assert.equal(
+    suggestions.find((suggestion) => suggestion.id === "provider:openai-main:skills:review-skill-library")?.priority,
+    "optional"
+  );
   assert.ok(!suggestions.some((suggestion) => suggestion.providerId === "incomplete"));
   assert.ok(suggestions.every((suggestion) => suggestion.trigger === "capability_gap"));
   assert.doesNotMatch(JSON.stringify(suggestions), /sk-test-openai|apiKey/u);

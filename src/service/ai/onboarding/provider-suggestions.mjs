@@ -20,7 +20,8 @@ function builtinToggleEnabled(config = {}, serverId) {
   return entry?.enabled !== false;
 }
 
-function hasSkillRegistry(config = {}) {
+function hasSkillRegistry(config = {}, paths = null) {
+  if (normalizeId(paths?.skillsDir)) return true;
   return Array.isArray(config.ai?.skills?.registries)
     && config.ai.skills.registries.length > 0;
 }
@@ -54,11 +55,12 @@ export function providerLooksConfigured(provider = {}) {
   return Boolean(normalizeId(provider.id) && normalizeId(provider.kind) && hasProviderCredential(provider));
 }
 
-export function buildProviderOnboardingSuggestions(provider = {}, { config = {}, env = process.env } = {}) {
+export function buildProviderOnboardingSuggestions(provider = {}, { config = {}, paths = null, env = process.env } = {}) {
   if (!providerLooksConfigured(provider)) return [];
 
   const suggestions = [];
   const providerKind = provider.kind ?? "";
+  const skillsReady = hasSkillRegistry(config, paths);
 
   for (const serverId of SAFE_LOCAL_MCP_IDS) {
     if (!builtinToggleEnabled(config, serverId)) {
@@ -80,9 +82,9 @@ export function buildProviderOnboardingSuggestions(provider = {}, { config = {},
   }
 
   suggestions.push(baseSuggestion(provider, "skills", "review-skill-library", {
-    priority: hasSkillRegistry(config) ? "optional" : "recommended",
-    title: hasSkillRegistry(config) ? "Review editable skills" : "Create or connect editable skills",
-    reason: hasSkillRegistry(config)
+    priority: skillsReady ? "optional" : "recommended",
+    title: skillsReady ? "Review editable skills" : "Create or connect editable skills",
+    reason: skillsReady
       ? "Skills are loaded from disk on each registry read, so edits can immediately improve recurring workflows."
       : "Skills give the assistant durable, editable instructions for repeatable work without adding more prompt text to every task.",
     action: {

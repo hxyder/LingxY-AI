@@ -26,12 +26,22 @@ assert.match(
   /conversationModelOverride/u,
   "capability gap suggestions should understand conversation model overrides"
 );
+assert.match(
+  capabilityService,
+  /paths/u,
+  "capability gap suggestions should receive runtime integration paths"
+);
 assert.doesNotMatch(
   capabilityService,
   /岗位|招聘|简历|天气|新闻|论文|市场|竞品/u,
   "capability gap suggestions must stay capability-oriented and avoid topic-specific patches"
 );
 
+assert.match(
+  providerRoutes,
+  /integrationPathsForRuntime/u,
+  "provider routes should pass runtime integration paths to capability suggestions"
+);
 assert.match(
   providerRoutes,
   /buildCapabilityGapSuggestions/u,
@@ -46,6 +56,11 @@ assert.match(
   conversationRoutes,
   /buildCapabilityGapSuggestions/u,
   "conversation model switching should return capability suggestions for the selected provider"
+);
+assert.match(
+  conversationRoutes,
+  /integrationPathsForRuntime/u,
+  "conversation model switching should pass runtime integration paths"
 );
 assert.match(
   conversationRoutes,

@@ -33,6 +33,7 @@ export function buildCapabilityGapSuggestions({
   providers = null,
   conversationModelOverride = null,
   conversationId = null,
+  paths = null,
   env = process.env,
   trigger = null
 } = {}) {
@@ -46,7 +47,7 @@ export function buildCapabilityGapSuggestions({
     ?? (conversationModelOverride ? "conversation_model_override" : "capability_gap");
 
   return selectedProviders.flatMap((entry) =>
-    buildProviderOnboardingSuggestions(entry, { config, env })
+    buildProviderOnboardingSuggestions(entry, { config, paths, env })
       .map((suggestion) => stampSuggestionContext(suggestion, {
         trigger: resolvedTrigger,
         conversationId

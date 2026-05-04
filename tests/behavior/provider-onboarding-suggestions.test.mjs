@@ -54,6 +54,26 @@ test("api provider suggestions are stable, secret-free, and capability-oriented"
   assert.doesNotMatch(JSON.stringify(suggestions), /stored-in-secret-store|secret:\/\/provider/u);
 });
 
+test("runtime skills path makes skill onboarding a review action", () => {
+  const suggestions = buildProviderOnboardingSuggestions({
+    id: "mock-openai",
+    name: "Mock OpenAI",
+    kind: "openai",
+    baseUrl: "https://example.invalid/v1",
+    apiKeyRef: "secret://provider/mock-openai/api-key",
+    defaultModel: "gpt-5.4-mini"
+  }, {
+    config: {},
+    paths: { skillsDir: "E:/linxi/data/integrations/skills" },
+    env: {}
+  });
+
+  const skillSuggestion = suggestions.find((suggestion) => suggestion.id === "provider:mock-openai:skills:review-skill-library");
+  assert.equal(skillSuggestion?.priority, "optional");
+  assert.equal(skillSuggestion?.title, "Review editable skills");
+  assert.equal(skillSuggestion?.action?.type, "open_skills_library");
+});
+
 test("code cli provider gets CLI MCP config guidance", () => {
   const suggestions = buildProviderOnboardingSuggestions({
     id: "claude-cli",
