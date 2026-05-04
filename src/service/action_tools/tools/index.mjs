@@ -2647,7 +2647,7 @@ export const STAT_FILE_TOOL = {
 export const READ_FILE_TEXT_TOOL = {
   id: "read_file_text",
   name: "Read File Text",
-  description: "Extract readable text from a local file path. Supports text files, PDFs, Office Open XML files, images with OCR, and directory listings. Use this before summarizing or analyzing an attached/local file.",
+  description: "Extract readable text from a local path. Supports text files, PDFs, Office Open XML files, images with OCR, and delegates directories to recursive folder extraction. Use this before summarizing or analyzing an attached/local file.",
   parameters: ACTION_TOOL_SCHEMAS.read_file_text,
   risk_level: "low",
   required_capabilities: ["file_read"],
@@ -2657,6 +2657,17 @@ export const READ_FILE_TEXT_TOOL = {
     if (!filePath) return createActionResult({ success: false, observation: "path required" });
     const maxChars = Math.max(500, Math.min(20000, Number(args.max_chars) || 8000));
     try {
+      const info = await lstat(filePath);
+      if (info.isDirectory()) {
+        return READ_FOLDER_TEXT_TOOL.execute({
+          path: filePath,
+          pattern: args.pattern ?? "*.{md,markdown,txt,pdf,docx,doc,pptx,xlsx,csv,json,html,htm}",
+          max_depth: args.max_depth ?? 4,
+          max_files: args.max_files ?? 30,
+          max_total_chars: args.max_total_chars ?? Math.max(maxChars, 30000),
+          max_chars_per_file: args.max_chars_per_file ?? maxChars
+        });
+      }
       const extracted = await extractFileContent(filePath);
       const text = String(extracted.text ?? "");
       const clipped = text.slice(0, maxChars);

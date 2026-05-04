@@ -66,6 +66,30 @@ test("read_folder_text recursively extracts bounded text from a folder", async (
   }
 });
 
+test("read_file_text delegates directory paths to recursive folder extraction", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "uca-read-file-directory-"));
+  try {
+    await writeFile(path.join(dir, "root.md"), "Root folder brief.", "utf8");
+    await mkdir(path.join(dir, "deep"), { recursive: true });
+    await writeFile(path.join(dir, "deep", "details.txt"), "Nested implementation details.", "utf8");
+
+    const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+    const result = await registry.call("read_file_text", {
+      path: dir,
+      max_chars: 2000,
+      max_depth: 3
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.metadata.tool_id, "read_folder_text");
+    assert.match(result.observation, /Root folder brief/);
+    assert.match(result.observation, /Nested implementation details/);
+    assert.equal(result.metadata.files_read, 2);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("file_read capability exposes read_folder_text to the planner", () => {
   const tools = filterToolsForTask(BUILTIN_ACTION_TOOLS, {
     context_packet: {
