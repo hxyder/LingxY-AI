@@ -33,6 +33,10 @@ assert.equal(record.metadata.path, "E:\\workspace\\verify.md");
 assert.equal(record.metadata.task_id, "task_verify");
 assert.equal(record.metadata.conversation_id, "conv_verify");
 assert.equal(record.metadata.project_id, "project_verify");
+assert.equal(record.metadata.chunk_index, 0);
+assert.equal(record.metadata.chunk_count, 1);
+assert.equal(record.metadata.char_start, 0);
+assert.equal(record.metadata.char_end, record.text.length);
 
 assert.deepEqual(buildFileContentIndexRecords({
   toolId: "glob_files",

@@ -82,3 +82,34 @@ test("file content index records use stable ids for the same evidence", () => {
   const [second] = buildFileContentIndexRecords(input);
   assert.equal(first.id, second.id);
 });
+
+test("file content index records chunk long extracted text with positional metadata", () => {
+  const sections = Array.from({ length: 12 }, (_, index) =>
+    `Section ${index + 1}\n${"general context ".repeat(30)}\n${index === 8 ? "needle project risk mitigation " : ""}${"details ".repeat(40)}`
+  );
+  const records = buildFileContentIndexRecords({
+    task: { task_id: "task_long", conversation_id: "conv_long", project_id: "project_long" },
+    toolId: "read_file_text",
+    result: {
+      success: true,
+      observation: sections.join("\n\n"),
+      metadata: {
+        path: "E:\\workspace\\long.md",
+        coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+        content_extracted: true,
+        chars_extracted: sections.join("\n\n").length,
+        truncated: false
+      }
+    },
+    createdAt: "2026-05-04T00:00:00.000Z"
+  });
+
+  assert.ok(records.length > 1);
+  assert.ok(records.some((record) => record.text.includes("needle project risk mitigation")));
+  assert.equal(new Set(records.map((record) => record.id)).size, records.length);
+  assert.deepEqual(records.map((record) => record.metadata.chunk_index), records.map((_, index) => index));
+  assert.ok(records.every((record) => record.metadata.chunk_count === records.length));
+  assert.ok(records.every((record) => record.metadata.project_id === "project_long"));
+  assert.ok(records.every((record) => Number.isInteger(record.metadata.char_start)));
+  assert.ok(records.every((record) => Number.isInteger(record.metadata.char_end)));
+});
