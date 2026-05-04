@@ -3662,10 +3662,12 @@ function renderMcpDrafts(drafts = []) {
       const original = btn.textContent;
       btn.textContent = "Importing...";
       try {
-        await importMcpDraft({ file });
+        const result = await importMcpDraft({ file });
         showConsoleToast("MCP draft imported as disabled server.", { kind: "ok" });
         await loadConnectorsTab();
         await refreshWorkspace();
+        const serverId = result.server?.id ?? result.draft?.id ?? "";
+        if (serverId) navigateToConnectorMcp(serverId);
       } catch (error) {
         btn.disabled = false;
         btn.textContent = original;
@@ -8216,6 +8218,13 @@ async function deleteMcpServer(id) {
   );
 }
 
+async function testMcpServer(id) {
+  if (typeof window.ucaShell?.testMcpServer !== "function") {
+    throw new Error("Desktop MCP test bridge unavailable.");
+  }
+  return await window.ucaShell.testMcpServer(id);
+}
+
 async function importMcpDraft(payload) {
   if (typeof window.ucaShell?.importMcpDraft !== "function") {
     throw new Error("Desktop MCP draft bridge unavailable.");
@@ -9077,6 +9086,7 @@ function renderConnectorsMcpServers(servers) {
     card.className = `mcp-card mcp-card--v3 ${canInstall ? "" : "unavailable"}`;
     card.id = cardId;
     const configBtn = hasConfigFields ? `<button class="btn btn-sm btn-ghost" data-mcp-config="${escapeHtml(s.id)}">Configure</button>` : "";
+    const testBtn = sourceView.readOnly ? "" : `<button class="btn btn-sm btn-ghost" data-mcp-test="${escapeHtml(s.id)}">Test</button>`;
     const guideBtn = meta.guideUrl ? `<button class="btn btn-sm btn-ghost" data-plugin-guide="${escapeHtml(meta.guideUrl)}">Guide</button>` : "";
     const needsConfigLabel = missingConfig.summary
       ? `需配置 · ${missingConfig.summary}`
@@ -9123,11 +9133,11 @@ function renderConnectorsMcpServers(servers) {
         ${headlineAction}
       </div>
       ${transportLine ? `<div class="mcp-transport">${escapeHtml(transportLine)}</div>` : ""}
-      ${(hasConfigFields || meta.guideUrl || needsConfigBadge) ? `
+      ${(hasConfigFields || meta.guideUrl || needsConfigBadge || testBtn) ? `
       <div class="mcp-card-actions">
         ${needsConfigBadge}
         <div style="flex:1;"></div>
-        ${guideBtn}${configBtn}
+        ${testBtn}${guideBtn}${configBtn}
       </div>` : ""}
       ${renderMcpConfigPanel(s, configFields)}
     `;
@@ -9209,6 +9219,32 @@ function renderConnectorsMcpServers(servers) {
     });
   });
 
+  connectorsMcpList.querySelectorAll("[data-mcp-test]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.mcpTest;
+      if (!id) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Testing...";
+      try {
+        const result = await testMcpServer(id);
+        if (result.ok) {
+          showConsoleToast("MCP 配置检测通过，可以启用。", { kind: "ok" });
+          return;
+        }
+        const missing = Array.isArray(result.missingEnv) && result.missingEnv.length
+          ? `缺少配置：${result.missingEnv.map((entry) => entry.name || entry.envKey).filter(Boolean).join(", ")}`
+          : (result.detail ? `状态：${result.detail}` : result.error ?? "MCP 配置未通过检测");
+        showConsoleToast(missing, { kind: "warn" });
+      } catch (error) {
+        showConsoleToast(`MCP 检测失败：${error?.message ?? error}`, { kind: "err" });
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  });
+
   connectorsMcpList.querySelectorAll("[data-mcp-install-source-click]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const source = btn.dataset.mcpInstallSourceClick;
@@ -9272,9 +9308,7 @@ function renderConnectorsMcpServers(servers) {
       if (stateEl) stateEl.textContent = "保存中…";
       try {
         await saveMcpServerConfig({ id, values, references });
-        if (stateEl) { stateEl.textContent = "已保存 ✓"; setTimeout(() => { stateEl.textContent = ""; }, 2000); }
-        // Also enable the server after saving API key
-        await toggleMcpServer(id, true);
+        if (stateEl) { stateEl.textContent = "已保存。请先测试，再启用。"; setTimeout(() => { stateEl.textContent = ""; }, 3000); }
         await loadConnectorsTab();
       } catch (err) {
         if (stateEl) stateEl.textContent = `Error: ${err.message}`;

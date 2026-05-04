@@ -1,15 +1,18 @@
+import {
+  isProviderConfiguredForUse,
+  providerConfigurationReason
+} from "../../shared/provider-configuration.mjs";
+
 export function isModelPickerProviderConfigured(provider = {}) {
-  if (!provider?.id) return false;
-  if (provider.kind === "code_cli") return Boolean(provider.command);
-  if (provider.kind === "ollama") return true;
-  return Boolean(provider.apiKey || provider.apiKeyRef || provider.apiKeyConfigured);
+  return isProviderConfiguredForUse(provider);
 }
 
 export function modelPickerProviderSetupReason(provider = {}) {
-  if (!provider?.id) return "Add a provider before choosing a conversation model.";
-  if (provider.kind === "code_cli") return "Add the CLI command for this provider.";
-  if (provider.kind === "ollama") return "";
-  return "Add an API key or saved secret for this provider.";
+  const reason = providerConfigurationReason(provider);
+  if (reason === "provider_not_found") return "Add a provider before choosing a conversation model.";
+  if (reason === "command_missing") return "Add the CLI command for this provider.";
+  if (reason === "api_key_missing") return "Add an API key or saved secret for this provider.";
+  return "";
 }
 
 export function configuredModelPickerProviders(providers = []) {

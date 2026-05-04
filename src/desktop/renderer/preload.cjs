@@ -306,6 +306,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteMcpServer(id) {
     return ipcRenderer.invoke("uca:mcp-server-delete", id ?? "");
   },
+  testMcpServer(id) {
+    return ipcRenderer.invoke("uca:mcp-server-test", id ?? "");
+  },
   toggleMcpServer(payload) {
     return ipcRenderer.invoke("uca:mcp-server-toggle", payload ?? {});
   },

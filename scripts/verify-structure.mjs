@@ -137,6 +137,7 @@ const requiredPaths = [
   "src/shared/contracts/office-context.ts",
   "src/shared/contracts/uca-models.ts",
   "src/shared/conversation-model-override.mjs",
+  "src/shared/provider-configuration.mjs",
   "src/shared/project-store.mjs",
   "src/service/ai/skills/lifecycle.mjs",
   "src/desktop/shared/manifest.mjs",

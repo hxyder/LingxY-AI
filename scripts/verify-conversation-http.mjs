@@ -360,6 +360,39 @@ await it("PATCH/DELETE /conversation/{id}/model pins and clears a conversation m
   } finally { await srv.close(); }
 });
 
+await it("PATCH /conversation/{id}/model rejects providers that are missing configuration", async () => {
+  const runtime = makeRuntime({
+    config: {
+      ai: {
+        customProviders: [{
+          id: "openai-empty",
+          name: "OpenAI",
+          kind: "openai",
+          baseUrl: "https://api.openai.com/v1",
+          defaultModel: "gpt-5.5"
+        }]
+      }
+    }
+  });
+  runtime.store.insertConversation({
+    conversation_id: "c_model_unconfigured",
+    metadata: { topic: "demo" }
+  });
+  const srv = await startServer(runtime);
+  try {
+    const set = await fetchJson(`${srv.url}/conversation/c_model_unconfigured/model`, desktopJson("PATCH", {
+      providerId: "openai-empty",
+      model: "gpt-5.5"
+    }));
+    assert.equal(set.status, 409);
+    assert.equal(set.body.error, "provider_not_configured");
+    assert.equal(set.body.configureProviderId, "openai-empty");
+    assert.equal(set.body.reason, "api_key_missing");
+    const conv = runtime.store.getConversation("c_model_unconfigured");
+    assert.equal(conv.metadata.modelOverride, undefined);
+  } finally { await srv.close(); }
+});
+
 await it("GET /conversation/{id}/messages?since=N: returns only seq >= N", async () => {
   const runtime = makeRuntime();
   runtime.store.insertConversation({ conversation_id: "c_inc" });

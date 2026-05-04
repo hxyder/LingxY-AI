@@ -23,6 +23,8 @@ assert.equal(preload.includes("saveMcpServer"), true);
 assert.equal(preload.includes(IPC_CHANNELS.mcpServerSave), true);
 assert.equal(preload.includes("deleteMcpServer"), true);
 assert.equal(preload.includes(IPC_CHANNELS.mcpServerDelete), true);
+assert.equal(preload.includes("testMcpServer"), true);
+assert.equal(preload.includes(IPC_CHANNELS.mcpServerTest), true);
 assert.equal(preload.includes("toggleMcpServer"), true);
 assert.equal(preload.includes(IPC_CHANNELS.mcpServerToggle), true);
 assert.equal(preload.includes("saveMcpServerConfig"), true);

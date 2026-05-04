@@ -140,3 +140,88 @@ test("POST /config/mcp/drafts/import rejects path traversal", async () => {
   assert.equal(response.json().error, "mcp_draft_path_not_allowed");
   assert.equal(runtime.savedConfig, null);
 });
+
+test("POST /config/mcp/servers/:id/test checks an imported disabled server without enabling it", async () => {
+  const runtime = await createDraftRuntime();
+  const { file } = await writeDraft(runtime, {
+    descriptor: {
+      id: "draft-mcp",
+      displayName: "Draft MCP",
+      transport: "stdio",
+      command: process.execPath,
+      args: ["--version"],
+      enabled: true
+    }
+  });
+  const importResponse = createJsonResponse();
+  await tryHandleConfigProviderRoute({
+    request: requestWithJson({ file }),
+    response: importResponse,
+    method: "POST",
+    url: new URL("http://127.0.0.1/config/mcp/drafts/import"),
+    runtime
+  });
+  assert.equal(importResponse.statusCode, 200);
+  assert.equal(runtime.savedConfig.ai.mcp.servers[0].enabled, false);
+
+  const response = createJsonResponse();
+  const handled = await tryHandleConfigProviderRoute({
+    request: requestWithJson({}),
+    response,
+    method: "POST",
+    url: new URL("http://127.0.0.1/config/mcp/servers/draft-mcp/test"),
+    runtime
+  });
+
+  assert.equal(handled, true);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().ok, true);
+  assert.equal(response.json().source, "runtime_config");
+  assert.equal(response.json().detail, "ready");
+  assert.equal(runtime.savedConfig.ai.mcp.servers[0].enabled, false);
+});
+
+test("POST /config/mcp/servers/:id/test reports missing config without leaking secret refs", async () => {
+  const runtime = await createDraftRuntime();
+  const { file } = await writeDraft(runtime);
+  const importResponse = createJsonResponse();
+  await tryHandleConfigProviderRoute({
+    request: requestWithJson({ file }),
+    response: importResponse,
+    method: "POST",
+    url: new URL("http://127.0.0.1/config/mcp/drafts/import"),
+    runtime
+  });
+
+  const response = createJsonResponse();
+  const handled = await tryHandleConfigProviderRoute({
+    request: requestWithJson({}),
+    response,
+    method: "POST",
+    url: new URL("http://127.0.0.1/config/mcp/servers/draft-mcp/test"),
+    runtime
+  });
+
+  assert.equal(handled, true);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().ok, false);
+  assert.equal(response.json().detail, "missing_config");
+  assert.equal(response.json().missingEnv[0].envKey, "TOKEN");
+  assert.doesNotMatch(response.body, /secret:\/\/lingxy\/mcp\/draft/);
+});
+
+test("POST /config/mcp/servers/:id/test requires desktop actor", async () => {
+  const runtime = await createDraftRuntime();
+  const response = createJsonResponse();
+  const handled = await tryHandleConfigProviderRoute({
+    request: requestWithJson({}, { [DESKTOP_ACTOR_HEADER]: "" }),
+    response,
+    method: "POST",
+    url: new URL("http://127.0.0.1/config/mcp/servers/draft-mcp/test"),
+    runtime
+  });
+
+  assert.equal(handled, true);
+  assert.equal(response.statusCode, 403);
+  assert.equal(response.json().error, "desktop_actor_required");
+});

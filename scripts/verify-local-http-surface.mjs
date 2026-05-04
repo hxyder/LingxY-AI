@@ -183,6 +183,12 @@ const expectedSurfaces = [
     boundary: "read_probe_no_guard",
     migration: "not_needed_read_probe"
   }),
+  surface("config-provider-routes.mjs", "POST", "/^\\/config\\/mcp\\/servers\\/[^/]+\\/test$/", {
+    domain: "mcp_config",
+    effect: "readiness_probe",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("config-provider-routes.mjs", "POST", "/config/output", {
     domain: "runtime_config",
     effect: "config_mutation",

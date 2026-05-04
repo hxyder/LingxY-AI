@@ -197,10 +197,14 @@ assert.ok(/saveMcpServer/.test(consoleJs) && /window\.ucaShell\.saveMcpServer/.t
   "mcp config save: console must use desktop shell bridge");
 assert.ok(/deleteMcpServer/.test(consoleJs) && /window\.ucaShell\.deleteMcpServer/.test(consoleJs),
   "mcp config delete: console must use desktop shell bridge");
+assert.ok(/testMcpServer/.test(consoleJs) && /window\.ucaShell\.testMcpServer/.test(consoleJs),
+  "mcp runtime test: console must use desktop shell bridge");
 assert.ok(/toggleMcpServer/.test(consoleJs) && /window\.ucaShell\.toggleMcpServer/.test(consoleJs),
   "mcp runtime toggle: console must use desktop shell bridge");
 assert.ok(/saveMcpServerConfig/.test(consoleJs) && /window\.ucaShell\.saveMcpServerConfig/.test(consoleJs),
   "mcp runtime config: console must use desktop shell bridge");
+assert.ok(/请先测试，再启用/.test(consoleJs),
+  "mcp runtime config: saving config must not silently enable the server");
 assert.ok(!/fetchJson\(\s*["'`]\/config\/mcp\/servers/.test(consoleJs),
   "mcp config save: console must not call /config/mcp/servers directly");
 assert.ok(!/fetch\(`\$\{state\.serviceBaseUrl\}\/ai\/mcp\/\$\{encodeURIComponent\(id\)\}\/(?:toggle|config)/.test(consoleJs),

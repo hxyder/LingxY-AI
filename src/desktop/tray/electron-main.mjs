@@ -2617,6 +2617,27 @@ export function createElectronShellRuntime({
           };
         }
       });
+      ipcMain.handle(IPC_CHANNELS.mcpServerTest, async (_event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const serverId = normalizeMcpServerId(id);
+        if (!serverId) {
+          return { ok: false, error: "mcp_server_id_required", message: "MCP server id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            pathname: `/config/mcp/servers/${encodeURIComponent(serverId)}/test`,
+            body: {}
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "mcp_server_test_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
       ipcMain.handle(IPC_CHANNELS.mcpServerToggle, async (_event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
         const body = normalizeMcpServerTogglePayload(payload);

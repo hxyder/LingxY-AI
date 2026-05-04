@@ -1,4 +1,5 @@
 import { detectProviderFamily } from "../../../shared/provider-catalog.mjs";
+import { isProviderConfiguredForUse } from "../../../shared/provider-configuration.mjs";
 
 export const PROVIDER_ONBOARDING_VERSION = 1;
 
@@ -7,12 +8,6 @@ const SUGGESTION_STATUSES = new Set(["pending", "dismissed", "completed"]);
 
 function normalizeId(value) {
   return `${value ?? ""}`.trim();
-}
-
-function hasProviderCredential(provider = {}) {
-  if (provider.kind === "code_cli") return Boolean(normalizeId(provider.command));
-  if (provider.kind === "ollama") return Boolean(normalizeId(provider.baseUrl));
-  return Boolean(normalizeId(provider.apiKey) || normalizeId(provider.apiKeyRef));
 }
 
 function builtinToggleEnabled(config = {}, serverId) {
@@ -52,7 +47,7 @@ function baseSuggestion(provider, kind, key, fields) {
 }
 
 export function providerLooksConfigured(provider = {}) {
-  return Boolean(normalizeId(provider.id) && normalizeId(provider.kind) && hasProviderCredential(provider));
+  return isProviderConfiguredForUse(provider);
 }
 
 export function buildProviderOnboardingSuggestions(provider = {}, { config = {}, paths = null, env = process.env } = {}) {

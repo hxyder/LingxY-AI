@@ -9,6 +9,10 @@ import {
   normalizeConversationModelOverride
 } from "../../../shared/conversation-model-override.mjs";
 import {
+  isProviderConfiguredForUse,
+  providerConfigurationReason
+} from "../../../shared/provider-configuration.mjs";
+import {
   buildCapabilityGapSuggestions,
   mergeCapabilityGapSuggestions
 } from "../../ai/onboarding/capability-gap-suggestions.mjs";
@@ -300,11 +304,30 @@ export async function tryHandleNoteProjectConversationRoute({
       sendJson(response, 400, { error: "providerId required" });
       return true;
     }
+    const config = override ? runtime.configStore?.load?.() ?? {} : {};
+    if (override) {
+      const provider = (config.ai?.customProviders ?? []).find((entry) => entry?.id === override.providerId) ?? null;
+      if (!provider) {
+        sendJson(response, 404, {
+          error: "provider_not_found",
+          providerId: override.providerId
+        });
+        return true;
+      }
+      if (!isProviderConfiguredForUse(provider)) {
+        sendJson(response, 409, {
+          error: "provider_not_configured",
+          providerId: override.providerId,
+          configureProviderId: override.providerId,
+          reason: providerConfigurationReason(provider)
+        });
+        return true;
+      }
+    }
     const metadata = applyConversationModelOverride(conv.metadata ?? {}, override);
     const updated = override && typeof runtime.store.patchConversationMetadata === "function"
       ? runtime.store.patchConversationMetadata(conversationId, { modelOverride: override })
       : runtime.store.updateConversation(conversationId, { metadata });
-    const config = override ? runtime.configStore?.load?.() ?? {} : {};
     const capabilitySuggestions = override
       ? buildCapabilityGapSuggestions({
           config,

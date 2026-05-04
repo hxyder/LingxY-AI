@@ -9,6 +9,7 @@ import { createImapClient } from "../../email/imap-client.mjs";
 import { getCredential } from "../../email/credential-store.mjs";
 import { maybeRunMorningDigest } from "../../email/digest.mjs";
 import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
+import { createConfiguredMCPServer } from "../../ai/mcp/configured.mjs";
 import { listMcpDrafts, readMcpDraft } from "../../ai/mcp/drafts.mjs";
 import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
 import {
@@ -60,6 +61,83 @@ function summarizeMcpServerEntry(entry = {}) {
     command: entry.command ?? null,
     url: entry.url ?? null,
     enabled: entry.enabled === true
+  };
+}
+
+function summarizeMcpEnvReferences(entries = []) {
+  if (!Array.isArray(entries)) return [];
+  return entries.map((entry) => ({
+    envKey: entry?.envKey ?? "",
+    type: entry?.type ?? ""
+  })).filter((entry) => entry.envKey);
+}
+
+async function testRuntimeMcpServer(runtime, serverId) {
+  const currentConfig = runtime.configStore?.load?.() ?? {};
+  const configuredServers = Array.isArray(currentConfig.ai?.mcp?.servers)
+    ? currentConfig.ai.mcp.servers
+    : [];
+  const configured = configuredServers.find((server) => server?.id === serverId);
+  if (configured) {
+    const validation = validateMcpServerDescriptor(configured);
+    if (!validation.ok) {
+      return {
+        ok: false,
+        serverId,
+        source: "runtime_config",
+        stage: "descriptor",
+        errors: validation.errors ?? []
+      };
+    }
+    const testServer = createConfiguredMCPServer({
+      ...validation.server,
+      enabled: true
+    });
+    const status = await testServer.getStatus?.({
+      secretStore: runtime.secretStore ?? null,
+      processEnv: process.env
+    });
+    return {
+      ok: status?.detail === "ready" && status?.available === true,
+      serverId,
+      source: "runtime_config",
+      stage: "readiness",
+      detail: status?.detail ?? "unknown",
+      available: status?.available === true,
+      configured: status?.configured === true,
+      missingEnv: summarizeMcpEnvReferences(status?.missingEnv),
+      envRequirements: summarizeMcpEnvReferences(status?.envRequirements)
+    };
+  }
+
+  const registered = runtime.platform?.mcpServers?.get?.(serverId) ?? null;
+  if (!registered) {
+    return {
+      ok: false,
+      serverId,
+      source: "missing",
+      stage: "lookup",
+      error: "mcp_server_not_found"
+    };
+  }
+  const status = typeof registered.getStatus === "function"
+    ? await registered.getStatus({
+      runtime,
+      config: currentConfig,
+      secretStore: runtime.secretStore ?? null,
+      processEnv: process.env
+    })
+    : null;
+  return {
+    ok: status?.available === true && status?.detail !== "missing_config",
+    serverId,
+    source: registered.source ?? "registry",
+    stage: "readiness",
+    detail: status?.detail ?? "unknown",
+    available: status?.available === true,
+    configured: status?.configured === true,
+    missingEnv: summarizeMcpEnvReferences(status?.missingEnv),
+    envRequirements: summarizeMcpEnvReferences(status?.envRequirements)
   };
 }
 
@@ -699,6 +777,20 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     const body = await readJsonBody(request);
     const result = validateMcpServerDescriptor(body);
     sendJson(response, 200, result);
+    return true;
+  }
+
+  if (method === "POST" && /^\/config\/mcp\/servers\/[^/]+\/test$/.test(url.pathname)) {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const serverId = decodeURIComponent(url.pathname
+      .replace(/^\/config\/mcp\/servers\//, "")
+      .replace(/\/test$/, ""));
+    if (!serverId) {
+      sendJson(response, 400, { ok: false, error: "mcp_server_id_required" });
+      return true;
+    }
+    const result = await testRuntimeMcpServer(runtime, serverId);
+    sendJson(response, result.error === "mcp_server_not_found" ? 404 : 200, result);
     return true;
   }
 
