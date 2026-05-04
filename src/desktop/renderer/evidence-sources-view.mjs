@@ -25,6 +25,25 @@ export function shortEvidenceLabel(value = "") {
   }
 }
 
+const COVERAGE_SCOPE_LABELS = Object.freeze({
+  single_file_text: "fresh file text",
+  folder_recursive_text: "deep folder text",
+  directory_listing_shallow: "listed only",
+  file_enumeration_recursive: "recursive listing",
+  file_metadata: "metadata only"
+});
+
+function renderCoverageScopeChips(counts = {}, { className = "chip muted", prefix = "" } = {}) {
+  if (!counts || typeof counts !== "object") return "";
+  return Object.entries(counts)
+    .filter(([, count]) => Number(count) > 0)
+    .map(([scope, count]) => {
+      const label = COVERAGE_SCOPE_LABELS[scope] ?? scope.replace(/_/g, " ");
+      return `<span class="${escapeHtml(className)}">${escapeHtml(count)} ${escapeHtml(prefix ? `${prefix} ${label}` : label)}</span>`;
+    })
+    .join("");
+}
+
 export function renderEvidenceSourcesHtml(evidence, {
   className = "task-answer task-evidence",
   title = "Evidence",
@@ -37,6 +56,9 @@ export function renderEvidenceSourcesHtml(evidence, {
   const shallowCount = Number(evidence?.local_shallow_source_count ?? 0);
   const truncatedCount = Number(evidence?.local_truncated_source_count ?? 0);
   const indexedTruncatedCount = Number(evidence?.indexed_file_truncated_source_count ?? 0);
+  const localDeepCount = Number(evidence?.local_deep_text_source_count ?? 0);
+  const localScopeChips = renderCoverageScopeChips(evidence?.local_coverage_scope_counts, { className: "chip ready" });
+  const indexedScopeChips = renderCoverageScopeChips(evidence?.indexed_file_coverage_scope_counts, { className: "chip muted", prefix: "indexed" });
   const blendedCount = Number(evidence?.blended_source_count ?? (webCount + localCount + indexedCount));
   if (!evidence || (blendedCount <= 0 && shallowCount <= 0)) return "";
   const urls = Array.isArray(evidence.urls) ? evidence.urls.slice(0, 6) : [];
@@ -55,9 +77,12 @@ export function renderEvidenceSourcesHtml(evidence, {
         <span class="chip ready">${escapeHtml(blendedCount)} content source${blendedCount === 1 ? "" : "s"}</span>
         ${webCount ? `<span class="chip muted">${escapeHtml(webCount)} web · ${escapeHtml(domainCount)} domains</span>` : ""}
         ${localCount ? `<span class="chip muted">${escapeHtml(localCount)} local text</span>` : ""}
+        ${localDeepCount ? `<span class="chip ready">${escapeHtml(localDeepCount)} deep local read</span>` : ""}
         ${indexedCount ? `<span class="chip muted">${escapeHtml(indexedCount)} indexed file</span>` : ""}
         ${shallowCount ? `<span class="chip warning">${escapeHtml(shallowCount)} listed only</span>` : ""}
         ${truncatedCount + indexedTruncatedCount ? `<span class="chip warning">${escapeHtml(truncatedCount + indexedTruncatedCount)} truncated</span>` : ""}
+        ${localScopeChips}
+        ${indexedScopeChips}
       </div>
       ${domains.length ? `<div class="muted" style="font-size:11px;margin-bottom:6px;">Domains: ${domains.map(escapeHtml).join(", ")}</div>` : ""}
       ${urls.length ? `

@@ -31,6 +31,9 @@ import {
   renderChatMessageBlocksHtml
 } from "./chat-blocks.mjs";
 import {
+  formatToolDisplayName
+} from "./tool-display.mjs";
+import {
   DEFAULT_PROJECT_ID,
   buildProject,
   createProjectId
@@ -1381,7 +1384,7 @@ function eventToPhase(eventType) {
     "step_started", "step_finished", "conversation_step",
     "tool_call_started", "tool_call_proposed", "tool_call_completed",
     "tool_call_denied", "tool_input_delta", "reasoning_delta",
-    "pending_approval_created", "log"
+    "local_file_read_guidance", "pending_approval_created", "log"
   ].includes(eventType)) return "EXECUTING";
   if ([
     "final_composer_started", "text_delta", "inline_result",
@@ -1453,6 +1456,7 @@ const STEP_CHEVRON =
 
 function buildToolStepInner(toolId, state, args, observation) {
   const icon = TOOL_STEP_ICONS[state] ?? TOOL_STEP_ICONS.pending;
+  const displayName = formatToolDisplayName(toolId);
   const argsText = args == null ? "" : (typeof args === "string" ? args : JSON.stringify(args, null, 2));
   const obsText = String(observation ?? "").trim();
   // Single-line summary capped at 80 chars. When the underlying text is
@@ -1479,7 +1483,7 @@ function buildToolStepInner(toolId, state, args, observation) {
     ${copyBtn}
     <button type="button" class="step-row" aria-expanded="${hasBody ? "true" : "false"}">
       <span class="step-icon">${icon}</span>
-      <span class="step-name">${escapeHtml(toolId)}</span>
+      <span class="step-name" title="${escapeHtml(toolId)}">${escapeHtml(displayName)}</span>
       <span class="step-summary">${escapeHtml(summaryText)}</span>
       ${truncatedHint}
       ${hasBody ? STEP_CHEVRON : ""}
@@ -2073,6 +2077,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     "tool_call_completed",
     "tool_call_denied",
     "tool_input_delta",
+    "local_file_read_guidance",
     "reasoning_delta",
     "pending_approval_created",
     "log",
@@ -2118,7 +2123,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     if (label) timelineAddStep(label, "active");
   }
 
-  if (["task_created", "accepted", "started", "provider_resolved", "phase_timing", "status_changed", "planner_request_started", "final_composer_started", "sr_patch_applied", "background_context_added", "log", "artifact_created"].includes(frame.event)) {
+  if (["task_created", "accepted", "started", "provider_resolved", "phase_timing", "status_changed", "planner_request_started", "final_composer_started", "sr_patch_applied", "background_context_added", "local_file_read_guidance", "log", "artifact_created"].includes(frame.event)) {
     timelineAddStep(`${summary.title}: ${summary.body}`, frame.event === "artifact_created" ? "done" : "active");
   }
 
@@ -2126,7 +2131,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
   if (frame.event === "tool_call_started" || frame.event === "tool_call_proposed") {
     const toolId = getToolEventId(frame);
     if (toolId) {
-      if (!showOverlay) timelineAddStep(`调用 ${toolId}…`, "active");
+      if (!showOverlay) timelineAddStep(`调用 ${formatToolDisplayName(toolId)}...`, "active");
       if (showOverlay) void maybeRevealOverlay();
       const stepEl = appendToolStepBubble(toolId, "pending", "", { anchorBefore: replayAnchor });
       // 83.3 — Stash args on the element so markToolStepBubble can re-render
@@ -2161,7 +2166,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     const toolId = getToolEventId(frame);
     const ok = frame.data?.success !== false;
     if (toolId) {
-      if (!showOverlay) timelineAddStep(`${toolId}`, ok ? "done" : "fail");
+      if (!showOverlay) timelineAddStep(formatToolDisplayName(toolId), ok ? "done" : "fail");
       markToolStepBubble(toolId, ok, frame.data?.observation ?? "");
       if (window.livePreview?.isFileGenTool?.(toolId)) {
         window.livePreview.commit({
@@ -2177,7 +2182,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
 
   if (frame.event === "tool_call_denied") {
     const toolId = getToolEventId(frame);
-    if (!showOverlay) timelineAddStep(toolId ? `${toolId} 已拦截` : summary.body, "fail");
+    if (!showOverlay) timelineAddStep(toolId ? `${formatToolDisplayName(toolId)} 已拦截` : summary.body, "fail");
   }
 
   if (frame.event === "pending_approval_created") {

@@ -28,6 +28,7 @@ const consolePreload = read("src/desktop/renderer/preload.cjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs");
 const evidenceSourcesView = read("src/desktop/renderer/evidence-sources-view.mjs");
+const toolDisplayView = read("src/desktop/renderer/tool-display.mjs");
 const dockHtml = read("src/desktop/renderer/dock.html");
 const dockJs = read("src/desktop/renderer/dock.js");
 const electronMain = read("src/desktop/tray/electron-main.mjs");
@@ -202,8 +203,14 @@ assert.ok(/local_shallow_source_count/.test(evidenceSourcesView) && /listed only
   "task detail: evidence sources must distinguish shallow file enumeration from content evidence");
 assert.ok(/indexed_file_source_count/.test(evidenceSourcesView) && />indexed</.test(evidenceSourcesView),
   "task detail: evidence sources must distinguish indexed file hits from fresh local reads");
+assert.ok(/local_deep_text_source_count/.test(evidenceSourcesView) && /folder_recursive_text/.test(evidenceSourcesView),
+  "task detail: evidence sources must surface deep local file coverage");
 assert.ok(/appendConsoleChatEvidenceSources/.test(consoleJs) && /data-chat-evidence-sources/.test(consoleJs),
   "chat: console must append structured evidence summaries to assistant messages");
+assert.ok(/formatToolDisplayName/.test(toolDisplayView) && /read_file_text/.test(toolDisplayView)
+    && /from\s+["']\.\/tool-display\.mjs["']/.test(consoleJs)
+    && /from\s+["']\.\/tool-display\.mjs["']/.test(overlayJs),
+  "tool display: console and overlay must share user-facing tool labels");
 assert.ok(/from\s+["']\.\/chat-blocks\.mjs["']/.test(consoleJs) && /from\s+["']\.\/chat-blocks\.mjs["']/.test(overlayJs),
   "chat blocks: console and overlay must share the rich block renderer");
 assert.ok(/renderChatMessageBlocksHtml/.test(chatBlocks) && /md-table/.test(chatBlocks) && /md-diagram/.test(chatBlocks) && /sanitizeSvgMarkup/.test(chatBlocks),
@@ -297,9 +304,9 @@ assert.ok(/renderWorkspaceAfterFetch\(\{\s*mode:\s*["']active["']\s*,\s*activeTa
   "console refresh: tab switch must render the active workspace slice from cached state");
 assert.ok(!/connWebhooksTitle|Coming soon[\s\S]{0,80}Webhook/.test(consoleHtml),
   "connectors: visible Webhooks placeholder must not ship without a working surface");
-assert.ok(/CHAT_TOOL_LABELS/.test(consoleJs) && /formatConsoleToolDisplayName/.test(consoleJs),
-  "chat tools: console must map raw tool ids to user-facing labels");
-assert.ok(/render_svg:\s*"生成矢量图"/.test(consoleJs),
+assert.ok(/TOOL_DISPLAY_LABELS/.test(toolDisplayView) && /formatConsoleToolDisplayName/.test(consoleJs),
+  "chat tools: shared tool display helper must map raw tool ids to user-facing labels");
+assert.ok(/render_svg:\s*"生成矢量图"/.test(toolDisplayView),
   "chat tools: SVG artifact tool must have a user-facing label");
 assert.ok(/formatConsoleToolArgsPreview/.test(consoleJs) && /dataset\.toolId/.test(consoleJs),
   "chat tools: console must keep raw tool ids in data attributes while showing compact args");

@@ -1,3 +1,5 @@
+import { formatToolDisplayName } from "./tool-display.mjs";
+
 function parseSseFrame(frame) {
   const parsed = {
     id: null,
@@ -183,23 +185,32 @@ export function formatTaskEventSummary(rawEvent, context = {}) {
     case "tool_input_delta":
       return {
         title: "正在写入",
-        body: `${payload.tool_id ?? "tool"} · ${(payload.partial_json ?? "").length}B`
+        body: `${formatToolDisplayName(payload.tool_id ?? payload.tool ?? "tool")} · ${(payload.partial_json ?? "").length}B`
       };
     case "tool_call_started":
     case "tool_call_proposed":
       return {
         title: "工具调用",
-        body: `正在调用 ${payload.tool_id ?? payload.tool ?? "工具"}`
+        body: `正在调用 ${formatToolDisplayName(payload.tool_id ?? payload.tool ?? "工具")}`
       };
     case "tool_call_completed":
       return {
         title: "工具完成",
-        body: `${payload.tool_id ?? payload.tool ?? "工具"} · ${payload.success === false ? "失败" : "成功"}`
+        body: `${formatToolDisplayName(payload.tool_id ?? payload.tool ?? "工具")} · ${payload.success === false ? "失败" : "成功"}`
       };
     case "tool_call_denied":
       return {
         title: "工具已拦截",
-        body: payload.tool_id ?? payload.tool ?? "工具调用被拦截。"
+        body: formatToolDisplayName(payload.tool_id ?? payload.tool ?? "工具调用")
+      };
+    case "local_file_read_guidance":
+      return {
+        title: "需要读取原文",
+        body: [
+          payload.deep ? "需要深度文件夹读取" : "需要读取本地文件正文",
+          Number(payload.candidate_count ?? 0) > 0 ? `候选 ${payload.candidate_count} 个` : "暂无可靠索引候选",
+          Number(payload.guidance_count ?? 0) > 0 ? `提示 ${payload.guidance_count}` : null
+        ].filter(Boolean).join(" · ")
       };
     case "success":
       return {

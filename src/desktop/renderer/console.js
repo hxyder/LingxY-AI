@@ -65,6 +65,11 @@ import {
   wireEvidenceSourceActions
 } from "./evidence-sources-view.mjs";
 import {
+  compactToolText as compactText,
+  formatToolArgsPreview as formatConsoleToolArgsPreview,
+  formatToolDisplayName as formatConsoleToolDisplayName
+} from "./tool-display.mjs";
+import {
   renderTaskKvGrid
 } from "./console-task-detail.mjs";
 import {
@@ -1470,62 +1475,6 @@ async function openNoteTargetPicker(text, anchorEl) {
   });
 }
 
-const CHAT_TOOL_LABELS = {
-  web_search_fetch: "搜索网页",
-  fetch_url_content: "读取网页",
-  generate_document: "生成文档",
-  write_file: "写入文件",
-  edit_file: "编辑文件",
-  render_diagram: "生成图表",
-  render_svg: "生成矢量图",
-  vision_analyze: "分析图片",
-  launch_app: "启动应用",
-  open_url: "打开网页",
-  notify: "发送通知",
-  connector_workflow_run: "连接器流程",
-  account_send_email: "发送邮件",
-  account_upload_file: "上传文件",
-  account_list_emails: "读取邮件",
-  account_list_files: "读取文件"
-};
-
-function compactText(value = "", max = 96) {
-  const text = String(value ?? "").replace(/\s+/g, " ").trim();
-  return text.length > max ? `${text.slice(0, max)}…` : text;
-}
-
-function formatConsoleToolDisplayName(toolName = "") {
-  const raw = String(toolName ?? "").trim();
-  return CHAT_TOOL_LABELS[raw] || raw.replace(/_/g, " ");
-}
-
-function formatConsoleToolArgsPreview(toolName = "", args = {}) {
-  const value = args && typeof args === "object" ? args : {};
-  if (toolName === "web_search_fetch") {
-    return value.query ? `query: ${compactText(value.query, 88)}` : "";
-  }
-  if (toolName === "fetch_url_content") {
-    try {
-      const url = new URL(String(value.url ?? ""));
-      return compactText(`${url.hostname}${url.pathname}`, 92);
-    } catch {
-      return value.url ? compactText(value.url, 92) : "";
-    }
-  }
-  if (toolName === "generate_document") {
-    const kind = value.kind ? String(value.kind).toUpperCase() : "DOC";
-    const outline = value.outline && typeof value.outline === "object" ? value.outline : {};
-    const title = outline.title ?? value.filename ?? value.path ?? "";
-    return compactText(`${kind}${title ? ` · ${title}` : ""}`, 92);
-  }
-  if (toolName === "launch_app") return value.app ? compactText(value.app, 80) : "";
-  if (toolName === "open_url") return value.url ? compactText(value.url, 92) : "";
-  const raw = typeof args === "string"
-    ? args
-    : (args == null ? "" : JSON.stringify(args, null, 0));
-  return compactText(raw, 110);
-}
-
 function appendConsoleChatTimelineNode(node) {
   if (!consoleChatMessages || !node) return node;
   const streamingWrapper = consoleChatStreamingAnswer?.wrapper;
@@ -1800,7 +1749,8 @@ function subscribeConsoleChatTask(taskId) {
         "planner_request_started",
         "final_composer_started",
         "sr_patch_applied",
-        "background_context_added"
+        "background_context_added",
+        "local_file_read_guidance"
       ].includes(frame.event)) {
         appendConsoleChatProgress(frame);
       } else if (frame.event === "inline_result") {

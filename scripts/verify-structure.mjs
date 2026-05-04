@@ -143,6 +143,7 @@ const requiredPaths = [
   "src/desktop/renderer/console-task-event-stream.mjs",
   "src/desktop/renderer/console-notes-model.mjs",
   "src/desktop/renderer/console-projects-view.mjs",
+  "src/desktop/renderer/tool-display.mjs",
   "src/desktop/renderer/console.html",
   "src/desktop/renderer/console.js",
   "src/desktop/renderer/dock.html",
