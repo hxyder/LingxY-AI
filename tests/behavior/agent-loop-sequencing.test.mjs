@@ -30,6 +30,33 @@ function makeLookupTool() {
   };
 }
 
+function makeReadFileTextTool() {
+  return {
+    id: "read_file_text",
+    name: "Read File Text",
+    description: "Returns deterministic file text for behavior tests.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["path"],
+      properties: {
+        path: { type: "string" }
+      }
+    },
+    async execute(args) {
+      return {
+        success: true,
+        observation: `file:${args.path}:hello`,
+        metadata: {
+          tool_id: "read_file_text",
+          path: args.path
+        }
+      };
+    }
+  };
+}
+
 function makeNoopTool(id, extra = {}) {
   return {
     id,
@@ -134,6 +161,48 @@ test("agent loop carries tool_result into the next planner turn and final compos
   assert.equal(plannerSnapshots[1][0].type, "tool_result");
   assert.equal(plannerSnapshots[1][0].observation, "observed:alpha");
   assert.ok(events.some((event) => event.eventType === "tool_call_completed" && event.payload?.success === true));
+});
+
+test("agent loop emits evidence summary for local file reads", async () => {
+  const { runtime, events, auditLog } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([makeReadFileTextTool()])
+  });
+  const task = {
+    ...makeTask(),
+    task_id: "task_agent_loop_local_evidence",
+    user_command: "Summarize the attached file.",
+    task_spec: {
+      goal: "summarize local file",
+      synthesis: { expected_output: "summary", user_goal: "summarize local file" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } }
+    }
+  };
+
+  const planner = async ({ iteration }) => {
+    if (iteration === 0) {
+      return { type: "tool_call", tool: "read_file_text", args: { path: "E:\\docs\\resume.md" } };
+    }
+    return { type: "final", text: "Summarized local evidence." };
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner,
+    maxIterations: 3
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.evidence_summary.local_source_count, 1);
+  assert.deepEqual(result.evidence_summary.local_sources, ["E:\\docs\\resume.md"]);
+  assert.ok(events.some((entry) =>
+    entry.eventType === "evidence_summary"
+    && entry.payload?.local_source_count === 1
+  ));
+  assert.ok(auditLog.some((entry) =>
+    entry.event_subtype === "tool_loop.evidence_summary"
+    && entry.payload?.local_source_count === 1
+  ));
 });
 
 test("attached-file research does not expose open/reveal as file-reading tools", async () => {

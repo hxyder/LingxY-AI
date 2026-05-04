@@ -643,9 +643,13 @@ function finaliseWithEvidence(result, { runtime, task } = {}) {
   if (!result || typeof result !== "object") return result;
   if (!Array.isArray(result.transcript)) return result;
   const evidence = extractEvidence(result.transcript);
-  // Skip the audit/event noise when the loop did no web tool calls —
-  // the typical "launch_app" flow has zero coverage to report.
-  if (evidence.source_count === 0 && evidence.distinct_domain_count === 0) {
+  // Skip the audit/event noise when the loop produced no evidence.
+  // The typical "launch_app" flow has zero coverage to report, but
+  // local file/image reads are evidence and should be visible even when
+  // no web URL was fetched.
+  if ((evidence.blended_source_count ?? 0) === 0
+      && evidence.source_count === 0
+      && evidence.local_source_count === 0) {
     return { ...result, evidence_summary: evidence };
   }
   try {
