@@ -28,6 +28,7 @@ const consolePreload = read("src/desktop/renderer/preload.cjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs");
 const evidenceSourcesView = read("src/desktop/renderer/evidence-sources-view.mjs");
+const dockHtml = read("src/desktop/renderer/dock.html");
 const dockJs = read("src/desktop/renderer/dock.js");
 const electronMain = read("src/desktop/tray/electron-main.mjs");
 const desktopManifest = read("src/desktop/shared/manifest.mjs");
@@ -114,6 +115,12 @@ assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/kws`\s*,\s*\{[\s\S]{0,180}met
   "echo KWS: dock must not POST /echo/kws directly");
 assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/enroll-keyword\?/.test(dockJs),
   "echo enrollment: dock must not POST /echo/enroll-keyword directly");
+assert.ok(/html\s*\{[\s\S]{0,120}position:\s*fixed;[\s\S]{0,80}inset:\s*0;[\s\S]{0,180}overflow:\s*hidden;/.test(dockHtml),
+  "dock: html must be fixed and non-scrollable");
+assert.ok(/body\s*\{[\s\S]{0,360}position:\s*fixed;[\s\S]{0,80}inset:\s*0;[\s\S]{0,260}overflow:\s*hidden\s*!important/.test(dockHtml),
+  "dock: body must be fixed and non-scrollable");
+assert.ok(/function\s+setManagedWindowBounds/.test(electronMain) && /setContentBounds/.test(electronMain) && /getContentBounds/.test(electronMain),
+  "dock: main process must manage the fixed orb by content bounds");
 assert.ok(/window\.ucaShell\.transcribeNoteAudio/.test(overlayJs),
   "note transcribe: overlay must use desktop shell bridge");
 assert.ok(/window\.ucaShell\.transcribeNoteAudioStreaming/.test(overlayJs),

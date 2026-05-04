@@ -850,6 +850,21 @@ export function createElectronShellRuntime({
     return clampWindowBounds(windowDef.id, defaults);
   }
 
+  function getManagedWindowBounds(windowId, browserWindow) {
+    if (windowId === "dock" && typeof browserWindow.getContentBounds === "function") {
+      return browserWindow.getContentBounds();
+    }
+    return browserWindow.getBounds();
+  }
+
+  function setManagedWindowBounds(windowId, browserWindow, bounds) {
+    if (windowId === "dock" && typeof browserWindow.setContentBounds === "function") {
+      browserWindow.setContentBounds(bounds);
+      return;
+    }
+    browserWindow.setBounds(bounds);
+  }
+
   function applyWindowPresentation(windowId, browserWindow) {
     const alwaysOnTop = isWindowAlwaysOnTop(windowId);
     browserWindow.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? "screen-saver" : "normal");
@@ -1414,7 +1429,7 @@ export function createElectronShellRuntime({
         }
       });
       const initialBounds = resolveWindowBounds(windowDef, browserWindow);
-      browserWindow.setBounds(initialBounds);
+      setManagedWindowBounds(windowDef.id, browserWindow, initialBounds);
       applyWindowPresentation(windowDef.id, browserWindow);
       browserWindow.on("close", (event) => {
         if (!quitting) {
@@ -1461,7 +1476,7 @@ export function createElectronShellRuntime({
         if (boundsPersistTimer) clearTimeout(boundsPersistTimer);
         boundsPersistTimer = setTimeout(() => {
           if (browserWindow.isDestroyed()) return;
-          persistWindowPreferences(windowDef.id, { bounds: browserWindow.getBounds() });
+          persistWindowPreferences(windowDef.id, { bounds: getManagedWindowBounds(windowDef.id, browserWindow) });
         }, 180);
       };
       browserWindow.on("move", scheduleBoundsPersist);
@@ -1499,7 +1514,7 @@ export function createElectronShellRuntime({
     }
     const windowDef = DESKTOP_SHELL_MANIFEST.windows.find((candidate) => candidate.id === windowId);
     if (windowDef && !getWindowPreferences(windowId)?.bounds) {
-      target.setBounds(resolveWindowBounds(windowDef, target));
+      setManagedWindowBounds(windowId, target, resolveWindowBounds(windowDef, target));
     }
     applyWindowPresentation(windowId, target);
     target.show();
@@ -3512,26 +3527,26 @@ export function createElectronShellRuntime({
       ipcMain.handle(IPC_CHANNELS.shellMoveWindowBy, (_event, { windowId, deltaX, deltaY } = {}) => {
         const target = windows.get(windowId);
         if (!target) return false;
-        const currentBounds = target.getBounds();
+        const currentBounds = getManagedWindowBounds(windowId, target);
         const nextBounds = clampWindowBounds(windowId, {
           ...currentBounds,
           x: currentBounds.x + (Number(deltaX) || 0),
           y: currentBounds.y + (Number(deltaY) || 0)
         }, { mode: "move" });
-        target.setBounds(nextBounds);
+        setManagedWindowBounds(windowId, target, nextBounds);
         persistWindowPreferences(windowId, { bounds: nextBounds });
         return true;
       });
       ipcMain.handle(IPC_CHANNELS.shellResizeWindowBy, (_event, { windowId, deltaWidth, deltaHeight } = {}) => {
         const target = windows.get(windowId);
         if (!target) return false;
-        const currentBounds = target.getBounds();
+        const currentBounds = getManagedWindowBounds(windowId, target);
         const nextBounds = clampWindowBounds(windowId, {
           ...currentBounds,
           width: currentBounds.width + (Number(deltaWidth) || 0),
           height: currentBounds.height + (Number(deltaHeight) || 0)
         });
-        target.setBounds(nextBounds);
+        setManagedWindowBounds(windowId, target, nextBounds);
         persistWindowPreferences(windowId, { bounds: nextBounds });
         return true;
       });
