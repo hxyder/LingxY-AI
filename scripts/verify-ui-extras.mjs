@@ -320,6 +320,8 @@ assert.ok(/attachedFilePaths\s*=\s*\[\]/.test(consoleProjectsView) && /Attached 
   "projects: Files column must show durable attached project files separately from generated artifacts");
 assert.ok(/data-project-file-detach/.test(consoleProjectsView) && /setProjectAttachedFilePath/.test(consoleJs),
   "projects: attached project files must be removable through the shared project-store helper");
+assert.ok(/data-project-file-reindex/.test(consoleProjectsView) && /attachProjectFilesViaShell/.test(consoleJs),
+  "projects: attached project files must be reindexable through the desktop shell bridge");
 assert.ok(/attachedProjectFilePaths/.test(consoleJs) && /projectArtifacts\.length\s*\+\s*attachedProjectFilePaths\.length/.test(consoleJs),
   "projects: Files count must include durable attached project files");
 assert.ok(/setHtmlIfChanged\(projectArtifactList/.test(consoleJs),

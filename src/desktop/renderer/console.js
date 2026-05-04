@@ -7289,6 +7289,31 @@ projectAttachFilesBtn?.addEventListener("click", async () => {
 
 projectArtifactList?.addEventListener("click", (event) => {
   const target = event.target instanceof Element ? event.target : null;
+  const reindexBtn = target?.closest?.("[data-project-file-reindex]");
+  if (reindexBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    const filePath = reindexBtn.dataset.projectFileReindex ?? "";
+    const projectId = reindexBtn.dataset.projectFileReindexProjectId ?? state.selectedProjectId ?? "";
+    if (!filePath || !projectId) return;
+    reindexBtn.setAttribute("disabled", "true");
+    showConsoleToast("Reindexing project file...", { kind: "info" });
+    void attachProjectFilesViaShell({ projectId, paths: [filePath] }).then((result) => {
+      const store = normalizeProjectStore(result.store ?? state.projectStore ?? loadConsoleProjectStore());
+      store.updatedAt = Date.now();
+      state.projectStore = store;
+      localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(store));
+      state.projectStoreRemoteReady = true;
+      renderProjectsWorkspace({ skipFetch: true });
+      renderConsoleChatArtifacts([]);
+      showConsoleToast(`Reindexed ${Number(result.indexed_count ?? 0)} chunk(s).`, { kind: "success" });
+    }).catch((error) => {
+      showConsoleToast(error?.message ?? "Could not reindex project file.", { kind: "error" });
+    }).finally(() => {
+      reindexBtn.removeAttribute("disabled");
+    });
+    return;
+  }
   const detachBtn = target?.closest?.("[data-project-file-detach]");
   if (detachBtn instanceof HTMLElement) {
     event.preventDefault();
