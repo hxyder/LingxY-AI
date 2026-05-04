@@ -85,6 +85,29 @@ test("skill lifecycle writes backups and restores the latest backup", async () =
   assert.match(await readFile(created.entryPath, "utf8"), /Updated once|Check quality/);
 });
 
+test("skill lifecycle prunes old history entries with a bounded retention limit", async () => {
+  const runtime = await makeRuntime();
+  runtime.skillHistoryLimit = 3;
+  const created = await createEditableSkill(runtime, {
+    id: "retention",
+    name: "Retention",
+    description: "Check history retention."
+  });
+
+  for (let index = 0; index < 6; index += 1) {
+    const written = await writeSkillMarkdownWithBackup(runtime, {
+      entryPath: created.entryPath,
+      markdown: `# Retention\n\ndescription: version ${index}\n`
+    });
+    assert.equal(written.backup?.retention.limit, 3);
+  }
+
+  const history = await listSkillHistory(runtime, created.entryPath);
+  assert.equal(history.history.length, 3);
+  const uniqueIds = new Set(history.history.map((entry) => entry.id));
+  assert.equal(uniqueIds.size, 3);
+});
+
 test("skill lifecycle test reports validation, saved state, and runtime discovery", async () => {
   const runtime = await makeRuntime();
   const created = await createEditableSkill(runtime, {

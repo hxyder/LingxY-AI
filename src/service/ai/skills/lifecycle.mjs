@@ -1,9 +1,12 @@
 import { existsSync } from "node:fs";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
 import { readSkillDescriptor, validateSkillDescriptorMarkdown } from "./discovery.mjs";
+
+const DEFAULT_HISTORY_LIMIT = 30;
+const MAX_HISTORY_LIMIT = 200;
 
 function expandLocalPath(value) {
   if (!value) return null;
@@ -160,6 +163,14 @@ function historyIdFromFilename(filename = "") {
   return path.basename(filename).replace(/\.md$/i, "");
 }
 
+function skillHistoryLimit(runtime = {}) {
+  const config = runtime.configStore?.load?.() ?? {};
+  const raw = runtime.skillHistoryLimit ?? config.ai?.skills?.historyLimit;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_HISTORY_LIMIT;
+  return Math.min(Math.max(1, Math.floor(value)), MAX_HISTORY_LIMIT);
+}
+
 export async function listSkillHistory(runtime = {}, entryPath = "") {
   const resolved = resolveEditableSkillEntryPath(runtime, entryPath);
   if (!resolved) throw new Error("skill_path_not_allowed");
@@ -176,6 +187,18 @@ export async function listSkillHistory(runtime = {}, entryPath = "") {
   return { ok: true, entryPath: resolved, history };
 }
 
+async function pruneSkillHistory(runtime = {}, entryPath = "") {
+  const limit = skillHistoryLimit(runtime);
+  const history = await listSkillHistory(runtime, entryPath);
+  const stale = history.history.slice(limit);
+  await Promise.all(stale.map((entry) => rm(entry.path, { force: true })));
+  return {
+    limit,
+    removed: stale.map((entry) => entry.id),
+    remaining: Math.min(history.history.length, limit)
+  };
+}
+
 export async function backupSkillMarkdown(runtime = {}, entryPath = "") {
   const resolved = resolveEditableSkillEntryPath(runtime, entryPath);
   if (!resolved) throw new Error("skill_path_not_allowed");
@@ -187,7 +210,8 @@ export async function backupSkillMarkdown(runtime = {}, entryPath = "") {
   const id = `backup-${stamp}-${crypto.randomUUID().slice(0, 8)}`;
   const backupPath = path.join(historyDir, `${id}.md`);
   await writeFile(backupPath, markdown, "utf8");
-  return { id, path: backupPath };
+  const retention = await pruneSkillHistory(runtime, resolved);
+  return { id, path: backupPath, retention };
 }
 
 export async function writeSkillMarkdownWithBackup(runtime = {}, {
