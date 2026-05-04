@@ -408,6 +408,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteNote(id) {
     return ipcRenderer.invoke("uca:note-delete", id ?? "");
   },
+  restoreNote(id) {
+    return ipcRenderer.invoke("uca:note-restore", id ?? "");
+  },
   appendNoteChip(payload) {
     return ipcRenderer.invoke("uca:note-append-chip", payload ?? {});
   },

@@ -15,6 +15,12 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import {
+  filterDeletedRecords,
+  isDeletedRecord,
+  markRecordDeleted,
+  restoreDeletedRecord
+} from "../core/deletion-lifecycle.mjs";
 
 const SCHEMA_VERSION = 1;
 
@@ -30,7 +36,7 @@ function makeId() {
 function normalizeNote(note = {}) {
   if (!note || typeof note !== "object") return null;
   const ts = nowIso();
-  return {
+  const normalized = {
     id: typeof note.id === "string" && note.id ? note.id : makeId(),
     title: typeof note.title === "string" ? note.title : "",
     body_html: typeof note.body_html === "string" ? note.body_html : "",
@@ -39,6 +45,12 @@ function normalizeNote(note = {}) {
     updated_at: typeof note.updated_at === "string" ? note.updated_at : ts,
     history: Array.isArray(note.history) ? note.history.slice(-50) : []
   };
+  for (const field of ["deleted_at", "deleted_by", "restore_until", "deletion_reason", "restored_at", "restored_by"]) {
+    if (typeof note[field] === "string" && note[field]) {
+      normalized[field] = note[field];
+    }
+  }
+  return normalized;
 }
 
 function escapeHtml(value) {
@@ -75,33 +87,63 @@ export function createNotesStore({ filePath } = {}) {
   }
 
   return {
-    listNotes() {
-      return readFile().notes;
+    listNotes(options = {}) {
+      return filterDeletedRecords(readFile().notes, options);
     },
     saveNotes(incoming) {
-      const notes = (Array.isArray(incoming) ? incoming : [])
+      const existing = readFile().notes;
+      const incomingNotes = (Array.isArray(incoming) ? incoming : [])
         .map(normalizeNote)
         .filter(Boolean);
+      const incomingIds = new Set(incomingNotes.map((note) => note.id));
+      const preservedDeleted = existing.filter((note) =>
+        isDeletedRecord(note) && !incomingIds.has(note.id)
+      );
+      const notes = [...incomingNotes, ...preservedDeleted];
       const state = { schema_version: SCHEMA_VERSION, notes };
       writeFile(state);
-      return notes;
+      return filterDeletedRecords(notes);
     },
     upsertNote(note) {
       const state = readFile();
       const normalized = normalizeNote(note);
       if (!normalized) return null;
       const idx = state.notes.findIndex((n) => n.id === normalized.id);
-      if (idx >= 0) state.notes[idx] = normalized;
-      else state.notes.unshift(normalized);
+      if (idx >= 0) {
+        const existing = state.notes[idx];
+        if (isDeletedRecord(existing) && !isDeletedRecord(normalized) && !normalized.restored_at) {
+          return existing;
+        }
+        state.notes[idx] = normalized;
+      } else {
+        state.notes.unshift(normalized);
+      }
       writeFile(state);
       return normalized;
     },
-    deleteNote(id) {
+    deleteNote(id, options = {}) {
       const state = readFile();
-      const next = state.notes.filter((n) => n.id !== id);
-      const removed = next.length !== state.notes.length;
-      if (removed) writeFile({ ...state, notes: next });
-      return removed;
+      const idx = state.notes.findIndex((n) => n.id === id);
+      if (idx < 0) return null;
+      if (options.hard === true) {
+        const [removed] = state.notes.splice(idx, 1);
+        writeFile(state);
+        return removed;
+      }
+      const deleted = markRecordDeleted(state.notes[idx], options);
+      state.notes[idx] = deleted;
+      writeFile(state);
+      return deleted;
+    },
+    restoreNote(id, options = {}) {
+      const state = readFile();
+      const idx = state.notes.findIndex((n) => n.id === id);
+      if (idx < 0) return null;
+      const restored = restoreDeletedRecord(state.notes[idx], options);
+      state.notes.splice(idx, 1);
+      state.notes.unshift(restored);
+      writeFile(state);
+      return restored;
     },
     // Append a "chat chip" block to a note's body. If `noteId === "__new__"`
     // (or no matching note exists), create a fresh note with the chip.
@@ -125,7 +167,7 @@ export function createNotesStore({ filePath } = {}) {
         ? `<div class="note-stamp" contenteditable="false">${escapeHtml(sourceLabel)} · ${escapeHtml(nowIso().slice(0, 16).replace("T", " "))}</div>`
         : "";
       const chipHtml = `${labelHtml}<div class="note-chat-chip">${bodyHtml}</div><p><br></p>`;
-      let target = state.notes.find((n) => n.id === noteId);
+      let target = state.notes.find((n) => n.id === noteId && !isDeletedRecord(n));
       let created = false;
       if (!target || noteId === "__new__") {
         const trimmedTitle = String(title ?? "").trim();

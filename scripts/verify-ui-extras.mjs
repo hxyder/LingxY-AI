@@ -75,6 +75,8 @@ assert.ok(/upsertNoteViaShell/.test(consoleJs) && /window\.ucaShell\.upsertNote/
   "notes upsert: console must use desktop shell bridge");
 assert.ok(/deleteNoteViaShell/.test(consoleJs) && /window\.ucaShell\.deleteNote/.test(consoleJs),
   "notes delete: console must use desktop shell bridge");
+assert.ok(/restoreNoteViaShell/.test(consoleJs) && /window\.ucaShell\.restoreNote/.test(consoleJs),
+  "notes restore: console must use desktop shell bridge");
 assert.ok(/appendNoteChipViaShell/.test(consoleJs) && /window\.ucaShell\.appendNoteChip/.test(consoleJs),
   "notes append-chip: console must use desktop shell bridge");
 assert.ok(/appendNoteChipViaShell/.test(overlayJs) && /window\.ucaShell\.appendNoteChip/.test(overlayJs),
@@ -83,7 +85,7 @@ assert.ok(!/fetchJson\(\s*["'`]\/notes\/append-chip["'`]\s*,\s*\{[\s\S]{0,160}me
   "notes append-chip: console must not POST /notes/append-chip directly via fetchJson");
 assert.ok(!/fetchJson\(\s*["'`]\/notes\/append-chip["'`]\s*,\s*\{[\s\S]{0,160}method:\s*["'`]POST/.test(overlayJs),
   "notes append-chip: overlay must not POST /notes/append-chip directly via fetchJson");
-assert.ok(!/fetch\(\s*`\$\{runtimeBaseUrl\}\/notes(?:\/(?:upsert|delete|append-chip))?`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
+assert.ok(!/fetch\(\s*`\$\{runtimeBaseUrl\}\/notes(?:\/(?:upsert|delete|restore|append-chip))?`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(consoleJs),
   "notes editor: console must not POST notes mutation routes directly via fetch");
 assert.ok(/saveProjectStoreViaShell/.test(consoleJs) && /window\.ucaShell\.saveProjectStore/.test(consoleJs),
   "project store: console must use desktop shell bridge for saves");

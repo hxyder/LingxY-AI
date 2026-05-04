@@ -416,7 +416,11 @@ function makeNotesRuntime() {
       },
       deleteNote(id) {
         calls.push({ method: "notes.deleteNote", id });
-        return true;
+        return { id, deleted_at: "2026-01-01T00:00:00.000Z" };
+      },
+      restoreNote(id) {
+        calls.push({ method: "notes.restoreNote", id });
+        return { id, restored_at: "2026-01-01T00:00:00.000Z" };
       },
       appendChip(payload) {
         calls.push({ method: "notes.appendChip", payload });
@@ -1097,6 +1101,7 @@ test("notes mutation routes reject unknown desktop actors before local note writ
     { method: "POST", pathname: "/notes", body: { notes: [{ id: "n1" }] } },
     { method: "POST", pathname: "/notes/upsert", body: { note: { id: "n2", title: "Demo" } } },
     { method: "POST", pathname: "/notes/delete", body: { id: "n2" } },
+    { method: "POST", pathname: "/notes/restore", body: { id: "n2" } },
     { method: "POST", pathname: "/notes/append-chip", body: { noteId: "__new__", text: "clip" } }
   ];
 
@@ -1116,7 +1121,8 @@ test("notes editor routes are console-only while append-chip allows overlay", as
   for (const entry of [
     { method: "POST", pathname: "/notes", body: { notes: [{ id: "n1" }] } },
     { method: "POST", pathname: "/notes/upsert", body: { note: { id: "n2", title: "Demo" } } },
-    { method: "POST", pathname: "/notes/delete", body: { id: "n2" } }
+    { method: "POST", pathname: "/notes/delete", body: { id: "n2" } },
+    { method: "POST", pathname: "/notes/restore", body: { id: "n2" } }
   ]) {
     const result = await noteProjectConversationRoute({
       ...entry,
@@ -1149,6 +1155,26 @@ test("notes mutation routes allow console and overlay note writers", async () =>
   assert.deepEqual(save.runtime.calls, [
     { method: "notes.saveNotes", notes: [{ id: "n1", title: "Seed" }] }
   ]);
+
+  const deletion = await noteProjectConversationRoute({
+    method: "POST",
+    pathname: "/notes/delete",
+    actor: "desktop_console",
+    body: { id: "n1" }
+  });
+  assert.equal(deletion.statusCode, 200);
+  assert.equal(deletion.payload.ok, true);
+  assert.equal(deletion.runtime.calls[0].method, "notes.deleteNote");
+
+  const restore = await noteProjectConversationRoute({
+    method: "POST",
+    pathname: "/notes/restore",
+    actor: "desktop_console",
+    body: { id: "n1" }
+  });
+  assert.equal(restore.statusCode, 200);
+  assert.equal(restore.payload.ok, true);
+  assert.equal(restore.runtime.calls[0].method, "notes.restoreNote");
 
   const append = await noteProjectConversationRoute({
     method: "POST",

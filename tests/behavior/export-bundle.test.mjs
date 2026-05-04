@@ -23,6 +23,7 @@ async function withTempRuntime(prefix, fn) {
 }
 
 test("runtime export bundle includes core user data and redacts secrets", () => {
+  let notesListOptions = null;
   const store = createInMemoryStoreScaffold();
   const task = {
     task_id: "task_export",
@@ -91,7 +92,8 @@ test("runtime export bundle includes core user data and redacts secrets", () => 
       }
     },
     notesStore: {
-      listNotes() {
+      listNotes(options) {
+        notesListOptions = options;
         return [{ id: "note_export", title: "Note", body_html: "<p>Body</p>" }];
       }
     }
@@ -101,6 +103,7 @@ test("runtime export bundle includes core user data and redacts secrets", () => 
   const serialized = JSON.stringify(bundle);
   assert.equal(bundle.schema_version, 1);
   assert.equal(bundle.notes.length, 1);
+  assert.deepEqual(notesListOptions, { deleted: "any" });
   assert.equal(bundle.conversations[0].messages.length, 1);
   assert.equal(bundle.tasks[0].artifacts[0].artifact_id, "artifact_export");
   assert.equal(bundle.config.ai.customProviders[0].requiresApiKey, true);

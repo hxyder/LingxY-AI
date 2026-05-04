@@ -342,6 +342,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("note-project-conversation-routes.mjs", "POST", "/notes/restore", {
+    domain: "notes",
+    effect: "local_state_write",
+    boundary: "guarded_desktop_actor",
+    migration: "soft_delete_restore"
+  }),
   surface("note-project-conversation-routes.mjs", "POST", "/notes/upsert", {
     domain: "notes",
     effect: "local_state_write",

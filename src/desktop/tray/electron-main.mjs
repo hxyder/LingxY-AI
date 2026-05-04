@@ -3023,6 +3023,28 @@ export function createElectronShellRuntime({
           };
         }
       });
+      ipcMain.handle(IPC_CHANNELS.noteRestore, async (event, id = "") => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const noteId = normalizeNoteId(id);
+        if (!noteId) {
+          return { ok: false, error: "note_id_required", message: "Note id is required." };
+        }
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/notes/restore",
+            body: { id: noteId }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "note_restore_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
       ipcMain.handle(IPC_CHANNELS.noteAppendChip, async (event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
         const actor = desktopActorForSender(event.sender);

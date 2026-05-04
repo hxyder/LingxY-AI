@@ -113,7 +113,7 @@ export function buildRuntimeExportBundle(runtime, {
       export_kind: "runtime_bundle"
     },
     config: redactRuntimeConfigForExport(config),
-    notes: runtime?.notesStore?.listNotes?.() ?? [],
+    notes: runtime?.notesStore?.listNotes?.({ deleted: "any" }) ?? [],
     projectStore: config.ui?.projectStore ?? null,
     conversations: collectConversations(store),
     tasks: collectTasks(store, { includeTaskEvents }),

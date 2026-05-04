@@ -6705,6 +6705,16 @@ async function deleteNoteViaShell(noteId) {
   );
 }
 
+async function restoreNoteViaShell(noteId) {
+  if (typeof window.ucaShell?.restoreNote !== "function") {
+    throw new Error("Desktop notes bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.restoreNote(noteId),
+    "Could not restore note."
+  );
+}
+
 async function appendNoteChipViaShell(payload) {
   if (typeof window.ucaShell?.appendNoteChip !== "function") {
     throw new Error("Desktop notes bridge unavailable.");
@@ -9334,8 +9344,19 @@ function initQuickNotes() {
 
   async function deleteNoteOnServer(id) {
     try {
-      await deleteNoteViaShell(id);
-    } catch { /* ignore */ }
+      return await deleteNoteViaShell(id);
+    } catch {
+      return null;
+    }
+  }
+
+  async function restoreNoteOnServer(id) {
+    try {
+      const data = await restoreNoteViaShell(id);
+      return data?.note ?? null;
+    } catch {
+      return null;
+    }
   }
 
   async function appendChipOnServer({ noteId, text, sourceLabel = null }) {
@@ -9872,12 +9893,30 @@ function initQuickNotes() {
     const note = currentNote();
     if (!note) return;
     if (!confirm(`Delete "${note.title || "Untitled note"}"?`)) return;
+    const deletedNote = { ...note };
     removeLocalNote(note.id);
     saveNotes();
     ensureSelection();
     renderList();
     renderEditor();
-    void deleteNoteOnServer(note.id);
+    const deletionPromise = deleteNoteOnServer(note.id);
+    void deletionPromise;
+    showConsoleToast("笔记已移到 Trash", {
+      kind: "ok",
+      durationMs: 7000,
+      actionLabel: "Undo",
+      onAction: async () => {
+        await deletionPromise;
+        const restored = await restoreNoteOnServer(deletedNote.id);
+        upsertLocalNote(restored ?? deletedNote);
+        notesState.selectedId = deletedNote.id;
+        rememberSelection(deletedNote.id);
+        renderList();
+        renderEditor();
+        void refreshNotesFromServer({ preserveSelection: true });
+        showConsoleToast("笔记已恢复", { kind: "ok" });
+      }
+    });
   });
 
   // ── Search ────────────────────────────────────────────────────────────

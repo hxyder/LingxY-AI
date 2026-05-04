@@ -87,6 +87,7 @@ export const IPC_CHANNELS = Object.freeze({
   notesSave: "uca:notes-save",
   noteUpsert: "uca:note-upsert",
   noteDelete: "uca:note-delete",
+  noteRestore: "uca:note-restore",
   noteAppendChip: "uca:note-append-chip",
   projectStoreSave: "uca:project-store-save",
   previewCacheClear: "uca:preview-cache-clear",

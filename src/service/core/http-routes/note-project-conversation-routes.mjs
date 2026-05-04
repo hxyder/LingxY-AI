@@ -1,5 +1,6 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
+import { normalizeDeletedFilter } from "../deletion-lifecycle.mjs";
 import {
   normalizeProjectStore as normalizeProjectStoreBase
 } from "../../../shared/project-store.mjs";
@@ -23,7 +24,11 @@ export async function tryHandleNoteProjectConversationRoute({
 }) {
   if (method === "GET" && url.pathname === "/notes") {
     if (!runtime.notesStore) sendJson(response, 200, { notes: [] });
-    else sendJson(response, 200, { notes: runtime.notesStore.listNotes() });
+    else sendJson(response, 200, {
+      notes: runtime.notesStore.listNotes({
+        deleted: normalizeDeletedFilter(url.searchParams.get("deleted") ?? false)
+      })
+    });
     return true;
   }
 
@@ -52,14 +57,28 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   if (method === "POST" && url.pathname === "/notes/delete") {
-    if (!requireDesktopActor({ request, response, allowedActors: NOTES_EDITOR_ACTORS })) return true;
+    const actor = requireDesktopActor({ request, response, allowedActors: NOTES_EDITOR_ACTORS });
+    if (!actor) return true;
     if (!runtime.notesStore) {
       sendJson(response, 503, { error: "notes store unavailable" });
       return true;
     }
     const body = await readJsonBody(request);
-    const removed = runtime.notesStore.deleteNote(body.id ?? "");
-    sendJson(response, 200, { ok: removed });
+    const note = runtime.notesStore.deleteNote(body.id ?? "", { actor });
+    sendJson(response, 200, { ok: Boolean(note), note });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/notes/restore") {
+    const actor = requireDesktopActor({ request, response, allowedActors: NOTES_EDITOR_ACTORS });
+    if (!actor) return true;
+    if (!runtime.notesStore) {
+      sendJson(response, 503, { error: "notes store unavailable" });
+      return true;
+    }
+    const body = await readJsonBody(request);
+    const note = runtime.notesStore.restoreNote(body.id ?? "", { actor });
+    sendJson(response, 200, { ok: Boolean(note), note });
     return true;
   }
 
