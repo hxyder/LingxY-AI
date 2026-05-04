@@ -87,6 +87,7 @@ const requiredPaths = [
   "tests/behavior/mcp-install-sandbox.test.mjs",
   "tests/behavior/multi-modal-external-call.test.mjs",
   "tests/behavior/provider-catalog-models.test.mjs",
+  "tests/behavior/provider-model-discovery.test.mjs",
   "tests/behavior/local-file-fresh-read-contract.test.mjs",
   "tests/behavior/local-file-read-guidance.test.mjs",
   "tests/behavior/read-file-text-tool.test.mjs",

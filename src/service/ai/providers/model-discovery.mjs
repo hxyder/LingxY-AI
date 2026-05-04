@@ -22,16 +22,73 @@ function normalizeModelOption(option) {
   const id = `${option?.id ?? option?.name ?? ""}`.trim();
   if (!id) return null;
   const label = `${option?.label ?? option?.display_name ?? id}`.trim() || id;
-  return { id, label };
+  return { ...option, id, label };
+}
+
+function modelOptionSources(option = {}) {
+  return [
+    ...(Array.isArray(option.sources) ? option.sources : []),
+    option.source
+  ].filter((source) => source && source !== "unknown");
+}
+
+function normalizeModelOptionMetadata(option = {}) {
+  const sources = [...new Set(modelOptionSources(option))];
+  return {
+    ...option,
+    sources,
+    source: option.source ?? sources[0] ?? "unknown",
+    configuredDefault: Boolean(option.configuredDefault),
+    activeRoute: Boolean(option.activeRoute),
+    recommended: Boolean(option.recommended),
+    available: Boolean(option.available),
+    stale: Boolean(option.stale)
+  };
+}
+
+function chooseModelOptionLabel(existing = {}, next = {}) {
+  const id = `${existing.id ?? next.id ?? ""}`.trim();
+  const existingLabel = `${existing.label ?? ""}`.trim();
+  const nextLabel = `${next.label ?? ""}`.trim();
+  if (existingLabel && existingLabel !== id) return existingLabel;
+  if (nextLabel && nextLabel !== id) return nextLabel;
+  return existingLabel || nextLabel || id;
+}
+
+function mergeModelOptionMetadata(existing = {}, next = {}) {
+  const sources = [...new Set([
+    ...modelOptionSources(existing),
+    ...modelOptionSources(next)
+  ])];
+  return {
+    ...next,
+    ...existing,
+    id: existing.id ?? next.id,
+    label: chooseModelOptionLabel(existing, next),
+    sources,
+    source: existing.source ?? next.source ?? sources[0] ?? "unknown",
+    configuredDefault: Boolean(existing.configuredDefault || next.configuredDefault),
+    activeRoute: Boolean(existing.activeRoute || next.activeRoute),
+    recommended: Boolean(existing.recommended || next.recommended),
+    available: Boolean(existing.available || next.available),
+    stale: Boolean(existing.stale || next.stale)
+  };
 }
 
 function uniqueModelOptions(options = []) {
-  const seen = new Set();
   const out = [];
+  const byId = new Map();
   for (const raw of options) {
-    const option = normalizeModelOption(raw);
-    if (!option || seen.has(option.id)) continue;
-    seen.add(option.id);
+    const normalized = normalizeModelOption(raw);
+    if (!normalized) continue;
+    const option = normalizeModelOptionMetadata(normalized);
+    if (byId.has(option.id)) {
+      const merged = mergeModelOptionMetadata(byId.get(option.id), option);
+      byId.set(option.id, merged);
+      out[out.findIndex((entry) => entry.id === option.id)] = merged;
+      continue;
+    }
+    byId.set(option.id, option);
     out.push(option);
   }
   return out;
@@ -44,17 +101,48 @@ function modelLimitForProvider(provider = {}) {
 
 function curatedModelOptions(provider = {}, taskType = "chat") {
   if (provider.kind === "code_cli") {
-    return uniqueModelOptions(codeCliModelChoices(provider));
+    return uniqueModelOptions(codeCliModelChoices(provider).map((choice) => ({
+      ...choice,
+      source: "curated",
+      recommended: true
+    })));
   }
-  return uniqueModelOptions(providerModelPresets(provider, taskType));
+  return uniqueModelOptions(providerModelPresets(provider, taskType).map((id) => ({
+    id,
+    label: id,
+    source: "curated",
+    recommended: true
+  })));
+}
+
+function discoveredModelOption(raw) {
+  const option = normalizeModelOption(raw);
+  if (!option) return null;
+  const sources = [...new Set([...modelOptionSources(option), "discovered"])];
+  return {
+    ...option,
+    sources,
+    source: "discovered",
+    available: true
+  };
 }
 
 function mergeModelOptions(provider = {}, taskType = "chat", discovered = []) {
   return uniqueModelOptions([
-    provider.defaultModel,
-    provider.model,
+    provider.defaultModel ? {
+      id: provider.defaultModel,
+      label: provider.defaultModel,
+      source: "configured_default",
+      configuredDefault: true
+    } : null,
+    provider.model ? {
+      id: provider.model,
+      label: provider.model,
+      source: "active_route",
+      activeRoute: true
+    } : null,
     ...curatedModelOptions(provider, taskType),
-    ...discovered
+    ...discovered.map(discoveredModelOption)
   ]);
 }
 
