@@ -5,7 +5,8 @@ import {
   callLLMDirectStream,
   callLLMDirectVision,
   buildPromptFor,
-  invalidateDesktopProbe
+  invalidateDesktopProbe,
+  hasStandaloneProviderConfig
 } from "./standalone-client.js";
 import {
   enrichContextForAction,
@@ -397,12 +398,12 @@ export async function runQuickAction({ action, selectionState, tab = null }, fet
   }
   const userCommand = CAPTURE_ACTIONS[action]?.userCommand ?? QUICK_ACTION_COMMANDS[action] ?? QUICK_ACTION_COMMANDS.summarize;
 
-  // Standalone short-circuit: if desktop isn't running AND the user has
-  // configured a direct API key, call the LLM directly from the extension.
+  // Standalone short-circuit: if desktop isn't running AND the provider is
+  // configured, call the LLM directly from the extension.
   const standaloneConfig = await loadStandaloneConfig();
   const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
   const desktopUp = await isDesktopAvailable(runtimeBase);
-  if (!desktopUp && standaloneConfig?.apiKey) {
+  if (!desktopUp && hasStandaloneProviderConfig(standaloneConfig)) {
     // UCA-161: summarize / explain get the full page outline + any in-selection
     // links fetched and inlined so the LLM has real material to ground on.
     let enrichmentMarkdown = "";
@@ -527,7 +528,7 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
   const standaloneConfig = await loadStandaloneConfig();
   const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
   const desktopUp = await isDesktopAvailable(runtimeBase);
-  if (!desktopUp && standaloneConfig?.apiKey) {
+  if (!desktopUp && hasStandaloneProviderConfig(standaloneConfig)) {
     // UCA-164: use the action the user actually picked from the context menu,
     // not a hardcoded "summarize". Right-click translate used to fall into
     // the summarize enrichment path (page outline + link fetches), adding
@@ -663,7 +664,7 @@ function buildStandaloneExplainPagePrompt(capture = {}) {
 }
 
 async function runStandaloneExplainPage({ capture, standaloneConfig, chromeApi = chrome }) {
-  if (!standaloneConfig?.apiKey) {
+  if (!hasStandaloneProviderConfig(standaloneConfig)) {
     return { ok: false, error: "desktop_unavailable" };
   }
   const { prompt, systemPrompt, contentKind } = buildStandaloneExplainPagePrompt(capture);
@@ -734,7 +735,7 @@ export async function dispatchExplainPage({
   const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
   const resolvedExplainUrl = pageExplainUrl ?? `${runtimeBase}/page/explain`;
   const desktopUp = await isDesktopAvailable(runtimeBase);
-  if (!desktopUp && standaloneConfig?.apiKey) {
+  if (!desktopUp && hasStandaloneProviderConfig(standaloneConfig)) {
     return runStandaloneExplainPage({ capture: payload, standaloneConfig, chromeApi });
   }
 
@@ -750,7 +751,7 @@ export async function dispatchExplainPage({
     return response.json();
   } catch (error) {
     invalidateDesktopProbe();
-    if (standaloneConfig?.apiKey) {
+    if (hasStandaloneProviderConfig(standaloneConfig)) {
       return runStandaloneExplainPage({ capture: payload, standaloneConfig, chromeApi });
     }
     return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
@@ -1063,7 +1064,7 @@ export function registerExtensionRuntime(chromeApi = chrome) {
           return;
         }
 
-        if (config?.apiKey) {
+        if (hasStandaloneProviderConfig(config)) {
           const systemPrompt = "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
           const messages = [
             { role: "system", content: systemPrompt },
@@ -1091,7 +1092,7 @@ export function registerExtensionRuntime(chromeApi = chrome) {
         const desktopUp = await isDesktopAvailable(runtimeBase);
         sendResponse({
           desktopAvailable: desktopUp,
-          standaloneReady: Boolean(config?.apiKey),
+          standaloneReady: hasStandaloneProviderConfig(config),
           provider: config?.provider ?? null,
           runtimeUrl: runtimeBase
         });
@@ -1187,8 +1188,8 @@ function registerChatStreamPort(chromeApi = chrome) {
           }
         });
       } else {
-        if (!config?.apiKey) {
-          port.postMessage({ type: "error", error: "no_api_key" });
+        if (!hasStandaloneProviderConfig(config)) {
+          port.postMessage({ type: "error", error: "no_provider_configured" });
           return;
         }
         result = await callLLMDirectStream({
@@ -1249,9 +1250,9 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
       // Webpage-origin quick actions should stay webpage-first. When the
       // extension has direct provider config, prefer it even if desktop is
       // running, so we don't produce duplicate overlay / notification UI.
-      if (!config?.apiKey) {
+      if (!hasStandaloneProviderConfig(config)) {
         if (!desktopUp) {
-          port.postMessage({ type: "error", error: "no_api_key" });
+          port.postMessage({ type: "error", error: "no_provider_configured" });
           return;
         }
         port.postMessage({ type: "start" });

@@ -2,6 +2,7 @@ import {
   DEFAULT_RUNTIME_URL,
   PROVIDER_CONFIGS,
   applyReasoningSelectionToBody,
+  isStandaloneProviderConfigured,
   normalizeStandaloneConfig
 } from "../shared/provider-catalog.js";
 
@@ -20,6 +21,10 @@ export async function loadStandaloneConfig(chromeApi = (typeof chrome !== "undef
   if (!chromeApi?.storage?.local?.get) return null;
   const data = await chromeApi.storage.local.get("ucaStandaloneConfig");
   return data.ucaStandaloneConfig ? normalizeStandaloneConfig(data.ucaStandaloneConfig) : null;
+}
+
+export function hasStandaloneProviderConfig(config = {}) {
+  return isStandaloneProviderConfigured(config);
 }
 
 // Probe the desktop runtime with a short timeout; cache the result for a few
@@ -584,13 +589,19 @@ async function callGeminiVision({ apiKey, model, prompt, imageUrl }) {
 
 export async function callLLMDirectVision({ config, prompt, imageUrl }) {
   const normalizedConfig = normalizeStandaloneConfig(config);
-  if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
   if (!imageUrl) return { ok: false, error: "no_image_url" };
   try {
-    if (normalizedConfig.provider === "anthropic") return await callAnthropicVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
-    if (normalizedConfig.provider === "gemini") return await callGeminiVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
+    if (normalizedConfig.provider === "anthropic") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      return await callAnthropicVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
+    }
+    if (normalizedConfig.provider === "gemini") {
+      if (!normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
+      return await callGeminiVision({ apiKey: normalizedConfig.apiKey, model: normalizedConfig.model, prompt, imageUrl });
+    }
     const entry = PROVIDER_CONFIGS[normalizedConfig.provider];
     if (entry && providerSupportsDirectVision(normalizedConfig.provider)) {
+      if (entry.authStyle !== "none" && !normalizedConfig?.apiKey) return { ok: false, error: "no_api_key" };
       return await callOpenAICompatVision({ ...entry, id: normalizedConfig.provider }, {
         apiKey: normalizedConfig.apiKey,
         model: normalizedConfig.model,

@@ -2,8 +2,10 @@ import {
   DEFAULT_RUNTIME_URL,
   PROVIDER_DEFAULT_MODELS,
   PROVIDER_GROUPS,
+  isStandaloneProviderConfigured,
   modelOptionsForProvider,
   normalizeStandaloneConfig,
+  providerRequiresApiKey,
   providerSupportsVision,
   reasoningOptionsForProvider
 } from "../shared/provider-catalog.js";
@@ -129,8 +131,9 @@ function renderStatus(config) {
   const extras = [];
   if (config.model) extras.push(config.model);
   if (config.reasoningEffort) extras.push(config.reasoningEffort);
-  statusKey.textContent = config.apiKey ? `${config.provider} · ${extras.join(" · ")}` : "未配置";
-  statusKey.className = `status-value ${config.apiKey ? "ok" : "warn"}`;
+  const configured = isStandaloneProviderConfigured(config);
+  statusKey.textContent = configured ? `${config.provider} · ${extras.join(" · ")}` : "未配置";
+  statusKey.className = `status-value ${configured ? "ok" : "warn"}`;
 }
 
 function renderConfig(config) {
@@ -211,7 +214,7 @@ saveBtn.addEventListener("click", async () => {
 testBtn.addEventListener("click", async () => {
   const config = readFormConfig();
   renderConfig(config);
-  if (!config.apiKey) {
+  if (providerRequiresApiKey(config.provider) && !config.apiKey) {
     saveStatus.textContent = "先填 API Key";
     return;
   }

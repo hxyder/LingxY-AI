@@ -343,9 +343,14 @@ const serviceWorkerJs = await readFile(path.join(repoRoot, "browser_ext", "backg
 assert.equal(serviceWorkerJs.includes("uca.overlay.openWithResult"), true);
 assert.equal(serviceWorkerJs.includes("uca.browser.contextSnapshot"), true);
 assert.equal(serviceWorkerJs.includes("RUNTIME_BROWSER_CONTEXT_URL"), true);
+assert.equal(serviceWorkerJs.includes("hasStandaloneProviderConfig"), true);
+assert.equal(serviceWorkerJs.includes("standaloneConfig?.apiKey"), false);
 assert.equal(manifest.commands["explain-page"].suggested_key.default, "Ctrl+Shift+E");
 const popupHtml = await readFile(path.join(repoRoot, "browser_ext", "popup", "index.html"), "utf8");
 assert.equal(popupHtml.includes("快捷键 Ctrl+Shift+E"), true);
+const optionsJs = await readFile(path.join(repoRoot, "browser_ext", "options", "index.js"), "utf8");
+assert.equal(optionsJs.includes("isStandaloneProviderConfigured"), true);
+assert.equal(optionsJs.includes("providerRequiresApiKey(config.provider)"), true);
 
 // Overlay renderer must handle priorResult by rendering history + conversation state
 const overlayJs = await readFile(path.join(repoRoot, "src", "desktop", "renderer", "overlay.js"), "utf8");

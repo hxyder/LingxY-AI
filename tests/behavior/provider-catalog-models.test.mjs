@@ -20,6 +20,7 @@ import {
   PROVIDER_DEFAULT_MODELS as BROWSER_PROVIDER_DEFAULT_MODELS,
   PROVIDER_MODEL_PRESETS as BROWSER_PROVIDER_MODEL_PRESETS,
   STALE_MODEL_IDS_BY_FAMILY as BROWSER_STALE_MODEL_IDS_BY_FAMILY,
+  isStandaloneProviderConfigured,
   normalizeStandaloneConfig as normalizeBrowserStandaloneConfig
 } from "../../browser_ext/shared/provider-catalog.js";
 import {
@@ -141,4 +142,10 @@ test("browser extension provider catalog mirrors current public model defaults",
   assert.equal(BROWSER_PROVIDER_MODEL_PRESETS.moonshot.includes("kimi-latest"), false);
   assert.equal(normalizeBrowserStandaloneConfig({ provider: "moonshot", model: "kimi-latest" }).model, "kimi-k2.6");
   assert.equal(normalizeBrowserStandaloneConfig({ provider: "mistral", model: "mistral-medium-3-5" }).model, "mistral-medium-3.5");
+});
+
+test("browser standalone readiness follows provider auth style instead of raw api key", () => {
+  assert.equal(isStandaloneProviderConfigured({ provider: "openai", apiKey: "" }), false);
+  assert.equal(isStandaloneProviderConfigured({ provider: "openai", apiKey: "sk-test" }), true);
+  assert.equal(isStandaloneProviderConfigured({ provider: "ollama", apiKey: "" }), true);
 });
