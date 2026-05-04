@@ -13,6 +13,7 @@ export function buildProject({
   name = "新项目",
   color = DEFAULT_PROJECT_COLOR,
   createdAt = Date.now(),
+  attachedFilePaths = [],
   metadata = {}
 } = {}) {
   return {
@@ -20,6 +21,7 @@ export function buildProject({
     name,
     color,
     createdAt,
+    attachedFilePaths: normalizeProjectAttachedFilePaths(attachedFilePaths),
     metadata
   };
 }
@@ -60,6 +62,46 @@ function clonePlain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
+export function normalizeProjectAttachedFilePaths(paths = []) {
+  const values = Array.isArray(paths) ? paths : [];
+  const seen = new Set();
+  const normalized = [];
+  for (const value of values) {
+    if (typeof value !== "string") continue;
+    const path = value.trim();
+    if (!path || seen.has(path)) continue;
+    seen.add(path);
+    normalized.push(path);
+  }
+  return normalized;
+}
+
+export function getProjectAttachedFilePaths(store, projectId) {
+  const id = typeof projectId === "string" ? projectId.trim() : "";
+  if (!id || !store || typeof store !== "object") return [];
+  const projects = Array.isArray(store.projects) ? store.projects : [];
+  const project = projects.find((item) => item?.id === id);
+  return normalizeProjectAttachedFilePaths(project?.attachedFilePaths);
+}
+
+export function setProjectAttachedFilePath(store, projectId, filePath, attached = true, options = {}) {
+  const id = typeof projectId === "string" ? projectId.trim() : "";
+  const path = typeof filePath === "string" ? filePath.trim() : "";
+  const next = normalizeProjectStore(store, options);
+  if (!id || !path) return next;
+  next.projects = next.projects.map((project) => {
+    if (project.id !== id) return project;
+    const paths = new Set(normalizeProjectAttachedFilePaths(project.attachedFilePaths));
+    if (attached) paths.add(path);
+    else paths.delete(path);
+    return {
+      ...project,
+      attachedFilePaths: [...paths]
+    };
+  });
+  return next;
+}
+
 export function normalizeProjectStore(store, {
   includeDefaultProject = true,
   withUpdatedAt = true,
@@ -71,6 +113,10 @@ export function normalizeProjectStore(store, {
 
   next.projects = Array.isArray(next.projects)
     ? next.projects.filter((project) => project?.id)
+      .map((project) => ({
+        ...project,
+        attachedFilePaths: normalizeProjectAttachedFilePaths(project.attachedFilePaths)
+      }))
     : [];
   next.conversations = Array.isArray(next.conversations)
     ? next.conversations.filter((conversation) => conversation?.id)
@@ -98,7 +144,15 @@ export function mergeProjectStores(localStore, remoteStore, options = {}) {
 
   const projects = new Map();
   for (const project of [...remote.projects, ...local.projects]) {
-    projects.set(project.id, { ...(projects.get(project.id) ?? {}), ...project });
+    const existing = projects.get(project.id) ?? {};
+    projects.set(project.id, {
+      ...existing,
+      ...project,
+      attachedFilePaths: normalizeProjectAttachedFilePaths([
+        ...(existing.attachedFilePaths ?? []),
+        ...(project.attachedFilePaths ?? [])
+      ])
+    });
   }
 
   const conversations = new Map();

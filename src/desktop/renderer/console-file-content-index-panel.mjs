@@ -1,4 +1,8 @@
 import { escapeHtml, formatDateTime } from "./shared-ui.mjs";
+import {
+  DEFAULT_PROJECT_ID,
+  setProjectAttachedFilePath
+} from "../../shared/project-store.mjs";
 
 const ACTOR_HEADER = "X-Lingxy-Desktop-Actor";
 
@@ -20,7 +24,25 @@ function recordMetaLine(record = {}) {
   return bits.join(" · ");
 }
 
-function renderRecord(record = {}) {
+function renderAttachControl(record = {}, project = null) {
+  if (!project?.id || project.id === DEFAULT_PROJECT_ID) return "";
+  const path = recordPath(record);
+  if (!path) return "";
+  const attachedPaths = Array.isArray(project.attachedFilePaths) ? project.attachedFilePaths : [];
+  const checked = attachedPaths.includes(path);
+  const label = `Attach to ${project.name || project.id}`;
+  return `
+    <label class="file-content-attach-control" title="${escapeHtml(label)}">
+      <input type="checkbox"
+             data-attach-file-content-path="${escapeHtml(path)}"
+             data-attach-file-content-project-id="${escapeHtml(project.id)}"
+             ${checked ? "checked" : ""}>
+      <span>${escapeHtml(label)}</span>
+    </label>
+  `;
+}
+
+function renderRecord(record = {}, { attachProject = null } = {}) {
   const path = recordPath(record);
   const meta = recordMetaLine(record);
   return `
@@ -31,7 +53,10 @@ function renderRecord(record = {}) {
           ${meta ? `<div class="muted" style="font-size:11px;margin-top:4px;">${escapeHtml(meta)}</div>` : ""}
           ${record.text_preview ? `<p class="muted" style="font-size:12px;margin:8px 0 0;line-height:1.45;">${escapeHtml(record.text_preview)}</p>` : ""}
         </div>
-        <button type="button" class="btn btn-sm btn-danger" data-delete-file-content-index="${escapeHtml(record.id)}">Delete index</button>
+        <div class="stack" style="align-items:flex-end;gap:6px;">
+          ${renderAttachControl(record, attachProject)}
+          <button type="button" class="btn btn-sm btn-danger" data-delete-file-content-index="${escapeHtml(record.id)}">Delete index</button>
+        </div>
       </div>
     </div>
   `;
@@ -42,6 +67,7 @@ export function createFileContentIndexPanel({
   getServiceBaseUrl,
   getProjects = () => [],
   getSelectedProjectId = () => null,
+  onProjectStoreUpdate = null,
   toast = () => {}
 } = {}) {
   const refreshBtn = root.querySelector("#fileContentIndexRefreshBtn");
@@ -81,6 +107,13 @@ export function createFileContentIndexPanel({
     if (value === "global") return "global";
     if (value.startsWith("project:")) return value.slice("project:".length);
     return null;
+  }
+
+  function selectedAttachProject() {
+    const projectId = String(selectedProjectQueryValue() ?? "").trim();
+    if (!projectId || projectId === DEFAULT_PROJECT_ID) return null;
+    const projects = Array.isArray(getProjects?.()) ? getProjects() : [];
+    return projects.find((project) => project?.id === projectId) ?? null;
   }
 
   function listPath() {
@@ -126,10 +159,20 @@ export function createFileContentIndexPanel({
       listEl.innerHTML = `<p class="muted" style="font-size:12px;">No indexed file content records.</p>`;
       return;
     }
-    listEl.innerHTML = records.map(renderRecord).join("");
+    const attachProject = selectedAttachProject();
+    listEl.innerHTML = records.map((record) => renderRecord(record, { attachProject })).join("");
     for (const button of listEl.querySelectorAll("[data-delete-file-content-index]")) {
       button.addEventListener("click", () => {
         void deleteRecord(button.dataset.deleteFileContentIndex);
+      });
+    }
+    for (const input of listEl.querySelectorAll("[data-attach-file-content-path]")) {
+      input.addEventListener("change", () => {
+        updateProjectAttachment({
+          projectId: input.dataset.attachFileContentProjectId,
+          path: input.dataset.attachFileContentPath,
+          attached: input.checked
+        });
       });
     }
   }
@@ -172,6 +215,20 @@ export function createFileContentIndexPanel({
     } catch (error) {
       setState(`Failed: ${error.message}`);
       toast(`删除索引失败：${error.message}`, { kind: "err" });
+    }
+  }
+
+  function updateProjectAttachment({ projectId, path, attached }) {
+    const id = String(projectId ?? "").trim();
+    const filePath = String(path ?? "").trim();
+    if (!id || !filePath || typeof onProjectStoreUpdate !== "function") return;
+    try {
+      onProjectStoreUpdate((store) => setProjectAttachedFilePath(store, id, filePath, attached));
+      render();
+      toast(attached ? "已加入项目文件范围" : "已移出项目文件范围", { kind: "ok" });
+    } catch (error) {
+      toast(`更新项目文件范围失败：${error.message}`, { kind: "err" });
+      render();
     }
   }
 

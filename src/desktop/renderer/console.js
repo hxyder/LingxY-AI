@@ -775,6 +775,13 @@ const fileContentIndexPanel = createFileContentIndexPanel({
   getServiceBaseUrl: () => state.serviceBaseUrl,
   getProjects: () => (state.projectStore ?? loadConsoleProjectStore()).projects ?? [],
   getSelectedProjectId: () => state.selectedProjectId ?? null,
+  onProjectStoreUpdate: (mutator) => {
+    const current = state.projectStore ?? loadConsoleProjectStore();
+    const next = typeof mutator === "function" ? mutator(current) : current;
+    saveConsoleProjectStore(next);
+    renderProjectsWorkspace({ skipFetch: true });
+    return next;
+  },
   toast: showConsoleToast
 });
 // Track the in-flight chat task so the composer can flip the Send

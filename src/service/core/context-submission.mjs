@@ -13,6 +13,9 @@ import { classifyContextSources } from "./intent/context-sources.mjs";
 import { pushBackgroundContextInPlace } from "./intent/background-contexts.mjs";
 import { EMBEDDING_NAMESPACES } from "../embeddings/store.mjs";
 import {
+  getProjectAttachedFilePaths
+} from "../../shared/project-store.mjs";
+import {
   createFileGenerationAttemptState,
   recordArtifactGenerated,
   recordFileGenerationToolEvent,
@@ -294,6 +297,17 @@ function fileContentProjectIdForTask(task = {}) {
   return normalized || null;
 }
 
+function fileContentAllowlistForProject(runtime, projectId) {
+  if (!projectId) return null;
+  try {
+    const store = runtime?.configStore?.load?.()?.ui?.projectStore;
+    const paths = getProjectAttachedFilePaths(store, projectId);
+    return paths.length > 0 ? new Set(paths) : null;
+  } catch {
+    return null;
+  }
+}
+
 function formatFileContentRecallLine(hit, index) {
   const meta = hit?.metadata ?? {};
   const pathLabel = meta.path ?? hit.id;
@@ -327,10 +341,11 @@ export async function computeFileContentRecallEntry({ runtime, userCommand, task
   if (hasCurrentFileInput(contextPacket)) return null;
   if (!needsFileReadFromStructure(task)) return null;
   const projectId = fileContentProjectIdForTask(task);
+  const pathAllowlist = fileContentAllowlistForProject(runtime, projectId);
   let results;
   try {
     results = await Promise.race([
-      store.search(userCommand, FILE_CONTENT_RECALL_K + 2, {
+      store.search(userCommand, pathAllowlist ? Math.max(FILE_CONTENT_RECALL_K + 2, 25) : FILE_CONTENT_RECALL_K + 2, {
         namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
         projectId
       }),
@@ -342,6 +357,7 @@ export async function computeFileContentRecallEntry({ runtime, userCommand, task
   const hits = (Array.isArray(results) ? results : [])
     .filter((hit) => hit?.id)
     .filter(passesFileContentRecallThreshold)
+    .filter((hit) => !pathAllowlist || pathAllowlist.has(hit?.metadata?.path))
     .slice(0, FILE_CONTENT_RECALL_K);
   if (hits.length === 0) return null;
   const lines = [

@@ -42,6 +42,12 @@ assert.match(indexPanel, /params\.set\("project_id",\s*projectId\)/,
   "Index panel must pass project_id when a project or global scope is selected");
 assert.match(indexPanel, /getProjects\s*=\s*\(\)\s*=>\s*\[\]/,
   "Index panel must accept a project list provider instead of reading global state directly");
+assert.match(indexPanel, /onProjectStoreUpdate\s*=\s*null/,
+  "Index panel must accept a project-store update callback for durable project file attachments");
+assert.match(indexPanel, /setProjectAttachedFilePath/,
+  "Index panel must update project attachedFilePaths through the shared project-store helper");
+assert.match(indexPanel, /data-attach-file-content-path/,
+  "Index panel must render an explicit per-file project attachment control");
 assert.match(indexPanel, /project:\$\{escapeHtml\(id\)\}/,
   "Index panel must render project-scoped filter options");
 assert.match(indexPanel, /\/history\/file-content\/\$\{encodeURIComponent\(id\)\}/,
@@ -52,6 +58,10 @@ assert.match(indexPanel, /confirm\(/,
   "Deleting an index record must be a user-confirmed action");
 assert.match(indexPanel, /does not delete the source file/,
   "Delete confirmation must distinguish index deletion from source-file deletion");
+assert.match(consoleJs, /onProjectStoreUpdate:\s*\(mutator\)\s*=>/,
+  "Console must wire project file attachment mutations back to the project store");
+assert.match(consoleJs, /saveConsoleProjectStore\(next\)/,
+  "Console attachment mutations must use the existing project-store persistence path");
 
 assert.doesNotMatch(overlayJs, /\/history\/file-content/,
   "Overlay must not manage file-content index records");

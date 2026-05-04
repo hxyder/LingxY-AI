@@ -754,6 +754,27 @@ label, .field-label {
   height: 30px;
   font-size: 9px;
 }
+.file-content-attach-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 180px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: right;
+  cursor: pointer;
+}
+.file-content-attach-control input {
+  flex: 0 0 auto;
+}
+.file-content-attach-control span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .project-artifact-main {
   min-width: 0;
   border: 0;
