@@ -82,8 +82,9 @@ export async function discoverExternalMcpCatalogEntries({
  */
 export async function refreshExternalMcpCatalogEntries({ runtime, policy, refresh = false } = {}) {
   if (!runtime?.connectorCatalog) return [];
+  const mcpRegistry = runtime.mcpRegistry ?? runtime.platform?.mcpServers ?? null;
   const entries = await discoverExternalMcpCatalogEntries({
-    mcpRegistry: runtime.mcpRegistry,
+    mcpRegistry,
     policy,
     refresh
   });

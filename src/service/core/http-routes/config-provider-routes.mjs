@@ -9,6 +9,7 @@ import { createImapClient } from "../../email/imap-client.mjs";
 import { getCredential } from "../../email/credential-store.mjs";
 import { maybeRunMorningDigest } from "../../email/digest.mjs";
 import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
+import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
 import {
   buildProviderOnboardingSuggestions,
   mergeProviderOnboardingSuggestions,
@@ -648,6 +649,9 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
         }
       }
     }));
+    try {
+      await refreshExternalMcpCatalogEntries({ runtime, refresh: true });
+    } catch { /* non-fatal; /connectors/catalog can refresh it later */ }
     sendJson(response, 200, { ok: true, server: entry });
     return true;
   }
@@ -667,6 +671,9 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
         }
       }
     }));
+    try {
+      await refreshExternalMcpCatalogEntries({ runtime, refresh: true });
+    } catch { /* non-fatal; /connectors/catalog can refresh it later */ }
     sendJson(response, 200, { ok: true, deleted: id });
     return true;
   }

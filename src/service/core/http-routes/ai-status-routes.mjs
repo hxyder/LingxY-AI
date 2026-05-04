@@ -1,5 +1,6 @@
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
+import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
 
 const WRITABLE_BUILTIN_MCP_SOURCES = new Set(["builtin", "builtin_mit", "lingxy_internal"]);
 
@@ -130,6 +131,9 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
       const { disconnectAll } = await import("../../ai/mcp/client-bridge.mjs");
       await disconnectAll();
     } catch { /* bridge may not be loaded yet */ }
+    try {
+      await refreshExternalMcpCatalogEntries({ runtime, refresh: true });
+    } catch { /* catalog refresh is best-effort; /connectors/catalog can rebuild it later */ }
     sendJson(response, 200, { ok: true, serverId, enabled: nextEnabled, source });
     return true;
   }
@@ -160,6 +164,9 @@ export async function tryHandleAiStatusRoute({ request, response, method, url, r
         }
       }
     });
+    try {
+      await refreshExternalMcpCatalogEntries({ runtime, refresh: true });
+    } catch { /* non-fatal; /connectors/catalog can refresh it later */ }
     sendJson(response, 200, { ok: true, serverId, key });
     return true;
   }

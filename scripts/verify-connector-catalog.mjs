@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { createConnectorCatalog } from "../src/service/connectors/core/catalog.mjs";
+import { refreshExternalMcpCatalogEntries } from "../src/service/connectors/core/mcp-catalog-bridge.mjs";
 import {
   CONNECTOR_CATALOG_GET_TOOL,
   CONNECTOR_CATALOG_SEARCH_TOOL
@@ -14,6 +16,7 @@ import { createPersistentRuntime } from "../src/service/core/persistent-runtime.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const runtimeDir = path.join(repoRoot, ".tmp", "verify-connector-catalog", crypto.randomUUID());
+const read = (p) => readFileSync(path.join(repoRoot, p), "utf8");
 
 const catalog = createConnectorCatalog();
 
@@ -73,6 +76,59 @@ const service = createServiceBootstrap();
 assert.ok(service.runtime.connectorCatalog.listTools({ provider: "google" }).length >= 6);
 assert.ok(service.runtime.actionToolRegistry.get("connector_catalog_search"));
 assert.ok(service.runtime.actionToolRegistry.get("connector_catalog_get"));
+
+const bridgeCatalog = createConnectorCatalog();
+bridgeCatalog.registerExternalTools([{
+  id: "external.stale_tool",
+  name: "stale_tool",
+  description: "Stale external MCP tool",
+  capability: "external_mcp",
+  risk: "low",
+  requiresConfirmation: false
+}]);
+assert.ok(bridgeCatalog.getTool("external.stale_tool"));
+await refreshExternalMcpCatalogEntries({
+  runtime: {
+    connectorCatalog: bridgeCatalog,
+    platform: {
+      mcpServers: {
+        list() {
+          return [{
+            id: "http-only-mcp",
+            displayName: "HTTP Only MCP",
+            transport: "http",
+            enabled: true
+          }];
+        }
+      }
+    }
+  }
+});
+assert.equal(
+  bridgeCatalog.getTool("external.stale_tool"),
+  null,
+  "external MCP catalog refresh must use platform.mcpServers and clear stale entries"
+);
+assert.match(
+  read("src/service/core/http-routes/connector-routes.mjs"),
+  /refreshExternalMcpCatalogEntries\(\{\s*runtime\s*\}/,
+  "connector catalog route must lazily refresh external MCP catalog entries"
+);
+assert.match(
+  read("src/service/core/http-routes/ai-status-routes.mjs"),
+  /refreshExternalMcpCatalogEntries\(\{\s*runtime,\s*refresh:\s*true\s*\}/,
+  "MCP enable/config routes must refresh external MCP catalog entries"
+);
+assert.match(
+  read("src/service/core/http-routes/config-provider-routes.mjs"),
+  /refreshExternalMcpCatalogEntries\(\{\s*runtime,\s*refresh:\s*true\s*\}/,
+  "MCP server save/delete routes must refresh external MCP catalog entries"
+);
+assert.match(
+  read("src/service/core/persistent-runtime.mjs"),
+  /disconnectMcpClients\(\)/,
+  "persistent runtime shutdown must close cached MCP clients"
+);
 
 await rm(runtimeDir, { recursive: true, force: true });
 const persistent = createPersistentRuntime({

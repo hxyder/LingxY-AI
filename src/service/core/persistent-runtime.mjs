@@ -8,6 +8,7 @@ import { createLocalSecretStore } from "../security/secret-store.mjs";
 import { createSqliteStore } from "./store/sqlite-store.mjs";
 import { createExplorerSelectionPipeServer, DEFAULT_EXPLORER_PIPE_NAME } from "./windows-pipe-server.mjs";
 import { getKimiRuntimeStatus, resolveKimiRuntime } from "../ai/code_cli/kimi/runtime.mjs";
+import { disconnectAll as disconnectMcpClients } from "../ai/mcp/client-bridge.mjs";
 import { createReminderWatcher } from "../scheduler/reminder-watcher.mjs";
 import { backfillConversationTitles } from "./task-runtime.mjs";
 
@@ -179,6 +180,7 @@ export function createPersistentRuntime({
         pipeServer.stop(),
         server.stop()
       ]);
+      await disconnectMcpClients();
       storeAdapter.close();
     },
     server,

@@ -22,6 +22,7 @@ import {
   upsertConnectedAccount
 } from "../../connectors/core/account-registry.mjs";
 import { submitConnectorWorkflowTask } from "../../connectors/core/workflow-submission.mjs";
+import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
 import { sendJson, sendHtml, readJsonBody } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 
@@ -50,6 +51,9 @@ export async function tryHandleConnectorRoute({ request, response, url, method, 
       sendJson(response, 503, { error: "connector_catalog_unavailable" });
       return true;
     }
+    try {
+      await refreshExternalMcpCatalogEntries({ runtime });
+    } catch { /* non-fatal: built-in connector catalog remains usable */ }
     const query = url.searchParams.get("q") ?? "";
     const provider = url.searchParams.get("provider") ?? undefined;
     const service = url.searchParams.get("service") ?? undefined;
