@@ -93,6 +93,7 @@ test("plain attached-file summary remains deterministic local", () => {
   assert.equal(spec.routing_degraded, false);
   assert.equal(spec.artifact.required, false);
   assert.ok(!spec.required_steps.includes("generate_artifact"));
+  assert.ok(spec.success_contract.required_policy_groups.includes("local_file_text_read"));
 });
 
 test("attached local input search does not inherit output artifact from the input file type", () => {

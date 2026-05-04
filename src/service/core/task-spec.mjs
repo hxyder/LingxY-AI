@@ -327,6 +327,13 @@ const NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE = new Set([
   "file_upload",
   "schedule_create"
 ]);
+const LOCAL_FILE_TEXT_READ_GROUP = "local_file_text_read";
+const LOCAL_FILE_SOURCE_SCOPES = new Set([
+  "uploaded_files",
+  "selection",
+  "current_context",
+  "local_project"
+]);
 const CLEAR_SIDE_EFFECT_POLICY_GROUPS = new Set([
   "email_send",
   "calendar_create",
@@ -334,7 +341,40 @@ const CLEAR_SIDE_EFFECT_POLICY_GROUPS = new Set([
   "schedule_create"
 ]);
 
-function requiredPolicyGroupsFromIntentRoute(decision = null, { text = "", contextPacket = null } = {}) {
+function contextHasLocalFileEvidence(contextPacket = {}) {
+  const sources = contextPacket?.context_sources ?? {};
+  return Boolean(
+    sources.uploaded_files
+    || (Array.isArray(contextPacket?.file_paths) && contextPacket.file_paths.length > 0)
+  );
+}
+
+function intentRouteRequiresLocalFileText(decision = null) {
+  if (!decision || typeof decision !== "object") return false;
+  if (decision.needs_user_files === true) return true;
+  if (Array.isArray(decision.needed_capabilities)
+      && decision.needed_capabilities.includes("file_read")) return true;
+  if (Array.isArray(decision.required_policy_groups)
+      && decision.required_policy_groups.includes(LOCAL_FILE_TEXT_READ_GROUP)) return true;
+  const sourceScope = `${decision.source_scope ?? ""}`.trim();
+  const sourceMode = `${decision.source_mode ?? ""}`.trim();
+  return LOCAL_FILE_SOURCE_SCOPES.has(sourceScope) && sourceMode === "provided_context";
+}
+
+function sourceSignalRequiresLocalFileText(signals = null) {
+  const sourceScope = signals?.source_scope;
+  const scopeValue = `${sourceScope?.hint?.value ?? ""}`.trim();
+  if (!sourceScope?.matched || !LOCAL_FILE_SOURCE_SCOPES.has(scopeValue)) return false;
+  return sourceScope.hint?.explicit_reference === true;
+}
+
+function shouldRequireLocalFileTextRead({ decision = null, signals = null, contextPacket = null } = {}) {
+  if (!contextHasLocalFileEvidence(contextPacket)) return false;
+  return intentRouteRequiresLocalFileText(decision)
+    || sourceSignalRequiresLocalFileText(signals);
+}
+
+function requiredPolicyGroupsFromIntentRoute(decision = null, { text = "", contextPacket = null, signals = null } = {}) {
   const groups = decision && typeof decision === "object" && Array.isArray(decision.required_policy_groups)
     ? decision.required_policy_groups
     : [];
@@ -352,7 +392,10 @@ function requiredPolicyGroupsFromIntentRoute(decision = null, { text = "", conte
       context_packet: contextPacket
     }
   });
-  return [...new Set([...groups, ...inferredGroups]
+  const localFileGroups = shouldRequireLocalFileTextRead({ decision, signals, contextPacket })
+    ? [LOCAL_FILE_TEXT_READ_GROUP]
+    : [];
+  return [...new Set([...groups, ...inferredGroups, ...localFileGroups]
     .filter((group) => NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE.has(group)))];
 }
 
@@ -899,7 +942,8 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
 
   const srRequiredPolicyGroups = requiredPolicyGroupsFromIntentRoute(srDecision, {
     text,
-    contextPacket: enrichedContext
+    contextPacket: enrichedContext,
+    signals
   });
   const synthesis = {
     user_goal: typeof srDecision?.user_goal === "string" && srDecision.user_goal.trim()

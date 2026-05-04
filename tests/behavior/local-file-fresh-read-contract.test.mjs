@@ -133,6 +133,43 @@ test("TaskSpec preserves SemanticRouter local_file_text_read contract", () => {
   assert.equal(spec.success_contract.tool_called, true);
 });
 
+test("TaskSpec requires fresh local read when the user references an attached document", () => {
+  const spec = createTaskSpec("总结这份文档", {
+    file_paths: ["E:/linxi/report.md"]
+  });
+
+  assert.ok(spec.success_contract.required_policy_groups.includes("local_file_text_read"));
+  assert.equal(spec.success_contract.tool_called, true);
+  assert.equal(spec.suggested_executor, "tool_using");
+});
+
+test("TaskSpec combines fresh local read and external web read for hybrid evidence routes", () => {
+  const spec = createTaskSpec("结合这份材料搜索外部机会", {
+    file_paths: ["E:/linxi/resume.pdf"],
+    semantic_router_decision: {
+      source_scope: "uploaded_files",
+      source_mode: "multi_source_research",
+      web_policy: "required",
+      output_kind: "conversation",
+      artifact_required: false,
+      executor: "tool_using",
+      research_depth: "multi_source",
+      needs_user_files: true,
+      needs_external_info: true,
+      needs_tool_use: true,
+      needed_capabilities: ["file_read", "external_web_read"],
+      required_policy_groups: ["external_web_read"],
+      confidence: 0.88,
+      reason: "The answer must combine the attached local material with current external evidence."
+    }
+  });
+
+  assert.ok(spec.success_contract.required_policy_groups.includes("local_file_text_read"));
+  assert.ok(spec.success_contract.required_policy_groups.includes("external_web_read"));
+  assert.equal(spec.tool_policy.policy_groups.external_web_read.mode, "required");
+  assert.equal(spec.success_contract.tool_called, true);
+});
+
 test("real read_file_text registry result satisfies the fresh-read contract", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "uca-local-contract-file-"));
   try {

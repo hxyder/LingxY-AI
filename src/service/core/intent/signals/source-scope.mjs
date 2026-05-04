@@ -36,6 +36,7 @@ export function detect(text, contextPacket) {
   const filePaths = Array.isArray(contextPacket?.file_paths) ? contextPacket.file_paths : [];
   const imagePaths = Array.isArray(contextPacket?.image_paths) ? contextPacket.image_paths : [];
   const selectionText = String(contextPacket?.text ?? "").trim();
+  const ctxMatch = CURRENT_CONTEXT_PATTERN.exec(text);
 
   if (filePaths.length > 0 || imagePaths.length > 0) {
     // P4-01 kind=fact: contextPacket arrays are runtime-observable state.
@@ -51,7 +52,11 @@ export function detect(text, contextPacket) {
         matched: filePaths[0] ?? imagePaths[0],
         reason: `contextPacket has ${filePaths.length} file(s) and ${imagePaths.length} image(s) attached`
       }],
-      hint: { value: "uploaded_files" }
+      hint: {
+        value: "uploaded_files",
+        explicit_reference: Boolean(ctxMatch),
+        reference_match: ctxMatch?.[0] ?? null
+      }
     };
   }
 
@@ -74,7 +79,6 @@ export function detect(text, contextPacket) {
     };
   }
 
-  const ctxMatch = CURRENT_CONTEXT_PATTERN.exec(text);
   if (ctxMatch) {
     // P4-01 kind=assumption: pronoun-style references ("这个", "这段")
     // are interpreted as "the current local context", but the same
