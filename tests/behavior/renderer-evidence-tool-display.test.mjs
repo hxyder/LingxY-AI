@@ -12,6 +12,10 @@ import {
   renderTimelineEntry
 } from "../../src/desktop/renderer/console-task-timeline.mjs";
 import {
+  buildCapabilityToolView,
+  renderCapabilityToolViewHtml
+} from "../../src/desktop/renderer/capability-tool-view.mjs";
+import {
   renderEvidenceSourcesHtml
 } from "../../src/desktop/renderer/evidence-sources-view.mjs";
 
@@ -63,6 +67,55 @@ test("task event summaries render user-facing tool labels and local-read guidanc
   assert.equal(guidanceSummary.title, "需要读取原文");
   assert.match(guidanceSummary.body, /深度文件夹读取/);
   assert.match(guidanceSummary.body, /候选 2 个/);
+});
+
+test("capability tool view renders interview progress without leaking draft internals", () => {
+  const view = buildCapabilityToolView("draft_capability", {
+    status: "ready_to_save",
+    draft: {
+      kind: "skill",
+      id: "inbox-helper",
+      name: "Inbox Helper",
+      purpose: "Triage incoming messages",
+      permissions: {
+        network: true,
+        filesystem: "read",
+        secrets: [{ name: "MAIL_TOKEN", value: "must-not-leak" }]
+      },
+      entry: {
+        markdown: "# Inbox Helper\n\n- huge prompt text should not render"
+      }
+    }
+  });
+  const html = renderCapabilityToolViewHtml(view);
+  assert.match(html, /能力草案已就绪/);
+  assert.match(html, /Inbox Helper/);
+  assert.match(html, /secrets: 1/);
+  assert.doesNotMatch(html, /must-not-leak|huge prompt text/);
+});
+
+test("timeline entry shows capability recovery card from metadata", () => {
+  const html = renderTimelineEntry({
+    event: "tool_call_completed",
+    ts: "2026-05-04T00:00:00.000Z",
+    data: {
+      tool_id: "draft_capability",
+      success: true,
+      observation: "Draft is ready",
+      metadata: {
+        status: "interviewing",
+        state: { kind: "mcp" },
+        missing_fields: ["config"],
+        next_question: {
+          prompt: "What command should start this MCP server?",
+          hint: "Use a command and args, not a secret literal."
+        }
+      }
+    }
+  });
+  assert.match(html, /能力访谈/);
+  assert.match(html, /What command should start this MCP server/);
+  assert.doesNotMatch(html, /tool_id/);
 });
 
 test("evidence source renderer surfaces fresh, deep, indexed, and shallow file coverage", () => {

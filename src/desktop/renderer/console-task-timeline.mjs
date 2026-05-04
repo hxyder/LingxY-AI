@@ -8,6 +8,10 @@ import {
 import {
   formatToolArgsPreview
 } from "./tool-display.mjs";
+import {
+  buildCapabilityToolView,
+  renderCapabilityToolViewHtml
+} from "./capability-tool-view.mjs";
 
 // Pull provider visibility info out of the task event stream so the
 // task detail panel can show the resolved provider and downgrade warning
@@ -79,7 +83,10 @@ export function renderTimelineEntry(event, context = {}) {
   const hasObservation = eventType === "tool_call_completed"
     && (typeof payload.observation === "string" || typeof payload.text === "string" || typeof payload.error === "string");
   const hasError = eventType === "failed" && typeof payload.message === "string" && payload.message.length > 0;
-  const hasRichDetail = hasToolArgs || hasObservation || hasError;
+  const capabilityView = eventType === "tool_call_completed"
+    ? buildCapabilityToolView(payload.tool_id ?? payload.tool ?? "", payload.metadata ?? {})
+    : null;
+  const hasRichDetail = hasToolArgs || hasObservation || hasError || Boolean(capabilityView);
 
   if (!hasRichDetail) {
     return `
@@ -111,6 +118,9 @@ export function renderTimelineEntry(event, context = {}) {
         : payload.error ?? "";
     const label = payload.success === false ? "error" : "observation";
     detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">${label}</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:var(--surface-soft);border-radius:6px;overflow:auto;white-space:pre-wrap;">${escapeHtml(raw)}</pre>`);
+  }
+  if (capabilityView) {
+    detailLines.push(renderCapabilityToolViewHtml(capabilityView));
   }
   if (hasError) {
     detailLines.push(`<div class="muted" style="font-size:11px;margin-top:6px;">failure</div><pre class="mono" style="font-size:11px;margin:4px 0 0;padding:8px;background:rgba(239,68,68,0.08);border-radius:6px;overflow:auto;white-space:pre-wrap;">${escapeHtml(payload.message)}</pre>`);

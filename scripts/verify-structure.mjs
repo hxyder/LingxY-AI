@@ -148,6 +148,7 @@ const requiredPaths = [
   "src/desktop/renderer/shared.css",
   "src/desktop/renderer/shared-ui.mjs",
   "src/desktop/renderer/capability-checklist.mjs",
+  "src/desktop/renderer/capability-tool-view.mjs",
   "src/desktop/renderer/model-picker-view-model.mjs",
   "src/desktop/renderer/mcp-missing-config.mjs",
   "src/desktop/renderer/conversation-cache.mjs",

@@ -84,6 +84,10 @@ import {
   formatToolDisplayName as formatConsoleToolDisplayName
 } from "./tool-display.mjs";
 import {
+  buildCapabilityToolView,
+  renderCapabilityToolViewHtml
+} from "./capability-tool-view.mjs";
+import {
   renderTaskKvGrid
 } from "./console-task-detail.mjs";
 import {
@@ -1527,6 +1531,9 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
 
   const argsPreview = formatConsoleToolArgsPreview(toolName, args);
   const outcomeText = outcome == null ? "" : compactText(outcome, 110);
+  const capabilityViewHtml = renderCapabilityToolViewHtml(
+    buildCapabilityToolView(toolName, options.metadata ?? {})
+  );
   const displayName = formatConsoleToolDisplayName(toolName);
   const time = new Date();
   const timeText = `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}:${String(time.getSeconds()).padStart(2, "0")}`;
@@ -1544,6 +1551,7 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
     ${outcomeText
       ? `<div class="ttc-outcome"><span class="ttc-outcome-arrow">→</span><span class="ttc-outcome-text">${escapeHtml(outcomeText)}</span></div>`
       : ""}
+    ${capabilityViewHtml}
   `;
   appendConsoleChatTimelineNode(card);
   consoleChatPin.maybeScrollToBottom();
@@ -1625,6 +1633,9 @@ function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) 
     : "DONE";
   const argsPreview = formatConsoleToolArgsPreview(toolName, args);
   const outcomeText = outcome == null ? "" : compactText(outcome, 110);
+  const capabilityViewHtml = renderCapabilityToolViewHtml(
+    buildCapabilityToolView(toolName, options.metadata ?? {})
+  );
 
   const nameEl = card.querySelector(".ttc-name");
   const statusEl = card.querySelector(".ttc-status");
@@ -1648,6 +1659,10 @@ function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) 
     }
   } else if (outcomeEl) {
     outcomeEl.remove();
+  }
+  card.querySelector(".capability-tool-view")?.remove();
+  if (capabilityViewHtml) {
+    card.insertAdjacentHTML("beforeend", capabilityViewHtml);
   }
   consoleChatPin.maybeScrollToBottom();
   return card;
@@ -1741,7 +1756,8 @@ function subscribeConsoleChatTask(taskId) {
         })?.[0] ?? null;
         completeConsoleChatToolCard(candidate, toolName, payload.args ?? {}, outcome, {
           state: payload.success === false ? "err" : "ok",
-          error: payload.success === false
+          error: payload.success === false,
+          metadata: payload.metadata ?? {}
         });
         consoleChatState.textContent = payload.success === false ? `${toolLabel}失败` : `${toolLabel}完成`;
         if (window.livePreview?.isFileGenTool?.(toolName)) {

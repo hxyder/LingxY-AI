@@ -3543,6 +3543,72 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.capability-tool-view {
+  margin-top: 4px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--panel) 84%, var(--panel-2));
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.capability-tool-view-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.capability-tool-view-head strong {
+  font-size: var(--fs-sm);
+  color: var(--ink);
+}
+.capability-tool-view-head span {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: var(--fw-semibold);
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--info-soft);
+  color: var(--info);
+  white-space: nowrap;
+}
+.capability-tool-view--ok .capability-tool-view-head span {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.capability-tool-view--warn .capability-tool-view-head span {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.capability-tool-view dl {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.capability-tool-view dl > div {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.capability-tool-view dt {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.capability-tool-view dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+.capability-tool-view p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
 
 /* Legacy class aliases kept so older callers still render something
    reasonable (pre-UCA-177 inline HTML used .tool-icon/.tool-name/.tool-args). */
