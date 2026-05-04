@@ -91,6 +91,8 @@ function mapArtifact(row) {
     artifact_id: row.artifact_id,
     task_id: row.task_id,
     conversation_id: row.conversation_id ?? null,
+    ...(row.project_id !== undefined ? { project_id: row.project_id ?? null } : {}),
+    ...(row.conversation_title !== undefined ? { conversation_title: row.conversation_title ?? null } : {}),
     path: row.path,
     mime_type: row.mime_type,
     kind: metadata.kind,
@@ -307,6 +309,18 @@ export function createSqliteStore({ dbPath }) {
         FROM artifacts
        WHERE conversation_id = @conversation_id
        ORDER BY created_at DESC
+       LIMIT @limit
+    `),
+    getArtifactsForProject: db.prepare(`
+      SELECT artifacts.artifact_id, artifacts.task_id, artifacts.conversation_id,
+             conversations.project_id, conversations.title AS conversation_title,
+             artifacts.path, artifacts.mime_type, artifacts.kind, artifacts.source,
+             artifacts.bytes, artifacts.sha256, artifacts.status, artifacts.created_at
+        FROM artifacts
+        JOIN conversations ON conversations.conversation_id = artifacts.conversation_id
+       WHERE conversations.project_id = @project_id
+         AND conversations.archived = 0
+       ORDER BY artifacts.created_at DESC
        LIMIT @limit
     `),
     upsertPendingApproval: db.prepare(`INSERT INTO pending_approvals (
@@ -669,6 +683,13 @@ export function createSqliteStore({ dbPath }) {
       if (!conversationId) return [];
       return statements.getArtifactsForConversation.all({
         conversation_id: conversationId,
+        limit: Math.max(1, Math.min(limit ?? 100, 500))
+      }).map(mapArtifact);
+    },
+    listProjectArtifacts({ projectId = null, limit = 100 } = {}) {
+      if (!projectId) return [];
+      return statements.getArtifactsForProject.all({
+        project_id: projectId,
         limit: Math.max(1, Math.min(limit ?? 100, 500))
       }).map(mapArtifact);
     },

@@ -668,14 +668,17 @@ label, .field-label {
    ========================================================================= */
 .projects-layout {
   display: grid;
-  /* Phase 2: dropped the third (Preview) column — Chat tab now owns
-     conversation viewing. Two-column layout keeps the project picker
-     on the left and the per-project conversations on the right. */
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr) minmax(260px, 0.9fr);
   gap: 12px;
-  max-width: 960px;
+  max-width: 1280px;
   height: calc(100vh - var(--top-h) - 96px);
   min-height: 480px;
+}
+@media (max-width: 1080px) {
+  .projects-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
 }
 .projects-col {
   display: flex;
@@ -708,6 +711,73 @@ label, .field-label {
   font-size: var(--fs-sm);
   color: var(--ink-2);
   line-height: 1.55;
+}
+.project-artifact-row {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  min-width: 0;
+}
+.project-artifact-row:hover {
+  border-color: var(--line-2);
+  background: var(--panel-2);
+}
+.project-artifact-row .artifact-icon {
+  width: 30px;
+  height: 30px;
+  font-size: 9px;
+}
+.project-artifact-main {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.project-artifact-name,
+.project-artifact-meta {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-artifact-name {
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+.project-artifact-main:hover .project-artifact-name {
+  color: var(--accent-strong);
+}
+.project-artifact-meta {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.project-artifact-action {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.project-artifact-action:hover {
+  background: var(--panel);
+  color: var(--ink);
 }
 .panel-section-body.compact { padding: 12px 18px; }
 .panel-foot {

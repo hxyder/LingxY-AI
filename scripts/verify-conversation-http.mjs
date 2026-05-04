@@ -232,6 +232,67 @@ await it("GET /conversation/{id}/artifacts: 404 when conversation is missing", a
   } finally { await srv.close(); }
 });
 
+await it("GET /projects/{id}/artifacts: aggregates conversation artifacts by project", async () => {
+  const runtime = makeRuntime();
+  runtime.store.insertConversation({ conversation_id: "c_project_art_a", project_id: "p_art", title: "A" });
+  runtime.store.insertConversation({ conversation_id: "c_project_art_b", project_id: "p_art", title: "B" });
+  runtime.store.insertConversation({ conversation_id: "c_project_art_other", project_id: "p_other", title: "Other" });
+  runtime.store.insertTask({
+    task_id: "task_project_art_a",
+    conversation_id: "c_project_art_a",
+    created_at: "2026-05-01T11:00:00.000Z",
+    updated_at: "2026-05-01T11:00:00.000Z",
+    status: "success",
+    user_command: "project file a"
+  });
+  runtime.store.insertTask({
+    task_id: "task_project_art_b",
+    conversation_id: "c_project_art_b",
+    created_at: "2026-05-01T11:01:00.000Z",
+    updated_at: "2026-05-01T11:01:00.000Z",
+    status: "success",
+    user_command: "project file b"
+  });
+  runtime.store.insertTask({
+    task_id: "task_project_art_other",
+    conversation_id: "c_project_art_other",
+    created_at: "2026-05-01T11:02:00.000Z",
+    updated_at: "2026-05-01T11:02:00.000Z",
+    status: "success",
+    user_command: "other file"
+  });
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_project_a",
+    task_id: "task_project_art_a",
+    path: "E:\\out\\project-a.docx",
+    created_at: "2026-05-01T11:03:00.000Z"
+  });
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_project_b",
+    task_id: "task_project_art_b",
+    path: "E:\\out\\project-b.pdf",
+    created_at: "2026-05-01T11:04:00.000Z"
+  });
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_project_other",
+    task_id: "task_project_art_other",
+    path: "E:\\out\\other-project.pdf",
+    created_at: "2026-05-01T11:05:00.000Z"
+  });
+  const srv = await startServer(runtime);
+  try {
+    const r = await fetchJson(`${srv.url}/projects/p_art/artifacts?limit=10`);
+    assert.equal(r.status, 200);
+    assert.equal(r.body.project_id, "p_art");
+    assert.deepEqual(r.body.artifacts.map((artifact) => artifact.path), [
+      "E:\\out\\project-b.pdf",
+      "E:\\out\\project-a.docx"
+    ]);
+    assert.deepEqual(r.body.artifacts.map((artifact) => artifact.conversation_title), ["B", "A"]);
+    assert.ok(r.body.artifacts.every((artifact) => artifact.project_id === "p_art"));
+  } finally { await srv.close(); }
+});
+
 await it("GET /conversation/{id}: 404 when missing", async () => {
   const runtime = makeRuntime();
   const srv = await startServer(runtime);

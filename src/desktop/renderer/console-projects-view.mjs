@@ -1,4 +1,7 @@
 import {
+  artifactExtension,
+  artifactIconClass,
+  artifactIconText,
   escapeHtml,
   formatDateTime
 } from "./shared-ui.mjs";
@@ -70,6 +73,34 @@ export function renderProjectConversationListHtml({
                stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M5 12h14"/><path d="M13 6l6 6-6 6"/>
           </svg>
+        </button>
+      </div>
+    `;
+  }).join("");
+}
+
+export function renderProjectArtifactListHtml({
+  artifacts = [],
+  labelForPath = (value) => value
+} = {}) {
+  const rows = Array.isArray(artifacts) ? artifacts.filter((artifact) => artifact?.path) : [];
+  if (rows.length === 0) {
+    return `<p class="muted" style="font-size:12px;">No files in this project.</p>`;
+  }
+  return rows.map((artifact) => {
+    const filePath = `${artifact.path ?? ""}`;
+    const ext = artifactExtension(filePath);
+    const label = labelForPath(filePath);
+    const conversationTitle = artifact.conversation_title || artifact.conversation_id || "";
+    return `
+      <div class="project-artifact-row">
+        <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
+        <button class="project-artifact-main" type="button" data-project-artifact-open="${escapeHtml(filePath)}" title="${escapeHtml(filePath)}">
+          <span class="project-artifact-name">${escapeHtml(label)}</span>
+          <span class="project-artifact-meta">${escapeHtml(conversationTitle)}${artifact.created_at ? ` · ${escapeHtml(formatDateTime(artifact.created_at))}` : ""}</span>
+        </button>
+        <button class="project-artifact-action" type="button" data-project-artifact-reveal="${escapeHtml(filePath)}" title="Reveal in folder" aria-label="Reveal ${escapeHtml(label)}">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>
         </button>
       </div>
     `;

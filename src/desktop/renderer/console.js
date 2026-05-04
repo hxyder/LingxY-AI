@@ -79,6 +79,7 @@ import {
 } from "./console-notes-model.mjs";
 import {
   formatProjectConversationPreview,
+  renderProjectArtifactListHtml,
   renderProjectConversationListHtml,
   renderProjectListHtml
 } from "./console-projects-view.mjs";
@@ -163,6 +164,8 @@ const projectCount = document.querySelector("#projectCount");
 const projectList = document.querySelector("#projectList");
 const projectConversationCount = document.querySelector("#projectConversationCount");
 const projectConversationList = document.querySelector("#projectConversationList");
+const projectArtifactCount = document.querySelector("#projectArtifactCount");
+const projectArtifactList = document.querySelector("#projectArtifactList");
 const projectConversationPreview = document.querySelector("#projectConversationPreview");
 const projectCreateForm = document.querySelector("#projectCreateForm");
 const projectNameInput = document.querySelector("#projectNameInput");
@@ -5775,6 +5778,9 @@ let projectBackendConversationStatus = "idle";
 let projectBackendConversations = [];
 let projectBackendConversationDetailId = null;
 let projectBackendConversationDetail = null;
+let projectBackendArtifactProjectId = null;
+let projectBackendArtifactStatus = "idle";
+let projectBackendArtifacts = [];
 
 function toProjectConversationSummary(conversation = {}) {
   const id = conversation.conversation_id ?? conversation.id ?? "";
@@ -5824,6 +5830,18 @@ function currentProjectConversations(store, projectId) {
   return legacyProjectConversations(store, projectId);
 }
 
+function currentProjectArtifacts(projectId) {
+  if (projectBackendArtifactProjectId === projectId && projectBackendArtifactStatus === "ready") {
+    return projectBackendArtifacts;
+  }
+  if (projectBackendArtifactProjectId === projectId
+      && projectBackendArtifactStatus === "loading"
+      && projectBackendArtifacts.length > 0) {
+    return projectBackendArtifacts;
+  }
+  return [];
+}
+
 async function refreshProjectConversationSummaries(projectId, { force = false } = {}) {
   if (!projectId) return;
   if (!force && projectBackendConversationProjectId === projectId && projectBackendConversationStatus === "ready") {
@@ -5839,10 +5857,35 @@ async function refreshProjectConversationSummaries(projectId, { force = false } 
   }
   try {
     const items = await fetchConversationsList({ limit: 200, archived: "0", projectId });
+    if (projectBackendConversationProjectId !== projectId) return;
     projectBackendConversations = items.map(toProjectConversationSummary);
     projectBackendConversationStatus = "ready";
   } catch {
+    if (projectBackendConversationProjectId !== projectId) return;
     projectBackendConversationStatus = "error";
+  }
+  renderProjectsWorkspace({ skipFetch: true });
+}
+
+async function refreshProjectArtifacts(projectId, { force = false } = {}) {
+  if (!projectId) return;
+  if (!force && projectBackendArtifactProjectId === projectId && projectBackendArtifactStatus === "ready") {
+    return;
+  }
+  const sameProject = projectBackendArtifactProjectId === projectId;
+  projectBackendArtifactProjectId = projectId;
+  projectBackendArtifactStatus = "loading";
+  if (!sameProject) {
+    projectBackendArtifacts = [];
+  }
+  try {
+    const payload = await fetchJson(`/projects/${encodeURIComponent(projectId)}/artifacts?limit=100`);
+    if (projectBackendArtifactProjectId !== projectId) return;
+    projectBackendArtifacts = Array.isArray(payload?.artifacts) ? payload.artifacts : [];
+    projectBackendArtifactStatus = "ready";
+  } catch {
+    if (projectBackendArtifactProjectId !== projectId) return;
+    projectBackendArtifactStatus = "error";
   }
   renderProjectsWorkspace({ skipFetch: true });
 }
@@ -5873,8 +5916,10 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
   const selectedProject = projects.find((project) => project.id === state.selectedProjectId) ?? projects[0] ?? null;
   if (selectedProject?.id && !skipFetch) {
     void refreshProjectConversationSummaries(selectedProject.id);
+    void refreshProjectArtifacts(selectedProject.id);
   }
   const conversations = currentProjectConversations(store, selectedProject?.id);
+  const projectArtifacts = currentProjectArtifacts(selectedProject?.id);
   if (!state.selectedProjectConversationId || !conversations.some((conversation) => conversation.id === state.selectedProjectConversationId)) {
     state.selectedProjectConversationId = conversations[0]?.id ?? null;
   }
@@ -5886,6 +5931,7 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
 
   projectCount.textContent = `${projects.length}`;
   projectConversationCount.textContent = `${conversations.length}`;
+  if (projectArtifactCount) projectArtifactCount.textContent = `${projectArtifacts.length}`;
   projectConversationPreview.textContent = projectBackendConversationStatus === "loading" && conversations.length === 0
     ? "Loading project conversations..."
     : formatProjectConversationPreview(selectedPreviewConversation);
@@ -5908,6 +5954,15 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
     conversations,
     selectedConversationId: selectedConversation?.id
   });
+  if (projectArtifactList) {
+    const artifactHtml = projectBackendArtifactStatus === "loading" && projectArtifacts.length === 0
+      ? `<p class="muted" style="font-size:12px;">Loading files...</p>`
+      : renderProjectArtifactListHtml({
+        artifacts: projectArtifacts,
+        labelForPath: formatArtifactLabel
+      });
+    setHtmlIfChanged(projectArtifactList, artifactHtml);
+  }
 
   for (const btn of projectList.querySelectorAll("[data-project-id]")) {
     btn.addEventListener("click", () => {
@@ -5915,6 +5970,9 @@ function renderProjectsWorkspace({ skipFetch = false } = {}) {
       state.selectedProjectConversationId = null;
       projectBackendConversationDetailId = null;
       projectBackendConversationDetail = null;
+      projectBackendArtifactProjectId = null;
+      projectBackendArtifactStatus = "idle";
+      projectBackendArtifacts = [];
       store.currentProjectId = state.selectedProjectId;
       store.currentConversationId = null;
       saveConsoleProjectStore(store);
@@ -6875,6 +6933,22 @@ consoleChatArtifacts?.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
     void openConversationArtifactPath(openBtn.dataset.conversationArtifactOpen ?? "");
+  }
+});
+projectArtifactList?.addEventListener("click", (event) => {
+  const target = event.target instanceof Element ? event.target : null;
+  const revealBtn = target?.closest?.("[data-project-artifact-reveal]");
+  if (revealBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    void revealConversationArtifactPath(revealBtn.dataset.projectArtifactReveal ?? "");
+    return;
+  }
+  const openBtn = target?.closest?.("[data-project-artifact-open]");
+  if (openBtn instanceof HTMLElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    void openConversationArtifactPath(openBtn.dataset.projectArtifactOpen ?? "");
   }
 });
 

@@ -148,6 +148,44 @@ runForBoth("appendArtifact preserves supplied stable artifact metadata", (store)
   );
 });
 
+runForBoth("listProjectArtifacts aggregates SQL-scoped conversation artifacts without task scans", (store) => {
+  store.insertConversation({ conversation_id: "conv_project_a", project_id: "project_a", title: "Project A1" });
+  store.insertConversation({ conversation_id: "conv_project_b", project_id: "project_a", title: "Project A2" });
+  store.insertConversation({ conversation_id: "conv_project_other", project_id: "project_b", title: "Other" });
+  store.insertTask(taskRecord("task_project_a", "conv_project_a", "2026-05-01T10:08:00.000Z"));
+  store.insertTask(taskRecord("task_project_b", "conv_project_b", "2026-05-01T10:09:00.000Z"));
+  store.insertTask(taskRecord("task_project_other", "conv_project_other", "2026-05-01T10:10:00.000Z"));
+  store.appendArtifact({
+    artifact_id: "artifact_project_a",
+    task_id: "task_project_a",
+    path: "E:\\out\\project-a.docx",
+    created_at: "2026-05-01T10:11:00.000Z"
+  });
+  store.appendArtifact({
+    artifact_id: "artifact_project_b",
+    task_id: "task_project_b",
+    path: "E:\\out\\project-b.pdf",
+    created_at: "2026-05-01T10:12:00.000Z"
+  });
+  store.appendArtifact({
+    artifact_id: "artifact_project_other",
+    task_id: "task_project_other",
+    path: "E:\\out\\project-other.pdf",
+    created_at: "2026-05-01T10:13:00.000Z"
+  });
+  assert.deepEqual(
+    store.listProjectArtifacts({ projectId: "project_a", limit: 10 }).map((artifact) => ({
+      path: artifact.path,
+      project_id: artifact.project_id,
+      conversation_title: artifact.conversation_title
+    })),
+    [
+      { path: "E:\\out\\project-b.pdf", project_id: "project_a", conversation_title: "Project A2" },
+      { path: "E:\\out\\project-a.docx", project_id: "project_a", conversation_title: "Project A1" }
+    ]
+  );
+});
+
 test("artifact store registerArtifact records file size, source, and status without hashing synchronously", async () => {
   const dir = mkdtempSync(path.join(tmpdir(), "artifact-metadata-"));
   try {

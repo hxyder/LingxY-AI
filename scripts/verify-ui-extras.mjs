@@ -225,6 +225,16 @@ assert.ok(/legacyProjectConversations/.test(consoleJs) && /projectStore\.convers
   "projects: legacy projectStore conversations must remain as fallback only");
 assert.ok(/conversation\.conversation_id/.test(consoleProjectsView) && /conversation\.message_count/.test(consoleProjectsView),
   "projects: project conversation renderer must accept SQL conversation summaries");
+assert.ok(/id="projectArtifactList"/.test(consoleHtml) && /id="projectArtifactCount"/.test(consoleHtml),
+  "projects: project tab must expose a scoped files column");
+assert.ok(/projectArtifactsMatch/.test(noteProjectConversationRoutes) && /listProjectArtifacts/.test(noteProjectConversationRoutes),
+  "projects: project artifact route must aggregate conversation artifacts");
+assert.ok(/function\s+refreshProjectArtifacts/.test(consoleJs) && /\/projects\/\$\{encodeURIComponent\(projectId\)\}\/artifacts/.test(consoleJs),
+  "projects: console must fetch project-scoped artifact index");
+assert.ok(/renderProjectArtifactListHtml/.test(consoleProjectsView) && /data-project-artifact-open/.test(consoleProjectsView),
+  "projects: renderer must show artifact open/reveal actions");
+assert.ok(/setHtmlIfChanged\(projectArtifactList/.test(consoleJs),
+  "projects: project artifact list must avoid unnecessary innerHTML churn");
 assert.ok(/updateSecurityState/.test(consoleJs) && /window\.ucaShell\.updateSecurityState/.test(consoleJs),
   "security settings: console must use desktop shell bridge");
 assert.ok(/updateBudget/.test(consoleJs) && /window\.ucaShell\.updateBudget/.test(consoleJs),

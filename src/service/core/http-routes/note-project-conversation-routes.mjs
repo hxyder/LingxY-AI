@@ -126,6 +126,50 @@ export async function tryHandleNoteProjectConversationRoute({
     return true;
   }
 
+  const projectArtifactsMatch = url.pathname.match(/^\/projects\/([^/]+)\/artifacts$/);
+  if (method === "GET" && projectArtifactsMatch) {
+    const projectId = projectArtifactsMatch[1];
+    if (typeof runtime.store?.listProjectArtifacts !== "function"
+        && (typeof runtime.store?.listConversations !== "function"
+          || typeof runtime.store?.getArtifactsForConversation !== "function")) {
+      sendJson(response, 404, { error: "project artifact store not available" });
+      return true;
+    }
+    const limitParam = parseInt(url.searchParams.get("limit") ?? "100", 10);
+    const limit = Number.isFinite(limitParam) ? Math.max(1, Math.min(limitParam, 500)) : 100;
+    const conversationLimitParam = parseInt(url.searchParams.get("conversation_limit") ?? "200", 10);
+    const conversationLimit = Number.isFinite(conversationLimitParam)
+      ? Math.max(1, Math.min(conversationLimitParam, 500))
+      : 200;
+    if (typeof runtime.store.listProjectArtifacts === "function") {
+      const artifacts = runtime.store.listProjectArtifacts({ projectId, limit });
+      sendJson(response, 200, { project_id: projectId, artifacts });
+      return true;
+    }
+    const conversations = runtime.store.listConversations({
+      projectId,
+      limit: conversationLimit,
+      archived: 0
+    });
+    const artifacts = [];
+    for (const conversation of conversations) {
+      const conversationArtifacts = runtime.store.getArtifactsForConversation(conversation.conversation_id, { limit });
+      for (const artifact of conversationArtifacts) {
+        artifacts.push({
+          ...artifact,
+          project_id: projectId,
+          conversation_title: conversation.title ?? null
+        });
+      }
+    }
+    artifacts.sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
+    sendJson(response, 200, {
+      project_id: projectId,
+      artifacts: artifacts.slice(0, limit)
+    });
+    return true;
+  }
+
   if (method === "GET" && url.pathname === "/conversations") {
     if (typeof runtime.store?.listConversations !== "function") {
       sendJson(response, 200, { conversations: [] });

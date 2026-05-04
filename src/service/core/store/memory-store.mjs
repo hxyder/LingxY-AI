@@ -110,6 +110,24 @@ export function createInMemoryStoreScaffold() {
         .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
         .slice(0, Math.max(1, Math.min(limit ?? 100, 500)));
     },
+    listProjectArtifacts({ projectId = null, limit = 100 } = {}) {
+      if (!projectId) return [];
+      const conversationById = new Map([...this.conversations.values()]
+        .filter((conversation) => conversation.project_id === projectId && !conversation.archived)
+        .map((conversation) => [conversation.conversation_id, conversation]));
+      return this.artifacts
+        .filter((artifact) => conversationById.has(artifact.conversation_id))
+        .map((artifact) => {
+          const conversation = conversationById.get(artifact.conversation_id);
+          return {
+            ...artifact,
+            project_id: projectId,
+            conversation_title: conversation?.title ?? null
+          };
+        })
+        .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")))
+        .slice(0, Math.max(1, Math.min(limit ?? 100, 500)));
+    },
     appendPendingApproval(approval) {
       this.pendingApprovals.push(approval);
       return approval;
