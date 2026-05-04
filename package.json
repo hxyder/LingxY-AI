@@ -189,11 +189,9 @@
     "dist": "node scripts/run-electron-builder.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.1",
-    "@modelcontextprotocol/server-brave-search": "^0.6.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@modelcontextprotocol/server-filesystem": "^2026.1.14",
     "@modelcontextprotocol/server-memory": "^2026.1.26",
-    "@modelcontextprotocol/server-puppeteer": "^2025.5.12",
     "@mozilla/readability": "^0.6.0",
     "better-sqlite3": "^11.10.0",
     "docx": "^9.6.1",

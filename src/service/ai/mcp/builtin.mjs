@@ -31,6 +31,7 @@ function makeStdioServer({ id, displayName, packageName, binFile, args = [], env
       return enabled && available;
     },
     async getStatus() {
+      const packageMissing = !available;
       return {
         id,
         displayName,
@@ -42,7 +43,9 @@ function makeStdioServer({ id, displayName, packageName, binFile, args = [], env
         args: binPath ? [binPath, ...args] : args,
         env,
         source,
-        detail: !available ? "package_not_found" : !enabled ? "disabled" : "ready"
+        detail: packageMissing ? "package_not_found" : !enabled ? "disabled" : "ready",
+        installSource: packageMissing ? packageName : null,
+        installRequired: packageMissing
       };
     },
     async listResources() {

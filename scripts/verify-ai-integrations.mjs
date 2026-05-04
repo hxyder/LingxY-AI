@@ -95,6 +95,14 @@ try {
   assert.equal(config.paths.skillsDir.endsWith(path.join("integrations", "skills")), true);
   assert.equal(config.paths.codeCliDir.endsWith(path.join("integrations", "code_cli")), true);
 
+  const initialMcpPayload = await fetch(`${listening.baseUrl}/ai/mcp`).then((response) => response.json());
+  const packageBackedMissing = (initialMcpPayload.servers ?? [])
+    .filter((server) => server.detail === "package_not_found");
+  assert.ok(
+    packageBackedMissing.every((server) => typeof server.installSource === "string" && server.installSource.length > 0),
+    "package-backed builtin MCP servers missing from the app bundle must expose installSource for sandbox install"
+  );
+
   const providerSave = await postJson(listening.baseUrl, "/config/providers", {
     id: "mock-openai",
     name: "Mock OpenAI",

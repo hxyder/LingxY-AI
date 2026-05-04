@@ -155,6 +155,10 @@ assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/note\/transcribe/.test(overlayJs),
 
 // ── MCP explicit install button ────────────────────────────────────────
 assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");
+assert.ok(/data-mcp-install-source-click/.test(consoleJs),
+  "mcp install: missing package-source install handoff for unavailable builtin MCP packages");
+assert.ok(/installRequired/.test(consoleJs) && /installSource/.test(consoleJs),
+  "mcp install: console must route package-missing MCP servers into the sandbox install flow");
 assert.ok(/mcp-install-btn/.test(consoleJs) && /mcp-install-btn/.test(sharedCss),
   "mcp install: .mcp-install-btn class or CSS missing");
 assert.ok(/id="mcpServerTestBtn"/.test(consoleHtml), "mcp preflight: test button missing");

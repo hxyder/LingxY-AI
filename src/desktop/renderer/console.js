@@ -8870,7 +8870,8 @@ function renderConnectorsMcpServers(servers) {
     const statusClass = sourceView.readOnly ? sourceView.className : status.className;
     const hasCfg = !!meta.configKey;
     const needsConfig = hasCfg && !s.enabled;
-    const canInstall = Boolean(s.configured || s.available || needsConfig);
+    const packageMissing = Boolean(s.installRequired && s.installSource);
+    const canInstall = Boolean(s.configured || s.available || needsConfig || packageMissing);
     const installed = s.available && s.enabled;
     const cardId = `mcp-card-${s.id}`;
     const logoClass = meta.logoClass ?? "imap";
@@ -8898,6 +8899,12 @@ function renderConnectorsMcpServers(servers) {
            <input type="checkbox" checked data-mcp-install="${escapeHtml(s.id)}" data-mcp-enabled="false">
            <span class="toggle-track"></span>
          </label>`
+      : packageMissing
+        ? `<button class="btn btn-sm btn-primary mcp-install-btn"
+                   data-mcp-install-source-click="${escapeHtml(s.installSource)}"
+                   title="使用隔离安装流程安装此 MCP 包">
+             安装包
+           </button>`
       : canInstall
         ? `<button class="btn btn-sm btn-primary mcp-install-btn"
                    data-mcp-install-click="${escapeHtml(s.id)}"
@@ -9008,6 +9015,21 @@ function renderConnectorsMcpServers(servers) {
         btn.textContent = original;
         showConsoleToast(`安装失败：${error?.message ?? error}`, { kind: "err" });
       }
+    });
+  });
+
+  connectorsMcpList.querySelectorAll("[data-mcp-install-source-click]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const source = btn.dataset.mcpInstallSourceClick;
+      if (!source || !mcpInstallSource) return;
+      mcpInstallSource.value = source;
+      mcpInstallSource.scrollIntoView({ behavior: "smooth", block: "center" });
+      mcpInstallSource.focus();
+      if (mcpInstallPlanSummary) {
+        mcpInstallPlanSummary.hidden = true;
+        mcpInstallPlanSummary.textContent = "";
+      }
+      setPreflightState(mcpInstallPlanState, "pending", "Review source, then run Plan.");
     });
   });
 
