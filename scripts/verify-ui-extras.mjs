@@ -194,6 +194,16 @@ assert.ok(/data-trash-restore-task/.test(consoleJs) && /restoreTaskViaShell/.tes
   "trash: task restore must use desktop shell bridge");
 assert.ok(/data-trash-restore-note/.test(consoleJs) && /restoreNoteViaShell/.test(consoleJs),
   "trash: note restore must use desktop shell bridge");
+assert.ok(/function\s+shouldRenderWorkspaceSlice/.test(consoleJs) && /workspaceRenderSignatures/.test(consoleJs),
+  "console refresh: renderer must gate repeated workspace renders by data signature");
+assert.ok(/async function refreshWorkspace\(options\s*=\s*\{\}\)/.test(consoleJs) && /options\.mode\s*\?\?\s*["']full["']/.test(consoleJs),
+  "console refresh: refreshWorkspace must support full/background modes");
+assert.ok(/setInterval\(\(\)\s*=>\s*void refreshWorkspace\(\{\s*mode:\s*["']background["']\s*\}\),\s*6000\)/.test(consoleJs),
+  "console refresh: polling must use background mode instead of full re-render");
+assert.ok(/renderWorkspaceAfterFetch\(\{\s*mode:\s*["']active["']\s*,\s*activeTabId:\s*tabId\s*\}\)/.test(consoleJs),
+  "console refresh: tab switch must render the active workspace slice from cached state");
+assert.ok(!/connWebhooksTitle|Coming soon[\s\S]{0,80}Webhook/.test(consoleHtml),
+  "connectors: visible Webhooks placeholder must not ship without a working surface");
 assert.ok(/exportBundle:\s*["']uca:export-bundle["']/.test(desktopManifest),
   "data export: IPC channel missing from desktop manifest");
 assert.ok(/diagnosticBundle:\s*["']uca:diagnostic-bundle["']/.test(desktopManifest),

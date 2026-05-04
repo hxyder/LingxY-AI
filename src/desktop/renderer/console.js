@@ -575,6 +575,10 @@ function switchTab(tabId) {
   if (tabId === "notes" && typeof initNotesIfNeeded === "function") initNotesIfNeeded();
   // UCA-107: persist the selection so the app boots back to where you left.
   try { localStorage.setItem("lingxy.view", tabId); } catch { /* sandbox: ignore */ }
+  // Background polling only refreshes the visible workspace slice. When the
+  // user switches tabs, render that slice from the latest cached state without
+  // waiting for the next network poll.
+  void renderWorkspaceAfterFetch({ mode: "active", activeTabId: tabId });
 }
 
 tabButtons.forEach((btn) => {
@@ -782,6 +786,7 @@ const completedScheduleRunTaskIds = new Set();
 const surfacedApprovalPopupIds = new Set();
 const surfacingApprovalPopupIds = new Set();
 let editingSkillPath = null;
+const workspaceRenderSignatures = new Map();
 
 /* ═══════════════════════════════════════════════
    HELPERS
@@ -2224,8 +2229,15 @@ function renderChatSidebar() {
 }
 
 async function refreshChatSidebar({ force = false } = {}) {
-  await ensureConversationsCache({ force });
-  renderChatSidebar();
+  const items = await ensureConversationsCache({ force });
+  const activeId = consoleActiveConversation?.conversation_id ?? null;
+  if (shouldRenderWorkspaceSlice("chat.sidebar", {
+    items,
+    searchTerm: chatSidebarSearchTerm,
+    activeConversationId: activeId
+  })) {
+    renderChatSidebar();
+  }
 }
 
 function formatDateTime(value) {
@@ -2234,6 +2246,28 @@ function formatDateTime(value) {
 
 function formatMoney(value) {
   return `$${Number(value ?? 0).toFixed(2)}`;
+}
+
+function currentConsoleTabId() {
+  const activePanel = document.querySelector(".tab-panel.active");
+  return activePanel?.id?.replace(/^panel-/, "") || "tasks";
+}
+
+function stableWorkspaceSignature(value) {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return String(value ?? "");
+  }
+}
+
+function shouldRenderWorkspaceSlice(key, value, { force = false } = {}) {
+  const signature = stableWorkspaceSignature(value);
+  if (!force && workspaceRenderSignatures.get(key) === signature) {
+    return false;
+  }
+  workspaceRenderSignatures.set(key, signature);
+  return true;
 }
 
 const CODE_EXTENSIONS = new Set([
@@ -5538,7 +5572,85 @@ document.getElementById("saveFeatureTogglesBtn")?.addEventListener("click", asyn
    WORKSPACE REFRESH
    ═══════════════════════════════════════════════ */
 
-async function refreshWorkspace() {
+async function renderWorkspaceAfterFetch({ mode = "full", activeTabId = currentConsoleTabId() } = {}) {
+  const full = mode === "full";
+  const isActive = (tabId) => full || activeTabId === tabId;
+  const renderIfChanged = (key, value, render) => {
+    if (shouldRenderWorkspaceSlice(key, value, { force: full })) render();
+  };
+
+  renderIfChanged("summary", {
+    tasks: state.workspace.tasks,
+    budget: state.workspace.budget
+  }, renderSummary);
+
+  if (isActive("tasks")) {
+    renderIfChanged("tasks.onboarding", {
+      health: state.workspace.health,
+      providers: state.workspace.providers,
+      codeCliAdapters: state.workspace.codeCliAdapters,
+      tasks: state.workspace.tasks
+    }, renderOnboarding);
+    renderIfChanged("tasks.integrations", {
+      health: state.workspace.health,
+      providers: state.workspace.providers,
+      codeCliAdapters: state.workspace.codeCliAdapters,
+      mcpServers: state.workspace.mcpServers,
+      emailAccounts: state.workspace.emailAccounts
+    }, renderIntegrations);
+    renderIfChanged("tasks.list", {
+      tasks: state.workspace.tasks,
+      taskFilter: state.taskFilter,
+      taskSearch: state.taskSearch,
+      taskDateFilter: state.taskDateFilter,
+      taskSourceFilter: state.taskSourceFilter,
+      selectedTaskId: state.selectedTaskId
+    }, renderTasks);
+  }
+
+  if (isActive("schedules")) {
+    renderIfChanged("schedules.approvals", state.workspace.approvals, renderApprovals);
+    renderIfChanged("schedules.list", state.workspace.schedules, renderSchedules);
+  }
+
+  if (isActive("settings")) {
+    renderIfChanged("settings.templates", state.workspace.templates, renderTemplates);
+    renderIfChanged("settings.dag", state.workspace.dagExecutions, renderDagExecutions);
+    renderIfChanged("settings.budget", state.workspace.budget, renderBudget);
+    renderIfChanged("settings.privacy", state.workspace.security, renderPrivacy);
+    renderIfChanged("settings.audit", state.workspace.audit, renderAudit);
+    renderIfChanged("settings.mcp", state.workspace.mcpServers, renderMcpServers);
+    renderIfChanged("settings.skills", {
+      skills: state.workspace.skills,
+      skillRegistries: state.workspace.skillRegistries
+    }, renderSkillRegistries);
+    renderIfChanged("settings.codeCli", state.workspace.codeCliAdapters, renderCodeCliAdapters);
+    renderIfChanged("settings.emailAccounts", state.workspace.emailAccounts, renderEmailAccounts);
+    renderIfChanged("settings.emailDigest", state.workspace.emailDigestSettings, renderEmailDigestSettings);
+    renderIfChanged("settings.features", state.workspace.health?.config?.features ?? {}, renderFeatureToggles);
+    renderIfChanged("settings.output", state.workspace.health?.config?.output ?? {}, renderOutputDir);
+    void renderPreviewSettings();
+    void renderFailedTasks();
+    void renderTrashList();
+  }
+
+  if (isActive("projects")) {
+    renderIfChanged("projects.local", state.projectStore, renderProjectsWorkspace);
+    void syncConsoleProjectStoreFromService({ rerender: true });
+  }
+
+  if (isActive("files")) {
+    void loadAllArtifacts();
+  }
+
+  const followUps = [];
+  if (isActive("tasks")) followUps.push(refreshTaskDetail());
+  if (isActive("settings")) followUps.push(loadTemplatePreview(state.selectedTemplateId));
+  if (followUps.length > 0) await Promise.all(followUps);
+}
+
+async function refreshWorkspace(options = {}) {
+  const mode = options.mode ?? "full";
   try {
     const shell = await window.ucaShell.getShellStatus();
     state.serviceBaseUrl = shell.serviceBaseUrl ?? state.serviceBaseUrl;
@@ -5585,33 +5697,7 @@ async function refreshWorkspace() {
 
     setRuntimeBadge(true, `Connected · ${state.serviceBaseUrl}`);
     updateTopRuntimePill();
-    renderSummary();
-    renderOnboarding();
-    renderIntegrations();
-    // providers + routing loaded separately via loadProvidersAndRouting()
-    renderTasks();
-    renderApprovals();
-    renderSchedules();
-    renderTemplates();
-    renderDagExecutions();
-    renderBudget();
-    // UCA-121: renderHistory() retired
-    renderProjectsWorkspace();
-    void syncConsoleProjectStoreFromService({ rerender: true });
-    renderPrivacy();
-    renderAudit();
-    void renderPreviewSettings();
-    void renderFailedTasks();
-    void renderTrashList();
-    renderMcpServers();
-    renderSkillRegistries();
-    renderCodeCliAdapters();
-    renderEmailAccounts();
-    renderEmailDigestSettings();
-    renderFeatureToggles();
-    renderOutputDir();
-    void loadAllArtifacts();
-    await Promise.all([refreshTaskDetail(), loadTemplatePreview(state.selectedTemplateId)]);
+    await renderWorkspaceAfterFetch({ mode });
   } catch (error) {
     setRuntimeBadge(false, `Unavailable · ${error.message}`);
   }
@@ -7411,7 +7497,7 @@ void refreshOfficeAddinSetupStatus();
 // directly into Chat tab (saved view) doesn't see "no conversations
 // yet" placeholder while their actual list loads in the background.
 void refreshChatSidebar();
-setInterval(() => void refreshWorkspace(), 6000);
+setInterval(() => void refreshWorkspace({ mode: "background" }), 6000);
 // Refresh sidebar periodically too — picks up conversations created
 // in the overlay while console is open. Cheap (just hits /conversations
 // and re-renders if the cache changed).

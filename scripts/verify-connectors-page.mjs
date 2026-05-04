@@ -30,7 +30,7 @@ for (const cls of [
   );
 }
 
-// ── Connectors tab has 5 panel-sections with the expected titles ───────
+// ── Connectors tab has panel-sections with the expected working titles ─
 // Isolate the connectors panel markup. The panel itself is a <section>
 // with nested <section class="panel-section">s, so we slice until the
 // next sibling top-level tab panel rather than trying to count.
@@ -40,13 +40,13 @@ const nextPanelStart = consoleHtml.indexOf('id="panel-settings"', connStart);
 assert.ok(nextPanelStart > connStart, "panel-settings not found after connectors");
 const panelMarkup = consoleHtml.slice(connStart, nextPanelStart);
 
-// UCA-121: Morning digest moved from Connectors to Schedules. 4 cards
-// remain on the Connectors tab now.
+// UCA-121: Morning digest moved from Connectors to Schedules.
+// UCA-190: Remove the Webhooks "Coming soon" placeholder; only working
+// connector surfaces should appear here.
 const expectedTitles = [
   { id: "connAccountsTitle", text: "Accounts" },
   { id: "connEmailTitle", text: "Email inbox" },
-  { id: "connMcpTitle", text: "MCP tools" },
-  { id: "connWebhooksTitle", text: "Webhooks" }
+  { id: "connMcpTitle", text: "MCP tools" }
 ];
 for (const { id, text } of expectedTitles) {
   assert.ok(
@@ -63,12 +63,14 @@ for (const { id } of expectedTitles) {
 }
 
 // ── bilingual Chinese suffixes present on each section title ───────────
-for (const zh of ["账户连接", "邮箱", "工具服务器", "Webhook 集成"]) {
+for (const zh of ["账户连接", "邮箱", "工具服务器"]) {
   assert.ok(
     panelMarkup.includes(zh),
     `connectors section missing Chinese suffix "${zh}"`
   );
 }
+assert.ok(!/connWebhooksTitle|Webhook 集成|Coming soon/.test(panelMarkup),
+  "connectors must not ship a Webhooks placeholder without a working surface");
 
 // ── existing IDs preserved (panel renderers depend on them) ────────────
 // UCA-121: connDigest* ids moved to the Schedules panel; verified there
