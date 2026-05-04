@@ -18,11 +18,12 @@
  *     done on real numbers, not anecdote.
  *
  * Scope:
- *   - Reads ONLY `metadata.results[].url` (from web_search_fetch) and
- *     `metadata.url` (from fetch_url_content). Other tools' result
- *     observations may also embed URLs, but regex-extracting them
- *     from free-form text is noisy enough to corrupt the count, so
- *     we accept the slight under-count.
+ *   - Reads structured evidence fields only: `metadata.results[].url`
+ *     from web_search_fetch, `metadata.url` from fetch_url_content, and
+ *     local paths from read_file_text / read_folder_text / vision_analyze.
+ *     Other tools' result observations may also embed URLs or paths, but
+ *     regex-extracting them from free-form text is noisy enough to corrupt
+ *     the count, so we accept the slight under-count.
  *   - Skips entries with `success === false` (failed fetches don't
  *     contribute evidence).
  *
@@ -92,6 +93,10 @@ const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
  * @property {number}   distinct_domain_count - count of unique registrable domains
  * @property {string[]} domains               - sorted list of unique domains
  * @property {string[]} urls                  - sorted list of unique URLs
+ * @property {number}   local_source_count    - count of unique local files/images read
+ * @property {string[]} local_sources         - sorted list of local file/image paths
+ * @property {number}   blended_source_count  - web URL count + local source count
+ * @property {number}   blended_origin_count  - distinct web domains + distinct local sources
  * @property {boolean}  is_single_roundup     - P4-RQ D2: true when distinct_domain_count===1
  *                                              AND any URL/title matches a roundup/digest
  *                                              marker. Validator uses this to emit the more
@@ -108,11 +113,14 @@ const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
 export function extractEvidence(transcript) {
   const urls = new Set();
   const domains = new Set();
+  const localSources = new Set();
   const titles = [];   // collected for roundup detection
   if (!Array.isArray(transcript)) {
     return {
       source_count: 0, distinct_domain_count: 0,
       domains: [], urls: [],
+      local_source_count: 0, local_sources: [],
+      blended_source_count: 0, blended_origin_count: 0,
       is_single_roundup: false, roundup_markers: []
     };
   }
@@ -132,6 +140,21 @@ export function extractEvidence(transcript) {
     } else if (entry.tool === "fetch_url_content") {
       const u = typeof entry.metadata?.url === "string" ? entry.metadata.url : null;
       if (u) urls.add(u);
+    } else if (entry.tool === "read_file_text") {
+      addLocalSource(localSources, entry.metadata?.path);
+    } else if (entry.tool === "read_folder_text") {
+      const files = entry.metadata?.files;
+      if (Array.isArray(files)) {
+        for (const file of files) {
+          if (file?.success !== false) addLocalSource(localSources, file?.path);
+        }
+      }
+      if (localSources.size === 0) addLocalSource(localSources, entry.metadata?.path);
+    } else if (entry.tool === "vision_analyze") {
+      const imagePaths = entry.metadata?.image_paths;
+      if (Array.isArray(imagePaths)) {
+        for (const imagePath of imagePaths) addLocalSource(localSources, imagePath);
+      }
     }
   }
   for (const u of urls) {
@@ -156,9 +179,20 @@ export function extractEvidence(transcript) {
     distinct_domain_count: domains.size,
     domains: [...domains].sort(),
     urls: [...urls].sort(),
+    local_source_count: localSources.size,
+    local_sources: [...localSources].sort(),
+    blended_source_count: urls.size + localSources.size,
+    blended_origin_count: domains.size + localSources.size,
     is_single_roundup: isSingleRoundup,
     roundup_markers: matchedMarkers
   };
+}
+
+function addLocalSource(out, value) {
+  if (typeof value !== "string") return;
+  const normalized = value.trim();
+  if (!normalized) return;
+  out.add(normalized);
 }
 
 /**

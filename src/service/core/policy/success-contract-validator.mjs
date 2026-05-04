@@ -648,22 +648,31 @@ function checkResearchCoverage(taskSpec, transcript, requiredGroups) {
   // active profile name so the user sees the real bar
   // ("deep_research requires ..." vs "multi_source_research requires ...").
   const profileLabel = rq.profile;
-  if (evidence.is_single_roundup && rq.single_source_digest_satisfies === false) {
+  const sourceCount = evidence.blended_source_count ?? evidence.source_count;
+  const originCount = evidence.blended_origin_count ?? evidence.distinct_domain_count;
+  const originLabel = evidence.local_source_count > 0
+    ? [
+      `${evidence.distinct_domain_count} web domain(s)`,
+      `${evidence.local_source_count} local source(s)`
+    ].join(" + ")
+    : `${evidence.distinct_domain_count} web domain(s)`;
+
+  if (evidence.is_single_roundup && evidence.local_source_count === 0 && rq.single_source_digest_satisfies === false) {
     violations.push({
       kind: "external_web_read_single_roundup_only",
       message: `${profileLabel} does not accept a single-publisher roundup/digest as evidence (domain=${evidence.domains.join(", ")}, markers matched: ${evidence.roundup_markers.join(", ")}).`
     });
-  } else if (evidence.distinct_domain_count < rq.min_distinct_domains) {
+  } else if (originCount < rq.min_distinct_domains) {
     violations.push({
       kind: "external_web_read_single_domain_only",
-      message: `${profileLabel} requires at least ${rq.min_distinct_domains} distinct publishers; got ${evidence.distinct_domain_count} (${evidence.domains.join(", ") || "none"}).`
+      message: `${profileLabel} requires at least ${rq.min_distinct_domains} distinct evidence origins; got ${originCount} (${originLabel}; web domains=${evidence.domains.join(", ") || "none"}; local sources=${evidence.local_sources?.join(", ") || "none"}).`
     });
   }
 
-  if (evidence.source_count < rq.min_sources) {
+  if (sourceCount < rq.min_sources) {
     violations.push({
       kind: "external_web_read_insufficient_sources",
-      message: `${profileLabel} requires at least ${rq.min_sources} distinct sources; got ${evidence.source_count}.`
+      message: `${profileLabel} requires at least ${rq.min_sources} distinct sources; got ${sourceCount} (${evidence.source_count} web + ${evidence.local_source_count ?? 0} local).`
     });
   }
 

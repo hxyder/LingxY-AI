@@ -193,6 +193,34 @@ it("validateSuccessContract: deep_research + 5 sources / 3 domains → satisfied
     `should be satisfied at 5/3; violations=${JSON.stringify(violations)}`);
 });
 
+it("validateSuccessContract: local files + web source satisfy blended multi-source coverage", () => {
+  const taskSpec = {
+    success_contract: { required_policy_groups: ["external_web_read"] },
+    research_quality: {
+      profile: "multi_source_research",
+      min_sources: 3,
+      min_distinct_domains: 2,
+      single_source_digest_satisfies: false
+    }
+  };
+  const transcript = [
+    { type: "tool_result", tool: "read_folder_text", success: true,
+      observation: "Read two local project notes.",
+      metadata: { files: [
+        { path: "E:\\docs\\resume.md", success: true },
+        { path: "E:\\docs\\portfolio.md", success: true }
+      ] } },
+    { type: "tool_result", tool: "web_search_fetch", success: true,
+      observation: "Found one current job market source.",
+      metadata: { results: [
+        { url: "https://reuters.com/jobs-market", title: "Job market" }
+      ] } }
+  ];
+  const { satisfied, violations } = validateSuccessContract(taskSpec, transcript);
+  assert.equal(satisfied, true,
+    `2 local files + 1 web source should satisfy 3-source / 2-origin blended coverage; got ${JSON.stringify(violations)}`);
+});
+
 it("validateSuccessContract: deep_research + roundup page on single domain → roundup violation", () => {
   const taskSpec = {
     success_contract: { required_policy_groups: ["external_web_read"] },

@@ -83,6 +83,9 @@ it("extract: empty transcript → 0 / 0", () => {
   const ev = extractEvidence([]);
   assert.equal(ev.source_count, 0);
   assert.equal(ev.distinct_domain_count, 0);
+  assert.equal(ev.local_source_count, 0);
+  assert.equal(ev.blended_source_count, 0);
+  assert.equal(ev.blended_origin_count, 0);
   assert.deepEqual(ev.domains, []);
   assert.deepEqual(ev.urls, []);
 });
@@ -162,6 +165,39 @@ it("extract: mixed web_search_fetch + fetch_url_content cross-tool dedupe", () =
   const ev = extractEvidence(transcript);
   assert.equal(ev.source_count, 3);          // 3 distinct URLs (nature dedup)
   assert.equal(ev.distinct_domain_count, 3); // nature.com / reuters.com / wired.com
+});
+
+it("extract: local file reads contribute blended evidence without changing web counts", () => {
+  const transcript = [
+    { type: "tool_result", tool: "read_file_text", success: true, metadata: {
+      path: "E:\\docs\\resume.pdf"
+    } },
+    { type: "tool_result", tool: "read_folder_text", success: true, metadata: {
+      files: [
+        { path: "E:\\docs\\notes\\a.md", success: true },
+        { path: "E:\\docs\\notes\\b.md", success: true },
+        { path: "E:\\docs\\notes\\failed.md", success: false }
+      ]
+    } },
+    { type: "tool_result", tool: "vision_analyze", success: true, metadata: {
+      image_paths: ["E:\\docs\\diagram.png"]
+    } },
+    { type: "tool_result", tool: "web_search_fetch", success: true, metadata: {
+      results: [{ url: "https://reuters.com/article", title: "Article" }]
+    } }
+  ];
+  const ev = extractEvidence(transcript);
+  assert.equal(ev.source_count, 1);
+  assert.equal(ev.distinct_domain_count, 1);
+  assert.equal(ev.local_source_count, 4);
+  assert.equal(ev.blended_source_count, 5);
+  assert.equal(ev.blended_origin_count, 5);
+  assert.deepEqual(ev.local_sources, [
+    "E:\\docs\\diagram.png",
+    "E:\\docs\\notes\\a.md",
+    "E:\\docs\\notes\\b.md",
+    "E:\\docs\\resume.pdf"
+  ]);
 });
 
 // ── registrableDomain heuristic ──────────────────────────────────────
