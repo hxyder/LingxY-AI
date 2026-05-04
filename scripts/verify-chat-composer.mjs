@@ -42,6 +42,8 @@ assert.match(css, /\.chat-tool-card\s*\{/, "shared.css missing .chat-tool-card")
 assert.match(css, /\.console-chat-toolbar\s*\{/, "shared.css missing .console-chat-toolbar");
 assert.match(css, /\.console-chat-attachments\s*\{/, "shared.css missing .console-chat-attachments");
 assert.match(css, /\.console-chat-toolbar\s+\.model-chip\s*\{/, "shared.css missing toolbar model-chip rule");
+assert.match(css, /\.model-picker-popover\s*\{/, "shared.css missing conversation model picker popover");
+assert.match(css, /\.model-picker-provider\.active/, "shared.css missing active provider state for model picker");
 assert.match(css, /\.chat-msg-bubble\s+a,\s*\n\.console-chat-message-body\s+a\s*\{/, "shared.css must style clickable chat links");
 
 // User / AI / system distinction styled.
@@ -54,8 +56,8 @@ assert.match(js, /wrapper\.className = `chat-msg \$\{role\}`/, "appendConsoleCha
 assert.match(js, /chat-msg-av/, "appendConsoleChatMessage must create .chat-msg-av");
 assert.match(js, /chat-msg-bubble/, "appendConsoleChatMessage must create .chat-msg-bubble");
 assert.match(js, /function renderConsoleChatBubbleContent\(/, "console.js must render linkified chat bubble content");
-assert.match(js, /CHAT_MARKDOWN_LINK_RE/, "console.js must linkify markdown links in chat output");
-assert.match(js, /CHAT_BARE_URL_RE/, "console.js must linkify bare URLs in chat output");
+assert.match(js, /renderChatMessageBlocks/, "console.js must delegate markdown/link rendering to chat-blocks");
+assert.match(read("src/desktop/renderer/chat-blocks.mjs"), /renderChatMessageBlocksHtml/, "chat-blocks must own rich chat block rendering");
 assert.match(js, /consoleChatMessages\?\.addEventListener\("click"/, "console.js must delegate chat link clicks");
 assert.match(js, /window\.ucaShell\.openExternal\(href\)/, "chat link click must open external links via shell");
 
@@ -63,6 +65,11 @@ assert.match(js, /window\.ucaShell\.openExternal\(href\)/, "chat link click must
 assert.match(js, /function appendConsoleChatToolCall\(/, "console.js missing appendConsoleChatToolCall");
 assert.match(js, /function renderChatAttachments\(/, "console.js missing renderChatAttachments");
 assert.match(js, /function updateChatModelChip\(/, "console.js missing updateChatModelChip");
+assert.match(js, /function renderConsoleModelPicker\(/, "console.js missing model picker renderer");
+assert.match(js, /model-picker-popover/, "console.js must render model picker as app UI");
+assert.match(js, /opensAbove[\s\S]{0,260}translateY\(-100%\)/, "model picker must open above the bottom composer when needed");
+assert.match(js, /mergeOnboardingSuggestionsIntoWorkspace\(saved\.onboarding\.suggestions\)/, "model picker must surface capability gap suggestions from the backend");
+assert.doesNotMatch(js, /选择当前对话使用的模型 Provider|输入当前对话使用的模型 ID/, "conversation model picker must not use browser prompt dialogs");
 assert.match(js, /consoleChatAttachBtn\?\.addEventListener\("click"/, "console.js must wire attach button click");
 assert.match(js, /consoleChatVoiceBtn\?\.addEventListener\("click"/, "console.js must wire voice button click");
 assert.match(js, /consoleChatAttachInput\?\.addEventListener\("change"/, "console.js must wire attach input change");

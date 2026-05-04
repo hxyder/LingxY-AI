@@ -202,10 +202,10 @@ assert.equal(overlayHtml.includes("sendBtn"), true);
 
 const dockHtml = await read("src/desktop/renderer/dock.html");
 assert.equal(dockHtml.includes("dockButton"), true);
-assert.equal(/html\s*\{[\s\S]{0,160}position:\s*fixed;[\s\S]{0,120}width:\s*100%/.test(dockHtml), true);
+assert.equal(/html\s*\{[\s\S]{0,180}position:\s*fixed;[\s\S]{0,120}width:\s*48px/.test(dockHtml), true);
 assert.equal(/body\s*\{[\s\S]{0,520}overflow:\s*hidden/.test(dockHtml), true);
 assert.equal(dockHtml.includes("html::-webkit-scrollbar"), true);
-assert.equal(/#dockButton\s*\{[\s\S]{0,180}position:\s*fixed;[\s\S]{0,160}width:\s*100%/.test(dockHtml), true);
+assert.equal(/#dockButton\s*\{[\s\S]{0,180}position:\s*fixed;[\s\S]{0,160}width:\s*48px/.test(dockHtml), true);
 
 // UCA-182 Phase 8: notification.html retired. In-app toasts now render
 // inside the popup-card window (popup-card.html); assert that file

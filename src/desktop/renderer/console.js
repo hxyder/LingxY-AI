@@ -10303,18 +10303,176 @@ async function ensureConsoleConversationForModelOverride() {
   return consoleActiveConversation;
 }
 
-function parseProviderChoice(input, providers) {
-  const text = `${input ?? ""}`.trim();
-  if (!text) return null;
-  const byIndex = Number.parseInt(text, 10);
-  if (Number.isInteger(byIndex) && byIndex >= 1 && byIndex <= providers.length) {
-    return providers[byIndex - 1];
+let consoleModelPickerEl = null;
+
+function mergeOnboardingSuggestionsIntoWorkspace(suggestions = []) {
+  const pending = state.workspace.onboarding?.pendingSuggestions ?? [];
+  const byId = new Map(pending.map((suggestion) => [suggestion.id, suggestion]));
+  for (const suggestion of suggestions) {
+    if (suggestion?.id && suggestion.status !== "dismissed" && suggestion.status !== "completed") {
+      byId.set(suggestion.id, {
+        ...byId.get(suggestion.id),
+        ...suggestion,
+        status: suggestion.status ?? "pending"
+      });
+    }
   }
-  const lower = text.toLowerCase();
-  return providers.find((provider) =>
-    `${provider.id ?? ""}`.toLowerCase() === lower
-    || `${provider.name ?? ""}`.toLowerCase() === lower
-  ) ?? null;
+  state.workspace.onboarding = {
+    ...(state.workspace.onboarding ?? {}),
+    pendingSuggestions: [...byId.values()].sort((a, b) => `${a.id}`.localeCompare(`${b.id}`))
+  };
+  renderProviderOnboardingSuggestions();
+}
+
+function closeConsoleModelPicker() {
+  consoleModelPickerEl?.remove();
+  consoleModelPickerEl = null;
+  document.removeEventListener("mousedown", handleConsoleModelPickerOutside, true);
+  document.removeEventListener("keydown", handleConsoleModelPickerKeydown, true);
+}
+
+function handleConsoleModelPickerOutside(event) {
+  if (!consoleModelPickerEl) return;
+  if (consoleModelPickerEl.contains(event.target) || consoleChatModelChip?.contains(event.target)) return;
+  closeConsoleModelPicker();
+}
+
+function handleConsoleModelPickerKeydown(event) {
+  if (event.key === "Escape" && consoleModelPickerEl) {
+    event.preventDefault();
+    closeConsoleModelPicker();
+  }
+}
+
+function positionConsoleModelPicker(popover) {
+  const rect = consoleChatModelChip?.getBoundingClientRect?.();
+  if (!rect) return;
+  const width = Math.min(520, Math.max(360, window.innerWidth - 24));
+  const left = Math.max(12, Math.min(window.innerWidth - width - 12, rect.left + window.scrollX));
+  const opensAbove = rect.top > window.innerHeight * 0.55;
+  const top = opensAbove
+    ? rect.top + window.scrollY - 8
+    : rect.bottom + window.scrollY + 8;
+  popover.style.width = `${width}px`;
+  popover.style.left = `${left}px`;
+  popover.style.top = `${top}px`;
+  popover.style.transform = opensAbove ? "translateY(-100%)" : "none";
+}
+
+async function renderConsoleModelPicker(popover, providers, selectedProviderId) {
+  const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? providers[0];
+  if (!selectedProvider) return;
+  await loadProviderModelOptions(selectedProvider.id);
+  const currentOverride = consoleActiveConversation?.metadata?.modelOverride ?? null;
+  const currentModel = currentOverride?.providerId === selectedProvider.id
+    ? currentOverride?.model ?? ""
+    : "";
+  const choices = modelChoicesForProvider(selectedProvider, "chat");
+  const fallbackModel = currentModel || defaultModelForProvider(selectedProvider, "chat") || choices[0]?.id || "";
+  const reasonOptions = reasoningEffortOptions(selectedProvider, fallbackModel);
+  const currentReasoning = currentOverride?.providerId === selectedProvider.id
+    ? currentOverride?.reasoningEffort ?? ""
+    : "";
+
+  popover.innerHTML = `
+    <div class="model-picker-head">
+      <div>
+        <div class="model-picker-title">Conversation model</div>
+        <div class="model-picker-sub">Applies only to the current chat</div>
+      </div>
+      <button class="icon-btn" type="button" data-model-picker-close aria-label="Close">×</button>
+    </div>
+    <div class="model-picker-body">
+      <div class="model-picker-providers" role="listbox" aria-label="Providers">
+        ${providers.map((provider) => `
+          <button type="button" class="model-picker-provider ${provider.id === selectedProvider.id ? "active" : ""}" data-model-provider="${escapeHtml(provider.id)}">
+            <span>${escapeHtml(provider.name ?? provider.id)}</span>
+            <small>${escapeHtml(provider.kind ?? "provider")}</small>
+          </button>
+        `).join("")}
+      </div>
+      <div class="model-picker-panel">
+        <label class="model-picker-field">
+          <span>Model</span>
+          <input data-model-custom-input type="text" value="${escapeHtml(fallbackModel)}" placeholder="${selectedProvider.kind === "code_cli" ? "(CLI default)" : "model id"}">
+        </label>
+        <div class="model-picker-list" aria-label="Model suggestions">
+          ${choices.slice(0, 16).map((choice) => `
+            <button type="button" class="model-picker-choice ${choice.id === fallbackModel ? "active" : ""}" data-model-choice="${escapeHtml(choice.id)}">
+              <span>${escapeHtml(choice.label || choice.id || "(CLI default)")}</span>
+            </button>
+          `).join("") || `<div class="model-picker-empty">No published list available. Enter a model ID manually.</div>`}
+        </div>
+        <label class="model-picker-field ${reasonOptions.length ? "" : "is-hidden"}">
+          <span>Reasoning effort</span>
+          <select data-model-reasoning>
+            <option value="">Provider default</option>
+            ${reasonOptions.map((option) => `
+              <option value="${escapeHtml(option.id)}" ${option.id === currentReasoning ? "selected" : ""}>${escapeHtml(option.label ?? option.id)}</option>
+            `).join("")}
+          </select>
+        </label>
+        <div class="model-picker-actions">
+          <button class="btn btn-ghost btn-sm" type="button" data-model-clear>Use global routing</button>
+          <button class="btn btn-primary btn-sm" type="button" data-model-save>Use for this chat</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  popover.querySelector("[data-model-picker-close]")?.addEventListener("click", closeConsoleModelPicker);
+  popover.querySelectorAll("[data-model-provider]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      void renderConsoleModelPicker(popover, providers, btn.dataset.modelProvider);
+    });
+  });
+  popover.querySelectorAll("[data-model-choice]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const input = popover.querySelector("[data-model-custom-input]");
+      if (input) input.value = btn.dataset.modelChoice ?? "";
+      popover.querySelectorAll(".model-picker-choice").forEach((entry) => entry.classList.remove("active"));
+      btn.classList.add("active");
+    });
+  });
+  popover.querySelector("[data-model-clear]")?.addEventListener("click", async () => {
+    const conv = await ensureConsoleConversationForModelOverride();
+    const cleared = await fetchJson(
+      `/conversation/${encodeURIComponent(conv.conversation_id)}/model`,
+      desktopMutationOptions("DELETE")
+    );
+    consoleActiveConversation = cacheEnsureBackendFields({
+      ...consoleActiveConversation,
+      metadata: cleared.conversation?.metadata ?? {}
+    });
+    updateChatModelChip();
+    closeConsoleModelPicker();
+    showConsoleToast("已恢复为全局 Task Routing。", { kind: "success" });
+  });
+  popover.querySelector("[data-model-save]")?.addEventListener("click", async () => {
+    const input = popover.querySelector("[data-model-custom-input]");
+    const reasoningSelect = popover.querySelector("[data-model-reasoning]");
+    const model = `${input?.value ?? ""}`.trim();
+    const conv = await ensureConsoleConversationForModelOverride();
+    const saved = await fetchJson(
+      `/conversation/${encodeURIComponent(conv.conversation_id)}/model`,
+      desktopJsonOptions("PATCH", {
+        providerId: selectedProvider.id,
+        model,
+        mode: "default",
+        reasoningEffort: `${reasoningSelect?.value ?? ""}`.trim() || undefined
+      })
+    );
+    consoleActiveConversation = cacheEnsureBackendFields({
+      ...consoleActiveConversation,
+      metadata: saved.conversation?.metadata ?? { modelOverride: saved.modelOverride ?? null }
+    });
+    if (saved.onboarding?.suggestions?.length) {
+      mergeOnboardingSuggestionsIntoWorkspace(saved.onboarding.suggestions);
+    }
+    updateChatModelChip();
+    closeConsoleModelPicker();
+    showConsoleToast("当前对话的模型已切换。", { kind: "success" });
+  });
 }
 
 async function chooseConsoleConversationModel() {
@@ -10329,63 +10487,21 @@ async function chooseConsoleConversationModel() {
   }
 
   const currentOverride = consoleActiveConversation?.metadata?.modelOverride ?? null;
-  const providerMenu = providers
-    .map((provider, index) => `${index + 1}. ${provider.name ?? provider.id} (${provider.defaultModel || "default"})`)
-    .join("\n");
-  const providerInput = globalThis.prompt?.(
-    `选择当前对话使用的模型 Provider：\n\n${providerMenu}\n\n输入 0 清除当前对话模型覆盖。`,
-    currentOverride?.providerId ?? "1"
+  closeConsoleModelPicker();
+  const popover = document.createElement("div");
+  popover.className = "model-picker-popover";
+  popover.setAttribute("role", "dialog");
+  popover.setAttribute("aria-label", "Conversation model picker");
+  document.body.appendChild(popover);
+  consoleModelPickerEl = popover;
+  positionConsoleModelPicker(popover);
+  document.addEventListener("mousedown", handleConsoleModelPickerOutside, true);
+  document.addEventListener("keydown", handleConsoleModelPickerKeydown, true);
+  await renderConsoleModelPicker(
+    popover,
+    providers,
+    currentOverride?.providerId ?? providers[0]?.id
   );
-  if (providerInput == null) return;
-  if (`${providerInput}`.trim() === "0") {
-    const conv = await ensureConsoleConversationForModelOverride();
-    const cleared = await fetchJson(
-      `/conversation/${encodeURIComponent(conv.conversation_id)}/model`,
-      desktopMutationOptions("DELETE")
-    );
-    consoleActiveConversation = cacheEnsureBackendFields({
-      ...consoleActiveConversation,
-      metadata: cleared.conversation?.metadata ?? {}
-    });
-    updateChatModelChip();
-    showConsoleToast("已恢复为全局 Task Routing。", { kind: "success" });
-    return;
-  }
-
-  const provider = parseProviderChoice(providerInput, providers);
-  if (!provider) {
-    showConsoleToast("没有找到这个 Provider。", { kind: "warning" });
-    return;
-  }
-
-  await loadProviderModelOptions(provider.id, { forceRefresh: false });
-  const choices = modelChoicesForProvider(provider, "chat");
-  const currentModel = currentOverride?.providerId === provider.id
-    ? currentOverride?.model
-    : "";
-  const fallbackModel = currentModel || defaultModelForProvider(provider, "chat") || choices[0]?.id || "";
-  const choiceText = choices.slice(0, 18).map((choice) => `- ${choice.id || "(CLI default)"}`).join("\n");
-  const modelInput = globalThis.prompt?.(
-    `输入当前对话使用的模型 ID。可选项：\n\n${choiceText || "(该 Provider 暂无内置列表，可输入自定义模型 ID)"}`,
-    fallbackModel
-  );
-  if (modelInput == null) return;
-  const model = `${modelInput}`.trim();
-  const conv = await ensureConsoleConversationForModelOverride();
-  const saved = await fetchJson(
-    `/conversation/${encodeURIComponent(conv.conversation_id)}/model`,
-    desktopJsonOptions("PATCH", {
-      providerId: provider.id,
-      model,
-      mode: "default"
-    })
-  );
-  consoleActiveConversation = cacheEnsureBackendFields({
-    ...consoleActiveConversation,
-    metadata: saved.conversation?.metadata ?? { modelOverride: saved.modelOverride ?? null }
-  });
-  updateChatModelChip();
-  showConsoleToast("当前对话的模型已切换。", { kind: "success" });
 }
 
 consoleChatModelChip?.addEventListener("click", () => {
