@@ -38,6 +38,54 @@ function draftSummaryRows(draft = {}) {
   return rows;
 }
 
+// Structured next-step affordances for a ready_to_save draft. The view layer
+// describes intents only — no click handlers and no direct save plumbing —
+// so the user keeps driving the interview through chat and approval flow.
+function readyToSaveActions(draft = {}) {
+  const kind = asText(draft.kind);
+  const saveDescription = kind === "mcp"
+    ? "保存为待审核 MCP 草稿；仍需导入、配置、测试、启用。"
+    : "保存为可编辑 skill 草稿；仍可修改、测试、回滚。";
+  return [
+    {
+      intent: "confirm_save",
+      label: "确认保存草稿",
+      description: saveDescription,
+      safety: "review_required"
+    },
+    {
+      intent: "edit_field",
+      label: "继续编辑",
+      description: "修改用途、权限或配置；不写文件。",
+      safety: "no_side_effect"
+    },
+    {
+      intent: "discard",
+      label: "放弃草案",
+      description: "结束当前草案；不写文件。",
+      safety: "no_side_effect"
+    }
+  ];
+}
+
+function recoveryActions(recovery = {}) {
+  const list = Array.isArray(recovery.suggested_next_actions) ? recovery.suggested_next_actions : [];
+  return list
+    .map((action) => {
+      const field = asText(action?.field);
+      const prompt = asText(action?.prompt);
+      if (!prompt) return null;
+      return {
+        intent: "edit_field",
+        label: field || "下一步",
+        description: prompt,
+        field: field || null,
+        safety: "no_side_effect"
+      };
+    })
+    .filter(Boolean);
+}
+
 export function buildCapabilityToolView(toolName = "", metadata = {}) {
   const toolId = asText(toolName);
   if (toolId !== "draft_capability" && toolId !== "save_capability_draft") return null;
@@ -67,23 +115,20 @@ export function buildCapabilityToolView(toolName = "", metadata = {}) {
         badge: "待确认保存",
         tone: "ok",
         rows: draftSummaryRows(data.draft),
-        question: "确认后才会进入保存步骤；未确认不会写入 skill 或 MCP 配置。"
+        question: "确认后才会进入保存步骤；未确认不会写入 skill 或 MCP 配置。",
+        actions: readyToSaveActions(data.draft)
       };
     }
     if (status === "recovery_required") {
       const recovery = data.recovery && typeof data.recovery === "object" ? data.recovery : {};
-      const actions = Array.isArray(recovery.suggested_next_actions)
-        ? recovery.suggested_next_actions.map((action) => ({
-          label: asText(action.field) || "下一步",
-          value: asText(action.prompt)
-        })).filter((row) => row.value)
-        : [];
+      const actions = recoveryActions(recovery);
       return {
         title: "能力草案需要调整",
         badge: "需要修正",
         tone: "warn",
-        rows: actions,
-        question: asText(recovery.question)
+        rows: actions.map((action) => ({ label: action.label, value: action.description })),
+        question: asText(recovery.question),
+        actions
       };
     }
   }
@@ -106,9 +151,25 @@ export function buildCapabilityToolView(toolName = "", metadata = {}) {
   return null;
 }
 
+function renderActionListHtml(actions) {
+  if (!Array.isArray(actions) || actions.length === 0) return "";
+  const items = actions.map((action) => {
+    const intent = escapeHtml(action.intent ?? "");
+    const safety = escapeHtml(action.safety ?? "");
+    const label = escapeHtml(action.label ?? "");
+    const description = escapeHtml(action.description ?? "");
+    return `<li class="capability-tool-view-action" data-capability-action="${intent}" data-capability-safety="${safety}">`
+      + `<span class="capability-tool-view-action-label">${label}</span>`
+      + (description ? `<span class="capability-tool-view-action-desc">${description}</span>` : "")
+      + "</li>";
+  }).join("");
+  return `<ul class="capability-tool-view-actions">${items}</ul>`;
+}
+
 export function renderCapabilityToolViewHtml(view = null) {
   if (!view) return "";
   const rows = Array.isArray(view.rows) ? view.rows : [];
+  const actionsHtml = renderActionListHtml(view.actions);
   return `
     <div class="capability-tool-view capability-tool-view--${escapeHtml(view.tone ?? "info")}">
       <div class="capability-tool-view-head">
@@ -122,6 +183,7 @@ export function renderCapabilityToolViewHtml(view = null) {
         </div>`).join("")}</dl>` : ""}
       ${view.question ? `<p>${escapeHtml(view.question)}</p>` : ""}
       ${view.hint ? `<p class="muted">${escapeHtml(view.hint)}</p>` : ""}
+      ${actionsHtml}
     </div>
   `;
 }

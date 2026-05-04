@@ -94,6 +94,74 @@ test("capability tool view renders interview progress without leaking draft inte
   assert.doesNotMatch(html, /must-not-leak|huge prompt text/);
 });
 
+test("ready_to_save view exposes structured next-step actions without bypassing approval", () => {
+  const skillView = buildCapabilityToolView("draft_capability", {
+    status: "ready_to_save",
+    draft: {
+      kind: "skill",
+      name: "Inbox Helper",
+      purpose: "Triage",
+      permissions: { network: false, filesystem: "none", secrets: [] }
+    }
+  });
+  assert.ok(Array.isArray(skillView.actions), "actions should be a structured array");
+  const intents = skillView.actions.map((action) => action.intent);
+  assert.deepEqual(intents, ["confirm_save", "edit_field", "discard"]);
+  const confirmSave = skillView.actions.find((action) => action.intent === "confirm_save");
+  assert.equal(confirmSave.safety, "review_required");
+  assert.match(confirmSave.description, /可编辑 skill 草稿/);
+  assert.doesNotMatch(confirmSave.description, /save_capability_draft/);
+
+  const mcpView = buildCapabilityToolView("draft_capability", {
+    status: "ready_to_save",
+    draft: {
+      kind: "mcp",
+      name: "Sample MCP",
+      purpose: "Bridge",
+      permissions: { network: true, filesystem: "none", secrets: [] },
+      descriptor: { transport: "stdio" }
+    }
+  });
+  const mcpConfirm = mcpView.actions.find((action) => action.intent === "confirm_save");
+  assert.match(mcpConfirm.description, /待审核 MCP 草稿/);
+  assert.match(mcpConfirm.description, /导入、配置、测试、启用/);
+
+  const html = renderCapabilityToolViewHtml(skillView);
+  assert.match(html, /capability-tool-view-actions/);
+  assert.match(html, /data-capability-action="confirm_save"/);
+  assert.match(html, /data-capability-action="edit_field"/);
+  assert.match(html, /data-capability-action="discard"/);
+  assert.match(html, /data-capability-safety="review_required"/);
+  assert.match(html, /确认保存草稿/);
+  assert.match(html, /放弃草案/);
+  assert.doesNotMatch(html, /save_capability_draft/);
+  // Renderer must not wire interactive handlers — no buttons, forms, or
+  // inline event handlers — so user keeps driving via chat + approval.
+  assert.doesNotMatch(html, /<button|<form|onclick=|formaction=/i);
+});
+
+test("recovery_required view maps suggested actions through the same structured shape", () => {
+  const view = buildCapabilityToolView("draft_capability", {
+    status: "recovery_required",
+    recovery: {
+      question: "请补一下 MCP 启动命令",
+      suggested_next_actions: [
+        { type: "answer_interview_field", field: "config", prompt: "What command should start this MCP server?" },
+        { type: "answer_interview_field", field: "permissions", prompt: "" }
+      ]
+    }
+  });
+  assert.equal(view.actions.length, 1, "empty prompts should be filtered out");
+  assert.equal(view.actions[0].intent, "edit_field");
+  assert.equal(view.actions[0].field, "config");
+  assert.equal(view.actions[0].safety, "no_side_effect");
+
+  const html = renderCapabilityToolViewHtml(view);
+  assert.match(html, /What command should start this MCP server/);
+  assert.match(html, /data-capability-action="edit_field"/);
+  assert.doesNotMatch(html, /<button|onclick=/i);
+});
+
 test("timeline entry shows capability recovery card from metadata", () => {
   const html = renderTimelineEntry({
     event: "tool_call_completed",
