@@ -182,6 +182,11 @@ test("search_file_content queries the file_content namespace only", async () => 
               score: 0.77,
               metadata: {
                 path: "E:\\workspace\\budget.md",
+                project_id: "project_budget",
+                chunk_index: 2,
+                chunk_count: 5,
+                char_start: 1200,
+                char_end: 1800,
                 coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
                 artifact_id: "artifact_budget",
                 revision_of: null,
@@ -199,6 +204,11 @@ test("search_file_content queries the file_content namespace only", async () => 
   assert.equal(result.metadata.namespace, "file_content");
   assert.equal(result.metadata.result_count, 1);
   assert.equal(result.metadata.results[0].path, "E:\\workspace\\budget.md");
+  assert.equal(result.metadata.results[0].project_id, "project_budget");
+  assert.equal(result.metadata.results[0].chunk_index, 2);
+  assert.equal(result.metadata.results[0].chunk_count, 5);
+  assert.equal(result.metadata.results[0].char_start, 1200);
+  assert.equal(result.metadata.results[0].char_end, 1800);
   assert.deepEqual(calls, [{
     query: "budget notes",
     limit: 3,

@@ -23,6 +23,8 @@ assert.match(searchTool, /store\.search\(query,\s*limit,\s*\{[\s\S]*namespace:\s
   "search_file_content must query the file_content namespace within the current project scope");
 assert.match(searchTool, /project_id:\s*projectId/,
   "search_file_content metadata must expose the project scope used for retrieval");
+assert.match(searchTool, /chunk_index/);
+assert.match(searchTool, /char_start/);
 assert.match(surface, /search_file_content/,
   "file_read capability tool surface must expose search_file_content");
 assert.match(searchTool, /This does not read disk/,

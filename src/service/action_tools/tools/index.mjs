@@ -3017,6 +3017,10 @@ export const SEARCH_FILE_CONTENT_TOOL = {
       id: match.id,
       score: Number.isFinite(Number(match.score)) ? Number(match.score) : 0,
       project_id: match.metadata?.project_id ?? null,
+      chunk_index: Number.isFinite(Number(match.metadata?.chunk_index)) ? Number(match.metadata.chunk_index) : null,
+      chunk_count: Number.isFinite(Number(match.metadata?.chunk_count)) ? Number(match.metadata.chunk_count) : null,
+      char_start: Number.isFinite(Number(match.metadata?.char_start)) ? Number(match.metadata.char_start) : null,
+      char_end: Number.isFinite(Number(match.metadata?.char_end)) ? Number(match.metadata.char_end) : null,
       path: match.metadata?.path ?? null,
       coverage_scope: match.metadata?.coverage_scope ?? null,
       artifact_id: match.metadata?.artifact_id ?? null,
@@ -3029,7 +3033,7 @@ export const SEARCH_FILE_CONTENT_TOOL = {
         `Found ${results.length} file-content match(es) for query: ${query}`,
         ...results.map((result, index) => [
           `${index + 1}. ${result.path ?? result.id} score=${result.score.toFixed(3)}`,
-          `coverage=${result.coverage_scope ?? "unknown"} artifact=${result.artifact_id ?? "none"}`,
+          `coverage=${result.coverage_scope ?? "unknown"} artifact=${result.artifact_id ?? "none"} chunk=${result.chunk_index != null && result.chunk_count != null ? `${result.chunk_index + 1}/${result.chunk_count}` : "n/a"}`,
           result.text
         ].join("\n"))
       ].join("\n\n")
