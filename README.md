@@ -4,7 +4,7 @@ LingxY is a Windows desktop AI workspace that can understand the window you are 
 
 It is not meant to be just another chat box. The goal is a local-first assistant for everyday knowledge work: reading pages and files, generating documents, launching apps, creating scheduled jobs, drafting emails for approval, and keeping a searchable task history on your machine.
 
-The project is currently in active pre-1.0 development. It is usable for local development and trials, but release packaging, automatic updates, OS keychain-backed secrets, export/import polish, crash diagnostics, and soft-delete recovery are still being completed before a wider public release.
+The project is currently in active pre-1.0 development. It is usable for local development and trials, with the main remaining release work focused on signed packaging, automatic updates, OS keychain-backed secrets, import/zip export polish, and a full Trash management view.
 
 ## Feature Overview
 
@@ -235,8 +235,9 @@ Known release gaps:
 
 - Automatic updates are not wired to a GitHub Releases channel yet.
 - Provider/API keys are stored outside `runtime.json` in the local Secret Store; OS credential-store/keychain backing is still pending.
-- Console Settings can export a redacted JSON data bundle; import, packaged zip export, and soft-delete/trash recovery are not finished.
+- Console Settings can export a redacted JSON data bundle; import and packaged zip export are still pending.
 - Console Settings can generate a local redacted diagnostics JSON; renderer/main errors and crash dumps stay on the user's machine, and no telemetry is sent by default.
+- Task and note deletion use soft delete plus short-window Undo; a unified Trash view and schedule/template deletion lifecycle are still pending.
 - `npm run dist` can require Windows symlink/signing support, depending on the machine.
 - Real Kimi CLI verification may skip when local credentials are invalid or quota is exhausted.
 
