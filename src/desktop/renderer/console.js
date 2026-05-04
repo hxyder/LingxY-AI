@@ -773,6 +773,8 @@ let consoleChatEventStream = null;
 let consoleChatResultTaskIds = new Set();
 const fileContentIndexPanel = createFileContentIndexPanel({
   getServiceBaseUrl: () => state.serviceBaseUrl,
+  getProjects: () => (state.projectStore ?? loadConsoleProjectStore()).projects ?? [],
+  getSelectedProjectId: () => state.selectedProjectId ?? null,
   toast: showConsoleToast
 });
 // Track the in-flight chat task so the composer can flip the Send

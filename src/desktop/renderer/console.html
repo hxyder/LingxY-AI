@@ -2251,6 +2251,10 @@
                 <p class="muted" style="font-size:12px;margin:4px 0 0;">Manage searchable file-content records. Deleting an index entry does not delete the source file.</p>
               </div>
               <div class="toolbar" style="gap:8px;justify-content:flex-end;">
+                <select id="fileContentIndexScopeSelect" class="select-compact" title="File index scope" aria-label="File index scope">
+                  <option value="all">All scopes</option>
+                  <option value="global">Personal / global</option>
+                </select>
                 <span id="fileContentIndexCount" class="tag">0</span>
                 <button id="fileContentIndexRefreshBtn" class="btn btn-sm btn-ghost" type="button">Load indexed files</button>
               </div>

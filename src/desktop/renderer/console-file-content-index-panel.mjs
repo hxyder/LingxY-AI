@@ -8,6 +8,11 @@ function recordPath(record = {}) {
 
 function recordMetaLine(record = {}) {
   const bits = [];
+  if (record.metadata?.project_id) bits.push(`project ${record.metadata.project_id}`);
+  if (record.metadata && record.metadata.project_id === null) bits.push("global");
+  if (Number.isFinite(Number(record.metadata?.chunk_index)) && Number.isFinite(Number(record.metadata?.chunk_count))) {
+    bits.push(`chunk ${Number(record.metadata.chunk_index) + 1}/${Number(record.metadata.chunk_count)}`);
+  }
   if (record.metadata?.coverage_scope) bits.push(record.metadata.coverage_scope);
   if (record.metadata?.artifact_id) bits.push(`artifact ${record.metadata.artifact_id}`);
   if (record.metadata?.task_id) bits.push(`task ${record.metadata.task_id}`);
@@ -35,9 +40,12 @@ function renderRecord(record = {}) {
 export function createFileContentIndexPanel({
   root = document,
   getServiceBaseUrl,
+  getProjects = () => [],
+  getSelectedProjectId = () => null,
   toast = () => {}
 } = {}) {
   const refreshBtn = root.querySelector("#fileContentIndexRefreshBtn");
+  const scopeSelect = root.querySelector("#fileContentIndexScopeSelect");
   const stateEl = root.querySelector("#fileContentIndexState");
   const countEl = root.querySelector("#fileContentIndexCount");
   const listEl = root.querySelector("#fileContentIndexList");
@@ -63,8 +71,52 @@ export function createFileContentIndexPanel({
     return payload;
   }
 
+  function selectedScopeValue() {
+    return String(scopeSelect?.value ?? "all").trim() || "all";
+  }
+
+  function selectedProjectQueryValue() {
+    const value = selectedScopeValue();
+    if (value === "all") return null;
+    if (value === "global") return "global";
+    if (value.startsWith("project:")) return value.slice("project:".length);
+    return null;
+  }
+
+  function listPath() {
+    const params = new URLSearchParams({ limit: "200" });
+    const projectId = selectedProjectQueryValue();
+    if (projectId != null) params.set("project_id", projectId);
+    return `/history/file-content?${params.toString()}`;
+  }
+
+  function refreshScopeOptions() {
+    if (!scopeSelect) return;
+    const previous = selectedScopeValue();
+    const selectedProjectId = String(getSelectedProjectId?.() ?? "").trim();
+    const projectOptions = (Array.isArray(getProjects?.()) ? getProjects() : [])
+      .filter((project) => project?.id)
+      .map((project) => {
+        const id = String(project.id);
+        const label = project.name || id;
+        return `<option value="project:${escapeHtml(id)}">${escapeHtml(label)}</option>`;
+      })
+      .join("");
+    scopeSelect.innerHTML = [
+      `<option value="all">All scopes</option>`,
+      `<option value="global">Personal / global</option>`,
+      selectedProjectId ? `<option value="project:${escapeHtml(selectedProjectId)}">Current project</option>` : "",
+      projectOptions
+    ].join("");
+    const values = new Set(Array.from(scopeSelect.options).map((option) => option.value));
+    scopeSelect.value = values.has(previous)
+      ? previous
+      : (selectedProjectId && values.has(`project:${selectedProjectId}`) ? `project:${selectedProjectId}` : "all");
+  }
+
   function render() {
     if (!listEl) return;
+    refreshScopeOptions();
     if (countEl) countEl.textContent = `${records.length}`;
     if (!loaded && records.length === 0) {
       listEl.innerHTML = `<p class="muted" style="font-size:12px;">Click Load indexed files to view searchable file-content records.</p>`;
@@ -89,7 +141,7 @@ export function createFileContentIndexPanel({
     refreshBtn?.setAttribute("disabled", "true");
     setState("Loading indexed files...");
     try {
-      const payload = await request("/history/file-content?limit=200");
+      const payload = await request(listPath());
       records = Array.isArray(payload.records) ? payload.records : [];
       loaded = true;
       setState(records.length ? "Loaded." : "No indexed file content.");
@@ -124,6 +176,12 @@ export function createFileContentIndexPanel({
   }
 
   refreshBtn?.addEventListener("click", () => {
+    void load({ force: true });
+  });
+  scopeSelect?.addEventListener("change", () => {
+    loaded = false;
+    records = [];
+    render();
     void load({ force: true });
   });
 

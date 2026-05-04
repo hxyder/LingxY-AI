@@ -153,6 +153,72 @@ test("file content index maintenance lists only indexed file records", async () 
   });
 });
 
+test("file content index maintenance can filter by project scope", async () => {
+  await withEmbeddingRuntime(async ({ runtime }) => {
+    runtime.platform.embeddingStore.add({
+      id: "file_content_global",
+      namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+      text: "Global indexed file content.",
+      metadata: {
+        path: "E:\\docs\\global.md",
+        project_id: null
+      }
+    });
+    runtime.platform.embeddingStore.add({
+      id: "file_content_project_a",
+      namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+      text: "Project A indexed file content.",
+      metadata: {
+        path: "E:\\docs\\a.md",
+        project_id: "project_a"
+      }
+    });
+    runtime.platform.embeddingStore.add({
+      id: "file_content_project_b",
+      namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+      text: "Project B indexed file content.",
+      metadata: {
+        path: "E:\\docs\\b.md",
+        project_id: "project_b"
+      }
+    });
+
+    const projectA = await runtimeAdminRoute({
+      method: "GET",
+      pathname: "/history/file-content?limit=10&project_id=project_a",
+      actor: "desktop_console",
+      runtime
+    });
+    assert.equal(projectA.statusCode, 200);
+    assert.equal(projectA.payload.project_id, "project_a");
+    assert.deepEqual(projectA.payload.records.map((record) => record.id), ["file_content_project_a"]);
+
+    const globalOnly = await runtimeAdminRoute({
+      method: "GET",
+      pathname: "/history/file-content?limit=10&project_id=global",
+      actor: "desktop_console",
+      runtime
+    });
+    assert.equal(globalOnly.statusCode, 200);
+    assert.equal(globalOnly.payload.project_id, null);
+    assert.deepEqual(globalOnly.payload.records.map((record) => record.id), ["file_content_global"]);
+
+    const all = await runtimeAdminRoute({
+      method: "GET",
+      pathname: "/history/file-content?limit=10",
+      actor: "desktop_console",
+      runtime
+    });
+    assert.equal(all.statusCode, 200);
+    assert.equal(all.payload.project_id, "all");
+    assert.deepEqual(new Set(all.payload.records.map((record) => record.id)), new Set([
+      "file_content_global",
+      "file_content_project_a",
+      "file_content_project_b"
+    ]));
+  });
+});
+
 test("file content index deletion is namespace-scoped and audited", async () => {
   await withEmbeddingRuntime(async ({ runtime, auditLog }) => {
     seedRecords(runtime.platform.embeddingStore);

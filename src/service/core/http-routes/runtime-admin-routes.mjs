@@ -15,6 +15,14 @@ function summarizeEmbeddingRecord(record = {}) {
   };
 }
 
+function projectFilterFromUrl(url) {
+  if (!url.searchParams.has("project_id")) return "all";
+  const raw = String(url.searchParams.get("project_id") ?? "").trim();
+  if (!raw || raw === "all") return "all";
+  if (raw === "global") return null;
+  return raw.slice(0, 128);
+}
+
 export async function tryHandleRuntimeAdminRoute({ request, response, method, url, runtime, paths }) {
   if (method === "GET" && url.pathname === "/health") {
     const config = runtime.configStore?.load?.() ?? {};
@@ -165,12 +173,17 @@ export async function tryHandleRuntimeAdminRoute({ request, response, method, ur
       return true;
     }
     const limit = Math.max(1, Math.min(200, Number(url.searchParams.get("limit") ?? 50) || 50));
+    const projectId = projectFilterFromUrl(url);
     const records = runtime.platform.embeddingStore
-      .list({ namespace: EMBEDDING_NAMESPACES.FILE_CONTENT })
+      .list({
+        namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+        projectId
+      })
       .slice(0, limit)
       .map(summarizeEmbeddingRecord);
     sendJson(response, 200, {
       namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+      project_id: projectId,
       records
     });
     return true;

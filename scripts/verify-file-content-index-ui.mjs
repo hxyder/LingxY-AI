@@ -20,6 +20,7 @@ const tools = read("src/service/action_tools/tools/index.mjs");
 
 for (const id of [
   "fileContentIndexPanel",
+  "fileContentIndexScopeSelect",
   "fileContentIndexRefreshBtn",
   "fileContentIndexCount",
   "fileContentIndexState",
@@ -35,8 +36,14 @@ assert.match(consoleJs, /createFileContentIndexPanel\s*\(/,
 assert.doesNotMatch(consoleJs, /["']\/history\/file-content/,
   "Console workspace refresh must not pull file-content index records globally");
 
-assert.match(indexPanel, /\/history\/file-content\?limit=200/,
+assert.match(indexPanel, /new URLSearchParams\(\{\s*limit:\s*"200"\s*\}\)/,
   "Index panel must list indexed file-content records through the admin route");
+assert.match(indexPanel, /params\.set\("project_id",\s*projectId\)/,
+  "Index panel must pass project_id when a project or global scope is selected");
+assert.match(indexPanel, /getProjects\s*=\s*\(\)\s*=>\s*\[\]/,
+  "Index panel must accept a project list provider instead of reading global state directly");
+assert.match(indexPanel, /project:\$\{escapeHtml\(id\)\}/,
+  "Index panel must render project-scoped filter options");
 assert.match(indexPanel, /\/history\/file-content\/\$\{encodeURIComponent\(id\)\}/,
   "Index panel must delete records through the namespace-scoped admin route");
 assert.match(indexPanel, /X-Lingxy-Desktop-Actor/);
