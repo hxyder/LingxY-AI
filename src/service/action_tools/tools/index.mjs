@@ -20,6 +20,7 @@ import { buildSideEffectContract } from "../../core/policy/side-effect-contracts
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 import { resolveFileReadBudgetFromTask } from "../../core/file-read-budget.mjs";
+import { buildFileContentIndexRecords } from "../../core/file-content-index-records.mjs";
 import { EMBEDDING_NAMESPACES } from "../../embeddings/store.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -2986,6 +2987,99 @@ export const SEARCH_FILE_CONTENT_TOOL = {
   }
 };
 
+function fileReadResultFromTranscriptEntry(entry = {}) {
+  const toolId = entry?.type === "tool_result"
+    ? entry.tool
+    : entry?.role === "tool"
+      ? entry.name
+      : null;
+  if (!["read_file_text", "read_folder_text"].includes(toolId)) return null;
+  return {
+    toolId,
+    result: {
+      success: entry.success === true,
+      observation: entry.observation ?? "",
+      metadata: entry.metadata ?? {}
+    }
+  };
+}
+
+export const INDEX_FILE_CONTENT_TOOL = {
+  id: "index_file_content",
+  name: "Index File Content",
+  description: "Persist file text already read in this task into the file-content RAG namespace for future retrieval. This never reads disk; read_file_text/read_folder_text must run first. Requires user confirmation because it stores local file text.",
+  parameters: ACTION_TOOL_SCHEMAS.index_file_content,
+  risk_level: "high",
+  required_capabilities: ["file_read"],
+  requires_confirmation: true,
+  async execute(args = {}, ctx = {}) {
+    const store = ctx?.runtime?.platform?.embeddingStore ?? ctx?.embeddingStore ?? null;
+    if (!store || typeof store.add !== "function") {
+      return createActionResult({
+        success: false,
+        observation: "file content index is not available",
+        metadata: {
+          tool_id: "index_file_content",
+          namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+          unavailable: true
+        }
+      });
+    }
+
+    const maxRecords = clampNumber(args.max_records, { min: 1, max: 50, fallback: 20 });
+    const createdAt = new Date().toISOString();
+    const seen = new Set();
+    const records = [];
+    for (const entry of Array.isArray(ctx.transcript) ? ctx.transcript : []) {
+      const fileRead = fileReadResultFromTranscriptEntry(entry);
+      if (!fileRead) continue;
+      for (const record of buildFileContentIndexRecords({
+        task: ctx.task,
+        toolId: fileRead.toolId,
+        result: fileRead.result,
+        createdAt
+      })) {
+        if (seen.has(record.id)) continue;
+        seen.add(record.id);
+        records.push(record);
+        if (records.length >= maxRecords) break;
+      }
+      if (records.length >= maxRecords) break;
+    }
+
+    if (records.length === 0) {
+      return createActionResult({
+        success: false,
+        observation: "No successful file text reads are available to index. Run read_file_text or read_folder_text first.",
+        metadata: {
+          tool_id: "index_file_content",
+          namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+          indexed_count: 0
+        }
+      });
+    }
+
+    for (const record of records) {
+      store.add(record);
+    }
+    const paths = records.map((record) => record.metadata?.path).filter(Boolean);
+    return createActionResult({
+      success: true,
+      observation: [
+        `Indexed ${records.length} file-content record(s) for future retrieval.`,
+        ...paths.slice(0, 8).map((filePath) => `- ${filePath}`)
+      ].join("\n"),
+      metadata: {
+        tool_id: "index_file_content",
+        namespace: EMBEDDING_NAMESPACES.FILE_CONTENT,
+        indexed_count: records.length,
+        record_ids: records.map((record) => record.id),
+        paths
+      }
+    });
+  }
+};
+
 export const VERIFY_FILE_EXISTS_TOOL = {
   id: "verify_file_exists",
   name: "Verify File Exists",
@@ -3421,6 +3515,7 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   READ_FILE_TEXT_TOOL,
   READ_FOLDER_TEXT_TOOL,
   SEARCH_FILE_CONTENT_TOOL,
+  INDEX_FILE_CONTENT_TOOL,
   VERIFY_FILE_EXISTS_TOOL,
   REGISTER_ARTIFACT_TOOL,
   RESOLVE_OUTPUT_PATH_TOOL,

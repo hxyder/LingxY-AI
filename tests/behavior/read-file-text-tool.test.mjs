@@ -144,6 +144,19 @@ test("file_read capability exposes search_file_content to the planner", () => {
   assert.ok(tools.some((tool) => tool.id === "search_file_content"));
 });
 
+test("file_read capability exposes confirmed index_file_content to the planner", () => {
+  const tools = filterToolsForTask(BUILTIN_ACTION_TOOLS, {
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["file_read"]
+      }
+    }
+  });
+  const tool = tools.find((item) => item.id === "index_file_content");
+  assert.ok(tool);
+  assert.equal(tool.requires_confirmation, true);
+});
+
 test("search_file_content queries the file_content namespace only", async () => {
   const calls = [];
   const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
@@ -184,6 +197,121 @@ test("search_file_content queries the file_content namespace only", async () => 
     limit: 3,
     options: { namespace: "file_content" }
   }]);
+});
+
+test("index_file_content persists prior file-read evidence into file_content namespace", async () => {
+  const adds = [];
+  const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+  const risk = registry.evaluate("index_file_content", {}, {});
+  assert.equal(risk.requires_confirmation, true);
+  assert.equal(risk.risk_level, "high");
+
+  const result = await registry.call("index_file_content", {
+    max_records: 5
+  }, {
+    task: {
+      task_id: "task_index_file_content",
+      conversation_id: "conv_index_file_content"
+    },
+    runtime: {
+      platform: {
+        embeddingStore: {
+          add(record) {
+            adds.push(record);
+          }
+        }
+      }
+    },
+    transcript: [{
+      type: "tool_result",
+      tool: "read_file_text",
+      success: true,
+      observation: "Important local file content.",
+      metadata: {
+        tool_id: "read_file_text",
+        path: "E:\\workspace\\notes.md",
+        coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+        content_extracted: true,
+        chars_extracted: 29
+      }
+    }]
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(result.metadata.tool_id, "index_file_content");
+  assert.equal(result.metadata.namespace, "file_content");
+  assert.equal(result.metadata.indexed_count, 1);
+  assert.equal(adds.length, 1);
+  assert.equal(adds[0].namespace, "file_content");
+  assert.equal(adds[0].metadata.task_id, "task_index_file_content");
+  assert.equal(adds[0].metadata.conversation_id, "conv_index_file_content");
+  assert.equal(adds[0].metadata.path, "E:\\workspace\\notes.md");
+  assert.equal(adds[0].metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT);
+});
+
+test("index_file_content does not read disk or index shallow transcript entries", async () => {
+  const adds = [];
+  const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+  const result = await registry.call("index_file_content", {}, {
+    runtime: {
+      platform: {
+        embeddingStore: {
+          add(record) {
+            adds.push(record);
+          }
+        }
+      }
+    },
+    transcript: [{
+      type: "tool_result",
+      tool: "list_files",
+      success: true,
+      observation: "notes.md",
+      metadata: {
+        tool_id: "list_files",
+        coverage_scope: FILE_EVIDENCE_COVERAGE.DIRECTORY_LISTING_SHALLOW
+      }
+    }]
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.metadata.indexed_count, 0);
+  assert.equal(adds.length, 0);
+});
+
+test("index_file_content accepts agentic tool transcript shape", async () => {
+  const adds = [];
+  const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+  const result = await registry.call("index_file_content", {}, {
+    runtime: {
+      platform: {
+        embeddingStore: {
+          add(record) {
+            adds.push(record);
+          }
+        }
+      }
+    },
+    transcript: [{
+      role: "tool",
+      name: "read_folder_text",
+      success: true,
+      observation: "Folder file A text.\n\nFolder file B text.",
+      metadata: {
+        tool_id: "read_folder_text",
+        path: "E:\\workspace",
+        coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+        content_extracted: true,
+        recursive: true,
+        files: [{ path: "E:\\workspace\\a.md", success: true, chars_extracted: 18 }]
+      }
+    }]
+  });
+
+  assert.equal(result.success, true);
+  assert.equal(adds.length, 1);
+  assert.equal(adds[0].metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT);
+  assert.equal(adds[0].metadata.recursive, true);
 });
 
 test("TaskSpec derives deep file_read budget from framework research depth", () => {

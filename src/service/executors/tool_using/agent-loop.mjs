@@ -1353,7 +1353,8 @@ async function _runToolAgentLoopCore({
       ...(runtime.toolContext ?? {}),
       outputDir: runtime.toolOutputDir,
       runtime,
-      task
+      task,
+      transcript: transcript.slice()
     });
 
     runtime.emitTaskEvent?.("tool_call_completed", {

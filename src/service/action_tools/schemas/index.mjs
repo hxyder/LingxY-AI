@@ -480,6 +480,13 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       limit: { type: "number" }
     }
   },
+  index_file_content: {
+    type: "object",
+    required: [],
+    properties: {
+      max_records: { type: "number" }
+    }
+  },
   verify_file_exists: {
     type: "object",
     required: [],

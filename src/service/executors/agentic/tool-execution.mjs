@@ -89,7 +89,12 @@ export async function executeAgenticToolCall({
   }
 
   try {
-    const result = await tool.execute(callArgs, toolContext ?? {});
+    const result = await tool.execute(callArgs, {
+      ...(toolContext ?? {}),
+      runtime,
+      task,
+      transcript: Array.isArray(transcript) ? transcript.slice() : []
+    });
     return {
       success: Boolean(result?.success),
       observation: result?.observation ?? "",
