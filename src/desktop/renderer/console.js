@@ -37,6 +37,7 @@ import {
   getMcpSourceView
 } from "./mcp-source-view.mjs";
 import {
+  buildMcpConfigFields,
   describeMcpMissingConfig,
   isMcpMissingConfig
 } from "./mcp-missing-config.mjs";
@@ -8101,12 +8102,12 @@ async function toggleMcpServer(id, enabled) {
   );
 }
 
-async function saveMcpServerConfig({ id, key, value }) {
+async function saveMcpServerConfig({ id, key, value, values, references }) {
   if (typeof window.ucaShell?.saveMcpServerConfig !== "function") {
     throw new Error("Desktop MCP runtime bridge unavailable.");
   }
   return assertShellResult(
-    await window.ucaShell.saveMcpServerConfig({ id, key, value }),
+    await window.ucaShell.saveMcpServerConfig({ id, key, value, values, references }),
     "Could not save MCP server config."
   );
 }
@@ -8868,6 +8869,36 @@ function getMcpStatusView(server) {
   return { label: "已关闭", className: "" };
 }
 
+function renderMcpConfigPanel(server, fields = []) {
+  if (!Array.isArray(fields) || fields.length === 0) return "";
+  const serverId = `${server?.id ?? ""}`;
+  const rows = fields.map((field, index) => {
+    const inputId = `mcp-cfg-val-${serverId}-${index}`;
+    const label = field.label || field.name || field.envKey || "配置值";
+    const placeholder = field.placeholder || "输入配置值";
+    return `
+        <label for="${escapeHtml(inputId)}" style="font-size:12px;font-weight:500;">${escapeHtml(label)}</label>
+        <div class="mcp-cfg-row">
+          <input type="password"
+                 id="${escapeHtml(inputId)}"
+                 placeholder="${escapeHtml(placeholder)}"
+                 class="mcp-cfg-input"
+                 data-mcp-cfg-input="${escapeHtml(serverId)}"
+                 data-mcp-cfg-key="${escapeHtml(field.envKey)}"
+                 data-mcp-cfg-type="${escapeHtml(field.type ?? "env")}"
+                 data-mcp-cfg-name="${escapeHtml(field.name ?? "")}">
+        </div>`;
+  }).join("");
+  return `
+      <div class="mcp-server-config" id="mcp-cfg-${escapeHtml(serverId)}">
+        ${rows}
+        <div class="mcp-cfg-row">
+          <button class="btn btn-sm" data-mcp-cfg-save="${escapeHtml(serverId)}">保存</button>
+        </div>
+        <div class="mcp-cfg-state" id="mcp-cfg-state-${escapeHtml(serverId)}"></div>
+      </div>`;
+}
+
 function renderConnectorsMcpServers(servers) {
   if (!connectorsMcpList) return;
   connectorsMcpList.innerHTML = "";
@@ -8888,19 +8919,18 @@ function renderConnectorsMcpServers(servers) {
     const status = getMcpStatusView(s);
     const statusLabel = sourceView.readOnly ? sourceView.label : status.label;
     const statusClass = sourceView.readOnly ? sourceView.className : status.className;
-    const hasCfg = !!meta.configKey;
+    const configFields = buildMcpConfigFields(s, meta);
+    const hasConfigFields = configFields.length > 0;
     const missingConfig = describeMcpMissingConfig(s);
     // `needsConfig` covers two reasons the user must act before this MCP
     // works: (a) we know a configKey for it but the server is still off,
     // (b) the backend reports `missing_config` / `missingEnv` for any
-    // server (known or custom). Custom MCPs without a meta configKey
-    // still surface the badge + names via `missingConfig.summary`; the
-    // Configure button only appears when we actually have a config write
-    // path (hasCfg).
-    const needsConfig = (hasCfg && !s.enabled) || missingConfig.missing;
-    const customMissingConfig = missingConfig.missing && !hasCfg;
+    // server (known or custom). `missingEnv` is also a write contract: it
+    // becomes a dynamic config form instead of a service-specific branch.
+    const needsConfig = (hasConfigFields && !s.enabled) || missingConfig.missing;
+    const customMissingConfig = missingConfig.missing && !hasConfigFields;
     const packageMissing = Boolean(s.installRequired && s.installSource);
-    const canInstall = Boolean(s.configured || s.available || (hasCfg && needsConfig) || packageMissing);
+    const canInstall = Boolean(s.configured || s.available || (hasConfigFields && needsConfig) || packageMissing);
     const installed = s.available && s.enabled;
     const cardId = `mcp-card-${s.id}`;
     const logoClass = meta.logoClass ?? "imap";
@@ -8912,7 +8942,7 @@ function renderConnectorsMcpServers(servers) {
     const card = document.createElement("div");
     card.className = `mcp-card mcp-card--v3 ${canInstall ? "" : "unavailable"}`;
     card.id = cardId;
-    const configBtn = hasCfg ? `<button class="btn btn-sm btn-ghost" data-mcp-config="${escapeHtml(s.id)}">${needsConfig ? "Configure" : "Configure"}</button>` : "";
+    const configBtn = hasConfigFields ? `<button class="btn btn-sm btn-ghost" data-mcp-config="${escapeHtml(s.id)}">Configure</button>` : "";
     const guideBtn = meta.guideUrl ? `<button class="btn btn-sm btn-ghost" data-plugin-guide="${escapeHtml(meta.guideUrl)}">Guide</button>` : "";
     const needsConfigLabel = missingConfig.summary
       ? `需配置 · ${missingConfig.summary}`
@@ -8959,21 +8989,13 @@ function renderConnectorsMcpServers(servers) {
         ${headlineAction}
       </div>
       ${transportLine ? `<div class="mcp-transport">${escapeHtml(transportLine)}</div>` : ""}
-      ${(hasCfg || meta.guideUrl || needsConfigBadge) ? `
+      ${(hasConfigFields || meta.guideUrl || needsConfigBadge) ? `
       <div class="mcp-card-actions">
         ${needsConfigBadge}
         <div style="flex:1;"></div>
         ${guideBtn}${configBtn}
       </div>` : ""}
-      ${hasCfg ? `
-      <div class="mcp-server-config" id="mcp-cfg-${s.id}">
-        <label style="font-size:12px;font-weight:500;">${meta.configLabel}</label>
-        <div class="mcp-cfg-row">
-          <input type="password" id="mcp-cfg-val-${s.id}" placeholder="${meta.configPlaceholder ?? ''}" class="mcp-cfg-input">
-          <button class="btn btn-sm" data-mcp-cfg-save="${s.id}">保存</button>
-        </div>
-        <div class="mcp-cfg-state" id="mcp-cfg-state-${s.id}"></div>
-      </div>` : ""}
+      ${renderMcpConfigPanel(s, configFields)}
     `;
     connectorsMcpList.appendChild(card);
   }
@@ -9003,11 +9025,10 @@ function renderConnectorsMcpServers(servers) {
     input.addEventListener("change", async () => {
       const id = input.dataset.mcpInstall;
       const wantEnabled = input.checked;
-      const meta = MCP_SERVER_META[id] ?? {};
       const cfgDiv = document.getElementById(`mcp-cfg-${id}`);
       // If turning ON a server that needs config but has none, divert
       // to the config flow and snap the toggle back off.
-      if (wantEnabled && meta.configKey && cfgDiv && input.dataset.mcpEnabled === "true") {
+      if (wantEnabled && cfgDiv && input.dataset.mcpEnabled === "true") {
         input.checked = false;
         cfgDiv.classList.add("open");
         return;
@@ -9033,10 +9054,10 @@ function renderConnectorsMcpServers(servers) {
       if (!id) return;
       const meta = MCP_SERVER_META[id] ?? {};
       const cfgDiv = document.getElementById(`mcp-cfg-${id}`);
-      if (meta.configKey && cfgDiv) {
+      if (cfgDiv) {
         cfgDiv.classList.add("open");
         cfgDiv.scrollIntoView({ behavior: "smooth", block: "center" });
-        document.getElementById(`mcp-cfg-val-${id}`)?.focus();
+        cfgDiv.querySelector("[data-mcp-cfg-input]")?.focus();
         return;
       }
       btn.disabled = true;
@@ -9089,12 +9110,34 @@ function renderConnectorsMcpServers(servers) {
   connectorsMcpList.querySelectorAll("[data-mcp-cfg-save]").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const id = btn.dataset.mcpCfgSave;
-      const val = document.getElementById(`mcp-cfg-val-${id}`)?.value?.trim();
       const stateEl = document.getElementById(`mcp-cfg-state-${id}`);
-      if (!val) { if (stateEl) stateEl.textContent = "请输入值"; return; }
+      const cfgDiv = document.getElementById(`mcp-cfg-${id}`);
+      const inputs = Array.from(cfgDiv?.querySelectorAll("[data-mcp-cfg-key]") ?? []);
+      const values = {};
+      const references = [];
+      for (const input of inputs) {
+        const key = `${input.dataset.mcpCfgKey ?? ""}`.trim();
+        const value = `${input.value ?? ""}`.trim();
+        if (!key) continue;
+        if (!value) {
+          if (stateEl) stateEl.textContent = "请输入值";
+          input.focus();
+          return;
+        }
+        values[key] = value;
+        references.push({
+          envKey: key,
+          type: input.dataset.mcpCfgType ?? "env",
+          name: input.dataset.mcpCfgName ?? ""
+        });
+      }
+      if (Object.keys(values).length === 0) {
+        if (stateEl) stateEl.textContent = "没有可保存的配置项";
+        return;
+      }
       if (stateEl) stateEl.textContent = "保存中…";
       try {
-        await saveMcpServerConfig({ id, key: MCP_SERVER_META[id]?.configKey, value: val });
+        await saveMcpServerConfig({ id, values, references });
         if (stateEl) { stateEl.textContent = "已保存 ✓"; setTimeout(() => { stateEl.textContent = ""; }, 2000); }
         // Also enable the server after saving API key
         await toggleMcpServer(id, true);

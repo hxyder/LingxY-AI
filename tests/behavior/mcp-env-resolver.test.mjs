@@ -79,6 +79,20 @@ test("resolveMcpEnv resolves ${secret_ref:REF} via secretStore.getSync, value st
   assert.equal(Object.prototype.hasOwnProperty.call(missing.missing[0], "value"), false);
 });
 
+test("resolveMcpEnv accepts URL-encoded secret refs produced by the local secret store", () => {
+  const secretStore = {
+    getSync(ref) {
+      return ref === "secret://lingxy/mcp/custom%20server/env/API_KEY" ? "encoded-value" : null;
+    }
+  };
+  const resolved = resolveMcpEnv(
+    { API_KEY: "${secret_ref:secret://lingxy/mcp/custom%20server/env/API_KEY}" },
+    { secretStore }
+  );
+  assert.equal(resolved.ok, true);
+  assert.equal(resolved.env.API_KEY, "encoded-value");
+});
+
 test("resolveMcpEnv handles partial env: literals + resolved + missing in one pass", () => {
   const result = resolveMcpEnv(
     {

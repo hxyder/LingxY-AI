@@ -44,3 +44,45 @@ export function describeMcpMissingConfig(server = {}) {
     summary: formatMissingNamesSummary(names)
   };
 }
+
+export function listMcpMissingConfigFields(server = {}) {
+  const entries = Array.isArray(server?.missingEnv) ? server.missingEnv : [];
+  const seen = new Set();
+  const fields = [];
+  for (const entry of entries) {
+    const envKey = asString(entry?.envKey);
+    if (!envKey || seen.has(envKey)) continue;
+    seen.add(envKey);
+    const name = asString(entry?.name);
+    const type = asString(entry?.type) || "env";
+    fields.push({
+      envKey,
+      type,
+      name,
+      label: name || envKey
+    });
+  }
+  return fields;
+}
+
+export function buildMcpConfigFields(server = {}, meta = {}) {
+  const dynamicFields = listMcpMissingConfigFields(server);
+  if (dynamicFields.length > 0) {
+    return dynamicFields.map((field) => ({
+      ...field,
+      label: asString(meta.configLabel) && field.envKey === asString(meta.configKey)
+        ? asString(meta.configLabel)
+        : field.label,
+      placeholder: asString(meta.configPlaceholder)
+    }));
+  }
+  const configKey = asString(meta.configKey);
+  if (!configKey) return [];
+  return [{
+    envKey: configKey,
+    type: "env",
+    name: configKey,
+    label: asString(meta.configLabel) || configKey,
+    placeholder: asString(meta.configPlaceholder)
+  }];
+}

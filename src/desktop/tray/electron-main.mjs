@@ -213,10 +213,25 @@ function normalizeMcpServerTogglePayload(payload = {}) {
 }
 
 function normalizeMcpServerConfigPayload(payload = {}) {
+  const values = payload.values && typeof payload.values === "object" && !Array.isArray(payload.values)
+    ? Object.fromEntries(Object.entries(payload.values).map(([key, value]) => [
+      `${key ?? ""}`.trim(),
+      value == null ? "" : `${value}`
+    ]).filter(([key]) => key))
+    : null;
+  const references = Array.isArray(payload.references)
+    ? payload.references.map((entry) => ({
+      envKey: `${entry?.envKey ?? ""}`.trim(),
+      type: `${entry?.type ?? ""}`.trim(),
+      name: `${entry?.name ?? ""}`.trim()
+    })).filter((entry) => entry.envKey)
+    : [];
   return {
     id: normalizeMcpServerId(payload.id),
     key: `${payload.key ?? ""}`.trim(),
-    value: payload.value == null ? "" : `${payload.value}`
+    value: payload.value == null ? "" : `${payload.value}`,
+    ...(values ? { values } : {}),
+    ...(references.length > 0 ? { references } : {})
   };
 }
 
@@ -2619,15 +2634,15 @@ export function createElectronShellRuntime({
       ipcMain.handle(IPC_CHANNELS.mcpServerConfig, async (_event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
         const body = normalizeMcpServerConfigPayload(payload);
-        if (!body.id || !body.key) {
-          return { ok: false, error: "mcp_server_config_required", message: "MCP server id and config key are required." };
+        if (!body.id || (!body.key && !body.values)) {
+          return { ok: false, error: "mcp_server_config_required", message: "MCP server id and config values are required." };
         }
         try {
           return await requestDesktopServiceJson({
             base,
             method: "PATCH",
             pathname: `/ai/mcp/${encodeURIComponent(body.id)}/config`,
-            body: { key: body.key, value: body.value }
+            body
           });
         } catch (error) {
           return {

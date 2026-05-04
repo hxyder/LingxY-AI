@@ -330,7 +330,7 @@ function descriptorEnvIsReferenceOnly(env) {
     if (typeof key !== "string" || !key.trim()) {
       return { ok: false, message: "MCP descriptor env keys must be non-empty names." };
     }
-    if (typeof value !== "string" || !/^\$\{(?:env|secret_ref):[A-Za-z0-9_.:/-]+\}$/.test(value)) {
+    if (typeof value !== "string" || !/^\$\{(?:env|secret_ref):[A-Za-z0-9_.:/%-]+\}$/.test(value)) {
       return {
         ok: false,
         message: "MCP descriptor env values must be ${env:NAME} or ${secret_ref:NAME} references, never literal secrets."

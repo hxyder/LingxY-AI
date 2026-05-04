@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildMcpConfigFields,
   describeMcpMissingConfig,
   formatMissingNamesSummary,
   isMcpMissingConfig,
+  listMcpMissingConfigFields,
   listMcpMissingNames
 } from "../../src/desktop/renderer/mcp-missing-config.mjs";
 
@@ -96,4 +98,60 @@ test("listMcpMissingNames never reads .value off entries", () => {
     ]
   });
   assert.deepEqual(out, ["BRAVE_API_KEY"]);
+});
+
+test("listMcpMissingConfigFields normalizes dynamic form fields by envKey", () => {
+  const fields = listMcpMissingConfigFields({
+    missingEnv: [
+      { envKey: "TOKEN", type: "env", name: "SERVICE_TOKEN" },
+      { envKey: "TOKEN", type: "env", name: "DUPLICATE_SHOULD_NOT_WIN" },
+      { envKey: "ACCOUNT", type: "secret_ref", name: "secret://lingxy/custom/account" }
+    ]
+  });
+  assert.deepEqual(fields, [
+    { envKey: "TOKEN", type: "env", name: "SERVICE_TOKEN", label: "SERVICE_TOKEN" },
+    { envKey: "ACCOUNT", type: "secret_ref", name: "secret://lingxy/custom/account", label: "secret://lingxy/custom/account" }
+  ]);
+});
+
+test("listMcpMissingConfigFields never copies submitted values into field schema", () => {
+  const fields = listMcpMissingConfigFields({
+    missingEnv: [
+      { envKey: "TOKEN", type: "env", name: "SERVICE_TOKEN", value: "do-not-show" }
+    ]
+  });
+  assert.equal(Object.prototype.hasOwnProperty.call(fields[0], "value"), false);
+  assert.doesNotMatch(JSON.stringify(fields), /do-not-show/);
+});
+
+test("buildMcpConfigFields prefers backend missingEnv and falls back to known configKey", () => {
+  assert.deepEqual(
+    buildMcpConfigFields({ detail: "disabled" }, {
+      configKey: "BRAVE_API_KEY",
+      configLabel: "Brave API Key",
+      configPlaceholder: "BSA..."
+    }),
+    [{
+      envKey: "BRAVE_API_KEY",
+      type: "env",
+      name: "BRAVE_API_KEY",
+      label: "Brave API Key",
+      placeholder: "BSA..."
+    }]
+  );
+  assert.deepEqual(
+    buildMcpConfigFields({
+      missingEnv: [{ envKey: "TOKEN", type: "env", name: "SERVICE_TOKEN" }]
+    }, {
+      configKey: "BRAVE_API_KEY",
+      configLabel: "Brave API Key"
+    }),
+    [{
+      envKey: "TOKEN",
+      type: "env",
+      name: "SERVICE_TOKEN",
+      label: "SERVICE_TOKEN",
+      placeholder: ""
+    }]
+  );
 });

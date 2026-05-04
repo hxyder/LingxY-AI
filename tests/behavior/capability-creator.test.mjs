@@ -182,6 +182,19 @@ test("capability creator preserves secret_ref secrets as descriptor references",
   assert.equal(validateCapabilityDraft(draft).ok, true);
 });
 
+test("capability creator validation accepts URL-encoded secret_ref references", () => {
+  const state = applyCapabilityInterviewAnswer(fillMcpState(), { field: "confirmation", value: true });
+  const draft = buildCapabilityDraft(state);
+  const withEncodedRef = {
+    ...draft,
+    descriptor: {
+      ...draft.descriptor,
+      env: { API_KEY: "${secret_ref:secret://lingxy/mcp/custom%20server/env/API_KEY}" }
+    }
+  };
+  assert.equal(validateCapabilityDraft(withEncodedRef).ok, true);
+});
+
 test("capability creator validation rejects drafts that smuggle in literal secret values", () => {
   const state = applyCapabilityInterviewAnswer(fillMcpState(), { field: "confirmation", value: true });
   const draft = buildCapabilityDraft(state);

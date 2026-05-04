@@ -16,7 +16,7 @@
  *   name); the actual secret value is never echoed back even when present.
  */
 
-const REFERENCE_PATTERN = /^\$\{(env|secret_ref):([A-Za-z0-9_.:/\-]+)\}$/;
+const REFERENCE_PATTERN = /^\$\{(env|secret_ref):([A-Za-z0-9_.:/%\-]+)\}$/;
 
 function classifyValue(value) {
   if (typeof value !== "string") {

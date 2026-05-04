@@ -86,6 +86,7 @@ const requiredPaths = [
   "tests/behavior/kimi-executor-external-call.test.mjs",
   "tests/behavior/local-mutation-guard.test.mjs",
   "tests/behavior/mermaid-local-assets.test.mjs",
+  "tests/behavior/mcp-config-route.test.mjs",
   "tests/behavior/mcp-env-resolver.test.mjs",
   "tests/behavior/mcp-missing-config.test.mjs",
   "tests/behavior/mcp-install-detection.test.mjs",

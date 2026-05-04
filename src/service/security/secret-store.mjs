@@ -77,6 +77,10 @@ export function createProviderApiKeySecretRef(providerId) {
   return `${REF_PREFIX}provider/${encodeRefPart(providerId)}/apiKey`;
 }
 
+export function createMcpEnvSecretRef(serverId, envKey) {
+  return `${REF_PREFIX}mcp/${encodeRefPart(serverId)}/env/${encodeRefPart(envKey)}`;
+}
+
 export function createLocalSecretStore(options = {}) {
   const filePath = resolveSecretStorePath(options);
   return {
