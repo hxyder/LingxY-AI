@@ -40,7 +40,7 @@ const CODE_EXTENSIONS = new Set([
   ".sh", ".ps1", ".bat", ".sql", ".yaml", ".yml", ".toml", ".ini", ".xml"
 ]);
 
-const KNOWN_SOURCES = new Set(["generated", "uploaded", "referenced", "imported", "external", "system", "unknown"]);
+const KNOWN_SOURCES = new Set(["generated", "edited", "uploaded", "referenced", "imported", "external", "system", "unknown"]);
 const KNOWN_STATUSES = new Set(["available", "missing", "pending", "failed", "deleted", "unknown"]);
 
 function normalizedText(value, fallback) {

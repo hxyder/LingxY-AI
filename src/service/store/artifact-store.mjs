@@ -35,11 +35,11 @@ export function createArtifactStore({ baseDir } = {}) {
       await mkdir(taskDir, { recursive: true });
       return taskDir;
     },
-    registerArtifact(taskId, artifactPath, mimeType, { conversationId = null, createdAt = null } = {}) {
+    registerArtifact(taskId, artifactPath, mimeType, { conversationId = null, createdAt = null, source = "generated" } = {}) {
       const metadata = normalizeArtifactMetadata({
         path: artifactPath,
         mime_type: mimeType,
-        source: "generated",
+        source,
         ...inspectArtifactPath(artifactPath)
       });
       return {

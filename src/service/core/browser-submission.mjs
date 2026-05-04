@@ -13,6 +13,10 @@ import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
 import {
+  artifactRegistrationOptionsForPath,
+  rememberArtifactMetadataFromToolEvent
+} from "./artifact-action-contract.mjs";
+import {
   EXECUTION_PHASES,
   EXECUTION_STATES,
   runExecutionPhase
@@ -323,6 +327,7 @@ function assertArtifactContract(task, generatedArtifacts) {
 async function runBrowserExecutor({ task, runtime }) {
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const generatedArtifacts = [];
+  const artifactMetadataByPath = new Map();
   let inlineText = "";
 
   // The dedicated `translate` executor uses the free translator client and
@@ -405,8 +410,19 @@ async function runBrowserExecutor({ task, runtime }) {
       if (event.event_type === "inline_result" || event.event_type === "success") {
         inlineText = event.payload?.text ?? event.payload?.summary ?? inlineText;
       }
+      if (event.event_type === "tool_call_completed") {
+        rememberArtifactMetadataFromToolEvent(artifactMetadataByPath, event.payload ?? {});
+      }
       if (event.event_type === "artifact_created" && event.payload?.path) {
-        const artifactRecord = artifactStore.registerArtifact(task.task_id, event.payload.path, event.payload.mime ?? event.payload.mime_type);
+        const artifactRecord = artifactStore.registerArtifact(
+          task.task_id,
+          event.payload.path,
+          event.payload.mime ?? event.payload.mime_type,
+          artifactRegistrationOptionsForPath(event.payload.path, {
+            metadataByPath: artifactMetadataByPath,
+            payload: event.payload
+          })
+        );
         runtime.store.appendArtifact(artifactRecord);
         generatedArtifacts.push(artifactRecord);
       }
@@ -416,7 +432,12 @@ async function runBrowserExecutor({ task, runtime }) {
           if (!filePath) continue;
           const alreadySaved = generatedArtifacts.some((a) => a.path === filePath);
           if (!alreadySaved) {
-            const artifactRecord = artifactStore.registerArtifact(task.task_id, filePath, null);
+            const artifactRecord = artifactStore.registerArtifact(
+              task.task_id,
+              filePath,
+              null,
+              artifactRegistrationOptionsForPath(filePath, { metadataByPath: artifactMetadataByPath })
+            );
             runtime.store.appendArtifact(artifactRecord);
             generatedArtifacts.push(artifactRecord);
           }

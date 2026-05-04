@@ -13,13 +13,23 @@ import {
 } from "./task-runtime.mjs";
 import { runToolAgentLoop } from "../executors/tool_using/agent-loop.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import {
+  artifactEventFieldsForToolResult,
+  artifactRegistrationOptionsForPath,
+  rememberArtifactMetadataFromToolEvent
+} from "./artifact-action-contract.mjs";
 
-function persistArtifacts(runtime, taskId, artifactPaths) {
+function persistArtifacts(runtime, taskId, artifactPaths, { metadataByPath = null, payload = null } = {}) {
   if (!artifactPaths?.length) return;
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   for (const filePath of artifactPaths) {
     if (!filePath) continue;
-    const record = artifactStore.registerArtifact(taskId, filePath, null);
+    const record = artifactStore.registerArtifact(
+      taskId,
+      filePath,
+      null,
+      artifactRegistrationOptionsForPath(filePath, { metadataByPath, payload })
+    );
     runtime.store.appendArtifact(record);
   }
 }
@@ -138,13 +148,18 @@ export async function submitActionToolTask({
   }
   runtime.queue.enqueue(task);
 
-  const emitExecutorEvent = (eventType, payload) =>
+  const artifactMetadataByPath = new Map();
+  const emitExecutorEvent = (eventType, payload) => {
+    if (eventType === "tool_call_completed") {
+      rememberArtifactMetadataFromToolEvent(artifactMetadataByPath, payload ?? {});
+    }
     emitTaskEvent({
       runtime,
       taskId: task.task_id,
       eventType,
       payload
     });
+  };
 
   emitExecutorEvent("task_created", {
     source_type: contextPacket.source_type,
@@ -209,18 +224,20 @@ export async function submitActionToolTask({
           };
         }
         const toolResult = await registry.call(fastPathTool, fastPathArgs ?? {}, toolContext);
-        emitExecutorEvent("tool_call_completed", {
+        const toolCompletionPayload = {
           tool_id: fastPathTool,
           success: toolResult.success,
-          error: toolResult.error ?? null
-        });
+          error: toolResult.error ?? null,
+          ...artifactEventFieldsForToolResult(fastPathTool, toolResult)
+        };
+        emitExecutorEvent("tool_call_completed", toolCompletionPayload);
         const finalText = toolResult.observation ?? (toolResult.success ? "完成。" : "操作失败。");
         if (!toolResult.success) {
           markTaskFailed(runtime, task, {
             code: toolResult.error ?? "action_tool_failed",
             message: finalText
           });
-          persistArtifacts(runtime, task.task_id, toolResult.artifact_paths);
+          persistArtifacts(runtime, task.task_id, toolResult.artifact_paths, { payload: toolCompletionPayload });
           return {
             task,
             taskEvents: runtime.store.getTaskEvents(task.task_id),
@@ -231,7 +248,7 @@ export async function submitActionToolTask({
         }
         updateTask(runtime, task, { status: "success", sub_status: "completed", progress: 1 }, true);
         markTaskSucceeded(runtime, task);
-        persistArtifacts(runtime, task.task_id, toolResult.artifact_paths);
+        persistArtifacts(runtime, task.task_id, toolResult.artifact_paths, { payload: toolCompletionPayload });
         return {
           task,
           taskEvents: runtime.store.getTaskEvents(task.task_id),
@@ -272,6 +289,7 @@ export async function submitActionToolTask({
           summary: loopResult.final_text
         });
         markTaskSucceeded(runtime, task);
+        persistArtifacts(runtime, task.task_id, loopResult.artifacts, { metadataByPath: artifactMetadataByPath });
         return {
           task,
           taskEvents: runtime.store.getTaskEvents(task.task_id),
@@ -299,7 +317,7 @@ export async function submitActionToolTask({
         summary: loopResult.final_text
       });
       markTaskSucceeded(runtime, task);
-      persistArtifacts(runtime, task.task_id, loopResult.artifacts);
+      persistArtifacts(runtime, task.task_id, loopResult.artifacts, { metadataByPath: artifactMetadataByPath });
 
       return {
         task,

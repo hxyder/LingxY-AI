@@ -66,6 +66,7 @@ import {
   findWaitingActionApprovalInTranscript,
   formatWaitingActionFinal
 } from "../../core/policy/obligation-evaluator.mjs";
+import { artifactEventFieldsForToolResult } from "../../core/artifact-action-contract.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
 
@@ -247,7 +248,8 @@ export async function runAgenticPlanner({
         success: searchResult.success,
         observation: (searchResult.observation ?? "").slice(0, 500),
         metadata: searchResult.metadata ?? {},
-        preflight: true
+        preflight: true,
+        ...artifactEventFieldsForToolResult(searchCall.name, searchResult)
       }
     });
     transcript.push({
@@ -513,7 +515,8 @@ export async function runAgenticPlanner({
           tool_id: call.name,
           success: result.success,
           observation: (result.observation ?? "").slice(0, 500),
-          metadata: result.metadata ?? {}
+          metadata: result.metadata ?? {},
+          ...artifactEventFieldsForToolResult(call.name, result)
         }
       });
 
@@ -563,12 +566,21 @@ export async function runAgenticPlanner({
         break;
       }
 
+      const artifactFields = artifactEventFieldsForToolResult(call.name, {
+        ...result,
+        artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
+      });
       for (const artifactPath of result.artifact_paths ?? []) {
         if (artifactPath && !artifactPaths.includes(artifactPath)) {
           artifactPaths.push(artifactPath);
           onEvent?.({
             event_type: "artifact_created",
-            payload: { path: artifactPath, mime: result.metadata?.mime_type ?? null }
+            payload: {
+              path: artifactPath,
+              mime: result.metadata?.mime_type ?? null,
+              ...(artifactFields.artifact_action ? { artifact_action: artifactFields.artifact_action } : {}),
+              ...(artifactFields.artifact_source ? { artifact_source: artifactFields.artifact_source } : {})
+            }
           });
         }
       }

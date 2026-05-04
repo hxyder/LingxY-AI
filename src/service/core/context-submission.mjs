@@ -18,6 +18,10 @@ import {
   shouldSynthesizeRequestedFallbackArtifact
 } from "./artifact-fallback-policy.mjs";
 import {
+  artifactRegistrationOptionsForPath,
+  rememberArtifactMetadataFromToolEvent
+} from "./artifact-action-contract.mjs";
+import {
   EXECUTION_PHASES,
   EXECUTION_STATES,
   runExecutionPhase
@@ -643,6 +647,7 @@ async function runKimiExecutor({ task, runtime, store, queue, artifactStore, mar
 async function runExecutor({ runtime, task, executor }) {
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const generatedArtifacts = [];
+  const artifactMetadataByPath = new Map();
   let inlineText = "";
   const fileGeneration = createFileGenerationAttemptState();
   const controller = new AbortController();
@@ -714,9 +719,18 @@ async function runExecutor({ runtime, task, executor }) {
       }
       if (event.event_type === "tool_call_completed") {
         recordFileGenerationToolEvent(fileGeneration, event.payload ?? {});
+        rememberArtifactMetadataFromToolEvent(artifactMetadataByPath, event.payload ?? {});
       }
       if (event.event_type === "artifact_created" && event.payload?.path) {
-        const artifactRecord = artifactStore.registerArtifact(task.task_id, event.payload.path, event.payload.mime ?? event.payload.mime_type);
+        const artifactRecord = artifactStore.registerArtifact(
+          task.task_id,
+          event.payload.path,
+          event.payload.mime ?? event.payload.mime_type,
+          artifactRegistrationOptionsForPath(event.payload.path, {
+            metadataByPath: artifactMetadataByPath,
+            payload: event.payload
+          })
+        );
         runtime.store.appendArtifact(artifactRecord);
         generatedArtifacts.push(artifactRecord);
         recordArtifactGenerated(fileGeneration);
@@ -731,7 +745,12 @@ async function runExecutor({ runtime, task, executor }) {
           if (!filePath) continue;
           const alreadySaved = generatedArtifacts.some((a) => a.path === filePath);
           if (!alreadySaved) {
-            const artifactRecord = artifactStore.registerArtifact(task.task_id, filePath, null);
+            const artifactRecord = artifactStore.registerArtifact(
+              task.task_id,
+              filePath,
+              null,
+              artifactRegistrationOptionsForPath(filePath, { metadataByPath: artifactMetadataByPath })
+            );
             runtime.store.appendArtifact(artifactRecord);
             generatedArtifacts.push(artifactRecord);
             recordArtifactGenerated(fileGeneration);

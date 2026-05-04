@@ -78,6 +78,7 @@ import {
 } from "./planner-mode.mjs";
 import { buildConversationMessages } from "./conversation-messages.mjs";
 import { repairToolArgs } from "./tool-arg-repair.mjs";
+import { artifactEventFieldsForToolResult } from "../../core/artifact-action-contract.mjs";
 import {
   buildHallucinatedClaimBanner,
   detectUnbackedConnectorClaim,
@@ -1357,7 +1358,8 @@ async function _runToolAgentLoopCore({
     runtime.emitTaskEvent?.("tool_call_completed", {
       tool_id: tool.id,
       success: result.success,
-      observation: result.observation
+      observation: result.observation,
+      ...artifactEventFieldsForToolResult(tool.id, result)
     });
     // UCA-054: Record args and success so buildConversationMessages can inject
     // proper observations into the next LLM turn (ReAct pattern).

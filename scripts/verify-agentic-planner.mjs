@@ -412,6 +412,7 @@ const repoRoot = path.resolve(__dirname, "..");
     user_command: "Write me a plan file",
     __runtime: runtime
   };
+  const events = [];
   // Monkey-patch createProviderAdapter usage by injecting the mock adapter
   // via the planner's adapterOverride path. The executor doesn't accept an
   // override directly, so we call the planner for this step of the test.
@@ -420,12 +421,18 @@ const repoRoot = path.resolve(__dirname, "..");
     task,
     runtime,
     adapterOverride: mockAdapter,
-    maxIterations: 3
+    maxIterations: 3,
+    onEvent: (event) => events.push(event)
   });
   assert.equal(plannerResult.success, true);
   assert.ok(plannerResult.artifactPaths.includes("/tmp/mock.md"));
   assert.equal(plannerResult.toolCalls[0].name, "write_file");
   assert.equal(plannerResult.toolCalls[0].success, true);
+  const completion = events.find((e) => e.event_type === "tool_call_completed");
+  assert.equal(completion.payload.artifact_action, "create_new");
+  assert.equal(completion.payload.artifact_source, "generated");
+  const created = events.find((e) => e.event_type === "artifact_created");
+  assert.equal(created.payload.artifact_source, "generated");
 }
 
 console.log("Agentic planner verification passed (prompt rendering / tool loop / truthfulness guard / code_cli bridge unit + end-to-end / executor scaffold).");

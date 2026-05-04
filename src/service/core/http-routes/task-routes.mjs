@@ -16,6 +16,10 @@ import { submitOfficeTask } from "../office-submission.mjs";
 import { readJsonBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 import { normalizeDeletedFilter } from "../deletion-lifecycle.mjs";
+import {
+  artifactSourceFromEventPayload,
+  normalizeArtifactSource
+} from "../artifact-action-contract.mjs";
 
 function taskDeletedFilterFromUrl(url) {
   return normalizeDeletedFilter(url.searchParams.get("deleted") ?? false);
@@ -123,6 +127,14 @@ function artifactMimeFromValue(value) {
     : null;
 }
 
+function artifactSourceFromValue(value, payload) {
+  if (value && typeof value === "object" && typeof value.source === "string") {
+    const source = normalizeArtifactSource(value.source);
+    if (source) return source;
+  }
+  return artifactSourceFromEventPayload(payload);
+}
+
 function artifactsFromEvent(taskId, event) {
   const payload = event?.payload && typeof event.payload === "object" ? event.payload : {};
   const candidates = [];
@@ -148,6 +160,7 @@ function artifactsFromEvent(taskId, event) {
         task_id: taskId,
         path: artifactPath,
         mime_type: artifactMimeFromValue(candidate),
+        source: artifactSourceFromValue(candidate, payload),
         created_at: event?.ts ?? new Date(0).toISOString(),
         derived_from_event: true
       };

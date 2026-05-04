@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 import { createActionToolRegistry } from "../../src/service/action_tools/registry.mjs";
 import { submitActionToolTask } from "../../src/service/core/action-tool-submission.mjs";
@@ -90,6 +93,47 @@ test("action-tool fast path still executes allowed direct tools", async () => {
   assert.equal(result.task.status, "success");
   assert.equal(result.task.submission_boundary.blocking, false);
   assert.equal(result.final_text, "notified");
+});
+
+test("action-tool fast path preserves edited artifact source for file update tools", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "action-tool-artifact-source-"));
+  try {
+    const runtime = createRuntime();
+    const artifactPath = path.join(dir, "draft.md");
+    writeFileSync(artifactPath, "updated\n");
+    runtime.actionToolRegistry = createActionToolRegistry([{
+      id: "edit_file",
+      name: "Fake edit file",
+      description: "Fake file update tool for artifact source testing.",
+      parameters: { type: "object", properties: {} },
+      async execute() {
+        return {
+          success: true,
+          observation: "edited",
+          artifact_paths: [artifactPath]
+        };
+      }
+    }]);
+
+    const result = await submitActionToolTask({
+      runtime,
+      userCommand: "更新这个文件",
+      executionMode: "interactive",
+      fastPathTool: "edit_file",
+      fastPathArgs: { path: artifactPath, content: "updated" }
+    });
+
+    assert.equal(result.task.status, "success");
+    const completion = result.taskEvents
+      .find((event) => event.event_type === "tool_call_completed");
+    assert.equal(completion.payload.artifact_action, "update_existing");
+    assert.equal(completion.payload.artifact_source, "edited");
+    const [artifact] = runtime.store.getArtifactsForTask(result.task.task_id);
+    assert.equal(artifact.path, artifactPath);
+    assert.equal(artifact.source, "edited");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("action-tool fast path creates approval for confirmation-required tools", async () => {
