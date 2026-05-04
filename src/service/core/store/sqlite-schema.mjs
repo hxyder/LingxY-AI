@@ -27,6 +27,11 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   conversation_id TEXT,
   path TEXT NOT NULL,
   mime_type TEXT,
+  kind TEXT,
+  source TEXT,
+  bytes INTEGER,
+  sha256 TEXT,
+  status TEXT,
   created_at TEXT NOT NULL
 );`,
   schedules: `CREATE TABLE IF NOT EXISTS schedules (

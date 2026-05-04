@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { createSqliteStore } from "../../src/service/core/store/sqlite-store.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
+import { createArtifactStore } from "../../src/service/store/artifact-store.mjs";
 
 function withSqlite(fn) {
   const dir = mkdtempSync(path.join(tmpdir(), "artifact-conv-index-"));
@@ -51,6 +52,9 @@ runForBoth("appendArtifact derives conversation_id from the task row", (store) =
     created_at: "2026-05-01T10:05:00.000Z"
   });
   assert.equal(saved.conversation_id, "conv_a");
+  assert.equal(saved.kind, "document");
+  assert.equal(saved.source, "generated");
+  assert.equal(saved.status, "available");
   assert.equal(store.getArtifactsForTask("task_a")[0].conversation_id, "conv_a");
   assert.deepEqual(
     store.getArtifactsForConversation("conv_a").map((artifact) => artifact.path),
@@ -103,4 +107,65 @@ runForBoth("soft-deleting a task keeps conversation artifact index rows", (store
     store.getArtifactsForConversation("conv_soft").map((artifact) => artifact.path),
     ["E:\\out\\soft.pdf"]
   );
+});
+
+runForBoth("appendArtifact preserves supplied stable artifact metadata", (store) => {
+  store.insertTask(taskRecord("task_meta", "conv_meta"));
+  const saved = store.appendArtifact({
+    artifact_id: "artifact_meta",
+    task_id: "task_meta",
+    path: "E:\\out\\meta.json",
+    mime_type: "application/json",
+    kind: "data",
+    source: "imported",
+    bytes: 42.9,
+    sha256: "a".repeat(64),
+    status: "available",
+    created_at: "2026-05-01T10:06:00.000Z"
+  });
+  assert.equal(saved.kind, "data");
+  assert.equal(saved.source, "imported");
+  assert.equal(saved.bytes, 42);
+  assert.equal(saved.sha256, "a".repeat(64));
+  assert.equal(saved.status, "available");
+  assert.deepEqual(
+    store.getArtifactsForConversation("conv_meta").map((artifact) => ({
+      path: artifact.path,
+      kind: artifact.kind,
+      source: artifact.source,
+      bytes: artifact.bytes,
+      sha256: artifact.sha256,
+      status: artifact.status
+    })),
+    [{
+      path: "E:\\out\\meta.json",
+      kind: "data",
+      source: "imported",
+      bytes: 42,
+      sha256: "a".repeat(64),
+      status: "available"
+    }]
+  );
+});
+
+test("artifact store registerArtifact records file size, source, and status without hashing synchronously", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "artifact-metadata-"));
+  try {
+    const artifactPath = path.join(dir, "report.md");
+    const body = "hello artifact metadata\n";
+    writeFileSync(artifactPath, body);
+    const artifactStore = createArtifactStore({ baseDir: dir });
+    const saved = artifactStore.registerArtifact("task_file_meta", artifactPath, "text/markdown", {
+      conversationId: "conv_file_meta",
+      createdAt: "2026-05-01T10:07:00.000Z"
+    });
+    assert.equal(saved.conversation_id, "conv_file_meta");
+    assert.equal(saved.kind, "markdown");
+    assert.equal(saved.source, "generated");
+    assert.equal(saved.bytes, Buffer.byteLength(body));
+    assert.equal(saved.sha256, null);
+    assert.equal(saved.status, "available");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

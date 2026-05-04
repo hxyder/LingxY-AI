@@ -1,6 +1,8 @@
+import { statSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { resolveRuntimeBaseDir } from "../core/runtime-paths.mjs";
+import { normalizeArtifactMetadata } from "../core/store/artifact-metadata.mjs";
 
 function resolveBaseDir(baseDir) {
   if (baseDir) {
@@ -8,6 +10,18 @@ function resolveBaseDir(baseDir) {
   }
 
   return resolveRuntimeBaseDir();
+}
+
+function inspectArtifactPath(artifactPath) {
+  try {
+    const stat = statSync(artifactPath);
+    if (!stat.isFile()) {
+      return { bytes: null, sha256: null, status: "available" };
+    }
+    return { bytes: stat.size, sha256: null, status: "available" };
+  } catch {
+    return { bytes: null, sha256: null, status: "missing" };
+  }
 }
 
 export function createArtifactStore({ baseDir } = {}) {
@@ -22,13 +36,20 @@ export function createArtifactStore({ baseDir } = {}) {
       return taskDir;
     },
     registerArtifact(taskId, artifactPath, mimeType, { conversationId = null, createdAt = null } = {}) {
+      const metadata = normalizeArtifactMetadata({
+        path: artifactPath,
+        mime_type: mimeType,
+        source: "generated",
+        ...inspectArtifactPath(artifactPath)
+      });
       return {
         artifact_id: `${taskId}:${path.basename(artifactPath)}`,
         task_id: taskId,
         conversation_id: conversationId ?? null,
         path: artifactPath,
         created_at: createdAt ?? new Date().toISOString(),
-        mime_type: mimeType
+        mime_type: mimeType,
+        ...metadata
       };
     }
   };

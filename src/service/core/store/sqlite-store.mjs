@@ -5,6 +5,8 @@ import Database from "better-sqlite3";
 import { SQLITE_SCHEMA_SQL, SQLITE_INDEX_SQL } from "./sqlite-schema.mjs";
 import { applyConversationV1 } from "./migrations/conversation_v1.mjs";
 import { applyArtifactConversationIndexV1 } from "./migrations/artifact_conversation_index_v1.mjs";
+import { applyArtifactMetadataV1 } from "./migrations/artifact_metadata_v1.mjs";
+import { normalizeArtifactMetadata } from "./artifact-metadata.mjs";
 import {
   filterDeletedRecords,
   markRecordDeleted,
@@ -84,12 +86,18 @@ function mapArtifact(row) {
   if (!row) {
     return null;
   }
+  const metadata = normalizeArtifactMetadata(row);
   return {
     artifact_id: row.artifact_id,
     task_id: row.task_id,
     conversation_id: row.conversation_id ?? null,
     path: row.path,
     mime_type: row.mime_type,
+    kind: metadata.kind,
+    source: metadata.source,
+    bytes: metadata.bytes,
+    sha256: metadata.sha256,
+    status: metadata.status,
     created_at: row.created_at
   };
 }
@@ -259,6 +267,7 @@ export function createSqliteStore({ dbPath }) {
 
   applyConversationV1(db);
   applyArtifactConversationIndexV1(db);
+  applyArtifactMetadataV1(db);
 
   const statements = {
     upsertTask: db.prepare(`INSERT INTO tasks (
@@ -288,13 +297,13 @@ export function createSqliteStore({ dbPath }) {
     )`),
     getEventsForTask: db.prepare("SELECT event_id, task_id, ts, event_type, payload_json FROM task_events WHERE task_id = ? ORDER BY ts ASC"),
     insertArtifact: db.prepare(`INSERT OR REPLACE INTO artifacts (
-      artifact_id, task_id, conversation_id, path, mime_type, created_at
+      artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, created_at
     ) VALUES (
-      @artifact_id, @task_id, @conversation_id, @path, @mime_type, @created_at
+      @artifact_id, @task_id, @conversation_id, @path, @mime_type, @kind, @source, @bytes, @sha256, @status, @created_at
     )`),
-    getArtifactsForTask: db.prepare("SELECT artifact_id, task_id, conversation_id, path, mime_type, created_at FROM artifacts WHERE task_id = ? ORDER BY created_at ASC"),
+    getArtifactsForTask: db.prepare("SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, created_at FROM artifacts WHERE task_id = ? ORDER BY created_at ASC"),
     getArtifactsForConversation: db.prepare(`
-      SELECT artifact_id, task_id, conversation_id, path, mime_type, created_at
+      SELECT artifact_id, task_id, conversation_id, path, mime_type, kind, source, bytes, sha256, status, created_at
         FROM artifacts
        WHERE conversation_id = @conversation_id
        ORDER BY created_at DESC
@@ -636,12 +645,18 @@ export function createSqliteStore({ dbPath }) {
         ?? artifact.conversationId
         ?? mapTask(statements.getTask.get(artifact.task_id))?.conversation_id
         ?? null;
+      const metadata = normalizeArtifactMetadata(artifact);
       const record = {
         artifact_id: artifact.artifact_id,
         task_id: artifact.task_id,
         conversation_id: conversationId,
         path: artifact.path,
         mime_type: artifact.mime_type ?? null,
+        kind: metadata.kind,
+        source: metadata.source,
+        bytes: metadata.bytes,
+        sha256: metadata.sha256,
+        status: metadata.status,
         created_at: artifact.created_at ?? nowIso()
       };
       statements.insertArtifact.run(record);

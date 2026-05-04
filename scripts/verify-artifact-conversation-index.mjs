@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
@@ -11,6 +11,10 @@ import {
   applyArtifactConversationIndexV1,
   MIGRATION_ID
 } from "../src/service/core/store/migrations/artifact_conversation_index_v1.mjs";
+import {
+  applyArtifactMetadataV1,
+  MIGRATION_ID as ARTIFACT_METADATA_MIGRATION_ID
+} from "../src/service/core/store/migrations/artifact_metadata_v1.mjs";
 
 let pass = 0;
 let fail = 0;
@@ -104,6 +108,49 @@ it("migration upgrades old artifacts table, backfills conversation_id, and is id
   }
 });
 
+it("artifact metadata migration adds stable metadata columns and defaults", () => {
+  const { db, dir } = createOldArtifactSchemaDb();
+  try {
+    seedTask(db, { taskId: "task_meta_migration", conversationId: "conv_meta_migration" });
+    db.prepare(`INSERT INTO artifacts
+      (artifact_id, task_id, path, mime_type, created_at)
+      VALUES (?, ?, ?, ?, ?)`
+    ).run(
+      "artifact_meta_migration",
+      "task_meta_migration",
+      "E:\\out\\migration.pdf",
+      "application/pdf",
+      "2026-05-01T10:04:00.000Z"
+    );
+
+    const result = applyArtifactMetadataV1(db);
+    assert.equal(result.applied, true);
+    assert.equal(result.backfilled, 1);
+    const columns = db.prepare("PRAGMA table_info(artifacts)").all().map((column) => column.name);
+    for (const column of ["kind", "source", "bytes", "sha256", "status"]) {
+      assert.ok(columns.includes(column), `${column} column must be added`);
+    }
+    const row = db.prepare("SELECT kind, source, bytes, sha256, status FROM artifacts WHERE artifact_id = ?")
+      .get("artifact_meta_migration");
+    assert.equal(row.kind, "file");
+    assert.equal(row.source, "generated");
+    assert.equal(row.bytes, null);
+    assert.equal(row.sha256, null);
+    assert.equal(row.status, "unknown");
+    assert.ok(db.prepare("SELECT 1 FROM schema_migrations WHERE migration_id = ?").get(ARTIFACT_METADATA_MIGRATION_ID));
+    assert.equal(applyArtifactMetadataV1(db).applied, false);
+  } finally {
+    disposeDb(db, dir);
+  }
+});
+
+it("registerArtifact does not hash artifact contents on the synchronous hot path", () => {
+  const source = readFileSync(path.join(process.cwd(), "src/service/store/artifact-store.mjs"), "utf8");
+  assert.ok(/statSync/.test(source), "registerArtifact may stat generated files for size/status");
+  assert.ok(!/readFileSync/.test(source), "registerArtifact must not synchronously read artifact contents");
+  assert.ok(!/createHash/.test(source), "registerArtifact must not synchronously hash artifacts");
+});
+
 it("createSqliteStore can open an old DB and expose getArtifactsForConversation", () => {
   const { db, dir, dbPath } = createOldArtifactSchemaDb();
   try {
@@ -120,6 +167,10 @@ it("createSqliteStore can open an old DB and expose getArtifactsForConversation"
         store.getArtifactsForConversation("conv_open").map((artifact) => artifact.path),
         ["E:\\out\\open.pdf"]
       );
+      const [artifact] = store.getArtifactsForConversation("conv_open");
+      assert.equal(artifact.kind, "file");
+      assert.equal(artifact.source, "generated");
+      assert.equal(artifact.status, "unknown");
     } finally {
       store.close();
     }
