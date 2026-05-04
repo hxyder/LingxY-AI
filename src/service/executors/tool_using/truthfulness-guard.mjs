@@ -13,7 +13,7 @@ export function detectUnbackedConnectorClaim(result) {
   return violations.length > 0 ? violations[0] : null;
 }
 
-const LOCAL_FILE_READ_TOOLS = new Set(["read_file_text", "vision_analyze"]);
+const LOCAL_FILE_READ_TOOLS = new Set(["read_file_text", "read_folder_text", "vision_analyze"]);
 
 function hasSuccessfulLocalRead(transcript = []) {
   return transcript.some((entry) =>

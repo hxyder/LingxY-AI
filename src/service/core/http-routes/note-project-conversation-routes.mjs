@@ -4,6 +4,10 @@ import { normalizeDeletedFilter } from "../deletion-lifecycle.mjs";
 import {
   normalizeProjectStore as normalizeProjectStoreBase
 } from "../../../shared/project-store.mjs";
+import {
+  applyConversationModelOverride,
+  normalizeConversationModelOverride
+} from "../../../shared/conversation-model-override.mjs";
 
 const NOTES_EDITOR_ACTORS = ["desktop_console"];
 const NOTES_CHIP_ACTORS = ["desktop_console", "desktop_overlay"];
@@ -139,6 +143,33 @@ export async function tryHandleNoteProjectConversationRoute({
     return true;
   }
 
+  if (method === "POST" && url.pathname === "/conversations") {
+    if (!requireDesktopActor({ request, response, allowedActors: CONVERSATION_MUTATION_ACTORS })) return true;
+    if (typeof runtime.store?.insertConversation !== "function") {
+      sendJson(response, 404, { error: "conversation store not available" });
+      return true;
+    }
+    const body = await readJsonBody(request);
+    const requestedId = typeof body?.conversation_id === "string" && body.conversation_id.trim()
+      ? body.conversation_id.trim().slice(0, 128)
+      : null;
+    const existing = requestedId && typeof runtime.store.getConversation === "function"
+      ? runtime.store.getConversation(requestedId)
+      : null;
+    if (existing) {
+      sendJson(response, 200, { conversation: existing, created: false });
+      return true;
+    }
+    const conversation = runtime.store.insertConversation({
+      conversation_id: requestedId ?? undefined,
+      project_id: typeof body?.project_id === "string" && body.project_id.trim() ? body.project_id.trim().slice(0, 128) : null,
+      title: typeof body?.title === "string" && body.title.trim() ? body.title.trim().slice(0, 200) : null,
+      metadata: body?.metadata && typeof body.metadata === "object" ? body.metadata : {}
+    });
+    sendJson(response, 200, { conversation, created: true });
+    return true;
+  }
+
   const conversationMessagesMatch = url.pathname.match(/^\/conversation\/([^/]+)\/messages$/);
   if (method === "GET" && conversationMessagesMatch) {
     const conversationId = conversationMessagesMatch[1];
@@ -172,6 +203,39 @@ export async function tryHandleNoteProjectConversationRoute({
   }
 
   const conversationByIdMatch = url.pathname.match(/^\/conversation\/([^/]+)$/);
+  const conversationModelMatch = url.pathname.match(/^\/conversation\/([^/]+)\/model$/);
+  if ((method === "PATCH" || method === "DELETE") && conversationModelMatch) {
+    const conversationId = conversationModelMatch[1];
+    if (!requireDesktopActor({ request, response, allowedActors: CONVERSATION_MUTATION_ACTORS })) return true;
+    if (typeof runtime.store?.getConversation !== "function" || typeof runtime.store?.updateConversation !== "function") {
+      sendJson(response, 404, { error: "conversation store not available" });
+      return true;
+    }
+    const conv = runtime.store.getConversation(conversationId);
+    if (!conv) {
+      sendJson(response, 404, { error: "conversation not found" });
+      return true;
+    }
+    const body = method === "PATCH" ? await readJsonBody(request) : { clear: true };
+    const clear = method === "DELETE" || body?.clear === true;
+    const override = clear
+      ? null
+      : normalizeConversationModelOverride(body?.modelOverride ?? body, { pinnedAt: new Date().toISOString() });
+    if (!clear && !override) {
+      sendJson(response, 400, { error: "providerId required" });
+      return true;
+    }
+    const metadata = applyConversationModelOverride(conv.metadata ?? {}, override);
+    const updated = override && typeof runtime.store.patchConversationMetadata === "function"
+      ? runtime.store.patchConversationMetadata(conversationId, { modelOverride: override })
+      : runtime.store.updateConversation(conversationId, { metadata });
+    sendJson(response, 200, {
+      conversation: updated,
+      modelOverride: updated?.metadata?.modelOverride ?? null
+    });
+    return true;
+  }
+
   if (method === "GET" && conversationByIdMatch) {
     const conversationId = conversationByIdMatch[1];
     if (typeof runtime.store?.getConversation !== "function") {

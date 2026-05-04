@@ -50,13 +50,17 @@ function hasFastProvider() {
   return hasAnyConfiguredProvider();
 }
 
-function chatRoutedToCodeCli() {
-  const provider = resolveProviderForTask("chat");
+function providerOptionsForTask(task = null, runtime = null) {
+  return { task, store: runtime?.store ?? null };
+}
+
+function chatRoutedToCodeCli(task = null, runtime = null) {
+  const provider = resolveProviderForTask("chat", process.env, providerOptionsForTask(task, runtime));
   return provider?.kind === "code_cli";
 }
 
-function hasChatApiProvider() {
-  const provider = resolveProviderForTask("chat");
+function hasChatApiProvider(task = null, runtime = null) {
+  const provider = resolveProviderForTask("chat", process.env, providerOptionsForTask(task, runtime));
   return Boolean(provider && provider.kind !== "code_cli");
 }
 
@@ -533,7 +537,11 @@ async function runKimiExecutor({ task, runtime, store, queue, artifactStore, mar
     cancel: async () => controller.abort()
   });
 
-  const activeCliRuntime = cliRuntime ?? resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime);
+  const activeCliRuntime = cliRuntime ?? resolveCodeCliRuntimeForTask(
+    "chat",
+    runtime.kimiRuntime,
+    providerOptionsForTask(task, runtime)
+  );
   if (!activeCliRuntime) {
     if (markFailure) {
       markTaskFailed(runtime, task, { message: "No code_cli runtime resolved for task." });
@@ -652,7 +660,10 @@ async function runExecutor({ runtime, task, executor }) {
   // but we record it here so Console + verify scripts see one canonical
   // `provider_resolved` event per task.
   const taskType = executor.id === "multi_modal" ? "vision" : "chat";
-  const resolvedProvider = resolveProviderForTask(taskType);
+  const resolvedProvider = resolveProviderForTask(taskType, process.env, {
+    task,
+    store: runtime.store
+  });
   const executorDescriptor = describeResolvedProvider(resolvedProvider);
   if (executorDescriptor) {
     emitTaskEvent({
@@ -1217,11 +1228,11 @@ export async function submitContextTask({
       && ((task.executor === "kimi" || task.executor === "code_cli")
         || (task.executor === "fast" && !hasFastProvider())
         || (task.executor === "general" && !hasFastProvider())
-        || chatRoutedToCodeCli());
+        || chatRoutedToCodeCli(task, runtime));
 
     const requestedFormat = detectRequestedOutputFormatForTask(task);
     const shouldPreferProviderArtifactFlow = requestedFormat.id !== "conversational"
-      && hasChatApiProvider()
+      && hasChatApiProvider(task, runtime)
       && !hasFileOrImageContext(executionContext);
 
     if (shouldPreferProviderArtifactFlow && (task.executor === "kimi" || task.executor === "code_cli")) {
@@ -1231,7 +1242,7 @@ export async function submitContextTask({
 
     // Resolve the code_cli runtime *per task* so that provider switches in the
     // UI take effect on the next submission without needing a service restart.
-    const resolvedCliRuntime = resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime);
+    const resolvedCliRuntime = resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime, providerOptionsForTask(task, runtime));
 
     if (shouldUseKimi && resolvedCliRuntime && !shouldPreferProviderArtifactFlow) {
       const artifactStore = runtime.artifactStore ?? createArtifactStore();

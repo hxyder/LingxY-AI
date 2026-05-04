@@ -243,6 +243,16 @@ export function createInMemoryStoreScaffold() {
       conv.updated_at = memNowIso();
       return { ...conv };
     },
+    patchConversationMetadata(id, patch = {}) {
+      const conv = this.conversations.get(id);
+      if (!conv) return null;
+      conv.metadata = {
+        ...(conv.metadata ?? {}),
+        ...(patch ?? {})
+      };
+      conv.updated_at = memNowIso();
+      return { ...conv };
+    },
     softDeleteConversation(id) {
       const conv = this.conversations.get(id);
       if (!conv) return null;

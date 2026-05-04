@@ -826,6 +826,23 @@ export function createSqliteStore({ dbPath }) {
       });
       return mapConversation(statements.getConversation.get(id));
     },
+    patchConversationMetadata(id, patch = {}) {
+      const existing = mapConversation(statements.getConversation.get(id));
+      if (!existing) return null;
+      const metadata = {
+        ...(existing.metadata ?? {}),
+        ...(patch ?? {})
+      };
+      statements.updateConversationFields.run({
+        conversation_id: id,
+        title: null,
+        project_id: null,
+        archived: null,
+        metadata_json: encodeJson(metadata),
+        updated_at: nowIso()
+      });
+      return mapConversation(statements.getConversation.get(id));
+    },
     softDeleteConversation(id) {
       statements.softDeleteConversation.run(nowIso(), id);
       return mapConversation(statements.getConversation.get(id));

@@ -198,7 +198,10 @@ export function createFastExecutorScaffold() {
       }
 
       // Resolve provider dynamically on each call (config may have changed)
-      const provider = resolveProviderForTask("chat");
+      const provider = resolveProviderForTask("chat", process.env, {
+        task,
+        store: task.__runtime?.store
+      });
       if (!provider) {
         yield { event_type: "success", payload: { text: "No AI provider configured. Open Console → Settings to add one." } };
         return;

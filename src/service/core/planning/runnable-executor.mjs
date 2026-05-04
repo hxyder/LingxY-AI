@@ -39,7 +39,10 @@ export function pickRunnableExecutor(task, runtime) {
       // code_cli providers go through the JSON planning-mode bridge in
       // code-cli-bridge.mjs. Falls back to fast only if no provider is
       // configured at all.
-      const provider = resolveProviderForTask("chat");
+      const provider = resolveProviderForTask("chat", process.env, {
+        task,
+        store: runtime.store
+      });
       const agentic = find("agentic");
       if (agentic && provider) return agentic;
       return fast();
@@ -47,7 +50,10 @@ export function pickRunnableExecutor(task, runtime) {
 
     case "kimi":
     case "code_cli":
-      if (!resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime)) return fast();
+      if (!resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime, {
+        task,
+        store: runtime.store
+      })) return fast();
       return find(task.executor) ?? fast();
 
     default:

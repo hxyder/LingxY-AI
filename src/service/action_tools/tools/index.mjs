@@ -2689,6 +2689,176 @@ export const READ_FILE_TEXT_TOOL = {
   }
 };
 
+const DEFAULT_FOLDER_EXCLUDES = new Set([
+  ".git",
+  ".hg",
+  ".svn",
+  "node_modules",
+  ".venv",
+  "venv",
+  "dist",
+  "build",
+  "out"
+]);
+
+function clampNumber(value, { min, max, fallback }) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function shouldSkipFolderEntry(entry) {
+  if (!entry?.name) return true;
+  if (entry.name.startsWith(".") && entry.name !== ".") return true;
+  return DEFAULT_FOLDER_EXCLUDES.has(entry.name);
+}
+
+async function collectReadableFiles(rootPath, {
+  patternRegex = null,
+  maxDepth = 3,
+  maxFiles = 20
+} = {}) {
+  const files = [];
+
+  async function walk(dir, depth = 0) {
+    if (files.length >= maxFiles || depth > maxDepth) return;
+    let entries = [];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((left, right) => left.name.localeCompare(right.name));
+    for (const entry of entries) {
+      if (files.length >= maxFiles) return;
+      const fullPath = path.join(dir, entry.name);
+      const relPath = path.relative(rootPath, fullPath).replace(/\\/g, "/");
+      if (entry.isDirectory()) {
+        if (!shouldSkipFolderEntry(entry)) {
+          await walk(fullPath, depth + 1);
+        }
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (patternRegex && !patternRegex.test(relPath) && !patternRegex.test(entry.name)) continue;
+      files.push(fullPath);
+    }
+  }
+
+  await walk(rootPath, 0);
+  return files;
+}
+
+async function extractFolderTextFile(filePath, maxCharsPerFile) {
+  try {
+    const extracted = await extractFileContent(filePath);
+    const text = String(extracted.text ?? "");
+    const clipped = text.slice(0, maxCharsPerFile);
+    return {
+      path: filePath,
+      success: true,
+      mime: extracted.mime ?? null,
+      extraction_mode: extracted.extraction_mode ?? null,
+      text: clipped,
+      chars_extracted: clipped.length,
+      chars_total: text.length,
+      truncated: text.length > clipped.length
+    };
+  } catch (error) {
+    return {
+      path: filePath,
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+export const READ_FOLDER_TEXT_TOOL = {
+  id: "read_folder_text",
+  name: "Read Folder Text",
+  description: "Recursively extract readable text from files under a local folder. Use this when a folder or project directory must be analyzed beyond a shallow listing.",
+  parameters: ACTION_TOOL_SCHEMAS.read_folder_text,
+  risk_level: "low",
+  required_capabilities: ["file_read"],
+  requires_confirmation: false,
+  async execute(args = {}) {
+    const rootPath = args.path ? path.resolve(String(args.path).replace(/^~/, os.homedir())) : "";
+    if (!rootPath) return createActionResult({ success: false, observation: "path required" });
+    const maxDepth = clampNumber(args.max_depth, { min: 0, max: 8, fallback: 3 });
+    const maxFiles = clampNumber(args.max_files, { min: 1, max: 80, fallback: 20 });
+    const maxCharsPerFile = clampNumber(args.max_chars_per_file, { min: 500, max: 20000, fallback: 6000 });
+    const maxTotalChars = clampNumber(args.max_total_chars, { min: 1000, max: 100000, fallback: 30000 });
+    const patternRegex = args.pattern ? globToRegex(String(args.pattern)) : null;
+
+    try {
+      const rootInfo = await lstat(rootPath);
+      const candidateFiles = rootInfo.isDirectory()
+        ? await collectReadableFiles(rootPath, { patternRegex, maxDepth, maxFiles })
+        : [rootPath];
+      const chunks = [];
+      const records = [];
+      let totalChars = 0;
+      let stoppedByBudget = false;
+
+      for (const filePath of candidateFiles) {
+        if (totalChars >= maxTotalChars) {
+          stoppedByBudget = true;
+          break;
+        }
+        const remaining = maxTotalChars - totalChars;
+        const extracted = await extractFolderTextFile(filePath, Math.min(maxCharsPerFile, remaining));
+        records.push(extracted);
+        if (!extracted.success) continue;
+        totalChars += extracted.chars_extracted;
+        chunks.push([
+          `--- ${path.relative(rootPath, filePath).replace(/\\/g, "/") || path.basename(filePath)} ---`,
+          `path=${filePath}`,
+          `mime=${extracted.mime ?? "unknown"} mode=${extracted.extraction_mode ?? "unknown"}`,
+          "",
+          extracted.text || "[No extractable text]"
+        ].join("\n"));
+      }
+
+      const successful = records.filter((record) => record.success);
+      return createActionResult({
+        success: true,
+        observation: successful.length > 0
+          ? [
+            `Extracted text from ${successful.length}/${candidateFiles.length} file(s) under ${rootPath}`,
+            stoppedByBudget ? `Stopped at max_total_chars=${maxTotalChars}` : "",
+            "",
+            chunks.join("\n\n")
+          ].filter(Boolean).join("\n")
+          : `No extractable text found under ${rootPath}`,
+        metadata: {
+          tool_id: "read_folder_text",
+          path: rootPath,
+          pattern: args.pattern ?? null,
+          max_depth: maxDepth,
+          max_files: maxFiles,
+          files_seen: candidateFiles.length,
+          files_read: successful.length,
+          chars_extracted: totalChars,
+          truncated: stoppedByBudget || records.some((record) => record.truncated),
+          files: records.map((record) => ({
+            path: record.path,
+            success: record.success,
+            chars_extracted: record.chars_extracted ?? 0,
+            truncated: record.truncated ?? false,
+            error: record.error ?? null
+          }))
+        }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `read_folder_text failed: ${error.message}`,
+        metadata: { tool_id: "read_folder_text", path: rootPath }
+      });
+    }
+  }
+};
+
 export const VERIFY_FILE_EXISTS_TOOL = {
   id: "verify_file_exists",
   name: "Verify File Exists",
@@ -3121,6 +3291,7 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   GET_LATEST_ARTIFACT_TOOL,
   STAT_FILE_TOOL,
   READ_FILE_TEXT_TOOL,
+  READ_FOLDER_TEXT_TOOL,
   VERIFY_FILE_EXISTS_TOOL,
   REGISTER_ARTIFACT_TOOL,
   RESOLVE_OUTPUT_PATH_TOOL,

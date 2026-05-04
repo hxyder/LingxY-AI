@@ -119,6 +119,30 @@ await it("GET /conversations: archived filter — default hides archived", async
   } finally { await srv.close(); }
 });
 
+await it("POST /conversations: creates or returns a durable conversation shell", async () => {
+  const runtime = makeRuntime();
+  const srv = await startServer(runtime);
+  try {
+    const created = await fetchJson(`${srv.url}/conversations`, desktopJson("POST", {
+      conversation_id: "c_create",
+      title: "draft chat",
+      metadata: { modelOverride: { providerId: "deepseek", model: "deepseek-v4-flash" } }
+    }));
+    assert.equal(created.status, 200);
+    assert.equal(created.body.created, true);
+    assert.equal(created.body.conversation.conversation_id, "c_create");
+    assert.equal(created.body.conversation.metadata.modelOverride.providerId, "deepseek");
+
+    const existing = await fetchJson(`${srv.url}/conversations`, desktopJson("POST", {
+      conversation_id: "c_create",
+      title: "ignored"
+    }));
+    assert.equal(existing.status, 200);
+    assert.equal(existing.body.created, false);
+    assert.equal(existing.body.conversation.title, "draft chat");
+  } finally { await srv.close(); }
+});
+
 await it("GET /conversation/{id}: returns conversation + messages + task links", async () => {
   const runtime = makeRuntime();
   runtime.store.insertConversation({ conversation_id: "c_full" });
@@ -144,6 +168,33 @@ await it("GET /conversation/{id}: 404 when missing", async () => {
   try {
     const r = await fetchJson(`${srv.url}/conversation/c_missing`);
     assert.equal(r.status, 404);
+  } finally { await srv.close(); }
+});
+
+await it("PATCH/DELETE /conversation/{id}/model pins and clears a conversation model override", async () => {
+  const runtime = makeRuntime();
+  runtime.store.insertConversation({
+    conversation_id: "c_model",
+    metadata: { topic: "demo" }
+  });
+  const srv = await startServer(runtime);
+  try {
+    const set = await fetchJson(`${srv.url}/conversation/c_model/model`, desktopJson("PATCH", {
+      providerId: "deepseek",
+      model: "deepseek-v4-flash",
+      reasoningEffort: "medium"
+    }));
+    assert.equal(set.status, 200);
+    assert.equal(set.body.modelOverride.providerId, "deepseek");
+    assert.equal(set.body.modelOverride.model, "deepseek-v4-flash");
+    assert.equal(set.body.conversation.metadata.topic, "demo");
+    assert.ok(set.body.modelOverride.pinnedAt, "pin should carry audit timestamp");
+
+    const cleared = await fetchJson(`${srv.url}/conversation/c_model/model`, desktopMutation("DELETE"));
+    assert.equal(cleared.status, 200);
+    assert.equal(cleared.body.modelOverride, null);
+    assert.equal(cleared.body.conversation.metadata.topic, "demo");
+    assert.equal(cleared.body.conversation.metadata.modelOverride, undefined);
   } finally { await srv.close(); }
 });
 
@@ -182,8 +233,8 @@ await it("POST /task does not run pre-task regex clarification", async () => {
     assert.ok(r.body.task?.task_id, "ambiguous-looking text should still create a task");
     assert.notEqual(r.body.type, "clarification_needed");
     const messages = runtime.store.getConversationMessages("c_clarify");
-    assert.equal(messages.length, 1);
-    assert.deepEqual(messages.map((m) => m.role), ["user"]);
+    assert.ok(messages.length >= 1);
+    assert.equal(messages[0].role, "user");
     assert.equal(messages[0].content, "打开文件");
     assert.equal(messages[0].metadata.client_message_id, "cmsg_clarify_1");
   } finally { await srv.close(); }

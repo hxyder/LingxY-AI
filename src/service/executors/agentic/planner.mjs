@@ -136,7 +136,10 @@ export async function runAgenticPlanner({
     runtime
   }) ?? [];
 
-  const resolvedProvider = provider ?? resolveProviderForTask("chat");
+  const resolvedProvider = provider ?? resolveProviderForTask("chat", process.env, {
+    task,
+    store: runtime?.store
+  });
   if (!resolvedProvider && !adapterOverride) {
     return {
       success: false,

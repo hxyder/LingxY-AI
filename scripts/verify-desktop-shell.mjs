@@ -30,12 +30,22 @@ if (host.start().serviceBridgeAttached !== true) {
 }
 
 const dockWindow = bootstrap.manifest.windows.find((w) => w.id === "dock");
-// Dock window must match the visible orb size (48×48). A previous 52×52
-// hitbox left invisible padding around the orb, preventing the user from
-// dragging it fully into a screen edge/corner. Hover scale(1.06) overflow
-// is acceptable on transparent windows.
+// Dock window must match the visible orb size (48×48). A previous oversized
+// hitbox left invisible padding around the orb, while body overflow created
+// native scrollbars in the tiny HUD window.
 if (!dockWindow || dockWindow.width !== 48 || dockWindow.height !== 48) {
   throw new Error("Dock window must match the 48x48 orb size (no invisible padding).");
+}
+
+const dockHtml = readFileSync(new URL("../src/desktop/renderer/dock.html", import.meta.url), "utf8");
+if (!/html\s*\{[\s\S]*?width:\s*48px;[\s\S]*?height:\s*48px;[\s\S]*?overflow:\s*hidden;/.test(dockHtml)
+    || !/body\s*\{[\s\S]*?width:\s*48px;\s*height:\s*48px;[\s\S]*?overflow:\s*hidden;/.test(dockHtml)) {
+  throw new Error("Dock renderer document must stay fixed 48x48 with hidden overflow.");
+}
+
+if (/#dockButton:hover\s*\{[^}]*scale\(\s*1\./.test(dockHtml)
+    || /#dockButton\.dragover\s*\{[^}]*scale\(\s*1\./.test(dockHtml)) {
+  throw new Error("Dock hover/dragover states must not enlarge the 48x48 document and trigger scrollbars.");
 }
 
 const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");

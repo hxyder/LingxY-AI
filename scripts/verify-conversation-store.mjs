@@ -83,6 +83,22 @@ runForBoth("appendMessage updates message_count and updated_at on conversations"
   assert.equal(c2.message_count, 2);
 });
 
+runForBoth("patchConversationMetadata merges without clobbering existing metadata", (store) => {
+  store.insertConversation({
+    conversation_id: "conv_meta_patch",
+    metadata: { topic: "demo", existing: true }
+  });
+  const updated = store.patchConversationMetadata("conv_meta_patch", {
+    modelOverride: { providerId: "deepseek", model: "deepseek-v4-flash" }
+  });
+  assert.equal(updated.metadata.topic, "demo");
+  assert.equal(updated.metadata.existing, true);
+  assert.deepEqual(updated.metadata.modelOverride, {
+    providerId: "deepseek",
+    model: "deepseek-v4-flash"
+  });
+});
+
 runForBoth("linkMessageToTask 'triggered' bumps task_count exactly once per insert", (store) => {
   store.insertConversation({ conversation_id: "conv_link" });
   const m = store.appendMessage({ conversation_id: "conv_link", role: "user", content: "go" });

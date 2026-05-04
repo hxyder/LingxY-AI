@@ -28,7 +28,10 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
       const text = String(composed ?? "").trim();
       if (text) return text;
     }
-    const provider = resolveProviderForTask("chat");
+    const provider = resolveProviderForTask("chat", process.env, {
+      task,
+      store: runtime?.store
+    });
     if (!provider || provider.kind === "code_cli") {
       return localFallbackFinal({ task, transcript, reason });
     }

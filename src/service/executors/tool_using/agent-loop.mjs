@@ -195,7 +195,10 @@ function defaultPlanner({ task, runtime: plannerRuntime = null }) {
 // Planner prompt formatting now lives in ./planner-formatting.mjs.
 
 async function llmPlanner({ task, transcript, tools, iteration, runtime }) {
-  const provider = resolveProviderForTask("chat");
+  const provider = resolveProviderForTask("chat", process.env, {
+    task,
+    store: runtime?.store ?? task.__runtime?.store
+  });
   if (!provider || provider.kind === "code_cli") {
     return defaultPlanner({ task, runtime: task.__runtime ?? null });
   }

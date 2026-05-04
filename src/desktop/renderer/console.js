@@ -248,6 +248,7 @@ const consoleChatScrollDownBtn = document.querySelector("#consoleChatScrollDown"
 const consoleChatState = document.querySelector("#consoleChatState");
 const consoleChatAttachBtn = document.querySelector("#consoleChatAttachBtn");
 const consoleChatVoiceBtn = document.querySelector("#consoleChatVoiceBtn");
+const consoleChatModelChip = document.querySelector("#consoleChatModelChip");
 const consoleChatModelChipLabel = document.querySelector("#consoleChatModelChipLabel");
 const consoleChatAttachInput = document.querySelector("#consoleChatAttachInput");
 const consoleChatAttachments = document.querySelector("#consoleChatAttachments");
@@ -2161,12 +2162,14 @@ function renderConsoleChatHeader() {
   if (!consoleActiveConversation?.conversation_id) {
     titleEl.textContent = "";
     titleEl.hidden = true;
+    updateChatModelChip();
     return;
   }
   const label = consoleActiveConversation.title
     || consoleActiveConversation.conversation_id.slice(0, 12);
   titleEl.textContent = `Continuing: ${label}`;
   titleEl.hidden = false;
+  updateChatModelChip();
 }
 
 const consoleChatMessageAdapter = {
@@ -2218,7 +2221,8 @@ async function loadConsoleConversationFromBackend(conversationId) {
   consoleActiveConversation = cacheEnsureBackendFields({
     conversation_id: detail.conversation.conversation_id,
     title: detail.conversation.title,
-    project_id: detail.conversation.project_id
+    project_id: detail.conversation.project_id,
+    metadata: detail.conversation.metadata ?? {}
   });
   if (consoleChatMessages) {
     // Defensive: if a streaming answer is in flight, drop its reference
@@ -9560,12 +9564,160 @@ consoleChatVoiceBtn?.addEventListener("click", () => {
 
 function updateChatModelChip() {
   if (!consoleChatModelChipLabel) return;
+  const override = consoleActiveConversation?.metadata?.modelOverride ?? null;
+  if (override?.providerId) {
+    const provider = customProviders.find((item) => item.id === override.providerId);
+    const providerLabel = provider?.name ?? override.providerId;
+    const label = override.model ? `${providerLabel}:${override.model}` : providerLabel;
+    consoleChatModelChipLabel.textContent = String(label).slice(0, 34);
+    if (consoleChatModelChip) {
+      consoleChatModelChip.title = `Conversation model: ${label}`;
+    }
+    return;
+  }
   const routing = state.workspace?.routing ?? {};
   const chatTask = Array.isArray(routing.tasks) ? routing.tasks.find((t) => t?.id === "chat" || t?.id === "chat.reply") : null;
   const label = chatTask?.model || routing.default_model || "auto";
   consoleChatModelChipLabel.textContent = String(label).slice(0, 28);
+  if (consoleChatModelChip) {
+    consoleChatModelChip.title = customProviders.length > 0
+      ? "Change model for this conversation"
+      : "Configure an AI provider to choose models";
+  }
 }
 updateChatModelChip();
+
+function desktopJsonOptions(method, body = {}) {
+  return {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Lingxy-Desktop-Actor": "desktop_console"
+    },
+    body: JSON.stringify(body)
+  };
+}
+
+function desktopMutationOptions(method) {
+  return {
+    method,
+    headers: {
+      "X-Lingxy-Desktop-Actor": "desktop_console"
+    }
+  };
+}
+
+async function ensureConsoleConversationForModelOverride() {
+  const currentId = consoleActiveConversation?.conversation_id ?? cacheCreateConversationId();
+  const payload = await fetchJson("/conversations", desktopJsonOptions("POST", {
+    conversation_id: currentId,
+    project_id: consoleActiveConversation?.project_id ?? null,
+    title: consoleActiveConversation?.title ?? null,
+    metadata: consoleActiveConversation?.metadata ?? {}
+  }));
+  const conv = payload.conversation ?? { conversation_id: currentId };
+  consoleActiveConversation = cacheEnsureBackendFields({
+    ...consoleActiveConversation,
+    conversation_id: conv.conversation_id,
+    title: conv.title ?? consoleActiveConversation?.title ?? null,
+    project_id: conv.project_id ?? consoleActiveConversation?.project_id ?? null,
+    metadata: conv.metadata ?? consoleActiveConversation?.metadata ?? {}
+  });
+  renderConsoleChatHeader();
+  renderChatSidebar();
+  return consoleActiveConversation;
+}
+
+function parseProviderChoice(input, providers) {
+  const text = `${input ?? ""}`.trim();
+  if (!text) return null;
+  const byIndex = Number.parseInt(text, 10);
+  if (Number.isInteger(byIndex) && byIndex >= 1 && byIndex <= providers.length) {
+    return providers[byIndex - 1];
+  }
+  const lower = text.toLowerCase();
+  return providers.find((provider) =>
+    `${provider.id ?? ""}`.toLowerCase() === lower
+    || `${provider.name ?? ""}`.toLowerCase() === lower
+  ) ?? null;
+}
+
+async function chooseConsoleConversationModel() {
+  await loadProvidersAndRouting();
+  const providers = customProviders.filter((provider) => provider?.id);
+  if (providers.length === 0) {
+    showConsoleToast("先添加一个 AI Provider，然后就可以给当前对话切模型。", { kind: "info" });
+    switchTab("settings");
+    document.querySelector('[data-settings-nav="providerSettingsPanel"]')?.click?.();
+    openProviderModal();
+    return;
+  }
+
+  const currentOverride = consoleActiveConversation?.metadata?.modelOverride ?? null;
+  const providerMenu = providers
+    .map((provider, index) => `${index + 1}. ${provider.name ?? provider.id} (${provider.defaultModel || "default"})`)
+    .join("\n");
+  const providerInput = globalThis.prompt?.(
+    `选择当前对话使用的模型 Provider：\n\n${providerMenu}\n\n输入 0 清除当前对话模型覆盖。`,
+    currentOverride?.providerId ?? "1"
+  );
+  if (providerInput == null) return;
+  if (`${providerInput}`.trim() === "0") {
+    const conv = await ensureConsoleConversationForModelOverride();
+    const cleared = await fetchJson(
+      `/conversation/${encodeURIComponent(conv.conversation_id)}/model`,
+      desktopMutationOptions("DELETE")
+    );
+    consoleActiveConversation = cacheEnsureBackendFields({
+      ...consoleActiveConversation,
+      metadata: cleared.conversation?.metadata ?? {}
+    });
+    updateChatModelChip();
+    showConsoleToast("已恢复为全局 Task Routing。", { kind: "success" });
+    return;
+  }
+
+  const provider = parseProviderChoice(providerInput, providers);
+  if (!provider) {
+    showConsoleToast("没有找到这个 Provider。", { kind: "warning" });
+    return;
+  }
+
+  await loadProviderModelOptions(provider.id, { forceRefresh: false });
+  const choices = modelChoicesForProvider(provider, "chat");
+  const currentModel = currentOverride?.providerId === provider.id
+    ? currentOverride?.model
+    : "";
+  const fallbackModel = currentModel || defaultModelForProvider(provider, "chat") || choices[0]?.id || "";
+  const choiceText = choices.slice(0, 18).map((choice) => `- ${choice.id || "(CLI default)"}`).join("\n");
+  const modelInput = globalThis.prompt?.(
+    `输入当前对话使用的模型 ID。可选项：\n\n${choiceText || "(该 Provider 暂无内置列表，可输入自定义模型 ID)"}`,
+    fallbackModel
+  );
+  if (modelInput == null) return;
+  const model = `${modelInput}`.trim();
+  const conv = await ensureConsoleConversationForModelOverride();
+  const saved = await fetchJson(
+    `/conversation/${encodeURIComponent(conv.conversation_id)}/model`,
+    desktopJsonOptions("PATCH", {
+      providerId: provider.id,
+      model,
+      mode: "default"
+    })
+  );
+  consoleActiveConversation = cacheEnsureBackendFields({
+    ...consoleActiveConversation,
+    metadata: saved.conversation?.metadata ?? { modelOverride: saved.modelOverride ?? null }
+  });
+  updateChatModelChip();
+  showConsoleToast("当前对话的模型已切换。", { kind: "success" });
+}
+
+consoleChatModelChip?.addEventListener("click", () => {
+  void chooseConsoleConversationModel().catch((error) => {
+    showConsoleToast(`模型切换失败：${error.message}`, { kind: "error" });
+  });
+});
 
 // UCA-125 Phase 7c: generic foldable panel-section.
 // Any <section class="panel-section" data-foldable="true"> can be folded

@@ -280,8 +280,12 @@ function hasFastProvider() {
   return hasAnyConfiguredProvider();
 }
 
-function chatRoutedToCodeCli() {
-  const provider = resolveProviderForTask("chat");
+function providerOptionsForTask(task = null, runtime = null) {
+  return { task, store: runtime?.store ?? null };
+}
+
+function chatRoutedToCodeCli(task = null, runtime = null) {
+  const provider = resolveProviderForTask("chat", process.env, providerOptionsForTask(task, runtime));
   return provider?.kind === "code_cli";
 }
 
@@ -330,9 +334,9 @@ async function runBrowserExecutor({ task, runtime }) {
     && ((task.executor === "kimi" || task.executor === "code_cli")
       || (task.executor === "fast" && !hasFastProvider())
       || (task.executor === "general" && !hasFastProvider())
-      || chatRoutedToCodeCli());
+      || chatRoutedToCodeCli(task, runtime));
 
-  const resolvedCliRuntime = resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime);
+  const resolvedCliRuntime = resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime, providerOptionsForTask(task, runtime));
 
   if (shouldUseKimi && resolvedCliRuntime) {
     const providerDescriptor = describeCodeCliRuntime(resolvedCliRuntime);
@@ -365,7 +369,10 @@ async function runBrowserExecutor({ task, runtime }) {
     writable: true
   });
 
-  const resolvedProvider = resolveProviderForTask(executor.id === "multi_modal" ? "vision" : "chat");
+  const resolvedProvider = resolveProviderForTask(executor.id === "multi_modal" ? "vision" : "chat", process.env, {
+    task,
+    store: runtime.store
+  });
   const executorDescriptor = describeResolvedProvider(resolvedProvider);
   if (executorDescriptor) {
     emitTaskEvent({
@@ -479,7 +486,11 @@ async function runKimiExecutor({ task, runtime, artifactStore, cliRuntime = null
     cancel: async () => controller.abort()
   });
 
-  const activeCliRuntime = cliRuntime ?? resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime);
+  const activeCliRuntime = cliRuntime ?? resolveCodeCliRuntimeForTask(
+    "chat",
+    runtime.kimiRuntime,
+    providerOptionsForTask(task, runtime)
+  );
   if (!activeCliRuntime) {
     markTaskFailed(runtime, task, { message: "No code_cli runtime resolved for task." });
     unregisterActiveExecution(runtime, task.task_id);

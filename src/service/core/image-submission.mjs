@@ -171,7 +171,10 @@ async function runExecutor({ task, runtime }) {
     sub_status: executor.id === "multi_modal" ? "multi_modal_executor" : "fast_executor"
   }, true);
 
-  const resolvedProvider = resolveProviderForTask(executor.id === "multi_modal" ? "vision" : "chat");
+  const resolvedProvider = resolveProviderForTask(executor.id === "multi_modal" ? "vision" : "chat", process.env, {
+    task,
+    store: runtime.store
+  });
   const executorDescriptor = describeResolvedProvider(resolvedProvider);
   if (executorDescriptor) {
     emitTaskEvent({

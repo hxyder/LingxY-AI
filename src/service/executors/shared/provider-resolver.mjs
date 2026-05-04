@@ -15,6 +15,9 @@ import {
   sanitizeTaskRouteForProvider
 } from "../../../shared/provider-catalog.mjs";
 import {
+  normalizeConversationModelOverride
+} from "../../../shared/conversation-model-override.mjs";
+import {
   hydrateProviderApiKeySecretSync,
   providerHasConfiguredApiKey
 } from "../../security/secret-store.mjs";
@@ -96,6 +99,65 @@ export function resolveRoutedModel(provider, route, taskType) {
   return resolveModeModel(sanitizedProvider, baseModel, mode);
 }
 
+const CONVERSATION_MODEL_TASK_TYPES = new Set(["chat"]);
+
+function shouldUseConversationModelOverride(taskType) {
+  return CONVERSATION_MODEL_TASK_TYPES.has(`${taskType ?? ""}`);
+}
+
+function getConversationFromOptions(options = {}) {
+  if (options.conversation && typeof options.conversation === "object") {
+    return options.conversation;
+  }
+  const conversationId = options.conversationId
+    ?? options.conversation_id
+    ?? options.task?.conversation_id
+    ?? null;
+  if (!conversationId || typeof options.store?.getConversation !== "function") {
+    return null;
+  }
+  try {
+    return options.store.getConversation(conversationId);
+  } catch {
+    return null;
+  }
+}
+
+function resolveModelOverrideFromOptions(taskType, options = {}) {
+  if (!shouldUseConversationModelOverride(taskType)) return null;
+  const direct = normalizeConversationModelOverride(
+    options.modelOverride
+      ?? options.model_override
+      ?? options.aiRoute
+      ?? options.ai_route
+      ?? options.task?.modelOverride
+      ?? options.task?.ai_route
+      ?? options.task?.context_packet?.selection_metadata?.modelOverride
+      ?? options.task?.context_packet?.selection_metadata?.ai_route
+      ?? null
+  );
+  if (direct) return direct;
+  const conversation = getConversationFromOptions(options);
+  return normalizeConversationModelOverride(
+    conversation?.metadata?.modelOverride
+      ?? conversation?.metadata?.model_override
+      ?? null
+  );
+}
+
+function resolveProviderFromOverride(customProviders, override, taskType) {
+  if (!override?.providerId) return null;
+  const provider = customProviders.find((candidate) => candidate.id === override.providerId);
+  if (!provider) return null;
+  const route = sanitizeTaskRouteForProvider(provider, {
+    providerId: override.providerId,
+    model: override.model,
+    mode: override.mode,
+    reasoningEffort: override.reasoningEffort
+  }, taskType) ?? { providerId: override.providerId };
+  return providerToResolved(provider, route, taskType);
+}
+
 function providerToResolved(provider, route, taskType) {
   // UCA-182 Phase 22b: sanitize the provider + route at resolve time
   // too. Without this, stale taskRouting (e.g. a reasoningEffort in
@@ -161,7 +223,7 @@ function providerToResolved(provider, route, taskType) {
  * @param {"chat"|"router"|"vision"|"file_analysis"|"audio_transcription"|"embedding"} taskType
  * @returns provider config or null
  */
-export function resolveProviderForTask(taskType, env = process.env) {
+export function resolveProviderForTask(taskType, env = process.env, options = {}) {
   const config = loadConfig();
   const customProviders = (config.ai?.customProviders ?? []).map((provider) => hydrateProvider(provider, taskType));
   const routing = Object.fromEntries(
@@ -172,6 +234,10 @@ export function resolveProviderForTask(taskType, env = process.env) {
       return [routeTaskType, sanitizeTaskRouteForProvider(provider, route, routeTaskType)];
     })
   );
+
+  const override = resolveModelOverrideFromOptions(taskType, options);
+  const overrideResolved = resolveProviderFromOverride(customProviders, override, taskType);
+  if (overrideResolved) return overrideResolved;
 
   // 1. Check explicit task routing
   const route = routing[taskType];
@@ -319,12 +385,12 @@ export function buildKimiRuntimeFromProvider(provider, fallbackRuntime = null) {
  * This replaces the old `resolveKimiRuntimeForTask` name, which is kept as
  * an alias for backwards compatibility.
  */
-export function resolveCodeCliRuntimeForTask(taskType, fallbackRuntime = null) {
+export function resolveCodeCliRuntimeForTask(taskType, fallbackRuntime = null, options = {}) {
   if (process.env.UCA_FORCE_BOOT_KIMI_RUNTIME === "1") {
     return fallbackRuntime;
   }
 
-  const provider = resolveProviderForTask(taskType);
+  const provider = resolveProviderForTask(taskType, process.env, options);
   if (provider?.kind === "code_cli") {
     return buildKimiRuntimeFromProvider(provider, fallbackRuntime);
   }
@@ -337,8 +403,8 @@ export function resolveCodeCliRuntimeForTask(taskType, fallbackRuntime = null) {
 }
 
 // Backwards-compatible alias.
-export function resolveKimiRuntimeForTask(taskType, fallbackRuntime = null) {
-  return resolveCodeCliRuntimeForTask(taskType, fallbackRuntime);
+export function resolveKimiRuntimeForTask(taskType, fallbackRuntime = null, options = {}) {
+  return resolveCodeCliRuntimeForTask(taskType, fallbackRuntime, options);
 }
 
 /**
@@ -385,9 +451,9 @@ export function describeCodeCliRuntime(runtime, { providerName = null, configId 
  * the code_cli runtime if the active provider is a code_cli; callers use this
  * for `/ai/active-provider-for-task` without having to juggle two functions.
  */
-export function resolveActiveProviderForTask(taskType, fallbackRuntime = null) {
+export function resolveActiveProviderForTask(taskType, fallbackRuntime = null, options = {}) {
   if (process.env.UCA_FORCE_BOOT_KIMI_RUNTIME !== "1") {
-    const provider = resolveProviderForTask(taskType);
+    const provider = resolveProviderForTask(taskType, process.env, options);
     if (provider) {
       if (provider.kind === "code_cli") {
         const runtime = buildKimiRuntimeFromProvider(provider, fallbackRuntime);

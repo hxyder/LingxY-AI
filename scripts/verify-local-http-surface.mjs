@@ -324,6 +324,18 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("note-project-conversation-routes.mjs", "PATCH", "/^\\/conversation\\/([^/]+)\\/model$/", {
+    domain: "conversation",
+    effect: "model_route_override",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
+  surface("note-project-conversation-routes.mjs", "POST", "/conversations", {
+    domain: "conversation",
+    effect: "local_state_write",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("note-project-conversation-routes.mjs", "POST", "/notes", {
     domain: "notes",
     effect: "local_state_write",
@@ -633,6 +645,15 @@ function assertDesktopActorGuard(surfaceEntry) {
       routeIndex = source.indexOf(`if (${variableMatch[1]} && method === "${surfaceEntry.method}"`);
       if (routeIndex < 0) {
         routeIndex = source.indexOf(`if (method === "${surfaceEntry.method}" && ${variableMatch[1]}`);
+      }
+      if (routeIndex < 0) {
+        const compoundMethodIndex = source.indexOf(`if ((method === "${surfaceEntry.method}"`);
+        if (compoundMethodIndex >= 0) {
+          const compoundLine = source.slice(compoundMethodIndex, source.indexOf("\n", compoundMethodIndex));
+          if (compoundLine.includes(variableMatch[1])) {
+            routeIndex = compoundMethodIndex;
+          }
+        }
       }
     } else {
       routeIndex = source.indexOf(`if (method === "${surfaceEntry.method}" && ${surfaceEntry.matcher}.test(url.pathname))`);
