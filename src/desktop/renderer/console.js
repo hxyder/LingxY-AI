@@ -882,10 +882,10 @@ async function openConsoleChatExternalLink(anchor) {
 
 consoleChatMessages?.addEventListener("click", (ev) => {
   const target = ev.target instanceof Element ? ev.target : null;
-  const capabilityAction = target?.closest?.("[data-capability-action][data-capability-prompt]");
+  const capabilityAction = target?.closest?.("[data-capability-action]");
   if (capabilityAction && consoleChatMessages.contains(capabilityAction)) {
     ev.preventDefault();
-    handoffConsoleCapabilityAction(capabilityAction);
+    void handoffConsoleCapabilityAction(capabilityAction);
     return;
   }
   const copyButton = target?.closest?.("[data-md-copy]");
@@ -904,8 +904,23 @@ consoleChatMessages?.addEventListener("click", (ev) => {
   void openConsoleChatExternalLink(anchor);
 });
 
-function handoffConsoleCapabilityAction(actionEl) {
+async function handoffConsoleCapabilityAction(actionEl) {
   if (!consoleChatInput || !actionEl) return;
+  const intent = `${actionEl.getAttribute("data-capability-action") ?? ""}`.trim();
+  if (intent === "open_saved_skill") {
+    const entryPath = `${actionEl.getAttribute("data-capability-path") ?? ""}`.trim();
+    if (entryPath) {
+      try { switchTab("settings"); } catch { /* ignore */ }
+      await openSkillEditor(entryPath);
+    }
+    return;
+  }
+  if (intent === "review_mcp_drafts") {
+    try { switchTab("connectors"); } catch { /* ignore */ }
+    await loadConnectorsTab();
+    try { document.querySelector("#mcpDraftList")?.scrollIntoView({ behavior: "smooth", block: "center" }); } catch { /* ignore */ }
+    return;
+  }
   const prompt = `${actionEl.getAttribute("data-capability-prompt") ?? ""}`.trim();
   if (!prompt) return;
   const current = consoleChatInput.value.trim();

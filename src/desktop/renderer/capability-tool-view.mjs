@@ -90,6 +90,28 @@ function recoveryActions(recovery = {}) {
     .filter(Boolean);
 }
 
+function savedCapabilityActions(data = {}) {
+  const kind = asText(data.kind);
+  if (kind === "skill" && asText(data.path)) {
+    return [{
+      intent: "open_saved_skill",
+      label: "查看/编辑 skill",
+      description: "打开 skill 编辑器，可测试、保存或回滚。",
+      path: asText(data.path),
+      safety: "local_read"
+    }];
+  }
+  if (kind === "mcp") {
+    return [{
+      intent: "review_mcp_drafts",
+      label: "审核 MCP 草稿",
+      description: "打开 Connectors 的待审核草稿区；导入后仍默认禁用。",
+      safety: "config_review"
+    }];
+  }
+  return [];
+}
+
 export function buildCapabilityToolView(toolName = "", metadata = {}) {
   const toolId = asText(toolName);
   if (toolId !== "draft_capability" && toolId !== "save_capability_draft") return null;
@@ -148,7 +170,8 @@ export function buildCapabilityToolView(toolName = "", metadata = {}) {
       badge: status === "saved" ? "已保存" : "需要处理",
       tone: status === "saved" ? "ok" : "warn",
       rows,
-      question: data.review_required ? "MCP 草稿仍需 review/install/enable；保存草稿不等于启用 live capability。" : ""
+      question: data.review_required ? "保存草稿不等于启用 live capability；请先审核、测试，再决定启用。" : "",
+      actions: status === "saved" ? savedCapabilityActions(data) : []
     };
   }
 
@@ -163,9 +186,10 @@ function renderActionListHtml(actions, { interactive = false } = {}) {
     const label = escapeHtml(action.label ?? "");
     const description = escapeHtml(action.description ?? "");
     const prompt = escapeHtml(action.prompt ?? action.description ?? "");
+    const path = escapeHtml(action.path ?? "");
     const tag = interactive ? "button" : "li";
     const attrs = interactive
-      ? ` type="button" data-capability-prompt="${prompt}"`
+      ? ` type="button"${prompt ? ` data-capability-prompt="${prompt}"` : ""}${path ? ` data-capability-path="${path}"` : ""}`
       : "";
     return `<${tag} class="capability-tool-view-action" data-capability-action="${intent}" data-capability-safety="${safety}"${attrs}>`
       + `<span class="capability-tool-view-action-label">${label}</span>`

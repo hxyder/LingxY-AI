@@ -169,6 +169,38 @@ test("recovery_required view maps suggested actions through the same structured 
   assert.doesNotMatch(html, /<button|onclick=/i);
 });
 
+test("saved capability view exposes review actions without enabling live capability", () => {
+  const skillView = buildCapabilityToolView("save_capability_draft", {
+    status: "saved",
+    kind: "skill",
+    path: "E:\\linxi\\data\\integrations\\skills\\triage\\SKILL.md",
+    review_required: true
+  });
+  assert.equal(skillView.actions.length, 1);
+  assert.equal(skillView.actions[0].intent, "open_saved_skill");
+  assert.equal(skillView.actions[0].safety, "local_read");
+  assert.match(skillView.question, /审核、测试/);
+
+  const skillHtml = renderCapabilityToolViewHtml(skillView, { interactive: true });
+  assert.match(skillHtml, /data-capability-action="open_saved_skill"/);
+  assert.match(skillHtml, /data-capability-path=/);
+  assert.doesNotMatch(skillHtml, /save_capability_draft/);
+  assert.doesNotMatch(skillHtml, /enable.*true/i);
+
+  const mcpView = buildCapabilityToolView("save_capability_draft", {
+    status: "saved",
+    kind: "mcp",
+    id: "search-bridge",
+    path: "E:\\linxi\\data\\mcp-drafts\\search-bridge.json",
+    review_required: true
+  });
+  assert.equal(mcpView.actions[0].intent, "review_mcp_drafts");
+  const mcpHtml = renderCapabilityToolViewHtml(mcpView, { interactive: true });
+  assert.match(mcpHtml, /审核 MCP 草稿/);
+  assert.match(mcpHtml, /默认禁用/);
+  assert.doesNotMatch(mcpHtml, /data-capability-path=/);
+});
+
 test("timeline entry shows capability recovery card from metadata", () => {
   const html = renderTimelineEntry({
     event: "tool_call_completed",
