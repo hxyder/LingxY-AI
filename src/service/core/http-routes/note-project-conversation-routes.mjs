@@ -8,6 +8,10 @@ import {
   applyConversationModelOverride,
   normalizeConversationModelOverride
 } from "../../../shared/conversation-model-override.mjs";
+import {
+  buildCapabilityGapSuggestions,
+  mergeCapabilityGapSuggestions
+} from "../../ai/onboarding/capability-gap-suggestions.mjs";
 
 const NOTES_EDITOR_ACTORS = ["desktop_console"];
 const NOTES_CHIP_ACTORS = ["desktop_console", "desktop_overlay"];
@@ -296,9 +300,23 @@ export async function tryHandleNoteProjectConversationRoute({
     const updated = override && typeof runtime.store.patchConversationMetadata === "function"
       ? runtime.store.patchConversationMetadata(conversationId, { modelOverride: override })
       : runtime.store.updateConversation(conversationId, { metadata });
+    const config = override ? runtime.configStore?.load?.() ?? {} : {};
+    const capabilitySuggestions = override
+      ? buildCapabilityGapSuggestions({
+          config,
+          conversationModelOverride: override,
+          conversationId
+        })
+      : [];
+    const onboarding = override
+      ? mergeCapabilityGapSuggestions(config.ai?.onboarding ?? {}, capabilitySuggestions)
+      : { pendingSuggestions: [] };
     sendJson(response, 200, {
       conversation: updated,
-      modelOverride: updated?.metadata?.modelOverride ?? null
+      modelOverride: updated?.metadata?.modelOverride ?? null,
+      onboarding: {
+        suggestions: onboarding.pendingSuggestions
+      }
     });
     return true;
   }

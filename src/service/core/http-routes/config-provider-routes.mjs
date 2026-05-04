@@ -11,11 +11,13 @@ import { maybeRunMorningDigest } from "../../email/digest.mjs";
 import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
 import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
 import {
-  buildProviderOnboardingSuggestions,
-  mergeProviderOnboardingSuggestions,
   removeProviderOnboardingSuggestions,
   updateProviderOnboardingSuggestionStatus
 } from "../../ai/onboarding/provider-suggestions.mjs";
+import {
+  buildCapabilityGapSuggestions,
+  mergeCapabilityGapSuggestions
+} from "../../ai/onboarding/capability-gap-suggestions.mjs";
 import { validateSkillDescriptorMarkdown } from "../../ai/skills/discovery.mjs";
 import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
@@ -311,11 +313,12 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
         taskRouting: sanitizedAi.taskRouting
       }
     };
-    const providerSuggestions = buildProviderOnboardingSuggestions(entry, {
+    const providerSuggestions = buildCapabilityGapSuggestions({
+      provider: entry,
       config: savedConfigWithoutOnboarding,
-      previousProvider: existing
+      trigger: "provider_saved"
     });
-    const onboarding = mergeProviderOnboardingSuggestions(
+    const onboarding = mergeCapabilityGapSuggestions(
       currentConfig.ai?.onboarding ?? {},
       providerSuggestions
     );
@@ -426,6 +429,11 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
 
   if (method === "GET" && url.pathname === "/config/integrations") {
     const config = runtime.configStore?.load?.() ?? {};
+    const capabilitySuggestions = buildCapabilityGapSuggestions({ config });
+    const onboarding = mergeCapabilityGapSuggestions(
+      config.ai?.onboarding ?? {},
+      capabilitySuggestions
+    );
     sendJson(response, 200, {
       paths: runtime.platform.integrationPaths ?? {},
       mcp: config.ai?.mcp ?? { servers: [] },
@@ -434,7 +442,10 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
         ...(config.ai?.codeCli ?? {}),
         adapters: config.ai?.codeCli?.adapters ?? []
       },
-      onboarding: config.ai?.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] },
+      onboarding: {
+        ...onboarding,
+        suggestions: onboarding.pendingSuggestions
+      },
       email: config.email ?? { accounts: [] }
     });
     return true;

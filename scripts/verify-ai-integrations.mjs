@@ -117,6 +117,10 @@ try {
     integrationsAfterProviderSave.onboarding?.pendingSuggestions?.some((suggestion) => suggestion.id === "provider:mock-openai:skills:review-skill-library"),
     "integration config should expose pending onboarding suggestions"
   );
+  assert.ok(
+    integrationsAfterProviderSave.onboarding?.suggestions?.some((suggestion) => suggestion.id === "provider:mock-openai:mcp:web-research"),
+    "integration config should expose current capability gap suggestions"
+  );
   const dismissedOnboarding = await patchJson(
     listening.baseUrl,
     "/config/onboarding/suggestions/provider%3Amock-openai%3Askills%3Areview-skill-library",
@@ -127,6 +131,11 @@ try {
   assert.ok(
     dismissedOnboarding.onboarding?.archivedSuggestions?.some((suggestion) => suggestion.id === "provider:mock-openai:skills:review-skill-library"),
     "dismissed onboarding suggestions should be archived"
+  );
+  const integrationsAfterDismiss = await fetch(`${listening.baseUrl}/config/integrations`).then((response) => response.json());
+  assert.ok(
+    !integrationsAfterDismiss.onboarding?.suggestions?.some((suggestion) => suggestion.id === "provider:mock-openai:skills:review-skill-library"),
+    "derived capability suggestions should honor dismissed onboarding state"
   );
 
   const unauthorizedMcpSave = await postJsonResponse(listening.baseUrl, "/config/mcp/servers", {

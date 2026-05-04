@@ -15,7 +15,7 @@ async function it(label, fn) {
   catch (err) { process.stdout.write(`FAIL  ${label}\n  ${err.message}\n`); fail += 1; }
 }
 
-function makeRuntime({ allowHardDelete = false } = {}) {
+function makeRuntime({ allowHardDelete = false, config = {} } = {}) {
   const store = createInMemoryStoreScaffold();
   return {
     store,
@@ -30,7 +30,7 @@ function makeRuntime({ allowHardDelete = false } = {}) {
       registerTaskRedactionMap() {}
     },
     platform: {},
-    configStore: { load: () => ({}), save: () => {} }
+    configStore: { load: () => config, save: () => {} }
   };
 }
 
@@ -303,7 +303,28 @@ await it("GET /conversation/{id}: 404 when missing", async () => {
 });
 
 await it("PATCH/DELETE /conversation/{id}/model pins and clears a conversation model override", async () => {
-  const runtime = makeRuntime();
+  const runtime = makeRuntime({
+    config: {
+      ai: {
+        customProviders: [{
+          id: "deepseek",
+          name: "DeepSeek",
+          kind: "openai",
+          baseUrl: "https://api.deepseek.com/v1",
+          apiKey: "sk-test-deepseek",
+          defaultModel: "deepseek-v4-flash"
+        }],
+        onboarding: {
+          archivedSuggestions: [{
+            id: "provider:deepseek:mcp:web-research",
+            providerId: "deepseek",
+            status: "dismissed",
+            dismissedAt: "2026-05-04T00:00:00.000Z"
+          }]
+        }
+      }
+    }
+  });
   runtime.store.insertConversation({
     conversation_id: "c_model",
     metadata: { topic: "demo" }
@@ -320,10 +341,20 @@ await it("PATCH/DELETE /conversation/{id}/model pins and clears a conversation m
     assert.equal(set.body.modelOverride.model, "deepseek-v4-flash");
     assert.equal(set.body.conversation.metadata.topic, "demo");
     assert.ok(set.body.modelOverride.pinnedAt, "pin should carry audit timestamp");
+    assert.ok(
+      set.body.onboarding?.suggestions?.some((suggestion) => suggestion.providerId === "deepseek"),
+      "model switch should return capability suggestions for the selected provider"
+    );
+    assert.ok(
+      !set.body.onboarding?.suggestions?.some((suggestion) => suggestion.id === "provider:deepseek:mcp:web-research"),
+      "model switch suggestions should honor dismissed onboarding state"
+    );
+    assert.doesNotMatch(JSON.stringify(set.body.onboarding), /sk-test-deepseek/u);
 
     const cleared = await fetchJson(`${srv.url}/conversation/c_model/model`, desktopMutation("DELETE"));
     assert.equal(cleared.status, 200);
     assert.equal(cleared.body.modelOverride, null);
+    assert.deepEqual(cleared.body.onboarding?.suggestions, []);
     assert.equal(cleared.body.conversation.metadata.topic, "demo");
     assert.equal(cleared.body.conversation.metadata.modelOverride, undefined);
   } finally { await srv.close(); }
