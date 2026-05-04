@@ -17,6 +17,13 @@ import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
 import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
 import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
 import { buildSideEffectContract } from "../../core/policy/side-effect-contracts.mjs";
+import {
+  applyCapabilityInterviewAnswer,
+  buildCapabilityDraft,
+  buildCapabilityInterviewState,
+  buildCapabilityRecoveryProposal,
+  validateCapabilityDraft
+} from "../../core/capability-creator/index.mjs";
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 import { resolveFileReadBudgetFromTask } from "../../core/file-read-budget.mjs";
@@ -3526,6 +3533,219 @@ Write-Output '{"ok":true,"method":"SendKeys-focused"}'
   }
 };
 
+// UCA-077: draft-only capability interview tool. It only calls pure creator
+// functions and returns interview state, an in-memory draft, or recovery.
+function isPlainObject(value) {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function rehydrateInterviewState(rawState) {
+  if (!isPlainObject(rawState)) return null;
+  const kind = typeof rawState.kind === "string" ? rawState.kind : "";
+  if (kind !== "skill" && kind !== "mcp") return null;
+  let state = buildCapabilityInterviewState({ kind, name: rawState.name ?? "" });
+  const collected = isPlainObject(rawState.collected) ? rawState.collected : {};
+  if (typeof collected.purpose === "string") {
+    state = applyCapabilityInterviewAnswer(state, { field: "purpose", value: collected.purpose });
+  }
+  if (collected.permissions !== undefined) {
+    state = applyCapabilityInterviewAnswer(state, { field: "permissions", value: collected.permissions });
+  }
+  if (collected.config !== undefined) {
+    state = applyCapabilityInterviewAnswer(state, { field: "config", value: collected.config });
+  }
+  if (collected.confirmed === true) {
+    state = applyCapabilityInterviewAnswer(state, { field: "confirmation", value: true });
+  }
+  return state;
+}
+
+function buildOneShotInterviewState(args) {
+  const kind = typeof args.kind === "string" ? args.kind : "";
+  if (kind !== "skill" && kind !== "mcp") {
+    return { error: "draft_capability requires kind=\"skill\" or kind=\"mcp\"." };
+  }
+  let state;
+  try {
+    state = buildCapabilityInterviewState({ kind, name: args.name ?? "" });
+  } catch (error) {
+    return { error: error.message };
+  }
+  if (typeof args.purpose === "string") {
+    state = applyCapabilityInterviewAnswer(state, { field: "purpose", value: args.purpose });
+  }
+  if (args.permissions !== undefined) {
+    state = applyCapabilityInterviewAnswer(state, { field: "permissions", value: args.permissions });
+  }
+  if (args.config !== undefined) {
+    state = applyCapabilityInterviewAnswer(state, { field: "config", value: args.config });
+  }
+  if (args.confirmation === true) {
+    state = applyCapabilityInterviewAnswer(state, { field: "confirmation", value: true });
+  }
+  return { state };
+}
+
+function summarizeDraftForObservation(draft) {
+  const lines = [
+    `Draft is ready to save (kind=${draft.kind}, id=${draft.id}, name="${draft.name}").`,
+    `purpose: ${draft.purpose}`
+  ];
+  const permissions = draft.permissions ?? {};
+  lines.push(
+    `permissions: network=${permissions.network ? "true" : "false"}, filesystem=${permissions.filesystem ?? "none"}, secrets=${(permissions.secrets ?? []).length}`
+  );
+  if (draft.kind === "skill") {
+    const instructions = draft.entry?.markdown?.split("\n").filter((l) => l.startsWith("- ")) ?? [];
+    lines.push(`skill: ${instructions.length} instruction step(s); SKILL.md prepared in-memory only.`);
+  } else if (draft.kind === "mcp") {
+    const desc = draft.descriptor ?? {};
+    if (desc.transport === "stdio") {
+      lines.push(`mcp: transport=stdio command=${desc.command ?? ""}`);
+    } else {
+      lines.push(`mcp: transport=${desc.transport ?? "?"} url=${desc.url ?? ""}`);
+    }
+    lines.push(`mcp: enabled=false (draft only; not installed).`);
+  }
+  return lines.join("\n");
+}
+
+function summarizeInterviewForObservation(state) {
+  const next = state.next_question;
+  const lines = [
+    `Capability interview is incomplete (kind=${state.kind}, missing: ${state.missing_fields.join(", ")}).`
+  ];
+  if (next) {
+    lines.push(`Next question (${next.id}): ${next.prompt}`);
+    if (next.hint) lines.push(`Hint: ${next.hint}`);
+  }
+  return lines.join("\n");
+}
+
+function summarizeRecoveryForObservation(proposal) {
+  const lines = [proposal.question];
+  if (Array.isArray(proposal.suggested_next_actions)) {
+    for (const action of proposal.suggested_next_actions) {
+      lines.push(`- ${action.field}: ${action.prompt}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+export const DRAFT_CAPABILITY_TOOL = {
+  id: "draft_capability",
+  name: "Draft Capability",
+  description: "Draft a skill or MCP capability through an interview. Read-only: never installs, writes files, edits runtime config, or stores secrets. Use {state, answer} to continue, or one-shot kind/name/purpose/permissions/config/confirmation. Secret values must be env or secret_ref references.",
+  parameters: ACTION_TOOL_SCHEMAS.draft_capability,
+  risk_level: "low",
+  requires_confirmation: false,
+  async execute(args = {}) {
+    let state = null;
+
+    if (isPlainObject(args.state)) {
+      state = rehydrateInterviewState(args.state);
+      if (!state) {
+        return createActionResult({
+          success: false,
+          observation: "draft_capability could not rehydrate the provided state. Re-send {kind, name, purpose, permissions, config, confirmation} or call again with a valid state.",
+          error: "capability_state_invalid",
+          metadata: { tool_id: "draft_capability", status: "invalid_state" }
+        });
+      }
+      if (isPlainObject(args.answer)) {
+        try {
+          state = applyCapabilityInterviewAnswer(state, args.answer);
+        } catch (error) {
+          const recovery = buildCapabilityRecoveryProposal(error);
+          return createActionResult({
+            success: false,
+            observation: summarizeRecoveryForObservation(recovery),
+            error: error.message,
+            metadata: {
+              tool_id: "draft_capability",
+              status: "recovery_required",
+              recovery
+            }
+          });
+        }
+      }
+    } else {
+      const built = buildOneShotInterviewState(args);
+      if (built.error) {
+        return createActionResult({
+          success: false,
+          observation: built.error,
+          error: built.error,
+          metadata: { tool_id: "draft_capability", status: "invalid_input" }
+        });
+      }
+      state = built.state;
+      if (isPlainObject(args.answer)) {
+        try {
+          state = applyCapabilityInterviewAnswer(state, args.answer);
+        } catch (error) {
+          const recovery = buildCapabilityRecoveryProposal(error);
+          return createActionResult({
+            success: false,
+            observation: summarizeRecoveryForObservation(recovery),
+            error: error.message,
+            metadata: {
+              tool_id: "draft_capability",
+              status: "recovery_required",
+              recovery
+            }
+          });
+        }
+      }
+    }
+
+    if (state.status !== "ready_to_save") {
+      return createActionResult({
+        success: true,
+        observation: summarizeInterviewForObservation(state),
+        metadata: {
+          tool_id: "draft_capability",
+          status: "interviewing",
+          state,
+          missing_fields: state.missing_fields,
+          next_question: state.next_question
+        }
+      });
+    }
+
+    const draft = buildCapabilityDraft(state);
+    const validation = validateCapabilityDraft(draft);
+    if (!validation.ok) {
+      const recovery = buildCapabilityRecoveryProposal(validation);
+      return createActionResult({
+        success: false,
+        observation: summarizeRecoveryForObservation(recovery),
+        error: "capability_draft_invalid",
+        metadata: {
+          tool_id: "draft_capability",
+          status: "recovery_required",
+          state,
+          draft,
+          validation,
+          recovery
+        }
+      });
+    }
+
+    return createActionResult({
+      success: true,
+      observation: summarizeDraftForObservation(draft),
+      metadata: {
+        tool_id: "draft_capability",
+        status: "ready_to_save",
+        state,
+        draft,
+        validation
+      }
+    });
+  }
+};
+
 export const BUILTIN_ACTION_TOOLS = Object.freeze([
   OPEN_URL_TOOL,
   WEB_SEARCH_TOOL,
@@ -3576,6 +3796,8 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   // ask for prior-task context on its own, replacing the earlier
   // submit-time digest injection.
   ...MEMORY_TOOLS,
+  // UCA-077: Capability creator (skill / MCP), draft-only and read-only.
+  DRAFT_CAPABILITY_TOOL,
   // Connector catalog + provider account tools (single aggregation point)
   ...CONNECTOR_ACTION_TOOLS
 ]);

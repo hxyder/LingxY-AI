@@ -578,5 +578,25 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
       conversation_id: { type: "string" },
       limit: { type: "number" }
     }
+  },
+  // UCA-077: Capability creator (skill / MCP) draft-only action tool. The
+  // tool wraps the pure functions in src/service/core/capability-creator
+  // and never writes files, mutates runtime config, or stores secrets; it
+  // produces a draft + validation result for the planner / UI to act on.
+  // The shape stays loose so the planner can pass either an interview
+  // answer (state + answer) or a one-shot intake (kind/name/purpose/...).
+  draft_capability: {
+    type: "object",
+    required: [],
+    properties: {
+      kind: { type: "string" },          // "skill" | "mcp"
+      name: { type: "string" },          // human-friendly capability name
+      state: {},                          // optional prior interview state from a previous call
+      answer: {},                         // optional { field, value } answer to apply against state
+      purpose: { type: "string" },       // user-facing goal, one or two sentences
+      permissions: {},                    // { network, filesystem, secrets[] }
+      config: {},                         // skill: { instructions[] }; mcp: { transport, command/args/url }
+      confirmation: { type: "boolean" }  // explicit confirmation toggle for one-shot intake
+    }
   }
 });
