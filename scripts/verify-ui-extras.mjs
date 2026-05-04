@@ -27,6 +27,7 @@ const consoleJs = read("src/desktop/renderer/console.js");
 const consolePreload = read("src/desktop/renderer/preload.cjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs");
+const capabilityChecklist = read("src/desktop/renderer/capability-checklist.mjs");
 const evidenceSourcesView = read("src/desktop/renderer/evidence-sources-view.mjs");
 const toolDisplayView = read("src/desktop/renderer/tool-display.mjs");
 const dockHtml = read("src/desktop/renderer/dock.html");
@@ -51,6 +52,18 @@ assert.ok(/id="consoleToastHost"/.test(consoleHtml), "toast: #consoleToastHost m
 assert.ok(/function showConsoleToast\s*\(/.test(consoleJs), "toast: showConsoleToast() missing");
 assert.ok(/\.toast-host\b/.test(sharedCss), "toast: .toast-host CSS missing");
 assert.ok(/\.toast--err|\.toast--ok|\.toast--info/.test(sharedCss), "toast: kind variants missing");
+
+// ── Capability checklist ──────────────────────────────────────────────
+assert.ok(/buildCapabilityChecklist/.test(capabilityChecklist) && /capabilityChecklistSummary/.test(capabilityChecklist),
+  "capability checklist: shared renderer helper missing");
+assert.ok(/from\s+["']\.\/capability-checklist\.mjs["']/.test(consoleJs) && /buildCapabilityChecklist/.test(consoleJs),
+  "capability checklist: console must render status from the shared helper");
+assert.ok(/data-capability-suggestion/.test(consoleJs) && /completeOnboardingSuggestion/.test(consoleJs),
+  "capability checklist: suggestion-backed actions must reuse onboarding actions");
+assert.ok(/data-capability-panel/.test(consoleJs) && /data-capability-mcp/.test(consoleJs),
+  "capability checklist: settings and MCP actions must be wired");
+assert.ok(/\.capability-checklist-item\b/.test(sharedCss),
+  "capability checklist: shared CSS missing");
 
 // ── Right-click context menu ───────────────────────────────────────────
 assert.ok(/id="chatCtxMenu"/.test(consoleHtml), "ctx-menu: #chatCtxMenu missing in console.html");

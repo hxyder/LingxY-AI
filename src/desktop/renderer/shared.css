@@ -343,6 +343,28 @@ button.primary, button.secondary, button.ghost {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.capability-checklist-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.capability-checklist-main {
+  flex: 1;
+  min-width: 0;
+}
+.capability-checklist-title {
+  font-size: 13px;
+}
+.capability-checklist-detail {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
 @keyframes surface-flash-outline {
   0%, 100% { box-shadow: none; }
   35% { box-shadow: 0 0 0 3px var(--accent-soft); }

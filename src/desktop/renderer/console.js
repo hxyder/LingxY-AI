@@ -37,6 +37,10 @@ import {
   getMcpSourceView
 } from "./mcp-source-view.mjs";
 import {
+  buildCapabilityChecklist,
+  capabilityChecklistSummary
+} from "./capability-checklist.mjs";
+import {
   renderChatSidebarListHtml
 } from "./console-chat-sidebar.mjs";
 import {
@@ -2702,32 +2706,94 @@ function renderSummary() {
 }
 
 function renderOnboarding() {
-  const kimi = state.workspace.health?.kimi ?? state.workspace.codeCliAdapters.find((i) => i.id === "kimi-code-cli") ?? null;
-  const providerReady = state.workspace.providers.some((p) => p.available && p.configured);
-  const tasks = state.workspace.tasks ?? [];
-  const hasFileFlow = tasks.some((t) => ["file", "file_group"].includes(t.source_type));
-  const hasBrowserFlow = tasks.some((t) => ["text_selection", "image", "webpage", "link"].includes(t.source_type));
-  const steps = [
-    { title: "Desktop UCA", status: "ready", detail: "Running in Electron shell." },
-    { title: "Local Runtime", status: state.workspace.health?.ok ? "ready" : "action_needed", detail: state.workspace.health?.ok ? `Connected ${state.serviceBaseUrl}` : "Not connected." },
-    { title: "Kimi Code CLI", status: kimi?.available ? "ready" : kimi?.configured ? "warning" : "action_needed", detail: kimi?.command ?? kimi?.detail ?? (providerReady ? "Cloud provider available." : "Install Kimi Code CLI first.") },
-    { title: "File Entry", status: hasFileFlow ? "ready" : "recommended", detail: hasFileFlow ? "File entry tasks detected." : "Right-click files to start." },
-    { title: "Browser Extension", status: hasBrowserFlow ? "ready" : "optional", detail: hasBrowserFlow ? "Web tasks detected." : "Enable for web context capture." }
-  ];
-
-  const hasBlocking = steps.some((s) => s.status === "action_needed");
-  const hasRecommended = steps.some((s) => s.status === "recommended");
+  const checklist = buildCapabilityChecklist({
+    workspace: state.workspace,
+    serviceBaseUrl: state.serviceBaseUrl
+  });
+  const summary = capabilityChecklistSummary(checklist);
+  const hasBlocking = summary.action_needed > 0;
+  const hasRecommended = summary.recommended > 0;
   onboardingState.textContent = hasBlocking ? "Action needed" : hasRecommended ? "Recommended" : "Ready";
   onboardingState.className = `chip ${hasBlocking ? "danger" : hasRecommended ? "warning" : "ready"}`;
-  wizardList.innerHTML = steps.map((step, i) => `
-    <div class="surface" style="padding:10px 12px;">
-      <div class="row">
-        <strong style="font-size:13px;">${i + 1}. ${escapeHtml(step.title)}</strong>
-        <span class="chip ${step.status === "ready" ? "ready" : step.status === "optional" ? "muted" : step.status === "recommended" ? "warning" : "danger"}">${escapeHtml(step.status)}</span>
+  wizardList.innerHTML = checklist.map((entry, index) => `
+    <div class="capability-checklist-item" data-capability-id="${escapeHtml(entry.id)}">
+      <div class="capability-checklist-main">
+        <div class="row">
+          <strong class="capability-checklist-title">${index + 1}. ${escapeHtml(entry.title)}</strong>
+          <span class="chip ${capabilityStatusChipClass(entry.status)}">${escapeHtml(capabilityStatusLabel(entry.status))}</span>
+        </div>
+        <p class="muted capability-checklist-detail">${escapeHtml(entry.detail ?? "")}</p>
       </div>
-      <p class="muted" style="margin:6px 0 0;font-size:12px;">${escapeHtml(step.detail)}</p>
+      ${renderCapabilityActionButton(entry)}
     </div>
   `).join("");
+  wireCapabilityChecklistActions();
+}
+
+function capabilityStatusChipClass(status = "") {
+  if (status === "ready") return "ready";
+  if (status === "recommended") return "warning";
+  if (status === "action_needed") return "danger";
+  return "muted";
+}
+
+function capabilityStatusLabel(status = "") {
+  return {
+    action_needed: "needs config",
+    recommended: "recommended",
+    optional: "optional",
+    ready: "ready",
+    disabled: "disabled"
+  }[status] ?? status;
+}
+
+function pendingOnboardingSuggestionById(id = "") {
+  return (state.workspace.onboarding?.pendingSuggestions ?? [])
+    .find((suggestion) => suggestion?.id === id && suggestion?.status === "pending") ?? null;
+}
+
+function renderCapabilityActionButton(entry = {}) {
+  const action = entry.action ?? null;
+  if (!action || entry.status === "ready" || entry.status === "disabled") return "";
+  if (action.type === "suggestion" && action.suggestionId) {
+    const suggestion = pendingOnboardingSuggestionById(action.suggestionId);
+    const label = suggestion ? onboardingSuggestionActionLabel(suggestion) : "Open";
+    return `<button class="btn btn-sm btn-ghost" type="button" data-capability-suggestion="${escapeHtml(action.suggestionId)}">${escapeHtml(label)}</button>`;
+  }
+  if (action.type === "settings_panel" && action.panelId) {
+    return `<button class="btn btn-sm btn-ghost" type="button" data-capability-panel="${escapeHtml(action.panelId)}">Open</button>`;
+  }
+  if (action.type === "connector_mcp" && action.serverId) {
+    return `<button class="btn btn-sm btn-ghost" type="button" data-capability-mcp="${escapeHtml(action.serverId)}">Configure</button>`;
+  }
+  return "";
+}
+
+function wireCapabilityChecklistActions() {
+  if (!wizardList) return;
+  wizardList.querySelectorAll("[data-capability-suggestion]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const suggestion = pendingOnboardingSuggestionById(btn.dataset.capabilitySuggestion);
+      if (!suggestion) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Working...";
+      try {
+        await completeOnboardingSuggestion(suggestion);
+      } catch (error) {
+        showConsoleToast(`能力配置失败：${error?.message ?? error}`, { kind: "err" });
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  });
+  wizardList.querySelectorAll("[data-capability-panel]").forEach((btn) => {
+    btn.addEventListener("click", () => navigateToSettingsPanel(btn.dataset.capabilityPanel));
+  });
+  wizardList.querySelectorAll("[data-capability-mcp]").forEach((btn) => {
+    btn.addEventListener("click", () => navigateToConnectorMcp(btn.dataset.capabilityMcp));
+  });
 }
 
 function renderIntegrations() {
