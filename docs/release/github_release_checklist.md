@@ -7,6 +7,7 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 ## Required Before Push
 
 - Run `npm run verify:github-readiness`.
+- Run `npm run verify:security-policy`.
 - Review all advisory warnings from `verify:github-readiness`, especially
   root Markdown docs that would become public.
 - If using GitHub Pages for OAuth verification, run
@@ -38,6 +39,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 - Keep the root `LICENSE` and matching `package.json` license in sync.
 - Preserve third-party notices in `THIRD_PARTY_LICENSES.md` when distributing
   source or packaged builds.
+- Keep `SECURITY.md` and `.github/dependabot.yml` tracked; they are part of
+  the public repository readiness lock.
 - Keep `package.json` as `"private": true` unless npm publication is intended.
 
 ## Allowed Placeholder Exceptions
@@ -55,8 +58,9 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 - Create a fresh clone and run `npm install` plus the documented quick-start
   path from `README.md`.
 - Check the Repo Baseline GitHub Actions run: it should execute
-  `npm ci`, `verify:github-readiness`, `verify:structure`,
-  `verify:doc-references`, `verify:local-http-surface`, and
+  `npm ci`, `verify:github-readiness`, `verify:dependency-hygiene`,
+  `verify:security-policy`, `verify:structure`, `verify:doc-references`,
+  `verify:local-http-surface`, and
   `verify:behavior-tests`.
 - Check the Release Gate GitHub Actions run before any release: it should
   execute `npm ci` and the full `npm run check`.

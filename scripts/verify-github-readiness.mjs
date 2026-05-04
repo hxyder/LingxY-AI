@@ -22,8 +22,10 @@ function gitTrackedFiles() {
 
 const requiredPublicFiles = [
   ".gitignore",
+  ".github/dependabot.yml",
   "LICENSE",
   "README.md",
+  "SECURITY.md",
   "package.json",
   "package-lock.json",
   "THIRD_PARTY_LICENSES.md",
@@ -115,7 +117,7 @@ if (pkg.private !== true) {
 const rootReviewMarkdown = tracked.filter((file) =>
   !file.includes("/")
   && /\.md$/iu.test(file)
-  && !["README.md", "THIRD_PARTY_LICENSES.md", "LICENSE.md", "LICENCE.md"].includes(file)
+  && !["README.md", "SECURITY.md", "THIRD_PARTY_LICENSES.md", "LICENSE.md", "LICENCE.md"].includes(file)
 );
 if (rootReviewMarkdown.length > 0) {
   warnings.push(`Tracked root Markdown docs need manual public review: ${rootReviewMarkdown.join(", ")}`);

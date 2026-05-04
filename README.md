@@ -230,6 +230,7 @@ Stable enough for local trials:
 - `npm run pack` builds a local unpacked Windows desktop package.
 - Core task execution, document generation, scheduler, connector workflows, MCP/plugin registry, and desktop renderer verification are covered by scripts and behavior tests.
 - Third-party license inventory is generated in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md), with the previous `buffers@0.1.1` unknown-license dependency removed.
+- Security reporting is documented in [SECURITY.md](SECURITY.md), and Dependabot is configured for weekly npm and GitHub Actions update PRs.
 
 Known release gaps:
 
