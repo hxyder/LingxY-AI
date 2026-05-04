@@ -6679,60 +6679,68 @@ async function renderWorkspaceAfterFetch({ mode = "full", activeTabId = currentC
   if (followUps.length > 0) await Promise.all(followUps);
 }
 
+let refreshWorkspaceInFlight = null;
+
 async function refreshWorkspace(options = {}) {
+  if (refreshWorkspaceInFlight) return refreshWorkspaceInFlight;
   const mode = options.mode ?? "full";
-  try {
-    const shell = await window.ucaShell.getShellStatus();
-    state.serviceBaseUrl = shell.serviceBaseUrl ?? state.serviceBaseUrl;
+  refreshWorkspaceInFlight = (async () => {
+    try {
+      const shell = await window.ucaShell.getShellStatus();
+      state.serviceBaseUrl = shell.serviceBaseUrl ?? state.serviceBaseUrl;
 
-    // UCA-121: /history/search call retired along with the Memory tab.
-    const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
-      fetchJson("/health"),
-      fetchJson("/tasks"),
-      fetchJson("/approvals"),
-      fetchJson("/schedules"),
-      fetchJson("/templates"),
-      fetchJson("/budget"),
-      fetchJson("/security/state"),
-      fetchJson("/audit-log"),
-      fetchJson("/dag/executions"),
-      fetchJson("/ai/providers"),
-      fetchJson("/ai/code-cli"),
-      fetchJson("/ai/mcp"),
-      fetchJson("/ai/skills"),
-      fetchJson("/config/integrations"),
-      fetchJson("/config/email/accounts"),
-      fetchJson("/config/email/settings")
-    ]);
+      // UCA-121: /history/search call retired along with the Memory tab.
+      const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
+        fetchJson("/health"),
+        fetchJson("/tasks"),
+        fetchJson("/approvals"),
+        fetchJson("/schedules"),
+        fetchJson("/templates"),
+        fetchJson("/budget"),
+        fetchJson("/security/state"),
+        fetchJson("/audit-log"),
+        fetchJson("/dag/executions"),
+        fetchJson("/ai/providers"),
+        fetchJson("/ai/code-cli"),
+        fetchJson("/ai/mcp"),
+        fetchJson("/ai/skills"),
+        fetchJson("/config/integrations"),
+        fetchJson("/config/email/accounts"),
+        fetchJson("/config/email/settings")
+      ]);
 
-    state.workspace = {
-      health,
-      tasks: tasksP.tasks ?? [],
-      approvals: approvalsP.approvals ?? [],
-      schedules: schedulesP.schedules ?? [],
-      templates: templatesP.templates ?? [],
-      budget: budgetP.budget ?? null,
-      providers: providersP.providers ?? [],
-      codeCliAdapters: cliP.adapters ?? [],
-      mcpServers: mcpP.servers ?? [],
-      skillRegistries: skillsP.registries ?? [],
-      skills: skillsP.skills ?? [],
-      onboarding: integrationsP.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] },
-      emailAccounts: emailP.accounts ?? [],
-      emailDigestSettings: emailSettingsP.settings ?? {},
-      history: [], // UCA-121: retired
-      security: securityP.security ?? null,
-      audit: auditP.entries ?? [],
-      dagExecutions: dagP.executions ?? []
-    };
-    surfaceNewWorkspaceApprovals(state.workspace.approvals);
+      state.workspace = {
+        health,
+        tasks: tasksP.tasks ?? [],
+        approvals: approvalsP.approvals ?? [],
+        schedules: schedulesP.schedules ?? [],
+        templates: templatesP.templates ?? [],
+        budget: budgetP.budget ?? null,
+        providers: providersP.providers ?? [],
+        codeCliAdapters: cliP.adapters ?? [],
+        mcpServers: mcpP.servers ?? [],
+        skillRegistries: skillsP.registries ?? [],
+        skills: skillsP.skills ?? [],
+        onboarding: integrationsP.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] },
+        emailAccounts: emailP.accounts ?? [],
+        emailDigestSettings: emailSettingsP.settings ?? {},
+        history: [], // UCA-121: retired
+        security: securityP.security ?? null,
+        audit: auditP.entries ?? [],
+        dagExecutions: dagP.executions ?? []
+      };
+      surfaceNewWorkspaceApprovals(state.workspace.approvals);
 
-    setRuntimeBadge(true, `Connected · ${state.serviceBaseUrl}`);
-    updateTopRuntimePill();
-    await renderWorkspaceAfterFetch({ mode });
-  } catch (error) {
-    setRuntimeBadge(false, `Unavailable · ${error.message}`);
-  }
+      setRuntimeBadge(true, `Connected · ${state.serviceBaseUrl}`);
+      updateTopRuntimePill();
+      await renderWorkspaceAfterFetch({ mode });
+    } catch (error) {
+      setRuntimeBadge(false, `Unavailable · ${error.message}`);
+    } finally {
+      refreshWorkspaceInFlight = null;
+    }
+  })();
+  return refreshWorkspaceInFlight;
 }
 
 /* ═══════════════════════════════════════════════
@@ -8719,7 +8727,7 @@ window.ucaShell?.onPopupCardResolved?.((payload) => {
 });
 
 window.ucaShell.onWindowFocused((payload) => {
-  if (payload.windowId === "console") void refreshWorkspace();
+  if (payload.windowId === "console") void refreshWorkspace({ mode: "background" });
 });
 
 checkOfficeAddinsButton?.addEventListener("click", () => {

@@ -9,6 +9,27 @@ let noteRecordingActive = false;
 let lastRecordingHeartbeat = 0;
 let dockMouseIgnoring = false;
 
+function resetDockScrollPosition() {
+  if (window.scrollX !== 0 || window.scrollY !== 0) {
+    window.scrollTo(0, 0);
+  }
+  if (document.documentElement) {
+    document.documentElement.scrollLeft = 0;
+    document.documentElement.scrollTop = 0;
+  }
+  if (document.body) {
+    document.body.scrollLeft = 0;
+    document.body.scrollTop = 0;
+  }
+}
+
+window.addEventListener("wheel", (event) => {
+  event.preventDefault();
+  resetDockScrollPosition();
+}, { passive: false });
+window.addEventListener("scroll", resetDockScrollPosition, true);
+resetDockScrollPosition();
+
 function setDockMouseIgnoring(ignore) {
   const next = Boolean(ignore);
   if (dockMouseIgnoring === next) return;

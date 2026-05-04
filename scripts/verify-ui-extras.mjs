@@ -149,6 +149,8 @@ assert.ok(/width:\s*100vw/.test(dockHtml) && /height:\s*100vh/.test(dockHtml)
   "dock: renderer must be viewport-sized and zoom-locked to avoid HUD scrollbars");
 assert.ok(/insertCSS\(/.test(electronMain) && /overflow:\s*hidden\s*!important/.test(electronMain),
   "dock: main process must inject a HUD scroll lock after renderer load");
+assert.ok(/resetDockScrollPosition/.test(dockJs) && /addEventListener\(["']wheel["'][\s\S]{0,160}preventDefault/.test(dockJs),
+  "dock: renderer must prevent wheel/scroll drift in the tiny HUD window");
 assert.ok(/thickFrame:\s*false/.test(electronMain) && /screen\.on\(["']display-/.test(electronMain),
   "dock: Windows HUD flags and display-change repair must be present");
 assert.ok(/if \(windowId === DOCK_WINDOW_ID\) return true;/.test(electronMain)
@@ -334,6 +336,10 @@ assert.ok(/function\s+shouldRenderWorkspaceSlice/.test(consoleJs) && /workspaceR
   "console refresh: renderer must gate repeated workspace renders by data signature");
 assert.ok(/async function refreshWorkspace\(options\s*=\s*\{\}\)/.test(consoleJs) && /options\.mode\s*\?\?\s*["']full["']/.test(consoleJs),
   "console refresh: refreshWorkspace must support full/background modes");
+assert.ok(/refreshWorkspaceInFlight/.test(consoleJs),
+  "console refresh: refreshWorkspace calls must be coalesced to avoid overlapping rerenders");
+assert.ok(/onWindowFocused[\s\S]{0,140}refreshWorkspace\(\{\s*mode:\s*["']background["']\s*\}\)/.test(consoleJs),
+  "console refresh: focus refresh must be background-scoped to avoid full-tab flicker");
 assert.ok(/setInterval\(\(\)\s*=>\s*void refreshWorkspace\(\{\s*mode:\s*["']background["']\s*\}\),\s*6000\)/.test(consoleJs),
   "console refresh: polling must use background mode instead of full re-render");
 assert.ok(/renderWorkspaceAfterFetch\(\{\s*mode:\s*["']active["']\s*,\s*activeTabId:\s*tabId\s*\}\)/.test(consoleJs),
