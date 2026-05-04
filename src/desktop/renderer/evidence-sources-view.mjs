@@ -33,16 +33,20 @@ export function renderEvidenceSourcesHtml(evidence, {
   const webCount = Number(evidence?.source_count ?? 0);
   const domainCount = Number(evidence?.distinct_domain_count ?? 0);
   const localCount = Number(evidence?.local_source_count ?? 0);
+  const indexedCount = Number(evidence?.indexed_file_source_count ?? 0);
   const shallowCount = Number(evidence?.local_shallow_source_count ?? 0);
   const truncatedCount = Number(evidence?.local_truncated_source_count ?? 0);
-  const blendedCount = Number(evidence?.blended_source_count ?? (webCount + localCount));
+  const indexedTruncatedCount = Number(evidence?.indexed_file_truncated_source_count ?? 0);
+  const blendedCount = Number(evidence?.blended_source_count ?? (webCount + localCount + indexedCount));
   if (!evidence || (blendedCount <= 0 && shallowCount <= 0)) return "";
   const urls = Array.isArray(evidence.urls) ? evidence.urls.slice(0, 6) : [];
   const domains = Array.isArray(evidence.domains) ? evidence.domains.slice(0, 6) : [];
   const localSources = Array.isArray(evidence.local_sources) ? evidence.local_sources.slice(0, 6) : [];
+  const indexedSources = Array.isArray(evidence.indexed_file_sources) ? evidence.indexed_file_sources.slice(0, 6) : [];
   const shallowSources = Array.isArray(evidence.local_shallow_sources) ? evidence.local_shallow_sources.slice(0, 6) : [];
   const moreWeb = Math.max(0, webCount - urls.length);
   const moreLocal = Math.max(0, localCount - localSources.length);
+  const moreIndexed = Math.max(0, indexedCount - indexedSources.length);
   const moreShallow = Math.max(0, shallowCount - shallowSources.length);
   return `
     <div class="${escapeHtml(className)}" data-evidence-sources>
@@ -51,8 +55,9 @@ export function renderEvidenceSourcesHtml(evidence, {
         <span class="chip ready">${escapeHtml(blendedCount)} content source${blendedCount === 1 ? "" : "s"}</span>
         ${webCount ? `<span class="chip muted">${escapeHtml(webCount)} web · ${escapeHtml(domainCount)} domains</span>` : ""}
         ${localCount ? `<span class="chip muted">${escapeHtml(localCount)} local text</span>` : ""}
+        ${indexedCount ? `<span class="chip muted">${escapeHtml(indexedCount)} indexed file</span>` : ""}
         ${shallowCount ? `<span class="chip warning">${escapeHtml(shallowCount)} listed only</span>` : ""}
-        ${truncatedCount ? `<span class="chip warning">${escapeHtml(truncatedCount)} truncated</span>` : ""}
+        ${truncatedCount + indexedTruncatedCount ? `<span class="chip warning">${escapeHtml(truncatedCount + indexedTruncatedCount)} truncated</span>` : ""}
       </div>
       ${domains.length ? `<div class="muted" style="font-size:11px;margin-bottom:6px;">Domains: ${domains.map(escapeHtml).join(", ")}</div>` : ""}
       ${urls.length ? `
@@ -76,6 +81,17 @@ export function renderEvidenceSourcesHtml(evidence, {
             </div>
           `).join("")}
           ${moreLocal ? `<div class="muted" style="font-size:11px;">+${escapeHtml(moreLocal)} more local source${moreLocal === 1 ? "" : "s"}</div>` : ""}
+        </div>` : ""}
+      ${indexedSources.length ? `
+        <div class="stack" style="gap:4px;margin-top:8px;">
+          ${indexedSources.map((filePath) => `
+            <div class="row" style="gap:6px;align-items:center;font-size:11.5px;">
+              <span class="tag">indexed</span>
+              <span class="muted" style="overflow-wrap:anywhere;min-width:0;flex:1;" title="${escapeHtml(filePath)}">${escapeHtml(shortEvidenceLabel(filePath))}</span>
+              <button class="btn btn-sm btn-ghost" type="button" data-evidence-path="${escapeHtml(filePath)}">Reveal</button>
+            </div>
+          `).join("")}
+          ${moreIndexed ? `<div class="muted" style="font-size:11px;">+${escapeHtml(moreIndexed)} more indexed file source${moreIndexed === 1 ? "" : "s"}</div>` : ""}
         </div>` : ""}
       ${shallowSources.length ? `
         <div class="stack" style="gap:4px;margin-top:8px;">

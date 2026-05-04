@@ -650,14 +650,19 @@ function checkResearchCoverage(taskSpec, transcript, requiredGroups) {
   const profileLabel = rq.profile;
   const sourceCount = evidence.blended_source_count ?? evidence.source_count;
   const originCount = evidence.blended_origin_count ?? evidence.distinct_domain_count;
-  const originLabel = evidence.local_source_count > 0
+  const indexedCount = evidence.indexed_file_source_count ?? 0;
+  const originLabel = evidence.local_source_count > 0 || indexedCount > 0
     ? [
       `${evidence.distinct_domain_count} web domain(s)`,
-      `${evidence.local_source_count} local source(s)`
+      `${evidence.local_source_count} fresh local source(s)`,
+      `${indexedCount} indexed file source(s)`
     ].join(" + ")
     : `${evidence.distinct_domain_count} web domain(s)`;
 
-  if (evidence.is_single_roundup && evidence.local_source_count === 0 && rq.single_source_digest_satisfies === false) {
+  if (evidence.is_single_roundup
+      && evidence.local_source_count === 0
+      && indexedCount === 0
+      && rq.single_source_digest_satisfies === false) {
     violations.push({
       kind: "external_web_read_single_roundup_only",
       message: `${profileLabel} does not accept a single-publisher roundup/digest as evidence (domain=${evidence.domains.join(", ")}, markers matched: ${evidence.roundup_markers.join(", ")}).`
@@ -672,7 +677,7 @@ function checkResearchCoverage(taskSpec, transcript, requiredGroups) {
   if (sourceCount < rq.min_sources) {
     violations.push({
       kind: "external_web_read_insufficient_sources",
-      message: `${profileLabel} requires at least ${rq.min_sources} distinct sources; got ${sourceCount} (${evidence.source_count} web + ${evidence.local_source_count ?? 0} local).`
+      message: `${profileLabel} requires at least ${rq.min_sources} distinct sources; got ${sourceCount} (${evidence.source_count} web + ${evidence.local_source_count ?? 0} fresh local + ${indexedCount} indexed file).`
     });
   }
 

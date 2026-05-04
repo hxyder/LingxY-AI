@@ -196,6 +196,8 @@ assert.ok(/data-evidence-url/.test(evidenceSourcesView) && /data-evidence-path/.
   "task detail: evidence sources must expose web open and local reveal actions");
 assert.ok(/local_shallow_source_count/.test(evidenceSourcesView) && /listed only/.test(evidenceSourcesView),
   "task detail: evidence sources must distinguish shallow file enumeration from content evidence");
+assert.ok(/indexed_file_source_count/.test(evidenceSourcesView) && />indexed</.test(evidenceSourcesView),
+  "task detail: evidence sources must distinguish indexed file hits from fresh local reads");
 assert.ok(/appendConsoleChatEvidenceSources/.test(consoleJs) && /data-chat-evidence-sources/.test(consoleJs),
   "chat: console must append structured evidence summaries to assistant messages");
 assert.ok(/from\s+["']\.\/chat-blocks\.mjs["']/.test(consoleJs) && /from\s+["']\.\/chat-blocks\.mjs["']/.test(overlayJs),

@@ -85,6 +85,7 @@ it("extract: empty transcript → 0 / 0", () => {
   assert.equal(ev.source_count, 0);
   assert.equal(ev.distinct_domain_count, 0);
   assert.equal(ev.local_source_count, 0);
+  assert.equal(ev.indexed_file_source_count, 0);
   assert.equal(ev.blended_source_count, 0);
   assert.equal(ev.blended_origin_count, 0);
   assert.deepEqual(ev.domains, []);
@@ -237,6 +238,45 @@ it("extract: local file reads contribute blended evidence without changing web c
     "E:\\docs\\notes\\b.md",
     "E:\\docs\\resume.pdf"
   ]);
+});
+
+it("extract: indexed file hits are evidence but not fresh local reads", () => {
+  const transcript = [
+    { type: "tool_result", tool: "search_file_content", success: true, metadata: {
+      results: [
+        {
+          id: "file_content_a",
+          path: "E:\\docs\\indexed-a.md",
+          coverage_scope: FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+          truncated: true
+        },
+        {
+          id: "file_content_b",
+          path: "E:\\docs\\indexed-b.md",
+          coverage_scope: FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT,
+          truncated: false
+        }
+      ]
+    } },
+    { type: "tool_result", tool: "web_search_fetch", success: true, metadata: {
+      results: [{ url: "https://reuters.com/article", title: "Article" }]
+    } }
+  ];
+  const ev = extractEvidence(transcript);
+  assert.equal(ev.source_count, 1);
+  assert.equal(ev.local_source_count, 0);
+  assert.equal(ev.local_text_source_count, 0);
+  assert.equal(ev.indexed_file_source_count, 2);
+  assert.equal(ev.indexed_file_truncated_source_count, 1);
+  assert.equal(ev.indexed_file_coverage_scope_counts[FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT], 1);
+  assert.equal(ev.indexed_file_coverage_scope_counts[FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT], 1);
+  assert.equal(ev.blended_source_count, 3);
+  assert.equal(ev.blended_origin_count, 3);
+  assert.deepEqual(ev.indexed_file_sources, [
+    "E:\\docs\\indexed-a.md",
+    "E:\\docs\\indexed-b.md"
+  ]);
+  assert.deepEqual(ev.indexed_file_truncated_sources, ["E:\\docs\\indexed-a.md"]);
 });
 
 // ── registrableDomain heuristic ──────────────────────────────────────

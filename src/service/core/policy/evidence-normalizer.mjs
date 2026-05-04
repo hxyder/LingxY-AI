@@ -109,8 +109,13 @@ const SECOND_LEVEL_PUBLIC_SUFFIXES = new Set([
  * @property {Object.<string, number>} local_coverage_scope_counts - source counts grouped by coverage scope
  * @property {number}   local_truncated_source_count - count of local sources whose extracted content was truncated
  * @property {string[]} local_truncated_sources - sorted list of truncated local paths
- * @property {number}   blended_source_count  - web URL count + local source count
- * @property {number}   blended_origin_count  - distinct web domains + distinct local sources
+ * @property {number}   indexed_file_source_count - count of local file-content index hits
+ * @property {string[]} indexed_file_sources - sorted list of indexed local file paths
+ * @property {Object.<string, number>} indexed_file_coverage_scope_counts - indexed hits grouped by coverage scope
+ * @property {number}   indexed_file_truncated_source_count - count of indexed hits marked truncated
+ * @property {string[]} indexed_file_truncated_sources - sorted list of truncated indexed paths
+ * @property {number}   blended_source_count  - web URL count + fresh local source count + indexed file source count
+ * @property {number}   blended_origin_count  - distinct web domains + fresh local sources + indexed file sources
  * @property {boolean}  is_single_roundup     - P4-RQ D2: true when distinct_domain_count===1
  *                                              AND any URL/title matches a roundup/digest
  *                                              marker. Validator uses this to emit the more
@@ -132,6 +137,9 @@ export function extractEvidence(transcript) {
   const localShallowSources = new Set();
   const localTruncatedSources = new Set();
   const localCoverageSources = new Map();
+  const indexedFileSources = new Set();
+  const indexedFileTruncatedSources = new Set();
+  const indexedFileCoverageSources = new Map();
   const titles = [];   // collected for roundup detection
   if (!Array.isArray(transcript)) {
     return {
@@ -142,6 +150,9 @@ export function extractEvidence(transcript) {
       local_shallow_source_count: 0, local_shallow_sources: [],
       local_coverage_scope_counts: {},
       local_truncated_source_count: 0, local_truncated_sources: [],
+      indexed_file_source_count: 0, indexed_file_sources: [],
+      indexed_file_coverage_scope_counts: {},
+      indexed_file_truncated_source_count: 0, indexed_file_truncated_sources: [],
       blended_source_count: 0, blended_origin_count: 0,
       is_single_roundup: false, roundup_markers: []
     };
@@ -210,6 +221,18 @@ export function extractEvidence(transcript) {
           });
         }
       }
+    } else if (entry.tool === "search_file_content") {
+      const results = Array.isArray(entry.metadata?.results) ? entry.metadata.results : [];
+      for (const result of results) {
+        addIndexedFileCoverageSource({
+          path: result?.path ?? result?.metadata?.path ?? result?.id,
+          scope: result?.coverage_scope ?? result?.metadata?.coverage_scope ?? FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT,
+          truncated: result?.truncated === true || result?.metadata?.truncated === true,
+          indexedFileSources,
+          indexedFileTruncatedSources,
+          indexedFileCoverageSources
+        });
+      }
     } else if (entry.tool === "list_files" || entry.tool === "glob_files" || entry.tool === "find_recent_files") {
       const files = Array.isArray(entry.metadata?.files) ? entry.metadata.files : [];
       const scope = entry.metadata?.coverage_scope
@@ -272,8 +295,13 @@ export function extractEvidence(transcript) {
     local_coverage_scope_counts: localCoverageScopeCounts(localCoverageSources),
     local_truncated_source_count: localTruncatedSources.size,
     local_truncated_sources: [...localTruncatedSources].sort(),
-    blended_source_count: urls.size + localSources.size,
-    blended_origin_count: domains.size + localSources.size,
+    indexed_file_source_count: indexedFileSources.size,
+    indexed_file_sources: [...indexedFileSources].sort(),
+    indexed_file_coverage_scope_counts: localCoverageScopeCounts(indexedFileCoverageSources),
+    indexed_file_truncated_source_count: indexedFileTruncatedSources.size,
+    indexed_file_truncated_sources: [...indexedFileTruncatedSources].sort(),
+    blended_source_count: urls.size + localSources.size + indexedFileSources.size,
+    blended_origin_count: domains.size + localSources.size + indexedFileSources.size,
     is_single_roundup: isSingleRoundup,
     roundup_markers: matchedMarkers
   };
@@ -358,6 +386,22 @@ function addFolderTextCoverage({
       localCoverageSources
     });
   }
+}
+
+function addIndexedFileCoverageSource({
+  path,
+  scope,
+  truncated = false,
+  indexedFileSources,
+  indexedFileTruncatedSources,
+  indexedFileCoverageSources
+}) {
+  const normalizedPath = typeof path === "string" ? path.trim() : "";
+  if (!normalizedPath) return;
+  const normalizedScope = normalizeFileCoverageScope(scope) ?? FILE_EVIDENCE_COVERAGE.SINGLE_FILE_TEXT;
+  addCoverageSource(indexedFileCoverageSources, normalizedScope, normalizedPath);
+  addLocalSource(indexedFileSources, normalizedPath);
+  if (truncated) addLocalSource(indexedFileTruncatedSources, normalizedPath);
 }
 
 function localCoverageScopeCounts(map) {
