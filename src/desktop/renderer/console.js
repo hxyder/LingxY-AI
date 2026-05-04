@@ -882,6 +882,12 @@ async function openConsoleChatExternalLink(anchor) {
 
 consoleChatMessages?.addEventListener("click", (ev) => {
   const target = ev.target instanceof Element ? ev.target : null;
+  const capabilityAction = target?.closest?.("[data-capability-action][data-capability-prompt]");
+  if (capabilityAction && consoleChatMessages.contains(capabilityAction)) {
+    ev.preventDefault();
+    handoffConsoleCapabilityAction(capabilityAction);
+    return;
+  }
   const copyButton = target?.closest?.("[data-md-copy]");
   if (copyButton && consoleChatMessages.contains(copyButton)) {
     ev.preventDefault();
@@ -897,6 +903,19 @@ consoleChatMessages?.addEventListener("click", (ev) => {
   ev.preventDefault();
   void openConsoleChatExternalLink(anchor);
 });
+
+function handoffConsoleCapabilityAction(actionEl) {
+  if (!consoleChatInput || !actionEl) return;
+  const prompt = `${actionEl.getAttribute("data-capability-prompt") ?? ""}`.trim();
+  if (!prompt) return;
+  const current = consoleChatInput.value.trim();
+  consoleChatInput.value = current ? `${current}\n\n${prompt}` : prompt;
+  consoleChatInput.focus();
+  consoleChatInput.setSelectionRange(consoleChatInput.value.length, consoleChatInput.value.length);
+  try { consoleChatInput.scrollIntoView({ behavior: "smooth", block: "end" }); } catch { /* ignore */ }
+  consoleChatInput.classList.add("composer-flash");
+  setTimeout(() => consoleChatInput.classList.remove("composer-flash"), 900);
+}
 
 function slugify(value) {
   const normalized = `${value ?? ""}`
@@ -1533,7 +1552,8 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
   const argsPreview = formatConsoleToolArgsPreview(toolName, args);
   const outcomeText = outcome == null ? "" : compactText(outcome, 110);
   const capabilityViewHtml = renderCapabilityToolViewHtml(
-    buildCapabilityToolView(toolName, options.metadata ?? {})
+    buildCapabilityToolView(toolName, options.metadata ?? {}),
+    { interactive: true }
   );
   const displayName = formatConsoleToolDisplayName(toolName);
   const time = new Date();
@@ -1635,7 +1655,8 @@ function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) 
   const argsPreview = formatConsoleToolArgsPreview(toolName, args);
   const outcomeText = outcome == null ? "" : compactText(outcome, 110);
   const capabilityViewHtml = renderCapabilityToolViewHtml(
-    buildCapabilityToolView(toolName, options.metadata ?? {})
+    buildCapabilityToolView(toolName, options.metadata ?? {}),
+    { interactive: true }
   );
 
   const nameEl = card.querySelector(".ttc-name");

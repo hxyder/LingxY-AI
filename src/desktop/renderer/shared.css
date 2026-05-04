@@ -3619,10 +3619,23 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .capability-tool-view-action {
   display: grid;
   gap: 2px;
+  width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--panel);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.capability-tool-view-action {
+  appearance: none;
+  cursor: pointer;
+}
+button.capability-tool-view-action:hover,
+button.capability-tool-view-action:focus-visible {
+  border-color: var(--line-2);
+  background: var(--surface-soft);
 }
 .capability-tool-view-action[data-capability-safety="review_required"] {
   border-color: color-mix(in srgb, var(--ok) 36%, var(--line));

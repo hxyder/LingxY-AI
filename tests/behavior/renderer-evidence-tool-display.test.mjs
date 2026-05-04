@@ -138,6 +138,13 @@ test("ready_to_save view exposes structured next-step actions without bypassing 
   // Renderer must not wire interactive handlers — no buttons, forms, or
   // inline event handlers — so user keeps driving via chat + approval.
   assert.doesNotMatch(html, /<button|<form|onclick=|formaction=/i);
+
+  const interactiveHtml = renderCapabilityToolViewHtml(skillView, { interactive: true });
+  assert.match(interactiveHtml, /<button/);
+  assert.match(interactiveHtml, /data-capability-prompt="确认保存这个能力草稿。"/);
+  assert.match(interactiveHtml, /data-capability-action="confirm_save"/);
+  assert.doesNotMatch(interactiveHtml, /save_capability_draft/);
+  assert.doesNotMatch(interactiveHtml, /<form|onclick=|formaction=/i);
 });
 
 test("recovery_required view maps suggested actions through the same structured shape", () => {

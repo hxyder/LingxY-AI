@@ -51,18 +51,21 @@ function readyToSaveActions(draft = {}) {
       intent: "confirm_save",
       label: "确认保存草稿",
       description: saveDescription,
+      prompt: "确认保存这个能力草稿。",
       safety: "review_required"
     },
     {
       intent: "edit_field",
       label: "继续编辑",
       description: "修改用途、权限或配置；不写文件。",
+      prompt: "我想继续修改这个能力草稿：",
       safety: "no_side_effect"
     },
     {
       intent: "discard",
       label: "放弃草案",
       description: "结束当前草案；不写文件。",
+      prompt: "放弃这个能力草稿。",
       safety: "no_side_effect"
     }
   ];
@@ -79,6 +82,7 @@ function recoveryActions(recovery = {}) {
         intent: "edit_field",
         label: field || "下一步",
         description: prompt,
+        prompt,
         field: field || null,
         safety: "no_side_effect"
       };
@@ -151,25 +155,31 @@ export function buildCapabilityToolView(toolName = "", metadata = {}) {
   return null;
 }
 
-function renderActionListHtml(actions) {
+function renderActionListHtml(actions, { interactive = false } = {}) {
   if (!Array.isArray(actions) || actions.length === 0) return "";
   const items = actions.map((action) => {
     const intent = escapeHtml(action.intent ?? "");
     const safety = escapeHtml(action.safety ?? "");
     const label = escapeHtml(action.label ?? "");
     const description = escapeHtml(action.description ?? "");
-    return `<li class="capability-tool-view-action" data-capability-action="${intent}" data-capability-safety="${safety}">`
+    const prompt = escapeHtml(action.prompt ?? action.description ?? "");
+    const tag = interactive ? "button" : "li";
+    const attrs = interactive
+      ? ` type="button" data-capability-prompt="${prompt}"`
+      : "";
+    return `<${tag} class="capability-tool-view-action" data-capability-action="${intent}" data-capability-safety="${safety}"${attrs}>`
       + `<span class="capability-tool-view-action-label">${label}</span>`
       + (description ? `<span class="capability-tool-view-action-desc">${description}</span>` : "")
-      + "</li>";
+      + `</${tag}>`;
   }).join("");
-  return `<ul class="capability-tool-view-actions">${items}</ul>`;
+  const wrap = interactive ? "div" : "ul";
+  return `<${wrap} class="capability-tool-view-actions">${items}</${wrap}>`;
 }
 
-export function renderCapabilityToolViewHtml(view = null) {
+export function renderCapabilityToolViewHtml(view = null, options = {}) {
   if (!view) return "";
   const rows = Array.isArray(view.rows) ? view.rows : [];
-  const actionsHtml = renderActionListHtml(view.actions);
+  const actionsHtml = renderActionListHtml(view.actions, options);
   return `
     <div class="capability-tool-view capability-tool-view--${escapeHtml(view.tone ?? "info")}">
       <div class="capability-tool-view-head">
