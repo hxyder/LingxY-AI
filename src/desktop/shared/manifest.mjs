@@ -55,6 +55,7 @@ export const IPC_CHANNELS = Object.freeze({
   mcpServerDelete: "uca:mcp-server-delete",
   mcpServerToggle: "uca:mcp-server-toggle",
   mcpServerConfig: "uca:mcp-server-config",
+  mcpDraftImport: "uca:mcp-draft-import",
   approvalApprove: "uca:approval-approve",
   approvalReject: "uca:approval-reject",
   securityStateUpdate: "uca:security-state-update",

@@ -171,6 +171,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "POST", "/config/mcp/drafts/import", {
+    domain: "mcp_config",
+    effect: "config_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done_review_first_disabled_import"
+  }),
   surface("config-provider-routes.mjs", "POST", "/config/mcp/test", {
     domain: "mcp_config",
     effect: "descriptor_validation",

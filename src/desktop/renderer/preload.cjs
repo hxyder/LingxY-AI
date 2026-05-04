@@ -312,6 +312,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   saveMcpServerConfig(payload) {
     return ipcRenderer.invoke("uca:mcp-server-config", payload ?? {});
   },
+  importMcpDraft(payload) {
+    return ipcRenderer.invoke("uca:mcp-draft-import", payload ?? {});
+  },
   approveApproval(payload) {
     return ipcRenderer.invoke("uca:approval-approve", payload ?? {});
   },

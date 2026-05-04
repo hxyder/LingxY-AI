@@ -9,6 +9,7 @@ import { createImapClient } from "../../email/imap-client.mjs";
 import { getCredential } from "../../email/credential-store.mjs";
 import { maybeRunMorningDigest } from "../../email/digest.mjs";
 import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.mjs";
+import { listMcpDrafts, readMcpDraft } from "../../ai/mcp/drafts.mjs";
 import { refreshExternalMcpCatalogEntries } from "../../connectors/core/mcp-catalog-bridge.mjs";
 import {
   removeProviderOnboardingSuggestions,
@@ -49,6 +50,17 @@ function upsertById(list = [], entry) {
   return index >= 0
     ? list.map((item, itemIndex) => itemIndex === index ? entry : item)
     : [...list, entry];
+}
+
+function summarizeMcpServerEntry(entry = {}) {
+  return {
+    id: entry.id ?? "",
+    displayName: entry.displayName ?? entry.name ?? entry.id ?? "",
+    transport: entry.transport ?? "stdio",
+    command: entry.command ?? null,
+    url: entry.url ?? null,
+    enabled: entry.enabled === true
+  };
 }
 
 function saveRuntimeConfig(runtime, updater) {
@@ -687,6 +699,60 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     const body = await readJsonBody(request);
     const result = validateMcpServerDescriptor(body);
     sendJson(response, 200, result);
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/config/mcp/drafts") {
+    sendJson(response, 200, { drafts: await listMcpDrafts(runtime) });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/config/mcp/drafts/import") {
+    if (!requireDesktopActor({ request, response })) {
+      return true;
+    }
+    const body = await readJsonBody(request);
+    const draftRef = body.file ?? body.path ?? "";
+    if (!draftRef) {
+      sendJson(response, 400, { error: "mcp_draft_required" });
+      return true;
+    }
+    let draft;
+    try {
+      draft = await readMcpDraft(runtime, draftRef);
+    } catch (error) {
+      const status = error.message === "mcp_draft_path_not_allowed" ? 403 : 400;
+      sendJson(response, status, { error: error.message });
+      return true;
+    }
+    const result = validateMcpServerDescriptor(draft.descriptor);
+    if (!result.ok) {
+      sendJson(response, 400, { error: "mcp_server_invalid", errors: result.errors });
+      return true;
+    }
+    const entry = { ...result.server, enabled: false };
+    saveRuntimeConfig(runtime, (currentConfig) => ({
+      ...currentConfig,
+      ai: {
+        ...(currentConfig.ai ?? {}),
+        mcp: {
+          ...(currentConfig.ai?.mcp ?? {}),
+          servers: upsertById(currentConfig.ai?.mcp?.servers ?? [], entry)
+        }
+      }
+    }));
+    try {
+      await refreshExternalMcpCatalogEntries({ runtime, refresh: true });
+    } catch { /* non-fatal; /connectors/catalog can refresh it later */ }
+    sendJson(response, 200, {
+      ok: true,
+      server: summarizeMcpServerEntry(entry),
+      draft: {
+        file: draft.file,
+        id: draft.id,
+        name: draft.name
+      }
+    });
     return true;
   }
 

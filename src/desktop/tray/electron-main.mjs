@@ -235,6 +235,13 @@ function normalizeMcpServerConfigPayload(payload = {}) {
   };
 }
 
+function normalizeMcpDraftImportPayload(payload = {}) {
+  return {
+    file: `${payload.file ?? ""}`.trim(),
+    path: `${payload.path ?? ""}`.trim()
+  };
+}
+
 function normalizePlainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : null;
 }
@@ -2648,6 +2655,27 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "mcp_server_config_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.mcpDraftImport, async (_event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const body = normalizeMcpDraftImportPayload(payload);
+        if (!body.file && !body.path) {
+          return { ok: false, error: "mcp_draft_required", message: "MCP draft file is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "POST",
+            pathname: "/config/mcp/drafts/import",
+            body
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "mcp_draft_import_failed",
             message: error?.message ?? String(error)
           };
         }

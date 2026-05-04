@@ -227,6 +227,7 @@ const mcpCommand = document.querySelector("#mcpCommand");
 const mcpArgs = document.querySelector("#mcpArgs");
 const mcpServerState = document.querySelector("#mcpServerState");
 const mcpServerList = document.querySelector("#mcpServerList");
+const mcpDraftList = document.querySelector("#mcpDraftList");
 const mcpServerRefreshBtn = document.querySelector("#mcpServerRefreshBtn");
 const mcpServerTestBtn = document.querySelector("#mcpServerTestBtn");
 const mcpInstallSource = document.querySelector("#mcpInstallSource");
@@ -3562,6 +3563,77 @@ function renderProviderOnboardingSuggestions() {
       } catch (error) {
         btn.disabled = false;
         showConsoleToast(`忽略失败：${error?.message ?? error}`, { kind: "err" });
+      }
+    });
+  });
+}
+
+function applyMcpDraftToForm(draft = {}) {
+  const descriptor = draft.descriptor ?? {};
+  if (mcpServerId) mcpServerId.value = descriptor.id ?? draft.id ?? "";
+  if (mcpServerName) mcpServerName.value = descriptor.displayName ?? draft.name ?? "";
+  if (mcpTransport) mcpTransport.value = descriptor.transport ?? "stdio";
+  if (mcpCommand) mcpCommand.value = descriptor.transport === "stdio"
+    ? (descriptor.command ?? "")
+    : (descriptor.url ?? "");
+  if (mcpArgs) mcpArgs.value = Array.isArray(descriptor.args) ? descriptor.args.join(" ") : "";
+  const wrap = document.querySelector("#mcpServerFormWrap");
+  if (wrap) {
+    wrap.hidden = false;
+    document.querySelector("#mcpServerAddToggle")?.setAttribute("aria-expanded", "true");
+  }
+  mcpServerForm?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function renderMcpDrafts(drafts = []) {
+  if (!mcpDraftList) return;
+  if (!Array.isArray(drafts) || drafts.length === 0) {
+    mcpDraftList.innerHTML = "";
+    return;
+  }
+  mcpDraftList.innerHTML = `
+    <div class="conn-section-label">MCP drafts<span class="zh">待审核草稿</span><span class="count">${drafts.length}</span></div>
+    ${drafts.map((draft) => {
+      const valid = draft.validation?.ok !== false;
+      const descriptor = draft.descriptor ?? {};
+      return `
+        <div class="surface" style="padding:10px 12px;">
+          <div class="row" style="gap:8px;">
+            <strong style="font-size:13px;">${escapeHtml(draft.name ?? draft.id ?? "MCP draft")}</strong>
+            <span class="chip ${valid ? "muted" : "error"}">${valid ? "待导入" : "需修正"}</span>
+          </div>
+          <p class="muted" style="margin-top:4px;font-size:12px;">${escapeHtml(draft.purpose ?? "")}</p>
+          <p class="muted mono" style="margin-top:4px;font-size:11px;">${escapeHtml(descriptor.transport ?? "stdio")} · ${escapeHtml(descriptor.command ?? descriptor.url ?? descriptor.id ?? "")}</p>
+          <div class="toolbar" style="margin-top:6px;">
+            <button class="btn btn-sm btn-ghost" data-mcp-draft-review="${escapeHtml(draft.file)}">Review</button>
+            ${valid ? `<button class="btn btn-sm btn-primary" data-mcp-draft-import="${escapeHtml(draft.file)}">Import disabled</button>` : ""}
+          </div>
+        </div>
+      `;
+    }).join("")}
+  `;
+  mcpDraftList.querySelectorAll("[data-mcp-draft-review]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const draft = drafts.find((entry) => entry.file === btn.dataset.mcpDraftReview);
+      if (draft) applyMcpDraftToForm(draft);
+    });
+  });
+  mcpDraftList.querySelectorAll("[data-mcp-draft-import]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const file = btn.dataset.mcpDraftImport;
+      if (!file) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Importing...";
+      try {
+        await importMcpDraft({ file });
+        showConsoleToast("MCP draft imported as disabled server.", { kind: "ok" });
+        await loadConnectorsTab();
+        await refreshWorkspace();
+      } catch (error) {
+        btn.disabled = false;
+        btn.textContent = original;
+        showConsoleToast(`Import failed: ${error?.message ?? error}`, { kind: "err" });
       }
     });
   });
@@ -8108,6 +8180,16 @@ async function deleteMcpServer(id) {
   );
 }
 
+async function importMcpDraft(payload) {
+  if (typeof window.ucaShell?.importMcpDraft !== "function") {
+    throw new Error("Desktop MCP draft bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.importMcpDraft(payload),
+    "Could not import MCP draft."
+  );
+}
+
 async function toggleMcpServer(id, enabled) {
   if (typeof window.ucaShell?.toggleMcpServer !== "function") {
     throw new Error("Desktop MCP runtime bridge unavailable.");
@@ -9276,9 +9358,10 @@ document.querySelector("#conversationsShowArchived")?.addEventListener("change",
 
 async function loadConnectorsTab() {
   try {
-    const [accountsResp, mcpResp, settingsResp, acResp, connectedResp] = await Promise.all([
+    const [accountsResp, mcpResp, mcpDraftsResp, settingsResp, acResp, connectedResp] = await Promise.all([
       fetch(`${state.serviceBaseUrl}/config/email/accounts`),
       fetch(`${state.serviceBaseUrl}/ai/mcp`),
+      fetch(`${state.serviceBaseUrl}/config/mcp/drafts`),
       fetch(`${state.serviceBaseUrl}/config/email/settings`),
       fetch(`${state.serviceBaseUrl}/connectors/accounts`),
       fetch(`${state.serviceBaseUrl}/connectors/connected-accounts`)
@@ -9290,6 +9373,10 @@ async function loadConnectorsTab() {
     if (mcpResp.ok) {
       const data = await mcpResp.json();
       renderConnectorsMcpServers(data.servers ?? []);
+    }
+    if (mcpDraftsResp.ok) {
+      const data = await mcpDraftsResp.json();
+      renderMcpDrafts(data.drafts ?? []);
     }
     if (settingsResp.ok) {
       const { settings } = await settingsResp.json();

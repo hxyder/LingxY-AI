@@ -27,6 +27,8 @@ assert.equal(preload.includes("toggleMcpServer"), true);
 assert.equal(preload.includes(IPC_CHANNELS.mcpServerToggle), true);
 assert.equal(preload.includes("saveMcpServerConfig"), true);
 assert.equal(preload.includes(IPC_CHANNELS.mcpServerConfig), true);
+assert.equal(preload.includes("importMcpDraft"), true);
+assert.equal(preload.includes(IPC_CHANNELS.mcpDraftImport), true);
 assert.equal(preload.includes("approveApproval"), true);
 assert.equal(preload.includes(IPC_CHANNELS.approvalApprove), true);
 assert.equal(preload.includes("rejectApproval"), true);

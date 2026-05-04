@@ -24,6 +24,7 @@ import {
   buildCapabilityRecoveryProposal,
   validateCapabilityDraft
 } from "../../core/capability-creator/index.mjs";
+import { resolveMcpDraftsDir } from "../../ai/mcp/drafts.mjs";
 import { createEditableSkill, slugifySkillId } from "../../ai/skills/lifecycle.mjs";
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
@@ -3753,15 +3754,6 @@ export const DRAFT_CAPABILITY_TOOL = {
 // The tool never installs an MCP server, never mutates runtime config, and
 // never persists literal secret values; descriptor.enabled is always false
 // and env values must already be ${env:NAME} / ${secret_ref:NAME} refs.
-function resolveMcpDraftsDir(runtime) {
-  const explicit = runtime?.paths?.mcpDraftsDir;
-  if (typeof explicit === "string" && explicit.trim()) return explicit;
-  const baseDir = runtime?.paths?.baseDir;
-  if (typeof baseDir === "string" && baseDir.trim()) {
-    return path.join(baseDir, "data", "mcp-drafts");
-  }
-  return null;
-}
 
 async function saveCapabilityDraftSkill(runtime, draft) {
   const created = await createEditableSkill(runtime, {
