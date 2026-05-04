@@ -2111,6 +2111,36 @@ function watchScheduleRunTask(task = {}) {
   scheduleRunTaskWatchers.set(taskId, stream);
 }
 
+function getChatSidebarProject(projectId = chatSidebarProjectId) {
+  if (!projectId) return null;
+  const store = state.projectStore ?? loadConsoleProjectStore();
+  return (store.projects ?? []).find((project) => project.id === projectId) ?? null;
+}
+
+function getChatSidebarProjectLabel(projectId = chatSidebarProjectId) {
+  const project = getChatSidebarProject(projectId);
+  return project?.name || project?.id || null;
+}
+
+function getConsoleChatSubmitProjectId() {
+  return consoleActiveConversation?.project_id ?? chatSidebarProjectId ?? null;
+}
+
+function renderConsoleChatEmptyState() {
+  if (!consoleChatMessages) return;
+  const projectLabel = getChatSidebarProjectLabel();
+  const scopeLine = projectLabel
+    ? `New chat in project: ${escapeHtml(projectLabel)}`
+    : "Saved as a regular conversation.";
+  consoleChatMessages.innerHTML = `
+    <div class="console-chat-empty">
+      <svg class="console-chat-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <div class="console-chat-empty-title">Start a conversation</div>
+      <div class="console-chat-empty-sub">${scopeLine}<br/>Type below, or press <span class="kbd">Ctrl</span><span class="kbd">K</span> to pick a template.</div>
+    </div>
+  `;
+}
+
 async function submitConsoleChat() {
   const text = consoleChatInput?.value?.trim() ?? "";
   if (!text) return;
@@ -2123,12 +2153,14 @@ async function submitConsoleChat() {
     const title = text.replace(/\s+/g, " ").trim();
     consoleActiveConversation = cacheEnsureBackendFields({
       conversation_id: cacheCreateConversationId(),
-      title: title.length > 36 ? `${title.slice(0, 36)}…` : title
+      title: title.length > 36 ? `${title.slice(0, 36)}…` : title,
+      project_id: chatSidebarProjectId ?? null
     });
     renderConsoleChatHeader();
   }
   // No history is re-injected — backend already has it.
   const conversationId = consoleActiveConversation?.conversation_id ?? null;
+  const projectId = getConsoleChatSubmitProjectId();
   const conv = cacheEnsureBackendFields(consoleActiveConversation);
   if (conv) {
     conv.pendingByClientId.set(clientMessageId, { role: "user", content: text, ts: Date.now() });
@@ -2151,6 +2183,7 @@ async function submitConsoleChat() {
         background: true,
         client_message_id: clientMessageId,
         ...(conversationId ? { conversation_id: conversationId } : {}),
+        ...(projectId ? { project_id: projectId, selectionMetadata: { project_id: projectId } } : {}),
         ...(attachedFilePaths.length > 0 ? { filePaths: attachedFilePaths } : {})
       })
     });
@@ -2224,7 +2257,8 @@ function renderConsoleChatHeader() {
   }
   const label = consoleActiveConversation.title
     || consoleActiveConversation.conversation_id.slice(0, 12);
-  titleEl.textContent = `Continuing: ${label}`;
+  const projectLabel = getChatSidebarProjectLabel(consoleActiveConversation.project_id);
+  titleEl.textContent = projectLabel ? `Continuing in ${projectLabel}: ${label}` : `Continuing: ${label}`;
   titleEl.hidden = false;
   updateChatModelChip();
 }
@@ -2316,34 +2350,87 @@ function clearConsoleActiveConversation() {
    ═══════════════════════════════════════════════ */
 let chatSidebarSearchTerm = "";
 let chatSidebarSearchDebounce = null;
+const CHAT_SIDEBAR_PROJECT_KEY = "lingxy.chatSidebar.projectId";
+let chatSidebarProjectId = (() => {
+  try {
+    const saved = localStorage.getItem(CHAT_SIDEBAR_PROJECT_KEY);
+    return saved ? saved : null;
+  } catch {
+    return null;
+  }
+})();
+let chatSidebarItems = [];
+let chatSidebarCacheKey = "";
+let chatSidebarCacheLoaded = false;
 
-async function fetchConversationsList({ limit = 100, archived = "false" } = {}) {
-  return cacheFetchConversations(fetch.bind(globalThis), state.serviceBaseUrl, { limit, archived });
+function chatSidebarRequestKey({ limit = 100, archived = "false", projectId = null } = {}) {
+  return JSON.stringify({ limit, archived, projectId: projectId ?? null });
 }
 
-async function ensureConversationsCache({ force = false, limit = 100, archived = "false" } = {}) {
-  if (!force && Array.isArray(conversationsState?.items) && conversationsState.items.length > 0) {
-    return conversationsState.items;
+async function fetchConversationsList({ limit = 100, archived = "false", projectId = null } = {}) {
+  return cacheFetchConversations(fetch.bind(globalThis), state.serviceBaseUrl, { limit, archived, projectId });
+}
+
+function renderChatSidebarProjectFilter() {
+  const select = document.querySelector("#chatSidebarProjectFilter");
+  if (!select) return;
+  const store = state.projectStore ?? loadConsoleProjectStore();
+  const projects = Array.isArray(store.projects) ? store.projects : [];
+  if (chatSidebarProjectId && !projects.some((project) => project.id === chatSidebarProjectId)) {
+    chatSidebarProjectId = null;
+  }
+  const options = [
+    `<option value="">All conversations</option>`,
+    ...projects.map((project) =>
+      `<option value="${escapeHtml(project.id)}">${escapeHtml(project.name ?? project.id)}</option>`
+    )
+  ].join("");
+  const previous = select.value;
+  if (select.innerHTML !== options) {
+    select.innerHTML = options;
+  }
+  const nextValue = chatSidebarProjectId ?? "";
+  if (select.value !== nextValue) select.value = nextValue;
+  if (previous !== select.value) {
+    try {
+      if (chatSidebarProjectId) localStorage.setItem(CHAT_SIDEBAR_PROJECT_KEY, chatSidebarProjectId);
+      else localStorage.removeItem(CHAT_SIDEBAR_PROJECT_KEY);
+    } catch { /* sandbox */ }
+  }
+}
+
+async function ensureConversationsCache({ force = false, limit = 100, archived = "false", projectId = chatSidebarProjectId } = {}) {
+  const key = chatSidebarRequestKey({ limit, archived, projectId });
+  if (!force && chatSidebarCacheLoaded && chatSidebarCacheKey === key) {
+    return chatSidebarItems;
   }
   try {
-    const items = await fetchConversationsList({ limit, archived });
-    if (conversationsState) {
-      conversationsState.items = items;
-    }
+    const items = await fetchConversationsList({ limit, archived, projectId });
+    chatSidebarItems = items;
+    chatSidebarCacheKey = key;
+    chatSidebarCacheLoaded = true;
     return items;
-  } catch { /* keep cache empty — sidebar shows the empty hint */ }
-  return conversationsState?.items ?? [];
+  } catch {
+    if (chatSidebarCacheKey !== key) {
+      chatSidebarItems = [];
+      chatSidebarCacheKey = key;
+      chatSidebarCacheLoaded = true;
+    }
+  }
+  return chatSidebarItems;
 }
 
 function renderChatSidebar() {
   const listEl = document.querySelector("#chatSidebarList");
   if (!listEl) return;
-  const items = (conversationsState?.items ?? []);
+  renderChatSidebarProjectFilter();
+  const items = chatSidebarItems;
   const activeId = consoleActiveConversation?.conversation_id ?? null;
   listEl.innerHTML = renderChatSidebarListHtml({
     items,
     searchTerm: chatSidebarSearchTerm,
-    activeConversationId: activeId
+    activeConversationId: activeId,
+    projectId: chatSidebarProjectId
   });
   for (const btn of listEl.querySelectorAll("[data-chat-sidebar-id]")) {
     btn.addEventListener("click", () => {
@@ -2355,12 +2442,14 @@ function renderChatSidebar() {
 }
 
 async function refreshChatSidebar({ force = false } = {}) {
+  renderChatSidebarProjectFilter();
   const items = await ensureConversationsCache({ force });
   const activeId = consoleActiveConversation?.conversation_id ?? null;
   if (shouldRenderWorkspaceSlice("chat.sidebar", {
     items,
     searchTerm: chatSidebarSearchTerm,
-    activeConversationId: activeId
+    activeConversationId: activeId,
+    projectId: chatSidebarProjectId
   })) {
     renderChatSidebar();
   }
@@ -5575,6 +5664,7 @@ async function syncConsoleProjectStoreFromService({ rerender = false } = {}) {
     state.projectStore = merged;
     localStorage.setItem(PROJECT_STORE_KEY, JSON.stringify(merged));
     await saveConsoleProjectStoreToService(merged);
+    renderChatSidebarProjectFilter();
     if (rerender) renderProjectsWorkspace();
   } catch {
     state.projectStore = state.projectStore ?? loadConsoleProjectStore();
@@ -5624,6 +5714,7 @@ function renderProjectsWorkspace() {
       store.currentConversationId = null;
       saveConsoleProjectStore(store);
       renderProjectsWorkspace();
+      renderChatSidebarProjectFilter();
     });
   }
   for (const btn of projectConversationList.querySelectorAll("[data-project-conversation-id]")) {
@@ -6777,7 +6868,7 @@ function startNewConsoleChat() {
   consoleChatResultTaskIds = new Set();
   clearConsoleActiveConversation();
   if (consoleChatMessages) {
-    consoleChatMessages.innerHTML = `<div class="console-chat-empty">没有对话 — 开始一个吧。</div>`;
+    renderConsoleChatEmptyState();
   }
   const input = document.querySelector("#consoleChatInput");
   if (input) { input.value = ""; input.focus(); }
@@ -6828,6 +6919,18 @@ document.querySelector("#chatSidebarSearch")?.addEventListener("input", (event) 
   }, 120);
 });
 
+document.querySelector("#chatSidebarProjectFilter")?.addEventListener("change", (event) => {
+  const value = event.target?.value ?? "";
+  chatSidebarProjectId = value || null;
+  chatSidebarCacheLoaded = false;
+  try {
+    if (chatSidebarProjectId) localStorage.setItem(CHAT_SIDEBAR_PROJECT_KEY, chatSidebarProjectId);
+    else localStorage.removeItem(CHAT_SIDEBAR_PROJECT_KEY);
+  } catch { /* sandbox */ }
+  if (!consoleActiveConversation?.conversation_id) renderConsoleChatEmptyState();
+  void refreshChatSidebar({ force: true });
+});
+
 projectCreateForm?.addEventListener("submit", (event) => {
   event.preventDefault();
   const name = projectNameInput.value.trim();
@@ -6850,6 +6953,7 @@ projectCreateForm?.addEventListener("submit", (event) => {
   projectNameInput.value = "";
   projectState.textContent = "Project created.";
   renderProjectsWorkspace();
+  renderChatSidebarProjectFilter();
 });
 
 scheduleForm?.addEventListener("submit", async (event) => {
@@ -9937,7 +10041,7 @@ async function ensureConsoleConversationForModelOverride() {
   const currentId = consoleActiveConversation?.conversation_id ?? cacheCreateConversationId();
   const payload = await fetchJson("/conversations", desktopJsonOptions("POST", {
     conversation_id: currentId,
-    project_id: consoleActiveConversation?.project_id ?? null,
+    project_id: getConsoleChatSubmitProjectId(),
     title: consoleActiveConversation?.title ?? null,
     metadata: consoleActiveConversation?.metadata ?? {}
   }));

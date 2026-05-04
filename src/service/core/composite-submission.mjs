@@ -25,6 +25,7 @@ export async function submitCompositeTask({
   subtasks,
   conversationId = null,
   clientMessageId = null,
+  projectId = null,
   submitChild
 }) {
   const store = runtime.store;
@@ -36,6 +37,7 @@ export async function submitCompositeTask({
     executionMode,
     conversationId,
     clientMessageId,
+    projectId,
     runtime,
     executorOverride: "composite",
     submissionKind: "composite",

@@ -187,6 +187,14 @@ assert.ok(/data-evidence-url/.test(evidenceSourcesView) && /data-evidence-path/.
   "task detail: evidence sources must expose web open and local reveal actions");
 assert.ok(/appendConsoleChatEvidenceSources/.test(consoleJs) && /data-chat-evidence-sources/.test(consoleJs),
   "chat: console must append structured evidence summaries to assistant messages");
+assert.ok(/id="chatSidebarProjectFilter"/.test(consoleHtml) && /chat-sidebar-scope/.test(sharedCss),
+  "chat projects: sidebar must expose a project/all conversation scope selector");
+assert.ok(/CHAT_SIDEBAR_PROJECT_KEY/.test(consoleJs) && /let\s+chatSidebarProjectId/.test(consoleJs),
+  "chat projects: console must persist chat sidebar project scope");
+assert.ok(/function\s+getConsoleChatSubmitProjectId/.test(consoleJs) && /project_id:\s*projectId/.test(consoleJs),
+  "chat projects: /task submit must carry structured project_id when scoped");
+assert.ok(/function\s+renderConsoleChatEmptyState/.test(consoleJs) && !/consoleChatMessages\.innerHTML\s*=\s*`<div class="console-chat-empty">没有对话/.test(consoleJs),
+  "chat empty: New chat must use the rich empty-state renderer instead of plain text");
 assert.ok(/updateSecurityState/.test(consoleJs) && /window\.ucaShell\.updateSecurityState/.test(consoleJs),
   "security settings: console must use desktop shell bridge");
 assert.ok(/updateBudget/.test(consoleJs) && /window\.ucaShell\.updateBudget/.test(consoleJs),

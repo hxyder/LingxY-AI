@@ -51,6 +51,25 @@ function listTaskSummaries(runtime, { deleted = false } = {}) {
   }));
 }
 
+function normalizeRequestProjectId(body = {}) {
+  const candidates = [
+    body.project_id,
+    body.projectId,
+    body.selectionMetadata?.project_id,
+    body.selectionMetadata?.projectId,
+    body.contextPacket?.selection_metadata?.project_id,
+    body.contextPacket?.selection_metadata?.projectId,
+    body.contextPacket?.selectionMetadata?.project_id,
+    body.contextPacket?.selectionMetadata?.projectId
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") continue;
+    const value = candidate.trim();
+    if (value) return value.slice(0, 128);
+  }
+  return null;
+}
+
 export function buildTaskSummaryPayload(runtime, { recentLimit = 80 } = {}) {
   const tasks = listTaskSummaries(runtime)
     .sort((left, right) =>
@@ -200,6 +219,7 @@ async function submitTaskFromBody(runtime, body) {
   const requestClientMessageId = typeof body.client_message_id === "string" && body.client_message_id
     ? body.client_message_id
     : (typeof body.clientMessageId === "string" && body.clientMessageId ? body.clientMessageId : null);
+  const requestProjectId = normalizeRequestProjectId(body);
 
   if (body.filePaths?.length) {
     return submitFileTask({
@@ -212,6 +232,7 @@ async function submitTaskFromBody(runtime, body) {
       parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
+      projectId: requestProjectId,
       background,
       runtime
     });
@@ -226,6 +247,7 @@ async function submitTaskFromBody(runtime, body) {
       parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
+      projectId: requestProjectId,
       background,
       runtime
     });
@@ -243,6 +265,7 @@ async function submitTaskFromBody(runtime, body) {
       parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
+      projectId: requestProjectId,
       background,
       runtime
     });
@@ -257,6 +280,7 @@ async function submitTaskFromBody(runtime, body) {
       parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
+      projectId: requestProjectId,
       background,
       runtime
     });
@@ -271,6 +295,7 @@ async function submitTaskFromBody(runtime, body) {
       parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,
+      projectId: requestProjectId,
       background,
       runtime
     });
@@ -302,6 +327,7 @@ async function submitTaskFromBody(runtime, body) {
     // existing parent_task_id pattern.
     conversationId: requestConversationId,
     clientMessageId: requestClientMessageId,
+    projectId: requestProjectId,
     background,
     runtime
   });

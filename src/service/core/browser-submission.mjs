@@ -593,6 +593,7 @@ export async function submitBrowserTask({
   parentTaskId = null,
   conversationId = null,
   clientMessageId = null,
+  projectId = null,
   childIndex = null,
   retryCount = 0,
   executorOverride = null,
@@ -652,6 +653,8 @@ export async function submitBrowserTask({
         executionMode,
         subtasks: decomposition.subtasks,
         conversationId,
+        clientMessageId,
+        projectId,
         submitChild: ({ subtask, index, parentTaskId: compositeId }) =>
           submitBrowserTask({
             // Children rebuild a fresh packet from the original
@@ -663,6 +666,8 @@ export async function submitBrowserTask({
             executionMode,
             parentTaskId: compositeId,
             conversationId,
+            clientMessageId,
+            projectId,
             childIndex: index,
             executorOverride: subtask.suggested_executor ?? null,
             skipDecomposition: true
@@ -683,6 +688,7 @@ export async function submitBrowserTask({
     parentTaskId,
     conversationId,
     clientMessageId,
+    projectId,
     childIndex,
     retryCount,
     executorOverride,
@@ -787,7 +793,10 @@ export async function submitBrowserTask({
         sourceApp: capture.browser,
         captureMode: "extension",
         runtime,
-        parentTaskId: task.task_id
+        parentTaskId: task.task_id,
+        conversationId,
+        clientMessageId,
+        projectId
       });
       updateTask(runtime, task, {
         status: "success",

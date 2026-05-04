@@ -93,12 +93,14 @@ await it("GET /conversations: returns active conversations sorted by updated_at 
   runtime.store.insertConversation({ conversation_id: "c_old", project_id: "p1", title: "old" });
   await new Promise((r) => setTimeout(r, 5));
   runtime.store.insertConversation({ conversation_id: "c_new", project_id: "p1", title: "new" });
+  runtime.store.insertConversation({ conversation_id: "c_other_project", project_id: "p2", title: "other" });
   const srv = await startServer(runtime);
   try {
     const r = await fetchJson(`${srv.url}/conversations?project_id=p1`);
     assert.equal(r.status, 200);
     assert.equal(r.body.conversations.length, 2);
     assert.equal(r.body.conversations[0].conversation_id, "c_new");
+    assert.ok(!r.body.conversations.some((conv) => conv.conversation_id === "c_other_project"));
   } finally { await srv.close(); }
 });
 
@@ -237,6 +239,65 @@ await it("POST /task does not run pre-task regex clarification", async () => {
     assert.equal(messages[0].role, "user");
     assert.equal(messages[0].content, "打开文件");
     assert.equal(messages[0].metadata.client_message_id, "cmsg_clarify_1");
+  } finally { await srv.close(); }
+});
+
+await it("POST /task stamps project_id onto newly-created conversations", async () => {
+  const runtime = makeRuntime();
+  const srv = await startServer(runtime);
+  try {
+    const r = await fetchJson(`${srv.url}/task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userCommand: "Create a project-scoped note",
+        conversation_id: "c_project_task",
+        project_id: "p_task",
+        client_message_id: "cmsg_project_task",
+        background: true,
+        sourceApp: "uca.console.chat",
+        executionMode: "interactive"
+      })
+    });
+    assert.equal(r.status, 200);
+    assert.equal(runtime.store.getConversation("c_project_task").project_id, "p_task");
+  } finally { await srv.close(); }
+});
+
+await it("POST /task accepts camelCase projectId and does not reassign existing conversations", async () => {
+  const runtime = makeRuntime();
+  runtime.store.insertConversation({ conversation_id: "c_existing_project", project_id: "p_old" });
+  const srv = await startServer(runtime);
+  try {
+    const created = await fetchJson(`${srv.url}/task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userCommand: "Create a camel project conversation",
+        conversationId: "c_project_task_camel",
+        projectId: "p_camel",
+        background: true,
+        sourceApp: "uca.console.chat",
+        executionMode: "interactive"
+      })
+    });
+    assert.equal(created.status, 200);
+    assert.equal(runtime.store.getConversation("c_project_task_camel").project_id, "p_camel");
+
+    const existing = await fetchJson(`${srv.url}/task`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userCommand: "Continue existing",
+        conversation_id: "c_existing_project",
+        project_id: "p_new",
+        background: true,
+        sourceApp: "uca.console.chat",
+        executionMode: "interactive"
+      })
+    });
+    assert.equal(existing.status, 200);
+    assert.equal(runtime.store.getConversation("c_existing_project").project_id, "p_old");
   } finally { await srv.close(); }
 });
 

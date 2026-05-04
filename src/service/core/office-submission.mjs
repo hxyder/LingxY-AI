@@ -100,6 +100,7 @@ export async function submitOfficeTask({
   parentTaskId = null,
   conversationId = null,
   clientMessageId = null,
+  projectId = null,
   retryCount = 0,
   executorOverride = null,
   background = false
@@ -127,6 +128,7 @@ export async function submitOfficeTask({
     parentTaskId,
     conversationId,
     clientMessageId,
+    projectId,
     retryCount,
     executorOverride,
     submissionKind: "office",

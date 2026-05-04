@@ -822,6 +822,7 @@ export async function submitContextTask({
   parentMessageId = null,
   conversationId = null,
   clientMessageId = null,
+  projectId = null,
   childIndex = null,
   retryCount = 0,
   bypassDedupe = false,
@@ -977,7 +978,8 @@ export async function submitContextTask({
         userCommand,
         executionMode,
         conversationId,
-      clientMessageId,
+        clientMessageId,
+        projectId,
         subtasks: decomposition.subtasks,
         submitChild: ({ subtask, index, parentTaskId: compositeId, parentMessageId }) =>
           submitContextTask({
@@ -988,7 +990,8 @@ export async function submitContextTask({
             parentTaskId: compositeId,
             parentMessageId,
             conversationId,
-      clientMessageId,
+            clientMessageId,
+            projectId,
             childIndex: index,
             executorOverride: subtask.suggested_executor ?? null,
             skipDecomposition: true
@@ -1019,7 +1022,7 @@ export async function submitContextTask({
     executorOverride,
     submissionKind: "context",
     runtime,
-    projectId: routerEnrichedContext?.selection_metadata?.project_id ?? null
+    projectId: projectId ?? routerEnrichedContext?.selection_metadata?.project_id ?? null
   });
   const enqueued = queue.enqueue(task);
   emitTaskEvent({

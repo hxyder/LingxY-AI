@@ -26,14 +26,15 @@ function conversationTitle(conversation = {}) {
 export function renderChatSidebarListHtml({
   items = [],
   searchTerm = "",
-  activeConversationId = null
+  activeConversationId = null,
+  projectId = null
 } = {}) {
   const source = Array.isArray(items) ? items : [];
   const term = normalizeChatSidebarSearchTerm(searchTerm);
   const filtered = filterChatSidebarItems(source, term);
   if (filtered.length === 0) {
     return source.length === 0
-      ? `<p class="chat-sidebar-empty">还没有对话，点 + New 开始。</p>`
+      ? `<p class="chat-sidebar-empty">${projectId ? "这个项目还没有对话，点 + New 开始。" : "还没有对话，点 + New 开始。"}</p>`
       : `<p class="chat-sidebar-empty">没有匹配 "${escapeHtml(term)}" 的对话。</p>`;
   }
   return filtered.map((conversation) => {

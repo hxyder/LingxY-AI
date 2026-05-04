@@ -47,6 +47,7 @@ export async function submitFileTask({
   parentTaskId = null,
   conversationId = null,
   clientMessageId = null,
+  projectId = null,
   retryCount = 0,
   executorOverride = null,
   background = false,
@@ -108,6 +109,7 @@ export async function submitFileTask({
       parentTaskId,
       conversationId,
       clientMessageId,
+      projectId,
       retryCount,
       executorOverride: executorOverride ?? null,
       skipDecomposition: false
@@ -129,6 +131,7 @@ export async function submitFileTask({
       parentTaskId,
       conversationId,
       clientMessageId,
+      projectId,
       retryCount,
       executorOverride: executorOverride ?? null,
       skipDecomposition: false
@@ -147,6 +150,7 @@ export async function submitFileTask({
     parentTaskId,
     conversationId,
     clientMessageId,
+    projectId,
     retryCount,
     executorOverride: preferredExecutorOverride,
     submissionKind: "file",

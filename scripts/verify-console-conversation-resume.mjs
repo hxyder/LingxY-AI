@@ -108,12 +108,31 @@ await it("console.js: blank submit mints conversation_id and force-refreshes con
   assert.match(slice, /consoleActiveConversation\s*=\s*cacheEnsureBackendFields/);
   assert.match(slice, /refreshChatSidebar\(\{\s*force:\s*true\s*\}\)/);
   assert.match(consoleJs, /async function ensureConversationsCache\s*\(\s*\{\s*force\s*=\s*false/);
-  assert.match(consoleJs, /if\s*\(\s*!force\s*&&\s*Array\.isArray\(conversationsState\?\.items\)/);
+  assert.match(consoleJs, /chatSidebarCacheLoaded/);
+  assert.match(consoleJs, /chatSidebarCacheKey\s*===\s*key/);
 });
 
 await it("console.js: submit body includes client_message_id from cacheCreateClientMessageId", () => {
   assert.match(consoleJs, /cacheCreateClientMessageId\(\)/);
   assert.match(consoleJs, /client_message_id:\s*clientMessageId/);
+});
+
+await it("console.js: project-scoped chat submits project_id without pseudo-history", () => {
+  const start = consoleJs.indexOf("async function submitConsoleChat");
+  assert.ok(start > 0, "submitConsoleChat must exist");
+  const end = consoleJs.indexOf("\nfunction appendConsoleChatUserMessage", start + 1);
+  const slice = consoleJs.slice(start, end > start ? end : start + 5000);
+  assert.match(slice, /project_id:\s*projectId/);
+  assert.match(slice, /selectionMetadata:\s*\{\s*project_id:\s*projectId\s*\}/);
+  assert.match(consoleJs, /function\s+getConsoleChatSubmitProjectId\s*\(/);
+});
+
+await it("console.js: chat sidebar fetch plumbs projectId without polluting resume history", () => {
+  assert.match(consoleHtml, /id="chatSidebarProjectFilter"/);
+  assert.match(consoleJs, /let\s+chatSidebarProjectId/);
+  assert.match(consoleJs, /fetchConversationsList\(\{\s*limit\s*=\s*100,\s*archived\s*=\s*["']false["'],\s*projectId\s*=\s*null/);
+  assert.match(consoleJs, /cacheFetchConversations\(fetch\.bind\(globalThis\),\s*state\.serviceBaseUrl,\s*\{\s*limit,\s*archived,\s*projectId\s*\}/);
+  assert.match(consoleJs, /refreshChatSidebar\(\{\s*force:\s*true\s*\}\)/);
 });
 
 await it("console.js: optimistic user bubble carries data-client-message-id and 'pending' class", () => {

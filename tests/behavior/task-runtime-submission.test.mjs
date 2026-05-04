@@ -38,6 +38,29 @@ test("task submission shell creates conversation, user message, task, link, and 
   assert.equal(store.auditLogs[0].task_id, result.task.task_id);
 });
 
+test("task submission shell does not reassign an existing conversation project", () => {
+  const store = createInMemoryStoreScaffold();
+  const runtime = { store };
+  store.insertConversation({
+    conversation_id: "conv_existing_project",
+    project_id: "project_old"
+  });
+
+  const result = submitTaskWithConversation({
+    runtime,
+    route: baseRoute,
+    contextPacket: { source_type: "text", source_app: "uca.test", text: "hello" },
+    userCommand: "Continue in this conversation",
+    executionMode: "interactive",
+    conversationId: "conv_existing_project",
+    projectId: "project_new",
+    submissionKind: "context"
+  });
+
+  assert.equal(result.conversation.project_id, "project_old");
+  assert.equal(store.getConversation("conv_existing_project").project_id, "project_old");
+});
+
 test("task submission shell reuses parent message without appending a new user message", () => {
   const store = createInMemoryStoreScaffold();
   const runtime = { store };

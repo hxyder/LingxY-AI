@@ -264,6 +264,7 @@ export async function submitImageTask({
   parentTaskId = null,
   conversationId = null,
   clientMessageId = null,
+  projectId = null,
   retryCount = 0,
   executorOverride = "multi_modal",
   submissionKind = "image",
@@ -303,6 +304,7 @@ export async function submitImageTask({
       parentTaskId,
       conversationId,
       clientMessageId,
+      projectId,
       retryCount
     });
   }
@@ -340,6 +342,7 @@ export async function submitImageTask({
     parentTaskId,
     conversationId,
     clientMessageId,
+    projectId,
     retryCount,
     executorOverride,
     submissionKind,
