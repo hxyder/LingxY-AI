@@ -26,6 +26,7 @@ const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
 const consolePreload = read("src/desktop/renderer/preload.cjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
+const evidenceSourcesView = read("src/desktop/renderer/evidence-sources-view.mjs");
 const dockJs = read("src/desktop/renderer/dock.js");
 const electronMain = read("src/desktop/tray/electron-main.mjs");
 const desktopManifest = read("src/desktop/shared/manifest.mjs");
@@ -178,10 +179,14 @@ assert.ok(/renderSkillValidation/.test(consoleJs) && /skill\.errors/.test(consol
   "skills: console must render descriptor validation errors");
 assert.ok(/window\.ucaShell\.openPath/.test(consoleJs) && /window\.ucaShell\?\.showItemInFolder/.test(consoleJs),
   "skills: console skill file actions must use the desktop shell bridge");
-assert.ok(/function\s+renderTaskEvidenceSummary/.test(consoleJs) && /taskEvidenceSummary/.test(consoleJs),
-  "task detail: console must render structured evidence summaries");
-assert.ok(/data-evidence-url/.test(consoleJs) && /data-evidence-path/.test(consoleJs),
+assert.ok(/renderEvidenceSourcesHtml/.test(evidenceSourcesView) && /extractEvidenceSummaryFromTaskDetail/.test(evidenceSourcesView),
+  "task detail: evidence source renderer must live in the shared renderer helper");
+assert.ok(/function\s+renderTaskEvidenceSummary/.test(consoleJs) && /renderEvidenceSourcesHtml/.test(consoleJs),
+  "task detail: console must render structured evidence summaries through the shared renderer");
+assert.ok(/data-evidence-url/.test(evidenceSourcesView) && /data-evidence-path/.test(evidenceSourcesView),
   "task detail: evidence sources must expose web open and local reveal actions");
+assert.ok(/appendConsoleChatEvidenceSources/.test(consoleJs) && /data-chat-evidence-sources/.test(consoleJs),
+  "chat: console must append structured evidence summaries to assistant messages");
 assert.ok(/updateSecurityState/.test(consoleJs) && /window\.ucaShell\.updateSecurityState/.test(consoleJs),
   "security settings: console must use desktop shell bridge");
 assert.ok(/updateBudget/.test(consoleJs) && /window\.ucaShell\.updateBudget/.test(consoleJs),
