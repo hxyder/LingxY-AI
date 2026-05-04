@@ -347,6 +347,17 @@ function normalizeSkillRollbackPayload(payload = {}) {
   };
 }
 
+function normalizeSkillTestPayload(payload = {}) {
+  const source = normalizePlainObject(payload) ?? {};
+  const normalized = {
+    entryPath: typeof source.entryPath === "string" ? source.entryPath : ""
+  };
+  if (Object.prototype.hasOwnProperty.call(source, "markdown")) {
+    normalized.markdown = source.markdown == null ? "" : `${source.markdown}`;
+  }
+  return normalized;
+}
+
 function normalizeRuntimeConfigPayload(payload = {}) {
   return normalizePlainObject(payload) ?? {};
 }
@@ -3152,6 +3163,24 @@ export function createElectronShellRuntime({
           return {
             ok: false,
             error: "skill_rollback_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
+      ipcMain.handle(IPC_CHANNELS.skillTest, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        try {
+          return await postDesktopServiceJson({
+            base,
+            actor,
+            pathname: "/skills/test",
+            body: normalizeSkillTestPayload(payload)
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "skill_test_failed",
             message: error?.message ?? String(error)
           };
         }

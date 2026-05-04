@@ -11,8 +11,11 @@ import {
   resolveEditableSkillEntryPath,
   rollbackSkillMarkdown,
   slugifySkillId,
+  testEditableSkill,
   writeSkillMarkdownWithBackup
 } from "../../src/service/ai/skills/lifecycle.mjs";
+import { createSkillRegistry } from "../../src/service/ai/skills/registry.mjs";
+import { createConfiguredSkillRegistry } from "../../src/service/ai/skills/builtin.mjs";
 
 async function makeRuntime() {
   const root = await mkdtemp(path.join(os.tmpdir(), "lingxy-skills-"));
@@ -80,6 +83,40 @@ test("skill lifecycle writes backups and restores the latest backup", async () =
   assert.equal(restored.ok, true);
   assert.match(restored.markdown, /Updated once|Check quality/);
   assert.match(await readFile(created.entryPath, "utf8"), /Updated once|Check quality/);
+});
+
+test("skill lifecycle test reports validation, saved state, and runtime discovery", async () => {
+  const runtime = await makeRuntime();
+  const created = await createEditableSkill(runtime, {
+    id: "planner-visible",
+    name: "Planner Visible",
+    description: "Visible to the skill registry."
+  });
+  runtime.platform = {
+    skillRegistries: createSkillRegistry([
+      createConfiguredSkillRegistry({
+        id: "runtime-skills",
+        rootPath: runtime.paths.skillsDir
+      })
+    ])
+  };
+
+  const ready = await testEditableSkill(runtime, { entryPath: created.entryPath });
+  assert.equal(ready.ok, true);
+  assert.equal(ready.validation.ok, true);
+  assert.equal(ready.saved, true);
+  assert.equal(ready.discovery.checked, true);
+  assert.equal(ready.discovery.discovered, true);
+  assert.equal(ready.discovery.registry, "runtime-skills");
+
+  const draft = await testEditableSkill(runtime, {
+    entryPath: created.entryPath,
+    markdown: "# Planner Visible\n\n"
+  });
+  assert.equal(draft.ok, false);
+  assert.equal(draft.saved, false);
+  assert.equal(draft.validation.ok, false);
+  assert.ok(draft.checks.some((check) => check.id === "saved_to_disk" && check.ok === false));
 });
 
 test("skill lifecycle rejects paths outside editable skill roots", async () => {

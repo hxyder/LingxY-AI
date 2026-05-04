@@ -24,6 +24,7 @@ import {
   listSkillHistory,
   resolveEditableSkillEntryPath,
   rollbackSkillMarkdown,
+  testEditableSkill,
   writeSkillMarkdownWithBackup
 } from "../../ai/skills/lifecycle.mjs";
 import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
@@ -661,6 +662,19 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     const body = await readJsonBody(request);
     try {
       const result = await rollbackSkillMarkdown(runtime, body ?? {});
+      sendJson(response, 200, result);
+    } catch (error) {
+      const status = error.message === "skill_path_not_allowed" ? 403 : 400;
+      sendJson(response, status, { error: error.message });
+    }
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/skills/test") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const body = await readJsonBody(request);
+    try {
+      const result = await testEditableSkill(runtime, body ?? {});
       sendJson(response, 200, result);
     } catch (error) {
       const status = error.message === "skill_path_not_allowed" ? 403 : 400;

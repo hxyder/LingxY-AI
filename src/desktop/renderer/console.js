@@ -289,6 +289,7 @@ const skillEditCloseBtn = document.querySelector("#skillEditCloseBtn");
 const skillEditOpenBtn = document.querySelector("#skillEditOpenBtn");
 const skillEditRevealBtn = document.querySelector("#skillEditRevealBtn");
 const skillEditRollbackBtn = document.querySelector("#skillEditRollbackBtn");
+const skillEditTestBtn = document.querySelector("#skillEditTestBtn");
 
 const consoleChatPin = createBottomPinController(consoleChatMessages, {
   button: consoleChatScrollDownBtn
@@ -3024,6 +3025,24 @@ function renderSkillValidation(target, validation) {
     return;
   }
   target.innerHTML = "";
+}
+
+function renderSkillTestResult(target, result) {
+  if (!target) return;
+  const checks = Array.isArray(result?.checks) ? result.checks : [];
+  const rows = checks.map((check) => {
+    const chipClass = check.ok === true ? "ready" : check.ok === false ? "warning" : "muted";
+    const chipText = check.ok === true ? "ok" : check.ok === false ? "check" : "n/a";
+    return `<div style="margin-top:4px;"><span class="chip ${chipClass}">${chipText}</span> ${escapeHtml(check.label ?? check.id ?? "check")}</div>`;
+  }).join("");
+  if (!checks.length) {
+    renderSkillValidation(target, result?.validation);
+    return;
+  }
+  target.innerHTML = `
+    <div><span class="chip ${result?.ok ? "ready" : "warning"}">${result?.ok ? "ready" : "needs attention"}</span></div>
+    <div style="margin-top:6px;">${rows}</div>
+  `;
 }
 
 async function openSkillPath(entryPath) {
@@ -7721,6 +7740,17 @@ async function rollbackSkillViaShell(entryPath) {
   );
 }
 
+async function testSkillViaShell(payload = {}) {
+  if (typeof window.ucaShell?.testSkill !== "function") {
+    throw new Error("Desktop skill test bridge unavailable.");
+  }
+  const result = await window.ucaShell.testSkill(payload);
+  if (result?.error) {
+    throw new Error(result.message ?? result.error ?? "Could not test skill.");
+  }
+  return result ?? {};
+}
+
 async function updateRoutingConfigViaShell(routing) {
   if (typeof window.ucaShell?.updateRoutingConfig !== "function") {
     throw new Error("Desktop routing config bridge unavailable.");
@@ -8303,6 +8333,20 @@ skillEditRollbackBtn?.addEventListener("click", async () => {
     renderSkillValidation(skillEditValidation, result.validation);
     skillEditState.textContent = `Restored ${result.restoredHistoryId ?? "latest backup"}.`;
     await refreshWorkspace({ mode: "background" });
+  } catch (error) {
+    skillEditState.textContent = `Failed: ${error.message}`;
+  }
+});
+skillEditTestBtn?.addEventListener("click", async () => {
+  if (!editingSkillPath || !skillEditText) return;
+  skillEditState.textContent = "Testing...";
+  try {
+    const result = await testSkillViaShell({
+      entryPath: editingSkillPath,
+      markdown: skillEditText.value
+    });
+    renderSkillTestResult(skillEditValidation, result);
+    skillEditState.textContent = result.ok ? "Ready for planner discovery." : "Review the checks above.";
   } catch (error) {
     skillEditState.textContent = `Failed: ${error.message}`;
   }

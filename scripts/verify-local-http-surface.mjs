@@ -255,6 +255,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "POST", "/skills/test", {
+    domain: "skills_config",
+    effect: "local_file_read",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
 
   surface("connector-routes.mjs", "DELETE", "/^\\/connectors\\/accounts\\/(microsoft|google)$/", {
     domain: "connector_accounts",

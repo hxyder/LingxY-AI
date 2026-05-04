@@ -396,6 +396,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   rollbackSkill(payload) {
     return ipcRenderer.invoke("uca:skill-rollback", payload ?? {});
   },
+  testSkill(payload) {
+    return ipcRenderer.invoke("uca:skill-test", payload ?? {});
+  },
   updateRoutingConfig(payload) {
     return ipcRenderer.invoke("uca:routing-config-update", payload ?? {});
   },

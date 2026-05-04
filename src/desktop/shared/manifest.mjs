@@ -83,6 +83,7 @@ export const IPC_CHANNELS = Object.freeze({
   skillDuplicate: "uca:skill-duplicate",
   skillHistory: "uca:skill-history",
   skillRollback: "uca:skill-rollback",
+  skillTest: "uca:skill-test",
   routingConfigUpdate: "uca:routing-config-update",
   outputConfigUpdate: "uca:output-config-update",
   featureConfigUpdate: "uca:feature-config-update",

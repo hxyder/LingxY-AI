@@ -3,7 +3,7 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
-import { validateSkillDescriptorMarkdown } from "./discovery.mjs";
+import { readSkillDescriptor, validateSkillDescriptorMarkdown } from "./discovery.mjs";
 
 function expandLocalPath(value) {
   if (!value) return null;
@@ -229,5 +229,86 @@ export async function rollbackSkillMarkdown(runtime = {}, {
     backup,
     markdown,
     validation: validateSkillDescriptorMarkdown(markdown)
+  };
+}
+
+function sameResolvedPath(a = "", b = "") {
+  return path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
+}
+
+async function findDiscoveredSkill(runtime = {}, resolvedEntryPath = "") {
+  if (typeof runtime.platform?.skillRegistries?.listSkills !== "function") {
+    return {
+      checked: false,
+      discovered: null,
+      reason: "skill_registry_unavailable"
+    };
+  }
+  const config = runtime.configStore?.load?.() ?? {};
+  const skills = await runtime.platform.skillRegistries.listSkills({ runtime, config });
+  const matched = (skills ?? []).find((skill) =>
+    skill?.entryPath && sameResolvedPath(skill.entryPath, resolvedEntryPath)
+  ) ?? null;
+  return {
+    checked: true,
+    discovered: Boolean(matched),
+    registry: matched?.registry ?? matched?.tags?.[0] ?? null,
+    skill: matched
+      ? {
+          id: matched.id ?? null,
+          displayName: matched.displayName ?? matched.name ?? matched.id ?? null,
+          description: matched.description ?? "",
+          valid: matched.valid !== false
+        }
+      : null
+  };
+}
+
+export async function testEditableSkill(runtime = {}, {
+  entryPath = "",
+  markdown = undefined
+} = {}) {
+  const resolved = resolveEditableSkillEntryPath(runtime, entryPath);
+  if (!resolved) throw new Error("skill_path_not_allowed");
+  const diskMarkdown = existsSync(resolved) ? await readFile(resolved, "utf8") : "";
+  const candidateMarkdown = markdown === undefined ? diskMarkdown : String(markdown ?? "");
+  const validation = validateSkillDescriptorMarkdown(candidateMarkdown);
+  const descriptor = readSkillDescriptor(path.dirname(resolved), "editable-skill-test");
+  const saved = candidateMarkdown === diskMarkdown;
+  const discovery = await findDiscoveredSkill(runtime, resolved);
+  const checks = [
+    {
+      id: "descriptor_valid",
+      ok: validation.ok,
+      label: validation.ok ? "Descriptor is valid." : "Descriptor needs heading/description fixes."
+    },
+    {
+      id: "saved_to_disk",
+      ok: saved,
+      label: saved ? "Editor content matches the saved SKILL.md." : "Editor has unsaved changes."
+    },
+    {
+      id: "runtime_discovery",
+      ok: discovery.checked ? discovery.discovered : null,
+      label: discovery.checked
+        ? (discovery.discovered ? "Runtime can discover this skill." : "Runtime did not discover this skill.")
+        : "Runtime discovery was not available in this context."
+    }
+  ];
+  const ok = validation.ok && saved && (discovery.checked ? discovery.discovered : true);
+  return {
+    ok,
+    entryPath: resolved,
+    validation,
+    saved,
+    discovery,
+    descriptor: {
+      id: descriptor?.id ?? path.basename(path.dirname(resolved)),
+      displayName: validation.heading || descriptor?.displayName || path.basename(path.dirname(resolved)),
+      description: validation.description || descriptor?.description || "",
+      valid: validation.ok,
+      errors: validation.errors
+    },
+    checks
   };
 }
