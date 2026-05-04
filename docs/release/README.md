@@ -20,3 +20,10 @@ Included documents:
 - `trial_feedback_template.md`
 
 The generated sideload bundle is produced by `npm run build:trial-package`.
+
+For installer artifacts, use the `Release Artifacts` GitHub Actions workflow.
+It runs on Windows, executes `npm run check`, rebuilds the third-party license
+inventory, runs `npm run dist`, generates SHA256 checksums, uploads the
+artifacts, and can create or update a draft GitHub Release for a tag. Treat
+runtime auto-update as a later step that depends on this release artifact
+channel being stable.

@@ -388,10 +388,13 @@ Release planning lives in [docs/release/](docs/release/README.md). The current r
 - source Markdown references,
 - public/release readiness verifiers.
 
+The `Release Artifacts` GitHub Actions workflow builds the Windows installer on `windows-latest`, runs the full verifier suite first, refreshes third-party notices, generates `checksums.sha256`, uploads installer artifacts, and can create or update a draft GitHub Release from a tag. Runtime auto-update support is intentionally not enabled until this artifact channel is proven stable.
+
 Run:
 
 ```powershell
 node scripts/verify-github-readiness.mjs
+node scripts/verify-release-artifact-workflow.mjs
 node scripts/verify-release-readiness.mjs
 ```
 

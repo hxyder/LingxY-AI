@@ -16,6 +16,10 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 - Confirm `.github/workflows/repo-baseline.yml` passes after push.
 - Before release branches or public announcement, run the `Release Gate`
   workflow or push through a `release/**` branch.
+- Before publishing installer artifacts, run the `Release Artifacts` workflow.
+  Confirm it uses Node 22.12.0, runs `npm run check`, refreshes
+  `THIRD_PARTY_LICENSES.md`, generates `checksums.sha256`, and uploads the
+  Windows installer artifacts.
 - Confirm local files under `models/`, `dist/`, `logs/`, `artifacts/`,
   `outputs/`, `.tmp/`, `internal/`, and `.claude/settings.local.json` are
   not tracked.
@@ -50,4 +54,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
   `verify:behavior-tests`.
 - Check the Release Gate GitHub Actions run before any release: it should
   execute `npm ci` and the full `npm run check`.
+- Check the Release Artifacts GitHub Actions run before making a GitHub
+  Release public: it should upload the installer, `latest.yml` when produced
+  by electron-builder, `checksums.sha256`, `LICENSE`, and
+  `THIRD_PARTY_LICENSES.md`.
 - Only publish GitHub Pages after checking the final URLs and contact emails.
