@@ -38,9 +38,32 @@ const DESKTOP_CONSOLE_ACTOR = "desktop_console";
 const DOCK_WINDOW_ID = "dock";
 const DOCK_HUD_SCROLL_LOCK_CSS = `
   html, body, #dockButton {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
     overflow: hidden !important;
+    overflow: clip !important;
     overscroll-behavior: none !important;
     scrollbar-width: none !important;
+  }
+  #dockButton {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: 0 !important;
+    transform-origin: center center !important;
+  }
+  #dockButton canvas,
+  canvas#orbCanvas {
+    width: 100% !important;
+    height: 100% !important;
+    max-width: 100% !important;
+    max-height: 100% !important;
   }
   html::-webkit-scrollbar,
   body::-webkit-scrollbar,
@@ -1625,6 +1648,12 @@ export function createElectronShellRuntime({
             event.preventDefault?.();
             lockWindowRendererZoom(windowDef, browserWindow);
           }
+        });
+      }
+      if (windowDef.id === DOCK_WINDOW_ID) {
+        browserWindow.webContents.on("dom-ready", () => {
+          installDockHudScrollLock(browserWindow);
+          enforceDockWindowInvariants(browserWindow);
         });
       }
       browserWindow.webContents.on("did-finish-load", () => {

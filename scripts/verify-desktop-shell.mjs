@@ -75,6 +75,12 @@ if (!electronMain.includes("function lockWindowRendererZoom")
   throw new Error("Dock renderer zoom must be locked to prevent tiny-window scrollbars.");
 }
 
+if (!electronMain.includes('"dom-ready"')
+    || !/DOCK_HUD_SCROLL_LOCK_CSS[\s\S]{0,220}position:\s*fixed\s*!important/.test(electronMain)
+    || !/canvas#orbCanvas[\s\S]{0,160}width:\s*100%\s*!important/.test(electronMain)) {
+  throw new Error("Dock scroll lock must be injected early and force viewport-sized HUD content.");
+}
+
 if (!/windowId === DOCK_WINDOW_ID[\s\S]{0,640}normalizeDockBounds\(tentativeDockBounds, dockDisplay/.test(electronMain)
     || !/width:\s*Number\.isFinite\(bounds\.width\)\s*\?\s*Math\.round\(bounds\.width\)\s*:\s*DOCK_SIZE_PX/.test(electronMain)
     || !/snap:\s*options\.mode === "move"/.test(electronMain)) {
