@@ -309,7 +309,7 @@ Generated from `package-lock.json` and installed package metadata.
 | dom-serializer | 2.0.0 | MIT | prod | git://github.com/cheeriojs/dom-serializer.git |
 | domelementtype | 2.3.0 | BSD-2-Clause | prod | git://github.com/fb55/domelementtype.git |
 | domhandler | 5.0.3 | BSD-2-Clause | prod | git://github.com/fb55/domhandler.git |
-| dompurify | 3.3.3 | (MPL-2.0 OR Apache-2.0) | prod | https://github.com/cure53/DOMPurify |
+| dompurify | 3.4.2 | (MPL-2.0 OR Apache-2.0) | prod | https://github.com/cure53/DOMPurify |
 | domutils | 3.2.2 | BSD-2-Clause | prod | git://github.com/fb55/domutils.git |
 | dotenv | 16.6.1 | BSD-2-Clause | dev | https://github.com/motdotla/dotenv#readme |
 | dotenv-expand | 11.0.7 | BSD-2-Clause | dev | https://github.com/motdotla/dotenv-expand |
@@ -408,7 +408,7 @@ Generated from `package-lock.json` and installed package metadata.
 | has-tostringtag | 1.0.2 | MIT | dev | https://github.com/inspect-js/has-tostringtag#readme |
 | hash.js | 1.1.7 | MIT | prod | https://github.com/indutny/hash.js |
 | hasown | 2.0.2 | MIT | prod | https://github.com/inspect-js/hasOwn#readme |
-| hono | 4.12.12 | MIT | prod | https://hono.dev |
+| hono | 4.12.16 | MIT | prod | https://hono.dev |
 | hosted-git-info | 4.1.0 | ISC | dev | https://github.com/npm/hosted-git-info |
 | html-escaper | 3.0.3 | MIT | prod | https://github.com/WebReflection/html-escaper |
 | htmlparser2 | 10.1.0 | MIT | prod | git://github.com/fb55/htmlparser2.git |
@@ -760,7 +760,7 @@ Generated from `package-lock.json` and installed package metadata.
 | uri-js | 4.4.1 | BSD-2-Clause | dev | https://github.com/garycourt/uri-js |
 | utf8-byte-length | 1.0.5 | (WTFPL OR MIT) | dev | https://github.com/parshap/utf8-byte-length#readme |
 | util-deprecate | 1.0.2 | MIT | prod | https://github.com/TooTallNate/util-deprecate |
-| uuid | 11.1.0 | MIT | prod | https://github.com/uuidjs/uuid.git |
+| uuid | 11.1.1 | MIT | prod | https://github.com/uuidjs/uuid.git |
 | uuid | 8.3.2 | MIT | prod | https://github.com/uuidjs/uuid.git |
 | vary | 1.1.2 | MIT | prod | jshttp/vary |
 | verror | 1.10.1 | MIT | dev, optional | https://registry.npmjs.org/verror/-/verror-1.10.1.tgz |
