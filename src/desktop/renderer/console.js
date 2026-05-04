@@ -714,6 +714,7 @@ const state = {
   selectedDagExecutionId: null,
   selectedTaskDetail: null,
   selectedTaskArtifactPath: null,
+  templatePreviewLoadKey: null,
   selectedProjectId: null,
   selectedProjectConversationId: null,
   projectStore: null,
@@ -2340,6 +2341,16 @@ function shouldRenderWorkspaceSlice(key, value, { force = false } = {}) {
   return true;
 }
 
+function setHtmlIfChanged(element, html) {
+  if (!element) return false;
+  const next = String(html ?? "");
+  if (element.innerHTML !== next) {
+    element.innerHTML = next;
+    return true;
+  }
+  return false;
+}
+
 const CODE_EXTENSIONS = new Set([
   ".js", ".mjs", ".cjs", ".jsx", ".ts", ".tsx",
   ".py", ".rb", ".go", ".rs", ".java", ".kt", ".swift",
@@ -3823,7 +3834,7 @@ function reconcileTaskList(container, entries, selectedTaskId) {
       btn.addEventListener("click", () => {
         state.selectedTaskId = btn.dataset.taskId;
         renderTasks();
-        void refreshTaskDetail();
+        void refreshTaskDetail({ showLoading: true });
       });
     } else {
       // Cheap content diff: outerHTML compare. If unchanged, leave the
@@ -3903,7 +3914,7 @@ function renderTaskChildren(detail) {
     btn.addEventListener("click", () => {
       state.selectedTaskId = btn.dataset.childTaskId;
       renderTasks();
-      void refreshTaskDetail();
+      void refreshTaskDetail({ showLoading: true });
     });
   }
 }
@@ -4395,7 +4406,7 @@ function renderTaskDetail(detail) {
     btn.addEventListener("click", () => {
       state.selectedTaskId = btn.dataset.parentTaskId;
       renderTasks();
-      void refreshTaskDetail();
+      void refreshTaskDetail({ showLoading: true });
     });
   }
   // Hero action proxies → trigger the existing hidden buttons that carry
@@ -4446,25 +4457,36 @@ function renderTaskDetail(detail) {
   if (deleteTaskButton) deleteTaskButton.disabled = false;
 }
 
-async function refreshTaskDetail() {
+async function refreshTaskDetail({ showLoading = false } = {}) {
   if (!state.selectedTaskId) {
     selectedTaskEventController.close();
-    renderTaskDetail(null);
+    if (state.selectedTaskDetail || taskDetailSummary.innerHTML.trim()) {
+      renderTaskDetail(null);
+    }
     return;
   }
+  const selectedTaskId = state.selectedTaskId;
+  const currentDetailTaskId = state.selectedTaskDetail?.task?.task_id ?? null;
+  const firstLoadForSelection = currentDetailTaskId !== selectedTaskId;
   const v = ++state.detailVersion;
-  taskDetailSummary.innerHTML = `
-    <div aria-label="Loading task details" role="status">
-      <div class="skeleton skeleton-line wide"></div>
-      <div class="skeleton skeleton-line mid"></div>
-      <div class="skeleton skeleton-line narrow"></div>
-    </div>
-  `;
+  if (showLoading || firstLoadForSelection) {
+    taskDetailSummary.innerHTML = `
+      <div aria-label="Loading task details" role="status">
+        <div class="skeleton skeleton-line wide"></div>
+        <div class="skeleton skeleton-line mid"></div>
+        <div class="skeleton skeleton-line narrow"></div>
+      </div>
+    `;
+  }
   try {
-    const detail = await fetchJson(`/task/${encodeURIComponent(state.selectedTaskId)}`);
+    const detail = await fetchJson(`/task/${encodeURIComponent(selectedTaskId)}`);
     if (v !== state.detailVersion) return;
-    selectedTaskEventController.ensure(state.selectedTaskId);
-    renderTaskDetail(detail);
+    selectedTaskEventController.ensure(selectedTaskId);
+    if (shouldRenderWorkspaceSlice(`task.detail.${selectedTaskId}`, detail, {
+      force: showLoading || firstLoadForSelection
+    })) {
+      renderTaskDetail(detail);
+    }
   } catch (error) {
     if (v !== state.detailVersion) return;
     state.selectedTaskDetail = null;
@@ -5221,13 +5243,27 @@ function renderSchedules() {
       state.selectedTaskId = taskId;
       switchTab("tasks");
       renderTasks();
-      void refreshTaskDetail();
+      void refreshTaskDetail({ showLoading: true });
     });
   }
 }
 
-async function loadTemplatePreview(templateId) {
-  if (!templateId) { templatePreview.textContent = "Select a template."; return; }
+function buildTemplatePreviewLoadKey(templateId) {
+  if (!templateId) return "";
+  const item = (state.workspace.templates ?? []).find((template) => template.id === templateId) ?? { id: templateId };
+  return stableWorkspaceSignature(item);
+}
+
+async function loadTemplatePreview(templateId, { force = false } = {}) {
+  if (!templateId) {
+    if (state.templatePreviewLoadKey !== "") {
+      templatePreview.textContent = "Select a template.";
+      state.templatePreviewLoadKey = "";
+    }
+    return;
+  }
+  const loadKey = buildTemplatePreviewLoadKey(templateId);
+  if (!force && state.templatePreviewLoadKey === loadKey) return;
   try {
     const [tp, ep] = await Promise.all([
       fetchJson(`/templates/${encodeURIComponent(templateId)}`),
@@ -5239,6 +5275,7 @@ async function loadTemplatePreview(templateId) {
     templateNameInput.value = t?.name ?? "";
     templatePromptInput.value = t?.steps?.find((s) => s.kind === "executor")?.inputs?.prompt ?? "";
     deleteTemplateButton.disabled = t?.template_origin !== "user";
+    state.templatePreviewLoadKey = loadKey;
   } catch (error) {
     templatePreview.textContent = `Failed: ${error.message}`;
   }
@@ -5247,7 +5284,7 @@ async function loadTemplatePreview(templateId) {
 async function selectTemplate(templateId) {
   state.selectedTemplateId = templateId;
   renderTemplates();
-  await loadTemplatePreview(templateId);
+  await loadTemplatePreview(templateId, { force: true });
 }
 
 function renderTemplates() {
@@ -5256,6 +5293,7 @@ function renderTemplates() {
   if (templates.length === 0) {
     renderEmpty(templateList, "No templates.");
     state.selectedTemplateId = null;
+    state.templatePreviewLoadKey = "";
     templatePreview.textContent = "Select a template.";
     deleteTemplateButton.disabled = true;
     return;
@@ -5519,38 +5557,40 @@ async function renderPreviewSettings() {
   const metricsEl = document.getElementById("previewMetrics");
   const cacheEl = document.getElementById("previewCacheInfo");
   if (!formatsEl || !strategyEl || !metricsEl || !cacheEl) return;
-  formatsEl.innerHTML = `<div class="muted" style="font-size:12px;">Loading…</div>`;
+  if (!formatsEl.innerHTML.trim()) {
+    formatsEl.innerHTML = `<div class="muted" style="font-size:12px;">Loading…</div>`;
+  }
   try {
     const status = await fetchJson("/preview/status");
     const formats = status.providers ?? [];
-    formatsEl.innerHTML = formats.length
+    setHtmlIfChanged(formatsEl, formats.length
       ? formats.map((p) => `
         <div class="row" style="justify-content:space-between;font-size:12px;padding:4px 0;">
           <span><strong>${escapeHtml(p.id)}</strong> <span class="muted">(${(p.extensions ?? []).join(" ")})</span></span>
           <span class="muted">priority ${p.priority}</span>
         </div>`).join("")
-      : `<div class="muted" style="font-size:12px;">无已注册的 Provider。</div>`;
+      : `<div class="muted" style="font-size:12px;">无已注册的 Provider。</div>`);
 
-    strategyEl.innerHTML = `
+    setHtmlIfChanged(strategyEl, `
       <div>生成的 Office 文件优先使用 sidecar HTML 预览。</div>
-      <div>外部 docx / xlsx / pdf 使用各自 provider；外部 pptx 使用坐标解析预览。</div>`;
+      <div>外部 docx / xlsx / pdf 使用各自 provider；外部 pptx 使用坐标解析预览。</div>`);
 
     const m = status.metrics ?? {};
     const hitRate = m.renders > 0 ? ((m.cacheHits / m.renders) * 100).toFixed(1) : "—";
     const byProvider = m.byProvider ?? {};
-    metricsEl.innerHTML = `
+    setHtmlIfChanged(metricsEl, `
       <div>总渲染次数: ${m.renders ?? 0}</div>
       <div>缓存命中: ${m.cacheHits ?? 0} · 命中率 ${hitRate}${typeof hitRate === "string" && hitRate !== "—" ? "%" : ""}</div>
       <div style="margin-top:6px;">${Object.entries(byProvider).map(([id, stats]) =>
         `<div>• ${escapeHtml(id)}: ${stats.hits} 次 · 平均 ${stats.hits > 0 ? (stats.renderMs / Math.max(1, stats.hits - stats.cacheHits)).toFixed(0) : "—"} ms · ${stats.errors ?? 0} 错误</div>`
-      ).join("") || '<span class="muted">暂无指标。</span>'}</div>`;
+      ).join("") || '<span class="muted">暂无指标。</span>'}</div>`);
 
     const cache = status.cache ?? {};
-    cacheEl.innerHTML = `
+    setHtmlIfChanged(cacheEl, `
       <div>路径: <code style="font-size:11px;">${escapeHtml(cache.dir ?? "—")}</code></div>
-      <div>${cache.files ?? 0} 个缓存文件 · ${formatBytesSimple(cache.bytes ?? 0)}</div>`;
+      <div>${cache.files ?? 0} 个缓存文件 · ${formatBytesSimple(cache.bytes ?? 0)}</div>`);
   } catch (error) {
-    formatsEl.innerHTML = `<div class="muted" style="font-size:12px;color:#b45309;">运行时未就绪: ${escapeHtml(error.message)}</div>`;
+    setHtmlIfChanged(formatsEl, `<div class="muted" style="font-size:12px;color:#b45309;">运行时未就绪: ${escapeHtml(error.message)}</div>`);
     strategyEl.textContent = "";
     metricsEl.textContent = "";
     cacheEl.textContent = "";
@@ -5571,15 +5611,17 @@ async function renderFailedTasks() {
   const listEl = document.getElementById("failedTasksList");
   const viewerEl = document.getElementById("failedTaskLogViewer");
   if (!listEl) return;
-  listEl.innerHTML = `<div class="muted" style="font-size:12px;">Loading…</div>`;
+  if (!listEl.innerHTML.trim()) {
+    listEl.innerHTML = `<div class="muted" style="font-size:12px;">Loading…</div>`;
+  }
   try {
     const resp = await fetchJson("/tasks/failed");
     const items = resp.failed ?? [];
     if (items.length === 0) {
-      listEl.innerHTML = `<div class="muted" style="font-size:12px;">最近没有失败任务。</div>`;
+      setHtmlIfChanged(listEl, `<div class="muted" style="font-size:12px;">最近没有失败任务。</div>`);
       return;
     }
-    listEl.innerHTML = items.map((t) => `
+    const changed = setHtmlIfChanged(listEl, items.map((t) => `
       <div class="surface" style="padding:8px 10px;cursor:pointer;" data-failed-task="${escapeHtml(t.task_id)}">
         <div class="row" style="justify-content:space-between;gap:8px;">
           <strong style="font-size:12px;">${escapeHtml(t.task_id.slice(0, 28))}</strong>
@@ -5587,7 +5629,8 @@ async function renderFailedTasks() {
         </div>
         <div class="muted" style="font-size:11.5px;margin-top:3px;">${escapeHtml((t.user_command ?? "").slice(0, 140))}</div>
         ${t.failure_user_message ? `<div style="font-size:11px;margin-top:4px;color:#b45309;">${escapeHtml(String(t.failure_user_message).slice(0, 240))}</div>` : ""}
-      </div>`).join("");
+      </div>`).join(""));
+    if (!changed) return;
     for (const row of listEl.querySelectorAll("[data-failed-task]")) {
       row.addEventListener("click", async () => {
         const taskId = row.dataset.failedTask;
@@ -5613,7 +5656,7 @@ async function renderFailedTasks() {
       });
     }
   } catch (error) {
-    listEl.innerHTML = `<div class="muted" style="font-size:12px;color:#b45309;">加载失败：${escapeHtml(error.message)}</div>`;
+    setHtmlIfChanged(listEl, `<div class="muted" style="font-size:12px;color:#b45309;">加载失败：${escapeHtml(error.message)}</div>`);
   }
 }
 
@@ -5645,8 +5688,7 @@ function renderTrashItem({ kind, id, title, deletedAt, restoreUntil }) {
 
 async function renderTrashList() {
   if (!trashList) return;
-  if (trashState) trashState.textContent = "Loading Trash...";
-  trashList.innerHTML = "";
+  if (trashState && !trashList.innerHTML.trim()) trashState.textContent = "Loading Trash...";
   try {
     const [tasksPayload, notesPayload] = await Promise.all([
       fetchJson("/tasks?deleted=only"),
@@ -5670,10 +5712,11 @@ async function renderTrashList() {
       .sort((left, right) => `${right.deletedAt ?? ""}`.localeCompare(`${left.deletedAt ?? ""}`));
     if (trashState) trashState.textContent = `${items.length} deleted item${items.length === 1 ? "" : "s"}.`;
     if (items.length === 0) {
-      trashList.innerHTML = `<div class="muted" style="font-size:12px;">Trash is empty.</div>`;
+      setHtmlIfChanged(trashList, `<div class="muted" style="font-size:12px;">Trash is empty.</div>`);
       return;
     }
-    trashList.innerHTML = items.map(renderTrashItem).join("");
+    const changed = setHtmlIfChanged(trashList, items.map(renderTrashItem).join(""));
+    if (!changed) return;
     for (const button of trashList.querySelectorAll("[data-trash-restore-task]")) {
       button.addEventListener("click", async () => {
         const taskId = button.getAttribute("data-trash-restore-task");
@@ -5708,7 +5751,7 @@ async function renderTrashList() {
     }
   } catch (error) {
     if (trashState) trashState.textContent = `Failed: ${error.message}`;
-    trashList.innerHTML = "";
+    setHtmlIfChanged(trashList, `<div class="muted" style="font-size:12px;color:#b45309;">Failed: ${escapeHtml(error.message)}</div>`);
   }
 }
 
@@ -6240,7 +6283,7 @@ document.addEventListener("keydown", (event) => {
           state.selectedTaskId = items[idx].taskId;
           switchTab("tasks");
           renderTasks();
-          void refreshTaskDetail();
+          void refreshTaskDetail({ showLoading: true });
           setOpen(false);
         }
       });
@@ -6322,7 +6365,7 @@ document.addEventListener("keydown", (event) => {
         state.selectedTaskId = items[activeIndex].taskId;
         switchTab("tasks");
         renderTasks();
-        void refreshTaskDetail();
+        void refreshTaskDetail({ showLoading: true });
         setOpen(false);
       } else {
         void submitPrompt();
@@ -6425,7 +6468,7 @@ deleteTaskButton?.addEventListener("click", async () => {
       await restoreTaskViaShell(taskId);
       state.selectedTaskId = taskId;
       await refreshWorkspace();
-      await refreshTaskDetail();
+      await refreshTaskDetail({ showLoading: true });
       showConsoleToast("任务已恢复", { kind: "ok" });
     }
   });
@@ -6466,6 +6509,7 @@ templateForm.addEventListener("submit", async (event) => {
     await saveTemplateViaShell(template);
     templateState.textContent = `Saved ${template.id}`;
     state.selectedTemplateId = template.id;
+    state.templatePreviewLoadKey = null;
     await refreshWorkspace();
   } catch (error) {
     templateState.textContent = `Failed: ${error.message}`;
@@ -6480,6 +6524,7 @@ importTemplateButton.addEventListener("click", async () => {
     await importTemplateViaShell(raw);
     templateState.textContent = "Imported";
     templateImportInput.value = "";
+    state.templatePreviewLoadKey = null;
     await refreshWorkspace();
   } catch (error) {
     templateState.textContent = `Failed: ${error.message}`;
@@ -6492,6 +6537,7 @@ deleteTemplateButton.addEventListener("click", async () => {
     await deleteTemplateViaShell(state.selectedTemplateId);
     templateState.textContent = "Deleted";
     state.selectedTemplateId = null;
+    state.templatePreviewLoadKey = "";
     templateNameInput.value = "";
     templatePromptInput.value = "";
     await refreshWorkspace();
