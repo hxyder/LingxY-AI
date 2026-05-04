@@ -59,7 +59,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
   path from `README.md`.
 - Check the Repo Baseline GitHub Actions run: it should execute
   `npm ci`, `verify:github-readiness`, `verify:dependency-hygiene`,
-  `verify:security-policy`, `verify:structure`, `verify:doc-references`,
+  `verify:security-policy`, `verify:codeql-workflow`,
+  `verify:structure`, `verify:doc-references`,
   `verify:local-http-surface`, and
   `verify:behavior-tests`.
 - Check the Release Gate GitHub Actions run before any release: it should

@@ -54,16 +54,24 @@ const workflows = readdirSync(workflowsDir)
 
 assert.deepEqual(
   workflows,
-  ["release-artifacts.yml", "release-gate.yml", "repo-baseline.yml"],
+  ["codeql.yml", "release-artifacts.yml", "release-gate.yml", "repo-baseline.yml"],
   "workflow permission baseline must be reviewed when workflows are added or removed"
 );
 
-const writeAllowedJob = {
-  fileName: "release-artifacts.yml",
-  jobName: "publish-github-release",
-  key: "contents",
-  reason: "draft GitHub Release publishing uses gh release create/upload"
-};
+const writeAllowedJobs = [
+  {
+    fileName: "codeql.yml",
+    jobName: "analyze",
+    key: "security-events",
+    reason: "CodeQL analysis uploads SARIF results"
+  },
+  {
+    fileName: "release-artifacts.yml",
+    jobName: "publish-github-release",
+    key: "contents",
+    reason: "draft GitHub Release publishing uses gh release create/upload"
+  }
+];
 
 for (const fileName of workflows) {
   const text = readWorkflow(fileName);
@@ -101,17 +109,22 @@ for (const fileName of workflows) {
     }
   }
 
-  const expectedElevated = fileName === writeAllowedJob.fileName
-    ? [{ job: writeAllowedJob.jobName, key: writeAllowedJob.key, value: "write" }]
-    : [];
+  const expectedElevated = writeAllowedJobs
+    .filter((allowed) => allowed.fileName === fileName)
+    .map((allowed) => ({ job: allowed.jobName, key: allowed.key, value: "write" }));
   assert.deepEqual(
     elevatedJobPermissions,
     expectedElevated,
     `${fileName} job-level write permissions must be explicitly reviewed`
   );
 
-  if (fileName === writeAllowedJob.fileName) {
-    assert.match(text, /gh release (?:create|upload)/u, `${fileName} needs ${writeAllowedJob.reason}`);
+  for (const allowed of writeAllowedJobs.filter((entry) => entry.fileName === fileName)) {
+    if (allowed.fileName === "release-artifacts.yml") {
+      assert.match(text, /gh release (?:create|upload)/u, `${fileName} needs ${allowed.reason}`);
+    }
+    if (allowed.fileName === "codeql.yml") {
+      assert.match(text, /github\/codeql-action\/analyze@v3/u, `${fileName} needs ${allowed.reason}`);
+    }
   }
 }
 

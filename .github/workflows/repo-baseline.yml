@@ -27,6 +27,7 @@ jobs:
       - run: npm run verify:issue-templates
       - run: npm run verify:node-version-baseline
       - run: npm run verify:pr-template
+      - run: npm run verify:codeql-workflow
       - run: npm run verify:workflow-permissions
       - run: npm run verify:structure
       - run: npm run verify:doc-references
