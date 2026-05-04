@@ -2748,6 +2748,29 @@ export function createElectronShellRuntime({
           };
         }
       });
+      ipcMain.handle(IPC_CHANNELS.onboardingSuggestionUpdate, async (event, payload = {}) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const suggestionId = `${payload?.id ?? ""}`.trim();
+        if (!suggestionId) {
+          return { ok: false, error: "suggestion_id_required", message: "Suggestion id is required." };
+        }
+        try {
+          return await requestDesktopServiceJson({
+            base,
+            method: "PATCH",
+            actor,
+            pathname: `/config/onboarding/suggestions/${encodeURIComponent(suggestionId)}`,
+            body: { status: payload?.status ?? "dismissed" }
+          });
+        } catch (error) {
+          return {
+            ok: false,
+            error: "onboarding_suggestion_update_failed",
+            message: error?.message ?? String(error)
+          };
+        }
+      });
       ipcMain.handle(IPC_CHANNELS.codeCliAdapterSave, async (event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
         const actor = desktopActorForSender(event.sender);

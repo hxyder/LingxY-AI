@@ -71,6 +71,7 @@ export const IPC_CHANNELS = Object.freeze({
   dagResume: "uca:dag-resume",
   providerSave: "uca:provider-save",
   providerDelete: "uca:provider-delete",
+  onboardingSuggestionUpdate: "uca:onboarding-suggestion-update",
   codeCliAdapterSave: "uca:code-cli-adapter-save",
   codeCliAdapterDelete: "uca:code-cli-adapter-delete",
   skillRegistrySave: "uca:skill-registry-save",

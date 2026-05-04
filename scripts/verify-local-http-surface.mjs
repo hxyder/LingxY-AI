@@ -135,6 +135,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("config-provider-routes.mjs", "PATCH", "/^\\/config\\/onboarding\\/suggestions\\/([^/]+)$/", {
+    domain: "provider_onboarding",
+    effect: "config_mutation",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("config-provider-routes.mjs", "POST", "/config/code-cli/adapters", {
     domain: "code_cli_config",
     effect: "config_mutation",

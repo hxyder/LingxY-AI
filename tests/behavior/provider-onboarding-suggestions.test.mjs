@@ -5,7 +5,8 @@ import {
   buildProviderOnboardingSuggestions,
   mergeProviderOnboardingSuggestions,
   providerLooksConfigured,
-  removeProviderOnboardingSuggestions
+  removeProviderOnboardingSuggestions,
+  updateProviderOnboardingSuggestionStatus
 } from "../../src/service/ai/onboarding/provider-suggestions.mjs";
 
 test("provider onboarding suggestions require a configured provider", () => {
@@ -102,4 +103,36 @@ test("merge preserves dismissed suggestions and removes provider-scoped entries"
   const removed = removeProviderOnboardingSuggestions(merged, "mock-openai");
   assert.deepEqual(removed.pendingSuggestions, []);
   assert.deepEqual(removed.archivedSuggestions, []);
+});
+
+test("suggestion status updates move entries between pending and archived", () => {
+  const onboarding = {
+    pendingSuggestions: [{
+      id: "provider:mock-openai:mcp:web-research",
+      providerId: "mock-openai",
+      status: "pending",
+      title: "Add web research"
+    }],
+    archivedSuggestions: []
+  };
+  const dismissed = updateProviderOnboardingSuggestionStatus(
+    onboarding,
+    "provider:mock-openai:mcp:web-research",
+    "dismissed",
+    { now: "2026-05-04T01:00:00.000Z" }
+  );
+  assert.equal(dismissed.ok, true);
+  assert.equal(dismissed.onboarding.pendingSuggestions.length, 0);
+  assert.equal(dismissed.onboarding.archivedSuggestions[0].status, "dismissed");
+  assert.equal(dismissed.onboarding.archivedSuggestions[0].dismissedAt, "2026-05-04T01:00:00.000Z");
+
+  const restored = updateProviderOnboardingSuggestionStatus(
+    dismissed.onboarding,
+    "provider:mock-openai:mcp:web-research",
+    "pending",
+    { now: "2026-05-04T01:01:00.000Z" }
+  );
+  assert.equal(restored.ok, true);
+  assert.equal(restored.onboarding.pendingSuggestions[0].status, "pending");
+  assert.equal(restored.onboarding.archivedSuggestions.length, 0);
 });

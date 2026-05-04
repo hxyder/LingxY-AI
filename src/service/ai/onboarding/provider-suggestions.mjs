@@ -3,6 +3,7 @@ import { detectProviderFamily } from "../../../shared/provider-catalog.mjs";
 export const PROVIDER_ONBOARDING_VERSION = 1;
 
 const SAFE_LOCAL_MCP_IDS = Object.freeze(["mcp-filesystem", "mcp-memory"]);
+const SUGGESTION_STATUSES = new Set(["pending", "dismissed", "completed"]);
 
 function normalizeId(value) {
   return `${value ?? ""}`.trim();
@@ -177,5 +178,70 @@ export function removeProviderOnboardingSuggestions(onboarding = {}, providerId 
       .filter((suggestion) => suggestion?.providerId !== normalizedProviderId),
     archivedSuggestions: (onboarding.archivedSuggestions ?? [])
       .filter((suggestion) => suggestion?.providerId !== normalizedProviderId)
+  };
+}
+
+export function updateProviderOnboardingSuggestionStatus(
+  onboarding = {},
+  suggestionId = "",
+  status = "dismissed",
+  { now = new Date().toISOString() } = {}
+) {
+  const id = normalizeId(suggestionId);
+  const nextStatus = SUGGESTION_STATUSES.has(status) ? status : "";
+  if (!id || !nextStatus) {
+    return {
+      ok: false,
+      error: !id ? "suggestion_id_required" : "suggestion_status_invalid",
+      onboarding: {
+        ...onboarding,
+        pendingSuggestions: onboarding.pendingSuggestions ?? [],
+        archivedSuggestions: onboarding.archivedSuggestions ?? []
+      },
+      suggestion: null
+    };
+  }
+
+  const pending = Array.isArray(onboarding.pendingSuggestions) ? onboarding.pendingSuggestions : [];
+  const archived = Array.isArray(onboarding.archivedSuggestions) ? onboarding.archivedSuggestions : [];
+  const existing = [...pending, ...archived].find((suggestion) => suggestion?.id === id) ?? null;
+  if (!existing) {
+    return {
+      ok: false,
+      error: "suggestion_not_found",
+      onboarding: {
+        ...onboarding,
+        pendingSuggestions: pending,
+        archivedSuggestions: archived
+      },
+      suggestion: null
+    };
+  }
+
+  const suggestion = {
+    ...existing,
+    status: nextStatus,
+    updatedAt: now,
+    ...(nextStatus === "dismissed" ? { dismissedAt: now } : {}),
+    ...(nextStatus === "completed" ? { completedAt: now } : {})
+  };
+
+  const otherPending = pending.filter((entry) => entry?.id !== id);
+  const otherArchived = archived.filter((entry) => entry?.id !== id);
+  const nextOnboarding = {
+    ...onboarding,
+    schemaVersion: PROVIDER_ONBOARDING_VERSION,
+    pendingSuggestions: nextStatus === "pending"
+      ? [...otherPending, suggestion].sort((a, b) => `${a.id}`.localeCompare(`${b.id}`))
+      : otherPending.sort((a, b) => `${a.id}`.localeCompare(`${b.id}`)),
+    archivedSuggestions: nextStatus === "pending"
+      ? otherArchived.sort((a, b) => `${a.id}`.localeCompare(`${b.id}`))
+      : [...otherArchived, suggestion].sort((a, b) => `${a.id}`.localeCompare(`${b.id}`))
+  };
+
+  return {
+    ok: true,
+    onboarding: nextOnboarding,
+    suggestion
   };
 }

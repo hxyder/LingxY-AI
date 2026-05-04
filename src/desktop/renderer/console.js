@@ -692,6 +692,7 @@ const state = {
     mcpServers: [],
     skillRegistries: [],
     skills: [],
+    onboarding: { pendingSuggestions: [], archivedSuggestions: [] },
     emailAccounts: [],
     emailDigestSettings: {},
     history: [],
@@ -2982,6 +2983,138 @@ async function loadProvidersAndRouting() {
   }
 }
 
+function onboardingSuggestionActionLabel(suggestion = {}) {
+  const type = suggestion.action?.type ?? "";
+  if (type === "enable_builtin_mcp") return "Enable";
+  if (type === "configure_builtin_mcp") return "Configure";
+  if (type === "open_skills_library") return "Open skills";
+  if (type === "configure_provider_mcp_files") return "Open CLI";
+  return "Open";
+}
+
+function navigateToSettingsPanel(panelId) {
+  if (typeof switchTab === "function") {
+    try { switchTab("settings"); } catch { /* ignore */ }
+  }
+  const link = document.querySelector(`[data-settings-nav="${panelId}"]`);
+  link?.click?.();
+  const panel = document.getElementById(panelId);
+  panel?.removeAttribute?.("data-collapsed");
+  panel?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+}
+
+function navigateToConnectorMcp(serverId = "") {
+  if (typeof switchTab === "function") {
+    try { switchTab("connectors"); } catch { /* ignore */ }
+  }
+  setTimeout(() => {
+    const card = serverId ? document.getElementById(`mcp-card-${serverId}`) : null;
+    card?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+    card?.classList?.add?.("surface-flash");
+    setTimeout(() => card?.classList?.remove?.("surface-flash"), 1200);
+  }, 80);
+}
+
+async function updateOnboardingSuggestionViaShell(id, status) {
+  if (typeof window.ucaShell?.updateOnboardingSuggestion !== "function") {
+    throw new Error("Desktop onboarding bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.updateOnboardingSuggestion({ id, status }),
+    "Could not update onboarding suggestion."
+  );
+}
+
+async function completeOnboardingSuggestion(suggestion) {
+  if (!suggestion?.id) return;
+  const action = suggestion.action ?? {};
+  if (action.type === "enable_builtin_mcp" && action.serverId) {
+    await toggleMcpServer(action.serverId, true);
+    await updateOnboardingSuggestionViaShell(suggestion.id, "completed");
+    showConsoleToast(`Enabled ${suggestion.title ?? action.serverId}`, { kind: "ok" });
+    await refreshWorkspace();
+    return;
+  }
+  if (action.type === "configure_builtin_mcp") {
+    navigateToConnectorMcp(action.serverId);
+    return;
+  }
+  if (action.type === "open_skills_library") {
+    navigateToSettingsPanel("skillsSettingsPanel");
+    return;
+  }
+  if (action.type === "configure_provider_mcp_files") {
+    navigateToSettingsPanel("codeCliSettingsPanel");
+    codeCliAdapterMcpFiles?.focus?.();
+    return;
+  }
+  showConsoleToast("No direct action is configured for this suggestion.", { kind: "info" });
+}
+
+function renderProviderOnboardingSuggestions() {
+  const el = document.getElementById("providerOnboardingList");
+  if (!el) return;
+  const suggestions = (state.workspace.onboarding?.pendingSuggestions ?? [])
+    .filter((suggestion) => suggestion?.status === "pending");
+  el.hidden = suggestions.length === 0;
+  if (suggestions.length === 0) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = suggestions.map((suggestion) => {
+    const priority = suggestion.priority === "recommended" ? "recommended" : "optional";
+    return `
+      <div class="onboarding-suggestion-card" data-onboarding-id="${escapeHtml(suggestion.id)}">
+        <div class="onboarding-suggestion-main">
+          <div class="onboarding-suggestion-title">
+            <span>${escapeHtml(suggestion.title ?? "Suggested setup")}</span>
+            <span class="pill ${priority === "recommended" ? "pill-info" : "pill-neutral"}">${escapeHtml(priority)}</span>
+          </div>
+          <div class="onboarding-suggestion-reason">${escapeHtml(suggestion.reason ?? "")}</div>
+        </div>
+        <div class="onboarding-suggestion-actions">
+          <button class="btn btn-sm btn-primary" type="button" data-onboarding-accept="${escapeHtml(suggestion.id)}">${escapeHtml(onboardingSuggestionActionLabel(suggestion))}</button>
+          <button class="btn btn-sm btn-ghost" type="button" data-onboarding-dismiss="${escapeHtml(suggestion.id)}">Dismiss</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  el.querySelectorAll("[data-onboarding-accept]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const suggestion = suggestions.find((entry) => entry.id === btn.dataset.onboardingAccept);
+      if (!suggestion) return;
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Working...";
+      try {
+        await completeOnboardingSuggestion(suggestion);
+      } catch (error) {
+        showConsoleToast(`建议执行失败：${error?.message ?? error}`, { kind: "err" });
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  });
+
+  el.querySelectorAll("[data-onboarding-dismiss]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.dataset.onboardingDismiss;
+      if (!id) return;
+      btn.disabled = true;
+      try {
+        await updateOnboardingSuggestionViaShell(id, "dismissed");
+        await refreshWorkspace({ mode: "background" });
+        showConsoleToast("Suggestion dismissed.", { kind: "ok" });
+      } catch (error) {
+        btn.disabled = false;
+        showConsoleToast(`忽略失败：${error?.message ?? error}`, { kind: "err" });
+      }
+    });
+  });
+}
+
 function renderProvidersList() {
   const el = document.getElementById("providersList");
   if (!el) return;
@@ -3395,9 +3528,14 @@ document.getElementById("providerEditForm")?.addEventListener("submit", async (e
     if (apiKey) payload.apiKey = apiKey;
   }
 
-  await saveProviderViaShell(payload);
+  const saveResult = await saveProviderViaShell(payload);
+  if (saveResult?.onboarding) {
+    state.workspace.onboarding = saveResult.onboarding;
+    renderProviderOnboardingSuggestions();
+  }
   closeProviderModal();
   await loadProvidersAndRouting();
+  await refreshWorkspace({ mode: "background" });
 });
 
 document.getElementById("saveRoutingBtn")?.addEventListener("click", async () => {
@@ -5734,6 +5872,7 @@ async function renderWorkspaceAfterFetch({ mode = "full", activeTabId = currentC
   }
 
   if (isActive("settings")) {
+    renderIfChanged("settings.providerOnboarding", state.workspace.onboarding, renderProviderOnboardingSuggestions);
     renderIfChanged("settings.templates", state.workspace.templates, renderTemplates);
     renderIfChanged("settings.dag", state.workspace.dagExecutions, renderDagExecutions);
     renderIfChanged("settings.budget", state.workspace.budget, renderBudget);
@@ -5776,7 +5915,7 @@ async function refreshWorkspace(options = {}) {
     state.serviceBaseUrl = shell.serviceBaseUrl ?? state.serviceBaseUrl;
 
     // UCA-121: /history/search call retired along with the Memory tab.
-    const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, emailP, emailSettingsP] = await Promise.all([
+    const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
       fetchJson("/health"),
       fetchJson("/tasks"),
       fetchJson("/approvals"),
@@ -5790,6 +5929,7 @@ async function refreshWorkspace(options = {}) {
       fetchJson("/ai/code-cli"),
       fetchJson("/ai/mcp"),
       fetchJson("/ai/skills"),
+      fetchJson("/config/integrations"),
       fetchJson("/config/email/accounts"),
       fetchJson("/config/email/settings")
     ]);
@@ -5806,6 +5946,7 @@ async function refreshWorkspace(options = {}) {
       mcpServers: mcpP.servers ?? [],
       skillRegistries: skillsP.registries ?? [],
       skills: skillsP.skills ?? [],
+      onboarding: integrationsP.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] },
       emailAccounts: emailP.accounts ?? [],
       emailDigestSettings: emailSettingsP.settings ?? {},
       history: [], // UCA-121: retired

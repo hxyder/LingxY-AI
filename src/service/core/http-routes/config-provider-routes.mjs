@@ -12,7 +12,8 @@ import { validateMcpServerDescriptor } from "../../ai/mcp/descriptor-validation.
 import {
   buildProviderOnboardingSuggestions,
   mergeProviderOnboardingSuggestions,
-  removeProviderOnboardingSuggestions
+  removeProviderOnboardingSuggestions,
+  updateProviderOnboardingSuggestionStatus
 } from "../../ai/onboarding/provider-suggestions.mjs";
 import { validateSkillDescriptorMarkdown } from "../../ai/skills/discovery.mjs";
 import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
@@ -356,6 +357,37 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
     });
     providerModelDiscovery.invalidate({ id });
     sendJson(response, 200, { ok: true, deleted: id });
+    return true;
+  }
+
+  const onboardingSuggestionMatch = url.pathname.match(/^\/config\/onboarding\/suggestions\/([^/]+)$/);
+  if (method === "PATCH" && onboardingSuggestionMatch) {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    const suggestionId = decodeURIComponent(onboardingSuggestionMatch[1]);
+    const body = await readJsonBody(request);
+    const config = runtime.configStore?.load?.() ?? {};
+    const result = updateProviderOnboardingSuggestionStatus(
+      config.ai?.onboarding ?? {},
+      suggestionId,
+      body.status ?? "dismissed"
+    );
+    if (!result.ok) {
+      sendJson(response, result.error === "suggestion_not_found" ? 404 : 400, {
+        ok: false,
+        error: result.error
+      });
+      return true;
+    }
+    runtime.configStore?.patch?.({
+      ai: {
+        onboarding: result.onboarding
+      }
+    });
+    sendJson(response, 200, {
+      ok: true,
+      suggestion: result.suggestion,
+      onboarding: result.onboarding
+    });
     return true;
   }
 

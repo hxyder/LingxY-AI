@@ -117,6 +117,17 @@ try {
     integrationsAfterProviderSave.onboarding?.pendingSuggestions?.some((suggestion) => suggestion.id === "provider:mock-openai:skills:review-skill-library"),
     "integration config should expose pending onboarding suggestions"
   );
+  const dismissedOnboarding = await patchJson(
+    listening.baseUrl,
+    "/config/onboarding/suggestions/provider%3Amock-openai%3Askills%3Areview-skill-library",
+    { status: "dismissed" },
+    desktopActorHeaders
+  );
+  assert.equal(dismissedOnboarding.suggestion?.status, "dismissed");
+  assert.ok(
+    dismissedOnboarding.onboarding?.archivedSuggestions?.some((suggestion) => suggestion.id === "provider:mock-openai:skills:review-skill-library"),
+    "dismissed onboarding suggestions should be archived"
+  );
 
   const unauthorizedMcpSave = await postJsonResponse(listening.baseUrl, "/config/mcp/servers", {
     id: "blocked-mcp",

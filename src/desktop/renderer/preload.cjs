@@ -360,6 +360,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   deleteProvider(id) {
     return ipcRenderer.invoke("uca:provider-delete", id ?? "");
   },
+  updateOnboardingSuggestion(payload) {
+    return ipcRenderer.invoke("uca:onboarding-suggestion-update", payload ?? {});
+  },
   saveCodeCliAdapter(payload) {
     return ipcRenderer.invoke("uca:code-cli-adapter-save", payload ?? {});
   },

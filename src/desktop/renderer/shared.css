@@ -302,6 +302,54 @@ button.primary, button.secondary, button.ghost {
   font-size: 12px;
   line-height: 1.4;
 }
+.onboarding-suggestion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.onboarding-suggestion-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+.onboarding-suggestion-main {
+  flex: 1;
+  min-width: 0;
+}
+.onboarding-suggestion-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.onboarding-suggestion-reason {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.onboarding-suggestion-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+@keyframes surface-flash-outline {
+  0%, 100% { box-shadow: none; }
+  35% { box-shadow: 0 0 0 3px var(--accent-soft); }
+}
+.surface-flash {
+  animation: surface-flash-outline 1.1s ease;
+}
 
 /* Legacy chip-classes used by many renderers — map to pill */
 .chip.ready   { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 10px; font-weight: 600; background: var(--ok-soft); color: var(--ok); border: 1px solid transparent; }
