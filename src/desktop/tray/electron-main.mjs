@@ -7,6 +7,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import os from "node:os";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
 import { createPopupCardManager } from "./popup-card-manager.mjs";
+import {
+  DOCK_SIZE_PX,
+  dockDefaultBounds,
+  normalizeDockBounds
+} from "./dock-geometry.mjs";
 
 // Guard against EPIPE — stderr/stdout may be a broken pipe when the parent
 // process (Explorer shell, Windows shortcut, etc.) has already closed. Any
@@ -763,7 +768,7 @@ export function createElectronShellRuntime({
     "echo-bubble": true
   });
   const WINDOW_SIZE_LIMITS = Object.freeze({
-    dock: { minWidth: 48, minHeight: 48, maxWidth: 48, maxHeight: 48 },
+    dock: { minWidth: DOCK_SIZE_PX, minHeight: DOCK_SIZE_PX, maxWidth: DOCK_SIZE_PX, maxHeight: DOCK_SIZE_PX },
     overlay: { minWidth: 420, minHeight: 360, maxWidth: 1400, maxHeight: 1200 }
   });
 
@@ -820,6 +825,7 @@ export function createElectronShellRuntime({
   }
 
   function isWindowAlwaysOnTop(windowId) {
+    if (windowId === DOCK_WINDOW_ID) return true;
     const prefs = getWindowPreferences(windowId);
     if (typeof prefs.alwaysOnTop === "boolean") return prefs.alwaysOnTop;
     return WINDOW_ALWAYS_ON_TOP_DEFAULTS[windowId] ?? false;
@@ -830,10 +836,24 @@ export function createElectronShellRuntime({
   }
 
   function clampWindowBounds(windowId, bounds = {}, options = {}) {
+    const fallbackWorkArea = screen.getPrimaryDisplay().workArea;
+    if (windowId === DOCK_WINDOW_ID) {
+      const tentativeDockBounds = {
+        x: Number.isFinite(bounds.x) ? Math.round(bounds.x) : fallbackWorkArea.x,
+        y: Number.isFinite(bounds.y) ? Math.round(bounds.y) : fallbackWorkArea.y,
+        width: Number.isFinite(bounds.width) ? Math.round(bounds.width) : DOCK_SIZE_PX,
+        height: Number.isFinite(bounds.height) ? Math.round(bounds.height) : DOCK_SIZE_PX
+      };
+      const dockDisplay = screen.getDisplayMatching?.(tentativeDockBounds) ?? screen.getPrimaryDisplay();
+      return normalizeDockBounds(tentativeDockBounds, dockDisplay, {
+        fallbackArea: fallbackWorkArea,
+        migrateLegacy: Boolean(options.migrateLegacy),
+        snap: options.mode === "move"
+      });
+    }
     const limits = getWindowSizeLimits(windowId);
     const width = Math.max(limits.minWidth, Math.min(limits.maxWidth, Math.round(bounds.width ?? limits.minWidth)));
     const height = Math.max(limits.minHeight, Math.min(limits.maxHeight, Math.round(bounds.height ?? limits.minHeight)));
-    const fallbackWorkArea = screen.getPrimaryDisplay().workArea;
     const tentative = {
       x: Number.isFinite(bounds.x) ? Math.round(bounds.x) : fallbackWorkArea.x,
       y: Number.isFinite(bounds.y) ? Math.round(bounds.y) : fallbackWorkArea.y,
@@ -841,11 +861,8 @@ export function createElectronShellRuntime({
       height
     };
     const matchingDisplay = screen.getDisplayMatching?.(tentative) ?? screen.getPrimaryDisplay();
-    const workArea = windowId === DOCK_WINDOW_ID
-      ? (matchingDisplay.bounds ?? matchingDisplay.workArea ?? fallbackWorkArea)
-      : (matchingDisplay.workArea ?? fallbackWorkArea);
+    const workArea = matchingDisplay.workArea ?? fallbackWorkArea;
     const overlayMove = windowId === "overlay" && options.mode === "move";
-    const dockMove = windowId === "dock" && options.mode === "move";
     const visibleMargin = overlayMove ? 96 : 0;
     const minX = overlayMove ? workArea.x - width + visibleMargin : workArea.x;
     const minY = overlayMove ? workArea.y - height + visibleMargin : workArea.y;
@@ -857,13 +874,6 @@ export function createElectronShellRuntime({
       : workArea.y + Math.max(0, workArea.height - height);
     let x = Math.max(minX, Math.min(maxX, tentative.x));
     let y = Math.max(minY, Math.min(maxY, tentative.y));
-    if (dockMove) {
-      const snapPx = 16;
-      if (Math.abs(x - minX) <= snapPx) x = minX;
-      if (Math.abs(x - maxX) <= snapPx) x = maxX;
-      if (Math.abs(y - minY) <= snapPx) y = minY;
-      if (Math.abs(y - maxY) <= snapPx) y = maxY;
-    }
     return {
       x,
       y,
@@ -878,12 +888,7 @@ export function createElectronShellRuntime({
     const width = currentWidth || windowDef.width;
     const height = currentHeight || windowDef.height;
     if (windowDef.id === "dock") {
-      return {
-        x: Math.max(workArea.x, workArea.x + workArea.width - width),
-        y: Math.max(workArea.y, workArea.y + workArea.height - height - 56),
-        width,
-        height
-      };
+      return dockDefaultBounds(screen.getPrimaryDisplay(), { fallbackArea: workArea });
     }
     if (windowDef.id === "overlay") {
       return {
@@ -909,13 +914,11 @@ export function createElectronShellRuntime({
       // Electron BrowserWindow default 320×240 (when the window was first
       // created without explicit dimensions) into settings.json, which
       // then survives every relaunch and surrounds the visible orb with
-      // a giant transparent hitbox. Always override persisted width/height
-      // for the dock with the manifest values so the user can drag the
-      // orb fully into a screen edge regardless of legacy settings.
-      const bounds = windowDef.id === "dock"
-        ? { ...prefs.bounds, width: defaults.width, height: defaults.height }
-        : prefs.bounds;
-      return clampWindowBounds(windowDef.id, bounds);
+      // a giant transparent hitbox. Preserve the old size long enough for
+      // dock geometry migration to project legacy right/bottom-edge intent
+      // onto the current 48×48 content bounds.
+      const bounds = prefs.bounds;
+      return clampWindowBounds(windowDef.id, bounds, { migrateLegacy: windowDef.id === "dock" });
     }
     return clampWindowBounds(windowDef.id, defaults);
   }
@@ -1546,6 +1549,7 @@ export function createElectronShellRuntime({
       setManagedWindowBounds(windowDef.id, browserWindow, initialBounds);
       if (windowDef.id === DOCK_WINDOW_ID) {
         enforceDockWindowInvariants(browserWindow, initialBounds);
+        persistWindowPreferences(DOCK_WINDOW_ID, { bounds: getManagedWindowBounds(DOCK_WINDOW_ID, browserWindow) });
       }
       lockWindowRendererZoom(windowDef, browserWindow);
       applyWindowPresentation(windowDef.id, browserWindow);
@@ -2272,7 +2276,7 @@ export function createElectronShellRuntime({
         const dockWin = windows.get("dock");
         if (!bubbleWin || !dockWin) return { accepted: false };
         try {
-          const dockBounds = dockWin.getBounds();
+          const dockBounds = getManagedWindowBounds(DOCK_WINDOW_ID, dockWin);
           const display = screen.getDisplayMatching(dockBounds);
           const bubbleSize = bubbleWin.getSize();
           const margin = 8;
@@ -3819,6 +3823,11 @@ export function createElectronShellRuntime({
       ipcMain.handle(IPC_CHANNELS.shellResizeWindowBy, (_event, { windowId, deltaWidth, deltaHeight } = {}) => {
         const target = windows.get(windowId);
         if (!target) return false;
+        if (windowId === DOCK_WINDOW_ID) {
+          const repaired = enforceDockWindowInvariants(target);
+          if (repaired) persistWindowPreferences(windowId, { bounds: repaired });
+          return true;
+        }
         const currentBounds = getManagedWindowBounds(windowId, target);
         const nextBounds = clampWindowBounds(windowId, {
           ...currentBounds,

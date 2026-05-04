@@ -32,6 +32,7 @@ const evidenceSourcesView = read("src/desktop/renderer/evidence-sources-view.mjs
 const toolDisplayView = read("src/desktop/renderer/tool-display.mjs");
 const dockHtml = read("src/desktop/renderer/dock.html");
 const dockJs = read("src/desktop/renderer/dock.js");
+const dockGeometry = read("src/desktop/tray/dock-geometry.mjs");
 const electronMain = read("src/desktop/tray/electron-main.mjs");
 const desktopManifest = read("src/desktop/shared/manifest.mjs");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
@@ -137,6 +138,10 @@ assert.ok(/contain:\s*layout\s+paint\s+style/.test(dockHtml) && /pointer-events:
   "dock: HUD content must be structurally contained and canvas must not expand the hit region");
 assert.ok(/function\s+setManagedWindowBounds/.test(electronMain) && /setContentBounds/.test(electronMain) && /getContentBounds/.test(electronMain),
   "dock: main process must manage the fixed orb by content bounds");
+assert.ok(/DOCK_SIZE_PX = 48/.test(dockGeometry)
+    && /DOCK_EDGE_SNAP_PX = 16/.test(dockGeometry)
+    && /normalizeDockBounds/.test(dockGeometry),
+  "dock: fixed HUD geometry must live in a shared pure helper");
 assert.ok(/width:\s*100vw/.test(dockHtml) && /height:\s*100vh/.test(dockHtml)
     && /setZoomFactor\?\.\(1\)/.test(electronMain)
     && /"zoom-changed"/.test(electronMain)
@@ -146,6 +151,9 @@ assert.ok(/insertCSS\(/.test(electronMain) && /overflow:\s*hidden\s*!important/.
   "dock: main process must inject a HUD scroll lock after renderer load");
 assert.ok(/thickFrame:\s*false/.test(electronMain) && /screen\.on\(["']display-/.test(electronMain),
   "dock: Windows HUD flags and display-change repair must be present");
+assert.ok(/if \(windowId === DOCK_WINDOW_ID\) return true;/.test(electronMain)
+    && /getManagedWindowBounds\(DOCK_WINDOW_ID, dockWin\)/.test(electronMain),
+  "dock: always-on-top and nearby HUD anchoring must use dock invariants");
 assert.ok(/window\.ucaShell\.transcribeNoteAudio/.test(overlayJs),
   "note transcribe: overlay must use desktop shell bridge");
 assert.ok(/window\.ucaShell\.transcribeNoteAudioStreaming/.test(overlayJs),

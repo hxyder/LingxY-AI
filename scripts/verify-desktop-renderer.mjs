@@ -227,10 +227,12 @@ const popupCardHtml = await read("src/desktop/renderer/popup-card.html");
 assert.equal(popupCardHtml.includes("pc-card"), true);
 
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
+const dockGeometry = await read("src/desktop/tray/dock-geometry.mjs");
 assert.equal(mainProcess.includes("preload: PRELOAD_PATH"), true);
 assert.equal(mainProcess.includes("useContentSize: true"), true);
 assert.equal(mainProcess.includes('windowId === "dock"'), true);
-assert.equal(mainProcess.includes("matchingDisplay.bounds"), true);
+assert.equal(mainProcess.includes("normalizeDockBounds"), true);
+assert.equal(dockGeometry.includes("dockDisplayArea"), true);
 assert.equal(mainProcess.includes("lockWindowRendererZoom"), true);
 assert.equal(mainProcess.includes("setZoomFactor?.(1)"), true);
 assert.equal(mainProcess.includes('"zoom-changed"'), true);

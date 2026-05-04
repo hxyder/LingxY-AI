@@ -41,6 +41,7 @@ if (dockWindow.locksRendererZoom !== true) {
 }
 
 const dockHtml = readFileSync(new URL("../src/desktop/renderer/dock.html", import.meta.url), "utf8");
+const dockGeometry = readFileSync(new URL("../src/desktop/tray/dock-geometry.mjs", import.meta.url), "utf8");
 if (!/html\s*\{[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100vh;[\s\S]*?overflow:\s*hidden;/.test(dockHtml)
     || !/body\s*\{[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100vh;[\s\S]*?overflow:\s*hidden/.test(dockHtml)) {
   throw new Error("Dock renderer document must be viewport-sized and non-scrollable.");
@@ -57,7 +58,13 @@ if (/#dockButton:hover\s*\{[^}]*scale\(\s*1\./.test(dockHtml)
 }
 
 const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
-if (!/dock:\s*\{\s*minWidth:\s*48,\s*minHeight:\s*48,\s*maxWidth:\s*48,\s*maxHeight:\s*48\s*\}/.test(electronMain)) {
+if (!/export const DOCK_SIZE_PX = 48/.test(dockGeometry)
+    || !/export const DOCK_EDGE_SNAP_PX = 16/.test(dockGeometry)
+    || !/function normalizeDockBounds/.test(dockGeometry)) {
+  throw new Error("Dock geometry helper must own fixed size, edge snap, and normalization.");
+}
+
+if (!/dock:\s*\{\s*minWidth:\s*DOCK_SIZE_PX,\s*minHeight:\s*DOCK_SIZE_PX,\s*maxWidth:\s*DOCK_SIZE_PX,\s*maxHeight:\s*DOCK_SIZE_PX\s*\}/.test(electronMain)) {
   throw new Error("Dock bounds clamp must keep the BrowserWindow fixed at 48x48.");
 }
 
@@ -68,9 +75,23 @@ if (!electronMain.includes("function lockWindowRendererZoom")
   throw new Error("Dock renderer zoom must be locked to prevent tiny-window scrollbars.");
 }
 
-if (!/const dockMove = windowId === "dock" && options\.mode === "move"/.test(electronMain)
-    || !/snapPx = 16/.test(electronMain)) {
-  throw new Error("Dock move bounds must snap to display edges.");
+if (!/windowId === DOCK_WINDOW_ID[\s\S]{0,640}normalizeDockBounds\(tentativeDockBounds, dockDisplay/.test(electronMain)
+    || !/width:\s*Number\.isFinite\(bounds\.width\)\s*\?\s*Math\.round\(bounds\.width\)\s*:\s*DOCK_SIZE_PX/.test(electronMain)
+    || !/snap:\s*options\.mode === "move"/.test(electronMain)) {
+  throw new Error("Dock move bounds must use the shared geometry helper and snap to display edges.");
+}
+
+if (!/if \(windowId === DOCK_WINDOW_ID\) return true;/.test(electronMain)) {
+  throw new Error("Dock always-on-top must not be disabled by stale window preferences.");
+}
+
+if (!/if \(windowId === DOCK_WINDOW_ID\) \{[\s\S]{0,180}enforceDockWindowInvariants\(target\)/.test(electronMain)) {
+  throw new Error("Dock resize IPC must repair invariants instead of resizing the fixed HUD.");
+}
+
+if (!/const dockBounds = getManagedWindowBounds\(DOCK_WINDOW_ID, dockWin\)/.test(electronMain)
+    || /const dockBounds = dockWin\.getBounds\(\)/.test(electronMain)) {
+  throw new Error("Echo bubble must anchor to dock content bounds, not outer BrowserWindow bounds.");
 }
 
 if (!bootstrap.manifest.ipcChannels.includes("uca:shell-set-ignore-mouse-events")) {
