@@ -174,12 +174,20 @@ export function appendTaskOutcomeMessage(runtime, task) {
   }
 
   try {
+    const metadata = {
+      task_id: task.task_id,
+      executor: task.executor
+    };
+    const evidenceSummary = task?.evidence_summary ?? task?.result?.evidence_summary ?? null;
+    if (evidenceSummary && typeof evidenceSummary === "object") {
+      metadata.evidence_summary = evidenceSummary;
+    }
     const message = runtime.store.appendMessage({
       conversation_id: conversationId,
       role,
       content,
       status: messageStatus,
-      metadata: { task_id: task.task_id, executor: task.executor }
+      metadata
     });
     runtime.store.linkMessageToTask(message.message_id, task.task_id, "answered_by");
     return message;

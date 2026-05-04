@@ -34,6 +34,7 @@ import {
   formatToolDisplayName
 } from "./tool-display.mjs";
 import {
+  extractEvidenceSummaryFromMessage,
   renderEvidenceSourcesHtml,
   renderToolCallSourcesHtml,
   revealEvidenceSource,
@@ -716,10 +717,15 @@ const overlayMessageAdapter = {
   onAppend(message) {
     appendTurn(message.role, message.content);
     if (typeof addBubble === "function") {
-      const bubble = addBubble(message.role, message.content);
+      const taskId = message.task_id ?? message.taskId ?? message.metadata?.task_id ?? null;
+      const bubble = addBubble(message.role, message.content, { taskId });
       if (bubble && bubble.dataset) {
         bubble.dataset.messageId = message.message_id;
         bubble.dataset.seq = String(message.seq);
+      }
+      const evidence = extractEvidenceSummaryFromMessage(message);
+      if (evidence && (message.role === "assistant" || message.role === "system")) {
+        appendOverlayEvidenceSources(taskId ?? message.message_id, evidence);
       }
     }
   },
@@ -1221,6 +1227,7 @@ function clearBubbles() {
   timelineBodyEl = null;
   pendingToolStepBubbles = {};
   renderedTimelineEventIds = new Set();
+  renderedEvidenceSummaryTaskIds = new Set();
   timelineLabelEl = null;
   timelinePhaseEl = null;
   timelineSpinnerEl = null;

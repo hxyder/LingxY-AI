@@ -74,6 +74,7 @@ import {
   renderTaskArtifactRowsHtml
 } from "./console-files-view.mjs";
 import {
+  extractEvidenceSummaryFromMessage,
   extractEvidenceSummaryFromTaskDetail,
   renderEvidenceSourcesHtml,
   renderToolCallSourcesHtml,
@@ -1379,6 +1380,23 @@ function consoleChatAssistantWrapperForTask(taskId) {
   return consoleChatMessages.querySelector(`.chat-msg.assistant[data-task-id="${cacheCssEscape(taskId)}"]`);
 }
 
+function appendConsoleChatEvidenceSourcesToBody(body, summary) {
+  if (!body || !summary || typeof summary !== "object") return false;
+  const html = renderEvidenceSourcesHtml(summary, {
+    className: "task-answer task-evidence chat-evidence-card",
+    title: "Sources",
+    zh: "来源"
+  });
+  if (!html) return false;
+  body.querySelector("[data-chat-evidence-sources]")?.remove();
+  const holder = document.createElement("div");
+  holder.dataset.chatEvidenceSources = "true";
+  holder.innerHTML = html;
+  body.appendChild(holder);
+  wireEvidenceSourceActions(holder, window.ucaShell);
+  return true;
+}
+
 function appendConsoleChatEvidenceSources(taskId, evidence = null) {
   if (!taskId) return;
   const summary = evidence && typeof evidence === "object"
@@ -1389,19 +1407,9 @@ function appendConsoleChatEvidenceSources(taskId, evidence = null) {
   const wrapper = consoleChatAssistantWrapperForTask(taskId);
   const body = wrapper?.querySelector(".chat-msg-body");
   if (!body) return;
-  const html = renderEvidenceSourcesHtml(summary, {
-    className: "task-answer task-evidence chat-evidence-card",
-    title: "Sources",
-    zh: "来源"
-  });
-  if (!html) return;
-  body.querySelector("[data-chat-evidence-sources]")?.remove();
-  const holder = document.createElement("div");
-  holder.dataset.chatEvidenceSources = "true";
-  holder.innerHTML = html;
-  body.appendChild(holder);
-  wireEvidenceSourceActions(holder, window.ucaShell);
-  consoleChatPin.maybeScrollToBottom();
+  if (appendConsoleChatEvidenceSourcesToBody(body, summary)) {
+    consoleChatPin.maybeScrollToBottom();
+  }
 }
 
 function appendConsoleChatFinalText(taskId, text, {
@@ -2421,13 +2429,16 @@ const consoleChatMessageAdapter = {
       // bubble can also surface a Regenerate button. If the backend
       // didn't store one (older messages, system bubbles), the action
       // simply won't render — graceful fallback.
-      appendConsoleChatMessage(message.role, message.content, {
-        taskId: message.task_id ?? message.taskId ?? null
-      });
-      const last = consoleChatMessages?.lastElementChild;
-      if (last && last.dataset) {
-        last.dataset.messageId = message.message_id;
-        last.dataset.seq = String(message.seq);
+      const taskId = message.task_id ?? message.taskId ?? message.metadata?.task_id ?? null;
+      const wrapper = appendConsoleChatMessage(message.role, message.content, { taskId });
+      if (wrapper && wrapper.dataset) {
+        wrapper.dataset.messageId = message.message_id;
+        wrapper.dataset.seq = String(message.seq);
+        const evidence = extractEvidenceSummaryFromMessage(message);
+        if (evidence) {
+          appendConsoleChatEvidenceSourcesToBody(wrapper.querySelector(".chat-msg-body"), evidence);
+          if (taskId) consoleChatEvidenceByTaskId.set(taskId, evidence);
+        }
       }
     }
     consoleChatPin.maybeScrollToBottom();

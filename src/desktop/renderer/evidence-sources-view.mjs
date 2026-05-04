@@ -13,6 +13,16 @@ export function extractEvidenceSummaryFromTaskDetail(detail) {
   return null;
 }
 
+export function extractEvidenceSummaryFromMessage(message) {
+  const metadata = message?.metadata && typeof message.metadata === "object"
+    ? message.metadata
+    : (message?.metadata_json && typeof message.metadata_json === "object" ? message.metadata_json : null);
+  if (metadata?.evidence_summary && typeof metadata.evidence_summary === "object") {
+    return metadata.evidence_summary;
+  }
+  return null;
+}
+
 export function shortEvidenceLabel(value = "") {
   const text = String(value ?? "");
   if (!text) return "";
