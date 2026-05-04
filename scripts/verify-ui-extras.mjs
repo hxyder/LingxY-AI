@@ -118,14 +118,21 @@ assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/enroll-keyword\?/.test(dockJs
   "echo enrollment: dock must not POST /echo/enroll-keyword directly");
 assert.ok(/html\s*\{[\s\S]{0,120}position:\s*fixed;[\s\S]{0,80}inset:\s*0;[\s\S]{0,180}overflow:\s*hidden;/.test(dockHtml),
   "dock: html must be fixed and non-scrollable");
-assert.ok(/body\s*\{[\s\S]{0,360}position:\s*fixed;[\s\S]{0,80}inset:\s*0;[\s\S]{0,260}overflow:\s*hidden\s*!important/.test(dockHtml),
+assert.ok(/body\s*\{[\s\S]*?position:\s*fixed;[\s\S]*?inset:\s*0;[\s\S]*?overflow:\s*hidden\s*!important/.test(dockHtml),
   "dock: body must be fixed and non-scrollable");
+assert.ok(/contain:\s*layout\s+paint\s+style/.test(dockHtml) && /pointer-events:\s*none/.test(dockHtml),
+  "dock: HUD content must be structurally contained and canvas must not expand the hit region");
 assert.ok(/function\s+setManagedWindowBounds/.test(electronMain) && /setContentBounds/.test(electronMain) && /getContentBounds/.test(electronMain),
   "dock: main process must manage the fixed orb by content bounds");
 assert.ok(/width:\s*100vw/.test(dockHtml) && /height:\s*100vh/.test(dockHtml)
     && /setZoomFactor\?\.\(1\)/.test(electronMain)
-    && /"zoom-changed"/.test(electronMain),
+    && /"zoom-changed"/.test(electronMain)
+    && /"before-input-event"/.test(electronMain),
   "dock: renderer must be viewport-sized and zoom-locked to avoid HUD scrollbars");
+assert.ok(/insertCSS\(/.test(electronMain) && /overflow:\s*hidden\s*!important/.test(electronMain),
+  "dock: main process must inject a HUD scroll lock after renderer load");
+assert.ok(/thickFrame:\s*false/.test(electronMain) && /screen\.on\(["']display-/.test(electronMain),
+  "dock: Windows HUD flags and display-change repair must be present");
 assert.ok(/window\.ucaShell\.transcribeNoteAudio/.test(overlayJs),
   "note transcribe: overlay must use desktop shell bridge");
 assert.ok(/window\.ucaShell\.transcribeNoteAudioStreaming/.test(overlayJs),

@@ -30,6 +30,22 @@ const RENDERER_DIR = path.join(__dirname, "..", "renderer");
 const PRELOAD_PATH = path.join(RENDERER_DIR, "preload.cjs");
 const DESKTOP_ACTOR_HEADER = "X-Lingxy-Desktop-Actor";
 const DESKTOP_CONSOLE_ACTOR = "desktop_console";
+const DOCK_WINDOW_ID = "dock";
+const DOCK_HUD_SCROLL_LOCK_CSS = `
+  html, body, #dockButton {
+    overflow: hidden !important;
+    overscroll-behavior: none !important;
+    scrollbar-width: none !important;
+  }
+  html::-webkit-scrollbar,
+  body::-webkit-scrollbar,
+  #dockButton::-webkit-scrollbar,
+  *::-webkit-scrollbar {
+    width: 0 !important;
+    height: 0 !important;
+    display: none !important;
+  }
+`;
 let desktopDiagnosticsInstalled = false;
 
 function desktopLogsDir() {
@@ -584,6 +600,7 @@ function resolveWindowOptions(windowDef) {
       alwaysOnTop: true,
       autoHideMenuBar: true,
       frame: false,
+      thickFrame: false,
       transparent: true,
       resizable: false,
       useContentSize: true,
@@ -659,6 +676,7 @@ export function createElectronShellRuntime({
   let noteRecordingState = { active: false };
   let lastExternalWindowContext = null;
   let registeredPopupCardManager = null;
+  let dockDisplayRepairInstalled = false;
   // UCA-182 Phase 14: dedicated preview BrowserWindow anchored to the
   // right edge of the primary display. Created lazily on first show
   // so apps that never preview a file don't pay the memory cost.
@@ -771,7 +789,7 @@ export function createElectronShellRuntime({
       height
     };
     const matchingDisplay = screen.getDisplayMatching?.(tentative) ?? screen.getPrimaryDisplay();
-    const workArea = windowId === "dock"
+    const workArea = windowId === DOCK_WINDOW_ID
       ? (matchingDisplay.bounds ?? matchingDisplay.workArea ?? fallbackWorkArea)
       : (matchingDisplay.workArea ?? fallbackWorkArea);
     const overlayMove = windowId === "overlay" && options.mode === "move";
@@ -879,6 +897,38 @@ export function createElectronShellRuntime({
   function applyWindowPresentation(windowId, browserWindow) {
     const alwaysOnTop = isWindowAlwaysOnTop(windowId);
     browserWindow.setAlwaysOnTop(alwaysOnTop, alwaysOnTop ? "screen-saver" : "normal");
+  }
+
+  function equalWindowBounds(left = {}, right = {}) {
+    return Math.round(left.x ?? 0) === Math.round(right.x ?? 0)
+      && Math.round(left.y ?? 0) === Math.round(right.y ?? 0)
+      && Math.round(left.width ?? 0) === Math.round(right.width ?? 0)
+      && Math.round(left.height ?? 0) === Math.round(right.height ?? 0);
+  }
+
+  function enforceDockWindowInvariants(browserWindow, bounds = null) {
+    if (!browserWindow || browserWindow.isDestroyed?.()) return null;
+    const limits = getWindowSizeLimits(DOCK_WINDOW_ID);
+    try { browserWindow.setResizable?.(false); } catch { /* ignore */ }
+    try { browserWindow.setMinimumSize?.(limits.minWidth, limits.minHeight); } catch { /* ignore */ }
+    try { browserWindow.setMaximumSize?.(limits.maxWidth, limits.maxHeight); } catch { /* ignore */ }
+    lockWindowRendererZoom({ locksRendererZoom: true }, browserWindow);
+    const currentBounds = bounds ?? getManagedWindowBounds(DOCK_WINDOW_ID, browserWindow);
+    const nextBounds = clampWindowBounds(DOCK_WINDOW_ID, {
+      ...currentBounds,
+      width: limits.minWidth,
+      height: limits.minHeight
+    });
+    if (equalWindowBounds(currentBounds, nextBounds)) return null;
+    setManagedWindowBounds(DOCK_WINDOW_ID, browserWindow, nextBounds);
+    return nextBounds;
+  }
+
+  function installDockHudScrollLock(browserWindow) {
+    if (!browserWindow?.webContents || browserWindow.webContents.isDestroyed?.()) return;
+    try {
+      void browserWindow.webContents.insertCSS(DOCK_HUD_SCROLL_LOCK_CSS, { cssOrigin: "author" });
+    } catch { /* ignore */ }
   }
 
   function persistWindowPreferences(windowId, patch = {}) {
@@ -1442,6 +1492,9 @@ export function createElectronShellRuntime({
       });
       const initialBounds = resolveWindowBounds(windowDef, browserWindow);
       setManagedWindowBounds(windowDef.id, browserWindow, initialBounds);
+      if (windowDef.id === DOCK_WINDOW_ID) {
+        enforceDockWindowInvariants(browserWindow, initialBounds);
+      }
       lockWindowRendererZoom(windowDef, browserWindow);
       applyWindowPresentation(windowDef.id, browserWindow);
       browserWindow.on("close", (event) => {
@@ -1493,16 +1546,38 @@ export function createElectronShellRuntime({
         }, 180);
       };
       browserWindow.on("move", scheduleBoundsPersist);
-      browserWindow.on("resize", scheduleBoundsPersist);
+      browserWindow.on("resize", () => {
+        if (windowDef.id === DOCK_WINDOW_ID) {
+          enforceDockWindowInvariants(browserWindow);
+        }
+        scheduleBoundsPersist();
+      });
       if (windowDef.locksRendererZoom) {
         browserWindow.webContents.on("zoom-changed", (event) => {
           event.preventDefault?.();
           lockWindowRendererZoom(windowDef, browserWindow);
         });
+        browserWindow.webContents.on("before-input-event", (event, input = {}) => {
+          if (input.type !== "keyDown") return;
+          const meta = Boolean(input.control || input.meta);
+          const key = `${input.key ?? ""}`.toLowerCase();
+          const code = `${input.code ?? ""}`;
+          const isZoomKey = ["+", "=", "-", "0"].includes(key)
+            || code === "NumpadAdd"
+            || code === "NumpadSubtract";
+          if (meta && isZoomKey) {
+            event.preventDefault?.();
+            lockWindowRendererZoom(windowDef, browserWindow);
+          }
+        });
       }
       browserWindow.webContents.on("did-finish-load", () => {
         lockWindowRendererZoom(windowDef, browserWindow);
         readyWindows.add(windowDef.id);
+        if (windowDef.id === DOCK_WINDOW_ID) {
+          installDockHudScrollLock(browserWindow);
+          enforceDockWindowInvariants(browserWindow);
+        }
         browserWindow.webContents.send(IPC_CHANNELS.shellReady, {
           windowId: windowDef.id,
           route: windowDef.route,
@@ -1524,6 +1599,24 @@ export function createElectronShellRuntime({
     }
   }
 
+  function repairDockWindowForDisplayChange(reason = "display") {
+    const dock = windows.get(DOCK_WINDOW_ID);
+    if (!dock || dock.isDestroyed?.()) return;
+    const nextBounds = enforceDockWindowInvariants(dock);
+    if (nextBounds) {
+      safeWarn(`[UCA] repaired dock HUD bounds after ${reason}`);
+      persistWindowPreferences(DOCK_WINDOW_ID, { bounds: nextBounds });
+    }
+  }
+
+  function installDockDisplayRepair() {
+    if (dockDisplayRepairInstalled) return;
+    dockDisplayRepairInstalled = true;
+    screen.on("display-metrics-changed", () => repairDockWindowForDisplayChange("display-metrics-changed"));
+    screen.on("display-added", () => repairDockWindowForDisplayChange("display-added"));
+    screen.on("display-removed", () => repairDockWindowForDisplayChange("display-removed"));
+  }
+
   function showWindow(windowId) {
     const target = windows.get(windowId);
     if (!target) {
@@ -1535,6 +1628,9 @@ export function createElectronShellRuntime({
     const windowDef = DESKTOP_SHELL_MANIFEST.windows.find((candidate) => candidate.id === windowId);
     if (windowDef && !getWindowPreferences(windowId)?.bounds) {
       setManagedWindowBounds(windowId, target, resolveWindowBounds(windowDef, target));
+    }
+    if (windowId === DOCK_WINDOW_ID) {
+      enforceDockWindowInvariants(target);
     }
     applyWindowPresentation(windowId, target);
     target.show();
@@ -1883,6 +1979,7 @@ export function createElectronShellRuntime({
 
       await loadSettings();
       createWindows();
+      installDockDisplayRepair();
       createTray();
       registerShortcuts();
       await startHandoffWatcher();
