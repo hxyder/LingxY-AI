@@ -23,6 +23,7 @@ import {
   artifactExtension,
   artifactIconClass,
   artifactIconText,
+  artifactStatusInfo,
   createBottomPinController,
   escapeHtml,
   formatArtifactLabel as formatSharedArtifactLabel,
@@ -2163,12 +2164,16 @@ function renderConsoleChatArtifacts(artifacts = []) {
     const label = formatArtifactLabel(filePath);
     const ext = artifactExtension(filePath);
     const createdAt = artifact.created_at ? formatDateTime(artifact.created_at) : "";
+    const status = artifactStatusInfo(artifact.status);
     return `
       <div class="conversation-artifact" title="${escapeHtml(filePath)}">
         <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
         <button type="button" class="conversation-artifact-main" data-conversation-artifact-open="${escapeHtml(filePath)}">
           <span class="conversation-artifact-name">${escapeHtml(label)}</span>
-          ${createdAt ? `<span class="conversation-artifact-meta">${escapeHtml(createdAt)}</span>` : ""}
+          <span class="conversation-artifact-meta">
+            ${createdAt ? `<span>${escapeHtml(createdAt)}</span>` : ""}
+            ${status ? `<span class="artifact-status ${status.className}">${escapeHtml(status.label)}</span>` : ""}
+          </span>
         </button>
         <button type="button" class="conversation-artifact-action" data-conversation-artifact-reveal="${escapeHtml(filePath)}" aria-label="Reveal ${escapeHtml(label)}" title="Reveal in folder">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>

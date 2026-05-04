@@ -206,6 +206,10 @@ assert.ok(/setHtmlIfChanged\(consoleChatArtifacts/.test(consoleJs),
   "chat artifacts: renderer must avoid unnecessary innerHTML churn");
 assert.ok(/data-conversation-artifact-open/.test(consoleJs) && /data-conversation-artifact-reveal/.test(consoleJs),
   "chat artifacts: file strip must expose open and reveal actions");
+assert.ok(/artifactStatusInfo/.test(sharedUi) && /\.artifact-status\b/.test(sharedCss),
+  "artifacts: renderer must expose metadata status badges");
+assert.ok(/artifactStatusInfo\(artifact\.status\)/.test(consoleJs),
+  "chat artifacts: file strip must render artifact.status metadata");
 assert.ok(/function\s+currentOverlayProjectIdForSubmission/.test(overlayJs) && /function\s+attachOverlayProjectScope/.test(overlayJs),
   "overlay projects: overlay task submissions must use a shared project-scope helper");
 assert.ok(/project_id:\s*projectId/.test(overlayJs) && /selectionMetadata:\s*\{[\s\S]{0,140}project_id:\s*projectId/.test(overlayJs),
@@ -233,6 +237,8 @@ assert.ok(/function\s+refreshProjectArtifacts/.test(consoleJs) && /\/projects\/\
   "projects: console must fetch project-scoped artifact index");
 assert.ok(/renderProjectArtifactListHtml/.test(consoleProjectsView) && /data-project-artifact-open/.test(consoleProjectsView),
   "projects: renderer must show artifact open/reveal actions");
+assert.ok(/artifactStatusInfo\(artifact\.status\)/.test(consoleProjectsView),
+  "projects: scoped artifact list must render artifact.status metadata");
 assert.ok(/setHtmlIfChanged\(projectArtifactList/.test(consoleJs),
   "projects: project artifact list must avoid unnecessary innerHTML churn");
 assert.ok(/updateSecurityState/.test(consoleJs) && /window\.ucaShell\.updateSecurityState/.test(consoleJs),

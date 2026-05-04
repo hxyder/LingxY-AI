@@ -763,6 +763,41 @@ label, .field-label {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
+.conversation-artifact-meta,
+.project-artifact-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.conversation-artifact-meta > span:first-child,
+.project-artifact-meta > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.artifact-status {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  text-transform: capitalize;
+  background: var(--panel-2);
+  color: var(--muted);
+}
+.artifact-status--missing {
+  background: var(--err-soft);
+  color: var(--err);
+}
+.artifact-status--unknown {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
 .project-artifact-action {
   width: 28px;
   height: 28px;
@@ -2072,6 +2107,11 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   margin-top: 1px;
   color: var(--muted);
   font-size: 10.5px;
+}
+.conversation-artifact-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .conversation-artifact-action {
   width: 24px;

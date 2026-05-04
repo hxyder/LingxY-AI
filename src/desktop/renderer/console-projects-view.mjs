@@ -2,6 +2,7 @@ import {
   artifactExtension,
   artifactIconClass,
   artifactIconText,
+  artifactStatusInfo,
   escapeHtml,
   formatDateTime
 } from "./shared-ui.mjs";
@@ -92,12 +93,16 @@ export function renderProjectArtifactListHtml({
     const ext = artifactExtension(filePath);
     const label = labelForPath(filePath);
     const conversationTitle = artifact.conversation_title || artifact.conversation_id || "";
+    const status = artifactStatusInfo(artifact.status);
     return `
       <div class="project-artifact-row">
         <span class="artifact-icon ${artifactIconClass(ext)}">${escapeHtml(artifactIconText(filePath))}</span>
         <button class="project-artifact-main" type="button" data-project-artifact-open="${escapeHtml(filePath)}" title="${escapeHtml(filePath)}">
           <span class="project-artifact-name">${escapeHtml(label)}</span>
-          <span class="project-artifact-meta">${escapeHtml(conversationTitle)}${artifact.created_at ? ` · ${escapeHtml(formatDateTime(artifact.created_at))}` : ""}</span>
+          <span class="project-artifact-meta">
+            <span>${escapeHtml(conversationTitle)}${artifact.created_at ? ` · ${escapeHtml(formatDateTime(artifact.created_at))}` : ""}</span>
+            ${status ? `<span class="artifact-status ${status.className}">${escapeHtml(status.label)}</span>` : ""}
+          </span>
         </button>
         <button class="project-artifact-action" type="button" data-project-artifact-reveal="${escapeHtml(filePath)}" title="Reveal in folder" aria-label="Reveal ${escapeHtml(label)}">
           <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h5l2 2h11v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/><path d="M3 7V5a2 2 0 0 1 2-2h3l2 2h4"/></svg>

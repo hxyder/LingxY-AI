@@ -129,6 +129,22 @@ export function artifactIconText(artifactPath = "") {
   return (artifactExtension(artifactPath) || "FILE").toUpperCase().slice(0, 3);
 }
 
+const ARTIFACT_STATUS_LABELS = new Map([
+  ["available", "Available"],
+  ["missing", "Missing"],
+  ["unknown", "Unknown"]
+]);
+
+export function artifactStatusInfo(status = "") {
+  const raw = String(status ?? "").trim().toLowerCase();
+  if (!raw || raw === "available") return null;
+  const safeClass = /^[a-z0-9_-]+$/.test(raw) ? raw : "unknown";
+  return {
+    className: `artifact-status--${safeClass}`,
+    label: ARTIFACT_STATUS_LABELS.get(raw) ?? raw.replaceAll("_", " ")
+  };
+}
+
 export function formatRelativeTime(value) {
   if (!value) return "";
   const ts = typeof value === "number" ? value : new Date(value).getTime();
