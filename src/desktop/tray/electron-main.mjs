@@ -692,6 +692,7 @@ export function createElectronShellRuntime({
     "echo-bubble": true
   });
   const WINDOW_SIZE_LIMITS = Object.freeze({
+    dock: { minWidth: 48, minHeight: 48, maxWidth: 48, maxHeight: 48 },
     overlay: { minWidth: 420, minHeight: 360, maxWidth: 1400, maxHeight: 1200 }
   });
 
@@ -759,22 +760,39 @@ export function createElectronShellRuntime({
 
   function clampWindowBounds(windowId, bounds = {}, options = {}) {
     const limits = getWindowSizeLimits(windowId);
-    const primaryWorkArea = screen.getPrimaryDisplay().workArea;
     const width = Math.max(limits.minWidth, Math.min(limits.maxWidth, Math.round(bounds.width ?? limits.minWidth)));
     const height = Math.max(limits.minHeight, Math.min(limits.maxHeight, Math.round(bounds.height ?? limits.minHeight)));
+    const fallbackWorkArea = screen.getPrimaryDisplay().workArea;
+    const tentative = {
+      x: Number.isFinite(bounds.x) ? Math.round(bounds.x) : fallbackWorkArea.x,
+      y: Number.isFinite(bounds.y) ? Math.round(bounds.y) : fallbackWorkArea.y,
+      width,
+      height
+    };
+    const workArea = screen.getDisplayMatching?.(tentative)?.workArea ?? fallbackWorkArea;
     const overlayMove = windowId === "overlay" && options.mode === "move";
+    const dockMove = windowId === "dock" && options.mode === "move";
     const visibleMargin = overlayMove ? 96 : 0;
-    const minX = overlayMove ? primaryWorkArea.x - width + visibleMargin : primaryWorkArea.x;
-    const minY = overlayMove ? primaryWorkArea.y - height + visibleMargin : primaryWorkArea.y;
+    const minX = overlayMove ? workArea.x - width + visibleMargin : workArea.x;
+    const minY = overlayMove ? workArea.y - height + visibleMargin : workArea.y;
     const maxX = overlayMove
-      ? primaryWorkArea.x + primaryWorkArea.width - visibleMargin
-      : primaryWorkArea.x + Math.max(0, primaryWorkArea.width - width);
+      ? workArea.x + workArea.width - visibleMargin
+      : workArea.x + Math.max(0, workArea.width - width);
     const maxY = overlayMove
-      ? primaryWorkArea.y + primaryWorkArea.height - visibleMargin
-      : primaryWorkArea.y + Math.max(0, primaryWorkArea.height - height);
+      ? workArea.y + workArea.height - visibleMargin
+      : workArea.y + Math.max(0, workArea.height - height);
+    let x = Math.max(minX, Math.min(maxX, tentative.x));
+    let y = Math.max(minY, Math.min(maxY, tentative.y));
+    if (dockMove) {
+      const snapPx = 16;
+      if (Math.abs(x - minX) <= snapPx) x = minX;
+      if (Math.abs(x - maxX) <= snapPx) x = maxX;
+      if (Math.abs(y - minY) <= snapPx) y = minY;
+      if (Math.abs(y - maxY) <= snapPx) y = maxY;
+    }
     return {
-      x: Math.max(minX, Math.min(maxX, Math.round(bounds.x ?? primaryWorkArea.x))),
-      y: Math.max(minY, Math.min(maxY, Math.round(bounds.y ?? primaryWorkArea.y))),
+      x,
+      y,
       width,
       height
     };
@@ -787,7 +805,7 @@ export function createElectronShellRuntime({
     const height = currentHeight || windowDef.height;
     if (windowDef.id === "dock") {
       return {
-        x: Math.max(workArea.x, workArea.x + workArea.width - width - 28),
+        x: Math.max(workArea.x, workArea.x + workArea.width - width),
         y: Math.max(workArea.y, workArea.y + workArea.height - height - 56),
         width,
         height
@@ -811,10 +829,21 @@ export function createElectronShellRuntime({
 
   function resolveWindowBounds(windowDef, browserWindow) {
     const prefs = getWindowPreferences(windowDef.id);
+    const defaults = getDefaultWindowBounds(windowDef, browserWindow);
     if (prefs?.bounds && Number.isFinite(prefs.bounds.x) && Number.isFinite(prefs.bounds.y) && Number.isFinite(prefs.bounds.width) && Number.isFinite(prefs.bounds.height)) {
-      return clampWindowBounds(windowDef.id, prefs.bounds);
+      // Dock is a fixed-size 48×48 orb. Some past sessions persisted the
+      // Electron BrowserWindow default 320×240 (when the window was first
+      // created without explicit dimensions) into settings.json, which
+      // then survives every relaunch and surrounds the visible orb with
+      // a giant transparent hitbox. Always override persisted width/height
+      // for the dock with the manifest values so the user can drag the
+      // orb fully into a screen edge regardless of legacy settings.
+      const bounds = windowDef.id === "dock"
+        ? { ...prefs.bounds, width: defaults.width, height: defaults.height }
+        : prefs.bounds;
+      return clampWindowBounds(windowDef.id, bounds);
     }
-    return clampWindowBounds(windowDef.id, getDefaultWindowBounds(windowDef, browserWindow));
+    return clampWindowBounds(windowDef.id, defaults);
   }
 
   function applyWindowPresentation(windowId, browserWindow) {

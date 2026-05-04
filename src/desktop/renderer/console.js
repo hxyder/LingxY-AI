@@ -1464,6 +1464,73 @@ async function openNoteTargetPicker(text, anchorEl) {
   });
 }
 
+const CHAT_TOOL_LABELS = {
+  web_search_fetch: "搜索网页",
+  fetch_url_content: "读取网页",
+  generate_document: "生成文档",
+  write_file: "写入文件",
+  edit_file: "编辑文件",
+  render_diagram: "生成图表",
+  render_svg: "生成矢量图",
+  vision_analyze: "分析图片",
+  launch_app: "启动应用",
+  open_url: "打开网页",
+  notify: "发送通知",
+  connector_workflow_run: "连接器流程",
+  account_send_email: "发送邮件",
+  account_upload_file: "上传文件",
+  account_list_emails: "读取邮件",
+  account_list_files: "读取文件"
+};
+
+function compactText(value = "", max = 96) {
+  const text = String(value ?? "").replace(/\s+/g, " ").trim();
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function formatConsoleToolDisplayName(toolName = "") {
+  const raw = String(toolName ?? "").trim();
+  return CHAT_TOOL_LABELS[raw] || raw.replace(/_/g, " ");
+}
+
+function formatConsoleToolArgsPreview(toolName = "", args = {}) {
+  const value = args && typeof args === "object" ? args : {};
+  if (toolName === "web_search_fetch") {
+    return value.query ? `query: ${compactText(value.query, 88)}` : "";
+  }
+  if (toolName === "fetch_url_content") {
+    try {
+      const url = new URL(String(value.url ?? ""));
+      return compactText(`${url.hostname}${url.pathname}`, 92);
+    } catch {
+      return value.url ? compactText(value.url, 92) : "";
+    }
+  }
+  if (toolName === "generate_document") {
+    const kind = value.kind ? String(value.kind).toUpperCase() : "DOC";
+    const outline = value.outline && typeof value.outline === "object" ? value.outline : {};
+    const title = outline.title ?? value.filename ?? value.path ?? "";
+    return compactText(`${kind}${title ? ` · ${title}` : ""}`, 92);
+  }
+  if (toolName === "launch_app") return value.app ? compactText(value.app, 80) : "";
+  if (toolName === "open_url") return value.url ? compactText(value.url, 92) : "";
+  const raw = typeof args === "string"
+    ? args
+    : (args == null ? "" : JSON.stringify(args, null, 0));
+  return compactText(raw, 110);
+}
+
+function appendConsoleChatTimelineNode(node) {
+  if (!consoleChatMessages || !node) return node;
+  const streamingWrapper = consoleChatStreamingAnswer?.wrapper;
+  if (streamingWrapper?.parentElement === consoleChatMessages && node !== streamingWrapper) {
+    consoleChatMessages.insertBefore(node, streamingWrapper);
+  } else {
+    consoleChatMessages.appendChild(node);
+  }
+  return node;
+}
+
 // UCA-177: premium two-row timeline card for tool invocations.
 //   state — "running" | "ok" | "err" (default "ok" when outcome present,
 //   else "running" when no outcome, else neutral).
@@ -1481,14 +1548,13 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
 
   const card = document.createElement("div");
   card.className = `chat-tool-card is-${inferredState}`;
+  card.dataset.toolId = toolName;
   card.setAttribute("role", "group");
-  card.setAttribute("aria-label", `tool call ${toolName}`);
+  card.setAttribute("aria-label", `tool call ${formatConsoleToolDisplayName(toolName)}`);
 
-  const argsText = typeof args === "string"
-    ? args
-    : (args == null ? "" : JSON.stringify(args, null, 0));
-  const argsPreview = argsText.length > 240 ? `${argsText.slice(0, 240)}…` : argsText;
-  const outcomeText = outcome == null ? "" : String(outcome).slice(0, 140);
+  const argsPreview = formatConsoleToolArgsPreview(toolName, args);
+  const outcomeText = outcome == null ? "" : compactText(outcome, 110);
+  const displayName = formatConsoleToolDisplayName(toolName);
   const time = new Date();
   const timeText = `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}:${String(time.getSeconds()).padStart(2, "0")}`;
 
@@ -1497,7 +1563,7 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
   card.innerHTML = `
     <div class="ttc-head">
       ${ICON}
-      <span class="ttc-name">${escapeHtml(toolName)}</span>
+      <span class="ttc-name">${escapeHtml(displayName)}</span>
       <span class="ttc-status">${stateLabel}</span>
       <time class="ttc-time" datetime="${time.toISOString()}">${timeText}</time>
     </div>
@@ -1506,7 +1572,7 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
       ? `<div class="ttc-outcome"><span class="ttc-outcome-arrow">→</span><span class="ttc-outcome-text">${escapeHtml(outcomeText)}</span></div>`
       : ""}
   `;
-  consoleChatMessages.appendChild(card);
+  appendConsoleChatTimelineNode(card);
   consoleChatPin.maybeScrollToBottom();
   return card;
 }
@@ -1584,18 +1650,15 @@ function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) 
   const stateLabel = inferredState === "running" ? "RUNNING"
     : inferredState === "err" ? "FAILED"
     : "DONE";
-  const argsText = typeof args === "string"
-    ? args
-    : (args == null ? "" : JSON.stringify(args, null, 0));
-  const argsPreview = argsText.length > 240 ? `${argsText.slice(0, 240)}…` : argsText;
-  const outcomeText = outcome == null ? "" : String(outcome).slice(0, 140);
+  const argsPreview = formatConsoleToolArgsPreview(toolName, args);
+  const outcomeText = outcome == null ? "" : compactText(outcome, 110);
 
   const nameEl = card.querySelector(".ttc-name");
   const statusEl = card.querySelector(".ttc-status");
   const argsEl = card.querySelector(".ttc-args");
   const outcomeEl = card.querySelector(".ttc-outcome");
   const outcomeTextEl = card.querySelector(".ttc-outcome-text");
-  if (nameEl) nameEl.textContent = toolName;
+  if (nameEl) nameEl.textContent = formatConsoleToolDisplayName(toolName);
   if (statusEl) statusEl.textContent = stateLabel;
   if (argsEl) {
     argsEl.textContent = argsPreview;
@@ -1678,10 +1741,11 @@ function subscribeConsoleChatTask(taskId) {
         consoleChatState.textContent = "Answering...";
       } else if (frame.event === "tool_call_proposed" || frame.event === "tool_call_started") {
         const toolName = payload.tool_id ?? payload.tool ?? "tool";
+        const toolLabel = formatConsoleToolDisplayName(toolName);
         const args = payload.args ?? payload.arguments ?? {};
         const id = createConsoleChatToolCard(toolName, args, { state: "running" });
         if (!payload.__consoleToolCardId) payload.__consoleToolCardId = id;
-        consoleChatState.textContent = `Running ${toolName}...`;
+        consoleChatState.textContent = `${toolLabel}中...`;
         if (window.livePreview?.isFileGenTool?.(toolName)) {
           window.livePreview.openForTool({ toolName, args });
         }
@@ -1692,16 +1756,17 @@ function subscribeConsoleChatTask(taskId) {
         }
       } else if (frame.event === "tool_call_completed") {
         const toolName = payload.tool_id ?? payload.tool ?? "tool";
+        const toolLabel = formatConsoleToolDisplayName(toolName);
         const outcome = payload.observation ?? payload.text ?? payload.error ?? "";
         const candidate = [...consoleChatToolCards.entries()].reverse().find(([, card]) => {
-          return card.querySelector(".ttc-name")?.textContent === toolName
+          return card.dataset.toolId === toolName
             && card.querySelector(".ttc-status")?.textContent === "RUNNING";
         })?.[0] ?? null;
         completeConsoleChatToolCard(candidate, toolName, payload.args ?? {}, outcome, {
           state: payload.success === false ? "err" : "ok",
           error: payload.success === false
         });
-        consoleChatState.textContent = payload.success === false ? `${toolName} failed` : `${toolName} done`;
+        consoleChatState.textContent = payload.success === false ? `${toolLabel}失败` : `${toolLabel}完成`;
         if (window.livePreview?.isFileGenTool?.(toolName)) {
           const artifactPath = payload.metadata?.path ?? payload.artifact_path ?? "";
           window.livePreview.commit({
@@ -3566,36 +3631,87 @@ function renderTasks() {
   }
 
   const entries = buildTaskListEntries(tasks);
-  // Cache signature so we can skip the rebuild when nothing material
-  // has changed. Without this, the 6s refresh tick rebuilds the entire
-  // task list every time and every hover / click target gets the
-  // "flash" the user complained about. Compare a compact signature of
-  // (id, status, sub_status, child_count) — anything else is metadata
-  // that doesn't need a re-render.
-  const sig = taskListSignature(entries);
+  // Outer signature gate: if (id, status, sub_status, child_count) for the
+  // whole entry list is unchanged AND the selection didn't change, we can
+  // skip the entire reconcile pass. This handles the no-op poll tick where
+  // nothing material is different.
+  const sig = `${taskListSignature(entries)}|sel:${state.selectedTaskId ?? ""}`;
   if (taskList._lastSig === sig && taskList.children.length > 0) {
-    // Nothing visibly changed; skip the destructive rebuild. Selection
-    // state is also unchanged because state.selectedTaskId is the
-    // same.
-  } else {
-  taskList._lastSig = sig;
-  // Preserve scroll position across the rebuild.
-  const prevScroll = taskList.scrollTop;
-  taskList.innerHTML = entries.map((entry) =>
-    renderTaskListItemHtml({ ...entry, selectedTaskId: state.selectedTaskId })
-  ).join("");
-  // Restore scroll position so the user's place isn't reset on the
-  // 6s refresh tick. Pin to bottom if they were already there.
-  taskList.scrollTop = prevScroll;
-  // Re-attach click handlers — only needed when we actually rebuilt.
-  // (The skip branch keeps existing buttons + their listeners.)
-  for (const btn of taskList.querySelectorAll("[data-task-id]")) {
-    btn.addEventListener("click", () => {
-      state.selectedTaskId = btn.dataset.taskId;
-      renderTasks();
-      void refreshTaskDetail();
-    });
+    return;
   }
+  taskList._lastSig = sig;
+
+  // Incremental reconcile (instead of `taskList.innerHTML = ...` which was
+  // the previous fix). Why: even with the outer sig gate, a single task
+  // changing status triggers the gate to invalidate, and a destructive
+  // innerHTML rebuild loses every button's DOM identity → hover state /
+  // focus / mid-scroll click target / CSS transitions all reset for every
+  // unchanged button. The result is a visible flicker each time any task
+  // state ticks. Reconcile preserves the button nodes that are still
+  // current and only modifies the ones whose data changed.
+  reconcileTaskList(taskList, entries, state.selectedTaskId);
+}
+
+// Diff `container.children` against `entries` by task_id, modifying DOM
+// in place so persistent button nodes keep their identity across refresh
+// ticks. The HTML for any single entry is generated by the same pure
+// renderer used at first render (`renderTaskListItemHtml`), which means
+// the markup contract stays in one place.
+function reconcileTaskList(container, entries, selectedTaskId) {
+  const existing = new Map();
+  for (const btn of [...container.children]) {
+    const id = btn.dataset.taskId;
+    if (id) existing.set(id, btn);
+  }
+
+  // First pass: ensure each target entry has a button at the right index,
+  // updating in place when content differs.
+  for (let cursor = 0; cursor < entries.length; cursor += 1) {
+    const entry = entries[cursor];
+    const id = entry.task.task_id;
+    const html = renderTaskListItemHtml({ ...entry, selectedTaskId }).trim();
+    let btn = existing.get(id);
+    if (!btn) {
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      btn = tmp.firstElementChild;
+      // Click handler: bind once at creation. Subsequent updates only
+      // rewrite inner content / classes, not the button element itself,
+      // so this listener survives reconciles.
+      btn.addEventListener("click", () => {
+        state.selectedTaskId = btn.dataset.taskId;
+        renderTasks();
+        void refreshTaskDetail();
+      });
+    } else {
+      // Cheap content diff: outerHTML compare. If unchanged, leave the
+      // node alone so :hover / :focus / animations stay intact.
+      if (btn.outerHTML.trim() !== html) {
+        const tmp = document.createElement("div");
+        tmp.innerHTML = html;
+        const next = tmp.firstElementChild;
+        // Mutate this button's attributes + inner subtree, but DON'T
+        // replace the button node — the click listener and DOM identity
+        // are preserved.
+        btn.className = next.className;
+        btn.style.cssText = next.style.cssText;
+        for (const attr of next.getAttributeNames()) {
+          if (attr === "class" || attr === "style") continue;
+          btn.setAttribute(attr, next.getAttribute(attr));
+        }
+        btn.innerHTML = next.innerHTML;
+      }
+    }
+    // Reorder if needed.
+    if (container.children[cursor] !== btn) {
+      container.insertBefore(btn, container.children[cursor] ?? null);
+    }
+  }
+
+  // Second pass: drop any tail buttons whose tasks are no longer in the
+  // entries list (e.g. filtered out, deleted, or beyond the limit).
+  while (container.children.length > entries.length) {
+    container.removeChild(container.lastElementChild);
   }
 }
 
@@ -7515,6 +7631,113 @@ function refreshChatTimestamps() {
   }
 }
 setInterval(refreshChatTimestamps, 30_000);
+
+/* ═══════════════════════════════════════════════
+   INLINE PREVIEW (Console-only, split-pane in chat tab)
+   ═══════════════════════════════════════════════ */
+
+/* Console clicks on artifacts / file chips open the preview *inside* the
+   chat tab as a third grid column (split view). Overlay clicks still go
+   through the dedicated preview BrowserWindow — see live-preview.js.
+
+   Why override at this layer instead of changing live-preview.js to be
+   context-aware: live-preview.js is loaded by both console.html and
+   overlay.html, and overlay's behavior must not change. By overriding
+   `window.livePreview.openForFile` only inside console.js, the overlay's
+   existing IPC path remains untouched. */
+
+const consolePreviewLayout = document.querySelector(".chat-layout");
+const consolePreviewPane = document.querySelector("#consolePreviewPane");
+const consolePreviewBody = document.querySelector("#consolePreviewBody");
+const consolePreviewTitle = document.querySelector("#consolePreviewTitle");
+const consolePreviewMeta = document.querySelector("#consolePreviewMeta");
+const consolePreviewCloseBtn = document.querySelector("#consolePreviewCloseBtn");
+const consolePreviewOpenExternalBtn = document.querySelector("#consolePreviewOpenExternalBtn");
+
+let currentInlinePreviewPath = null;
+
+function fileNameFromPath(filePath) {
+  if (!filePath) return "Preview";
+  const segments = String(filePath).split(/[\\/]/);
+  return segments[segments.length - 1] || "Preview";
+}
+
+function closeInlinePreview() {
+  if (consolePreviewLayout) consolePreviewLayout.classList.remove("preview-open");
+  if (consolePreviewPane) consolePreviewPane.hidden = true;
+  if (consolePreviewBody) consolePreviewBody.innerHTML = "";
+  currentInlinePreviewPath = null;
+}
+
+async function openInlinePreviewInChat({ filePath, mime } = {}) {
+  if (!filePath || !consolePreviewPane || !consolePreviewBody || !consolePreviewLayout) {
+    return false;
+  }
+
+  // The user might click a file from any tab; ensure they see the chat
+  // tab so the split view is actually visible.
+  const activeTab = document.querySelector(".tab-panel.active");
+  if (activeTab?.id !== "panel-chat") {
+    if (typeof switchTab === "function") {
+      try { switchTab("chat"); } catch { /* ignore */ }
+    }
+  }
+
+  if (consolePreviewTitle) consolePreviewTitle.textContent = fileNameFromPath(filePath);
+  if (consolePreviewMeta) consolePreviewMeta.textContent = filePath;
+  consolePreviewPane.hidden = false;
+  consolePreviewLayout.classList.add("preview-open");
+  currentInlinePreviewPath = filePath;
+
+  // Loading placeholder while the registered handler renders.
+  consolePreviewBody.innerHTML = `<div class="muted" style="padding:24px;text-align:center;font-size:12px;">Loading preview…  正在加载预览</div>`;
+
+  if (typeof window.livePreviewClient?.render !== "function") {
+    consolePreviewBody.innerHTML = `<div class="muted" style="padding:24px;text-align:center;">Inline preview is unavailable (registry not loaded).</div>`;
+    return true;
+  }
+
+  try {
+    await window.livePreviewClient.render(consolePreviewBody, {
+      filePath,
+      mime: mime ?? null,
+      runtimeBaseUrl: state.serviceBaseUrl
+    });
+  } catch (error) {
+    consolePreviewBody.innerHTML = `<div class="muted" style="padding:24px;text-align:center;">预览失败：${escapeHtml(error?.message ?? String(error))}</div>`;
+  }
+  return true;
+}
+
+consolePreviewCloseBtn?.addEventListener("click", () => closeInlinePreview());
+consolePreviewOpenExternalBtn?.addEventListener("click", async () => {
+  // "Open external" closes the inline pane and routes through the
+  // standard external open path (system associations / preview window).
+  const path = currentInlinePreviewPath;
+  closeInlinePreview();
+  if (!path) return;
+  try {
+    if (typeof window.ucaShell?.openPath === "function") {
+      await window.ucaShell.openPath(path);
+    }
+  } catch { /* ignore */ }
+});
+
+// Override livePreview.openForFile so console-internal callers route to
+// the inline pane. Other livePreview methods (openForTool / appendDelta /
+// commit — used for live tool output) stay unchanged: tool output still
+// streams to the dedicated preview window because that flow needs SSE
+// support which the inline pane doesn't replicate.
+if (window.livePreview) {
+  const originalOpenForFile = window.livePreview.openForFile;
+  window.livePreview.openForFile = function consoleOpenForFile(opts = {}) {
+    void openInlinePreviewInChat(opts);
+    return true;
+  };
+  // Keep a handle in case anyone needs the original (e.g. an "open in
+  // dedicated window" affordance later).
+  window.livePreview._originalOpenForFile = originalOpenForFile;
+}
 
 /* ═══════════════════════════════════════════════
    UCA-070: CONNECTORS TAB

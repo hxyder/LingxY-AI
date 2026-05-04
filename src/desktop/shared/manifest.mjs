@@ -156,8 +156,14 @@ export const DESKTOP_SHELL_MANIFEST = Object.freeze({
       route: "/dock",
       singleton: true,
       startsHidden: false,
-      width: 52,
-      height: 52
+      // The visible orb is 48×48; the window must match so the user can
+      // drag the orb fully into a screen edge/corner without invisible
+      // padding blocking the move. Hover scale(1.06) → 50.88px overflows
+      // the window slightly, but transparent windows clip the overflow
+      // gracefully and the trade-off is correct: edge alignment matters
+      // more than a 100% complete hover animation.
+      width: 48,
+      height: 48
     },
     {
       id: WINDOW_IDS.overlay,

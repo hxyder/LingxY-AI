@@ -12,6 +12,12 @@ import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
 import { pushBackgroundContextInPlace } from "./intent/background-contexts.mjs";
 import {
+  createFileGenerationAttemptState,
+  recordArtifactGenerated,
+  recordFileGenerationToolEvent,
+  shouldSynthesizeRequestedFallbackArtifact
+} from "./artifact-fallback-policy.mjs";
+import {
   EXECUTION_PHASES,
   EXECUTION_STATES,
   runExecutionPhase
@@ -630,6 +636,7 @@ async function runExecutor({ runtime, task, executor }) {
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
   const generatedArtifacts = [];
   let inlineText = "";
+  const fileGeneration = createFileGenerationAttemptState();
   const controller = new AbortController();
   registerActiveExecution(runtime, task.task_id, {
     cancel: async () => controller.abort()
@@ -694,10 +701,14 @@ async function runExecutor({ runtime, task, executor }) {
           inlineText = candidateText;
         }
       }
+      if (event.event_type === "tool_call_completed") {
+        recordFileGenerationToolEvent(fileGeneration, event.payload ?? {});
+      }
       if (event.event_type === "artifact_created" && event.payload?.path) {
         const artifactRecord = artifactStore.registerArtifact(task.task_id, event.payload.path, event.payload.mime ?? event.payload.mime_type);
         runtime.store.appendArtifact(artifactRecord);
         generatedArtifacts.push(artifactRecord);
+        recordArtifactGenerated(fileGeneration);
       }
       // Agentic executor yields artifact_paths on its terminal event (not
       // artifact_created). Collect them for both success and partial_success:
@@ -712,6 +723,7 @@ async function runExecutor({ runtime, task, executor }) {
             const artifactRecord = artifactStore.registerArtifact(task.task_id, filePath, null);
             runtime.store.appendArtifact(artifactRecord);
             generatedArtifacts.push(artifactRecord);
+            recordArtifactGenerated(fileGeneration);
           }
         }
       }
@@ -722,9 +734,12 @@ async function runExecutor({ runtime, task, executor }) {
     }
 
     const requestedFormat = detectRequestedOutputFormatForTask(task);
-    const shouldSynthesizeFallbackArtifact = requestedFormat.id !== "conversational"
-      && generatedArtifacts.length === 0
-      && task.task_spec?.goal !== "transform_existing_file";
+    const shouldSynthesizeFallbackArtifact = shouldSynthesizeRequestedFallbackArtifact({
+      requestedFormat,
+      generatedArtifacts,
+      task,
+      fileGeneration
+    });
     if (shouldSynthesizeFallbackArtifact) {
       const outputDir = await createOutputDirForTask({ runtime, artifactStore, task });
       const artifacts = await writeRequestedArtifacts({
@@ -741,6 +756,7 @@ async function runExecutor({ runtime, task, executor }) {
         const artifactRecord = artifactStore.registerArtifact(task.task_id, artifact.path, artifact.mime_type);
         runtime.store.appendArtifact(artifactRecord);
         generatedArtifacts.push(artifactRecord);
+        recordArtifactGenerated(fileGeneration);
         emitTaskEvent({
           runtime,
           taskId: task.task_id,

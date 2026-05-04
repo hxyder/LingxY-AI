@@ -2,6 +2,7 @@ import { buildDesktopShellBootstrapState } from "../src/desktop/tray/bootstrap.m
 import { createDesktopRuntimeHost } from "../src/desktop/tray/runtime-host.mjs";
 import { createOverlayViewModel } from "../src/desktop/overlay/view-model.mjs";
 import { createConsoleViewModel } from "../src/desktop/console/view-model.mjs";
+import { readFileSync } from "node:fs";
 
 const bootstrap = buildDesktopShellBootstrapState();
 const overlay = createOverlayViewModel();
@@ -29,8 +30,22 @@ if (host.start().serviceBridgeAttached !== true) {
 }
 
 const dockWindow = bootstrap.manifest.windows.find((w) => w.id === "dock");
-if (!dockWindow || dockWindow.width !== 52 || dockWindow.height !== 52) {
-  throw new Error("Dock window must use the reduced 52x52 hitbox.");
+// Dock window must match the visible orb size (48×48). A previous 52×52
+// hitbox left invisible padding around the orb, preventing the user from
+// dragging it fully into a screen edge/corner. Hover scale(1.06) overflow
+// is acceptable on transparent windows.
+if (!dockWindow || dockWindow.width !== 48 || dockWindow.height !== 48) {
+  throw new Error("Dock window must match the 48x48 orb size (no invisible padding).");
+}
+
+const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
+if (!/dock:\s*\{\s*minWidth:\s*48,\s*minHeight:\s*48,\s*maxWidth:\s*48,\s*maxHeight:\s*48\s*\}/.test(electronMain)) {
+  throw new Error("Dock bounds clamp must keep the BrowserWindow fixed at 48x48.");
+}
+
+if (!/const dockMove = windowId === "dock" && options\.mode === "move"/.test(electronMain)
+    || !/snapPx = 16/.test(electronMain)) {
+  throw new Error("Dock move bounds must snap to display edges.");
 }
 
 if (!bootstrap.manifest.ipcChannels.includes("uca:shell-set-ignore-mouse-events")) {

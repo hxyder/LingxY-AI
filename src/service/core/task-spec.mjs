@@ -974,13 +974,10 @@ function collectGoalEvidence(signals, { noteIntent, artifactEditIntent }) {
   const evidence = [];
   if (noteIntent) evidence.push({ type: "context", source: "note-intent", reason: "hasNoteTakingIntent" });
   if (artifactEditIntent) evidence.push({ type: "context", source: "artifact-edit-intent", reason: "hasArtifactRefinementIntent" });
-  // F2: evidence list extended with semantic_router. topic_hint
-  // kept as OBSERVABILITY-ONLY evidence — it no longer participates
-  // in the goal classifier's decision (see GOAL_RULES requiresSignal),
-  // but a topic match alongside a goal=search_and_answer still
-  // surfaces in the trace so operators can see corroborating
-  // signals.
-  for (const name of ["explicit_external", "semantic_router", "topic_hint", "source_scope"]) {
+  // F2/F7: evidence list follows structural signals plus the SR verdict.
+  // The retired topic_hint compatibility key is intentionally omitted:
+  // topical judgement belongs to SR, not deterministic regex evidence.
+  for (const name of ["explicit_external", "semantic_router", "source_scope"]) {
     const signal = signals?.[name];
     if (signal?.matched) evidence.push(...signal.evidence);
   }

@@ -4,6 +4,8 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { extractPureLaunchApp } from "../../core/router/fast-path-router.mjs";
+import { renderMermaidScriptTag } from "../../action_tools/tools/mermaid-assets.mjs";
+import { sanitizeHtml } from "../../preview/providers/markdown.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -46,26 +48,9 @@ async function writeStructuredPreviewHtml({ kind, outputPath, outline = null, pl
     const { renderDocumentPreviewHtml } = await import("../../action_tools/tools/document-renderer.mjs");
     html = renderDocumentPreviewHtml({ kind, outline, title: path.basename(outputPath) });
   } else {
-    html = `<!doctype html>
-<html lang="zh-CN">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>${escapeHtml(path.basename(outputPath))}</title>
-    <style>
-      body { margin: 0; padding: 24px; background: #f5f7fb; color: #1e293b; font: 14px/1.6 "Segoe UI", Calibri, Arial, sans-serif; }
-      article { max-width: 1080px; margin: 0 auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 28px; box-shadow: 0 16px 40px rgba(15,23,42,.08); }
-      h1 { margin: 0 0 12px; font-size: 28px; }
-      pre { white-space: pre-wrap; word-break: keep-all; overflow-wrap: anywhere; margin: 0; font: 13px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace; }
-    </style>
-  </head>
-  <body>
-    <article>
-      <h1>${escapeHtml(path.basename(outputPath))}</h1>
-      <pre>${escapeHtml(plainText || "(empty)")}</pre>
-    </article>
-  </body>
-</html>`;
+    html = await renderMarkdownDocumentHtml(plainText || "(empty)", {
+      title: path.basename(outputPath)
+    });
   }
   await writeFile(previewPath, `${html}\n`, "utf8");
   return previewPath;
@@ -236,25 +221,54 @@ function coerceCsv(text) {
   return `response\n${escapeCsvCell(stripMarkdownSyntax(text))}\n`;
 }
 
-function coerceHtml(text) {
-  const candidate = stripCodeFences(text).trim();
-  if (/<html[\s>]|<body[\s>]|<main[\s>]|<section[\s>]|<article[\s>]/i.test(candidate)) {
-    return candidate;
-  }
+function extractMarkdownTitle(text = "") {
+  const heading = String(text ?? "").match(/^\s*#\s+(.+)$/m);
+  if (heading?.[1]) return heading[1].trim();
+  const firstLine = String(text ?? "").split(/\r?\n/).find((line) => line.trim());
+  return firstLine ? stripMarkdownSyntax(firstLine).slice(0, 80) : "UCA Result";
+}
+
+async function renderMarkdownDocumentHtml(text, { title = "" } = {}) {
+  const source = String(text ?? "");
+  const { marked } = await import("marked");
+  marked.setOptions({ breaks: true, gfm: true });
+  const bodyHtml = sanitizeHtml(marked.parse(source));
+  const hasMermaid = /```mermaid\b/i.test(source);
+  const resolvedTitle = title || extractMarkdownTitle(source);
   return [
     "<!doctype html>",
     "<html lang=\"zh-CN\">",
     "  <head>",
     "    <meta charset=\"utf-8\">",
-    "    <title>UCA Result</title>",
+    "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">",
+    `    <title>${escapeHtml(resolvedTitle)}</title>`,
+    hasMermaid ? `    ${renderMermaidScriptTag()}` : "",
+    "    <style>",
+    "      body{margin:0;background:#f8fafc;color:#1f2937;font:15px/1.7 \"Segoe UI\",\"Microsoft YaHei\",Arial,sans-serif;}",
+    "      main{max-width:860px;margin:0 auto;padding:44px 52px;background:#fff;min-height:100vh;}",
+    "      h1{font-size:30px;line-height:1.25;margin:0 0 18px;color:#111827;} h2{font-size:22px;margin:30px 0 10px;border-bottom:1px solid #e5e7eb;padding-bottom:6px;}",
+    "      h3{font-size:18px;margin:22px 0 8px;} p{margin:0 0 12px;} ul,ol{margin:8px 0 16px 24px;padding:0;} li{margin:4px 0;}",
+    "      table{width:100%;border-collapse:collapse;margin:16px 0 22px;font-size:14px;} th,td{border:1px solid #e5e7eb;padding:8px 10px;text-align:left;vertical-align:top;} th{background:#111827;color:#fff;} tr:nth-child(even) td{background:#f9fafb;}",
+    "      code{background:#f3f4f6;border-radius:4px;padding:1px 4px;} pre{background:#111827;color:#e5e7eb;border-radius:8px;padding:14px;overflow:auto;} blockquote{border-left:3px solid #93c5fd;margin:14px 0;padding:4px 0 4px 14px;color:#4b5563;}",
+    "      .mermaid{margin:18px 0;text-align:center;} pre.mermaid-fallback{background:#f1f5f9;color:#475569;border:1px solid #e2e8f0;white-space:pre-wrap;}",
+    "    </style>",
     "  </head>",
     "  <body>",
-    "    <main>",
-    `      <pre>${escapeHtml(stripMarkdownSyntax(text))}</pre>`,
-    "    </main>",
+    `    <main>${bodyHtml}</main>`,
+    hasMermaid
+      ? "    <script>if(typeof mermaid!==\"undefined\"){mermaid.initialize({startOnLoad:true,theme:\"default\",securityLevel:\"loose\"});}</script>"
+      : "",
     "  </body>",
     "</html>"
-  ].join("\n");
+  ].filter(Boolean).join("\n");
+}
+
+async function coerceHtml(text) {
+  const candidate = stripCodeFences(text).trim();
+  if (/<html[\s>]|<body[\s>]|<main[\s>]|<section[\s>]|<article[\s>]/i.test(candidate)) {
+    return candidate;
+  }
+  return renderMarkdownDocumentHtml(text);
 }
 
 async function writePdfFromHtml(htmlPath, pdfPath) {
@@ -458,7 +472,7 @@ export async function writeRequestedArtifacts({
 
   if (requestedFormat.id === "pdf") {
     // generate HTML first, then convert to PDF via PowerShell
-    const htmlContent = coerceHtml(baseText);
+    const htmlContent = await coerceHtml(baseText);
     const htmlPath = path.join(outputDir, "result.html");
     const pdfPath = path.join(outputDir, "result.pdf");
     await writeFile(htmlPath, `${htmlContent}\n`, "utf8");
@@ -518,7 +532,7 @@ export async function writeRequestedArtifacts({
   } else if (requestedFormat.id === "csv") {
     renderedText = coerceCsv(baseText);
   } else if (requestedFormat.id === "html") {
-    renderedText = coerceHtml(baseText);
+    renderedText = await coerceHtml(baseText);
   }
 
   await writeFile(targetPath, `${renderedText.trim()}\n`, "utf8");

@@ -204,6 +204,16 @@ assert.ok(/renderWorkspaceAfterFetch\(\{\s*mode:\s*["']active["']\s*,\s*activeTa
   "console refresh: tab switch must render the active workspace slice from cached state");
 assert.ok(!/connWebhooksTitle|Coming soon[\s\S]{0,80}Webhook/.test(consoleHtml),
   "connectors: visible Webhooks placeholder must not ship without a working surface");
+assert.ok(/CHAT_TOOL_LABELS/.test(consoleJs) && /formatConsoleToolDisplayName/.test(consoleJs),
+  "chat tools: console must map raw tool ids to user-facing labels");
+assert.ok(/render_svg:\s*"生成矢量图"/.test(consoleJs),
+  "chat tools: SVG artifact tool must have a user-facing label");
+assert.ok(/formatConsoleToolArgsPreview/.test(consoleJs) && /dataset\.toolId/.test(consoleJs),
+  "chat tools: console must keep raw tool ids in data attributes while showing compact args");
+assert.ok(/appendConsoleChatTimelineNode/.test(consoleJs) && /insertBefore\(node,\s*streamingWrapper\)/.test(consoleJs),
+  "chat tools: console must keep the active streaming answer anchored after tool cards");
+assert.ok(/\.chat-tool-card \.ttc-args[\s\S]{0,420}white-space:\s*nowrap/.test(sharedCss),
+  "chat tools: tool cards must keep argument previews compact");
 assert.ok(/exportBundle:\s*["']uca:export-bundle["']/.test(desktopManifest),
   "data export: IPC channel missing from desktop manifest");
 assert.ok(/diagnosticBundle:\s*["']uca:diagnostic-bundle["']/.test(desktopManifest),

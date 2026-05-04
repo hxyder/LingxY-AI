@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const requiredPaths = [
   "README.md",
@@ -60,6 +60,8 @@ const requiredPaths = [
   "tests/behavior/agent-loop-tool-arg-repair.test.mjs",
   "tests/behavior/agent-loop-tool-surface.test.mjs",
   "tests/behavior/agentic-tool-result-controls.test.mjs",
+  "tests/behavior/artifact-quality.test.mjs",
+  "tests/behavior/artifact-fallback-policy.test.mjs",
   "tests/behavior/agentic-tool-surface.test.mjs",
   "tests/behavior/agentic-validator-transcript.test.mjs",
   "tests/behavior/agentic-finalization.test.mjs",
@@ -69,8 +71,11 @@ const requiredPaths = [
   "tests/behavior/code-cli-bridge-external-call.test.mjs",
   "tests/behavior/connector-workflow-scheduled-authorization.test.mjs",
   "tests/behavior/connector-workflow-submission-boundary.test.mjs",
+  "tests/behavior/document-diagram-components.test.mjs",
+  "tests/behavior/svg-artifact-components.test.mjs",
   "tests/behavior/executor-loop-policy.test.mjs",
   "tests/behavior/external-call.test.mjs",
+  "tests/behavior/failure-classifier.test.mjs",
   "tests/behavior/executor-selection.test.mjs",
   "tests/behavior/fast-executor-external-call.test.mjs",
   "tests/behavior/kimi-executor-external-call.test.mjs",
@@ -82,6 +87,8 @@ const requiredPaths = [
   "tests/behavior/mcp-install-sandbox.test.mjs",
   "tests/behavior/multi-modal-external-call.test.mjs",
   "tests/behavior/provider-catalog-models.test.mjs",
+  "tests/behavior/read-file-text-tool.test.mjs",
+  "tests/behavior/requested-output-renderer.test.mjs",
   "tests/behavior/task-runtime-event-emitter.test.mjs",
   "tests/behavior/task-runtime-event-log.test.mjs",
   "tests/behavior/task-runtime-composite.test.mjs",
@@ -91,6 +98,7 @@ const requiredPaths = [
   "tests/behavior/task-runtime-services.test.mjs",
   "tests/behavior/task-runtime-submission.test.mjs",
   "tests/behavior/task-runtime-cancellation.test.mjs",
+  "tests/behavior/tool-call-validator-document.test.mjs",
   "docs/scheduler/README.md",
   "docs/scheduler/cron_cheatsheet.md",
   "docs/scheduler/trigger_types.md",
@@ -217,6 +225,7 @@ const requiredPaths = [
   "src/service/action_tools/registry.mjs",
   "src/service/action_tools/tools/index.mjs",
   "src/service/action_tools/tools/mermaid-assets.mjs",
+  "src/service/action_tools/tools/svg-sanitize.mjs",
   "src/service/core/file-submission.mjs",
   "src/service/store/artifact-store.mjs",
   "src/service/extractors/file-ingest.mjs",
@@ -425,6 +434,16 @@ if (missing.length > 0) {
     console.error(`- ${path}`);
   }
   process.exit(1);
+}
+
+const agentLoopSource = readFileSync("src/service/executors/tool_using/agent-loop.mjs", "utf8");
+if (/text\.includes\(["']通知["']\)|text\.includes\(["']notify["']\)/.test(agentLoopSource)) {
+  throw new Error("defaultPlanner must not route tools from per-word text.includes checks.");
+}
+
+const topicHintSource = readFileSync("src/service/core/intent/signals/topic-hint.mjs", "utf8");
+if (/const\s+PATTERN\s*=/.test(topicHintSource) || /天气\|气温|weather\|forecast|stock\\s\*price|AI\\s\*新闻/i.test(topicHintSource)) {
+  throw new Error("topic_hint must remain a compatibility placeholder; topic regex belongs to SemanticRouter.");
 }
 
 console.log("Repository structure verification passed.");

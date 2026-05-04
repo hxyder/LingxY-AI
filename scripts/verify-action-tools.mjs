@@ -49,6 +49,7 @@ assert.equal(registry.get("web_search_fetch")?.id, "web_search_fetch");
 assert.equal(registry.get("write_file")?.id, "write_file");
 assert.equal(registry.get("run_script")?.id, "run_script");
 assert.equal(registry.get("generate_document")?.id, "generate_document");
+assert.equal(registry.get("render_svg")?.id, "render_svg");
 assert.equal(evaluateToolRisk(registry.get("send_email_smtp"), { to: ["a@example.com"], subject: "x", body: "y" }, {}).requires_confirmation, true);
 // UCA-049: news/search intents now route to the agentic executor so the
 // planner can chain web_search_fetch + summarisation. The underlying

@@ -15,7 +15,9 @@ import { CONNECTOR_ACTION_TOOLS } from "../../connectors/tools/action-tool-aggre
 import { MEMORY_TOOLS } from "./memory-tools.mjs";
 import { VISION_ANALYZE_TOOL } from "./vision-analyze.mjs";
 import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
+import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
 import { buildSideEffectContract } from "../../core/policy/side-effect-contracts.mjs";
+import { extractFileContent } from "../../extractors/file-ingest.mjs";
 
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -1978,6 +1980,52 @@ function escapeHtml(text) {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
+function diagramCodeOf(value) {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  return String(value.code ?? value.mermaid ?? value.source ?? "").trim();
+}
+
+function diagramCaptionOf(value) {
+  if (!value || typeof value !== "object") return "";
+  return String(value.caption ?? value.title ?? "").trim();
+}
+
+function sectionDiagrams(section = {}) {
+  const diagrams = [];
+  if (section.diagram) diagrams.push(section.diagram);
+  if (Array.isArray(section.diagrams)) diagrams.push(...section.diagrams);
+  return diagrams
+    .map((entry) => ({
+      code: diagramCodeOf(entry),
+      caption: diagramCaptionOf(entry)
+    }))
+    .filter((entry) => entry.code);
+}
+
+function svgMarkupOf(value) {
+  if (typeof value === "string") return sanitizeSvgMarkup(value);
+  if (!value || typeof value !== "object") return "";
+  return sanitizeSvgMarkup(value.svg ?? value.markup ?? value.source ?? "");
+}
+
+function svgCaptionOf(value) {
+  if (!value || typeof value !== "object") return "";
+  return String(value.caption ?? value.title ?? "").trim();
+}
+
+function sectionSvgs(section = {}) {
+  const svgs = [];
+  if (section.svg) svgs.push(section.svg);
+  if (Array.isArray(section.svgs)) svgs.push(...section.svgs);
+  return svgs
+    .map((entry) => ({
+      svg: svgMarkupOf(entry),
+      caption: svgCaptionOf(entry)
+    }))
+    .filter((entry) => entry.svg);
+}
+
 /**
  * Convert a structured outline (same shape as docx) to a styled HTML document
  * suitable for printing to PDF via headless Chrome.
@@ -2018,6 +2066,14 @@ function buildPdfHtml(outline) {
 
     if (sec.body) {
       bodyLines.push(renderBodyWithMermaid(String(sec.body)));
+    }
+
+    for (const diagram of sectionDiagrams(sec)) {
+      bodyLines.push(renderHtmlDiagram(diagram));
+    }
+
+    for (const svg of sectionSvgs(sec)) {
+      bodyLines.push(renderHtmlSvg(svg));
     }
 
     if (Array.isArray(sec.bullets) && sec.bullets.length > 0) {
@@ -2070,6 +2126,11 @@ ${renderMermaidScriptTag()}
   tbody tr:nth-child(even) { background: #F8FAFC; }
   tbody td { padding: 6px 10px; border: 1px solid #E2E8F0; vertical-align: top; }
   .mermaid { margin: 16px 0; text-align: center; }
+  figure.doc-diagram { margin: 18px 0; }
+  figure.doc-diagram figcaption { margin-top: 6px; color: #64748B; font-size: 9pt; text-align: center; }
+  figure.doc-svg { margin: 18px 0; text-align: center; }
+  figure.doc-svg svg { max-width: 100%; height: auto; }
+  figure.doc-svg figcaption { margin-top: 6px; color: #64748B; font-size: 9pt; text-align: center; }
   pre.mermaid-fallback {
     background: #F1F5F9; border: 1px solid #E2E8F0;
     padding: 12px; border-radius: 4px; font-size: 9pt;
@@ -2113,6 +2174,20 @@ function renderBodyWithMermaid(text) {
       return t ? `<p>${escapeHtml(t)}</p>` : "";
     }).filter(Boolean).join("\n");
   }).join("\n");
+}
+
+function renderHtmlDiagram(diagram) {
+  const caption = diagram.caption
+    ? `<figcaption>${escapeHtml(diagram.caption)}</figcaption>`
+    : "";
+  return `<figure class="doc-diagram"><div class="mermaid">${escapeHtml(diagram.code)}</div>${caption}</figure>`;
+}
+
+function renderHtmlSvg(svg) {
+  const caption = svg.caption
+    ? `<figcaption>${escapeHtml(svg.caption)}</figcaption>`
+    : "";
+  return `<figure class="doc-svg">${svg.svg}${caption}</figure>`;
 }
 
 function renderHtmlTable(table) {
@@ -2216,6 +2291,50 @@ ${escapeHtml(code)}
         success: false,
         observation: `render_diagram failed: ${error.message}`,
         metadata: { tool_id: "render_diagram" }
+      });
+    }
+  }
+};
+
+/* ------------------------------------------------------------------------ */
+/* RENDER_SVG_TOOL — sanitized standalone vector graphics                    */
+/* ------------------------------------------------------------------------ */
+
+export const RENDER_SVG_TOOL = {
+  id: "render_svg",
+  name: "Render SVG",
+  description: "Write sanitized standalone SVG markup to a task artifact. Use for vector illustrations, icon-like diagrams, simple charts, layout mockups, or other scalable visual components.",
+  parameters: ACTION_TOOL_SCHEMAS.render_svg,
+  risk_level: "low",
+  required_capabilities: ["file_write"],
+  requires_confirmation: false,
+  async execute(args = {}, ctx = {}) {
+    const svg = sanitizeSvgMarkup(args.svg ?? args.markup ?? args.source ?? "");
+    const filename = typeof args.filename === "string" && args.filename.trim()
+      ? args.filename.trim().replace(/\.(html|svg|png)$/i, "") + ".svg"
+      : "graphic.svg";
+    if (!svg) {
+      return createActionResult({
+        success: false,
+        observation: "render_svg: valid <svg> markup required.",
+        metadata: { tool_id: "render_svg" }
+      });
+    }
+    try {
+      const outputDir = await ensureOutputDir(resolveOutputDirForTool(ctx));
+      const svgPath = await resolveSandboxedTarget(outputDir, filename);
+      await writeFile(svgPath, svg, "utf8");
+      return createActionResult({
+        success: true,
+        observation: `render_svg produced ${path.relative(outputDir, svgPath) || path.basename(svgPath)}`,
+        metadata: { tool_id: "render_svg", path: svgPath, mime_type: "image/svg+xml" },
+        artifactPaths: [svgPath]
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `render_svg failed: ${error.message}`,
+        metadata: { tool_id: "render_svg" }
       });
     }
   }
@@ -2520,6 +2639,51 @@ export const STAT_FILE_TOOL = {
         success: false,
         observation: error.code === "ENOENT" ? `File not found: ${filePath}` : `stat_file failed: ${error.message}`,
         metadata: { tool_id: "stat_file", path: filePath, exists: false }
+      });
+    }
+  }
+};
+
+export const READ_FILE_TEXT_TOOL = {
+  id: "read_file_text",
+  name: "Read File Text",
+  description: "Extract readable text from a local file path. Supports text files, PDFs, Office Open XML files, images with OCR, and directory listings. Use this before summarizing or analyzing an attached/local file.",
+  parameters: ACTION_TOOL_SCHEMAS.read_file_text,
+  risk_level: "low",
+  required_capabilities: ["file_read"],
+  requires_confirmation: false,
+  async execute(args = {}) {
+    const filePath = args.path ? path.resolve(String(args.path).replace(/^~/, os.homedir())) : "";
+    if (!filePath) return createActionResult({ success: false, observation: "path required" });
+    const maxChars = Math.max(500, Math.min(20000, Number(args.max_chars) || 8000));
+    try {
+      const extracted = await extractFileContent(filePath);
+      const text = String(extracted.text ?? "");
+      const clipped = text.slice(0, maxChars);
+      const truncated = text.length > clipped.length;
+      return createActionResult({
+        success: true,
+        observation: [
+          `Extracted ${clipped.length}${truncated ? `/${text.length}` : ""} chars from ${filePath}`,
+          `mime=${extracted.mime ?? "unknown"} mode=${extracted.extraction_mode ?? "unknown"}`,
+          "",
+          clipped || "[No extractable text]"
+        ].join("\n"),
+        metadata: {
+          tool_id: "read_file_text",
+          path: filePath,
+          mime: extracted.mime ?? null,
+          extraction_mode: extracted.extraction_mode ?? null,
+          chars_extracted: clipped.length,
+          chars_total: text.length,
+          truncated
+        }
+      });
+    } catch (error) {
+      return createActionResult({
+        success: false,
+        observation: `read_file_text failed: ${error.message}`,
+        metadata: { tool_id: "read_file_text", path: filePath }
       });
     }
   }
@@ -2949,12 +3113,14 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   RUN_SCRIPT_TOOL,
   GENERATE_DOCUMENT_TOOL,
   RENDER_DIAGRAM_TOOL,
+  RENDER_SVG_TOOL,
   // UCA-053: File Discovery & Artifact Verification
   LIST_FILES_TOOL,
   GLOB_FILES_TOOL,
   FIND_RECENT_FILES_TOOL,
   GET_LATEST_ARTIFACT_TOOL,
   STAT_FILE_TOOL,
+  READ_FILE_TEXT_TOOL,
   VERIFY_FILE_EXISTS_TOOL,
   REGISTER_ARTIFACT_TOOL,
   RESOLVE_OUTPUT_PATH_TOOL,

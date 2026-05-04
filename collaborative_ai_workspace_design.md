@@ -2897,3 +2897,572 @@ AI 和 AI 合作，
 英文描述：
 
 > A collaborative project workspace where people and their own AI agents can join the same project, share context, divide tasks, execute workflows, review outputs, and track cost and responsibility across multiple LLM providers.
+
+---
+
+## 30. 记忆、对话、任务讨论的存放设计
+
+多人多模型协作系统最容易混乱的地方，不是 UI，而是信息层级混在一起。对话、任务讨论、长期记忆、交付物和决策记录必须分开存放，否则项目越做越久，聊天记录会变成不可检索、不可审计、不可复用的信息堆。
+
+核心原则：
+
+```text
+Raw Messages       = 发生了什么
+Task Discussions   = 围绕某个目标讨论了什么
+Memory Items       = 以后还应该记住什么
+Artifacts          = 最终产出了什么
+Decision Records   = 为什么这样决定
+Task Events        = 系统实际执行了什么
+Model Runs         = 哪个模型花了多少钱、看了什么、做了什么
+```
+
+---
+
+### 30.1 Raw Conversation：原始对话
+
+原始对话存放所有人类、AI、工具和系统消息。
+
+用途：
+
+- 还原上下文
+- 支持审计和回放
+- 支持从历史中重新生成摘要、任务和记忆
+- 支持成员之间查看项目过程
+
+核心字段：
+
+- `conversation_id`
+- `project_id`
+- `room_id`
+- `message_id`
+- `sender_type`: human / ai / tool / system
+- `sender_id`
+- `content`
+- `attachments`
+- `reply_to`
+- `visibility_scope`
+- `created_at`
+
+重要原则：
+
+> 原始对话应该只追加，不应该被当成长久记忆直接喂给模型。
+
+---
+
+### 30.2 Task Discussion：任务讨论
+
+任务讨论是围绕一个具体任务的上下文房间。它不是普通聊天，而是绑定目标、状态、上下文、产物和责任人的执行空间。
+
+一个 Task Room 可以这样组织：
+
+```text
+task
+ ├─ task brief
+ ├─ discussion thread
+ ├─ context pack
+ ├─ task events
+ ├─ artifacts
+ ├─ approvals
+ └─ final handoff card
+```
+
+任务讨论适合存放：
+
+- 任务澄清
+- 执行计划
+- 阻塞问题
+- 人类反馈
+- AI 中间结论
+- 审查意见
+- 完成总结
+
+核心字段：
+
+- `thread_id`
+- `task_id`
+- `project_id`
+- `thread_type`: planning / execution / review / approval / handoff
+- `participants`
+- `linked_artifacts`
+- `open_questions`
+- `decisions`
+- `summary`
+- `status`
+
+---
+
+### 30.3 Memory：长期记忆
+
+记忆不是保存所有聊天记录，而是从对话、任务、文件、决策和交付物中提炼出来的可复用信息。
+
+记忆类型：
+
+- Personal memory：用户个人偏好、写作风格、常用工作流。
+- Project memory：项目目标、术语、架构、客户要求、交付标准。
+- Team memory：成员分工、审批习惯、团队协作规则。
+- Artifact memory：某个文档、代码模块、报告版本的摘要和约束。
+- Operational memory：某个工具、模型、脚本、流程的成功/失败经验。
+- Policy memory：组织规则、隐私要求、不能发送给外部模型的内容。
+
+记忆必须带来源和作用域：
+
+- 来源：来自哪条消息、哪个任务、哪个文件、哪个决策。
+- 作用域：个人 / 项目 / 团队 / 组织 / 产物。
+- 状态：candidate / approved / rejected / archived。
+- 可信度：用户确认 / AI 推断 / 系统记录。
+- 有效期：临时 / 长期 / 过期。
+
+核心字段：
+
+- `memory_id`
+- `scope_type`
+- `scope_id`
+- `memory_type`
+- `content`
+- `source_refs`
+- `confidence`
+- `status`
+- `created_by`
+- `last_used_at`
+- `expires_at`
+
+记忆提升流程：
+
+```text
+raw message / task result / artifact
+        ↓
+AI 提议 memory candidate
+        ↓
+用户或 project owner 确认
+        ↓
+写入 scoped memory
+        ↓
+后续任务按 scope 检索
+```
+
+重要原则：
+
+> AI 可以建议记忆，但关键记忆必须允许用户确认、编辑、删除和查看来源。
+
+---
+
+### 30.4 Artifacts & Decisions：产物和决策
+
+项目不能只留下“AI 说过什么”。真正有价值的是可交付、可引用、可审查的项目资产。
+
+Artifacts 包括：
+
+- 文档
+- 报告
+- PPT
+- 代码 diff
+- 表格
+- 图表
+- 研究卡片
+- 会议纪要
+- 交接卡
+
+Decision Records 单独存放：
+
+- 谁提出
+- 谁批准
+- 为什么这样做
+- 替代方案是什么
+- 影响哪些任务、文件、成员和模型
+- 对应的证据或讨论链接
+
+---
+
+## 31. 不同会话类型
+
+### 31.1 Quick Chat
+
+轻任务入口，适合快速问答、翻译、总结、临时生成内容。
+
+存储策略：
+
+- 默认进入个人 conversation
+- 不自动变成项目记忆
+- 只有用户点击“保存到项目”或任务产生 artifact 时才沉淀
+
+---
+
+### 31.2 Project Chat
+
+项目主讨论区，适合讨论目标、分工、进度和决策。
+
+存储策略：
+
+- 保存为 project-level conversation
+- 自动生成项目摘要
+- 可提炼 project memory 和 decision record
+
+---
+
+### 31.3 Task Room
+
+真正做事的地方，适合代码改动、文稿修改、调研任务、数据分析、审查和返工。
+
+存储策略：
+
+- 绑定 `task_id`
+- 保存 task discussion
+- 保存 task events
+- 绑定 artifacts
+- 完成后生成 handoff card
+
+---
+
+### 31.4 Artifact Discussion
+
+围绕某个产物的评论，例如文档某段、代码某行、PPT 某页、表格某个区域。
+
+存储策略：
+
+- 绑定 `artifact_id`
+- 绑定 anchor：文件路径、行号、段落 id、slide id、cell range
+- 讨论结论可以转成 edit task 或 decision
+
+---
+
+### 31.5 Review / Approval Thread
+
+围绕风险动作的审批，例如发送邮件、合并代码、删除文件、调用外部模型查看敏感资料、增加预算。
+
+存储策略：
+
+- 绑定 `approval_id`
+- 记录 approve / reject、审批人、理由、时间
+- 审批结果写入 audit log
+
+---
+
+## 32. 不同项目类型的工作区安排
+
+第一版不要追求所有行业模板。最常见、最应该优先的是代码、文稿和综合项目。
+
+---
+
+### 32.1 代码项目
+
+核心对象：
+
+- repository
+- branch
+- issue / task
+- diff
+- test result
+- review comment
+- PR / patch
+
+工作区重点：
+
+- 文件树
+- Task Room
+- diff viewer
+- 终端和测试日志
+- AI coder / reviewer 分工
+- 回滚和审计
+
+记忆重点：
+
+- 项目架构
+- 编码规范
+- 常见测试命令
+- 模块边界
+- 已踩过的坑
+- 用户偏好的实现风格
+
+第一版功能：
+
+- AI 读代码并生成计划
+- AI 修改文件但必须产生 diff
+- 人类 review 后确认
+- 任务完成后记录“改了什么、为什么、怎么测”
+
+---
+
+### 32.2 文稿 / 报告 / PPT 项目
+
+核心对象：
+
+- document
+- outline
+- section
+- source material
+- citation
+- revision
+- review comment
+
+工作区重点：
+
+- 大纲
+- 资料库
+- 文档编辑器
+- 版本对比
+- 评论
+- 引用来源
+
+记忆重点：
+
+- 写作风格
+- 目标读者
+- 交付格式
+- 常用术语
+- 品牌/语气要求
+- 禁用表达
+
+第一版功能：
+
+- 从对话生成大纲
+- 从资料生成章节
+- 多模型分别做 researcher / writer / reviewer
+- 自动生成 revision summary
+- 把重要结论沉淀成 research card
+
+---
+
+### 32.3 综合项目 / 产品 / 研究项目
+
+核心对象：
+
+- goal
+- milestone
+- task
+- decision
+- risk
+- artifact
+- meeting note
+- owner
+
+工作区重点：
+
+- 项目概览
+- 任务看板
+- 决策日志
+- 研究卡片
+- 交付物
+- 成员和 AI 分工
+
+记忆重点：
+
+- 项目目标
+- 当前策略
+- 已决定事项
+- 未解决问题
+- 风险和依赖
+- 客户/团队偏好
+
+第一版功能：
+
+- 从聊天中抽任务
+- 从任务中抽 handoff card
+- 从讨论中抽 decision record
+- 从资料中抽 research card
+- 每天生成 project digest
+
+---
+
+### 32.4 数据 / 表格 / 分析项目
+
+核心对象：
+
+- dataset
+- spreadsheet
+- query
+- chart
+- notebook / script
+- metric definition
+- analysis result
+
+工作区重点：
+
+- 数据源
+- 表格和图表预览
+- 分析脚本
+- 指标定义
+- 结果解释
+
+记忆重点：
+
+- 指标口径
+- 数据来源
+- 清洗规则
+- 常用图表
+- 结论可信度
+
+---
+
+## 33. 不同人群会怎么用
+
+### 33.1 Solo Builder
+
+一个人带多个 AI 做项目。
+
+需要：
+
+- 快速拆任务
+- 多模型对比
+- 成本控制
+- 自动保存项目记忆
+- 代码和文稿都能交付
+
+最重要功能：
+
+- Project Chat -> Task Room -> Artifact
+- AI supervisor
+- 一键生成 handoff summary
+
+---
+
+### 33.2 小团队 / 创业团队
+
+几个人共同推进产品、代码、市场资料。
+
+需要：
+
+- 成员权限
+- AI 成员分工
+- 决策记录
+- 任务状态
+- 审批和责任归属
+
+最重要功能：
+
+- Project Overview
+- Task Board
+- Approval Inbox
+- Decision Log
+
+---
+
+### 33.3 写作者 / 研究者 / 学生
+
+围绕资料、论文、报告、课程内容协作。
+
+需要：
+
+- 资料管理
+- 引用
+- 大纲
+- 版本修改
+- 研究卡片
+
+最重要功能：
+
+- Source Library
+- Research Cards
+- Draft Workspace
+- Citation-aware review
+
+---
+
+### 33.4 客户交付 / 咨询 / 代理服务
+
+团队为客户做报告、方案、自动化、网站或分析。
+
+需要：
+
+- 客户可见视图
+- 内部讨论和外部交付分离
+- 审批记录
+- 版本交付
+- 责任归属
+
+最重要功能：
+
+- Internal vs client-visible thread
+- Deliverable status
+- Approval trail
+- Export package
+
+---
+
+### 33.5 组织 / 企业
+
+关注权限、合规、成本、模型访问和知识沉淀。
+
+需要：
+
+- 组织级模型策略
+- 数据访问边界
+- 成本中心
+- 审计日志
+- 记忆权限
+- 可禁用外部模型
+
+最重要功能：
+
+- Org Policy
+- Model access control
+- Audit log
+- Memory governance
+
+---
+
+## 34. 第一版大方向实现
+
+第一版不要先做完整企业协作平台。更稳的路线是先跑通这个闭环：
+
+```text
+聊天产生任务
+任务进入 Task Room
+Task Room 使用 Context Pack
+执行过程留下 Events 和 Discussion
+结果沉淀为 Artifact
+重要信息经确认后进入 Memory
+关键选择沉淀为 Decision Record
+```
+
+第一版最小数据结构：
+
+```text
+projects
+project_members
+ai_members
+conversations
+messages
+tasks
+task_events
+task_threads
+thread_messages
+artifacts
+artifact_comments
+decision_records
+memory_items
+context_packs
+model_runs
+approvals
+audit_logs
+```
+
+其中最关键的是三组关系：
+
+```text
+project -> conversations -> messages
+project -> tasks -> task_threads -> thread_messages
+project -> artifacts -> artifact_comments
+
+task -> context_pack
+task -> task_events
+task -> artifacts
+task -> model_runs
+
+memory_item -> source_refs
+decision_record -> source_refs
+artifact -> source_refs
+```
+
+第一版应该避免：
+
+- 完整企业级 RBAC
+- 类 Slack 的完整频道系统
+- 类 Jira 的完整工作流引擎
+- 复杂知识图谱
+- 全自动永久记忆
+- AI 之间无限自我讨论
+- 所有项目类型的深度模板
+
+第一版最应该做到：
+
+> 轻任务从聊天开始，重任务进入 Task Room，结果沉淀为 Artifact，重要信息经确认后进入 Memory。

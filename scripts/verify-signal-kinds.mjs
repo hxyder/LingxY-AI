@@ -96,10 +96,10 @@ async function run() {
     assert.equal(s.matched, true);
     assert.equal(s.kind, "hint");
   });
-  it("hint: topic_hint returns kind:hint when matched", () => {
+  it("compat: topic_hint is retired and stays unmatched", () => {
     const s = detectEntity("今天北京的天气", {});
-    assert.equal(s.matched, true);
-    assert.equal(s.kind, "hint");
+    assert.equal(s.matched, false);
+    assert.equal(s.kind, null);
   });
   it("hint: weak_freshness returns kind:hint when matched", () => {
     const s = detectFresh("最近怎么样", {});
@@ -222,7 +222,6 @@ async function run() {
     const cases = [
       detectExternal("查一下网上最近的开源项目", {}),
       detectSearch("查一下文档", {}),
-      detectEntity("今日 AI 新闻", {}),
       detectFresh("最近怎么样", {}),
       detectScope("分析下面代码", {}),
       detectScope("帮我看看", { file_paths: ["a.txt"] }),

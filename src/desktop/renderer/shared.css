@@ -1074,8 +1074,11 @@ body[data-rail="collapsed"] .rail-toggle-label { display: none; }
    ========================================================================= */
 .page, .tab-panel {
   padding: 24px 28px 40px;
-  max-width: 1400px;
-  margin: 0 auto;
+  /* Removed max-width:1400px + margin:auto so the tab content occupies the
+     full Console window width. With max-width on, the chat sidebar (and
+     every other tab) had a visible blank gutter on the left/right at any
+     window width >1400px. The page-head and inner panels still cap their
+     own width via .panel max-widths where appropriate. */
   display: none;
 }
 .page.active, .tab-panel.active { display: block; }
@@ -1871,22 +1874,87 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
    sidebar (left) + main chat shell (right). The grid takes the
    panel-chat's height (calc(100vh - topbar)) and lets each child
    manage its own internal scrolling. */
+/* Default: sidebar 280px + chat panel + (preview slot collapsed to 0).
+   When .chat-layout.preview-open is set, the preview slot expands to a
+   42% column so the user gets a real split view (chat shrinks, preview
+   gets a usable width). The grid-template-columns transition animates
+   the open/close. */
 .chat-layout {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr) 0;
   gap: 14px;
   height: 100%;
   min-height: 0;
   position: relative;
   transition: grid-template-columns var(--duration-base) var(--ease-standard);
 }
+.chat-layout.preview-open {
+  grid-template-columns: 280px minmax(0, 1fr) minmax(0, 42%);
+}
 /* Collapsed: sidebar slides out, chat shell takes the full width.
    .chat-sidebar-expand floats at the chat shell's left edge so the
    user can re-open. State is persisted in localStorage so refreshing
    keeps the user's preference. */
 .chat-layout.sidebar-collapsed {
-  grid-template-columns: 0 minmax(0, 1fr);
+  grid-template-columns: 0 minmax(0, 1fr) 0;
   gap: 0;
+}
+.chat-layout.sidebar-collapsed.preview-open {
+  grid-template-columns: 0 minmax(0, 1fr) minmax(0, 42%);
+  gap: 14px;
+}
+
+/* Inline preview pane — third column of .chat-layout. Uses the same
+   .panel surface as the sidebar so it visually pairs with the
+   conversation list. The body fills available height and lets the
+   client preview registry's handler paint into it. */
+.chat-preview-pane[hidden] { display: none; }
+.chat-preview-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.chat-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+.chat-preview-head-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.chat-preview-title {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chat-preview-head-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.chat-preview-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+  background: var(--bg);
+}
+/* Center placeholder + image content nicely inside the body. */
+.chat-preview-body img,
+.chat-preview-body iframe {
+  max-width: 100%;
+  display: block;
+  margin: 0 auto;
 }
 .chat-layout.sidebar-collapsed .chat-sidebar {
   visibility: hidden;
@@ -2620,8 +2688,8 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
    reads as elevated surface without competing with the chat bubble. */
 .chat-tool-card {
   position: relative;
-  margin: 8px 0;
-  padding: 10px 12px 10px 16px;
+  margin: 6px 0;
+  padding: 8px 10px 8px 14px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: linear-gradient(180deg,
@@ -2671,11 +2739,10 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .chat-tool-card.is-running .ttc-icon { color: var(--info); }
 
 .chat-tool-card .ttc-name {
-  font-family: var(--font-mono);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   color: var(--ink);
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 .chat-tool-card .ttc-status {
   font-size: 10.5px;
@@ -2706,9 +2773,10 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
   background: color-mix(in srgb, var(--ink) 3%, transparent);
   padding: 5px 8px;
   border-radius: 5px;
-  word-break: break-all;
-  white-space: pre-wrap;
-  max-height: 96px;
+  word-break: normal;
+  overflow-wrap: anywhere;
+  white-space: nowrap;
+  max-height: 32px;
   overflow: hidden;
   position: relative;
 }
@@ -2723,7 +2791,13 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .chat-tool-card.is-ok .ttc-outcome { color: var(--ok); }
 .chat-tool-card.is-err .ttc-outcome { color: var(--err); }
 .chat-tool-card .ttc-outcome-arrow { color: var(--muted-2); }
-.chat-tool-card .ttc-outcome-text { color: var(--ink-2); font-family: var(--font-mono); }
+.chat-tool-card .ttc-outcome-text {
+  color: var(--ink-2);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* Legacy class aliases kept so older callers still render something
    reasonable (pre-UCA-177 inline HTML used .tool-icon/.tool-name/.tool-args). */
@@ -3133,7 +3207,7 @@ button.subtask-row:hover { border-color: var(--line-2); background: var(--panel-
 .sched-action-summary {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   margin-top: 5px;
   min-width: 0;
   color: var(--muted);

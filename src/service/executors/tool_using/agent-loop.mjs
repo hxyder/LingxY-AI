@@ -80,7 +80,8 @@ import { buildConversationMessages } from "./conversation-messages.mjs";
 import { repairToolArgs } from "./tool-arg-repair.mjs";
 import {
   buildHallucinatedClaimBanner,
-  detectUnbackedConnectorClaim
+  detectUnbackedConnectorClaim,
+  detectUnbackedLocalFileClaim
 } from "./truthfulness-guard.mjs";
 import {
   inferSearchRecencyFromText,
@@ -121,7 +122,6 @@ function nowIso() {
 }
 
 function defaultPlanner({ task, runtime: plannerRuntime = null }) {
-  const text = task.user_command.toLowerCase();
   const catalog = plannerRuntime?.connectorCatalog ?? task.__runtime?.connectorCatalog ?? null;
   const deterministic = planDeterministicToolCall(task.user_command, catalog);
   if (deterministic) return deterministic;
@@ -149,17 +149,6 @@ function defaultPlanner({ task, runtime: plannerRuntime = null }) {
       tool: "launch_app",
       args: {
         app: launchApp
-      }
-    };
-  }
-
-  if (text.includes("通知") || text.includes("notify")) {
-    return {
-      type: "tool_call",
-      tool: "notify",
-      args: {
-        title: "UCA",
-        body: "Action completed."
       }
     };
   }
@@ -571,6 +560,17 @@ export function createToolUsingExecutorScaffold() {
           yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
           yield { event_type: "inline_result", payload: { text } };
           yield { event_type: "partial_success", payload: { text, violations: [connectorClaimGuard] } };
+          return;
+        }
+
+        const localFileClaimGuard = detectUnbackedLocalFileClaim(result, task);
+        if (result.status === "success" && localFileClaimGuard) {
+          const banner = buildHallucinatedClaimBanner(localFileClaimGuard);
+          const body = result.final_text || "任务没有生成最终答复。";
+          const text = `${banner}\n\n---\n\n${body}`;
+          yield { event_type: "step_finished", payload: { step: "tool_planner", progress: 0.95 } };
+          yield { event_type: "inline_result", payload: { text } };
+          yield { event_type: "partial_success", payload: { text, violations: [localFileClaimGuard] } };
           return;
         }
 
@@ -1160,7 +1160,10 @@ async function _runToolAgentLoopCore({
       };
     }
 
-    const validation = validateToolCall(tool, decision.args, runtime.toolContext ?? {});
+    const validation = validateToolCall(tool, decision.args, {
+      ...(runtime.toolContext ?? {}),
+      task
+    });
     if (!validation.ok) {
       transcript.push({
         type: "validation_error",

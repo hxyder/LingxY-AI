@@ -7,10 +7,17 @@
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
-        width: 52px; height: 52px;
+        /* Window is 48×48 (see manifest.mjs); body matches so the visible
+           orb sits at every edge with zero invisible padding. Hover/active
+           scale animations may overflow the window; that's OK on transparent
+           Electron windows and lets users drag the orb fully into screen
+           corners. */
+        width: 48px; height: 48px;
         background: transparent;
         display: grid; place-items: center;
-        overflow: hidden;
+        /* overflow:visible so the hover scale isn't clipped at the window
+           border; outer window is transparent anyway. */
+        overflow: visible;
       }
 
       #dockButton {

@@ -1,7 +1,9 @@
-// All action tool schemas use loose validation:
-// - `required` is empty so the LLM never gets a hard schema_validation_failed for missing fields
+// Most action tool schemas use loose validation:
+// - routine tools keep `required` empty so the LLM can repair paraphrased args
+// - artifact creation tools use a small required contract for fields that are
+//   impossible to infer safely (for example document kind/outline or SVG markup)
 // - properties are still typed so obvious type errors are caught
-// - the actual tool implementation is responsible for checking required fields and returning a useful error
+// - the tool layer remains responsible for useful execution-time errors
 //
 // Rationale: AI planners often paraphrase ("body" vs "content", "to" as string vs array). We let the
 // tool layer accept those variations and only fail at execute() time with a descriptive observation
@@ -232,7 +234,7 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
   },
   generate_document: {
     type: "object",
-    required: [],
+    required: ["kind", "outline"],
     properties: {
       kind: { type: "string" },       // pptx | docx | xlsx | pdf
       outline: {},                    // structured outline; shape depends on kind (see tool description)
@@ -387,10 +389,20 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
 
   render_diagram: {
     type: "object",
-    required: [],
+    required: ["code"],
     properties: {
       code: { type: "string" },       // Mermaid diagram source (graph LR, pie, sequenceDiagram, etc.)
       filename: { type: "string" }    // optional; defaults to diagram.html
+    }
+  },
+  render_svg: {
+    type: "object",
+    required: ["svg"],
+    properties: {
+      svg: { type: "string" },        // complete <svg>...</svg> markup
+      markup: { type: "string" },     // alias accepted by arg repair/tool
+      source: { type: "string" },     // alias accepted by arg repair/tool
+      filename: { type: "string" }    // optional; defaults to graphic.svg
     }
   },
 
@@ -433,6 +445,14 @@ export const ACTION_TOOL_SCHEMAS = Object.freeze({
     required: [],
     properties: {
       path: { type: "string" }
+    }
+  },
+  read_file_text: {
+    type: "object",
+    required: [],
+    properties: {
+      path: { type: "string" },
+      max_chars: { type: "number" }
     }
   },
   verify_file_exists: {

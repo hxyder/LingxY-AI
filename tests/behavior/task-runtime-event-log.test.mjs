@@ -18,7 +18,9 @@ function withTempLogsDir() {
   return {
     root,
     runtime: { paths: { logsDir: root } },
-    cleanup() {
+    async cleanup() {
+      await flushTaskLogs();
+      resetTaskLogStateForTests();
       rmSync(root, { recursive: true, force: true });
     }
   };
@@ -39,7 +41,7 @@ test("event-log writer serializes same-task writes and skips streaming deltas", 
     assert.deepEqual(events.map((event) => event.payload.order), [1, 2]);
     assert.ok(await stat(path.join(root, "tasks", "task_a.jsonl")));
   } finally {
-    cleanup();
+    await cleanup();
   }
 });
 
@@ -61,7 +63,7 @@ test("event-log reader tolerates missing files and malformed jsonl lines", async
     assert.equal(events.length, 1);
     assert.equal(events[0].event_id, "ok");
   } finally {
-    cleanup();
+    await cleanup();
   }
 });
 
@@ -84,6 +86,6 @@ test("event-log rotation removes oldest task logs first", async () => {
     const remaining = (await readdir(dir)).sort();
     assert.deepEqual(remaining, ["middle.jsonl", "newest.jsonl"]);
   } finally {
-    cleanup();
+    await cleanup();
   }
 });

@@ -183,14 +183,14 @@ it("G1: SR=forbidden + non-matching text → qa (forbidden does NOT escalate)", 
   assert.equal(classifyGoal(text, signals), "qa");
 });
 
-it("goal: WITHOUT SR + topical query → qa (conservative fallback, no topic_hint dependency)", () => {
+it("goal: WITHOUT SR + topical query → qa (no deterministic topic signal)", () => {
   // Pre-F2: this returned search_and_answer because topic_hint
   // matched. Post-F2: topic_hint removed from the gate; result is
   // qa unless explicit_external also fires.
   const text = "今天北京的天气";
   const { signals } = extractAllSignals(text, {});
-  assert.equal(signals.topic_hint?.matched, true,
-    "sanity: topic_hint detector still fires (kept for SR / observability)");
+  assert.equal(signals.topic_hint?.matched, false,
+    "topic_hint is now a compatibility key; topical judgement belongs to SR");
   assert.equal(classifyGoal(text, signals), "qa",
     "topic_hint match alone must NOT drive search_and_answer post-F2");
 });
@@ -241,27 +241,24 @@ it("e2e: scheduler-fired '每天汇报 AI 新闻' WITH SR → multi-source resea
   assert.equal(spec.research_quality?.profile, "multi_source_research");
 });
 
-// ── 4. topic_hint detector still functional (no detector removal) ───
-it("topic_hint: detector still fires for SR / observability consumption", () => {
-  // F2 only removed topic_hint from the goal classifier's
-  // requiresSignal. The detector is kept; SR sees it in the signal
-  // bundle as input, decision-trace surfaces it as evidence, etc.
+// ── 4. topic_hint detector retired ───────────────────────────────────
+it("topic_hint: detector is retired; SR owns topical judgement", () => {
   const text = "今天北京的天气";
   const { signals } = extractAllSignals(text, {});
-  assert.equal(signals.topic_hint?.matched, true);
-  assert.equal(signals.topic_hint?.kind, "hint");
+  assert.equal(signals.topic_hint?.matched, false);
+  assert.equal(signals.topic_hint?.kind, null);
 });
 
-// ── 5. Decision trace evidence still includes topic_hint when matched ─
-it("evidence: trace's GOAL_CLASSIFICATION evidence carries topic_hint AND semantic_router when both fire", () => {
+// ── 5. Decision trace evidence follows structural/SR signals ─────────
+it("evidence: trace's GOAL_CLASSIFICATION evidence carries semantic_router, not retired topic_hint", () => {
   const spec = createTaskSpec("今天有什么 AI 新闻", {
     semantic_router_decision: srStub({ web_policy: "required" })
   }, {});
   const goalStage = spec.decision_trace?.find((e) => e.stage === "goal-classification");
   assert.ok(goalStage, "goal-classification stage must exist");
   const sources = (goalStage.evidence ?? []).map((e) => e.source);
-  assert.ok(sources.includes("topic_hint"),
-    `topic_hint observability evidence missing; got ${sources.join(", ")}`);
+  assert.equal(sources.includes("topic_hint"), false,
+    `retired topic_hint evidence must not be emitted; got ${sources.join(", ")}`);
   assert.ok(sources.includes("semantic_router"),
     `semantic_router evidence missing; got ${sources.join(", ")}`);
 });

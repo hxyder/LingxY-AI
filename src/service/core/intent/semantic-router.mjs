@@ -516,7 +516,7 @@ function buildMessages({ text, contextPacket, signals }) {
     "",
     "**Signal-kind ranking** — fact > hint > assumption. A signal with `kind=fact` is ground truth for what it observes (e.g. an attachment exists, or the user said no web), but provenance facts are not the same as policy constraints. `hint` is an explicit phrase pattern in the user text — strong but conventional. `assumption` is the system interpreting an indirect reference (e.g. \"这个\" → current_context); you may second-guess if other signals contradict.",
     "",
-    "**Regex boundary** — regex-derived signals are evidence, not the final intent classifier. Topic hints (weather/news/finance/etc.) help you understand the request but do not by themselves execute tools. The policy layer decides final constraints.",
+    "**Regex boundary** — deterministic regex signals are limited to structural evidence (URLs, attachments, explicit search/no-search, local-only constraints). Topic judgement is your job; do not assume the signal layer has pre-classified weather/news/finance/etc.",
     "",
     "**Interpretation (front-classifier merge)** — also decide whether the request should run NOW, be SCHEDULED for later, or NEEDS A CLARIFYING QUESTION. Pick exactly one of `immediate` / `schedule` / `needs_clarification` and emit it as `interpretation`.",
     "- `immediate` (default): execute now. Use this whenever the request can be acted on with the available context, even if the text mentions a time as DATA (event start time, meeting time, reminder datetime that the tool itself accepts). Example: \"在日历里新建一个时间在明天下午1点的任务\" — create the event NOW; the time is an argument, not a defer.",

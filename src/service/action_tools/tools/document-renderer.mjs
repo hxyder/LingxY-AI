@@ -12,6 +12,8 @@
 
 import { writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
+import { renderMermaidScriptTag } from "./mermaid-assets.mjs";
+import { sanitizeSvgMarkup } from "./svg-sanitize.mjs";
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
 
@@ -502,6 +504,52 @@ function escapeHtml(text) {
     .replace(/'/g, "&#39;");
 }
 
+function diagramCodeOf(value) {
+  if (typeof value === "string") return value.trim();
+  if (!value || typeof value !== "object") return "";
+  return String(value.code ?? value.mermaid ?? value.source ?? "").trim();
+}
+
+function diagramCaptionOf(value) {
+  if (!value || typeof value !== "object") return "";
+  return String(value.caption ?? value.title ?? "").trim();
+}
+
+function sectionDiagrams(section = {}) {
+  const diagrams = [];
+  if (section.diagram) diagrams.push(section.diagram);
+  if (Array.isArray(section.diagrams)) diagrams.push(...section.diagrams);
+  return diagrams
+    .map((entry) => ({
+      code: diagramCodeOf(entry),
+      caption: diagramCaptionOf(entry)
+    }))
+    .filter((entry) => entry.code);
+}
+
+function svgMarkupOf(value) {
+  if (typeof value === "string") return sanitizeSvgMarkup(value);
+  if (!value || typeof value !== "object") return "";
+  return sanitizeSvgMarkup(value.svg ?? value.markup ?? value.source ?? "");
+}
+
+function svgCaptionOf(value) {
+  if (!value || typeof value !== "object") return "";
+  return String(value.caption ?? value.title ?? "").trim();
+}
+
+function sectionSvgs(section = {}) {
+  const svgs = [];
+  if (section.svg) svgs.push(section.svg);
+  if (Array.isArray(section.svgs)) svgs.push(...section.svgs);
+  return svgs
+    .map((entry) => ({
+      svg: svgMarkupOf(entry),
+      caption: svgCaptionOf(entry)
+    }))
+    .filter((entry) => entry.svg);
+}
+
 function renderPreviewStyles() {
   return `
     :root {
@@ -538,6 +586,13 @@ function renderPreviewStyles() {
     .slide { border: 1px solid var(--line); border-radius: 10px; padding: 18px; margin-top: 14px; background: linear-gradient(180deg, #fff 0%, #fbfdff 100%); }
     .slide-head { font-size: 18px; font-weight: 700; margin-bottom: 8px; }
     .slide-body, .section-body { white-space: pre-wrap; }
+    .doc-diagram { margin: 16px 0; }
+    .doc-diagram .mermaid { max-width: 100%; }
+    .doc-diagram figcaption { margin-top: 6px; color: var(--muted); text-align: center; font-size: 12px; }
+    .doc-svg { margin: 16px 0; text-align: center; }
+    .doc-svg svg { max-width: 100%; height: auto; }
+    .doc-svg figcaption { margin-top: 6px; color: var(--muted); text-align: center; font-size: 12px; }
+    pre.mermaid-fallback { background: #f1f5f9; border: 1px solid var(--line); border-radius: 6px; padding: 12px; white-space: pre-wrap; }
     .slide ul, .section ul { margin: 10px 0 0 18px; padding: 0; }
     .section { padding: 18px 0; border-top: 1px solid var(--line); }
     .section:first-of-type { border-top: 0; padding-top: 4px; }
@@ -558,6 +613,7 @@ function wrapPreviewHtml(title, body, kindLabel = "") {
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(title || "Preview")}</title>
+    ${renderMermaidScriptTag()}
     <style>${renderPreviewStyles()}</style>
   </head>
   <body>
@@ -568,6 +624,18 @@ function wrapPreviewHtml(title, body, kindLabel = "") {
       </header>
       ${body}
     </article>
+    <script>
+      if (typeof mermaid !== "undefined") {
+        mermaid.initialize({ startOnLoad: true, theme: "default", securityLevel: "loose" });
+      } else {
+        document.querySelectorAll(".mermaid").forEach(el => {
+          const pre = document.createElement("pre");
+          pre.className = "mermaid-fallback";
+          pre.textContent = el.textContent;
+          el.replaceWith(pre);
+        });
+      }
+    </script>
   </body>
 </html>`;
 }
@@ -575,6 +643,28 @@ function wrapPreviewHtml(title, body, kindLabel = "") {
 function renderBullets(items = []) {
   if (!Array.isArray(items) || items.length === 0) return "";
   return `<ul>${items.filter(Boolean).map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
+}
+
+function renderPreviewDiagrams(section = {}) {
+  const diagrams = sectionDiagrams(section);
+  if (diagrams.length === 0) return "";
+  return diagrams.map((diagram) => `
+    <figure class="doc-diagram">
+      <div class="mermaid">${escapeHtml(diagram.code)}</div>
+      ${diagram.caption ? `<figcaption>${escapeHtml(diagram.caption)}</figcaption>` : ""}
+    </figure>
+  `).join("");
+}
+
+function renderPreviewSvgs(section = {}) {
+  const svgs = sectionSvgs(section);
+  if (svgs.length === 0) return "";
+  return svgs.map((svg) => `
+    <figure class="doc-svg">
+      ${svg.svg}
+      ${svg.caption ? `<figcaption>${escapeHtml(svg.caption)}</figcaption>` : ""}
+    </figure>
+  `).join("");
 }
 
 export function renderDocumentPreviewHtml({ kind, outline = {}, title = "" } = {}) {
@@ -587,6 +677,8 @@ export function renderDocumentPreviewHtml({ kind, outline = {}, title = "" } = {
         <section class="slide">
           <div class="slide-head">幻灯片 ${index + 1}${slide?.heading ? ` · ${escapeHtml(slide.heading)}` : ""}</div>
           ${slide?.body ? `<div class="slide-body">${escapeHtml(slide.body)}</div>` : ""}
+          ${renderPreviewDiagrams(slide)}
+          ${renderPreviewSvgs(slide)}
           ${renderBullets(slide?.bullets)}
         </section>
       `).join("")}
@@ -625,6 +717,8 @@ export function renderDocumentPreviewHtml({ kind, outline = {}, title = "" } = {
       <section class="section">
         ${section?.heading ? `<h2>${escapeHtml(section.heading)}</h2>` : ""}
         ${section?.body ? `<div class="section-body">${escapeHtml(section.body)}</div>` : ""}
+        ${renderPreviewDiagrams(section)}
+        ${renderPreviewSvgs(section)}
         ${renderBullets(section?.bullets)}
       </section>
     `).join("")}

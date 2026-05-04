@@ -2,6 +2,7 @@ export const FAILURE_CATEGORIES = Object.freeze([
   "context_capture_error",
   "permission_denied",
   "parse_error",
+  "missing_artifact",
   "tool_unavailable",
   "cli_execution_error",
   "model_call_error",
@@ -17,6 +18,7 @@ const USER_MESSAGES = Object.freeze({
   context_capture_error: "上下文读取失败，请确认原始内容仍然可访问后重试。",
   permission_denied: "权限不足，请检查文件或系统权限后重试。",
   parse_error: "内容解析失败，请确认源文件未损坏、未加密。",
+  missing_artifact: "任务需要生成文件，但执行结束时没有可用文件。请重新生成，或改为先生成可预览草稿。",
   tool_unavailable: "所需外部工具不可用，请先安装或配置对应执行器。",
   cli_execution_error: "外部执行器异常退出，请查看日志或切换执行器重试。",
   model_call_error: "模型调用失败，请稍后重试或更换模型。",
@@ -32,6 +34,7 @@ const USER_ACTIONS = Object.freeze({
   context_capture_error: ["重新捕获上下文", "检查原文件或页面是否仍然存在"],
   permission_denied: ["检查权限", "以更高权限重新执行"],
   parse_error: ["确认文件未损坏", "尝试更换文件格式后重试"],
+  missing_artifact: ["重新生成文件", "检查输出目录权限", "先生成可预览草稿再导出"],
   tool_unavailable: ["安装缺失工具", "切换到其它执行器"],
   cli_execution_error: ["查看 stderr 日志", "切换执行器后重试"],
   model_call_error: ["稍后重试", "缩小输入范围", "切换模型"],
@@ -64,6 +67,17 @@ export function classifyFailure(errorLike) {
     category = "redaction_state_lost";
   } else if (code.includes("enotfound") || code.includes("econn") || message.includes("network")) {
     category = "network_error";
+  } else if (
+    message.includes("artifact")
+    && (
+      message.includes("no artifact")
+      || message.includes("requires a")
+      || message.includes("required")
+      || message.includes("missing")
+      || message.includes("was not created")
+    )
+  ) {
+    category = "missing_artifact";
   } else if (message.includes("parse") || message.includes("pdf") || message.includes("docx")) {
     category = "parse_error";
   } else if (message.includes("429") || message.includes("rate limit") || message.includes("model")) {

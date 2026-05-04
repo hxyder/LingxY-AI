@@ -47,3 +47,67 @@ test("agent tool arg repair fills the next unattempted compound launch target", 
 
   assert.deepEqual(repaired, { app: "Word" });
 });
+
+test("agent tool arg repair fills document kind from artifact contract and outline aliases", () => {
+  const repaired = repairToolArgs(
+    {
+      tool: "generate_document",
+      args: {
+        format: "PDF",
+        content: "# Report guide\n\n- Planning\n- Tools"
+      }
+    },
+    {
+      task_spec: {
+        artifact: { required: true, kind: "pdf" }
+      }
+    },
+    [],
+    {
+      parameters: {
+        properties: {
+          kind: {},
+          outline: {},
+          filename: {},
+          path: {}
+        }
+      }
+    }
+  );
+
+  assert.deepEqual(repaired, {
+    kind: "pdf",
+    outline: "# Report guide\n\n- Planning\n- Tools"
+  });
+});
+
+test("agent tool arg repair can infer missing document kind from task contract", () => {
+  const repaired = repairToolArgs(
+    { tool: "generate_document", args: { outline: { title: "Report" } } },
+    { task_spec: { artifact: { required: true, kind: "docx" } } },
+    []
+  );
+
+  assert.equal(repaired.kind, "docx");
+  assert.deepEqual(repaired.outline, { title: "Report" });
+});
+
+test("agent tool arg repair normalizes SVG markup aliases", () => {
+  const repaired = repairToolArgs(
+    { tool: "render_svg", args: { markup: "<svg viewBox=\"0 0 1 1\"></svg>" } },
+    {},
+    [],
+    {
+      parameters: {
+        properties: {
+          svg: { type: "string" },
+          markup: { type: "string" },
+          source: { type: "string" }
+        }
+      }
+    }
+  );
+
+  assert.equal(repaired.svg, "<svg viewBox=\"0 0 1 1\"></svg>");
+  assert.equal("markup" in repaired, false);
+});

@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   buildHallucinatedClaimBanner,
-  detectUnbackedConnectorClaim
+  detectUnbackedConnectorClaim,
+  detectUnbackedLocalFileClaim
 } from "../../src/service/executors/tool_using/truthfulness-guard.mjs";
 
 test("agent truthfulness guard detects connector write claims without tool evidence", () => {
@@ -37,4 +38,35 @@ test("agent truthfulness guard renders user-visible banners by action group", ()
     buildHallucinatedClaimBanner({ kind: "notification_send_claim_unsupported" }),
     /通知实际并未发送/
   );
+});
+
+test("agent truthfulness guard detects local-file analysis claims without file text extraction", () => {
+  const violation = detectUnbackedLocalFileClaim({
+    transcript: [
+      { type: "tool_result", tool: "stat_file", success: true, observation: "File exists" }
+    ],
+    final_text: "我已经分析了你的简历，整体经验很匹配产品经理岗位。"
+  }, {
+    context_packet: {
+      file_paths: ["C:\\Users\\demo\\resume.pdf"]
+    }
+  });
+
+  assert.equal(violation?.kind, "local_file_read_claim_unsupported");
+  assert.match(buildHallucinatedClaimBanner(violation), /文件内容实际并未读取/);
+});
+
+test("agent truthfulness guard allows local-file claims after read_file_text", () => {
+  const violation = detectUnbackedLocalFileClaim({
+    transcript: [
+      { type: "tool_result", tool: "read_file_text", success: true, observation: "Resume text" }
+    ],
+    final_text: "我已经分析了你的简历，下面是建议。"
+  }, {
+    context_packet: {
+      file_paths: ["C:\\Users\\demo\\resume.pdf"]
+    }
+  });
+
+  assert.equal(violation, null);
 });

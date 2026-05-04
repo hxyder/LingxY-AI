@@ -315,14 +315,9 @@ export function shouldConsultSemanticRouter({ signals, contextPacket = {}, text 
   const localOnlyConstraint = signals?.local_only_constraint;
   if (localOnlyConstraint?.matched && localOnlyConstraint.kind === "fact") return false;
 
-  // P4-RQ E3 stage C1: topic_hint (topic regex) NO LONGER
-  // skips SR. Previously, "今天天气" with strong-topic_hint
-  // would short-circuit the SR call and rely on the deterministic
-  // step 3 (now removed) to escalate. With Option C, those queries
-  // need the SR's classification, so the gate must let them
-  // through. The latency cost (~200-1500 ms per task on these
-  // queries) is the explicit trade-off for letting SR own
-  // topical routing rather than perpetually expanding regex.
+  // Topic classification belongs to SR. The retired topic_hint
+  // compatibility signal never skips SR; short topical requests need the
+  // model-owned classifier instead of a deterministic topic-word table.
   //
   // P4-RQ E3 stage C1: text-length threshold lowered from 8 → 3.
   // The original 8-char threshold was tuned for English chitchat
