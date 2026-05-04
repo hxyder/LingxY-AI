@@ -23,6 +23,7 @@ jobs:
       - run: npm run verify:github-readiness
       - run: npm run verify:dependency-hygiene
       - run: npm run verify:security-policy
+      - run: npm run verify:code-of-conduct
       - run: npm run verify:workflow-permissions
       - run: npm run verify:structure
       - run: npm run verify:doc-references

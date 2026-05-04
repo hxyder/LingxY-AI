@@ -104,7 +104,8 @@ have no plans to do this.
 ## Code of conduct
 
 Be respectful. Disagreements are fine; personal attacks are not. We
-follow the spirit of the [Contributor Covenant](https://www.contributor-covenant.org/).
+follow the [LingxY Code of Conduct](CODE_OF_CONDUCT.md), which is adapted
+from the spirit of the [Contributor Covenant](https://www.contributor-covenant.org/).
 
 If you experience or witness unacceptable behavior, please email the
 maintainer (see git log for current maintainer contact).
