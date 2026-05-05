@@ -202,6 +202,15 @@ assert.ok(/function openOverlayVoice\(/.test(electronMain) && /shellOpenOverlayV
   "voice bridge: main process must own openOverlayVoice routing");
 assert.ok(/payload\.autoStart !== false/.test(overlayJs),
   "voice bridge: overlay must honor shell voice autoStart option");
+assert.ok(/function commandTargetsCurrentBrowserContext\s*\(/.test(overlayJs),
+  "voice/current-page: overlay must keep a structural current-page signal");
+assert.ok(/command:\s*"分析当前页面的完整内容并总结要点"/.test(overlayJs)
+    && /command:\s*"把当前页面翻译成中文"/.test(overlayJs),
+  "current-page quick actions: commands must preserve current-page intent instead of embedding URL text");
+assert.ok(/commandTargetsCurrentBrowserContext\(commandText\)[\s\S]{0,120}\?[\s\S]{0,120}resolveActiveWindowBrowserCapture\(\)/.test(overlayJs),
+  "current-page routing: active browser capture must be gated by explicit current-page intent");
+assert.ok(!/command:\s*`[^`]*页面[^`]*\$\{activeWindow\.url\}/.test(overlayJs),
+  "current-page quick actions: URL must stay as structured context, not user command text");
 
 // ── MCP explicit install button ────────────────────────────────────────
 assert.ok(/data-mcp-install-click/.test(consoleMcpView), "mcp install: missing data-mcp-install-click button");

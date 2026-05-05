@@ -3871,7 +3871,9 @@ async function submitTask() {
         capture: { ...capture }
       };
     } else {
-      const activeBrowserCapture = await resolveActiveWindowBrowserCapture();
+      const activeBrowserCapture = commandTargetsCurrentBrowserContext(commandText)
+        ? await resolveActiveWindowBrowserCapture()
+        : null;
       if (activeBrowserCapture) {
         ensureConversation(activeBrowserCapture, conversationState?.seedCommand ?? rawCommand ?? commandText);
         payload = {
@@ -4003,9 +4005,9 @@ function showActiveWindowPreviewCard(activeWindow) {
     label = `当前浏览器：${title || process}`;
     subLabel = activeWindow.url;
     quickActions = [
-      { label: "分析此页面", command: `分析这个页面的内容并总结要点：${activeWindow.url}` },
-      { label: "翻译此页面", command: `把这个页面翻译成中文：${activeWindow.url}` },
-      { label: "提取关键信息", command: `从这个页面里抽取最重要的数据点：${activeWindow.url}` }
+      { label: "分析此页面", command: "分析当前页面的完整内容并总结要点" },
+      { label: "翻译此页面", command: "把当前页面翻译成中文" },
+      { label: "提取关键信息", command: "从当前页面里抽取最重要的数据点" }
     ];
   } else if (kind === "file_path" && (activeWindow.file_path || activeWindow.filePath)) {
     const filePath = activeWindow.file_path ?? activeWindow.filePath;
@@ -4076,6 +4078,11 @@ function activeWindowFilePath(activeWindow = null) {
 
 function commandTargetsCurrentFileContext(commandText = "") {
   return /(这个文件|当前文件|这个文档|当前文档|这份文档|打开的文件|打开的文档|this\s+(?:file|document)|current\s+(?:file|document))/i
+    .test(`${commandText ?? ""}`);
+}
+
+function commandTargetsCurrentBrowserContext(commandText = "") {
+  return /(这个页面|当前页面|此页面|该页面|这个网页|当前网页|此网页|当前标签页|this\s+(?:page|webpage|tab)|current\s+(?:page|webpage|tab))/i
     .test(`${commandText ?? ""}`);
 }
 
