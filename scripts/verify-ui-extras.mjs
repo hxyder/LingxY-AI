@@ -202,6 +202,12 @@ assert.ok(/function openOverlayVoice\(/.test(electronMain) && /shellOpenOverlayV
   "voice bridge: main process must own openOverlayVoice routing");
 assert.ok(/payload\.autoStart !== false/.test(overlayJs),
   "voice bridge: overlay must honor shell voice autoStart option");
+assert.ok(/if \(!isEchoTask\(taskId\) && !shouldSurfaceTaskPopupCards\(\)\) return;/.test(overlayJs),
+  "echo result cards: Echo tasks must surface a completion card even when overlay visibility is ambiguous");
+assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml),
+  "voice language: overlay voice input must default to simplified Chinese with English words preserved");
+assert.ok(/if \(\s*\/\^zh\/i\.test\([\s\S]{0,120}\)\) return "zh-CN";/.test(overlayJs),
+  "voice language: auto Chinese browser locale must normalize to zh-CN");
 assert.ok(/function commandTargetsCurrentBrowserContext\s*\(/.test(overlayJs),
   "voice/current-page: overlay must keep a structural current-page signal");
 assert.ok(/command:\s*"分析当前页面的完整内容并总结要点"/.test(overlayJs)
@@ -450,10 +456,10 @@ assert.ok(/frame\.event === "success"[\s\S]{0,260}showEchoResultHudOnce/.test(ov
   "echo mode: terminal success events without inline_result must still surface through the Echo HUD");
 assert.ok(/captureActiveWindowHintForVoice/.test(overlayJs) && /voice_wake/.test(overlayJs) && /echo_voice_wake/.test(overlayJs),
   "voice mode: voice and Echo sessions must capture active browser context before page-analysis commands");
-assert.ok(/<option value="auto" selected>自动识别语言 \/ Mixed<\/option>/.test(overlayHtml)
+assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml)
     && /selectedVoiceLanguage/.test(overlayJs)
     && /liveRecognizerLanguage/.test(overlayJs),
-  "voice mode: language selection must default to auto/mixed and separate live recognizer locale from final transcription");
+  "voice mode: language selection must default to simplified Chinese and separate live recognizer locale from final transcription");
 assert.ok(/id="voiceEchoSettingsPanel"/.test(consoleHtml) && /setEchoWakeProfile/.test(consoleJs),
   "echo mode: Console settings must expose the Echo wake profile instead of leaving settings.echoWake invisible");
 assert.ok(!/id="providerOnboardingList"/.test(consoleHtml),

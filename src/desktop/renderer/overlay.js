@@ -191,7 +191,7 @@ function shouldAutoRevealTaskResult() {
 
 function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, openWindow = null } = {}) {
   if (!taskId || popupSuccessCardTaskId === taskId) return;
-  if (!shouldSurfaceTaskPopupCards()) return;
+  if (!isEchoTask(taskId) && !shouldSurfaceTaskPopupCards()) return;
   popupSuccessCardTaskId = taskId;
   try {
     window.ucaShell?.notify?.({
@@ -5057,7 +5057,7 @@ function getSpeechRecognitionCtor() {
 }
 
 function selectedVoiceLanguage() {
-  return voiceLangSelect?.value || "auto";
+  return voiceLangSelect?.value || "zh-CN";
 }
 
 function liveRecognizerLanguage() {
@@ -5066,6 +5066,7 @@ function liveRecognizerLanguage() {
   const preferred = Array.isArray(navigator.languages)
     ? navigator.languages.find((lang) => /^zh|^en/i.test(lang))
     : "";
+  if (/^zh/i.test(preferred || navigator.language || "")) return "zh-CN";
   return preferred || navigator.language || "zh-CN";
 }
 
