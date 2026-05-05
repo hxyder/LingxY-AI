@@ -42,7 +42,7 @@ installer trust prompts.
 | Fresh install | Clone or download on a clean Windows 10/11 machine, run `npm install`, start runtime and desktop, and verify the first-run path is understandable. |
 | User interaction smoke | Walk `docs/release/user_interaction_smoke_checklist.md`: dock, overlay, console, voice, browser extension, Office, Explorer, scheduler, and approval controls. |
 | Provider smoke | Configure at least one cloud provider or code CLI, run one short conversation, one tool-using task, one document-generation task, and one live schedule-creation task (`verify:schedule-create-live` may be used locally when credentials are available). |
-| Browser sideload | Sideload the browser extension in a clean Chrome/Edge profile, capture selected text, capture current page URL/title, and send both into LingxY. |
+| Browser sideload | Sideload the browser extension in a clean Chrome/Edge profile; capture selected text, analyze a page through sidepanel, verify location permission UX, and confirm no-runtime/offline actions show a visible capability gap. |
 | Office sideload | Sideload Word, Excel, and PowerPoint add-ins, submit current selection and whole-document context, and insert a reviewed result back into the document. |
 | Explorer entry | Install the Explorer helper, right-click one file and multiple files, confirm the overlay opens with the expected file list and does not open the files unless the task requires reading them. |
 | Scheduler | Create one recurring schedule and one one-shot schedule, restart LingxY, verify missed recurring runs recover correctly and completed one-shots do not pretend to be active. |
@@ -50,7 +50,7 @@ installer trust prompts.
 | Artifact quality | Generate one DOCX, one PPTX, one spreadsheet, one HTML/PDF report, and one diagram-rich report; open each artifact locally and inspect formatting, tables, images/diagrams, and conversation attachment links. |
 | MCP/skills | Install or configure one MCP server in a sandbox, create/edit one skill, and verify the tool/skill appears in the planner-visible capability list. |
 | Packaging | Run `npm run pack` or the Release Artifacts workflow, inspect unsigned-installer warnings, verify checksums and bundled `THIRD_PARTY_LICENSES.md`, then launch the packaged app. |
-| Recovery | Kill the runtime during a task, restart, confirm task state, logs, diagnostics export, and user-visible failure wording are understandable. |
+| Recovery | Kill the runtime during a task and during a browser extension action, restart, confirm task state, logs, diagnostics export, and user-visible failure wording are understandable. |
 
 ## Release Rule
 

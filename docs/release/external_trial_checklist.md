@@ -44,6 +44,20 @@ Trial channel baseline: `0.1.0-trial.1`
 3. Select text on a webpage.
 4. Confirm the selection entry / chip appears.
 5. Submit a task and verify it reaches the desktop runtime.
+6. Open the side panel and run **Analyze page** on a normal article page.
+7. Confirm the task/result references the page title or URL and does not behave like an unrelated blank chat.
+8. Click the location chip, approve or deny the browser permission prompt, and record the visible chip state.
+9. Stop the desktop runtime, clear standalone provider config, and trigger one browser action; confirm the side panel shows a visible "no runtime / no provider" capability gap instead of doing nothing.
+10. If standalone provider config is available, repeat one text action with desktop stopped and confirm it uses standalone mode with a visible mode pill.
+
+## Voice and Audio Pass
+
+1. Open overlay voice mode from the dock and from console chat.
+2. Start voice input, grant or deny microphone permission, and record the exact visible state.
+3. Speak a short command and confirm transcript/final answer behavior.
+4. Drag one file or image onto the voice card and verify the attachment chip remains visible until submit.
+5. Start note recording, wait at least 10 seconds, finish, and confirm transcript/artifact/task state.
+6. If Echo keyword enrollment is configured, run detect/enroll smoke and record whether the wake path starts voice capture.
 
 ## Office Pass
 
@@ -58,6 +72,8 @@ Trial channel baseline: `0.1.0-trial.1`
 - SmartScreen result:
 - Defender result:
 - Permission prompts shown:
+- Browser geolocation prompt result:
+- Microphone permission prompt result:
 - Any unsigned binary warnings:
 - Any blocked scripts:
 
