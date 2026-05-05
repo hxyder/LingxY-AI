@@ -27,6 +27,7 @@ const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
 const consoleFloatingUi = read("src/desktop/renderer/console-floating-ui.mjs");
 const consoleChatAttachments = read("src/desktop/renderer/console-chat-attachments.mjs");
+const consoleMcpView = read("src/desktop/renderer/console-mcp-view.mjs");
 const consolePreload = read("src/desktop/renderer/preload.cjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs");
@@ -194,12 +195,12 @@ assert.ok(/payload\.autoStart !== false/.test(overlayJs),
   "voice bridge: overlay must honor shell voice autoStart option");
 
 // ── MCP explicit install button ────────────────────────────────────────
-assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");
-assert.ok(/data-mcp-install-source-click/.test(consoleJs),
+assert.ok(/data-mcp-install-click/.test(consoleMcpView), "mcp install: missing data-mcp-install-click button");
+assert.ok(/data-mcp-install-source-click/.test(consoleMcpView),
   "mcp install: missing package-source install handoff for unavailable builtin MCP packages");
-assert.ok(/installRequired/.test(consoleJs) && /installSource/.test(consoleJs),
+assert.ok(/installRequired/.test(consoleMcpView) && /installSource/.test(consoleMcpView),
   "mcp install: console must route package-missing MCP servers into the sandbox install flow");
-assert.ok(/mcp-install-btn/.test(consoleJs) && /mcp-install-btn/.test(sharedCss),
+assert.ok(/mcp-install-btn/.test(consoleMcpView) && /mcp-install-btn/.test(sharedCss),
   "mcp install: .mcp-install-btn class or CSS missing");
 assert.ok(/id="mcpServerTestBtn"/.test(consoleHtml), "mcp preflight: test button missing");
 assert.ok(/\/config\/mcp\/test/.test(consoleJs), "mcp preflight: console must call /config/mcp/test");

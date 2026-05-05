@@ -12,12 +12,18 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { readCssWithImports } from "./lib/css-imports.mjs";
+import {
+  getMcpStatusView,
+  MCP_SERVER_META,
+  renderConnectorsMcpServersHtml
+} from "../src/desktop/renderer/console-mcp-view.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const consoleHtml = read("src/desktop/renderer/console.html");
+const consoleJs = read("src/desktop/renderer/console.js");
 const shared = readCssWithImports(root, "src/desktop/renderer/shared.css");
 
 // ── panel-section component exists in shared.css ───────────────────────
@@ -112,5 +118,49 @@ assert.ok(
   /id="connEmailInlineForm"[^>]*background:\s*var\(--surface-soft\)/.test(consoleHtml),
   "#connEmailInlineForm inline style must use var(--surface-soft)"
 );
+
+// ── MCP card view is a pure module, not another inline island in console.js ─
+assert.ok(consoleJs.includes('from "./console-mcp-view.mjs"'),
+  "console.js must import shared MCP connector view");
+assert.ok(!/const\s+EXTRA_PLUGIN_OPTIONS\s*=/.test(consoleJs),
+  "console.js must not own MCP extra plugin constants");
+assert.ok(!/function\s+renderMcpConfigPanel\(/.test(consoleJs),
+  "console.js must not own MCP config panel renderer");
+assert.equal(MCP_SERVER_META["mcp-filesystem"].title, "Filesystem");
+assert.deepEqual(getMcpStatusView({ available: true, enabled: true }), {
+  label: "运行中",
+  className: "ready"
+});
+
+const html = renderConnectorsMcpServersHtml([
+  {
+    id: "mcp-brave-search",
+    available: false,
+    enabled: false,
+    configured: true,
+    transport: "stdio",
+    command: "npx",
+    missingEnv: [{ envKey: "BRAVE_API_KEY", name: "Brave API Key" }]
+  },
+  {
+    id: "figma",
+    available: false,
+    enabled: false,
+    installRequired: true,
+    installSource: "figma-mcp"
+  }
+], {
+  escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+});
+assert.ok(html.includes("mcp-card--v3"), "MCP view must render v3 cards");
+assert.ok(html.includes('data-mcp-cfg-save="mcp-brave-search"'), "MCP view must render dynamic config save");
+assert.ok(html.includes("mcp-needs-config"), "MCP view must surface missing config");
+assert.ok(html.includes('data-mcp-install-source-click="figma-mcp"'), "MCP view must render isolated package install handoff");
 
 console.log("ok verify-connectors-page");
