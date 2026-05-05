@@ -46,6 +46,9 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 - Keep the root `LICENSE` and matching `package.json` license in sync.
 - Preserve third-party notices in `THIRD_PARTY_LICENSES.md` when distributing
   source or packaged builds.
+- Keep `LICENSE` and `THIRD_PARTY_LICENSES.md` in `package.json`
+  `build.files` so Electron packaged apps include the notices, not only the
+  GitHub Release asset list.
 - Keep `SECURITY.md` and `.github/dependabot.yml` tracked; they are part of
   the public repository readiness lock.
 - Keep `package.json` as `"private": true` unless npm publication is intended.

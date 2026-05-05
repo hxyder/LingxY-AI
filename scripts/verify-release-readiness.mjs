@@ -6,8 +6,21 @@ import { execFileSync, spawnSync } from "node:child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
+const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
 const releaseConfigPath = path.join(repoRoot, "tools", "release", "release-config.json");
 const releaseConfig = JSON.parse(readFileSync(releaseConfigPath, "utf8"));
+const packagedFiles = packageJson.build?.files ?? [];
+
+assert.equal(
+  packagedFiles.includes("LICENSE"),
+  true,
+  "Electron packaged app must include the root LICENSE"
+);
+assert.equal(
+  packagedFiles.includes("THIRD_PARTY_LICENSES.md"),
+  true,
+  "Electron packaged app must include THIRD_PARTY_LICENSES.md"
+);
 
 for (const relativePath of [
   "docs/release/README.md",

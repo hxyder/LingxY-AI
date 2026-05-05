@@ -240,6 +240,8 @@
       "output": "dist"
     },
     "files": [
+      "LICENSE",
+      "THIRD_PARTY_LICENSES.md",
       "index.cjs",
       "src/**/*",
       "office_addin/shared/**/*",

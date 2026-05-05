@@ -29,3 +29,8 @@ inventory, runs `npm run dist`, generates SHA256 checksums, uploads the
 artifacts, and can create or update a draft GitHub Release for a tag. Treat
 runtime auto-update as a later step that depends on this release artifact
 channel being stable.
+
+License obligations are checked in two places: the GitHub Release workflow must
+upload `LICENSE` and `THIRD_PARTY_LICENSES.md` as release assets, and
+`package.json` `build.files` must include both files so the packaged Electron
+app carries the same notices.
