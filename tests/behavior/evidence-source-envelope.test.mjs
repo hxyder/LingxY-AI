@@ -3,6 +3,12 @@ import test from "node:test";
 
 import { normalizeSources } from "../../src/service/core/evidence/source-envelope.mjs";
 import {
+  browserContentEvidenceFromCapture,
+  fileContentEvidenceFromContextPacket,
+  imageContentEvidenceFromContextPacket,
+  mergeContentEvidence
+} from "../../src/service/core/evidence/content-evidence.mjs";
+import {
   citationViolations,
   verifyCitations
 } from "../../src/service/core/evidence/citation-verifier.mjs";
@@ -123,4 +129,74 @@ test("citation verifier reports unresolved framework source ids without requirin
   const none = verifyCitations("No citation markers here.", sources);
   assert.deepEqual(none.claimed, []);
   assert.deepEqual(none.missing, []);
+});
+
+test("content evidence distinguishes captured page text from URL-only metadata", () => {
+  const pageEvidence = browserContentEvidenceFromCapture({
+    sourceType: "page_explanation",
+    url: "https://example.com/article",
+    pageTitle: "Article",
+    text: "Article body"
+  });
+  assert.equal(pageEvidence[0].source_kind, "browser_page_text");
+  assert.equal(pageEvidence[0].coverage_scope, "captured_page_text");
+  assert.equal(pageEvidence[0].content_extracted, true);
+
+  const metadataOnly = browserContentEvidenceFromCapture({
+    sourceType: "webpage",
+    url: "https://example.com/current",
+    pageTitle: "Current",
+    metadata: { hasPageContent: false }
+  });
+  assert.equal(metadataOnly[0].source_kind, "browser_page_metadata");
+  assert.equal(metadataOnly[0].coverage_scope, "url_title_only");
+  assert.equal(metadataOnly[0].content_extracted, false);
+});
+
+test("content evidence records file text, shallow directory listings, and image pixels separately", () => {
+  const fileEvidence = fileContentEvidenceFromContextPacket({
+    file_metadata: [
+      { path: "E:\\docs\\resume.md", mime: "text/markdown", size: 1200, extraction_mode: "native_text" },
+      { path: "E:\\docs", mime: "inode/directory", size: 0, extraction_mode: "directory_listing" },
+      { path: "E:\\docs\\scan.pdf", mime: "application/pdf", size: 4000, extraction_mode: "pdf_ocr_unavailable" }
+    ]
+  });
+  assert.deepEqual(fileEvidence.map((entry) => entry.coverage_scope), [
+    "single_file_text",
+    "directory_listing_shallow",
+    "file_metadata"
+  ]);
+  assert.deepEqual(fileEvidence.map((entry) => entry.content_extracted), [true, false, false]);
+
+  const imageEvidence = imageContentEvidenceFromContextPacket({
+    image_paths: ["E:\\shots\\page.png"],
+    image_metadata: { source: "screenshot", ocr_text: "visible words", ocr_engine: "paddle_ocr" }
+  });
+  assert.deepEqual(imageEvidence.map((entry) => entry.source_kind), [
+    "screenshot_image",
+    "screenshot_ocr_text"
+  ]);
+  assert.deepEqual(imageEvidence.map((entry) => entry.content_extracted), [false, true]);
+  assert.equal(imageEvidence[0].pixels_available, true);
+});
+
+test("content evidence merge prefers concrete content over metadata-only entries", () => {
+  const merged = mergeContentEvidence([
+    {
+      source_kind: "browser_page_metadata",
+      coverage_scope: "url_title_only",
+      locator: "https://example.com",
+      content_extracted: false
+    }
+  ], [
+    {
+      source_kind: "browser_prefetch_text",
+      coverage_scope: "fetched_page_text",
+      locator: "https://example.com",
+      content_extracted: true,
+      char_length: 500
+    }
+  ]);
+  assert.equal(merged.length, 2);
+  assert.ok(merged.some((entry) => entry.content_extracted === true));
 });

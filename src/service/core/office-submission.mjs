@@ -1,5 +1,9 @@
 import crypto from "node:crypto";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import {
+  officeContentEvidenceFromCapture,
+  withContentEvidence
+} from "./evidence/content-evidence.mjs";
 import { routeIntent } from "./router/intent-router.mjs";
 import {
   applyExecutorEvent,
@@ -15,12 +19,12 @@ import {
 } from "./task-runtime.mjs";
 
 function buildOfficeSelectionMetadata(capture) {
-  return {
+  return withContentEvidence({
     office_app: capture.officeApp,
     document_name: capture.documentName,
     document_path: capture.documentPath,
     ...capture.selectionMetadata
-  };
+  }, officeContentEvidenceFromCapture(capture));
 }
 
 export function buildOfficeContextPacket({

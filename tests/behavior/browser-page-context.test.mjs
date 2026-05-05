@@ -69,6 +69,11 @@ test("explicit current-page browser capture fetches page text before execution",
     assert.match(seen.text, /Full current page article body/);
     assert.equal(task.context_packet.context_sources.browser_page, true);
     assert.equal(task.context_packet.context_sources.real_selection, false);
+    assert.ok(task.context_packet.selection_metadata.content_evidence.some((entry) =>
+      entry.source_kind === "browser_prefetch_text"
+      && entry.coverage_scope === "fetched_page_text"
+      && entry.content_extracted === true
+    ));
     assert.ok(runtime.store.getTaskEvents(task.task_id).some((event) =>
       event.event_type === "step_finished"
       && event.payload?.step === "browser_page_context_prefetch"
@@ -113,6 +118,11 @@ test("browser page explanation capture is structured page evidence, not a real t
 
     assert.equal(task.status, "success");
     assert.equal(seen.metadata.browser_page_content, true);
+    assert.ok(seen.metadata.content_evidence.some((entry) =>
+      entry.source_kind === "browser_page_text"
+      && entry.coverage_scope === "captured_page_text"
+      && entry.content_extracted === true
+    ));
     assert.equal(seen.contextSources.browser_page, true);
     assert.equal(seen.contextSources.real_selection, false);
   } finally {
@@ -159,6 +169,11 @@ test("explicit current-page capture fails closed when only URL metadata is avail
     assert.equal(executorCalled, false);
     assert.match(task.failure_user_message, /上下文读取失败|could not read/i);
     assert.equal(task.context_packet.selection_metadata.browser_page_prefetch, "failed");
+    assert.ok(task.context_packet.selection_metadata.content_evidence.some((entry) =>
+      entry.source_kind === "browser_prefetch_failed"
+      && entry.status === "failed"
+      && entry.content_extracted === false
+    ));
     assert.ok(runtime.store.getTaskEvents(task.task_id).some((event) =>
       event.event_type === "step_warning"
       && event.payload?.step === "browser_page_context_prefetch"

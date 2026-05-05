@@ -1,6 +1,10 @@
 import crypto from "node:crypto";
 import { buildFileContextPacket } from "../extractors/file-ingest.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import {
+  fileContentEvidenceFromContextPacket,
+  withContentEvidence
+} from "./evidence/content-evidence.mjs";
 import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import {
@@ -84,8 +88,13 @@ export async function submitFileTask({
     contextId: `ctx_${crypto.randomUUID()}`
   });
   rawContextPacket.selection_metadata = {
-    ...(rawContextPacket.selection_metadata ?? {}),
-    ...(selectionMetadata && typeof selectionMetadata === "object" ? selectionMetadata : {})
+    ...withContentEvidence(
+      {
+        ...(rawContextPacket.selection_metadata ?? {}),
+        ...(selectionMetadata && typeof selectionMetadata === "object" ? selectionMetadata : {})
+      },
+      fileContentEvidenceFromContextPacket(rawContextPacket)
+    )
   };
 
   const fileFocusedGoals = new Set([

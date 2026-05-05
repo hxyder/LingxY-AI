@@ -3,6 +3,10 @@ import { stat } from "node:fs/promises";
 import path from "node:path";
 import { runImageOcr } from "../extractors/image_ocr.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import {
+  imageContentEvidenceFromContextPacket,
+  withContentEvidence
+} from "./evidence/content-evidence.mjs";
 import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import {
@@ -50,7 +54,7 @@ export function buildImageContextPacket({
   capturedAt = new Date().toISOString()
 }) {
   const primaryImagePath = imagePaths[0];
-  return {
+  const packet = {
     schema_version: "1.0",
     context_id: contextId,
     trace_id: traceId,
@@ -74,6 +78,11 @@ export function buildImageContextPacket({
     },
     captured_at: capturedAt
   };
+  packet.selection_metadata = withContentEvidence(
+    packet.selection_metadata,
+    imageContentEvidenceFromContextPacket(packet)
+  );
+  return packet;
 }
 
 async function runKimiImageFallback({ task, runtime, artifactStore, store, queue, cliRuntime = null, providerDescriptor = null }) {
@@ -297,9 +306,13 @@ export async function submitImageTask({
         security_level: "internal",
         redaction_applied: false,
         text: `File attached by user for sending: ${imagePaths.join(", ")}`,
-        selection_metadata: selectionMetadata && typeof selectionMetadata === "object"
-          ? { ...selectionMetadata }
-          : {},
+        selection_metadata: withContentEvidence(
+          selectionMetadata && typeof selectionMetadata === "object" ? { ...selectionMetadata } : {},
+          imageContentEvidenceFromContextPacket({
+            image_paths: imagePaths,
+            selection_metadata: { image_source: source }
+          })
+        ),
         file_paths: imagePaths,
         image_paths: imagePaths,
         captured_at: new Date().toISOString()

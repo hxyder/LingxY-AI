@@ -2,6 +2,11 @@ import crypto from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import {
+  browserContentEvidenceFromCapture,
+  browserPrefetchContentEvidence,
+  withContentEvidence
+} from "./evidence/content-evidence.mjs";
 import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import { detectRequestedOutputFormat, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
@@ -57,7 +62,7 @@ function createSelectionMetadata(capture) {
       || Boolean(String(capture.text ?? "").trim())
       || Boolean(String(capture.html ?? "").trim())
     : false;
-  return {
+  return withContentEvidence({
     page_title: capture.pageTitle,
     context_before: capture.contextBefore,
     context_after: capture.contextAfter,
@@ -69,7 +74,7 @@ function createSelectionMetadata(capture) {
     ...(capture.selectionMetadata && typeof capture.selectionMetadata === "object"
       ? capture.selectionMetadata
       : {})
-  };
+  }, browserContentEvidenceFromCapture(capture));
 }
 
 // P4-03 follow-up: browser captures of webpage / link / image WITHOUT
@@ -301,7 +306,10 @@ async function prefetchBrowserPageContext({ capture, runtime, artifactStore, tas
       }
     });
     task.context_packet.selection_metadata = {
-      ...(task.context_packet.selection_metadata ?? {}),
+      ...withContentEvidence(
+        task.context_packet.selection_metadata ?? {},
+        browserPrefetchContentEvidence({ capture, contextPacket: task.context_packet, ok: true })
+      ),
       browser_page_content: true,
       browser_page_prefetch: "success"
     };
@@ -318,7 +326,10 @@ async function prefetchBrowserPageContext({ capture, runtime, artifactStore, tas
       }
     });
     task.context_packet.selection_metadata = {
-      ...(task.context_packet.selection_metadata ?? {}),
+      ...withContentEvidence(
+        task.context_packet.selection_metadata ?? {},
+        browserPrefetchContentEvidence({ capture, contextPacket: task.context_packet, ok: false, error })
+      ),
       browser_page_content: false,
       browser_page_prefetch: "failed",
       browser_page_prefetch_error: error?.message ?? "unknown"
