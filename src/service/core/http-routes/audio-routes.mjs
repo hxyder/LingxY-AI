@@ -10,6 +10,7 @@ import { resolveProviderForTask } from "../../executors/shared/provider-resolver
 import { hydrateProviderApiKeySecretSync } from "../../security/secret-store.mjs";
 import { HttpBodyTooLargeError, readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
+import { createReadProbeCache } from "../read-probe-cache.mjs";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_LOCAL_WHISPER_MODEL = "base";
@@ -333,6 +334,11 @@ async function getLocalKeywordSpottingStatus() {
   }
 }
 
+const readLocalKeywordSpottingStatus = createReadProbeCache({
+  probe: getLocalKeywordSpottingStatus,
+  ttlMs: Number(process.env.UCA_SHERPA_KWS_STATUS_TTL_MS ?? 5_000)
+});
+
 async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", personalized = false, templateFallback = false } = {}) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-echo-kws-"));
   const ext = mimeType.includes("wav") ? ".wav"
@@ -629,7 +635,7 @@ function resolveAudioRuntime(runtime) {
 
 export async function tryHandleAudioRoute({ request, response, method, url, runtime }) {
   if (method === "GET" && url.pathname === "/echo/kws/status") {
-    sendJson(response, 200, await getLocalKeywordSpottingStatus());
+    sendJson(response, 200, await readLocalKeywordSpottingStatus());
     return true;
   }
 

@@ -121,6 +121,11 @@ if (!audioRouteSource.includes('url.pathname === "/note/transcribe"')
     || !audioRouteSource.includes('url.pathname === "/echo/enroll-keyword"')) {
   throw new Error("audio-routes.mjs must own note transcription and Echo wake-word routes.");
 }
+if (!audioRouteSource.includes("createReadProbeCache")
+    || !audioRouteSource.includes("readLocalKeywordSpottingStatus")
+    || /sendJson\(response,\s*200,\s*await getLocalKeywordSpottingStatus\(\)\)/.test(audioRouteSource)) {
+  throw new Error("Echo KWS status must use the shared read-probe cache instead of spawning on every GET.");
+}
 if (httpServerSource.includes('url.pathname === "/file/render-preview-html"')
     || httpServerSource.includes('url.pathname === "/preview/status"')
     || httpServerSource.includes('url.pathname === "/file/extract-text"')) {
