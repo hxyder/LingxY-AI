@@ -4,6 +4,13 @@ import { CHECK_COMMANDS, FAST_CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 const runnerSource = readFileSync("scripts/run-checks.mjs", "utf8");
+const functionalMatrix = readFileSync("docs/release/functional_acceptance_matrix.md", "utf8");
+
+const RELEASE_ONLY_VERIFIERS = new Set([
+  // Starts the runtime + Electron shell and depends on a local GUI session.
+  // It is a release-candidate smoke, not a deterministic default check.
+  "verify:trial-launch"
+]);
 
 assert.equal(pkg.scripts.check, "node scripts/run-checks.mjs",
   "package.json scripts.check must use the shared check runner");
@@ -49,10 +56,23 @@ for (const required of [
   "node scripts/verify-structure.mjs",
   "node scripts/verify-check-runner.mjs",
   "node scripts/verify-behavior-tests.mjs",
+  "node scripts/verify-extension-enrichment.mjs",
   "node scripts/verify-functional-acceptance.mjs",
   "node scripts/verify-release-readiness.mjs"
 ]) {
   assert.ok(CHECK_COMMANDS.includes(required), `full check manifest missing ${required}`);
+}
+
+const automatedCoverage = functionalMatrix.split("## Manual Release Pass")[0] ?? functionalMatrix;
+const matrixVerifierAliases = [...new Set(automatedCoverage.match(/verify:[\w-]+/gu) ?? [])];
+for (const alias of matrixVerifierAliases) {
+  if (RELEASE_ONLY_VERIFIERS.has(alias)) continue;
+  const command = pkg.scripts[alias];
+  if (!command || !/^node scripts\/verify-[\w-]+\.mjs$/u.test(command)) continue;
+  assert.ok(
+    CHECK_COMMANDS.includes(command),
+    `functional acceptance matrix references ${alias}, but ${command} is not in npm run check`
+  );
 }
 
 for (const requiredFast of [

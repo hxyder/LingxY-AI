@@ -274,13 +274,14 @@ await ait("agent-loop: dedupe path emits a synthesis_retry transcript entry", as
 
 await ait("agent-loop: final-text path runs validateAnswerSynthesis before returning", async () => {
   const src = await readFile(path.join(repoRoot, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
+  const phaseGateSrc = await readFile(path.join(repoRoot, "src/service/executors/tool_using/phase-gate.mjs"), "utf8");
   // Phase 1.12 — validator scope split:
   //   - validateSuccessContract → task_spec_initial (hard, no retro)
   //   - validateStepGate / validateAnswerSynthesis → task.task_spec
   //     (LATEST so SR's `expected_output` enrichment shapes synthesis)
   assert.match(src, /validateAnswerSynthesis\(\s*synthesisValidationSpec\s*,/);
   assert.match(src, /synthesisValidationSpec\s*=\s*task\.task_spec\s*\?\?\s*task\.task_spec_initial/);
-  assert.match(src, /stepGateSpec\s*=\s*task\.task_spec\s*\?\?\s*task\.task_spec_initial/);
+  assert.match(phaseGateSrc, /stepGateSpec\s*=\s*task\.task_spec\s*\?\?\s*task\.task_spec_initial/);
   assert.match(src, /validationSpec\s*=\s*task\.task_spec_initial\s*\?\?\s*task\.task_spec/);
   assert.match(src, /validateSuccessContract\(\s*validationSpec/);
   assert.match(src, /MAX_SYNTHESIS_RETRIES/);
@@ -295,7 +296,7 @@ await ait("agent-loop: final path does not prefer connector raw-list fallback", 
 });
 
 await ait("agent-loop: connector raw final is gated to raw_results", async () => {
-  const src = await readFile(path.join(repoRoot, "src/service/executors/tool_using/agent-loop.mjs"), "utf8");
+  const src = await readFile(path.join(repoRoot, "src/service/executors/tool_using/finalization.mjs"), "utf8");
   assert.match(src, /function allowsRawConnectorFinal/);
   assert.match(src, /expected_output === "raw_results"/);
   assert.match(src, /if \(rawAllowed\) return formatConnectorFinal/);
