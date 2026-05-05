@@ -1758,6 +1758,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.chat-tool-card.is-collapsed {
+  margin: 4px 0;
+  padding-block: 5px;
+  gap: 0;
+  box-shadow: none;
+}
+.chat-tool-card.is-collapsed .ttc-head {
+  min-height: 20px;
+}
+.chat-tool-card.is-collapsed .ttc-args,
+.chat-tool-card.is-collapsed .ttc-outcome,
+.chat-tool-card.is-collapsed .ttc-sources,
+.chat-tool-card.is-collapsed .capability-tool-view {
+  display: none;
+}
 .cite-chip {
   display: inline-flex;
   align-items: center;

@@ -17,6 +17,12 @@ import {
   rememberArtifactMetadataFromToolEvent
 } from "./artifact-action-contract.mjs";
 import {
+  createFileGenerationAttemptState,
+  recordArtifactGenerated,
+  recordFileGenerationToolEvent,
+  shouldSynthesizeRequestedFallbackArtifact
+} from "./artifact-fallback-policy.mjs";
+import {
   EXECUTION_PHASES,
   EXECUTION_STATES,
   runExecutionPhase
@@ -329,6 +335,7 @@ async function runBrowserExecutor({ task, runtime }) {
   const generatedArtifacts = [];
   const artifactMetadataByPath = new Map();
   let inlineText = "";
+  const fileGeneration = createFileGenerationAttemptState();
 
   // The dedicated `translate` executor uses the free translator client and
   // must not be redirected to a Kimi/CLI provider even when chat is routed
@@ -411,6 +418,7 @@ async function runBrowserExecutor({ task, runtime }) {
         inlineText = event.payload?.text ?? event.payload?.summary ?? inlineText;
       }
       if (event.event_type === "tool_call_completed") {
+        recordFileGenerationToolEvent(fileGeneration, event.payload ?? {});
         rememberArtifactMetadataFromToolEvent(artifactMetadataByPath, event.payload ?? {});
       }
       if (event.event_type === "artifact_created" && event.payload?.path) {
@@ -425,6 +433,7 @@ async function runBrowserExecutor({ task, runtime }) {
         );
         runtime.store.appendArtifact(artifactRecord);
         generatedArtifacts.push(artifactRecord);
+        recordArtifactGenerated(fileGeneration);
       }
       if (["success", "partial_success"].includes(event.event_type)
           && Array.isArray(event.payload?.artifact_paths)) {
@@ -440,6 +449,7 @@ async function runBrowserExecutor({ task, runtime }) {
             );
             runtime.store.appendArtifact(artifactRecord);
             generatedArtifacts.push(artifactRecord);
+            recordArtifactGenerated(fileGeneration);
           }
         }
       }
@@ -450,7 +460,12 @@ async function runBrowserExecutor({ task, runtime }) {
     }
 
     const requestedFormat = detectRequestedOutputFormat(task.user_command);
-    if (requestedFormat.id !== "conversational" && generatedArtifacts.length === 0) {
+    if (shouldSynthesizeRequestedFallbackArtifact({
+      requestedFormat,
+      generatedArtifacts,
+      task,
+      fileGeneration
+    })) {
       const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
       const artifacts = await writeRequestedArtifacts({
         assistantText: inlineText || task.context_packet?.text || task.user_command,
@@ -461,6 +476,7 @@ async function runBrowserExecutor({ task, runtime }) {
         const artifactRecord = artifactStore.registerArtifact(task.task_id, artifact.path, artifact.mime_type);
         runtime.store.appendArtifact(artifactRecord);
         generatedArtifacts.push(artifactRecord);
+        recordArtifactGenerated(fileGeneration);
         emitTaskEvent({
           runtime,
           taskId: task.task_id,

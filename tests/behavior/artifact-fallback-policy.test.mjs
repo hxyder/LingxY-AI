@@ -29,9 +29,23 @@ test("artifact fallback policy preserves legacy fallback when no file generator 
   assert.equal(shouldSynthesizeRequestedFallbackArtifact({
     requestedFormat: pdfFormat,
     generatedArtifacts: [],
-    task: { task_spec: { artifact: { required: true, kind: "pdf" } } },
+    task: { task_spec: { artifact: { required: true, kind: "pdf" }, success_contract: { tool_called: false } } },
     fileGeneration: createFileGenerationAttemptState()
   }), true);
+});
+
+test("artifact fallback policy blocks synthetic files when a tool-required artifact task never called a generator", () => {
+  assert.equal(shouldSynthesizeRequestedFallbackArtifact({
+    requestedFormat: pdfFormat,
+    generatedArtifacts: [],
+    task: {
+      task_spec: {
+        artifact: { required: true, kind: "pdf" },
+        success_contract: { artifact_created: true, tool_called: true }
+      }
+    },
+    fileGeneration: createFileGenerationAttemptState()
+  }), false);
 });
 
 test("artifact fallback policy skips fallback when an artifact already exists", () => {

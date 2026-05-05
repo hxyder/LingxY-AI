@@ -27,7 +27,10 @@ import { renderResearchPrinciples, renderResearchBudget } from "../shared/resear
 import { extractEvidence } from "../../core/policy/evidence-normalizer.mjs";
 import { verifyCitations } from "../../core/evidence/citation-verifier.mjs";
 import { normalizeSources } from "../../core/evidence/source-envelope.mjs";
-import { validateSuccessContract } from "../../core/policy/success-contract-validator.mjs";
+import {
+  selectSuccessContractValidationSpec,
+  validateSuccessContract
+} from "../../core/policy/success-contract-validator.mjs";
 import {
   actionObligationsWithStatus,
   buildActionObligationGuidance,
@@ -554,7 +557,7 @@ export function createToolUsingExecutorScaffold() {
           // already finished. The other two validators (step_gate,
           // answer_synthesis) read the LATEST spec because they're
           // forward / quality concerns, not retroactive correctness.
-          const validationSpec = task.task_spec_initial ?? task.task_spec;
+          const validationSpec = selectSuccessContractValidationSpec(task);
           const { satisfied, violations } = validateSuccessContract(validationSpec, result.transcript ?? []);
           if (!satisfied) {
             const reasons = violations.map((v) => v.message).join(" ");

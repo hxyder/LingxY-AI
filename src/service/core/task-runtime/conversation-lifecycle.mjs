@@ -151,6 +151,10 @@ export function appendTaskOutcomeMessage(runtime, task) {
   const conversationId = task?.conversation_id;
   if (!conversationId) return null;
   if (!runtime.store.getConversation?.(conversationId)) return null;
+  const existingAnswered = typeof runtime.store.getTaskMessages === "function"
+    ? (runtime.store.getTaskMessages(task.task_id) ?? []).some((link) => link.relation === "answered_by")
+    : false;
+  if (existingAnswered) return null;
 
   const status = task.status;
   let role = "assistant";
@@ -165,8 +169,13 @@ export function appendTaskOutcomeMessage(runtime, task) {
     role = "system";
     content = "Task was cancelled.";
   } else if (status === "partial_success") {
-    role = "system";
-    content = `Task partially succeeded: ${task.failure_user_message ?? "see task for details"}`;
+    const finalText = task.result_summary ?? task.result?.final_text ?? task.final_text ?? "";
+    if (typeof finalText === "string" && finalText.trim().length > 0) {
+      content = finalText;
+    } else {
+      role = "system";
+      content = `Task partially succeeded: ${task.failure_user_message ?? "see task for details"}`;
+    }
   } else if (status === "failed") {
     role = "system";
     content = `Task failed: ${task.failure_user_message ?? task.failure_category ?? "unknown error"}`;

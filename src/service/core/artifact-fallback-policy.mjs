@@ -39,8 +39,13 @@ export function shouldSynthesizeRequestedFallbackArtifact({
 
   const artifactRequired = task?.task_spec?.artifact?.required === true
     || task?.task_spec?.success_contract?.artifact_created === true;
+  const toolUseRequired = task?.task_spec?.success_contract?.tool_called === true;
   const blockedByFailedGenerator = artifactRequired
     && fileGeneration?.attempted === true
     && fileGeneration?.succeeded !== true;
+  const blockedByMissingGenerator = artifactRequired
+    && toolUseRequired
+    && fileGeneration?.attempted !== true;
+  if (blockedByMissingGenerator) return false;
   return !blockedByFailedGenerator;
 }

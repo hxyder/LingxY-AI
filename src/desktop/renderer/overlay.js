@@ -169,6 +169,8 @@ let notifiedInlineResultTaskId = null;
 // or status_changed=success) and cleared per new task.
 let popupSuccessCardTaskId = null;
 let suppressOverlayAutoReveal = false;
+let echoTaskIds = new Set();
+let echoResultHudTaskIds = new Set();
 
 function shouldSurfaceTaskPopupCards() {
   try {
@@ -200,6 +202,42 @@ function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, open
       openWindow
     });
   } catch { /* optional */ }
+}
+
+function rememberEchoTask(taskId) {
+  if (!taskId) return;
+  echoTaskIds.add(taskId);
+}
+
+function isEchoTask(taskId) {
+  return Boolean(taskId && echoTaskIds.has(taskId));
+}
+
+function compactEchoResultText(text = "") {
+  const oneLine = String(text ?? "").replace(/\s+/g, " ").trim();
+  if (!oneLine) return "";
+  return oneLine.length > 220 ? `${oneLine.slice(0, 220)}...` : oneLine;
+}
+
+function showEchoResultHudOnce(taskId, { text = "", title = "任务完成", kind = "success", durationMs = 9000 } = {}) {
+  if (!isEchoTask(taskId) || echoResultHudTaskIds.has(taskId)) return;
+  const body = compactEchoResultText(text);
+  const label = compactEchoResultText(title);
+  const hudText = body ? `${label ? `${label}: ` : ""}${body}` : (label || "任务完成");
+  if (!hudText) return;
+  echoResultHudTaskIds.add(taskId);
+  try {
+    void window.ucaShell?.showEchoBubble?.({
+      text: hudText,
+      kind,
+      durationMs
+    });
+  } catch { /* optional */ }
+}
+
+function finishEchoTaskSurface(taskId) {
+  if (!taskId) return;
+  echoTaskIds.delete(taskId);
 }
 
 async function maybeRevealOverlay({ markEngaged = false } = {}) {
@@ -2671,6 +2709,11 @@ async function handleTaskEventFrame(rawEvent) {
           body: text,
           openWindow: "overlay"
         });
+        showEchoResultHudOnce(frameTaskId, {
+          title: lastTask?.intent ?? "任务完成",
+          text,
+          kind: "success"
+        });
       }
     }
   }
@@ -2724,6 +2767,26 @@ async function handleTaskEventFrame(rawEvent) {
         appendOverlayEvidenceSources(frameTaskId, frame.data.evidence_summary);
       }
     }
+    if (frame.event === "partial_success") {
+      showEchoResultHudOnce(frameTaskId, {
+        title: lastTask?.intent ?? "部分完成",
+        text: frame.data?.text ?? "任务已完成，但有一些限制。",
+        kind: "info"
+      });
+    } else if (frame.event === "failed") {
+      showEchoResultHudOnce(frameTaskId, {
+        title: lastTask?.intent ?? "任务失败",
+        text: frame.data?.message ?? frame.data?.text ?? "任务失败，请打开对话查看详情。",
+        kind: "error",
+        durationMs: 10000
+      });
+    } else if (frame.event === "cancelled") {
+      showEchoResultHudOnce(frameTaskId, {
+        title: "任务已取消",
+        text: frame.data?.message ?? "",
+        kind: "info"
+      });
+    }
     // Close any background stream for this task — it's done, no more events.
     if (frameTaskId) {
       const dispose = backgroundTaskStreams.get(frameTaskId);
@@ -2742,6 +2805,7 @@ async function handleTaskEventFrame(rawEvent) {
         }
       }
       clearTaskConversationBinding(taskConversationMap, frameTaskId);
+      finishEchoTaskSurface(frameTaskId);
     }
   }
 }
@@ -3820,6 +3884,7 @@ async function submitTask() {
 
     activeTaskId = result.task.task_id;
     lastTask = result.task;
+    if (echoSessionActive) rememberEchoTask(activeTaskId);
     notifiedTaskId = null;
     notifiedInlineResultTaskId = null;
     lastArtifactPreview = "";

@@ -147,6 +147,33 @@ test("conversation lifecycle writes assistant outcome messages and answered_by l
   );
 });
 
+test("conversation lifecycle stores partial-success final text once as assistant outcome", () => {
+  const runtime = makeRuntime();
+  const task = submitTaskWithConversation({
+    route: baseRoute,
+    contextPacket: { source_type: "clipboard", source_app: "uca.overlay" },
+    userCommand: "查一下天气",
+    executionMode: "interactive",
+    conversationId: "conv_partial_outcome",
+    runtime
+  }).task;
+
+  task.status = "partial_success";
+  task.result_summary = "明天有雨。\n\n注意：来源覆盖不足。";
+
+  const first = appendTaskOutcomeMessage(runtime, task);
+  const second = appendTaskOutcomeMessage(runtime, task);
+
+  assert.equal(first.role, "assistant");
+  assert.equal(first.status, "partial_success");
+  assert.equal(first.content, task.result_summary);
+  assert.equal(second, null);
+  assert.equal(
+    runtime.store.getTaskMessages(task.task_id).filter((link) => link.relation === "answered_by").length,
+    1
+  );
+});
+
 test("conversation lifecycle helpers cap prior messages and keep empty ids inert", () => {
   const runtime = makeRuntime();
   assert.equal(ensureConversation(runtime, { conversationId: "" }), null);

@@ -732,6 +732,38 @@ function groupHitSatisfies(group, entry) {
   return resultHasSubstance(entry);
 }
 
+function researchQualityThresholds(rq) {
+  if (!rq || typeof rq !== "object") return null;
+  const minSources = Number(rq.min_sources);
+  const minDomains = Number(rq.min_distinct_domains);
+  if (!Number.isFinite(minSources) || !Number.isFinite(minDomains)) return null;
+  return {
+    minSources,
+    minDomains
+  };
+}
+
+function isLooserResearchQuality(candidate, base) {
+  const candidateThresholds = researchQualityThresholds(candidate);
+  const baseThresholds = researchQualityThresholds(base);
+  if (!candidateThresholds || !baseThresholds) return false;
+  return candidateThresholds.minSources <= baseThresholds.minSources
+    && candidateThresholds.minDomains <= baseThresholds.minDomains;
+}
+
+export function selectSuccessContractValidationSpec(task) {
+  const initial = task?.task_spec_initial ?? null;
+  const current = task?.task_spec ?? null;
+  const base = initial ?? current;
+  if (!base || !current || current === base) return base;
+
+  const next = { ...base };
+  if (isLooserResearchQuality(current.research_quality, base.research_quality)) {
+    next.research_quality = current.research_quality;
+  }
+  return next;
+}
+
 function requiresDeepLocalTextRead(taskSpec) {
   return taskSpec?.file_read?.depth === "deep";
 }

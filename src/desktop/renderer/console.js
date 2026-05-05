@@ -1556,6 +1556,14 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
   return card;
 }
 
+function collapseCompletedConsoleToolCards() {
+  if (!consoleChatMessages) return;
+  for (const card of consoleChatMessages.querySelectorAll(".chat-tool-card.is-ok")) {
+    card.classList.add("is-collapsed");
+    card.setAttribute("aria-expanded", "false");
+  }
+}
+
 function createConsoleChatToolCard(toolName, args, options = {}) {
   const id = `tool-${++consoleChatToolCardCounter}`;
   const card = appendConsoleChatToolCall(toolName, args, null, { ...options, state: options.state ?? "running" });
@@ -1625,6 +1633,8 @@ function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) 
       : "running");
   card.classList.remove("is-running", "is-ok", "is-err");
   card.classList.add(`is-${inferredState}`);
+  card.classList.toggle("is-collapsed", inferredState === "ok");
+  card.setAttribute("aria-expanded", inferredState === "ok" ? "false" : "true");
 
   const stateLabel = inferredState === "running" ? "RUNNING"
     : inferredState === "err" ? "FAILED"
@@ -1687,6 +1697,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
     return;
   }
   if (directText) {
+    collapseCompletedConsoleToolCards();
     appendConsoleChatFinalText(taskId, directText, {
       evidence: payload.evidence_summary ?? null
     });
@@ -1704,6 +1715,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
       ?? ""
     ).trim();
     if (!settledText) return;
+    collapseCompletedConsoleToolCards();
     appendConsoleChatFinalText(taskId, settledText, {
       role: task?.status === "failed" ? "system" : "assistant",
       evidence: extractEvidenceSummaryFromTaskDetail(detail)

@@ -429,6 +429,12 @@ assert.ok(/appendConsoleChatTimelineNode/.test(consoleJs) && /insertBefore\(node
   "chat tools: console must keep the active streaming answer anchored after tool cards");
 assert.ok(/\.chat-tool-card \.ttc-args[\s\S]{0,420}white-space:\s*nowrap/.test(sharedCss),
   "chat tools: tool cards must keep argument previews compact");
+assert.ok(/collapseCompletedConsoleToolCards/.test(consoleJs) && /\.chat-tool-card\.is-collapsed\b/.test(sharedCss),
+  "chat tools: completed tool cards must collapse after the final answer");
+assert.ok(/rememberEchoTask/.test(overlayJs) && /showEchoResultHudOnce/.test(overlayJs),
+  "echo mode: echo-submitted task results must surface through the Echo HUD");
+assert.ok(/\.chat-preview-pane \.lp-iframe\b/.test(sharedCss),
+  "chat preview: inline preview iframe must have stable dimensions outside the standalone live-preview shell");
 assert.ok(/exportBundle:\s*["']uca:export-bundle["']/.test(desktopManifest),
   "data export: IPC channel missing from desktop manifest");
 assert.ok(/diagnosticBundle:\s*["']uca:diagnostic-bundle["']/.test(desktopManifest),
