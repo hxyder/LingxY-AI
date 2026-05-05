@@ -449,13 +449,17 @@ async function resolvePageExplainRouteContext({
   };
 }
 
-export async function runQuickAction({
+export async function executeQuickAction({
   action,
   selectionState,
   tab = null,
   routePlan = null,
   standaloneConfig = null,
-  runtimeBase = null
+  runtimeBase = null,
+  stream = false,
+  signal = null,
+  onStart = null,
+  onChunk = null
 }, fetchImpl = fetch) {
   const text = (selectionState?.text ?? "").trim();
   const requiresSelectionText = !["uca.fetch-link", "uca.inspect-image"].includes(action);
@@ -486,8 +490,16 @@ export async function runQuickAction({
   }
 
   if (effectiveRoutePlan.transport === "standalone_direct") {
-    // UCA-161: summarize / explain get the full page outline + any in-selection
-    // links fetched and inlined so the LLM has real material to ground on.
+    if (action === "uca.inspect-image") {
+      const imageUrl = selectionState?.imageUrl ?? "";
+      if (!imageUrl) return { ok: false, mode: "standalone", error: "no_image_url" };
+      onStart?.();
+      const prompt = buildPromptFor(action, selectionState, "").prompt;
+      const result = await callLLMDirectVision({ config: effectiveStandaloneConfig, prompt, imageUrl });
+      if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success" };
+      return { ok: false, mode: "standalone", error: result.error };
+    }
+
     let enrichmentMarkdown = "";
     if (shouldEnrichForAction(action)) {
       try {
@@ -496,7 +508,27 @@ export async function runQuickAction({
       } catch { /* enrichment is best-effort */ }
     }
     const { prompt, systemPrompt } = buildPromptFor(action, selectionState, enrichmentMarkdown);
-    const result = await callLLMDirect({ config: effectiveStandaloneConfig, prompt, systemPrompt });
+    onStart?.();
+    const translateMaxTokens = action === "uca.translate-selection" || action === "translate"
+      ? (stream ? Math.min(256, Math.max(96, Math.round(text.length * 1.4))) : undefined)
+      : undefined;
+    const result = stream
+      ? await callLLMDirectStream({
+        config: effectiveStandaloneConfig,
+        messages: [
+          { role: "system", content: systemPrompt ?? "" },
+          { role: "user", content: prompt }
+        ],
+        maxTokens: translateMaxTokens ?? 1024,
+        signal,
+        onChunk
+      })
+      : await callLLMDirect({
+        config: effectiveStandaloneConfig,
+        prompt,
+        systemPrompt,
+        ...(translateMaxTokens ? { maxTokens: translateMaxTokens } : {})
+      });
     if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success" };
     return { ok: false, mode: "standalone", error: result.error };
   }
@@ -508,12 +540,17 @@ export async function runQuickAction({
     } catch { /* best-effort */ }
   }
 
+  onStart?.();
   return runDesktopTask({
     runtimeBase: effectiveRuntimeBase,
     userCommand,
     capture: buildDesktopCaptureForAction(action, selectionState, enrichment),
     fetchImpl
   });
+}
+
+export async function runQuickAction(args = {}, fetchImpl = fetch) {
+  return executeQuickAction(args, fetchImpl);
 }
 
 function extractInlineResult(events = []) {
@@ -1398,95 +1435,23 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
         return;
       }
 
-      if (routePlan.transport === "desktop_task") {
-        port.postMessage({ type: "start" });
-        const desktopResult = await runQuickAction({
-          action,
-          selectionState,
-          routePlan,
-          standaloneConfig: config,
-          runtimeBase
-        }, fetch);
-        if (aborted) return;
-        if (desktopResult.ok) {
-          port.postMessage({ type: "done", text: desktopResult.text });
-        } else {
-          port.postMessage({ type: "error", error: desktopResult.error });
-        }
-        return;
-      }
-
-      if (action === "uca.translate-selection" || action === "translate") {
-        const text = `${selectionState?.text ?? selectionState?.selectionText ?? ""}`.trim();
-        if (!text) {
-          port.postMessage({ type: "error", error: "empty_selection" });
-          return;
-        }
-        port.postMessage({ type: "start" });
-        const { prompt, systemPrompt } = buildPromptFor(action, selectionState, "");
-        const translateMaxTokens = Math.min(256, Math.max(96, Math.round(text.length * 1.4)));
-        const translateResult = await callLLMDirect({
-          config,
-          prompt,
-          systemPrompt,
-          maxTokens: translateMaxTokens
-        });
-        if (aborted) return;
-        if (translateResult.ok) {
-          port.postMessage({ type: "done", text: translateResult.text });
-        } else {
-          port.postMessage({ type: "error", error: translateResult.error });
-        }
-        return;
-      }
-
-      // UCA-173: image analysis takes its own path (vision API, base64
-      // image). Vision responses aren't streamed by most providers, so we
-      // emit a single done frame. The content-script frame handles both
-      // shapes identically.
-      if (action === "uca.inspect-image") {
-        const imageUrl = selectionState?.imageUrl ?? "";
-        if (!imageUrl) {
-          port.postMessage({ type: "error", error: "no_image_url" });
-          return;
-        }
-        port.postMessage({ type: "start" });
-        const prompt = "请分析这张图片：简述里面有什么、关键文字（如有）、是否需要注意的细节。用中文回答。";
-        const { callLLMDirectVision } = await import("./standalone-client.js");
-        const visionResult = await callLLMDirectVision({ config, prompt, imageUrl });
-        if (aborted) return;
-        if (visionResult.ok) {
-          port.postMessage({ type: "done", text: visionResult.text });
-        } else {
-          port.postMessage({ type: "error", error: visionResult.error });
-        }
-        return;
-      }
-
-      // Enrichment for summarize / explain / fetch-link. Translate goes
-      // direct — that was the whole point of UCA-164a.
-      let enrichmentMarkdown = "";
-      if (shouldEnrichForAction(action)) {
-        try {
-          const enrichment = await enrichContextForAction({ action, selectionState, tab: message.tab ?? null });
-          enrichmentMarkdown = formatEnrichmentAsMarkdown(enrichment);
-        } catch { /* best effort */ }
-      }
-      const { prompt, systemPrompt } = buildPromptFor(action, selectionState, enrichmentMarkdown);
-      port.postMessage({ type: "start" });
-      const result = await callLLMDirectStream({
-        config,
-        messages: [
-          { role: "system", content: systemPrompt ?? "" },
-          { role: "user", content: prompt }
-        ],
-        maxTokens: 1024,
+      const result = await executeQuickAction({
+        action,
+        selectionState,
+        tab: message.tab ?? null,
+        routePlan,
+        standaloneConfig: config,
+        runtimeBase,
+        stream: true,
         signal: controller.signal,
+        onStart: () => {
+          if (!aborted) port.postMessage({ type: "start" });
+        },
         onChunk: (delta, full) => {
           if (aborted) return;
           try { port.postMessage({ type: "chunk", delta, full }); } catch { /* closed */ }
         }
-      });
+      }, fetch);
       if (aborted) return;
       if (result.ok) {
         port.postMessage({ type: "done", text: result.text });

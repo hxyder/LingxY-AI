@@ -8,6 +8,7 @@ import {
   buildOverlayHandoffRequest,
   dispatchBrowserContextSnapshot,
   dispatchOverlayHandoff,
+  executeQuickAction,
   RUNTIME_BROWSER_CONTEXT_URL,
   RUNTIME_OVERLAY_HANDOFF_URL,
   runQuickAction
@@ -344,6 +345,87 @@ const emptyQuickAction = await runQuickAction(
 assert.equal(emptyQuickAction.ok, false);
 assert.equal(emptyQuickAction.error, "empty_selection");
 
+const originalFetch = globalThis.fetch;
+try {
+  const standaloneCalls = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    standaloneCalls.push({ url: String(url), body: opts?.body ? JSON.parse(opts.body) : null });
+    return {
+      ok: true,
+      async json() {
+        return { choices: [{ message: { content: "Standalone summary" } }] };
+      }
+    };
+  };
+  const standaloneText = await executeQuickAction({
+    action: "uca.summarize-selection",
+    routePlan: {
+      ok: true,
+      origin: "verify",
+      actionKind: "text",
+      ui: "inline_frame",
+      transport: "standalone_direct",
+      mode: "standalone",
+      reason: "verify_standalone_text"
+    },
+    standaloneConfig: { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" },
+    selectionState: {
+      text: "Selected text",
+      url: "https://example.com",
+      pageTitle: "Example"
+    }
+  });
+  assert.equal(standaloneText.ok, true);
+  assert.equal(standaloneText.text, "Standalone summary");
+  assert.equal(standaloneCalls.length, 1);
+  assert.equal(standaloneCalls[0].url, "https://api.openai.com/v1/chat/completions");
+  assert.equal(standaloneCalls[0].body.messages[0].role, "system");
+
+  const visionCalls = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    visionCalls.push({ url: String(url), body: opts?.body ? JSON.parse(opts.body) : null });
+    if (String(url) === "https://example.com/image.png") {
+      return {
+        ok: true,
+        async blob() {
+          return new Blob([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], { type: "image/png" });
+        }
+      };
+    }
+    return {
+      ok: true,
+      async json() {
+        return { choices: [{ message: { content: "Vision analysis" } }] };
+      }
+    };
+  };
+  const standaloneImage = await executeQuickAction({
+    action: "uca.inspect-image",
+    routePlan: {
+      ok: true,
+      origin: "verify",
+      actionKind: "image",
+      ui: "inline_frame",
+      transport: "standalone_direct",
+      mode: "standalone",
+      reason: "verify_standalone_image"
+    },
+    standaloneConfig: { provider: "openai", apiKey: "test-key", model: "gpt-5.4-mini" },
+    selectionState: {
+      imageUrl: "https://example.com/image.png",
+      url: "https://example.com/page",
+      pageTitle: "Example Image"
+    }
+  });
+  assert.equal(standaloneImage.ok, true);
+  assert.equal(standaloneImage.text, "Vision analysis");
+  assert.equal(visionCalls.length, 2);
+  assert.equal(visionCalls[1].body.messages[0].content[0].type, "image_url");
+  assert.ok(visionCalls[1].body.messages[0].content[0].image_url.url.startsWith("data:image/png;base64,"));
+} finally {
+  globalThis.fetch = originalFetch;
+}
+
 // Inline result frame helper exists in the content script
 const selectionCacheJs = await readFile(path.join(repoRoot, "browser_ext", "content_script", "selection-cache.js"), "utf8");
 assert.equal(selectionCacheJs.includes("showInlineResultFrame"), true);
@@ -366,6 +448,7 @@ assert.equal(serviceWorkerJs.includes("hasStandaloneProviderConfig"), true);
 assert.equal(serviceWorkerJs.includes("standaloneConfig?.apiKey"), false);
 assert.equal(serviceWorkerJs.includes("resolveQuickActionRouteContext"), true);
 assert.equal(serviceWorkerJs.includes("resolvePageExplainRouteContext"), true);
+assert.equal(serviceWorkerJs.includes("executeQuickAction"), true);
 assert.equal(serviceWorkerJs.includes("planPageExplainRoute"), true);
 assert.equal(serviceWorkerJs.includes("routePlan: sidepanelContext.routePlan"), true);
 assert.equal(serviceWorkerJs.includes("routePlan: inlineRouteContext.routePlan"), true);
