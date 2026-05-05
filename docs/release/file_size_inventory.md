@@ -33,14 +33,14 @@ an intentional new baseline with a reason in this inventory.
 
 | File | Baseline lines | Budget before split note |
 | --- | ---: | ---: |
-| `src/desktop/renderer/console.js` | 11494 | 11694 |
-| `src/desktop/renderer/overlay.js` | 7255 | 7455 |
-| `src/desktop/renderer/shared-core.css` | 1370 | 1570 |
-| `src/desktop/renderer/shared-tasks.css` | 520 | 720 |
-| `src/desktop/renderer/shared-chat.css` | 2015 | 2215 |
-| `src/desktop/renderer/shared-rest.css` | 2878 | 3078 |
-| `src/desktop/tray/electron-main.mjs` | 4086 | 4286 |
-| `src/service/action_tools/tools/index.mjs` | 3900 | 4100 |
+| `src/desktop/renderer/console.js` | 11495 | 11695 |
+| `src/desktop/renderer/overlay.js` | 7210 | 7410 |
+| `src/desktop/renderer/shared-core.css` | 1371 | 1571 |
+| `src/desktop/renderer/shared-tasks.css` | 521 | 721 |
+| `src/desktop/renderer/shared-chat.css` | 2016 | 2216 |
+| `src/desktop/renderer/shared-rest.css` | 2879 | 3079 |
+| `src/desktop/tray/electron-main.mjs` | 4087 | 4287 |
+| `src/service/action_tools/tools/index.mjs` | 3901 | 4101 |
 
 ## Notes
 

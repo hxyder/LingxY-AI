@@ -17,14 +17,14 @@ const documentedHotspots = [
   "src/service/action_tools/tools/index.mjs"
 ];
 const hotspotGrowthBudgets = Object.freeze({
-  "src/desktop/renderer/console.js": { baselineLines: 11494, maxAddedLines: 200 },
-  "src/desktop/renderer/overlay.js": { baselineLines: 7255, maxAddedLines: 200 },
-  "src/desktop/renderer/shared-core.css": { baselineLines: 1370, maxAddedLines: 200 },
-  "src/desktop/renderer/shared-tasks.css": { baselineLines: 520, maxAddedLines: 200 },
-  "src/desktop/renderer/shared-chat.css": { baselineLines: 2015, maxAddedLines: 200 },
-  "src/desktop/renderer/shared-rest.css": { baselineLines: 2878, maxAddedLines: 200 },
-  "src/desktop/tray/electron-main.mjs": { baselineLines: 4086, maxAddedLines: 200 },
-  "src/service/action_tools/tools/index.mjs": { baselineLines: 3900, maxAddedLines: 200 }
+  "src/desktop/renderer/console.js": { baselineLines: 11495, maxAddedLines: 200 },
+  "src/desktop/renderer/overlay.js": { baselineLines: 7210, maxAddedLines: 200 },
+  "src/desktop/renderer/shared-core.css": { baselineLines: 1371, maxAddedLines: 200 },
+  "src/desktop/renderer/shared-tasks.css": { baselineLines: 521, maxAddedLines: 200 },
+  "src/desktop/renderer/shared-chat.css": { baselineLines: 2016, maxAddedLines: 200 },
+  "src/desktop/renderer/shared-rest.css": { baselineLines: 2879, maxAddedLines: 200 },
+  "src/desktop/tray/electron-main.mjs": { baselineLines: 4087, maxAddedLines: 200 },
+  "src/service/action_tools/tools/index.mjs": { baselineLines: 3901, maxAddedLines: 200 }
 });
 const hardLineLimit = 12_500;
 const sharedCssImports = [
