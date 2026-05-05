@@ -1013,41 +1013,10 @@ async function _runToolAgentLoopCore({
       };
     }
 
-    if (decision?.type === "tool_call" && !visibleToolIds.has(decision.tool)) {
-      const sample = [...visibleToolIds].slice(0, 12).join(", ");
-      const more = visibleToolIds.size > 12 ? `, … +${visibleToolIds.size - 12} more` : "";
-      const hint = `Tool "${decision.tool}" is not available for this task. Pick one of the visible tools: ${sample}${more}.`;
-      runtime.emitTaskEvent?.("tool_call_denied", {
-        tool_id: decision.tool,
-        reason: "tool_not_available_for_task"
-      });
-      transcript.push({
-        type: "tool_denied",
-        tool: decision.tool,
-        reason: "tool_not_available_for_task"
-      });
-      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
-        synthesisRetriesUsed += 1;
-        transcript.push({
-          type: "synthesis_retry",
-          violations: [{ kind: "tool_not_available_for_task", message: hint }]
-        });
-        runtime?.emitTaskEvent?.("synthesis_retry", {
-          attempt: synthesisRetriesUsed,
-          reason: "tool_not_available_for_task",
-          tool_id: decision.tool
-        });
-        continue;
-      }
-      return {
-        status: "partial_success",
-        final_text: localFallbackFinal({ task, transcript, reason: hint }),
-        transcript
-      };
-    }
-
     const actionOnlyAllowedTools = actionOnlyToolIds(transcript);
-    if (actionOnlyAllowedTools.size > 0 && !actionOnlyAllowedTools.has(decision.tool)) {
+    if (decision?.type === "tool_call"
+        && actionOnlyAllowedTools.size > 0
+        && !actionOnlyAllowedTools.has(decision.tool)) {
       const allowed = [...actionOnlyAllowedTools];
       const sample = allowed.slice(0, 8).join(", ");
       const hint = `Action-only handoff is active; ${decision.tool} cannot satisfy the pending action obligation. Call one of: ${sample}.`;
@@ -1071,6 +1040,39 @@ async function _runToolAgentLoopCore({
           attempt: synthesisRetriesUsed,
           reason: "action_only_obligation_handoff",
           tool_id: decision.tool ?? null
+        });
+        continue;
+      }
+      return {
+        status: "partial_success",
+        final_text: localFallbackFinal({ task, transcript, reason: hint }),
+        transcript
+      };
+    }
+
+    if (decision?.type === "tool_call" && !visibleToolIds.has(decision.tool)) {
+      const sample = [...visibleToolIds].slice(0, 12).join(", ");
+      const more = visibleToolIds.size > 12 ? `, … +${visibleToolIds.size - 12} more` : "";
+      const hint = `Tool "${decision.tool}" is not available for this task. Pick one of the visible tools: ${sample}${more}.`;
+      runtime.emitTaskEvent?.("tool_call_denied", {
+        tool_id: decision.tool,
+        reason: "tool_not_available_for_task"
+      });
+      transcript.push({
+        type: "tool_denied",
+        tool: decision.tool,
+        reason: "tool_not_available_for_task"
+      });
+      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+        synthesisRetriesUsed += 1;
+        transcript.push({
+          type: "synthesis_retry",
+          violations: [{ kind: "tool_not_available_for_task", message: hint }]
+        });
+        runtime?.emitTaskEvent?.("synthesis_retry", {
+          attempt: synthesisRetriesUsed,
+          reason: "tool_not_available_for_task",
+          tool_id: decision.tool
         });
         continue;
       }

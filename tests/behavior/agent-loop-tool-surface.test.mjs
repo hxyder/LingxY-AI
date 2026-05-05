@@ -15,6 +15,7 @@ const tools = [
   { id: "launch_app" },
   { id: "create_scheduled_task" },
   { id: "account_send_email" },
+  { id: "connector_workflow_run" },
   { id: "draft_capability" },
   { id: "save_capability_draft" }
 ];
@@ -91,6 +92,28 @@ test("agent tool surface exposes capability tools when capability_management is 
   const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
 
   assert.deepEqual(visible.sort(), ["draft_capability", "save_capability_draft"].sort());
+});
+
+test("agent tool surface preserves required action tools even when capabilities focus on research", () => {
+  const task = {
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["external_web_read"]
+      }
+    },
+    task_spec: {
+      success_contract: {
+        required_policy_groups: ["external_web_read", "email_send"]
+      }
+    }
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(visible.includes("web_search_fetch"));
+  assert.ok(visible.includes("account_send_email"));
+  assert.ok(visible.includes("connector_workflow_run"));
+  assert.ok(!visible.includes("launch_app"));
 });
 
 test("capability_management still hides direct file open tools when not required", () => {

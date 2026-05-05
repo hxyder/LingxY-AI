@@ -1,3 +1,5 @@
+import { toolsInGroup } from "../../core/policy/policy-groups.mjs";
+
 function semanticDecisionOf(task) {
   return task?.context_packet?.semantic_router_decision ?? null;
 }
@@ -77,6 +79,34 @@ function filterDirectFileOpenTools(list = [], task) {
   return list.filter((tool) => !DIRECT_FILE_OPEN_TOOL_IDS.has(tool.id));
 }
 
+function requiredPolicyGroupsOf(task) {
+  const groups = [];
+  for (const spec of [task?.task_spec, task?.task_spec_initial]) {
+    const required = spec?.success_contract?.required_policy_groups;
+    if (!Array.isArray(required)) continue;
+    groups.push(...required.filter((group) => typeof group === "string" && group.trim()));
+  }
+  return [...new Set(groups)];
+}
+
+function toolSatisfiesRequiredPolicyGroup(tool, groups = []) {
+  if (!tool?.id) return false;
+  return groups.some((group) =>
+    tool.policy_group === group || toolsInGroup(group).includes(tool.id)
+  );
+}
+
+function mergeToolLists(primary = [], extra = []) {
+  const seen = new Set();
+  const merged = [];
+  for (const tool of [...primary, ...extra]) {
+    if (!tool?.id || seen.has(tool.id)) continue;
+    seen.add(tool.id);
+    merged.push(tool);
+  }
+  return merged;
+}
+
 export function filterToolsForTask(tools = [], task) {
   const insideScheduledFire = isScheduledFireTask(task);
   const stripTaskScopedTools = (list) => {
@@ -92,7 +122,10 @@ export function filterToolsForTask(tools = [], task) {
     const matcher = CAPABILITY_TOOL_MATCHERS[capability];
     return typeof matcher === "function" ? matcher(tool) : false;
   }));
-  return stripTaskScopedTools(filtered.length > 0 ? filtered : tools);
+  const requiredGroups = requiredPolicyGroupsOf(task);
+  const requiredTools = tools.filter((tool) => toolSatisfiesRequiredPolicyGroup(tool, requiredGroups));
+  const capabilityTools = filtered.length > 0 ? filtered : tools;
+  return stripTaskScopedTools(mergeToolLists(capabilityTools, requiredTools));
 }
 
 export function shouldRenderWorkflowHint(task) {
