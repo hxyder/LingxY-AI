@@ -560,6 +560,25 @@ function extractInlineResult(events = []) {
   return null;
 }
 
+function normalizeBrowserCaptureForChat(capture = null) {
+  if (!capture || typeof capture !== "object") return null;
+  const text = `${capture.text ?? ""}`.trim();
+  const url = `${capture.url ?? ""}`.trim();
+  const pageTitle = `${capture.pageTitle ?? capture.title ?? ""}`.trim();
+  if (!text && !url && !pageTitle) return null;
+  return {
+    sourceType: `${capture.sourceType ?? "page_explanation"}`,
+    browser: `${capture.browser ?? "chrome.exe"}`,
+    url,
+    pageTitle,
+    text: text.slice(0, 24_000),
+    metadata: {
+      ...(capture.metadata && typeof capture.metadata === "object" ? capture.metadata : {}),
+      source: capture.metadata?.source ?? "browser_sidepanel"
+    }
+  };
+}
+
 async function queueSidePanelAnalysis(request, { chromeApi = chrome, windowId = null, openPanel = true, routePlan = null } = {}) {
   const effectiveRoutePlan = isValidRoutePlan(routePlan)
     ? routePlan
@@ -1355,6 +1374,7 @@ function registerChatStreamPort(chromeApi = chrome) {
         ? message.systemPrompt
         : "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
       const messages = [{ role: "system", content: systemPrompt }, ...conversation];
+      const browserCapture = normalizeBrowserCaptureForChat(message.browserCapture);
       const requestedMaxTokens = Number.isFinite(message?.maxTokens)
         ? Math.min(2048, Math.max(256, Math.round(message.maxTokens)))
         : 512;
@@ -1365,7 +1385,7 @@ function registerChatStreamPort(chromeApi = chrome) {
         result = await runDesktopTask({
           runtimeBase,
           userCommand: userText,
-          capture: {
+          capture: browserCapture ?? {
             sourceType: "chat",
             text: userText,
             history: conversation.slice(0, -1),

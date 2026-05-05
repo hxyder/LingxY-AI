@@ -453,6 +453,8 @@ assert.equal(serviceWorkerJs.includes("function isValidRoutePlan("), false,
 assert.equal(serviceWorkerJs.includes("isValidRoutePlan"), true);
 assert.equal(serviceWorkerJs.includes("validateRoutePlan"), false,
   "routePlan validation schema should stay in run-mode-router, not be duplicated in the worker");
+assert.equal(serviceWorkerJs.includes("normalizeBrowserCaptureForChat"), true);
+assert.equal(serviceWorkerJs.includes("browserCapture ?? {"), true);
 assert.equal(serviceWorkerJs.includes("executeQuickAction"), true);
 assert.equal(serviceWorkerJs.includes("planPageExplainRoute"), true);
 assert.equal(serviceWorkerJs.includes("routePlan: sidepanelContext.routePlan"), true);
@@ -477,6 +479,8 @@ assert.equal(sidepanelJs.includes("formatRouteFailureMessage"), true);
 assert.equal(sidepanelJs.includes("request.kind === \"runtime_unavailable\""), true);
 assert.equal(sidepanelJs.includes("routePlan: request.routePlan ?? null"), true);
 assert.equal(sidepanelJs.includes("routePlan = null"), true);
+assert.equal(sidepanelJs.includes("browserCapture"), true);
+assert.equal(sidepanelJs.includes("sourceType: \"page_explanation\""), true);
 assert.equal(selectionCacheJs.includes("routePlan"), true);
 assert.equal(runModeViewJs.includes("本地工具与文件/RAG"), true);
 assert.equal(runModeViewJs.includes("网页内容问答"), true);

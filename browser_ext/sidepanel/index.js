@@ -173,7 +173,16 @@ async function refreshMode() {
 }
 
 /* ── Chat send (port-based streaming) ────────────────────────────────── */
-function sendTurn({ userContent, systemContent = null, assistantPrefix = null, displayLabel = null, attached = null, maxTokens = null, routePlan = null } = {}) {
+function sendTurn({
+  userContent,
+  systemContent = null,
+  assistantPrefix = null,
+  displayLabel = null,
+  attached = null,
+  maxTokens = null,
+  routePlan = null,
+  browserCapture = null
+} = {}) {
   return new Promise((resolve) => {
     if (isBusy) { resolve({ ok: false, error: "busy" }); return; }
     isBusy = true;
@@ -342,7 +351,8 @@ function sendTurn({ userContent, systemContent = null, assistantPrefix = null, d
       history: sendableHistory,
       systemPrompt: SYSTEM_PROMPT,
       maxTokens,
-      ...(routePlan ? { routePlan } : {})
+      ...(routePlan ? { routePlan } : {}),
+      ...(browserCapture ? { browserCapture } : {})
     });
   });
 }
@@ -558,12 +568,26 @@ async function onAnalyzePageV2({ mode = "analyze", resetConversation = true, rou
     ? `请解释以下${kindLabel}：先给一段清楚的总述，再列出 5-8 个关键点，说明背景、核心结论和需要注意的不确定性。我可能会继续追问。\n\n---\n${bodyBlock}\n---`
     : `请分析以下${kindLabel}：先一段总体概述，再用编号列表给出 5-8 个关键要点，最后给出 3 个值得延伸的问题。我可能会基于这份分析继续追问。\n\n---\n${bodyBlock}\n---`;
   const displayLabel = `${isExplain ? "📖 解释" : "📄 分析"}${kindLabel === "YouTube 视频" ? "视频" : "此页"}：${chipTitle.slice(0, 80)}`;
+  const browserCapture = {
+    sourceType: "page_explanation",
+    browser: "chrome.exe",
+    url: tab.url ?? "",
+    pageTitle: chipTitle,
+    text: bodyBlock,
+    metadata: {
+      source: "browser_sidepanel",
+      contentKind: kindLabel === "YouTube 视频" ? "video" : "article",
+      mode: isExplain ? "explain" : "analyze",
+      platform: captured?.platform ?? captured?.youtube?.platform ?? "generic"
+    }
+  };
   await sendTurn({
     userContent: userText,
     displayLabel,
     attached: bodyBlock,
     maxTokens: 1536,
-    routePlan
+    routePlan,
+    browserCapture
   });
 }
 

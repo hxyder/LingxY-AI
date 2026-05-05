@@ -279,6 +279,11 @@ async function verifySidePanelClicks() {
   await tick();
   assert.ok(transcript.scriptCalls.some((source) => source.includes("__ucaPageSourceCapture")),
     "sidepanel page action should try the page-source capture bridge");
+  assert.ok(transcript.ports.some((port) =>
+    port.name === "uca.chat.stream"
+    && port.payload?.browserCapture?.sourceType === "page_explanation"
+    && port.payload?.browserCapture?.metadata?.source === "browser_sidepanel"),
+  "sidepanel page action should attach structured browser capture metadata to the stream");
 
   document.getElementById("sp-action-location").dispatchEvent(new Event("click"));
   await tick();
