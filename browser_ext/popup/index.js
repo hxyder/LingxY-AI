@@ -1,3 +1,8 @@
+import {
+  buildRunModeView,
+  renderRunModeDetail
+} from "../shared/run-mode-view.js";
+
 export function renderTaskList(tasks, doc = document) {
   const list = doc.getElementById("task-list");
   list.innerHTML = "";
@@ -93,20 +98,11 @@ function renderRunMode(status, doc = document) {
   const pill = doc.getElementById("mode-pill");
   const detail = doc.getElementById("mode-detail");
   if (!pill) return;
+  const view = buildRunModeView(status);
   pill.classList.remove("mode-desktop", "mode-standalone", "mode-offline");
-  if (status.desktopAvailable) {
-    pill.textContent = "桌面程序在线";
-    pill.classList.add("mode-desktop");
-    if (detail) detail.textContent = "任务会送到桌面程序处理。";
-  } else if (status.standaloneReady) {
-    pill.textContent = `独立模式 · ${status.provider ?? "llm"}`;
-    pill.classList.add("mode-standalone");
-    if (detail) detail.textContent = "桌面程序未开：独立模式只支持网页问答和直接 LLM 调用，本地工具、文件、审批、调度和生成文件需要打开桌面程序。";
-  } else {
-    pill.textContent = "未配置";
-    pill.classList.add("mode-offline");
-    if (detail) detail.textContent = "请启动桌面程序，或在扩展设置里填 API Key。";
-  }
+  pill.textContent = view.label;
+  pill.classList.add(`mode-${view.mode}`);
+  renderRunModeDetail(detail, view, doc);
 }
 
 // ── Chat dialog (UCA-160) ─────────────────────────────────────────────────

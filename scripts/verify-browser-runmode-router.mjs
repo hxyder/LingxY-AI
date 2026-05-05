@@ -4,6 +4,9 @@ import {
   planQuickActionRoute,
   standaloneProviderSupportsVision
 } from "../browser_ext/background/run-mode-router.js";
+import {
+  buildRunModeView
+} from "../browser_ext/shared/run-mode-view.js";
 
 const desktopCaps = createRunModeCapabilities({
   desktopAvailable: true,
@@ -30,6 +33,16 @@ assert.deepEqual(
     reason: "desktop_available"
   }
 );
+assert.deepEqual(buildRunModeView(desktopCaps), {
+  mode: "desktop",
+  label: "桌面程序在线",
+  detail: "使用完整桌面能力，任务会送到本地桌面 runtime 处理。",
+  capabilities: [
+    "本地工具与文件/RAG",
+    "审批、任务队列和审计",
+    "调度、连接器和生成文件"
+  ]
+});
 
 const standaloneTextCaps = createRunModeCapabilities({
   desktopAvailable: false,
@@ -38,6 +51,20 @@ const standaloneTextCaps = createRunModeCapabilities({
 });
 assert.equal(standaloneTextCaps.canStandaloneQuickText, true);
 assert.equal(standaloneTextCaps.canStandaloneVision, false);
+assert.deepEqual(buildRunModeView({
+  standaloneReady: true,
+  provider: "deepseek",
+  capabilities: standaloneTextCaps
+}), {
+  mode: "standalone",
+  label: "独立模式 · deepseek",
+  detail: "桌面程序未开时可临时直连模型；本地工具、文件、审批、调度和生成文件需要打开桌面程序。",
+  capabilities: [
+    "网页内容问答",
+    "直接 LLM 对话",
+    "文字快捷动作"
+  ]
+});
 assert.equal(
   planQuickActionRoute({
     action: "summarize",
@@ -62,6 +89,14 @@ const standaloneVisionCaps = createRunModeCapabilities({
   standaloneConfig: { provider: "gemini" }
 });
 assert.equal(standaloneProviderSupportsVision("gemini"), true);
+assert.equal(
+  buildRunModeView({
+    standaloneReady: true,
+    provider: "gemini",
+    capabilities: standaloneVisionCaps
+  }).capabilities.includes("图片快捷分析"),
+  true
+);
 assert.equal(
   planQuickActionRoute({
     action: "uca.inspect-image",
@@ -92,5 +127,7 @@ assert.deepEqual(
     reason: "no_runtime"
   }
 );
+assert.equal(buildRunModeView(offlineCaps).mode, "offline");
+assert.equal(buildRunModeView(offlineCaps).capabilities[0], "暂无可运行后端");
 
 console.log("ok verify-browser-runmode-router");

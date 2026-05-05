@@ -136,6 +136,17 @@ body {
 .status-pill.mode-standalone { background: #fef3c7; color: #9a4a1f; }
 .status-pill.mode-offline { background: #fee2e2; color: #b91c1c; }
 
+.run-mode-copy {
+  margin: 0 0 6px;
+}
+
+.run-mode-capabilities {
+  margin: 0;
+  padding-left: 16px;
+  display: grid;
+  gap: 2px;
+}
+
 /* ── Chat dialog (UCA-160) ── */
 .chat-panel { display: grid; gap: 8px; }
 .chat-clear {
