@@ -770,6 +770,11 @@ function createFloatingChipController(doc = document) {
   host.style.display = "none";
   host.style.zIndex = "2147483647";
   host.style.pointerEvents = "none";
+  host.style.width = "max-content";
+  host.style.height = "max-content";
+  host.style.maxWidth = "calc(100vw - 24px)";
+  host.style.overflow = "visible";
+  host.style.contain = "layout style paint";
   doc.documentElement.appendChild(host);
 
   let previewOpen = false;
@@ -1312,7 +1317,18 @@ function installHoverObserver(doc) {
 
     // Use Shadow DOM for style isolation
     const host = doc.createElement("uca-hover-chip");
-    host.style.cssText = "position:fixed;z-index:2147483647;pointer-events:none;";
+    host.style.cssText = [
+      "all:initial",
+      "position:fixed",
+      "display:block",
+      "width:max-content",
+      "height:max-content",
+      "max-width:calc(100vw - 24px)",
+      "overflow:visible",
+      "contain:layout style paint",
+      "z-index:2147483647",
+      "pointer-events:none"
+    ].join(";");
     host.style.top = `${Math.min(rect.bottom + 6, window.innerHeight - 40)}px`;
     host.style.left = `${Math.min(rect.left, window.innerWidth - 160)}px`;
 

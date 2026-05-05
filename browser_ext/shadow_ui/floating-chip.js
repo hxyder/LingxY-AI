@@ -36,6 +36,11 @@ export function createFloatingChipController(doc = document, theme = DEFAULT_FLO
   host.style.position = "fixed";
   host.style.display = "none";
   host.style.zIndex = "2147483647";
+  host.style.width = "max-content";
+  host.style.height = "max-content";
+  host.style.maxWidth = "calc(100vw - 24px)";
+  host.style.overflow = "visible";
+  host.style.contain = "layout style paint";
   doc.documentElement.appendChild(host);
 
   return {

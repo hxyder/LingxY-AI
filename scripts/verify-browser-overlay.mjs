@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const manifest = JSON.parse(await readFile(path.join(repoRoot, "browser_ext", "manifest.json"), "utf8"));
+const selectionCacheSource = await readFile(path.join(repoRoot, "browser_ext", "content_script", "selection-cache.js"), "utf8");
+const shadowFloatingChipSource = await readFile(path.join(repoRoot, "browser_ext", "shadow_ui", "floating-chip.js"), "utf8");
 
 assert.deepEqual(manifest.content_scripts[0].js, [
   "content_script/rules.js",
@@ -48,6 +50,16 @@ const overlay = context.__ucaOverlay;
 assert.equal(typeof overlay.computeFloatingChipPlacement, "function");
 assert.equal(typeof overlay.createStabilityWatcher, "function");
 assert.equal(overlay.DEFAULT_OVERLAY_SETTINGS.displayMode, "smart");
+assert.equal(selectionCacheSource.includes("width:max-content"), true,
+  "hover chip host must reserve its own width so page CSS cannot shrink it into scrollbars");
+assert.equal(selectionCacheSource.includes("overflow:visible"), true,
+  "hover chip host must keep shadow content visible instead of clipping into scrollbars");
+assert.equal(selectionCacheSource.includes("contain:layout style paint"), true,
+  "hover chip host must isolate layout/style/paint from the host page");
+assert.equal(shadowFloatingChipSource.includes("host.style.width = \"max-content\""), true,
+  "shared floating chip host must use a stable max-content box");
+assert.equal(shadowFloatingChipSource.includes("host.style.overflow = \"visible\""), true,
+  "shared floating chip host must not clip its shadow button");
 
 const flipped = overlay.computeFloatingChipPlacement({
   left: 300,
