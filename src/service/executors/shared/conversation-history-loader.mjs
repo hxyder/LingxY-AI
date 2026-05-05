@@ -64,6 +64,19 @@ function turnTokens(turn, estimateTokens) {
   return total;
 }
 
+function hasStructuredValue(message = {}) {
+  const metadata = message.metadata && typeof message.metadata === "object"
+    ? message.metadata
+    : {};
+  return message.role === "tool_summary"
+    || (Array.isArray(metadata.artifact_paths) && metadata.artifact_paths.length > 0)
+    || (metadata.evidence_summary && typeof metadata.evidence_summary === "object");
+}
+
+function isHighValueTurn(turn = {}) {
+  return Array.isArray(turn.messages) && turn.messages.some(hasStructuredValue);
+}
+
 export function pickTurnsWithinBudget(turns, totalBudget, estimateTokens = defaultTokenEstimator, opts = {}) {
   if (!Array.isArray(turns) || turns.length === 0) return [];
   const partialShare = opts.partialShare ?? PARTIAL_HISTORY_SHARE;
@@ -74,13 +87,30 @@ export function pickTurnsWithinBudget(turns, totalBudget, estimateTokens = defau
   const partialTurns = turns.filter((t) => t.anyPartial);
 
   const keptLive = [];
+  const keptLiveSeqs = new Set();
   let liveUsed = 0;
-  for (let i = liveTurns.length - 1; i >= 0; i--) {
-    const cost = turnTokens(liveTurns[i], estimateTokens);
-    if (liveUsed + cost > budget && keptLive.length > 0) break;
-    keptLive.push(liveTurns[i]);
+  const highValueLiveTurns = liveTurns.filter(isHighValueTurn);
+  const normalLiveTurns = liveTurns.filter((turn) => !isHighValueTurn(turn));
+  const addLiveTurn = (turn) => {
+    if (!turn || keptLiveSeqs.has(turn.triggerSeq)) return false;
+    const cost = turnTokens(turn, estimateTokens);
+    if (liveUsed + cost > budget && keptLive.length > 0) return false;
+    keptLive.push(turn);
+    keptLiveSeqs.add(turn.triggerSeq);
     liveUsed += cost;
+    return true;
+  };
+
+  addLiveTurn(normalLiveTurns[normalLiveTurns.length - 1]);
+  for (let i = highValueLiveTurns.length - 1; i >= 0; i--) {
+    addLiveTurn(highValueLiveTurns[i]);
     if (liveUsed >= budget) break;
+  }
+  if (liveUsed < budget) {
+    for (let i = normalLiveTurns.length - 1; i >= 0; i--) {
+      addLiveTurn(normalLiveTurns[i]);
+      if (liveUsed >= budget) break;
+    }
   }
 
   const partialCap = Math.min(Math.floor(budget * partialShare), Math.max(0, budget - liveUsed));

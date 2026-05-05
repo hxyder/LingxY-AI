@@ -100,11 +100,45 @@ test("conversation lifecycle writes assistant outcome messages and answered_by l
 
   task.status = "success";
   task.result_summary = "这是回答。";
+  task.evidence_summary = {
+    source_count: 1,
+    sources: [{ kind: "web", locator: "https://example.test/source" }]
+  };
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_outcome",
+    task_id: task.task_id,
+    conversation_id: task.conversation_id,
+    path: "E:\\linxiDoc\\task\\result.docx",
+    mime_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    kind: "document",
+    status: "ready"
+  });
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_preview_html",
+    task_id: task.task_id,
+    conversation_id: task.conversation_id,
+    path: "E:\\linxiDoc\\task\\result-preview.html",
+    mime_type: "text/html",
+    kind: "preview",
+    status: "ready"
+  });
+  runtime.store.appendArtifact({
+    artifact_id: "artifact_preview_txt",
+    task_id: task.task_id,
+    conversation_id: task.conversation_id,
+    path: "E:\\linxiDoc\\task\\result-preview.txt",
+    mime_type: "text/plain",
+    kind: "preview",
+    status: "ready"
+  });
   const message = appendTaskOutcomeMessage(runtime, task);
 
   assert.equal(message.role, "assistant");
   assert.equal(message.status, "ok");
   assert.equal(message.content, "这是回答。");
+  assert.equal(message.metadata.task_id, task.task_id);
+  assert.deepEqual(message.metadata.artifact_paths, ["E:\\linxiDoc\\task\\result.docx"]);
+  assert.deepEqual(message.metadata.evidence_summary, task.evidence_summary);
   assert.deepEqual(
     runtime.store.getTaskMessages(task.task_id).map((link) => link.relation).sort(),
     ["answered_by", "triggered"]

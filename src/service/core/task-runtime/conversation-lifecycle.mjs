@@ -144,6 +144,8 @@ export function backfillConversationTitles(runtime) {
   return { scanned: all.length, updated };
 }
 
+const MAX_OUTCOME_ARTIFACT_PATHS = 8;
+
 export function appendTaskOutcomeMessage(runtime, task) {
   if (!runtime?.store?.appendMessage || !runtime.store.linkMessageToTask) return null;
   const conversationId = task?.conversation_id;
@@ -181,6 +183,19 @@ export function appendTaskOutcomeMessage(runtime, task) {
     const evidenceSummary = task?.evidence_summary ?? task?.result?.evidence_summary ?? null;
     if (evidenceSummary && typeof evidenceSummary === "object") {
       metadata.evidence_summary = evidenceSummary;
+    }
+    if (typeof runtime.store.getArtifactsForTask === "function") {
+      const artifactPaths = (runtime.store.getArtifactsForTask(task.task_id) ?? [])
+        .map((artifact) => typeof artifact?.path === "string" ? artifact.path : "")
+        .filter(Boolean)
+        .filter((artifactPath) =>
+          !artifactPath.endsWith("-preview.html")
+          && !artifactPath.endsWith("-preview.txt")
+        )
+        .slice(0, MAX_OUTCOME_ARTIFACT_PATHS);
+      if (artifactPaths.length > 0) {
+        metadata.artifact_paths = artifactPaths;
+      }
     }
     const message = runtime.store.appendMessage({
       conversation_id: conversationId,
