@@ -365,6 +365,8 @@ assert.equal(serviceWorkerJs.includes("RUNTIME_BROWSER_CONTEXT_URL"), true);
 assert.equal(serviceWorkerJs.includes("hasStandaloneProviderConfig"), true);
 assert.equal(serviceWorkerJs.includes("standaloneConfig?.apiKey"), false);
 assert.equal(serviceWorkerJs.includes("resolveQuickActionRouteContext"), true);
+assert.equal(serviceWorkerJs.includes("resolvePageExplainRouteContext"), true);
+assert.equal(serviceWorkerJs.includes("planPageExplainRoute"), true);
 assert.equal(serviceWorkerJs.includes("routePlan: sidepanelContext.routePlan"), true);
 assert.equal(serviceWorkerJs.includes("routePlan: inlineRouteContext.routePlan"), true);
 assert.equal(
@@ -381,6 +383,7 @@ const runModeViewJs = await readFile(path.join(repoRoot, "browser_ext", "shared"
 assert.equal(popupJs.includes("../shared/run-mode-view.js"), true);
 assert.equal(sidepanelJs.includes("../shared/run-mode-view.js"), true);
 assert.equal(sidepanelJs.includes("routePlan: request.routePlan ?? null"), true);
+assert.equal(sidepanelJs.includes("routePlan = null"), true);
 assert.equal(selectionCacheJs.includes("routePlan"), true);
 assert.equal(runModeViewJs.includes("本地工具与文件/RAG"), true);
 assert.equal(runModeViewJs.includes("网页内容问答"), true);

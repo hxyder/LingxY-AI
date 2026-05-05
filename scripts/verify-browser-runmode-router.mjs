@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   createRunModeCapabilities,
+  planPageExplainRoute,
   planQuickActionRoute,
   standaloneProviderSupportsVision
 } from "../browser_ext/background/run-mode-router.js";
@@ -43,6 +44,22 @@ assert.deepEqual(buildRunModeView(desktopCaps), {
     "调度、连接器和生成文件"
   ]
 });
+assert.deepEqual(
+  planPageExplainRoute({
+    origin: "popup",
+    capabilities: desktopCaps,
+    preferSidePanel: true
+  }),
+  {
+    ok: true,
+    origin: "popup",
+    actionKind: "page_explain",
+    ui: "sidepanel_pending",
+    transport: "desktop_page_explain",
+    mode: "desktop",
+    reason: "desktop_available"
+  }
+);
 
 const standaloneTextCaps = createRunModeCapabilities({
   desktopAvailable: false,
@@ -73,6 +90,14 @@ assert.equal(
     preferInline: false
   }).transport,
   "standalone_direct"
+);
+assert.equal(
+  planPageExplainRoute({
+    origin: "keyboard",
+    capabilities: standaloneTextCaps,
+    preferSidePanel: false
+  }).ui,
+  "standalone_notification"
 );
 assert.equal(
   planQuickActionRoute({
@@ -126,6 +151,13 @@ assert.deepEqual(
     mode: "offline",
     reason: "no_runtime"
   }
+);
+assert.equal(
+  planPageExplainRoute({
+    origin: "popup",
+    capabilities: offlineCaps
+  }).reason,
+  "no_runtime"
 );
 assert.equal(buildRunModeView(offlineCaps).mode, "offline");
 assert.equal(buildRunModeView(offlineCaps).capabilities[0], "暂无可运行后端");

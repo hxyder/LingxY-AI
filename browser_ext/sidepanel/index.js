@@ -513,7 +513,7 @@ async function extractPagePlainText(tabId) {
   }
 }
 
-async function onAnalyzePageV2({ mode = "analyze", resetConversation = true } = {}) {
+async function onAnalyzePageV2({ mode = "analyze", resetConversation = true, routePlan = null } = {}) {
   if (isBusy) return;
   if (resetConversation) {
     await startFreshAnalysisThread();
@@ -554,7 +554,8 @@ async function onAnalyzePageV2({ mode = "analyze", resetConversation = true } = 
     userContent: userText,
     displayLabel,
     attached: bodyBlock,
-    maxTokens: 1536
+    maxTokens: 1536,
+    routePlan
   });
 }
 
@@ -660,7 +661,7 @@ async function runPendingAnalysis(request = null) {
     return;
   }
   if (request.kind === "page_explain") {
-    await onAnalyzePageV2({ mode: "explain", resetConversation: true });
+    await onAnalyzePageV2({ mode: "explain", resetConversation: true, routePlan: request.routePlan ?? null });
     return;
   }
   if (request.kind === "quickaction") {

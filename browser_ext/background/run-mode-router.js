@@ -110,3 +110,41 @@ export function planQuickActionRoute({
     reason: actionKind === "image" ? "no_vision_runtime" : "no_runtime"
   });
 }
+
+export function planPageExplainRoute({
+  origin = "page_action",
+  capabilities = createRunModeCapabilities(),
+  preferSidePanel = true
+} = {}) {
+  if (capabilities.desktopAvailable) {
+    return Object.freeze({
+      ok: true,
+      origin,
+      actionKind: "page_explain",
+      ui: preferSidePanel ? "sidepanel_pending" : "desktop_handoff",
+      transport: "desktop_page_explain",
+      mode: "desktop",
+      reason: "desktop_available"
+    });
+  }
+  if (capabilities.canStandaloneChat) {
+    return Object.freeze({
+      ok: true,
+      origin,
+      actionKind: "page_explain",
+      ui: preferSidePanel ? "sidepanel_pending" : "standalone_notification",
+      transport: "standalone_direct",
+      mode: "standalone",
+      reason: "desktop_unavailable_standalone_text"
+    });
+  }
+  return Object.freeze({
+    ok: false,
+    origin,
+    actionKind: "page_explain",
+    ui: "error",
+    transport: "none",
+    mode: "offline",
+    reason: "no_runtime"
+  });
+}

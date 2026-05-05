@@ -15,6 +15,7 @@ import {
 } from "./context-enricher.js";
 import {
   createRunModeCapabilities,
+  planPageExplainRoute,
   planQuickActionRoute
 } from "./run-mode-router.js";
 import { runTaskWithStream } from "./sse-client.js";
@@ -424,6 +425,30 @@ async function resolveQuickActionRouteContext({
   };
 }
 
+async function resolvePageExplainRouteContext({
+  origin = "page_action",
+  preferSidePanel = true
+} = {}) {
+  const standaloneConfig = await loadStandaloneConfig();
+  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+  const desktopUp = await isDesktopAvailable(runtimeBase);
+  const capabilities = createRunModeCapabilities({
+    desktopAvailable: desktopUp,
+    standaloneReady: hasStandaloneProviderConfig(standaloneConfig),
+    standaloneConfig
+  });
+  return {
+    standaloneConfig,
+    runtimeBase,
+    capabilities,
+    routePlan: planPageExplainRoute({
+      origin,
+      capabilities,
+      preferSidePanel
+    })
+  };
+}
+
 export async function runQuickAction({
   action,
   selectionState,
@@ -795,11 +820,16 @@ export async function dispatchExplainPage({
   // attribute source_app correctly.
   payload.browser = tab?.url?.includes("edge") ? "msedge.exe" : "chrome.exe";
 
-  const standaloneConfig = await loadStandaloneConfig();
-  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+  const routeContext = await resolvePageExplainRouteContext({
+    origin: "keyboard_or_service_worker",
+    preferSidePanel: false
+  });
+  const { standaloneConfig, runtimeBase, routePlan } = routeContext;
   const resolvedExplainUrl = pageExplainUrl ?? `${runtimeBase}/page/explain`;
-  const desktopUp = await isDesktopAvailable(runtimeBase);
-  if (!desktopUp && hasStandaloneProviderConfig(standaloneConfig)) {
+  if (!routePlan.ok) {
+    return { ok: false, mode: routePlan.mode, error: routePlan.reason, routePlan };
+  }
+  if (routePlan.transport === "standalone_direct") {
     return runStandaloneExplainPage({ capture: payload, standaloneConfig, chromeApi });
   }
 
@@ -860,11 +890,17 @@ export function registerExtensionRuntime(chromeApi = chrome) {
 
   chromeApi.contextMenus.onClicked.addListener(async (info, tab) => {
     if (info.menuItemId === "uca.explain-page") {
+      const routeContext = await resolvePageExplainRouteContext({
+        origin: "context_menu",
+        preferSidePanel: true
+      });
       await queueSidePanelAnalysis({
-        kind: "page_explain"
+        kind: "page_explain",
+        routePlan: routeContext.routePlan
       }, {
         chromeApi,
-        windowId: tab?.windowId ?? null
+        windowId: tab?.windowId ?? null,
+        routePlan: routeContext.routePlan
       });
       return;
     }
@@ -1014,12 +1050,18 @@ export function registerExtensionRuntime(chromeApi = chrome) {
       (async () => {
         const explicitWindowId = message.windowId ?? null;
         const senderWindowId = _sender?.tab?.windowId ?? null;
+        const routeContext = await resolvePageExplainRouteContext({
+          origin: "popup_or_message",
+          preferSidePanel: true
+        });
         const result = await queueSidePanelAnalysis({
-          kind: "page_explain"
+          kind: "page_explain",
+          routePlan: routeContext.routePlan
         }, {
           chromeApi,
           windowId: explicitWindowId ?? senderWindowId,
-          openPanel: message.openPanel !== false
+          openPanel: message.openPanel !== false,
+          routePlan: routeContext.routePlan
         });
         sendResponse(result);
       })();
