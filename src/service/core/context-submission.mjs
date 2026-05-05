@@ -11,6 +11,10 @@ import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
 import { pushBackgroundContextInPlace } from "./intent/background-contexts.mjs";
+import {
+  firstContentEvidenceViolationMessage,
+  validateContentEvidenceGate
+} from "./evidence/content-evidence-gate.mjs";
 import { EMBEDDING_NAMESPACES } from "../embeddings/store.mjs";
 import {
   getProjectAttachedFilePaths
@@ -964,6 +968,7 @@ export async function submitContextTask({
   executorOverride = null,
   skipDecomposition = false,
   skipPlanLayer = false,
+  contentEvidenceGateMode = null,
   background = false
 }) {
   ensureRuntimeServices(runtime);
@@ -1207,6 +1212,35 @@ export async function submitContextTask({
       taskEvents: originalEvents.length > 0 ? originalEvents : store.getTaskEvents(task.task_id),
       artifacts: originalArtifacts
     };
+  }
+
+  if (contentEvidenceGateMode) {
+    const evidenceGate = validateContentEvidenceGate({
+      taskSpec: task.task_spec,
+      contextPacket: task.context_packet,
+      mode: contentEvidenceGateMode,
+      allowImagePixels: task.executor === "multi_modal"
+    });
+    if (!evidenceGate.ok) {
+      emitTaskEvent({
+        runtime,
+        taskId: task.task_id,
+        eventType: "step_warning",
+        payload: {
+          step: "content_evidence_gate",
+          mode: contentEvidenceGateMode,
+          violations: evidenceGate.violations
+        }
+      });
+      markTaskFailed(runtime, task, {
+        message: firstContentEvidenceViolationMessage(evidenceGate)
+      });
+      return {
+        task,
+        taskEvents: store.getTaskEvents(task.task_id),
+        artifacts: []
+      };
+    }
   }
 
   const execute = async () => {

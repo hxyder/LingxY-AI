@@ -126,7 +126,8 @@ export async function submitFileTask({
       projectId,
       retryCount,
       executorOverride: executorOverride ?? null,
-      skipDecomposition: false
+      skipDecomposition: false,
+      contentEvidenceGateMode: "inline_context_only"
     });
   }
 

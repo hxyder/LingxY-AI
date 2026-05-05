@@ -142,6 +142,51 @@ test("context submission declares its submission kind through the central bounda
   assert.equal(audit.payload.submission_kind, "context");
 });
 
+test("context submission inline evidence gate blocks unreadable file metadata before executor", async () => {
+  let executorCalled = false;
+  const runtime = createRuntime();
+  runtime.executors = [{
+    id: "fast",
+    async *execute() {
+      executorCalled = true;
+      yield { event_type: "inline_result", payload: { text: "should not run" } };
+    }
+  }];
+
+  const { task, taskEvents } = await submitContextTask({
+    runtime,
+    userCommand: "总结这个文件",
+    executionMode: "interactive",
+    background: true,
+    skipPlanLayer: true,
+    contentEvidenceGateMode: "inline_context_only",
+    contextPacket: {
+      source_type: "file",
+      source_app: "uca.test",
+      capture_mode: "manual",
+      text: "",
+      file_paths: ["E:\\docs\\scan.pdf"],
+      selection_metadata: {
+        content_evidence: [{
+          source_kind: "local_file_metadata",
+          coverage_scope: "file_metadata",
+          locator: "E:\\docs\\scan.pdf",
+          extraction_mode: "pdf_ocr_unavailable",
+          content_extracted: false
+        }]
+      }
+    }
+  });
+
+  assert.equal(task.status, "failed");
+  assert.equal(executorCalled, false);
+  assert.match(task.failure_user_message, /does not contain readable text|没有/);
+  assert.ok(taskEvents.some((event) =>
+    event.event_type === "step_warning"
+    && event.payload?.step === "content_evidence_gate"
+  ));
+});
+
 async function withEmptyProviderConfig(fn) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "uca-submission-boundary-"));
   const configPath = path.join(dir, "runtime.json");
