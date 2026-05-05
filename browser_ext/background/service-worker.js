@@ -579,6 +579,20 @@ function normalizeBrowserCaptureForChat(capture = null) {
   };
 }
 
+function formatBrowserCaptureForStandalonePrompt(capture = null) {
+  if (!capture) return "";
+  const title = `${capture.pageTitle ?? ""}`.trim();
+  const url = `${capture.url ?? ""}`.trim();
+  const text = `${capture.text ?? capture.selectionText ?? ""}`.trim();
+  if (!title && !url && !text) return "";
+  return [
+    "Browser context:",
+    title ? `Title: ${title}` : "",
+    url ? `URL: ${url}` : "",
+    text ? `Content:\n${text}` : ""
+  ].filter(Boolean).join("\n");
+}
+
 async function queueSidePanelAnalysis(request, { chromeApi = chrome, windowId = null, openPanel = true, routePlan = null } = {}) {
   const effectiveRoutePlan = isValidRoutePlan(routePlan)
     ? routePlan
@@ -1373,8 +1387,12 @@ function registerChatStreamPort(chromeApi = chrome) {
       const systemPrompt = typeof message.systemPrompt === "string" && message.systemPrompt.trim()
         ? message.systemPrompt
         : "You are LingxY, a helpful assistant in a Chrome extension popup. Reply concisely in the user's language. Use Markdown for structure when helpful.";
-      const messages = [{ role: "system", content: systemPrompt }, ...conversation];
       const browserCapture = normalizeBrowserCaptureForChat(message.browserCapture);
+      const standaloneCaptureContext = formatBrowserCaptureForStandalonePrompt(browserCapture);
+      const standaloneConversation = standaloneCaptureContext
+        ? [...history, { role: "user", content: `${userText}\n\n---\n${standaloneCaptureContext}\n---` }]
+        : conversation;
+      const messages = [{ role: "system", content: systemPrompt }, ...standaloneConversation];
       const requestedMaxTokens = Number.isFinite(message?.maxTokens)
         ? Math.min(2048, Math.max(256, Math.round(message.maxTokens)))
         : 512;

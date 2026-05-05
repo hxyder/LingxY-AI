@@ -175,6 +175,7 @@ async function refreshMode() {
 /* ── Chat send (port-based streaming) ────────────────────────────────── */
 function sendTurn({
   userContent,
+  requestText = null,
   systemContent = null,
   assistantPrefix = null,
   displayLabel = null,
@@ -347,7 +348,7 @@ function sendTurn({
       .map((t) => ({ role: t.role, content: String(t.content ?? "") }));
     port.postMessage({
       type: "chat",
-      text: userContent,
+      text: requestText ?? userContent,
       history: sendableHistory,
       systemPrompt: SYSTEM_PROMPT,
       maxTokens,
@@ -564,6 +565,9 @@ async function onAnalyzePageV2({ mode = "analyze", resetConversation = true, rou
   }
   statusEl.textContent = "";
   const isExplain = mode === "explain";
+  const requestText = isExplain
+    ? `请解释当前${kindLabel}，基于随请求附带的页面内容给出总述、关键点、背景、结论和不确定性。我可能会继续追问。`
+    : `请分析当前${kindLabel}，基于随请求附带的页面内容给出总体概述、关键要点和 3 个值得延伸的问题。我可能会继续追问。`;
   const userText = isExplain
     ? `请解释以下${kindLabel}：先给一段清楚的总述，再列出 5-8 个关键点，说明背景、核心结论和需要注意的不确定性。我可能会继续追问。\n\n---\n${bodyBlock}\n---`
     : `请分析以下${kindLabel}：先一段总体概述，再用编号列表给出 5-8 个关键要点，最后给出 3 个值得延伸的问题。我可能会基于这份分析继续追问。\n\n---\n${bodyBlock}\n---`;
@@ -583,6 +587,7 @@ async function onAnalyzePageV2({ mode = "analyze", resetConversation = true, rou
   };
   await sendTurn({
     userContent: userText,
+    requestText,
     displayLabel,
     attached: bodyBlock,
     maxTokens: 1536,
@@ -617,11 +622,25 @@ async function onAnalyzeSelection({ resetConversation = true } = {}) {
     }
     const userText = `请分析以下网页选区内容，给出要点和我可能感兴趣的延伸问题：\n\n标题：${payload.title}\nURL：${payload.url}\n\n选区：\n${payload.text}`;
     const preview = payload.text.slice(0, 40) + (payload.text.length > 40 ? "…" : "");
+    const browserCapture = {
+      sourceType: "text_selection",
+      browser: "chrome.exe",
+      url: payload.url ?? "",
+      pageTitle: payload.title ?? "",
+      text: payload.text,
+      selectionText: payload.text,
+      metadata: {
+        source: "browser_sidepanel",
+        contentKind: "selection"
+      }
+    };
     await sendTurn({
       userContent: userText,
+      requestText: "请分析当前网页选区内容，基于随请求附带的选区文本给出要点和延伸问题。",
       displayLabel: `✂️ 分析选区：${preview}`,
       attached: payload.text,
-      maxTokens: 1024
+      maxTokens: 1024,
+      browserCapture
     });
   } catch {
     appendTurnEl({ role: "error", content: "无法读取页面选区（这个页面可能禁止注入脚本）" });

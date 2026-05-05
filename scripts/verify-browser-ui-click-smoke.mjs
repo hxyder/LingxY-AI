@@ -273,6 +273,12 @@ async function verifySidePanelClicks() {
   await tick();
   assert.ok(transcript.scriptCalls.some((source) => source.includes("window.getSelection")),
     "sidepanel selection action should read the active tab selection");
+  assert.ok(transcript.ports.some((port) =>
+    port.name === "uca.chat.stream"
+    && port.payload?.browserCapture?.sourceType === "text_selection"
+    && port.payload?.browserCapture?.selectionText === "selected text"
+    && !port.payload?.text?.includes("selected text")),
+  "sidepanel selection action should pass selected text as structured capture, not plain chat");
 
   document.getElementById("sp-action-page").dispatchEvent(new Event("click"));
   await tick();
@@ -284,6 +290,12 @@ async function verifySidePanelClicks() {
     && port.payload?.browserCapture?.sourceType === "page_explanation"
     && port.payload?.browserCapture?.metadata?.source === "browser_sidepanel"),
   "sidepanel page action should attach structured browser capture metadata to the stream");
+  assert.ok(transcript.ports.some((port) =>
+    port.name === "uca.chat.stream"
+    && port.payload?.browserCapture?.sourceType === "page_explanation"
+    && port.payload?.browserCapture?.text?.includes("Readable body text")
+    && !port.payload?.text?.includes("Readable body text")),
+  "sidepanel page action should keep page body in structured capture, not duplicate it into the task command");
 
   document.getElementById("sp-action-location").dispatchEvent(new Event("click"));
   await tick();
