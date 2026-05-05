@@ -20,6 +20,7 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_LOCAL_WHISPER_MODEL = "base";
 const DEFAULT_LOCAL_WHISPER_BEAM_SIZE = "5";
 const ECHO_AUDIO_ACTORS = ["desktop_shell"];
+const ECHO_STATUS_ACTORS = ["desktop_shell", "desktop_console"];
 const NOTE_TRANSCRIBE_ACTORS = ["desktop_overlay"];
 const ECHO_AUDIO_MAX_BYTES = 1024 * 1024 * 12;
 const NOTE_AUDIO_MAX_BYTES = 1024 * 1024 * 64;
@@ -441,11 +442,38 @@ async function readEnrollmentManifest() {
     return {
       schemaVersion: 1,
       sessionId: typeof parsed.sessionId === "string" ? parsed.sessionId : "",
+      updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : "",
+      profile: parsed.profile && typeof parsed.profile === "object" ? parsed.profile : null,
       samples: parsed.samples && typeof parsed.samples === "object" ? parsed.samples : {}
     };
   } catch {
-    return { schemaVersion: 1, sessionId: "", samples: {} };
+    return { schemaVersion: 1, sessionId: "", updatedAt: "", profile: null, samples: {} };
   }
+}
+
+async function readEnrollmentStatus() {
+  const manifest = await readEnrollmentManifest();
+  const summary = summarizeEnrollment(manifest.samples);
+  const sampleStates = ENROLLMENT_SAMPLE_KEYS.map((key) => {
+    const sample = manifest.samples?.[key] ?? null;
+    return {
+      sample: key,
+      present: Boolean(sample),
+      updatedAt: typeof sample?.updatedAt === "string" ? sample.updatedAt : "",
+      kwsMatched: Boolean(sample?.kwsSelfCheck?.matched),
+      keyword: sample?.kwsSelfCheck?.keyword ?? "",
+      audioSeconds: sample?.kwsSelfCheck?.audio_seconds ?? null,
+      reason: sample?.kwsSelfCheck?.reason ?? null
+    };
+  });
+  return {
+    ok: true,
+    schemaVersion: manifest.schemaVersion,
+    updatedAt: manifest.updatedAt,
+    profile: manifest.profile,
+    ...summary,
+    samples: sampleStates
+  };
 }
 
 async function writeEnrollmentSample({ sessionId = "", sampleKey, savedAudio, transcript, kwsSelfCheck }) {
@@ -648,6 +676,9 @@ function resolveAudioRuntime(runtime) {
     writeEnrollmentSample: typeof injected?.writeEnrollmentSample === "function"
       ? injected.writeEnrollmentSample
       : writeEnrollmentSample,
+    readEnrollmentStatus: typeof injected?.readEnrollmentStatus === "function"
+      ? injected.readEnrollmentStatus
+      : readEnrollmentStatus,
     getUserKeywordDir: typeof injected?.getUserKeywordDir === "function"
       ? injected.getUserKeywordDir
       : getUserKeywordDir
@@ -657,6 +688,13 @@ function resolveAudioRuntime(runtime) {
 export async function tryHandleAudioRoute({ request, response, method, url, runtime }) {
   if (method === "GET" && url.pathname === "/echo/kws/status") {
     sendJson(response, 200, await readLocalKeywordSpottingStatus());
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/echo/enrollment/status") {
+    if (!requireDesktopActor({ request, response, allowedActors: ECHO_STATUS_ACTORS })) return true;
+    const audioRuntime = resolveAudioRuntime(runtime);
+    sendJson(response, 200, await audioRuntime.readEnrollmentStatus());
     return true;
   }
 

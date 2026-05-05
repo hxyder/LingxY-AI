@@ -134,6 +134,8 @@ for (const bridge of [
   "getDesktopAudioSource()",
   "detectEchoKeyword(payload)",
   "enrollEchoKeyword(payload)",
+  "getEchoDiagnostics()",
+  "startWakeEnrollment()",
   "setEchoWakeProfile(profile)",
   "transcribeNoteAudio(payload)",
   "transcribeNoteAudioStreaming(payload, callback)",
@@ -146,6 +148,8 @@ for (const channel of [
   "shellOpenOverlayVoice",
   "echoKwsDetect",
   "echoKeywordEnroll",
+  "echoDiagnostics",
+  "echoWakeEnrollmentStart",
   "echoWakeProfileUpdate",
   "noteTranscribe",
   "noteTranscribeStream",
@@ -159,6 +163,8 @@ for (const mainBridge of [
   "IPC_CHANNELS.shellOpenOverlayVoice",
   "IPC_CHANNELS.echoKwsDetect",
   "IPC_CHANNELS.echoKeywordEnroll",
+  "IPC_CHANNELS.echoDiagnostics",
+  "IPC_CHANNELS.echoWakeEnrollmentStart",
   "IPC_CHANNELS.echoWakeProfileUpdate",
   "IPC_CHANNELS.noteTranscribe",
   "IPC_CHANNELS.noteTranscribeStream",
@@ -174,6 +180,7 @@ for (const mainBridge of [
 
 for (const route of [
   "GET\" && url.pathname === \"/echo/kws/status\"",
+  "GET\" && url.pathname === \"/echo/enrollment/status\"",
   "POST\" && url.pathname === \"/echo/kws\"",
   "POST\" && url.pathname === \"/echo/enroll-keyword\"",
   "POST\" && url.pathname === \"/note/transcribe\""
@@ -198,6 +205,7 @@ for (const inventory of [
   "POST\", \"/echo/enroll-keyword\"",
   "POST\", \"/echo/kws\"",
   "GET\", \"/echo/kws/status\"",
+  "GET\", \"/echo/enrollment/status\"",
   "POST\", \"/note/transcribe\""
 ]) {
   assert.ok(localSurface.includes(inventory), `local HTTP surface inventory missing ${inventory}`);

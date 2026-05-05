@@ -257,6 +257,9 @@ const echoWakePhrases = document.querySelector("#echoWakePhrases");
 const echoWakeIncludeDefault = document.querySelector("#echoWakeIncludeDefault");
 const echoWakeSaveBtn = document.querySelector("#echoWakeSaveBtn");
 const echoWakeState = document.querySelector("#echoWakeState");
+const echoDiagnosticsRefreshBtn = document.querySelector("#echoDiagnosticsRefreshBtn");
+const echoEnrollmentStartBtn = document.querySelector("#echoEnrollmentStartBtn");
+const echoDiagnosticsPanel = document.querySelector("#echoDiagnosticsPanel");
 const mcpServerCount = document.querySelector("#mcpServerCount");
 const mcpServerForm = document.querySelector("#mcpServerForm");
 const mcpServerId = document.querySelector("#mcpServerId");
@@ -469,10 +472,89 @@ function renderEchoWakeSettings(settings = {}) {
   if (echoWakeIncludeDefault) echoWakeIncludeDefault.checked = profile.includeDefault !== false;
 }
 
+let echoDiagnosticsLastLoadedAt = 0;
+let echoDiagnosticsInFlight = null;
+
+function renderEchoDiagnostics(payload = null) {
+  if (!echoDiagnosticsPanel) return;
+  if (!payload) {
+    echoDiagnosticsPanel.innerHTML = `
+      <div class="voice-status-card">
+        <strong>Voice status</strong>
+        <div class="value">Not checked</div>
+        <div class="hint">Open this panel or refresh to inspect Echo without slowing live wake detection.</div>
+      </div>
+    `;
+    return;
+  }
+  const kws = payload.kws ?? {};
+  const enrollment = payload.enrollment ?? {};
+  const profile = payload.echoWake ?? {};
+  const kwsOk = Boolean(kws.ok);
+  const enrollmentEnabled = Boolean(enrollment.enabled);
+  const sampleCount = Number(enrollment.sampleCount ?? 0);
+  const requiredSamples = Number(enrollment.requiredSamples ?? 3);
+  const matchedCount = Number(enrollment.matchedCount ?? 0);
+  const requiredMatches = Number(enrollment.requiredMatches ?? 2);
+  const customPhrases = Array.isArray(profile.phrases) ? profile.phrases.length : 0;
+  const profileLabel = profile.displayName || "linxi";
+  const sampleHint = enrollment.ok === false
+    ? (enrollment.message || enrollment.reason || "Enrollment status unavailable.")
+    : `${sampleCount}/${requiredSamples} samples, ${matchedCount}/${requiredMatches} KWS matches.`;
+  echoDiagnosticsPanel.innerHTML = `
+    <div class="voice-status-card">
+      <strong>Echo mode</strong>
+      <div class="value">${payload.echoMode ? "On" : "Off"}</div>
+      <div class="hint">Wake profile: ${escapeHtml(profileLabel)} · ${customPhrases} custom phrase${customPhrases === 1 ? "" : "s"}</div>
+    </div>
+    <div class="voice-status-card">
+      <strong>Wake engine</strong>
+      <div class="value">${kwsOk ? "Local KWS ready" : "Needs setup"}</div>
+      <div class="hint">${escapeHtml(kwsOk ? (kws.model || kws.engine || "sherpa-onnx") : (kws.message || kws.reason || "Local KWS status unavailable."))}</div>
+    </div>
+    <div class="voice-status-card">
+      <strong>Personal samples</strong>
+      <div class="value">${enrollmentEnabled ? "Enabled" : sampleCount > 0 ? "Needs retest" : "Not recorded"}</div>
+      <div class="hint">${escapeHtml(sampleHint)}</div>
+    </div>
+  `;
+}
+
+async function loadEchoDiagnostics({ force = false } = {}) {
+  if (!echoDiagnosticsPanel || typeof window.ucaShell?.getEchoDiagnostics !== "function") return null;
+  const now = Date.now();
+  if (!force && echoDiagnosticsInFlight) return echoDiagnosticsInFlight;
+  if (!force && echoDiagnosticsLastLoadedAt && now - echoDiagnosticsLastLoadedAt < 30_000) return null;
+  if (force && echoWakeState) echoWakeState.textContent = "Checking voice status...";
+  echoDiagnosticsInFlight = window.ucaShell.getEchoDiagnostics()
+    .then((payload) => {
+      echoDiagnosticsLastLoadedAt = Date.now();
+      renderEchoDiagnostics(payload);
+      if (force && echoWakeState) echoWakeState.textContent = "";
+      return payload;
+    })
+    .catch((error) => {
+      renderEchoDiagnostics({
+        ok: false,
+        echoMode: false,
+        echoWake: {},
+        kws: { ok: false, reason: "diagnostics_failed", message: error?.message ?? String(error) },
+        enrollment: { ok: false, reason: "diagnostics_failed", message: error?.message ?? String(error) }
+      });
+      if (force && echoWakeState) echoWakeState.textContent = `Voice status failed: ${error?.message ?? error}`;
+      return null;
+    })
+    .finally(() => {
+      echoDiagnosticsInFlight = null;
+    });
+  return echoDiagnosticsInFlight;
+}
+
 async function loadEchoWakeSettings() {
   if (typeof window.ucaShell?.getSettings !== "function") return;
   try {
     renderEchoWakeSettings(await window.ucaShell.getSettings());
+    void loadEchoDiagnostics();
   } catch {
     // Non-fatal: settings can still be loaded on the next broadcast.
   }
@@ -480,8 +562,11 @@ async function loadEchoWakeSettings() {
 
 window.ucaShell?.onSettingsChanged?.((settings) => {
   renderEchoWakeSettings(settings ?? {});
+  echoDiagnosticsLastLoadedAt = 0;
+  void loadEchoDiagnostics();
 });
 void loadEchoWakeSettings();
+renderEchoDiagnostics();
 
 // UCA-107: Rail collapse toggle + persisted rail state + persisted
 // current view. Reads from localStorage on boot, writes on interaction.
@@ -6630,6 +6715,7 @@ async function renderWorkspaceAfterFetch({ mode = "full", activeTabId = currentC
     renderIfChanged("settings.emailDigest", state.workspace.emailDigestSettings, renderEmailDigestSettings);
     renderIfChanged("settings.features", state.workspace.health?.config?.features ?? {}, renderFeatureToggles);
     renderIfChanged("settings.output", state.workspace.health?.config?.output ?? {}, renderOutputDir);
+    void loadEchoDiagnostics();
     void renderPreviewSettings();
     void renderFailedTasks();
     void renderTrashList();
@@ -8859,12 +8945,37 @@ echoWakeSaveBtn?.addEventListener("click", async () => {
   try {
     const settings = await updateEchoWakeProfileViaShell(profile);
     renderEchoWakeSettings(settings);
+    echoDiagnosticsLastLoadedAt = 0;
+    void loadEchoDiagnostics({ force: true });
     if (echoWakeState) echoWakeState.textContent = "Saved. Echo will use this profile next wake.";
     setTimeout(() => { if (echoWakeState) echoWakeState.textContent = ""; }, 2600);
   } catch (error) {
     if (echoWakeState) echoWakeState.textContent = `Failed: ${error.message}`;
   } finally {
     if (echoWakeSaveBtn) echoWakeSaveBtn.disabled = false;
+  }
+});
+
+echoDiagnosticsRefreshBtn?.addEventListener("click", () => {
+  void loadEchoDiagnostics({ force: true });
+});
+
+echoEnrollmentStartBtn?.addEventListener("click", async () => {
+  if (typeof window.ucaShell?.startWakeEnrollment !== "function") {
+    if (echoWakeState) echoWakeState.textContent = "Wake enrollment is only available in the desktop shell.";
+    return;
+  }
+  if (echoEnrollmentStartBtn) echoEnrollmentStartBtn.disabled = true;
+  if (echoWakeState) echoWakeState.textContent = "Starting wake sample recording...";
+  try {
+    const result = await window.ucaShell.startWakeEnrollment();
+    if (!result?.ok) throw new Error(result?.message || result?.reason || "Could not start wake enrollment.");
+    if (echoWakeState) echoWakeState.textContent = "Follow the Echo bubbles to record 3 wake samples.";
+    setTimeout(() => { if (echoWakeState) echoWakeState.textContent = ""; }, 4200);
+  } catch (error) {
+    if (echoWakeState) echoWakeState.textContent = `Failed: ${error.message}`;
+  } finally {
+    if (echoEnrollmentStartBtn) echoEnrollmentStartBtn.disabled = false;
   }
 });
 

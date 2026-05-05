@@ -107,6 +107,8 @@ export const IPC_CHANNELS = Object.freeze({
   officeAddinsSetup: "uca:office-addins-setup",
   echoKwsDetect: "uca:echo-kws-detect",
   echoKeywordEnroll: "uca:echo-keyword-enroll",
+  echoDiagnostics: "uca:echo-diagnostics",
+  echoWakeEnrollmentStart: "uca:echo-wake-enrollment-start",
   noteTranscribe: "uca:note-transcribe",
   noteTranscribeStream: "uca:note-transcribe-stream",
   noteTranscribeStreamEvent: "uca:note-transcribe-stream-event",

@@ -67,6 +67,12 @@ const expectedSurfaces = [
     boundary: "read_probe_no_guard",
     migration: "ttl_cached_read_probe"
   }),
+  surface("audio-routes.mjs", "GET", "/echo/enrollment/status", {
+    domain: "audio",
+    effect: "local_audio_training_status",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("audio-routes.mjs", "POST", "/note/transcribe", {
     domain: "audio",
     effect: "local_file_processing",

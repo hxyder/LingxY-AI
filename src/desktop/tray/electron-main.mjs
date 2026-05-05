@@ -2316,6 +2316,48 @@ export function createElectronShellRuntime({
       ipcMain.handle(IPC_CHANNELS.echoWakeProfileUpdate, async (_event, profile = {}) => {
         return updateSettings({ echoWake: profile && typeof profile === "object" ? profile : {} });
       });
+      ipcMain.handle(IPC_CHANNELS.echoDiagnostics, async (event) => {
+        const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+        const actor = desktopActorForSender(event.sender);
+        const settings = await loadSettings();
+        const [kws, enrollment] = await Promise.all([
+          requestDesktopServiceJson({
+            base,
+            pathname: "/echo/kws/status",
+            method: "GET",
+            actor
+          }).catch((error) => ({
+            ok: false,
+            reason: "kws_status_unavailable",
+            message: error?.message ?? String(error)
+          })),
+          requestDesktopServiceJson({
+            base,
+            pathname: "/echo/enrollment/status",
+            method: "GET",
+            actor
+          }).catch((error) => ({
+            ok: false,
+            reason: "enrollment_status_unavailable",
+            message: error?.message ?? String(error)
+          }))
+        ]);
+        return {
+          ok: true,
+          echoMode: Boolean(settings?.echoMode),
+          echoWake: settings?.echoWake ?? {},
+          kws,
+          enrollment
+        };
+      });
+      ipcMain.handle(IPC_CHANNELS.echoWakeEnrollmentStart, async () => {
+        const dock = windows.get("dock");
+        if (!dock || dock.webContents?.isDestroyed?.()) {
+          return { ok: false, reason: "dock_unavailable", message: "Dock is not available." };
+        }
+        dock.webContents.send("uca:start-wake-enrollment", { at: Date.now(), source: "settings" });
+        return { ok: true };
+      });
 
       // Right-click on the dock orb asks the main process to show a native
       // context menu. Done here (not in the renderer) so we get native

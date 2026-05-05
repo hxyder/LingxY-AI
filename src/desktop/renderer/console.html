@@ -539,6 +539,38 @@
         height: 18px;
       }
 
+      .voice-status-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 8px;
+      }
+
+      .voice-status-card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius-md);
+        background: var(--surface);
+        padding: 10px 12px;
+        min-height: 74px;
+      }
+
+      .voice-status-card strong {
+        display: block;
+        font-size: 12px;
+        margin-bottom: 6px;
+      }
+
+      .voice-status-card .value {
+        font-size: 13px;
+        font-weight: 600;
+      }
+
+      .voice-status-card .hint {
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.45;
+        margin-top: 4px;
+      }
+
       /* ── history panel ── */
       .history-layout {
         display: grid;
@@ -2041,8 +2073,11 @@
           </div>
           <div class="toolbar" style="margin-top:10px;">
             <button id="echoWakeSaveBtn" class="btn btn-primary" type="button">Save Wake Profile</button>
+            <button id="echoDiagnosticsRefreshBtn" class="btn btn-ghost" type="button">Refresh Voice Status</button>
+            <button id="echoEnrollmentStartBtn" class="btn btn-ghost" type="button">Record Wake Samples</button>
             <span id="echoWakeState" class="muted" style="font-size:12px;"></span>
           </div>
+          <div id="echoDiagnosticsPanel" class="voice-status-grid" style="margin-top:12px;"></div>
         </div>
 
         <!-- ── Skills Registries ── -->

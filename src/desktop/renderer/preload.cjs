@@ -471,6 +471,12 @@ contextBridge.exposeInMainWorld("ucaShell", {
   enrollEchoKeyword(payload) {
     return ipcRenderer.invoke("uca:echo-keyword-enroll", payload ?? {});
   },
+  getEchoDiagnostics() {
+    return ipcRenderer.invoke("uca:echo-diagnostics");
+  },
+  startWakeEnrollment() {
+    return ipcRenderer.invoke("uca:echo-wake-enrollment-start");
+  },
   transcribeNoteAudio(payload) {
     return ipcRenderer.invoke("uca:note-transcribe", payload ?? {});
   },

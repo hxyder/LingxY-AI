@@ -497,6 +497,10 @@ assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词�
   "voice mode: language selection must default to simplified Chinese and separate live recognizer locale from final transcription");
 assert.ok(/id="voiceEchoSettingsPanel"/.test(consoleHtml) && /setEchoWakeProfile/.test(consoleJs),
   "echo mode: Console settings must expose the Echo wake profile instead of leaving settings.echoWake invisible");
+assert.ok(/id="echoDiagnosticsPanel"/.test(consoleHtml)
+    && /getEchoDiagnostics/.test(consoleJs)
+    && /startWakeEnrollment/.test(consoleJs),
+  "echo mode: Console settings must expose non-hot-path diagnostics and wake enrollment controls");
 assert.ok(!/id="providerOnboardingList"/.test(consoleHtml),
   "provider settings must not show global capability onboarding cards inside AI Providers");
 assert.equal((consoleHtml.match(/Add any OpenAI-compatible or Anthropic API\. Saved instantly/g) ?? []).length, 1,

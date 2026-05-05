@@ -644,6 +644,20 @@ function makeEchoAudioRuntime({ keywordDir = null } = {}) {
       getUserKeywordDir() {
         calls.push({ method: "audio.getUserKeywordDir" });
         return keywordDir ?? path.join(os.tmpdir(), "uca-audio-guard-unused");
+      },
+      async readEnrollmentStatus() {
+        calls.push({ method: "audio.readEnrollmentStatus" });
+        return {
+          ok: true,
+          enabled: true,
+          completed: true,
+          matchedCount: 2,
+          sampleCount: 3,
+          requiredMatches: 2,
+          requiredSamples: 3,
+          profile: { personalized: true },
+          samples: []
+        };
       }
     }
   };
@@ -1586,6 +1600,41 @@ test("echo KWS rejects oversized audio before local audio processing", async () 
   assert.equal(result.handled, true);
   assert.equal(result.statusCode, 413);
   assert.equal(result.payload.reason, "audio_too_large");
+  assert.deepEqual(runtime.calls, []);
+});
+
+test("echo enrollment status allows console actor and does not process audio", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "GET",
+    pathname: "/echo/enrollment/status",
+    actor: "desktop_console",
+    rawBody: "",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 200);
+  assert.equal(result.payload.ok, true);
+  assert.equal(result.payload.enabled, true);
+  assert.deepEqual(runtime.calls.map((call) => call.method), [
+    "audio.readEnrollmentStatus"
+  ]);
+});
+
+test("echo enrollment status rejects untrusted actors", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "GET",
+    pathname: "/echo/enrollment/status",
+    actor: "browser_page",
+    rawBody: "",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.payload.error, "desktop_actor_required");
   assert.deepEqual(runtime.calls, []);
 });
 
