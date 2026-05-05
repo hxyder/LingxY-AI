@@ -13,6 +13,10 @@ import {
   formatEnrichmentAsMarkdown,
   shouldEnrichForAction
 } from "./context-enricher.js";
+import {
+  createRunModeCapabilities,
+  planQuickActionRoute
+} from "./run-mode-router.js";
 import { runTaskWithStream } from "./sse-client.js";
 import { getCachedLocation, getSystemTimezone, STORAGE_KEY as LOCATION_STORAGE_KEY } from "../shared/location.js";
 
@@ -403,7 +407,17 @@ export async function runQuickAction({ action, selectionState, tab = null }, fet
   const standaloneConfig = await loadStandaloneConfig();
   const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
   const desktopUp = await isDesktopAvailable(runtimeBase);
-  if (!desktopUp && hasStandaloneProviderConfig(standaloneConfig)) {
+  const routePlan = planQuickActionRoute({
+    action,
+    origin: "runtime_message",
+    capabilities: createRunModeCapabilities({
+      desktopAvailable: desktopUp,
+      standaloneReady: hasStandaloneProviderConfig(standaloneConfig),
+      standaloneConfig
+    }),
+    preferInline: true
+  });
+  if (routePlan.transport === "standalone_direct") {
     // UCA-161: summarize / explain get the full page outline + any in-selection
     // links fetched and inlined so the LLM has real material to ground on.
     let enrichmentMarkdown = "";
@@ -417,6 +431,9 @@ export async function runQuickAction({ action, selectionState, tab = null }, fet
     const result = await callLLMDirect({ config: standaloneConfig, prompt, systemPrompt });
     if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success" };
     return { ok: false, mode: "standalone", error: result.error };
+  }
+  if (!routePlan.ok && hasStandaloneProviderConfig(standaloneConfig)) {
+    return { ok: false, mode: routePlan.mode, error: routePlan.reason };
   }
 
   let enrichment = null;
@@ -1090,11 +1107,18 @@ export function registerExtensionRuntime(chromeApi = chrome) {
         const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
         invalidateDesktopProbe();
         const desktopUp = await isDesktopAvailable(runtimeBase);
+        const standaloneReady = hasStandaloneProviderConfig(config);
+        const capabilities = createRunModeCapabilities({
+          desktopAvailable: desktopUp,
+          standaloneReady,
+          standaloneConfig: config
+        });
         sendResponse({
           desktopAvailable: desktopUp,
-          standaloneReady: hasStandaloneProviderConfig(config),
+          standaloneReady,
           provider: config?.provider ?? null,
-          runtimeUrl: runtimeBase
+          runtimeUrl: runtimeBase,
+          capabilities
         });
       })();
       return true;
@@ -1246,15 +1270,23 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
       const config = await loadStandaloneConfig();
       const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
       const desktopUp = await isDesktopAvailable(runtimeBase);
+      const routePlan = planQuickActionRoute({
+        action,
+        origin: "selection_chip",
+        capabilities: createRunModeCapabilities({
+          desktopAvailable: desktopUp,
+          standaloneReady: hasStandaloneProviderConfig(config),
+          standaloneConfig: config
+        }),
+        preferInline: true
+      });
 
-      // Webpage-origin quick actions should stay webpage-first. When the
-      // extension has direct provider config, prefer it even if desktop is
-      // running, so we don't produce duplicate overlay / notification UI.
-      if (!hasStandaloneProviderConfig(config)) {
-        if (!desktopUp) {
-          port.postMessage({ type: "error", error: "no_provider_configured" });
-          return;
-        }
+      if (!routePlan.ok) {
+        port.postMessage({ type: "error", error: routePlan.reason });
+        return;
+      }
+
+      if (routePlan.transport === "desktop_task") {
         port.postMessage({ type: "start" });
         const desktopResult = await runQuickAction({ action, selectionState }, fetch);
         if (aborted) return;
