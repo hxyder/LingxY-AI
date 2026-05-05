@@ -301,12 +301,18 @@ assert.ok(/local_deep_text_source_count/.test(evidenceSourcesView) && /folder_re
   "task detail: evidence sources must surface deep local file coverage");
 assert.ok(/appendConsoleChatEvidenceSources/.test(consoleJs) && /data-chat-evidence-sources/.test(consoleJs),
   "chat: console must append structured evidence summaries to assistant messages");
+assert.ok(/appendConsoleChatContentEvidenceFromTask/.test(consoleJs) && /data-chat-content-evidence/.test(consoleJs)
+    && /extractContentEvidenceFromTaskDetail/.test(consoleJs),
+  "chat: console must append input content evidence to assistant messages");
 assert.ok(/renderToolCallSourcesHtml/.test(evidenceSourcesView) && /data-tool-call-sources/.test(evidenceSourcesView),
   "chat tools: evidence source chips must be rendered by the shared evidence helper");
 assert.ok(/payload\.sources/.test(consoleJs) && /renderToolCallSourcesHtml/.test(consoleJs),
   "chat tools: console tool cards must render per-tool evidence sources from event payloads");
 assert.ok(/renderEvidenceSourcesHtml/.test(overlayJs) && /appendOverlayEvidenceSources/.test(overlayJs) && /evidence_summary/.test(overlayJs),
   "overlay: runtime evidence summaries must render through the shared evidence source helper");
+assert.ok(/renderContentEvidenceHtml/.test(overlayJs) && /appendOverlayContentEvidence/.test(overlayJs)
+    && /extractContentEvidenceFromTaskDetail/.test(overlayJs),
+  "overlay: input content evidence must render through the shared evidence source helper");
 assert.ok(/renderToolCallSourcesHtml/.test(overlayJs) && /frame\.data\?\.sources/.test(overlayJs),
   "overlay: tool-step bubbles must render per-call evidence sources from event payloads");
 assert.ok(/formatToolDisplayName/.test(toolDisplayView) && /read_file_text/.test(toolDisplayView)

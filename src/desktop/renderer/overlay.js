@@ -35,7 +35,9 @@ import {
   formatToolDisplayName
 } from "./tool-display.mjs";
 import {
+  extractContentEvidenceFromTaskDetail,
   extractEvidenceSummaryFromMessage,
+  renderContentEvidenceHtml,
   renderEvidenceSourcesHtml,
   renderToolCallSourcesHtml,
   revealEvidenceSource,
@@ -321,6 +323,7 @@ let streamingBubble = null;
 let streamingBubbleRawText = "";
 let pendingToolStepBubbles = {}; // { toolId: [stepEl, ...] } — updated by tool_call_completed
 let renderedEvidenceSummaryTaskIds = new Set();
+let renderedContentEvidenceTaskIds = new Set();
 let activeClarificationBubble = null;
 const approvalPopupCardIds = new Map(); // approvalId -> popup card id
 const surfacedApprovalPopupIds = new Set();
@@ -1331,6 +1334,7 @@ function clearBubbles() {
   pendingToolStepBubbles = {};
   renderedTimelineEventIds = new Set();
   renderedEvidenceSummaryTaskIds = new Set();
+  renderedContentEvidenceTaskIds = new Set();
   timelineLabelEl = null;
   timelinePhaseEl = null;
   timelineSpinnerEl = null;
@@ -2181,6 +2185,7 @@ function closeActiveTaskEventStream() {
   streamingBubbleRawText = "";
   pendingToolStepBubbles = {};
   renderedEvidenceSummaryTaskIds = new Set();
+  renderedContentEvidenceTaskIds = new Set();
   // The new task may not arrive immediately, but resetting here means the
   // first step_started we see for it always increments from 0 — never
   // appearing as "第 5 步" because the previous task's counter leaked.
@@ -2348,6 +2353,23 @@ function appendOverlayEvidenceSources(taskId, evidence) {
   addBubble("assistant", node, { taskId });
   wireEvidenceSourceActions(node, window.ucaShell);
   renderedEvidenceSummaryTaskIds.add(key);
+}
+
+function appendOverlayContentEvidence(taskId, entries) {
+  const key = taskId || "active";
+  if (renderedContentEvidenceTaskIds.has(key)) return;
+  renderedContentEvidenceTaskIds.add(key);
+  const html = renderContentEvidenceHtml(entries, {
+    className: "task-answer task-evidence overlay-evidence overlay-content-evidence",
+    title: "Input evidence",
+    zh: "输入证据"
+  });
+  if (!html) return;
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = html;
+  const node = wrapper.firstElementChild;
+  if (!node) return;
+  addBubble("assistant", node, { taskId });
 }
 
 // Track approval bubbles so SSE duplicates don't stack cards, and so we can
@@ -2818,7 +2840,8 @@ async function handleTaskEventFrame(rawEvent) {
       // the primary surface. The card is still expandable on click; we
       // also stamp it with the final character count as a residual hint.
       closeActiveThinkingCard();
-      await refreshActiveTask();
+      const detail = await refreshActiveTask();
+      appendOverlayContentEvidence(frameTaskId, extractContentEvidenceFromTaskDetail(detail));
       if ((frame.event === "success" || frame.event === "partial_success") && frame.data?.evidence_summary) {
         appendOverlayEvidenceSources(frameTaskId, frame.data.evidence_summary);
       }
@@ -3231,6 +3254,7 @@ async function attachLatestActiveTaskToOverlay() {
   notifiedInlineResultTaskId = null;
   pendingToolStepBubbles = {};
   renderedEvidenceSummaryTaskIds = new Set();
+  renderedContentEvidenceTaskIds = new Set();
   ensureActiveTaskEventStream(activeTaskId);
   await refreshActiveTask();
   return true;
@@ -3560,7 +3584,7 @@ async function refreshActiveTask() {
   if (!activeTaskId) {
     await refreshTaskSummaries();
     renderTaskListDock();
-    return;
+    return null;
   }
 
   try {
@@ -3790,9 +3814,11 @@ async function refreshActiveTask() {
     if (["success", "failed", "cancelled", "partial_success"].includes(task.status)) {
       conversationPhase = "idle";
     }
+    return payload;
   } catch (error) {
     // Service restart/network hiccup: leave the composer usable. Task list
     // polling will reattach when the runtime comes back.
+    return null;
   }
 }
 

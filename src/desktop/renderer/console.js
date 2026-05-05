@@ -713,6 +713,7 @@ const state = {
 
 let consoleChatEventStream = null;
 let consoleChatResultTaskIds = new Set();
+const consoleChatContentEvidenceTaskIds = new Set();
 const fileContentIndexPanel = createFileContentIndexPanel({
   getServiceBaseUrl: () => state.serviceBaseUrl,
   getProjects: () => (state.projectStore ?? loadConsoleProjectStore()).projects ?? [],
@@ -1390,6 +1391,47 @@ function appendConsoleChatEvidenceSources(taskId, evidence = null) {
   }
 }
 
+function appendConsoleChatContentEvidenceToBody(body, entries) {
+  if (!body) return false;
+  const html = renderContentEvidenceHtml(entries, {
+    className: "task-answer task-evidence chat-content-evidence-card",
+    title: "Input evidence",
+    zh: "输入证据"
+  });
+  if (!html) return false;
+  body.querySelector("[data-chat-content-evidence]")?.remove();
+  const holder = document.createElement("div");
+  holder.dataset.chatContentEvidence = "true";
+  holder.innerHTML = html;
+  const sources = body.querySelector("[data-chat-evidence-sources]");
+  if (sources) body.insertBefore(holder, sources);
+  else body.appendChild(holder);
+  return true;
+}
+
+function appendConsoleChatContentEvidence(taskId, entries) {
+  if (!taskId) return false;
+  const wrapper = consoleChatAssistantWrapperForTask(taskId);
+  const body = wrapper?.querySelector(".chat-msg-body");
+  if (!body) return false;
+  consoleChatContentEvidenceTaskIds.add(taskId);
+  if (appendConsoleChatContentEvidenceToBody(body, entries)) {
+    consoleChatPin.maybeScrollToBottom();
+    return true;
+  }
+  return false;
+}
+
+async function appendConsoleChatContentEvidenceFromTask(taskId) {
+  if (!taskId || consoleChatContentEvidenceTaskIds.has(taskId)) return;
+  try {
+    const detail = await fetchJson(`/task/${encodeURIComponent(taskId)}`);
+    appendConsoleChatContentEvidence(taskId, extractContentEvidenceFromTaskDetail(detail));
+  } catch {
+    /* optional */
+  }
+}
+
 function appendConsoleChatFinalText(taskId, text, {
   role = "assistant",
   evidence = null
@@ -1769,6 +1811,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
     appendConsoleChatFinalText(taskId, visibleText, {
       evidence: payload.evidence_summary ?? null
     });
+    void appendConsoleChatContentEvidenceFromTask(taskId);
     consoleChatResultTaskIds.add(taskId);
     void refreshConsoleChatArtifacts({ force: true });
     return;
@@ -1788,6 +1831,7 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
       role: task?.status === "failed" ? "system" : "assistant",
       evidence: extractEvidenceSummaryFromTaskDetail(detail)
     });
+    appendConsoleChatContentEvidence(taskId, extractContentEvidenceFromTaskDetail(detail));
     consoleChatResultTaskIds.add(taskId);
     void refreshConsoleChatArtifacts({ force: true });
   } catch {
@@ -1802,6 +1846,7 @@ function subscribeConsoleChatTask(taskId) {
   consoleChatProgressEventIds = new Set();
   consoleChatSuppressedTextByTaskId.delete(taskId);
   consoleChatEvidenceByTaskId.delete(taskId);
+  consoleChatContentEvidenceTaskIds.delete(taskId);
   closeConsoleChatThinkingCard();
   consoleChatActiveTaskId = taskId;
   refreshConsoleChatSendBtnMode();
@@ -1883,6 +1928,7 @@ function subscribeConsoleChatTask(taskId) {
         appendConsoleChatFinalText(taskId, payload.text ?? payload.message ?? "", {
           evidence: payload.evidence_summary ?? null
         });
+        void appendConsoleChatContentEvidenceFromTask(taskId);
         consoleChatResultTaskIds.add(taskId);
         consoleChatState.textContent = "Done.";
       } else if (frame.event === "failed") {
