@@ -82,6 +82,8 @@ test("conversation lifecycle auto-resolves short follow-ups to the newest prior 
   }).task;
 
   assert.equal(follow.parent_task_id, first.task_id);
+  assert.equal(first.is_continuation, false);
+  assert.equal(follow.is_continuation, true);
   assert.ok(follow.context_packet.prior_messages.some(
     (message) => message.role === "assistant" && message.content.includes("今天晴")
   ));

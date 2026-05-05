@@ -51,6 +51,7 @@ test("task record factory applies conversation precedence and enriches follow-up
 
   assert.equal(task.conversation_id, "conv_record");
   assert.equal(task.parent_task_id, "task_parent");
+  assert.equal(task.is_continuation, true);
   assert.equal(task.context_packet.parent_task_summary.parent_task_id, "task_parent");
   assert.ok(task.context_packet.prior_messages.some((message) => message.content === "parent answer"));
 });
@@ -74,6 +75,7 @@ test("task record factory stamps task spec snapshot, dedupe key, and submission 
   assert.match(task.task_id, /^task_/);
   assert.equal(task.conversation_id, "conv_from_context");
   assert.equal(task.executor, "tool_using");
+  assert.equal(task.is_continuation, false);
   assert.equal(task.task_spec_initial, task.task_spec);
   assert.equal(task.task_spec_valid, true);
   assert.equal(task.submission_boundary.submission_kind, "action_tool");
@@ -102,8 +104,28 @@ test("task record factory keeps retry and child metadata stable", () => {
   assert.equal(task.parent_task_id, "task_parent");
   assert.deepEqual(task.child_task_ids, ["child_a"]);
   assert.equal(task.child_index, 2);
+  assert.equal(task.is_continuation, true);
   assert.equal(task.retry_count, 1);
   assert.equal(task.bypass_dedupe, true);
   assert.equal(task.execution_mode, "interactive");
   assert.equal(task.source_dedupe_key, `manual:uca.test:${task.executor}:Run child:a.md|b.md`);
+});
+
+test("task record factory marks caller-provided follow-up parents as continuations", () => {
+  const task = createTaskRecord({
+    route: baseRoute,
+    runtime: null,
+    contextPacket: {
+      source_type: "manual",
+      source_app: "uca.test"
+    },
+    userCommand: "继续",
+    executionMode: "interactive",
+    parentTaskId: "task_parent",
+    retryCount: 0
+  });
+
+  assert.equal(task.parent_task_id, "task_parent");
+  assert.equal(task.child_index, null);
+  assert.equal(task.is_continuation, true);
 });

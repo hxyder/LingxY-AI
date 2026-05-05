@@ -886,6 +886,12 @@ function isCompositeChildTask(task = {}) {
   return Boolean(task?.parent_task_id) && Number.isInteger(task?.child_index);
 }
 
+function isNestedChildTask(task = {}) {
+  if (!task) return false;
+  if (isCompositeChildTask(task)) return true;
+  return task.is_continuation === true && Boolean(task.parent_task_id);
+}
+
 function seedCaptureMatches(newText) {
   if (!conversationState?.seedCapture?.text) return false;
   const a = String(conversationState.seedCapture.text).trim().slice(0, 200);
@@ -3064,10 +3070,10 @@ function sortTasksNewestFirst(tasks = []) {
 }
 
 function findLatestOverlayTask(tasks = taskSummaries) {
-  const visible = sortTasksNewestFirst(tasks)
-    .filter((task) => isUserVisibleTask(task) && !isCompositeChildTask(task));
+  const visible = sortTasksNewestFirst(tasks).filter(isUserVisibleTask);
   return visible.find((task) => taskIsActive(task.status))
     ?? visible.find((task) => {
+      if (isNestedChildTask(task)) return false;
       const updatedAt = new Date(task.updated_at ?? task.created_at ?? 0).getTime();
       return Number.isFinite(updatedAt) && Date.now() - updatedAt < 15 * 60_000;
     })
@@ -3207,7 +3213,7 @@ function choosePreviewArtifactPath(artifacts = []) {
 function renderTaskListDock() {
   if (!taskListDock || !taskListBody) return;
   const tasks = taskSummaries ?? [];
-  const parentOrStandalone = tasks.filter((task) => isUserVisibleTask(task) && !isCompositeChildTask(task));
+  const parentOrStandalone = tasks.filter((task) => isUserVisibleTask(task) && !isNestedChildTask(task));
   const filtered = parentOrStandalone.filter((task) => {
     if (taskListFilter === "active") return taskIsActive(task.status);
     if (taskListFilter === "done") return taskIsDone(task.status);

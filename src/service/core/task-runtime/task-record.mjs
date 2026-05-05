@@ -51,10 +51,15 @@ export function createTaskRecord({
     typeof rawConversationId === "string" && rawConversationId.length > 0
       ? rawConversationId
       : null;
-  const effectiveParentTaskId = parentTaskId
-    ?? (shouldAutoResolveParentFromConversation(userCommand)
-      ? resolveParentFromConversation(effectiveConversationId, runtime)
-      : null);
+  const callerProvidedParent = parentTaskId != null;
+  const continuationSignal = shouldAutoResolveParentFromConversation(userCommand);
+  const autoResolvedParentTaskId = !callerProvidedParent && continuationSignal
+    ? resolveParentFromConversation(effectiveConversationId, runtime)
+    : null;
+  const effectiveParentTaskId = parentTaskId ?? autoResolvedParentTaskId;
+  const isCompositeChild = Number.isInteger(childIndex);
+  const isContinuation = retryCount > 0
+    || (Boolean(effectiveParentTaskId) && !isCompositeChild && continuationSignal);
 
   const withParentSummary = effectiveParentTaskId && runtime?.store?.getTask
     ? attachParentTaskSummary(contextPacket, effectiveParentTaskId, runtime)
@@ -86,7 +91,8 @@ export function createTaskRecord({
     parent_task_id: effectiveParentTaskId,
     conversation_id: effectiveConversationId,
     child_task_ids: Array.isArray(childTaskIds) ? childTaskIds : null,
-    child_index: Number.isInteger(childIndex) ? childIndex : null,
+    child_index: isCompositeChild ? childIndex : null,
+    is_continuation: isContinuation,
     retry_count: retryCount,
     bypass_dedupe: Boolean(bypassDedupe || retryCount > 0),
     executor_history: [],

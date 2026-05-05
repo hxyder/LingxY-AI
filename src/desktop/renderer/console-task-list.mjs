@@ -7,12 +7,30 @@ export function isCompositeChildTask(task = {}) {
   return Boolean(task?.parent_task_id) && Number.isInteger(task?.child_index);
 }
 
+export function isNestedChildTask(task = {}) {
+  if (!task) return false;
+  if (isCompositeChildTask(task)) return true;
+  return task.is_continuation === true && Boolean(task.parent_task_id);
+}
+
+function compareNestedTasks(left = {}, right = {}) {
+  const leftIndex = Number.isInteger(left.child_index) ? left.child_index : null;
+  const rightIndex = Number.isInteger(right.child_index) ? right.child_index : null;
+  if (leftIndex != null && rightIndex != null && leftIndex !== rightIndex) {
+    return leftIndex - rightIndex;
+  }
+  if (leftIndex != null && rightIndex == null) return -1;
+  if (leftIndex == null && rightIndex != null) return 1;
+  return `${left.created_at ?? ""}`.localeCompare(`${right.created_at ?? ""}`);
+}
+
 export function buildTaskListEntries(list = [], { limit = 12 } = {}) {
   const tasks = Array.isArray(list) ? list : [];
   const max = Math.max(1, Number(limit) || 12);
+  const tasksById = new Set(tasks.map((task) => task?.task_id).filter(Boolean));
   const childrenByParent = new Map();
   for (const task of tasks) {
-    if (isCompositeChildTask(task)) {
+    if (isNestedChildTask(task) && tasksById.has(task.parent_task_id)) {
       if (!childrenByParent.has(task.parent_task_id)) {
         childrenByParent.set(task.parent_task_id, []);
       }
@@ -21,24 +39,32 @@ export function buildTaskListEntries(list = [], { limit = 12 } = {}) {
   }
 
   for (const [parentId, children] of childrenByParent) {
-    children.sort((a, b) => (a.child_index ?? 0) - (b.child_index ?? 0));
+    children.sort(compareNestedTasks);
     childrenByParent.set(parentId, children);
   }
 
-  const parentsOrSingles = tasks.filter((task) => !isCompositeChildTask(task));
+  const parentsOrSingles = tasks.filter((task) => !isNestedChildTask(task) || !tasksById.has(task.parent_task_id));
   const sorted = parentsOrSingles.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
   const entries = [];
-  for (const task of sorted) {
-    if (entries.length >= max) break;
-    entries.push({ task, indent: 0, isChild: false });
-    const children = childrenByParent.get(task.task_id) ?? [];
+  const seen = new Set();
+  const appendChildren = (parentId, indent) => {
+    const children = childrenByParent.get(parentId) ?? [];
     for (const child of children) {
       if (entries.length >= max) break;
-      entries.push({ task: child, indent: 1, isChild: true });
+      if (seen.has(child.task_id)) continue;
+      entries.push({ task: child, indent, isChild: true });
+      seen.add(child.task_id);
+      appendChildren(child.task_id, indent + 1);
     }
+  };
+  for (const task of sorted) {
+    if (entries.length >= max) break;
+    if (seen.has(task.task_id)) continue;
+    entries.push({ task, indent: 0, isChild: false });
+    seen.add(task.task_id);
+    appendChildren(task.task_id, 1);
   }
 
-  const seen = new Set(entries.map((entry) => entry.task.task_id));
   for (const task of tasks) {
     if (entries.length >= max) break;
     if (seen.has(task.task_id)) continue;

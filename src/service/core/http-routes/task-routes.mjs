@@ -52,6 +52,7 @@ function listTaskSummaries(runtime, { deleted = false } = {}) {
     user_command: task.user_command,
     parent_task_id: task.parent_task_id ?? null,
     child_index: task.child_index ?? null,
+    is_continuation: task.is_continuation === true,
     child_count: Array.isArray(task.child_task_ids) ? task.child_task_ids.length : 0
   }));
 }
