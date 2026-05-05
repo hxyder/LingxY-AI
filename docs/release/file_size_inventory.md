@@ -25,6 +25,23 @@ need an explicit split plan before more features are added.
 - Prefer domain splits with behavior/verifier coverage over cosmetic line-count splits.
 - Keep `http-server.mjs` as a shell unless business logic starts returning to it.
 
+## Growth Budget
+
+These baselines are release guardrails, not targets. A hotspot may grow by at
+most 200 lines from its baseline before release verification asks for a split or
+an intentional new baseline with a reason in this inventory.
+
+| File | Baseline lines | Budget before split note |
+| --- | ---: | ---: |
+| `src/desktop/renderer/console.js` | 11494 | 11694 |
+| `src/desktop/renderer/overlay.js` | 7255 | 7455 |
+| `src/desktop/renderer/shared-core.css` | 1370 | 1570 |
+| `src/desktop/renderer/shared-tasks.css` | 520 | 720 |
+| `src/desktop/renderer/shared-chat.css` | 2015 | 2215 |
+| `src/desktop/renderer/shared-rest.css` | 2878 | 3078 |
+| `src/desktop/tray/electron-main.mjs` | 4086 | 4286 |
+| `src/service/action_tools/tools/index.mjs` | 3900 | 4100 |
+
 ## Notes
 
 - `shared.css` is intentionally import-only. This preserves the original CSS

@@ -16,6 +16,16 @@ const documentedHotspots = [
   "src/desktop/tray/electron-main.mjs",
   "src/service/action_tools/tools/index.mjs"
 ];
+const hotspotGrowthBudgets = Object.freeze({
+  "src/desktop/renderer/console.js": { baselineLines: 11494, maxAddedLines: 200 },
+  "src/desktop/renderer/overlay.js": { baselineLines: 7255, maxAddedLines: 200 },
+  "src/desktop/renderer/shared-core.css": { baselineLines: 1370, maxAddedLines: 200 },
+  "src/desktop/renderer/shared-tasks.css": { baselineLines: 520, maxAddedLines: 200 },
+  "src/desktop/renderer/shared-chat.css": { baselineLines: 2015, maxAddedLines: 200 },
+  "src/desktop/renderer/shared-rest.css": { baselineLines: 2878, maxAddedLines: 200 },
+  "src/desktop/tray/electron-main.mjs": { baselineLines: 4086, maxAddedLines: 200 },
+  "src/service/action_tools/tools/index.mjs": { baselineLines: 3900, maxAddedLines: 200 }
+});
 const hardLineLimit = 12_500;
 const sharedCssImports = [
   "./tokens.css",
@@ -80,6 +90,20 @@ for (const hotspot of documentedHotspots) {
   assert(
     rows.some((row) => row.path === hotspot),
     `documented hotspot no longer exists: ${hotspot}`
+  );
+}
+
+for (const [hotspot, budget] of Object.entries(hotspotGrowthBudgets)) {
+  assert(
+    inventory.includes(`\`${hotspot}\``) && inventory.includes(`${budget.baselineLines}`),
+    `file_size_inventory.md must document the line-count baseline for ${hotspot}`
+  );
+  const row = rows.find((candidate) => candidate.path === hotspot);
+  assert(row, `hotspot budget target no longer exists: ${hotspot}`);
+  const allowedLines = budget.baselineLines + budget.maxAddedLines;
+  assert(
+    row.lines <= allowedLines,
+    `${hotspot} grew from ${budget.baselineLines} to ${row.lines} lines. Split the hotspot or update file_size_inventory.md with a deliberate new baseline before release.`
   );
 }
 
