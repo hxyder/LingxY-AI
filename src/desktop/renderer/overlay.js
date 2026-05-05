@@ -227,6 +227,11 @@ function isEchoOriginTask(task = null) {
   return metadata?.submission_origin === "echo";
 }
 
+function isEchoOriginEventFrame(frame = {}) {
+  const data = frame?.data ?? {};
+  return data?.submission_origin === "echo" || Boolean(data?.voice_session_id);
+}
+
 function attachOverlaySubmissionMetadata(payload = {}) {
   const metadata = echoSessionActive
     ? {
@@ -2676,7 +2681,7 @@ async function handleTaskEventFrame(rawEvent) {
   // mutate the owning conversation's turns list; we just don't render
   // bubbles for them.
   const frameTaskId = frame.taskId ?? frame.task_id ?? activeTaskId;
-  if (frame.event === "task_created" && frame.data?.submission_origin === "echo") {
+  if (frameTaskId && isEchoOriginEventFrame(frame)) {
     rememberEchoTask(frameTaskId);
   }
   const ownerConvId = taskOwnerConversationId(taskConversationMap, frameTaskId);

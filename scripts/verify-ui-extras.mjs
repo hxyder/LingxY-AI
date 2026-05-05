@@ -482,6 +482,8 @@ assert.ok(!/body:\s*payload\.message\s*\?\?\s*JSON\.stringify\(payload\)/.test(t
   "task events: generic summaries must not expose raw payload JSON to users");
 assert.ok(/rememberEchoTask/.test(overlayJs) && /showEchoResultHudOnce/.test(overlayJs),
   "echo mode: echo-submitted task results must surface through the Echo HUD");
+assert.ok(/isEchoOriginEventFrame/.test(overlayJs) && /voice_session_id/.test(overlayJs),
+  "echo mode: any task event carrying Echo origin metadata must keep the result HUD eligible");
 assert.ok(/frame\.event === "success"[\s\S]{0,260}showEchoResultHudOnce/.test(overlayJs),
   "echo mode: terminal success events without inline_result must still surface through the Echo HUD");
 assert.ok(/captureActiveWindowHintForVoice/.test(overlayJs) && /voice_wake/.test(overlayJs) && /echo_voice_wake/.test(overlayJs),
