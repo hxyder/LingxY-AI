@@ -35,6 +35,7 @@ function readCssWithImports(relativePath, seen = new Set()) {
 
 const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
+const consoleFloatingUi = read("src/desktop/renderer/console-floating-ui.mjs");
 const consolePreload = read("src/desktop/renderer/preload.cjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs");
@@ -61,7 +62,9 @@ const connectorRoutes = read("src/service/core/http-routes/connector-routes.mjs"
 
 // ── Toast system ───────────────────────────────────────────────────────
 assert.ok(/id="consoleToastHost"/.test(consoleHtml), "toast: #consoleToastHost missing in console.html");
-assert.ok(/function showConsoleToast\s*\(/.test(consoleJs), "toast: showConsoleToast() missing");
+assert.ok(/createConsoleToastController/.test(consoleFloatingUi) && /showToast\s*\(/.test(consoleFloatingUi),
+  "toast: toast controller missing");
+assert.ok(/showToast:\s*showConsoleToast/.test(consoleJs), "toast: console must bind showConsoleToast");
 assert.ok(/\.toast-host\b/.test(sharedCss), "toast: .toast-host CSS missing");
 assert.ok(/\.toast--err|\.toast--ok|\.toast--info/.test(sharedCss), "toast: kind variants missing");
 
@@ -80,7 +83,10 @@ assert.ok(/\.capability-checklist-item\b/.test(sharedCss),
 // ── Right-click context menu ───────────────────────────────────────────
 assert.ok(/id="chatCtxMenu"/.test(consoleHtml), "ctx-menu: #chatCtxMenu missing in console.html");
 assert.ok(/id="overlayCtxMenu"/.test(overlayHtml), "ctx-menu: #overlayCtxMenu missing in overlay.html");
-assert.ok(/function openCtxMenu\s*\(|openCtxMenu\s*=/.test(consoleJs), "ctx-menu: openCtxMenu() missing in console.js");
+assert.ok(/createConsoleContextMenuController/.test(consoleFloatingUi) && /installConsoleChatContextMenu/.test(consoleFloatingUi),
+  "ctx-menu: console floating UI helpers missing");
+assert.ok(/openMenu:\s*openCtxMenu/.test(consoleJs) && /installConsoleChatContextMenu/.test(consoleJs),
+  "ctx-menu: console must bind shared context menu controller");
 assert.ok(/function openOverlayCtxMenu\s*\(|openOverlayCtxMenu\s*=/.test(overlayJs), "ctx-menu: openOverlayCtxMenu() missing");
 assert.ok(/\.ctx-menu\b/.test(sharedCss) && /\.ctx-menu\b/.test(overlayHtml),
   "ctx-menu: .ctx-menu CSS missing in either console or overlay");

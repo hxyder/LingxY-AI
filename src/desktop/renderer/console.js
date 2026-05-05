@@ -31,6 +31,11 @@ import {
   formatRelativeTime
 } from "./shared-ui.mjs";
 import {
+  createConsoleContextMenuController,
+  createConsoleToastController,
+  installConsoleChatContextMenu
+} from "./console-floating-ui.mjs";
+import {
   renderChatMessageBlocks
 } from "./chat-blocks.mjs";
 import {
@@ -320,148 +325,27 @@ const consoleChatPin = createBottomPinController(consoleChatMessages, {
    ═══════════════════════════════════════════════ */
 
 const consoleToastHost = document.querySelector("#consoleToastHost");
-
-// Lightweight floating toast. Replaces the older pattern of writing
-// flash messages into consoleChatState/.textContent — that text was
-// easy to miss and fought with composer status. kind: "info" | "ok" |
-// "err". Auto-dismisses; click to dismiss early.
-function showConsoleToast(message, { kind = "info", durationMs = 3200, actionLabel = "", onAction = null } = {}) {
-  if (!consoleToastHost || !message) return;
-  const toast = document.createElement("div");
-  toast.className = `toast toast--${kind}`;
-  toast.setAttribute("role", "status");
-  const glyphMap = {
-    ok: "✓",
-    err: "!",
-    info: "i"
-  };
-  toast.innerHTML = `
-    <span class="toast-glyph">${glyphMap[kind] ?? "i"}</span>
-    <span class="toast-body"></span>
-    ${actionLabel && typeof onAction === "function" ? `<button type="button" class="toast-action"></button>` : ""}
-  `;
-  toast.querySelector(".toast-body").textContent = String(message);
-  const actionButton = toast.querySelector(".toast-action");
-  if (actionButton) {
-    actionButton.textContent = actionLabel;
-    actionButton.addEventListener("click", async (event) => {
-      event.stopPropagation();
-      actionButton.disabled = true;
-      try {
-        await onAction();
-        dismiss();
-      } catch (error) {
-        actionButton.disabled = false;
-        showConsoleToast(`操作失败：${error?.message ?? error}`, { kind: "err" });
-      }
-    });
-  }
-  consoleToastHost.appendChild(toast);
-  let timer = setTimeout(dismiss, durationMs);
-  function dismiss() {
-    clearTimeout(timer);
-    if (!toast.isConnected) return;
-    toast.classList.add("toast--leaving");
-    toast.addEventListener("animationend", () => toast.remove(), { once: true });
-  }
-  toast.addEventListener("click", dismiss);
-}
+const { showToast: showConsoleToast } = createConsoleToastController({ host: consoleToastHost });
 
 // Singleton context-menu element. Each surface (chat panel, etc.)
 // installs its own contextmenu listener that calls openCtxMenu with a
 // list of items + the click coordinates.
 const chatCtxMenu = document.querySelector("#chatCtxMenu");
-function closeCtxMenu() {
-  if (!chatCtxMenu) return;
-  chatCtxMenu.hidden = true;
-  chatCtxMenu.innerHTML = "";
-}
-function openCtxMenu(items, x, y) {
-  if (!chatCtxMenu) return;
-  chatCtxMenu.innerHTML = items.map((item) => {
-    if (item.separator) return `<div class="ctx-sep" role="separator"></div>`;
-    return `
-      <button type="button" class="ctx-item" role="menuitem" data-act="${item.id}">
-        <span class="ctx-glyph">${item.glyph ?? ""}</span>
-        <span>${escapeHtml(item.label)}</span>
-      </button>
-    `;
-  }).join("");
-  chatCtxMenu.hidden = false;
-  // Initial position — clamp to viewport so the menu stays on-screen
-  // when the click is near the right/bottom edge.
-  const rect = chatCtxMenu.getBoundingClientRect();
-  const maxX = window.innerWidth - rect.width - 8;
-  const maxY = window.innerHeight - rect.height - 8;
-  chatCtxMenu.style.left = `${Math.max(8, Math.min(x, maxX))}px`;
-  chatCtxMenu.style.top = `${Math.max(8, Math.min(y, maxY))}px`;
-  // Wire the click handlers fresh each open.
-  for (const btn of chatCtxMenu.querySelectorAll("[data-act]")) {
-    btn.addEventListener("click", () => {
-      const item = items.find((i) => i.id === btn.dataset.act);
-      closeCtxMenu();
-      try { item?.onClick?.(); } catch (error) {
-        showConsoleToast(`操作失败：${error?.message ?? error}`, { kind: "err" });
-      }
-    });
-  }
-}
-document.addEventListener("click", (event) => {
-  if (chatCtxMenu && !chatCtxMenu.hidden && !chatCtxMenu.contains(event.target)) {
-    closeCtxMenu();
-  }
+const { closeMenu: closeCtxMenu, openMenu: openCtxMenu } = createConsoleContextMenuController({
+  menu: chatCtxMenu,
+  escapeHtml,
+  showToast: showConsoleToast
 });
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && chatCtxMenu && !chatCtxMenu.hidden) closeCtxMenu();
-});
-window.addEventListener("blur", closeCtxMenu);
-window.addEventListener("scroll", closeCtxMenu, true);
 
 // Wire chat-bubble contextmenu — one delegated listener on the chat
 // messages container so it covers existing + future bubbles.
-consoleChatMessages?.addEventListener("contextmenu", (event) => {
-  const target = event.target instanceof Element ? event.target : event.target?.parentElement;
-  const wrapper = target?.closest?.(".chat-msg");
-  if (!wrapper) return;
-  event.preventDefault();
-  const role = wrapper.classList.contains("user") ? "user"
-    : wrapper.classList.contains("assistant") || wrapper.classList.contains("ai") ? "assistant"
-    : "system";
-  if (role === "system") return; // system bubbles aren't actionable
-  const bubble = wrapper.querySelector(".chat-msg-bubble");
-  const text = bubble?.dataset.rawText || bubble?.textContent || "";
-  const taskId = wrapper.dataset.taskId || null;
-  const items = [
-    { id: "copy", label: "复制", glyph: "⧉", onClick: () => {
-      try { navigator.clipboard?.writeText?.(text); } catch { /* ignore */ }
-      showConsoleToast("已复制到剪贴板", { kind: "ok" });
-    }},
-    { id: "quote", label: "引用并回复", glyph: "›", onClick: () => {
-      const quoted = String(text).split("\n").map((line) => `> ${line}`).join("\n");
-      const prefix = consoleChatInput.value.trim() ? `${consoleChatInput.value}\n\n` : "";
-      consoleChatInput.value = `${prefix}${quoted}\n\n`;
-      consoleChatInput.focus();
-      consoleChatInput.setSelectionRange(consoleChatInput.value.length, consoleChatInput.value.length);
-      // Make the result visible — the composer is at the bottom of the
-      // chat panel and may be off-screen on a long thread. Smooth-scroll
-      // it into view + flash the focus ring so the user can see where
-      // the quote landed.
-      try { consoleChatInput.scrollIntoView({ behavior: "smooth", block: "end" }); } catch { /* ignore */ }
-      consoleChatInput.classList.add("composer-flash");
-      setTimeout(() => consoleChatInput.classList.remove("composer-flash"), 1200);
-      showConsoleToast("已引用到输入框", { kind: "info", durationMs: 1600 });
-    }},
-    { id: "note", label: "添加到 Note", glyph: "+", onClick: () => {
-      openNoteTargetPicker(text, wrapper);
-    }}
-  ];
-  if (role === "assistant" && taskId) {
-    items.push({ separator: true });
-    items.push({ id: "regen", label: "重新生成", glyph: "↻", onClick: () => {
-      void regenerateConsoleChatTask(taskId, null);
-    }});
-  }
-  openCtxMenu(items, event.clientX, event.clientY);
+installConsoleChatContextMenu({
+  messagesEl: consoleChatMessages,
+  inputEl: consoleChatInput,
+  openMenu: openCtxMenu,
+  showToast: showConsoleToast,
+  openNoteTargetPicker,
+  regenerateTask: regenerateConsoleChatTask
 });
 
 /* ═══════════════════════════════════════════════
