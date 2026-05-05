@@ -11,6 +11,12 @@ import {
   formatRouteFailureMessage,
   renderRunModeDetail
 } from "../shared/run-mode-view.js";
+import {
+  clearCachedLocation,
+  formatLocationLabel,
+  getCachedLocation,
+  requestPreciseLocation
+} from "../shared/location.js";
 
 const HISTORY_KEY = "ucaSidePanelHistory";
 const HISTORY_MAX = 40;
@@ -735,7 +741,6 @@ optionsBtn.addEventListener("click", () => {
  */
 async function refreshLocationChip() {
   try {
-    const { getCachedLocation, formatLocationLabel } = await import("../shared/location.js");
     const cached = await getCachedLocation();
     if (cached) {
       actionLocationBtn.textContent = `📍 ${formatLocationLabel(cached)}`;
@@ -776,8 +781,6 @@ async function pushLocationToDesktop(location, { clear = false } = {}) {
 }
 
 async function onLocationChipClick() {
-  const { requestPreciseLocation, clearCachedLocation, getCachedLocation, formatLocationLabel } =
-    await import("../shared/location.js");
   const existing = await getCachedLocation();
   if (existing) {
     const choice = window.confirm(

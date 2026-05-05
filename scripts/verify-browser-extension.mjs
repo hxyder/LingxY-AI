@@ -470,6 +470,9 @@ const sidepanelJs = await readFile(path.join(repoRoot, "browser_ext", "sidepanel
 const runModeViewJs = await readFile(path.join(repoRoot, "browser_ext", "shared", "run-mode-view.js"), "utf8");
 assert.equal(popupJs.includes("../shared/run-mode-view.js"), true);
 assert.equal(sidepanelJs.includes("../shared/run-mode-view.js"), true);
+assert.equal(sidepanelJs.includes("../shared/location.js"), true);
+assert.equal(sidepanelJs.includes("await import(\"../shared/location.js\")"), false,
+  "sidepanel location click must not insert a dynamic import before navigator.geolocation");
 assert.equal(sidepanelJs.includes("formatRouteFailureMessage"), true);
 assert.equal(sidepanelJs.includes("request.kind === \"runtime_unavailable\""), true);
 assert.equal(sidepanelJs.includes("routePlan: request.routePlan ?? null"), true);
