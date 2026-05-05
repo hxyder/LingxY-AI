@@ -948,7 +948,9 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       const enabled = Boolean(finalEnrollment.enabled);
       window.ucaShell?.showEchoBubble?.({
         text: enabled
-          ? `✅ 录入有效 · KWS 自检命中 ${matched}/${total}`
+          ? (matched >= required
+            ? `✅ 录入有效 · KWS 自检命中 ${matched}/${total}`
+            : `✅ 录入完成 · 已启用个人样本（KWS 自检 ${matched}/${required}，仅作诊断）`)
           : `⚠ 录入未改善唤醒（命中 ${matched}/${total}，需要 ${required}）请靠近麦克风重录`,
         kind: enabled ? "wake" : "error",
         durationMs: enabled ? 3600 : 5200

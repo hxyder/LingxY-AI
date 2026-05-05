@@ -200,12 +200,17 @@ function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, open
   if (!taskId || popupSuccessCardTaskId === taskId) return;
   if (!isEchoTask(taskId) && !shouldSurfaceTaskPopupCards()) return;
   popupSuccessCardTaskId = taskId;
+  const fullBody = Array.isArray(body) ? body.filter(Boolean).join("\n") : String(body ?? "");
+  const echoTask = isEchoTask(taskId);
   try {
     window.ucaShell?.notify?.({
       kind: "success",
       taskId,
       title: title || "任务完成",
-      body: Array.isArray(body) ? body.filter(Boolean).join("\n") : String(body ?? "").slice(0, 160),
+      body: echoTask ? fullBody : fullBody.slice(0, 160),
+      inlinePreview: echoTask ? fullBody : null,
+      allowLongBody: echoTask,
+      forcePopup: echoTask,
       autoHideMs,
       openWindow
     });

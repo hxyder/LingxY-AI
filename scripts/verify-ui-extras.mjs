@@ -39,6 +39,7 @@ const dockHtml = read("src/desktop/renderer/dock.html");
 const dockJs = read("src/desktop/renderer/dock.js");
 const dockGeometry = read("src/desktop/tray/dock-geometry.mjs");
 const electronMain = read("src/desktop/tray/electron-main.mjs");
+const popupCardJs = read("src/desktop/renderer/popup-card.js");
 const desktopManifest = read("src/desktop/shared/manifest.mjs");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
@@ -496,6 +497,15 @@ assert.ok(/explicitBrowserContextRequest[\s\S]{0,180}resolveActiveWindowBrowserC
     && /if \(activeBrowserCapture\)[\s\S]{0,280}stale clipboard\/email text/.test(overlayJs)
     && /else if \(pendingCapture\?\.capture \|\| conversationState\?\.seedCapture\)/.test(overlayJs),
   "overlay context priority: explicit current-page requests must override passive clipboard/seed captures before submit");
+assert.ok(/const echoTask = isEchoTask\(taskId\);/.test(overlayJs)
+    && /inlinePreview: echoTask \? fullBody : null/.test(overlayJs)
+    && /allowLongBody: echoTask/.test(overlayJs)
+    && /forcePopup: echoTask/.test(overlayJs),
+  "echo result cards: Echo success cards must carry the complete answer without requiring overlay open");
+assert.ok(/const shouldOpenOverlay = payload\?\.openWindow === "overlay" \|\| payload\?\.handoff;/.test(popupCardJs)
+    && /else if \(!shouldOpenOverlay\)[\s\S]{0,160}openTaskDetail/.test(popupCardJs)
+    && /\(payload\?\.taskId \|\| payload\?\.openWindow\) && !shouldOpenOverlay/.test(popupCardJs),
+  "popup cards: open-overlay actions must not duplicate the generic detail button");
 assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml)
     && /selectedVoiceLanguage/.test(overlayJs)
     && /liveRecognizerLanguage/.test(overlayJs),

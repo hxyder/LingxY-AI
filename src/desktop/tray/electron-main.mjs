@@ -4123,7 +4123,10 @@ export function createElectronShellRuntime({
         if (acceptedFilePaths.length === 0) {
           return { accepted: false, reason: "no_files" };
         }
-        showWindow("overlay");
+        // Dropping onto the dock is a context handoff, not an implicit
+        // request to open chat. Keep the orb calm: the hidden overlay
+        // renderer can receive the pending files and the user can click the
+        // dock when they actually want to inspect or ask about them.
         enqueueWindowMessage(
           "overlay",
           IPC_CHANNELS.shellContextReceived,

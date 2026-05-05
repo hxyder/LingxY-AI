@@ -50,6 +50,12 @@ assert.equal(mainProcess.includes("captureActiveWindowContext"), true);
 assert.equal(mainProcess.includes("capture-context.ps1"), true);
 assert.equal(mainProcess.includes("shellSubmitDroppedFiles"), true);
 assert.equal(mainProcess.includes("hotkey_preview"), true);
+assert.match(mainProcess,
+  /shellSubmitDroppedFiles[\s\S]{0,900}Dropping onto the dock is a context handoff[\s\S]{0,500}enqueueWindowMessage\(\s*"overlay"/,
+  "dock file drop should hand off context without forcing the overlay open");
+assert.doesNotMatch(mainProcess,
+  /shellSubmitDroppedFiles[\s\S]{0,700}showWindow\("overlay"\)[\s\S]{0,300}enqueueWindowMessage\(\s*"overlay"/,
+  "dock file drop must not open overlay before enqueueing dropped files");
 
 const helperProgram = await read("src/helper/explorer_selection/UcaExplorerSelectionHelper/Program.cs");
 assert.equal(helperProgram.includes("overlay_prompt"), true);

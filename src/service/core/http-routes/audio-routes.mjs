@@ -418,6 +418,7 @@ let cachedEnrollmentKnownAt = 0;
 const ENROLLMENT_CACHE_TTL_MS = 0;
 const ENROLLMENT_REQUIRED_SAMPLES = 3;
 const ENROLLMENT_REQUIRED_MATCHES = 2;
+const ENROLLMENT_MIN_AUDIO_SECONDS = 0.45;
 const ENROLLMENT_SAMPLE_KEYS = ["1", "2", "3"];
 
 function getUserKeywordDir() {
@@ -442,14 +443,22 @@ function summarizeEnrollment(samples = {}) {
     .map((key) => samples[key])
     .filter(Boolean);
   const matchedCount = entries.filter((item) => item?.kwsSelfCheck?.matched).length;
+  const usableSampleCount = entries.filter((item) => {
+    const seconds = Number(item?.kwsSelfCheck?.audio_seconds ?? 0);
+    return item?.kwsSelfCheck?.ok !== false && seconds >= ENROLLMENT_MIN_AUDIO_SECONDS;
+  }).length;
   const completed = ENROLLMENT_SAMPLE_KEYS.every((key) => Boolean(samples[key]));
+  const selfCheckPassed = matchedCount >= ENROLLMENT_REQUIRED_MATCHES;
   return {
     sampleCount: entries.length,
     requiredSamples: ENROLLMENT_REQUIRED_SAMPLES,
+    usableSampleCount,
+    minAudioSeconds: ENROLLMENT_MIN_AUDIO_SECONDS,
     matchedCount,
     requiredMatches: ENROLLMENT_REQUIRED_MATCHES,
+    selfCheckPassed,
     completed,
-    enabled: completed && matchedCount >= ENROLLMENT_REQUIRED_MATCHES
+    enabled: completed && usableSampleCount >= ENROLLMENT_REQUIRED_SAMPLES
   };
 }
 
@@ -527,7 +536,7 @@ async function hasUserEnrollment() {
   }
   try {
     const parsed = JSON.parse(await readFile(getEnrollmentManifestPath(), "utf8"));
-    cachedEnrollmentKnown = Boolean(parsed?.enabled);
+    cachedEnrollmentKnown = Boolean(parsed?.enabled || summarizeEnrollment(parsed?.samples ?? {}).enabled);
   } catch {
     cachedEnrollmentKnown = false;
   }
@@ -842,10 +851,13 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       enrollment: {
         enabled: enrollment.enabled,
         completed: enrollment.completed,
+        usableSampleCount: enrollment.usableSampleCount,
+        minAudioSeconds: enrollment.minAudioSeconds,
         matchedCount: enrollment.matchedCount,
         sampleCount: enrollment.sampleCount,
         requiredMatches: enrollment.requiredMatches,
         requiredSamples: enrollment.requiredSamples,
+        selfCheckPassed: enrollment.selfCheckPassed,
         profile: enrollment.profile
       }
     });

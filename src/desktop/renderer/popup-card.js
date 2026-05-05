@@ -354,14 +354,15 @@ function applyInit(payload) {
     // replacement for the retired result-toast (overlay bottom-center).
     const hasArtifact = Boolean(payload?.artifactPath);
     const hasInline = Boolean(payload?.inlinePreview || payload?.artifactPath);
+    const shouldOpenOverlay = payload?.openWindow === "overlay" || payload?.handoff;
     const buttons = [];
     if (hasArtifact) {
       buttons.push({ label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });
       buttons.push({ label: "打开文件夹", variant: "ghost", onClick: () => resolveCard("reveal", { artifactPath: payload.artifactPath }) });
-    } else {
+    } else if (!shouldOpenOverlay) {
       buttons.push({ label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) });
     }
-    if (payload?.openWindow === "overlay" || payload?.handoff) {
+    if (shouldOpenOverlay) {
       buttons.push({
         label: "打开对话框",
         variant: hasArtifact ? "ghost" : "primary",
@@ -396,11 +397,12 @@ function applyInit(payload) {
     scheduleAutoHide(payload?.autoHideMs ?? 12000);
   } else {
     const buttons = [];
+    const shouldOpenOverlay = payload?.openWindow === "overlay" || payload?.handoff;
     if (payload?.artifactPath) {
       buttons.push({ label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });
       buttons.push({ label: "打开文件夹", variant: "ghost", onClick: () => resolveCard("reveal", { artifactPath: payload.artifactPath }) });
     }
-    if (payload?.openWindow === "overlay" || payload?.handoff) {
+    if (shouldOpenOverlay) {
       buttons.push({
         label: "打开对话框",
         variant: buttons.length ? "ghost" : "primary",
@@ -415,7 +417,7 @@ function applyInit(payload) {
         })
       });
     }
-    if (payload?.taskId || payload?.openWindow) {
+    if ((payload?.taskId || payload?.openWindow) && !shouldOpenOverlay) {
       buttons.push({ label: detailLabel, variant: buttons.length ? "ghost" : "primary", onClick: () => openTaskDetail(payload?.taskId, payload) });
     }
     if (payload?.inlinePreview || payload?.artifactPath) {

@@ -634,8 +634,11 @@ function makeEchoAudioRuntime({ keywordDir = null } = {}) {
         return {
           enabled: true,
           completed: true,
+          usableSampleCount: 3,
+          minAudioSeconds: 0.45,
           matchedCount: 3,
           sampleCount: 3,
+          selfCheckPassed: true,
           requiredMatches: 2,
           requiredSamples: 3,
           profile: { personalized: true }
@@ -651,8 +654,11 @@ function makeEchoAudioRuntime({ keywordDir = null } = {}) {
           ok: true,
           enabled: true,
           completed: true,
+          usableSampleCount: 3,
+          minAudioSeconds: 0.45,
           matchedCount: 2,
           sampleCount: 3,
+          selfCheckPassed: true,
           requiredMatches: 2,
           requiredSamples: 3,
           profile: { personalized: true },
@@ -1715,6 +1721,72 @@ test("echo enrollment allows the dock shell actor and writes through injected au
   ]);
   assert.equal(runtime.calls[3].record.sampleKey, "2");
   assert.equal(runtime.calls[3].record.sessionId, "s1");
+});
+
+test("echo enrollment enables usable personal samples even when KWS self-check is diagnostic-only", async (t) => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "uca-echo-enroll-diag-"));
+  t.after(async () => {
+    await rm(tempRoot, { recursive: true, force: true });
+  });
+  const runtime = makeEchoAudioRuntime({ keywordDir: tempRoot });
+  const samples = {};
+  runtime.audio.detectWakeKeywordLocally = async (audioBuffer, options = {}) => {
+    runtime.calls.push({
+      method: "audio.detectWakeKeywordLocally",
+      bytes: audioBuffer.length,
+      options
+    });
+    return {
+      ok: true,
+      matched: false,
+      keyword: "",
+      audio_seconds: 1.2
+    };
+  };
+  runtime.audio.writeEnrollmentSample = async (record = {}) => {
+    runtime.calls.push({
+      method: "audio.writeEnrollmentSample",
+      record
+    });
+    samples[record.sampleKey] = record;
+    const entries = Object.values(samples);
+    const matchedCount = entries.filter((entry) => entry?.kwsSelfCheck?.matched).length;
+    const usableSampleCount = entries.filter((entry) =>
+      entry?.kwsSelfCheck?.ok !== false && Number(entry?.kwsSelfCheck?.audio_seconds ?? 0) >= 0.45
+    ).length;
+    return {
+      enabled: usableSampleCount >= 3,
+      completed: entries.length >= 3,
+      usableSampleCount,
+      minAudioSeconds: 0.45,
+      matchedCount,
+      sampleCount: entries.length,
+      selfCheckPassed: matchedCount >= 2,
+      requiredMatches: 2,
+      requiredSamples: 3,
+      profile: { personalized: true }
+    };
+  };
+
+  let lastPayload = null;
+  for (const sample of ["1", "2", "3"]) {
+    const result = await audioRoute({
+      method: "POST",
+      pathname: `/echo/enroll-keyword?sample=${sample}&session=s2`,
+      actor: "desktop_shell",
+      rawBody: `voice-${sample}`,
+      runtime
+    });
+    assert.equal(result.handled, true);
+    assert.equal(result.statusCode, 200);
+    lastPayload = result.payload;
+  }
+
+  assert.equal(lastPayload.enrollment.completed, true);
+  assert.equal(lastPayload.enrollment.enabled, true);
+  assert.equal(lastPayload.enrollment.usableSampleCount, 3);
+  assert.equal(lastPayload.enrollment.matchedCount, 0);
+  assert.equal(lastPayload.enrollment.selfCheckPassed, false);
 });
 
 test("echo enrollment rejects oversized audio before writing samples", async () => {

@@ -495,13 +495,17 @@ function renderEchoDiagnostics(payload = null) {
   const enrollmentEnabled = Boolean(enrollment.enabled);
   const sampleCount = Number(enrollment.sampleCount ?? 0);
   const requiredSamples = Number(enrollment.requiredSamples ?? 3);
+  const usableSampleCount = Number(enrollment.usableSampleCount ?? sampleCount);
   const matchedCount = Number(enrollment.matchedCount ?? 0);
   const requiredMatches = Number(enrollment.requiredMatches ?? 2);
+  const selfCheckPassed = Boolean(enrollment.selfCheckPassed ?? matchedCount >= requiredMatches);
   const customPhrases = Array.isArray(profile.phrases) ? profile.phrases.length : 0;
   const profileLabel = profile.displayName || "linxi";
   const sampleHint = enrollment.ok === false
     ? (enrollment.message || enrollment.reason || "Enrollment status unavailable.")
-    : `${sampleCount}/${requiredSamples} samples, ${matchedCount}/${requiredMatches} KWS matches.`;
+    : enrollmentEnabled
+      ? `${usableSampleCount}/${requiredSamples} usable samples. KWS self-check ${matchedCount}/${requiredMatches}${selfCheckPassed ? "." : " (diagnostic only)." }`
+      : `${sampleCount}/${requiredSamples} samples, ${matchedCount}/${requiredMatches} KWS matches.`;
   const transcriptionProvider = transcription.provider?.name
     || transcription.provider?.id
     || (transcription.localFallback?.available ? "Local fallback" : "Not configured");
@@ -523,7 +527,7 @@ function renderEchoDiagnostics(payload = null) {
     </div>
     <div class="voice-status-card">
       <strong>Personal samples</strong>
-      <div class="value">${enrollmentEnabled ? "Enabled" : sampleCount > 0 ? "Needs retest" : "Not recorded"}</div>
+      <div class="value">${enrollmentEnabled ? "Enabled" : sampleCount > 0 ? "Needs samples" : "Not recorded"}</div>
       <div class="hint">${escapeHtml(sampleHint)}</div>
     </div>
     <div class="voice-status-card">
