@@ -2,6 +2,11 @@ import { buildDesktopShellBootstrapState } from "../src/desktop/tray/bootstrap.m
 import { createDesktopRuntimeHost } from "../src/desktop/tray/runtime-host.mjs";
 import { createOverlayViewModel } from "../src/desktop/overlay/view-model.mjs";
 import { createConsoleViewModel } from "../src/desktop/console/view-model.mjs";
+import {
+  DESKTOP_UNKNOWN_ACTOR,
+  desktopActorForSender,
+  desktopActorForWindowId
+} from "../src/desktop/tray/desktop-actor.mjs";
 import { readFileSync } from "node:fs";
 
 const bootstrap = buildDesktopShellBootstrapState();
@@ -27,6 +32,14 @@ if (!bootstrap.entryPoint.endsWith("electron-main.mjs")) {
 
 if (host.start().serviceBridgeAttached !== true) {
   throw new Error("Desktop runtime host did not attach service bridge.");
+}
+
+if (desktopActorForWindowId("dock") !== "desktop_shell"
+    || desktopActorForWindowId("overlay") !== "desktop_overlay"
+    || desktopActorForWindowId("console") !== "desktop_console"
+    || desktopActorForWindowId("preview") !== DESKTOP_UNKNOWN_ACTOR
+    || desktopActorForSender({ id: "unknown" }, new Map()) !== DESKTOP_UNKNOWN_ACTOR) {
+  throw new Error("Desktop IPC actor mapping must be explicit and fail closed for unknown senders.");
 }
 
 const dockWindow = bootstrap.manifest.windows.find((w) => w.id === "dock");
@@ -58,6 +71,10 @@ if (/#dockButton:hover\s*\{[^}]*scale\(\s*1\./.test(dockHtml)
 }
 
 const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
+if (!electronMain.includes("resolveDesktopActorForSender(sender, windows)")
+    || /function desktopActorForSender[\s\S]{0,220}return\s+["']desktop_shell["']/.test(electronMain)) {
+  throw new Error("desktopActorForSender must delegate to the shared fail-closed actor resolver.");
+}
 if (!/export const DOCK_SIZE_PX = 48/.test(dockGeometry)
     || !/export const DOCK_EDGE_SNAP_PX = 16/.test(dockGeometry)
     || !/function normalizeDockBounds/.test(dockGeometry)) {

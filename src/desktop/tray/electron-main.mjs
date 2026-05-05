@@ -8,6 +8,10 @@ import os from "node:os";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
 import { createPopupCardManager } from "./popup-card-manager.mjs";
 import {
+  DESKTOP_CONSOLE_ACTOR,
+  desktopActorForSender as resolveDesktopActorForSender
+} from "./desktop-actor.mjs";
+import {
   DOCK_SIZE_PX,
   dockDefaultBounds,
   normalizeDockBounds
@@ -34,7 +38,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const RENDERER_DIR = path.join(__dirname, "..", "renderer");
 const PRELOAD_PATH = path.join(RENDERER_DIR, "preload.cjs");
 const DESKTOP_ACTOR_HEADER = "X-Lingxy-Desktop-Actor";
-const DESKTOP_CONSOLE_ACTOR = "desktop_console";
 const DOCK_WINDOW_ID = "dock";
 const DOCK_HUD_SCROLL_LOCK_CSS = `
   html, body, #dockButton {
@@ -806,20 +809,8 @@ export function createElectronShellRuntime({
   let previewWindow = null;
   let previewWindowPinned = false;
 
-  function desktopActorForWindowId(windowId) {
-    if (windowId === "overlay") return "desktop_overlay";
-    if (windowId === "popup-card") return "popup_card";
-    if (windowId === "dock" || windowId === "echo-bubble") return "desktop_shell";
-    return DESKTOP_CONSOLE_ACTOR;
-  }
-
   function desktopActorForSender(sender) {
-    for (const [windowId, windowRef] of windows) {
-      if (windowRef?.webContents === sender) {
-        return desktopActorForWindowId(windowId);
-      }
-    }
-    return "desktop_shell";
+    return resolveDesktopActorForSender(sender, windows);
   }
 
   // Desktop shell settings (echo mode, future flags). Persisted as JSON in
