@@ -10,9 +10,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 - Run `npm run verify:public-branding`.
 - Run `npm run verify:functional-acceptance`.
 - Run `npm run verify:security-policy`.
-- Review `docs/release/root_markdown_public_review.md` and all advisory
-  warnings from `verify:github-readiness`, especially root Markdown docs
-  marked `temporary-root`, `move-internal`, or `release-notes-only`.
+- Review `docs/release/root_markdown_public_review.md`; it should remain
+  empty because README is the only product-facing root Markdown entry.
 - Review `docs/release/functional_acceptance_matrix.md`; every shipped
   user-visible capability must have automated coverage and a manual release
   pass path.

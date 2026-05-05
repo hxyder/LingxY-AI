@@ -44,7 +44,6 @@ for (const relativePath of [
 
 const publicBrandFiles = [
   "README.md",
-  "产品介绍.md",
   "docs/prd_v1.0.md",
   "docs/phase_1a_demo_script.md",
   "docs/release/README.md",
@@ -92,7 +91,6 @@ assert.equal(nativeIntegrationsDoc.includes("compatibility ids"), true,
 
 for (const [relativePath, expectedPhrase] of [
   ["README.md", "LingxY AI Desktop"],
-  ["产品介绍.md", "灵犀 LingxY AI"],
   ["docs/prd_v1.0.md", "LingxY PRD v1.0"],
   ["docs/release/trial_release_notes_v0.1.0-trial.1.md", "LingxY Trial Release Notes"]
 ]) {

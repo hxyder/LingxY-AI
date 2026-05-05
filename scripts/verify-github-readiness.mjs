@@ -155,50 +155,16 @@ const rootReviewMarkdown = tracked.filter((file) =>
 );
 
 const rootReviewEntries = rootMarkdownReviewEntries();
-const allowedRootReviewDecisions = new Set([
-  "public-ok",
-  "temporary-root",
-  "move-internal",
-  "release-notes-only"
-]);
-const missingRootReviewEntries = [];
-const invalidRootReviewEntries = [];
-for (const file of rootReviewMarkdown) {
-  const entry = rootReviewEntries.get(file);
-  if (!entry) {
-    missingRootReviewEntries.push(file);
-    continue;
-  }
-  if (
-    !allowedRootReviewDecisions.has(entry.decision)
-    || entry.owner.length === 0
-    || entry.notes.length === 0
-  ) {
-    invalidRootReviewEntries.push(`${file} — ${entry.decision || "(missing decision)"}`);
-  }
-}
 assert.deepEqual(
-  missingRootReviewEntries,
+  rootReviewMarkdown,
   [],
-  `root Markdown docs are missing public review decisions in ${publicReviewPath}:\n${missingRootReviewEntries.join("\n")}`
+  `non-standard root Markdown docs must not be tracked for public GitHub release:\n${rootReviewMarkdown.join("\n")}`
 );
 assert.deepEqual(
-  invalidRootReviewEntries,
+  [...rootReviewEntries.keys()],
   [],
-  `root Markdown public review entries need a valid decision, owner, and notes:\n${invalidRootReviewEntries.join("\n")}`
+  `${publicReviewPath} must stay empty now that README is the only public product root Markdown entry`
 );
-
-if (rootReviewMarkdown.length > 0) {
-  const nonPublicRootDocs = rootReviewMarkdown.filter((file) => {
-    const decision = rootReviewEntries.get(file)?.decision;
-    return decision && decision !== "public-ok";
-  });
-  if (nonPublicRootDocs.length > 0) {
-    warnings.push(
-      `Tracked root Markdown docs are reviewed but not final-public: ${nonPublicRootDocs.join(", ")}`
-    );
-  }
-}
 
 console.log("GitHub readiness verification passed.");
 if (warnings.length > 0) {
