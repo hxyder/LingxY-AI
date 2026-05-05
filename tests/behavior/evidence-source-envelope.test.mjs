@@ -9,6 +9,10 @@ import {
   mergeContentEvidence
 } from "../../src/service/core/evidence/content-evidence.mjs";
 import {
+  hasReadableTextEvidence,
+  validateContentEvidenceGate
+} from "../../src/service/core/evidence/content-evidence-gate.mjs";
+import {
   citationViolations,
   verifyCitations
 } from "../../src/service/core/evidence/citation-verifier.mjs";
@@ -146,6 +150,7 @@ test("content evidence distinguishes captured page text from URL-only metadata",
     sourceType: "webpage",
     url: "https://example.com/current",
     pageTitle: "Current",
+    text: "URL: https://example.com/current",
     metadata: { hasPageContent: false }
   });
   assert.equal(metadataOnly[0].source_kind, "browser_page_metadata");
@@ -199,4 +204,93 @@ test("content evidence merge prefers concrete content over metadata-only entries
   ]);
   assert.equal(merged.length, 2);
   assert.ok(merged.some((entry) => entry.content_extracted === true));
+});
+
+test("content evidence gate rejects current-page metadata-only analysis", () => {
+  const result = validateContentEvidenceGate({
+    taskSpec: {
+      contract: { source_scope: "browser_page" }
+    },
+    contextPacket: {
+      source_type: "webpage",
+      selection_metadata: {
+        content_evidence: [{
+          source_kind: "browser_page_metadata",
+          coverage_scope: "url_title_only",
+          locator: "https://example.com/current",
+          content_extracted: false
+        }]
+      }
+    }
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.violations[0].kind, "browser_page_content_required");
+
+  const forced = validateContentEvidenceGate({
+    taskSpec: { contract: { source_scope: "none" } },
+    contextPacket: {
+      source_type: "webpage",
+      selection_metadata: {
+        content_evidence: [{
+          source_kind: "browser_page_metadata",
+          coverage_scope: "url_title_only",
+          content_extracted: false
+        }]
+      }
+    },
+    requireReadableText: true
+  });
+  assert.equal(forced.ok, false);
+  assert.equal(forced.violations[0].kind, "browser_page_content_required");
+});
+
+test("content evidence gate accepts browser text and keeps image pixels separate from readable text", () => {
+  const readable = [{
+    source_kind: "browser_page_text",
+    coverage_scope: "captured_page_text",
+    content_extracted: true
+  }];
+  assert.equal(hasReadableTextEvidence(readable), true);
+  assert.equal(validateContentEvidenceGate({
+    taskSpec: { contract: { source_scope: "browser_page" } },
+    contextPacket: {
+      source_type: "webpage",
+      selection_metadata: { content_evidence: readable }
+    }
+  }).ok, true);
+
+  const pixelsOnly = [{
+    source_kind: "screenshot_image",
+    coverage_scope: "image_pixels_available",
+    pixels_available: true,
+    content_extracted: false
+  }];
+  assert.equal(hasReadableTextEvidence(pixelsOnly), false);
+  assert.equal(validateContentEvidenceGate({
+    taskSpec: { contract: { source_scope: "browser_page" } },
+    contextPacket: {
+      source_type: "webpage",
+      selection_metadata: { content_evidence: pixelsOnly }
+    }
+  }).ok, false);
+});
+
+test("content evidence gate can protect inline file contexts without blocking deferred tool readers", () => {
+  const contextPacket = {
+    source_type: "file",
+    selection_metadata: {
+      content_evidence: [{
+        source_kind: "local_file_metadata",
+        coverage_scope: "file_metadata",
+        locator: "E:\\docs\\scan.pdf",
+        extraction_mode: "pdf_ocr_unavailable",
+        content_extracted: false
+      }]
+    }
+  };
+  const taskSpec = { contract: { source_scope: "uploaded_files" } };
+  assert.equal(validateContentEvidenceGate({ taskSpec, contextPacket }).ok, true);
+  const inlineOnly = validateContentEvidenceGate({ taskSpec, contextPacket, mode: "inline_context_only" });
+  assert.equal(inlineOnly.ok, false);
+  assert.equal(inlineOnly.violations[0].kind, "file_content_required");
 });

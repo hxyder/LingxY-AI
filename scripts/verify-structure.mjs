@@ -226,6 +226,7 @@ const requiredPaths = [
   "src/service/core/external-call.mjs",
   "src/service/core/read-probe-cache.mjs",
   "src/service/core/evidence/content-evidence.mjs",
+  "src/service/core/evidence/content-evidence-gate.mjs",
   "src/service/core/task-runtime/composite-status.mjs",
   "src/service/core/task-runtime/conversation-lifecycle.mjs",
   "src/service/core/task-runtime/event-emitter.mjs",

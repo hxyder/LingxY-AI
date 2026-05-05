@@ -7,6 +7,10 @@ import {
   browserPrefetchContentEvidence,
   withContentEvidence
 } from "./evidence/content-evidence.mjs";
+import {
+  firstContentEvidenceViolationMessage,
+  validateContentEvidenceGate
+} from "./evidence/content-evidence-gate.mjs";
 import { buildKimiTaskPackage } from "../executors/kimi/task-package-builder.mjs";
 import { executeKimiTask } from "../executors/kimi/kimi-cli-executor.mjs";
 import { detectRequestedOutputFormat, writeRequestedArtifacts } from "../executors/kimi/output-format.mjs";
@@ -942,9 +946,14 @@ export async function submitBrowserTask({
 
     if (shouldPrefetchBrowserPageContext({ capture, task })) {
       const prefetch = await prefetchBrowserPageContext({ capture, runtime, artifactStore, task });
-      if (!prefetch.ok && shouldRequireBrowserPageContent({ capture, task })) {
+      const evidenceGate = validateContentEvidenceGate({
+        taskSpec: task.task_spec,
+        contextPacket: task.context_packet,
+        requireReadableText: true
+      });
+      if (!prefetch.ok && !evidenceGate.ok) {
         markTaskFailed(runtime, task, {
-          message: "I could not read the current page content. I only have the URL/title, so I need you to retry page capture, open the browser extension page action, paste the page text, or allow a screenshot/vision fallback."
+          message: firstContentEvidenceViolationMessage(evidenceGate)
         });
         return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
       }

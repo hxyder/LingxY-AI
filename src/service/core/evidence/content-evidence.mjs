@@ -40,6 +40,7 @@ function hasMeaningfulText(value) {
 
 function hasBrowserPageContent(capture = {}) {
   if (capture.sourceType !== "webpage" && capture.sourceType !== "page_explanation") return false;
+  if (capture.metadata?.hasPageContent === false) return hasMeaningfulText(capture.html);
   return capture.metadata?.hasPageContent === true
     || hasMeaningfulText(capture.text)
     || hasMeaningfulText(capture.html);
