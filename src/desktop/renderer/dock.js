@@ -57,7 +57,8 @@ async function detectEchoKeywordViaShell(blob) {
   }
   return await window.ucaShell.detectEchoKeyword({
     audio: await blob.arrayBuffer(),
-    mimeType: blob.type || "audio/webm"
+    mimeType: blob.type || "audio/webm",
+    keywords: echoWakeProfile.phrases
   });
 }
 

@@ -3738,11 +3738,17 @@ export function createElectronShellRuntime({
       ipcMain.handle(IPC_CHANNELS.echoKwsDetect, async (event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
         const actor = desktopActorForSender(event.sender);
+        const params = new URLSearchParams();
+        if (Array.isArray(payload?.keywords) && payload.keywords.length) {
+          params.set("keywords", payload.keywords.map((item) => String(item ?? "").trim()).filter(Boolean).join("\n"));
+        }
+        const search = params.toString() ? `?${params}` : "";
         try {
           return await postDesktopServiceBinary({
             base,
             actor,
             pathname: "/echo/kws",
+            search,
             body: payload?.audio,
             contentType: payload?.mimeType || "audio/webm"
           });

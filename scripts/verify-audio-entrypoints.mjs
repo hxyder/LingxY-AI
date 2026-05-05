@@ -182,6 +182,12 @@ for (const route of [
 
 assert.ok(audioRoutes.includes("transcriptionPromptForLanguage") && audioRoutes.includes("Use Simplified Chinese"),
   "audio routes must pass an output-locale prompt so zh-CN transcriptions do not drift to Traditional Chinese");
+assert.ok(dockJs.includes("keywords: echoWakeProfile.phrases"),
+  "echo KWS: dock must pass the saved wake profile phrases into local KWS detection");
+assert.ok(main.includes("params.set(\"keywords\"") && main.includes("pathname: \"/echo/kws\""),
+  "echo KWS: main process must forward wake-profile keywords to the local service route");
+assert.ok(audioRoutes.includes("parseWakeKeywordsParam") && audioRoutes.includes("--keywords"),
+  "echo KWS: audio route must pass forwarded wake-profile keywords to the sherpa helper");
 
 for (const inventory of [
   "POST\", \"/echo/enroll-keyword\"",

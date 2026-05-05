@@ -347,7 +347,15 @@ const readLocalKeywordSpottingStatus = createReadProbeCache({
   ttlMs: Number(process.env.UCA_SHERPA_KWS_STATUS_TTL_MS ?? 5_000)
 });
 
-async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", personalized = false, templateFallback = false } = {}) {
+function parseWakeKeywordsParam(value) {
+  return String(value ?? "")
+    .split(/\r?\n|,/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 80);
+}
+
+async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", personalized = false, templateFallback = false, keywords = [] } = {}) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-echo-kws-"));
   const ext = mimeType.includes("wav") ? ".wav"
     : mimeType.includes("mp4") || mimeType.includes("m4a") ? ".m4a"
@@ -357,6 +365,7 @@ async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", 
   try {
     await writeFile(audioPath, audioBuffer);
     const args = [getLocalKeywordSpottingScriptPath(), audioPath];
+    if (Array.isArray(keywords) && keywords.length) args.push("--keywords", keywords.join("\n"));
     if (personalized) args.push("--personalized");
     if (templateFallback) args.push("--template-fallback");
     const { stdout } = await execFileAsync(getPythonCommand(), args, {
@@ -669,6 +678,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     const result = await audioRuntime.detectWakeKeywordLocally(audioBuffer, {
       mimeType,
       personalized,
+      keywords: parseWakeKeywordsParam(url.searchParams.get("keywords")),
       templateFallback: process.env.UCA_ECHO_TEMPLATE_WAKE_FALLBACK !== "0"
     });
     if (
