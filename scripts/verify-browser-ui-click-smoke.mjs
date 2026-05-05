@@ -320,8 +320,34 @@ async function verifySidePanelPendingQuickAction() {
   "sidepanel pending quick action should preserve action, selection state, and route plan");
 }
 
+async function verifySidePanelPendingPageExplainRoutePlan() {
+  const routePlan = { ok: true, transport: "standalone_direct", ui: "sidepanel_pending", reason: "smoke" };
+  const pending = {
+    id: "pending-page-1",
+    kind: "page_explain",
+    routePlan
+  };
+  const transcript = createTranscript();
+  const chromeStub = createChromeStub(transcript, {
+    initialStorage: { ucaSidePanelPendingAnalysis: pending }
+  });
+  chromeStub.__transcript = transcript;
+  installBrowserGlobals(read("browser_ext/sidepanel/index.html"), chromeStub);
+  await importFresh("browser_ext/sidepanel/index.js", "sidepanel-pending-page");
+
+  await tick();
+  await tick();
+  assert.ok(transcript.ports.some((port) =>
+    port.name === "uca.chat.stream"
+    && port.payload?.type === "chat"
+    && port.payload?.routePlan?.transport === "standalone_direct"
+    && port.payload?.routePlan?.ui === "sidepanel_pending"),
+  "sidepanel pending page explain should preserve route plan on the chat stream");
+}
+
 await verifyPopupClicks();
 await verifySidePanelClicks();
 await verifySidePanelPendingQuickAction();
+await verifySidePanelPendingPageExplainRoutePlan();
 
 console.log("ok verify-browser-ui-click-smoke");

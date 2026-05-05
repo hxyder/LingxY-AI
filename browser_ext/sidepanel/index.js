@@ -166,7 +166,7 @@ async function refreshMode() {
 }
 
 /* ── Chat send (port-based streaming) ────────────────────────────────── */
-function sendTurn({ userContent, systemContent = null, assistantPrefix = null, displayLabel = null, attached = null, maxTokens = null } = {}) {
+function sendTurn({ userContent, systemContent = null, assistantPrefix = null, displayLabel = null, attached = null, maxTokens = null, routePlan = null } = {}) {
   return new Promise((resolve) => {
     if (isBusy) { resolve({ ok: false, error: "busy" }); return; }
     isBusy = true;
@@ -334,7 +334,8 @@ function sendTurn({ userContent, systemContent = null, assistantPrefix = null, d
       text: userContent,
       history: sendableHistory,
       systemPrompt: SYSTEM_PROMPT,
-      maxTokens
+      maxTokens,
+      ...(routePlan ? { routePlan } : {})
     });
   });
 }
