@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -43,8 +44,10 @@ assert.match(releaseGate, /npm run verify:audit-high/, "release gate must block 
 assert.equal(packageJson.scripts["verify:release-artifact-workflow"], "node scripts/verify-release-artifact-workflow.mjs");
 assert.equal(packageJson.scripts["verify:dependency-hygiene"], "node scripts/verify-dependency-hygiene.mjs");
 assert.equal(packageJson.scripts["verify:audit-high"], "npm audit --audit-level=high");
-assert.match(packageJson.scripts.check, /verify-release-artifact-workflow\.mjs/, "npm run check must include release artifact workflow verification");
-assert.match(packageJson.scripts.check, /verify-dependency-hygiene\.mjs/, "npm run check must include dependency hygiene verification");
+assert.ok(CHECK_COMMANDS.includes("node scripts/verify-release-artifact-workflow.mjs"),
+  "npm run check must include release artifact workflow verification");
+assert.ok(CHECK_COMMANDS.includes("node scripts/verify-dependency-hygiene.mjs"),
+  "npm run check must include dependency hygiene verification");
 
 assert.match(releaseChecklist, /Release Artifacts/, "release checklist must mention the release artifact workflow");
 assert.match(releaseChecklist, /checksums\.sha256/, "release checklist must require checksum review");

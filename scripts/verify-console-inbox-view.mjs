@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
+import { CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const viewPath = "src/desktop/renderer/console-inbox-view.mjs";
 const consolePath = "src/desktop/renderer/console.js";
@@ -138,6 +139,6 @@ assert.ok(consoleSource.includes("/messages/${encodeURIComponent(id)}"), "consol
 assert.ok(consoleSource.includes("openExternal"), "console.js must keep external open binding");
 
 assert.equal(pkg.scripts["verify:console-inbox-view"], "node scripts/verify-console-inbox-view.mjs");
-assert.ok(pkg.scripts.check.includes("node scripts/verify-console-inbox-view.mjs"), "npm run check must include console inbox view verifier");
+assert.ok(CHECK_COMMANDS.includes("node scripts/verify-console-inbox-view.mjs"), "npm run check must include console inbox view verifier");
 
 console.log("ok verify-console-inbox-view");

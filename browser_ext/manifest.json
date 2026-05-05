@@ -8,12 +8,10 @@
     "contextMenus",
     "nativeMessaging",
     "notifications",
+    "geolocation",
     "scripting",
     "sidePanel",
     "storage"
-  ],
-  "optional_permissions": [
-    "geolocation"
   ],
   "host_permissions": [
     "<all_urls>",

@@ -13,6 +13,7 @@ import { tryHandleOfficeRoute } from "../../src/service/core/http-routes/office-
 import { tryHandlePreviewFileRoute } from "../../src/service/core/http-routes/preview-file-routes.mjs";
 import { tryHandleRuntimeAdminRoute } from "../../src/service/core/http-routes/runtime-admin-routes.mjs";
 import { tryHandleTaskRoute } from "../../src/service/core/http-routes/task-routes.mjs";
+import { removeTempDirWithRetry } from "./helpers/temp-dir.mjs";
 
 const ACTOR_HEADER = "x-lingxy-desktop-actor";
 
@@ -746,7 +747,7 @@ test("email account credential mutations reject non-console actors before local 
 test("email account credential mutations allow the console actor", async (t) => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), "uca-email-guard-"));
   t.after(async () => {
-    await rm(dataDir, { recursive: true, force: true });
+    await removeTempDirWithRetry(dataDir);
   });
 
   const saveRuntime = makeEmailAccountRuntime();

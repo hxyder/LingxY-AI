@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const read = (relativePath) => readFileSync(path.join(repoRoot, relativePath), "utf8");
@@ -69,7 +70,7 @@ assert.equal(typeof pkg.scripts["verify:user-interaction-smoke"], "string",
   "package.json missing verify:user-interaction-smoke script");
 const smokeScript = pkg.scripts["verify:user-interaction-smoke"].match(/node\s+(scripts\/[^ ]+\.mjs)/u)?.[1];
 assert.ok(smokeScript, "verify:user-interaction-smoke must be a node verifier");
-assert.equal((pkg.scripts.check ?? "").includes(smokeScript), true,
+assert.equal(CHECK_COMMANDS.includes(`node ${smokeScript}`), true,
   "npm run check must include user interaction smoke verifier");
 
 const popupHtml = read("browser_ext/popup/index.html");

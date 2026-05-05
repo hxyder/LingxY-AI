@@ -22,6 +22,7 @@ import { createMultiModalExecutorScaffold } from "../src/service/executors/multi
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const manifest = JSON.parse(await readFile(path.join(repoRoot, "browser_ext", "manifest.json"), "utf8"));
+const locationModule = await readFile(path.join(repoRoot, "browser_ext", "shared", "location.js"), "utf8");
 
 function createFetchResponse(body, contentType) {
   const bytes = Buffer.isBuffer(body) ? body : Buffer.from(body, "utf8");
@@ -56,6 +57,14 @@ function createMockFastExecutor() {
 assert.equal(manifest.manifest_version, 3);
 assert.ok(manifest.permissions.includes("nativeMessaging"));
 assert.equal(manifest.background.service_worker, "background/service-worker.js");
+assert.equal((manifest.optional_permissions ?? []).includes("geolocation"), false,
+  "Chrome MV3 rejects geolocation in optional_permissions; use navigator.geolocation from a user gesture");
+assert.equal((manifest.permissions ?? []).includes("geolocation"), true,
+  "Chrome extension pages need geolocation in required permissions for navigator.geolocation");
+assert.equal(/chrome\.permissions\.(request|contains|remove)[\s\S]*geolocation/.test(locationModule), false,
+  "location module must not request geolocation through chrome.permissions");
+assert.ok(locationModule.includes("navigator.geolocation"),
+  "location module must use the browser geolocation API");
 
 const framed = encodeNativeMessage({ hello: "world" });
 assert.deepEqual(decodeNativeMessage(framed), { hello: "world" });

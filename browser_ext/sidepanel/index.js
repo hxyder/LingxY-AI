@@ -759,7 +759,7 @@ async function onLocationChipClick() {
   const existing = await getCachedLocation();
   if (existing) {
     const choice = window.confirm(
-      `当前定位：${formatLocationLabel(existing)}\n\n按「确定」重新获取，按「取消」清除并撤销授权（下次需重新允许）。`
+      `当前定位：${formatLocationLabel(existing)}\n\n按「确定」重新获取，按「取消」清除 LingxY 缓存。浏览器定位授权可在 Chrome 站点/扩展权限里管理。`
     );
     if (choice) {
       actionLocationBtn.textContent = "📍 定位中…";
@@ -771,11 +771,9 @@ async function onLocationChipClick() {
         actionLocationBtn.textContent = `📍 失败：${r.reason}`;
       }
     } else {
-      // Full revoke: clears our cache, revokes the optional Chrome
-      // permission (next click prompts again), and tells the desktop
-      // service to drop its mirror. Without all three, "cancel" only
-      // touches one of the three places where state lives and the user
-      // sees stale data until they force-reload.
+      // Clear LingxY's cache and tell the desktop service to drop its mirror.
+      // Chrome owns the browser-level geolocation permission; MV3 requires it
+      // as a normal manifest permission, not an optional runtime permission.
       await clearCachedLocation();
       void pushLocationToDesktop(null, { clear: true });
       actionLocationBtn.textContent = "📍 定位：已撤销";
@@ -792,8 +790,8 @@ async function onLocationChipClick() {
     void pushLocationToDesktop(r.location);
   } else if (r.reason === "permission_denied") {
     actionLocationBtn.textContent = "📍 已拒绝";
-    actionLocationBtn.title = "你拒绝了授权。再次点击会重新弹出权限请求。";
-  } else if (r.reason === "no_permissions_api") {
+    actionLocationBtn.title = "你拒绝了授权。可在 Chrome 的站点/扩展权限中重新允许定位。";
+  } else if (r.reason === "unsupported") {
     actionLocationBtn.textContent = "📍 不支持";
   } else {
     actionLocationBtn.textContent = `📍 失败：${r.reason}`;

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { CHECK_COMMANDS } from "./check-manifest.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoPath = (relativePath) => path.join(repoRoot, relativePath);
@@ -19,7 +20,6 @@ const releaseConfig = read("tools/release/release-config.json");
 const pkg = JSON.parse(read("package.json"));
 
 const scripts = pkg.scripts ?? {};
-const checkCommand = scripts.check ?? "";
 
 const requiredDomains = [
   "Desktop shell",
@@ -89,10 +89,10 @@ for (const scriptName of requiredVerifyScripts) {
   assert.equal(typeof scripts[scriptName], "string", `package.json missing script ${scriptName}`);
   const nodeScript = scripts[scriptName].match(/node\s+(scripts\/[^ ]+\.mjs)/u)?.[1];
   if (nodeScript) {
-    assert.equal(checkCommand.includes(nodeScript), true,
+    assert.equal(CHECK_COMMANDS.includes(`node ${nodeScript}`), true,
       `npm run check must include ${nodeScript} for ${scriptName}`);
   } else {
-    assert.equal(checkCommand.includes(scriptName), true,
+    assert.equal(CHECK_COMMANDS.some((command) => command.includes(scriptName)), true,
       `npm run check must include ${scriptName}`);
   }
   assert.equal(matrix.includes(scriptName), true,

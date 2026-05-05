@@ -1,65 +1,31 @@
 /**
  * Browser-extension location module — REAL geolocation, with user consent.
  *
- * `geolocation` is declared as an OPTIONAL permission in the manifest, so:
- *   1. First click on the chip → chrome.permissions.request(['geolocation'])
- *      → Chrome shows the native "do you allow this extension to access your
- *      location?" prompt. Without this dance, declaring geolocation in the
- *      regular `permissions` array silently grants it at install — no prompt
- *      ever fires, which is exactly the UX the user reported as broken.
- *   2. After approval we call navigator.geolocation.getCurrentPosition and
- *      reverse-geocode lat/lng via BigDataCloud's free, CORS-enabled,
- *      key-less client endpoint.
- *   3. Result cached in chrome.storage.local under STORAGE_KEY, with a
- *      fetched-at timestamp. Service worker mirrors it for outbound capture
- *      payloads (service workers can't call navigator.geolocation directly).
- *   4. Clearing fully revokes: removes our cache AND calls
- *      chrome.permissions.remove(['geolocation']) so the next request prompts
- *      again. Otherwise Chrome silently re-grants and the user's "no" feels
- *      ignored.
+ * Chrome MV3 requires `geolocation` in the manifest's required permissions,
+ * but does not allow it in optional_permissions. The side-panel click calls
+ * navigator.geolocation directly from the user gesture; the browser owns the
+ * native permission prompt. We only cache the approved result in
+ * chrome.storage.local and mirror it to the service worker/desktop.
  */
 
 export const STORAGE_KEY = "ucaUserLocation";
 export const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
 
-function hasChromePermissions() {
-  return typeof chrome !== "undefined" && chrome.permissions?.request;
-}
-
 /**
- * Check (and request, if missing) the optional geolocation permission.
- * MUST be called from a user-gesture handler — Chrome rejects
- * permissions.request() outside one. Returns { ok, granted } so callers can
- * distinguish "user said no" from "we couldn't even ask".
+ * Geolocation permission is requested by navigator.geolocation itself. This
+ * helper only keeps the old call boundary stable and checks whether the Web
+ * API is available in the current extension page.
  */
 export async function ensureGeolocationPermission() {
-  if (!hasChromePermissions()) return { ok: false, granted: false, reason: "no_permissions_api" };
-  const already = await new Promise((resolve) => {
-    chrome.permissions.contains({ permissions: ["geolocation"] }, resolve);
-  });
-  if (already) return { ok: true, granted: true, alreadyGranted: true };
-  const granted = await new Promise((resolve) => {
-    try {
-      chrome.permissions.request({ permissions: ["geolocation"] }, (ok) => resolve(Boolean(ok)));
-    } catch {
-      resolve(false);
-    }
-  });
-  return granted
-    ? { ok: true, granted: true, alreadyGranted: false }
-    : { ok: false, granted: false, reason: "permission_denied" };
+  if (typeof navigator === "undefined" || !navigator.geolocation) {
+    return { ok: false, granted: false, reason: "unsupported" };
+  }
+  return { ok: true, granted: true, alreadyGranted: false };
 }
 
-/** Revoke our optional geolocation permission so the next attempt prompts again. */
+/** Chrome does not expose a geolocation optional permission to revoke here. */
 export async function revokeGeolocationPermission() {
-  if (!hasChromePermissions()) return false;
-  return new Promise((resolve) => {
-    try {
-      chrome.permissions.remove({ permissions: ["geolocation"] }, (ok) => resolve(Boolean(ok)));
-    } catch {
-      resolve(false);
-    }
-  });
+  return false;
 }
 
 export function getSystemTimezone() {
@@ -165,10 +131,9 @@ async function writeCachedLocation(record) {
 }
 
 /**
- * Trigger the geolocation permission prompt (if not yet granted), then read
- * the position, reverse-geocode, and cache. MUST be called from a user
- * gesture (button click) — both chrome.permissions.request() and the
- * permission prompt require active user activation.
+ * Trigger the browser geolocation prompt (if not yet granted), then read the
+ * position, reverse-geocode, and cache. MUST be called from a user gesture
+ * (button click) so Chrome can show the native prompt.
  */
 export async function requestPreciseLocation({ highAccuracy = false } = {}) {
   const perm = await ensureGeolocationPermission();
@@ -197,17 +162,14 @@ export async function requestPreciseLocation({ highAccuracy = false } = {}) {
 }
 
 /**
- * Full revoke: wipe our cache AND remove the optional Chrome permission
- * so the next requestPreciseLocation() shows the prompt again. Without
- * the permission removal, "clear" only wipes our storage but Chrome still
- * remembers the grant — the user perceives that as the cancel being
- * ignored (which is exactly the bug reported on first attempt).
+ * Clear our cached location. Browser-level geolocation grants/denials remain
+ * under Chrome's site/extension permission UI because `geolocation` is a
+ * required extension permission, not a valid optional permission.
  */
 export async function clearCachedLocation() {
   if (typeof chrome !== "undefined" && chrome.storage?.local) {
     try { await chrome.storage.local.remove(STORAGE_KEY); } catch { /* best effort */ }
   }
-  await revokeGeolocationPermission();
 }
 
 export function formatLocationLabel(location) {
