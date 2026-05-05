@@ -1,7 +1,7 @@
 import {
   formatTaskEventSummary,
-  isInternalControlJsonText,
-  looksLikeInternalControlJsonText,
+  sanitizeAssistantVisibleText,
+  looksLikeInternalAssistantText,
   subscribeTaskEvents,
   toTaskEventFrame
 } from "./task-event-stream.js";
@@ -783,6 +783,7 @@ let consoleChatThinkingText = "";
 let consoleChatStreamingAnswer = null;
 let consoleChatProgressEventIds = new Set();
 let consoleChatEvidenceByTaskId = new Map();
+let consoleChatSuppressedTextByTaskId = new Map();
 // G: console chat resume state. The chat composer threads this
 // conversation_id on every submit, so back-and-forth in the same
 // conversation hangs together server-side. New chat clears it.
@@ -1272,17 +1273,26 @@ async function regenerateConsoleChatTask(taskId, btn) {
 function appendConsoleChatTextDelta(taskId, delta) {
   if (!taskId || !delta || !consoleChatMessages) return;
   closeConsoleChatThinkingCard();
-  const nextText = `${consoleChatStreamingAnswer?.text ?? ""}${String(delta)}`;
-  if (looksLikeInternalControlJsonText(nextText)) {
+  const baseText = consoleChatSuppressedTextByTaskId.get(taskId) ?? consoleChatStreamingAnswer?.text ?? "";
+  const rawNextText = `${baseText}${String(delta)}`;
+  const visibleNextText = sanitizeAssistantVisibleText(rawNextText);
+  const nextText = visibleNextText !== rawNextText ? visibleNextText : rawNextText;
+  if (!nextText && visibleNextText !== rawNextText) {
+    consoleChatSuppressedTextByTaskId.delete(taskId);
+    consoleChatStreamingAnswer?.wrapper?.remove?.();
+    consoleChatStreamingAnswer = null;
+    return;
+  }
+  if (looksLikeInternalAssistantText(nextText)) {
+    consoleChatSuppressedTextByTaskId.set(taskId, nextText);
     if (consoleChatStreamingAnswer) {
       consoleChatStreamingAnswer.text = nextText;
-      if (isInternalControlJsonText(nextText)) {
-        consoleChatStreamingAnswer.wrapper?.remove?.();
-        consoleChatStreamingAnswer = null;
-      }
+      consoleChatStreamingAnswer.wrapper?.remove?.();
+      consoleChatStreamingAnswer = null;
     }
     return;
   }
+  consoleChatSuppressedTextByTaskId.delete(taskId);
   if (!consoleChatStreamingAnswer || consoleChatStreamingAnswer.taskId !== taskId) {
     const wrapper = appendConsoleChatMessage("assistant", "", { allowEmpty: true, taskId });
     const bubble = wrapper?.querySelector(".chat-msg-bubble") ?? null;
@@ -1296,7 +1306,7 @@ function appendConsoleChatTextDelta(taskId, delta) {
       bubble
     };
   }
-  consoleChatStreamingAnswer.text += String(delta);
+  consoleChatStreamingAnswer.text = nextText;
   if (consoleChatStreamingAnswer.bubble) {
     consoleChatStreamingAnswer.bubble.classList.remove("answer-placeholder");
     renderConsoleChatBubbleContent(consoleChatStreamingAnswer.bubble, consoleChatStreamingAnswer.text);
@@ -1326,8 +1336,10 @@ function finalizeConsoleChatStreaming(taskId, finalText = "") {
   if (!taskId || !consoleChatStreamingAnswer || consoleChatStreamingAnswer.taskId !== taskId) {
     return false;
   }
-  const text = String(finalText || consoleChatStreamingAnswer.text || "").trim();
-  if (isInternalControlJsonText(text)) {
+  const rawText = String(finalText || consoleChatStreamingAnswer.text || consoleChatSuppressedTextByTaskId.get(taskId) || "");
+  const text = sanitizeAssistantVisibleText(rawText).trim();
+  consoleChatSuppressedTextByTaskId.delete(taskId);
+  if (!text) {
     consoleChatStreamingAnswer.wrapper?.remove?.();
     consoleChatStreamingAnswer = null;
     return true;
@@ -1382,9 +1394,10 @@ function appendConsoleChatFinalText(taskId, text, {
   role = "assistant",
   evidence = null
 } = {}) {
-  if (!taskId || !text) return;
-  if (!finalizeConsoleChatStreaming(taskId, text)) {
-    appendConsoleChatMessage(role, text, { taskId });
+  const visibleText = sanitizeAssistantVisibleText(text).trim();
+  if (!taskId || !visibleText) return;
+  if (!finalizeConsoleChatStreaming(taskId, visibleText)) {
+    appendConsoleChatMessage(role, visibleText, { taskId });
   }
   appendConsoleChatEvidenceSources(taskId, evidence);
 }
@@ -1746,13 +1759,14 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
     ?? payload.message
     ?? ""
   ).trim();
-  if (isInternalControlJsonText(directText)) {
+  const visibleText = sanitizeAssistantVisibleText(directText).trim();
+  if (!visibleText && directText) {
     consoleChatResultTaskIds.add(taskId);
     return;
   }
-  if (directText) {
+  if (visibleText) {
     collapseCompletedConsoleToolCards();
-    appendConsoleChatFinalText(taskId, directText, {
+    appendConsoleChatFinalText(taskId, visibleText, {
       evidence: payload.evidence_summary ?? null
     });
     consoleChatResultTaskIds.add(taskId);
@@ -1786,6 +1800,7 @@ function subscribeConsoleChatTask(taskId) {
   consoleChatToolCards = new Map();
   consoleChatStreamingAnswer = null;
   consoleChatProgressEventIds = new Set();
+  consoleChatSuppressedTextByTaskId.delete(taskId);
   consoleChatEvidenceByTaskId.delete(taskId);
   closeConsoleChatThinkingCard();
   consoleChatActiveTaskId = taskId;
@@ -1872,6 +1887,7 @@ function subscribeConsoleChatTask(taskId) {
         consoleChatState.textContent = "Done.";
       } else if (frame.event === "failed") {
         closeConsoleChatThinkingCard();
+        consoleChatSuppressedTextByTaskId.delete(taskId);
         consoleChatStreamingAnswer = null;
         appendConsoleChatMessage("system", payload.message ?? "Task failed.");
         consoleChatResultTaskIds.add(taskId);
@@ -1880,6 +1896,7 @@ function subscribeConsoleChatTask(taskId) {
         refreshConsoleChatSendBtnMode();
       } else if (frame.event === "cancelled") {
         closeConsoleChatThinkingCard();
+        consoleChatSuppressedTextByTaskId.delete(taskId);
         consoleChatStreamingAnswer = null;
         appendConsoleChatMessage("system", payload.message ?? "任务已取消。");
         consoleChatResultTaskIds.add(taskId);
@@ -1889,6 +1906,7 @@ function subscribeConsoleChatTask(taskId) {
       } else if (frame.event === "success" || frame.event === "partial_success") {
         void appendConsoleChatFinalResult(taskId, payload);
         appendConsoleChatEvidenceSources(taskId, payload.evidence_summary ?? null);
+        consoleChatSuppressedTextByTaskId.delete(taskId);
         consoleChatState.textContent = frame.event === "partial_success" ? "Partially done." : "Done.";
         if (consoleChatActiveTaskId === taskId) consoleChatActiveTaskId = null;
         refreshConsoleChatSendBtnMode();

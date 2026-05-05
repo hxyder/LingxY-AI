@@ -1,4 +1,9 @@
-import { formatToolDisplayName } from "./tool-display.mjs";
+import {
+  TOOL_DISPLAY_LABELS,
+  formatToolDisplayName
+} from "./tool-display.mjs";
+
+const TOOL_INVOCATION_PREFIXES = Object.freeze(buildKnownToolInvocationPrefixes());
 
 function parseSseFrame(frame) {
   const parsed = {
@@ -35,6 +40,15 @@ function parseSseFrame(frame) {
   return parsed;
 }
 
+function buildKnownToolInvocationPrefixes() {
+  const values = new Set(["tool_call"]);
+  for (const [raw, label] of Object.entries(TOOL_DISPLAY_LABELS)) {
+    if (raw) values.add(raw);
+    if (label) values.add(label);
+  }
+  return [...values].sort((a, b) => b.length - a.length);
+}
+
 export function toTaskEventFrame(event) {
   return {
     id: event?.id ?? event?.event_id ?? null,
@@ -54,6 +68,60 @@ function normalizeMaybeJsonText(text = "") {
     .trim();
 }
 
+function readBalancedJsonObjectPrefix(text = "") {
+  const source = String(text ?? "").trim();
+  if (!source.startsWith("{")) return null;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch === "\\") {
+        escaped = true;
+      } else if (ch === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (ch === "\"") {
+      inString = true;
+      continue;
+    }
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        const jsonText = source.slice(0, i + 1);
+        const rest = source.slice(i + 1).trim();
+        return { jsonText, rest };
+      }
+    }
+  }
+  return null;
+}
+
+function parseVisibleToolInvocationText(text = "") {
+  const normalized = normalizeMaybeJsonText(text);
+  for (const prefix of TOOL_INVOCATION_PREFIXES) {
+    if (!normalized.toLowerCase().startsWith(prefix.toLowerCase())) continue;
+    const rest = normalized.slice(prefix.length).trimStart();
+    if (!rest.startsWith("{")) continue;
+    const json = readBalancedJsonObjectPrefix(rest);
+    if (!json) continue;
+    try {
+      const parsed = JSON.parse(json.jsonText);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      return { prefix, args: parsed, rest: json.rest };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
 export function isInternalControlJsonText(text = "") {
   const normalized = normalizeMaybeJsonText(text);
   if (!normalized.startsWith("{") || !normalized.endsWith("}")) return false;
@@ -69,6 +137,11 @@ export function isInternalControlJsonText(text = "") {
   }
 }
 
+export function isInternalToolInvocationText(text = "") {
+  const parsed = parseVisibleToolInvocationText(text);
+  return Boolean(parsed && !parsed.rest);
+}
+
 export function looksLikeInternalControlJsonText(text = "") {
   const normalized = normalizeMaybeJsonText(text);
   if (!normalized.startsWith("{")) return false;
@@ -79,6 +152,46 @@ export function looksLikeInternalControlJsonText(text = "") {
     /"satisfied"\s*:/.test(normalized)
   ].filter(Boolean).length;
   return hits >= 3;
+}
+
+export function looksLikeInternalToolInvocationText(text = "") {
+  const normalized = normalizeMaybeJsonText(text);
+  if (!normalized) return false;
+  return TOOL_INVOCATION_PREFIXES.some((prefix) => {
+    const lower = normalized.toLowerCase();
+    const prefixLower = prefix.toLowerCase();
+    if (lower === prefixLower) return true;
+    if (!lower.startsWith(prefixLower)) return false;
+    const rest = normalized.slice(prefix.length);
+    return /^\s*\{/.test(rest);
+  });
+}
+
+export function isInternalAssistantText(text = "") {
+  return isInternalControlJsonText(text) || isInternalToolInvocationText(text);
+}
+
+export function looksLikeInternalAssistantText(text = "") {
+  return looksLikeInternalControlJsonText(text) || looksLikeInternalToolInvocationText(text);
+}
+
+export function sanitizeAssistantVisibleText(text = "") {
+  const source = String(text ?? "");
+  if (isInternalControlJsonText(source)) return "";
+  const parsedToolInvocation = parseVisibleToolInvocationText(source);
+  if (parsedToolInvocation) return parsedToolInvocation.rest;
+  return source;
+}
+
+function formatPayloadFallbackMessage(payload = {}, fallback = "已收到执行事件。") {
+  if (payload?.message) return payload.message;
+  if (payload?.summary) return payload.summary;
+  if (payload?.error) return payload.error;
+  if (payload?.detail) return payload.detail;
+  if (payload?.code) return `代码：${payload.code}`;
+  if (payload?.status) return `状态：${payload.status}`;
+  if (payload?.tool_id || payload?.tool) return `工具：${formatToolDisplayName(payload.tool_id ?? payload.tool)}`;
+  return fallback;
 }
 
 // Best-effort "X/Y" step suffix. Backends may emit either step_index +
@@ -245,12 +358,12 @@ export function formatTaskEventSummary(rawEvent, context = {}) {
     case "log":
       return {
         title: "执行日志",
-        body: payload.message ?? JSON.stringify(payload)
+        body: formatPayloadFallbackMessage(payload, "已收到执行日志。")
       };
     default:
       return {
         title: frame.event,
-        body: payload.message ?? JSON.stringify(payload)
+        body: formatPayloadFallbackMessage(payload)
       };
   }
 }

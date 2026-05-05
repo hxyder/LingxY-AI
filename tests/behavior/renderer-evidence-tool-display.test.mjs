@@ -9,7 +9,10 @@ import {
   renderChatMessageBlocksHtml
 } from "../../src/desktop/renderer/chat-blocks.mjs";
 import {
-  formatTaskEventSummary
+  formatTaskEventSummary,
+  isInternalAssistantText,
+  looksLikeInternalAssistantText,
+  sanitizeAssistantVisibleText
 } from "../../src/desktop/renderer/task-event-stream.js";
 import {
   renderTimelineEntry
@@ -85,6 +88,25 @@ test("renderer tool display summarizes schedule tools without leaking raw JSON",
   assert.doesNotMatch(titleCasePreview, /\{|"trigger"|"action"/);
 });
 
+test("assistant visible text gate hides serialized tool invocations generically", () => {
+  const scheduled = 'Create Scheduled Task {"name":"提醒吃饭","trigger":{"type":"at","run_at":"2026-05-06T15:00:00-04:00"},"action":{"type":"task","target":"提醒吃饭"}}';
+  assert.equal(looksLikeInternalAssistantText("Create Scheduled Task"), true);
+  assert.equal(looksLikeInternalAssistantText(scheduled.slice(0, 48)), true);
+  assert.equal(isInternalAssistantText(scheduled), true);
+
+  const localRead = '读取文件原文 {"path":"E:/linxi/docs/resume.md"}';
+  assert.equal(isInternalAssistantText(localRead), true);
+
+  const withVisibleTail = `${scheduled} 已创建提醒。`;
+  assert.equal(sanitizeAssistantVisibleText(withVisibleTail), "已创建提醒。");
+  assert.equal(sanitizeAssistantVisibleText(scheduled), "");
+
+  const normalAnswer = '我已经创建了明天下午三点的吃饭提醒。';
+  assert.equal(looksLikeInternalAssistantText(normalAnswer), false);
+  assert.equal(isInternalAssistantText(normalAnswer), false);
+  assert.equal(sanitizeAssistantVisibleText(normalAnswer), normalAnswer);
+});
+
 test("renderer tool display fallback folds unknown structured args", () => {
   const preview = formatToolArgsPreview("unknown_tool", {
     nested: { should: "not leak" },
@@ -109,6 +131,13 @@ test("task event summaries render user-facing tool labels and local-read guidanc
   assert.equal(guidanceSummary.title, "需要读取原文");
   assert.match(guidanceSummary.body, /深度文件夹读取/);
   assert.match(guidanceSummary.body, /候选 2 个/);
+
+  const logSummary = formatTaskEventSummary({
+    event: "log",
+    data: { error: "preview render failed", debug: { nested: true } }
+  });
+  assert.equal(logSummary.body, "preview render failed");
+  assert.doesNotMatch(logSummary.body, /\{|"debug"/);
 });
 
 test("capability tool view renders interview progress without leaking draft internals", () => {

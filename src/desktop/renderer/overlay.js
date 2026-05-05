@@ -1,8 +1,8 @@
 import {
   applyTaskEventPatch,
   formatTaskEventSummary,
-  isInternalControlJsonText,
-  looksLikeInternalControlJsonText,
+  looksLikeInternalAssistantText,
+  sanitizeAssistantVisibleText,
   subscribeTaskEvents,
   toTaskEventFrame
 } from "./task-event-stream.js";
@@ -31,6 +31,7 @@ import {
   renderChatMessageBlocksHtml
 } from "./chat-blocks.mjs";
 import {
+  formatToolArgsPreview,
   formatToolDisplayName
 } from "./tool-display.mjs";
 import {
@@ -1573,7 +1574,7 @@ const STEP_CHEVRON =
 function buildToolStepInner(toolId, state, args, observation, sources = []) {
   const icon = TOOL_STEP_ICONS[state] ?? TOOL_STEP_ICONS.pending;
   const displayName = formatToolDisplayName(toolId);
-  const argsText = args == null ? "" : (typeof args === "string" ? args : JSON.stringify(args, null, 2));
+  const argsText = args == null ? "" : formatToolArgsPreview(toolId, args);
   const obsText = String(observation ?? "").trim();
   // Single-line summary capped at 80 chars. When the underlying text is
   // longer we add an explicit "…查看全部" hint so it's clear the row is
@@ -2678,14 +2679,17 @@ async function handleTaskEventFrame(rawEvent) {
     if (!isForActiveConv) return; // silent streams don't build bubbles
     const delta = frame.data?.delta ?? frame.data?.text ?? "";
     if (!delta) return;
-    const nextRawText = `${streamingBubbleRawText}${delta}`;
-    if (looksLikeInternalControlJsonText(nextRawText)) {
+    const rawNextText = `${streamingBubbleRawText}${delta}`;
+    const visibleNextText = sanitizeAssistantVisibleText(rawNextText);
+    const nextRawText = visibleNextText !== rawNextText ? visibleNextText : rawNextText;
+    if (!nextRawText && visibleNextText !== rawNextText) {
+      streamingBubble?.remove?.();
+      streamingBubble = null;
+      streamingBubbleRawText = "";
+      return;
+    }
+    if (looksLikeInternalAssistantText(nextRawText)) {
       streamingBubbleRawText = nextRawText;
-      if (isInternalControlJsonText(nextRawText)) {
-        streamingBubble?.remove?.();
-        streamingBubble = null;
-        streamingBubbleRawText = "";
-      }
       return;
     }
     // 83.4 — Previously the thinking card collapsed the moment the first
@@ -2701,7 +2705,7 @@ async function handleTaskEventFrame(rawEvent) {
       streamingBubbleRawText = "";
       void maybeRevealOverlay({ markEngaged: true }); // lock overlay open unless user explicitly closed it
     }
-    streamingBubbleRawText += delta;
+    streamingBubbleRawText = nextRawText;
     streamingBubble.classList.remove("answer-placeholder");
     streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
     bubbleAreaPin.maybeScrollToBottom();
@@ -2713,7 +2717,8 @@ async function handleTaskEventFrame(rawEvent) {
     const trimmedText = text.trim();
     const isPlannerPlaceholder = trimmedText === "(no response from agentic planner)";
     if (text && !isPlannerPlaceholder) {
-      if (isInternalControlJsonText(text)) return;
+      const visibleText = sanitizeAssistantVisibleText(text).trim();
+      if (!visibleText) return;
       if (isForActiveConv) {
         if (streamingBubble) {
           // Tool-step bubbles get appended while the task runs, so move the
@@ -2721,21 +2726,21 @@ async function handleTaskEventFrame(rawEvent) {
           bubbleArea.appendChild(streamingBubble);
           streamingBubble.classList.remove("streaming");
           streamingBubble.classList.remove("answer-placeholder");
-          streamingBubbleRawText = text;
-          streamingBubble.dataset.rawText = text;
+          streamingBubbleRawText = visibleText;
+          streamingBubble.dataset.rawText = visibleText;
           streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
           // Now that streaming has settled, attach the action row (+
           // Note, ↻ 重新生成) and timestamp. Done after the last
           // innerHTML write so the next render can't wipe them. Without
           // this the streaming-derived answer used to lack both the
           // note button and the regenerate affordance.
-          appendAssistantActions(streamingBubble, text, frameTaskId ?? activeTaskId ?? null);
+          appendAssistantActions(streamingBubble, visibleText, frameTaskId ?? activeTaskId ?? null);
           appendBubbleTimestamp(streamingBubble);
           streamingBubble = null;
           streamingBubbleRawText = "";
         } else {
           streamingBubbleRawText = "";
-          addBubble("assistant", text, { taskId: frameTaskId ?? activeTaskId ?? null });
+          addBubble("assistant", visibleText, { taskId: frameTaskId ?? activeTaskId ?? null });
         }
         bubbleAreaPin.maybeScrollToBottom();
       }

@@ -41,6 +41,7 @@ const electronMain = read("src/desktop/tray/electron-main.mjs");
 const desktopManifest = read("src/desktop/shared/manifest.mjs");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
+const taskEventStream = read("src/desktop/renderer/task-event-stream.js");
 const sharedCss = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const sharedUi = read("src/desktop/renderer/shared-ui.mjs");
 const chatBlocks = read("src/desktop/renderer/chat-blocks.mjs");
@@ -456,6 +457,23 @@ assert.ok(/function setConsoleToolCardCollapsed/.test(consoleJs)
   "chat tools: completed fallback tool cards must collapse and stay expandable");
 assert.ok(/\.chat-tool-card:focus-visible/.test(sharedCss),
   "chat tools: collapsed tool cards must remain keyboard-expandable");
+assert.ok(/isInternalToolInvocationText/.test(taskEventStream)
+    && /looksLikeInternalToolInvocationText/.test(taskEventStream)
+    && /TOOL_DISPLAY_LABELS/.test(taskEventStream),
+  "chat tools: visible assistant text must gate serialized tool invocations through the shared tool registry");
+assert.ok(/sanitizeAssistantVisibleText/.test(consoleJs) && /looksLikeInternalAssistantText/.test(consoleJs),
+  "chat tools: console must not render serialized tool invocations as assistant prose");
+assert.ok(/consoleChatSuppressedTextByTaskId/.test(consoleJs)
+    && /frame\.event === "failed"[\s\S]{0,180}consoleChatSuppressedTextByTaskId\.delete\(taskId\)/.test(consoleJs)
+    && /frame\.event === "cancelled"[\s\S]{0,180}consoleChatSuppressedTextByTaskId\.delete\(taskId\)/.test(consoleJs)
+    && /frame\.event === "success" \|\| frame\.event === "partial_success"[\s\S]{0,220}consoleChatSuppressedTextByTaskId\.delete\(taskId\)/.test(consoleJs),
+  "chat tools: console must clear suppressed internal-text buffers on terminal events");
+assert.ok(/sanitizeAssistantVisibleText/.test(overlayJs) && /looksLikeInternalAssistantText/.test(overlayJs),
+  "chat tools: overlay must not render serialized tool invocations as assistant prose");
+assert.ok(/formatToolArgsPreview/.test(overlayJs) && !/const argsText = args == null \? "" : \(typeof args === "string" \? args : JSON\.stringify\(args/.test(overlayJs),
+  "chat tools: overlay tool steps must use compact argument previews instead of dumping JSON");
+assert.ok(!/body:\s*payload\.message\s*\?\?\s*JSON\.stringify\(payload\)/.test(taskEventStream),
+  "task events: generic summaries must not expose raw payload JSON to users");
 assert.ok(/rememberEchoTask/.test(overlayJs) && /showEchoResultHudOnce/.test(overlayJs),
   "echo mode: echo-submitted task results must surface through the Echo HUD");
 assert.ok(/frame\.event === "success"[\s\S]{0,260}showEchoResultHudOnce/.test(overlayJs),
