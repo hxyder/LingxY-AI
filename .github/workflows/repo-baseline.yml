@@ -35,3 +35,7 @@ jobs:
       - run: npm run verify:doc-references
       - run: npm run verify:local-http-surface
       - run: npm run verify:behavior-tests
+      - run: npm run verify:browser-runmode-router
+      - run: npm run verify:browser-extension
+      - run: npm run verify:browser-ui-click-smoke
+      - run: npm run verify:audio-entrypoints

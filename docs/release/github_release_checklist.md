@@ -73,8 +73,9 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
   `verify:public-branding`, `verify:functional-acceptance`,
   `verify:security-policy`, `verify:codeql-workflow`,
   `verify:structure`, `verify:doc-references`,
-  `verify:local-http-surface`, and
-  `verify:behavior-tests`.
+  `verify:local-http-surface`, `verify:behavior-tests`,
+  `verify:browser-runmode-router`, `verify:browser-extension`,
+  `verify:browser-ui-click-smoke`, and `verify:audio-entrypoints`.
 - Check the Release Gate GitHub Actions run before any release: it should
   execute `npm ci` and the full `npm run check`.
 - Check the Release Artifacts GitHub Actions run before making a GitHub

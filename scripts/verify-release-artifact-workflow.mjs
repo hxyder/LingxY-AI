@@ -45,6 +45,10 @@ assert.match(workflow, /checksums\.sha256 must include/, "release workflow must 
 
 assert.match(repoBaseline, /node-version:\s+"22\.12\.0"/, "repo baseline must use the documented Node baseline");
 assert.match(repoBaseline, /verify:dependency-hygiene/, "repo baseline must run dependency hygiene verification");
+assert.match(repoBaseline, /verify:browser-runmode-router/, "repo baseline must run browser route boundary verification");
+assert.match(repoBaseline, /verify:browser-extension/, "repo baseline must run browser extension verification");
+assert.match(repoBaseline, /verify:browser-ui-click-smoke/, "repo baseline must run browser UI click smoke verification");
+assert.match(repoBaseline, /verify:audio-entrypoints/, "repo baseline must run audio entrypoint verification");
 assert.match(releaseGate, /node-version:\s+"22\.12\.0"/, "release gate must use the documented Node baseline");
 assert.match(releaseGate, /npm run verify:audit-high/, "release gate must block high/critical npm advisories");
 
