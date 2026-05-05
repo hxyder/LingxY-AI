@@ -4,11 +4,15 @@
 
 Trial channel baseline: `0.1.0-trial.1`
 
+For the broader user-visible feature contract, see
+[`functional_acceptance_matrix.md`](functional_acceptance_matrix.md). This
+file remains the trial-channel E2E subset.
+
 ## Matrix
 
 | Area | Flow | Expected result | Status |
 |---|---|---|---|
-| Runtime bootstrap | Start local runtime with `node scripts/start-runtime.mjs` | Runtime exposes `/health` and `/ai/code-cli` | planned |
+| Runtime bootstrap | Start local runtime with `node scripts/start-runtime.mjs` | Runtime exposes `/health` and `/ai/code-cli` | verified via release readiness smoke |
 | Kimi Code CLI | Submit clipboard/file task to Kimi print-mode executor | Task reaches `success` and writes `report.md` artifact | verified via automated smoke |
 | Explorer entry | Install helper and submit files from Explorer entry | File capture reaches runtime with dedupe-safe batch handling | verified via native integration smoke |
 | Browser extension | Right-click selected text and dispatch to native host | Selection payload reaches runtime and task is created | verified via extension smoke |

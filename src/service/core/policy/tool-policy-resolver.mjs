@@ -4,10 +4,10 @@
  *
  * Decision order:
  *   0a. explicit_no_search (kind=fact)         → forbidden  (hard)
- *   0b. local_only_constraint (kind=fact)      → forbidden  (hard)
- *   0c. pending_offer external intent          → required   (hard)
+ *   0b. explicit_single_url + inline URL       → required   (named source)
+ *   0c. local_only_constraint (kind=fact)      → forbidden  (hard)
+ *   0d. pending_offer external intent          → required   (hard)
  *   1.  explicit_external strong               → required   (hard)
- *   2b. explicit_single_url + inline URL       → required   (hard)
  *   2c. source_scope + LOCAL, no search intent → forbidden  (local fallback)
  *   3.  explicit_search strong                 → required, or optional with local input
  *   4/5/6. default                             → see resolveDeterministicPolicy
@@ -107,7 +107,21 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
     );
   }
 
-  // 0b. Local-only constraint. This is separate from source_scope:
+  // 0b. P4-RQ E2: explicit single-URL anchor. The user pasted a URL
+  // alongside a summarise-style verb — the URL IS the user's anchor.
+  // "Only based on this article <url>" is a source-bound request, not a
+  // broad-web-search request; local_only_constraint must not block reading
+  // the user-provided URL. explicit_no_search above still wins for literal
+  // "do not browse / 不联网" wording.
+  if (explicitSingleUrl?.matched && hasInlineUrl(text)) {
+    return webSearchPolicy(
+      "required",
+      "User named a single specific URL/article — must fetch it via fetch_url_content (single_lookup task).",
+      explicitSingleUrl.evidence
+    );
+  }
+
+  // 0c. Local-only constraint. This is separate from source_scope:
   // source_scope says local evidence exists; local_only_constraint says
   // the user explicitly limited the task to that evidence.
   if (localOnlyConstraint?.matched) {
@@ -118,7 +132,7 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
     );
   }
 
-  // 0c. Pending-offer inheritance (P4-02.x C4). When the user replies with
+  // 0d. Pending-offer inheritance (P4-02.x C4). When the user replies with
   // a short affirmative ("需要", "继续", "yes") to an assistant offer
   // that was about a high-freshness external entity (weather / news /
   // stock / flight / …), upgrade the policy to `required`. The
@@ -150,33 +164,6 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   const scopeValue = sourceScope?.hint?.value ?? "none";
   const hasLocalScope = isLocalSourceScope(sourceScope);
   const neutralSearch = isStrongExplicitSearch(explicitSearch);
-
-  // 2a. P4-RQ E2: explicit single-URL anchor. The user pasted a URL
-  // alongside a summarise-style verb — the URL IS the user's anchor,
-  // and the resolver must force web=required (NOT optional) so the
-  // executor actually fetches the URL via fetch_url_content rather
-  // than answering from training memory.
-  //
-  // Gate: explicit_single_url MATCHED *and* an actual URL is present
-  // in the user command. The signal alone is too permissive — it
-  // also fires for "总结这个页面" (current-context pronoun referring
-  // to the user's open browser tab, no URL in the text). Without
-  // structural URL evidence we cannot upgrade web=required, since
-  // there is nothing for the executor to fetch. When there's no
-  // URL, fall through to the local-input fallback below.
-  //
-  // This keeps the explicit_single_url signal broad (D1 research-
-  // quality inference still consumes it for single_lookup profile)
-  // while the deterministic web upgrade requires structural
-  // evidence — the structural-vs-topical distinction the reference
-  // docs require.
-  if (explicitSingleUrl?.matched && hasInlineUrl(text)) {
-    return webSearchPolicy(
-      "required",
-      "User named a single specific URL/article — must fetch it via fetch_url_content (single_lookup task).",
-      explicitSingleUrl.evidence
-    );
-  }
 
   // 2b. Local input fallback. Local evidence is not a hard no-web
   // constraint, but when the user did not ask to search, browse, or fetch a

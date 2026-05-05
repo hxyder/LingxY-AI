@@ -8,9 +8,13 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 
 - Run `npm run verify:github-readiness`.
 - Run `npm run verify:public-branding`.
+- Run `npm run verify:functional-acceptance`.
 - Run `npm run verify:security-policy`.
 - Review all advisory warnings from `verify:github-readiness`, especially
   root Markdown docs that would become public.
+- Review `docs/release/functional_acceptance_matrix.md`; every shipped
+  user-visible capability must have automated coverage and a manual release
+  pass path.
 - If using GitHub Pages for OAuth verification, run
   `npm run verify:github-pages-readiness`.
 - Run `npm run check`.
@@ -61,7 +65,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
   path from `README.md`.
 - Check the Repo Baseline GitHub Actions run: it should execute
   `npm ci`, `verify:github-readiness`, `verify:dependency-hygiene`,
-  `verify:public-branding`, `verify:security-policy`, `verify:codeql-workflow`,
+  `verify:public-branding`, `verify:functional-acceptance`,
+  `verify:security-policy`, `verify:codeql-workflow`,
   `verify:structure`, `verify:doc-references`,
   `verify:local-http-surface`, and
   `verify:behavior-tests`.

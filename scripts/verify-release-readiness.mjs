@@ -12,6 +12,7 @@ const releaseConfig = JSON.parse(readFileSync(releaseConfigPath, "utf8"));
 for (const relativePath of [
   "docs/release/README.md",
   "docs/release/e2e_matrix.md",
+  "docs/release/functional_acceptance_matrix.md",
   "docs/release/known_issues.md",
   "docs/release/rollback_plan.md",
   "docs/release/trial_release_notes_v0.1.0-trial.1.md",
