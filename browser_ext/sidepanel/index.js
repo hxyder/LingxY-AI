@@ -23,6 +23,7 @@ const sendBtn = document.getElementById("sp-send");
 const formEl = document.getElementById("sp-form");
 const statusEl = document.getElementById("sp-status");
 const modePillEl = document.getElementById("sp-mode-pill");
+const modeDetailEl = document.getElementById("sp-mode-detail");
 const optionsBtn = document.getElementById("sp-options-btn");
 const actionClearBtn = document.getElementById("sp-action-clear");
 const actionPageBtn = document.getElementById("sp-action-page");
@@ -150,16 +151,20 @@ async function refreshMode() {
     if (response?.desktopAvailable) {
       modePillEl.textContent = "桌面在线";
       modePillEl.classList.add("mode-desktop");
+      if (modeDetailEl) modeDetailEl.textContent = "桌面程序在线：可以使用本地工具、文件、审批、任务队列和更完整的上下文。";
     } else if (response?.standaloneReady) {
       modePillEl.textContent = `独立 · ${response.provider ?? "llm"}`;
       modePillEl.classList.add("mode-standalone");
+      if (modeDetailEl) modeDetailEl.textContent = "独立模式只支持网页内容问答和直接 LLM 调用；本地工具、文件、审批、调度和生成文件需要打开桌面程序。";
     } else {
       modePillEl.textContent = "未配置";
       modePillEl.classList.add("mode-offline");
+      if (modeDetailEl) modeDetailEl.textContent = "请启动桌面程序，或在扩展设置里配置独立模式 API。";
     }
   } catch {
     modePillEl.textContent = "未配置";
     modePillEl.classList.add("mode-offline");
+    if (modeDetailEl) modeDetailEl.textContent = "请启动桌面程序，或在扩展设置里配置独立模式 API。";
   }
 }
 

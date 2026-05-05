@@ -12,6 +12,7 @@ const matrixPath = "docs/release/functional_acceptance_matrix.md";
 assert.equal(existsSync(repoPath(matrixPath)), true, "missing functional acceptance matrix");
 
 const matrix = read(matrixPath);
+const userInteractionChecklist = read("docs/release/user_interaction_smoke_checklist.md");
 const releaseChecklist = read("docs/release/github_release_checklist.md");
 const releaseReadiness = read("scripts/verify-release-readiness.mjs");
 const releaseConfig = read("tools/release/release-config.json");
@@ -73,12 +74,15 @@ const requiredVerifyScripts = [
   "verify:internal-mcp-server",
   "verify:local-http-surface",
   "verify:security-broker",
+  "verify:ui-extras",
   "verify:release-readiness",
   "verify:release-artifact-workflow",
   "verify:agentic-parity",
   "verify:action-claim-guard",
   "verify:public-branding",
-  "verify:github-readiness"
+  "verify:github-readiness",
+  "verify:functional-acceptance",
+  "verify:user-interaction-smoke"
 ];
 
 for (const scriptName of requiredVerifyScripts) {
@@ -97,6 +101,7 @@ for (const scriptName of requiredVerifyScripts) {
 
 const manualRows = [
   "Fresh install",
+  "User interaction smoke",
   "Provider smoke",
   "Browser sideload",
   "Office sideload",
@@ -116,6 +121,12 @@ for (const row of manualRows) {
 
 assert.equal(releaseChecklist.includes("functional_acceptance_matrix.md"), true,
   "GitHub release checklist must point maintainers to the functional acceptance matrix");
+assert.equal(matrix.includes("user_interaction_smoke_checklist.md"), true,
+  "functional acceptance matrix must point to the user interaction smoke checklist");
+assert.equal(userInteractionChecklist.includes("Voice and Audio"), true,
+  "user interaction smoke checklist must cover voice and audio");
+assert.equal(userInteractionChecklist.includes("Browser Extension"), true,
+  "user interaction smoke checklist must cover the browser extension");
 assert.equal(releaseReadiness.includes("docs/release/functional_acceptance_matrix.md"), true,
   "release readiness verifier must require the functional acceptance matrix");
 assert.equal(releaseConfig.includes("docs/release/functional_acceptance_matrix.md"), true,

@@ -101,7 +101,7 @@ function renderRunMode(status, doc = document) {
   } else if (status.standaloneReady) {
     pill.textContent = `独立模式 · ${status.provider ?? "llm"}`;
     pill.classList.add("mode-standalone");
-    if (detail) detail.textContent = "桌面程序未开，扩展会用您配置的 API Key 直接调 LLM。";
+    if (detail) detail.textContent = "桌面程序未开：独立模式只支持网页问答和直接 LLM 调用，本地工具、文件、审批、调度和生成文件需要打开桌面程序。";
   } else {
     pill.textContent = "未配置";
     pill.classList.add("mode-offline");

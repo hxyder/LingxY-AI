@@ -23,7 +23,8 @@ function jsonRequest(body, headers = {}) {
 }
 
 function rawRequest(text, headers = {}) {
-  const request = Readable.from([Buffer.from(text ?? "", "utf8")]);
+  const chunks = Array.isArray(text) ? text : [text ?? ""];
+  const request = Readable.from(chunks.map((chunk) => Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk ?? "", "utf8")));
   request.headers = headers;
   return request;
 }
@@ -1557,6 +1558,22 @@ test("echo KWS allows the dock shell actor through the injected audio runtime", 
   assert.equal(runtime.calls[1].options.personalized, true);
 });
 
+test("echo KWS rejects oversized audio before local audio processing", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "POST",
+    pathname: "/echo/kws",
+    actor: "desktop_shell",
+    rawBody: [Buffer.alloc(1024 * 1024 * 12), Buffer.from("x")],
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 413);
+  assert.equal(result.payload.reason, "audio_too_large");
+  assert.deepEqual(runtime.calls, []);
+});
+
 test("echo enrollment rejects non-shell actors before writing samples", async () => {
   const runtime = makeEchoAudioRuntime();
   const result = await audioRoute({
@@ -1603,6 +1620,22 @@ test("echo enrollment allows the dock shell actor and writes through injected au
   assert.equal(runtime.calls[3].record.sessionId, "s1");
 });
 
+test("echo enrollment rejects oversized audio before writing samples", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "POST",
+    pathname: "/echo/enroll-keyword?sample=1&session=s1",
+    actor: "desktop_shell",
+    rawBody: [Buffer.alloc(1024 * 1024 * 12), Buffer.from("x")],
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 413);
+  assert.equal(result.payload.reason, "audio_too_large");
+  assert.deepEqual(runtime.calls, []);
+});
+
 test("note transcription rejects non-overlay actors before reading audio", async () => {
   const runtime = makeEchoAudioRuntime();
   const result = await audioRoute({
@@ -1638,4 +1671,20 @@ test("note transcription allows the overlay actor through the injected audio run
   ]);
   assert.equal(runtime.calls[0].bytes, "note-audio".length);
   assert.equal(runtime.calls[0].options.lang, "zh");
+});
+
+test("note transcription rejects oversized audio before transcription runtime", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "POST",
+    pathname: "/note/transcribe",
+    actor: "desktop_overlay",
+    rawBody: [Buffer.alloc(1024 * 1024 * 64), Buffer.from("x")],
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 413);
+  assert.equal(result.payload.reason, "audio_too_large");
+  assert.deepEqual(runtime.calls, []);
 });

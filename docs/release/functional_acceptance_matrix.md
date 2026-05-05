@@ -6,11 +6,14 @@ to automated verification and manual smoke passes.
 
 Rule: a feature can stay in README as a shipped capability only when it has at least one automated verifier and a clear manual pass path for release testing.
 
+For click-by-click visual and interaction coverage, pair this matrix with
+`docs/release/user_interaction_smoke_checklist.md`.
+
 ## Automated Coverage
 
 | Area | User-visible promise | Automated verification |
 |---|---|---|
-| Desktop shell | LingxY starts as a desktop app with tray, dock, overlay, console, popup cards, and preview surfaces | `verify:desktop-shell`, `verify:desktop-renderer`, `verify:overlay-composer`, `verify:context-handoff-ui`, `verify:popup-card-fit`, `verify:preview-window` through `npm run check` |
+| Desktop shell | LingxY starts as a desktop app with tray, dock, overlay, console, popup cards, and preview surfaces | `verify:desktop-shell`, `verify:desktop-renderer`, `verify:overlay-composer`, `verify:context-handoff-ui`, `verify:ui-extras`, `verify:popup-card-fit`, `verify:preview-window` through `npm run check` |
 | Console workspace | Tasks, conversations, providers, connectors, schedules, notes, projects, files, approvals, settings, and diagnostics remain navigable | `verify:console-ui`, `verify:console-runtime-client`, `verify:console-rendered-workspace`, `verify:tasks-page`, `verify:connectors-page`, `verify:notes-feature` |
 | Provider and model routing | Users can configure model providers, pick current models, override conversation models, and use CLI-backed providers | `verify:provider-health`, `verify:provider-routing`, `verify:ai-integrations`, `verify:conversation-model-override`, `verify:capability-gap-suggestions`, `verify:agentic-planner` |
 | First useful task path | A user can submit a normal request, see task status, get events, and receive a final answer or actionable failure | `verify:runtime-wiring`, `verify:behavior-tests`, `verify:status-metrics`, `verify:task-log`, `verify:task-branch`, `verify:conversation-message-flow` |
@@ -25,7 +28,7 @@ Rule: a feature can stay in README as a shipped capability only when it has at l
 | Connectors | Email, account connectors, workflow dispatch, Microsoft/Google contracts, and scheduled connector authorization work behind guards | `verify:unified-connectors`, `verify:connector-catalog`, `verify:connector-workflow-dispatcher`, `verify:workflow-first-dispatch`, `verify:email-monitoring`, `verify:email-morning-digest`, `verify:email-send-routing` |
 | MCP, skills, plugins, and code CLIs | Users can install/configure MCP, manage skills, discover capability gaps, and route code tasks to CLI adapters | `verify:plugin-registry`, `verify:internal-mcp-server`, `verify:ai-integrations`, `verify:file-kimi`, `verify:kimi-runtime`, `verify:behavior-tests`, `verify:capability-gap-suggestions` |
 | Privacy and safety | Local mutation routes, side effects, provider secrets, audit logs, redaction, offline mode, and public docs stay guarded | `verify:local-http-surface`, `verify:submission-policy-boundary`, `verify:security-broker`, `verify:security-policy`, `verify:public-branding`, `verify:dependency-hygiene`, `verify:github-readiness` |
-| Packaging and release | Trial bundle, launch smoke, release artifacts, checksums, third-party notices, and CI gates are reproducible | `verify:release-readiness`, `verify:release-artifact-workflow`, `verify:workflow-permissions`, `verify:codeql-workflow`, `verify:node-version-baseline`, `verify:pr-template`, `verify:issue-templates` |
+| Packaging and release | Trial bundle, launch smoke, release artifacts, checksums, third-party notices, and CI gates are reproducible | `verify:release-readiness`, `verify:release-artifact-workflow`, `verify:functional-acceptance`, `verify:user-interaction-smoke`, `verify:workflow-permissions`, `verify:codeql-workflow`, `verify:node-version-baseline`, `verify:pr-template`, `verify:issue-templates` |
 
 ## Manual Release Pass
 
@@ -36,6 +39,7 @@ installer trust prompts.
 | Area | Manual pass before public release |
 |---|---|
 | Fresh install | Clone or download on a clean Windows 10/11 machine, run `npm install`, start runtime and desktop, and verify the first-run path is understandable. |
+| User interaction smoke | Walk `docs/release/user_interaction_smoke_checklist.md`: dock, overlay, console, voice, browser extension, Office, Explorer, scheduler, and approval controls. |
 | Provider smoke | Configure at least one cloud provider or code CLI, run one short conversation, one tool-using task, one document-generation task, and one live schedule-creation task (`verify:schedule-create-live` may be used locally when credentials are available). |
 | Browser sideload | Sideload the browser extension in a clean Chrome/Edge profile, capture selected text, capture current page URL/title, and send both into LingxY. |
 | Office sideload | Sideload Word, Excel, and PowerPoint add-ins, submit current selection and whole-document context, and insert a reviewed result back into the document. |

@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { SSE_HEADERS } from "../../events/sse.mjs";
 import { resolveProviderForTask } from "../../executors/shared/provider-resolver.mjs";
 import { hydrateProviderApiKeySecretSync } from "../../security/secret-store.mjs";
-import { readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
+import { HttpBodyTooLargeError, readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
 import { requireDesktopActor } from "../http-route-guards.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -16,6 +16,59 @@ const DEFAULT_LOCAL_WHISPER_MODEL = "base";
 const DEFAULT_LOCAL_WHISPER_BEAM_SIZE = "5";
 const ECHO_AUDIO_ACTORS = ["desktop_shell"];
 const NOTE_TRANSCRIBE_ACTORS = ["desktop_overlay"];
+const ECHO_AUDIO_MAX_BYTES = 1024 * 1024 * 12;
+const NOTE_AUDIO_MAX_BYTES = 1024 * 1024 * 64;
+
+function jsonBodyMaxBytesForAudio(binaryMaxBytes) {
+  return Math.ceil(binaryMaxBytes * 1.4) + 4096;
+}
+
+async function readAudioRequestBody(request, {
+  contentType,
+  defaultMimeType = "audio/webm",
+  maxBytes
+} = {}) {
+  let audioBuffer = Buffer.alloc(0);
+  let mimeType = defaultMimeType;
+  let jsonBody = null;
+  try {
+    if (/^application\/json\b/i.test(contentType)) {
+      jsonBody = await readJsonBody(request, { maxBytes: jsonBodyMaxBytesForAudio(maxBytes) });
+      const audioBase64 = String(jsonBody.audio ?? "").replace(/^data:[^;]+;base64,/, "").trim();
+      mimeType = String(jsonBody.mimeType ?? defaultMimeType).trim();
+      audioBuffer = audioBase64 ? Buffer.from(audioBase64, "base64") : Buffer.alloc(0);
+    } else {
+      audioBuffer = await readRawBody(request, { maxBytes });
+      mimeType = contentType.split(";")[0] || defaultMimeType;
+    }
+  } catch (error) {
+    if (error instanceof HttpBodyTooLargeError || error?.code === "body_too_large") {
+      return {
+        ok: false,
+        tooLarge: true,
+        maxBytes,
+        actualBytes: error.actualBytes ?? null
+      };
+    }
+    throw error;
+  }
+
+  if (audioBuffer.length > maxBytes) {
+    return {
+      ok: false,
+      tooLarge: true,
+      maxBytes,
+      actualBytes: audioBuffer.length
+    };
+  }
+
+  return {
+    ok: true,
+    audioBuffer,
+    mimeType,
+    jsonBody
+  };
+}
 
 function readApiKey(env, ...keys) {
   for (const key of keys) {
@@ -500,23 +553,17 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     if (!requireDesktopActor({ request, response, allowedActors: ECHO_AUDIO_ACTORS })) return true;
     const audioRuntime = resolveAudioRuntime(runtime);
     const contentType = String(request.headers["content-type"] ?? "application/octet-stream").trim();
-    let audioBuffer = Buffer.alloc(0);
-    let mimeType = "audio/webm";
-    if (/^application\/json\b/i.test(contentType)) {
-      const body = await readJsonBody(request);
-      const audioBase64 = String(body.audio ?? "").replace(/^data:[^;]+;base64,/, "").trim();
-      mimeType = String(body.mimeType ?? "audio/webm").trim();
-      audioBuffer = audioBase64 ? Buffer.from(audioBase64, "base64") : Buffer.alloc(0);
-    } else {
-      audioBuffer = await readRawBody(request);
-      mimeType = contentType.split(";")[0] || "audio/webm";
-    }
-    if (audioBuffer.length === 0) {
-      sendJson(response, 400, { ok: false, reason: "missing_audio" });
+    const bodyResult = await readAudioRequestBody(request, {
+      contentType,
+      maxBytes: ECHO_AUDIO_MAX_BYTES
+    });
+    if (bodyResult.tooLarge) {
+      sendJson(response, 413, { ok: false, reason: "audio_too_large", maxBytes: ECHO_AUDIO_MAX_BYTES });
       return true;
     }
-    if (audioBuffer.length > 1024 * 1024 * 12) {
-      sendJson(response, 413, { ok: false, reason: "audio_too_large" });
+    const { audioBuffer, mimeType } = bodyResult;
+    if (audioBuffer.length === 0) {
+      sendJson(response, 400, { ok: false, reason: "missing_audio" });
       return true;
     }
 
@@ -567,17 +614,15 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     const contentType = String(request.headers["content-type"] ?? "application/octet-stream").trim();
     const sampleIndex = String(url.searchParams.get("sample") ?? "").trim();
     const sessionId = String(url.searchParams.get("session") ?? "").trim();
-    let audioBuffer = Buffer.alloc(0);
-    let mimeType = "audio/webm";
-    if (/^application\/json\b/i.test(contentType)) {
-      const body = await readJsonBody(request);
-      const audioBase64 = String(body.audio ?? "").replace(/^data:[^;]+;base64,/, "").trim();
-      mimeType = String(body.mimeType ?? "audio/webm").trim();
-      audioBuffer = audioBase64 ? Buffer.from(audioBase64, "base64") : Buffer.alloc(0);
-    } else {
-      audioBuffer = await readRawBody(request);
-      mimeType = contentType.split(";")[0] || "audio/webm";
+    const bodyResult = await readAudioRequestBody(request, {
+      contentType,
+      maxBytes: ECHO_AUDIO_MAX_BYTES
+    });
+    if (bodyResult.tooLarge) {
+      sendJson(response, 413, { ok: false, reason: "audio_too_large", maxBytes: ECHO_AUDIO_MAX_BYTES });
+      return true;
     }
+    const { audioBuffer, mimeType } = bodyResult;
     if (audioBuffer.length === 0) {
       sendJson(response, 400, { ok: false, reason: "missing_audio" });
       return true;
@@ -638,20 +683,17 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     if (!requireDesktopActor({ request, response, allowedActors: NOTE_TRANSCRIBE_ACTORS })) return true;
     const audioRuntime = resolveAudioRuntime(runtime);
     const contentType = String(request.headers["content-type"] ?? "application/json").trim();
-    let audioBuffer = Buffer.alloc(0);
-    let mimeType = "audio/webm";
     let lang = String(url.searchParams.get("lang") ?? "auto").trim();
-
-    if (/^application\/json\b/i.test(contentType)) {
-      const body = await readJsonBody(request);
-      const audioBase64 = String(body.audio ?? "").trim();
-      mimeType = String(body.mimeType ?? "audio/webm").trim();
-      lang = String(body.lang ?? lang ?? "auto").trim();
-      audioBuffer = audioBase64 ? Buffer.from(audioBase64, "base64") : Buffer.alloc(0);
-    } else {
-      audioBuffer = await readRawBody(request);
-      mimeType = contentType.split(";")[0] || "audio/webm";
+    const bodyResult = await readAudioRequestBody(request, {
+      contentType,
+      maxBytes: NOTE_AUDIO_MAX_BYTES
+    });
+    if (bodyResult.tooLarge) {
+      sendJson(response, 413, { ok: false, reason: "audio_too_large", maxBytes: NOTE_AUDIO_MAX_BYTES });
+      return true;
     }
+    const { audioBuffer, mimeType, jsonBody } = bodyResult;
+    if (jsonBody) lang = String(jsonBody.lang ?? lang ?? "auto").trim();
 
     if (audioBuffer.length === 0) {
       sendJson(response, 400, { ok: false, error: "missing_audio" });
