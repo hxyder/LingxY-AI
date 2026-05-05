@@ -21,6 +21,14 @@ export const TOOL_DISPLAY_LABELS = Object.freeze({
   launch_app: "启动应用",
   open_url: "打开网页",
   notify: "发送通知",
+  create_scheduled_task: "创建定时任务",
+  "Create Scheduled Task": "创建定时任务",
+  list_scheduled_tasks: "读取定时任务",
+  "List Scheduled Tasks": "读取定时任务",
+  update_scheduled_task: "更新定时任务",
+  "Update Scheduled Task": "更新定时任务",
+  delete_scheduled_task: "删除定时任务",
+  "Delete Scheduled Task": "删除定时任务",
   connector_workflow_run: "连接器流程",
   account_send_email: "发送邮件",
   send_email_smtp: "发送邮件",
@@ -61,8 +69,41 @@ function pickFirstString(value, keys = []) {
   return "";
 }
 
+function coerceArgsObject(args) {
+  if (args && typeof args === "object") return args;
+  if (typeof args !== "string" || !args.trim()) return {};
+  try {
+    const parsed = JSON.parse(args);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function formatTriggerPreview(trigger = {}) {
+  if (!trigger || typeof trigger !== "object") return "";
+  const type = String(trigger.type ?? trigger.trigger_type ?? "").trim();
+  const at = trigger.run_at ?? trigger.at ?? trigger.next_run_at ?? "";
+  const cron = trigger.cron ?? trigger.expression ?? "";
+  if (type === "at" && at) return compactToolText(`一次 · ${at}`, 72);
+  if (type === "cron" && cron) return compactToolText(`重复 · ${cron}`, 72);
+  if (type) return compactToolText(type, 72);
+  return compactToolText(String(at || cron || ""), 72);
+}
+
+function formatActionPreview(action = {}) {
+  if (!action || typeof action !== "object") return "";
+  const params = action.params && typeof action.params === "object" ? action.params : {};
+  return compactToolText(
+    pickFirstString(action, ["target", "title", "message", "description"])
+      || pickFirstString(params, ["userCommand", "command", "title", "message", "body", "contextText"]),
+    84
+  );
+}
+
 export function formatToolArgsPreview(toolName = "", args = {}) {
-  const value = args && typeof args === "object" ? args : {};
+  const value = coerceArgsObject(args);
+  const normalizedToolName = String(toolName ?? "").trim().toLowerCase().replace(/\s+/g, "_");
   if (toolName === "web_search_fetch") {
     return value.query ? `query: ${compactToolText(value.query, 88)}` : "";
   }
@@ -94,6 +135,19 @@ export function formatToolArgsPreview(toolName = "", args = {}) {
   }
   if (toolName === "launch_app") return value.app ? compactToolText(value.app, 80) : "";
   if (toolName === "open_url") return value.url ? compactToolText(value.url, 92) : "";
+  if (toolName === "notify") {
+    return compactToolText(pickFirstString(value, ["title", "body", "message"]), 92);
+  }
+  if (normalizedToolName === "create_scheduled_task") {
+    const name = pickFirstString(value, ["name", "title", "description"]);
+    const trigger = formatTriggerPreview(value.trigger);
+    const action = formatActionPreview(value.action);
+    return compactToolText([name, trigger, action].filter(Boolean).join(" · "), 110);
+  }
+  if (normalizedToolName === "update_scheduled_task" || normalizedToolName === "delete_scheduled_task") {
+    return compactToolText(pickFirstString(value, ["schedule_id", "id", "name", "title"]), 92);
+  }
+  if (normalizedToolName === "list_scheduled_tasks") return "";
   if (toolName === "draft_capability") {
     const kind = value.kind ?? value.state?.kind ?? "capability";
     const name = value.name ?? value.state?.name ?? "";
@@ -107,8 +161,14 @@ export function formatToolArgsPreview(toolName = "", args = {}) {
     const name = draft.name ?? state.name ?? "";
     return compactToolText(`${kind}${name ? ` · ${name}` : ""}`, 92);
   }
-  const raw = typeof args === "string"
-    ? args
-    : (args == null ? "" : JSON.stringify(args, null, 0));
-  return compactToolText(raw, 110);
+  const summary = pickFirstString(value, [
+    "name",
+    "title",
+    "query",
+    "path",
+    "url",
+    "description",
+    "message"
+  ]);
+  return summary ? compactToolText(summary, 110) : "参数已折叠";
 }

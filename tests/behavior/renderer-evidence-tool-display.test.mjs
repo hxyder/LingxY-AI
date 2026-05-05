@@ -56,6 +56,43 @@ test("renderer tool display names capability tools and keeps timeline args compa
   assert.doesNotMatch(html, /very long markdown should not be dumped raw/);
 });
 
+test("renderer tool display summarizes schedule tools without leaking raw JSON", () => {
+  assert.equal(formatToolDisplayName("create_scheduled_task"), "创建定时任务");
+  assert.equal(formatToolDisplayName("Create Scheduled Task"), "创建定时任务");
+  const preview = formatToolArgsPreview("create_scheduled_task", {
+    name: "提醒吃饭 - 明天下午三点",
+    description: "明天下午提醒用户吃饭",
+    trigger: { type: "at", run_at: "2026-05-06T15:00:00-04:00" },
+    action: { type: "task", target: "提醒吃饭", params: { userCommand: "提醒我吃饭" } }
+  });
+  assert.match(preview, /提醒吃饭/);
+  assert.match(preview, /一次/);
+  assert.doesNotMatch(preview, /\{|"trigger"|"action"|"params"/);
+
+  const stringArgsPreview = formatToolArgsPreview("create_scheduled_task", JSON.stringify({
+    name: "提醒吃饭",
+    trigger: { type: "at", run_at: "2026-05-06T15:00:00-04:00" },
+    action: { type: "task", target: "提醒吃饭" }
+  }));
+  assert.doesNotMatch(stringArgsPreview, /\{|"trigger"|"action"/);
+
+  const titleCasePreview = formatToolArgsPreview("Create Scheduled Task", {
+    name: "提醒吃饭",
+    trigger: { type: "at", run_at: "2026-05-06T15:00:00-04:00" },
+    action: { type: "task", target: "提醒吃饭" }
+  });
+  assert.doesNotMatch(titleCasePreview, /\{|"trigger"|"action"/);
+});
+
+test("renderer tool display fallback folds unknown structured args", () => {
+  const preview = formatToolArgsPreview("unknown_tool", {
+    nested: { should: "not leak" },
+    count: 3
+  });
+  assert.equal(preview, "参数已折叠");
+  assert.doesNotMatch(preview, /\{|"nested"/);
+});
+
 test("task event summaries render user-facing tool labels and local-read guidance", () => {
   const toolSummary = formatTaskEventSummary({
     event: "tool_call_completed",

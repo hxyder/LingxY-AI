@@ -9,6 +9,7 @@ const read = (relativePath) => readFileSync(path.join(repoRoot, relativePath), "
 
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
+const dockJs = read("src/desktop/renderer/dock.js");
 const audioDevice = read("src/desktop/renderer/audio-device.mjs");
 const audioView = read("src/desktop/renderer/overlay-audio-view.mjs");
 const preload = read("src/desktop/renderer/preload.cjs");
@@ -71,6 +72,16 @@ for (const voiceInvariant of [
   "attachDroppedFilesToVoice(filePaths)"
 ]) {
   assert.ok(overlayJs.includes(voiceInvariant), `voice state machine missing invariant: ${voiceInvariant}`);
+}
+
+for (const echoInvariant of [
+  "const DEFAULT_WAKE_PROFILE",
+  "function buildWakeProfile(settings = {})",
+  "function applyEchoSettings(settings = {})",
+  "停顿后自动发送；Ctrl+Enter 立即发送",
+  "getWakeDisplayName()"
+]) {
+  assert.ok(dockJs.includes(echoInvariant), `dock echo wake profile missing invariant: ${echoInvariant}`);
 }
 
 for (const viewInvariant of [

@@ -130,6 +130,12 @@ const WAKE_FIRST_CHARS = "林琳凌淩灵靈邻鄰临臨淋零令陵麟";
 const WAKE_SECOND_CHARS = "夕西氏熙希喜溪犀席系细細戏戲昔洗袭襲奇起其期琪琦齐齊七息惜稀锡錫晰熹";
 const WAKE_REGEX_CN = new RegExp(`[${WAKE_FIRST_CHARS}]\\s*[${WAKE_SECOND_CHARS}]`);
 const WAKE_REGEX_LATIN = /\b(?:lin|ling|lyn)[\s-]*(?:xi|see|sey|sy|x)\b|\b(?:lindsay|linsey|linsee|lynx)\b/i;
+const DEFAULT_WAKE_DISPLAY_NAME = "linxi";
+const DEFAULT_WAKE_PROFILE = Object.freeze({
+  displayName: DEFAULT_WAKE_DISPLAY_NAME,
+  phrases: WAKE_PHRASES,
+  includeDefault: true
+});
 const NOTE_PHRASES = [
   "开始录音", "開始錄音", "start recording", "开始录制", "開始錄製",
   "开始记录", "開始記錄", "录音笔记", "錄音筆記", "会议记录", "會議記錄",
@@ -172,6 +178,7 @@ let echoResumeTimer = null;
 let echoResumeAttempt = 0;
 let echoLocalKwsStatus = null;
 let echoLocalKwsStatusAt = 0;
+let echoWakeProfile = DEFAULT_WAKE_PROFILE;
 // Simple voice-activity tap: we piggyback an AnalyserNode on the mic stream
 // so we can RMS-gate outgoing KWS requests. Sending silence or ambient noise
 // to sherpa wastes CPU and produces false-negative "no match" responses that
@@ -250,12 +257,57 @@ function matchesAny(text, phrases) {
   return phrases.some((p) => norm.includes(normalizeForMatch(p)));
 }
 
+function normalizeWakePhrases(value, { max = 12 } = {}) {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const phrases = [];
+  for (const item of value) {
+    const phrase = String(item ?? "").trim();
+    if (!phrase) continue;
+    const key = normalizeForMatch(phrase);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    phrases.push(phrase);
+  }
+  return Number.isFinite(max) ? phrases.slice(0, max) : phrases;
+}
+
+function buildWakeProfile(settings = {}) {
+  const source = settings?.echoWake && typeof settings.echoWake === "object"
+    ? settings.echoWake
+    : {};
+  const customPhrases = normalizeWakePhrases(source.phrases, { max: 12 });
+  const includeDefault = source.includeDefault !== false;
+  const displayName = String(source.displayName || customPhrases[0] || DEFAULT_WAKE_DISPLAY_NAME).trim()
+    || DEFAULT_WAKE_DISPLAY_NAME;
+  const phrases = [
+    ...(includeDefault ? DEFAULT_WAKE_PROFILE.phrases : []),
+    ...customPhrases
+  ];
+  return {
+    displayName,
+    phrases: normalizeWakePhrases(phrases, { max: Infinity }),
+    includeDefault
+  };
+}
+
+function applyEchoSettings(settings = {}) {
+  echoWakeProfile = buildWakeProfile(settings);
+  applyEchoState(Boolean(settings?.echoMode));
+}
+
+function getWakeDisplayName() {
+  return echoWakeProfile.displayName || DEFAULT_WAKE_DISPLAY_NAME;
+}
+
 function matchesWake(text) {
-  if (matchesAny(text, WAKE_PHRASES)) return true;
-  // Fuzzy Chinese remains bounded to two-character "lin/ling + xi-like"
-  // forms; generic command words never pass this gate.
-  if (WAKE_REGEX_CN.test(normalizeForMatch(text))) return true;
-  if (WAKE_REGEX_LATIN.test(text)) return true;
+  if (matchesAny(text, echoWakeProfile.phrases)) return true;
+  if (echoWakeProfile.includeDefault) {
+    // Fuzzy Chinese remains bounded to two-character "lin/ling + xi-like"
+    // forms; generic command words never pass this gate.
+    if (WAKE_REGEX_CN.test(normalizeForMatch(text))) return true;
+    if (WAKE_REGEX_LATIN.test(text)) return true;
+  }
   return false;
 }
 
@@ -293,7 +345,7 @@ async function onWakeDetected(kind, transcript = "") {
     window.ucaShell?.showEchoBubble?.({
       text: kind === "note"
         ? "🎙 正在录音… 按 Ctrl+Enter 结束并总结"
-        : "🎙 请说出指令，说完按 Ctrl+Enter 发送",
+        : "🎙 请说出指令，停顿后自动发送；Ctrl+Enter 立即发送",
       kind: "info",
       durationMs: 12_000
     });
@@ -745,11 +797,11 @@ function applyEchoState(enabled) {
 (async () => {
   try {
     const settings = await window.ucaShell?.getSettings?.();
-    if (settings?.echoMode) applyEchoState(true);
+    applyEchoSettings(settings ?? {});
   } catch { /* ignore */ }
 })();
 window.ucaShell?.onSettingsChanged?.((settings) => {
-  applyEchoState(Boolean(settings?.echoMode));
+  applyEchoSettings(settings ?? {});
 });
 
 /* ═══════════════════════════════════════════════
@@ -800,7 +852,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
   if (wasEnabled) stopEchoRecognizer();
   try {
     window.ucaShell?.showEchoBubble?.({
-      text: "🎤 录入唤醒词：听到「开始」后大声清晰念「linxi」",
+      text: `🎤 录入唤醒词：听到「开始」后大声清晰念「${getWakeDisplayName()}」`,
       kind: "info",
       durationMs: 3200
     });
@@ -820,7 +872,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       });
       await new Promise((r) => setTimeout(r, countdownMs));
       window.ucaShell?.showEchoBubble?.({
-        text: `🎙 开始！请念「linxi」`,
+        text: `🎙 开始！请念「${getWakeDisplayName()}」`,
         kind: "wake",
         durationMs: 2500
       });
@@ -877,7 +929,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
         ? `听到「${result.transcript}」`
         : "（未听清，跳过此样本）";
       const kwsText = kwsSelfCheck.matched
-        ? `KWS 命中「${kwsSelfCheck.keyword || "linxi"}」`
+        ? `KWS 命中「${kwsSelfCheck.keyword || getWakeDisplayName()}」`
         : "KWS 未命中";
       window.ucaShell?.showEchoBubble?.({
         text: `第 ${i}/${samples} 次：${heardText} · ${kwsText}`,

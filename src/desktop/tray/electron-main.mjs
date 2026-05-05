@@ -891,8 +891,18 @@ export function createElectronShellRuntime({
   function mergeSettingsDefaults(raw = {}) {
     return {
       echoMode: false,
+      echoWake: {
+        displayName: "linxi",
+        phrases: [],
+        includeDefault: true
+      },
       windowPreferences: {},
       ...raw,
+      echoWake: {
+        displayName: raw?.echoWake?.displayName || "linxi",
+        phrases: Array.isArray(raw?.echoWake?.phrases) ? raw.echoWake.phrases : [],
+        includeDefault: raw?.echoWake?.includeDefault !== false
+      },
       windowPreferences: {
         ...(raw?.windowPreferences ?? {})
       }
@@ -925,7 +935,10 @@ export function createElectronShellRuntime({
       windowPreferences: {
         ...(current?.windowPreferences ?? {}),
         ...(patch?.windowPreferences ?? {})
-      }
+      },
+      echoWake: patch?.echoWake
+        ? mergeSettingsDefaults({ echoWake: patch.echoWake }).echoWake
+        : current?.echoWake
     });
     await saveSettings();
     for (const browserWindow of windows.values()) {
