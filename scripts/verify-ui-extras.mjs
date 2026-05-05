@@ -189,6 +189,9 @@ assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/note\/transcribe/.test(overlayJs),
   "note transcribe: overlay must not POST /note/transcribe directly");
 assert.ok(/openOverlayVoice/.test(consoleJs) && /window\.ucaShell\.openOverlayVoice/.test(consoleJs),
   "console voice: chat composer must use desktop shell voice bridge");
+assert.ok(/openOverlayForNoteVoice/.test(consoleJs)
+    && /window\.ucaShell\.openOverlayVoice\(\{\s*mode:\s*"note",\s*autoStart:\s*true\s*\}\)/.test(consoleJs),
+  "console notes voice: notes button must use desktop shell note bridge");
 assert.ok(/function openOverlayVoice\(/.test(electronMain) && /shellOpenOverlayVoice/.test(electronMain),
   "voice bridge: main process must own openOverlayVoice routing");
 assert.ok(/payload\.autoStart !== false/.test(overlayJs),

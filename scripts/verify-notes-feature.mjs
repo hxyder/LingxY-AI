@@ -8,7 +8,8 @@
  *   - Editor carries a title input, created/last-edited timestamps,
  *     a compact format toolbar (bold / italic / H / quote / lists /
  *     link / image / table / hr / inline stamp), font family + size
- *     selectors, and a voice dictation button.
+ *     selectors, and a voice note button that opens the shared overlay
+ *     note recorder.
  *   - A local in-note chat strip that lets the user ask questions
  *     and explicitly adopt the reply into the note ("用户同意").
  *   - A Share dialog that exports as text / Markdown / HTML with
@@ -100,8 +101,15 @@ assert.match(js, /adoptLastChatReply|adoptFromChatBtn/,
 assert.match(js, /appendAdoptedChip/,
   "missing appendAdoptedChip (inserts chat excerpts with a 'From chat' chip)");
 
-// Voice input.
-assert.match(js, /webkitSpeechRecognition|SpeechRecognition/,
-  "missing SpeechRecognition-based voice dictation");
+// Voice note capture must reuse the shared overlay recorder instead of
+// maintaining a second Console-local SpeechRecognition state machine.
+assert.match(js, /function openOverlayForNoteVoice\(\)/,
+  "missing note voice bridge helper");
+assert.match(js, /window\.ucaShell\.openOverlayVoice\(\{\s*mode:\s*"note",\s*autoStart:\s*true\s*\}\)/,
+  "note voice button must open overlay note recorder through shell bridge");
+assert.equal(/const\s+SR\s*=\s*window\.SpeechRecognition/.test(js), false,
+  "notes must not own a Console-local SpeechRecognition recorder");
+assert.equal(/new\s+SR\(\)/.test(js), false,
+  "notes must not instantiate a Console-local SpeechRecognition recorder");
 
 console.log("ok verify-notes-feature");

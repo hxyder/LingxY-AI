@@ -11432,35 +11432,27 @@ function initQuickNotes() {
     return data.text ?? data.message ?? data.content ?? JSON.stringify(data).slice(0, 400);
   }
 
-  // ── Voice input (SpeechRecognition with MediaRecorder fallback) ───────
-  voiceBtn?.addEventListener("click", () => toggleVoiceInput());
-  let voiceRec = null;
-  function toggleVoiceInput() {
-    if (voiceRec) { try { voiceRec.stop(); } catch {} voiceRec = null; voiceBtn.classList.remove("is-active"); return; }
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SR) {
-      toastNote("Voice dictation not available in this window; use the global Ctrl+Shift+N voice-note shortcut.");
+  // ── Voice note capture ────────────────────────────────────────────────
+  voiceBtn?.addEventListener("click", () => {
+    void openOverlayForNoteVoice();
+  });
+
+  async function openOverlayForNoteVoice() {
+    if (typeof window.ucaShell?.openOverlayVoice !== "function") {
+      toastNote("Voice notes are available from the global Ctrl+Shift+N shortcut.");
       return;
     }
-    const rec = new SR();
-    rec.lang = "zh-CN";
-    rec.interimResults = true;
-    rec.continuous = true;
-    rec.onresult = (ev) => {
-      let finalText = "";
-      for (let i = ev.resultIndex; i < ev.results.length; i++) {
-        if (ev.results[i].isFinal) finalText += ev.results[i][0].transcript;
+    voiceBtn?.classList.add("is-active");
+    try {
+      const result = await window.ucaShell.openOverlayVoice({ mode: "note", autoStart: true });
+      if (!result?.ok) {
+        toastNote("Could not open the voice note recorder.");
       }
-      if (finalText) {
-        document.execCommand("insertText", false, finalText + " ");
-        scheduleSave();
-      }
-    };
-    rec.onerror = () => { voiceRec = null; voiceBtn.classList.remove("is-active"); };
-    rec.onend = () => { voiceRec = null; voiceBtn.classList.remove("is-active"); };
-    voiceRec = rec;
-    voiceBtn.classList.add("is-active");
-    try { rec.start(); } catch { voiceRec = null; voiceBtn.classList.remove("is-active"); }
+    } catch {
+      toastNote("Could not open the voice note recorder.");
+    } finally {
+      voiceBtn?.classList.remove("is-active");
+    }
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────
