@@ -23,6 +23,7 @@ const scripts = pkg.scripts ?? {};
 
 const requiredDomains = [
   "Desktop shell",
+  "Voice and audio",
   "Console workspace",
   "Provider and model routing",
   "First useful task path",
@@ -49,6 +50,7 @@ const requiredVerifyScripts = [
   "verify:desktop-shell",
   "verify:desktop-renderer",
   "verify:overlay-composer",
+  "verify:audio-entrypoints",
   "verify:console-ui",
   "verify:console-runtime-client",
   "verify:provider-routing",

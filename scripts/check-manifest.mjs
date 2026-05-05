@@ -79,6 +79,7 @@ export const CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-desktop-shell.mjs",
   "node scripts/verify-desktop-renderer.mjs",
   "node scripts/verify-overlay-composer.mjs",
+  "node scripts/verify-audio-entrypoints.mjs",
   "node scripts/verify-context-handoff-ui.mjs",
   "node scripts/verify-console-ui.mjs",
   "node scripts/verify-console-runtime-client.mjs",

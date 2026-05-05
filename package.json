@@ -137,6 +137,7 @@
     "verify:file-content-index-ui": "node scripts/verify-file-content-index-ui.mjs",
     "verify:desktop-renderer": "node scripts/verify-desktop-renderer.mjs",
     "verify:overlay-composer": "node scripts/verify-overlay-composer.mjs",
+    "verify:audio-entrypoints": "node scripts/verify-audio-entrypoints.mjs",
     "verify:context-handoff-ui": "node scripts/verify-context-handoff-ui.mjs",
     "verify:console-ui": "node scripts/verify-console-ui.mjs",
     "verify:console-runtime-client": "node scripts/verify-console-runtime-client.mjs",
