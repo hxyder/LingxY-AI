@@ -3,7 +3,7 @@
 ## Trigger Conditions
 
 - Local runtime cannot start or fails `/health`
-- Kimi Code CLI becomes unavailable on test machines
+- Configured model provider or code CLI adapter becomes unavailable on test machines
 - Native integrations fail to submit to the runtime
 - Trial package install instructions no longer match the generated bundle
 

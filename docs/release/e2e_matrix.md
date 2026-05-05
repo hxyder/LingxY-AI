@@ -13,7 +13,7 @@ file remains the trial-channel E2E subset.
 | Area | Flow | Expected result | Status |
 |---|---|---|---|
 | Runtime bootstrap | Start local runtime with `node scripts/start-runtime.mjs` | Runtime exposes `/health` and `/ai/code-cli` | verified via release readiness smoke |
-| Kimi Code CLI | Submit clipboard/file task to Kimi print-mode executor | Task reaches `success` and writes `report.md` artifact | verified via automated smoke |
+| Provider or code CLI | Configure one provider or code CLI adapter, then submit a clipboard/file task | Task reaches `success` and writes an artifact when requested | verified via automated smoke plus manual provider smoke |
 | Explorer entry | Install helper and submit files from Explorer entry | File capture reaches runtime with dedupe-safe batch handling | verified via native integration smoke |
 | Browser extension | Right-click selected text and dispatch to native host | Selection payload reaches runtime and task is created | verified via extension smoke |
 | Browser floating chip | Selection chip placement and rule gating | Chip appears only on allowed surfaces and remains stable | verified via overlay smoke |

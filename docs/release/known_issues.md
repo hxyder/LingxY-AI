@@ -3,7 +3,7 @@
 ## Accepted For Trial
 
 - Electron shell is still a runtime-connected scaffold; trial operation relies on service/runtime verification more than polished renderer UX.
-- Cloud AI providers expose health/config discovery only; current primary execution path is `Kimi Code CLI`.
+- Live model execution depends on user-configured provider credentials or a configured code CLI adapter. Kimi Code CLI is supported as one adapter path, not the only primary path.
 - Office integration ships with protocol-handler-first fallback; localhost HTTPS is not a release blocker for the trial channel.
 - DAG resume currently replays through a platform placeholder executor path rather than real per-node business executors.
 - History search uses a lightweight lexical embedding approximation and is suitable for local recall, not semantic ranking parity with production vector services.
