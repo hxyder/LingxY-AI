@@ -1,4 +1,6 @@
 import { validateStepGate } from "../../core/policy/success-contract-validator.mjs";
+import { ACTION_OBLIGATION_GROUPS } from "../../core/policy/obligation-evaluator.mjs";
+import { toolsInGroup } from "../../core/policy/policy-groups.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
 import {
   buildRequiredActionGuidance,
@@ -11,8 +13,12 @@ import {
 
 export const DEFAULT_PHASE_GATE_GUIDANCE_LIMITS = Object.freeze({
   maxContractActionGuidance: 2,
-  maxTerminalContractActionGuidance: 1
+  maxTerminalContractActionGuidance: 1,
+  maxRequiredPolicyGuidance: 2
 });
+
+const ACTION_GROUP_SET = new Set(ACTION_OBLIGATION_GROUPS);
+const REQUIRED_POLICY_GROUP_VIOLATION_RE = /^(.+)_required_(?:not_called|all_failed|returned_empty)$/;
 
 export function evaluatePhaseGate({ task, transcript, iteration, maxIterations }) {
   const stepGateSpec = task.task_spec ?? task.task_spec_initial;
@@ -76,6 +82,60 @@ export function planContractActionHandoff({
       iteration,
       required_policy_groups: actionGroups,
       action_only: actionOnlyHandoff
+    }
+  };
+}
+
+function missingNonActionRequiredPolicyGroups(stepGate) {
+  const groups = [];
+  for (const violation of stepGate?.violations ?? []) {
+    const match = REQUIRED_POLICY_GROUP_VIOLATION_RE.exec(String(violation?.kind ?? ""));
+    if (!match) continue;
+    const group = match[1];
+    if (ACTION_GROUP_SET.has(group)) continue;
+    groups.push(group);
+  }
+  return [...new Set(groups)];
+}
+
+export function planRequiredPolicyGroupGuidance({
+  stepGate,
+  iteration,
+  maxIterations,
+  requiredPolicyGuidanceCount,
+  limits = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS
+}) {
+  if ((stepGate?.violations ?? []).some((violation) => violation?.kind === "tool_repeated_failure")) {
+    return null;
+  }
+  const groups = missingNonActionRequiredPolicyGroups(stepGate);
+  const canInject = groups.length > 0
+    && iteration < maxIterations - 1
+    && requiredPolicyGuidanceCount < limits.maxRequiredPolicyGuidance;
+  if (!canInject) return null;
+
+  const groupLines = groups.map((group) => {
+    const members = toolsInGroup(group);
+    const memberText = members.length > 0 ? members.join(", ") : "a registered tool in this policy group";
+    return `- ${group}: call at least one of ${memberText} before finalizing.`;
+  });
+
+  return {
+    groups,
+    transcriptEntry: {
+      type: "contract_guidance",
+      groups,
+      instruction: [
+        "The task contract is not satisfied yet. Do not finalize.",
+        ...groupLines,
+        "Use the visible tool surface, then synthesize from the new tool result."
+      ].join("\n"),
+      action_only: false
+    },
+    eventPayload: {
+      iteration,
+      required_policy_groups: groups,
+      action_only: false
     }
   };
 }

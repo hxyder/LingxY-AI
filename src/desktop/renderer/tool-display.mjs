@@ -1,4 +1,5 @@
 export const TOOL_DISPLAY_LABELS = Object.freeze({
+  web_search: "打开网页搜索",
   web_search_fetch: "搜索网页",
   fetch_url_content: "读取网页",
   search_file_content: "检索文件索引",
@@ -22,9 +23,20 @@ export const TOOL_DISPLAY_LABELS = Object.freeze({
   notify: "发送通知",
   connector_workflow_run: "连接器流程",
   account_send_email: "发送邮件",
+  send_email_smtp: "发送邮件",
+  account_create_event: "创建日历事件",
+  account_list_events: "读取日历",
   account_upload_file: "上传文件",
   account_list_emails: "读取邮件",
   account_list_files: "读取文件",
+  google_gmail_send_email: "发送 Gmail",
+  "google.gmail.send_email": "发送 Gmail",
+  microsoft_outlook_send_email: "发送 Outlook 邮件",
+  "microsoft.outlook.send_email": "发送 Outlook 邮件",
+  google_calendar_create_event: "创建 Google 日历事件",
+  "google.calendar.create_event": "创建 Google 日历事件",
+  microsoft_calendar_create_event: "创建 Outlook 日历事件",
+  "microsoft.calendar.create_event": "创建 Outlook 日历事件",
   draft_capability: "起草能力",
   save_capability_draft: "保存能力草稿"
 });

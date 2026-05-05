@@ -104,6 +104,7 @@ import {
   phaseGateSignalPayload,
   planContractActionHandoff,
   planLocalFileTextReadGuidance,
+  planRequiredPolicyGroupGuidance,
   planRunbookGuidance
 } from "./phase-gate.mjs";
 import {
@@ -744,9 +745,11 @@ async function _runToolAgentLoopCore({
   const firedRunbooks = new Set();
   let contractActionGuidanceCount = 0;
   let terminalContractActionGuidanceCount = 0;
+  let requiredPolicyGuidanceCount = 0;
   let localFileReadGuidanceCount = 0;
   const MAX_CONTRACT_ACTION_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxContractActionGuidance;
   const MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxTerminalContractActionGuidance;
+  const MAX_REQUIRED_POLICY_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxRequiredPolicyGuidance;
   // Soft saturation nudge for multi_source / deep_research tasks. Fires
   // once per task — if the model heeds the hint and changes angle, no
   // further nudges; if it ignores, the existing research-quality
@@ -834,6 +837,105 @@ async function _runToolAgentLoopCore({
           source: "launch_sequence"
         });
         continue;
+      }
+      if (resolvedPlanner !== defaultPlanner) {
+        const finalStepGate = evaluatePhaseGate({
+          task,
+          transcript,
+          iteration,
+          maxIterations
+        });
+        runtime.emitTaskEvent?.("phase_gate_signal", phaseGateSignalPayload({ iteration, stepGate: finalStepGate }));
+        appendAuditLog(runtime, task, "tool_loop.phase_gate", phaseGateAuditPayload({ iteration, stepGate: finalStepGate }));
+
+        if (!finalStepGate.satisfied) {
+          const localFileReadGuidance = planLocalFileTextReadGuidance({
+            stepGate: finalStepGate,
+            transcript,
+            taskSpec: task.task_spec ?? task.task_spec_initial,
+            iteration,
+            maxIterations,
+            localFileReadGuidanceCount
+          });
+          if (localFileReadGuidance) {
+            localFileReadGuidanceCount += 1;
+            const guidancePayload = {
+              ...localFileReadGuidance.eventPayload,
+              guidance_count: localFileReadGuidanceCount,
+              source: "final_gate"
+            };
+            transcript.push(localFileReadGuidance.transcriptEntry);
+            runtime.emitTaskEvent?.("local_file_read_guidance", guidancePayload);
+            appendAuditLog(runtime, task, "tool_loop.local_file_read_guidance", guidancePayload);
+            continue;
+          }
+
+          const actionHandoff = planContractActionHandoff({
+            stepGate: finalStepGate,
+            transcript,
+            iteration,
+            maxIterations,
+            contractActionGuidanceCount,
+            terminalContractActionGuidanceCount,
+            limits: {
+              maxContractActionGuidance: MAX_CONTRACT_ACTION_GUIDANCE,
+              maxTerminalContractActionGuidance: MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE
+            }
+          });
+          if (actionHandoff) {
+            if (actionHandoff.incrementTerminal) {
+              terminalContractActionGuidanceCount += 1;
+            }
+            if (actionHandoff.incrementNormal) {
+              contractActionGuidanceCount += 1;
+            }
+            const eventPayload = {
+              ...actionHandoff.eventPayload,
+              source: "final_gate"
+            };
+            transcript.push(actionHandoff.transcriptEntry);
+            runtime.emitTaskEvent?.("contract_action_handoff", eventPayload);
+            appendAuditLog(runtime, task, "tool_loop.contract_action_handoff", eventPayload);
+            continue;
+          }
+
+          const requiredPolicyGuidance = planRequiredPolicyGroupGuidance({
+            stepGate: finalStepGate,
+            iteration,
+            maxIterations,
+            requiredPolicyGuidanceCount,
+            limits: {
+              maxRequiredPolicyGuidance: MAX_REQUIRED_POLICY_GUIDANCE
+            }
+          });
+          if (requiredPolicyGuidance) {
+            requiredPolicyGuidanceCount += 1;
+            const eventPayload = {
+              ...requiredPolicyGuidance.eventPayload,
+              guidance_count: requiredPolicyGuidanceCount,
+              source: "final_gate"
+            };
+            transcript.push(requiredPolicyGuidance.transcriptEntry);
+            runtime.emitTaskEvent?.("contract_guidance", eventPayload);
+            appendAuditLog(runtime, task, "tool_loop.contract_guidance", eventPayload);
+            continue;
+          }
+
+          const phaseGateStop = buildPhaseGateStop({ stepGate: finalStepGate, iteration, runbook: null });
+          if (phaseGateStop) {
+            return {
+              status: "partial_success",
+              final_text: await composeFinalAnswer({
+                task,
+                transcript,
+                runtime,
+                reason: phaseGateStop.reasonText
+              }),
+              transcript,
+              phase_gate: phaseGateStop.phaseGate
+            };
+          }
+        }
       }
       let candidateFinal = decision?.text
         ?? finalFallbackText(transcript, task.user_command, task.task_spec)
@@ -967,14 +1069,60 @@ async function _runToolAgentLoopCore({
 
     if (decision?.type === "tool_call") {
       if (typeof decision.tool !== "string" || decision.tool.trim().length === 0) {
+        const invalidToolViolation = {
+          kind: "invalid_tool_call",
+          message: "Planner emitted a tool call without a tool id; either call a valid tool or answer/ask for clarification in plain text."
+        };
+        const invalidStepGate = evaluatePhaseGate({
+          task,
+          transcript,
+          iteration,
+          maxIterations
+        });
+        if (
+          invalidStepGate.satisfied
+          && needsFinalComposer(task, transcript)
+          && !hasUnresolvedActionFailure(transcript)
+        ) {
+          transcript.push({
+            type: "synthesis_retry",
+            violations: [invalidToolViolation],
+            recovery: "compose_final_after_satisfied_contract"
+          });
+          runtime?.emitTaskEvent?.("synthesis_retry", {
+            attempt: synthesisRetriesUsed + 1,
+            reason: "invalid_tool_call_fallback_to_final"
+          });
+          appendAuditLog(runtime, task, "tool_loop.invalid_tool_call_recovered", {
+            iteration,
+            reason: "contract_satisfied_compose_final"
+          });
+          const recoveredFinalText = await composeFinalAnswer({
+            task,
+            transcript,
+            runtime,
+            reason: "invalid_tool_call_after_satisfied_contract"
+          });
+          const recoveredSynthesisSpec = task.task_spec ?? task.task_spec_initial;
+          const recoveredSynthesisViolations = validateAnswerSynthesis(
+            recoveredSynthesisSpec,
+            transcript,
+            recoveredFinalText
+          );
+          return {
+            status: recoveredSynthesisViolations.length > 0 ? "partial_success" : "success",
+            final_text: recoveredFinalText,
+            transcript,
+            synthesis_violations: recoveredSynthesisViolations.length > 0
+              ? recoveredSynthesisViolations
+              : undefined
+          };
+        }
         if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
           synthesisRetriesUsed += 1;
           transcript.push({
             type: "synthesis_retry",
-            violations: [{
-              kind: "invalid_tool_call",
-              message: "Planner emitted a tool call without a tool id; either call a valid tool or answer/ask for clarification in plain text."
-            }]
+            violations: [invalidToolViolation]
           });
           runtime?.emitTaskEvent?.("synthesis_retry", {
             attempt: synthesisRetriesUsed,
@@ -1576,6 +1724,28 @@ async function _runToolAgentLoopCore({
         transcript.push(actionHandoff.transcriptEntry);
         runtime.emitTaskEvent?.("contract_action_handoff", actionHandoff.eventPayload);
         appendAuditLog(runtime, task, "tool_loop.contract_action_handoff", actionHandoff.eventPayload);
+        continue;
+      }
+
+      const requiredPolicyGuidance = planRequiredPolicyGroupGuidance({
+        stepGate,
+        iteration,
+        maxIterations,
+        requiredPolicyGuidanceCount,
+        limits: {
+          maxRequiredPolicyGuidance: MAX_REQUIRED_POLICY_GUIDANCE
+        }
+      });
+      if (requiredPolicyGuidance) {
+        requiredPolicyGuidanceCount += 1;
+        const eventPayload = {
+          ...requiredPolicyGuidance.eventPayload,
+          guidance_count: requiredPolicyGuidanceCount,
+          source: "step_gate"
+        };
+        transcript.push(requiredPolicyGuidance.transcriptEntry);
+        runtime.emitTaskEvent?.("contract_guidance", eventPayload);
+        appendAuditLog(runtime, task, "tool_loop.contract_guidance", eventPayload);
         continue;
       }
 

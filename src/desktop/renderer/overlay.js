@@ -1588,6 +1588,19 @@ function appendToolStepBubble(toolId, state = "pending", detailText = "", { anch
   return stepEl;
 }
 
+function ensureStreamingAnswerPlaceholder({ taskId = null, label = "正在整理答案…" } = {}) {
+  if (streamingBubble || !bubbleArea) return;
+  streamingBubble = document.createElement("div");
+  streamingBubble.className = "bubble assistant streaming answer-placeholder";
+  if (taskId) streamingBubble.dataset.taskId = taskId;
+  streamingBubbleRawText = "";
+  streamingBubble.innerHTML = `<span class="answer-placeholder-text">${escapeHtml(label)}</span>`;
+  bubbleArea.hidden = false;
+  bubbleArea.appendChild(streamingBubble);
+  bubbleAreaPin.maybeScrollToBottom();
+  void maybeRevealOverlay({ markEngaged: true });
+}
+
 function markToolStepBubble(toolId, ok, observation = "", sources = []) {
   if (!toolId) return;
   const queue = pendingToolStepBubbles[toolId];
@@ -2562,6 +2575,10 @@ async function handleTaskEventFrame(rawEvent) {
     renderTaskTimelineEvent(frame, { showOverlay: true });
   }
 
+  if (frame.event === "final_composer_started" && isForActiveConv) {
+    ensureStreamingAnswerPlaceholder({ taskId: frameTaskId ?? activeTaskId ?? null });
+  }
+
   if (frame.event === "text_delta") {
     if (!isForActiveConv) return; // silent streams don't build bubbles
     const delta = frame.data?.delta ?? frame.data?.text ?? "";
@@ -2590,6 +2607,7 @@ async function handleTaskEventFrame(rawEvent) {
       void maybeRevealOverlay({ markEngaged: true }); // lock overlay open unless user explicitly closed it
     }
     streamingBubbleRawText += delta;
+    streamingBubble.classList.remove("answer-placeholder");
     streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);
     bubbleAreaPin.maybeScrollToBottom();
     return;
@@ -2607,6 +2625,7 @@ async function handleTaskEventFrame(rawEvent) {
           // live answer node to the tail before finalising it.
           bubbleArea.appendChild(streamingBubble);
           streamingBubble.classList.remove("streaming");
+          streamingBubble.classList.remove("answer-placeholder");
           streamingBubbleRawText = text;
           streamingBubble.dataset.rawText = text;
           streamingBubble.innerHTML = renderMarkdown(streamingBubbleRawText);

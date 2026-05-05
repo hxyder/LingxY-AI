@@ -882,8 +882,29 @@
   animation: lingxy-caret-blink 1s steps(2, jump-none) infinite;
   vertical-align: baseline;
 }
+.chat-msg-bubble.answer-placeholder {
+  color: var(--muted);
+}
+.chat-msg-bubble.answer-placeholder .answer-placeholder-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.chat-msg-bubble.answer-placeholder .answer-placeholder-text::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.55;
+  animation: lingxy-answer-placeholder-pulse 1.1s ease-in-out infinite;
+}
 @keyframes lingxy-caret-blink {
   50% { opacity: 0; }
+}
+@keyframes lingxy-answer-placeholder-pulse {
+  0%, 100% { transform: scale(0.8); opacity: 0.35; }
+  50% { transform: scale(1); opacity: 0.8; }
 }
 .chat-msg-bubble a,
 .console-chat-message-body a {

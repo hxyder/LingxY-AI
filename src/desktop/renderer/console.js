@@ -1266,8 +1266,27 @@ function appendConsoleChatTextDelta(taskId, delta) {
   }
   consoleChatStreamingAnswer.text += String(delta);
   if (consoleChatStreamingAnswer.bubble) {
+    consoleChatStreamingAnswer.bubble.classList.remove("answer-placeholder");
     renderConsoleChatBubbleContent(consoleChatStreamingAnswer.bubble, consoleChatStreamingAnswer.text);
   }
+  consoleChatPin.maybeScrollToBottom();
+}
+
+function ensureConsoleChatAnswerPlaceholder(taskId, label = "正在整理答案…") {
+  if (!taskId || !consoleChatMessages) return;
+  if (consoleChatStreamingAnswer?.taskId === taskId) return;
+  closeConsoleChatThinkingCard();
+  const wrapper = appendConsoleChatMessage("assistant", "", { allowEmpty: true, taskId });
+  const bubble = wrapper?.querySelector(".chat-msg-bubble") ?? null;
+  if (!wrapper || !bubble) return;
+  bubble.classList.add("streaming", "answer-placeholder");
+  bubble.innerHTML = `<span class="answer-placeholder-text">${escapeHtml(label)}</span>`;
+  consoleChatStreamingAnswer = {
+    taskId,
+    text: "",
+    wrapper,
+    bubble
+  };
   consoleChatPin.maybeScrollToBottom();
 }
 
@@ -1282,6 +1301,7 @@ function finalizeConsoleChatStreaming(taskId, finalText = "") {
     return true;
   }
   if (text && consoleChatStreamingAnswer.bubble) {
+    consoleChatStreamingAnswer.bubble.classList.remove("answer-placeholder");
     renderConsoleChatBubbleContent(consoleChatStreamingAnswer.bubble, text);
   }
   consoleChatStreamingAnswer.bubble?.classList.remove("streaming");
@@ -1762,13 +1782,16 @@ function subscribeConsoleChatTask(taskId) {
         if (!String(source).startsWith("tool_call")) {
           appendConsoleChatProgress(frame);
         }
+      } else if (frame.event === "final_composer_started") {
+        appendConsoleChatProgress(frame);
+        ensureConsoleChatAnswerPlaceholder(taskId);
+        consoleChatState.textContent = "Answering...";
       } else if ([
         "task_created",
         "accepted",
         "started",
         "provider_resolved",
         "planner_request_started",
-        "final_composer_started",
         "sr_patch_applied",
         "background_context_added",
         "local_file_read_guidance"
