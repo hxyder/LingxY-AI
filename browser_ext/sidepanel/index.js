@@ -8,6 +8,7 @@
 
 import {
   buildRunModeView,
+  formatRouteFailureMessage,
   renderRunModeDetail
 } from "../shared/run-mode-view.js";
 
@@ -663,6 +664,16 @@ async function runPendingAnalysis(request = null) {
   }
   if (request.kind === "page_explain") {
     await onAnalyzePageV2({ mode: "explain", resetConversation: true, routePlan: request.routePlan ?? null });
+    return;
+  }
+  if (request.kind === "runtime_unavailable") {
+    const message = formatRouteFailureMessage(request.routePlan ?? {});
+    const turn = { role: "error", content: message };
+    conversation.push(turn);
+    appendTurnEl(turn);
+    statusEl.textContent = "";
+    await saveHistory();
+    void refreshMode();
     return;
   }
   if (request.kind === "quickaction") {

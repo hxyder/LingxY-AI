@@ -15,6 +15,7 @@ import {
 } from "./context-enricher.js";
 import {
   createRunModeCapabilities,
+  isValidRoutePlan,
   planPageExplainRoute,
   planQuickActionRoute
 } from "./run-mode-router.js";
@@ -395,10 +396,6 @@ async function runDesktopTask({
   return { ok: false, taskId, error: "timeout", mode: "desktop" };
 }
 
-function isValidRoutePlan(routePlan = null) {
-  return routePlan && typeof routePlan === "object" && typeof routePlan.transport === "string";
-}
-
 async function resolveQuickActionRouteContext({
   action,
   origin = "runtime_message",
@@ -567,13 +564,18 @@ async function queueSidePanelAnalysis(request, { chromeApi = chrome, windowId = 
   const effectiveRoutePlan = isValidRoutePlan(routePlan)
     ? routePlan
     : (isValidRoutePlan(request?.routePlan) ? request.routePlan : null);
-  if (effectiveRoutePlan && !effectiveRoutePlan.ok) {
-    return { ok: false, error: effectiveRoutePlan.reason, routePlan: effectiveRoutePlan };
-  }
   const payload = {
     id: crypto.randomUUID(),
     queuedAt: Date.now(),
-    ...request,
+    ...(effectiveRoutePlan && !effectiveRoutePlan.ok
+      ? {
+        kind: "runtime_unavailable",
+        originalKind: request?.kind ?? null,
+        originalAction: request?.action ?? null,
+        displayLabel: request?.displayLabel ?? "",
+        attached: request?.attached ?? ""
+      }
+      : request),
     ...(effectiveRoutePlan ? { routePlan: effectiveRoutePlan } : {})
   };
   await chromeApi.storage.local.set({
@@ -597,7 +599,13 @@ async function queueSidePanelAnalysis(request, { chromeApi = chrome, windowId = 
       };
     }
   }
-  return { ok: true, requestId: payload.id };
+  return {
+    ok: effectiveRoutePlan?.ok !== false,
+    requestId: payload.id,
+    ...(effectiveRoutePlan?.ok === false
+      ? { queued: true, error: effectiveRoutePlan.reason, routePlan: effectiveRoutePlan }
+      : {})
+  };
 }
 
 async function openExtensionDialog(chromeApi = chrome, pagePath = "sidepanel/index.html") {

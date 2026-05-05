@@ -448,6 +448,11 @@ assert.equal(serviceWorkerJs.includes("hasStandaloneProviderConfig"), true);
 assert.equal(serviceWorkerJs.includes("standaloneConfig?.apiKey"), false);
 assert.equal(serviceWorkerJs.includes("resolveQuickActionRouteContext"), true);
 assert.equal(serviceWorkerJs.includes("resolvePageExplainRouteContext"), true);
+assert.equal(serviceWorkerJs.includes("function isValidRoutePlan("), false,
+  "service worker must use the shared run-mode routePlan validator");
+assert.equal(serviceWorkerJs.includes("isValidRoutePlan"), true);
+assert.equal(serviceWorkerJs.includes("validateRoutePlan"), false,
+  "routePlan validation schema should stay in run-mode-router, not be duplicated in the worker");
 assert.equal(serviceWorkerJs.includes("executeQuickAction"), true);
 assert.equal(serviceWorkerJs.includes("planPageExplainRoute"), true);
 assert.equal(serviceWorkerJs.includes("routePlan: sidepanelContext.routePlan"), true);
@@ -465,12 +470,19 @@ const sidepanelJs = await readFile(path.join(repoRoot, "browser_ext", "sidepanel
 const runModeViewJs = await readFile(path.join(repoRoot, "browser_ext", "shared", "run-mode-view.js"), "utf8");
 assert.equal(popupJs.includes("../shared/run-mode-view.js"), true);
 assert.equal(sidepanelJs.includes("../shared/run-mode-view.js"), true);
+assert.equal(sidepanelJs.includes("formatRouteFailureMessage"), true);
+assert.equal(sidepanelJs.includes("request.kind === \"runtime_unavailable\""), true);
 assert.equal(sidepanelJs.includes("routePlan: request.routePlan ?? null"), true);
 assert.equal(sidepanelJs.includes("routePlan = null"), true);
 assert.equal(selectionCacheJs.includes("routePlan"), true);
 assert.equal(runModeViewJs.includes("本地工具与文件/RAG"), true);
 assert.equal(runModeViewJs.includes("网页内容问答"), true);
 assert.equal(runModeViewJs.includes("暂无可运行后端"), true);
+const runModeRouterJs = await readFile(path.join(repoRoot, "browser_ext", "background", "run-mode-router.js"), "utf8");
+assert.equal(runModeRouterJs.includes("export function validateRoutePlan"), true);
+assert.equal(runModeRouterJs.includes("ok_route_has_no_transport"), true);
+assert.equal(runModeViewJs.includes("formatRouteFailureMessage"), true);
+assert.equal(serviceWorkerJs.includes("kind: \"runtime_unavailable\""), true);
 const optionsJs = await readFile(path.join(repoRoot, "browser_ext", "options", "index.js"), "utf8");
 assert.equal(optionsJs.includes("isStandaloneProviderConfigured"), true);
 assert.equal(optionsJs.includes("providerRequiresApiKey(config.provider)"), true);

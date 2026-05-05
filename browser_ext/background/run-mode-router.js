@@ -20,6 +20,26 @@ const TEXT_ACTIONS = Object.freeze(new Set([
   "translate",
   "explain"
 ]));
+const ROUTE_TRANSPORTS = Object.freeze(new Set([
+  "desktop_task",
+  "desktop_page_explain",
+  "standalone_direct",
+  "none"
+]));
+const ROUTE_MODES = Object.freeze(new Set(["desktop", "standalone", "offline"]));
+const ROUTE_UIS = Object.freeze(new Set([
+  "inline_frame",
+  "sidepanel_pending",
+  "desktop_handoff",
+  "standalone_notification",
+  "error"
+]));
+const ROUTE_ACTION_KINDS = Object.freeze(new Set([
+  "text",
+  "link",
+  "image",
+  "page_explain"
+]));
 
 export function normalizeRuntimeBase(runtimeUrl = DEFAULT_RUNTIME_BASE) {
   return `${runtimeUrl || DEFAULT_RUNTIME_BASE}`.replace(/\/+$/, "");
@@ -27,6 +47,41 @@ export function normalizeRuntimeBase(runtimeUrl = DEFAULT_RUNTIME_BASE) {
 
 export function standaloneProviderSupportsVision(provider = "") {
   return DIRECT_VISION_PROVIDERS.has(`${provider ?? ""}`.trim());
+}
+
+export function validateRoutePlan(routePlan = null) {
+  if (!routePlan || typeof routePlan !== "object") {
+    return { ok: false, reason: "not_object" };
+  }
+  if (typeof routePlan.ok !== "boolean") {
+    return { ok: false, reason: "missing_ok" };
+  }
+  if (!ROUTE_TRANSPORTS.has(routePlan.transport)) {
+    return { ok: false, reason: "invalid_transport" };
+  }
+  if (!ROUTE_MODES.has(routePlan.mode)) {
+    return { ok: false, reason: "invalid_mode" };
+  }
+  if (!ROUTE_UIS.has(routePlan.ui)) {
+    return { ok: false, reason: "invalid_ui" };
+  }
+  if (!ROUTE_ACTION_KINDS.has(routePlan.actionKind)) {
+    return { ok: false, reason: "invalid_action_kind" };
+  }
+  if (typeof routePlan.reason !== "string" || routePlan.reason.length === 0) {
+    return { ok: false, reason: "missing_reason" };
+  }
+  if (routePlan.ok && routePlan.transport === "none") {
+    return { ok: false, reason: "ok_route_has_no_transport" };
+  }
+  if (!routePlan.ok && routePlan.transport !== "none") {
+    return { ok: false, reason: "failed_route_has_transport" };
+  }
+  return { ok: true, routePlan };
+}
+
+export function isValidRoutePlan(routePlan = null) {
+  return validateRoutePlan(routePlan).ok;
 }
 
 export function createRunModeCapabilities({

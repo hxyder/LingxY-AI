@@ -1,12 +1,15 @@
 import assert from "node:assert/strict";
 import {
   createRunModeCapabilities,
+  isValidRoutePlan,
   planPageExplainRoute,
   planQuickActionRoute,
-  standaloneProviderSupportsVision
+  standaloneProviderSupportsVision,
+  validateRoutePlan
 } from "../browser_ext/background/run-mode-router.js";
 import {
-  buildRunModeView
+  buildRunModeView,
+  formatRouteFailureMessage
 } from "../browser_ext/shared/run-mode-view.js";
 
 const desktopCaps = createRunModeCapabilities({
@@ -161,5 +164,37 @@ assert.equal(
 );
 assert.equal(buildRunModeView(offlineCaps).mode, "offline");
 assert.equal(buildRunModeView(offlineCaps).capabilities[0], "暂无可运行后端");
+
+const validStandaloneRoute = planQuickActionRoute({
+  action: "summarize",
+  origin: "verify",
+  capabilities: standaloneTextCaps
+});
+assert.equal(isValidRoutePlan(validStandaloneRoute), true);
+assert.deepEqual(validateRoutePlan(validStandaloneRoute), {
+  ok: true,
+  routePlan: validStandaloneRoute
+});
+assert.equal(validateRoutePlan({ transport: "standalone_direct" }).reason, "missing_ok");
+assert.equal(validateRoutePlan({
+  ok: true,
+  origin: "verify",
+  actionKind: "text",
+  ui: "inline_frame",
+  transport: "native_magic",
+  mode: "desktop",
+  reason: "forged"
+}).reason, "invalid_transport");
+assert.equal(validateRoutePlan({
+  ok: true,
+  origin: "verify",
+  actionKind: "text",
+  ui: "inline_frame",
+  transport: "none",
+  mode: "offline",
+  reason: "forged"
+}).reason, "ok_route_has_no_transport");
+assert.match(formatRouteFailureMessage({ reason: "no_runtime" }), /没有可运行后端/);
+assert.match(formatRouteFailureMessage({ reason: "no_vision_runtime" }), /图片分析后端/);
 
 console.log("ok verify-browser-runmode-router");

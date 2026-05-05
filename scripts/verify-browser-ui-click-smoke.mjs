@@ -345,9 +345,43 @@ async function verifySidePanelPendingPageExplainRoutePlan() {
   "sidepanel pending page explain should preserve route plan on the chat stream");
 }
 
+async function verifySidePanelPendingRuntimeUnavailable() {
+  const routePlan = {
+    ok: false,
+    origin: "context_menu",
+    actionKind: "image",
+    ui: "error",
+    transport: "none",
+    mode: "offline",
+    reason: "no_vision_runtime"
+  };
+  const pending = {
+    id: "pending-runtime-unavailable-1",
+    kind: "runtime_unavailable",
+    routePlan
+  };
+  const transcript = createTranscript();
+  const chromeStub = createChromeStub(transcript, {
+    initialStorage: { ucaSidePanelPendingAnalysis: pending }
+  });
+  chromeStub.__transcript = transcript;
+  installBrowserGlobals(read("browser_ext/sidepanel/index.html"), chromeStub);
+  await importFresh("browser_ext/sidepanel/index.js", "sidepanel-runtime-unavailable");
+
+  await tick();
+  await tick();
+  assert.ok(transcript.storageRemoves.includes("ucaSidePanelPendingAnalysis"),
+    "sidepanel should consume pending runtime-unavailable notices");
+  assert.equal(transcript.ports.length, 0,
+    "runtime-unavailable notices should render locally without opening a streaming port");
+  assert.match(document.getElementById("sp-history").textContent, /图片分析后端/,
+    "runtime-unavailable notices should show a user-visible capability gap");
+}
+
 await verifyPopupClicks();
 await verifySidePanelClicks();
 await verifySidePanelPendingQuickAction();
 await verifySidePanelPendingPageExplainRoutePlan();
+await verifySidePanelPendingRuntimeUnavailable();
 
 console.log("ok verify-browser-ui-click-smoke");

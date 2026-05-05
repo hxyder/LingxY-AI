@@ -43,6 +43,17 @@ export function buildRunModeView(status = {}) {
   });
 }
 
+export function formatRouteFailureMessage(routePlan = {}) {
+  const reason = routePlan?.reason ?? "no_runtime";
+  if (reason === "no_vision_runtime") {
+    return "当前没有可用的图片分析后端。请启动 LingxY 桌面程序，或在扩展设置里配置支持图片的独立模式模型。";
+  }
+  if (reason === "no_runtime") {
+    return "当前没有可运行后端。请启动 LingxY 桌面程序，或在扩展设置里配置独立模式 provider。";
+  }
+  return `当前操作无法继续：${reason}`;
+}
+
 export function renderRunModeDetail(element, view, doc = document) {
   if (!element) return;
   element.textContent = "";
