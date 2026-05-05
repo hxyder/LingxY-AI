@@ -363,7 +363,14 @@ async function startFreshAnalysisThread() {
   renderHistory();
 }
 
-async function runQuickActionTurn({ action, selectionState = {}, displayLabel = "", attached = "", resetConversation = true } = {}) {
+async function runQuickActionTurn({
+  action,
+  selectionState = {},
+  displayLabel = "",
+  attached = "",
+  resetConversation = true,
+  routePlan = null
+} = {}) {
   return new Promise((resolve) => {
     if (isBusy) { resolve({ ok: false, error: "busy" }); return; }
     void (async () => {
@@ -457,7 +464,8 @@ async function runQuickActionTurn({ action, selectionState = {}, displayLabel = 
       port.postMessage({
         type: "quickaction",
         action,
-        selectionState
+        selectionState,
+        routePlan
       });
     })();
   });
@@ -661,7 +669,8 @@ async function runPendingAnalysis(request = null) {
       selectionState: request.selectionState ?? {},
       displayLabel: request.displayLabel ?? buildQuickActionDisplayLabel(request.action, request.selectionState),
       attached: request.attached ?? buildQuickActionAttached(request.action, request.selectionState),
-      resetConversation: true
+      resetConversation: true,
+      routePlan: request.routePlan ?? null
     });
   }
 }

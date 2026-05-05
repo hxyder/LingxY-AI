@@ -297,6 +297,16 @@ let submittedTask = null;
 const quickActionResult = await runQuickAction(
   {
     action: "translate",
+    routePlan: {
+      ok: true,
+      origin: "verify",
+      actionKind: "text",
+      ui: "inline_frame",
+      transport: "desktop_task",
+      mode: "desktop",
+      reason: "verify_desktop_task"
+    },
+    runtimeBase: "http://127.0.0.1:4310",
     selectionState: {
       text: "Hello world",
       url: "https://example.com",
@@ -354,6 +364,14 @@ assert.equal(serviceWorkerJs.includes("uca.browser.contextSnapshot"), true);
 assert.equal(serviceWorkerJs.includes("RUNTIME_BROWSER_CONTEXT_URL"), true);
 assert.equal(serviceWorkerJs.includes("hasStandaloneProviderConfig"), true);
 assert.equal(serviceWorkerJs.includes("standaloneConfig?.apiKey"), false);
+assert.equal(serviceWorkerJs.includes("resolveQuickActionRouteContext"), true);
+assert.equal(serviceWorkerJs.includes("routePlan: sidepanelContext.routePlan"), true);
+assert.equal(serviceWorkerJs.includes("routePlan: inlineRouteContext.routePlan"), true);
+assert.equal(
+  /\(info\.menuItemId === "uca\.fetch-link" \|\| info\.menuItemId === "uca\.inspect-image"\)[\s\S]{0,220}queueSidePanelAnalysis/.test(serviceWorkerJs),
+  false,
+  "context-menu link/image actions must not bypass the shared quick-action route plan"
+);
 assert.equal(manifest.commands["explain-page"].suggested_key.default, "Ctrl+Shift+E");
 const popupHtml = await readFile(path.join(repoRoot, "browser_ext", "popup", "index.html"), "utf8");
 assert.equal(popupHtml.includes("快捷键 Ctrl+Shift+E"), true);
@@ -362,6 +380,8 @@ const sidepanelJs = await readFile(path.join(repoRoot, "browser_ext", "sidepanel
 const runModeViewJs = await readFile(path.join(repoRoot, "browser_ext", "shared", "run-mode-view.js"), "utf8");
 assert.equal(popupJs.includes("../shared/run-mode-view.js"), true);
 assert.equal(sidepanelJs.includes("../shared/run-mode-view.js"), true);
+assert.equal(sidepanelJs.includes("routePlan: request.routePlan ?? null"), true);
+assert.equal(selectionCacheJs.includes("routePlan"), true);
 assert.equal(runModeViewJs.includes("本地工具与文件/RAG"), true);
 assert.equal(runModeViewJs.includes("网页内容问答"), true);
 assert.equal(runModeViewJs.includes("暂无可运行后端"), true);

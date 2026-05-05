@@ -394,7 +394,44 @@ async function runDesktopTask({
   return { ok: false, taskId, error: "timeout", mode: "desktop" };
 }
 
-export async function runQuickAction({ action, selectionState, tab = null }, fetchImpl = fetch) {
+function isValidRoutePlan(routePlan = null) {
+  return routePlan && typeof routePlan === "object" && typeof routePlan.transport === "string";
+}
+
+async function resolveQuickActionRouteContext({
+  action,
+  origin = "runtime_message",
+  preferInline = true
+} = {}) {
+  const standaloneConfig = await loadStandaloneConfig();
+  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+  const desktopUp = await isDesktopAvailable(runtimeBase);
+  const capabilities = createRunModeCapabilities({
+    desktopAvailable: desktopUp,
+    standaloneReady: hasStandaloneProviderConfig(standaloneConfig),
+    standaloneConfig
+  });
+  return {
+    standaloneConfig,
+    runtimeBase,
+    capabilities,
+    routePlan: planQuickActionRoute({
+      action,
+      origin,
+      capabilities,
+      preferInline
+    })
+  };
+}
+
+export async function runQuickAction({
+  action,
+  selectionState,
+  tab = null,
+  routePlan = null,
+  standaloneConfig = null,
+  runtimeBase = null
+}, fetchImpl = fetch) {
   const text = (selectionState?.text ?? "").trim();
   const requiresSelectionText = !["uca.fetch-link", "uca.inspect-image"].includes(action);
   if (requiresSelectionText && !text) {
@@ -402,22 +439,28 @@ export async function runQuickAction({ action, selectionState, tab = null }, fet
   }
   const userCommand = CAPTURE_ACTIONS[action]?.userCommand ?? QUICK_ACTION_COMMANDS[action] ?? QUICK_ACTION_COMMANDS.summarize;
 
-  // Standalone short-circuit: if desktop isn't running AND the provider is
-  // configured, call the LLM directly from the extension.
-  const standaloneConfig = await loadStandaloneConfig();
-  const runtimeBase = (standaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
-  const desktopUp = await isDesktopAvailable(runtimeBase);
-  const routePlan = planQuickActionRoute({
-    action,
-    origin: "runtime_message",
-    capabilities: createRunModeCapabilities({
-      desktopAvailable: desktopUp,
-      standaloneReady: hasStandaloneProviderConfig(standaloneConfig),
-      standaloneConfig
-    }),
-    preferInline: true
-  });
-  if (routePlan.transport === "standalone_direct") {
+  let effectiveRoutePlan = isValidRoutePlan(routePlan) ? routePlan : null;
+  let effectiveStandaloneConfig = standaloneConfig;
+  let effectiveRuntimeBase = runtimeBase;
+  if (!effectiveRoutePlan) {
+    const resolved = await resolveQuickActionRouteContext({
+      action,
+      origin: "runtime_message",
+      preferInline: true
+    });
+    effectiveRoutePlan = resolved.routePlan;
+    effectiveStandaloneConfig = resolved.standaloneConfig;
+    effectiveRuntimeBase = resolved.runtimeBase;
+  } else {
+    if (!effectiveStandaloneConfig) effectiveStandaloneConfig = await loadStandaloneConfig();
+    effectiveRuntimeBase = (effectiveRuntimeBase ?? effectiveStandaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+  }
+
+  if (!effectiveRoutePlan.ok) {
+    return { ok: false, mode: effectiveRoutePlan.mode, error: effectiveRoutePlan.reason };
+  }
+
+  if (effectiveRoutePlan.transport === "standalone_direct") {
     // UCA-161: summarize / explain get the full page outline + any in-selection
     // links fetched and inlined so the LLM has real material to ground on.
     let enrichmentMarkdown = "";
@@ -428,12 +471,9 @@ export async function runQuickAction({ action, selectionState, tab = null }, fet
       } catch { /* enrichment is best-effort */ }
     }
     const { prompt, systemPrompt } = buildPromptFor(action, selectionState, enrichmentMarkdown);
-    const result = await callLLMDirect({ config: standaloneConfig, prompt, systemPrompt });
+    const result = await callLLMDirect({ config: effectiveStandaloneConfig, prompt, systemPrompt });
     if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success" };
     return { ok: false, mode: "standalone", error: result.error };
-  }
-  if (!routePlan.ok && hasStandaloneProviderConfig(standaloneConfig)) {
-    return { ok: false, mode: routePlan.mode, error: routePlan.reason };
   }
 
   let enrichment = null;
@@ -444,7 +484,7 @@ export async function runQuickAction({ action, selectionState, tab = null }, fet
   }
 
   return runDesktopTask({
-    runtimeBase,
+    runtimeBase: effectiveRuntimeBase,
     userCommand,
     capture: buildDesktopCaptureForAction(action, selectionState, enrichment),
     fetchImpl
@@ -461,11 +501,18 @@ function extractInlineResult(events = []) {
   return null;
 }
 
-async function queueSidePanelAnalysis(request, { chromeApi = chrome, windowId = null, openPanel = true } = {}) {
+async function queueSidePanelAnalysis(request, { chromeApi = chrome, windowId = null, openPanel = true, routePlan = null } = {}) {
+  const effectiveRoutePlan = isValidRoutePlan(routePlan)
+    ? routePlan
+    : (isValidRoutePlan(request?.routePlan) ? request.routePlan : null);
+  if (effectiveRoutePlan && !effectiveRoutePlan.ok) {
+    return { ok: false, error: effectiveRoutePlan.reason, routePlan: effectiveRoutePlan };
+  }
   const payload = {
     id: crypto.randomUUID(),
     queuedAt: Date.now(),
-    ...request
+    ...request,
+    ...(effectiveRoutePlan ? { routePlan: effectiveRoutePlan } : {})
   };
   await chromeApi.storage.local.set({
     [SIDEPANEL_PENDING_ANALYSIS_KEY]: payload
@@ -826,20 +873,28 @@ export function registerExtensionRuntime(chromeApi = chrome) {
       func: () => window.__ucaSelectionState ?? null
     });
 
-    if ((info.menuItemId === "uca.fetch-link" || info.menuItemId === "uca.inspect-image") && tab?.windowId != null) {
+    const quickActionSelectionState = {
+      text: selectionState?.text ?? info.selectionText ?? "",
+      url: info.linkUrl ?? info.pageUrl ?? tab?.url ?? "",
+      pageTitle: tab?.title ?? "",
+      imageUrl: info.srcUrl ?? "",
+      anchorText: info.linkText ?? ""
+    };
+    const inlineRouteContext = await resolveQuickActionRouteContext({
+      action: info.menuItemId,
+      origin: "context_menu",
+      preferInline: true
+    });
+    if (!inlineRouteContext.routePlan.ok) {
       await queueSidePanelAnalysis({
         kind: "quickaction",
         action: info.menuItemId,
-        selectionState: {
-          text: selectionState?.text ?? info.selectionText ?? "",
-          url: info.linkUrl ?? info.pageUrl ?? tab?.url ?? "",
-          pageTitle: tab?.title ?? "",
-          imageUrl: info.srcUrl ?? "",
-          anchorText: info.linkText ?? ""
-        }
+        selectionState: quickActionSelectionState,
+        routePlan: inlineRouteContext.routePlan
       }, {
         chromeApi,
-        windowId: tab.windowId
+        windowId: tab?.windowId ?? null,
+        routePlan: inlineRouteContext.routePlan
       });
       return;
     }
@@ -856,17 +911,14 @@ export function registerExtensionRuntime(chromeApi = chrome) {
       "uca.summarize-selection",
       "uca.translate-selection"
     ]);
-    if (visibleFrameActions.has(info.menuItemId) && tab?.id != null) {
+    if (visibleFrameActions.has(info.menuItemId)
+        && inlineRouteContext.routePlan.ui === "inline_frame"
+        && tab?.id != null) {
       const payload = {
         type: "uca.content.showActionFrame",
         action: info.menuItemId,
-        selectionState: {
-          text: selectionState?.text ?? info.selectionText ?? "",
-          url: info.linkUrl ?? info.pageUrl ?? tab?.url ?? "",
-          pageTitle: tab?.title ?? "",
-          imageUrl: info.srcUrl ?? "",
-          anchorText: info.linkText ?? ""
-        },
+        selectionState: quickActionSelectionState,
+        routePlan: inlineRouteContext.routePlan,
         tabInfo: { id: tab.id, url: tab.url ?? "", title: tab.title ?? "" }
       };
       try {
@@ -883,6 +935,27 @@ export function registerExtensionRuntime(chromeApi = chrome) {
         // the user still gets a chrome.notifications reply in standalone
         // mode / a desktop handoff when the desktop app is running.
       } catch { /* fall through */ }
+    }
+
+    if (visibleFrameActions.has(info.menuItemId) && tab?.windowId != null) {
+      const sidepanelContext = inlineRouteContext.routePlan.ui === "sidepanel_pending"
+        ? inlineRouteContext
+        : await resolveQuickActionRouteContext({
+          action: info.menuItemId,
+          origin: "context_menu",
+          preferInline: false
+        });
+      await queueSidePanelAnalysis({
+        kind: "quickaction",
+        action: info.menuItemId,
+        selectionState: quickActionSelectionState,
+        routePlan: sidepanelContext.routePlan
+      }, {
+        chromeApi,
+        windowId: tab.windowId,
+        routePlan: sidepanelContext.routePlan
+      });
+      return;
     }
 
     const request = buildOverlayHandoffRequest({
@@ -925,7 +998,8 @@ export function registerExtensionRuntime(chromeApi = chrome) {
     if (message?.type === "uca.runtime.runQuickAction") {
       runQuickAction({
         action: message.action,
-        selectionState: message.selectionState
+        selectionState: message.selectionState,
+        routePlan: message.routePlan ?? null
       }).then((response) => sendResponse(response));
       return true;
     }
@@ -1269,17 +1343,13 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
       const { action, selectionState } = message;
       const config = await loadStandaloneConfig();
       const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
-      const desktopUp = await isDesktopAvailable(runtimeBase);
-      const routePlan = planQuickActionRoute({
-        action,
-        origin: "selection_chip",
-        capabilities: createRunModeCapabilities({
-          desktopAvailable: desktopUp,
-          standaloneReady: hasStandaloneProviderConfig(config),
-          standaloneConfig: config
-        }),
-        preferInline: true
-      });
+      const routePlan = isValidRoutePlan(message.routePlan)
+        ? message.routePlan
+        : (await resolveQuickActionRouteContext({
+          action,
+          origin: "selection_chip",
+          preferInline: true
+        })).routePlan;
 
       if (!routePlan.ok) {
         port.postMessage({ type: "error", error: routePlan.reason });
@@ -1288,7 +1358,13 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
 
       if (routePlan.transport === "desktop_task") {
         port.postMessage({ type: "start" });
-        const desktopResult = await runQuickAction({ action, selectionState }, fetch);
+        const desktopResult = await runQuickAction({
+          action,
+          selectionState,
+          routePlan,
+          standaloneConfig: config,
+          runtimeBase
+        }, fetch);
         if (aborted) return;
         if (desktopResult.ok) {
           port.postMessage({ type: "done", text: desktopResult.text });

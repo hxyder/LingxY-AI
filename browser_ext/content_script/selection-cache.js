@@ -877,6 +877,7 @@ function createFloatingChipController(doc = document) {
             type: "uca.runtime.runQuickAction",
             action,
             selectionState,
+            routePlan: selectionState?.routePlan ?? null,
             requestId: snapshot.requestId
           }, (response) => {
             if (snapshot.requestId !== _pendingActionRequestId) return;
@@ -930,7 +931,8 @@ function createFloatingChipController(doc = document) {
           port.postMessage({
             type: "quickaction",
             action,
-            selectionState
+            selectionState,
+            routePlan: selectionState?.routePlan ?? null
           });
         } catch {
           streamingActive = false;
@@ -1405,7 +1407,7 @@ function installHoverObserver(doc) {
 // no usable selection rect (right-click on link/image has no selection).
 function handleShowActionFrame(message, sendResponse) {
   try {
-    const { action, selectionState = {}, tabInfo = {} } = message;
+    const { action, selectionState = {}, tabInfo = {}, routePlan = null } = message;
 
     // Prefer the live selection rect when we have actual selection text.
     let rect = null;
@@ -1454,7 +1456,7 @@ function handleShowActionFrame(message, sendResponse) {
           frame.setError("连接意外断开，请重试");
         }
       });
-      port.postMessage({ type: "quickaction", action, selectionState });
+      port.postMessage({ type: "quickaction", action, selectionState, routePlan });
     } catch (error) {
       frame.setError(`连接失败：${error?.message ?? error}`);
     }
