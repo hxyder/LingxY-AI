@@ -182,6 +182,16 @@ function setInternalTaskPromise(task, name, promise) {
   });
 }
 
+function scheduleInternalTaskPromise(work) {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      Promise.resolve()
+        .then(work)
+        .then(resolve, reject);
+    }, 0);
+  });
+}
+
 const FOLLOWUP_ARTIFACT_EDIT_PATTERNS = [
   /(加上|加入|补充|插入|替换|修改|更新|调整|优化|完善|美化|精美|润色|改一下|改得|重做|重写|继续改)/i,
   /\b(add|include|insert|replace|modify|edit|update|revise|refine|polish|improve|beautify|restyle)\b/i
@@ -1248,12 +1258,12 @@ export async function submitContextTask({
     if (deferPreExecutionPlanning && inspection.allowed) {
       // Phase 1.11 — LLM-first zero-wait start.
       //
-      // SR runs in PARALLEL with the executor — the deterministic preflight
-      // task_spec is sufficient to start the agent loop. When SR returns we
-      // patch task.task_spec / task.context_packet for any downstream
-      // iteration to read. Pre-Phase-1.6 this was an `await`, which made the
-      // main executor LLM wait ~1-2s on SR before it could even start
-      // thinking — that was the actual user-visible latency.
+      // SR runs after the immediate executor-start turn — the deterministic
+      // preflight task_spec is sufficient to start the agent loop. When SR
+      // returns we patch task.task_spec / task.context_packet for any
+      // downstream iteration to read. Pre-Phase-1.6 this was an `await`,
+      // which made the main executor LLM wait ~1-2s on SR before it could
+      // even start thinking — that was the actual user-visible latency.
       //
       // Hard constraints for the parallel Semantic Router patch:
       //   1. task_spec_initial is NEVER touched here — validators use it
@@ -1270,7 +1280,7 @@ export async function submitContextTask({
       // Tasks where SR's verdict MUST gate the executor (schedule lane,
       // clarify lane) already short-circuited inside triage — they never
       // enter execute().
-      const srPromise = runExecutionPhase({
+      const srPromise = scheduleInternalTaskPromise(() => runExecutionPhase({
         runtime: runtimeWithTaskEmitter(runtime, task.task_id),
         taskId: task.task_id,
         phase: EXECUTION_PHASES.SEMANTIC_ROUTER_PATCH,
@@ -1288,9 +1298,10 @@ export async function submitContextTask({
             executor: executorOverride ?? spec.suggested_executor ?? route.executor
           };
         }
-      });
-      // Fire-and-forget patch. Failures degrade silently — the executor
-      // already has a valid spec to run with.
+      }));
+      // Fire-and-forget patch. scheduleInternalTaskPromise keeps SR setup off
+      // the immediate status/provider/first-delta path; failures degrade
+      // silently because the executor already has a valid spec to run with.
       setInternalTaskPromise(task, "__srPatchPromise", srPromise.then((srEnriched) => {
         if (!srEnriched) return null;
         try {

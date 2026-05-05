@@ -81,6 +81,9 @@ assert.ok(/stream:\s*typeof onTextDelta === "function"/.test(fastExecutor),
 
 assert.ok(/Object\.defineProperty\(task,\s*name/.test(submission),
   "background SR/memory promises must be non-enumerable");
+assert.ok(/function scheduleInternalTaskPromise/.test(submission)
+  && /setTimeout\(\(\)\s*=>\s*\{[\s\S]*?then\(work\)/.test(submission),
+  "background SR patch must be scheduled off the immediate executor-start path");
 assert.ok(/mergeContextPacketPatch/.test(submission),
   "parallel context patches must merge rather than overwrite");
 assert.ok(/featureFlags\?\.legacyDecomposer\s*===\s*true/.test(submission)

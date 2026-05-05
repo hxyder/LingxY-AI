@@ -8,6 +8,7 @@
  *   0c. local_only_constraint (kind=fact)      → forbidden  (hard)
  *   0d. pending_offer external intent          → required   (hard)
  *   1.  explicit_external strong               → required   (hard)
+ *   2a. provided URL/link context              → optional   (exact source read)
  *   2c. source_scope + LOCAL, no search intent → forbidden  (local fallback)
  *   3.  explicit_search strong                 → required, or optional with local input
  *   4/5/6. default                             → see resolveDeterministicPolicy
@@ -165,6 +166,20 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
   const hasLocalScope = isLocalSourceScope(sourceScope);
   const neutralSearch = isStrongExplicitSearch(explicitSearch);
 
+  // 2a. User-provided URL context. A URL selected by the user or handed to us
+  // as a browser link is not a broad web search. It is the explicit source the
+  // user pointed at, so fetch_url_content may read that exact URL unless the
+  // user also gave a hard no-search/local-only constraint above. Keep this at
+  // optional rather than required: translating selected page text should stay
+  // local, while "分析这个链接" can fetch without a false policy denial.
+  if (hasProvidedUrlContext(contextPacket)) {
+    return webSearchPolicy(
+      "optional",
+      "User provided a URL/link as task context; reading that exact source is allowed, while broad web search remains planner-discretionary.",
+      [{ type: "context", source: "context.url", reason: "provided URL/link source" }]
+    );
+  }
+
   // 2b. Local input fallback. Local evidence is not a hard no-web
   // constraint, but when the user did not ask to search, browse, or fetch a
   // URL, the deterministic fallback remains local. When a neutral search
@@ -252,6 +267,23 @@ export function resolveDeterministicPolicy({ signals, contextPacket = {}, text =
 function hasInlineUrl(text) {
   if (typeof text !== "string" || text.length === 0) return false;
   return /https?:\/\/\S+/i.test(text);
+}
+
+function hasProvidedUrlContext(contextPacket = {}) {
+  if (!contextPacket || typeof contextPacket !== "object") return false;
+  const sourceType = String(contextPacket.source_type ?? contextPacket.sourceType ?? "");
+  if (sourceType === "link" && isBareUrlString(contextPacket.url)) return true;
+  if (sourceType === "text_selection" || sourceType === "selection") {
+    return isBareUrlString(contextPacket.text)
+      || isBareUrlString(contextPacket.selection_text)
+      || isBareUrlString(contextPacket.selectionText)
+      || isBareUrlString(contextPacket.selection_metadata?.selection_text);
+  }
+  return false;
+}
+
+function isBareUrlString(value) {
+  return typeof value === "string" && /^https?:\/\/\S+$/i.test(value.trim());
 }
 
 function webSearchPolicy(mode, reason, evidence) {

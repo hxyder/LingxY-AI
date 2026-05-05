@@ -96,6 +96,36 @@ test("plain attached-file summary remains deterministic local", () => {
   assert.ok(spec.success_contract.required_policy_groups.includes("local_file_text_read"));
 });
 
+test("selected URL text is allowed as an exact source without broad-search opt-in", () => {
+  const spec = createTaskSpec("分析一下这个链接", {
+    source_type: "text_selection",
+    text: "https://news.example.org/story/123"
+  }, {});
+
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional");
+  assert.match(spec.tool_policy?.web_search_fetch?.reason ?? "", /provided a URL\/link/i);
+});
+
+test("selected paragraph that only contains a URL stays local by default", () => {
+  const spec = createTaskSpec("解释这段话", {
+    source_type: "text_selection",
+    text: "See https://news.example.org/story/123 for details."
+  }, {});
+
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
+  assert.match(spec.tool_policy?.web_search_fetch?.reason ?? "", /anchored to/i);
+});
+
+test("selected URL context still respects explicit no-search", () => {
+  const spec = createTaskSpec("不要联网，分析一下这个链接", {
+    source_type: "text_selection",
+    text: "https://news.example.org/story/123"
+  }, {});
+
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
+  assert.match(spec.tool_policy?.web_search_fetch?.reason ?? "", /forbade web browsing|不联网/i);
+});
+
 test("attached local input search does not inherit output artifact from the input file type", () => {
   const spec = createTaskSpec("结合这份材料搜索外部机会", {
     file_paths: ["material.docx"]

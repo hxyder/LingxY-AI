@@ -84,6 +84,17 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
     );
   }
 
+  if (goal === "translate" && !artifactRequired && !requiresExternalWeb && !canBenefitFromExternalWeb) {
+    return decision("translate",
+      "Pure translation task with provided text uses the dedicated translate executor.",
+      [
+        { type: "intent", source: "task_spec.goal", matched: "translate" },
+        { type: "policy", source: "tool_policy.external_web_read", matched: webMode }
+      ],
+      rejectAllExcept("translate", routeSuggestion)
+    );
+  }
+
   return decision("tool_using",
     `AI-agent default — goal=${goal}, artifact_required=${artifactRequired}, connector_domain=${taskSpec?.connector_domain === true}, web=${webMode}.`,
     [

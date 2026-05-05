@@ -96,6 +96,40 @@ test("executor resolver gives image context priority even when an artifact is re
   assert.ok(decision.rejected.some((item) => item.candidate === "agentic"));
 });
 
+test("executor resolver routes pure translation to translate executor", () => {
+  const taskSpec = {
+    goal: "translate",
+    artifact: { required: false },
+    connector_domain: false
+  };
+
+  const decision = resolveExecutor({
+    taskSpec,
+    toolPolicy: BASE_TOOL_POLICY,
+    contextPacket: {
+      source_type: "text_selection",
+      text: "Hello from a selected paragraph."
+    },
+    routeSuggestion: "tool_using"
+  });
+
+  assert.equal(decision.executor, "translate");
+  assert.match(decision.reason, /dedicated translate executor/);
+  assert.ok(decision.rejected.some((item) => item.candidate === "tool_using"));
+});
+
+test("createTaskSpec keeps selected text translation on the translate fast path", () => {
+  const spec = createTaskSpec("请翻译这段网页内容", {
+    source_type: "text_selection",
+    text: "Hello from a selected paragraph.",
+    url: "https://example.com/article"
+  });
+
+  assert.equal(spec.goal, "translate");
+  assert.equal(spec.suggested_executor, "translate");
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "forbidden");
+});
+
 test("executor resolver fails loudly when the selected executor is unavailable", () => {
   assert.throws(
     () => resolveExecutor({
