@@ -1050,31 +1050,47 @@ pollTaskState();
 
 /* ── window drag support ── */
 let isDragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
+let lastDragX = 0;
+let lastDragY = 0;
+let dragOriginX = 0;
+let dragOriginY = 0;
 let dragMoved = false;
 
-dockButton.addEventListener("mousedown", (e) => {
+function stopDockDrag(event) {
+  if (!isDragging) return;
+  isDragging = false;
+  try { dockButton.releasePointerCapture?.(event?.pointerId); } catch { /* ignore */ }
+}
+
+dockButton.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   isDragging = true;
   dragMoved = false;
-  dragStartX = e.screenX;
-  dragStartY = e.screenY;
+  dragOriginX = e.screenX;
+  dragOriginY = e.screenY;
+  lastDragX = e.screenX;
+  lastDragY = e.screenY;
+  try { dockButton.setPointerCapture?.(e.pointerId); } catch { /* ignore */ }
+  e.preventDefault();
 });
 
-window.addEventListener("mousemove", (e) => {
+dockButton.addEventListener("pointermove", (e) => {
   if (!isDragging) return;
-  const dx = e.screenX - dragStartX;
-  const dy = e.screenY - dragStartY;
-  if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+  const dx = e.screenX - lastDragX;
+  const dy = e.screenY - lastDragY;
+  lastDragX = e.screenX;
+  lastDragY = e.screenY;
+  if (Math.abs(e.screenX - dragOriginX) > 4 || Math.abs(e.screenY - dragOriginY) > 4) {
     dragMoved = true;
-    dragStartX = e.screenX;
-    dragStartY = e.screenY;
-    window.ucaShell.moveWindowBy("dock", dx, dy);
+  }
+  if (dx !== 0 || dy !== 0) {
+    void window.ucaShell.moveWindowBy("dock", dx, dy);
   }
 });
 
-window.addEventListener("mouseup", () => { isDragging = false; });
+dockButton.addEventListener("pointerup", stopDockDrag);
+dockButton.addEventListener("pointercancel", stopDockDrag);
+window.addEventListener("blur", () => { isDragging = false; });
 
 /* ── click: single = overlay, double = console ── */
 let clickTimer = null;

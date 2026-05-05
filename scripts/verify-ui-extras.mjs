@@ -176,6 +176,12 @@ assert.ok(/insertCSS\(/.test(electronMain) && /overflow:\s*hidden\s*!important/.
   "dock: main process must inject a HUD scroll lock after renderer load");
 assert.ok(/resetDockScrollPosition/.test(dockJs) && /addEventListener\(["']wheel["'][\s\S]{0,160}preventDefault/.test(dockJs),
   "dock: renderer must prevent wheel/scroll drift in the tiny HUD window");
+assert.ok(/addEventListener\(["']pointerdown["']/.test(dockJs)
+    && /setPointerCapture/.test(dockJs)
+    && /releasePointerCapture/.test(dockJs),
+  "dock: drag must use pointer capture so it remains responsive when the pointer leaves the tiny HUD");
+assert.ok(!/Math\.abs\(dx\)\s*>\s*3\s*\|\|\s*Math\.abs\(dy\)\s*>\s*3/.test(dockJs),
+  "dock: drag movement must not require every move event to cross a per-frame threshold");
 assert.ok(/thickFrame:\s*false/.test(electronMain) && /screen\.on\(["']display-/.test(electronMain),
   "dock: Windows HUD flags and display-change repair must be present");
 assert.ok(/if \(windowId === DOCK_WINDOW_ID\) return true;/.test(electronMain)
