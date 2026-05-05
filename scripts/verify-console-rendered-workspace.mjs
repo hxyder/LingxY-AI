@@ -39,17 +39,40 @@ assert.equal(consoleHtml.includes("Email Accounts"), true);
 const consoleJs = await read("src/desktop/renderer/console.js");
 const taskTimelineJs = await read("src/desktop/renderer/console-task-timeline.mjs");
 const taskEventControllerJs = await read("src/desktop/renderer/console-task-event-stream.mjs");
-assert.equal(consoleJs.includes('fetchJson("/approvals")'), true);
-assert.equal(consoleJs.includes('fetchJson("/schedules")'), true);
-assert.equal(consoleJs.includes('fetchJson("/templates")'), true);
+const projectColorsIndex = consoleJs.indexOf("const PROJECT_COLORS");
+const workspaceSignaturesIndex = consoleJs.indexOf("const workspaceRenderSignatures");
+const fileIndexPanelIndex = consoleJs.indexOf("createFileContentIndexPanel({");
+const restoreViewIndex = consoleJs.indexOf("requestAnimationFrame(() => switchTab(savedView))");
+assert.ok(projectColorsIndex >= 0, "console.js must declare PROJECT_COLORS");
+assert.ok(workspaceSignaturesIndex >= 0, "console.js must declare workspaceRenderSignatures");
+assert.ok(fileIndexPanelIndex >= 0, "console.js must instantiate createFileContentIndexPanel");
+assert.ok(restoreViewIndex >= 0, "console.js must restore saved console view");
+assert.ok(
+  projectColorsIndex < fileIndexPanelIndex,
+  "console.js startup constants must be declared before file index panel creation"
+);
+assert.ok(
+  workspaceSignaturesIndex < restoreViewIndex,
+  "console.js render signature cache must be declared before saved-view restore can switch tabs"
+);
+function assertConsoleFetches(endpoint) {
+  assert.ok(
+    consoleJs.includes(`fetchJson("${endpoint}"`) || consoleJs.includes(`fetchJsonWithFallback("${endpoint}"`),
+    `console.js must fetch ${endpoint}`
+  );
+}
+
+assertConsoleFetches("/approvals");
+assertConsoleFetches("/schedules");
+assertConsoleFetches("/templates");
 assert.equal(consoleJs.includes("importTemplateViaShell"), true);
-assert.equal(consoleJs.includes('fetchJson("/budget")'), true);
-assert.equal(consoleJs.includes('fetchJson("/dag/executions")'), true);
+assertConsoleFetches("/budget");
+assertConsoleFetches("/dag/executions");
 assert.equal(consoleJs.includes('fetchJson("/dag/preview"'), true);
 // UCA-121: /history/search call retired along with the Memory tab.
-assert.equal(consoleJs.includes('fetchJson("/security/state")'), true);
-assert.equal(consoleJs.includes('fetchJson("/audit-log")'), true);
-assert.equal(consoleJs.includes('fetchJson("/config/email/settings")'), true);
+assertConsoleFetches("/security/state");
+assertConsoleFetches("/audit-log");
+assertConsoleFetches("/config/email/settings");
 assert.equal(consoleJs.includes("renderTaskArtifacts"), true);
 assert.equal(consoleJs.includes("openTaskArtifactButton"), true);
 assert.equal(consoleJs.includes("useTaskArtifactContextButton"), true);

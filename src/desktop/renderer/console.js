@@ -157,6 +157,10 @@ import {
   mergeProjectStores as mergeProjectStoresBase
 } from "../../shared/project-store.mjs";
 
+const PROJECT_STORE_KEY = "uca.overlay.projects.v3";
+const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6"];
+const workspaceRenderSignatures = new Map();
+
 const runtimeState = document.querySelector("#runtimeState");
 const summaryGrid = document.querySelector("#summaryGrid");
 const integrationList = document.querySelector("#integrationList");
@@ -757,7 +761,6 @@ const completedScheduleRunTaskIds = new Set();
 const surfacedApprovalPopupIds = new Set();
 const surfacingApprovalPopupIds = new Set();
 let editingSkillPath = null;
-const workspaceRenderSignatures = new Map();
 
 /* ═══════════════════════════════════════════════
    HELPERS
@@ -2554,9 +2557,6 @@ const CODE_EXTENSIONS = new Set([
   ".c", ".h", ".cpp", ".hpp", ".cs", ".php",
   ".sh", ".ps1", ".bat", ".sql", ".yaml", ".yml", ".toml", ".ini", ".xml"
 ]);
-
-const PROJECT_STORE_KEY = "uca.overlay.projects.v3";
-const PROJECT_COLORS = ["#6366f1", "#3b82f6", "#ef4444", "#f59e0b", "#10b981", "#8b5cf6"];
 
 function formatArtifactLabel(artifactPath = "") {
   return formatSharedArtifactLabel(artifactPath, {
