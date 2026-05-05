@@ -21,19 +21,32 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
+function readCssWithImports(relativePath, seen = new Set()) {
+  const absolutePath = path.join(root, relativePath);
+  if (seen.has(absolutePath)) return "";
+  seen.add(absolutePath);
+  const css = readFileSync(absolutePath, "utf8");
+  const dir = path.dirname(relativePath);
+  return css.replace(/@import\s+url\(["']?([^"')]+)["']?\);\s*/g, (_match, target) => {
+    const child = path.join(dir, target).replace(/\\/g, "/");
+    return readCssWithImports(child, seen);
+  });
+}
 
 const html = read("src/desktop/renderer/console.html");
 const js = read("src/desktop/renderer/console.js");
-const css = read("src/desktop/renderer/shared.css");
+const css = readCssWithImports("src/desktop/renderer/shared.css");
+const schedulesView = read("src/desktop/renderer/console-schedules-view.mjs");
 
 // Search input exists in schedules toolbar.
 assert.match(html, /<input id="scheduleSearchInput"/, "console.html missing #scheduleSearchInput");
 assert.match(html, /<div class="sched-toolbar">/, "console.html missing .sched-toolbar wrapper");
 
-// renderSchedules gains bucket + search helpers.
-assert.match(js, /function scheduleBucket\(/, "console.js missing scheduleBucket()");
-assert.match(js, /function scheduleMatchesSearch\(/, "console.js missing scheduleMatchesSearch()");
-assert.match(js, /function renderScheduleRow\(/, "console.js missing renderScheduleRow()");
+// renderSchedules consumes the schedule view module instead of owning the pure helpers.
+assert.match(js, /from\s+["']\.\/console-schedules-view\.mjs["']/, "console.js must import schedule view helpers");
+assert.match(schedulesView, /export function scheduleBucket\(/, "schedule view missing scheduleBucket()");
+assert.match(schedulesView, /export function scheduleMatchesSearch\(/, "schedule view missing scheduleMatchesSearch()");
+assert.match(schedulesView, /export function renderScheduleRow\(/, "schedule view missing renderScheduleRow()");
 
 // Three group keys appear in the spec block.
 for (const key of ["active", "paused", "completed"]) {
@@ -44,9 +57,9 @@ for (const key of ["active", "paused", "completed"]) {
 }
 
 // Row state class + re-run label.
-assert.match(js, /is-completed/, "console.js missing .is-completed class in row");
-assert.match(js, /is-paused/, "console.js missing .is-paused class in row");
-assert.match(js, /"Re-run"/, "console.js missing Re-run label for completed schedules");
+assert.match(schedulesView, /is-completed/, "schedule view missing .is-completed class in row");
+assert.match(schedulesView, /is-paused/, "schedule view missing .is-paused class in row");
+assert.match(schedulesView, /"Re-run"/, "schedule view missing Re-run label for completed schedules");
 
 // Calendar entries carry ref + click handler.
 assert.match(js, /data-schedule-ref="/, "console.js calendar missing data-schedule-ref");
@@ -69,13 +82,8 @@ assert.match(css, /\.sched-row\.is-highlighted/, "shared.css missing .sched-row.
 assert.match(css, /@keyframes schedHighlight/, "shared.css missing schedHighlight keyframes");
 assert.match(css, /\.cal-entry:hover/, "shared.css must style .cal-entry hover (click affordance)");
 
-// Exercise helpers via isolated eval.
-const helperSource = js.slice(
-  js.indexOf("function isOneShotScheduleRow("),
-  js.indexOf("function renderSchedules(")
-);
-const exec = new Function(`${helperSource}; return { scheduleBucket, scheduleMatchesSearch };`);
-const { scheduleBucket, scheduleMatchesSearch } = exec();
+// Exercise helpers through the real module API.
+const { scheduleBucket, scheduleMatchesSearch } = await import("../src/desktop/renderer/console-schedules-view.mjs");
 
 assert.equal(scheduleBucket({ enabled: true, next_run_at: "2026-04-20T09:00:00Z" }), "active");
 assert.equal(scheduleBucket({ enabled: false }), "paused");

@@ -102,6 +102,10 @@ import {
   createConsoleTaskEventController
 } from "./console-task-event-stream.mjs";
 import {
+  groupSchedules,
+  renderScheduleRow
+} from "./console-schedules-view.mjs";
+import {
   exportAsHtml,
   exportAsMarkdown,
   exportAsText,
@@ -5285,196 +5289,6 @@ function focusScheduleInList(scheduleId) {
   });
 }
 
-// UCA-125 Phase 7b helpers
-function isOneShotScheduleRow(s) {
-  return s?.trigger_type === "at" || s?.metadata?.one_shot === true;
-}
-
-function scheduleRunAtIsPast(s) {
-  const ts = Date.parse(s?.trigger_config?.run_at ?? s?.trigger_config?.at ?? "");
-  return Number.isFinite(ts) && ts <= Date.now();
-}
-
-function isTerminalOneShotScheduleRow(s) {
-  return isOneShotScheduleRow(s)
-    && !s.next_run_at
-    && (Boolean(s.last_run_at) || Number(s.run_count ?? 0) > 0 || !s.enabled || scheduleRunAtIsPast(s));
-}
-
-function terminalOneShotLabel(s) {
-  if (!isTerminalOneShotScheduleRow(s)) return null;
-  return s.last_run_at || Number(s.run_count ?? 0) > 0 ? "completed" : "expired";
-}
-
-function scheduleBucket(s) {
-  if (s.completed_at || isTerminalOneShotScheduleRow(s)) return "completed";
-  if (!s.enabled) return "paused";
-  return "active";
-}
-function scheduleMatchesSearch(s, q) {
-  if (!q) return true;
-  const hay = [
-    s.name,
-    s.description,
-    s.schedule_id,
-    s.trigger_type,
-    s.category,
-    s.metadata?.category,
-    s.last_run_status,
-    s.action_target,
-    s.action_params?.userCommand,
-    s.action_params?.contextText,
-    scheduleRecipients(s).join(" ")
-  ]
-    .filter(Boolean).join(" ").toLowerCase();
-  return hay.includes(q);
-}
-
-const SCHEDULE_EMAIL_REGEX = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
-
-function uniqueScheduleEmails(values) {
-  const seen = new Set();
-  const emails = [];
-  for (const value of values) {
-    const matches = String(value ?? "").match(SCHEDULE_EMAIL_REGEX) ?? [];
-    for (const email of matches) {
-      const normalized = email.toLowerCase();
-      if (!seen.has(normalized)) {
-        seen.add(normalized);
-        emails.push(email);
-      }
-    }
-  }
-  return emails;
-}
-
-function recipientSegments(text = "") {
-  const value = String(text ?? "");
-  if (!value) return [];
-  const segments = [];
-  const markerPattern = /(?:收件人|发送到|发给|寄给|email\s+to|send\s+to|\bto\b)\s*[:：]?\s*/gi;
-  for (const match of value.matchAll(markerPattern)) {
-    const rest = value.slice(match.index + match[0].length);
-    const stop = rest.search(/(?:主题|subject|正文|body|内容|，邮件|。|\n)/i);
-    segments.push(stop >= 0 ? rest.slice(0, stop) : rest);
-  }
-  return segments;
-}
-
-function scheduleRecipients(schedule = {}) {
-  const params = schedule.action_params ?? {};
-  const input = params.input ?? {};
-  const explicit = [
-    params.to,
-    params.cc,
-    params.bcc,
-    params.recipient,
-    params.recipients,
-    input.to,
-    input.cc,
-    input.bcc,
-    input.recipient,
-    input.recipients
-  ];
-  const explicitEmails = uniqueScheduleEmails(explicit.flatMap((value) => Array.isArray(value) ? value : [value]));
-  if (explicitEmails.length) return explicitEmails;
-
-  const textSources = [
-    schedule.description,
-    params.userCommand,
-    params.contextText,
-    params.command,
-    schedule.action_target
-  ];
-  const segmentEmails = uniqueScheduleEmails(textSources.flatMap(recipientSegments));
-  if (segmentEmails.length) return segmentEmails;
-
-  return uniqueScheduleEmails([schedule.description]);
-}
-
-function scheduleActionPreview(schedule = {}) {
-  const params = schedule.action_params ?? {};
-  const text = params.userCommand
-    ?? params.command
-    ?? params.contextText
-    ?? schedule.description
-    ?? schedule.action_target
-    ?? "";
-  return String(text).replace(/\s+/g, " ").trim();
-}
-
-function clipSchedulePreview(text, max = 170) {
-  const value = String(text ?? "");
-  return value.length > max ? `${value.slice(0, max - 1)}…` : value;
-}
-
-function renderScheduleActionSummary(s) {
-  const recipients = scheduleRecipients(s);
-  const preview = scheduleActionPreview(s);
-  const hasSummary = recipients.length || preview;
-  if (!hasSummary) return "";
-  const recipientHtml = recipients.length
-    ? `<div class="sched-action-summary"><span class="sched-action-label">收件人</span>${recipients.map((email) => `<span class="tag">${escapeHtml(email)}</span>`).join("")}</div>`
-    : "";
-  const previewHtml = preview
-    ? `<div class="sched-action-summary"><span class="sched-action-label">执行</span><span class="sched-action-text" title="${escapeHtml(preview)}">${escapeHtml(clipSchedulePreview(preview))}</span></div>`
-    : "";
-  return `${recipientHtml}${previewHtml}`;
-}
-// "Last:" meta — show time and colored status. When the last run
-// failed AND we know which task it produced, wrap the status in a
-// clickable button so the user can jump straight to the task detail
-// and see the failure_user_message / timeline events.
-function formatScheduleLastRun(s) {
-  if (!s.last_run_at) return "<span class=\"muted\">Last: never</span>";
-  const timeText = escapeHtml(formatDateTime(s.last_run_at));
-  const status = s.last_run_status;
-  if (!status) return `<span>Last: ${timeText}</span>`;
-  const cls = status === "success" ? "ok" : (status === "failed" ? "err" : "muted");
-  const statusLabel = escapeHtml(status);
-  if (status === "failed" && s.last_run_task_id) {
-    return `<span>Last: ${timeText} · <button type="button" class="sched-last-link sched-last-${cls}" data-sched-task-jump="${escapeHtml(s.last_run_task_id)}">${statusLabel}</button></span>`;
-  }
-  return `<span>Last: ${timeText} · <span class="sched-last-${cls}">${statusLabel}</span></span>`;
-}
-
-function renderScheduleRow(s) {
-  const color = s.color || s.metadata?.color || "";
-  const categoryLabel = s.category || s.metadata?.category || "";
-  const enabledChecked = s.enabled ? " checked" : "";
-  const bucket = scheduleBucket(s);
-  const stateClass = bucket === "completed" ? " is-completed" : (bucket === "paused" ? " is-paused" : "");
-  const runLabel = bucket === "completed" ? "Re-run" : "Run now";
-  const terminalLabel = terminalOneShotLabel(s);
-  const statePill = bucket === "completed"
-    ? `<span class="pill pill-neutral">${escapeHtml(terminalLabel ?? "completed")}</span>`
-    : (bucket === "paused" ? `<span class="pill pill-neutral">paused</span>` : "");
-  return `
-    <div class="sched-row${stateClass}" data-schedule-row="${escapeHtml(s.schedule_id)}" style="${color ? `border-left:3px solid ${escapeHtml(color)};` : ""}">
-      <label class="toggle" title="${s.enabled ? "Disable" : "Enable"}">
-        <input type="checkbox"${enabledChecked} data-toggle-schedule-id="${escapeHtml(s.schedule_id)}" data-enabled="${s.enabled ? "false" : "true"}"/>
-        <span class="toggle-track"></span>
-      </label>
-      <div style="flex:1;min-width:0;">
-        <div class="sched-title">${escapeHtml(s.name ?? s.schedule_id)}</div>
-        <div class="sched-meta">
-          ${categoryLabel ? `<span class="tag">${escapeHtml(categoryLabel)}</span>` : ""}
-          <span class="tag">${escapeHtml(s.trigger_type ?? "manual")}</span>
-          <span>Next: ${escapeHtml(formatDateTime(s.next_run_at))}</span>
-          ${formatScheduleLastRun(s)}
-          ${statePill}
-        </div>
-        ${renderScheduleActionSummary(s)}
-      </div>
-      <div class="sched-actions btn-group">
-        <button class="btn btn-sm btn-ghost" data-edit-schedule-id="${escapeHtml(s.schedule_id)}" title="重命名">编辑</button>
-        <button class="btn btn-sm" data-run-schedule-id="${escapeHtml(s.schedule_id)}">${runLabel}</button>
-        <button class="btn btn-sm btn-danger" data-delete-schedule-id="${escapeHtml(s.schedule_id)}">Delete</button>
-      </div>
-    </div>
-  `;
-}
-
 // In-place schedule edit — supports renaming AND rewriting the
 // trigger time. Pops a small popover anchored to the row with two
 // inputs (name + when). Save sends both fields; backend honours
@@ -5647,9 +5461,7 @@ function renderSchedules() {
   }
 
   // Partition into active / paused / completed, filter by search.
-  const filtered = schedules.filter((s) => scheduleMatchesSearch(s, scheduleSearch));
-  const groups = { active: [], paused: [], completed: [] };
-  for (const s of filtered) groups[scheduleBucket(s)].push(s);
+  const { filtered, groups } = groupSchedules(schedules, scheduleSearch);
 
   const groupSpec = [
     { key: "active",    label: "Active",    zh: "启用中" },
