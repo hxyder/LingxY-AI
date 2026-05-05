@@ -71,6 +71,11 @@ if (/#dockButton:hover\s*\{[^}]*scale\(\s*1\./.test(dockHtml)
 }
 
 const electronMain = readFileSync(new URL("../src/desktop/tray/electron-main.mjs", import.meta.url), "utf8");
+if (!electronMain.includes("createPersistentRuntime")
+    || !electronMain.includes("ensureEmbeddedServiceRuntime")
+    || !electronMain.includes("embedded_runtime_start_failed")) {
+  throw new Error("Desktop shell must self-host the local runtime when 127.0.0.1 service is not already running.");
+}
 if (!electronMain.includes("resolveDesktopActorForSender(sender, windows)")
     || /function desktopActorForSender[\s\S]{0,220}return\s+["']desktop_shell["']/.test(electronMain)) {
   throw new Error("desktopActorForSender must delegate to the shared fail-closed actor resolver.");

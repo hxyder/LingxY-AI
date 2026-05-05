@@ -475,6 +475,24 @@ async function executeScheduledTask({
             dedupeKey: `scheduled-result:${taskId}`
           }, { runtime, task })
             .catch(() => { /* ignore */ });
+        } else if (task?.status === "partial_success" && !agentAlreadyNotified) {
+          const partialEvent = [...events].reverse().find(
+            (e) => e.event_type === "partial_success" && typeof e.payload?.text === "string"
+          );
+          const resultText = partialEvent?.payload?.text
+            ?? task?.result_summary
+            ?? `定时任务"${actionTarget ?? "schedule"}"已部分完成，请打开任务详情查看原因。`;
+          runtime.actionToolRegistry.call("notify", {
+            kind: "warning",
+            title: `计划任务需要查看：${actionTarget ?? "schedule"}`,
+            body: resultText,
+            taskId,
+            openWindow: "console",
+            allowLongBody: true,
+            autoHideMs: 0,
+            dedupeKey: `scheduled-partial:${taskId}`
+          }, { runtime, task })
+            .catch(() => { /* ignore */ });
         }
       }
     }

@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import os from "node:os";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
+import { createPersistentRuntime } from "../../service/core/persistent-runtime.mjs";
 import { createPopupCardManager } from "./popup-card-manager.mjs";
 import {
   DESKTOP_CONSOLE_ACTOR,
@@ -799,6 +800,7 @@ export function createElectronShellRuntime({
   let resolvedServiceBaseUrl = serviceBaseUrl;
   let handoffWatcher = null;
   let notificationWatcher = null;
+  let embeddedServiceRuntime = null;
   let noteRecordingState = { active: false };
   let lastExternalWindowContext = null;
   let registeredPopupCardManager = null;
@@ -811,6 +813,63 @@ export function createElectronShellRuntime({
 
   function desktopActorForSender(sender) {
     return resolveDesktopActorForSender(sender, windows);
+  }
+
+  function servicePortFromUrl(urlValue) {
+    try {
+      const parsed = new URL(urlValue);
+      return parsed.port ? Number(parsed.port) : (parsed.protocol === "https:" ? 443 : 80);
+    } catch {
+      return 4310;
+    }
+  }
+
+  function shouldHostEmbeddedService(urlValue) {
+    try {
+      const parsed = new URL(urlValue);
+      return ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);
+    } catch {
+      return false;
+    }
+  }
+
+  async function serviceIsHealthy() {
+    try {
+      const response = await fetch(`${resolvedServiceBaseUrl}/health`, {
+        signal: AbortSignal.timeout(1000)
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function waitForServiceHealth(timeoutMs = 5000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (await serviceIsHealthy()) return true;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    return false;
+  }
+
+  async function ensureEmbeddedServiceRuntime() {
+    if (await serviceIsHealthy()) return null;
+    if (!shouldHostEmbeddedService(resolvedServiceBaseUrl)) return null;
+    if (embeddedServiceRuntime) return embeddedServiceRuntime;
+    embeddedServiceRuntime = createPersistentRuntime({
+      port: servicePortFromUrl(resolvedServiceBaseUrl)
+    });
+    let listening;
+    try {
+      listening = await embeddedServiceRuntime.start();
+    } catch (error) {
+      embeddedServiceRuntime = null;
+      if (await waitForServiceHealth()) return null;
+      throw error;
+    }
+    resolvedServiceBaseUrl = listening.baseUrl ?? resolvedServiceBaseUrl;
+    return embeddedServiceRuntime;
   }
 
   // Desktop shell settings (echo mode, future flags). Persisted as JSON in
@@ -2078,6 +2137,14 @@ export function createElectronShellRuntime({
   return {
     async start() {
       await app.whenReady();
+      try {
+        await ensureEmbeddedServiceRuntime();
+      } catch (error) {
+        safeError("[LingxY] failed to start local runtime service:", error?.message ?? error);
+        void appendDesktopDiagnosticError("embedded_runtime_start_failed", error, {
+          serviceBaseUrl: resolvedServiceBaseUrl
+        });
+      }
 
       // Grant microphone access to our own renderer windows so the Web
       // Speech API (used by the overlay's voice input) doesn't fail with
@@ -4053,6 +4120,7 @@ export function createElectronShellRuntime({
         handoffWatcher?.return?.().catch?.(() => {});
         notificationWatcher?.return?.().catch?.(() => {});
         registeredPopupCardManager?.shutdown?.();
+        embeddedServiceRuntime?.stop?.().catch?.(() => {});
       });
       await handleLaunchArgs(process.argv);
       return {

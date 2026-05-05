@@ -1055,6 +1055,15 @@ async function fetchJson(pathname, options = {}) {
   return payload;
 }
 
+async function fetchJsonWithFallback(pathname, fallback, label = pathname) {
+  try {
+    return await fetchJson(pathname);
+  } catch (error) {
+    console.warn(`[console] ${label} refresh failed`, error);
+    return fallback;
+  }
+}
+
 function downloadTextFile(content, name, mime = "text/plain") {
   const blob = new Blob([content], { type: mime });
   const url = URL.createObjectURL(blob);
@@ -6477,27 +6486,33 @@ async function refreshWorkspace(options = {}) {
   const mode = options.mode ?? "full";
   refreshWorkspaceInFlight = (async () => {
     try {
-      const shell = await window.ucaShell.getShellStatus();
+      const shell = typeof window.ucaShell?.getShellStatus === "function"
+        ? await window.ucaShell.getShellStatus()
+        : { serviceBaseUrl: state.serviceBaseUrl };
       state.serviceBaseUrl = shell.serviceBaseUrl ?? state.serviceBaseUrl;
+      const activeTabId = currentConsoleTabId();
+      const shouldLoadSettingsHeavyData = activeTabId === "settings";
 
-      // UCA-121: /history/search call retired along with the Memory tab.
+      const previous = state.workspace ?? {};
       const [health, tasksP, approvalsP, schedulesP, templatesP, budgetP, securityP, auditP, dagP, providersP, cliP, mcpP, skillsP, integrationsP, emailP, emailSettingsP] = await Promise.all([
-        fetchJson("/health"),
-        fetchJson("/tasks"),
-        fetchJson("/approvals"),
-        fetchJson("/schedules"),
-        fetchJson("/templates"),
-        fetchJson("/budget"),
-        fetchJson("/security/state"),
-        fetchJson("/audit-log"),
-        fetchJson("/dag/executions"),
-        fetchJson("/ai/providers"),
-        fetchJson("/ai/code-cli"),
-        fetchJson("/ai/mcp"),
-        fetchJson("/ai/skills"),
-        fetchJson("/config/integrations"),
-        fetchJson("/config/email/accounts"),
-        fetchJson("/config/email/settings")
+        fetchJsonWithFallback("/health", previous.health ?? {}, "health"),
+        fetchJsonWithFallback("/tasks", { tasks: previous.tasks ?? [] }, "tasks"),
+        fetchJsonWithFallback("/approvals", { approvals: previous.approvals ?? [] }, "approvals"),
+        fetchJsonWithFallback("/schedules", { schedules: previous.schedules ?? [] }, "schedules"),
+        fetchJsonWithFallback("/templates", { templates: previous.templates ?? [] }, "templates"),
+        fetchJsonWithFallback("/budget", { budget: previous.budget ?? null }, "budget"),
+        fetchJsonWithFallback("/security/state", { security: previous.security ?? null }, "security"),
+        shouldLoadSettingsHeavyData
+          ? fetchJsonWithFallback("/audit-log", { entries: previous.audit ?? [] }, "audit-log")
+          : Promise.resolve({ entries: previous.audit ?? [] }),
+        fetchJsonWithFallback("/dag/executions", { executions: previous.dagExecutions ?? [] }, "dag-executions"),
+        fetchJsonWithFallback("/ai/providers", { providers: previous.providers ?? [] }, "ai-providers"),
+        fetchJsonWithFallback("/ai/code-cli", { adapters: previous.codeCliAdapters ?? [] }, "code-cli"),
+        fetchJsonWithFallback("/ai/mcp", { servers: previous.mcpServers ?? [] }, "mcp"),
+        fetchJsonWithFallback("/ai/skills", { registries: previous.skillRegistries ?? [], skills: previous.skills ?? [] }, "skills"),
+        fetchJsonWithFallback("/config/integrations", { onboarding: previous.onboarding ?? { pendingSuggestions: [], archivedSuggestions: [] } }, "integrations"),
+        fetchJsonWithFallback("/config/email/accounts", { accounts: previous.emailAccounts ?? [] }, "email-accounts"),
+        fetchJsonWithFallback("/config/email/settings", { settings: previous.emailDigestSettings ?? {} }, "email-settings")
       ]);
 
       state.workspace = {
@@ -6524,7 +6539,7 @@ async function refreshWorkspace(options = {}) {
 
       setRuntimeBadge(true, `Connected · ${state.serviceBaseUrl}`);
       updateTopRuntimePill();
-      await renderWorkspaceAfterFetch({ mode });
+      await renderWorkspaceAfterFetch({ mode, activeTabId });
     } catch (error) {
       setRuntimeBadge(false, `Unavailable · ${error.message}`);
     } finally {

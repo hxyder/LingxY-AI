@@ -401,6 +401,10 @@ assert.ok(/async function refreshWorkspace\(options\s*=\s*\{\}\)/.test(consoleJs
   "console refresh: refreshWorkspace must support full/background modes");
 assert.ok(/refreshWorkspaceInFlight/.test(consoleJs),
   "console refresh: refreshWorkspace calls must be coalesced to avoid overlapping rerenders");
+assert.ok(/fetchJsonWithFallback/.test(consoleJs) && /refresh failed/.test(consoleJs),
+  "console refresh: endpoint failures must not blank the whole workspace");
+assert.ok(/shouldLoadSettingsHeavyData[\s\S]{0,260}\/audit-log/.test(consoleJs),
+  "console refresh: heavy audit log fetch must be gated to the settings surface");
 assert.ok(/onWindowFocused[\s\S]{0,140}refreshWorkspace\(\{\s*mode:\s*["']background["']\s*\}\)/.test(consoleJs),
   "console refresh: focus refresh must be background-scoped to avoid full-tab flicker");
 assert.ok(/setInterval\(\(\)\s*=>\s*void refreshWorkspace\(\{\s*mode:\s*["']background["']\s*\}\),\s*6000\)/.test(consoleJs),

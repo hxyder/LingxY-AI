@@ -14,6 +14,8 @@
 //      cleanly (no regression).
 //   4. Tasks where the agent already called notify itself do NOT
 //      double-fire (the same dedupe rule the success path uses).
+//   5. Non-approval partial_success is visible instead of silently
+//      disappearing when the user is away from the desktop.
 
 import assert from "node:assert/strict";
 
@@ -104,6 +106,23 @@ async function runScheduledNotifyHarness({ taskStatus, subStatus, events, comman
         allowLongBody: true,
         autoHideMs: 14000,
         dedupeKey: `scheduled-result:${task2.task_id}`
+      });
+    } else if (task2.status === "partial_success" && !agentAlreadyNotified) {
+      const partialEvent = [...events_].reverse().find(
+        (e) => e.event_type === "partial_success" && typeof e.payload?.text === "string"
+      );
+      const resultText = partialEvent?.payload?.text
+        ?? task2.result_summary
+        ?? `定时任务"${actionTarget}"已部分完成，请打开任务详情查看原因。`;
+      await r2.actionToolRegistry.call("notify", {
+        kind: "warning",
+        title: `计划任务需要查看：${actionTarget}`,
+        body: resultText,
+        taskId: task2.task_id,
+        openWindow: "console",
+        allowLongBody: true,
+        autoHideMs: 0,
+        dedupeKey: `scheduled-partial:${task2.task_id}`
       });
     }
   }
@@ -212,12 +231,16 @@ async function runScheduledNotifyHarness({ taskStatus, subStatus, events, comman
   console.log("PASS  agent-notified task: no double-notify on waiting_external_decision");
 }
 
-// 5. partial_success with NO pending_approval_created → no notify (legacy).
+// 5. partial_success with NO pending_approval_created → sticky warning notify.
 {
   const events = [
     {
       event_type: "tool_call_completed",
       payload: { tool_id: "web_search_fetch", success: false }
+    },
+    {
+      event_type: "partial_success",
+      payload: { text: "拿到了部分资料，但邮件没有发送成功。" }
     }
   ];
   const { calls } = await runScheduledNotifyHarness({
@@ -225,8 +248,13 @@ async function runScheduledNotifyHarness({ taskStatus, subStatus, events, comman
     subStatus: null,
     events
   });
-  assert.equal(calls.length, 0, "partial_success without approval pending must not fire either notify");
-  console.log("PASS  partial_success without approval → no notify (no false alarm)");
+  assert.equal(calls.length, 1, "partial_success without approval pending must be surfaced");
+  assert.equal(calls[0].kind, "warning");
+  assert.equal(calls[0].openWindow, "console");
+  assert.equal(calls[0].autoHideMs, 0);
+  assert.match(calls[0].body, /邮件没有发送成功/);
+  assert.match(calls[0].dedupeKey, /^scheduled-partial:/);
+  console.log("PASS  partial_success without approval → sticky warning notify");
 }
 
 console.log("\nok verify-scheduled-approval-notify");
