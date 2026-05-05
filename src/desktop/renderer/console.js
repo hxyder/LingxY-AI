@@ -58,6 +58,10 @@ import {
   renderConnectedAccountConnectorRowHtml
 } from "./console-account-connectors-view.mjs";
 import {
+  renderInboxAccountsHtml,
+  renderInboxContentHtml
+} from "./console-inbox-view.mjs";
+import {
   buildCapabilityChecklist,
   capabilityChecklistSummary
 } from "./capability-checklist.mjs";
@@ -9556,72 +9560,16 @@ async function loadInboxTab({ force = false } = {}) {
   renderInboxContent();
 }
 
-// Render an email's raw HTML body inside a sandboxed iframe with a
-// strict CSP. The sandbox="" empty attribute blocks scripts, forms,
-// popups, navigation, and plugins; the inline CSP meta blocks all
-// external resources so tracking pixels / remote images / remote
-// CSS never fire — the user reads content without beaconing home.
-// Inline styles and data: URIs stay allowed so the email still looks
-// roughly like what the sender intended.
-function renderEmailHtmlFrame(emailId, rawHtml) {
-  const csp = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:;";
-  const doc = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><style>body{margin:0;padding:14px 16px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:13px;line-height:1.55;color:#1a1917;background:#ffffff;word-break:break-word}a{color:#b85c2a}img{max-width:100%;height:auto}table{max-width:100%!important}</style></head><body>${rawHtml}</body></html>`;
-  // srcdoc needs double-quotes escaped for the attribute value.
-  const escaped = doc.replace(/"/g, "&quot;");
-  return `<iframe class="inbox-item-body-html" data-email-html-frame="${escapeHtml(emailId)}" sandbox="" srcdoc="${escaped}" referrerpolicy="no-referrer"></iframe>`;
-}
-
-// UCA-128: per-provider logo fallback for IMAP accounts so they render
-// the same logo treatment as OAuth accounts (Gmail red, Outlook blue,
-// QQ cyan, etc).
-const IMAP_PROVIDER_LOGOS = {
-  gmail:   { cls: "gmail",   logo: "G" },
-  outlook: { cls: "outlook", logo: "O" },
-  graph:   { cls: "outlook", logo: "O" },
-  qq:      { cls: "qq",      logo: "Q" },
-  "163":   { cls: "imap",    logo: "163" },
-  imap:    { cls: "imap",    logo: "✉" }
-};
-
 function renderInboxAccounts() {
   const list = document.querySelector("#inboxAccountList");
   if (!list) return;
+  list.innerHTML = renderInboxAccountsHtml(_inboxState.accounts, _inboxState.activeAccountId);
   if (_inboxState.accounts.length === 0) {
-    // Empty state — give the user a one-click jump to Connectors so
-    // they don't have to find the rail item manually. Previously this
-    // was a static muted line of text.
-    list.innerHTML = `
-      <div class="inbox-empty-accounts" style="padding:18px 16px;display:flex;flex-direction:column;gap:10px;align-items:flex-start;">
-        <p class="muted" style="margin:0;font-size:12px;line-height:1.5;">尚未连接账户。连接邮箱、文件、日历后，这里能直接预览。</p>
-        <button type="button" class="btn btn-sm btn-primary" id="inboxGoConnectorsBtn">
-          去 Connectors 添加<span class="zh">·</span><span>Connect</span>
-        </button>
-      </div>
-    `;
     list.querySelector("#inboxGoConnectorsBtn")?.addEventListener("click", () => {
       switchTab("connectors");
     });
     return;
   }
-  list.innerHTML = _inboxState.accounts.map((account) => {
-    const isImap = account._kind === "imap";
-    const oauthMeta = ACCOUNT_CONNECTOR_META[account.provider];
-    const imapMeta = IMAP_PROVIDER_LOGOS[account.provider] ?? IMAP_PROVIDER_LOGOS.imap;
-    const meta = oauthMeta ?? { label: account.provider, logo: imapMeta.logo, logoClass: imapMeta.cls };
-    const isActive = account.id === _inboxState.activeAccountId;
-    const statusClass = account.tokenStatus === "active" ? "" : "offline";
-    const kindLabel = isImap ? `IMAP` : (meta.label ?? account.provider);
-    return `
-      <button class="inbox-account ${isActive ? "active" : ""}" data-inbox-account="${escapeHtml(account.id)}" type="button">
-        <div class="inbox-account-logo acc-logo ${meta.logoClass}">${meta.logo}</div>
-        <div class="inbox-account-info">
-          <div class="inbox-account-name">${escapeHtml(account.displayName ?? account.email ?? meta.label)}</div>
-          <div class="inbox-account-email">${escapeHtml(account.email ?? "")}${isImap ? ` · ${escapeHtml(kindLabel)}` : ""}</div>
-        </div>
-        <span class="inbox-account-status ${statusClass}" title="${escapeHtml(account.tokenStatus ?? "")}"></span>
-      </button>
-    `;
-  }).join("");
   list.querySelectorAll("[data-inbox-account]").forEach((btn) => {
     btn.addEventListener("click", () => {
       if (_inboxState.activeAccountId !== btn.dataset.inboxAccount) {
@@ -9669,85 +9617,15 @@ async function renderInboxContent() {
   }
 
   function renderInboxPayload(data) {
-    if (isImap && data.reason) {
-      content.innerHTML = `
-        <div class="inbox-empty" style="padding:32px 24px;">
-          <div style="font-size:13px;font-weight:600;color:var(--ink);margin-bottom:6px;">
-            无法连接到邮箱服务器
-          </div>
-          <div style="max-width:440px;margin:0 auto;line-height:1.6;font-size:12px;">
-            ${escapeHtml(data.reason)}<br/>
-            <span class="muted">检查 Connectors 页的 IMAP host / 授权码，或稍后重试。</span>
-          </div>
-        </div>
-      `;
-      return;
-    }
-
-    if (_inboxState.activeTab === "files") {
-      const files = data.files ?? [];
-      if (!files.length) { content.innerHTML = `<p class="inbox-empty">该账户没有可预览的文件。</p>`; return; }
-      content.innerHTML = files.map((f) => `
-        <button class="inbox-item" type="button" data-external-url="${escapeHtml(f.url ?? "")}">
-          <span class="inbox-item-icon">${f.isFolder ? "📁" : "📄"}</span>
-          <div class="inbox-item-main">
-            <div class="inbox-item-title">${escapeHtml(f.name ?? "(untitled)")}</div>
-            <div class="inbox-item-meta">${escapeHtml(f.path ?? f.url ?? "")}</div>
-          </div>
-          <span class="inbox-item-time">${f.modified ? new Date(f.modified).toLocaleDateString("zh-CN") : ""}</span>
-        </button>
-      `).join("");
-    } else if (_inboxState.activeTab === "emails") {
-      const emails = data.emails ?? data.messages ?? [];
-      if (!emails.length) { content.innerHTML = `<p class="inbox-empty">该账户暂无邮件。</p>`; return; }
-      const expandedId = _inboxState.expandedEmailId;
-      content.innerHTML = emails.map((m) => {
-        const isExpanded = expandedId === m.id;
-        const body = _inboxState.fullBodyCache.get(m.id) ?? m.bodyText ?? m.preview ?? "";
-        const htmlBody = _inboxState.htmlBodyCache.get(m.id) ?? m.bodyHtml ?? "";
-        const hasHtml = htmlBody && htmlBody.length > 0;
-        const viewMode = _inboxState.bodyViewMode.get(m.id) ?? (hasHtml ? "html" : "text");
-        const receivedLine = m.received ? new Date(m.received).toLocaleString("zh-CN", {
-          year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit"
-        }) : "";
-        const fromLine = [m.fromName, m.from].filter(Boolean).map(escapeHtml).join(" &lt;") + (m.fromName && m.from ? "&gt;" : "");
-        let bodyMarkup;
-        if (!isExpanded) {
-          bodyMarkup = "";
-        } else if (viewMode === "html" && hasHtml) {
-          bodyMarkup = renderEmailHtmlFrame(m.id, htmlBody);
-        } else if (body) {
-          bodyMarkup = `<pre class="inbox-item-body-text">${escapeHtml(body)}</pre>`;
-        } else {
-          bodyMarkup = `<pre class="inbox-item-body-text"><span class="muted">（此邮件没有可预览的文本正文）</span></pre>`;
-        }
-        const toggleMarkup = isExpanded && hasHtml ? `
-          <div class="inbox-item-body-toggle">
-            <button type="button" class="seg-btn ${viewMode === "html" ? "active" : ""}" data-email-view="html" data-email-id="${escapeHtml(m.id)}">Rich</button>
-            <button type="button" class="seg-btn ${viewMode === "text" ? "active" : ""}" data-email-view="text" data-email-id="${escapeHtml(m.id)}">Plain</button>
-          </div>
-        ` : "";
-        return `
-          <button class="inbox-item ${isExpanded ? "inbox-item--expanded" : ""}" type="button" data-email-id="${escapeHtml(m.id ?? "")}">
-            <span class="inbox-item-icon">${m.isRead ? "○" : "●"}</span>
-            <div class="inbox-item-main">
-              <div class="inbox-item-title ${m.isRead ? "" : "unread"}">${escapeHtml(m.subject ?? "(无主题)")}</div>
-              <div class="inbox-item-meta">${escapeHtml(m.fromName ?? m.from ?? "")}${!isExpanded && m.preview ? " — " + escapeHtml(m.preview) : ""}</div>
-            </div>
-            <span class="inbox-item-time">${m.received ? new Date(m.received).toLocaleDateString("zh-CN") : ""}</span>
-          </button>
-          ${isExpanded ? `
-            <div class="inbox-item-body">
-              <div class="inbox-item-body-head">
-                <div><strong>${escapeHtml(m.subject ?? "(无主题)")}</strong></div>
-                <div class="muted">From ${fromLine || "(unknown)"}${receivedLine ? ` · ${escapeHtml(receivedLine)}` : ""}</div>
-                ${toggleMarkup}
-              </div>
-              ${bodyMarkup}
-            </div>
-          ` : ""}
-        `;
-      }).join("");
+    content.innerHTML = renderInboxContentHtml(data, {
+      activeTab: _inboxState.activeTab,
+      isImap,
+      expandedEmailId: _inboxState.expandedEmailId,
+      fullBodyCache: _inboxState.fullBodyCache,
+      htmlBodyCache: _inboxState.htmlBodyCache,
+      bodyViewMode: _inboxState.bodyViewMode
+    });
+    if (_inboxState.activeTab === "emails" && !(isImap && data.reason)) {
       content.querySelectorAll("[data-email-view]").forEach((btn) => {
         btn.addEventListener("click", (ev) => {
           ev.stopPropagation();
@@ -9775,19 +9653,6 @@ async function renderInboxContent() {
           }
         });
       });
-    } else {
-      const events = data.events ?? [];
-      if (!events.length) { content.innerHTML = `<p class="inbox-empty">近期无日程。</p>`; return; }
-      content.innerHTML = events.map((e) => `
-        <button class="inbox-item" type="button">
-          <span class="inbox-item-icon">📅</span>
-          <div class="inbox-item-main">
-            <div class="inbox-item-title">${escapeHtml(e.title ?? "(无标题)")}</div>
-            <div class="inbox-item-meta">${e.location ? escapeHtml(e.location) : ""}</div>
-          </div>
-          <span class="inbox-item-time">${e.start ? new Date(e.start).toLocaleString("zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : ""}</span>
-        </button>
-      `).join("");
     }
     content.querySelectorAll("[data-external-url]").forEach((btn) => {
       btn.addEventListener("click", (ev) => {
