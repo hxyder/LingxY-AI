@@ -217,7 +217,8 @@ assert.ok(/from\s+["']\.\.\/\.\.\/shared\/current-context-intent\.mjs["']/.test(
 assert.ok(/command:\s*"分析当前页面的完整内容并总结要点"/.test(overlayJs)
     && /command:\s*"把当前页面翻译成中文"/.test(overlayJs),
   "current-page quick actions: commands must preserve current-page intent instead of embedding URL text");
-assert.ok(/commandTargetsCurrentBrowserContext\(commandText\)[\s\S]{0,120}\?[\s\S]{0,120}resolveActiveWindowBrowserCapture\(\)/.test(overlayJs),
+assert.ok(/const explicitBrowserContextRequest = commandTargetsCurrentBrowserContext\(commandText\);/.test(overlayJs)
+    && /const activeBrowserCapture = explicitBrowserContextRequest[\s\S]{0,120}\? await resolveActiveWindowBrowserCapture\(\)/.test(overlayJs),
   "current-page routing: active browser capture must be gated by explicit current-page intent");
 assert.ok(!/command:\s*`[^`]*页面[^`]*\$\{activeWindow\.url\}/.test(overlayJs),
   "current-page quick actions: URL must stay as structured context, not user command text");
@@ -491,6 +492,10 @@ assert.ok(/frame\.event === "success"[\s\S]{0,260}showEchoResultHudOnce/.test(ov
   "echo mode: terminal success events without inline_result must still surface through the Echo HUD");
 assert.ok(/captureActiveWindowHintForVoice/.test(overlayJs) && /voice_wake/.test(overlayJs) && /echo_voice_wake/.test(overlayJs),
   "voice mode: voice and Echo sessions must capture active browser context before page-analysis commands");
+assert.ok(/explicitBrowserContextRequest[\s\S]{0,180}resolveActiveWindowBrowserCapture/.test(overlayJs)
+    && /if \(activeBrowserCapture\)[\s\S]{0,280}stale clipboard\/email text/.test(overlayJs)
+    && /else if \(pendingCapture\?\.capture \|\| conversationState\?\.seedCapture\)/.test(overlayJs),
+  "overlay context priority: explicit current-page requests must override passive clipboard/seed captures before submit");
 assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml)
     && /selectedVoiceLanguage/.test(overlayJs)
     && /liveRecognizerLanguage/.test(overlayJs),

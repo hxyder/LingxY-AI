@@ -3875,10 +3875,37 @@ async function submitTask() {
 
   try {
     let payload;
+    const explicitBrowserContextRequest = commandTargetsCurrentBrowserContext(commandText);
+    const explicitFileContextRequest = commandTargetsCurrentFileContext(commandText);
+    const activeBrowserCapture = explicitBrowserContextRequest
+      ? await resolveActiveWindowBrowserCapture()
+      : null;
+    const activeFileSelection = !activeBrowserCapture && explicitFileContextRequest
+      ? resolveActiveWindowFileSelection(commandText)
+      : null;
     // P6-F1: legacy outbound history removed. Backend conversation_messages
     // is now the single source of conversation history (see Phase D loader).
     // The frontend cache is rendered locally but never re-injected here.
-    if (pendingFileSelection?.filePaths?.length) {
+    if (activeBrowserCapture) {
+      // Explicit "current page/tab" requests are about the active browser
+      // surface, so they must override passive clipboard captures or an old
+      // conversation seed. Otherwise Echo/hotkey submits can accidentally
+      // analyze stale clipboard/email text.
+      ensureConversation(activeBrowserCapture, conversationState?.seedCommand ?? rawCommand ?? commandText);
+      payload = {
+        userCommand: commandText,
+        executionMode: "interactive",
+        capture: { ...activeBrowserCapture }
+      };
+    } else if (activeFileSelection) {
+      payload = {
+        sourceApp: activeFileSelection.sourceApp,
+        captureMode: activeFileSelection.captureMode,
+        filePaths: activeFileSelection.filePaths,
+        userCommand: commandText,
+        executionMode: "interactive"
+      };
+    } else if (pendingFileSelection?.filePaths?.length) {
       const imageExts = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
       const allImages = pendingFileSelection.filePaths.every((fp) =>
         imageExts.some((ext) => fp.toLowerCase().endsWith(ext))
@@ -3911,37 +3938,14 @@ async function submitTask() {
         capture: { ...capture }
       };
     } else {
-      const activeBrowserCapture = commandTargetsCurrentBrowserContext(commandText)
-        ? await resolveActiveWindowBrowserCapture()
-        : null;
-      if (activeBrowserCapture) {
-        ensureConversation(activeBrowserCapture, conversationState?.seedCommand ?? rawCommand ?? commandText);
-        payload = {
-          userCommand: commandText,
-          executionMode: "interactive",
-          capture: { ...activeBrowserCapture }
-        };
-      } else {
-        const activeFileSelection = resolveActiveWindowFileSelection(commandText);
-        if (activeFileSelection) {
-          payload = {
-            sourceApp: activeFileSelection.sourceApp,
-            captureMode: activeFileSelection.captureMode,
-            filePaths: activeFileSelection.filePaths,
-            userCommand: commandText,
-            executionMode: "interactive"
-          };
-        } else {
-          payload = {
-            sourceApp: "uca.overlay",
-            captureMode: "overlay",
-            sourceType: "clipboard",
-            text: "",
-            userCommand: commandText,
-            executionMode: "interactive"
-          };
-        }
-      }
+      payload = {
+        sourceApp: "uca.overlay",
+        captureMode: "overlay",
+        sourceType: "clipboard",
+        text: "",
+        userCommand: commandText,
+        executionMode: "interactive"
+      };
     }
 
     // UCA-182 Phase 9: link follow-up turns to the conversation's last
