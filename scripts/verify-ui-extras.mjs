@@ -21,6 +21,17 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
+function readCssWithImports(relativePath, seen = new Set()) {
+  const absolutePath = path.join(root, relativePath);
+  if (seen.has(absolutePath)) return "";
+  seen.add(absolutePath);
+  const css = readFileSync(absolutePath, "utf8");
+  const dir = path.dirname(relativePath);
+  return css.replace(/@import\s+url\(["']?([^"')]+)["']?\);\s*/g, (_match, target) => {
+    const child = path.join(dir, target).replace(/\\/g, "/");
+    return readCssWithImports(child, seen);
+  });
+}
 
 const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
@@ -37,7 +48,7 @@ const electronMain = read("src/desktop/tray/electron-main.mjs");
 const desktopManifest = read("src/desktop/shared/manifest.mjs");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
-const sharedCss = read("src/desktop/renderer/shared.css");
+const sharedCss = readCssWithImports("src/desktop/renderer/shared.css");
 const sharedUi = read("src/desktop/renderer/shared-ui.mjs");
 const chatBlocks = read("src/desktop/renderer/chat-blocks.mjs");
 const taskRuntime = read("src/service/core/task-runtime.mjs");

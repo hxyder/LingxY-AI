@@ -9,10 +9,21 @@ const documentedHotspots = [
   "src/desktop/renderer/console.js",
   "src/desktop/renderer/overlay.js",
   "src/desktop/renderer/shared.css",
+  "src/desktop/renderer/shared-core.css",
+  "src/desktop/renderer/shared-tasks.css",
+  "src/desktop/renderer/shared-chat.css",
+  "src/desktop/renderer/shared-rest.css",
   "src/desktop/tray/electron-main.mjs",
   "src/service/action_tools/tools/index.mjs"
 ];
 const hardLineLimit = 12_500;
+const sharedCssImports = [
+  "./tokens.css",
+  "./shared-core.css",
+  "./shared-tasks.css",
+  "./shared-chat.css",
+  "./shared-rest.css"
+];
 
 async function* walk(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -71,5 +82,13 @@ for (const hotspot of documentedHotspots) {
     `documented hotspot no longer exists: ${hotspot}`
   );
 }
+
+const sharedCss = await readFile(path.join(repoRoot, "src", "desktop", "renderer", "shared.css"), "utf8");
+const sharedCssLines = sharedCss.trim().split(/\r?\n/);
+assert.deepEqual(
+  sharedCssLines,
+  sharedCssImports.map((target) => `@import url("${target}");`),
+  "shared.css must remain an import-only aggregator in the original cascade order"
+);
 
 console.log("ok verify-file-size-inventory");
