@@ -35,6 +35,13 @@ assert.match(workflow, /!dist\/win-unpacked\/\*\*/, "release workflow must exclu
 assert.match(workflow, /LINGXY_RELEASE_REF_NAME/, "release workflow must pass GitHub context to PowerShell through env");
 assert.match(workflow, /gh release create/, "release workflow must support draft GitHub Release creation");
 assert.match(workflow, /gh release upload/, "release workflow must support updating an existing release");
+assert.match(workflow, /\$tag -notmatch '\^v\\d\+\\\.\\d\+\\\.\\d\+/, "release workflow must validate release tag shape before publishing");
+assert.match(workflow, /release artifacts are empty/, "release workflow must reject empty artifact sets before publishing");
+assert.match(workflow, /\\win-unpacked\\/, "release workflow must reject win-unpacked assets before publishing");
+assert.match(workflow, /dist\\checksums\.sha256/, "release workflow publish preflight must require checksums.sha256");
+assert.match(workflow, /dist\\LICENSE/, "release workflow publish preflight must require LICENSE");
+assert.match(workflow, /dist\\THIRD_PARTY_LICENSES\.md/, "release workflow publish preflight must require third-party notices");
+assert.match(workflow, /checksums\.sha256 must include/, "release workflow must verify required files are covered by checksums");
 
 assert.match(repoBaseline, /node-version:\s+"22\.12\.0"/, "repo baseline must use the documented Node baseline");
 assert.match(repoBaseline, /verify:dependency-hygiene/, "repo baseline must run dependency hygiene verification");

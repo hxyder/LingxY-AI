@@ -87,7 +87,28 @@ jobs:
           if (-not $tag) {
             throw "release_tag is required when publishing from workflow_dispatch."
           }
+          if ($tag -notmatch '^v\d+\.\d+\.\d+([-.+][0-9A-Za-z.-]+)?$') {
+            throw "release tag must look like vX.Y.Z, optionally with a prerelease/build suffix. Got: $tag"
+          }
           $assets = Get-ChildItem -Path dist -File -Recurse | ForEach-Object { $_.FullName }
+          if (-not $assets -or $assets.Count -eq 0) {
+            throw "release artifacts are empty."
+          }
+          $forbiddenAssets = $assets | Where-Object { $_ -match '\\win-unpacked\\' }
+          if ($forbiddenAssets) {
+            throw "release artifacts must not include win-unpacked output: $($forbiddenAssets -join ', ')"
+          }
+          foreach ($requiredAsset in @("dist\checksums.sha256", "dist\LICENSE", "dist\THIRD_PARTY_LICENSES.md")) {
+            if (-not (Test-Path $requiredAsset -PathType Leaf)) {
+              throw "missing required release asset: $requiredAsset"
+            }
+          }
+          $checksums = Get-Content -Path dist\checksums.sha256 -Raw
+          foreach ($requiredChecksum in @("LICENSE", "THIRD_PARTY_LICENSES.md")) {
+            if ($checksums -notmatch [regex]::Escape($requiredChecksum)) {
+              throw "checksums.sha256 must include $requiredChecksum"
+            }
+          }
           if (gh release view $tag 2>$null) {
             gh release upload $tag @assets --clobber
           } else {

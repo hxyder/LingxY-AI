@@ -77,5 +77,6 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 - Check the Release Artifacts GitHub Actions run before making a GitHub
   Release public: it should upload the installer, `latest.yml` when produced
   by electron-builder, `checksums.sha256`, `LICENSE`, and
-  `THIRD_PARTY_LICENSES.md`.
+  `THIRD_PARTY_LICENSES.md`. The publish step must also reject malformed
+  `vX.Y.Z` tags, empty asset sets, and `win-unpacked` output.
 - Only publish GitHub Pages after checking the final URLs and contact emails.
