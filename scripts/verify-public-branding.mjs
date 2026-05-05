@@ -50,7 +50,8 @@ const publicBrandFiles = [
   "docs/release/README.md",
   "docs/release/external_trial_checklist.md",
   "docs/release/trial_release_notes_v0.1.0-trial.1.md",
-  "docs/runtime/office_addin_sideload.md"
+  "docs/runtime/office_addin_sideload.md",
+  "uca-native-host/README.md"
 ];
 
 for (const relativePath of publicBrandFiles) {
@@ -70,6 +71,24 @@ for (const relativePath of publicBrandFiles) {
       `${relativePath} still contains old public brand phrase: ${forbiddenPhrase}`);
   }
 }
+
+const nativeHostReadme = read("uca-native-host/README.md");
+assert.equal(nativeHostReadme.includes("# LingxY Native Host"), true,
+  "native host README should use the LingxY public name");
+assert.equal(nativeHostReadme.includes("# UCA Native Host"), false,
+  "native host README must not use UCA as the public title");
+assert.equal(nativeHostReadme.includes("legacy package path"), true,
+  "native host README should explain why the uca-native-host path still exists");
+assert.equal(nativeHostReadme.includes("com.uca.host"), true,
+  "native host README should document the compatibility host id");
+
+const nativeMessagingProtocol = read("docs/runtime/native_messaging_protocol.md");
+assert.equal(nativeMessagingProtocol.includes("legacy compatibility namespace"), true,
+  "native messaging protocol doc should explain com.uca.host compatibility");
+
+const nativeIntegrationsDoc = read("docs/runtime/native_integrations.md");
+assert.equal(nativeIntegrationsDoc.includes("compatibility ids"), true,
+  "native integrations doc should distinguish legacy ids from public product naming");
 
 for (const [relativePath, expectedPhrase] of [
   ["README.md", "LingxY AI Desktop"],

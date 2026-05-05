@@ -1,10 +1,14 @@
 # Native Integrations
 
-`UCA-016` wires three user-level native entry paths:
+LingxY wires three user-level native entry paths:
 
 - Explorer context menu via `scripts/install-explorer-entry.ps1`
 - Chrome / Edge Native Messaging host via `scripts/install-native-host.ps1`
 - Office Task Pane selection capture via `office_addin/shared/office_bridge.js`
+
+Some registry keys and protocol ids still use the legacy `UCA` / `com.uca.*`
+namespace. Treat those as compatibility ids, not public product naming, until a
+data and registry migration is designed and verified.
 
 Current registry locations:
 
