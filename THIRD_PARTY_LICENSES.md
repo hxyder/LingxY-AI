@@ -2,15 +2,15 @@
 
 Generated from `package-lock.json` and installed package metadata.
 
-- Total packages: 757
-- Production packages: 464
+- Total packages: 758
+- Production packages: 465
 - Development-only packages: 293
 
 ## License Summary
 
 | License | Count |
 |---|---:|
-| MIT | 563 |
+| MIT | 564 |
 | ISC | 115 |
 | BSD-2-Clause | 20 |
 | Apache-2.0 | 18 |
@@ -577,6 +577,7 @@ Generated from `package-lock.json` and installed package metadata.
 | on-finished | 2.4.1 | MIT | prod | jshttp/on-finished |
 | once | 1.4.0 | ISC | prod | git://github.com/isaacs/once |
 | onetime | 5.1.2 | MIT | dev | sindresorhus/onetime |
+| opencc-js | 1.3.0 | MIT | prod | https://github.com/nk2028/opencc-js#readme |
 | option | 0.2.4 | BSD-2-Clause | prod | https://github.com/mwilliamson/node-options.git |
 | ora | 5.4.1 | MIT | dev | sindresorhus/ora |
 | p-cancelable | 2.1.1 | MIT | dev | sindresorhus/p-cancelable |

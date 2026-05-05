@@ -16,6 +16,7 @@ const preload = read("src/desktop/renderer/preload.cjs");
 const main = read("src/desktop/tray/electron-main.mjs");
 const manifest = read("src/desktop/shared/manifest.mjs");
 const audioRoutes = read("src/service/core/http-routes/audio-routes.mjs");
+const transcriptLocale = read("src/service/audio/transcript-locale.mjs");
 const localSurface = read("scripts/verify-local-http-surface.mjs");
 const userSmoke = read("docs/release/user_interaction_smoke_checklist.md");
 
@@ -182,6 +183,10 @@ for (const route of [
 
 assert.ok(audioRoutes.includes("transcriptionPromptForLanguage") && audioRoutes.includes("Use Simplified Chinese"),
   "audio routes must pass an output-locale prompt so zh-CN transcriptions do not drift to Traditional Chinese");
+assert.ok(transcriptLocale.includes("opencc-js/t2cn") && transcriptLocale.includes("normalizeTranscriptionTextForLocale"),
+  "audio transcription: locale normalizer must use OpenCC for Traditional-to-Simplified post-processing");
+assert.ok(audioRoutes.includes("normalizeTranscriptionTextForLocale") && audioRoutes.includes("normalizeTranscriptionEventForLocale"),
+  "audio routes must normalize both one-shot and streaming transcription text by requested output locale");
 assert.ok(dockJs.includes("keywords: echoWakeProfile.phrases"),
   "echo KWS: dock must pass the saved wake profile phrases into local KWS detection");
 assert.ok(main.includes("params.set(\"keywords\"") && main.includes("pathname: \"/echo/kws\""),

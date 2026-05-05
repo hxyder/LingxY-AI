@@ -6,6 +6,10 @@ import path from "node:path";
 import readline from "node:readline";
 import { promisify } from "node:util";
 import { SSE_HEADERS } from "../../events/sse.mjs";
+import {
+  normalizeTranscriptionEventForLocale,
+  normalizeTranscriptionTextForLocale
+} from "../../audio/transcript-locale.mjs";
 import { resolveProviderForTask } from "../../executors/shared/provider-resolver.mjs";
 import { hydrateProviderApiKeySecretSync } from "../../security/secret-store.mjs";
 import { HttpBodyTooLargeError, readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
@@ -844,7 +848,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
           });
           if (apiResp.ok) {
             const cloud = await apiResp.json();
-            const text = cloud.text ?? "";
+            const text = normalizeTranscriptionTextForLocale(cloud.text ?? "", { outputLocale, lang });
             if (!closed && text) writeFrame({ type: "segment", start: 0, end: 0, text });
             if (!closed) {
               writeFrame({
@@ -869,7 +873,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
             { mimeType, lang, signal: streamAbort.signal },
             (event) => {
               markActivity();
-              if (!closed) writeFrame(event);
+              if (!closed) writeFrame(normalizeTranscriptionEventForLocale(event, { outputLocale, lang }));
             }
           ),
           {
@@ -905,9 +909,10 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     if (!provider) {
       const localResult = await audioRuntime.transcribeAudioLocally(audioBuffer, { mimeType, lang });
       if (localResult.ok) {
+        const transcript = normalizeTranscriptionTextForLocale(localResult.transcript ?? "", { outputLocale, lang });
         sendJson(response, 200, {
           ok: true,
-          transcript: localResult.transcript ?? "",
+          transcript,
           provider: localResult.provider,
           local: {
             language: localResult.language ?? null,
@@ -959,9 +964,10 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
         const errText = await apiResp.text().catch(() => "");
         const localResult = await audioRuntime.transcribeAudioLocally(audioBuffer, { mimeType, lang });
         if (localResult.ok) {
+          const transcript = normalizeTranscriptionTextForLocale(localResult.transcript ?? "", { outputLocale, lang });
           sendJson(response, 200, {
             ok: true,
-            transcript: localResult.transcript ?? "",
+            transcript,
             provider: localResult.provider,
             fallbackFrom: {
               provider: providerPublicDescriptor(provider),
@@ -990,18 +996,20 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       }
 
       const result = await apiResp.json();
+      const transcript = normalizeTranscriptionTextForLocale(result.text ?? "", { outputLocale, lang });
       sendJson(response, 200, {
         ok: true,
-        transcript: result.text ?? "",
+        transcript,
         provider: providerPublicDescriptor(provider)
       });
       return true;
     } catch (err) {
       const localResult = await audioRuntime.transcribeAudioLocally(audioBuffer, { mimeType, lang });
       if (localResult.ok) {
+        const transcript = normalizeTranscriptionTextForLocale(localResult.transcript ?? "", { outputLocale, lang });
         sendJson(response, 200, {
           ok: true,
-          transcript: localResult.transcript ?? "",
+          transcript,
           provider: localResult.provider,
           fallbackFrom: {
             provider: providerPublicDescriptor(provider),
