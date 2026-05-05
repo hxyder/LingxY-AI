@@ -94,8 +94,10 @@ import {
   renderTaskArtifactRowsHtml
 } from "./console-files-view.mjs";
 import {
+  extractContentEvidenceFromTaskDetail,
   extractEvidenceSummaryFromMessage,
   extractEvidenceSummaryFromTaskDetail,
+  renderContentEvidenceHtml,
   renderEvidenceSourcesHtml,
   renderToolCallSourcesHtml,
   revealEvidenceSource,
@@ -4897,6 +4899,10 @@ function renderTaskEvidenceSummary(detail) {
   return renderEvidenceSourcesHtml(extractEvidenceSummaryFromTaskDetail(detail));
 }
 
+function renderTaskContentEvidence(detail) {
+  return renderContentEvidenceHtml(extractContentEvidenceFromTaskDetail(detail));
+}
+
 function renderTaskDetail(detail) {
   if (!detail) {
     selectedTaskEventController.close();
@@ -4958,6 +4964,7 @@ function renderTaskDetail(detail) {
       <div class="task-answer-body">${escapeHtml(answerText)}</div>
     </div>
   ` : "";
+  const contentEvidenceBlock = renderTaskContentEvidence(detail);
   const evidenceSummaryBlock = renderTaskEvidenceSummary(detail);
   // UCA-122: v3 detail-hero + KV grid. Hero shows title + status pill +
   // task ID tag + subtitle meta. KV grid spreads the metadata that
@@ -5013,6 +5020,7 @@ function renderTaskDetail(detail) {
     </div>
     ${renderDowngradedWarning(downgraded)}
     ${failBlock}
+    ${contentEvidenceBlock}
     ${resultSummaryBlock}
     ${evidenceSummaryBlock}
   `;

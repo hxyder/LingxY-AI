@@ -19,6 +19,7 @@ import {
   renderCapabilityToolViewHtml
 } from "../../src/desktop/renderer/capability-tool-view.mjs";
 import {
+  renderContentEvidenceHtml,
   renderEvidenceSourcesHtml,
   renderToolCallSourcesHtml
 } from "../../src/desktop/renderer/evidence-sources-view.mjs";
@@ -301,6 +302,41 @@ test("evidence source renderer surfaces fresh, deep, indexed, and shallow file c
   assert.match(html, /indexed fresh file text/);
   assert.match(html, />listed</);
   assert.match(html, /data-evidence-path/);
+});
+
+test("content evidence renderer explains readable versus reference-only input", () => {
+  const html = renderContentEvidenceHtml([
+    {
+      source_kind: "browser_page_text",
+      coverage_scope: "captured_page_text",
+      locator: "https://example.com/article",
+      title: "Article",
+      content_extracted: true,
+      char_length: 1200
+    },
+    {
+      source_kind: "screenshot_image",
+      coverage_scope: "image_pixels_available",
+      locator: "E:/shots/page.png",
+      content_extracted: false,
+      pixels_available: true
+    },
+    {
+      source_kind: "browser_prefetch_failed",
+      coverage_scope: "url_title_only",
+      locator: "https://example.com/current",
+      status: "failed",
+      content_extracted: false,
+      error: "network unavailable"
+    }
+  ]);
+
+  assert.match(html, /Input evidence/);
+  assert.match(html, /网页正文/);
+  assert.match(html, /内容已读取/);
+  assert.match(html, /像素可用/);
+  assert.match(html, /读取失败/);
+  assert.doesNotMatch(html, /\{|"source_kind"|"coverage_scope"/);
 });
 
 test("tool call source renderer shows compact per-tool source chips", () => {

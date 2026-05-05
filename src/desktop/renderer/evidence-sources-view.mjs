@@ -13,6 +13,12 @@ export function extractEvidenceSummaryFromTaskDetail(detail) {
   return null;
 }
 
+export function extractContentEvidenceFromTaskDetail(detail) {
+  const metadata = detail?.task?.context_packet?.selection_metadata;
+  const entries = Array.isArray(metadata?.content_evidence) ? metadata.content_evidence : [];
+  return normalizeContentEvidenceForView(entries);
+}
+
 export function extractEvidenceSummaryFromMessage(message) {
   const metadata = message?.metadata && typeof message.metadata === "object"
     ? message.metadata
@@ -58,6 +64,129 @@ function renderCoverageScopeChips(counts = {}, { className = "chip muted", prefi
       return `<span class="${escapeHtml(className)}">${escapeHtml(count)} ${escapeHtml(prefix ? `${prefix} ${label}` : label)}</span>`;
     })
     .join("");
+}
+
+const CONTENT_KIND_LABELS = Object.freeze({
+  browser_page_text: "网页正文",
+  browser_page_metadata: "仅 URL/标题",
+  browser_prefetch_text: "网页正文预取",
+  browser_prefetch_failed: "网页读取失败",
+  browser_text_selection: "网页选区",
+  browser_link_metadata: "链接引用",
+  browser_image_reference: "网页图片引用",
+  local_file_text: "文件正文",
+  local_directory_listing: "目录列表",
+  local_file_metadata: "文件元数据",
+  local_image_text: "图片 OCR",
+  attached_image: "图片像素",
+  screenshot_image: "截图像素",
+  image_ocr_text: "图片 OCR",
+  screenshot_ocr_text: "截图 OCR",
+  office_selection_text: "Office 选区"
+});
+
+const CONTENT_SCOPE_LABELS = Object.freeze({
+  captured_page_text: "已捕获页面文本",
+  fetched_page_text: "已抓取页面文本",
+  url_title_only: "只有 URL/标题",
+  selected_text: "选区文本",
+  link_reference_only: "仅链接",
+  image_url_reference: "仅图片链接",
+  single_file_text: "单文件文本",
+  directory_listing_shallow: "只列目录",
+  file_metadata: "仅元数据",
+  image_pixels_available: "像素可用",
+  ocr_text: "OCR 文本"
+});
+
+function normalizeContentEvidenceForView(entries = []) {
+  return (Array.isArray(entries) ? entries : [])
+    .filter((entry) => entry && typeof entry === "object")
+    .map((entry) => ({
+      sourceKind: String(entry.source_kind ?? "").trim(),
+      coverageScope: String(entry.coverage_scope ?? "").trim(),
+      locator: String(entry.locator ?? "").trim(),
+      title: String(entry.title ?? "").trim(),
+      modality: String(entry.modality ?? "").trim(),
+      status: String(entry.status ?? "available").trim(),
+      contentExtracted: entry.content_extracted === true,
+      pixelsAvailable: entry.pixels_available === true,
+      extractionMode: String(entry.extraction_mode ?? "").trim(),
+      charLength: Number.isFinite(Number(entry.char_length)) ? Number(entry.char_length) : null,
+      byteLength: Number.isFinite(Number(entry.byte_length)) ? Number(entry.byte_length) : null,
+      error: String(entry.error ?? "").trim()
+    }))
+    .filter((entry) => entry.sourceKind || entry.coverageScope || entry.locator);
+}
+
+function contentStatusChip(entry) {
+  if (entry.status === "failed") return `<span class="chip warning">读取失败</span>`;
+  if (entry.contentExtracted) return `<span class="chip ready">内容已读取</span>`;
+  if (entry.pixelsAvailable) return `<span class="chip muted">像素可用</span>`;
+  return `<span class="chip warning">未读取正文</span>`;
+}
+
+function contentEvidenceLabel(entry) {
+  return CONTENT_KIND_LABELS[entry.sourceKind]
+    ?? entry.sourceKind.replace(/_/g, " ")
+    ?? "输入证据";
+}
+
+function contentCoverageLabel(entry) {
+  return CONTENT_SCOPE_LABELS[entry.coverageScope]
+    ?? entry.coverageScope.replace(/_/g, " ");
+}
+
+function compactContentEvidenceMeta(entry) {
+  const bits = [];
+  const scope = contentCoverageLabel(entry);
+  if (scope) bits.push(scope);
+  if (entry.charLength) bits.push(`${entry.charLength} chars`);
+  if (entry.byteLength) bits.push(`${entry.byteLength} bytes`);
+  if (entry.extractionMode) bits.push(entry.extractionMode.replace(/_/g, " "));
+  if (entry.error) bits.push(entry.error);
+  return bits.join(" · ");
+}
+
+export function renderContentEvidenceHtml(entries = [], {
+  className = "task-answer task-evidence task-content-evidence",
+  title = "Input evidence",
+  zh = "输入证据"
+} = {}) {
+  const evidence = normalizeContentEvidenceForView(entries);
+  if (evidence.length === 0) return "";
+  const readableCount = evidence.filter((entry) => entry.contentExtracted).length;
+  const weakCount = evidence.filter((entry) => !entry.contentExtracted).length;
+  const failedCount = evidence.filter((entry) => entry.status === "failed").length;
+  const shown = evidence.slice(0, 8);
+  return `
+    <div class="${escapeHtml(className)}" data-content-evidence>
+      <div class="task-answer-label">${escapeHtml(title)}<span class="zh">${escapeHtml(zh)}</span></div>
+      <div class="btn-group" style="margin-bottom:8px;">
+        ${readableCount ? `<span class="chip ready">${escapeHtml(readableCount)} readable</span>` : ""}
+        ${weakCount ? `<span class="chip muted">${escapeHtml(weakCount)} reference-only</span>` : ""}
+        ${failedCount ? `<span class="chip warning">${escapeHtml(failedCount)} failed</span>` : ""}
+      </div>
+      <div class="stack" style="gap:6px;">
+        ${shown.map((entry) => {
+          const label = contentEvidenceLabel(entry);
+          const locatorLabel = entry.title || shortEvidenceLabel(entry.locator);
+          const meta = compactContentEvidenceMeta(entry);
+          return `
+            <div class="row evidence-source-row" data-content-evidence-row style="gap:6px;align-items:center;font-size:11.5px;">
+              ${contentStatusChip(entry)}
+              <span class="tag">${escapeHtml(label)}</span>
+              <span class="muted" style="overflow-wrap:anywhere;min-width:0;flex:1;" title="${escapeHtml(entry.locator)}">
+                ${escapeHtml(locatorLabel || meta || label)}
+              </span>
+              ${meta ? `<span class="muted" style="font-size:11px;">${escapeHtml(meta)}</span>` : ""}
+            </div>
+          `;
+        }).join("")}
+        ${evidence.length > shown.length ? `<div class="muted" style="font-size:11px;">+${escapeHtml(evidence.length - shown.length)} more input evidence entr${evidence.length - shown.length === 1 ? "y" : "ies"}</div>` : ""}
+      </div>
+    </div>
+  `;
 }
 
 export function renderEvidenceSourcesHtml(evidence, {
