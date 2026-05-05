@@ -2313,6 +2313,9 @@ export function createElectronShellRuntime({
       ipcMain.handle("uca:set-echo-mode", async (_event, enabled) => {
         return updateSettings({ echoMode: Boolean(enabled) });
       });
+      ipcMain.handle(IPC_CHANNELS.echoWakeProfileUpdate, async (_event, profile = {}) => {
+        return updateSettings({ echoWake: profile && typeof profile === "object" ? profile : {} });
+      });
 
       // Right-click on the dock orb asks the main process to show a native
       // context menu. Done here (not in the renderer) so we get native

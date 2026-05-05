@@ -200,6 +200,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   setEchoMode(enabled) {
     return ipcRenderer.invoke("uca:set-echo-mode", Boolean(enabled));
   },
+  setEchoWakeProfile(profile) {
+    return ipcRenderer.invoke("uca:echo-wake-profile-update", profile ?? {});
+  },
   onSettingsChanged(callback) {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("uca:shell-settings-changed", listener);

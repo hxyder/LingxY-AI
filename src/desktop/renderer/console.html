@@ -1704,7 +1704,38 @@
           </button>
         </div>
       </header>
-      <div class="settings-sections">
+      <div class="settings-grid connectors-grid">
+        <nav class="settings-nav connectors-nav" aria-label="Connector sections">
+          <a href="#connAccountsTitle" data-connectors-nav="connAccountsTitle" class="active">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 22a8 8 0 0 1 16 0"/></svg>
+            Accounts
+          </a>
+          <a href="#connEmailTitle" data-connectors-nav="connEmailTitle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
+            Email
+          </a>
+          <a href="#connMcpTitle" data-connectors-nav="connMcpTitle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v6"/><path d="M12 16v6"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="M2 12h6"/><path d="M16 12h6"/></svg>
+            MCP
+          </a>
+          <a href="#integrationsStatusPanel" data-connectors-nav="integrationsStatusPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            Integrations
+          </a>
+          <a href="#skillsSettingsPanel" data-connectors-nav="skillsSettingsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            Skills
+          </a>
+          <a href="#codeCliSettingsPanel" data-connectors-nav="codeCliSettingsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            Code CLI
+          </a>
+          <a href="#officeSetupPanel" data-connectors-nav="officeSetupPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="14" x="3" y="5" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+            Office
+          </a>
+        </nav>
+        <div class="settings-sections connectors-content">
 
         <!-- ── Account Connectors (Microsoft 365 / Google) ── -->
         <section class="panel-section" aria-labelledby="connAccountsTitle" data-foldable="true">
@@ -1885,6 +1916,7 @@
 
         <div id="connectorsConfigMount" class="settings-sections"></div>
 
+        </div>
       </div>
     </section>
 
@@ -1912,20 +1944,9 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="m9 19 9-14"/></svg>
             Routing
           </a>
-          <!-- UCA-126: MCP Servers link retired — MCP has a single home
-               in Connectors → MCP tools now. The custom-server form was
-               moved there too. -->
-          <a href="#skillsSettingsPanel" data-settings-nav="skillsSettingsPanel">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            Skills
-          </a>
-          <a href="#codeCliSettingsPanel" data-settings-nav="codeCliSettingsPanel">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-            Code CLI
-          </a>
-          <a href="#emailSettingsPanel" data-settings-nav="emailSettingsPanel">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-10 5L2 7"/></svg>
-            Email
+          <a href="#voiceEchoSettingsPanel" data-settings-nav="voiceEchoSettingsPanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/></svg>
+            Voice
           </a>
           <a href="#systemStatusPanel" data-settings-nav="systemStatusPanel">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
@@ -1976,7 +1997,6 @@
             <button id="addProviderBtn" class="btn" type="button" data-no-fold>+ Add Provider</button>
           </div>
           <p class="muted" style="font-size:12px;margin:0 0 12px;">Add any OpenAI-compatible or Anthropic API. Saved instantly — no restart needed.</p>
-          <div id="providerOnboardingList" class="onboarding-suggestion-list" hidden></div>
           <div id="providersList" class="stack" style="gap:8px;"></div>
         </div>
 
@@ -1995,6 +2015,35 @@
 
         <!-- UCA-126: MCP Servers panel moved to Connectors → MCP tools.
              See #connectorsMcpList + #mcpServerForm there. -->
+
+        <!-- ── Voice / Echo ── -->
+        <div id="voiceEchoSettingsPanel" class="settings-group" data-foldable="true">
+          <div class="settings-group-head">
+            <h3 class="settings-group-title" style="margin:0;">Voice & Echo<span class="zh">语音唤醒</span></h3>
+          </div>
+          <p class="muted" style="font-size:12px;margin:0 0 12px;">Configure the wake profile used by Echo mode. Web Speech uses these phrases; local KWS still relies on recorded samples.</p>
+          <div class="row" style="gap:8px;">
+            <div style="flex:1;">
+              <label for="echoWakeDisplayName">Wake display name</label>
+              <input id="echoWakeDisplayName" type="text" placeholder="linxi">
+            </div>
+            <label class="switch-row" style="flex:1;margin:0;">
+              <div class="switch-copy">
+                <strong>Keep default Linxi</strong>
+                <span class="muted">Retain built-in linxi / 林夕 matching while custom phrases are added.</span>
+              </div>
+              <input id="echoWakeIncludeDefault" class="switch-control" type="checkbox" checked>
+            </label>
+          </div>
+          <div style="margin-top:10px;">
+            <label for="echoWakePhrases">Custom wake phrases</label>
+            <textarea id="echoWakePhrases" rows="3" placeholder="One phrase per line, e.g. Hey LingxY&#10;小灵"></textarea>
+          </div>
+          <div class="toolbar" style="margin-top:10px;">
+            <button id="echoWakeSaveBtn" class="btn btn-primary" type="button">Save Wake Profile</button>
+            <span id="echoWakeState" class="muted" style="font-size:12px;"></span>
+          </div>
+        </div>
 
         <!-- ── Skills Registries ── -->
         <div id="skillsSettingsPanel" class="settings-group" data-foldable="true" data-collapsed="true">

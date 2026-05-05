@@ -130,6 +130,7 @@ for (const bridge of [
   "getDesktopAudioSource()",
   "detectEchoKeyword(payload)",
   "enrollEchoKeyword(payload)",
+  "setEchoWakeProfile(profile)",
   "transcribeNoteAudio(payload)",
   "transcribeNoteAudioStreaming(payload, callback)",
   "note-transcribe-stream-event"
@@ -141,6 +142,7 @@ for (const channel of [
   "shellOpenOverlayVoice",
   "echoKwsDetect",
   "echoKeywordEnroll",
+  "echoWakeProfileUpdate",
   "noteTranscribe",
   "noteTranscribeStream",
   "noteTranscribeStreamEvent"
@@ -153,6 +155,7 @@ for (const mainBridge of [
   "IPC_CHANNELS.shellOpenOverlayVoice",
   "IPC_CHANNELS.echoKwsDetect",
   "IPC_CHANNELS.echoKeywordEnroll",
+  "IPC_CHANNELS.echoWakeProfileUpdate",
   "IPC_CHANNELS.noteTranscribe",
   "IPC_CHANNELS.noteTranscribeStream",
   "IPC_CHANNELS.noteTranscribeStreamEvent",

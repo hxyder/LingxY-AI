@@ -50,6 +50,10 @@ test("api provider suggestions are stable, secret-free, and capability-oriented"
     suggestions.find((suggestion) => suggestion.id === "provider:mock-openai:mcp:web-research")?.priority,
     "recommended"
   );
+  assert.ok(
+    suggestions.some((suggestion) => suggestion.id === "global:mcp:browser-automation"),
+    "browser automation is a global capability and must not repeat once per provider"
+  );
   assert.ok(suggestions.some((suggestion) => suggestion.kind === "skills"));
   assert.doesNotMatch(JSON.stringify(suggestions), /stored-in-secret-store|secret:\/\/provider/u);
 });
@@ -124,6 +128,27 @@ test("merge preserves dismissed suggestions and removes provider-scoped entries"
   assert.deepEqual(removed.pendingSuggestions, []);
   assert.deepEqual(removed.archivedSuggestions, []);
 });
+
+test("merge dedupes global onboarding suggestions across providers", () => {
+  const now = "2026-05-04T02:00:00.000Z";
+  const merged = mergeProviderOnboardingSuggestions({}, [{
+    id: "global:mcp:browser-automation",
+    scope: "global",
+    providerId: "provider-a",
+    status: "pending",
+    title: "Enable browser automation when needed"
+  }, {
+    id: "global:mcp:browser-automation",
+    scope: "global",
+    providerId: "provider-b",
+    status: "pending",
+    title: "Enable browser automation when needed"
+  }], { now });
+
+  assert.equal(merged.pendingSuggestions.length, 1);
+  assert.equal(merged.pendingSuggestions[0].id, "global:mcp:browser-automation");
+});
+
 
 test("suggestion status updates move entries between pending and archived", () => {
   const onboarding = {

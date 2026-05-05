@@ -250,6 +250,11 @@ const auditList = document.querySelector("#auditList");
 const officeAddinSetupState = document.querySelector("#officeAddinSetupState");
 const checkOfficeAddinsButton = document.querySelector("#checkOfficeAddinsButton");
 const setupOfficeAddinsButton = document.querySelector("#setupOfficeAddinsButton");
+const echoWakeDisplayName = document.querySelector("#echoWakeDisplayName");
+const echoWakePhrases = document.querySelector("#echoWakePhrases");
+const echoWakeIncludeDefault = document.querySelector("#echoWakeIncludeDefault");
+const echoWakeSaveBtn = document.querySelector("#echoWakeSaveBtn");
+const echoWakeState = document.querySelector("#echoWakeState");
 const mcpServerCount = document.querySelector("#mcpServerCount");
 const mcpServerForm = document.querySelector("#mcpServerForm");
 const mcpServerId = document.querySelector("#mcpServerId");
@@ -450,6 +455,31 @@ function applyConsoleInformationArchitecture() {
 }
 
 applyConsoleInformationArchitecture();
+
+function renderEchoWakeSettings(settings = {}) {
+  const profile = settings?.echoWake && typeof settings.echoWake === "object"
+    ? settings.echoWake
+    : {};
+  if (echoWakeDisplayName) echoWakeDisplayName.value = profile.displayName || "linxi";
+  if (echoWakePhrases) {
+    echoWakePhrases.value = Array.isArray(profile.phrases) ? profile.phrases.join("\n") : "";
+  }
+  if (echoWakeIncludeDefault) echoWakeIncludeDefault.checked = profile.includeDefault !== false;
+}
+
+async function loadEchoWakeSettings() {
+  if (typeof window.ucaShell?.getSettings !== "function") return;
+  try {
+    renderEchoWakeSettings(await window.ucaShell.getSettings());
+  } catch {
+    // Non-fatal: settings can still be loaded on the next broadcast.
+  }
+}
+
+window.ucaShell?.onSettingsChanged?.((settings) => {
+  renderEchoWakeSettings(settings ?? {});
+});
+void loadEchoWakeSettings();
 
 // UCA-107: Rail collapse toggle + persisted rail state + persisted
 // current view. Reads from localStorage on boot, writes on interaction.
@@ -3519,6 +3549,18 @@ function navigateToConnectorMcp(serverId = "") {
   }, 80);
 }
 
+function navigateToConnectorsPanel(panelId = "") {
+  if (typeof switchTab === "function") {
+    try { switchTab("connectors"); } catch { /* ignore */ }
+  }
+  const link = document.querySelector(`[data-connectors-nav="${panelId}"]`);
+  link?.click?.();
+  const target = document.getElementById(panelId);
+  const panel = target?.closest?.(".settings-group, .panel-section") ?? target;
+  panel?.removeAttribute?.("data-collapsed");
+  panel?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+}
+
 async function updateOnboardingSuggestionViaShell(id, status) {
   if (typeof window.ucaShell?.updateOnboardingSuggestion !== "function") {
     throw new Error("Desktop onboarding bridge unavailable.");
@@ -3544,11 +3586,11 @@ async function completeOnboardingSuggestion(suggestion) {
     return;
   }
   if (action.type === "open_skills_library") {
-    navigateToSettingsPanel("skillsSettingsPanel");
+    navigateToConnectorsPanel("skillsSettingsPanel");
     return;
   }
   if (action.type === "configure_provider_mcp_files") {
-    navigateToSettingsPanel("codeCliSettingsPanel");
+    navigateToConnectorsPanel("codeCliSettingsPanel");
     codeCliAdapterMcpFiles?.focus?.();
     return;
   }
@@ -8102,6 +8144,16 @@ async function setupOfficeAddinsViaShell(payload) {
   return result ?? {};
 }
 
+async function updateEchoWakeProfileViaShell(profile) {
+  if (typeof window.ucaShell?.setEchoWakeProfile !== "function") {
+    throw new Error("Desktop Echo wake profile bridge unavailable.");
+  }
+  return assertShellResult(
+    await window.ucaShell.setEchoWakeProfile(profile ?? {}),
+    "Could not save Echo wake profile."
+  );
+}
+
 async function renameConnectedAccountViaShell(accountId, displayName) {
   if (typeof window.ucaShell?.renameConnectedAccount !== "function") {
     throw new Error("Desktop connector account bridge unavailable.");
@@ -8696,6 +8748,31 @@ loadSampleDagButton?.addEventListener("click", () => {
 killSwitchToggle.addEventListener("change", async () => await updateSecurityConfig({ global_kill_switch: killSwitchToggle.checked }, "Kill switch"));
 offlineModeToggle.addEventListener("change", async () => await updateSecurityConfig({ offline_mode: offlineModeToggle.checked }, "Offline mode"));
 presenterModeToggle.addEventListener("change", async () => await updateSecurityConfig({ presenter_mode: presenterModeToggle.checked }, "Presenter mode"));
+
+echoWakeSaveBtn?.addEventListener("click", async () => {
+  const phrases = (echoWakePhrases?.value ?? "")
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const displayName = (echoWakeDisplayName?.value ?? "").trim() || phrases[0] || "linxi";
+  const profile = {
+    displayName,
+    phrases,
+    includeDefault: echoWakeIncludeDefault?.checked !== false
+  };
+  if (echoWakeState) echoWakeState.textContent = "Saving...";
+  if (echoWakeSaveBtn) echoWakeSaveBtn.disabled = true;
+  try {
+    const settings = await updateEchoWakeProfileViaShell(profile);
+    renderEchoWakeSettings(settings);
+    if (echoWakeState) echoWakeState.textContent = "Saved. Echo will use this profile next wake.";
+    setTimeout(() => { if (echoWakeState) echoWakeState.textContent = ""; }, 2600);
+  } catch (error) {
+    if (echoWakeState) echoWakeState.textContent = `Failed: ${error.message}`;
+  } finally {
+    if (echoWakeSaveBtn) echoWakeSaveBtn.disabled = false;
+  }
+});
 
 // load custom providers + task routing on startup
 loadProvidersAndRouting();
@@ -10518,45 +10595,59 @@ function initFoldablePanelSections() {
 }
 initFoldablePanelSections();
 
+function initSectionNav({ selector, datasetKey }) {
+  const navLinks = Array.from(document.querySelectorAll(selector));
+  if (navLinks.length === 0) return;
+  const setActive = (id) => {
+    for (const link of navLinks) {
+      link.classList.toggle("active", link.dataset[datasetKey] === id);
+    }
+  };
+  const sectionForTarget = (target) =>
+    target.closest?.(".settings-group, .panel-section") ?? target;
+  for (const link of navLinks) {
+    link.addEventListener("click", (ev) => {
+      const id = link.dataset[datasetKey];
+      const target = document.querySelector(`#${CSS.escape(id)}`);
+      if (!target) return;
+      ev.preventDefault();
+      const section = sectionForTarget(target);
+      if (section.getAttribute("data-foldable") === "true" && section.getAttribute("data-collapsed") === "true") {
+        section.setAttribute("data-collapsed", "false");
+        const head = section.querySelector(":scope > .settings-group-head, :scope > .panel-section-header");
+        if (head) head.setAttribute("aria-expanded", "true");
+      }
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+      setActive(id);
+    });
+  }
+  const panels = navLinks
+    .map((l) => {
+      const target = document.querySelector(`#${CSS.escape(l.dataset[datasetKey])}`);
+      return target ? sectionForTarget(target) : null;
+    })
+    .filter(Boolean);
+  if (panels.length > 0 && "IntersectionObserver" in window) {
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!visible) return;
+      const link = navLinks.find((entry) => {
+        const target = document.querySelector(`#${CSS.escape(entry.dataset[datasetKey])}`);
+        return target === visible.target || target?.closest?.(".settings-group, .panel-section") === visible.target;
+      });
+      if (link) setActive(link.dataset[datasetKey]);
+    }, { rootMargin: "-20% 0px -70% 0px", threshold: [0, 0.25, 0.5, 1] });
+    for (const p of panels) io.observe(p);
+  }
+}
+
 // UCA-125 Phase 3-3: Settings sub-nav — clicking an anchor un-collapses
 // the target foldable (if any), scrolls it into view, and moves the
 // "active" highlight to the clicked link. IntersectionObserver then
 // tracks which panel is in view during manual scrolling so the nav
 // reflects the current section without needing extra clicks.
-(function initSettingsNav() {
-  const navLinks = Array.from(document.querySelectorAll(".settings-nav [data-settings-nav]"));
-  if (navLinks.length === 0) return;
-  const setActive = (id) => {
-    for (const link of navLinks) {
-      link.classList.toggle("active", link.dataset.settingsNav === id);
-    }
-  };
-  for (const link of navLinks) {
-    link.addEventListener("click", (ev) => {
-      const id = link.dataset.settingsNav;
-      const target = document.querySelector(`#${CSS.escape(id)}`);
-      if (!target) return;
-      ev.preventDefault();
-      if (target.getAttribute("data-foldable") === "true" && target.getAttribute("data-collapsed") === "true") {
-        target.setAttribute("data-collapsed", "false");
-        const head = target.querySelector(":scope > .settings-group-head, :scope > .panel-section-header");
-        if (head) head.setAttribute("aria-expanded", "true");
-      }
-      target.scrollIntoView({ behavior: "smooth", block: "start" });
-      setActive(id);
-    });
-  }
-  const panels = navLinks
-    .map((l) => document.querySelector(`#${CSS.escape(l.dataset.settingsNav)}`))
-    .filter(Boolean);
-  if (panels.length > 0 && "IntersectionObserver" in window) {
-    const io = new IntersectionObserver((entries) => {
-      const visible = entries.filter((e) => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
-      if (visible) setActive(visible.target.id);
-    }, { rootMargin: "-20% 0px -70% 0px", threshold: [0, 0.25, 0.5, 1] });
-    for (const p of panels) io.observe(p);
-  }
-})();
+initSectionNav({ selector: ".settings-nav [data-settings-nav]", datasetKey: "settingsNav" });
+initSectionNav({ selector: ".connectors-nav [data-connectors-nav]", datasetKey: "connectorsNav" });
 
 /* ═══════════════════════════════════════════════════════════════════════════
    UCA-178: QUICK NOTES

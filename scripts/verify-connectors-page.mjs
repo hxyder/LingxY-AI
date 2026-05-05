@@ -52,6 +52,23 @@ const nextPanelStart = consoleHtml.indexOf('id="panel-settings"', connStart);
 assert.ok(nextPanelStart > connStart, "panel-settings not found after connectors");
 const panelMarkup = consoleHtml.slice(connStart, nextPanelStart);
 
+for (const navTarget of [
+  "connAccountsTitle",
+  "connEmailTitle",
+  "connMcpTitle",
+  "integrationsStatusPanel",
+  "skillsSettingsPanel",
+  "codeCliSettingsPanel",
+  "officeSetupPanel"
+]) {
+  assert.ok(
+    new RegExp(`data-connectors-nav="${navTarget}"`).test(panelMarkup),
+    `connectors sidebar nav missing ${navTarget}`
+  );
+}
+assert.ok(consoleJs.includes('initSectionNav({ selector: ".connectors-nav [data-connectors-nav]", datasetKey: "connectorsNav" });'),
+  "connectors sidebar nav must use the shared section-nav wiring");
+
 // UCA-121: Morning digest moved from Connectors to Schedules.
 // UCA-190: Remove the Webhooks "Coming soon" placeholder; only working
 // connector surfaces should appear here.

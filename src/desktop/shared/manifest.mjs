@@ -110,6 +110,7 @@ export const IPC_CHANNELS = Object.freeze({
   noteTranscribe: "uca:note-transcribe",
   noteTranscribeStream: "uca:note-transcribe-stream",
   noteTranscribeStreamEvent: "uca:note-transcribe-stream-event",
+  echoWakeProfileUpdate: "uca:echo-wake-profile-update",
   connectedAccountRename: "uca:connected-account-rename",
   connectedAccountDefaultSet: "uca:connected-account-default-set",
   connectedAccountDisconnect: "uca:connected-account-disconnect",

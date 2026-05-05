@@ -178,6 +178,7 @@ for (const channel of [
   "uca:office-addins-setup",
   "uca:echo-kws-detect",
   "uca:echo-keyword-enroll",
+  "uca:echo-wake-profile-update",
   "uca:note-transcribe",
   "uca:note-transcribe-stream",
   "uca:note-transcribe-stream-event",

@@ -30,6 +30,10 @@ function suggestionId(providerId, kind, key) {
   return `provider:${providerId}:${kind}:${key}`;
 }
 
+function globalSuggestionId(kind, key) {
+  return `global:${kind}:${key}`;
+}
+
 function baseSuggestion(provider, kind, key, fields) {
   const providerId = normalizeId(provider.id);
   const providerFamily = detectProviderFamily(provider);
@@ -37,6 +41,22 @@ function baseSuggestion(provider, kind, key, fields) {
     id: suggestionId(providerId, kind, key),
     schemaVersion: PROVIDER_ONBOARDING_VERSION,
     scope: "provider",
+    providerId,
+    providerKind: provider.kind ?? "unknown",
+    providerFamily,
+    kind,
+    status: "pending",
+    ...fields
+  };
+}
+
+function baseGlobalSuggestion(provider, kind, key, fields) {
+  const providerId = normalizeId(provider.id);
+  const providerFamily = detectProviderFamily(provider);
+  return {
+    id: globalSuggestionId(kind, key),
+    schemaVersion: PROVIDER_ONBOARDING_VERSION,
+    scope: "global",
     providerId,
     providerKind: provider.kind ?? "unknown",
     providerFamily,
@@ -102,7 +122,7 @@ export function buildProviderOnboardingSuggestions(provider = {}, { config = {},
     }
   }));
 
-  suggestions.push(baseSuggestion(provider, "mcp", "browser-automation", {
+  suggestions.push(baseGlobalSuggestion(provider, "mcp", "browser-automation", {
     priority: "optional",
     title: "Enable browser automation when needed",
     reason: "Browser automation should stay explicit: it is useful for login-bound or interactive sites, but it has more side effects than plain search.",

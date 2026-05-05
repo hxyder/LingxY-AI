@@ -433,6 +433,18 @@ assert.ok(/collapseCompletedConsoleToolCards/.test(consoleJs) && /\.chat-tool-ca
   "chat tools: completed tool cards must collapse after the final answer");
 assert.ok(/rememberEchoTask/.test(overlayJs) && /showEchoResultHudOnce/.test(overlayJs),
   "echo mode: echo-submitted task results must surface through the Echo HUD");
+assert.ok(/id="voiceEchoSettingsPanel"/.test(consoleHtml) && /setEchoWakeProfile/.test(consoleJs),
+  "echo mode: Console settings must expose the Echo wake profile instead of leaving settings.echoWake invisible");
+assert.ok(!/id="providerOnboardingList"/.test(consoleHtml),
+  "provider settings must not show global capability onboarding cards inside AI Providers");
+assert.equal((consoleHtml.match(/Add any OpenAI-compatible or Anthropic API\. Saved instantly/g) ?? []).length, 1,
+  "provider setup helper text must appear once, not be duplicated by onboarding cards");
+assert.ok(!/data-settings-nav="(?:skillsSettingsPanel|codeCliSettingsPanel|emailSettingsPanel)"/.test(consoleHtml),
+  "settings nav must not link to panels that are mounted under Connectors");
+assert.ok(/data-connectors-nav="skillsSettingsPanel"/.test(consoleHtml)
+    && /data-connectors-nav="codeCliSettingsPanel"/.test(consoleHtml)
+    && /data-connectors-nav="connEmailTitle"/.test(consoleHtml),
+  "connectors must provide sidebar navigation for email, skills, and Code CLI surfaces");
 assert.ok(/\.chat-preview-pane \.lp-iframe\b/.test(sharedCss),
   "chat preview: inline preview iframe must have stable dimensions outside the standalone live-preview shell");
 assert.ok(/exportBundle:\s*["']uca:export-bundle["']/.test(desktopManifest),
