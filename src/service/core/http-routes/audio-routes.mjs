@@ -18,6 +18,76 @@ const ECHO_AUDIO_ACTORS = ["desktop_shell"];
 const NOTE_TRANSCRIBE_ACTORS = ["desktop_overlay"];
 const ECHO_AUDIO_MAX_BYTES = 1024 * 1024 * 12;
 const NOTE_AUDIO_MAX_BYTES = 1024 * 1024 * 64;
+const DEFAULT_NOTE_STREAM_TOTAL_TIMEOUT_MS = 120_000;
+const DEFAULT_NOTE_STREAM_IDLE_TIMEOUT_MS = 45_000;
+
+function positiveIntegerEnv(name, fallback) {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function getNoteStreamTimeouts() {
+  return {
+    totalMs: positiveIntegerEnv("UCA_NOTE_TRANSCRIBE_STREAM_TOTAL_TIMEOUT_MS", DEFAULT_NOTE_STREAM_TOTAL_TIMEOUT_MS),
+    idleMs: positiveIntegerEnv("UCA_NOTE_TRANSCRIBE_STREAM_IDLE_TIMEOUT_MS", DEFAULT_NOTE_STREAM_IDLE_TIMEOUT_MS)
+  };
+}
+
+async function runWithStreamTimeout(operation, {
+  totalMs,
+  idleMs,
+  onTimeout
+} = {}) {
+  let settled = false;
+  let idleTimer = null;
+  let totalTimer = null;
+  let resolveTimeout = null;
+  const clearTimers = () => {
+    if (idleTimer) clearTimeout(idleTimer);
+    if (totalTimer) clearTimeout(totalTimer);
+    idleTimer = null;
+    totalTimer = null;
+  };
+  const finishTimeout = (reason) => {
+    if (settled) return;
+    settled = true;
+    clearTimers();
+    onTimeout?.(reason);
+    resolveTimeout?.({ ok: false, reason });
+  };
+  const armIdleTimer = () => {
+    if (!idleMs) return;
+    if (idleTimer) clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => finishTimeout("stream_idle_timeout"), idleMs);
+  };
+  const markActivity = () => {
+    if (!settled) armIdleTimer();
+  };
+
+  const timeoutPromise = new Promise((resolve) => {
+    resolveTimeout = resolve;
+    if (totalMs) totalTimer = setTimeout(() => finishTimeout("stream_total_timeout"), totalMs);
+    armIdleTimer();
+  });
+  const workPromise = Promise.resolve()
+    .then(() => operation(markActivity))
+    .then(
+      (result) => {
+        if (settled) return null;
+        settled = true;
+        clearTimers();
+        return result;
+      },
+      (error) => {
+        if (settled) return null;
+        settled = true;
+        clearTimers();
+        throw error;
+      }
+    );
+
+  return await Promise.race([workPromise, timeoutPromise]);
+}
 
 function jsonBodyMaxBytesForAudio(binaryMaxBytes) {
   return Math.ceil(binaryMaxBytes * 1.4) + 4096;
@@ -464,7 +534,12 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
   }
 }
 
-async function transcribeAudioLocallyStream(audioBuffer, { mimeType = "audio/webm", lang = "auto" } = {}, onEvent) {
+async function transcribeAudioLocallyStream(audioBuffer, {
+  mimeType = "audio/webm",
+  lang = "auto",
+  signal = null
+} = {}, onEvent) {
+  if (signal?.aborted) return { ok: false, reason: "stream_aborted" };
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-note-audio-"));
   const ext = mimeType.includes("wav") ? ".wav"
     : mimeType.includes("mp4") || mimeType.includes("m4a") ? ".m4a"
@@ -488,6 +563,10 @@ async function transcribeAudioLocallyStream(audioBuffer, { mimeType = "audio/web
 
     const stderrChunks = [];
     child.stderr.on("data", (chunk) => stderrChunks.push(chunk));
+    const abortStream = () => {
+      if (!child.killed) child.kill("SIGTERM");
+    };
+    signal?.addEventListener?.("abort", abortStream, { once: true });
 
     const rl = readline.createInterface({ input: child.stdout });
     rl.on("line", (line) => {
@@ -503,7 +582,12 @@ async function transcribeAudioLocallyStream(audioBuffer, { mimeType = "audio/web
         resolve({ ok: false, reason: "spawn_failed" });
       });
       child.on("close", (code) => {
+        signal?.removeEventListener?.("abort", abortStream);
         rl.close();
+        if (signal?.aborted) {
+          resolve({ ok: false, reason: "stream_aborted" });
+          return;
+        }
         if (code !== 0) {
           const stderrText = Buffer.concat(stderrChunks).toString("utf8").slice(-800);
           onEvent({ type: "error", reason: "python_exit", code, message: stderrText });
@@ -708,7 +792,11 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
         catch { /* client hung up */ }
       };
       let closed = false;
-      request.on("close", () => { closed = true; });
+      const streamAbort = new AbortController();
+      request.on("close", () => {
+        closed = true;
+        streamAbort.abort();
+      });
 
       let providerHandled = false;
       const provider = resolveAudioTranscriptionProvider(runtime);
@@ -744,12 +832,37 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       }
 
       if (!providerHandled && !closed) {
-        const result = await audioRuntime.transcribeAudioLocallyStream(
-          audioBuffer,
-          { mimeType, lang },
-          (event) => { if (!closed) writeFrame(event); }
+        const timeoutConfig = getNoteStreamTimeouts();
+        const result = await runWithStreamTimeout(
+          (markActivity) => audioRuntime.transcribeAudioLocallyStream(
+            audioBuffer,
+            { mimeType, lang, signal: streamAbort.signal },
+            (event) => {
+              markActivity();
+              if (!closed) writeFrame(event);
+            }
+          ),
+          {
+            ...timeoutConfig,
+            onTimeout(reason) {
+              streamAbort.abort();
+              if (!closed) {
+                writeFrame({
+                  type: "error",
+                  reason,
+                  timeout_ms: reason === "stream_idle_timeout"
+                    ? timeoutConfig.idleMs
+                    : timeoutConfig.totalMs
+                });
+              }
+            }
+          }
         );
-        if (!result.ok && !closed) {
+        if (
+          !result.ok
+          && !closed
+          && !["stream_idle_timeout", "stream_total_timeout"].includes(result.reason ?? "")
+        ) {
           writeFrame({ type: "error", reason: result.reason ?? "local_stream_failed" });
         }
       }

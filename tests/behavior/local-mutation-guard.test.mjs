@@ -38,6 +38,10 @@ function captureResponse() {
       this.statusCode = statusCode;
       this.headers = headers;
     },
+    flushHeaders() {},
+    write(chunk = "") {
+      this.body += chunk;
+    },
     end(chunk = "") {
       this.body += chunk;
     }
@@ -612,6 +616,15 @@ function makeEchoAudioRuntime({ keywordDir = null } = {}) {
           provider: { model: "fake-whisper" }
         };
       },
+      async transcribeAudioLocallyStream(audioBuffer, options = {}, onEvent = () => {}) {
+        calls.push({
+          method: "audio.transcribeAudioLocallyStream",
+          bytes: audioBuffer.length,
+          options
+        });
+        onEvent({ type: "segment", start: 0, end: 1, text: "linxi" });
+        return { ok: true };
+      },
       async writeEnrollmentSample(record = {}) {
         calls.push({
           method: "audio.writeEnrollmentSample",
@@ -660,7 +673,8 @@ async function audioRoute({
   return {
     handled,
     statusCode: response.statusCode,
-    payload: parsePayload(response),
+    body: response.body,
+    payload: response.body.trim().startsWith("{") ? parsePayload(response) : null,
     runtime
   };
 }
@@ -1687,4 +1701,137 @@ test("note transcription rejects oversized audio before transcription runtime", 
   assert.equal(result.statusCode, 413);
   assert.equal(result.payload.reason, "audio_too_large");
   assert.deepEqual(runtime.calls, []);
+});
+
+test("streaming note transcription sends local runtime SSE events and ends normally", async () => {
+  const savedEnv = {
+    UCA_TRANSCRIPTION_API_KEY: process.env.UCA_TRANSCRIPTION_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    UCA_OPENAI_API_KEY: process.env.UCA_OPENAI_API_KEY
+  };
+  delete process.env.UCA_TRANSCRIPTION_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.UCA_OPENAI_API_KEY;
+  try {
+    const runtime = makeEchoAudioRuntime();
+    const result = await audioRoute({
+      method: "POST",
+      pathname: "/note/transcribe?stream=1&lang=zh",
+      actor: "desktop_overlay",
+      rawBody: "note-audio",
+      runtime
+    });
+
+    assert.equal(result.handled, true);
+    assert.equal(result.statusCode, 200);
+    assert.match(result.body, /"type":"segment"/);
+    assert.match(result.body, /"text":"linxi"/);
+    assert.doesNotMatch(result.body, /stream_idle_timeout|stream_total_timeout/);
+    assert.equal(runtime.calls.length, 1);
+    assert.equal(runtime.calls[0].method, "audio.transcribeAudioLocallyStream");
+    assert.equal(runtime.calls[0].options.lang, "zh");
+    assert.equal(runtime.calls[0].options.signal.aborted, false);
+  } finally {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("streaming note transcription ends with a structured idle timeout when local runtime stalls", async () => {
+  const savedEnv = {
+    UCA_NOTE_TRANSCRIBE_STREAM_IDLE_TIMEOUT_MS: process.env.UCA_NOTE_TRANSCRIBE_STREAM_IDLE_TIMEOUT_MS,
+    UCA_NOTE_TRANSCRIBE_STREAM_TOTAL_TIMEOUT_MS: process.env.UCA_NOTE_TRANSCRIBE_STREAM_TOTAL_TIMEOUT_MS,
+    UCA_TRANSCRIPTION_API_KEY: process.env.UCA_TRANSCRIPTION_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    UCA_OPENAI_API_KEY: process.env.UCA_OPENAI_API_KEY
+  };
+  process.env.UCA_NOTE_TRANSCRIBE_STREAM_IDLE_TIMEOUT_MS = "20";
+  process.env.UCA_NOTE_TRANSCRIBE_STREAM_TOTAL_TIMEOUT_MS = "200";
+  delete process.env.UCA_TRANSCRIPTION_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.UCA_OPENAI_API_KEY;
+  try {
+    const runtime = makeEchoAudioRuntime();
+    runtime.audio.transcribeAudioLocallyStream = async (audioBuffer, options = {}) => {
+      runtime.calls.push({
+        method: "audio.transcribeAudioLocallyStream",
+        bytes: audioBuffer.length,
+        options
+      });
+      return new Promise(() => {});
+    };
+    const result = await audioRoute({
+      method: "POST",
+      pathname: "/note/transcribe?stream=1&lang=zh",
+      actor: "desktop_overlay",
+      rawBody: "note-audio",
+      runtime
+    });
+
+    assert.equal(result.handled, true);
+    assert.equal(result.statusCode, 200);
+    assert.match(result.body, /"type":"error"/);
+    assert.match(result.body, /"reason":"stream_idle_timeout"/);
+    assert.equal(runtime.calls.length, 1);
+    assert.equal(runtime.calls[0].method, "audio.transcribeAudioLocallyStream");
+    assert.equal(runtime.calls[0].bytes, "note-audio".length);
+    assert.equal(runtime.calls[0].options.mimeType, "audio/webm");
+    assert.equal(runtime.calls[0].options.lang, "zh");
+    assert.equal(runtime.calls[0].options.signal.aborted, true);
+  } finally {
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("streaming note transcription enforces a total timeout even when local runtime stays active", async () => {
+  const savedEnv = {
+    UCA_NOTE_TRANSCRIBE_STREAM_IDLE_TIMEOUT_MS: process.env.UCA_NOTE_TRANSCRIBE_STREAM_IDLE_TIMEOUT_MS,
+    UCA_NOTE_TRANSCRIBE_STREAM_TOTAL_TIMEOUT_MS: process.env.UCA_NOTE_TRANSCRIBE_STREAM_TOTAL_TIMEOUT_MS,
+    UCA_TRANSCRIPTION_API_KEY: process.env.UCA_TRANSCRIPTION_API_KEY,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    UCA_OPENAI_API_KEY: process.env.UCA_OPENAI_API_KEY
+  };
+  process.env.UCA_NOTE_TRANSCRIBE_STREAM_IDLE_TIMEOUT_MS = "200";
+  process.env.UCA_NOTE_TRANSCRIBE_STREAM_TOTAL_TIMEOUT_MS = "35";
+  delete process.env.UCA_TRANSCRIPTION_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.UCA_OPENAI_API_KEY;
+  let interval = null;
+  try {
+    const runtime = makeEchoAudioRuntime();
+    runtime.audio.transcribeAudioLocallyStream = async (audioBuffer, options = {}, onEvent = () => {}) => {
+      runtime.calls.push({
+        method: "audio.transcribeAudioLocallyStream",
+        bytes: audioBuffer.length,
+        options
+      });
+      interval = setInterval(() => onEvent({ type: "segment", text: "still-working" }), 5);
+      options.signal.addEventListener("abort", () => clearInterval(interval), { once: true });
+      return new Promise(() => {});
+    };
+    const result = await audioRoute({
+      method: "POST",
+      pathname: "/note/transcribe?stream=1",
+      actor: "desktop_overlay",
+      rawBody: "note-audio",
+      runtime
+    });
+
+    assert.equal(result.handled, true);
+    assert.equal(result.statusCode, 200);
+    assert.match(result.body, /"type":"segment"/);
+    assert.match(result.body, /"reason":"stream_total_timeout"/);
+    assert.equal(runtime.calls[0].options.signal.aborted, true);
+  } finally {
+    if (interval) clearInterval(interval);
+    for (const [key, value] of Object.entries(savedEnv)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });
