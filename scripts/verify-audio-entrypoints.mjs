@@ -10,6 +10,7 @@ const read = (relativePath) => readFileSync(path.join(repoRoot, relativePath), "
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const audioDevice = read("src/desktop/renderer/audio-device.mjs");
+const audioView = read("src/desktop/renderer/overlay-audio-view.mjs");
 const preload = read("src/desktop/renderer/preload.cjs");
 const main = read("src/desktop/tray/electron-main.mjs");
 const manifest = read("src/desktop/shared/manifest.mjs");
@@ -59,6 +60,8 @@ for (const listener of [
 for (const voiceInvariant of [
   "function resetVoiceState()",
   "requestAudioInputStream({",
+  "applyVoiceRecordingView({",
+  "resetVoiceTranscriptView(voiceTranscript",
   "startVoiceLocalRecorder(stream)",
   "startVoicePreviewLoop()",
   "stopVoiceLocalRecorder({ transcribe",
@@ -68,6 +71,15 @@ for (const voiceInvariant of [
   "attachDroppedFilesToVoice(filePaths)"
 ]) {
   assert.ok(overlayJs.includes(voiceInvariant), `voice state machine missing invariant: ${voiceInvariant}`);
+}
+
+for (const viewInvariant of [
+  "export function formatNoteElapsed",
+  "export function setVoiceCardMode",
+  "export function resetVoiceTranscriptView",
+  "export function applyVoiceRecordingView"
+]) {
+  assert.ok(audioView.includes(viewInvariant), `overlay audio view helper missing invariant: ${viewInvariant}`);
 }
 
 for (const deviceInvariant of [

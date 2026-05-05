@@ -74,6 +74,12 @@ import {
 import {
   requestAudioInputStream
 } from "./audio-device.mjs";
+import {
+  applyVoiceRecordingView,
+  formatNoteElapsed,
+  resetVoiceTranscriptView,
+  setVoiceCardMode as setVoiceCardModeView
+} from "./overlay-audio-view.mjs";
 
 /* ── Theme sync (mirrors console theme via shared localStorage) ── */
 const THEME_KEY = "uca-console-theme";
@@ -4573,9 +4579,11 @@ async function submitEchoVoiceCommand() {
 }
 
 function setVoiceCardMode(mode = "voice") {
-  voiceCard?.setAttribute("data-mode", mode);
-  tabVoiceBtn?.classList.toggle("active", mode === "voice");
-  tabNoteBtn?.classList.toggle("active", mode === "note");
+  setVoiceCardModeView({
+    voiceCard,
+    tabVoiceBtn,
+    tabNoteBtn
+  }, mode);
 }
 
 function showNotePanel() {
@@ -4601,11 +4609,7 @@ function enterVoiceMode() {
   setVoiceCardMode("voice");
   voiceCard?.classList.add("idle");
   voiceCard?.classList.remove("error");
-  if (voiceTranscript) {
-    voiceTranscript.textContent = "实时识别的文字会显示在这里…";
-    voiceTranscript.classList.add("placeholder");
-    voiceTranscript.scrollTop = 0;
-  }
+  resetVoiceTranscriptView(voiceTranscript);
   // Defensive reset — make sure a stale voiceRecording=true from a prior
   // session doesn't make the Start button no-op the next time the panel
   // opens. If there's no active stream/recorder, voiceRecording was wrong.
@@ -4844,28 +4848,16 @@ function getSpeechRecognitionCtor() {
 
 function setVoiceRecording(active) {
   voiceRecording = active;
+  applyVoiceRecordingView({
+    voiceCard,
+    voiceStatus,
+    voiceToggleBtn,
+    voiceStartBtn,
+    voiceStopBtn
+  }, active);
   if (active) {
-    voiceCard?.classList.remove("idle", "error");
-    voiceStatus.textContent = "🎙 正在聆听...";
-    voiceToggleBtn?.classList.add("recording");
-    // Keep the Start button clickable during recording so the user has a
-    // hard-restart affordance. The click handler always resets state before
-    // re-starting, so this never produces the old "button does nothing"
-    // symptom where the state machine silently swallowed the click.
-    if (voiceStartBtn) {
-      voiceStartBtn.disabled = false;
-      voiceStartBtn.textContent = "重启";
-    }
-    if (voiceStopBtn) voiceStopBtn.disabled = false;
     showEchoHud({ text: "正在聆听…", kind: "wake", durationMs: 1800, throttleMs: 0 });
   } else {
-    voiceCard?.classList.add("idle");
-    voiceToggleBtn?.classList.remove("recording");
-    if (voiceStartBtn) {
-      voiceStartBtn.disabled = false;
-      voiceStartBtn.textContent = "开始";
-    }
-    if (voiceStopBtn) voiceStopBtn.disabled = false;
     stopVoiceAudioMeter();
     showEchoHud({ text: "识别已停止", kind: "info", durationMs: 1200 });
   }
@@ -5298,10 +5290,7 @@ function resetVoiceState() {
   if (!noteActive) {
     void window.ucaShell?.setNoteRecordingState?.({ active: false, elapsedMs: 0, elapsed: "00:00" });
   }
-  if (voiceTranscript) {
-    voiceTranscript.textContent = "实时识别的文字会显示在这里…";
-    voiceTranscript.classList.add("placeholder");
-  }
+  resetVoiceTranscriptView(voiceTranscript);
 }
 
 // On Windows, Web Speech API does not trigger the OS microphone permission
@@ -5771,13 +5760,6 @@ function publishNoteRecordingState(extra = {}) {
     ...safeExtra,
     active: noteActive
   });
-}
-
-function formatNoteElapsed(ms) {
-  const totalSec = Math.floor(ms / 1000);
-  const m = Math.floor(totalSec / 60).toString().padStart(2, "0");
-  const s = (totalSec % 60).toString().padStart(2, "0");
-  return `${m}:${s}`;
 }
 
 function getNoteLanguageSelection() {
