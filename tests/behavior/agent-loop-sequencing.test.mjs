@@ -111,6 +111,31 @@ function makeNoopTool(id, extra = {}) {
   };
 }
 
+function makeGenerateDocumentTool() {
+  return {
+    id: "generate_document",
+    name: "Generate Document",
+    description: "Generate a document artifact for behavior tests.",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      required: ["kind", "outline"],
+      properties: {
+        kind: { type: "string", enum: ["pptx", "docx", "xlsx", "pdf", "html"] },
+        outline: { type: "object" }
+      }
+    },
+    async execute(args = {}) {
+      return {
+        success: true,
+        observation: `generated:${args.kind}`,
+        artifact_paths: [`E:\\linxiDoc\\behavior.${args.kind}`]
+      };
+    }
+  };
+}
+
 function makeRuntime(overrides = {}) {
   const events = [];
   const auditLog = [];
@@ -193,6 +218,120 @@ test("agent loop carries tool_result into the next planner turn and final compos
   assert.equal(plannerSnapshots[1][0].type, "tool_result");
   assert.equal(plannerSnapshots[1][0].observation, "observed:alpha");
   assert.ok(events.some((event) => event.eventType === "tool_call_completed" && event.payload?.success === true));
+});
+
+test("invalid tool arguments do not poison repeated-call dedupe before repair", async () => {
+  const { runtime, events } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([makeGenerateDocumentTool()]),
+    finalAnswerComposer: async ({ transcript }) => {
+      assert.ok(transcript.some((entry) =>
+        entry.type === "validation_error"
+        && entry.tool === "generate_document"
+      ));
+      assert.ok(transcript.some((entry) =>
+        entry.type === "tool_result"
+        && entry.tool === "generate_document"
+        && entry.success === true
+      ));
+      return "document generated";
+    }
+  });
+  const task = {
+    task_id: "task_document_validation_repair",
+    user_command: "Generate a Word document.",
+    execution_mode: "interactive",
+    task_spec: {
+      goal: "generate_document",
+      artifact: { required: true, kind: "docx", quality: "draft" },
+      synthesis: { expected_output: "docx", user_goal: "generate a document" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: false,
+        tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: []
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ iteration }) => {
+      if (iteration === 0 || iteration === 1) {
+        return { type: "tool_call", tool: "generate_document", args: { kind: "docx" } };
+      }
+      if (iteration === 2) {
+        return {
+          type: "tool_call",
+          tool: "generate_document",
+          args: {
+            kind: "docx",
+            outline: {
+              title: "Repairable Document",
+              sections: [
+                { heading: "Summary", body: "This section proves the corrected arguments reached the tool." }
+              ]
+            }
+          }
+        };
+      }
+      return { type: "final", text: "done" };
+    },
+    maxIterations: 5
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.final_text, "document generated");
+  assert.equal(
+    result.transcript.filter((entry) => entry.type === "validation_error" && entry.tool === "generate_document").length,
+    2
+  );
+  assert.ok(events.some((event) =>
+    event.eventType === "tool_call_completed"
+    && event.payload?.tool_id === "generate_document"
+    && event.payload?.success === true
+  ));
+  assert.ok(!events.some((event) =>
+    event.eventType === "synthesis_retry"
+    && event.payload?.reason === "repeated_tool_call"
+  ));
+});
+
+test("valid repeated tool calls still trigger repeated-call synthesis guidance", async () => {
+  const { runtime, events } = makeRuntime({
+    finalAnswerComposer: async ({ transcript }) => {
+      assert.equal(
+        transcript.filter((entry) => entry.type === "tool_result" && entry.tool === "lookup_fixture").length,
+        1
+      );
+      return "deduped final";
+    }
+  });
+
+  const result = await runToolAgentLoop({
+    task: makeTask(),
+    runtime,
+    planner: async ({ iteration }) => {
+      if (iteration === 0 || iteration === 1) {
+        return { type: "tool_call", tool: "lookup_fixture", args: { value: "same" } };
+      }
+      return { type: "final", text: "done" };
+    },
+    maxIterations: 4
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.final_text, "deduped final");
+  assert.equal(
+    result.transcript.filter((entry) => entry.type === "tool_result" && entry.tool === "lookup_fixture").length,
+    1
+  );
+  assert.ok(events.some((event) =>
+    event.eventType === "synthesis_retry"
+    && event.payload?.reason === "repeated_tool_call"
+  ));
 });
 
 test("agent loop emits evidence summary for local file reads", async () => {

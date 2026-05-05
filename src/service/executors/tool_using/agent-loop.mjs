@@ -1276,39 +1276,6 @@ async function _runToolAgentLoopCore({
       decision.args = applySideEffectContractToDecisionArgs({ decision, tool, task, runtime });
     }
 
-    // Dedupe: if the planner repeats the same tool+args, ask it to
-    // synthesize from what's already been observed instead of dumping
-    // raw observations as the final answer.
-    const callKey = `${decision.tool}::${JSON.stringify(decision.args ?? {})}`;
-    if (seenCalls.has(callKey)) {
-      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
-        synthesisRetriesUsed += 1;
-        transcript.push({
-          type: "synthesis_retry",
-          violations: [{
-            kind: "repeated_tool_call",
-            message: `Planner repeated the same ${decision.tool} call; synthesize from prior observations instead.`
-          }]
-        });
-        runtime?.emitTaskEvent?.("synthesis_retry", {
-          attempt: synthesisRetriesUsed,
-          reason: "repeated_tool_call"
-        });
-        continue;
-      }
-      return {
-        status: "partial_success",
-        final_text: await composeFinalAnswer({
-          task,
-          transcript,
-          runtime,
-          reason: "repeated_tool_call"
-        }),
-        transcript
-      };
-    }
-    seenCalls.add(callKey);
-
     // UCA-181 follow-up: after a side-effect tool already succeeded in
     // this loop, refuse further calls to the SAME tool. Agents that
     // varied a single field (description ordering, attendee list) were
@@ -1364,6 +1331,39 @@ async function _runToolAgentLoopCore({
       }
       continue;
     }
+
+    // Dedupe only validated tool calls. Invalid arguments are part of the
+    // planner repair loop; marking them as "seen" before validation prevents
+    // the model from retrying the same tool with corrected arguments.
+    const callKey = `${decision.tool}::${JSON.stringify(decision.args ?? {})}`;
+    if (seenCalls.has(callKey)) {
+      if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
+        synthesisRetriesUsed += 1;
+        transcript.push({
+          type: "synthesis_retry",
+          violations: [{
+            kind: "repeated_tool_call",
+            message: `Planner repeated the same ${decision.tool} call; synthesize from prior observations instead.`
+          }]
+        });
+        runtime?.emitTaskEvent?.("synthesis_retry", {
+          attempt: synthesisRetriesUsed,
+          reason: "repeated_tool_call"
+        });
+        continue;
+      }
+      return {
+        status: "partial_success",
+        final_text: await composeFinalAnswer({
+          task,
+          transcript,
+          runtime,
+          reason: "repeated_tool_call"
+        }),
+        transcript
+      };
+    }
+    seenCalls.add(callKey);
 
     const risk = registry.evaluate(tool.id, decision.args, runtime.toolContext ?? {});
     const securityDecision = runtime.securityBroker?.authorizeToolCall(tool, decision.args) ?? {
