@@ -19,13 +19,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { readCssWithImports } from "./lib/css-imports.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const tokens = read("src/desktop/renderer/tokens.css");
-const shared = read("src/desktop/renderer/shared.css");
+const shared = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const consoleHtml = read("src/desktop/renderer/console.html");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 

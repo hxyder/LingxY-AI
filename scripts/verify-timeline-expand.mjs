@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { readCssWithImports } from "./lib/css-imports.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -50,7 +51,7 @@ assert.ok(
 
 // CSS: hide default marker on webkit AND strip list-style so Chromium/FF
 // don't render the disclosure triangle inside the surface card.
-const shared = read("src/desktop/renderer/shared.css");
+const shared = readCssWithImports(root, "src/desktop/renderer/shared.css");
 assert.ok(
   /details\.timeline-item\s*>\s*summary\s*\{[^}]*list-style:\s*none/s.test(shared),
   "shared.css must hide the <summary> default marker"

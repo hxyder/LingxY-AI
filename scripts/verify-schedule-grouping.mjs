@@ -17,25 +17,15 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { readCssWithImports } from "./lib/css-imports.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
-function readCssWithImports(relativePath, seen = new Set()) {
-  const absolutePath = path.join(root, relativePath);
-  if (seen.has(absolutePath)) return "";
-  seen.add(absolutePath);
-  const css = readFileSync(absolutePath, "utf8");
-  const dir = path.dirname(relativePath);
-  return css.replace(/@import\s+url\(["']?([^"')]+)["']?\);\s*/g, (_match, target) => {
-    const child = path.join(dir, target).replace(/\\/g, "/");
-    return readCssWithImports(child, seen);
-  });
-}
 
 const html = read("src/desktop/renderer/console.html");
 const js = read("src/desktop/renderer/console.js");
-const css = readCssWithImports("src/desktop/renderer/shared.css");
+const css = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const schedulesView = read("src/desktop/renderer/console-schedules-view.mjs");
 
 // Search input exists in schedules toolbar.

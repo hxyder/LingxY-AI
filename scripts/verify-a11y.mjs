@@ -18,13 +18,14 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { readCssWithImports } from "./lib/css-imports.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
 const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 // ── focus-visible rule exists in shared.css ─────────────────────────────
-const shared = read("src/desktop/renderer/shared.css");
+const shared = readCssWithImports(root, "src/desktop/renderer/shared.css");
 assert.ok(
   /:focus-visible\s*\{[^}]*outline:\s*2px\s+solid\s+var\(--accent\)/s.test(shared),
   "shared.css must define a :focus-visible rule with outline:2px solid var(--accent)"

@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { readCssWithImports } from "./lib/css-imports.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -26,7 +27,7 @@ function readSection(source, startMarker, endMarker) {
 }
 
 // ── skeleton loader CSS ────────────────────────────────────────────────
-const shared = read("src/desktop/renderer/shared.css");
+const shared = readCssWithImports(root, "src/desktop/renderer/shared.css");
 assert.ok(/\.skeleton\s*\{/.test(shared), "shared.css must define .skeleton");
 assert.ok(
   /@keyframes\s+skeleton-shimmer/.test(shared),

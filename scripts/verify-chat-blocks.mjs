@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { readCssWithImports } from "./lib/css-imports.mjs";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -14,7 +15,7 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const consoleJs = read("src/desktop/renderer/console.js");
 const overlayJs = read("src/desktop/renderer/overlay.js");
-const sharedCss = read("src/desktop/renderer/shared.css");
+const sharedCss = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const chatBlocks = read("src/desktop/renderer/chat-blocks.mjs");
 
 assert.match(consoleJs, /from\s+["']\.\/chat-blocks\.mjs["']/,

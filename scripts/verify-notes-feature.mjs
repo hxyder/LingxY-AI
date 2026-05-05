@@ -23,6 +23,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { readCssWithImports } from "./lib/css-imports.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -30,7 +31,7 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const html = read("src/desktop/renderer/console.html");
 const js = read("src/desktop/renderer/console.js");
-const css = read("src/desktop/renderer/shared.css");
+const css = readCssWithImports(root, "src/desktop/renderer/shared.css");
 
 // ── HTML ────────────────────────────────────────────────────────────────
 assert.match(html, /<button class="rail-item" data-tab="notes"/,
