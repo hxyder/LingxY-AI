@@ -349,6 +349,10 @@ assert.ok(/const\s+clarifyPayload\s*=\s*attachOverlayProjectScope\(\{/.test(over
   "overlay projects: /task/clarify submissions must preserve project scope");
 assert.ok(/const\s+taskBody\s*=\s*attachOverlayProjectScope\(\s*(?:attachOverlaySubmissionMetadata\(payload\)|payload)\s*\)/.test(overlayJs),
   "overlay projects: note transcription task submission must preserve project scope");
+assert.ok(/function\s+resolveActiveWindowFileSelection/.test(overlayJs)
+    && /captureMode:\s*activeFileSelection\.captureMode/.test(overlayJs)
+    && /filePaths:\s*activeFileSelection\.filePaths/.test(overlayJs),
+  "active-window files: overlay must route explicit current-file/document commands through file submission");
 assert.ok(/refreshProjectConversationSummaries/.test(consoleJs) && /fetchConversationsList\(\{\s*limit:\s*200,\s*archived:\s*["']0["'],\s*projectId\s*\}/.test(consoleJs),
   "projects: project tab must read SQL conversation summaries by project_id");
 assert.ok(/legacyProjectConversations/.test(consoleJs) && /projectStore\.conversations|store\.conversations/.test(consoleJs),

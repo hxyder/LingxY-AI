@@ -3880,14 +3880,25 @@ async function submitTask() {
           capture: { ...activeBrowserCapture }
         };
       } else {
-        payload = {
-          sourceApp: "uca.overlay",
-          captureMode: "overlay",
-          sourceType: "clipboard",
-          text: "",
-          userCommand: commandText,
-          executionMode: "interactive"
-        };
+        const activeFileSelection = resolveActiveWindowFileSelection(commandText);
+        if (activeFileSelection) {
+          payload = {
+            sourceApp: activeFileSelection.sourceApp,
+            captureMode: activeFileSelection.captureMode,
+            filePaths: activeFileSelection.filePaths,
+            userCommand: commandText,
+            executionMode: "interactive"
+          };
+        } else {
+          payload = {
+            sourceApp: "uca.overlay",
+            captureMode: "overlay",
+            sourceType: "clipboard",
+            text: "",
+            userCommand: commandText,
+            executionMode: "interactive"
+          };
+        }
       }
     }
 
@@ -4057,6 +4068,17 @@ function isActiveBrowserWindow(activeWindow = null) {
   return kind === "web_url" && Boolean(activeWindow?.url);
 }
 
+function activeWindowFilePath(activeWindow = null) {
+  const kind = activeWindow?.detected_kind ?? activeWindow?.detectedKind;
+  if (kind !== "file_path") return "";
+  return `${activeWindow?.file_path ?? activeWindow?.filePath ?? ""}`.trim();
+}
+
+function commandTargetsCurrentFileContext(commandText = "") {
+  return /(这个文件|当前文件|这个文档|当前文档|这份文档|打开的文件|打开的文档|this\s+(?:file|document)|current\s+(?:file|document))/i
+    .test(`${commandText ?? ""}`);
+}
+
 function browserProcessName(activeWindow = null) {
   const process = `${activeWindow?.process ?? ""}`.trim().toLowerCase();
   if (!process) return "chrome.exe";
@@ -4136,6 +4158,16 @@ async function resolveActiveWindowBrowserCapture() {
   return buildBrowserContextCapture(browserContext, pendingActiveWindowContext);
 }
 
+function resolveActiveWindowFileSelection(commandText = "") {
+  const filePath = activeWindowFilePath(pendingActiveWindowContext);
+  if (!filePath || !commandTargetsCurrentFileContext(commandText)) return null;
+  return {
+    sourceApp: pendingActiveWindowContext?.process ?? "active-window",
+    captureMode: "active_window_file",
+    filePaths: [filePath]
+  };
+}
+
 async function captureActiveWindowHintForVoice({ captureMode = "voice_context" } = {}) {
   if (typeof window.ucaShell?.getActiveWindowContext !== "function") return null;
   try {
@@ -4151,7 +4183,7 @@ async function captureActiveWindowHintForVoice({ captureMode = "voice_context" }
       null
     );
     const activeWindow = payload?.active_window ?? payload?.activeWindow ?? null;
-    if (isActiveBrowserWindow(activeWindow)) {
+    if (isActiveBrowserWindow(activeWindow) || activeWindowFilePath(activeWindow)) {
       pendingActiveWindowContext = { ...activeWindow };
     }
     return activeWindow;

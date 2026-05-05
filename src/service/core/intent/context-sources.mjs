@@ -185,6 +185,9 @@ export function classifyContextSources({ text, contextPacket = {} } = {}) {
   if (typeof meta.editable_target_path === "string" && meta.editable_target_path.length > 0) {
     sources.editable_artifact = true;
   }
+  if (meta.browser_page_content === true) {
+    sources.browser_page = true;
+  }
 
   // Stage 1b — Phase 1.11 — read structured `background_contexts[]`.
   // Producers (memory recall / recent artifact / parent task / SR
@@ -260,7 +263,9 @@ export function classifyContextSources({ text, contextPacket = {} } = {}) {
     // we don't want to classify that as a real selection either.
     const isJustCommandEcho = userCommand.length > 0 && trimmedCtxText === userCommand;
     const isSchedulerContext = isScheduledFireContext(ctx, meta);
-    if (nonSentinelBlockSeen && !anySentinelMatched && !isJustCommandEcho && !isSchedulerContext) {
+    const isProducerDeclaredBrowserPage = sources.browser_page === true
+      && (ctx.source_type === "webpage" || ctx.source_type === "page_explanation");
+    if (nonSentinelBlockSeen && !anySentinelMatched && !isJustCommandEcho && !isSchedulerContext && !isProducerDeclaredBrowserPage) {
       sources.real_selection = true;
     }
   }

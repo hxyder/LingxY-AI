@@ -52,6 +52,11 @@ function runtimeWithTaskEmitter(runtime, taskId) {
 }
 
 function createSelectionMetadata(capture) {
+  const hasPageContent = capture.sourceType === "webpage" || capture.sourceType === "page_explanation"
+    ? capture.metadata?.hasPageContent === true
+      || Boolean(String(capture.text ?? "").trim())
+      || Boolean(String(capture.html ?? "").trim())
+    : false;
   return {
     page_title: capture.pageTitle,
     context_before: capture.contextBefore,
@@ -59,6 +64,7 @@ function createSelectionMetadata(capture) {
     anchor_text: capture.anchorText,
     image_url: capture.imageUrl,
     tab_id: capture.tabId,
+    browser_page_content: hasPageContent,
     browser_capture: capture.metadata && typeof capture.metadata === "object" ? capture.metadata : null,
     ...(capture.selectionMetadata && typeof capture.selectionMetadata === "object"
       ? capture.selectionMetadata
