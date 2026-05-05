@@ -23,6 +23,7 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 
 const html = read("src/desktop/renderer/console.html");
 const js = read("src/desktop/renderer/console.js");
+const attachmentsJs = read("src/desktop/renderer/console-chat-attachments.mjs");
 const css = readCssWithImports(root, "src/desktop/renderer/shared.css");
 
 // HTML: composer toolbar + 3 rich buttons + attachment bar + file input.
@@ -66,9 +67,14 @@ assert.match(read("src/desktop/renderer/chat-blocks.mjs"), /renderChatMessageBlo
 assert.match(js, /consoleChatMessages\?\.addEventListener\("click"/, "console.js must delegate chat link clicks");
 assert.match(js, /window\.ucaShell\.openExternal\(href\)/, "chat link click must open external links via shell");
 
-// Tool call helper + attach handlers + model chip updater.
+// Tool call helper + attachment controller + model chip updater.
 assert.match(js, /function appendConsoleChatToolCall\(/, "console.js missing appendConsoleChatToolCall");
-assert.match(js, /function renderChatAttachments\(/, "console.js missing renderChatAttachments");
+assert.match(js, /from "\.\/console-chat-attachments\.mjs"/, "console.js must import chat attachment controller");
+assert.match(js, /createConsoleChatAttachmentsController\(\{/, "console.js must create chat attachment controller");
+assert.match(js, /consoleChatAttachmentsController\.getFilePaths\(\)/, "console submit must read attachments from controller");
+assert.match(js, /consoleChatAttachmentsController\.clear\(\)/, "console submit must clear attachments through controller");
+assert.doesNotMatch(js, /consoleChatAttachList/, "console.js must not own chat attachment mutable list");
+assert.doesNotMatch(js, /function renderChatAttachments\(/, "console.js must not own chat attachment renderer");
 assert.match(js, /function updateChatModelChip\(/, "console.js missing updateChatModelChip");
 assert.match(js, /function renderConsoleModelPicker\(/, "console.js missing model picker renderer");
 assert.match(js, /from "\.\/model-picker-view-model\.mjs"/, "console model picker must use shared provider-state view-model");
@@ -84,9 +90,17 @@ assert.match(js, /model-picker-popover/, "console.js must render model picker as
 assert.match(js, /opensAbove[\s\S]{0,260}translateY\(-100%\)/, "model picker must open above the bottom composer when needed");
 assert.match(js, /mergeOnboardingSuggestionsIntoWorkspace\(saved\.onboarding\.suggestions\)/, "model picker must surface capability gap suggestions from the backend");
 assert.doesNotMatch(js, /选择当前对话使用的模型 Provider|输入当前对话使用的模型 ID/, "conversation model picker must not use browser prompt dialogs");
-assert.match(js, /consoleChatAttachBtn\?\.addEventListener\("click"/, "console.js must wire attach button click");
 assert.match(js, /consoleChatVoiceBtn\?\.addEventListener\("click"/, "console.js must wire voice button click");
-assert.match(js, /consoleChatAttachInput\?\.addEventListener\("change"/, "console.js must wire attach input change");
-assert.match(js, /consoleChatAttachList\.length\s*=\s*0/, "console.js must clear attach list after submit");
+
+// Attachment controller owns attach input, drop-zone, thumbnail loading, and clear/get APIs.
+assert.match(attachmentsJs, /export function createConsoleChatAttachmentsController\(/, "attachment controller must export factory");
+assert.match(attachmentsJs, /attachButton\?\.addEventListener\("click"/, "attachment controller must wire attach button");
+assert.match(attachmentsJs, /attachInput\?\.addEventListener\("change"/, "attachment controller must wire attach input");
+assert.match(attachmentsJs, /dropShell\.addEventListener\("drop"/, "attachment controller must wire drop-zone");
+assert.match(attachmentsJs, /readFileAsDataUrl/, "attachment controller must load image thumbnails through shell bridge");
+assert.match(attachmentsJs, /chip-attach--image/, "attachment controller must render image attachment chips");
+assert.match(attachmentsJs, /function clear\(\)/, "attachment controller must expose clear");
+assert.match(attachmentsJs, /function getFilePaths\(\)/, "attachment controller must expose getFilePaths");
+assert.match(attachmentsJs, /return \{\s*addFiles,\s*clear,\s*getFilePaths,\s*render\s*\}/, "attachment controller must expose stable public API");
 
 console.log("ok verify-chat-composer");

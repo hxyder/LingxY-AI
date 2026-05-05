@@ -36,6 +36,9 @@ import {
   installConsoleChatContextMenu
 } from "./console-floating-ui.mjs";
 import {
+  createConsoleChatAttachmentsController
+} from "./console-chat-attachments.mjs";
+import {
   renderChatMessageBlocks
 } from "./chat-blocks.mjs";
 import {
@@ -306,7 +309,6 @@ const consoleChatModelChip = document.querySelector("#consoleChatModelChip");
 const consoleChatModelChipLabel = document.querySelector("#consoleChatModelChipLabel");
 const consoleChatAttachInput = document.querySelector("#consoleChatAttachInput");
 const consoleChatAttachments = document.querySelector("#consoleChatAttachments");
-const consoleChatAttachList = [];
 const skillEditModal = document.querySelector("#skillEditModal");
 const skillEditText = document.querySelector("#skillEditText");
 const skillEditPath = document.querySelector("#skillEditPath");
@@ -2168,7 +2170,7 @@ async function revealConversationArtifactPath(filePath) {
 async function submitConsoleChat() {
   const text = consoleChatInput?.value?.trim() ?? "";
   if (!text) return;
-  const attachedFilePaths = consoleChatAttachList.map((entry) => `${entry?.path ?? ""}`.trim()).filter(Boolean);
+  const attachedFilePaths = consoleChatAttachmentsController.getFilePaths();
   const clientMessageId = cacheCreateClientMessageId();
   // G: when a conversation is active, we are RESUMING; when the user
   // started a blank chat, mint the conversation_id before /task so the
@@ -2235,8 +2237,7 @@ async function submitConsoleChat() {
     void refreshChatSidebar({ force: true });
     await refreshWorkspace();
     updateChatModelChip?.();
-    consoleChatAttachList.length = 0;
-    renderChatAttachments?.();
+    consoleChatAttachmentsController.clear();
   } catch (error) {
     markConsoleChatPendingFailed(clientMessageId, error);
     consoleChatState.textContent = "Failed.";
@@ -10498,111 +10499,17 @@ connectorsMcpRefreshBtn?.addEventListener("click", () => { void loadConnectorsTa
 // model chip label. Attach is local-file-picker + chips (passed into task
 // context). Voice defers to the existing overlay voice mode via hotkey.
 
-// Cache data: URLs for image attachments so re-rendering the chip row
-// (e.g. on add / remove) doesn't re-read the file. Path → data URL.
-const attachThumbnailCache = new Map();
-
-async function loadAttachmentThumbnail(filePath) {
-  if (!filePath || attachThumbnailCache.has(filePath)) {
-    return attachThumbnailCache.get(filePath) ?? null;
-  }
-  if (!isImageArtifactPath(filePath) || !window.ucaShell?.readFileAsDataUrl) return null;
-  // Pre-mark with null so concurrent calls don't race. Real value
-  // overwrites on success; failure leaves null and won't retry.
-  attachThumbnailCache.set(filePath, null);
-  try {
-    const dataUrl = await window.ucaShell.readFileAsDataUrl(filePath, imageMimeFor(filePath));
-    attachThumbnailCache.set(filePath, dataUrl);
-    return dataUrl;
-  } catch (error) {
-    // Surface the reason for the dev — silent failures here used to
-    // leave the user with an empty thumb slot and no idea why.
-    console.warn("[attach-thumb] readFileAsDataUrl failed", filePath, error?.message ?? error);
-    return null;
-  }
-}
-
-// Fallback placeholder shown inside .chip-attach-thumb when the data
-// URL hasn't loaded (or failed). Keeps the chip looking like an image
-// chip even before / without the real thumbnail.
-const ATTACH_THUMB_PLACEHOLDER = `
-  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-    <rect x="3" y="3" width="18" height="18" rx="2"/>
-    <circle cx="8.5" cy="9" r="1.5"/>
-    <path d="m21 15-5-5L5 21"/>
-  </svg>
-`;
-
-function renderChatAttachments() {
-  if (!consoleChatAttachments) return;
-  if (consoleChatAttachList.length === 0) {
-    consoleChatAttachments.hidden = true;
-    consoleChatAttachments.innerHTML = "";
-    return;
-  }
-  consoleChatAttachments.hidden = false;
-  consoleChatAttachments.innerHTML = consoleChatAttachList.map((entry, idx) => {
-    const filePath = entry?.path ?? "";
-    const isImage = isImageArtifactPath(filePath);
-    const cached = isImage ? attachThumbnailCache.get(filePath) : null;
-    if (isImage) {
-      // Image chip — square thumb on the left, name + remove on the
-      // right. The img fills lazily once readFileAsDataUrl resolves.
-      // Until then the placeholder icon shows so the box is never
-      // empty (otherwise users wonder if the upload broke).
-      const thumbInner = cached
-        ? `<img src="${escapeHtml(cached)}" alt="">`
-        : ATTACH_THUMB_PLACEHOLDER;
-      return `
-        <span class="chip-attach chip-attach--image" data-path="${escapeHtml(filePath)}">
-          <span class="chip-attach-thumb">${thumbInner}</span>
-          <span class="chip-attach-name">${escapeHtml(entry?.name ?? "")}</span>
-          <button type="button" data-remove-attach="${idx}" aria-label="Remove">×</button>
-        </span>
-      `;
-    }
-    return `
-      <span class="chip-attach">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 17.93 8.8l-8.58 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-        <span>${escapeHtml(entry?.name ?? "")}</span>
-        <button type="button" data-remove-attach="${idx}" aria-label="Remove">×</button>
-      </span>
-    `;
-  }).join("");
-  for (const btn of consoleChatAttachments.querySelectorAll("[data-remove-attach]")) {
-    btn.addEventListener("click", () => {
-      const idx = Number(btn.dataset.removeAttach);
-      if (Number.isInteger(idx)) {
-        consoleChatAttachList.splice(idx, 1);
-        renderChatAttachments();
-      }
-    });
-  }
-  // Lazy-load thumbnails that aren't cached yet. The placeholder icon
-  // is in place from the initial render; this swaps it for the real
-  // image once readFileAsDataUrl resolves. If the load fails the
-  // placeholder simply stays — better than an empty box.
-  for (const chip of consoleChatAttachments.querySelectorAll(".chip-attach--image")) {
-    const filePath = chip.dataset.path;
-    if (!filePath || chip.querySelector("img")) continue;
-    void loadAttachmentThumbnail(filePath).then((dataUrl) => {
-      if (!dataUrl) return;
-      const thumb = chip.querySelector(".chip-attach-thumb");
-      if (!thumb || thumb.querySelector("img")) return;
-      // Replace the placeholder svg with the real image.
-      thumb.innerHTML = "";
-      const img = document.createElement("img");
-      img.src = dataUrl;
-      img.alt = "";
-      thumb.appendChild(img);
-    });
-  }
-}
-
-consoleChatAttachBtn?.addEventListener("click", () => {
-  consoleChatAttachInput?.click();
+const consoleChatAttachmentsController = createConsoleChatAttachmentsController({
+  attachButton: consoleChatAttachBtn,
+  attachInput: consoleChatAttachInput,
+  attachmentsEl: consoleChatAttachments,
+  dropShell: document.querySelector(".console-chat-shell"),
+  dropZone: document.querySelector("#consoleChatDropZone"),
+  shell: window.ucaShell,
+  escapeHtml,
+  isImagePath: isImageArtifactPath,
+  imageMimeFor
 });
-
 const consoleChatNoteBtn = document.querySelector("#consoleChatNoteBtn");
 consoleChatNoteBtn?.addEventListener("click", () => {
   // Need notes module booted to read note bodies — touch the panel once
@@ -10655,67 +10562,6 @@ consoleChatNoteBtn?.addEventListener("click", () => {
     });
   });
 });
-consoleChatAttachInput?.addEventListener("change", () => {
-  const files = Array.from(consoleChatAttachInput.files ?? []);
-  const resolvedPaths = window.ucaShell?.resolveDroppedFilePaths?.(files) ?? [];
-  for (const [index, f] of files.entries()) {
-    consoleChatAttachList.push({
-      name: f.name,
-      path: resolvedPaths[index] || f.path || ""
-    });
-  }
-  consoleChatAttachInput.value = "";
-  renderChatAttachments();
-});
-
-// Drag-and-drop attach. The shell-level handlers (drop-guard.js) already
-// preventDefault any file drag, so the OS won't try to open dropped
-// files. We just layer a visual drop-zone over the chat-shell + route
-// drops into the existing attach list. The dragenter/leave counter
-// handles bubbling through child bubbles without the zone flickering.
-(function wireConsoleChatDropZone() {
-  const shell = document.querySelector(".console-chat-shell");
-  const zone = document.querySelector("#consoleChatDropZone");
-  if (!shell || !zone) return;
-  const hasFilePayload = (event) => {
-    const types = event.dataTransfer?.types;
-    if (!types) return false;
-    for (let i = 0; i < types.length; i += 1) if (types[i] === "Files") return true;
-    return false;
-  };
-  let counter = 0;
-  shell.addEventListener("dragenter", (event) => {
-    if (!hasFilePayload(event)) return;
-    counter += 1;
-    zone.hidden = false;
-  });
-  shell.addEventListener("dragleave", (event) => {
-    if (!hasFilePayload(event)) return;
-    counter -= 1;
-    if (counter <= 0) { counter = 0; zone.hidden = true; }
-  });
-  shell.addEventListener("dragover", (event) => {
-    if (hasFilePayload(event)) event.preventDefault();
-  });
-  shell.addEventListener("drop", (event) => {
-    if (!hasFilePayload(event)) return;
-    event.preventDefault();
-    event.stopPropagation();
-    counter = 0;
-    zone.hidden = true;
-    const files = Array.from(event.dataTransfer?.files ?? []);
-    if (!files.length) return;
-    const paths = window.ucaShell?.resolveDroppedFilePaths?.(files) ?? [];
-    for (const [i, f] of files.entries()) {
-      consoleChatAttachList.push({
-        name: f.name,
-        path: paths[i] || f.path || ""
-      });
-    }
-    renderChatAttachments();
-  });
-})();
-
 consoleChatVoiceBtn?.addEventListener("click", () => {
   // Defer to the existing overlay voice mode (Ctrl+Shift+V). The preload
   // bridge exposes a helper when available; otherwise surface a hint.

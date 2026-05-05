@@ -26,6 +26,7 @@ const read = (p) => readFileSync(path.join(root, p), "utf8");
 const consoleHtml = read("src/desktop/renderer/console.html");
 const consoleJs = read("src/desktop/renderer/console.js");
 const consoleFloatingUi = read("src/desktop/renderer/console-floating-ui.mjs");
+const consoleChatAttachments = read("src/desktop/renderer/console-chat-attachments.mjs");
 const consolePreload = read("src/desktop/renderer/preload.cjs");
 const consoleChatSidebar = read("src/desktop/renderer/console-chat-sidebar.mjs");
 const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs");
@@ -82,8 +83,10 @@ assert.ok(/\.ctx-menu\b/.test(sharedCss) && /\.ctx-menu\b/.test(overlayHtml),
   "ctx-menu: .ctx-menu CSS missing in either console or overlay");
 
 // ── Image attachment thumbnails ────────────────────────────────────────
-assert.ok(/loadAttachmentThumbnail/.test(consoleJs), "thumbnail: loadAttachmentThumbnail missing");
-assert.ok(/ATTACH_THUMB_PLACEHOLDER/.test(consoleJs), "thumbnail: placeholder svg constant missing");
+assert.ok(/from\s+["']\.\/console-chat-attachments\.mjs["']/.test(consoleJs),
+  "thumbnail: console must bind shared attachment controller");
+assert.ok(/loadAttachmentThumbnail/.test(consoleChatAttachments), "thumbnail: loadAttachmentThumbnail missing");
+assert.ok(/ATTACH_THUMB_PLACEHOLDER/.test(consoleChatAttachments), "thumbnail: placeholder svg constant missing");
 assert.ok(/\.chip-attach--image|\.chip-attach-thumb/.test(sharedCss), "thumbnail: image-chip CSS missing");
 
 // ── New-note title prompt ──────────────────────────────────────────────
