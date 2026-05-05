@@ -300,6 +300,12 @@ async function prefetchBrowserPageContext({ capture, runtime, artifactStore, tas
         attached_to_context: true
       }
     });
+    task.context_packet.selection_metadata = {
+      ...(task.context_packet.selection_metadata ?? {}),
+      browser_page_content: true,
+      browser_page_prefetch: "success"
+    };
+    return { ok: true };
   } catch (error) {
     emitTaskEvent({
       runtime,
@@ -311,7 +317,20 @@ async function prefetchBrowserPageContext({ capture, runtime, artifactStore, tas
         message: error?.message ?? "Browser page prefetch failed; continuing with captured metadata."
       }
     });
+    task.context_packet.selection_metadata = {
+      ...(task.context_packet.selection_metadata ?? {}),
+      browser_page_content: false,
+      browser_page_prefetch: "failed",
+      browser_page_prefetch_error: error?.message ?? "unknown"
+    };
+    return { ok: false, error };
   }
+}
+
+function shouldRequireBrowserPageContent({ capture, task }) {
+  if (capture?.sourceType !== "webpage" && capture?.sourceType !== "page_explanation") return false;
+  if (!taskExplicitlyTargetsBrowserPage(task)) return false;
+  return capture?.metadata?.hasPageContent === false || !String(capture?.text ?? "").trim();
 }
 
 export function buildBrowserContextPacket({
@@ -911,7 +930,13 @@ export async function submitBrowserTask({
     }
 
     if (shouldPrefetchBrowserPageContext({ capture, task })) {
-      await prefetchBrowserPageContext({ capture, runtime, artifactStore, task });
+      const prefetch = await prefetchBrowserPageContext({ capture, runtime, artifactStore, task });
+      if (!prefetch.ok && shouldRequireBrowserPageContent({ capture, task })) {
+        markTaskFailed(runtime, task, {
+          message: "I could not read the current page content. I only have the URL/title, so I need you to retry page capture, open the browser extension page action, paste the page text, or allow a screenshot/vision fallback."
+        });
+        return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+      }
     }
 
     if (capture.sourceType === "link" && !capture.html) {
