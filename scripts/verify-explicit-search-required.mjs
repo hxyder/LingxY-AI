@@ -67,7 +67,8 @@ it("E5: '搜索 / google / 查询' verbs all promote to required", () => {
     "搜索一下相关文档",
     "google 这个 API",
     "查询一下背景信息",
-    "搜一下相关案例"
+    "搜一下相关案例",
+    "帮我搜同款价格"
   ]) {
     assert.equal(modeFor(text), "required", `expected required for "${text}"`);
   }

@@ -59,7 +59,10 @@ function createSelectionMetadata(capture) {
     anchor_text: capture.anchorText,
     image_url: capture.imageUrl,
     tab_id: capture.tabId,
-    browser_capture: capture.metadata && typeof capture.metadata === "object" ? capture.metadata : null
+    browser_capture: capture.metadata && typeof capture.metadata === "object" ? capture.metadata : null,
+    ...(capture.selectionMetadata && typeof capture.selectionMetadata === "object"
+      ? capture.selectionMetadata
+      : {})
   };
 }
 

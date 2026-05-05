@@ -123,6 +123,35 @@ test("createTaskSpec records executor-selection behavior in the decision trace",
   assert.ok(spec.decision_trace.some((entry) => entry.stage === "executor-selection"));
 });
 
+test("createTaskSpec keeps plain image understanding conversational, not artifact-only", () => {
+  const spec = createTaskSpec("识别这张图里的内容", {
+    image_paths: ["fixture.png"]
+  });
+
+  assert.equal(spec.goal, "multimodal_analyze");
+  assert.equal(spec.artifact.required, false);
+  assert.equal(spec.suggested_executor, "multi_modal");
+});
+
+test("createTaskSpec composes image plus neutral search with tool loop even before SR", () => {
+  const spec = createTaskSpec("看看这张图，帮我搜索同款价格", {
+    image_paths: ["product.png"]
+  });
+
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional");
+  assert.equal(spec.suggested_executor, "tool_using");
+  assert.equal(spec.artifact.required, false);
+});
+
+test("createTaskSpec treats compact Chinese search verb as structural search", () => {
+  const spec = createTaskSpec("看看这张图，帮我搜同款价格", {
+    image_paths: ["product.png"]
+  });
+
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional");
+  assert.equal(spec.suggested_executor, "tool_using");
+});
+
 test("createTaskSpec treats html as a first-class generated artifact format", () => {
   const spec = createTaskSpec("生成一个 HTML 报告");
 

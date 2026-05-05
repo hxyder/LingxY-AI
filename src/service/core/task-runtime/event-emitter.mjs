@@ -142,13 +142,38 @@ export const EPHEMERAL_EVENT_TYPES = new Set([
 
 const firstDeltaTimingEmitted = new Set();
 
+function taskCreatedPayloadWithSubmissionOrigin(runtime, taskId, payload = {}) {
+  let task;
+  try {
+    task = runtime?.store?.getTask?.(taskId);
+  } catch {
+    task = null;
+  }
+  const metadata = task?.context_packet?.selection_metadata ?? {};
+  const submissionOrigin = typeof metadata.submission_origin === "string"
+    ? metadata.submission_origin.trim().slice(0, 80)
+    : "";
+  const voiceSessionId = typeof metadata.voice_session_id === "string"
+    ? metadata.voice_session_id.trim().slice(0, 120)
+    : "";
+  if (!submissionOrigin && !voiceSessionId) return payload ?? {};
+  return {
+    ...(payload ?? {}),
+    ...(submissionOrigin ? { submission_origin: submissionOrigin } : {}),
+    ...(voiceSessionId ? { voice_session_id: voiceSessionId } : {})
+  };
+}
+
 export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
+  const effectivePayload = eventType === "task_created"
+    ? taskCreatedPayloadWithSubmissionOrigin(runtime, taskId, payload)
+    : payload;
   const record = {
     event_id: createId("evt"),
     task_id: taskId,
     ts: nowIso(),
     event_type: eventType,
-    payload
+    payload: effectivePayload
   };
 
   if (!EPHEMERAL_EVENT_TYPES.has(eventType)) {
@@ -168,7 +193,7 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   // `task_created` so SSE consumers (overlay timeline, task detail page)
   // can render the goal / tool-policy / executor decisions without an
   // extra round trip. Lookup-on-emit avoids touching the submission sites.
-  if (eventType === "task_created" && !payload?.__suppressDecisionTrace) {
+  if (eventType === "task_created" && !effectivePayload?.__suppressDecisionTrace) {
     emitDecisionTraceFollowUp(runtime, taskId);
   }
 
@@ -183,7 +208,7 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
         payload: {
           step_label: stepLabel,
           source_event: eventType,
-          tool_id: payload?.tool_id ?? payload?.tool ?? null
+          tool_id: effectivePayload?.tool_id ?? effectivePayload?.tool ?? null
         }
       });
     }

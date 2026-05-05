@@ -7,12 +7,15 @@ import {
   resetTaskEventEmitterStateForTests
 } from "../../src/service/core/task-runtime/event-emitter.mjs";
 
-function makeRuntime() {
+function makeRuntime({ selectionMetadata = null } = {}) {
   const appended = [];
   const published = [];
   const task = {
     task_id: "task_emitter",
     created_at: new Date(Date.now() - 25).toISOString(),
+    context_packet: selectionMetadata
+      ? { selection_metadata: selectionMetadata }
+      : undefined,
     task_spec: {
       suggested_executor: "tool_using",
       tool_policy: { web: "forbidden" },
@@ -72,6 +75,24 @@ test("task event emitter publishes decision trace projection on task_created", (
     reason: "fixture"
   }]);
   assert.equal(appended.some((event) => event.event_type === "decision_trace"), false);
+});
+
+test("task event emitter carries stable submission origin on task_created", () => {
+  resetTaskEventEmitterStateForTests();
+  const { runtime, appended, published } = makeRuntime({
+    selectionMetadata: {
+      submission_origin: "echo",
+      voice_session_id: "echo_test_123"
+    }
+  });
+
+  emitTaskEvent({ runtime, taskId: "task_emitter", eventType: "task_created", payload: { route: "general" } });
+
+  const created = appended.find((event) => event.event_type === "task_created");
+  const live = published.find((event) => event.event_type === "task_created");
+  assert.equal(created.payload.submission_origin, "echo");
+  assert.equal(created.payload.voice_session_id, "echo_test_123");
+  assert.equal(live.payload.submission_origin, "echo");
 });
 
 test("task event emitter projects visible tool events into conversation steps", () => {

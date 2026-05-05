@@ -171,6 +171,7 @@ let popupSuccessCardTaskId = null;
 let suppressOverlayAutoReveal = false;
 let echoTaskIds = new Set();
 let echoResultHudTaskIds = new Set();
+let echoSessionId = null;
 
 function shouldSurfaceTaskPopupCards() {
   try {
@@ -211,6 +212,53 @@ function rememberEchoTask(taskId) {
 
 function isEchoTask(taskId) {
   return Boolean(taskId && echoTaskIds.has(taskId));
+}
+
+function createEchoSessionId() {
+  const random = Math.random().toString(36).slice(2, 10);
+  return `echo_${Date.now().toString(36)}_${random}`;
+}
+
+function isEchoOriginTask(task = null) {
+  const metadata = task?.context_packet?.selection_metadata ?? task?.selection_metadata ?? {};
+  return metadata?.submission_origin === "echo";
+}
+
+function attachOverlaySubmissionMetadata(payload = {}) {
+  const metadata = echoSessionActive
+    ? {
+        submission_origin: "echo",
+        voice_session_id: echoSessionId || createEchoSessionId()
+      }
+    : {};
+  if (metadata.voice_session_id && !echoSessionId) echoSessionId = metadata.voice_session_id;
+  if (Object.keys(metadata).length === 0) return payload;
+  const next = {
+    ...payload,
+    selectionMetadata: {
+      ...(payload.selectionMetadata ?? {}),
+      ...metadata
+    }
+  };
+  if (next.contextPacket && typeof next.contextPacket === "object") {
+    next.contextPacket = {
+      ...next.contextPacket,
+      selection_metadata: {
+        ...(next.contextPacket.selection_metadata ?? {}),
+        ...metadata
+      }
+    };
+  }
+  if (next.capture && typeof next.capture === "object") {
+    next.capture = {
+      ...next.capture,
+      selectionMetadata: {
+        ...(next.capture.selectionMetadata ?? {}),
+        ...metadata
+      }
+    };
+  }
+  return next;
 }
 
 function compactEchoResultText(text = "") {
@@ -2605,6 +2653,9 @@ async function handleTaskEventFrame(rawEvent) {
   // mutate the owning conversation's turns list; we just don't render
   // bubbles for them.
   const frameTaskId = frame.taskId ?? frame.task_id ?? activeTaskId;
+  if (frame.event === "task_created" && frame.data?.submission_origin === "echo") {
+    rememberEchoTask(frameTaskId);
+  }
   const ownerConvId = taskOwnerConversationId(taskConversationMap, frameTaskId);
   const isForActiveConv = !ownerConvId || ownerConvId === conversationState?.id;
 
@@ -3798,8 +3849,7 @@ async function submitTask() {
         source: "file",
         sourceApp: pendingFileSelection.sourceApp ?? "explorer.exe",
         captureMode: pendingFileSelection.captureMode ?? "shell_menu",
-        executionMode: "interactive",
-        executorOverride: "multi_modal"
+        executionMode: "interactive"
       } : {
         sourceApp: pendingFileSelection.sourceApp ?? "explorer.exe",
         captureMode: pendingFileSelection.captureMode ?? "shell_menu",
@@ -3815,13 +3865,11 @@ async function submitTask() {
       const capture = pendingCapture?.capture
         ? { ...pendingCapture.capture }
         : { ...conversationState.seedCapture };
-      const executorOverride = capture.sourceType === "image" ? "multi_modal" : undefined;
       payload = {
         userCommand: commandText,
         executionMode: "interactive",
         capture: { ...capture }
       };
-      if (executorOverride) payload.executorOverride = executorOverride;
     } else {
       const activeBrowserCapture = await resolveActiveWindowBrowserCapture();
       if (activeBrowserCapture) {
@@ -3857,13 +3905,13 @@ async function submitTask() {
 
     let result;
     try {
-      const taskBody = attachOverlayProjectScope({
+      const taskBody = attachOverlayProjectScope(attachOverlaySubmissionMetadata({
         ...payload,
         background: true,
         parent_task_id: parentTaskId,
         conversation_id: conversationState?.id ?? null,
         client_message_id: clientMessageId
-      });
+      }));
       result = await fetchJson("/task", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -3890,7 +3938,7 @@ async function submitTask() {
 
     activeTaskId = result.task.task_id;
     lastTask = result.task;
-    if (echoSessionActive) rememberEchoTask(activeTaskId);
+    if (echoSessionActive || isEchoOriginTask(result.task)) rememberEchoTask(activeTaskId);
     notifiedTaskId = null;
     notifiedInlineResultTaskId = null;
     lastArtifactPreview = "";
@@ -6547,7 +6595,7 @@ ${sourceAssistRequirement}`;
   };
 
   try {
-    const taskBody = attachOverlayProjectScope(payload);
+    const taskBody = attachOverlayProjectScope(attachOverlaySubmissionMetadata(payload));
     const result = await fetchJson("/task", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -6561,6 +6609,7 @@ ${sourceAssistRequirement}`;
 
     activeTaskId = result.task.task_id;
     lastTask = result.task;
+    if (echoSessionActive || isEchoOriginTask(result.task)) rememberEchoTask(activeTaskId);
     notifiedTaskId = null;
     notifiedInlineResultTaskId = null;
     lastArtifactPreview = "";
@@ -7236,6 +7285,7 @@ async function beginEchoSession() {
   if (echoSessionActive) return;
   clearEchoVoiceAutoSubmit();
   echoSessionActive = true;
+  echoSessionId = createEchoSessionId();
   echoHudLastText = "";
   echoHudLastAt = 0;
   echoCommandStartedAt = Date.now();
@@ -7248,6 +7298,7 @@ async function endEchoSession() {
   if (!echoSessionActive) return;
   clearEchoVoiceAutoSubmit();
   echoSessionActive = false;
+  echoSessionId = null;
   echoHudLastText = "";
   echoHudLastAt = 0;
   echoCommandStartedAt = 0;

@@ -76,6 +76,12 @@ function normalizeRequestProjectId(body = {}) {
   return null;
 }
 
+function requestSelectionMetadata(body = {}) {
+  return body.selectionMetadata && typeof body.selectionMetadata === "object"
+    ? body.selectionMetadata
+    : {};
+}
+
 export function buildTaskSummaryPayload(runtime, { recentLimit = 80 } = {}) {
   const tasks = listTaskSummaries(runtime)
     .sort((left, right) =>
@@ -250,6 +256,7 @@ async function submitTaskFromBody(runtime, body) {
       userCommand: body.userCommand,
       captureMode: body.captureMode,
       sourceApp: body.sourceApp,
+      selectionMetadata: requestSelectionMetadata(body),
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
       parentTaskId: effectiveRequestParentTaskId,
@@ -263,7 +270,13 @@ async function submitTaskFromBody(runtime, body) {
 
   if (body.capture?.sourceType) {
     return submitBrowserTask({
-      capture: body.capture,
+      capture: {
+        ...body.capture,
+        selectionMetadata: {
+          ...(body.capture.selectionMetadata ?? {}),
+          ...requestSelectionMetadata(body)
+        }
+      },
       userCommand: body.userCommand,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
@@ -283,8 +296,9 @@ async function submitTaskFromBody(runtime, body) {
       source: body.source,
       sourceApp: body.sourceApp,
       captureMode: body.captureMode,
+      selectionMetadata: requestSelectionMetadata(body),
       executionMode: body.executionMode,
-      executorOverride: body.executorOverride ?? "multi_modal",
+      executorOverride: body.executorOverride ?? null,
       parentTaskId: effectiveRequestParentTaskId,
       conversationId: requestConversationId,
       clientMessageId: requestClientMessageId,

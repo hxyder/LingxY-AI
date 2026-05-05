@@ -731,7 +731,7 @@ export function createTaskSpec(userText, contextPacket = {}, intentRouterResult 
   const explicitFileArtifactKind = noteIntent
     ? (suggestedFormats.includes("md") ? "md" : null)
     : (suggestedFormats.find((f) => FILE_ARTIFACT_FORMATS.has(f)) ?? null);
-  const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file", "multimodal_analyze"].includes(goal)
+  const inferredFileArtifactKind = ["generate_document", "analyze_and_report", "transform_existing_file"].includes(goal)
     ? (noteIntent ? "md" : "docx")
     : null;
   const fileArtifactKind = explicitFileArtifactKind

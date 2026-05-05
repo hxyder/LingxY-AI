@@ -44,6 +44,7 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
   const webMode = toolPolicy.web_search_fetch.mode;
   const hasImage = Array.isArray(contextPacket.image_paths) && contextPacket.image_paths.length > 0;
   const requiresExternalWeb = isExternalWebRequired(taskSpec, toolPolicy);
+  const canBenefitFromExternalWeb = isExternalWebOptional(taskSpec, toolPolicy);
   const evidence = [];
   const rejected = [];
 
@@ -57,14 +58,16 @@ export function resolveExecutor({ taskSpec, toolPolicy, contextPacket = {}, runt
     });
   }
 
-  if (hasImage && requiresExternalWeb) {
+  if (hasImage && (requiresExternalWeb || canBenefitFromExternalWeb)) {
     return decision("tool_using",
-      "Image attachments plus required external_web_read need tool-capable image understanding and search.",
+      requiresExternalWeb
+        ? "Image attachments plus required external_web_read need tool-capable image understanding and search."
+        : "Image attachments plus a research/search signal need tool-capable image understanding and optional external search.",
       [
         { type: "context", source: "context.image_paths",
           matched: `${contextPacket.image_paths.length} image(s)` },
         { type: "policy", source: "tool_policy.external_web_read",
-          matched: "required" }
+          matched: requiresExternalWeb ? "required" : "optional" }
       ],
       rejectAllExcept("tool_using", routeSuggestion)
     );
@@ -113,6 +116,17 @@ function isExternalWebRequired(taskSpec = {}, toolPolicy = {}) {
     || toolPolicy?.policy_groups?.external_web_read?.mode === "required"
     || (Array.isArray(taskSpec?.success_contract?.required_policy_groups)
       && taskSpec.success_contract.required_policy_groups.includes("external_web_read"));
+}
+
+function isExternalWebOptional(taskSpec = {}, toolPolicy = {}) {
+  const mode = toolPolicy?.policy_groups?.external_web_read?.mode
+    ?? toolPolicy?.web_search_fetch?.mode;
+  const capabilities = taskSpec?.contract?.needed_capabilities
+    ?? taskSpec?.needed_capabilities
+    ?? [];
+  return mode === "optional"
+    && (taskSpec?.research_signals_present === true
+      || (Array.isArray(capabilities) && capabilities.includes("external_web_read")));
 }
 
 function rejectAllExcept(chosen, routeSuggestion) {

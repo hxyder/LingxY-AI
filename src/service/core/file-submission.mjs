@@ -43,6 +43,7 @@ export async function submitFileTask({
   userCommand,
   captureMode = "shell_menu",
   sourceApp = "explorer.exe",
+  selectionMetadata = {},
   executionMode,
   parentTaskId = null,
   conversationId = null,
@@ -82,6 +83,10 @@ export async function submitFileTask({
     traceId: `trace_${crypto.randomUUID()}`,
     contextId: `ctx_${crypto.randomUUID()}`
   });
+  rawContextPacket.selection_metadata = {
+    ...(rawContextPacket.selection_metadata ?? {}),
+    ...(selectionMetadata && typeof selectionMetadata === "object" ? selectionMetadata : {})
+  };
 
   const fileFocusedGoals = new Set([
     "generate_document",

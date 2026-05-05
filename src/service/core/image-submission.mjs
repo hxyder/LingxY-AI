@@ -259,6 +259,7 @@ export async function submitImageTask({
   source = "file",
   sourceApp = "uca.helper",
   captureMode = "manual",
+  selectionMetadata = {},
   runtime,
   executionMode,
   parentTaskId = null,
@@ -266,7 +267,7 @@ export async function submitImageTask({
   clientMessageId = null,
   projectId = null,
   retryCount = 0,
-  executorOverride = "multi_modal",
+  executorOverride = null,
   submissionKind = "image",
   background = false
 }) {
@@ -280,7 +281,7 @@ export async function submitImageTask({
   // somewhere (Gmail / Slack / Drive) — that's covered by
   // looksLikeConnectorFileSend below, which checks for verbs like
   // "发给/forward to/attach to send".
-  if (executorOverride === "multi_modal" && looksLikeConnectorFileSend(userCommand)) {
+  if ((executorOverride == null || executorOverride === "multi_modal") && looksLikeConnectorFileSend(userCommand)) {
     const { submitContextTask } = await import("./context-submission.mjs");
     return submitContextTask({
       runtime,
@@ -296,6 +297,9 @@ export async function submitImageTask({
         security_level: "internal",
         redaction_applied: false,
         text: `File attached by user for sending: ${imagePaths.join(", ")}`,
+        selection_metadata: selectionMetadata && typeof selectionMetadata === "object"
+          ? { ...selectionMetadata }
+          : {},
         file_paths: imagePaths,
         image_paths: imagePaths,
         captured_at: new Date().toISOString()
@@ -325,6 +329,10 @@ export async function submitImageTask({
     traceId: `trace_${crypto.randomUUID()}`,
     contextId: `ctx_${crypto.randomUUID()}`
   });
+  rawContextPacket.selection_metadata = {
+    ...(rawContextPacket.selection_metadata ?? {}),
+    ...(selectionMetadata && typeof selectionMetadata === "object" ? selectionMetadata : {})
+  };
   const inspection = runtime.securityBroker.inspectContext(rawContextPacket, {
     trigger: "image_submission"
   });
