@@ -10,8 +10,9 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 - Run `npm run verify:public-branding`.
 - Run `npm run verify:functional-acceptance`.
 - Run `npm run verify:security-policy`.
-- Review all advisory warnings from `verify:github-readiness`, especially
-  root Markdown docs that would become public.
+- Review `docs/release/root_markdown_public_review.md` and all advisory
+  warnings from `verify:github-readiness`, especially root Markdown docs
+  marked `temporary-root`, `move-internal`, or `release-notes-only`.
 - Review `docs/release/functional_acceptance_matrix.md`; every shipped
   user-visible capability must have automated coverage and a manual release
   pass path.
@@ -59,7 +60,8 @@ runtime data, credentials, generated packages, and unclear public-facing docs.
 
 - Search GitHub's web UI after push for obvious private terms, machine paths,
   and credentials.
-- Review root-level planning/design Markdown docs before making the repo public.
+- Review root-level planning/design Markdown docs against
+  `docs/release/root_markdown_public_review.md` before making the repo public.
 - Confirm `git ls-files internal phases` returns no files.
 - Create a fresh clone and run `npm install` plus the documented quick-start
   path from `README.md`.

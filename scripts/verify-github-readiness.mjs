@@ -116,6 +116,25 @@ assert.deepEqual(secretHits, [], `potential secrets in tracked files:\n${secretH
 const pkg = JSON.parse(readFileSync(repoPath("package.json"), "utf8"));
 assert.equal(pkg.license, "MIT", "package.json license must match root LICENSE");
 
+const publicReviewPath = "docs/release/root_markdown_public_review.md";
+assert.equal(existsSync(repoPath(publicReviewPath)), true, `missing ${publicReviewPath}`);
+
+function rootMarkdownReviewEntries() {
+  const text = readFileSync(repoPath(publicReviewPath), "utf8");
+  const rows = new Map();
+  for (const line of text.split(/\r?\n/u)) {
+    if (!line.startsWith("| `")) continue;
+    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
+    if (cells.length < 4) continue;
+    const file = cells[0].replace(/^`|`$/gu, "");
+    const decision = cells[1].replace(/^`|`$/gu, "");
+    const owner = cells[2];
+    const notes = cells[3];
+    rows.set(file, { decision, owner, notes });
+  }
+  return rows;
+}
+
 const warnings = [];
 if (pkg.private !== true) {
   warnings.push("package.json private=true is recommended unless npm publication is intentional.");
@@ -134,8 +153,51 @@ const rootReviewMarkdown = tracked.filter((file) =>
     "LICENCE.md"
   ].includes(file)
 );
+
+const rootReviewEntries = rootMarkdownReviewEntries();
+const allowedRootReviewDecisions = new Set([
+  "public-ok",
+  "temporary-root",
+  "move-internal",
+  "release-notes-only"
+]);
+const missingRootReviewEntries = [];
+const invalidRootReviewEntries = [];
+for (const file of rootReviewMarkdown) {
+  const entry = rootReviewEntries.get(file);
+  if (!entry) {
+    missingRootReviewEntries.push(file);
+    continue;
+  }
+  if (
+    !allowedRootReviewDecisions.has(entry.decision)
+    || entry.owner.length === 0
+    || entry.notes.length === 0
+  ) {
+    invalidRootReviewEntries.push(`${file} — ${entry.decision || "(missing decision)"}`);
+  }
+}
+assert.deepEqual(
+  missingRootReviewEntries,
+  [],
+  `root Markdown docs are missing public review decisions in ${publicReviewPath}:\n${missingRootReviewEntries.join("\n")}`
+);
+assert.deepEqual(
+  invalidRootReviewEntries,
+  [],
+  `root Markdown public review entries need a valid decision, owner, and notes:\n${invalidRootReviewEntries.join("\n")}`
+);
+
 if (rootReviewMarkdown.length > 0) {
-  warnings.push(`Tracked root Markdown docs need manual public review: ${rootReviewMarkdown.join(", ")}`);
+  const nonPublicRootDocs = rootReviewMarkdown.filter((file) => {
+    const decision = rootReviewEntries.get(file)?.decision;
+    return decision && decision !== "public-ok";
+  });
+  if (nonPublicRootDocs.length > 0) {
+    warnings.push(
+      `Tracked root Markdown docs are reviewed but not final-public: ${nonPublicRootDocs.join(", ")}`
+    );
+  }
 }
 
 console.log("GitHub readiness verification passed.");

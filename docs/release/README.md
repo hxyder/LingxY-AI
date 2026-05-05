@@ -15,6 +15,7 @@ Included documents:
 - `trial_release_notes_v0.1.0-trial.1.md`
 - `e2e_matrix.md`
 - `functional_acceptance_matrix.md`
+- `root_markdown_public_review.md`
 - `known_issues.md`
 - `rollback_plan.md`
 - `external_trial_checklist.md`
