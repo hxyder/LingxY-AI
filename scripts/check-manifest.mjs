@@ -95,6 +95,7 @@ export const CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-file-kimi.mjs",
   "node scripts/verify-kimi-runtime.mjs",
   "node scripts/verify-browser-extension.mjs",
+  "node scripts/verify-browser-ui-click-smoke.mjs",
   "node scripts/verify-extension-enrichment.mjs",
   "node scripts/verify-browser-runmode-router.mjs",
   "node scripts/verify-browser-overlay.mjs",

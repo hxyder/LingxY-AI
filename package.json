@@ -152,6 +152,7 @@
     "verify:file-kimi": "node scripts/verify-file-kimi.mjs",
     "verify:kimi-runtime": "node scripts/verify-kimi-runtime.mjs",
     "verify:browser-extension": "node scripts/verify-browser-extension.mjs",
+    "verify:browser-ui-click-smoke": "node scripts/verify-browser-ui-click-smoke.mjs",
     "verify:browser-runmode-router": "node scripts/verify-browser-runmode-router.mjs",
     "verify:extension-enrichment": "node scripts/verify-extension-enrichment.mjs",
     "verify:browser-overlay": "node scripts/verify-browser-overlay.mjs",
