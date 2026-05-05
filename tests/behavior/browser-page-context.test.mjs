@@ -130,6 +130,51 @@ test("browser page explanation capture is structured page evidence, not a real t
   }
 });
 
+test("page explanation metadata can prefetch full page text for explicit current-page commands", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lingxy-browser-page-"));
+  const seen = {};
+  const runtime = {
+    store: createInMemoryStoreScaffold(),
+    queue: createTaskQueueScaffold(),
+    eventBus: createEventBusScaffold(),
+    artifactStore: createArtifactStore({ baseDir: tempDir }),
+    executors: [{
+      id: "fast",
+      async *execute(task) {
+        seen.text = task.context_packet?.text ?? "";
+        yield { event_type: "inline_result", payload: { text: "ok" } };
+        yield { event_type: "success", payload: { text: "ok" } };
+      }
+    }],
+    async fetchImpl(url) {
+      assert.equal(url, "https://example.com/page-explain");
+      return createFetchResponse("<html><body><article>Fetched explanation page body.</article></body></html>");
+    }
+  };
+
+  try {
+    const { task } = await submitBrowserTask({
+      runtime,
+      userCommand: "请分析此页面",
+      executionMode: "interactive",
+      capture: {
+        sourceType: "page_explanation",
+        browser: "chrome.exe",
+        url: "https://example.com/page-explain",
+        pageTitle: "Page Explanation",
+        text: "",
+        metadata: { hasPageContent: false }
+      }
+    });
+
+    assert.equal(task.status, "success");
+    assert.match(seen.text, /Fetched explanation page body/);
+    assert.equal(task.context_packet.selection_metadata.browser_page_prefetch, "success");
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("explicit current-page capture fails closed when only URL metadata is available and page prefetch fails", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "lingxy-browser-page-"));
   let executorCalled = false;

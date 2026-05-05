@@ -49,6 +49,10 @@ import {
   createProjectId
 } from "../../shared/project-store.mjs";
 import {
+  commandTargetsCurrentBrowserContext,
+  commandTargetsCurrentFileContext
+} from "../../shared/current-context-intent.mjs";
+import {
   buildOverlayProjectStore,
   ensureDefaultProjectInStore,
   ensureSystemProjectInStore,
@@ -4110,16 +4114,6 @@ function activeWindowFilePath(activeWindow = null) {
   const kind = activeWindow?.detected_kind ?? activeWindow?.detectedKind;
   if (kind !== "file_path") return "";
   return `${activeWindow?.file_path ?? activeWindow?.filePath ?? ""}`.trim();
-}
-
-function commandTargetsCurrentFileContext(commandText = "") {
-  return /(这个文件|当前文件|这个文档|当前文档|这份文档|打开的文件|打开的文档|this\s+(?:file|document)|current\s+(?:file|document))/i
-    .test(`${commandText ?? ""}`);
-}
-
-function commandTargetsCurrentBrowserContext(commandText = "") {
-  return /(这个页面|当前页面|此页面|该页面|这个网页|当前网页|此网页|当前标签页|this\s+(?:page|webpage|tab)|current\s+(?:page|webpage|tab))/i
-    .test(`${commandText ?? ""}`);
 }
 
 function browserProcessName(activeWindow = null) {

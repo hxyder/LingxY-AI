@@ -34,6 +34,7 @@ const consoleProjectsView = read("src/desktop/renderer/console-projects-view.mjs
 const capabilityChecklist = read("src/desktop/renderer/capability-checklist.mjs");
 const evidenceSourcesView = read("src/desktop/renderer/evidence-sources-view.mjs");
 const toolDisplayView = read("src/desktop/renderer/tool-display.mjs");
+const currentContextIntent = read("src/shared/current-context-intent.mjs");
 const dockHtml = read("src/desktop/renderer/dock.html");
 const dockJs = read("src/desktop/renderer/dock.js");
 const dockGeometry = read("src/desktop/tray/dock-geometry.mjs");
@@ -209,8 +210,10 @@ assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词�
   "voice language: overlay voice input must default to simplified Chinese with English words preserved");
 assert.ok(/if \(\s*\/\^zh\/i\.test\([\s\S]{0,120}\)\) return "zh-CN";/.test(overlayJs),
   "voice language: auto Chinese browser locale must normalize to zh-CN");
-assert.ok(/function commandTargetsCurrentBrowserContext\s*\(/.test(overlayJs),
-  "voice/current-page: overlay must keep a structural current-page signal");
+assert.ok(/from\s+["']\.\.\/\.\.\/shared\/current-context-intent\.mjs["']/.test(overlayJs)
+    && /commandTargetsCurrentBrowserContext/.test(currentContextIntent)
+    && /commandTargetsCurrentFileContext/.test(currentContextIntent),
+  "voice/current-page: overlay and service code must share structural current context signals");
 assert.ok(/command:\s*"分析当前页面的完整内容并总结要点"/.test(overlayJs)
     && /command:\s*"把当前页面翻译成中文"/.test(overlayJs),
   "current-page quick actions: commands must preserve current-page intent instead of embedding URL text");

@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createArtifactStore } from "../store/artifact-store.mjs";
+import { commandTargetsCurrentBrowserContext } from "../../shared/current-context-intent.mjs";
 import {
   browserContentEvidenceFromCapture,
   browserPrefetchContentEvidence,
@@ -282,16 +283,20 @@ async function fetchBrowserLinkContext({ capture, runtime, artifactStore, task }
 function taskExplicitlyTargetsBrowserPage(task = {}) {
   const contractScope = task.task_spec?.contract?.source_scope;
   const srScope = task.context_packet?.semantic_router_decision?.source_scope;
+  const commandText = task.user_command ?? task.intent ?? task.task_spec?.user_command ?? "";
+  const currentPageCommand = commandTargetsCurrentBrowserContext(commandText);
   const sourceScopeDecision = task.task_spec?.executor_decision?.evidence
     ?.some?.((entry) => entry?.source === "source_scope" && /current_context|browser_page/.test(`${entry.matched ?? entry.reason ?? ""}`));
   return contractScope === "current_context"
     || contractScope === "browser_page"
     || srScope === "browser_page"
+    || currentPageCommand
     || sourceScopeDecision === true;
 }
 
 function shouldPrefetchBrowserPageContext({ capture, task }) {
-  if (capture?.sourceType !== "webpage" || !capture.url || capture.html) return false;
+  if (!["webpage", "page_explanation"].includes(capture?.sourceType) || !capture.url || capture.html) return false;
+  if (capture.sourceType === "page_explanation" && String(capture.text ?? "").trim()) return false;
   if (capture.metadata?.hasPageContent === true) return false;
   return taskExplicitlyTargetsBrowserPage(task);
 }
