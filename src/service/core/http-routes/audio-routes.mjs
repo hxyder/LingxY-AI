@@ -22,6 +22,7 @@ const DEFAULT_LOCAL_WHISPER_BEAM_SIZE = "5";
 const ECHO_AUDIO_ACTORS = ["desktop_shell"];
 const ECHO_STATUS_ACTORS = ["desktop_shell", "desktop_console"];
 const NOTE_TRANSCRIBE_ACTORS = ["desktop_overlay"];
+const NOTE_STATUS_ACTORS = ["desktop_overlay", "desktop_console"];
 const ECHO_AUDIO_MAX_BYTES = 1024 * 1024 * 12;
 const NOTE_AUDIO_MAX_BYTES = 1024 * 1024 * 64;
 const DEFAULT_NOTE_STREAM_TOTAL_TIMEOUT_MS = 120_000;
@@ -236,6 +237,22 @@ function resolveAudioTranscriptionProvider(runtime, env = process.env) {
     baseUrl: provider.baseUrl,
     model: pickAudioTranscriptionModel(provider),
     providerName: provider.name
+  };
+}
+
+function resolveAudioTranscriptionStatus(runtime, env = process.env) {
+  const provider = resolveAudioTranscriptionProvider(runtime, env);
+  return {
+    ok: Boolean(provider),
+    provider: providerPublicDescriptor(provider),
+    model: provider?.model ?? null,
+    localFallback: {
+      available: existsSync(getLocalTranscriptionScriptPath()),
+      model: env.UCA_LOCAL_WHISPER_MODEL || DEFAULT_LOCAL_WHISPER_MODEL,
+      device: env.UCA_LOCAL_WHISPER_DEVICE || "cpu",
+      computeType: env.UCA_LOCAL_WHISPER_COMPUTE_TYPE || "int8"
+    },
+    reason: provider ? null : "audio_provider_unconfigured"
   };
 }
 
@@ -695,6 +712,12 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     if (!requireDesktopActor({ request, response, allowedActors: ECHO_STATUS_ACTORS })) return true;
     const audioRuntime = resolveAudioRuntime(runtime);
     sendJson(response, 200, await audioRuntime.readEnrollmentStatus());
+    return true;
+  }
+
+  if (method === "GET" && url.pathname === "/note/transcribe/status") {
+    if (!requireDesktopActor({ request, response, allowedActors: NOTE_STATUS_ACTORS })) return true;
+    sendJson(response, 200, resolveAudioTranscriptionStatus(runtime));
     return true;
   }
 

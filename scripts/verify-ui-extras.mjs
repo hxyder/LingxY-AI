@@ -499,7 +499,8 @@ assert.ok(/id="voiceEchoSettingsPanel"/.test(consoleHtml) && /setEchoWakeProfile
   "echo mode: Console settings must expose the Echo wake profile instead of leaving settings.echoWake invisible");
 assert.ok(/id="echoDiagnosticsPanel"/.test(consoleHtml)
     && /getEchoDiagnostics/.test(consoleJs)
-    && /startWakeEnrollment/.test(consoleJs),
+    && /startWakeEnrollment/.test(consoleJs)
+    && /Transcription/.test(consoleJs),
   "echo mode: Console settings must expose non-hot-path diagnostics and wake enrollment controls");
 assert.ok(!/id="providerOnboardingList"/.test(consoleHtml),
   "provider settings must not show global capability onboarding cards inside AI Providers");

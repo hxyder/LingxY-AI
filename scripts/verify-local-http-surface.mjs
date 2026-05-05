@@ -73,6 +73,12 @@ const expectedSurfaces = [
     boundary: "guarded_desktop_actor",
     migration: "done"
   }),
+  surface("audio-routes.mjs", "GET", "/note/transcribe/status", {
+    domain: "audio",
+    effect: "local_audio_provider_status",
+    boundary: "guarded_desktop_actor",
+    migration: "done"
+  }),
   surface("audio-routes.mjs", "POST", "/note/transcribe", {
     domain: "audio",
     effect: "local_file_processing",

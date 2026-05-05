@@ -1638,6 +1638,39 @@ test("echo enrollment status rejects untrusted actors", async () => {
   assert.deepEqual(runtime.calls, []);
 });
 
+test("note transcription status allows console actor without reading audio", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "GET",
+    pathname: "/note/transcribe/status",
+    actor: "desktop_console",
+    rawBody: "",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 200);
+  assert.equal(typeof result.payload.ok, "boolean");
+  assert.equal(Boolean(result.payload.localFallback), true);
+  assert.deepEqual(runtime.calls, []);
+});
+
+test("note transcription status rejects untrusted actors", async () => {
+  const runtime = makeEchoAudioRuntime();
+  const result = await audioRoute({
+    method: "GET",
+    pathname: "/note/transcribe/status",
+    actor: "browser_page",
+    rawBody: "",
+    runtime
+  });
+
+  assert.equal(result.handled, true);
+  assert.equal(result.statusCode, 403);
+  assert.equal(result.payload.error, "desktop_actor_required");
+  assert.deepEqual(runtime.calls, []);
+});
+
 test("echo enrollment rejects non-shell actors before writing samples", async () => {
   const runtime = makeEchoAudioRuntime();
   const result = await audioRoute({

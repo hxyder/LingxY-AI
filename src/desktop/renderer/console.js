@@ -489,6 +489,7 @@ function renderEchoDiagnostics(payload = null) {
   }
   const kws = payload.kws ?? {};
   const enrollment = payload.enrollment ?? {};
+  const transcription = payload.transcription ?? {};
   const profile = payload.echoWake ?? {};
   const kwsOk = Boolean(kws.ok);
   const enrollmentEnabled = Boolean(enrollment.enabled);
@@ -501,6 +502,14 @@ function renderEchoDiagnostics(payload = null) {
   const sampleHint = enrollment.ok === false
     ? (enrollment.message || enrollment.reason || "Enrollment status unavailable.")
     : `${sampleCount}/${requiredSamples} samples, ${matchedCount}/${requiredMatches} KWS matches.`;
+  const transcriptionProvider = transcription.provider?.name
+    || transcription.provider?.id
+    || (transcription.localFallback?.available ? "Local fallback" : "Not configured");
+  const transcriptionHint = transcription.ok
+    ? `${transcriptionProvider}${transcription.model ? ` · ${transcription.model}` : ""}`
+    : transcription.localFallback?.available
+      ? `Cloud STT not configured; local ${transcription.localFallback.model || "whisper"} on ${transcription.localFallback.device || "cpu"} is available.`
+      : (transcription.message || transcription.reason || "No speech-to-text provider configured.");
   echoDiagnosticsPanel.innerHTML = `
     <div class="voice-status-card">
       <strong>Echo mode</strong>
@@ -516,6 +525,11 @@ function renderEchoDiagnostics(payload = null) {
       <strong>Personal samples</strong>
       <div class="value">${enrollmentEnabled ? "Enabled" : sampleCount > 0 ? "Needs retest" : "Not recorded"}</div>
       <div class="hint">${escapeHtml(sampleHint)}</div>
+    </div>
+    <div class="voice-status-card">
+      <strong>Transcription</strong>
+      <div class="value">${transcription.ok ? "Cloud STT" : transcription.localFallback?.available ? "Local fallback" : "Not configured"}</div>
+      <div class="hint">${escapeHtml(transcriptionHint)}</div>
     </div>
   `;
 }
@@ -539,7 +553,8 @@ async function loadEchoDiagnostics({ force = false } = {}) {
         echoMode: false,
         echoWake: {},
         kws: { ok: false, reason: "diagnostics_failed", message: error?.message ?? String(error) },
-        enrollment: { ok: false, reason: "diagnostics_failed", message: error?.message ?? String(error) }
+        enrollment: { ok: false, reason: "diagnostics_failed", message: error?.message ?? String(error) },
+        transcription: { ok: false, reason: "diagnostics_failed", message: error?.message ?? String(error) }
       });
       if (force && echoWakeState) echoWakeState.textContent = `Voice status failed: ${error?.message ?? error}`;
       return null;

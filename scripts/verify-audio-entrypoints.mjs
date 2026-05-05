@@ -181,6 +181,7 @@ for (const mainBridge of [
 for (const route of [
   "GET\" && url.pathname === \"/echo/kws/status\"",
   "GET\" && url.pathname === \"/echo/enrollment/status\"",
+  "GET\" && url.pathname === \"/note/transcribe/status\"",
   "POST\" && url.pathname === \"/echo/kws\"",
   "POST\" && url.pathname === \"/echo/enroll-keyword\"",
   "POST\" && url.pathname === \"/note/transcribe\""
@@ -206,6 +207,7 @@ for (const inventory of [
   "POST\", \"/echo/kws\"",
   "GET\", \"/echo/kws/status\"",
   "GET\", \"/echo/enrollment/status\"",
+  "GET\", \"/note/transcribe/status\"",
   "POST\", \"/note/transcribe\""
 ]) {
   assert.ok(localSurface.includes(inventory), `local HTTP surface inventory missing ${inventory}`);

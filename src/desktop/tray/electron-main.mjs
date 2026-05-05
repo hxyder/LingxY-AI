@@ -2320,7 +2320,7 @@ export function createElectronShellRuntime({
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
         const actor = desktopActorForSender(event.sender);
         const settings = await loadSettings();
-        const [kws, enrollment] = await Promise.all([
+        const [kws, enrollment, transcription] = await Promise.all([
           requestDesktopServiceJson({
             base,
             pathname: "/echo/kws/status",
@@ -2340,6 +2340,16 @@ export function createElectronShellRuntime({
             ok: false,
             reason: "enrollment_status_unavailable",
             message: error?.message ?? String(error)
+          })),
+          requestDesktopServiceJson({
+            base,
+            pathname: "/note/transcribe/status",
+            method: "GET",
+            actor
+          }).catch((error) => ({
+            ok: false,
+            reason: "transcription_status_unavailable",
+            message: error?.message ?? String(error)
           }))
         ]);
         return {
@@ -2347,7 +2357,8 @@ export function createElectronShellRuntime({
           echoMode: Boolean(settings?.echoMode),
           echoWake: settings?.echoWake ?? {},
           kws,
-          enrollment
+          enrollment,
+          transcription
         };
       });
       ipcMain.handle(IPC_CHANNELS.echoWakeEnrollmentStart, async () => {
