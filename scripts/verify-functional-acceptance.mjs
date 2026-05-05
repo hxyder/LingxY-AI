@@ -4,6 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CHECK_COMMANDS } from "./check-manifest.mjs";
+import { outcomeLabelForManualArea, parseManualReleasePassRows } from "./release-manual-pass.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const repoPath = (relativePath) => path.join(repoRoot, relativePath);
@@ -14,6 +15,7 @@ assert.equal(existsSync(repoPath(matrixPath)), true, "missing functional accepta
 
 const matrix = read(matrixPath);
 const userInteractionChecklist = read("docs/release/user_interaction_smoke_checklist.md");
+const externalTrialChecklist = read("docs/release/external_trial_checklist.md");
 const releaseChecklist = read("docs/release/github_release_checklist.md");
 const releaseReadiness = read("scripts/verify-release-readiness.mjs");
 const releaseConfig = read("tools/release/release-config.json");
@@ -121,6 +123,16 @@ for (const row of manualRows) {
     `functional acceptance matrix missing manual row: ${row}`);
 }
 
+const parsedManualRows = parseManualReleasePassRows(matrix);
+assert.deepEqual(parsedManualRows.map((row) => row.area), manualRows,
+  "manual release pass rows must be parsed from functional acceptance matrix in release order");
+
+for (const row of parsedManualRows) {
+  const outcomeLabel = outcomeLabelForManualArea(row.area);
+  assert.equal(externalTrialChecklist.includes(`- ${outcomeLabel}: \`pass / partial / fail\``), true,
+    `external trial checklist missing outcome row for manual pass: ${row.area}`);
+}
+
 assert.equal(releaseChecklist.includes("functional_acceptance_matrix.md"), true,
   "GitHub release checklist must point maintainers to the functional acceptance matrix");
 assert.equal(matrix.includes("user_interaction_smoke_checklist.md"), true,
@@ -131,6 +143,8 @@ assert.equal(userInteractionChecklist.includes("Browser Extension"), true,
   "user interaction smoke checklist must cover the browser extension");
 assert.equal(releaseReadiness.includes("docs/release/functional_acceptance_matrix.md"), true,
   "release readiness verifier must require the functional acceptance matrix");
+assert.equal(releaseReadiness.includes("generate-trial-readiness-report.mjs"), true,
+  "release readiness verifier must regenerate the trial readiness report");
 assert.equal(releaseConfig.includes("docs/release/functional_acceptance_matrix.md"), true,
   "trial release config must bundle the functional acceptance matrix");
 

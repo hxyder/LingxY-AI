@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseManualReleasePassRows } from "./release-manual-pass.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -29,6 +30,7 @@ const prereqs = JSON.parse(prereqJson);
 const manifest = JSON.parse(readFileSync(path.join(bundleRoot, "release-manifest.json"), "utf8"));
 const installText = readFileSync(path.join(bundleRoot, "INSTALL.txt"), "utf8");
 const e2eMatrix = readFileSync(path.join(repoRoot, "docs", "release", "e2e_matrix.md"), "utf8");
+const functionalMatrix = readFileSync(path.join(repoRoot, "docs", "release", "functional_acceptance_matrix.md"), "utf8");
 const knownIssues = readFileSync(path.join(repoRoot, "docs", "release", "known_issues.md"), "utf8");
 const gitHead = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: repoRoot,
@@ -58,12 +60,7 @@ const report = {
     "Launch LingxY Desktop Trial.cmd",
     "Stop LingxY Desktop Trial.cmd"
   ],
-  manual_remaining: [
-    "Fresh Windows machine install",
-    "Browser extension side-load in clean profile",
-    "Office task pane manual sideload",
-    "Packaging smoke with Defender / SmartScreen notes captured"
-  ]
+  manual_remaining: parseManualReleasePassRows(functionalMatrix).map((row) => `${row.area}: ${row.manualPass}`)
 };
 
 const markdown = [

@@ -63,9 +63,16 @@ Trial channel baseline: `0.1.0-trial.1`
 
 ## Outcome
 
-- Trial install result: `pass / partial / fail`
-- Desktop shell result: `pass / partial / fail`
-- File entry result: `pass / partial / fail`
-- Browser result: `pass / partial / fail`
-- Office result: `pass / partial / fail`
+- Fresh install result: `pass / partial / fail`
+- User interaction smoke result: `pass / partial / fail`
+- Provider smoke result: `pass / partial / fail`
+- Browser sideload result: `pass / partial / fail`
+- Office sideload result: `pass / partial / fail`
+- Explorer entry result: `pass / partial / fail`
+- Scheduler result: `pass / partial / fail`
+- Side-effect approval result: `pass / partial / fail`
+- Artifact quality result: `pass / partial / fail`
+- MCP/skills result: `pass / partial / fail`
+- Packaging result: `pass / partial / fail`
+- Recovery result: `pass / partial / fail`
 - Recommended next action:
