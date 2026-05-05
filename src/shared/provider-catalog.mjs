@@ -18,6 +18,18 @@ export const BUILTIN_API_TEMPLATES = Object.freeze([
   { id: "ollama", label: "Ollama (local)", kind: "ollama", baseUrl: "http://127.0.0.1:11434", defaultModel: "llama3.2" }
 ]);
 
+export const MODEL_CATALOG_REVIEW = Object.freeze({
+  reviewedAt: "2026-05-04",
+  policy: "Provider /models discovery is authoritative; curated presets are fallback hints only.",
+  sources: Object.freeze({
+    openai: "https://developers.openai.com/api/docs/models",
+    anthropic: "https://platform.claude.com/docs/en/about-claude/models/overview",
+    deepseek: "https://api-docs.deepseek.com/updates",
+    gemini: "https://ai.google.dev/gemini-api/docs/models",
+    mistral: "https://docs.mistral.ai/models/model-cards/mistral-medium-3-5-26-04"
+  })
+});
+
 export function uniqueNonEmpty(values = []) {
   const seen = new Set();
   const out = [];

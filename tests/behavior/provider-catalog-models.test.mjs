@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   BUILTIN_API_TEMPLATES,
+  MODEL_CATALOG_REVIEW,
   STALE_MODEL_IDS_BY_FAMILY,
   applyReasoningSelectionToBody,
   buildOpenAIChatCompletionBody,
@@ -51,6 +52,14 @@ test("provider catalog exposes current official OpenAI defaults and Chat body sh
   assert.equal(body.messages[0].role, "developer");
   assert.equal(body.max_completion_tokens, 123);
   assert.equal(body.max_tokens, undefined);
+});
+
+test("provider catalog records source review metadata for curated model fallbacks", () => {
+  assert.equal(MODEL_CATALOG_REVIEW.reviewedAt, "2026-05-04");
+  assert.match(MODEL_CATALOG_REVIEW.policy, /discovery is authoritative/u);
+  for (const family of ["openai", "anthropic", "deepseek", "gemini", "mistral"]) {
+    assert.match(MODEL_CATALOG_REVIEW.sources[family], /^https:\/\//u);
+  }
 });
 
 test("DeepSeek catalog prefers v4 while preserving documented compatibility aliases", () => {
