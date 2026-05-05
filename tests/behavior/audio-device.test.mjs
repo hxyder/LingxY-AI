@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   classifyAudioInputError,
+  describeAudioInputFailure,
   requestAudioInputStream
 } from "../../src/desktop/renderer/audio-device.mjs";
 
@@ -110,4 +111,13 @@ test("audio input error classifier keeps device failures generic and narrow", ()
   assert.equal(classifyAudioInputError({ name: "NotFoundError" }), "no_device");
   assert.equal(classifyAudioInputError(new Error("getUserMedia_timeout")), "timeout");
   assert.equal(classifyAudioInputError(new Error("driver crashed")), "init_failed");
+});
+
+test("audio input failure descriptions are reusable across voice surfaces", () => {
+  assert.match(describeAudioInputFailure({ code: "unsupported" }), /无法访问麦克风接口/);
+  assert.match(describeAudioInputFailure({ code: "permission_denied_preflight" }), /系统拒绝/);
+  assert.match(describeAudioInputFailure({ code: "permission_denied" }), /权限被拒绝/);
+  assert.match(describeAudioInputFailure({ code: "no_device" }), /未检测到可用的麦克风/);
+  assert.match(describeAudioInputFailure({ code: "timeout" }), /启动超时/);
+  assert.match(describeAudioInputFailure({ code: "init_failed", error: new Error("driver crashed") }), /driver crashed/);
 });

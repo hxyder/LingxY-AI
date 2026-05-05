@@ -83,6 +83,7 @@ for (const viewInvariant of [
 }
 
 for (const deviceInvariant of [
+  "export function describeAudioInputFailure",
   "permissions?.query?.({ name: \"microphone\" })",
   "mediaDevices.getUserMedia({ audio: true })",
   "getUserMedia_timeout",

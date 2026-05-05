@@ -72,6 +72,7 @@ import {
   taskOwnerConversationId
 } from "./overlay-task-routing.mjs";
 import {
+  describeAudioInputFailure,
   requestAudioInputStream
 } from "./audio-device.mjs";
 import {
@@ -5322,19 +5323,7 @@ async function startVoiceRecognition() {
     timeoutMs: 5000
   });
   if (!audioRequest.ok) {
-    if (audioRequest.code === "unsupported") {
-      finishError("当前环境无法访问麦克风接口。");
-    } else if (audioRequest.code === "permission_denied_preflight") {
-      finishError("麦克风权限已被系统拒绝。请到系统设置 → 隐私 → 麦克风 允许此应用访问后重试。");
-    } else if (audioRequest.code === "timeout") {
-      finishError("麦克风启动超时——请检查系统麦克风权限，或重启 UCA 后重试。", audioRequest.error);
-    } else if (audioRequest.code === "permission_denied") {
-      finishError("麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。", audioRequest.error);
-    } else if (audioRequest.code === "no_device") {
-      finishError("未检测到可用的麦克风。请确认设备已连接后重试。", audioRequest.error);
-    } else {
-      finishError(`麦克风初始化失败：${audioRequest.error?.message ?? audioRequest.error}`, audioRequest.error);
-    }
+    finishError(describeAudioInputFailure(audioRequest), audioRequest.error);
     return;
   }
 

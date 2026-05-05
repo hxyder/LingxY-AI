@@ -13,6 +13,27 @@ export function classifyAudioInputError(error) {
   return "init_failed";
 }
 
+export function describeAudioInputFailure(result = {}) {
+  const code = result?.code ?? "init_failed";
+  const error = result?.error;
+  if (code === "unsupported") {
+    return "当前环境无法访问麦克风接口。";
+  }
+  if (code === "permission_denied_preflight") {
+    return "麦克风权限已被系统拒绝。请到系统设置 → 隐私 → 麦克风 允许此应用访问后重试。";
+  }
+  if (code === "timeout") {
+    return "麦克风启动超时——请检查系统麦克风权限，或重启 UCA 后重试。";
+  }
+  if (code === "permission_denied") {
+    return "麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。";
+  }
+  if (code === "no_device") {
+    return "未检测到可用的麦克风。请确认设备已连接后重试。";
+  }
+  return `麦克风初始化失败：${error?.message ?? error ?? "未知错误"}`;
+}
+
 function stopStream(stream) {
   for (const track of stream?.getTracks?.() ?? []) {
     try { track.stop?.(); } catch { /* ignore late cleanup failures */ }
@@ -73,4 +94,3 @@ export async function requestAudioInputStream({
   }
   return result;
 }
-
