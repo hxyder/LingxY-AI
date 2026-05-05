@@ -51,6 +51,13 @@ import {
   renderConnectorsMcpServersHtml
 } from "./console-mcp-view.mjs";
 import {
+  ACCOUNT_CONNECTOR_META,
+  countAvailableAccountConnectors,
+  renderAccountConnectorSectionLabelHtml,
+  renderAvailableAccountConnectorHtml,
+  renderConnectedAccountConnectorRowHtml
+} from "./console-account-connectors-view.mjs";
+import {
   buildCapabilityChecklist,
   capabilityChecklistSummary
 } from "./capability-checklist.mjs";
@@ -9204,43 +9211,6 @@ async function loadConnectorsTab() {
 
 // ── Account Connectors (Microsoft 365 / Google) ───────────────────────────────
 
-const ACCOUNT_CONNECTOR_META = {
-  microsoft: {
-    label: "Microsoft 365",
-    logo: "Ⓜ",
-    logoClass: "microsoft",
-    desc: "OneDrive 文件 · Outlook 邮件 · 日历",
-    scopes: "Files.Read、Mail.Read、Calendars.Read",
-    setupTitle: "注册 Azure AD 应用（免费）",
-    setupSteps: [
-      "打开 Azure 门户 → 应用注册 → 新建注册",
-      "受支持账户类型选\"任何组织目录中的账户和个人 Microsoft 账户\"",
-      "重定向 URI 选 Public client/native，填 http://localhost:4310/auth/callback",
-      "注册完成后，将\"应用程序(客户端) ID\"粘贴到下方",
-      "Microsoft PKCE 流无需客户端密码"
-    ],
-    setupUrl: "https://portal.azure.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
-    needsSecret: false
-  },
-  google: {
-    label: "Google",
-    logo: "G",
-    logoClass: "google",
-    desc: "Google Drive 文件 · Gmail · 日历",
-    scopes: "drive.readonly、gmail.readonly、calendar.readonly",
-    setupTitle: "创建 Google OAuth 应用（免费）",
-    setupSteps: [
-      "打开 Google Cloud Console → API 和服务 → 凭据",
-      "创建凭据 → OAuth 客户端 ID → 类型选\"桌面应用\"",
-      "将 http://localhost:4310/auth/callback 加入已授权的重定向 URI",
-      "复制客户端 ID 和客户端密码粘贴到下方",
-      "在 OAuth 同意屏幕里添加你自己的邮箱为测试用户"
-    ],
-    setupUrl: "https://console.cloud.google.com/apis/credentials",
-    needsSecret: true
-  }
-};
-
 let _acConfigOpen = {};   // { microsoft: bool, google: bool }
 
 async function renderAccountConnectors(connectors, connectedAccounts = []) {
@@ -9248,7 +9218,6 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
   if (!list) return;
   // Skip-render guard: don't wipe an inline rename input mid-edit.
   if (shouldSkipRender(list, ".conn-row-edit")) return;
-  list.innerHTML = "";
   // UCA-127: connector cards collapsed into single-line .conn-row entries
   // grouped under "Connected" / "Available providers" section labels
   // (settings-style). Bulky cards, capability tag strips, and per-card
@@ -9256,164 +9225,56 @@ async function renderAccountConnectors(connectors, connectedAccounts = []) {
   // live in the Inbox tab; this page is only the connection ledger.
   list.className = "conn-section-group";
 
+  const html = [];
   if (connectedAccounts.length > 0) {
-    const connectedLabel = document.createElement("div");
-    connectedLabel.className = "conn-section-label";
-    connectedLabel.innerHTML = `Connected<span class="zh">已连接</span><span class="count">${connectedAccounts.length}</span>`;
-    list.appendChild(connectedLabel);
-
-    for (const account of connectedAccounts) {
-      const meta = ACCOUNT_CONNECTOR_META[account.provider] ?? { label: account.provider, logo: "●", logoClass: "" };
-      const caps = account.capabilities ?? {};
-      const capLabels = [
-        ["emailRead", "邮件读"],
-        ["emailWrite", "邮件写"],
-        ["fileRead", "文件读"],
-        ["fileWrite", "文件写"],
-        ["calendarRead", "日历读"],
-        ["calendarWrite", "日历写"]
-      ].filter(([key]) => caps[key]).map(([, label]) => label);
-      const defaults = [
-        account.isDefaultForEmail ? "邮箱默认" : null,
-        account.isDefaultForFiles ? "文件默认" : null,
-        account.isDefaultForCalendar ? "日历默认" : null
-      ].filter(Boolean);
-      const statusOn = account.tokenStatus === "active";
-      const row = document.createElement("div");
-      row.className = "conn-row";
-      row.innerHTML = `
-        <div class="conn-row-logo acc-logo ${meta.logoClass}">${meta.logo}</div>
-        <div class="conn-row-main">
-          <div class="conn-row-title">
-            ${escapeHtml(account.displayName ?? account.email ?? meta.label)}
-            ${defaults.map((label) => `<span class="pill pill-ok">${escapeHtml(label)}</span>`).join("")}
-          </div>
-          <div class="conn-row-sub">${escapeHtml(meta.label)} · ${escapeHtml(account.email ?? "")}${capLabels.length ? " · " + capLabels.slice(0, 4).join("/") : ""}</div>
-        </div>
-        <span class="conn-row-status">
-          <span class="conn-row-status-dot ${statusOn ? "on" : "warn"}" title="${escapeHtml(account.tokenStatus ?? "")}"></span>
-          ${statusOn ? "active" : escapeHtml(account.tokenStatus ?? "offline")}
-        </span>
-        <div class="conn-row-actions">
-          <button class="btn btn-sm btn-ghost" data-connected-edit="${escapeHtml(account.id)}" title="重命名显示名">编辑</button>
-          <button class="btn btn-sm btn-ghost" data-connected-reauth="${escapeHtml(account.id)}">重新授权</button>
-          <button class="btn btn-sm btn-danger" data-connected-delete="${escapeHtml(account.id)}">断开</button>
-          <div class="acc-more" data-acc-more-root>
-            <button class="icon-btn acc-more-btn" type="button" data-acc-more-toggle aria-label="更多选项" title="更多">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="1"/><circle cx="12" cy="5" r="1"/><circle cx="12" cy="19" r="1"/></svg>
-            </button>
-            <div class="acc-more-menu" hidden>
-              <button class="acc-more-item" data-connected-default="${escapeHtml(account.id)}" data-purpose="email">设为邮箱默认</button>
-              <button class="acc-more-item" data-connected-default="${escapeHtml(account.id)}" data-purpose="files">设为文件默认</button>
-              <button class="acc-more-item" data-connected-default="${escapeHtml(account.id)}" data-purpose="calendar">设为日历默认</button>
-            </div>
-          </div>
-        </div>
-      `;
-      list.appendChild(row);
-      const moreRoot = row.querySelector("[data-acc-more-root]");
-      const moreBtn = row.querySelector("[data-acc-more-toggle]");
-      const moreMenu = row.querySelector(".acc-more-menu");
-      moreBtn?.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        moreMenu?.toggleAttribute("hidden");
-      });
-      document.addEventListener("click", (ev) => {
-        if (!moreRoot?.contains(ev.target) && moreMenu && !moreMenu.hasAttribute("hidden")) {
-          moreMenu.setAttribute("hidden", "");
-        }
-      });
-    }
+    html.push(renderAccountConnectorSectionLabelHtml("Connected", "已连接", connectedAccounts.length));
+    html.push(...connectedAccounts.map((account) => renderConnectedAccountConnectorRowHtml(account)));
   }
 
   // Available providers section
-  const availLabel = document.createElement("div");
-  availLabel.className = "conn-section-label";
-  availLabel.innerHTML = `Available providers<span class="zh">可添加</span><span class="count">${connectors.filter((c) => ACCOUNT_CONNECTOR_META[c.type]).length}</span>`;
-  list.appendChild(availLabel);
+  html.push(renderAccountConnectorSectionLabelHtml("Available providers", "可添加", countAvailableAccountConnectors(connectors)));
 
   for (const connector of connectors) {
-    const meta = ACCOUNT_CONNECTOR_META[connector.type];
-    if (!meta) continue;
     const type = connector.type;
-    const statusOn = connector.connected;
-    const statusText = connector.connected
-      ? (connector.email ?? "已连接")
-      : connector.configured
-        ? "未连接"
-        : "需要配置 Client ID";
-    const connectBtn = connector.connected
-      ? `<button class="btn btn-sm btn-ghost" data-ac-disconnect="${type}">断开</button>`
-      : `<button class="btn btn-sm btn-primary" data-ac-connect="${type}" ${connector.configured ? "" : "disabled"}>授权登录</button>`;
-
-    const row = document.createElement("div");
-    row.className = "conn-row";
-    row.dataset.acType = type;
-    row.innerHTML = `
-      <div class="conn-row-logo acc-logo ${meta.logoClass}">${meta.logo}</div>
-      <div class="conn-row-main">
-        <div class="conn-row-title">${escapeHtml(meta.label)}</div>
-        <div class="conn-row-sub">${connector.connected ? escapeHtml(statusText) : escapeHtml(meta.desc)}</div>
-      </div>
-      <span class="conn-row-status">
-        <span class="conn-row-status-dot ${statusOn ? "on" : ""}" title="${escapeHtml(statusText)}"></span>
-        ${statusOn ? "connected" : "not connected"}
-      </span>
-      <div class="conn-row-actions">
-        ${connectBtn}
-        <button class="btn btn-sm btn-ghost" data-ac-config-toggle="${type}">${_acConfigOpen[type] ? "收起" : "配置"}</button>
-      </div>
-    `;
+    if (!ACCOUNT_CONNECTOR_META[type]) continue;
+    let cfgData = { clientId: "", hasClientSecret: false };
 
     // ── Config panel (shown when user clicks "配置") ──
     if (_acConfigOpen[type]) {
-      let cfgData = { clientId: "", hasClientSecret: false };
       try {
         const r = await fetch(`${state.serviceBaseUrl}/connectors/accounts/${type}/config`);
         if (r.ok) cfgData = await r.json();
       } catch { /* ignore */ }
-
-      const configPanel = document.createElement("div");
-      configPanel.className = "acc-config-panel";
-      configPanel.innerHTML = `
-        <details style="font-size:12px;color:var(--muted);">
-          <summary style="cursor:pointer;font-weight:600;color:var(--text);">${escapeHtml(meta.setupTitle)}</summary>
-          <ol style="margin:8px 0 0 16px;padding:0;line-height:1.7;">
-            ${meta.setupSteps.map((s) => `<li>${escapeHtml(s)}</li>`).join("")}
-          </ol>
-          <a href="#" data-external-url="${escapeHtml(meta.setupUrl)}" style="font-size:11px;color:var(--accent);">打开 ${meta.label} 开发者控制台 →</a>
-        </details>
-        <div>
-          <label>Client ID</label>
-          <input type="text" data-ac-field="clientId" placeholder="粘贴 Client ID…" value="${escapeHtml(cfgData.clientId)}" autocomplete="off">
-        </div>
-        ${meta.needsSecret ? `
-        <div>
-          <label>Client Secret</label>
-          <input type="password" data-ac-field="clientSecret" placeholder="${cfgData.hasClientSecret ? "（已保存）" : "粘贴 Client Secret…"}" autocomplete="new-password">
-        </div>` : `<p style="font-size:11px;color:var(--muted);margin:0;">✓ Microsoft PKCE 流无需 Client Secret</p>`}
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button class="btn btn-primary" data-ac-save-config="${type}" style="font-size:12px;padding:5px 14px;">保存</button>
-          <span data-ac-config-status style="font-size:12px;color:var(--muted);"></span>
-        </div>
-      `;
       // UCA-127: config panel attaches as a sibling row below the conn-row
       // (full-width), so the row stays one line even when configuring.
-      configPanel.style.cssText = "padding:12px 14px;background:var(--panel-2);border:1px solid var(--line);border-radius:var(--radius-sm);margin-top:-2px;display:flex;flex-direction:column;gap:10px;";
-      list.appendChild(row);
-      list.appendChild(configPanel);
-      continue;
     }
 
     // UCA-126: resource-strip (files/mail/calendar preview) retired from
     // connector cards. Those previews now live in the dedicated Inbox tab
     // with a sidebar account switcher — keeps Connectors cards focused on
     // connection status alone.
-
-    list.appendChild(row);
+    html.push(renderAvailableAccountConnectorHtml(connector, {
+      configOpen: Boolean(_acConfigOpen[type]),
+      configData: cfgData
+    }));
   }
 
+  list.innerHTML = html.join("");
+
   // Wire events
+  list.querySelectorAll("[data-acc-more-toggle]").forEach((moreBtn) => {
+    const moreRoot = moreBtn.closest("[data-acc-more-root]");
+    const moreMenu = moreRoot?.querySelector(".acc-more-menu");
+    moreBtn.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      moreMenu?.toggleAttribute("hidden");
+    });
+    document.addEventListener("click", (ev) => {
+      if (!moreRoot?.contains(ev.target) && moreMenu && !moreMenu.hasAttribute("hidden")) {
+        moreMenu.setAttribute("hidden", "");
+      }
+    });
+  });
   list.querySelectorAll("[data-ac-connect]").forEach((btn) => {
     btn.addEventListener("click", () => handleAccountConnect(btn.dataset.acConnect));
   });

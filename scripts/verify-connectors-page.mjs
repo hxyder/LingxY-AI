@@ -17,6 +17,11 @@ import {
   MCP_SERVER_META,
   renderConnectorsMcpServersHtml
 } from "../src/desktop/renderer/console-mcp-view.mjs";
+import {
+  ACCOUNT_CONNECTOR_META,
+  renderAvailableAccountConnectorHtml,
+  renderConnectedAccountConnectorRowHtml
+} from "../src/desktop/renderer/console-account-connectors-view.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
@@ -162,5 +167,73 @@ assert.ok(html.includes("mcp-card--v3"), "MCP view must render v3 cards");
 assert.ok(html.includes('data-mcp-cfg-save="mcp-brave-search"'), "MCP view must render dynamic config save");
 assert.ok(html.includes("mcp-needs-config"), "MCP view must surface missing config");
 assert.ok(html.includes('data-mcp-install-source-click="figma-mcp"'), "MCP view must render isolated package install handoff");
+
+// ── Account connector card view is pure HTML/meta, with behavior in console.js ─
+assert.ok(consoleJs.includes('from "./console-account-connectors-view.mjs"'),
+  "console.js must import shared account connector view");
+assert.ok(!/const\s+ACCOUNT_CONNECTOR_META\s*=/.test(consoleJs),
+  "console.js must not own account connector metadata");
+assert.ok(!consoleJs.includes("conn-row-logo acc-logo"),
+  "console.js must not own account connector row/card HTML");
+assert.ok(!consoleJs.includes("meta.setupSteps.map"),
+  "console.js must not own account connector setup-panel HTML");
+assert.equal(ACCOUNT_CONNECTOR_META.microsoft.label, "Microsoft 365");
+assert.equal(ACCOUNT_CONNECTOR_META.google.needsSecret, true);
+
+const connectedAccountHtml = renderConnectedAccountConnectorRowHtml({
+  id: "acct-1",
+  provider: "google",
+  email: "person@example.com",
+  displayName: "Personal Google",
+  tokenStatus: "active",
+  isDefaultForEmail: true,
+  capabilities: { emailRead: true, fileRead: true, calendarRead: true }
+});
+for (const needle of [
+  "conn-row",
+  "conn-row-logo acc-logo google",
+  "Personal Google",
+  'data-connected-edit="acct-1"',
+  'data-connected-reauth="acct-1"',
+  'data-connected-delete="acct-1"',
+  'data-connected-default="acct-1"',
+  'data-purpose="email"',
+  'data-purpose="files"',
+  'data-purpose="calendar"'
+]) {
+  assert.ok(connectedAccountHtml.includes(needle),
+    `account connected-card contract missing ${needle}`);
+}
+
+const availableAccountHtml = renderAvailableAccountConnectorHtml({
+  type: "google",
+  configured: true,
+  connected: false
+}, {
+  configOpen: true,
+  configData: { clientId: "google-client-id", hasClientSecret: true }
+});
+for (const needle of [
+  'data-ac-type="google"',
+  'data-ac-connect="google"',
+  'data-ac-config-toggle="google"',
+  "acc-config-panel",
+  'data-ac-field="clientId"',
+  'data-ac-field="clientSecret"',
+  'data-ac-save-config="google"',
+  "google-client-id"
+]) {
+  assert.ok(availableAccountHtml.includes(needle),
+    `account available-card contract missing ${needle}`);
+}
+
+const connectedProviderHtml = renderAvailableAccountConnectorHtml({
+  type: "microsoft",
+  configured: true,
+  connected: true,
+  email: "work@example.com"
+});
+assert.ok(connectedProviderHtml.includes('data-ac-disconnect="microsoft"'),
+  "account provider card must keep disconnect affordance");
 
 console.log("ok verify-connectors-page");
