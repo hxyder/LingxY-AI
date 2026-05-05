@@ -10563,13 +10563,12 @@ consoleChatNoteBtn?.addEventListener("click", () => {
   });
 });
 consoleChatVoiceBtn?.addEventListener("click", () => {
-  // Defer to the existing overlay voice mode (Ctrl+Shift+V). The preload
-  // bridge exposes a helper when available; otherwise surface a hint.
-  if (window.ucaBridge?.openOverlayInVoiceMode) {
-    window.ucaBridge.openOverlayInVoiceMode();
-  } else {
+  if (typeof window.ucaShell?.openOverlayVoice !== "function") {
     showConsoleToast("按 Ctrl+Shift+V 开启语音", { kind: "info" });
+    return;
   }
+  window.ucaShell.openOverlayVoice({ mode: "voice", autoStart: true })
+    .catch(() => showConsoleToast("按 Ctrl+Shift+V 开启语音", { kind: "info" }));
 });
 
 function updateChatModelChip() {

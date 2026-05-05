@@ -1786,6 +1786,24 @@ export function createElectronShellRuntime({
     return true;
   }
 
+  function openOverlayVoice(payload = {}) {
+    const mode = payload?.mode === "note" ? "note" : "voice";
+    const shortcutId = mode === "note" ? "note-wake" : "voice-wake";
+    const shown = showWindow("overlay");
+    enqueueWindowMessage("overlay", IPC_CHANNELS.shortcutTriggered, {
+      shortcutId,
+      accelerator: mode === "note" ? "Ctrl+Shift+N" : "Ctrl+Shift+V",
+      source: "shell_bridge",
+      mode,
+      autoStart: payload?.autoStart !== false
+    });
+    return {
+      ok: Boolean(shown),
+      mode,
+      shortcutId
+    };
+  }
+
   function sendEchoShortcutWake(kind = "voice") {
     const payload = {
       kind,
@@ -3964,6 +3982,7 @@ export function createElectronShellRuntime({
       }));
       ipcMain.handle(IPC_CHANNELS.shellShowWindow, (_event, windowId) => showWindow(windowId));
       ipcMain.handle(IPC_CHANNELS.shellHideWindow, (_event, windowId) => hideWindow(windowId));
+      ipcMain.handle(IPC_CHANNELS.shellOpenOverlayVoice, (_event, payload = {}) => openOverlayVoice(payload));
       ipcMain.handle(IPC_CHANNELS.shellSubmitDroppedFiles, async (_event, filePaths = []) => {
         const acceptedFilePaths = filePaths.filter((filePath) => typeof filePath === "string" && filePath.length > 0);
         if (acceptedFilePaths.length === 0) {

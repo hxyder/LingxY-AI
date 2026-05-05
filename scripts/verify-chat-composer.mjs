@@ -102,5 +102,7 @@ assert.match(attachmentsJs, /chip-attach--image/, "attachment controller must re
 assert.match(attachmentsJs, /function clear\(\)/, "attachment controller must expose clear");
 assert.match(attachmentsJs, /function getFilePaths\(\)/, "attachment controller must expose getFilePaths");
 assert.match(attachmentsJs, /return \{\s*addFiles,\s*clear,\s*getFilePaths,\s*render\s*\}/, "attachment controller must expose stable public API");
+assert.match(js, /window\.ucaShell\.openOverlayVoice\(\{\s*mode:\s*"voice",\s*autoStart:\s*true\s*\}\)/, "console voice button must use shell openOverlayVoice bridge");
+assert.doesNotMatch(js, /ucaBridge\?\.openOverlayInVoiceMode/, "console voice button must not depend on missing ucaBridge helper");
 
 console.log("ok verify-chat-composer");

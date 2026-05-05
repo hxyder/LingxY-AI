@@ -15,6 +15,8 @@ const preload = await read("src/desktop/renderer/preload.cjs");
 assert.equal(preload.includes(IPC_CHANNELS.shellStatus), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellShowWindow), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellHideWindow), true);
+assert.equal(preload.includes(IPC_CHANNELS.shellOpenOverlayVoice), true);
+assert.equal(preload.includes("openOverlayVoice"), true);
 assert.equal(preload.includes("previewMcpInstall"), true);
 assert.equal(preload.includes(IPC_CHANNELS.mcpInstallPreview), true);
 assert.equal(preload.includes("runMcpInstall"), true);

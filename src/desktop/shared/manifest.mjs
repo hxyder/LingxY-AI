@@ -15,6 +15,7 @@ export const IPC_CHANNELS = Object.freeze({
   shellStatus: "uca:shell-status",
   shellShowWindow: "uca:shell-show-window",
   shellHideWindow: "uca:shell-hide-window",
+  shellOpenOverlayVoice: "uca:shell-open-overlay-voice",
   shellSubmitDroppedFiles: "uca:shell-submit-dropped-files",
   shellNotify: "uca:shell-notify",
   shellNotificationReceived: "uca:shell-notification-received",

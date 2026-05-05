@@ -58,6 +58,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   hideWindow(windowId) {
     return ipcRenderer.invoke("uca:shell-hide-window", windowId);
   },
+  openOverlayVoice(payload = {}) {
+    return ipcRenderer.invoke("uca:shell-open-overlay-voice", payload ?? {});
+  },
   readClipboardText() {
     return clipboard.readText();
   },

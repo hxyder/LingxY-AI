@@ -7015,7 +7015,7 @@ window.ucaShell.onShortcutTriggered((payload) => {
   }
   if (payload.shortcutId === "voice-wake") {
     startNewConversation();
-    openVoicePanel({ autoStart: true });
+    openVoicePanel({ autoStart: payload.autoStart !== false });
   }
   if (payload.shortcutId === "note-wake") {
     // Match voice-wake semantics (fresh conversation) then jump straight into

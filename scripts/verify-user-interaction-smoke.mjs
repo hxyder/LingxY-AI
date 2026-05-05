@@ -76,12 +76,17 @@ const popupHtml = read("browser_ext/popup/index.html");
 const popupJs = read("browser_ext/popup/index.js");
 const sidepanelHtml = read("browser_ext/sidepanel/index.html");
 const sidepanelJs = read("browser_ext/sidepanel/index.js");
+const runModeViewJs = read("browser_ext/shared/run-mode-view.js");
 
 assert.equal(popupHtml.includes('id="mode-detail"'), true,
   "browser popup must expose a run-mode detail line");
 assert.equal(sidepanelHtml.includes('id="sp-mode-detail"'), true,
   "browser side panel must expose a run-mode detail line");
-assert.equal(/standalone.*local tools|独立模式.*本地工具/is.test(popupJs + "\n" + sidepanelJs), true,
+assert.equal(popupJs.includes("../shared/run-mode-view.js"), true,
+  "browser popup must use the shared run-mode view");
+assert.equal(sidepanelJs.includes("../shared/run-mode-view.js"), true,
+  "browser side panel must use the shared run-mode view");
+assert.equal(/独立模式[\s\S]*本地工具/.test(runModeViewJs), true,
   "browser extension UI must explain standalone mode limitations");
 
 console.log("ok verify-user-interaction-smoke");

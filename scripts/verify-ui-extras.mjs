@@ -186,6 +186,12 @@ assert.ok(/window\.ucaShell\.transcribeNoteAudioStreaming/.test(overlayJs),
   "note transcribe stream: overlay must use desktop shell streaming bridge");
 assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/note\/transcribe/.test(overlayJs),
   "note transcribe: overlay must not POST /note/transcribe directly");
+assert.ok(/openOverlayVoice/.test(consoleJs) && /window\.ucaShell\.openOverlayVoice/.test(consoleJs),
+  "console voice: chat composer must use desktop shell voice bridge");
+assert.ok(/function openOverlayVoice\(/.test(electronMain) && /shellOpenOverlayVoice/.test(electronMain),
+  "voice bridge: main process must own openOverlayVoice routing");
+assert.ok(/payload\.autoStart !== false/.test(overlayJs),
+  "voice bridge: overlay must honor shell voice autoStart option");
 
 // ── MCP explicit install button ────────────────────────────────────────
 assert.ok(/data-mcp-install-click/.test(consoleJs), "mcp install: missing data-mcp-install-click button");
