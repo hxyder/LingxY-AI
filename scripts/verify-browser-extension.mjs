@@ -428,6 +428,7 @@ try {
 
 // Inline result frame helper exists in the content script
 const selectionCacheJs = await readFile(path.join(repoRoot, "browser_ext", "content_script", "selection-cache.js"), "utf8");
+const pageSourceCaptureJs = await readFile(path.join(repoRoot, "browser_ext", "content_script", "page-source-capture.js"), "utf8");
 assert.equal(selectionCacheJs.includes("showInlineResultFrame"), true);
 assert.equal(selectionCacheJs.includes("sendRuntimeMessageSafely"), true);
 assert.equal(selectionCacheJs.includes("uca.runtime.runQuickAction"), true);
@@ -438,6 +439,9 @@ assert.equal(selectionCacheJs.includes("ACTION_LABELS"), true);
 // "Open in dialog" button must carry the prior result into the follow-up path
 assert.equal(selectionCacheJs.includes("uca.result.openFollowup"), true);
 assert.equal(selectionCacheJs.includes("priorResult: resultText"), true);
+assert.equal(pageSourceCaptureJs.includes("__lingxyPageSourceCapture"), true);
+assert.equal(pageSourceCaptureJs.includes("window.__ucaPageSourceCapture[CAPTURE_MARKER] === true"), true);
+assert.equal(pageSourceCaptureJs.includes("writable: false"), true);
 
 // Service worker must register the openWithResult message handler
 const serviceWorkerJs = await readFile(path.join(repoRoot, "browser_ext", "background", "service-worker.js"), "utf8");

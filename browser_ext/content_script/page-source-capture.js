@@ -27,7 +27,11 @@
 
 (function installPageSourceCapture() {
   if (typeof window === "undefined") return;
-  if (typeof window.__ucaPageSourceCapture === "function") return; // idempotent
+  const CAPTURE_MARKER = "__lingxyPageSourceCapture";
+  if (typeof window.__ucaPageSourceCapture === "function"
+      && window.__ucaPageSourceCapture[CAPTURE_MARKER] === true) {
+    return; // idempotent for our own installed capture function
+  }
 
   const YOUTUBE_HOSTS = new Set([
     "youtube.com",
@@ -499,7 +503,22 @@
     };
   }
 
-  window.__ucaPageSourceCapture = capturePageSource;
+  try {
+    Object.defineProperty(capturePageSource, CAPTURE_MARKER, {
+      value: true,
+      enumerable: false
+    });
+  } catch { /* marker is best-effort */ }
+
+  try {
+    Object.defineProperty(window, "__ucaPageSourceCapture", {
+      value: capturePageSource,
+      configurable: false,
+      writable: false
+    });
+  } catch {
+    window.__ucaPageSourceCapture = capturePageSource;
+  }
 
   // Main-world ↔ isolated-world bridge: isolated-world scripts dispatch a
   // CustomEvent("uca:capture-page-source") with `{ detail: { requestId } }`;
