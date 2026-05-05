@@ -292,6 +292,10 @@ async function runReadToolCase() {
   });
   assert.equal(result.success, true);
   assert.equal(result.metadata.connector_status, "success");
+  assert.equal(result.metadata.result_kind, "record_list");
+  assert.equal(result.metadata.record_type, "email");
+  assert.equal(result.metadata.record_count, 1);
+  assert.deepEqual(result.metadata.synthesis_affordances, ["summarize_collection", "extract_action_items"]);
   assert.equal(result.metadata.emails[0].subject, "Hello");
   assert.equal(result.metadata.account.email, "tool-g@example.com");
   assert.equal(result.observation.includes("Hello"), true);

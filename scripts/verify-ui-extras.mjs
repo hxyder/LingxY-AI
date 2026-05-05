@@ -433,6 +433,14 @@ assert.ok(/collapseCompletedConsoleToolCards/.test(consoleJs) && /\.chat-tool-ca
   "chat tools: completed tool cards must collapse after the final answer");
 assert.ok(/rememberEchoTask/.test(overlayJs) && /showEchoResultHudOnce/.test(overlayJs),
   "echo mode: echo-submitted task results must surface through the Echo HUD");
+assert.ok(/frame\.event === "success"[\s\S]{0,260}showEchoResultHudOnce/.test(overlayJs),
+  "echo mode: terminal success events without inline_result must still surface through the Echo HUD");
+assert.ok(/captureActiveWindowHintForVoice/.test(overlayJs) && /voice_wake/.test(overlayJs) && /echo_voice_wake/.test(overlayJs),
+  "voice mode: voice and Echo sessions must capture active browser context before page-analysis commands");
+assert.ok(/<option value="auto" selected>自动识别语言 \/ Mixed<\/option>/.test(overlayHtml)
+    && /selectedVoiceLanguage/.test(overlayJs)
+    && /liveRecognizerLanguage/.test(overlayJs),
+  "voice mode: language selection must default to auto/mixed and separate live recognizer locale from final transcription");
 assert.ok(/id="voiceEchoSettingsPanel"/.test(consoleHtml) && /setEchoWakeProfile/.test(consoleJs),
   "echo mode: Console settings must expose the Echo wake profile instead of leaving settings.echoWake invisible");
 assert.ok(!/id="providerOnboardingList"/.test(consoleHtml),

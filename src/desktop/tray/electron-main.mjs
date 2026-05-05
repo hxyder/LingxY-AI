@@ -3783,6 +3783,7 @@ export function createElectronShellRuntime({
         const actor = desktopActorForSender(event.sender);
         const params = new URLSearchParams();
         params.set("lang", `${payload?.lang || "auto"}`);
+        if (payload?.outputLocale) params.set("output_locale", `${payload.outputLocale}`);
         try {
           return await postDesktopServiceBinary({
             base,
@@ -3807,6 +3808,7 @@ export function createElectronShellRuntime({
         const params = new URLSearchParams();
         params.set("stream", "1");
         params.set("lang", `${payload?.lang || "auto"}`);
+        if (payload?.outputLocale) params.set("output_locale", `${payload.outputLocale}`);
         try {
           return await postDesktopServiceBinaryStream({
             base,

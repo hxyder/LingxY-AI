@@ -2773,6 +2773,12 @@ async function handleTaskEventFrame(rawEvent) {
         text: frame.data?.text ?? "任务已完成，但有一些限制。",
         kind: "info"
       });
+    } else if (frame.event === "success") {
+      showEchoResultHudOnce(frameTaskId, {
+        title: lastTask?.intent ?? "任务完成",
+        text: frame.data?.text ?? frame.data?.summary ?? lastTask?.result_summary ?? lastArtifactPreview ?? "任务已完成。",
+        kind: "success"
+      });
     } else if (frame.event === "failed") {
       showEchoResultHudOnce(frameTaskId, {
         title: lastTask?.intent ?? "任务失败",
@@ -4044,6 +4050,7 @@ function buildBrowserContextCapture(browserContext = null, activeWindow = null) 
   const description = browserContext?.metadata?.description || youtube?.description || "";
   const captions = youtube?.visibleCaptions || "";
   const pageText = browserContext?.text || "";
+  const hasPageContent = Boolean(description || captions || pageText);
 
   const header = [
     platform ? `平台：${platform}` : "",
@@ -4069,7 +4076,8 @@ function buildBrowserContextCapture(browserContext = null, activeWindow = null) 
       contentKind: youtube ? "video" : "webpage",
       platform: platform || "generic",
       browserContextScore: browserContext?.score ?? null,
-      hasVisibleCaptions: Boolean(captions)
+      hasVisibleCaptions: Boolean(captions),
+      hasPageContent
     }
   };
 }
@@ -4078,6 +4086,30 @@ async function resolveActiveWindowBrowserCapture() {
   if (!isActiveBrowserWindow(pendingActiveWindowContext)) return null;
   const browserContext = await fetchRecentBrowserContextForActiveWindow(pendingActiveWindowContext);
   return buildBrowserContextCapture(browserContext, pendingActiveWindowContext);
+}
+
+async function captureActiveWindowHintForVoice({ captureMode = "voice_context" } = {}) {
+  if (typeof window.ucaShell?.getActiveWindowContext !== "function") return null;
+  try {
+    const payload = await timeoutWithFallback(
+      window.ucaShell.getActiveWindowContext({
+        includeSelection: false,
+        excludeShellWindow: true,
+        preferLastExternal: true,
+        maxExternalAgeMs: 10 * 60 * 1000,
+        captureMode
+      }),
+      1200,
+      null
+    );
+    const activeWindow = payload?.active_window ?? payload?.activeWindow ?? null;
+    if (isActiveBrowserWindow(activeWindow)) {
+      pendingActiveWindowContext = { ...activeWindow };
+    }
+    return activeWindow;
+  } catch {
+    return null;
+  }
 }
 
 function applyShellHandoff(payload) {
@@ -4937,6 +4969,25 @@ function getSpeechRecognitionCtor() {
   return window.SpeechRecognition || window.webkitSpeechRecognition || null;
 }
 
+function selectedVoiceLanguage() {
+  return voiceLangSelect?.value || "auto";
+}
+
+function liveRecognizerLanguage() {
+  const selected = selectedVoiceLanguage();
+  if (selected && selected !== "auto") return selected;
+  const preferred = Array.isArray(navigator.languages)
+    ? navigator.languages.find((lang) => /^zh|^en/i.test(lang))
+    : "";
+  return preferred || navigator.language || "zh-CN";
+}
+
+function transcriptionOutputLocale() {
+  const selected = selectedVoiceLanguage();
+  if (selected && selected !== "auto") return selected;
+  return "zh-CN";
+}
+
 function setVoiceRecording(active) {
   voiceRecording = active;
   applyVoiceRecordingView({
@@ -5075,7 +5126,7 @@ function startVoicePreviewLoop() {
     const snapshot = voiceAudioChunks.slice();
     const blob = new Blob(snapshot, { type: "audio/webm" });
     voicePreviewInFlight = true;
-    transcribeAudioBlob(blob, { lang: voiceLangSelect?.value || "auto" })
+    transcribeAudioBlob(blob, { lang: selectedVoiceLanguage() })
       .then((resp) => {
         if (!voiceRecording || voicePreviewSessionId !== mySession) return;
         const text = `${resp?.transcript ?? ""}`.trim();
@@ -5138,7 +5189,7 @@ function stopVoiceLocalRecorder({ transcribe = false } = {}) {
         voiceStatus.textContent = "⏳ 正在转写...";
         const blob = new Blob(chunks, { type: "audio/webm" });
         const streamed = await transcribeAudioBlobStreaming(blob, {
-          lang: voiceLangSelect?.value || "auto"
+          lang: selectedVoiceLanguage()
         });
         if (streamed.ok) {
           const transcript = `${streamed.transcript ?? ""}`.trim();
@@ -5149,7 +5200,7 @@ function stopVoiceLocalRecorder({ transcribe = false } = {}) {
         // Streaming failed (no partials, bad server, etc.) — fall back to the
         // original one-shot endpoint so we still get a transcript.
         const resp = await transcribeAudioBlob(blob, {
-          lang: voiceLangSelect?.value || "auto"
+          lang: selectedVoiceLanguage()
         });
         const transcript = `${resp.transcript ?? ""}`.trim();
         if (resp.ok === false) {
@@ -5310,7 +5361,7 @@ function ensureVoiceRecognizer() {
 // Low-level helper — starts the recognizer after mic permission is confirmed.
 function _doStartRecognizer(recognizer) {
   if (!recognizer) return;
-  recognizer.lang = voiceLangSelect?.value || "zh-CN";
+  recognizer.lang = liveRecognizerLanguage();
   commandInput.dataset.voiceBase = commandInput.value;
   try {
     recognizer.start();
@@ -5443,7 +5494,8 @@ function stopVoiceRecognition({ discard = false, forceTranscribe = false } = {})
   // In Echo sessions, Web Speech is only a low-latency preview. Always run
   // the MediaRecorder audio through the final transcription path before
   // sending so a bad interim transcript does not become the command.
-  const shouldTranscribe = !discard && (forceTranscribe || voiceLocalFallbackActive || !voiceRecognitionProducedText);
+  const shouldTranscribe = !discard
+    && (forceTranscribe || voiceLocalFallbackActive || !voiceRecognitionProducedText || selectedVoiceLanguage() === "auto");
   voiceManualStopPending = true;
   if (voiceLocalFallbackActive || shouldTranscribe) {
     setVoiceRecording(false);
@@ -6315,7 +6367,8 @@ async function transcribeAudioBlob(blob, { lang = "auto" } = {}) {
   const payload = await window.ucaShell.transcribeNoteAudio({
     audio: await blob.arrayBuffer(),
     mimeType: blob.type || "audio/webm",
-    lang: lang || "auto"
+    lang: lang || "auto",
+    outputLocale: transcriptionOutputLocale()
   });
   if (payload?.ok === false && payload?.error) {
     throw new Error(payload.message ?? payload.error ?? "/note/transcribe");
@@ -6350,7 +6403,8 @@ async function transcribeAudioBlobStreaming(blob, { lang = "auto" } = {}) {
     const streamPromise = window.ucaShell.transcribeNoteAudioStreaming({
       audio: await blob.arrayBuffer(),
       mimeType: blob.type || "audio/webm",
-      lang: lang || "auto"
+      lang: lang || "auto",
+      outputLocale: transcriptionOutputLocale()
     }, (event) => {
         if (!gotAnyFrame) {
           gotAnyFrame = true;
@@ -7059,6 +7113,7 @@ window.ucaShell.onShortcutTriggered((payload) => {
   }
   if (payload.shortcutId === "voice-wake") {
     startNewConversation();
+    void captureActiveWindowHintForVoice({ captureMode: "voice_wake" });
     openVoicePanel({ autoStart: payload.autoStart !== false });
   }
   if (payload.shortcutId === "note-wake") {
@@ -7066,6 +7121,7 @@ window.ucaShell.onShortcutTriggered((payload) => {
     // dual-channel note recording — mic transcript + system audio capture.
     startNewConversation();
     if (voiceRecording) stopVoiceRecognition();
+    void captureActiveWindowHintForVoice({ captureMode: "note_wake" });
     void enterNoteMode();
   }
 });
@@ -7204,6 +7260,7 @@ window.ucaShell?.onEchoWake?.(async (payload = {}) => {
   const kind = payload.kind === "note" ? "note" : "voice";
   startNewConversation();
   await beginEchoSession();
+  void captureActiveWindowHintForVoice({ captureMode: kind === "note" ? "echo_note_wake" : "echo_voice_wake" });
   if (kind === "note") {
     showEchoHud({ text: "开始录音笔记…", kind: "wake", durationMs: 1800, throttleMs: 0 });
     if (voiceRecording) stopVoiceRecognition();

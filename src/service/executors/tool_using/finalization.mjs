@@ -72,6 +72,119 @@ export function allowsRawConnectorFinal(taskSpec) {
   return taskSpec?.synthesis?.expected_output === "raw_results";
 }
 
+function countBy(values = [], selector = () => "") {
+  const counts = new Map();
+  for (const value of values) {
+    const key = String(selector(value) ?? "").trim();
+    if (!key) continue;
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 5);
+}
+
+function compactList(values = [], selector = (value) => value, limit = 5) {
+  return values
+    .map(selector)
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .slice(0, limit);
+}
+
+function formatCountSummary(items = []) {
+  return items.map(([label, count]) => `${label} (${count})`).join(", ");
+}
+
+export function formatConnectorSynthesisFinal(entry, userCommand = "", taskSpec = null) {
+  if (allowsRawConnectorFinal(taskSpec)) return null;
+  const expected = taskSpec?.synthesis?.expected_output;
+  const needsSynthesis = expected === null
+    || expected === undefined
+    || expected === ""
+    || SYNTHESIS_REQUIRED_OUTPUTS.has(expected);
+  if (!needsSynthesis) return null;
+
+  const metadata = entry?.metadata ?? {};
+  const zh = hasCjk(userCommand);
+
+  if (entry?.tool === "account_list_emails") {
+    const emails = Array.isArray(metadata.emails) ? metadata.emails : [];
+    const account = metadata.account ?? { provider: metadata.provider, accountId: metadata.accountId };
+    if (emails.length === 0) {
+      return zh
+        ? `总结来看，${formatAccountLabel(account)} 目前没有查到邮件。`
+        : `In summary, no emails were found in ${formatAccountLabel(account)}.`;
+    }
+    const senders = formatCountSummary(countBy(emails, (email) => email.fromName || email.from));
+    const subjects = compactList(emails, (email) => email.subject || "(no subject)", 5);
+    if (expected === "action_items") {
+      return zh
+        ? [
+            `总结来看，我查看了 ${formatAccountLabel(account)} 的 ${emails.length} 封邮件。`,
+            senders ? `主要来源：${senders}。` : null,
+            "建议下一步：",
+            ...subjects.map((subject) => `- 查看并判断是否需要回复：${subject}`)
+          ].filter(Boolean).join("\n")
+        : [
+            `In summary, I reviewed ${emails.length} emails in ${formatAccountLabel(account)}.`,
+            senders ? `Main senders: ${senders}.` : null,
+            "Recommended next steps:",
+            ...subjects.map((subject) => `- Review and decide whether to reply: ${subject}`)
+          ].filter(Boolean).join("\n");
+    }
+    return zh
+      ? [
+          `总结来看，我查看了 ${formatAccountLabel(account)} 的 ${emails.length} 封邮件。`,
+          senders ? `主要来源：${senders}。` : null,
+          subjects.length ? `最近涉及的主题包括：${subjects.join("；")}。` : null,
+          "如果需要，我可以继续按重要性、待回复事项或时间范围做进一步整理。"
+        ].filter(Boolean).join("\n")
+      : [
+          `In summary, I reviewed ${emails.length} emails in ${formatAccountLabel(account)}.`,
+          senders ? `Main senders: ${senders}.` : null,
+          subjects.length ? `Recent subjects include: ${subjects.join("; ")}.` : null,
+          "I can further organize them by priority, reply-needed items, or date range."
+        ].filter(Boolean).join("\n");
+  }
+
+  if (entry?.tool === "account_list_files") {
+    const files = Array.isArray(metadata.files) ? metadata.files : [];
+    const account = metadata.account ?? { provider: metadata.provider, accountId: metadata.accountId };
+    const names = compactList(files, (file) => file.name || "(untitled)", 6);
+    return zh
+      ? [
+          `总结来看，我查看了 ${formatAccountLabel(account)} 的云端文件，共 ${files.length} 个结果。`,
+          names.length ? `主要文件：${names.join("；")}。` : null,
+          "这些是文件清单信息；若要分析内容，需要继续下载或读取具体文件。"
+        ].filter(Boolean).join("\n")
+      : [
+          `In summary, I found ${files.length} cloud-file results in ${formatAccountLabel(account)}.`,
+          names.length ? `Main files: ${names.join("; ")}.` : null,
+          "These are file listings; content analysis requires downloading or reading the specific files."
+        ].filter(Boolean).join("\n");
+  }
+
+  if (entry?.tool === "account_list_events") {
+    const events = Array.isArray(metadata.events) ? metadata.events : [];
+    const account = metadata.account ?? { provider: metadata.provider, accountId: metadata.accountId };
+    const titles = compactList(events, (event) => event.title || "(untitled)", 6);
+    return zh
+      ? [
+          `总结来看，我查看了 ${formatAccountLabel(account)} 的日历，共 ${events.length} 个事件。`,
+          titles.length ? `主要事件：${titles.join("；")}。` : null,
+          "如果需要，我可以继续按时间冲突、优先级或待准备事项整理。"
+        ].filter(Boolean).join("\n")
+      : [
+          `In summary, I found ${events.length} calendar events in ${formatAccountLabel(account)}.`,
+          titles.length ? `Main events: ${titles.join("; ")}.` : null,
+          "I can further organize them by conflicts, priority, or preparation items."
+        ].filter(Boolean).join("\n");
+  }
+
+  return null;
+}
+
 export function connectorFallbackText(transcript, userCommand = "", taskSpec = null, fallbackText = null) {
   const rawAllowed = allowsRawConnectorFinal(taskSpec);
   const entry = [...(transcript ?? [])].reverse().find((item) =>
@@ -250,6 +363,15 @@ export function localFallbackFinal({ task, transcript, reason = "" }) {
   if (actionAttempt) return actionAttempt;
   const action = actionCompletionFallbackText(transcript, userCommand, task?.task_spec);
   if (action) return action;
+  const connectorEntry = [...(transcript ?? [])].reverse().find((item) =>
+    item.type === "tool_result"
+    && item.success === true
+    && ["account_list_emails", "account_list_files", "account_list_events"].includes(item.tool)
+  );
+  const connectorSynthesis = connectorEntry
+    ? formatConnectorSynthesisFinal(connectorEntry, userCommand, task?.task_spec)
+    : null;
+  if (connectorSynthesis) return connectorSynthesis;
   const connector = connectorFallbackText(transcript, userCommand, { synthesis: { expected_output: "raw_results" } });
   if (connector) return connector;
   const latest = [...(transcript ?? [])].reverse()

@@ -160,6 +160,59 @@ await it("validateAnswerSynthesis: action_items requires action/priority markers
   assert.equal(violations[0].missingExpectedTransformation, true);
 });
 
+await it("validateAnswerSynthesis: record-list summary rejects mostly raw enumeration", () => {
+  const obs = "Fetched a structured record list from a connector.".repeat(8);
+  const finalText = [
+    "总结如下：",
+    "1. 2026-05-05 | Ada | Budget review",
+    "2. 2026-05-05 | Ben | Lunch",
+    "3. 2026-05-05 | Chen | Invoice"
+  ].join("\n");
+  const violations = validateAnswerSynthesis(
+    { synthesis: { expected_output: "summary" } },
+    [{
+      type: "tool_result",
+      tool: "account_list_emails",
+      success: true,
+      observation: obs,
+      metadata: {
+        result_kind: "record_list",
+        record_type: "email",
+        record_count: 3
+      }
+    }],
+    finalText
+  );
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].unsynthesizedRecordList, true);
+  assert.match(violations[0].checkerReason, /record_list_not_synthesized/);
+});
+
+await it("validateAnswerSynthesis: record-list summary passes with collection-level prose", () => {
+  const obs = "Fetched a structured record list from a connector.".repeat(8);
+  const finalText = [
+    "总结来看，今天共有 3 条记录，其中两条集中在预算和账单事项，另一条是普通午餐沟通。",
+    "主要优先级是先处理预算 review 和 invoice，因为它们更可能影响后续交付或付款。",
+    "其余记录可以稍后查看。"
+  ].join("\n");
+  const violations = validateAnswerSynthesis(
+    { synthesis: { expected_output: "summary" } },
+    [{
+      type: "tool_result",
+      tool: "account_list_emails",
+      success: true,
+      observation: obs,
+      metadata: {
+        result_kind: "record_list",
+        record_type: "email",
+        record_count: 3
+      }
+    }],
+    finalText
+  );
+  assert.equal(violations.length, 0);
+});
+
 await it("SYNTHESIS_REQUIRED_OUTPUTS is read by callers, not duplicated", async () => {
   const semantic = await read("src/service/core/intent/semantic-router.mjs");
   const validator = await read("src/service/core/policy/success-contract-validator.mjs");

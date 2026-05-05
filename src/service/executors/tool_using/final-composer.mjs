@@ -102,6 +102,7 @@ export async function composeFinalAnswer({ task, transcript, runtime, reason = "
       "Use only the user request, task spec, and sanitized tool transcript below.",
       "Do not call tools. Do not mention internal pipeline, retries, budgets, validators, or raw tool protocol.",
       "Turn tool observations into the final answer the user asked for, in the user's language.",
+      "When tool metadata marks `result_kind=record_list` and the expected output is summary, comparison, recommendation, or analysis, produce collection-level synthesis: counts, groups, priorities, implications, or next steps. Do not merely restate each record as a list.",
       "If the transcript contains concrete values or facts that directly answer the request, use them. Do not claim data is unavailable just because the same observation also contains page boilerplate, navigation text, warnings, or unrelated errors.",
       "Preserve relevant source, timestamp, location, units, and uncertainty from the transcript when they matter to the answer.",
       "Never output raw internal control/event JSON. If you see fields like iteration, next_action, violation_kinds, or satisfied, treat them as internal diagnostics and omit them.",

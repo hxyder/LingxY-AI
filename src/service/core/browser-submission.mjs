@@ -58,7 +58,8 @@ function createSelectionMetadata(capture) {
     context_after: capture.contextAfter,
     anchor_text: capture.anchorText,
     image_url: capture.imageUrl,
-    tab_id: capture.tabId
+    tab_id: capture.tabId,
+    browser_capture: capture.metadata && typeof capture.metadata === "object" ? capture.metadata : null
   };
 }
 
@@ -77,6 +78,14 @@ const BROWSER_METADATA_SENTINEL =
 function normalizeCaptureText(capture) {
   if (capture.sourceType === "chat") {
     return capture.text ?? "";
+  }
+
+  if (capture.sourceType === "webpage" && capture.metadata?.hasPageContent === false && capture.url) {
+    return [
+      BROWSER_METADATA_SENTINEL,
+      `Webpage URL: ${capture.url}`,
+      capture.pageTitle ? `Page title: ${capture.pageTitle}` : ""
+    ].filter(Boolean).join("\n");
   }
 
   if (capture.text) {
@@ -250,6 +259,50 @@ async function fetchBrowserLinkContext({ capture, runtime, artifactStore, task }
       attached_to_context: isText
     }
   });
+}
+
+function taskExplicitlyTargetsBrowserPage(task = {}) {
+  const contractScope = task.task_spec?.contract?.source_scope;
+  const srScope = task.context_packet?.semantic_router_decision?.source_scope;
+  const sourceScopeDecision = task.task_spec?.executor_decision?.evidence
+    ?.some?.((entry) => entry?.source === "source_scope" && /current_context|browser_page/.test(`${entry.matched ?? entry.reason ?? ""}`));
+  return contractScope === "current_context"
+    || contractScope === "browser_page"
+    || srScope === "browser_page"
+    || sourceScopeDecision === true;
+}
+
+function shouldPrefetchBrowserPageContext({ capture, task }) {
+  if (capture?.sourceType !== "webpage" || !capture.url || capture.html) return false;
+  if (capture.metadata?.hasPageContent === true) return false;
+  return taskExplicitlyTargetsBrowserPage(task);
+}
+
+async function prefetchBrowserPageContext({ capture, runtime, artifactStore, task }) {
+  try {
+    await fetchBrowserLinkContext({ capture, runtime, artifactStore, task });
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "step_finished",
+      payload: {
+        step: "browser_page_context_prefetch",
+        url: capture.url,
+        attached_to_context: true
+      }
+    });
+  } catch (error) {
+    emitTaskEvent({
+      runtime,
+      taskId: task.task_id,
+      eventType: "step_warning",
+      payload: {
+        step: "browser_page_context_prefetch",
+        url: capture.url,
+        message: error?.message ?? "Browser page prefetch failed; continuing with captured metadata."
+      }
+    });
+  }
 }
 
 export function buildBrowserContextPacket({
@@ -846,6 +899,10 @@ export async function submitBrowserTask({
         taskEvents: store.getTaskEvents(task.task_id),
         artifacts: delegated.artifacts ?? []
       };
+    }
+
+    if (shouldPrefetchBrowserPageContext({ capture, task })) {
+      await prefetchBrowserPageContext({ capture, runtime, artifactStore, task });
     }
 
     if (capture.sourceType === "link" && !capture.html) {

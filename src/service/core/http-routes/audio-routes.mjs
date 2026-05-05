@@ -239,6 +239,14 @@ function normalizeLanguageHint(lang = "auto") {
   return lang.split("-")[0];
 }
 
+function transcriptionPromptForLanguage(lang = "auto", outputLocale = "") {
+  const normalized = String(outputLocale || lang || "auto").toLowerCase();
+  if (normalized === "zh-cn" || normalized === "zh" || normalized === "cmn") {
+    return "Use Simplified Chinese for Chinese text. Preserve English words as spoken.";
+  }
+  return "";
+}
+
 const WAKE_TEXT_PHRASES = [
   "linxi", "lin xi", "lin-xi", "lingxi", "ling xi", "lynx",
   "linsee", "lin see", "linsey", "lindsay", "linsy",
@@ -774,6 +782,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     const audioRuntime = resolveAudioRuntime(runtime);
     const contentType = String(request.headers["content-type"] ?? "application/json").trim();
     let lang = String(url.searchParams.get("lang") ?? "auto").trim();
+    let outputLocale = String(url.searchParams.get("output_locale") ?? "").trim();
     const bodyResult = await readAudioRequestBody(request, {
       contentType,
       maxBytes: NOTE_AUDIO_MAX_BYTES
@@ -783,7 +792,10 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       return true;
     }
     const { audioBuffer, mimeType, jsonBody } = bodyResult;
-    if (jsonBody) lang = String(jsonBody.lang ?? lang ?? "auto").trim();
+    if (jsonBody) {
+      lang = String(jsonBody.lang ?? lang ?? "auto").trim();
+      outputLocale = String(jsonBody.outputLocale ?? jsonBody.output_locale ?? outputLocale ?? "").trim();
+    }
 
     if (audioBuffer.length === 0) {
       sendJson(response, 400, { ok: false, error: "missing_audio" });
@@ -812,6 +824,8 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
           formData.append("file", new Blob([audioBuffer], { type: mimeType }), "note-recording.webm");
           formData.append("model", provider.model || "whisper-1");
           if (lang && lang !== "auto") formData.append("language", lang.split("-")[0]);
+          const prompt = transcriptionPromptForLanguage(lang, outputLocale);
+          if (prompt) formData.append("prompt", prompt);
           const baseUrl = (provider.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
           const apiResp = await fetch(`${baseUrl}/audio/transcriptions`, {
             method: "POST",
@@ -921,6 +935,8 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       if (lang && lang !== "auto") {
         formData.append("language", lang.split("-")[0]);
       }
+      const prompt = transcriptionPromptForLanguage(lang, outputLocale);
+      if (prompt) formData.append("prompt", prompt);
 
       const baseUrl = (provider.baseUrl ?? "https://api.openai.com/v1").replace(/\/$/, "");
       const apiResp = await fetch(`${baseUrl}/audio/transcriptions`, {

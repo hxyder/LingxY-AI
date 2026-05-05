@@ -68,6 +68,9 @@ for (const voiceInvariant of [
   "stopVoiceLocalRecorder({ transcribe",
   "transcribeAudioBlob(blob",
   "transcribeAudioBlobStreaming(blob",
+  "selectedVoiceLanguage()",
+  "liveRecognizerLanguage()",
+  "transcriptionOutputLocale()",
   "voiceCard.addEventListener(\"drop\"",
   "attachDroppedFilesToVoice(filePaths)"
 ]) {
@@ -162,7 +165,8 @@ for (const mainBridge of [
   "uca:get-desktop-audio-source",
   "setPermissionRequestHandler",
   "permission === \"audioCapture\"",
-  "permission === \"microphone\""
+  "permission === \"microphone\"",
+  "output_locale"
 ]) {
   assert.ok(main.includes(mainBridge), `main process missing audio bridge: ${mainBridge}`);
 }
@@ -175,6 +179,9 @@ for (const route of [
 ]) {
   assert.ok(audioRoutes.includes(route), `audio routes missing ${route}`);
 }
+
+assert.ok(audioRoutes.includes("transcriptionPromptForLanguage") && audioRoutes.includes("Use Simplified Chinese"),
+  "audio routes must pass an output-locale prompt so zh-CN transcriptions do not drift to Traditional Chinese");
 
 for (const inventory of [
   "POST\", \"/echo/enroll-keyword\"",

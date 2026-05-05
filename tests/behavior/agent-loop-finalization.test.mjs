@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   compactTranscriptForComposer,
   finalFallbackText,
+  formatConnectorSynthesisFinal,
   hasUnresolvedActionFailure,
   localFallbackFinal,
   needsFinalComposer
@@ -73,6 +74,62 @@ test("agent finalization separates connector raw results from synthesis-needed r
   assert.match(raw, /1 封邮件|1 emails/);
   assert.match(raw, /Hello/);
   assert.match(summary, /仍需要按你的请求进行总结|still needs synthesis/);
+});
+
+test("agent finalization local fallback synthesizes connector lists instead of raw dumping", () => {
+  const transcript = [
+    {
+      type: "tool_result",
+      tool: "account_list_emails",
+      success: true,
+      observation: [
+        "account_list_emails returned 3 emails from google account me@example.com:",
+        "1. 2026-05-05 | Ada <ada@example.com> | Budget review",
+        "2. 2026-05-05 | Ben <ben@example.com> | Lunch",
+        "3. 2026-05-05 | Ada <ada@example.com> | Revised budget"
+      ].join("\n"),
+      metadata: {
+        account: { provider: "google", email: "me@example.com" },
+        emails: [
+          { received: "2026-05-05", fromName: "Ada", from: "ada@example.com", subject: "Budget review" },
+          { received: "2026-05-05", fromName: "Ben", from: "ben@example.com", subject: "Lunch" },
+          { received: "2026-05-05", fromName: "Ada", from: "ada@example.com", subject: "Revised budget" }
+        ]
+      }
+    }
+  ];
+
+  const text = localFallbackFinal({
+    task: {
+      user_command: "汇总一下今天的邮件",
+      task_spec: { synthesis: { expected_output: "summary" } }
+    },
+    transcript,
+    reason: "composer_unavailable"
+  });
+
+  assert.match(text, /总结来看/);
+  assert.match(text, /3 封邮件/);
+  assert.match(text, /主要来源/);
+  assert.doesNotMatch(text, /^1\.\s+2026-05-05/m);
+});
+
+test("agent finalization connector synthesis can produce action-item shape", () => {
+  const text = formatConnectorSynthesisFinal({
+    type: "tool_result",
+    tool: "account_list_emails",
+    success: true,
+    metadata: {
+      account: { provider: "google", email: "me@example.com" },
+      emails: [
+        { subject: "Submit report", from: "ops@example.com" },
+        { subject: "Confirm appointment", from: "clinic@example.com" }
+      ]
+    }
+  }, "整理待办邮件", { synthesis: { expected_output: "action_items" } });
+
+  assert.match(text, /建议下一步/);
+  assert.match(text, /查看并判断是否需要回复/);
 });
 
 test("agent finalization decides when a final composer is needed", () => {

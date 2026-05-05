@@ -55,6 +55,13 @@ function describeConnectorResult(toolId, connectorResult, noun, account) {
   ].join("\n");
 }
 
+function recordTypeForNoun(noun) {
+  if (noun === "emails") return "email";
+  if (noun === "files") return "file";
+  if (noun === "events") return "event";
+  return "record";
+}
+
 function toActionResult(toolId, connectorResult, noun, account = null) {
   if (connectorResult.status !== "success") {
     return createActionResult({
@@ -77,6 +84,11 @@ function toActionResult(toolId, connectorResult, noun, account = null) {
       provider: connectorResult.provider,
       accountId: connectorResult.accountId,
       account: account ? publicAccount(account) : undefined,
+      result_kind: "record_list",
+      record_type: recordTypeForNoun(noun),
+      record_count: values.length,
+      raw_observation_kind: "list",
+      synthesis_affordances: ["summarize_collection", "extract_action_items"],
       ...connectorResult.data
     }
   });

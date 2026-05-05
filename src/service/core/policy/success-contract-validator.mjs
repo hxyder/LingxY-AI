@@ -75,6 +75,52 @@ function compactMetadataForOverlap(metadata) {
   }
 }
 
+function recordListMetadata(entry = {}) {
+  const metadata = entry?.metadata;
+  if (!metadata || typeof metadata !== "object") return null;
+  if (metadata.result_kind !== "record_list") return null;
+  const count = Number(metadata.record_count ?? 0);
+  return {
+    recordType: String(metadata.record_type ?? "record"),
+    recordCount: Number.isFinite(count) ? count : 0
+  };
+}
+
+function lineShapeStats(text = "") {
+  const lines = String(text ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const itemLines = lines.filter((line) => /^(?:[-*]|\d+[.)、])\s+/.test(line));
+  const proseLines = lines.filter((line) => !/^(?:[-*]|\d+[.)、])\s+/.test(line));
+  return {
+    lineCount: lines.length,
+    itemLineCount: itemLines.length,
+    substantialProseLineCount: proseLines.filter((line) => line.length >= 24).length
+  };
+}
+
+function detectUnsynthesizedRecordList(toolResults = [], expected, final = "") {
+  if (!SYNTHESIS_REQUIRED_OUTPUTS.has(expected)) return null;
+  if (expected === "action_items") return null;
+  const recordLists = toolResults
+    .map(recordListMetadata)
+    .filter((entry) => entry && entry.recordCount >= 3);
+  if (recordLists.length === 0) return null;
+
+  const stats = lineShapeStats(final);
+  if (stats.lineCount < 3 || stats.itemLineCount < 3) return null;
+  const mostlyItems = stats.itemLineCount / stats.lineCount >= 0.6;
+  const hasEnoughProse = stats.substantialProseLineCount >= 2;
+  if (!mostlyItems || hasEnoughProse) return null;
+
+  const totalRecords = recordLists.reduce((sum, entry) => sum + entry.recordCount, 0);
+  return {
+    record_count: totalRecords,
+    record_types: [...new Set(recordLists.map((entry) => entry.recordType))]
+  };
+}
+
 /**
  * Per-kind shape markers. Deterministic v1 — light heuristics that
  * catch obvious "wrong shape" cases (e.g. expected_output=summary but
@@ -229,8 +275,9 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
     && finalLongEnoughForRawDump
     && maxOverlap >= SYNTHESIS_OVERLAP_THRESHOLD;
   const missingExpectedTransformation = isSynthesisKind && !hasShapeMarker(expected, final);
+  const unsynthesizedRecordList = detectUnsynthesizedRecordList(toolResults, expected, final);
 
-  if (!isLikelyRawDump && !missingExpectedTransformation) return [];
+  if (!isLikelyRawDump && !missingExpectedTransformation && !unsynthesizedRecordList) return [];
 
   const reasons = [];
   if (isLikelyRawDump) {
@@ -239,6 +286,9 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
   if (missingExpectedTransformation) {
     reasons.push(`missing_${expected}_shape_markers`);
   }
+  if (unsynthesizedRecordList) {
+    reasons.push(`record_list_not_synthesized=${unsynthesizedRecordList.record_count}`);
+  }
   const checkerReason = reasons.join("; ");
 
   const expectationLabel = isSynthesisKind
@@ -246,7 +296,9 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
     : "synthesis (expected_output unclassified — defensive raw-dump arm)";
   const detail = isLikelyRawDump
     ? `final answer echoes raw tool observations (${(maxOverlap * 100).toFixed(0)}% bigram overlap)`
-    : `final answer lacks ${expectationLabel}`;
+    : unsynthesizedRecordList
+      ? `final answer mostly enumerates ${unsynthesizedRecordList.record_count} records instead of producing collection-level synthesis`
+      : `final answer lacks ${expectationLabel}`;
 
   // P6 F3 followup A: when expected_output was not classified (SR
   // unavailable or skipped), expected_output stays null but the
@@ -259,6 +311,7 @@ export function validateAnswerSynthesis(taskSpec, transcript = [], finalText = "
     expected_output: expected ?? "raw_dump",
     isLikelyRawDump,
     missingExpectedTransformation,
+    unsynthesizedRecordList: Boolean(unsynthesizedRecordList),
     checkerReason,
     message: isSynthesisKind
       ? `expected_output=${expected} requires synthesis: ${detail}.`
