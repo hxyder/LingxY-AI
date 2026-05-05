@@ -9,6 +9,7 @@ const read = (relativePath) => readFileSync(path.join(repoRoot, relativePath), "
 
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
+const audioDevice = read("src/desktop/renderer/audio-device.mjs");
 const preload = read("src/desktop/renderer/preload.cjs");
 const main = read("src/desktop/tray/electron-main.mjs");
 const manifest = read("src/desktop/shared/manifest.mjs");
@@ -57,9 +58,7 @@ for (const listener of [
 
 for (const voiceInvariant of [
   "function resetVoiceState()",
-  "navigator.permissions?.query?.({ name: \"microphone\" })",
-  "navigator.mediaDevices.getUserMedia({ audio: true })",
-  "getUserMedia_timeout",
+  "requestAudioInputStream({",
   "startVoiceLocalRecorder(stream)",
   "startVoicePreviewLoop()",
   "stopVoiceLocalRecorder({ transcribe",
@@ -69,6 +68,20 @@ for (const voiceInvariant of [
   "attachDroppedFilesToVoice(filePaths)"
 ]) {
   assert.ok(overlayJs.includes(voiceInvariant), `voice state machine missing invariant: ${voiceInvariant}`);
+}
+
+for (const deviceInvariant of [
+  "permissions?.query?.({ name: \"microphone\" })",
+  "mediaDevices.getUserMedia({ audio: true })",
+  "getUserMedia_timeout",
+  "classificationAudioInputError",
+  "permission_denied_preflight",
+  "stopStream(stream)"
+]) {
+  const expected = deviceInvariant === "classificationAudioInputError"
+    ? "classifyAudioInputError"
+    : deviceInvariant;
+  assert.ok(audioDevice.includes(expected), `audio device helper missing invariant: ${expected}`);
 }
 
 for (const noteInvariant of [

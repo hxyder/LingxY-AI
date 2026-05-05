@@ -71,6 +71,9 @@ import {
   clearTaskConversationBinding,
   taskOwnerConversationId
 } from "./overlay-task-routing.mjs";
+import {
+  requestAudioInputStream
+} from "./audio-device.mjs";
 
 /* ── Theme sync (mirrors console theme via shared localStorage) ── */
 const THEME_KEY = "uca-console-theme";
@@ -5324,38 +5327,30 @@ async function startVoiceRecognition() {
     setVoiceRecording(false);
   };
 
-  if (!navigator.mediaDevices?.getUserMedia) {
-    finishError("当前环境无法访问麦克风接口。");
+  const audioRequest = await requestAudioInputStream({
+    mediaDevices: navigator.mediaDevices,
+    permissions: navigator.permissions,
+    timeoutMs: 5000
+  });
+  if (!audioRequest.ok) {
+    if (audioRequest.code === "unsupported") {
+      finishError("当前环境无法访问麦克风接口。");
+    } else if (audioRequest.code === "permission_denied_preflight") {
+      finishError("麦克风权限已被系统拒绝。请到系统设置 → 隐私 → 麦克风 允许此应用访问后重试。");
+    } else if (audioRequest.code === "timeout") {
+      finishError("麦克风启动超时——请检查系统麦克风权限，或重启 UCA 后重试。", audioRequest.error);
+    } else if (audioRequest.code === "permission_denied") {
+      finishError("麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。", audioRequest.error);
+    } else if (audioRequest.code === "no_device") {
+      finishError("未检测到可用的麦克风。请确认设备已连接后重试。", audioRequest.error);
+    } else {
+      finishError(`麦克风初始化失败：${audioRequest.error?.message ?? audioRequest.error}`, audioRequest.error);
+    }
     return;
   }
 
-  // Pre-check mic permission where supported — if the OS has already denied,
-  // skip the getUserMedia round-trip and give an actionable message directly.
   try {
-    const perm = await navigator.permissions?.query?.({ name: "microphone" });
-    if (perm?.state === "denied") {
-      finishError("麦克风权限已被系统拒绝。请到系统设置 → 隐私 → 麦克风 允许此应用访问后重试。");
-      return;
-    }
-  } catch { /* permissions API not available — fall through */ }
-
-  // Sentinel: if getUserMedia neither resolves nor rejects within 5s (Electron
-  // on Windows can hang when the OS mic prompt is suppressed), surface the
-  // timeout to the user instead of leaving the UI frozen.
-  const TIMEOUT_MS = 5000;
-  let timedOut = false;
-  const timeout = new Promise((_, reject) => {
-    setTimeout(() => {
-      timedOut = true;
-      reject(new Error("getUserMedia_timeout"));
-    }, TIMEOUT_MS);
-  });
-
-  try {
-    const stream = await Promise.race([
-      navigator.mediaDevices.getUserMedia({ audio: true }),
-      timeout
-    ]);
+    const stream = audioRequest.stream;
     voiceCard?.classList.remove("starting");
     startVoiceLocalRecorder(stream);
     setVoiceRecording(true);
@@ -5372,19 +5367,7 @@ async function startVoiceRecognition() {
       voiceStatus.textContent = "🎙 正在聆听（实时预览转写）";
     }
   } catch (err) {
-    if (timedOut) {
-      finishError("麦克风启动超时——请检查系统麦克风权限，或重启 UCA 后重试。", err);
-      return;
-    }
-    const denied = err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError";
-    const noDevice = err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError";
-    if (denied) {
-      finishError("麦克风权限被拒绝。请在系统设置 → 隐私 → 麦克风 中允许此应用访问，然后重试。", err);
-    } else if (noDevice) {
-      finishError("未检测到可用的麦克风。请确认设备已连接后重试。", err);
-    } else {
-      finishError(`麦克风初始化失败：${err?.message ?? err}`, err);
-    }
+    finishError(`麦克风初始化失败：${err?.message ?? err}`, err);
   }
 }
 
