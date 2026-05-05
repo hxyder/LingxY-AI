@@ -1649,8 +1649,13 @@
   gap: 6px;
   box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02), 0 0 0 0.5px color-mix(in srgb, var(--ink) 4%, transparent);
   font-size: var(--fs-sm);
+  cursor: pointer;
   transition: box-shadow var(--duration-fast) var(--ease-standard),
               border-color var(--duration-fast) var(--ease-standard);
+}
+.chat-tool-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: 2px;
 }
 .chat-tool-card:hover {
   border-color: var(--line-2);

@@ -450,6 +450,12 @@ assert.ok(/\.chat-tool-card \.ttc-args[\s\S]{0,420}white-space:\s*nowrap/.test(s
   "chat tools: tool cards must keep argument previews compact");
 assert.ok(/collapseCompletedConsoleToolCards/.test(consoleJs) && /\.chat-tool-card\.is-collapsed\b/.test(sharedCss),
   "chat tools: completed tool cards must collapse after the final answer");
+assert.ok(/function setConsoleToolCardCollapsed/.test(consoleJs)
+    && /bindConsoleToolCardToggle/.test(consoleJs)
+    && /setConsoleToolCardCollapsed\(card,\s*inferredState === "ok"\)/.test(consoleJs),
+  "chat tools: completed fallback tool cards must collapse and stay expandable");
+assert.ok(/\.chat-tool-card:focus-visible/.test(sharedCss),
+  "chat tools: collapsed tool cards must remain keyboard-expandable");
 assert.ok(/rememberEchoTask/.test(overlayJs) && /showEchoResultHudOnce/.test(overlayJs),
   "echo mode: echo-submitted task results must surface through the Echo HUD");
 assert.ok(/frame\.event === "success"[\s\S]{0,260}showEchoResultHudOnce/.test(overlayJs),

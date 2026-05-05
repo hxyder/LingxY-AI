@@ -1583,16 +1583,38 @@ function appendConsoleChatToolCall(toolName, args, outcome, options = {}) {
     ${sourcesHtml}
     ${capabilityViewHtml}
   `;
+  bindConsoleToolCardToggle(card);
+  setConsoleToolCardCollapsed(card, inferredState === "ok");
   appendConsoleChatTimelineNode(card);
   consoleChatPin.maybeScrollToBottom();
   return card;
 }
 
+function setConsoleToolCardCollapsed(card, collapsed) {
+  if (!card) return;
+  card.classList.toggle("is-collapsed", Boolean(collapsed));
+  card.setAttribute("aria-expanded", collapsed ? "false" : "true");
+}
+
+function bindConsoleToolCardToggle(card) {
+  if (!card || card.dataset.toolToggleBound === "true") return;
+  card.dataset.toolToggleBound = "true";
+  card.tabIndex = 0;
+  card.addEventListener("click", (event) => {
+    if (event.target?.closest?.("a,button,input,select,textarea")) return;
+    setConsoleToolCardCollapsed(card, !card.classList.contains("is-collapsed"));
+  });
+  card.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    setConsoleToolCardCollapsed(card, !card.classList.contains("is-collapsed"));
+  });
+}
+
 function collapseCompletedConsoleToolCards() {
   if (!consoleChatMessages) return;
   for (const card of consoleChatMessages.querySelectorAll(".chat-tool-card.is-ok")) {
-    card.classList.add("is-collapsed");
-    card.setAttribute("aria-expanded", "false");
+    setConsoleToolCardCollapsed(card, true);
   }
 }
 
@@ -1665,8 +1687,8 @@ function completeConsoleChatToolCard(id, toolName, args, outcome, options = {}) 
       : "running");
   card.classList.remove("is-running", "is-ok", "is-err");
   card.classList.add(`is-${inferredState}`);
-  card.classList.toggle("is-collapsed", inferredState === "ok");
-  card.setAttribute("aria-expanded", inferredState === "ok" ? "false" : "true");
+  setConsoleToolCardCollapsed(card, inferredState === "ok");
+  bindConsoleToolCardToggle(card);
 
   const stateLabel = inferredState === "running" ? "RUNNING"
     : inferredState === "err" ? "FAILED"
