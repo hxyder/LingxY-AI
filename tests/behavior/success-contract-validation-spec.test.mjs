@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  selectSuccessContractValidationSpec
+  selectSuccessContractValidationSpec,
+  validateAnswerSynthesis
 } from "../../src/service/core/policy/success-contract-validator.mjs";
 
 const multiSource = {
@@ -66,4 +67,36 @@ test("success-contract validation rejects SR research-quality tightening", () =>
   });
 
   assert.equal(selected.research_quality.profile, "multi_source_research");
+});
+
+test("synthesis validation rejects two-record connector lists for summary output", () => {
+  const violations = validateAnswerSynthesis(
+    { synthesis: { expected_output: "summary" } },
+    [{
+      type: "tool_result",
+      tool: "account_list_emails",
+      success: true,
+      observation: [
+        "account_list_emails returned 2 emails from google account me@example.com:",
+        "1. 2026-05-05 | Ada <ada@example.com> | Budget review and follow-up plan for the Q2 forecast",
+        "2. 2026-05-05 | Ben <ben@example.com> | Lunch logistics and meeting room update"
+      ].join("\n"),
+      metadata: {
+        result_kind: "record_list",
+        record_type: "email",
+        record_count: 2,
+        emails: [
+          { subject: "Budget review and follow-up plan for the Q2 forecast", from: "ada@example.com" },
+          { subject: "Lunch logistics and meeting room update", from: "ben@example.com" }
+        ]
+      }
+    }],
+    [
+      "1. 2026-05-05 | Ada <ada@example.com> | Budget review and follow-up plan for the Q2 forecast",
+      "2. 2026-05-05 | Ben <ben@example.com> | Lunch logistics and meeting room update"
+    ].join("\n")
+  );
+
+  assert.equal(violations[0]?.kind, "answer_not_synthesized");
+  assert.match(violations[0]?.checkerReason ?? "", /record_list_not_synthesized=2/);
 });

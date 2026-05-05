@@ -105,11 +105,11 @@ function detectUnsynthesizedRecordList(toolResults = [], expected, final = "") {
   if (expected === "action_items") return null;
   const recordLists = toolResults
     .map(recordListMetadata)
-    .filter((entry) => entry && entry.recordCount >= 3);
+    .filter((entry) => entry && entry.recordCount >= 2);
   if (recordLists.length === 0) return null;
 
   const stats = lineShapeStats(final);
-  if (stats.lineCount < 3 || stats.itemLineCount < 3) return null;
+  if (stats.lineCount < 2 || stats.itemLineCount < 2) return null;
   const mostlyItems = stats.itemLineCount / stats.lineCount >= 0.6;
   const hasEnoughProse = stats.substantialProseLineCount >= 2;
   if (!mostlyItems || hasEnoughProse) return null;
