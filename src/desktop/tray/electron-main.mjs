@@ -1179,12 +1179,15 @@ export function createElectronShellRuntime({
     }, 3000);
   }
 
-  function buildOverlayPayloadFromFiles(filePaths, sourceApp = "uca.dock", captureMode = "dock_drop") {
+  function buildOverlayPayloadFromFiles(filePaths, sourceApp = "uca.dock", captureMode = "dock_drop", options = {}) {
     return {
       source_app: sourceApp,
       capture_mode: captureMode,
       file_paths: filePaths,
-      targetWindow: "overlay"
+      targetWindow: "overlay",
+      mode: options.mode ?? null,
+      surface: options.surface ?? null,
+      voiceContinueTtlMs: options.voiceContinueTtlMs ?? 0
     };
   }
 
@@ -4254,7 +4257,11 @@ export function createElectronShellRuntime({
         enqueueWindowMessage(
           "overlay",
           IPC_CHANNELS.shellContextReceived,
-          buildOverlayPayloadFromFiles(acceptedFilePaths)
+          buildOverlayPayloadFromFiles(acceptedFilePaths, "uca.dock", "dock_drop", {
+            mode: settings?.echoMode ? "echo" : "normal",
+            surface: settings?.echoMode ? "echo_receipt" : "overlay",
+            voiceContinueTtlMs: settings?.echoMode ? 12_000 : 0
+          })
         );
         return {
           accepted: true,

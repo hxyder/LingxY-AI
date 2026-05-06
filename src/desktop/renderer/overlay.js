@@ -4395,9 +4395,10 @@ function applyShellHandoff(payload) {
   }
 
   if (payload?.file_paths?.length) {
+    const isEchoReceipt = payload.surface === "echo_receipt" || payload.mode === "echo";
     const isHotkeyCapture = payload.capture_mode === "hotkey_capture" || payload.captureMode === "hotkey_capture";
     const hasExistingThread = Boolean(conversationState?.turns?.length || activeTaskId);
-    if (isHotkeyCapture || hasExistingThread) {
+    if (!isEchoReceipt && (isHotkeyCapture || hasExistingThread)) {
       startNewConversation();
     }
     pendingCapture = null;
@@ -4406,6 +4407,10 @@ function applyShellHandoff(payload) {
       captureMode: payload.capture_mode ?? "shell_menu",
       filePaths: payload.file_paths ?? []
     };
+    if (isEchoReceipt) {
+      renderVoiceChips();
+      return;
+    }
     showContextReceivedBubble();
     if (payload.active_window) {
       showActiveWindowPreviewCard(payload.active_window);

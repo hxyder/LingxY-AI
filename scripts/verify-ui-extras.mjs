@@ -605,6 +605,8 @@ assert.ok(/surface:\s*settings\?\.echoMode \? "echo_receipt" : "overlay"/.test(e
   "dock file drop: main owns mode policy; dock only renders the returned receipt surface");
 assert.ok(/startNewConversation\(\{ preservePendingInputContext \}\)/.test(overlayJs)
     && /const hasPendingInputContext = Boolean\(pendingFileSelection\?\.filePaths\?\.length \|\| pendingCapture\?\.capture\)/.test(overlayJs)
+    && /const isEchoReceipt = payload\.surface === "echo_receipt" \|\| payload\.mode === "echo"/.test(overlayJs)
+    && /if \(isEchoReceipt\) \{[\s\S]{0,80}renderVoiceChips\(\);[\s\S]{0,40}return;[\s\S]{0,40}\}/.test(overlayJs)
     && /已收到 \$\{fileCount\} 个文件。按 V 直接说话/.test(read("src/desktop/renderer/dock.js"))
     && /onWakeDetected\("voice", "dock_file_voice", \{[\s\S]{0,120}preserveContext:\s*true/.test(read("src/desktop/renderer/dock.js")),
   "echo dock drop: file handoff must survive V wake and surface a HUD receipt without opening overlay");
