@@ -1858,7 +1858,8 @@ export function createElectronShellRuntime({
       accelerator: mode === "note" ? "Ctrl+Shift+N" : "Ctrl+Shift+V",
       source: "shell_bridge",
       mode,
-      autoStart: payload?.autoStart !== false
+      autoStart: payload?.autoStart !== false,
+      preserveContext: Boolean(payload?.preserveContext)
     });
     return {
       ok: Boolean(shown),
@@ -2457,25 +2458,32 @@ export function createElectronShellRuntime({
         return { accepted: true };
       });
 
-      // Session-scoped Ctrl+Enter. Overlay registers this at the start of
+      // Session-scoped submit shortcuts. Overlay registers these at the start of
       // an echo-initiated voice/note session and unregisters on finish, so
       // the shortcut never interferes with other apps outside the session.
       // The accelerator is forwarded to the overlay renderer as a virtual
       // IPC event, letting it run the same handleUserSend / finishNote
       // paths it already uses for Enter.
       ipcMain.handle("uca:register-ctrl-enter", (_event, tag = "echo-session") => {
-        if (globalShortcut.isRegistered("CommandOrControl+Return")) return { accepted: true };
-        const ok = globalShortcut.register("CommandOrControl+Return", () => {
-          for (const browserWindow of windows.values()) {
-            if (!browserWindow.webContents?.isDestroyed?.()) {
-              browserWindow.webContents.send("uca:ctrl-enter", { tag });
+        const accelerators = ["CommandOrControl+Return", "Return"];
+        let accepted = true;
+        for (const accelerator of accelerators) {
+          if (globalShortcut.isRegistered(accelerator)) continue;
+          const ok = globalShortcut.register(accelerator, () => {
+            for (const browserWindow of windows.values()) {
+              if (!browserWindow.webContents?.isDestroyed?.()) {
+                browserWindow.webContents.send("uca:ctrl-enter", { tag, accelerator });
+              }
             }
-          }
-        });
-        return { accepted: Boolean(ok) };
+          });
+          accepted = accepted && Boolean(ok);
+        }
+        return { accepted };
       });
       ipcMain.handle("uca:unregister-ctrl-enter", () => {
-        try { globalShortcut.unregister("CommandOrControl+Return"); } catch { /* ignore */ }
+        for (const accelerator of ["CommandOrControl+Return", "Return"]) {
+          try { globalShortcut.unregister(accelerator); } catch { /* ignore */ }
+        }
         // Echo session has ended — tell the dock so it can resume wake-word
         // listening immediately instead of waiting for its 20s fallback timer.
         const dock = windows.get("dock");

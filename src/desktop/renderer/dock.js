@@ -8,6 +8,9 @@ let clipboardReadyTimer = null;
 let noteRecordingActive = false;
 let lastRecordingHeartbeat = 0;
 let dockMouseIgnoring = false;
+let droppedFileVoiceReadyUntil = 0;
+
+const DOCK_DROP_VOICE_READY_MS = 30_000;
 
 function resetDockScrollPosition() {
   if (window.scrollX !== 0 || window.scrollY !== 0) {
@@ -345,8 +348,8 @@ async function onWakeDetected(kind, transcript = "") {
     if (!echoPausedForSession) return;
     window.ucaShell?.showEchoBubble?.({
       text: kind === "note"
-        ? "🎙 正在录音… 按 Ctrl+Enter 结束并总结"
-        : "🎙 请说出指令，停顿后自动发送；Ctrl+Enter 立即发送",
+        ? "🎙 正在录音… 按 Enter 结束并总结"
+        : "🎙 请说出指令，停顿后自动发送；Enter 立即发送",
       kind: "info",
       durationMs: 12_000
     });
@@ -1200,6 +1203,36 @@ function handleDragLeave(event) {
   if (dragDepth === 0) setDragState(false);
 }
 
+async function startVoiceForDroppedFiles() {
+  if (!echoEnabled || Date.now() > droppedFileVoiceReadyUntil) return false;
+  droppedFileVoiceReadyUntil = 0;
+  window.__orbApi?.pulse?.();
+  await window.ucaShell?.openOverlayVoice?.({
+    mode: "voice",
+    autoStart: true,
+    preserveContext: true,
+    source: "dock_drop_voice"
+  });
+  return true;
+}
+
+function announceDroppedFiles(fileCount) {
+  droppedFileVoiceReadyUntil = Date.now() + DOCK_DROP_VOICE_READY_MS;
+  dockButton?.focus?.({ preventScroll: true });
+  if (echoEnabled) {
+    void window.ucaShell?.showEchoBubble?.({
+      text: `已收到 ${fileCount} 个文件。按 V 直接说话，或点击 dock 打开对话框`,
+      kind: "info",
+      durationMs: DOCK_DROP_VOICE_READY_MS
+    });
+    return;
+  }
+  void window.ucaShell.notify({
+    title: "LingxY",
+    body: `Received ${fileCount} file(s).`
+  });
+}
+
 async function handleDrop(event) {
   if (!hasFilePayload(event)) return;
   event.preventDefault();
@@ -1213,9 +1246,18 @@ async function handleDrop(event) {
   }
   const result = await window.ucaShell.submitDroppedFiles(filePaths);
   if (result?.accepted) {
-    await window.ucaShell.notify({ title: "LingxY", body: `Received ${result.fileCount} file(s).` });
+    announceDroppedFiles(result.fileCount);
   }
 }
+
+window.addEventListener("keydown", (event) => {
+  if (event.defaultPrevented) return;
+  if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+  if (`${event.key ?? ""}`.toLowerCase() !== "v") return;
+  if (!echoEnabled || Date.now() > droppedFileVoiceReadyUntil) return;
+  event.preventDefault();
+  void startVoiceForDroppedFiles();
+});
 
 ["dragenter", "dragover", "dragleave", "drop"].forEach((name) => {
   window.addEventListener(name, (e) => { if (hasFilePayload(e)) e.preventDefault(); });

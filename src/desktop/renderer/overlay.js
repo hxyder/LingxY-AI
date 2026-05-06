@@ -7306,8 +7306,12 @@ window.ucaShell.onShortcutTriggered((payload) => {
     // late shortcut event clears the captured selection.
   }
   if (payload.shortcutId === "voice-wake") {
-    startNewConversation();
-    void captureActiveWindowHintForVoice({ captureMode: "voice_wake" });
+    if (!payload.preserveContext) {
+      startNewConversation();
+    }
+    if (!payload.preserveContext) {
+      void captureActiveWindowHintForVoice({ captureMode: "voice_wake" });
+    }
     if (payload.autoStart !== false) {
       toggleComposerVoiceInput();
     }
