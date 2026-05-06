@@ -487,6 +487,12 @@ assert.equal(selectionCacheJs.includes("ACTION_LABELS"), true);
 // "Open in dialog" button must carry the prior result into the follow-up path
 assert.equal(selectionCacheJs.includes("uca.result.openFollowup"), true);
 assert.equal(selectionCacheJs.includes("priorResult: resultText"), true);
+assert.equal(selectionCacheJs.includes("showInlineResultFrame({ action, rect, previewText = \"\", selectionState = {}, doc = document })"), true,
+  "inline result frame must receive the original selection envelope");
+assert.equal(selectionCacheJs.includes("const handoffSelectionState = {\n      ...selectionState,"), true,
+  "inline result frame open-in-dialog must preserve selectedAnchorUrl/imageUrl/sourceType context");
+assert.equal(selectionCacheJs.includes("selectionState: handoffSelectionState"), true,
+  "inline result frame must send the preserved envelope into follow-up handoff");
 assert.equal(pageSourceCaptureJs.includes("__lingxyPageSourceCapture"), true);
 assert.equal(pageSourceCaptureJs.includes("window.__ucaPageSourceCapture[CAPTURE_MARKER] === true"), true);
 assert.equal(pageSourceCaptureJs.includes("writable: false"), true);
@@ -501,6 +507,12 @@ assert.equal(serviceWorkerJs.includes("standaloneConfig?.apiKey"), false);
 assert.equal(serviceWorkerJs.includes("function createSelectionEnvelope"), true);
 assert.equal(serviceWorkerJs.includes("createSelectionEnvelope({ info, tab, selectionState })"), true);
 assert.equal(serviceWorkerJs.includes("selectedAnchorUrl,"), true);
+assert.equal(serviceWorkerJs.includes("const isSummarizeOrExplain = /总结|解释|summar|explain|抓取/i.test(uc);"), false,
+  "browser desktop handoff enrichment must use action/source signals, not userCommand regex");
+assert.equal(serviceWorkerJs.includes("shouldEnrichForAction(action) && capture"), true,
+  "browser desktop handoff enrichment must be gated by structured action id");
+assert.equal(serviceWorkerJs.includes("action, selectionState, tab: activeTab, chromeApi"), true,
+  "browser desktop handoff enrichment must pass the structured action to the enricher");
 assert.equal(serviceWorkerJs.includes("const markStarted = () =>"), true);
 assert.ok(/markStarted\(\);[\s\S]{0,120}if \(shouldEnrichForAction\(action\)\)/.test(serviceWorkerJs),
   "quick action inline frame must enter started state before slow enrichment");

@@ -20,7 +20,7 @@ const ACTION_LABELS = {
 // appearing in the newly-opened frame.
 let _pendingActionRequestId = null;
 
-function showInlineResultFrame({ action, rect, previewText = "", doc = document }) {
+function showInlineResultFrame({ action, rect, previewText = "", selectionState = {}, doc = document }) {
   const host = doc.createElement("div");
   host.setAttribute("data-uca-result-frame", "true");
   const root = host.attachShadow({ mode: "open" });
@@ -269,16 +269,18 @@ function showInlineResultFrame({ action, rect, previewText = "", doc = document 
 
   openOverlayBtn.addEventListener("click", () => {
     if (typeof chrome === "undefined" || !chrome.runtime?.sendMessage) return;
-    const selectionState = {
-      text: previewText,
-      url: window.location.href,
-      pageTitle: doc.title,
-      sourceType: "text_selection"
+    const handoffSelectionState = {
+      ...selectionState,
+      text: selectionState?.text ?? previewText,
+      selectionText: selectionState?.selectionText ?? selectionState?.text ?? previewText,
+      url: selectionState?.url ?? window.location.href,
+      pageTitle: selectionState?.pageTitle ?? doc.title,
+      sourceType: selectionState?.sourceType ?? "text_selection"
     };
     sendRuntimeMessageSafely({
       type: "uca.result.openFollowup",
       action,
-      selectionState,
+      selectionState: handoffSelectionState,
       displayLabel: `💬 ${ACTION_LABELS[action] ?? "结果"}：${previewText.slice(0, 80)}`,
       attached: previewText,
       priorResult: resultText || ""
@@ -867,6 +869,7 @@ function createFloatingChipController(doc = document) {
           action,
           rect: snapshot.rect,
           previewText: snapshot.text,
+          selectionState,
           doc
         });
 
@@ -1488,6 +1491,7 @@ function handleShowActionFrame(message, sendResponse) {
         : action === "uca.fetch-link"
           ? `链接：${selectionState.url?.slice(0, 80) ?? ""}`
           : (selectionState.text ?? "").slice(0, 80),
+      selectionState,
       doc: document
     });
 

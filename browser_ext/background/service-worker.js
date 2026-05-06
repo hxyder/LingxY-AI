@@ -838,26 +838,34 @@ export async function dispatchOverlayHandoff(request, chromeApi = chrome, fetchI
     return { ok: Boolean(result.ok), mode: "standalone", text: result.text ?? "", error: result.error };
   }
 
-  // UCA-161: also enrich the desktop path. We infer action from the user
-  // command text (the payload doesn't carry it directly) and only enrich for
-  // summarize / explain families — right-click "抓取链接" / "解释此页" alike.
+  // UCA-161: also enrich the desktop path. Use the structured action/source
+  // signal carried by the capture payload; userCommand wording is display
+  // text and should not decide routing/enrichment behavior.
   try {
-    const uc = `${request?.payload?.userCommand ?? ""}`;
-    const isSummarizeOrExplain = /总结|解释|summar|explain|抓取/i.test(uc);
-    if (isSummarizeOrExplain && request?.payload?.capture && chromeApi?.tabs?.query && chromeApi?.scripting?.executeScript) {
+    const capture = request?.payload?.capture ?? null;
+    const action = request?.payload?.actionId
+      ?? (capture?.sourceType === "link" ? "uca.fetch-link" : null);
+    if (shouldEnrichForAction(action) && capture && chromeApi?.tabs?.query && chromeApi?.scripting?.executeScript) {
       const selectionState = {
-        text: request.payload.capture.text ?? "",
-        url: request.payload.capture.url ?? "",
-        pageTitle: request.payload.capture.pageTitle ?? ""
+        text: capture.text ?? capture.selectionText ?? "",
+        selectionText: capture.selectionText ?? capture.text ?? "",
+        url: capture.url ?? "",
+        pageTitle: capture.pageTitle ?? "",
+        selectedAnchorUrl: capture.selectedAnchorUrl ?? "",
+        anchorText: capture.anchorText ?? "",
+        imageUrl: capture.imageUrl ?? "",
+        contextBefore: capture.contextBefore ?? "",
+        contextAfter: capture.contextAfter ?? "",
+        sourceType: capture.sourceType ?? "text_selection"
       };
       const [activeTab] = await chromeApi.tabs.query({ active: true, currentWindow: true });
       const enrichment = await enrichContextForAction({
-        action: "summarize", selectionState, tab: activeTab, chromeApi
+        action, selectionState, tab: activeTab, chromeApi
       });
       const enrichmentMarkdown = formatEnrichmentAsMarkdown(enrichment);
       if (enrichmentMarkdown) {
-        request.payload.capture.text = `${selectionState.text}\n\n---\n【补充上下文（自动抓取）】\n${enrichmentMarkdown}`;
-        request.payload.capture.enrichment = {
+        capture.text = `${selectionState.text}\n\n---\n【补充上下文（自动抓取）】\n${enrichmentMarkdown}`;
+        capture.enrichment = {
           pageOutline: enrichment?.pageOutline ?? null,
           linkResults: enrichment?.linkResults ?? []
         };
