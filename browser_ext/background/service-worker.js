@@ -349,10 +349,12 @@ async function runDesktopTask({
   runtimeBase,
   userCommand,
   capture,
-  fetchImpl = fetch
+  fetchImpl = fetch,
+  onTiming = null
 }) {
   let submitJson;
   try {
+    onTiming?.("desktop_submit_started");
     const submitResponse = await fetchImpl(`${runtimeBase}/task`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -367,6 +369,7 @@ async function runDesktopTask({
       return { ok: false, error: `submit_failed_${submitResponse.status}` };
     }
     submitJson = await submitResponse.json();
+    onTiming?.("desktop_task_created");
   } catch (error) {
     invalidateDesktopProbe();
     return { ok: false, error: `network_error:${error?.message ?? "unknown"}` };
@@ -385,7 +388,23 @@ async function runDesktopTask({
   const controller = new AbortController();
   const streamDeadline = setTimeout(() => controller.abort(), 30_000);
   try {
-    const streamed = await runTaskWithStream(`${runtimeBase}/task/${taskId}`, { signal: controller.signal });
+    let sawSseFrame = false;
+    let sawVisibleOutput = false;
+    const streamed = await runTaskWithStream(`${runtimeBase}/task/${taskId}`, {
+      signal: controller.signal,
+      onFrame(frame) {
+        if (!sawSseFrame) {
+          sawSseFrame = true;
+          onTiming?.("desktop_first_sse_frame");
+        }
+        const event = frame.event ?? frame.data?.event_type ?? "";
+        const payload = frame.data?.payload ?? frame.data ?? {};
+        if (!sawVisibleOutput && (event === "inline_result" || event === "success") && typeof payload.text === "string" && payload.text.length > 0) {
+          sawVisibleOutput = true;
+          onTiming?.("desktop_first_visible_output");
+        }
+      }
+    });
     if (streamed?.ok) {
       clearTimeout(streamDeadline);
       return { ok: true, taskId, text: streamed.text, status: streamed.status, mode: "desktop" };
@@ -398,6 +417,7 @@ async function runDesktopTask({
   clearTimeout(streamDeadline);
 
   const deadline = Date.now() + 30_000;
+  onTiming?.("desktop_poll_started");
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 600));
     try {
@@ -486,6 +506,23 @@ async function resolveQuickActionRouteContext({
   };
 }
 
+function createQuickActionTiming() {
+  const startedAt = Date.now();
+  const marks = {};
+  return {
+    mark(name) {
+      if (!name || marks[`${name}_ms`] != null) return;
+      marks[`${name}_ms`] = Date.now() - startedAt;
+    },
+    finish() {
+      return {
+        ...marks,
+        total_ms: Date.now() - startedAt
+      };
+    }
+  };
+}
+
 async function resolvePageExplainRouteContext({
   origin = "page_action",
   preferSidePanel = true
@@ -522,10 +559,11 @@ export async function executeQuickAction({
   onStart = null,
   onChunk = null
 }, fetchImpl = fetch) {
+  const timing = createQuickActionTiming();
   const text = (selectionState?.text ?? "").trim();
   const requiresSelectionText = !["uca.fetch-link", "uca.inspect-image"].includes(action);
   if (requiresSelectionText && !text) {
-    return { ok: false, error: "empty_selection" };
+    return { ok: false, error: "empty_selection", timings: timing.finish() };
   }
   let startSent = false;
   const markStarted = () => {
@@ -547,43 +585,51 @@ export async function executeQuickAction({
     effectiveRoutePlan = resolved.routePlan;
     effectiveStandaloneConfig = resolved.standaloneConfig;
     effectiveRuntimeBase = resolved.runtimeBase;
+    timing.mark("route_plan_ready");
   } else {
     if (!effectiveStandaloneConfig) effectiveStandaloneConfig = await loadStandaloneConfig();
     effectiveRuntimeBase = (effectiveRuntimeBase ?? effectiveStandaloneConfig?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
+    timing.mark("route_plan_ready");
   }
 
   if (!effectiveRoutePlan.ok) {
-    return { ok: false, mode: effectiveRoutePlan.mode, error: effectiveRoutePlan.reason };
+    return { ok: false, mode: effectiveRoutePlan.mode, error: effectiveRoutePlan.reason, timings: timing.finish() };
   }
 
   if (effectiveRoutePlan.transport === "desktop_task"
       && (action === "uca.translate-selection" || action === "translate")) {
     markStarted();
-    return runDesktopTranslate({
+    timing.mark("visible_start");
+    const result = await runDesktopTranslate({
       runtimeBase: effectiveRuntimeBase,
       selectionState,
       fetchImpl,
       signal
     });
+    return { ...result, timings: timing.finish() };
   }
 
   if (effectiveRoutePlan.transport === "standalone_direct") {
     if (action === "uca.inspect-image") {
       const imageUrl = selectionState?.imageUrl ?? "";
-      if (!imageUrl) return { ok: false, mode: "standalone", error: "no_image_url" };
+      if (!imageUrl) return { ok: false, mode: "standalone", error: "no_image_url", timings: timing.finish() };
       markStarted();
+      timing.mark("visible_start");
       const prompt = buildPromptFor(action, selectionState, "").prompt;
       const result = await callLLMDirectVision({ config: effectiveStandaloneConfig, prompt, imageUrl });
-      if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success" };
-      return { ok: false, mode: "standalone", error: result.error };
+      if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success", timings: timing.finish() };
+      return { ok: false, mode: "standalone", error: result.error, timings: timing.finish() };
     }
 
     let enrichmentMarkdown = "";
     markStarted();
+    timing.mark("visible_start");
     if (shouldEnrichForAction(action)) {
       try {
+        timing.mark("enrichment_started");
         const enrichment = await enrichContextForAction({ action, selectionState, tab });
         enrichmentMarkdown = formatEnrichmentAsMarkdown(enrichment);
+        timing.mark("enrichment_done");
       } catch { /* enrichment is best-effort */ }
     }
     const { prompt, systemPrompt } = buildPromptFor(action, selectionState, enrichmentMarkdown);
@@ -599,7 +645,10 @@ export async function executeQuickAction({
         ],
         maxTokens: translateMaxTokens ?? 1024,
         signal,
-        onChunk
+        onChunk: (delta, full) => {
+          timing.mark("first_chunk");
+          onChunk?.(delta, full);
+        }
       })
       : await callLLMDirect({
         config: effectiveStandaloneConfig,
@@ -607,24 +656,29 @@ export async function executeQuickAction({
         systemPrompt,
         ...(translateMaxTokens ? { maxTokens: translateMaxTokens } : {})
       });
-    if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success" };
-    return { ok: false, mode: "standalone", error: result.error };
+    if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success", timings: timing.finish() };
+    return { ok: false, mode: "standalone", error: result.error, timings: timing.finish() };
   }
 
   let enrichment = null;
   markStarted();
+  timing.mark("visible_start");
   if (shouldEnrichForAction(action)) {
     try {
+      timing.mark("enrichment_started");
       enrichment = await enrichContextForAction({ action, selectionState, tab });
+      timing.mark("enrichment_done");
     } catch { /* best-effort */ }
   }
 
-  return runDesktopTask({
+  const result = await runDesktopTask({
     runtimeBase: effectiveRuntimeBase,
     userCommand,
     capture: buildDesktopCaptureForAction(action, selectionState, enrichment),
-    fetchImpl
+    fetchImpl,
+    onTiming: (name) => timing.mark(name)
   });
+  return { ...result, timings: timing.finish() };
 }
 
 export async function runQuickAction(args = {}, fetchImpl = fetch) {
@@ -1606,9 +1660,9 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
       }, fetch);
       if (aborted) return;
       if (result.ok) {
-        port.postMessage({ type: "done", text: result.text });
+        port.postMessage({ type: "done", text: result.text, timings: result.timings ?? null });
       } else {
-        port.postMessage({ type: "error", error: result.error });
+        port.postMessage({ type: "error", error: result.error, timings: result.timings ?? null });
       }
     });
   });

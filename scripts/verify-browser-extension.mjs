@@ -337,6 +337,9 @@ const quickActionResult = await runQuickAction(
 assert.equal(quickActionResult.ok, true);
 assert.equal(quickActionResult.text, "[zh] Hello world");
 assert.equal(quickActionResult.translation?.provider, "google_web");
+assert.equal(Number.isFinite(quickActionResult.timings?.route_plan_ready_ms), true);
+assert.equal(Number.isFinite(quickActionResult.timings?.visible_start_ms), true);
+assert.equal(Number.isFinite(quickActionResult.timings?.total_ms), true);
 assert.equal(submittedTranslate?.text, "Hello world");
 
 let selectedLinkTask = null;
@@ -383,6 +386,8 @@ assert.equal(selectedLinkAction.ok, true);
 assert.equal(selectedLinkTask?.capture?.sourceType, "link");
 assert.equal(selectedLinkTask?.capture?.url, "https://news.un.org/en/story/2026/05/example");
 assert.equal(selectedLinkTask?.background, true);
+assert.equal(Number.isFinite(selectedLinkAction.timings?.desktop_submit_started_ms), true);
+assert.equal(Number.isFinite(selectedLinkAction.timings?.desktop_task_created_ms), true);
 
 const emptyQuickAction = await runQuickAction(
   { action: "translate", selectionState: { text: "  " } },
@@ -514,6 +519,9 @@ assert.equal(serviceWorkerJs.includes("shouldEnrichForAction(action) && capture"
 assert.equal(serviceWorkerJs.includes("action, selectionState, tab: activeTab, chromeApi"), true,
   "browser desktop handoff enrichment must pass the structured action to the enricher");
 assert.equal(serviceWorkerJs.includes("const markStarted = () =>"), true);
+assert.equal(serviceWorkerJs.includes("function createQuickActionTiming()"), true);
+assert.equal(serviceWorkerJs.includes("desktop_first_visible_output"), true);
+assert.equal(serviceWorkerJs.includes("timings: result.timings ?? null"), true);
 assert.ok(/markStarted\(\);[\s\S]{0,120}if \(shouldEnrichForAction\(action\)\)/.test(serviceWorkerJs),
   "quick action inline frame must enter started state before slow enrichment");
 assert.ok(/port\.postMessage\(\{ type: "start" \}\)[\s\S]{0,160}loadStandaloneConfig/.test(serviceWorkerJs),

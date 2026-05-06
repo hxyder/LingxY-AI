@@ -66,10 +66,11 @@ function parseFrame(raw) {
 
 // Helper: consume the task-event SSE until the task reaches a terminal state
 // or the caller aborts. Returns { ok, text, status, error }.
-export async function runTaskWithStream(taskDetailUrl, { signal } = {}) {
+export async function runTaskWithStream(taskDetailUrl, { signal, onFrame } = {}) {
   let lastInlineText = "";
   try {
     for await (const frame of readSseFrames(`${taskDetailUrl}/events`, { signal })) {
+      try { onFrame?.(frame); } catch { /* observability only */ }
       const event = frame.event ?? frame.data?.event_type ?? "";
       const payload = frame.data?.payload ?? frame.data ?? {};
       if ((event === "inline_result" || event === "success") && typeof payload.text === "string" && payload.text.length > 0) {
