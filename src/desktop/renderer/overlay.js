@@ -4421,7 +4421,7 @@ commandInput.addEventListener("input", autoSizeInput);
 commandInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
-    void handleUserSend();
+    void submitComposerInput();
   }
 });
 
@@ -4432,7 +4432,7 @@ sendBtn.addEventListener("click", () => {
     void cancelActiveTask();
     return;
   }
-  void handleUserSend();
+  void submitComposerInput();
 });
 
 closeBtn.addEventListener("click", () => {
@@ -7211,6 +7211,26 @@ function requestOverlayDismiss() {
   conversationPhase = "idle";
   suppressOverlayAutoReveal = true;
   void window.ucaShell.hideWindow("overlay");
+}
+
+async function submitComposerInput() {
+  if (userSendInFlight) return;
+  if (voiceRecording && !voiceMode && !noteActive) {
+    voiceStatus.textContent = "正在转写并发送...";
+    showEchoHud({ text: "正在转写并发送...", kind: "info", durationMs: 1800, throttleMs: 0 });
+    const result = await stopVoiceRecognition();
+    const transcript = `${result?.transcript ?? ""}`.trim();
+    if (transcript && !commandInput.value.trim()) {
+      commandInput.value = transcript;
+      autoSizeInput();
+      if (voiceTranscript) {
+        voiceTranscript.classList.remove("placeholder");
+        voiceTranscript.textContent = transcript;
+        voiceTranscript.scrollTop = voiceTranscript.scrollHeight;
+      }
+    }
+  }
+  await handleUserSend();
 }
 
 async function handleUserSend() {

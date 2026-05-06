@@ -213,6 +213,10 @@ assert.ok(overlayJs.includes("function toggleComposerVoiceInput()")
   && overlayJs.includes("if (payload.shortcutId === \"voice-wake\")")
   && overlayJs.includes("toggleComposerVoiceInput();"),
   "overlay voice: Ctrl+Shift+V must route to the lightweight composer mic path");
+assert.ok(overlayJs.includes("async function submitComposerInput()")
+  && overlayJs.includes("await stopVoiceRecognition()")
+  && overlayJs.includes("void submitComposerInput();"),
+  "overlay voice: composer Enter/send must stop dictation before submitting");
 assert.ok(overlayJs.includes("voiceToggleBtn?.addEventListener(\"click\"")
   && overlayJs.includes("void enterNoteMode();"),
   "overlay voice: quick voice button must open the recording-note path, not the legacy voice panel");
