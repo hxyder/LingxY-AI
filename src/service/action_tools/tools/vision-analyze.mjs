@@ -25,6 +25,7 @@ import {
 } from "../../executors/multi_modal/multi-modal-executor.mjs";
 
 const MAX_IMAGES_PER_CALL = 4;
+const IMAGE_ARTIFACT_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]);
 
 // Windows is case-insensitive at the filesystem layer; macOS/Linux can be
 // either depending on volume. Use a normalised key so "C:\\Foo\\bar.png"
@@ -59,6 +60,27 @@ function normalizeImagePaths(args = {}) {
   return out;
 }
 
+function isImageArtifactPath(value = "") {
+  return IMAGE_ARTIFACT_EXTENSIONS.has(path.extname(`${value ?? ""}`).toLowerCase());
+}
+
+function collectGeneratedImageArtifacts(transcript = []) {
+  const out = [];
+  for (const entry of Array.isArray(transcript) ? transcript : []) {
+    if (!entry || entry.success === false) continue;
+    const paths = [
+      ...(Array.isArray(entry.artifact_paths) ? entry.artifact_paths : []),
+      ...(Array.isArray(entry.result?.artifact_paths) ? entry.result.artifact_paths : []),
+      entry.metadata?.path
+    ].filter(Boolean);
+    for (const candidate of paths) {
+      const value = `${candidate ?? ""}`.trim();
+      if (value && isImageArtifactPath(value)) out.push(value);
+    }
+  }
+  return out;
+}
+
 // Codex high-severity finding: the planner-supplied `image_paths`
 // argument is untrusted from a security standpoint — combining
 // file_read with remote provider upload means a runaway or prompt-
@@ -74,7 +96,12 @@ function buildAttachedAllowlist(ctx) {
     // file_paths is also accepted because submitImageTask mirrors image
     // attachments into both lists when forwarding to a connector send,
     // and the user-supplied attachment surface is identical.
-    ...(Array.isArray(cp.file_paths) ? cp.file_paths : [])
+    ...(Array.isArray(cp.file_paths) ? cp.file_paths : []),
+    // Same-task generated screenshots are user-authorized context too:
+    // take_screenshot writes a PNG artifact, then the planner can pass that
+    // path to vision_analyze. This is still a structural allowlist, not an
+    // arbitrary local path escape hatch.
+    ...collectGeneratedImageArtifacts(ctx?.transcript)
   ].map((entry) => `${entry ?? ""}`.trim()).filter(Boolean);
 
   const allowed = new Map(); // key → original spelling (for error messages)
@@ -138,7 +165,7 @@ async function callVisionProvider({ provider, prompt, images, signal }) {
 // Test-only export. Surface for unit tests so the Ollama / supportsVision
 // gates can be exercised without monkey-patching the resolver. Not part
 // of the public tool surface.
-export const __test = Object.freeze({ callVisionProvider });
+export const __test = Object.freeze({ callVisionProvider, buildAttachedAllowlist, collectGeneratedImageArtifacts });
 
 export const VISION_ANALYZE_TOOL = {
   id: "vision_analyze",
