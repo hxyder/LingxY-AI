@@ -11,6 +11,7 @@ import {
   normalizeTranscriptionTextForLocale
 } from "../../audio/transcript-locale.mjs";
 import { detectWakeKeywordWithSherpaDaemon } from "../../audio/sherpa-daemon.mjs";
+import { getWhisperDaemon } from "../../audio/whisper-daemon.mjs";
 import { resolveProviderForTask } from "../../executors/shared/provider-resolver.mjs";
 import { hydrateProviderApiKeySecretSync } from "../../security/secret-store.mjs";
 import { HttpBodyTooLargeError, readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
@@ -565,6 +566,43 @@ function invalidateEnrollmentCache() {
   cachedEnrollmentKnownAt = 0;
 }
 
+function buildWhisperProvider(result, fallbackModel) {
+  return {
+    id: "local-faster-whisper",
+    kind: "local",
+    name: "Local faster-whisper",
+    model: result?.model ?? fallbackModel
+  };
+}
+
+async function tryWhisperDaemonTranscribe(audioPath, { language, beamSize, noVad, model, device, computeType }) {
+  const daemon = getWhisperDaemon({
+    pythonCommand: getPythonCommand(),
+    scriptPath: getLocalTranscriptionScriptPath()
+  });
+  if (!daemon) return { ok: false, daemon: false };
+  try {
+    const result = await daemon.transcribe({
+      audioPath,
+      language,
+      beamSize,
+      noVad,
+      model,
+      device,
+      computeType,
+      // Cap the daemon request to the operator-configured absolute upper
+      // bound so long audio files (audio-routes uses 30 minutes by default)
+      // are not arbitrarily killed by the daemon's lower default. Codex
+      // Round 7 review: the route owns the absolute ceiling; the daemon
+      // only owns its own protocol-level guard.
+      timeoutMs: Number(process.env.UCA_LOCAL_WHISPER_TIMEOUT_MS ?? 30 * 60_000)
+    });
+    return { ok: true, daemon: true, result };
+  } catch (error) {
+    return { ok: false, daemon: true, error };
+  }
+}
+
 async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", lang = "auto", noVad = false } = {}) {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "uca-note-audio-"));
   const ext = mimeType.includes("wav") ? ".wav"
@@ -572,21 +610,47 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
       : mimeType.includes("mpeg") || mimeType.includes("mp3") ? ".mp3"
         : ".webm";
   const audioPath = path.join(tempDir, `note-recording${ext}`);
+  const language = normalizeLanguageHint(lang);
+  const fallbackModel = process.env.UCA_LOCAL_WHISPER_MODEL || DEFAULT_LOCAL_WHISPER_MODEL;
+  const device = process.env.UCA_LOCAL_WHISPER_DEVICE || "cpu";
+  const computeType = process.env.UCA_LOCAL_WHISPER_COMPUTE_TYPE || "int8";
+  const beamSize = Number(process.env.UCA_LOCAL_WHISPER_BEAM_SIZE || DEFAULT_LOCAL_WHISPER_BEAM_SIZE);
   try {
     await writeFile(audioPath, audioBuffer);
+
+    // Daemon path (codex Round 7): a singleton faster-whisper process
+    // amortises the 1-3 s cold start across the session. On any daemon
+    // failure (circuit breaker open, spawn error, protocol violation, or
+    // model error) we fall through to the legacy execFile path so a
+    // daemon bug never disables transcription entirely.
+    const daemonAttempt = await tryWhisperDaemonTranscribe(audioPath, {
+      language,
+      beamSize,
+      noVad,
+      model: fallbackModel,
+      device,
+      computeType
+    });
+    if (daemonAttempt.ok) {
+      return {
+        ...daemonAttempt.result,
+        provider: buildWhisperProvider(daemonAttempt.result, fallbackModel)
+      };
+    }
+
     const args = [
       getLocalTranscriptionScriptPath(),
       audioPath,
       "--language",
-      normalizeLanguageHint(lang),
+      language,
       "--model",
-      process.env.UCA_LOCAL_WHISPER_MODEL || DEFAULT_LOCAL_WHISPER_MODEL,
+      fallbackModel,
       "--device",
-      process.env.UCA_LOCAL_WHISPER_DEVICE || "cpu",
+      device,
       "--compute-type",
-      process.env.UCA_LOCAL_WHISPER_COMPUTE_TYPE || "int8",
+      computeType,
       "--beam-size",
-      process.env.UCA_LOCAL_WHISPER_BEAM_SIZE || DEFAULT_LOCAL_WHISPER_BEAM_SIZE
+      String(beamSize)
     ];
     if (noVad) args.push("--no-vad");
     const { stdout } = await execFileAsync(getPythonCommand(), args, {
@@ -608,12 +672,7 @@ async function transcribeAudioLocally(audioBuffer, { mimeType = "audio/webm", la
     const result = JSON.parse(jsonLine || stdoutText || "{}");
     return {
       ...result,
-      provider: {
-        id: "local-faster-whisper",
-        kind: "local",
-        name: "Local faster-whisper",
-        model: result.model ?? process.env.UCA_LOCAL_WHISPER_MODEL ?? DEFAULT_LOCAL_WHISPER_MODEL
-      }
+      provider: buildWhisperProvider(result, fallbackModel)
     };
   } catch (error) {
     const details = [
