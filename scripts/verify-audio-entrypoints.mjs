@@ -33,6 +33,7 @@ for (const id of [
   "voiceCancelBtn",
   "voiceStopBtn",
   "voiceStartBtn",
+  "composerMicBtn",
   "noteTimer",
   "noteMicTag",
   "noteSysTag",
@@ -206,6 +207,13 @@ assert.ok(audioRoutes.includes("parseWakeKeywordsParam") && audioRoutes.includes
   "echo KWS: audio route must pass forwarded wake-profile keywords to the sherpa helper");
 assert.ok(audioRoutes.includes("detectWakeKeywordWithSherpaDaemon") && sherpaScript.includes("--server"),
   "echo KWS: local sherpa must expose a reusable daemon path with one-shot fallback");
+assert.ok(overlayJs.includes("function toggleComposerVoiceInput()")
+  && overlayJs.includes("if (payload.shortcutId === \"voice-wake\")")
+  && overlayJs.includes("toggleComposerVoiceInput();"),
+  "overlay voice: Ctrl+Shift+V must route to the lightweight composer mic path");
+assert.ok(overlayJs.includes("voiceToggleBtn?.addEventListener(\"click\"")
+  && overlayJs.includes("void enterNoteMode();"),
+  "overlay voice: quick voice button must open the recording-note path, not the legacy voice panel");
 
 for (const inventory of [
   "POST\", \"/echo/enroll-keyword\"",

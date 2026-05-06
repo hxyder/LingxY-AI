@@ -108,6 +108,7 @@ const commandInput = document.querySelector("#commandInput");
 const sendBtn = document.querySelector("#sendBtn");
 const closeBtn = document.querySelector("#closeBtn");
 const clipboardBtn = document.querySelector("#clipboardBtn");
+const composerMicBtn = document.querySelector("#composerMicBtn");
 // UCA-182 Phase 8: retired result-toast DOM. showToast() now routes
 // every artifact notification through the top-right popup-card stack
 // (see popup-card.js / popup-card-manager.mjs). Query refs intentionally
@@ -5124,12 +5125,27 @@ function setVoiceRecording(active) {
     voiceStartBtn,
     voiceStopBtn
   }, active);
+  updateComposerMicView(active);
   if (active) {
     showEchoHud({ text: "正在聆听…", kind: "wake", durationMs: 1800, throttleMs: 0 });
   } else {
     stopVoiceAudioMeter();
     showEchoHud({ text: "识别已停止", kind: "info", durationMs: 1200 });
   }
+}
+
+// Composer mic owns the lightweight voice-to-text path: it reuses the same
+// recognizer + recorder used by the full voice card, but does not flip the
+// overlay into voice-mode, so the user dictates straight into the composer
+// without losing the chat surface.
+function updateComposerMicView(active) {
+  if (!composerMicBtn) return;
+  composerMicBtn.classList.toggle("recording", !!active);
+  composerMicBtn.classList.remove("starting");
+  composerMicBtn.setAttribute("aria-pressed", active ? "true" : "false");
+  composerMicBtn.title = active
+    ? "停止语音输入 (Ctrl+Shift+V)"
+    : "语音输入 (Ctrl+Shift+V) — 再次点击停止";
 }
 
 function appendVoiceTranscript(text) {
@@ -5672,11 +5688,8 @@ voiceToggleBtn?.addEventListener("click", () => {
     void window.ucaShell.hideWindow("overlay");
     return;
   }
-  if (voiceMode) {
-    closeVoicePanel({ submit: false });
-  } else {
-    openVoicePanel({ autoStart: true });
-  }
+  if (voiceRecording) stopVoiceRecognition({ discard: true });
+  void enterNoteMode();
 });
 
 voiceMinimizeBtn?.addEventListener("click", () => {
@@ -5938,6 +5951,36 @@ voiceCancelBtn?.addEventListener("click", () => {
   exitVoiceMode();
   void endEchoSession();
 });
+
+// Composer mic button — toggles the same recognizer the voice card uses,
+// but stays in normal composer mode so dictation lands straight in the
+// textarea. While a note is being recorded the recognizer is owned by note
+// mode, so the mic button defers to the user opening the note panel.
+function toggleComposerVoiceInput() {
+  if (!composerMicBtn) return;
+  if (noteActive) {
+    showEchoHud({ text: "录音笔记进行中，请先结束笔记再使用语音输入", kind: "info", durationMs: 2000, throttleMs: 0 });
+    return;
+  }
+  if (voiceRecording) {
+    void stopVoiceRecognition();
+    return;
+  }
+  composerMicBtn.classList.add("starting");
+  Promise.resolve()
+    .then(() => startVoiceRecognition())
+    .catch((error) => {
+      console.error("[voice] composer mic start failed:", error);
+      composerMicBtn.classList.remove("starting", "recording");
+      composerMicBtn.setAttribute("aria-pressed", "false");
+      setVoiceRecording(false);
+    })
+    .finally(() => {
+      composerMicBtn.classList.remove("starting");
+    });
+}
+
+composerMicBtn?.addEventListener("click", toggleComposerVoiceInput);
 
 // Global Esc + voice-mode Enter handling.
 // Esc semantics by precedence:
@@ -7242,7 +7285,9 @@ window.ucaShell.onShortcutTriggered((payload) => {
   if (payload.shortcutId === "voice-wake") {
     startNewConversation();
     void captureActiveWindowHintForVoice({ captureMode: "voice_wake" });
-    openVoicePanel({ autoStart: payload.autoStart !== false });
+    if (payload.autoStart !== false) {
+      toggleComposerVoiceInput();
+    }
   }
   if (payload.shortcutId === "note-wake") {
     // Match voice-wake semantics (fresh conversation) then jump straight into

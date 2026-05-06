@@ -1465,6 +1465,45 @@
         color: var(--ink);
       }
 
+      /* Lightweight composer mic — owns voice-to-text directly into the
+         textarea so the user can dictate without entering full voice mode.
+         Recording state shows a red fill plus a pulsing ring so the active
+         recording is unmistakable next to the send button. */
+      .input-bar .composer-mic-btn {
+        position: relative;
+      }
+      .input-bar .composer-mic-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+      .input-bar .composer-mic-btn.recording {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        border-color: transparent;
+        color: #fff;
+      }
+      .input-bar .composer-mic-btn.recording::after {
+        content: "";
+        position: absolute;
+        inset: -4px;
+        border-radius: 999px;
+        border: 2px solid rgba(220, 38, 38, 0.32);
+        animation: composer-mic-pulse 1.2s ease-in-out infinite;
+        pointer-events: none;
+      }
+      .input-bar .composer-mic-btn.starting {
+        background: linear-gradient(135deg, #fcd34d, #f59e0b);
+        border-color: transparent;
+        color: #fff;
+      }
+      .input-bar .composer-mic-btn[disabled] {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      @keyframes composer-mic-pulse {
+        0%, 100% { opacity: 0.35; transform: scale(0.94); }
+        50%      { opacity: 0.95; transform: scale(1.06); }
+      }
+
       /* UCA-182 Phase 8: .result-toast styles retired.
          Artifact notifications now render in the shared popup-card
          window (top-right). See popup-card.css for card styling. */
@@ -2422,22 +2461,27 @@
       </div>
     </div>
 
-    <!-- Apple-style voice card (replaces the old inline panel) -->
-    <div id="voiceCard" class="voice-card idle" data-mode="voice">
+    <!-- Apple-style voice card. This surface focuses on recording notes; the
+         composer mic button owns lightweight voice-to-text. Legacy voice-input
+         controls remain in DOM as a hidden fallback for older state restore. -->
+    <div id="voiceCard" class="voice-card idle" data-mode="note">
       <button id="voiceMinimizeBtn" class="voice-minimize" type="button" title="最小化">−</button>
-      <!-- Tab switcher: voice / note -->
-      <div class="note-mode-tabs">
-        <button class="note-tab-btn active" id="tabVoiceBtn" type="button">语音输入</button>
-        <button class="note-tab-btn" id="tabNoteBtn" type="button">录音笔记</button>
+      <!-- Tab switcher kept for verifier + legacy fallback; visually hidden
+           because the composer mic now owns voice-input. -->
+      <div class="note-mode-tabs" hidden>
+        <button class="note-tab-btn" id="tabVoiceBtn" type="button">语音输入</button>
+        <button class="note-tab-btn active" id="tabNoteBtn" type="button">录音笔记</button>
       </div>
+
+      <div class="voice-title note-only">录音笔记 · 实时转录</div>
 
       <!-- Voice-card dropzone: files/images dropped anywhere on the card are
            attached as context; the user can then speak the instruction. -->
       <div id="voiceDropHint" class="voice-drop-hint" aria-hidden="true">拖入文件 / 图片作为上下文</div>
       <div id="voiceChips" class="voice-chips voice-only" role="list" aria-label="已附加的文件"></div>
 
-      <!-- ── VOICE mode elements ── -->
-      <div class="voice-subtitle voice-only" id="voiceStatus">点击「开始」后说话</div>
+      <!-- ── VOICE mode elements (legacy fallback, hidden in note mode) ── -->
+      <div class="voice-subtitle voice-only" id="voiceStatus">点击发送旁的麦克风可直接语音输入；本面板用于录音笔记</div>
       <div class="wave-container voice-only" aria-hidden="true">
         <span class="wave-bar"></span>
         <span class="wave-bar"></span>
@@ -2508,8 +2552,8 @@
       <button id="scheduleToggleBtn" class="quick-btn" type="button" title="新建定时任务">
         <span class="quick-glyph">&#9200;</span>定时
       </button>
-      <button id="voiceToggleBtn" class="quick-btn" type="button" title="语音输入 (Ctrl+Shift+V) / 录音笔记 (Ctrl+Shift+N)">
-        <span class="quick-glyph">&#127908;</span>语音
+      <button id="voiceToggleBtn" class="quick-btn" type="button" title="录音笔记 (Ctrl+Shift+N) — 语音输入请用发送旁的麦克风按钮 (Ctrl+Shift+V)">
+        <span class="quick-glyph">&#127908;</span>录音笔记
       </button>
       <span class="quick-spacer"></span>
       <button id="settingsBtn" class="quick-btn quick-icon-btn" type="button" title="打开设置">
@@ -2521,6 +2565,12 @@
     <div class="input-bar" role="group" aria-label="指令输入栏">
       <button id="clipboardBtn" class="aux-btn" type="button" title="读取剪贴板" aria-label="读取剪贴板内容作为上下文">&#128203;</button>
       <textarea id="commandInput" rows="1" placeholder="输入你的需求..." aria-label="输入指令（按 Enter 发送，Shift+Enter 换行）" autofocus></textarea>
+      <button id="composerMicBtn" class="aux-btn composer-mic-btn" type="button" title="语音输入 (Ctrl+Shift+V) — 再次点击停止" aria-label="语音输入" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3z" fill="currentColor"/>
+          <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </button>
       <button id="sendBtn" class="send-btn" type="button" title="发送 (Enter)" aria-label="发送指令">
         <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <path d="M3.4 20.4l17.45-8.05a.5.5 0 0 0 0-.91L3.4 3.4a.5.5 0 0 0-.7.6l2.4 7.5a.5.5 0 0 0 .42.34l9.48.9a.1.1 0 0 1 0 .2l-9.48.9a.5.5 0 0 0-.42.34L2.7 19.8a.5.5 0 0 0 .7.6z" fill="currentColor"/>
