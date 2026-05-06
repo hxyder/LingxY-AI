@@ -7620,7 +7620,7 @@ window.ucaShell?.onCtrlEnter?.(() => {
   if (!echoSessionActive) return;
   if (noteActive || noteFinishInFlight) {
     void finishNote().finally(() => endEchoSession());
-  } else if (voiceMode) {
+  } else if (voiceMode || voiceRecording) {
     void submitEchoVoiceCommand();
   } else {
     void endEchoSession();

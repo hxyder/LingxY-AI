@@ -217,6 +217,8 @@ assert.ok(/resolveCard\(["']voice_continue["']/.test(popupCardJs)
     && /pendingContinuationTaskId = taskId/.test(overlayJs)
     && /toggleComposerVoiceInput\(\)/.test(overlayJs),
   "echo result cards: pressing V on a result card must start a voice follow-up without opening the overlay");
+assert.ok(/else if \(voiceMode \|\| voiceRecording\)[\s\S]{0,80}submitEchoVoiceCommand\(\)/.test(overlayJs),
+  "echo result cards: popup-card V starts composer voice capture, so global Enter must submit even when the full voice panel is hidden");
 assert.ok(/function renderActions\(buttons = \[\]\)[\s\S]{0,260}seenLabels[\s\S]{0,260}seenLabels\.has\(label\)[\s\S]{0,160}continue/.test(popupCardJs),
   "popup-card actions must dedupe duplicate labels such as repeated open-dialog buttons");
 assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml),
@@ -536,6 +538,8 @@ assert.ok(/function normalizeBatchEntry\(payload\)[\s\S]{0,260}conversationId: p
     && /conversationId: only\.conversationId \?\? null/.test(electronMain)
     && /conversationId: card\.payload\?\.conversationId \?\? card\.meta\?\.conversationId/.test(electronMain),
   "echo result cards: notification batching and resolve broadcasts must not drop conversationId");
+assert.ok(/lines\.length <= limit[\s\S]{0,180}more line\(s\)\. Open the conversation for the full result/.test(electronMain),
+  "popup result cards: long bodies must disclose truncation instead of silently hiding content");
 assert.ok(/frame\.event === "success"[\s\S]{0,320}fireSuccessPopupCardOnce/.test(overlayJs),
   "echo result cards: terminal-only success events must still surface a full popup result card");
 assert.ok(/popupSuccessCardTaskId === taskId && !terminal/.test(overlayJs)

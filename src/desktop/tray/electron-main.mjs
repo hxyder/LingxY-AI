@@ -1240,7 +1240,12 @@ export function createElectronShellRuntime({
       : (payload.body ?? payload.message ?? "");
     if (!body) return [];
     const limit = payload.allowLongBody === true ? 240 : payload.kind === "success" ? 80 : defaultLimit;
-    return String(body).split(/\r?\n/).slice(0, limit);
+    const lines = String(body).split(/\r?\n/);
+    if (lines.length <= limit) return lines;
+    return [
+      ...lines.slice(0, limit),
+      `... ${lines.length - limit} more line(s). Open the conversation for the full result.`
+    ];
   }
 
   function normalizeBatchEntry(payload) {
