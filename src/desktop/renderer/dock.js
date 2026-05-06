@@ -979,18 +979,27 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       //      treat it as a retry candidate just like a transcribed wrong
       //      word.
       const transcriptHasContent = transcript.trim().length > 0;
+      const targetPhrases = enrollmentTargetPhrases(echoWakeProfile);
       const transcriptHitsTarget = transcriptHasContent
-        && matchesAny(transcript, enrollmentTargetPhrases(echoWakeProfile));
-      const kwsMatched = Boolean(kwsSelfCheck.matched);
-      // Retry trigger: heard a word that wasn't the target, OR heard nothing
-      // and the local KWS also didn't pick anything up. If KWS matched we
-      // accept (the personalized model heard the keyword even if Whisper
-      // mistranscribed it).
+        && matchesAny(transcript, targetPhrases);
+      // Codex Round 4 review: kwsMatched alone isn't sufficient to accept the
+      // sample. If the personalized KWS model has been primed for the default
+      // wake but not yet the custom one (or fires on a noise burst whose
+      // matched keyword is in the default set), kwsMatched=true while the
+      // user actually said something else still counted as "OK". Tighten:
+      // require that the keyword the KWS reports as matched is itself in
+      // the enrollment target phrase set. An empty/missing keyword is
+      // treated as "no usable evidence" and is NOT enough on its own.
+      const kwsKeyword = `${kwsSelfCheck.keyword ?? ""}`.trim();
+      const kwsHitsTarget = Boolean(kwsSelfCheck.matched)
+        && kwsKeyword.length > 0
+        && matchesAny(kwsKeyword, targetPhrases);
+      const sampleAcceptable = transcriptHitsTarget || kwsHitsTarget;
+      // Retry trigger: any sample that didn't produce evidence the user
+      // actually uttered the target. Heard a different word, heard nothing,
+      // KWS matched a non-target — all retry candidates while budget allows.
       const shouldRetry = transcriptRetries < MAX_TRANSCRIPT_RETRIES_PER_SAMPLE
-        && (
-          (transcriptHasContent && !transcriptHitsTarget && !kwsMatched)
-          || (!transcriptHasContent && !kwsMatched)
-        );
+        && !sampleAcceptable;
       if (shouldRetry) {
         transcriptRetries += 1;
         const corrective = transcriptHasContent

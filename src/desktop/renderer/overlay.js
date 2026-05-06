@@ -4007,6 +4007,32 @@ async function refreshActiveTask() {
           autoHideMs: 12000
         });
       } catch { /* optional */ }
+    } else if (task.status === "partial_success") {
+      // Codex Round 4 review: partial_success was already declared a terminal
+      // status (line ~4018 in conversationPhase reset), but no UI / memory /
+      // continuation branch existed. If a backend path ever emits this state
+      // the user would see a silent freeze. Mirror the failed branch's
+      // conversation thread updates so a follow-up wake within the 30s
+      // window can attach via parent_task_id, while making the partial
+      // outcome visible.
+      const partialMsg = task.failure_user_message
+        ?? task.partial_message
+        ?? "Task partially succeeded.";
+      addBubble("assistant", `Task partially succeeded: ${partialMsg}`);
+      if (conversationState) {
+        conversationState.lastCompletedTaskId = task.task_id;
+        conversationState.lastCompletedAt = Date.now();
+        conversationState.updatedAt = Date.now();
+      }
+      appendTurn("assistant", `部分完成：${partialMsg}`);
+      if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
+        lastEchoTaskCompletedAt = Date.now();
+        lastEchoTaskConversationId = task.conversation_id
+          ?? taskOwnerConversationId(taskConversationMap, task.task_id)
+          ?? conversationState?.id
+          ?? null;
+        lastEchoTaskId = task.task_id;
+      }
     } else if (task.status === "cancelled") {
       addSystemBubble("Task cancelled.");
     }
