@@ -337,6 +337,7 @@ assert.equal(quickActionResult.text, "[zh] Hello world");
 assert.equal(quickActionResult.taskId, "task_qa");
 assert.equal(submittedTask?.userCommand?.includes("翻译"), true);
 assert.equal(submittedTask?.capture?.text, "Hello world");
+assert.equal(submittedTask?.background, true);
 
 let selectedLinkTask = null;
 const selectedLinkAction = await runQuickAction(
@@ -381,6 +382,7 @@ const selectedLinkAction = await runQuickAction(
 assert.equal(selectedLinkAction.ok, true);
 assert.equal(selectedLinkTask?.capture?.sourceType, "link");
 assert.equal(selectedLinkTask?.capture?.url, "https://news.un.org/en/story/2026/05/example");
+assert.equal(selectedLinkTask?.background, true);
 
 const emptyQuickAction = await runQuickAction(
   { action: "translate", selectionState: { text: "  " } },

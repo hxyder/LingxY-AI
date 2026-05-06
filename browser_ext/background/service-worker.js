@@ -355,6 +355,7 @@ async function runDesktopTask({
       body: JSON.stringify({
         userCommand,
         executionMode: "interactive",
+        background: true,
         capture
       })
     });
