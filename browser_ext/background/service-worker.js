@@ -417,6 +417,49 @@ async function runDesktopTask({
   return { ok: false, taskId, error: "timeout", mode: "desktop" };
 }
 
+async function runDesktopTranslate({
+  runtimeBase,
+  selectionState,
+  fetchImpl = fetch,
+  signal = null
+}) {
+  const text = `${selectionState?.text ?? selectionState?.selectionText ?? ""}`.trim();
+  if (!text) return { ok: false, error: "empty_selection" };
+  try {
+    const response = await fetchImpl(`${runtimeBase}/translate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      ...(signal ? { signal } : {}),
+      body: JSON.stringify({
+        text,
+        source: "auto",
+        target: selectionState?.translationTarget ?? null
+      })
+    });
+    if (!response.ok) {
+      return { ok: false, mode: "desktop", error: `translate_failed_${response.status}` };
+    }
+    const payload = await response.json();
+    if (!payload?.ok || typeof payload.text !== "string") {
+      return { ok: false, mode: "desktop", error: payload?.error ?? "translate_failed" };
+    }
+    return {
+      ok: true,
+      mode: "desktop",
+      status: "success",
+      text: payload.text,
+      translation: {
+        source_language: payload.source_language ?? null,
+        target_language: payload.target_language ?? null,
+        provider: payload.provider ?? null
+      }
+    };
+  } catch (error) {
+    invalidateDesktopProbe();
+    return { ok: false, mode: "desktop", error: `network_error:${error?.message ?? "unknown"}` };
+  }
+}
+
 async function resolveQuickActionRouteContext({
   action,
   origin = "runtime_message",
@@ -505,6 +548,17 @@ export async function executeQuickAction({
 
   if (!effectiveRoutePlan.ok) {
     return { ok: false, mode: effectiveRoutePlan.mode, error: effectiveRoutePlan.reason };
+  }
+
+  if (effectiveRoutePlan.transport === "desktop_task"
+      && (action === "uca.translate-selection" || action === "translate")) {
+    onStart?.();
+    return runDesktopTranslate({
+      runtimeBase: effectiveRuntimeBase,
+      selectionState,
+      fetchImpl,
+      signal
+    });
   }
 
   if (effectiveRoutePlan.transport === "standalone_direct") {

@@ -12,6 +12,7 @@ import { tryHandlePreviewFileRoute } from "./http-routes/preview-file-routes.mjs
 import { tryHandleRuntimeAdminRoute } from "./http-routes/runtime-admin-routes.mjs";
 import { tryHandleSchedulerTemplateRoute } from "./http-routes/scheduler-template-routes.mjs";
 import { tryHandleTaskRoute } from "./http-routes/task-routes.mjs";
+import { tryHandleTranslationRoute } from "./http-routes/translation-routes.mjs";
 import { sendJson } from "./http-helpers.mjs";
 import { createProviderModelDiscovery } from "../ai/providers/model-discovery.mjs";
 
@@ -78,6 +79,10 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
     {
       name: "task",
       handle: tryHandleTaskRoute
+    },
+    {
+      name: "translation",
+      handle: tryHandleTranslationRoute
     },
     {
       name: "runtime-admin",

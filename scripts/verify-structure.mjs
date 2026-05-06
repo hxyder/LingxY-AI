@@ -222,6 +222,7 @@ const requiredPaths = [
   "src/service/core/http-routes/runtime-admin-routes.mjs",
   "src/service/core/http-routes/scheduler-template-routes.mjs",
   "src/service/core/http-routes/task-routes.mjs",
+  "src/service/core/http-routes/translation-routes.mjs",
   "src/service/core/capability-creator/index.mjs",
   "src/service/core/external-call.mjs",
   "src/service/core/read-probe-cache.mjs",

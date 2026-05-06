@@ -293,11 +293,12 @@ assert.equal(linkResponse.payload.status, "success");
 assert.equal(runtime.store.taskEvents.some((event) => event.payload?.step === "web_fetch"), true);
 assert.equal(runtime.store.taskEvents.some((event) => event.payload?.step === "web_fetch_placeholder"), false);
 
-// runQuickAction (inline result frame backend) — mocked fetch round-trip
-let submittedTask = null;
+// runQuickAction (inline result frame backend) — translation uses the direct
+// desktop translator route instead of creating a full task.
+let submittedTranslate = null;
 const quickActionResult = await runQuickAction(
   {
-    action: "translate",
+    action: "uca.translate-selection",
     routePlan: {
       ok: true,
       origin: "verify",
@@ -315,16 +316,17 @@ const quickActionResult = await runQuickAction(
     }
   },
   async (url, opts) => {
-    if (url.endsWith("/task") && opts?.method === "POST") {
-      submittedTask = JSON.parse(opts.body);
+    if (url.endsWith("/translate") && opts?.method === "POST") {
+      submittedTranslate = JSON.parse(opts.body);
       return {
         ok: true,
         async json() {
           return {
-            task: { task_id: "task_qa", status: "success", executor: "translate" },
-            taskEvents: [
-              { event_type: "inline_result", payload: { text: "[zh] Hello world" } }
-            ]
+            ok: true,
+            text: "[zh] Hello world",
+            provider: "google_web",
+            source_language: "en",
+            target_language: "zh-CN"
           };
         }
       };
@@ -334,10 +336,8 @@ const quickActionResult = await runQuickAction(
 );
 assert.equal(quickActionResult.ok, true);
 assert.equal(quickActionResult.text, "[zh] Hello world");
-assert.equal(quickActionResult.taskId, "task_qa");
-assert.equal(submittedTask?.userCommand?.includes("翻译"), true);
-assert.equal(submittedTask?.capture?.text, "Hello world");
-assert.equal(submittedTask?.background, true);
+assert.equal(quickActionResult.translation?.provider, "google_web");
+assert.equal(submittedTranslate?.text, "Hello world");
 
 let selectedLinkTask = null;
 const selectedLinkAction = await runQuickAction(
