@@ -75,7 +75,20 @@ export function createPersistentRuntime({
     configPath: paths.configPath,
     secretStore,
     defaults: {
-      security: {}
+      security: {},
+      echo: {
+        // Phase 1 Echo TTS. enabled defaults to true because the user
+        // explicitly asked for "voice reply with optional mute". The
+        // dock surfaces a one-click mute toggle for the workplace /
+        // late-night case codex flagged in review. maxChars caps very
+        // long responses to keep the user's machine from monologuing.
+        tts: {
+          enabled: true,
+          maxChars: 600,
+          rate: null,
+          voice: null
+        }
+      }
     }
   });
   const config = configStore.load();

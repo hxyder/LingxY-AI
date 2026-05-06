@@ -2410,6 +2410,35 @@ export function createElectronShellRuntime({
         const current = await loadSettings();
         const dockWin = windows.get("dock");
         if (!dockWin || dockWin.webContents?.isDestroyed?.()) return;
+        // Best-effort fetch of the echo TTS preference. If the service is
+        // unreachable we still build the menu — the toggle just defaults
+        // to "enabled". Codex review noted: keep this fast and never let
+        // service issues block the menu.
+        let ttsPreference = { enabled: true };
+        let ttsEngineUnavailable = false;
+        try {
+          if (resolvedServiceBaseUrl) {
+            const ttsResp = await fetch(`${resolvedServiceBaseUrl}/echo/tts/preference`, {
+              method: "GET",
+              headers: { "x-uca-actor": "desktop_shell" }
+            });
+            if (ttsResp.ok) {
+              const ttsData = await ttsResp.json().catch(() => ({}));
+              ttsPreference = ttsData.preference ?? ttsPreference;
+              ttsEngineUnavailable = Boolean(ttsData.engineUnavailable);
+            }
+          }
+        } catch { /* fall through with defaults */ }
+        const setEchoTtsEnabled = async (enabled) => {
+          if (!resolvedServiceBaseUrl) return;
+          try {
+            await fetch(`${resolvedServiceBaseUrl}/echo/tts/preference`, {
+              method: "POST",
+              headers: { "content-type": "application/json", "x-uca-actor": "desktop_shell" },
+              body: JSON.stringify({ enabled })
+            });
+          } catch { /* surfaced visually next time the menu opens */ }
+        };
         const menu = Menu.buildFromTemplate([
           {
             label: "正常模式",
@@ -2422,6 +2451,16 @@ export function createElectronShellRuntime({
             type: "radio",
             checked: Boolean(current.echoMode),
             click() { void updateSettings({ echoMode: true }); }
+          },
+          { type: "separator" },
+          {
+            label: ttsEngineUnavailable
+              ? "语音回复（系统 TTS 不可用）"
+              : "语音回复",
+            type: "checkbox",
+            checked: Boolean(ttsPreference.enabled) && !ttsEngineUnavailable,
+            enabled: !ttsEngineUnavailable,
+            click(menuItem) { void setEchoTtsEnabled(menuItem.checked); }
           },
           { type: "separator" },
           {

@@ -12,6 +12,7 @@ import {
 } from "../../audio/transcript-locale.mjs";
 import { detectWakeKeywordWithSherpaDaemon } from "../../audio/sherpa-daemon.mjs";
 import { getWhisperDaemon } from "../../audio/whisper-daemon.mjs";
+import { getTtsEngine } from "../../audio/tts-engine.mjs";
 import { resolveProviderForTask } from "../../executors/shared/provider-resolver.mjs";
 import { hydrateProviderApiKeySecretSync } from "../../security/secret-store.mjs";
 import { HttpBodyTooLargeError, readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
@@ -29,6 +30,39 @@ const ECHO_AUDIO_MAX_BYTES = 1024 * 1024 * 12;
 const NOTE_AUDIO_MAX_BYTES = 1024 * 1024 * 64;
 const DEFAULT_NOTE_STREAM_TOTAL_TIMEOUT_MS = 120_000;
 const DEFAULT_NOTE_STREAM_IDLE_TIMEOUT_MS = 45_000;
+const DEFAULT_ECHO_TTS_MAX_CHARS = 600;
+const ECHO_TTS_ACTORS = ["desktop_shell", "desktop_overlay", "desktop_console"];
+
+function readEchoTtsConfig(runtime) {
+  const config = runtime?.configStore?.load?.() ?? {};
+  const tts = config?.echo?.tts ?? {};
+  return {
+    enabled: tts.enabled !== false,
+    maxChars: Number.isFinite(Number(tts.maxChars)) && Number(tts.maxChars) > 0
+      ? Math.floor(Number(tts.maxChars))
+      : DEFAULT_ECHO_TTS_MAX_CHARS,
+    rate: typeof tts.rate === "number" ? tts.rate : null,
+    voice: typeof tts.voice === "string" && tts.voice.trim() ? tts.voice.trim() : null
+  };
+}
+
+function saveEchoTtsConfig(runtime, patch = {}) {
+  const store = runtime?.configStore;
+  if (!store?.load || !store?.save) return null;
+  const current = store.load();
+  const next = {
+    ...current,
+    echo: {
+      ...(current.echo ?? {}),
+      tts: {
+        ...(current.echo?.tts ?? {}),
+        ...patch
+      }
+    }
+  };
+  store.save(next);
+  return readEchoTtsConfig(runtime);
+}
 
 function positiveIntegerEnv(name, fallback) {
   const parsed = Number(process.env[name]);
@@ -1200,6 +1234,100 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       });
       return true;
     }
+  }
+
+  if (method === "GET" && url.pathname === "/echo/tts/preference") {
+    if (!requireDesktopActor({ request, response, allowedActors: ECHO_TTS_ACTORS })) return true;
+    const preference = readEchoTtsConfig(runtime);
+    const engine = getTtsEngine();
+    sendJson(response, 200, { ok: true, preference, engineUnavailable: engine.isUnavailable() });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/echo/tts/preference") {
+    if (!requireDesktopActor({ request, response, allowedActors: ECHO_TTS_ACTORS })) return true;
+    let body;
+    try {
+      body = await readJsonBody(request, { maxBytes: 4096 });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, reason: "invalid_json", message: String(error?.message ?? error) });
+      return true;
+    }
+    const patch = {};
+    if (typeof body?.enabled === "boolean") patch.enabled = body.enabled;
+    if (Number.isFinite(Number(body?.maxChars)) && Number(body.maxChars) > 0) {
+      patch.maxChars = Math.floor(Number(body.maxChars));
+    }
+    if (typeof body?.rate === "number") patch.rate = body.rate;
+    if (typeof body?.voice === "string") patch.voice = body.voice.trim() || null;
+    if (Object.keys(patch).length === 0) {
+      sendJson(response, 400, { ok: false, reason: "no_supported_fields" });
+      return true;
+    }
+    const preference = saveEchoTtsConfig(runtime, patch) ?? readEchoTtsConfig(runtime);
+    // Codex review: when the user switches to muted, kill any in-flight
+    // utterance immediately so a prior speak does not keep talking past
+    // the toggle.
+    if (patch.enabled === false) {
+      try { getTtsEngine().cancel(); } catch { /* ignore */ }
+    }
+    sendJson(response, 200, { ok: true, preference });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/echo/speak/cancel") {
+    if (!requireDesktopActor({ request, response, allowedActors: ECHO_TTS_ACTORS })) return true;
+    const result = getTtsEngine().cancel();
+    sendJson(response, 200, { ok: true, ...result });
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/echo/speak") {
+    if (!requireDesktopActor({ request, response, allowedActors: ECHO_TTS_ACTORS })) return true;
+    let body;
+    try {
+      body = await readJsonBody(request, { maxBytes: 64 * 1024 });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, reason: "invalid_json", message: String(error?.message ?? error) });
+      return true;
+    }
+    const text = String(body?.text ?? "").trim();
+    if (!text) {
+      sendJson(response, 400, { ok: false, reason: "missing_text" });
+      return true;
+    }
+    const preference = readEchoTtsConfig(runtime);
+    if (!preference.enabled) {
+      // When muted, return success without spawning so the renderer's
+      // call site stays simple. The dock toggle reflects state separately
+      // via /echo/tts/preference.
+      sendJson(response, 200, { ok: true, muted: true });
+      return true;
+    }
+    // Cap very long monologues. Codex review: cap protects users from a
+    // 5-minute tail when the agent returns a long markdown answer.
+    const capped = text.length > preference.maxChars
+      ? `${text.slice(0, preference.maxChars - 1)}…`
+      : text;
+    const engine = getTtsEngine();
+    const speakPromise = engine.speak(capped, {
+      rate: preference.rate,
+      voice: preference.voice
+    });
+    // Race against a short timeout so the HTTP response returns promptly
+    // for long utterances. The engine's generation token guards against
+    // any race between this fire-and-forget continuation and cancel().
+    const earlyTimeout = new Promise((resolve) => {
+      setTimeout(() => resolve({ ok: true, started: true, async: true }), 300);
+    });
+    const result = await Promise.race([speakPromise, earlyTimeout]);
+    sendJson(response, 200, {
+      ok: result?.ok !== false,
+      muted: false,
+      generation: engine.inflightGeneration,
+      detail: result
+    });
+    return true;
   }
 
   return false;

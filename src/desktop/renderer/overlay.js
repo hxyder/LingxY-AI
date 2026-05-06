@@ -208,6 +208,38 @@ let lastEchoTaskCompletedAt = 0;
 let lastEchoTaskConversationId = null;
 let lastEchoTaskId = null;
 
+// Echo TTS helpers. The /echo/speak route returns immediately (the engine
+// races synthesis against a 300ms timeout) so these are safe to await
+// without blocking the renderer's terminal-state handling.
+async function postEchoSpeak(text) {
+  const trimmed = String(text ?? "").trim();
+  if (!trimmed) return;
+  try {
+    await fetch(`${serviceBaseUrl}/echo/speak`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-uca-actor": "desktop_overlay" },
+      body: JSON.stringify({ text: trimmed })
+    });
+  } catch { /* ignore — speech is best-effort */ }
+}
+
+async function postEchoSpeakCancel() {
+  try {
+    await fetch(`${serviceBaseUrl}/echo/speak/cancel`, {
+      method: "POST",
+      headers: { "x-uca-actor": "desktop_overlay" }
+    });
+  } catch { /* ignore */ }
+}
+
+function speakEchoFinalIfApplicable(task, text) {
+  // Only speak when the task came in via the echo wake path. Console-driven
+  // chats and overlay-typed prompts get no audio reply, mirroring the
+  // privacy default ("voice in → voice out, text in → text out").
+  if (!task || !(isEchoTask(task.task_id) || isEchoOriginTask(task))) return;
+  void postEchoSpeak(text);
+}
+
 function shouldSurfaceTaskPopupCards() {
   try {
     return document.visibilityState !== "visible";
@@ -3867,6 +3899,14 @@ async function refreshActiveTask() {
           autoHideMs: 10000,
           terminal: true
         });
+        // Echo TTS: speak the artifact summary line + preview snippet.
+        // The route caps to maxChars; we just send a useful summary text.
+        speakEchoFinalIfApplicable(
+          task,
+          previewText
+            ? `已生成 ${filename}。${previewText.slice(0, 200)}`
+            : `已生成 ${filename}。`
+        );
       }
       // Auto-open removed: previously the host file viewer would steal focus
       // every time a task finished. Users explicitly click the "打开文件"
@@ -3958,6 +3998,9 @@ async function refreshActiveTask() {
           openWindow: "overlay",
           terminal: true
         });
+        // Echo TTS: voice in → voice out. Best-effort; muted users get a
+        // 200 OK with muted:true and no spawn.
+        speakEchoFinalIfApplicable(task, finalText);
       }
     } else if (task.status === "failed") {
       const failureMsg = task.failure_user_message ?? "Unknown error.";
@@ -4007,6 +4050,7 @@ async function refreshActiveTask() {
           autoHideMs: 12000
         });
       } catch { /* optional */ }
+      speakEchoFinalIfApplicable(task, `任务失败：${failureMsg}`);
     } else if (task.status === "partial_success") {
       // Codex Round 4 review: partial_success was already declared a terminal
       // status (line ~4018 in conversationPhase reset), but no UI / memory /
@@ -4045,6 +4089,7 @@ async function refreshActiveTask() {
           ?? null;
         lastEchoTaskId = task.task_id;
       }
+      speakEchoFinalIfApplicable(task, partialText);
     } else if (task.status === "cancelled") {
       addSystemBubble("Task cancelled.");
     }
@@ -7769,6 +7814,11 @@ async function endEchoSession() {
 
 window.ucaShell?.onEchoWake?.(async (payload = {}) => {
   const kind = payload.kind === "note" ? "note" : "voice";
+  // The wake word means the user is about to speak again — interrupt any
+  // in-flight TTS so the assistant's reply does not talk over the user.
+  // Best-effort: the route returns immediately; OS audio buffer may still
+  // play a short tail, which is the documented behaviour.
+  void postEchoSpeakCancel();
   const hasPendingInputContext = Boolean(pendingFileSelection?.filePaths?.length || pendingCapture?.capture);
   const preservePendingInputContext = Boolean(payload.preserveContext || hasPendingInputContext);
 
