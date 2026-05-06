@@ -3,6 +3,7 @@ import { createTaskEventStream, encodeSseFrame } from "../../events/sse.mjs";
 import { retryTask } from "../../retry/retry-manager.mjs";
 import {
   cancelTask,
+  emitTaskEvent,
   readTaskEventLog,
   shouldAutoResolveParentFromConversation
 } from "../task-runtime.mjs";
@@ -430,6 +431,25 @@ export async function submitTaskFromBody(runtime, body) {
   });
 }
 
+export function emitSubmitToTaskCreatedTiming(runtime, result, startedAtMs, route = "/task") {
+  const taskId = result?.task?.task_id;
+  if (!taskId || !Number.isFinite(startedAtMs)) return null;
+  const event = emitTaskEvent({
+    runtime,
+    taskId,
+    eventType: "phase_timing",
+    payload: {
+      phase: "submit_to_task_created",
+      route,
+      duration_ms: Math.max(0, Date.now() - startedAtMs)
+    }
+  });
+  if (Array.isArray(result.taskEvents)) {
+    result.taskEvents.push(event);
+  }
+  return event;
+}
+
 async function handleTaskEventStream({ request, response, url, runtime, taskId }) {
   const task = runtime.store.getTask(taskId);
   if (!task) {
@@ -519,8 +539,10 @@ export async function tryHandleTaskRoute({ request, response, method, url, runti
   }
 
   if (method === "POST" && url.pathname === "/task") {
+    const startedAtMs = Date.now();
     const body = await readJsonBody(request);
     const result = await submitTaskFromBody(runtime, body);
+    emitSubmitToTaskCreatedTiming(runtime, result, startedAtMs, "/task");
     sendJson(response, 200, result);
     return true;
   }
@@ -545,7 +567,9 @@ export async function tryHandleTaskRoute({ request, response, method, url, runti
     };
     delete mergedBody.originalCommand;
     delete mergedBody.clarificationAnswer;
+    const startedAtMs = Date.now();
     const result = await submitTaskFromBody(runtime, mergedBody);
+    emitSubmitToTaskCreatedTiming(runtime, result, startedAtMs, "/task/clarify");
     sendJson(response, 200, result);
     return true;
   }

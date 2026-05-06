@@ -14,7 +14,10 @@ import { submitImageTask } from "../../src/service/core/image-submission.mjs";
 import { submitOfficeTask } from "../../src/service/core/office-submission.mjs";
 import { submitScreenshotTask } from "../../src/service/core/screenshot-submission.mjs";
 import { submitTaskWithConversation } from "../../src/service/core/task-runtime.mjs";
-import { submitTaskFromBody } from "../../src/service/core/http-routes/task-routes.mjs";
+import {
+  emitSubmitToTaskCreatedTiming,
+  submitTaskFromBody
+} from "../../src/service/core/http-routes/task-routes.mjs";
 
 function createRuntime({ enqueueAccepted = true } = {}) {
   return {
@@ -322,6 +325,37 @@ test("task route preserves mixed file and image attachments in one context envel
     .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
   assert.ok(audit);
   assert.equal(audit.payload.submission_kind, "context");
+});
+
+test("task route timing records submit to task creation without changing task result shape", () => {
+  const runtime = createRuntime();
+  const { task } = submitTaskWithConversation({
+    runtime,
+    route: { intent: "chat", executor: "fast", requires_confirmation: false, intent_tags: [] },
+    contextPacket: {
+      source_type: "clipboard",
+      source_app: "uca.test",
+      capture_mode: "manual",
+      text: "hello"
+    },
+    userCommand: "hello",
+    executionMode: "interactive",
+    executorOverride: "fast",
+    submissionKind: "context"
+  });
+  const result = { task, taskEvents: runtime.store.getTaskEvents(task.task_id) };
+
+  const event = emitSubmitToTaskCreatedTiming(runtime, result, Date.now() - 12, "/task");
+
+  assert.ok(event);
+  assert.equal(event.event_type, "phase_timing");
+  assert.equal(event.payload.phase, "submit_to_task_created");
+  assert.equal(event.payload.route, "/task");
+  assert.equal(runtime.store.getTaskEvents(task.task_id).some((entry) =>
+    entry.event_type === "phase_timing"
+    && entry.payload?.phase === "submit_to_task_created"
+  ), true);
+  assert.equal(result.taskEvents.includes(event), true);
 });
 
 test("browser submission declares its submission kind through the central boundary", async () => {
