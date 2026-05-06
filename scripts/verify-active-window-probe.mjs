@@ -124,8 +124,11 @@ function createMockRunner(scenario) {
   };
 }
 
-async function runScenario(scenario) {
-  return captureActiveWindowContext({ runPowerShell: createMockRunner(scenario) });
+async function runScenario(scenario, options = {}) {
+  return captureActiveWindowContext({
+    runPowerShell: createMockRunner(scenario),
+    ...options
+  });
 }
 
 {
@@ -135,6 +138,23 @@ async function runScenario(scenario) {
   assert.equal(ctx.activeWindow.url, "https://claude.ai/chat/test");
   assert.equal(ctx.activeWindow.process, "msedge");
   assert.equal(ctx.activeWindow.blocked, false);
+}
+
+{
+  const ctx = await runScenario("browser-edge-url", {
+    clipboardFallback: () => "stale clipboard mail",
+    allowClipboardFallback: false
+  });
+  assert.equal(ctx.selectedText, null, "disabled clipboard fallback must not become selected text");
+  assert.equal(ctx.activeWindow.url, "https://claude.ai/chat/test");
+}
+
+{
+  const ctx = await runScenario("browser-edge-url", {
+    clipboardFallback: () => "fresh copied selection",
+    allowClipboardFallback: true
+  });
+  assert.equal(ctx.selectedText, "fresh copied selection");
 }
 
 {

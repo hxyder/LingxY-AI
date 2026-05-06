@@ -1604,14 +1604,15 @@ export function createElectronShellRuntime({
     }
   }
 
-  async function captureActiveWindowContext({ includeSelection = true } = {}) {
+  async function captureActiveWindowContext({ includeSelection = true, allowClipboardFallback = true } = {}) {
     const activeWindowEnabled = await isRemoteFeatureEnabled("active_window_probe");
     const context = await runCaptureActiveWindowContext({
       runPowerShell: runPowerShellScript,
       clipboardFallback: () => clipboard.readText() ?? "",
       timeoutMs: 3000,
       activeWindowEnabled,
-      includeSelection
+      includeSelection,
+      allowClipboardFallback
     });
 
     // Keep the clipboard watcher in sync when capture-context.ps1 surfaced
@@ -2236,7 +2237,8 @@ export function createElectronShellRuntime({
       ipcMain.handle("uca:capture-active-window-context", async (event, options = {}) => {
         try {
           let context = await captureActiveWindowContext({
-            includeSelection: options?.includeSelection !== false
+            includeSelection: options?.includeSelection !== false,
+            allowClipboardFallback: options?.allowClipboardFallback !== false
           });
           if (options?.excludeShellWindow && looksLikeShellWindowContext(context)) {
             const sourceWindow = BrowserWindow.fromWebContents(event.sender);
@@ -2246,7 +2248,8 @@ export function createElectronShellRuntime({
               try {
                 await wait(160);
                 context = await captureActiveWindowContext({
-                  includeSelection: options?.includeSelection !== false
+                  includeSelection: options?.includeSelection !== false,
+                  allowClipboardFallback: options?.allowClipboardFallback !== false
                 });
               } finally {
                 if (typeof sourceWindow.showInactive === "function") sourceWindow.showInactive();

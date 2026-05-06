@@ -4326,6 +4326,7 @@ async function captureActiveWindowHintForVoice({ captureMode = "voice_context" }
     const payload = await timeoutWithFallback(
       window.ucaShell.getActiveWindowContext({
         includeSelection: true,
+        allowClipboardFallback: false,
         excludeShellWindow: true,
         preferLastExternal: true,
         maxExternalAgeMs: 10 * 60 * 1000,

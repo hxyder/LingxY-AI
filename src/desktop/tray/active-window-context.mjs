@@ -115,7 +115,8 @@ export async function captureActiveWindowContext({
   probeScriptName = PROBE_SCRIPT_NAME,
   timeoutMs = 3000,
   activeWindowEnabled = true,
-  includeSelection = true
+  includeSelection = true,
+  allowClipboardFallback = true
 } = {}) {
   if (typeof runPowerShell !== "function") {
     throw new Error("captureActiveWindowContext requires a runPowerShell({script,args}) function.");
@@ -161,7 +162,11 @@ export async function captureActiveWindowContext({
     }
   }
 
-  if (includeSelection && !result.selectedText && result.filePaths.length === 0 && typeof clipboardFallback === "function") {
+  if (includeSelection
+      && allowClipboardFallback
+      && !result.selectedText
+      && result.filePaths.length === 0
+      && typeof clipboardFallback === "function") {
     const clipText = clipboardFallback();
     if (typeof clipText === "string" && clipText.trim().length > 2) {
       result.selectedText = clipText.trim();
