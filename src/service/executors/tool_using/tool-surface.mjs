@@ -18,7 +18,7 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
   file_read: (tool) =>
     /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|read_file_text|read_folder_text|search_file_content|index_file_content|verify_file_exists|file_op)$/.test(tool.id),
   artifact_generation: (tool) =>
-    /^(write_file|generate_document|edit_file|render_diagram|resolve_output_path|register_artifact|verify_file_exists)$/.test(tool.id),
+    /^(write_file|generate_document|edit_file|render_diagram|render_svg|resolve_output_path|register_artifact|verify_file_exists)$/.test(tool.id),
   code_execution: (tool) => tool.id === "run_script",
   browser_control: (tool) => ["open_url", "take_screenshot"].includes(tool.id),
   email_calendar_action: (tool) =>
@@ -31,7 +31,7 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
   // which is the path image-bearing tasks take when they reach
   // tool_using instead of multi_modal.
   image_understanding: (tool) => tool.id === "vision_analyze",
-  image_generation: (tool) => ["generate_document", "write_file"].includes(tool.id),
+  image_generation: (tool) => ["generate_document", "write_file", "render_svg", "render_diagram"].includes(tool.id),
   // First-class lane for the "create / configure a capability" intent.
   // Exposes the draft + save tools so the planner can run the interview
   // and persist the result without per-case keyword routing.
@@ -58,6 +58,7 @@ const ARTIFACT_TOOL_IDS = new Set([
   "generate_document",
   "edit_file",
   "render_diagram",
+  "render_svg",
   "resolve_output_path",
   "register_artifact",
   "verify_file_exists"

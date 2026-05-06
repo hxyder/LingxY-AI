@@ -33,6 +33,7 @@ import { buildAgenticSystemPrompt, isAudioNoteSingleMarkdownTask } from "./promp
 import { createProviderAdapter } from "./provider-adapter.mjs";
 import { finalizeAgenticPlannerRun } from "./finalization.mjs";
 import { executeAgenticToolCall } from "./tool-execution.mjs";
+import { isStreamableArtifactTool } from "../shared/previewable-artifact-tools.mjs";
 import { buildAgenticUserMessage } from "./user-message.mjs";
 import { renderEvidenceLedger } from "../shared/evidence-ledger.mjs";
 import { resolveProviderForTask, describeResolvedProvider } from "../shared/provider-resolver.mjs";
@@ -72,12 +73,6 @@ import {
 import { artifactEventFieldsForToolResult } from "../../core/artifact-action-contract.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
-
-// Whitelist of tools whose argument streams are surfaced as
-// `tool_input_delta` events for the live preview panel. Limiting the set
-// keeps the SSE bus from carrying every partial JSON token (e.g. for
-// arguments to search / lookup tools where a live preview is meaningless).
-const FILE_GEN_TOOLS = new Set(["write_file", "generate_document", "edit_file"]);
 
 /**
  * Main entry point for the agentic planner.
@@ -371,7 +366,7 @@ export async function runAgenticPlanner({
         : undefined;
       const onToolInputDelta = (adapter.supportsStreaming && onEvent)
         ? (toolName, partialJson) => {
-            if (!FILE_GEN_TOOLS.has(toolName)) return;
+            if (!isStreamableArtifactTool(toolName)) return;
             onEvent({
               event_type: "tool_input_delta",
               payload: { tool_id: toolName, partial_json: partialJson }

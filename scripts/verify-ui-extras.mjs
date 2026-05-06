@@ -44,6 +44,8 @@ const desktopManifest = read("src/desktop/shared/manifest.mjs");
 const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const taskEventStream = read("src/desktop/renderer/task-event-stream.js");
+const livePreview = read("src/desktop/renderer/live-preview.js");
+const previewStreaming = read("src/desktop/renderer/preview/streaming.js");
 const sharedCss = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const sharedUi = read("src/desktop/renderer/shared-ui.mjs");
 const chatBlocks = read("src/desktop/renderer/chat-blocks.mjs");
@@ -721,6 +723,20 @@ assert.ok(/function navigateUserBubble/.test(overlayJs), "user nav: navigateUser
 // ── Streaming caret ────────────────────────────────────────────────────
 assert.ok(/\.chat-msg-bubble\.streaming::after/.test(sharedCss), "streaming caret: console CSS missing");
 assert.ok(/\.bubble\.assistant\.streaming::after/.test(overlayHtml), "streaming caret: overlay CSS missing");
+
+// ── Live artifact preview coverage ─────────────────────────────────────
+for (const toolId of ["write_file", "generate_document", "edit_file", "render_diagram", "render_svg"]) {
+  assert.ok(livePreview.includes(`"${toolId}"`),
+    `live preview: ${toolId} must be a previewable artifact tool`);
+}
+assert.ok(/toolName === "render_diagram"/.test(previewStreaming)
+    && /renderDiagramStream/.test(previewStreaming)
+    && /extractStringField\(rawJson,\s*"code"\)/.test(previewStreaming),
+  "live preview: render_diagram must stream diagram source before final artifact render");
+assert.ok(/toolName === "render_svg"/.test(previewStreaming)
+    && /renderSvgStream/.test(previewStreaming)
+    && /extractStringField\(rawJson,\s*"svg"\)/.test(previewStreaming),
+  "live preview: render_svg must stream SVG source before final artifact render");
 
 // ── Bubble timestamps ──────────────────────────────────────────────────
 assert.ok(/function formatRelativeTime\s*\(/.test(sharedUi), "timestamps: shared formatRelativeTime() missing");

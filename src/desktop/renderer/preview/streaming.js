@@ -1,8 +1,8 @@
 // Streaming-phase preview (UCA-182 Phase 3).
 //
-// During a write_file / generate_document tool call the model streams
-// its tool arguments as partial JSON. We render whatever is already
-// complete, without pretending we know the final layout:
+// During a previewable artifact tool call the model streams its tool
+// arguments as partial JSON. We render whatever is already complete,
+// without pretending we know the final layout:
 //
 //   write_file (.md/.html/.txt/.json/.code/...) → stream the `content`
 //     field value verbatim into a <pre> (for code) or let marked paint
@@ -13,6 +13,10 @@
 //     *heading* text fields and render them as a markdown outline
 //     (`# Title\n## Heading`). No tables, no bullets, no "slide cards".
 //     Banner is explicit: "大纲预览 · 正在生成".
+//
+//   render_diagram / render_svg → stream the source while the final
+//     HTML/SVG artifact is being written, then let the final preview
+//     provider render the actual file.
 //
 // This file intentionally does not simulate docx / pptx / xlsx
 // layouts — we never try to reconstruct tables, bullet lists, or
@@ -42,6 +46,14 @@
     if (!container) return;
     if (toolName === "generate_document") {
       scheduleRender(container, () => renderOutline(container, rawJson, toolPath));
+      return;
+    }
+    if (toolName === "render_diagram") {
+      scheduleRender(container, () => renderDiagramStream(container, rawJson));
+      return;
+    }
+    if (toolName === "render_svg") {
+      scheduleRender(container, () => renderSvgStream(container, rawJson));
       return;
     }
     scheduleRender(container, () => renderContentStream(container, rawJson, toolKind, toolPath));
@@ -93,6 +105,38 @@
       <div class="lp-outline"></div>`;
     const target = container.querySelector(".lp-outline");
     renderMarkdownInto(target, md);
+  }
+
+  function renderDiagramStream(container, rawJson) {
+    const code = extractStringField(rawJson, "code")
+      || extractStringField(rawJson, "mermaid")
+      || extractStringField(rawJson, "source");
+    const shown = code || String(rawJson || "").slice(-2000);
+    container.innerHTML = `
+      <div class="lp-banner">
+        图表预览 · 正在生成 · 完成后加载可交互 HTML
+      </div>
+      <pre class="lp-pre"></pre>`;
+    const pre = container.querySelector("pre");
+    if (pre) pre.textContent = shown;
+  }
+
+  function renderSvgStream(container, rawJson) {
+    const svg = extractStringField(rawJson, "svg")
+      || extractStringField(rawJson, "markup")
+      || extractStringField(rawJson, "source");
+    if (!svg) {
+      container.innerHTML = `<div class="lp-prejson"><pre></pre></div>`;
+      const pre = container.querySelector("pre");
+      if (pre) pre.textContent = String(rawJson || "").slice(-2000);
+      return;
+    }
+    let iframe = container.querySelector("iframe.lp-iframe");
+    if (!iframe) {
+      container.innerHTML = `<iframe class="lp-iframe" sandbox></iframe>`;
+      iframe = container.querySelector("iframe");
+    }
+    iframe.srcdoc = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;min-height:100%;display:grid;place-items:center;background:#fff;}svg{max-width:96vw;max-height:96vh;}</style></head><body>${svg}</body></html>`;
   }
 
   function buildOutlineMarkdown({ title, subtitle, headings, toolPath }) {

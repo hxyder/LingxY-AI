@@ -5,8 +5,8 @@
 // events:
 //
 //   uca:preview-window-init      { toolName, args }
-//     — a generate_document / write_file / edit_file tool has started
-//       and the window should open in "streaming" mode.
+//     — a previewable artifact tool has started and the window should
+//       open in "streaming" mode.
 //
 //   uca:preview-window-delta     { toolName, partialJson }
 //     — partial tool-args JSON; we pass it straight into the

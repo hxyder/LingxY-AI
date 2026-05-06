@@ -22,14 +22,20 @@
 // toggles, auto-collapse) is retired with the overlay embedding.
 
 (function initLivePreviewProxy() {
-  const FILE_GEN_TOOLS = new Set(["write_file", "generate_document", "edit_file"]);
+  const PREVIEWABLE_ARTIFACT_TOOLS = new Set([
+    "write_file",
+    "generate_document",
+    "edit_file",
+    "render_diagram",
+    "render_svg"
+  ]);
 
   function ensureShell() {
     return typeof window !== "undefined" ? window.ucaShell : null;
   }
 
   function openForTool({ toolName, args } = {}) {
-    if (!FILE_GEN_TOOLS.has(toolName)) return false;
+    if (!PREVIEWABLE_ARTIFACT_TOOLS.has(toolName)) return false;
     const shell = ensureShell();
     if (!shell?.showPreviewWindow) return false;
     shell.showPreviewWindow({ kind: "tool", toolName, args: args ?? {} });
@@ -66,7 +72,7 @@
   }
 
   window.livePreview = {
-    isFileGenTool: (toolName) => FILE_GEN_TOOLS.has(toolName),
+    isFileGenTool: (toolName) => PREVIEWABLE_ARTIFACT_TOOLS.has(toolName),
     openForTool,
     openForFile,
     appendDelta,

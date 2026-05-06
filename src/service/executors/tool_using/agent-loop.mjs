@@ -84,6 +84,7 @@ import {
 import { buildConversationMessages } from "./conversation-messages.mjs";
 import { repairToolArgs } from "./tool-arg-repair.mjs";
 import { artifactEventFieldsForToolResult } from "../../core/artifact-action-contract.mjs";
+import { isStreamableArtifactTool } from "../shared/previewable-artifact-tools.mjs";
 import {
   buildHallucinatedClaimBanner,
   detectUnbackedConnectorClaim,
@@ -423,7 +424,7 @@ Use call_tool when a tool is needed. Call at most ONE tool per turn. If no tool 
           }
         : undefined,
       onToolInputDelta: (toolName, partialJson) => {
-        if (!["write_file", "generate_document", "edit_file"].includes(toolName)) return;
+        if (!isStreamableArtifactTool(toolName)) return;
         runtime?.emitTaskEvent?.("tool_input_delta", {
           tool_id: toolName,
           partial_json: partialJson

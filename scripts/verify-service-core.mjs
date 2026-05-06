@@ -25,6 +25,10 @@ const mcpInstallExecutionSource = await readFile(new URL("../src/service/ai/mcp/
 const taskRouteSource = await readFile(new URL("../src/service/core/http-routes/task-routes.mjs", import.meta.url), "utf8");
 const imageSubmissionSource = await readFile(new URL("../src/service/core/image-submission.mjs", import.meta.url), "utf8");
 const fileIngestSource = await readFile(new URL("../src/service/extractors/file-ingest.mjs", import.meta.url), "utf8");
+const previewableArtifactToolsSource = await readFile(new URL("../src/service/executors/shared/previewable-artifact-tools.mjs", import.meta.url), "utf8");
+const toolUsingAgentLoopSource = await readFile(new URL("../src/service/executors/tool_using/agent-loop.mjs", import.meta.url), "utf8");
+const agenticPlannerSource = await readFile(new URL("../src/service/executors/agentic/planner.mjs", import.meta.url), "utf8");
+const toolSurfaceSource = await readFile(new URL("../src/service/executors/tool_using/tool-surface.mjs", import.meta.url), "utf8");
 
 if (!httpServerSource.includes("const routeGroups = [") || !httpServerSource.includes("tryHandleRouteGroups")) {
   throw new Error("HTTP server must dispatch delegated route modules through routeGroups.");
@@ -41,6 +45,21 @@ if (imageSubmissionSource.includes("runImageOcr") || !imageSubmissionSource.incl
 if (!/export async function detectMimeType[\s\S]{0,360}open\(filePath, "r"\)/.test(fileIngestSource)
     || /export async function detectMimeType[\s\S]{0,360}readFile\(filePath\)/.test(fileIngestSource)) {
   throw new Error("File ingest MIME detection must read a header probe, not the entire file.");
+}
+for (const toolId of ["write_file", "generate_document", "edit_file", "render_diagram", "render_svg"]) {
+  if (!previewableArtifactToolsSource.includes(`"${toolId}"`)) {
+    throw new Error(`Previewable artifact tool registry must include ${toolId}.`);
+  }
+}
+if (!toolUsingAgentLoopSource.includes("isStreamableArtifactTool(toolName)")
+    || !agenticPlannerSource.includes("isStreamableArtifactTool(toolName)")) {
+  throw new Error("Both tool_using and agentic executors must share the previewable artifact stream registry.");
+}
+if (!toolSurfaceSource.includes("render_svg")) {
+  throw new Error("Artifact generation capability filtering must preserve render_svg.");
+}
+if (!/image_generation:[\s\S]{0,160}render_svg[\s\S]{0,80}render_diagram/.test(toolSurfaceSource)) {
+  throw new Error("Image-generation capability filtering must preserve SVG and diagram artifact tools.");
 }
 if (!httpServerSource.includes("tryHandleTaskRoute")) {
   throw new Error("HTTP server must delegate task routes through routeGroups.");
