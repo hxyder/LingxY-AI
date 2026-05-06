@@ -165,6 +165,7 @@ let lastTask = null;
 let pendingFileSelection = null;
 let pendingCapture = null;
 let pendingActiveWindowContext = null;
+let pendingActiveWindowContextCapturedAt = 0;
 let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
 let notifiedTaskId = null;
@@ -3001,6 +3002,7 @@ function clearPendingInputContext() {
   pendingFileSelection = null;
   pendingCapture = null;
   pendingActiveWindowContext = null;
+  pendingActiveWindowContextCapturedAt = 0;
   // Keep the voice-card chip strip in sync when files are cleared via any
   // path (submit success, new conversation, cancel).
   if (typeof renderVoiceChips === "function") renderVoiceChips();
@@ -3913,6 +3915,13 @@ async function submitTask() {
     const activeBrowserCapture = explicitBrowserContextRequest
       ? await resolveActiveWindowBrowserCapture()
       : null;
+    if (explicitBrowserContextRequest && !activeBrowserCapture) {
+      commandInput.value = rawCommand;
+      autoSizeInput();
+      addSystemBubble("没有检测到可读取的当前浏览器页面。请先切到要分析的网页，或选中文字/链接后再提问。");
+      commandInput.focus();
+      return;
+    }
     const activeFileSelection = !activeBrowserCapture && explicitFileContextRequest
       ? resolveActiveWindowFileSelection(commandText)
       : null;
@@ -4071,9 +4080,22 @@ async function submitTask() {
 // overlay whenever the hotkey probe detected a real URL / document path.
 // The card appends 2-3 quick-action buttons that auto-fill the command
 // input so the user can hit Enter without typing anything.
-function showActiveWindowPreviewCard(activeWindow) {
+function rememberPendingActiveWindowContext(activeWindow = null) {
   if (!activeWindow || activeWindow.blocked) return;
   pendingActiveWindowContext = { ...activeWindow };
+  pendingActiveWindowContextCapturedAt = Date.now();
+}
+
+function freshPendingActiveWindowContext(maxAgeMs = 2 * 60 * 1000) {
+  if (!pendingActiveWindowContext) return null;
+  if (!pendingActiveWindowContextCapturedAt) return null;
+  if (Date.now() - pendingActiveWindowContextCapturedAt > maxAgeMs) return null;
+  return pendingActiveWindowContext;
+}
+
+function showActiveWindowPreviewCard(activeWindow) {
+  if (!activeWindow || activeWindow.blocked) return;
+  rememberPendingActiveWindowContext(activeWindow);
   const kind = activeWindow.detected_kind ?? activeWindow.detectedKind;
   const process = activeWindow.process ?? "app";
   const title = activeWindow.title ?? "";
@@ -4137,7 +4159,7 @@ function showActiveWindowPreviewCard(activeWindow) {
       label: action.label,
       onClick: () => {
         startNewConversation();
-        pendingActiveWindowContext = { ...activeWindow };
+        rememberPendingActiveWindowContext(activeWindow);
         commandInput.value = action.command;
         autoSizeInput();
         commandInput.focus();
@@ -4232,9 +4254,31 @@ function buildBrowserContextCapture(browserContext = null, activeWindow = null) 
 }
 
 async function resolveActiveWindowBrowserCapture() {
-  if (!isActiveBrowserWindow(pendingActiveWindowContext)) return null;
-  const browserContext = await fetchRecentBrowserContextForActiveWindow(pendingActiveWindowContext);
-  return buildBrowserContextCapture(browserContext, pendingActiveWindowContext);
+  let activeWindow = null;
+  if (typeof window.ucaShell?.getActiveWindowContext === "function") {
+    const payload = await timeoutWithFallback(
+      window.ucaShell.getActiveWindowContext({
+        includeSelection: false,
+        excludeShellWindow: true,
+        preferLastExternal: true,
+        maxExternalAgeMs: 2 * 60 * 1000,
+        captureMode: "current_page_submit"
+      }),
+      900,
+      null
+    );
+    activeWindow = payload?.active_window ?? payload?.activeWindow ?? null;
+    if (isActiveBrowserWindow(activeWindow)) {
+      rememberPendingActiveWindowContext(activeWindow);
+    }
+  }
+
+  const candidate = isActiveBrowserWindow(activeWindow)
+    ? activeWindow
+    : freshPendingActiveWindowContext();
+  if (!isActiveBrowserWindow(candidate)) return null;
+  const browserContext = await fetchRecentBrowserContextForActiveWindow(candidate);
+  return buildBrowserContextCapture(browserContext, candidate);
 }
 
 function resolveActiveWindowFileSelection(commandText = "") {
@@ -4266,7 +4310,7 @@ async function captureActiveWindowHintForVoice({ captureMode = "voice_context" }
       applyShellHandoff(payload);
     }
     if (isActiveBrowserWindow(activeWindow) || activeWindowFilePath(activeWindow)) {
-      pendingActiveWindowContext = { ...activeWindow };
+      rememberPendingActiveWindowContext(activeWindow);
     }
     return activeWindow;
   } catch {

@@ -229,8 +229,13 @@ assert.ok(/command:\s*"分析当前页面的完整内容并总结要点"/.test(o
     && /command:\s*"把当前页面翻译成中文"/.test(overlayJs),
   "current-page quick actions: commands must preserve current-page intent instead of embedding URL text");
 assert.ok(/const explicitBrowserContextRequest = commandTargetsCurrentBrowserContext\(commandText\);/.test(overlayJs)
-    && /const activeBrowserCapture = explicitBrowserContextRequest[\s\S]{0,120}\? await resolveActiveWindowBrowserCapture\(\)/.test(overlayJs),
+    && /const activeBrowserCapture = explicitBrowserContextRequest[\s\S]{0,120}\? await resolveActiveWindowBrowserCapture\(\)/.test(overlayJs)
+    && /explicitBrowserContextRequest && !activeBrowserCapture/.test(overlayJs),
   "current-page routing: active browser capture must be gated by explicit current-page intent");
+assert.ok(/getActiveWindowContext\(\{[\s\S]{0,220}preferLastExternal:\s*true[\s\S]{0,220}current_page_submit/.test(overlayJs)
+    && /freshPendingActiveWindowContext/.test(overlayJs)
+    && /pendingActiveWindowContextCapturedAt/.test(overlayJs),
+  "current-page routing: explicit current-page submits must refresh external browser context instead of using stale seed context");
 assert.ok(!/command:\s*`[^`]*页面[^`]*\$\{activeWindow\.url\}/.test(overlayJs),
   "current-page quick actions: URL must stay as structured context, not user command text");
 
@@ -530,6 +535,8 @@ assert.ok(/id="echoDiagnosticsPanel"/.test(consoleHtml)
     && /startWakeEnrollment/.test(consoleJs)
     && /Transcription/.test(consoleJs),
   "echo mode: Console settings must expose non-hot-path diagnostics and wake enrollment controls");
+assert.ok(/const settings = await loadSettings\(\);[\s\S]{0,420}if \(!settings\?\.echoMode\)[\s\S]{0,100}showWindow\("overlay"\)/.test(electronMain),
+  "dock file drop: normal mode must open overlay while Echo mode only hands off files for V-to-ask");
 assert.ok(!/id="providerOnboardingList"/.test(consoleHtml),
   "provider settings must not show global capability onboarding cards inside AI Providers");
 assert.equal((consoleHtml.match(/Add any OpenAI-compatible or Anthropic API\. Saved instantly/g) ?? []).length, 1,

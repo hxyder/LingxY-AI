@@ -108,8 +108,7 @@ export function createTranslateExecutorScaffold({ translator = translateText } =
         payload: { step: "free_translate", progress: 0.95 }
       };
 
-      const header = `【${result.source_language} → ${result.target_language} · ${result.provider}】\n`;
-      const finalText = `${header}${result.text}`;
+      const finalText = result.text;
 
       yield {
         event_type: "inline_result",

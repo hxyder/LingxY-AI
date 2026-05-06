@@ -1028,10 +1028,15 @@ function captureSelectionState(doc = document) {
     } catch { /* DOM access failed */ }
   }
 
+  const anchor = selectedAnchorForRange(range);
+  const selectedAnchorUrl = normalizeSelectedAnchorUrl(anchor?.href ?? "");
+
   return {
     text,
     contextBefore,
     contextAfter,
+    selectedAnchorUrl,
+    anchorText: anchor ? (anchor.textContent ?? "").trim().slice(0, 200) : "",
     rect: rect
       ? {
           top: rect.top,
@@ -1044,6 +1049,45 @@ function captureSelectionState(doc = document) {
       : null,
     selectionKey
   };
+}
+
+function elementForSelectionNode(node = null) {
+  if (!node) return null;
+  if (node.nodeType === Node.ELEMENT_NODE) return node;
+  return node.parentElement ?? null;
+}
+
+function selectedAnchorForRange(range = null) {
+  if (!range) return null;
+  const candidates = [
+    elementForSelectionNode(range.startContainer),
+    elementForSelectionNode(range.endContainer),
+    elementForSelectionNode(range.commonAncestorContainer)
+  ].filter(Boolean);
+  for (const candidate of candidates) {
+    const direct = candidate.closest?.("a[href]");
+    if (direct?.href) return direct;
+  }
+  const common = elementForSelectionNode(range.commonAncestorContainer);
+  if (!common?.querySelectorAll) return null;
+  const anchors = [...common.querySelectorAll("a[href]")];
+  return anchors.find((anchor) => {
+    try {
+      return range.intersectsNode(anchor);
+    } catch {
+      return false;
+    }
+  }) ?? null;
+}
+
+function normalizeSelectedAnchorUrl(value = "") {
+  try {
+    const parsed = new URL(String(value ?? ""), window.location.href);
+    if (!["http:", "https:"].includes(parsed.protocol)) return "";
+    return parsed.toString();
+  } catch {
+    return "";
+  }
 }
 
 function getOverlaySettings() {

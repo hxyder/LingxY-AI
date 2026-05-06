@@ -146,12 +146,13 @@ export async function enrichContextForAction({ action, selectionState, tab, chro
   const selectionText = `${selectionState?.text ?? ""}`;
   // For `uca.fetch-link` (right-click a link → "抓取并总结") the user's
   // selection is usually just the anchor text, not a URL. The actual target
-  // lives in selectionState.url / capture.url. Seed the link-fetch list
-  // with it so the enricher actually pulls the linked page's text. Without
-  // this, fetch-link would fall back to summarizing the anchor text alone.
+  // lives in selectionState.url / selectedAnchorUrl / capture.url. Seed the
+  // link-fetch list with it so the enricher actually pulls the linked page's
+  // text. Without this, fetch-link would fall back to summarizing the anchor
+  // text alone.
   const explicitUrls = [];
-  if (action === "uca.fetch-link" || action === "fetch-link") {
-    const candidate = `${selectionState?.url ?? ""}`.trim();
+  if (action === "uca.fetch-link" || action === "fetch-link" || selectionState?.selectedAnchorUrl) {
+    const candidate = `${selectionState?.selectedAnchorUrl || selectionState?.url || ""}`.trim();
     if (/^https?:\/\//i.test(candidate)) explicitUrls.push(candidate);
   }
   const textUrls = extractUrlsFromText(selectionText);

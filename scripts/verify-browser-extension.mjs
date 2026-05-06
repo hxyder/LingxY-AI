@@ -338,6 +338,50 @@ assert.equal(quickActionResult.taskId, "task_qa");
 assert.equal(submittedTask?.userCommand?.includes("翻译"), true);
 assert.equal(submittedTask?.capture?.text, "Hello world");
 
+let selectedLinkTask = null;
+const selectedLinkAction = await runQuickAction(
+  {
+    action: "summarize",
+    routePlan: {
+      ok: true,
+      origin: "verify",
+      actionKind: "text",
+      ui: "inline_frame",
+      transport: "desktop_task",
+      mode: "desktop",
+      reason: "verify_desktop_task"
+    },
+    runtimeBase: "http://127.0.0.1:4310",
+    selectionState: {
+      text: "UN report",
+      selectedAnchorUrl: "https://news.un.org/en/story/2026/05/example",
+      url: "https://news.un.org/en/",
+      pageTitle: "UN News",
+      anchorText: "UN report"
+    }
+  },
+  async (url, opts) => {
+    if (url.endsWith("/task") && opts?.method === "POST") {
+      selectedLinkTask = JSON.parse(opts.body);
+      return {
+        ok: true,
+        async json() {
+          return {
+            task: { task_id: "task_link", status: "success", executor: "fast" },
+            taskEvents: [
+              { event_type: "inline_result", payload: { text: "Linked page summary" } }
+            ]
+          };
+        }
+      };
+    }
+    throw new Error(`unexpected selected-link url ${url}`);
+  }
+);
+assert.equal(selectedLinkAction.ok, true);
+assert.equal(selectedLinkTask?.capture?.sourceType, "link");
+assert.equal(selectedLinkTask?.capture?.url, "https://news.un.org/en/story/2026/05/example");
+
 const emptyQuickAction = await runQuickAction(
   { action: "translate", selectionState: { text: "  " } },
   async () => { throw new Error("should not be called"); }
@@ -434,6 +478,8 @@ assert.equal(selectionCacheJs.includes("sendRuntimeMessageSafely"), true);
 assert.equal(selectionCacheJs.includes("uca.runtime.runQuickAction"), true);
 assert.equal(selectionCacheJs.includes("uca.browser.contextSnapshot"), true);
 assert.equal(selectionCacheJs.includes("buildBrowserContextSnapshot"), true);
+assert.equal(selectionCacheJs.includes("selectedAnchorForRange"), true);
+assert.equal(selectionCacheJs.includes("selectedAnchorUrl"), true);
 assert.equal(selectionCacheJs.includes("yt-navigate-finish"), true);
 assert.equal(selectionCacheJs.includes("ACTION_LABELS"), true);
 // "Open in dialog" button must carry the prior result into the follow-up path

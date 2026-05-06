@@ -279,6 +279,7 @@ export function buildOverlayHandoffRequest({ actionId, info = {}, tab, selection
 function buildDesktopCaptureForAction(action, selectionState = {}, enrichment = null) {
   const text = `${selectionState?.text ?? selectionState?.selectionText ?? ""}`.trim();
   const url = selectionState?.url ?? "";
+  const selectedAnchorUrl = `${selectionState?.selectedAnchorUrl ?? ""}`.trim();
   const pageTitle = selectionState?.pageTitle ?? "";
   const base = {
     url,
@@ -290,6 +291,21 @@ function buildDesktopCaptureForAction(action, selectionState = {}, enrichment = 
     return {
       ...base,
       sourceType: "link",
+      text,
+      anchorText: selectionState?.anchorText ?? text,
+      selectionText: text,
+      enrichment: enrichment
+        ? { pageOutline: enrichment.pageOutline, linkResults: enrichment.linkResults }
+        : null
+    };
+  }
+
+  if ((action === "uca.summarize-selection" || action === "summarize" || action === "explain")
+      && selectedAnchorUrl) {
+    return {
+      ...base,
+      sourceType: "link",
+      url: selectedAnchorUrl,
       text,
       anchorText: selectionState?.anchorText ?? text,
       selectionText: text,
