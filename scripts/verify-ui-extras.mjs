@@ -207,6 +207,9 @@ assert.ok(/payload\.autoStart !== false/.test(overlayJs),
   "voice bridge: overlay must honor shell voice autoStart option");
 assert.ok(/if \(!isEchoTask\(taskId\) && !shouldSurfaceTaskPopupCards\(\)\) return;/.test(overlayJs),
   "echo result cards: Echo tasks must surface a completion card even when overlay visibility is ambiguous");
+assert.ok(/ensureStreamingAnswerPlaceholder\(\{[\s\S]{0,180}label:\s*"正在处理请求…"/.test(overlayJs)
+    && /reveal:\s*!isEchoTask\(frameTaskId\)/.test(overlayJs),
+  "overlay streaming: tool steps must anchor above an answer placeholder without forcing Echo tasks to open the overlay");
 assert.ok(/resolveCard\(["']voice_continue["']/.test(popupCardJs)
     && /action === ["']voice_continue["']/.test(overlayJs)
     && /pendingContinuationTaskId = taskId/.test(overlayJs)

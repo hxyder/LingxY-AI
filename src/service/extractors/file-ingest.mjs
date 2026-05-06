@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from "node:fs/promises";
+import { open, readFile, readdir, stat } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -102,7 +102,14 @@ function countPdfPages(buffer) {
 
 export async function detectMimeType(filePath) {
   const extension = path.extname(filePath).toLowerCase();
-  const bytes = await readFile(filePath);
+  const handle = await open(filePath, "r");
+  let bytes;
+  try {
+    bytes = Buffer.alloc(4);
+    await handle.read(bytes, 0, bytes.length, 0);
+  } finally {
+    await handle.close();
+  }
 
   if (bytes.subarray(0, 4).toString("latin1") === "%PDF") {
     return "application/pdf";

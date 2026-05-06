@@ -1707,7 +1707,7 @@ function appendToolStepBubble(toolId, state = "pending", detailText = "", { anch
   return stepEl;
 }
 
-function ensureStreamingAnswerPlaceholder({ taskId = null, label = "正在整理答案…" } = {}) {
+function ensureStreamingAnswerPlaceholder({ taskId = null, label = "正在整理答案…", reveal = true } = {}) {
   if (streamingBubble || !bubbleArea) return;
   streamingBubble = document.createElement("div");
   streamingBubble.className = "bubble assistant streaming answer-placeholder";
@@ -1717,7 +1717,7 @@ function ensureStreamingAnswerPlaceholder({ taskId = null, label = "正在整理
   bubbleArea.hidden = false;
   bubbleArea.appendChild(streamingBubble);
   bubbleAreaPin.maybeScrollToBottom();
-  void maybeRevealOverlay({ markEngaged: true });
+  if (reveal) void maybeRevealOverlay({ markEngaged: true });
 }
 
 function markToolStepBubble(toolId, ok, observation = "", sources = []) {
@@ -2293,7 +2293,15 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     const toolId = getToolEventId(frame);
     if (toolId) {
       if (!showOverlay) timelineAddStep(`调用 ${formatToolDisplayName(toolId)}...`, "active");
-      if (showOverlay) void maybeRevealOverlay();
+      const frameTaskId = frame.taskId ?? frame.task_id ?? activeTaskId;
+      if (showOverlay) {
+        ensureStreamingAnswerPlaceholder({
+          taskId: frameTaskId ?? null,
+          label: "正在处理请求…",
+          reveal: !isEchoTask(frameTaskId)
+        });
+        if (!isEchoTask(frameTaskId)) void maybeRevealOverlay();
+      }
       const stepEl = appendToolStepBubble(toolId, "pending", "", { anchorBefore: replayAnchor });
       // 83.3 — Stash args on the element so markToolStepBubble can re-render
       // them inside the result body. The proposed/started events carry the
@@ -2716,7 +2724,10 @@ async function handleTaskEventFrame(rawEvent) {
   }
 
   if (frame.event === "final_composer_started" && isForActiveConv) {
-    ensureStreamingAnswerPlaceholder({ taskId: frameTaskId ?? activeTaskId ?? null });
+    ensureStreamingAnswerPlaceholder({
+      taskId: frameTaskId ?? activeTaskId ?? null,
+      reveal: !isEchoTask(frameTaskId)
+    });
   }
 
   if (frame.event === "text_delta") {

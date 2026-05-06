@@ -4,23 +4,44 @@ import path from "node:path";
 import { describeMcpEnvRequirements, resolveMcpEnv } from "./env-resolver.mjs";
 
 const DEFAULT_TIMEOUT_MS = 3_000;
+const COMMAND_EXISTS_CACHE_TTL_MS = 5 * 60 * 1000;
 const TRANSPORTS = new Set(["stdio", "http", "ws"]);
+const commandExistsCache = new Map();
 
-function commandExists(command) {
+export function clearMcpCommandExistsCacheForTests() {
+  commandExistsCache.clear();
+}
+
+export function commandExists(command, {
+  now = Date.now(),
+  lookup = spawnSync,
+  fileExists = existsSync
+} = {}) {
   if (!command) {
     return false;
   }
-  if (path.isAbsolute(command) || command.includes(path.sep)) {
-    return existsSync(command);
+  const cacheKey = `${process.platform}:${command}`;
+  const cached = commandExistsCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.exists;
   }
-
-  const lookup = process.platform === "win32" ? "where.exe" : "which";
-  const result = spawnSync(lookup, [command], {
-    encoding: "utf8",
-    windowsHide: true,
-    timeout: DEFAULT_TIMEOUT_MS
+  let exists;
+  if (path.isAbsolute(command) || command.includes(path.sep)) {
+    exists = fileExists(command);
+  } else {
+    const lookupCommand = process.platform === "win32" ? "where.exe" : "which";
+    const result = lookup(lookupCommand, [command], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: DEFAULT_TIMEOUT_MS
+    });
+    exists = result.status === 0;
+  }
+  commandExistsCache.set(cacheKey, {
+    exists,
+    expiresAt: now + COMMAND_EXISTS_CACHE_TTL_MS
   });
-  return result.status === 0;
+  return exists;
 }
 
 function normalizeTransport(transport) {

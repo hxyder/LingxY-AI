@@ -4,7 +4,11 @@ import {
   describeMcpEnvRequirements,
   resolveMcpEnv
 } from "../../src/service/ai/mcp/env-resolver.mjs";
-import { createConfiguredMCPServer } from "../../src/service/ai/mcp/configured.mjs";
+import {
+  clearMcpCommandExistsCacheForTests,
+  commandExists,
+  createConfiguredMCPServer
+} from "../../src/service/ai/mcp/configured.mjs";
 import {
   connectMcpServer,
   disconnectAll,
@@ -200,6 +204,25 @@ test("createConfiguredMCPServer.isAvailable short-circuits on missing config wit
     secretStore: { getSync: () => null }
   });
   assert.equal(available, false);
+});
+
+test("MCP command existence lookup uses a short TTL cache", () => {
+  clearMcpCommandExistsCacheForTests();
+  let lookups = 0;
+  const lookup = () => {
+    lookups += 1;
+    return { status: 0 };
+  };
+
+  assert.equal(commandExists("definitely-present-mcp", { now: 1000, lookup }), true);
+  assert.equal(commandExists("definitely-present-mcp", { now: 1100, lookup }), true);
+  assert.equal(lookups, 1);
+
+  assert.equal(commandExists("definitely-present-mcp", {
+    now: 1000 + 5 * 60 * 1000 + 1,
+    lookup
+  }), true);
+  assert.equal(lookups, 2);
 });
 
 test("createConfiguredMCPServer secret_ref resolves through the supplied secretStore", async () => {

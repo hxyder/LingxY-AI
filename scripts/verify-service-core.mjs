@@ -24,6 +24,7 @@ const httpRouteGuardSource = await readFile(new URL("../src/service/core/http-ro
 const mcpInstallExecutionSource = await readFile(new URL("../src/service/ai/mcp/install-execution.mjs", import.meta.url), "utf8");
 const taskRouteSource = await readFile(new URL("../src/service/core/http-routes/task-routes.mjs", import.meta.url), "utf8");
 const imageSubmissionSource = await readFile(new URL("../src/service/core/image-submission.mjs", import.meta.url), "utf8");
+const fileIngestSource = await readFile(new URL("../src/service/extractors/file-ingest.mjs", import.meta.url), "utf8");
 
 if (!httpServerSource.includes("const routeGroups = [") || !httpServerSource.includes("tryHandleRouteGroups")) {
   throw new Error("HTTP server must dispatch delegated route modules through routeGroups.");
@@ -36,6 +37,10 @@ if (!httpServerSource.includes("tryHandleAiStatusRoute")) {
 }
 if (imageSubmissionSource.includes("runImageOcr") || !imageSubmissionSource.includes('step: "image_context"')) {
   throw new Error("Image submission must create tasks from image paths without blocking on OCR.");
+}
+if (!/export async function detectMimeType[\s\S]{0,360}open\(filePath, "r"\)/.test(fileIngestSource)
+    || /export async function detectMimeType[\s\S]{0,360}readFile\(filePath\)/.test(fileIngestSource)) {
+  throw new Error("File ingest MIME detection must read a header probe, not the entire file.");
 }
 if (!httpServerSource.includes("tryHandleTaskRoute")) {
   throw new Error("HTTP server must delegate task routes through routeGroups.");
