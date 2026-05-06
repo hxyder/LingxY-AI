@@ -304,6 +304,35 @@ function getWakeDisplayName() {
   return echoWakeProfile.displayName || DEFAULT_WAKE_DISPLAY_NAME;
 }
 
+// Codex Round 3 review: enrollment gate must reflect the SPECIFIC wake the
+// user intends to record, not whatever the runtime listener happens to
+// accept. When the user has set a custom displayName the default phrases
+// (灵犀/linxi/...) are still in echoWakeProfile.phrases (because
+// buildWakeProfile concatenates default+custom when includeDefault=true),
+// so a literal `matchesAny(transcript, profile.phrases)` would silently
+// accept the user uttering the default name during a custom-name
+// enrollment. Compute the target set by stripping default phrases when
+// the displayName itself is non-default — the default name and its
+// fuzzy variants belong to the runtime listener, not the enrollment
+// gate.
+function enrollmentTargetPhrases(profile = echoWakeProfile) {
+  const phrases = Array.isArray(profile?.phrases) ? profile.phrases : [];
+  const isCustomDisplayName = (profile?.displayName ?? DEFAULT_WAKE_DISPLAY_NAME)
+    !== DEFAULT_WAKE_DISPLAY_NAME;
+  if (!isCustomDisplayName) return phrases;
+  // Filter out the canonical default phrases. Compare via normalizeForMatch
+  // so subtle whitespace / punctuation differences in user-supplied custom
+  // phrases that overlap a default form (rare but possible) are caught.
+  const defaultKeys = new Set(DEFAULT_WAKE_PROFILE.phrases.map(normalizeForMatch));
+  const filtered = phrases.filter((p) => !defaultKeys.has(normalizeForMatch(p)));
+  // Always include the configured displayName itself, even if it overlaps
+  // a default form, so the user's intended target is on the list.
+  if (profile.displayName && !filtered.some((p) => normalizeForMatch(p) === normalizeForMatch(profile.displayName))) {
+    filtered.unshift(profile.displayName);
+  }
+  return filtered;
+}
+
 function matchesWake(text) {
   if (matchesAny(text, echoWakeProfile.phrases)) return true;
   if (echoWakeProfile.includeDefault) {
@@ -951,7 +980,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       //      word.
       const transcriptHasContent = transcript.trim().length > 0;
       const transcriptHitsTarget = transcriptHasContent
-        && matchesAny(transcript, echoWakeProfile.phrases);
+        && matchesAny(transcript, enrollmentTargetPhrases(echoWakeProfile));
       const kwsMatched = Boolean(kwsSelfCheck.matched);
       // Retry trigger: heard a word that wasn't the target, OR heard nothing
       // and the local KWS also didn't pick anything up. If KWS matched we
@@ -991,7 +1020,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       console.info(
         `[echo] enrollment sample ${i} transcribed as:`,
         JSON.stringify(transcript),
-        "transcriptHitsWake:", transcriptHitsWake,
+        "transcriptHitsTarget:", transcriptHitsTarget,
         "kwsMatched:", Boolean(kwsSelfCheck.matched),
         "kwsKeyword:", JSON.stringify(kwsSelfCheck.keyword ?? ""),
         "enrollment:", result.enrollment ?? null

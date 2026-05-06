@@ -3761,7 +3761,17 @@ async function refreshActiveTask() {
       // the same fields so the policy is uniform across terminal outcomes.
       if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
         lastEchoTaskCompletedAt = Date.now();
-        lastEchoTaskConversationId = task.conversation_id ?? conversationState?.id ?? null;
+        // Codex Round 3 review: prefer task.conversation_id (authoritative
+        // server-side owner), then taskConversationMap (renderer-side bind
+        // record that survives conversation switches), then the live
+        // conversationState as a last fallback. The previous direct
+        // fallback to conversationState.id could bind to whichever
+        // conversation the user happened to be viewing when the task
+        // finished, which might not be the task's actual owner.
+        lastEchoTaskConversationId = task.conversation_id
+          ?? taskOwnerConversationId(taskConversationMap, task.task_id)
+          ?? conversationState?.id
+          ?? null;
         lastEchoTaskId = task.task_id;
       }
       const previewPath = choosePreviewArtifactPath(task.artifacts) ?? task.artifacts[0].path;
@@ -3877,7 +3887,17 @@ async function refreshActiveTask() {
       // echo task (no artifact) also opens the 30s follow-up window.
       if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
         lastEchoTaskCompletedAt = Date.now();
-        lastEchoTaskConversationId = task.conversation_id ?? conversationState?.id ?? null;
+        // Codex Round 3 review: prefer task.conversation_id (authoritative
+        // server-side owner), then taskConversationMap (renderer-side bind
+        // record that survives conversation switches), then the live
+        // conversationState as a last fallback. The previous direct
+        // fallback to conversationState.id could bind to whichever
+        // conversation the user happened to be viewing when the task
+        // finished, which might not be the task's actual owner.
+        lastEchoTaskConversationId = task.conversation_id
+          ?? taskOwnerConversationId(taskConversationMap, task.task_id)
+          ?? conversationState?.id
+          ?? null;
         lastEchoTaskId = task.task_id;
       }
       // conversational mode — no artifacts
@@ -3965,7 +3985,17 @@ async function refreshActiveTask() {
       // starting fresh.
       if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
         lastEchoTaskCompletedAt = Date.now();
-        lastEchoTaskConversationId = task.conversation_id ?? conversationState?.id ?? null;
+        // Codex Round 3 review: prefer task.conversation_id (authoritative
+        // server-side owner), then taskConversationMap (renderer-side bind
+        // record that survives conversation switches), then the live
+        // conversationState as a last fallback. The previous direct
+        // fallback to conversationState.id could bind to whichever
+        // conversation the user happened to be viewing when the task
+        // finished, which might not be the task's actual owner.
+        lastEchoTaskConversationId = task.conversation_id
+          ?? taskOwnerConversationId(taskConversationMap, task.task_id)
+          ?? conversationState?.id
+          ?? null;
         lastEchoTaskId = task.task_id;
       }
       try {
