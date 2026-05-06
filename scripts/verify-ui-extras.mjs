@@ -560,6 +560,10 @@ assert.ok(/function normalizeBatchEntry\(payload\)[\s\S]{0,260}conversationId: p
   "echo result cards: notification batching and resolve broadcasts must not drop conversationId");
 assert.ok(/lines\.length <= limit[\s\S]{0,180}more line\(s\)\. Open the conversation for the full result/.test(electronMain),
   "popup result cards: long bodies must disclose truncation instead of silently hiding content");
+assert.ok(/payload\.allowLongBody === true && payload\.forcePopup === true[\s\S]{0,80}return lines/.test(electronMain)
+    && /\(payload\.forcePopup === true && payload\.allowLongBody === true\)/.test(electronMain)
+    && /forcePopup: only\.forcePopup/.test(electronMain),
+  "echo result cards: forcePopup long-body cards must render the full body instead of batch-truncated preview lines");
 assert.ok(/frame\.event === "success"[\s\S]{0,320}fireSuccessPopupCardOnce/.test(overlayJs),
   "echo result cards: terminal-only success events must still surface a full popup result card");
 assert.ok(/popupSuccessCardTaskId === taskId && !terminal/.test(overlayJs)

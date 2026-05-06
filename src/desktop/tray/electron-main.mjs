@@ -1239,8 +1239,9 @@ export function createElectronShellRuntime({
       ? payload.inlinePreview
       : (payload.body ?? payload.message ?? "");
     if (!body) return [];
-    const limit = payload.allowLongBody === true ? 240 : payload.kind === "success" ? 80 : defaultLimit;
     const lines = String(body).split(/\r?\n/);
+    if (payload.allowLongBody === true && payload.forcePopup === true) return lines;
+    const limit = payload.allowLongBody === true ? 240 : payload.kind === "success" ? 80 : defaultLimit;
     if (lines.length <= limit) return lines;
     return [
       ...lines.slice(0, limit),
@@ -1262,6 +1263,7 @@ export function createElectronShellRuntime({
       handoff: payload.handoff ?? null,
       allowLongBody: payload.allowLongBody ?? null,
       allowContinue: payload.allowContinue ?? null,
+      forcePopup: payload.forcePopup ?? null,
       addedAt: Date.now()
     };
   }
@@ -1290,6 +1292,7 @@ export function createElectronShellRuntime({
           inlinePreview: only.inlinePreview,
           openWindow: only.openWindow,
           allowContinue: only.allowContinue,
+          forcePopup: only.forcePopup,
           dedupeKey: `notify:${taskId}`
         });
       } else {
@@ -1341,6 +1344,7 @@ export function createElectronShellRuntime({
           payload.skipBatch === true ||
           payload.kind === "error" ||
           payload.kind === "approval" ||
+          (payload.forcePopup === true && payload.allowLongBody === true) ||
           !payload.taskId;
         if (skipBatch) {
           registeredPopupCardManager.showCard({
