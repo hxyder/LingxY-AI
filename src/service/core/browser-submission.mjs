@@ -280,6 +280,29 @@ async function fetchBrowserLinkContext({ capture, runtime, artifactStore, task }
   });
 }
 
+function recordBrowserLinkFetchWarning({ capture, runtime, task, error }) {
+  const message = error?.message ?? "Browser link fetch failed; continuing with captured link metadata.";
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: "step_warning",
+    payload: {
+      step: "web_fetch",
+      url: capture?.url ?? null,
+      message
+    }
+  });
+  task.context_packet = {
+    ...task.context_packet,
+    selection_metadata: {
+      ...(task.context_packet?.selection_metadata ?? {}),
+      browser_link_fetch: "failed",
+      browser_link_fetch_error: message
+    }
+  };
+  updateTask(runtime, task, { context_packet: task.context_packet });
+}
+
 function taskExplicitlyTargetsBrowserPage(task = {}) {
   const contractScope = task.task_spec?.contract?.source_scope;
   const srScope = task.context_packet?.semantic_router_decision?.source_scope;
@@ -968,10 +991,7 @@ export async function submitBrowserTask({
       try {
         await fetchBrowserLinkContext({ capture, runtime, artifactStore, task });
       } catch (error) {
-        markTaskFailed(runtime, task, {
-          message: `Browser link fetch failed: ${error.message}`
-        });
-        return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [] };
+        recordBrowserLinkFetchWarning({ capture, runtime, task, error });
       }
     }
 

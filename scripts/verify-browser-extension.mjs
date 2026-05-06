@@ -293,6 +293,29 @@ assert.equal(linkResponse.payload.status, "success");
 assert.equal(runtime.store.taskEvents.some((event) => event.payload?.step === "web_fetch"), true);
 assert.equal(runtime.store.taskEvents.some((event) => event.payload?.step === "web_fetch_placeholder"), false);
 
+const blockedLinkResponse = await handler({
+  protocolVersion: "1.0",
+  requestId: "req-link-blocked",
+  action: "submit_capture",
+  payload: {
+    userCommand: "请分析这个链接",
+    capture: {
+      sourceType: "link",
+      browser: "chrome.exe",
+      url: "https://example.com/blocked",
+      anchorText: "blocked article"
+    }
+  }
+});
+assert.equal(blockedLinkResponse.ok, true);
+assert.notEqual(blockedLinkResponse.payload.status, "failed",
+  "browser link analysis must not fail solely because desktop fetch lacks browser session/cookies");
+assert.equal(runtime.store.taskEvents.some((event) =>
+  event.event_type === "step_warning"
+  && event.payload?.step === "web_fetch"
+  && event.payload?.url === "https://example.com/blocked"
+), true);
+
 // runQuickAction (inline result frame backend) — translation uses the direct
 // desktop translator route instead of creating a full task.
 let submittedTranslate = null;
