@@ -316,6 +316,37 @@ test("real read_file_text registry result satisfies the fresh-read contract", as
   }
 });
 
+test("artifact contract requires the requested file kind", () => {
+  const wrongKind = validateSuccessContract({
+    artifact: { required: true, kind: "docx" },
+    success_contract: { artifact_created: true }
+  }, [
+    toolResult({
+      tool: "generate_document",
+      metadata: { path: "E:/linxiDoc/task/result.html" },
+      observation: "Created HTML artifact."
+    })
+  ]);
+
+  assert.equal(wrongKind.satisfied, false);
+  assert.ok(wrongKind.violations.some((violation) =>
+    violation.kind === "artifact_required_kind_mismatch"
+  ));
+
+  const rightKind = validateSuccessContract({
+    artifact: { required: true, kind: "docx" },
+    success_contract: { artifact_created: true }
+  }, [
+    toolResult({
+      tool: "generate_document",
+      metadata: { path: "E:/linxiDoc/task/result.docx" },
+      observation: "Created DOCX artifact."
+    })
+  ]);
+
+  assert.equal(rightKind.satisfied, true);
+});
+
 test("real folder extraction satisfies the deep fresh-read contract", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "uca-local-contract-folder-"));
   try {

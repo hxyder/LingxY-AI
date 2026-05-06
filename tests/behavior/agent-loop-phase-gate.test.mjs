@@ -539,3 +539,131 @@ test("invalid tool call falls back to final synthesis once required evidence is 
     && event.payload?.reason === "invalid_tool_call_fallback_to_final"
   ));
 });
+
+test("invalid tool call on artifact-required task injects artifact guidance before failing", async () => {
+  const calls = [];
+  const events = [];
+  const auditLog = [];
+  const tools = [
+    {
+      id: "web_search_fetch",
+      name: "Web Search Fixture",
+      description: "fixture",
+      risk_level: "low",
+      requires_confirmation: false,
+      policy_group: "external_web_read",
+      parameters: { type: "object", properties: { query: { type: "string" } } },
+      async execute(args) {
+        calls.push({ tool: "web_search_fetch", args });
+        return {
+          success: true,
+          observation: "External web evidence gathered.",
+          metadata: {
+            tool_id: "web_search_fetch",
+            results: [{ title: "Evidence", url: "https://example.com/evidence" }]
+          }
+        };
+      }
+    },
+    {
+      id: "generate_document",
+      name: "Generate Document Fixture",
+      description: "fixture",
+      risk_level: "low",
+      requires_confirmation: false,
+      parameters: { type: "object", properties: {} },
+      async execute(args) {
+        calls.push({ tool: "generate_document", args });
+        return {
+          success: true,
+          observation: "DOCX artifact created.",
+          artifact_paths: ["E:/linxiDoc/task_fixture/result.docx"],
+          metadata: {
+            path: "E:/linxiDoc/task_fixture/result.docx",
+            artifact_paths: ["E:/linxiDoc/task_fixture/result.docx"]
+          }
+        };
+      }
+    }
+  ];
+  const runtime = {
+    actionToolRegistry: createActionToolRegistry(tools),
+    toolContext: {},
+    toolOutputDir: null,
+    securityBroker: {
+      authorizeToolCall() {
+        return { allowed: true, reason: null };
+      }
+    },
+    store: {
+      appendAuditLog(entry) {
+        auditLog.push(entry);
+      }
+    },
+    emitTaskEvent(eventType, payload) {
+      events.push({ eventType, payload });
+    },
+    confirmationHandler: async ({ args }) => ({ decision: "approve", args }),
+    finalAnswerComposer: async () => "Created the requested document."
+  };
+
+  const result = await runToolAgentLoop({
+    task: makeTask({
+      user_command: "Research the topic and create a docx report.",
+      task_spec: {
+        goal: "create_file",
+        synthesis: { expected_output: "document", user_goal: "create a docx report" },
+        artifact: { required: true, kind: "docx" },
+        constraints: { must_verify_artifact: true },
+        tool_policy: {
+          policy_groups: { external_web_read: { mode: "required" } },
+          web_search_fetch: { mode: "required" }
+        },
+        execution_constraints: {
+          error_budget: {
+            max_empty_search_results: 5,
+            max_tool_failures: 5
+          }
+        },
+        success_contract: {
+          artifact_created: true,
+          required_policy_groups: ["external_web_read"],
+          required_tool_names: []
+        }
+      }
+    }),
+    runtime,
+    planner: async ({ iteration }) => {
+      if (iteration === 0) {
+        return { type: "tool_call", tool: "web_search_fetch", args: { query: "report evidence" } };
+      }
+      if (iteration === 1) {
+        return { type: "tool_call", args: { kind: "docx" } };
+      }
+      return {
+        type: "tool_call",
+        tool: "generate_document",
+        args: {
+          kind: "docx",
+          outline: {
+            title: "Report",
+            sections: [{ heading: "Summary", body: "Evidence-backed summary." }]
+          }
+        }
+      };
+    },
+    maxIterations: 4
+  });
+
+  assert.ok(["success", "partial_success"].includes(result.status), result.status);
+  assert.deepEqual(calls.map((call) => call.tool), ["web_search_fetch", "generate_document"]);
+  assert.ok(events.some((event) =>
+    event.eventType === "contract_guidance"
+    && event.payload?.source === "invalid_tool_call_gate"
+    && event.payload?.required_policy_groups?.includes("artifact_generation")
+  ));
+  assert.ok(auditLog.some((entry) =>
+    entry.event_subtype === "tool_loop.contract_guidance"
+    && entry.payload?.source === "invalid_tool_call_gate"
+  ));
+});

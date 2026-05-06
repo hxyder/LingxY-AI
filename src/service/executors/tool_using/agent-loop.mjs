@@ -1180,6 +1180,34 @@ async function _runToolAgentLoopCore({
               : undefined
           };
         }
+        if (!invalidStepGate.satisfied) {
+          const artifactGuidance = planArtifactCreationGuidance({
+            stepGate: invalidStepGate,
+            taskSpec: task.task_spec ?? task.task_spec_initial,
+            iteration,
+            maxIterations,
+            artifactGuidanceCount
+          });
+          if (artifactGuidance) {
+            artifactGuidanceCount += 1;
+            const eventPayload = {
+              ...artifactGuidance.eventPayload,
+              guidance_count: artifactGuidanceCount,
+              source: "invalid_tool_call_gate"
+            };
+            transcript.push({
+              type: "synthesis_retry",
+              violations: [invalidToolViolation],
+              recovery: "artifact_guidance_after_invalid_tool_call"
+            });
+            transcript.push(artifactGuidance.transcriptEntry);
+            runtime?.emitTaskEvent?.("phase_gate_signal", phaseGateSignalPayload({ iteration, stepGate: invalidStepGate }));
+            runtime.emitTaskEvent?.("contract_guidance", eventPayload);
+            appendAuditLog(runtime, task, "tool_loop.phase_gate", phaseGateAuditPayload({ iteration, stepGate: invalidStepGate }));
+            appendAuditLog(runtime, task, "tool_loop.contract_guidance", eventPayload);
+            continue;
+          }
+        }
         if (synthesisRetriesUsed < MAX_SYNTHESIS_RETRIES) {
           synthesisRetriesUsed += 1;
           transcript.push({

@@ -105,6 +105,19 @@ function buildWindowTitleFallback(result) {
   };
 }
 
+function parseHttpUrl(value = "") {
+  const text = String(value ?? "").trim();
+  if (!text) return null;
+  try {
+    const url = new URL(text);
+    return url.protocol === "http:" || url.protocol === "https:"
+      ? url.toString()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Run both PowerShell probes in parallel and merge the results into a
  * single context object. See contract above for shape.
@@ -217,6 +230,17 @@ export function buildShellContextPayload({ context, sourceApp, captureMode = "ho
     return base;
   }
   if (context.selectedText) {
+    const selectedUrl = parseHttpUrl(context.selectedText);
+    if (selectedUrl) {
+      base.capture = {
+        sourceType: "link",
+        text: "",
+        url: selectedUrl,
+        pageTitle: context.windowTitle ?? "",
+        processName: context.processName ?? null
+      };
+      return base;
+    }
     base.capture = {
       sourceType: "text_selection",
       text: context.selectedText,

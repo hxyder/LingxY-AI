@@ -666,11 +666,19 @@ export function validateSuccessContract(taskSpec, transcript = []) {
   }
 
   if (requiresArtifactCreated(taskSpec) && !transcriptHasArtifactCreated(transcript)) {
-    const kind = taskSpec?.artifact?.kind ?? taskSpec?.contract?.output_contract?.kind ?? "artifact";
+    const kind = artifactKindFromSpec(taskSpec) || "artifact";
     violations.push({
       kind: "artifact_required_not_created",
       message: `success_contract.artifact_created is true, but no ${kind} artifact was created or registered. The executor must call an artifact-producing tool before finalizing.`
     });
+  } else if (requiresArtifactCreated(taskSpec)) {
+    const kind = artifactKindFromSpec(taskSpec);
+    if (kind && !transcriptHasArtifactKind(transcript, kind)) {
+      violations.push({
+        kind: "artifact_required_kind_mismatch",
+        message: `success_contract.artifact_created requires a ${kind} artifact, but the created artifact paths/metadata do not match that kind.`
+      });
+    }
   }
 
   return { satisfied: violations.length === 0, violations };
@@ -817,6 +825,43 @@ function transcriptHasArtifactCreated(transcript = []) {
     if (entry?.type === "artifact_created") return artifactPathsFromEntry(entry).length > 0;
     if (entry?.type === "tool_result") return artifactPathsFromEntry(entry).length > 0;
     return artifactPathsFromEntry(entry).length > 0;
+  });
+}
+
+function artifactKindFromSpec(taskSpec = {}) {
+  return String(taskSpec?.artifact?.kind
+    ?? taskSpec?.contract?.output_contract?.kind
+    ?? "").trim().toLowerCase();
+}
+
+function artifactPathMatchesKind(filePath = "", kind = "") {
+  const normalized = String(kind ?? "").trim().toLowerCase();
+  if (!normalized) return true;
+  const lower = String(filePath ?? "").trim().toLowerCase();
+  if (!lower) return false;
+  if (normalized === "word") return lower.endsWith(".docx");
+  if (normalized === "excel") return lower.endsWith(".xlsx");
+  if (normalized === "ppt" || normalized === "powerpoint") return lower.endsWith(".pptx");
+  return lower.endsWith(`.${normalized}`);
+}
+
+function entryMatchesArtifactKind(entry = {}, kind = "") {
+  const normalized = String(kind ?? "").trim().toLowerCase();
+  if (!normalized) return true;
+  const metadataKind = String(entry?.metadata?.kind
+    ?? entry?.metadata?.artifact_kind
+    ?? entry?.result?.kind
+    ?? entry?.result?.artifact_kind
+    ?? "").trim().toLowerCase();
+  if (metadataKind && metadataKind === normalized) return true;
+  return artifactPathsFromEntry(entry).some((filePath) => artifactPathMatchesKind(filePath, normalized));
+}
+
+function transcriptHasArtifactKind(transcript = [], kind = "") {
+  return (transcript ?? []).some((entry) => {
+    if (!isSuccessfulHit(entry)) return false;
+    if (artifactPathsFromEntry(entry).length === 0) return false;
+    return entryMatchesArtifactKind(entry, kind);
   });
 }
 

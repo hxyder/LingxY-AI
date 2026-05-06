@@ -518,9 +518,10 @@ assert.ok(/captureActiveWindowHintForVoice/.test(overlayJs) && /voice_wake/.test
   "voice mode: voice and Echo sessions must capture active browser context before page-analysis commands");
 assert.ok(/commandInput\.addEventListener\("keydown"[\s\S]{0,180}e\.stopPropagation\(\)[\s\S]{0,180}voiceMode && !noteActive[\s\S]{0,120}closeVoicePanel\(\{ submit: true \}\)/.test(overlayJs),
   "voice mode: Enter in the composer must route through the voice submit controller and not bubble into a second submit");
-assert.ok(/captureActiveWindowHintForVoice[\s\S]{0,420}includeSelection:\s*true/.test(overlayJs)
-    && /captureActiveWindowHintForVoice[\s\S]{0,460}allowClipboardFallback:\s*false/.test(overlayJs)
-    && /captureActiveWindowHintForVoice[\s\S]{0,760}applyShellHandoff\(payload\)/.test(overlayJs),
+assert.ok(/captureActiveWindowHintForVoice[\s\S]{0,760}includeSelection:\s*true/.test(overlayJs)
+    && /captureActiveWindowHintForVoice[\s\S]{0,820}allowClipboardFallback:\s*false/.test(overlayJs)
+    && /captureActiveWindowHintForVoice[\s\S]{0,900}clipboardBaseline/.test(overlayJs)
+    && /captureActiveWindowHintForVoice[\s\S]{0,1100}applyShellHandoff\(payload\)/.test(overlayJs),
   "voice mode: voice and Echo context capture must hand off selected text/files without promoting stale clipboard fallback");
 assert.ok(/explicitBrowserContextRequest[\s\S]{0,180}resolveActiveWindowBrowserCapture/.test(overlayJs)
     && /resolveOverlayContextSubmission/.test(overlayJs)

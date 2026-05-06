@@ -1613,7 +1613,11 @@ export function createElectronShellRuntime({
     }
   }
 
-  async function captureActiveWindowContext({ includeSelection = true, allowClipboardFallback = true } = {}) {
+  async function captureActiveWindowContext({
+    includeSelection = true,
+    allowClipboardFallback = true,
+    clipboardBaseline = null
+  } = {}) {
     const activeWindowEnabled = await isRemoteFeatureEnabled("active_window_probe");
     const context = await runCaptureActiveWindowContext({
       runPowerShell: runPowerShellScript,
@@ -1621,7 +1625,8 @@ export function createElectronShellRuntime({
       timeoutMs: 3000,
       activeWindowEnabled,
       includeSelection,
-      allowClipboardFallback
+      allowClipboardFallback,
+      clipboardBaseline
     });
 
     // Keep the clipboard watcher in sync when capture-context.ps1 surfaced
@@ -2250,7 +2255,8 @@ export function createElectronShellRuntime({
         try {
           let context = await captureActiveWindowContext({
             includeSelection: options?.includeSelection !== false,
-            allowClipboardFallback: options?.allowClipboardFallback !== false
+            allowClipboardFallback: options?.allowClipboardFallback !== false,
+            clipboardBaseline: typeof options?.clipboardBaseline === "string" ? options.clipboardBaseline : null
           });
           if (options?.excludeShellWindow && looksLikeShellWindowContext(context)) {
             const sourceWindow = BrowserWindow.fromWebContents(event.sender);
@@ -2261,7 +2267,8 @@ export function createElectronShellRuntime({
                 await wait(160);
                 context = await captureActiveWindowContext({
                   includeSelection: options?.includeSelection !== false,
-                  allowClipboardFallback: options?.allowClipboardFallback !== false
+                  allowClipboardFallback: options?.allowClipboardFallback !== false,
+                  clipboardBaseline: typeof options?.clipboardBaseline === "string" ? options.clipboardBaseline : null
                 });
               } finally {
                 if (typeof sourceWindow.showInactive === "function") sourceWindow.showInactive();

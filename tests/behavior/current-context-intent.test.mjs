@@ -8,6 +8,7 @@ import {
 test("current context intent detects structural page references", () => {
   assert.equal(commandTargetsCurrentBrowserContext("请分析此页面"), true);
   assert.equal(commandTargetsCurrentBrowserContext("请分析此页"), true);
+  assert.equal(commandTargetsCurrentBrowserContext("请分析当全页面"), true);
   assert.equal(commandTargetsCurrentBrowserContext("summarize this tab"), true);
   assert.equal(commandTargetsCurrentBrowserContext("分析天气新闻"), false);
 });

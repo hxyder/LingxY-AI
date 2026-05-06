@@ -184,6 +184,10 @@ async function runScenario(scenario, options = {}) {
 
 assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,1600}allowClipboardFallback:\s*false[\s\S]{0,220}clipboardBaseline:\s*hotKeyClipboardSnapshot/.test(electronMainSource),
   "capture-and-ask must only accept text copied after the hotkey, not stale clipboard fallback");
+assert.ok(/async function captureActiveWindowContext\s*\(\{\s*includeSelection[\s\S]{0,220}clipboardBaseline\s*=\s*null/.test(electronMainSource)
+  && /runCaptureActiveWindowContext\(\{[\s\S]{0,520}clipboardBaseline/.test(electronMainSource)
+  && /ipcMain\.handle\("uca:capture-active-window-context"[\s\S]{0,520}clipboardBaseline:\s*typeof options\?\.clipboardBaseline/.test(electronMainSource),
+  "electron-main must forward clipboardBaseline through every active-window capture path");
 
 {
   const ctx = await runScenario("office-word-com");
@@ -250,6 +254,27 @@ assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,1600}allowClipboardFallbac
   assert.equal(payload.active_window.blocked, false);
   assert.equal(payload.capture.sourceType, "text_selection");
   assert.equal(payload.capture.url, "https://claude.ai/chat/test", "selection url should be auto-filled from active window");
+}
+
+{
+  const context = {
+    processName: "msedge",
+    windowTitle: "UN News · Edge",
+    filePaths: [],
+    selectedText: "https://news.un.org/en/story/example",
+    activeWindow: {
+      process: "msedge",
+      title: "UN News · Edge",
+      detectedKind: "web_url",
+      url: "https://search.example/",
+      extra: {},
+      blocked: false
+    }
+  };
+  const payload = buildShellContextPayload({ context, sourceApp: "msedge" });
+  assert.equal(payload.capture.sourceType, "link");
+  assert.equal(payload.capture.url, "https://news.un.org/en/story/example");
+  assert.equal(payload.capture.text, "");
 }
 
 {

@@ -4317,10 +4317,11 @@ async function resolveActiveWindowBrowserCapture() {
 }
 
 function resolveActiveWindowFileSelection(commandText = "") {
-  const filePath = activeWindowFilePath(pendingActiveWindowContext);
+  const activeWindow = freshPendingActiveWindowContext();
+  const filePath = activeWindowFilePath(activeWindow);
   if (!filePath || !commandTargetsCurrentFileContext(commandText)) return null;
   return {
-    sourceApp: pendingActiveWindowContext?.process ?? "active-window",
+    sourceApp: activeWindow?.process ?? "active-window",
     captureMode: "active_window_file",
     filePaths: [filePath]
   };
@@ -4329,10 +4330,19 @@ function resolveActiveWindowFileSelection(commandText = "") {
 async function captureActiveWindowHintForVoice({ captureMode = "voice_context" } = {}) {
   if (typeof window.ucaShell?.getActiveWindowContext !== "function") return null;
   try {
+    let clipboardBaseline = null;
+    try {
+      clipboardBaseline = typeof window.ucaShell?.readClipboardText === "function"
+        ? await timeoutWithFallback(window.ucaShell.readClipboardText(), 250, null)
+        : null;
+    } catch {
+      clipboardBaseline = null;
+    }
     const payload = await timeoutWithFallback(
       window.ucaShell.getActiveWindowContext({
         includeSelection: true,
         allowClipboardFallback: false,
+        clipboardBaseline: typeof clipboardBaseline === "string" ? clipboardBaseline : null,
         excludeShellWindow: true,
         preferLastExternal: true,
         maxExternalAgeMs: 10 * 60 * 1000,
