@@ -1,7 +1,6 @@
 import crypto from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
-import { runImageOcr } from "../extractors/image_ocr.mjs";
 import { createArtifactStore } from "../store/artifact-store.mjs";
 import {
   imageContentEvidenceFromContextPacket,
@@ -332,13 +331,12 @@ export async function submitImageTask({
   const route = routeIntent(userCommand);
 
   const fileStats = await Promise.all(imagePaths.map((imagePath) => stat(imagePath)));
-  const ocrResult = await runImageOcr(imagePaths[0]);
   const rawContextPacket = buildImageContextPacket({
     imagePaths,
     source,
     sourceApp,
     captureMode,
-    ocrResult,
+    ocrResult: null,
     traceId: `trace_${crypto.randomUUID()}`,
     contextId: `ctx_${crypto.randomUUID()}`
   });
@@ -413,9 +411,10 @@ export async function submitImageTask({
       taskId: task.task_id,
       eventType: "step_started",
       payload: {
-        step: "image_ocr",
+        step: "image_context",
         output_dir: outputDir,
-        ocr_engine: ocrResult.ocr_engine
+        image_count: imagePaths.length,
+        ocr: "deferred"
       }
     });
     emitTaskEvent({
@@ -423,8 +422,9 @@ export async function submitImageTask({
       taskId: task.task_id,
       eventType: "step_finished",
       payload: {
-        step: "image_ocr",
-        ocr_confidence: ocrResult.ocr_confidence
+        step: "image_context",
+        image_count: imagePaths.length,
+        ocr: "deferred"
       }
     });
 

@@ -10,6 +10,10 @@ import {
 const tools = [
   { id: "web_search_fetch", policy_group: "external_web_read" },
   { id: "vision_analyze" },
+  { id: "generate_document" },
+  { id: "write_file" },
+  { id: "register_artifact" },
+  { id: "verify_file_exists" },
   { id: "open_file" },
   { id: "reveal_in_explorer" },
   { id: "launch_app" },
@@ -113,6 +117,31 @@ test("agent tool surface preserves required action tools even when capabilities 
   assert.ok(visible.includes("web_search_fetch"));
   assert.ok(visible.includes("account_send_email"));
   assert.ok(visible.includes("connector_workflow_run"));
+  assert.ok(!visible.includes("launch_app"));
+});
+
+test("agent tool surface preserves artifact tools when artifact is required", () => {
+  const task = {
+    context_packet: {
+      semantic_router_decision: {
+        needed_capabilities: ["external_web_read"]
+      }
+    },
+    task_spec: {
+      artifact: { required: true, kind: "docx" },
+      success_contract: {
+        artifact_created: true
+      }
+    }
+  };
+
+  const visible = filterToolsForTask(tools, task).map((tool) => tool.id);
+
+  assert.ok(visible.includes("web_search_fetch"));
+  assert.ok(visible.includes("generate_document"));
+  assert.ok(visible.includes("write_file"));
+  assert.ok(visible.includes("register_artifact"));
+  assert.ok(visible.includes("verify_file_exists"));
   assert.ok(!visible.includes("launch_app"));
 });
 

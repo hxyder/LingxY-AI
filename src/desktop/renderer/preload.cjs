@@ -73,6 +73,9 @@ contextBridge.exposeInMainWorld("ucaShell", {
   openExternal(url) {
     return shell.openExternal(url);
   },
+  openUrl(url, options = {}) {
+    return ipcRenderer.invoke("uca:shell-open-url", { url, ...(options ?? {}) });
+  },
   showItemInFolder(targetPath) {
     shell.showItemInFolder(targetPath);
   },

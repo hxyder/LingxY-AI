@@ -91,6 +91,26 @@ test("agent planner mode renders required contract members for prompt evidence",
   assert.doesNotMatch(block, /search_file_content/);
 });
 
+test("agent planner mode renders artifact contract for required file outputs", () => {
+  const block = renderRequiredContractForPlanner({
+    task_spec: {
+      artifact: { required: true, kind: "docx" },
+      constraints: { must_verify_artifact: true },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: true,
+        required_tool_names: [],
+        required_policy_groups: []
+      }
+    }
+  });
+
+  assert.match(block, /artifact_required: true/);
+  assert.match(block, /artifact_kind: docx/);
+  assert.match(block, /artifact_tools: .*generate_document/);
+  assert.match(block, /must_verify_artifact: true/);
+});
+
 test("agent lean chat prompt preserves roleplay and phantom attachment rules", () => {
   const prompt = buildLeanChatSystemPrompt({
     task: {

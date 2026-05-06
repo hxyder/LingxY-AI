@@ -17,6 +17,8 @@ assert.equal(preload.includes(IPC_CHANNELS.shellShowWindow), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellHideWindow), true);
 assert.equal(preload.includes(IPC_CHANNELS.shellOpenOverlayVoice), true);
 assert.equal(preload.includes("openOverlayVoice"), true);
+assert.equal(preload.includes(IPC_CHANNELS.shellOpenUrl), true);
+assert.equal(preload.includes("openUrl"), true);
 assert.equal(preload.includes("previewMcpInstall"), true);
 assert.equal(preload.includes(IPC_CHANNELS.mcpInstallPreview), true);
 assert.equal(preload.includes("runMcpInstall"), true);
@@ -253,6 +255,12 @@ assert.equal(mainProcess.includes("setManagedWindowBounds"), true);
 assert.equal(mainProcess.includes("setContentBounds"), true);
 assert.equal(mainProcess.includes("buildWindowUrl"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.shellSubmitDroppedFiles"), true);
+assert.equal(mainProcess.includes("IPC_CHANNELS.shellOpenUrl"), true);
+assert.equal(mainProcess.includes("showLinkBrowserWindow"), true);
+assert.equal(mainProcess.includes("LingxY 新窗口"), true);
+assert.equal(mainProcess.includes("setWindowOpenHandler"), true);
+assert.equal(mainProcess.includes("sandbox: true"), true);
+assert.equal(mainProcess.includes("nodeIntegration: false"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.mcpInstallPreview"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.mcpInstallRun"), true);
 assert.equal(mainProcess.includes("IPC_CHANNELS.mcpServerSave"), true);
@@ -367,5 +375,10 @@ assert.equal(mainProcess.includes("showDesktopNotification"), true);
 // Permission handler for the Web Speech API mic access
 assert.equal(mainProcess.includes("setPermissionRequestHandler"), true);
 assert.equal(mainProcess.includes("setPermissionCheckHandler"), true);
+
+assert.equal(consoleJs.includes("window.ucaShell.openUrl"), true);
+assert.equal(consoleJs.includes('source: "console_chat"'), true);
+assert.equal(overlayJs.includes("window.ucaShell?.openUrl"), true);
+assert.equal(overlayJs.includes('source: "overlay_chat"'), true);
 
 console.log("Desktop renderer verification passed.");

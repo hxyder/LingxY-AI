@@ -140,6 +140,44 @@ export function planRequiredPolicyGroupGuidance({
   };
 }
 
+export function planArtifactCreationGuidance({
+  stepGate,
+  taskSpec,
+  iteration,
+  maxIterations,
+  artifactGuidanceCount,
+  maxGuidance = Number.POSITIVE_INFINITY
+}) {
+  const violation = (stepGate?.violations ?? [])
+    .find((entry) => entry?.kind === "artifact_required_not_created");
+  const canInject = Boolean(violation)
+    && iteration < maxIterations - 1
+    && artifactGuidanceCount < maxGuidance;
+  if (!canInject) return null;
+
+  const kind = taskSpec?.artifact?.kind
+    ?? taskSpec?.contract?.output_contract?.kind
+    ?? "docx";
+  return {
+    transcriptEntry: {
+      type: "contract_guidance",
+      groups: ["artifact_generation"],
+      instruction: [
+        "The task contract requires a real file artifact. Do not finalize with prose only.",
+        `Call generate_document now with kind="${kind}" and a structured outline, or call another artifact-producing tool if it better fits the requested output.`,
+        "The final answer may summarize the generated file, but the task is not complete until an artifact path exists."
+      ].join("\n"),
+      action_only: false
+    },
+    eventPayload: {
+      iteration,
+      required_policy_groups: ["artifact_generation"],
+      artifact_kind: kind,
+      action_only: false
+    }
+  };
+}
+
 export function planLocalFileTextReadGuidance({
   stepGate,
   transcript,

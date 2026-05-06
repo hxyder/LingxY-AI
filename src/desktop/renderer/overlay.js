@@ -1184,7 +1184,11 @@ function addBubble(role, content, options) {
         anchor.addEventListener("click", (e) => {
           e.preventDefault();
           const url = anchor.dataset.openUrl;
-          if (url) window.ucaShell?.openExternal?.(url) ?? window.open(url, "_blank");
+          if (url) {
+            window.ucaShell?.openUrl?.(url, { ask: true, source: "overlay_chat" })
+              ?? window.ucaShell?.openExternal?.(url)
+              ?? window.open(url, "_blank");
+          }
         });
       }
       // Copy-to-clipboard for fenced code blocks

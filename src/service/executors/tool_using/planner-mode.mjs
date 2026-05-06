@@ -82,6 +82,7 @@ function formatLeanAmbientContext() {
 }
 
 export function renderRequiredContractForPlanner(task) {
+  const spec = task?.task_spec ?? {};
   const contract = task?.task_spec?.success_contract ?? {};
   const requiredTools = Array.isArray(contract.required_tool_names)
     ? contract.required_tool_names.filter(Boolean)
@@ -89,7 +90,10 @@ export function renderRequiredContractForPlanner(task) {
   const requiredGroups = Array.isArray(contract.required_policy_groups)
     ? contract.required_policy_groups.filter(Boolean)
     : [];
-  if (requiredTools.length === 0 && requiredGroups.length === 0) return "";
+  const artifactRequired = spec.artifact?.required === true
+    || contract.artifact_created === true
+    || spec.contract?.output_contract?.artifact_required === true;
+  if (requiredTools.length === 0 && requiredGroups.length === 0 && !artifactRequired) return "";
 
   const lines = ["", "Task contract:"];
   lines.push(`- required_tools: ${requiredTools.length > 0 ? requiredTools.join(", ") : "(none)"}`);
@@ -102,6 +106,13 @@ export function renderRequiredContractForPlanner(task) {
       const memberHint = members.length > 0 ? ` (any of: ${members.join(", ")})` : "";
       lines.push(`  - ${group}${memberHint}`);
     }
+  }
+  if (artifactRequired) {
+    const kind = spec.artifact?.kind ?? spec.contract?.output_contract?.kind ?? "artifact";
+    lines.push(`- artifact_required: true`);
+    lines.push(`- artifact_kind: ${kind}`);
+    lines.push(`- artifact_tools: generate_document, write_file, register_artifact, verify_file_exists`);
+    lines.push(`- must_verify_artifact: ${spec.constraints?.must_verify_artifact === false ? "false" : "true"}`);
   }
   return lines.join("\n");
 }

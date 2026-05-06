@@ -299,6 +299,82 @@ test("invalid tool arguments do not poison repeated-call dedupe before repair", 
   ));
 });
 
+test("artifact-required tasks cannot finalize before creating a file", async () => {
+  const { runtime, events } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([makeGenerateDocumentTool()]),
+    finalAnswerComposer: async ({ transcript }) => {
+      assert.ok(transcript.some((entry) =>
+        entry.type === "tool_result"
+        && entry.tool === "generate_document"
+        && entry.artifact_paths?.length === 1
+      ));
+      return "document generated";
+    }
+  });
+  const seenGuidance = [];
+  const task = {
+    task_id: "task_artifact_required_gate",
+    user_command: "给我生成一份制作 multi-agent 的文档",
+    execution_mode: "interactive",
+    task_spec: {
+      goal: "generate_document",
+      artifact: { required: true, kind: "docx", quality: "draft" },
+      synthesis: { expected_output: "artifact", user_goal: "generate a document" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: true,
+        tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: []
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ transcript }) => {
+      const guidance = transcript.find((entry) =>
+        entry.type === "contract_guidance"
+        && entry.groups?.includes("artifact_generation")
+      );
+      if (!guidance) return { type: "final", text: "Here is the document text, but no file." };
+      seenGuidance.push(guidance.instruction);
+      const generated = transcript.some((entry) => entry.type === "tool_result" && entry.tool === "generate_document");
+      if (!generated) {
+        return {
+          type: "tool_call",
+          tool: "generate_document",
+          args: {
+            kind: "docx",
+            outline: {
+              title: "Multi-Agent Systems",
+              sections: [
+                { heading: "Overview", body: "A practical overview of multi-agent design." }
+              ]
+            }
+          }
+        };
+      }
+      return { type: "final", text: "done" };
+    },
+    maxIterations: 5
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.final_text, "document generated");
+  assert.ok(seenGuidance.some((text) => text.includes("Do not finalize with prose only")));
+  assert.ok(events.some((event) =>
+    event.eventType === "phase_gate_signal"
+    && event.payload?.violation_kinds?.includes("artifact_required_not_created")
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "contract_guidance"
+    && event.payload?.required_policy_groups?.includes("artifact_generation")
+  ));
+});
+
 test("valid repeated tool calls still trigger repeated-call synthesis guidance", async () => {
   const { runtime, events } = makeRuntime({
     finalAnswerComposer: async ({ transcript }) => {

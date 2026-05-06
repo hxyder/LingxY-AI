@@ -53,6 +53,15 @@ const SCHEDULE_REGISTRY_TOOL_IDS = new Set([
 ]);
 
 const DIRECT_FILE_OPEN_TOOL_IDS = new Set(["open_file", "reveal_in_explorer"]);
+const ARTIFACT_TOOL_IDS = new Set([
+  "write_file",
+  "generate_document",
+  "edit_file",
+  "render_diagram",
+  "resolve_output_path",
+  "register_artifact",
+  "verify_file_exists"
+]);
 
 export function isScheduledFireTask(task) {
   return task?.context_packet?.selection_metadata?.scheduled_task_fire === true;
@@ -107,6 +116,19 @@ function mergeToolLists(primary = [], extra = []) {
   return merged;
 }
 
+function taskRequiresArtifactTools(task) {
+  const specs = [task?.task_spec, task?.task_spec_initial];
+  return specs.some((spec) =>
+    spec?.artifact?.required === true
+    || spec?.success_contract?.artifact_created === true
+    || spec?.contract?.output_contract?.artifact_required === true
+  );
+}
+
+function artifactToolsFrom(tools = []) {
+  return tools.filter((tool) => ARTIFACT_TOOL_IDS.has(tool.id));
+}
+
 export function filterToolsForTask(tools = [], task) {
   const insideScheduledFire = isScheduledFireTask(task);
   const stripTaskScopedTools = (list) => {
@@ -124,8 +146,9 @@ export function filterToolsForTask(tools = [], task) {
   }));
   const requiredGroups = requiredPolicyGroupsOf(task);
   const requiredTools = tools.filter((tool) => toolSatisfiesRequiredPolicyGroup(tool, requiredGroups));
+  const artifactTools = taskRequiresArtifactTools(task) ? artifactToolsFrom(tools) : [];
   const capabilityTools = filtered.length > 0 ? filtered : tools;
-  return stripTaskScopedTools(mergeToolLists(capabilityTools, requiredTools));
+  return stripTaskScopedTools(mergeToolLists(capabilityTools, [...requiredTools, ...artifactTools]));
 }
 
 export function shouldRenderWorkflowHint(task) {

@@ -665,6 +665,14 @@ export function validateSuccessContract(taskSpec, transcript = []) {
     violations.push(v);
   }
 
+  if (requiresArtifactCreated(taskSpec) && !transcriptHasArtifactCreated(transcript)) {
+    const kind = taskSpec?.artifact?.kind ?? taskSpec?.contract?.output_contract?.kind ?? "artifact";
+    violations.push({
+      kind: "artifact_required_not_created",
+      message: `success_contract.artifact_created is true, but no ${kind} artifact was created or registered. The executor must call an artifact-producing tool before finalizing.`
+    });
+  }
+
   return { satisfied: violations.length === 0, violations };
 }
 
@@ -783,6 +791,33 @@ function groupHitSatisfies(group, entry) {
     return actionGroupHitSatisfies(group, entry);
   }
   return resultHasSubstance(entry);
+}
+
+function requiresArtifactCreated(taskSpec) {
+  return taskSpec?.success_contract?.artifact_created === true
+    || taskSpec?.artifact?.required === true
+    || taskSpec?.contract?.output_contract?.artifact_required === true;
+}
+
+function artifactPathsFromEntry(entry = {}) {
+  const paths = [];
+  if (Array.isArray(entry.artifact_paths)) paths.push(...entry.artifact_paths);
+  if (Array.isArray(entry.artifacts)) paths.push(...entry.artifacts);
+  if (Array.isArray(entry.result?.artifact_paths)) paths.push(...entry.result.artifact_paths);
+  if (Array.isArray(entry.result?.artifacts)) paths.push(...entry.result.artifacts);
+  if (typeof entry.path === "string" && entry.path.trim()) paths.push(entry.path);
+  if (typeof entry.result?.path === "string" && entry.result.path.trim()) paths.push(entry.result.path);
+  if (typeof entry.metadata?.path === "string" && entry.metadata.path.trim()) paths.push(entry.metadata.path);
+  return paths.filter((value) => typeof value === "string" && value.trim());
+}
+
+function transcriptHasArtifactCreated(transcript = []) {
+  return (transcript ?? []).some((entry) => {
+    if (!isSuccessfulHit(entry)) return false;
+    if (entry?.type === "artifact_created") return artifactPathsFromEntry(entry).length > 0;
+    if (entry?.type === "tool_result") return artifactPathsFromEntry(entry).length > 0;
+    return artifactPathsFromEntry(entry).length > 0;
+  });
 }
 
 function researchQualityThresholds(rq) {

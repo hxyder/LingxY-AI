@@ -105,6 +105,7 @@ import {
   evaluatePhaseGate,
   phaseGateAuditPayload,
   phaseGateSignalPayload,
+  planArtifactCreationGuidance,
   planContractActionHandoff,
   planLocalFileTextReadGuidance,
   planRequiredPolicyGroupGuidance,
@@ -750,6 +751,7 @@ async function _runToolAgentLoopCore({
   let terminalContractActionGuidanceCount = 0;
   let requiredPolicyGuidanceCount = 0;
   let localFileReadGuidanceCount = 0;
+  let artifactGuidanceCount = 0;
   const MAX_CONTRACT_ACTION_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxContractActionGuidance;
   const MAX_TERMINAL_CONTRACT_ACTION_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxTerminalContractActionGuidance;
   const MAX_REQUIRED_POLICY_GUIDANCE = DEFAULT_PHASE_GATE_GUIDANCE_LIMITS.maxRequiredPolicyGuidance;
@@ -806,6 +808,42 @@ async function _runToolAgentLoopCore({
       // emits a real tool_calls array (original bug fixed) or it reaffirms
       // a prose final (the original reply was legitimately a question).
       const proseText = (decision?.text ?? "").trim();
+      if (proseText && resolvedPlanner !== defaultPlanner) {
+        const proseStepGate = evaluatePhaseGate({
+          task,
+          transcript,
+          iteration,
+          maxIterations
+        });
+        if (!proseStepGate.satisfied) {
+          const artifactGuidance = planArtifactCreationGuidance({
+            stepGate: proseStepGate,
+            taskSpec: task.task_spec ?? task.task_spec_initial,
+            iteration,
+            maxIterations,
+            artifactGuidanceCount
+          });
+          if (artifactGuidance) {
+            artifactGuidanceCount += 1;
+            const eventPayload = {
+              ...artifactGuidance.eventPayload,
+              guidance_count: artifactGuidanceCount,
+              source: "prose_trap"
+            };
+            transcript.push({
+              type: "prose_trap_retry",
+              assistantProse: proseText,
+              reason: "artifact_required_not_created"
+            });
+            transcript.push(artifactGuidance.transcriptEntry);
+            runtime?.emitTaskEvent?.("phase_gate_signal", phaseGateSignalPayload({ iteration, stepGate: proseStepGate }));
+            runtime.emitTaskEvent?.("contract_guidance", eventPayload);
+            appendAuditLog(runtime, task, "tool_loop.phase_gate", phaseGateAuditPayload({ iteration, stepGate: proseStepGate }));
+            appendAuditLog(runtime, task, "tool_loop.contract_guidance", eventPayload);
+            continue;
+          }
+        }
+      }
       if (
         proseText &&
         proseTrapAttemptsUsed < PROSE_TRAP_MAX_ATTEMPTS &&
@@ -870,6 +908,26 @@ async function _runToolAgentLoopCore({
             transcript.push(localFileReadGuidance.transcriptEntry);
             runtime.emitTaskEvent?.("local_file_read_guidance", guidancePayload);
             appendAuditLog(runtime, task, "tool_loop.local_file_read_guidance", guidancePayload);
+            continue;
+          }
+
+          const artifactGuidance = planArtifactCreationGuidance({
+            stepGate: finalStepGate,
+            taskSpec: task.task_spec ?? task.task_spec_initial,
+            iteration,
+            maxIterations,
+            artifactGuidanceCount
+          });
+          if (artifactGuidance) {
+            artifactGuidanceCount += 1;
+            const eventPayload = {
+              ...artifactGuidance.eventPayload,
+              guidance_count: artifactGuidanceCount,
+              source: "final_gate"
+            };
+            transcript.push(artifactGuidance.transcriptEntry);
+            runtime.emitTaskEvent?.("contract_guidance", eventPayload);
+            appendAuditLog(runtime, task, "tool_loop.contract_guidance", eventPayload);
             continue;
           }
 
@@ -1702,6 +1760,26 @@ async function _runToolAgentLoopCore({
         appendAuditLog(runtime, task, "tool_loop.local_file_read_guidance", {
           ...guidancePayload
         });
+        continue;
+      }
+
+      const artifactGuidance = planArtifactCreationGuidance({
+        stepGate,
+        taskSpec: task.task_spec ?? task.task_spec_initial,
+        iteration,
+        maxIterations,
+        artifactGuidanceCount
+      });
+      if (artifactGuidance) {
+        artifactGuidanceCount += 1;
+        const eventPayload = {
+          ...artifactGuidance.eventPayload,
+          guidance_count: artifactGuidanceCount,
+          source: "step_gate"
+        };
+        transcript.push(artifactGuidance.transcriptEntry);
+        runtime.emitTaskEvent?.("contract_guidance", eventPayload);
+        appendAuditLog(runtime, task, "tool_loop.contract_guidance", eventPayload);
         continue;
       }
 

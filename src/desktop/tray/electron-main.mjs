@@ -784,7 +784,7 @@ export function createElectronShellRuntime({
     throw new Error("Electron bindings are required to create the shell runtime.");
   }
 
-  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session, desktopCapturer, crashReporter, dialog } = electron;
+  const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session, desktopCapturer, crashReporter, dialog, shell } = electron;
   installDesktopDiagnostics({ app, crashReporter });
   const windows = new Map();
   const readyWindows = new Set();
@@ -810,6 +810,7 @@ export function createElectronShellRuntime({
   // so apps that never preview a file don't pay the memory cost.
   let previewWindow = null;
   let previewWindowPinned = false;
+  const linkBrowserWindows = new Set();
 
   function desktopActorForSender(sender) {
     return resolveDesktopActorForSender(sender, windows);
@@ -2723,6 +2724,88 @@ export function createElectronShellRuntime({
           try { previewWindow.setAlwaysOnTop(previewWindowPinned, "screen-saver"); } catch { /* ignore */ }
         }
         return previewWindowPinned;
+      });
+
+      function normalizeOpenableUrl(value) {
+        try {
+          const parsed = new URL(String(value ?? "").trim());
+          if (!["http:", "https:", "mailto:"].includes(parsed.protocol)) return null;
+          return parsed.toString();
+        } catch {
+          return null;
+        }
+      }
+
+      function showLinkBrowserWindow(url) {
+        const { workArea } = screen.getPrimaryDisplay();
+        const width = Math.max(920, Math.min(Math.round(workArea.width * 0.58), 1280));
+        const height = Math.max(620, Math.min(workArea.height - 48, 900));
+        const win = new BrowserWindow({
+          width,
+          height,
+          x: workArea.x + Math.max(12, Math.round((workArea.width - width) / 2)),
+          y: workArea.y + 24,
+          show: true,
+          frame: true,
+          resizable: true,
+          movable: true,
+          skipTaskbar: false,
+          title: "LingxY Browser",
+          backgroundColor: "#ffffff",
+          webPreferences: {
+            sandbox: true,
+            contextIsolation: true,
+            nodeIntegration: false,
+            webSecurity: true
+          }
+        });
+        linkBrowserWindows.add(win);
+        win.on("closed", () => linkBrowserWindows.delete(win));
+        win.webContents.setWindowOpenHandler(({ url: nextUrl }) => {
+          const safeUrl = normalizeOpenableUrl(nextUrl);
+          if (safeUrl && /^https?:/i.test(safeUrl)) {
+            showLinkBrowserWindow(safeUrl);
+          } else if (safeUrl) {
+            void shell.openExternal(safeUrl);
+          }
+          return { action: "deny" };
+        });
+        win.webContents.on("will-navigate", (event, nextUrl) => {
+          const safeUrl = normalizeOpenableUrl(nextUrl);
+          if (!safeUrl) event.preventDefault();
+        });
+        win.loadURL(url);
+        return { ok: true, mode: "lingxy_browser" };
+      }
+
+      ipcMain.handle(IPC_CHANNELS.shellOpenUrl, async (event, payload = {}) => {
+        const url = normalizeOpenableUrl(payload.url);
+        if (!url) return { ok: false, error: "invalid_url" };
+        const protocol = new URL(url).protocol;
+        const canOpenInLingxy = protocol === "http:" || protocol === "https:";
+        let mode = payload.mode === "system" || payload.mode === "lingxy_browser"
+          ? payload.mode
+          : null;
+        if (!mode && payload.ask === true && canOpenInLingxy) {
+          const owner = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
+          const choice = await dialog.showMessageBox(owner ?? undefined, {
+            type: "question",
+            title: "Open link",
+            message: "打开这个链接",
+            detail: url,
+            buttons: ["LingxY 新窗口", "系统浏览器", "取消"],
+            defaultId: 0,
+            cancelId: 2,
+            noLink: true
+          });
+          if (choice.response === 2) return { ok: false, cancelled: true };
+          mode = choice.response === 1 ? "system" : "lingxy_browser";
+        }
+        if (mode === "lingxy_browser" && canOpenInLingxy) {
+          return showLinkBrowserWindow(url);
+        }
+        await shell.openExternal(url);
+        return { ok: true, mode: "system" };
       });
       ipcMain.handle(IPC_CHANNELS.mcpInstallPreview, async (_event, payload = {}) => {
         const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";

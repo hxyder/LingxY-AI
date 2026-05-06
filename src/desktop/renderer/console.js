@@ -924,6 +924,10 @@ async function openConsoleChatExternalLink(anchor) {
   const href = normalizeExternalUrl(anchor?.getAttribute?.("href") ?? anchor?.href ?? "");
   if (!href) return false;
   try {
+    if (window.ucaShell?.openUrl) {
+      await window.ucaShell.openUrl(href, { ask: true, source: "console_chat" });
+      return true;
+    }
     if (window.ucaShell?.openExternal) {
       await window.ucaShell.openExternal(href);
       return true;
