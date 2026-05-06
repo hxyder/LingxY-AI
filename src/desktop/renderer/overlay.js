@@ -947,7 +947,9 @@ function renderConversationFromState() {
   renderConversationState();
 }
 
-function startNewConversation() {
+function startNewConversation({ preservePendingInputContext = false } = {}) {
+  const preservedPendingFileSelection = preservePendingInputContext ? pendingFileSelection : null;
+  const preservedPendingCapture = preservePendingInputContext ? pendingCapture : null;
   closeActiveTaskEventStream();
   activeTaskId = null; lastTask = null; notifiedTaskId = null; notifiedInlineResultTaskId = null;
   popupSuccessCardTaskId = null;
@@ -959,7 +961,15 @@ function startNewConversation() {
   clearActiveClarificationBubble();
   if (projectStore) projectStore.currentConversationId = null;
   saveProjectStore();
-  clearPendingInputContext();
+  if (preservePendingInputContext) {
+    pendingFileSelection = preservedPendingFileSelection;
+    pendingCapture = preservedPendingCapture;
+    pendingActiveWindowContext = null;
+    pendingActiveWindowContextCapturedAt = 0;
+    if (typeof renderVoiceChips === "function") renderVoiceChips();
+  } else {
+    clearPendingInputContext();
+  }
   // Hard reset: drop the streaming bubble reference so clearBubbles()
   // doesn't preserve it into the new conversation. (Defensive guard in
   // clearBubbles keeps streaming visible during incidental wipes — but
@@ -4332,6 +4342,15 @@ function applyShellHandoff(payload) {
       filePaths: payload.file_paths ?? []
     };
     showContextReceivedBubble();
+    if ((payload.capture_mode ?? payload.captureMode) === "dock_drop") {
+      showEchoHud({
+        text: `已收到 ${pendingFileSelection.filePaths.length} 个文件，按 V 直接提问`,
+        kind: "wake",
+        durationMs: 5000,
+        throttleMs: 0,
+        allowOutsideSession: true
+      });
+    }
     if (payload.active_window) {
       showActiveWindowPreviewCard(payload.active_window);
     }
@@ -4775,8 +4794,8 @@ function isEchoNoteCommand(text = "") {
   return ECHO_NOTE_COMMAND_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-function showEchoHud({ text = "", kind = "info", durationMs = 1600, throttleMs = 700 } = {}) {
-  if (!echoSessionActive || !text) return;
+function showEchoHud({ text = "", kind = "info", durationMs = 1600, throttleMs = 700, allowOutsideSession = false } = {}) {
+  if ((!echoSessionActive && !allowOutsideSession) || !text) return;
   const now = Date.now();
   if (text === echoHudLastText && now - echoHudLastAt < throttleMs) return;
   echoHudLastText = text;
@@ -7543,11 +7562,13 @@ async function endEchoSession() {
 
 window.ucaShell?.onEchoWake?.(async (payload = {}) => {
   const kind = payload.kind === "note" ? "note" : "voice";
+  const hasPendingInputContext = Boolean(pendingFileSelection?.filePaths?.length || pendingCapture?.capture);
+  const preservePendingInputContext = Boolean(payload.preserveContext || hasPendingInputContext);
   if (!payload.preserveContext) {
-    startNewConversation();
+    startNewConversation({ preservePendingInputContext });
   }
   await beginEchoSession();
-  if (!payload.preserveContext) {
+  if (!payload.preserveContext && !hasPendingInputContext) {
     void captureActiveWindowHintForVoice({ captureMode: kind === "note" ? "echo_note_wake" : "echo_voice_wake" });
   }
   if (kind === "note") {
