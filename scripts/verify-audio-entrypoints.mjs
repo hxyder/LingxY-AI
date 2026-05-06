@@ -16,6 +16,7 @@ const preload = read("src/desktop/renderer/preload.cjs");
 const main = read("src/desktop/tray/electron-main.mjs");
 const manifest = read("src/desktop/shared/manifest.mjs");
 const audioRoutes = read("src/service/core/http-routes/audio-routes.mjs");
+const sherpaScript = read("scripts/local-sherpa-kws.py");
 const transcriptLocale = read("src/service/audio/transcript-locale.mjs");
 const localSurface = read("scripts/verify-local-http-surface.mjs");
 const userSmoke = read("docs/release/user_interaction_smoke_checklist.md");
@@ -203,6 +204,8 @@ assert.ok(main.includes("params.set(\"keywords\"") && main.includes("pathname: \
   "echo KWS: main process must forward wake-profile keywords to the local service route");
 assert.ok(audioRoutes.includes("parseWakeKeywordsParam") && audioRoutes.includes("--keywords"),
   "echo KWS: audio route must pass forwarded wake-profile keywords to the sherpa helper");
+assert.ok(audioRoutes.includes("detectWakeKeywordWithSherpaDaemon") && sherpaScript.includes("--server"),
+  "echo KWS: local sherpa must expose a reusable daemon path with one-shot fallback");
 
 for (const inventory of [
   "POST\", \"/echo/enroll-keyword\"",

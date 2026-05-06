@@ -27,6 +27,14 @@ except Exception:
 
 
 DEFAULT_MODEL_NAME = "sherpa-onnx-kws-zipformer-zh-en-3M-2025-12-20"
+ORIGINAL_KWS_ENV = {
+    key: os.environ.get(key)
+    for key in (
+        "UCA_SHERPA_KWS_KEYWORDS_SCORE",
+        "UCA_SHERPA_KWS_KEYWORDS_THRESHOLD",
+        "UCA_SHERPA_KWS_MAX_ACTIVE_PATHS",
+    )
+}
 # Keywords the spotter is primed for. Kept broad because users won't hit
 # every character exactly; the sherpa KWS internally converts each entry
 # to its pinyin tokens (via phone+ppinyin), so duplicated pronunciations
@@ -156,6 +164,18 @@ def parse_keywords(value: str | None) -> list[str]:
             seen.add(keyword)
             explicit.append(keyword)
     return explicit
+
+
+def apply_kws_profile(personalized: bool) -> None:
+    for key, value in ORIGINAL_KWS_ENV.items():
+        if value is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = value
+    if personalized:
+        os.environ["UCA_SHERPA_KWS_KEYWORDS_SCORE"] = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE_PERSONALIZED", "2.0")
+        os.environ["UCA_SHERPA_KWS_KEYWORDS_THRESHOLD"] = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD_PERSONALIZED", "0.08")
+        os.environ["UCA_SHERPA_KWS_MAX_ACTIVE_PATHS"] = os.environ.get("UCA_SHERPA_KWS_MAX_ACTIVE_PATHS_PERSONALIZED", "8")
 
 
 def build_keywords_file(model_dir: Path, tokens: Path, keywords: list[str], output_dir: Path) -> Path:
@@ -492,12 +512,45 @@ def run_kws(audio_path: Path, model_dir: Path, keywords: list[str], template_fal
         }
 
 
+def run_server(default_model_dir: Path, default_keywords: list[str]) -> int:
+    for line in sys.stdin:
+        text = line.strip()
+        if not text:
+            continue
+        request_id = None
+        try:
+            payload = json.loads(text)
+            request_id = payload.get("id")
+            apply_kws_profile(bool(payload.get("personalized")))
+            request_keywords = payload.get("keywords")
+            explicit_keywords = [str(item).strip() for item in request_keywords if str(item).strip()] if isinstance(request_keywords, list) else []
+            keywords = explicit_keywords or default_keywords
+            model_dir = resolve_model_dir(payload.get("model_dir") or str(default_model_dir))
+            result = run_kws(
+                Path(str(payload.get("audio_path") or "")).resolve(),
+                model_dir,
+                keywords,
+                template_fallback=bool(payload.get("template_fallback")),
+            )
+        except Exception as exc:
+            result = {
+                "ok": False,
+                "reason": "kws_exception",
+                "message": str(exc),
+            }
+        if request_id is not None:
+            result["id"] = request_id
+        print(json.dumps(result, ensure_ascii=True), flush=True)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Detect the Echo wake word with sherpa-onnx KWS.")
     parser.add_argument("audio_path", nargs="?", help="Path to a browser-recorded audio file.")
     parser.add_argument("--model-dir", default="")
     parser.add_argument("--keywords", default="")
     parser.add_argument("--check", action="store_true")
+    parser.add_argument("--server", action="store_true", help="Run a persistent JSONL KWS sidecar on stdin/stdout.")
     parser.add_argument(
         "--personalized",
         action="store_true",
@@ -511,15 +564,13 @@ def main() -> int:
     args = parser.parse_args()
 
     # Personalized mode overrides env so the spotter is looser. The backend
-    # enables this only after the saved enrollment samples pass KWS self-check.
-    if args.personalized:
-        os.environ.setdefault("UCA_SHERPA_KWS_KEYWORDS_SCORE", "2.0")
-        os.environ["UCA_SHERPA_KWS_KEYWORDS_SCORE"] = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE_PERSONALIZED", "2.0")
-        os.environ["UCA_SHERPA_KWS_KEYWORDS_THRESHOLD"] = os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD_PERSONALIZED", "0.08")
-        os.environ["UCA_SHERPA_KWS_MAX_ACTIVE_PATHS"] = os.environ.get("UCA_SHERPA_KWS_MAX_ACTIVE_PATHS_PERSONALIZED", "8")
+    # enables this only after enough saved enrollment samples are usable.
+    apply_kws_profile(args.personalized)
 
     model_dir = resolve_model_dir(args.model_dir)
     keywords = parse_keywords(args.keywords)
+    if args.server:
+        return run_server(model_dir, keywords)
     if args.check:
         try:
             import sherpa_onnx  # noqa: F401

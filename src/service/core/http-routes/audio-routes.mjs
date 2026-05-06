@@ -10,6 +10,7 @@ import {
   normalizeTranscriptionEventForLocale,
   normalizeTranscriptionTextForLocale
 } from "../../audio/transcript-locale.mjs";
+import { detectWakeKeywordWithSherpaDaemon } from "../../audio/sherpa-daemon.mjs";
 import { resolveProviderForTask } from "../../executors/shared/provider-resolver.mjs";
 import { hydrateProviderApiKeySecretSync } from "../../security/secret-store.mjs";
 import { HttpBodyTooLargeError, readJsonBody, readRawBody, sendJson } from "../http-helpers.mjs";
@@ -390,6 +391,21 @@ async function detectWakeKeywordLocally(audioBuffer, { mimeType = "audio/webm", 
     if (Array.isArray(keywords) && keywords.length) args.push("--keywords", keywords.join("\n"));
     if (personalized) args.push("--personalized");
     if (templateFallback) args.push("--template-fallback");
+    if (process.env.UCA_SHERPA_KWS_DAEMON !== "0") {
+      try {
+        return await detectWakeKeywordWithSherpaDaemon({
+          pythonCommand: getPythonCommand(),
+          scriptPath: getLocalKeywordSpottingScriptPath(),
+          audioPath,
+          personalized,
+          templateFallback,
+          keywords,
+          requestTimeoutMs: Number(process.env.UCA_SHERPA_KWS_REQUEST_TIMEOUT_MS ?? 12_000)
+        });
+      } catch {
+        // Fall back to the one-shot helper when the daemon is not available.
+      }
+    }
     const { stdout } = await execFileAsync(getPythonCommand(), args, {
       timeout: Number(process.env.UCA_SHERPA_KWS_REQUEST_TIMEOUT_MS ?? 12_000),
       maxBuffer: 1024 * 1024 * 2,
