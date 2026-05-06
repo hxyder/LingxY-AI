@@ -218,6 +218,13 @@ assert.ok(overlayJs.includes("function toggleComposerVoiceInput()")
   "overlay voice: Ctrl+Shift+V must route to the lightweight composer mic path");
 assert.ok(overlayJs.includes("if (!payload.preserveContext)") && main.includes("preserveContext: Boolean(payload?.preserveContext)"),
   "overlay voice: dock/file handoff must be able to start voice without clearing pending context");
+assert.ok(dockJs.includes("window.ucaShell?.showWindow?.(\"overlay\")")
+  && dockJs.includes("if (echoEnabled)")
+  && dockJs.includes("sendEchoWake"),
+  "dock drop: normal mode must open overlay, while Echo mode stays in hidden voice handoff");
+assert.ok(main.includes("preserveContext: Boolean(payload.preserveContext)")
+  && overlayJs.includes("window.ucaShell?.onEchoWake"),
+  "Echo wake: preserveContext must survive dock -> main -> overlay handoff");
 assert.ok(overlayJs.includes("async function submitComposerInput()")
   && overlayJs.includes("await stopVoiceRecognition()")
   && overlayJs.includes("void submitComposerInput();"),

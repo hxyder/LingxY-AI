@@ -14,6 +14,7 @@ const state = {
   kind: "info",
   pinned: false,
   resolved: false,
+  payload: null,
   autoHideTimer: null,
   autoHideMs: 0,
   interacting: false,
@@ -306,6 +307,7 @@ function applyInit(payload) {
   state.resolved = false;
   state.interacting = false;
   state.kind = kind;
+  state.payload = payload ?? null;
   cardEl.setAttribute("data-kind", kind);
   setText(titleEl, payload?.title ?? defaultTitleFor(kind));
 
@@ -435,6 +437,18 @@ function applyInit(payload) {
     setTimeout(measureAndResize, 260);
   });
 }
+
+document.addEventListener("keydown", (event) => {
+  if (event.defaultPrevented || state.resolved) return;
+  if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+  if (`${event.key ?? ""}`.toLowerCase() !== "v") return;
+  const payload = state.payload ?? {};
+  if (payload.allowContinue === false) return;
+  const taskId = payload.taskId ?? batchState.entries[batchState.currentIndex]?.taskId ?? batchState.taskId ?? null;
+  if (!taskId) return;
+  event.preventDefault();
+  void resolveCard("voice_continue", { taskId });
+});
 
 function defaultTitleFor(kind) {
   if (kind === "approval") return "等待确认";

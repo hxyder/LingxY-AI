@@ -11,6 +11,18 @@ import { readJsonBody, sendJson } from "../http-helpers.mjs";
 const RECENT_BROWSER_CONTEXT_LIMIT = 30;
 const RECENT_BROWSER_CONTEXT_TTL_MS = 30 * 60 * 1000;
 
+function persistUserLocation(runtime, location) {
+  try {
+    runtime?.configStore?.patch?.({
+      location: {
+        userLocation: location ? { ...location } : null
+      }
+    });
+  } catch {
+    // Location still works for the current process; persistence is best-effort.
+  }
+}
+
 async function writeOverlayHandoff(body) {
   const handoffDir = path.join(os.homedir(), "AppData", "Local", "UCA", "handoffs", "explorer");
   await mkdir(handoffDir, { recursive: true });
@@ -306,7 +318,7 @@ function listRecentBrowserContexts(recentBrowserContexts, query = {}) {
     .map((item) => ({ ...item.context, score: item.score }));
 }
 
-export async function tryHandleBrowserContextRoute({ request, response, method, url, recentBrowserContexts }) {
+export async function tryHandleBrowserContextRoute({ request, response, method, url, runtime, recentBrowserContexts }) {
   // /location — browser extension pushes fresh fixes here after the user grants
   // the Chrome geolocation prompt. GET returns the current cached fix; DELETE
   // wipes it. The task submission path can also refresh the same cache.
@@ -322,18 +334,21 @@ export async function tryHandleBrowserContextRoute({ request, response, method, 
       sendJson(response, 400, { ok: false, error: "invalid_location" });
       return true;
     }
+    persistUserLocation(runtime, stored);
     sendJson(response, 200, { ok: true, location: stored });
     return true;
   }
 
   if (method === "DELETE" && url.pathname === "/location") {
     clearUserLocation();
+    persistUserLocation(runtime, null);
     sendJson(response, 200, { ok: true });
     return true;
   }
 
   if (method === "POST" && url.pathname === "/location/windows") {
     const result = await refreshWindowsLocation();
+    if (result.ok) persistUserLocation(runtime, result.location);
     const status = result.ok ? 200 : 400;
     sendJson(response, status, result);
     return true;

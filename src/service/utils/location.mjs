@@ -81,6 +81,19 @@ export function setUserLocation(input) {
   return record;
 }
 
+export function hydrateUserLocation(input) {
+  const record = normalize(input);
+  if (!record) return null;
+  const parsed = Date.parse(record.fetchedAt);
+  _userLocation = record;
+  _userLocationAt = Number.isFinite(parsed) ? parsed : Date.now();
+  return record;
+}
+
+export function serializeUserLocation() {
+  return _userLocation ? { ..._userLocation } : null;
+}
+
 /**
  * Synchronous read used by the agent-loop prompt builder and the scheduler
  * dispatch gate. Returns null if nothing has been set, or if the stored

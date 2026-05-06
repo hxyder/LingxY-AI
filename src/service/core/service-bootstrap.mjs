@@ -30,6 +30,8 @@ import { createDagCheckpointStore } from "../dag/scheduler.mjs";
 import { createEmailMonitor } from "../email/monitor.mjs";
 import { createConnectorCatalog } from "../connectors/core/catalog.mjs";
 import { createPluginRegistry } from "../connectors/core/plugin-registry.mjs";
+import { hydrateUserLocation } from "../utils/location.mjs";
+import { refreshWindowsLocation } from "../utils/windows-geolocator.mjs";
 
 // Minimal in-memory config store: survives within a single process lifetime
 // but doesn't persist to disk. Used when createServiceBootstrap() is called
@@ -196,6 +198,28 @@ export function createServiceBootstrap({
       });
     }
   } catch { /* non-fatal — resolve-time sanitize still protects */ }
+  try {
+    const savedLocation = runtime.configStore?.load?.()?.location?.userLocation ?? null;
+    if (savedLocation) {
+      hydrateUserLocation(savedLocation);
+      const persistFreshLocation = (result) => {
+        if (!result?.ok || !result.location) return;
+        runtime.configStore?.patch?.({
+          location: {
+            userLocation: { ...result.location }
+          }
+        });
+      };
+      // Startup stays fast: hydrate immediately, refresh Windows location in
+      // the background so moving between places is picked up without another
+      // manual click.
+      refreshWindowsLocation({ timeoutMs: 8_000 }).then(persistFreshLocation).catch(() => {});
+      runtime.locationRefreshInterval = setInterval(() => {
+        refreshWindowsLocation({ timeoutMs: 8_000 }).then(persistFreshLocation).catch(() => {});
+      }, 30 * 60 * 1000);
+      runtime.locationRefreshInterval?.unref?.();
+    }
+  } catch { /* location is advisory; never block service startup */ }
   runtime.emailMonitor = createEmailMonitor({ runtime });
   runtime.emailMonitor.start();
   runtime.persistSecurityConfig = (patch) => {

@@ -315,7 +315,7 @@ function matchesWake(text) {
   return false;
 }
 
-async function onWakeDetected(kind, transcript = "") {
+async function onWakeDetected(kind, transcript = "", options = {}) {
   // Rate-limit to one wake every 1.5 seconds (prevents the same utterance
   // from firing twice across interim+final results or across rolling-window
   // iterations). The old "ignore while restartTimer exists" guard locked
@@ -347,16 +347,20 @@ async function onWakeDetected(kind, transcript = "") {
   setTimeout(() => {
     if (!echoPausedForSession) return;
     window.ucaShell?.showEchoBubble?.({
-      text: kind === "note"
+      text: options.guidanceText || (kind === "note"
         ? "🎙 正在录音… 按 Enter 结束并总结"
-        : "🎙 请说出指令，停顿后自动发送；Enter 立即发送",
+        : "🎙 请说出指令，停顿后自动发送；Enter 立即发送"),
       kind: "info",
       durationMs: 12_000
     });
   }, 1100);
   window.__orbApi?.echoListening?.(true);
   try {
-    await window.ucaShell?.sendEchoWake?.({ kind, transcript });
+    await window.ucaShell?.sendEchoWake?.({
+      kind,
+      transcript,
+      preserveContext: Boolean(options.preserveContext)
+    });
   } catch (err) {
     console.warn("[echo] wake handoff failed:", err);
   }
@@ -1207,11 +1211,9 @@ async function startVoiceForDroppedFiles() {
   if (!echoEnabled || Date.now() > droppedFileVoiceReadyUntil) return false;
   droppedFileVoiceReadyUntil = 0;
   window.__orbApi?.pulse?.();
-  await window.ucaShell?.openOverlayVoice?.({
-    mode: "voice",
-    autoStart: true,
+  await onWakeDetected("voice", "dock_file_voice", {
     preserveContext: true,
-    source: "dock_drop_voice"
+    guidanceText: "🎙 已带上文件，请直接说你的问题；Enter 立即发送"
   });
   return true;
 }
@@ -1227,9 +1229,10 @@ function announceDroppedFiles(fileCount) {
     });
     return;
   }
+  void window.ucaShell?.showWindow?.("overlay");
   void window.ucaShell.notify({
     title: "LingxY",
-    body: `Received ${fileCount} file(s).`
+    body: `Received ${fileCount} file(s). Opening chat.`
   });
 }
 

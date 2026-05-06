@@ -180,6 +180,7 @@ let suppressOverlayAutoReveal = false;
 let echoTaskIds = new Set();
 let echoResultHudTaskIds = new Set();
 let echoSessionId = null;
+let pendingContinuationTaskId = null;
 
 function shouldSurfaceTaskPopupCards() {
   try {
@@ -289,7 +290,9 @@ function showEchoResultHudOnce(taskId, { text = "", title = "任务完成", kind
   if (!isEchoTask(taskId) || echoResultHudTaskIds.has(taskId)) return;
   const body = compactEchoResultText(text);
   const label = compactEchoResultText(title);
-  const hudText = body ? `${label ? `${label}: ` : ""}${body}` : (label || "任务完成");
+  const hudText = body
+    ? `${label ? `${label}: ` : ""}${body}\n按 V 继续语音追问，或点卡片打开对话框`
+    : `${label || "任务完成"}\n按 V 继续语音追问，或点卡片打开对话框`;
   if (!hudText) return;
   echoResultHudTaskIds.add(taskId);
   try {
@@ -2740,7 +2743,9 @@ async function handleTaskEventFrame(rawEvent) {
       bubbleArea.hidden = false;
       bubbleArea.appendChild(streamingBubble);
       streamingBubbleRawText = "";
-      void maybeRevealOverlay({ markEngaged: true }); // lock overlay open unless user explicitly closed it
+      if (!isEchoTask(frameTaskId)) {
+        void maybeRevealOverlay({ markEngaged: true }); // lock overlay open unless user explicitly closed it
+      }
     }
     streamingBubbleRawText = nextRawText;
     streamingBubble.classList.remove("answer-placeholder");
@@ -2792,7 +2797,7 @@ async function handleTaskEventFrame(rawEvent) {
         // image-submission tasks (whose preflight task_spec has
         // `artifact.required` undefined) double-rendered every reply.
         notifiedInlineResultTaskId = activeTaskId;
-        if (shouldAutoRevealTaskResult()) void maybeRevealOverlay();
+        if (!isEchoTask(frameTaskId) && shouldAutoRevealTaskResult()) void maybeRevealOverlay();
         // Fire success popup card from the inline-result path as well —
         // the downstream status_changed=success block is guarded by
         // notifiedInlineResultTaskId and otherwise wouldn't trigger the
@@ -3958,8 +3963,12 @@ async function submitTask() {
     // completed task. Server-side submitContextTask skips decomposition /
     // plan layer when parentTaskId is set, so the follow-up inherits the
     // thread instead of starting a brand-new root task every time.
-    const parentTaskId = shouldAttachParentTaskForCommand(commandText)
+    const explicitContinuationTaskId = pendingContinuationTaskId;
+    const parentTaskId = explicitContinuationTaskId || (shouldAttachParentTaskForCommand(commandText)
       ? conversationState?.lastCompletedTaskId ?? null
+      : null);
+    const continuationConversationId = explicitContinuationTaskId
+      ? taskOwnerConversationId(taskConversationMap, explicitContinuationTaskId)
       : null;
 
     const clientMessageId = createClientMessageId();
@@ -3972,7 +3981,7 @@ async function submitTask() {
         ...payload,
         background: true,
         parent_task_id: parentTaskId,
-        conversation_id: conversationState?.id ?? null,
+        conversation_id: continuationConversationId ?? conversationState?.id ?? null,
         client_message_id: clientMessageId
       }));
       result = await fetchJson("/task", {
@@ -4000,6 +4009,7 @@ async function submitTask() {
     }
 
     activeTaskId = result.task.task_id;
+    pendingContinuationTaskId = null;
     lastTask = result.task;
     if (echoSessionActive || isEchoOriginTask(result.task)) rememberEchoTask(activeTaskId);
     notifiedTaskId = null;
@@ -7345,7 +7355,7 @@ window.ucaShell?.onPopupCardResolved?.(async (payload) => {
 
   // UCA-182 Phase 8: success-kind cards carry artifact actions. These
   // replace the old result-toast buttons.
-  if (["preview", "reveal", "copy", "continue", "open_overlay"].includes(payload.action)) {
+  if (["preview", "reveal", "copy", "continue", "voice_continue", "open_overlay"].includes(payload.action)) {
     const meta = payload.meta ?? {};
     const action = payload.action;
     if (action === "open_overlay") {
@@ -7379,7 +7389,20 @@ window.ucaShell?.onPopupCardResolved?.(async (payload) => {
     } else if (action === "copy") {
       const text = meta.inlinePreview || meta.artifactPath || "";
       if (text) void window.ucaShell?.writeClipboardText?.(text);
+    } else if (action === "voice_continue") {
+      const taskId = meta.taskId ?? payload.taskId;
+      if (taskId) {
+        rememberEchoTask(taskId);
+        pendingContinuationTaskId = taskId;
+      }
+      await beginEchoSession();
+      showEchoHud({ text: "继续追问，请直接说；Enter 立即发送", kind: "wake", durationMs: 9000, throttleMs: 0 });
+      if (!voiceRecording) {
+        toggleComposerVoiceInput();
+      }
     } else if (action === "continue") {
+      const taskId = meta.taskId ?? payload.taskId;
+      if (taskId) pendingContinuationTaskId = taskId;
       commandInput?.focus?.();
       void maybeRevealOverlay?.();
     }
@@ -7460,9 +7483,13 @@ async function endEchoSession() {
 
 window.ucaShell?.onEchoWake?.(async (payload = {}) => {
   const kind = payload.kind === "note" ? "note" : "voice";
-  startNewConversation();
+  if (!payload.preserveContext) {
+    startNewConversation();
+  }
   await beginEchoSession();
-  void captureActiveWindowHintForVoice({ captureMode: kind === "note" ? "echo_note_wake" : "echo_voice_wake" });
+  if (!payload.preserveContext) {
+    void captureActiveWindowHintForVoice({ captureMode: kind === "note" ? "echo_note_wake" : "echo_voice_wake" });
+  }
   if (kind === "note") {
     showEchoHud({ text: "开始录音笔记…", kind: "wake", durationMs: 1800, throttleMs: 0 });
     if (voiceRecording) stopVoiceRecognition();

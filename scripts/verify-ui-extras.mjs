@@ -207,6 +207,11 @@ assert.ok(/payload\.autoStart !== false/.test(overlayJs),
   "voice bridge: overlay must honor shell voice autoStart option");
 assert.ok(/if \(!isEchoTask\(taskId\) && !shouldSurfaceTaskPopupCards\(\)\) return;/.test(overlayJs),
   "echo result cards: Echo tasks must surface a completion card even when overlay visibility is ambiguous");
+assert.ok(/resolveCard\(["']voice_continue["']/.test(popupCardJs)
+    && /action === ["']voice_continue["']/.test(overlayJs)
+    && /pendingContinuationTaskId = taskId/.test(overlayJs)
+    && /toggleComposerVoiceInput\(\)/.test(overlayJs),
+  "echo result cards: pressing V on a result card must start a voice follow-up without opening the overlay");
 assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml),
   "voice language: overlay voice input must default to simplified Chinese with English words preserved");
 assert.ok(/if \(\s*\/\^zh\/i\.test\([\s\S]{0,120}\)\) return "zh-CN";/.test(overlayJs),

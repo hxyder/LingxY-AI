@@ -2453,6 +2453,7 @@ export function createElectronShellRuntime({
         enqueueWindowMessage("overlay", "uca:echo-wake", {
           kind: payload.kind ?? "voice",
           transcript: payload.transcript ?? "",
+          preserveContext: Boolean(payload.preserveContext),
           triggeredAt: Date.now()
         });
         return { accepted: true };
