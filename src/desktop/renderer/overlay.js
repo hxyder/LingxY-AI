@@ -3950,6 +3950,12 @@ async function submitTask() {
         executionMode: "interactive",
         capture
       };
+    } else if (contextDecision.kind === "missing_explicit_file_context") {
+      commandInput.value = rawCommand;
+      autoSizeInput();
+      addSystemBubble("没有检测到可读取的当前文件。请先选中文件、拖入文件，或把文件窗口切到前台后再提问。");
+      commandInput.focus();
+      return;
     } else if (contextDecision.kind === "image_paths") {
       payload = {
         imagePaths: contextDecision.filePaths,

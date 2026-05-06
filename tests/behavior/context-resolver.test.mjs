@@ -39,6 +39,18 @@ test("pending image files route separately from document files", () => {
   }).kind, "file_paths");
 });
 
+test("explicit current-file requests do not fall back to stale seed capture", () => {
+  const decision = resolveOverlayContextSubmission({
+    explicitFileContextRequest: true,
+    activeFileSelection: null,
+    pendingFileSelection: null,
+    seedCapture: { sourceType: "text_selection", text: "old selection" }
+  });
+
+  assert.equal(decision.kind, "missing_explicit_file_context");
+  assert.equal(decision.fallbackAllowed, false);
+});
+
 test("pending capture wins over seed capture for follow-up context", () => {
   const decision = resolveOverlayContextSubmission({
     pendingCapture: { capture: { sourceType: "text_selection", text: "new selection" } },

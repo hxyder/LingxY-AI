@@ -21,6 +21,7 @@ function normalizePaths(value) {
 export function resolveOverlayContextSubmission({
   explicitBrowserContextRequest = false,
   activeBrowserCapture = null,
+  explicitFileContextRequest = false,
   activeFileSelection = null,
   pendingFileSelection = null,
   pendingCapture = null,
@@ -61,6 +62,14 @@ export function resolveOverlayContextSubmission({
       sourceApp: pendingFileSelection?.sourceApp,
       captureMode: pendingFileSelection?.captureMode,
       filePaths: pendingFilePaths
+    };
+  }
+
+  if (explicitFileContextRequest) {
+    return {
+      kind: "missing_explicit_file_context",
+      reason: "explicit_file_context_unavailable",
+      fallbackAllowed: false
     };
   }
 
