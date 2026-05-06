@@ -209,6 +209,9 @@ const KNOWN_CODE_CLIS = [
   { name: "Snow CLI", binNames: ["snow.exe", "snow"], args: [], transport: "stream_json_print", defaultModel: "", versionFlag: "--version" }
 ];
 
+const DETECT_CODE_CLIS_TTL_MS = 30_000;
+let detectCodeClisCache = null;
+
 async function findExecutableOnPath(binName) {
   const lookup = process.platform === "win32" ? "where.exe" : "which";
   try {
@@ -277,6 +280,20 @@ async function detectInstalledCodeClis() {
   return found;
 }
 
+async function detectInstalledCodeClisCached({ refresh = false, now = Date.now() } = {}) {
+  if (!refresh
+      && detectCodeClisCache
+      && now - detectCodeClisCache.checkedAt < DETECT_CODE_CLIS_TTL_MS) {
+    return detectCodeClisCache.clis.map((entry) => ({ ...entry }));
+  }
+  const clis = await detectInstalledCodeClis();
+  detectCodeClisCache = {
+    checkedAt: now,
+    clis: clis.map((entry) => ({ ...entry }))
+  };
+  return clis;
+}
+
 export async function tryHandleConfigProviderRoute({ request, response, method, url, runtime, providerModelDiscovery }) {
   if (method === "GET" && url.pathname === "/config") {
     const config = runtime.configStore?.load?.() ?? {};
@@ -285,7 +302,8 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
   }
 
   if (method === "GET" && url.pathname === "/config/detect-clis") {
-    const detected = await detectInstalledCodeClis();
+    const forceRefresh = ["1", "true", "yes"].includes(`${url.searchParams.get("refresh") ?? ""}`.toLowerCase());
+    const detected = await detectInstalledCodeClisCached({ refresh: forceRefresh });
     sendJson(response, 200, { clis: detected });
     return true;
   }
