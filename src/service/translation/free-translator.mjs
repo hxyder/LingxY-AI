@@ -16,6 +16,8 @@ const DEFAULT_FETCH = (typeof fetch === "function") ? fetch : null;
 
 const MAX_CHUNK_CHARS = 480;       // MyMemory single-request limit is ~500
 const PROVIDERS = ["google_web", "mymemory"];
+const DEFAULT_PROVIDER_TIMEOUT_MS = 2500;
+const DEFAULT_CHUNK_CONCURRENCY = 3;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Language helpers
@@ -174,13 +176,41 @@ const PROVIDER_FUNCS = {
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
 
+function providerSignal({ signal, timeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS } = {}) {
+  const timeout = Number(timeoutMs);
+  if (!Number.isFinite(timeout) || timeout <= 0 || typeof AbortSignal?.timeout !== "function") {
+    return signal;
+  }
+  const timeoutSignal = AbortSignal.timeout(timeout);
+  if (!signal) return timeoutSignal;
+  if (typeof AbortSignal?.any === "function") return AbortSignal.any([signal, timeoutSignal]);
+  if (signal.aborted) return signal;
+  return timeoutSignal;
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const limit = Math.max(1, Math.min(Number(concurrency) || 1, items.length || 1));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, () => worker()));
+  return results;
+}
+
 export async function translateChunk({
   text,
   source = "auto",
   target = "zh-CN",
   fetchImpl = DEFAULT_FETCH,
   signal,
-  preferredProvider = null
+  preferredProvider = null,
+  providerTimeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS
 } = {}) {
   if (!fetchImpl) {
     throw new Error("translate_no_fetch_available");
@@ -198,7 +228,13 @@ export async function translateChunk({
     const fn = PROVIDER_FUNCS[provider];
     if (!fn) continue;
     try {
-      return await fn({ text, source, target, fetchImpl, signal });
+      return await fn({
+        text,
+        source,
+        target,
+        fetchImpl,
+        signal: providerSignal({ signal, timeoutMs: providerTimeoutMs })
+      });
     } catch (error) {
       errors.push(`${provider}: ${error.message}`);
     }
@@ -212,7 +248,9 @@ export async function translateText({
   target = null,
   fetchImpl = DEFAULT_FETCH,
   signal,
-  preferredProvider = null
+  preferredProvider = null,
+  providerTimeoutMs = DEFAULT_PROVIDER_TIMEOUT_MS,
+  chunkConcurrency = DEFAULT_CHUNK_CONCURRENCY
 } = {}) {
   const trimmed = String(text ?? "").trim();
   if (!trimmed) {
@@ -242,27 +280,25 @@ export async function translateText({
   }
 
   const pieces = splitIntoChunks(trimmed);
-  const chunks = [];
-  let providerUsed = null;
-  let detectedFromProvider = null;
-
-  for (const piece of pieces) {
+  const chunks = await mapWithConcurrency(pieces, chunkConcurrency, async (piece) => {
     const result = await translateChunk({
       text: piece,
       source: source === "auto" ? "auto" : detectedSource,
       target: resolvedTarget,
       fetchImpl,
       signal,
-      preferredProvider
+      preferredProvider,
+      providerTimeoutMs
     });
-    chunks.push({
+    return {
       source: piece,
       translated: result.text,
-      provider: result.provider
-    });
-    providerUsed ??= result.provider;
-    detectedFromProvider ??= result.detectedSource;
-  }
+      provider: result.provider,
+      detectedSource: result.detectedSource
+    };
+  });
+  const providerUsed = chunks.find((chunk) => chunk.provider)?.provider ?? null;
+  const detectedFromProvider = chunks.find((chunk) => chunk.detectedSource)?.detectedSource ?? null;
 
   return {
     input: trimmed,
@@ -270,7 +306,7 @@ export async function translateText({
     source_language: detectedFromProvider ?? detectedSource,
     target_language: resolvedTarget,
     provider: providerUsed ?? "unknown",
-    chunks
+    chunks: chunks.map(({ detectedSource: _detectedSource, ...chunk }) => chunk)
   };
 }
 
