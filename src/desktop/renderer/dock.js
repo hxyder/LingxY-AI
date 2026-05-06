@@ -1024,6 +1024,13 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
         transcript,
         kwsMatched: Boolean(kwsSelfCheck.matched),
         kwsKeyword: kwsSelfCheck.keyword ?? "",
+        // Codex Round 5 review: the final summary fallback was using
+        // saved.filter(s => s.kwsMatched) to count "good" samples, but the
+        // current acceptance gate only treats KWS matches whose keyword is
+        // in enrollmentTargetPhrases() as evidence. Persist that stricter
+        // signal alongside the raw kwsMatched flag so the fallback count
+        // can use the same gate as acceptance.
+        kwsHitsTarget,
         enrollment: result.enrollment ?? null
       });
       console.info(
@@ -1051,7 +1058,10 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
 
     if (saved.length > 0) {
       const finalEnrollment = saved.at(-1)?.enrollment ?? {};
-      const matched = finalEnrollment.matchedCount ?? saved.filter((s) => s.kwsMatched).length;
+      // Prefer the server-side authoritative matchedCount when present;
+      // otherwise count only samples whose KWS keyword was in the
+      // enrollment target set (matches the acceptance gate above).
+      const matched = finalEnrollment.matchedCount ?? saved.filter((s) => s.kwsHitsTarget).length;
       const total = finalEnrollment.sampleCount ?? saved.length;
       const required = finalEnrollment.requiredMatches ?? 2;
       const enabled = Boolean(finalEnrollment.enabled);

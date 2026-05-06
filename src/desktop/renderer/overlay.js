@@ -4018,7 +4018,19 @@ async function refreshActiveTask() {
       const partialMsg = task.failure_user_message
         ?? task.partial_message
         ?? "Task partially succeeded.";
-      addBubble("assistant", `Task partially succeeded: ${partialMsg}`);
+      const partialText = `Task partially succeeded: ${partialMsg}`;
+      // Codex Round 5 review: success branches finalise streamingBubble in
+      // place rather than adding a duplicate; partial_success must do the
+      // same so a backend path that ends mid-stream (no inline_result, no
+      // success event) doesn't leave a "streaming" bubble hanging in the UI.
+      if (streamingBubble) {
+        streamingBubble.classList.remove("streaming");
+        streamingBubble.innerHTML = renderMarkdown(partialText);
+        streamingBubble = null;
+        streamingBubbleRawText = "";
+      } else {
+        addBubble("assistant", partialText);
+      }
       if (conversationState) {
         conversationState.lastCompletedTaskId = task.task_id;
         conversationState.lastCompletedAt = Date.now();
