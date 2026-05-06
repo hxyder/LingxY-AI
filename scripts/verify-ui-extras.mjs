@@ -603,6 +603,8 @@ assert.ok(/void refreshDesktopLocationChip\(\);[\s\S]{0,80}setTimeout\(\(\) => \
 assert.ok(/const settings = await loadSettings\(\);[\s\S]{0,420}if \(!settings\?\.echoMode\)[\s\S]{0,100}showWindow\("overlay"\)/.test(electronMain),
   "dock file drop: normal mode must open overlay while Echo mode only hands off files for V-to-ask");
 assert.ok(/surface:\s*settings\?\.echoMode \? "echo_receipt" : "overlay"/.test(electronMain)
+    && /const ECHO_DOCK_DROP_VOICE_READY_MS = 30_000;/.test(electronMain)
+    && /voiceContinueTtlMs:\s*settings\?\.echoMode \? ECHO_DOCK_DROP_VOICE_READY_MS : 0/.test(electronMain)
     && !/announceDroppedFiles[\s\S]{0,700}showWindow\?\.\("overlay"\)/.test(read("src/desktop/renderer/dock.js")),
   "dock file drop: main owns mode policy; dock only renders the returned receipt surface");
 assert.ok(/startNewConversation\(\{ preservePendingInputContext \}\)/.test(overlayJs)

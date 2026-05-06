@@ -40,6 +40,7 @@ const RENDERER_DIR = path.join(__dirname, "..", "renderer");
 const PRELOAD_PATH = path.join(RENDERER_DIR, "preload.cjs");
 const DESKTOP_ACTOR_HEADER = "X-Lingxy-Desktop-Actor";
 const DOCK_WINDOW_ID = "dock";
+const ECHO_DOCK_DROP_VOICE_READY_MS = 30_000;
 const DOCK_HUD_SCROLL_LOCK_CSS = `
   html, body, #dockButton {
     position: fixed !important;
@@ -4260,7 +4261,7 @@ export function createElectronShellRuntime({
           buildOverlayPayloadFromFiles(acceptedFilePaths, "uca.dock", "dock_drop", {
             mode: settings?.echoMode ? "echo" : "normal",
             surface: settings?.echoMode ? "echo_receipt" : "overlay",
-            voiceContinueTtlMs: settings?.echoMode ? 12_000 : 0
+            voiceContinueTtlMs: settings?.echoMode ? ECHO_DOCK_DROP_VOICE_READY_MS : 0
           })
         );
         return {
@@ -4268,7 +4269,7 @@ export function createElectronShellRuntime({
           fileCount: acceptedFilePaths.length,
           mode: settings?.echoMode ? "echo" : "normal",
           surface: settings?.echoMode ? "echo_receipt" : "overlay",
-          voiceContinueTtlMs: settings?.echoMode ? 12_000 : 0
+          voiceContinueTtlMs: settings?.echoMode ? ECHO_DOCK_DROP_VOICE_READY_MS : 0
         };
       });
       ipcMain.handle(IPC_CHANNELS.shellMoveWindowBy, (_event, { windowId, deltaX, deltaY } = {}) => {
