@@ -490,4 +490,9 @@ if (/const\s+PATTERN\s*=/.test(topicHintSource) || /天气\|气温|weather\|fore
   throw new Error("topic_hint must remain a compatibility placeholder; topic regex belongs to SemanticRouter.");
 }
 
+const submitFileTaskScript = readFileSync("scripts/submit-file-task.ps1", "utf8");
+if (!/background\s*=\s*\$true/i.test(submitFileTaskScript)) {
+  throw new Error("submit-file-task.ps1 must request background task creation before polling status.");
+}
+
 console.log("Repository structure verification passed.");

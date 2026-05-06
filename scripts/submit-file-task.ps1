@@ -46,6 +46,7 @@ $body = @{
   userCommand = $Prompt
   executorOverride = $Executor
   executionMode = "interactive"
+  background = $true
 } | ConvertTo-Json -Depth 6
 
 $submitResult = Invoke-RestMethod -Method Post -Uri "$RuntimeUrl/task" -ContentType "application/json" -Body $body
