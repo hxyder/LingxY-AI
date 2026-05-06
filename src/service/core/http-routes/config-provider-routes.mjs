@@ -29,6 +29,7 @@ import {
   testEditableSkill,
   writeSkillMarkdownWithBackup
 } from "../../ai/skills/lifecycle.mjs";
+import { installSkillFromGitHub } from "../../ai/skills/github-install.mjs";
 import { validateSkillRegistryDescriptor } from "../../ai/skills/registry-validation.mjs";
 import { resolveActiveProviderForTask, sanitizeTaskRouteForProvider } from "../../executors/shared/provider-resolver.mjs";
 import { sanitizeProviderConfig } from "../../../shared/provider-catalog.mjs";
@@ -788,6 +789,28 @@ export async function tryHandleConfigProviderRoute({ request, response, method, 
       const status = error.message === "skill_path_not_allowed" ? 403 : 400;
       sendJson(response, status, { error: error.message });
     }
+    return true;
+  }
+
+  if (method === "POST" && url.pathname === "/skills/install/github") {
+    if (!requireDesktopActor({ request, response, allowedActors: ["desktop_console"] })) return true;
+    let body;
+    try {
+      body = await readJsonBody(request, { maxBytes: 4096 });
+    } catch (error) {
+      sendJson(response, 400, { ok: false, error: "invalid_json", message: String(error?.message ?? error) });
+      return true;
+    }
+    body = body && typeof body === "object" ? body : {};
+    const result = await installSkillFromGitHub({
+      url: body.url,
+      branch: typeof body.branch === "string" ? body.branch : null,
+      runtime
+    });
+    const status = result.ok
+      ? 200
+      : (result.error === "git_not_installed" ? 503 : 400);
+    sendJson(response, status, result);
     return true;
   }
 

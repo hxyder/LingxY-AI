@@ -2112,6 +2112,20 @@
             </div>
           </form>
           <div id="skillRegistryList" class="stack" style="gap:8px;"></div>
+          <div id="skillGitHubInstallPanel" class="stack" style="gap:8px;margin-top:14px;border-top:1px solid var(--line);padding-top:12px;">
+            <div>
+              <strong style="font-size:12px;">从 GitHub 安装 Skill</strong>
+              <p class="muted" style="font-size:12px;margin:4px 0 0;">
+                粘贴 <code>https://github.com/owner/repo</code>。安装后会被注册为本地 Skill 注册表。
+                第三方 Skill 的 SKILL.md 会进入 LLM 上下文 — 不要把私密凭据交给来源不明的 Skill。
+              </p>
+            </div>
+            <div class="row" style="gap:8px;">
+              <input id="skillGitHubInstallUrl" type="text" style="flex:1;" placeholder="https://github.com/owner/repo">
+              <button id="skillGitHubInstallBtn" class="btn btn-primary" type="button">安装</button>
+            </div>
+            <div id="skillGitHubInstallState" class="muted" style="font-size:12px;"></div>
+          </div>
         </div>
 
         <!-- ── Code CLI Adapters ── -->

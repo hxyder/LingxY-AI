@@ -295,6 +295,9 @@ const skillRegistryList = document.querySelector("#skillRegistryList");
 const skillRegistryRefreshBtn = document.querySelector("#skillRegistryRefreshBtn");
 const skillRegistryTestBtn = document.querySelector("#skillRegistryTestBtn");
 const skillCreateBtn = document.querySelector("#skillCreateBtn");
+const skillGitHubInstallUrl = document.querySelector("#skillGitHubInstallUrl");
+const skillGitHubInstallBtn = document.querySelector("#skillGitHubInstallBtn");
+const skillGitHubInstallState = document.querySelector("#skillGitHubInstallState");
 const codeCliAdapterCount = document.querySelector("#codeCliAdapterCount");
 const codeCliAdapterForm = document.querySelector("#codeCliAdapterForm");
 const codeCliAdapterId = document.querySelector("#codeCliAdapterId");
@@ -7805,6 +7808,43 @@ mcpServerRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
 skillRegistryRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
 codeCliAdapterRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
 emailAccountRefreshBtn?.addEventListener("click", () => void refreshWorkspace());
+
+skillGitHubInstallBtn?.addEventListener("click", async () => {
+  if (!skillGitHubInstallUrl) return;
+  const url = skillGitHubInstallUrl.value.trim();
+  if (!url) {
+    if (skillGitHubInstallState) skillGitHubInstallState.textContent = "请输入 GitHub URL";
+    return;
+  }
+  const originalLabel = skillGitHubInstallBtn.textContent;
+  skillGitHubInstallBtn.disabled = true;
+  skillGitHubInstallBtn.textContent = "安装中…";
+  if (skillGitHubInstallState) skillGitHubInstallState.textContent = "正在 git clone…";
+  try {
+    const response = await fetch(`${state.serviceBaseUrl}/skills/install/github`, desktopJsonOptions("POST", { url }));
+    const data = await response.json().catch(() => ({}));
+    if (data?.ok) {
+      if (skillGitHubInstallState) {
+        skillGitHubInstallState.textContent = `已安装：${data.descriptor?.heading ?? data.repo} → ${data.rootPath}`;
+      }
+      skillGitHubInstallUrl.value = "";
+      showConsoleToast("Skill 已安装", { kind: "ok" });
+      // Skill registry list refreshes via the workspace fetcher.
+      void refreshWorkspace?.();
+    } else {
+      const reason = data?.error ?? "install_failed";
+      const detail = data?.message ? `${reason}：${data.message}` : reason;
+      if (skillGitHubInstallState) skillGitHubInstallState.textContent = `失败：${detail}`;
+      showConsoleToast(`安装失败：${detail}`, { kind: "err" });
+    }
+  } catch (error) {
+    if (skillGitHubInstallState) skillGitHubInstallState.textContent = `失败：${error.message}`;
+    showConsoleToast(`安装失败：${error.message}`, { kind: "err" });
+  } finally {
+    skillGitHubInstallBtn.disabled = false;
+    skillGitHubInstallBtn.textContent = originalLabel;
+  }
+});
 
 // UCA-126: custom MCP server form lives in Connectors page now. Toggle
 // its visibility from the "+ Add custom server" button; close on Cancel
