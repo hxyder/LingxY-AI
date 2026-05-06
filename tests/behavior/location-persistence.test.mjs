@@ -69,3 +69,46 @@ test("fresh location updates replace hydrated location", () => {
   assert.equal(getUserLocation()?.city, "New York");
   assert.equal(serializeUserLocation()?.city, "New York");
 });
+
+test("old pushed location payload does not become fresh just because it arrived now", () => {
+  clearUserLocation();
+  setUserLocation({
+    latitude: 35.7796,
+    longitude: -78.6382,
+    city: "Raleigh",
+    country: "United States",
+    countryCode: "US",
+    timezone: "America/New_York",
+    fetchedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()
+  });
+
+  assert.equal(getUserLocation(), null);
+  assert.equal(getUserLocation({ maxAgeMs: 7 * 24 * 60 * 60 * 1000 })?.city, "Raleigh");
+});
+
+test("older cached location cannot overwrite a newer fresh location", () => {
+  clearUserLocation();
+  setUserLocation({
+    latitude: 40.7128,
+    longitude: -74.0060,
+    city: "New York",
+    country: "United States",
+    countryCode: "US",
+    timezone: "America/New_York",
+    fetchedAt: new Date().toISOString()
+  });
+
+  const accepted = setUserLocation({
+    latitude: 35.7796,
+    longitude: -78.6382,
+    city: "Raleigh",
+    country: "United States",
+    countryCode: "US",
+    timezone: "America/New_York",
+    fetchedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString()
+  });
+
+  assert.equal(accepted.city, "New York");
+  assert.equal(getUserLocation()?.city, "New York");
+  assert.equal(serializeUserLocation()?.city, "New York");
+});

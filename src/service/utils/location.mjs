@@ -26,6 +26,12 @@ const DEFAULT_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 let _userLocation = null;     // normalized record or null
 let _userLocationAt = 0;       // ms epoch when we last received a fix
 
+function timestampForRecord(record) {
+  const parsed = Date.parse(record?.fetchedAt ?? "");
+  if (!Number.isFinite(parsed)) return Date.now();
+  return Math.min(parsed, Date.now());
+}
+
 export function getSystemTimezone() {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -76,17 +82,20 @@ function normalize(input) {
 export function setUserLocation(input) {
   const record = normalize(input);
   if (!record) return null;
+  const incomingAt = timestampForRecord(record);
+  if (_userLocation && incomingAt < _userLocationAt) {
+    return _userLocation;
+  }
   _userLocation = record;
-  _userLocationAt = Date.now();
+  _userLocationAt = incomingAt;
   return record;
 }
 
 export function hydrateUserLocation(input) {
   const record = normalize(input);
   if (!record) return null;
-  const parsed = Date.parse(record.fetchedAt);
   _userLocation = record;
-  _userLocationAt = Number.isFinite(parsed) ? parsed : Date.now();
+  _userLocationAt = timestampForRecord(record);
   return record;
 }
 
