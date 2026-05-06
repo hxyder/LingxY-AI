@@ -868,13 +868,25 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
 
     const saved = [];
     const enrollmentSession = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    for (let i = 1; i <= samples; i += 1) {
+    // Per-sample transcript retry budget. Without this, the loop accepts ANY
+    // recording — including ones the diagnostic Whisper transcribes as a
+    // completely different word ("狗在吗?" instead of "灵犀") — and the user
+    // only learns at the end that all 3 samples missed and enrollment is
+    // `enabled:false`. Catching a wrong transcript per-sample lets the user
+    // recover the same sample without scrapping the whole session.
+    const MAX_TRANSCRIPT_RETRIES_PER_SAMPLE = 2;
+    let i = 1;
+    let transcriptRetries = 0;
+    while (i <= samples) {
       // Two-phase cue: "准备" → short pause → "开始！" + record. User has time
       // to see the first bubble, take a breath, then speak when the second
       // one lights up. Previously the single "请念" bubble appeared and
       // recording started before the user had time to react.
+      const retryHint = transcriptRetries > 0
+        ? `（重试 ${transcriptRetries}/${MAX_TRANSCRIPT_RETRIES_PER_SAMPLE}）`
+        : "";
       window.ucaShell?.showEchoBubble?.({
-        text: `第 ${i}/${samples} 次 — 准备…`,
+        text: `第 ${i}/${samples} 次 — 准备…${retryHint}`,
         kind: "info",
         durationMs: 1200
       });
@@ -916,26 +928,53 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
         });
         continue;
       }
-      // The backend always saves the raw audio. Whisper is diagnostic only;
-      // the sherpa self-check below is the source of truth for whether this
-      // sample improves personalized wake behavior.
       const kwsSelfCheck = result.kwsSelfCheck ?? {};
+      const transcript = result.transcript ?? "";
+
+      // Mid-session validation: if Whisper heard meaningful speech that does
+      // NOT contain the wake word, the user almost certainly said something
+      // else (or the mic picked up a different sound). Re-record THIS sample
+      // up to MAX_TRANSCRIPT_RETRIES_PER_SAMPLE times before accepting it,
+      // so the user gets immediate corrective feedback instead of finishing
+      // 3 garbage samples and then seeing "enabled:false" at the end.
+      const transcriptHasContent = transcript.trim().length > 0;
+      const transcriptHitsWake = transcriptHasContent && matchesWake(transcript);
+      if (transcriptHasContent
+        && !transcriptHitsWake
+        && transcriptRetries < MAX_TRANSCRIPT_RETRIES_PER_SAMPLE) {
+        transcriptRetries += 1;
+        window.ucaShell?.showEchoBubble?.({
+          text: `❌ 听到「${transcript}」不是「${getWakeDisplayName()}」，请重念（${transcriptRetries}/${MAX_TRANSCRIPT_RETRIES_PER_SAMPLE}）`,
+          kind: "error",
+          durationMs: 3600
+        });
+        await new Promise((r) => setTimeout(r, 1400));
+        // Backend will overwrite this sample slot on the next upload because
+        // we keep the same `sample` index. No state cleanup needed here.
+        continue;
+      }
+
+      // Sample accepted (either transcript hit the wake word, was empty —
+      // we still let backend save raw audio for diagnostics — or retry
+      // budget is exhausted and we move on so the user isn't stuck).
+      transcriptRetries = 0;
       saved.push({
-        transcript: result.transcript ?? "",
+        transcript,
         kwsMatched: Boolean(kwsSelfCheck.matched),
         kwsKeyword: kwsSelfCheck.keyword ?? "",
         enrollment: result.enrollment ?? null
       });
       console.info(
         `[echo] enrollment sample ${i} transcribed as:`,
-        JSON.stringify(result.transcript ?? ""),
+        JSON.stringify(transcript),
+        "transcriptHitsWake:", transcriptHitsWake,
         "kwsMatched:", Boolean(kwsSelfCheck.matched),
         "kwsKeyword:", JSON.stringify(kwsSelfCheck.keyword ?? ""),
         "enrollment:", result.enrollment ?? null
       );
-      const heardText = result.transcript && result.transcript.trim()
-        ? `听到「${result.transcript}」`
-        : "（未听清，跳过此样本）";
+      const heardText = transcriptHasContent
+        ? `听到「${transcript}」`
+        : "（未听清，已保存原始音频供诊断）";
       const kwsText = kwsSelfCheck.matched
         ? `KWS 命中「${kwsSelfCheck.keyword || getWakeDisplayName()}」`
         : "KWS 未命中";
@@ -945,6 +984,7 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
         durationMs: 1800
       });
       await new Promise((r) => setTimeout(r, 600));
+      i += 1;
     }
 
     if (saved.length > 0) {
