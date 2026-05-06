@@ -252,3 +252,56 @@ test("explicit current-page capture fails closed when only URL metadata is avail
     await rm(tempDir, { recursive: true, force: true });
   }
 });
+
+test("explicit current-page capture has a bounded prefetch timeout before execution", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "lingxy-browser-page-"));
+  let executorCalled = false;
+  const runtime = {
+    store: createInMemoryStoreScaffold(),
+    queue: createTaskQueueScaffold(),
+    eventBus: createEventBusScaffold(),
+    artifactStore: createArtifactStore({ baseDir: tempDir }),
+    browserFetchTimeoutMs: 10,
+    executors: [{
+      id: "fast",
+      async *execute() {
+        executorCalled = true;
+        yield { event_type: "inline_result", payload: { text: "should not run" } };
+      }
+    }],
+    fetchImpl() {
+      return new Promise(() => {});
+    }
+  };
+
+  try {
+    const { task } = await submitBrowserTask({
+      runtime,
+      userCommand: "请分析当前页面",
+      executionMode: "interactive",
+      capture: {
+        sourceType: "webpage",
+        browser: "chrome.exe",
+        url: "https://example.com/slow-current",
+        pageTitle: "Slow Current Page",
+        text: "URL：https://example.com/slow-current",
+        metadata: { hasPageContent: false }
+      }
+    });
+
+    assert.equal(task.status, "failed");
+    assert.equal(executorCalled, false);
+    assert.match(task.failure_user_message, /上下文读取失败|could not read/i);
+    assert.equal(task.context_packet.selection_metadata.browser_page_prefetch, "failed");
+    assert.ok(runtime.store.getTaskEvents(task.task_id).some((event) =>
+      event.event_type === "phase_timing"
+      && event.payload?.phase === "browser_fetch"
+      && event.payload?.step === "web_fetch"
+      && event.payload?.failed === true
+      && event.payload?.timeout === true
+      && event.payload?.code === "BROWSER_FETCH_TIMEOUT"
+    ));
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+});

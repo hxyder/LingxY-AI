@@ -22,6 +22,7 @@ import { submitCompositeTask } from "./composite-submission.mjs";
 import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
+import { extractAllSignals } from "./intent/signals/index.mjs";
 import {
   artifactRegistrationOptionsForPath,
   rememberArtifactMetadataFromToolEvent
@@ -52,6 +53,7 @@ import {
 
 const MAX_BROWSER_FETCH_BYTES = 5 * 1024 * 1024;
 const MAX_BROWSER_CONTEXT_CHARS = 12000;
+const DEFAULT_BROWSER_FETCH_TIMEOUT_MS = 8000;
 
 function runtimeWithTaskEmitter(runtime, taskId) {
   if (runtime?.emitTaskEvent) return runtime;
@@ -216,29 +218,138 @@ function textFromBuffer(buffer) {
   return buffer.toString("utf8").slice(0, MAX_BROWSER_CONTEXT_CHARS);
 }
 
-async function fetchBrowserResource({ runtime, url, accept }) {
+function browserFetchTimeoutMs(runtime) {
+  const value = Number(runtime?.browserFetchTimeoutMs ?? runtime?.config?.browserFetchTimeoutMs);
+  return Number.isFinite(value) && value > 0 ? value : DEFAULT_BROWSER_FETCH_TIMEOUT_MS;
+}
+
+function browserCaptureNeedsResourceFetch(capture = {}) {
+  if (capture.sourceType === "image") return Boolean(capture.imageUrl ?? capture.url);
+  if (capture.sourceType === "link") return Boolean(capture.url && !capture.html);
+  if (!["webpage", "page_explanation"].includes(capture.sourceType) || !capture.url || capture.html) {
+    return false;
+  }
+  if (capture.sourceType === "page_explanation" && String(capture.text ?? "").trim()) return false;
+  if (capture.metadata?.hasPageContent === true) return false;
+  return true;
+}
+
+function browserCaptureCarriesUserContext(capture = {}) {
+  return Boolean(capture?.sourceType && capture.sourceType !== "chat");
+}
+
+function hasStrongExternalLookupSignal(userCommand, contextPacket) {
+  try {
+    const { signals } = extractAllSignals(userCommand, contextPacket);
+    const explicitSearch = signals?.explicit_search;
+    const explicitExternal = signals?.explicit_external;
+    return (explicitSearch?.matched && explicitSearch.strength === "strong")
+      || (explicitExternal?.matched && explicitExternal.strength === "strong");
+  } catch {
+    return false;
+  }
+}
+
+function shouldDeferBrowserPreExecutionPlanning({ background, capture }) {
+  return Boolean(background) || browserCaptureCarriesUserContext(capture);
+}
+
+function shouldRunDeferredSemanticRouterPatch({ background, capture, userCommand, contextPacket }) {
+  if (browserCaptureCarriesUserContext(capture)
+      && !hasStrongExternalLookupSignal(userCommand, contextPacket)) {
+    return false;
+  }
+  return Boolean(background);
+}
+
+function browserFetchTimeoutError(url, operation, timeoutMs) {
+  const error = new Error(`Browser ${operation} timed out after ${timeoutMs}ms for ${url}.`);
+  error.code = "BROWSER_FETCH_TIMEOUT";
+  error.timeout = true;
+  return error;
+}
+
+function withBrowserFetchTimeout(promise, { url, operation, timeoutMs, controller }) {
+  let timeoutId = null;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => {
+      try { controller?.abort?.(); } catch { /* best effort */ }
+      reject(browserFetchTimeoutError(url, operation, timeoutMs));
+    }, timeoutMs);
+  });
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeoutId) clearTimeout(timeoutId);
+  });
+}
+
+function emitBrowserFetchTiming({ runtime, task, step, startedAt, failed = false, error = null, timeout = false }) {
+  if (!task?.task_id) return;
+  emitTaskEvent({
+    runtime,
+    taskId: task.task_id,
+    eventType: "phase_timing",
+    payload: {
+      phase: "browser_fetch",
+      step,
+      duration_ms: Math.max(0, Date.now() - startedAt),
+      failed: Boolean(failed),
+      timeout: Boolean(timeout),
+      ...(error ? { error: error?.message ?? String(error), code: error?.code ?? null } : {})
+    }
+  });
+}
+
+async function fetchBrowserResource({ runtime, url, accept, task = null, step = "browser_fetch" }) {
   const fetchImpl = getFetchImpl(runtime);
   if (typeof fetchImpl !== "function") {
     throw new Error("No fetch implementation is available for browser resource capture.");
   }
-  const response = await fetchImpl(url, {
-    headers: accept ? { accept } : undefined
-  });
-  if (!response?.ok) {
-    throw new Error(`Fetch failed for ${url}: HTTP ${response?.status ?? "unknown"}`);
+  const startedAt = Date.now();
+  const timeoutMs = browserFetchTimeoutMs(runtime);
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  try {
+    const response = await withBrowserFetchTimeout(fetchImpl(url, {
+      headers: accept ? { accept } : undefined,
+      ...(controller ? { signal: controller.signal } : {})
+    }), {
+      url,
+      operation: "fetch",
+      timeoutMs,
+      controller
+    });
+    if (!response?.ok) {
+      throw new Error(`Fetch failed for ${url}: HTTP ${response?.status ?? "unknown"}`);
+    }
+    const contentLength = Number(response.headers?.get?.("content-length") ?? 0);
+    if (contentLength > MAX_BROWSER_FETCH_BYTES) {
+      throw new Error(`Fetch response is too large (${contentLength} bytes).`);
+    }
+    const arrayBuffer = await withBrowserFetchTimeout(response.arrayBuffer(), {
+      url,
+      operation: "body read",
+      timeoutMs,
+      controller
+    });
+    if (arrayBuffer.byteLength > MAX_BROWSER_FETCH_BYTES) {
+      throw new Error(`Fetch response is too large (${arrayBuffer.byteLength} bytes).`);
+    }
+    emitBrowserFetchTiming({ runtime, task, step, startedAt });
+    return {
+      buffer: Buffer.from(arrayBuffer),
+      contentType: response.headers?.get?.("content-type") ?? "application/octet-stream"
+    };
+  } catch (error) {
+    emitBrowserFetchTiming({
+      runtime,
+      task,
+      step,
+      startedAt,
+      failed: true,
+      error,
+      timeout: error?.code === "BROWSER_FETCH_TIMEOUT"
+    });
+    throw error;
   }
-  const contentLength = Number(response.headers?.get?.("content-length") ?? 0);
-  if (contentLength > MAX_BROWSER_FETCH_BYTES) {
-    throw new Error(`Fetch response is too large (${contentLength} bytes).`);
-  }
-  const arrayBuffer = await response.arrayBuffer();
-  if (arrayBuffer.byteLength > MAX_BROWSER_FETCH_BYTES) {
-    throw new Error(`Fetch response is too large (${arrayBuffer.byteLength} bytes).`);
-  }
-  return {
-    buffer: Buffer.from(arrayBuffer),
-    contentType: response.headers?.get?.("content-type") ?? "application/octet-stream"
-  };
 }
 
 async function saveBrowserImageArtifact({ capture, runtime, artifactStore, task }) {
@@ -250,7 +361,9 @@ async function saveBrowserImageArtifact({ capture, runtime, artifactStore, task 
   const fetched = await fetchBrowserResource({
     runtime,
     url: imageUrl,
-    accept: "image/*"
+    accept: "image/*",
+    task,
+    step: "browser_image_fetch"
   });
   const ext = imageExtensionFromContentType(fetched.contentType, imageUrl);
   const imageArtifactPath = path.join(outputDir, `browser-image${ext}`);
@@ -283,7 +396,9 @@ async function fetchBrowserLinkContext({ capture, runtime, artifactStore, task }
   const fetched = await fetchBrowserResource({
     runtime,
     url: capture.url,
-    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5"
+    accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5",
+    task,
+    step: "web_fetch"
   });
   const isText = isTextLikeContent(fetched.contentType);
   const isHtml = fetched.contentType.toLowerCase().includes("html");
@@ -819,7 +934,7 @@ export async function submitBrowserTask({
   // benefit specifically because the new `[browser_metadata · ...]`
   // sentinel lets SR distinguish "user is on a tab" from "user wants
   // this page analysed".
-  const deferPreExecutionPlanning = background;
+  const deferPreExecutionPlanning = shouldDeferBrowserPreExecutionPlanning({ background, capture });
   let routerEnrichedContext = deferPreExecutionPlanning
     ? {
         ...contextPacket,
@@ -945,7 +1060,12 @@ export async function submitBrowserTask({
   }
 
   const execute = async () => {
-    if (deferPreExecutionPlanning && inspection.allowed) {
+    if (deferPreExecutionPlanning && inspection.allowed && shouldRunDeferredSemanticRouterPatch({
+      background,
+      capture,
+      userCommand,
+      contextPacket: routerEnrichedContext
+    })) {
       const srPromise = scheduleInternalTaskPromise(() => runExecutionPhase({
         runtime: runtimeWithTaskEmitter(runtime, task.task_id),
         taskId: task.task_id,
