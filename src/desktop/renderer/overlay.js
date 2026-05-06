@@ -301,8 +301,8 @@ function showEchoResultHudOnce(taskId, { text = "", title = "任务完成", kind
   const body = compactEchoResultText(text);
   const label = compactEchoResultText(title);
   const hudText = body
-    ? `${label ? `${label}: ` : ""}${body}\n按 V 继续语音追问，或点卡片打开对话框`
-    : `${label || "任务完成"}\n按 V 继续语音追问，或点卡片打开对话框`;
+    ? `${label ? `${label}: ` : ""}${body}\n在结果卡片按 V 或点“继续追问”；点卡片可打开对话框`
+    : `${label || "任务完成"}\n在结果卡片按 V 或点“继续追问”；点卡片可打开对话框`;
   if (!hudText) return;
   echoResultHudTaskIds.add(taskId);
   try {
