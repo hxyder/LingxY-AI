@@ -62,7 +62,9 @@ test("validateBranchName rejects argument-injection shapes and git-illegal refs"
     "-main", "--upload-pack=foo",
     "with space", "tab\there", "quote'name", "back`tick",
     "main^", "main:foo", "main?", "main*", "main[", "main\\",
-    "main..", "main@{1}", "main/", "main.", "foo.lock"
+    "main..", "main@{1}", "main/", "main.", "foo.lock",
+    // Codex final-review additions: full git check-ref-format set.
+    "/main", "feat//x", ".foo", "foo/.bar", "foo.lock/bar", "@"
   ]) {
     const result = validateBranchName(bad);
     assert.equal(result.ok, false, "expected reject: " + JSON.stringify(bad) + " got " + JSON.stringify(result));

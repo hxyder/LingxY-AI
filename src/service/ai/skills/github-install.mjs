@@ -56,22 +56,38 @@ export function validateGitHubSkillUrl(url) {
 export function validateBranchName(branch) {
   const value = String(branch ?? "").trim();
   if (!value) return { ok: true, branch: null };
-  // Codex review: align with git check-ref-format. Reject:
+  // Codex review: align with `git check-ref-format`. Reject:
   //   - leading "-" (option injection)
-  //   - whitespace, control chars (\u0000-\u001f, \u007f)
-  //   - the explicit set git rejects: ~ ^ : ? * [ \
+  //   - leading or trailing "/", or sequence "//"
+  //   - any path component (segment between slashes) starting with "."
+  //   - any path component ending with ".lock"
+  //   - sequences ".." or "@{"
+  //   - a single bare "@"
+  //   - whitespace, control chars, the documented illegal set ~^:?*[\
   //   - shell metas (quotes / backticks / $) as belt-and-braces
-  //   - sequences ".." and "@{"
-  //   - trailing "/", ".", or ".lock"
-  // Common legal names like "feature-x", "feat/x", "v1.2.3" are accepted.
+  // feature-x, feat/x, v1.2.3, release-2026.05 still pass.
+  if (value === "@") {
+    return { ok: false, reason: SKILL_INSTALL_ERROR.INVALID_BRANCH, message: "branch may not be a bare @" };
+  }
   if (value.startsWith("-")) {
     return { ok: false, reason: SKILL_INSTALL_ERROR.INVALID_BRANCH, message: "branch may not start with -" };
   }
-  if (value.endsWith("/") || value.endsWith(".") || value.endsWith(".lock")) {
-    return { ok: false, reason: SKILL_INSTALL_ERROR.INVALID_BRANCH, message: "branch may not end with /, ., or .lock" };
+  if (value.startsWith("/") || value.endsWith("/") || value.includes("//")) {
+    return { ok: false, reason: SKILL_INSTALL_ERROR.INVALID_BRANCH, message: "branch may not start, end, or chain on /" };
+  }
+  if (value.endsWith(".")) {
+    return { ok: false, reason: SKILL_INSTALL_ERROR.INVALID_BRANCH, message: "branch may not end with ." };
   }
   if (value.includes("..") || value.includes("@{")) {
     return { ok: false, reason: SKILL_INSTALL_ERROR.INVALID_BRANCH, message: "branch may not contain .. or @{" };
+  }
+  for (const segment of value.split("/")) {
+    if (segment.startsWith(".")) {
+      return { ok: false, reason: SKILL_INSTALL_ERROR.INVALID_BRANCH, message: "branch components may not start with ." };
+    }
+    if (segment.endsWith(".lock")) {
+      return { ok: false, reason: SKILL_INSTALL_ERROR.INVALID_BRANCH, message: "branch components may not end with .lock" };
+    }
   }
   if (/[\u0000-\u001f\u007f\s~^:?*[\\"'`$]/.test(value)) {
     return { ok: false, reason: SKILL_INSTALL_ERROR.INVALID_BRANCH, message: "branch contains illegal characters" };
@@ -291,18 +307,22 @@ export async function installSkillFromGitHub({
   // Atomic swap. If `finalDir` exists, move it aside as a backup, then
   // rename staging -> final. On any failure, rollback. Codex review:
   // never delete the user's previous skill until the new one is fully in
-  // place. If even the rollback rename fails (worst-case Windows file
+  // place. If the rollback rename also fails (worst-case Windows file
   // lock), we MUST NOT clean up `backupDir` — it holds the user's last
-  // good skill and must be reachable for manual recovery.
+  // good skill and must be reachable for manual recovery. `backupTaken`
+  // ensures we don't lie about a backup path that was never actually
+  // created (e.g. when the very first rename throws).
   let rollbackFailedBackup = null;
+  let backupTaken = false;
   try {
     if (await dirExists(finalDir)) {
       backupDir = `${finalDir}.backup-${now()}`;
       await fsImpl.rename(finalDir, backupDir);
+      backupTaken = true;
     }
     await fsImpl.rename(stagingDir, finalDir);
   } catch (error) {
-    if (backupDir) {
+    if (backupTaken && backupDir) {
       try {
         await fsImpl.rename(backupDir, finalDir);
         backupDir = null;
