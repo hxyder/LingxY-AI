@@ -258,7 +258,16 @@ export async function submitTaskFromBody(runtime, body) {
   // level because the capture helper mirrors it into both.
   const incomingLocation = body.userLocation ?? body.capture?.userLocation ?? null;
   if (incomingLocation) {
-    setUserLocation(incomingLocation);
+    const storedLocation = setUserLocation(incomingLocation);
+    if (storedLocation) {
+      try {
+        runtime.configStore?.patch?.({
+          location: {
+            userLocation: { ...storedLocation }
+          }
+        });
+      } catch { /* location is advisory; never block task submission */ }
+    }
   }
 
   // UCA-060: Reject requests with no user command — prevents the hotkey

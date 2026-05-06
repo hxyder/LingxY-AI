@@ -184,6 +184,11 @@ if (!browserContextRouteSource.includes('url.pathname === "/location"')
 if (!serviceBootstrapSource.includes('savedLocation || process.platform === "win32"')) {
   throw new Error("service bootstrap must refresh Windows location on startup without requiring a fresh Console click.");
 }
+if (!taskRouteSource.includes("const storedLocation = setUserLocation(incomingLocation)")
+    || !taskRouteSource.includes("runtime.configStore?.patch?.({")
+    || !taskRouteSource.includes("userLocation: { ...storedLocation }")) {
+  throw new Error("task-routes.mjs must persist task-supplied userLocation so browser-granted location survives restart.");
+}
 if (httpServerSource.includes('url.pathname === "/executors"')
     || httpServerSource.includes('url.pathname === "/ai/providers"')
     || httpServerSource.includes('url.pathname === "/ai/code-cli"')
