@@ -190,6 +190,17 @@ let echoSessionId = null;
 let pendingContinuationTaskId = null;
 let pendingContinuationConversationId = null;
 
+// Echo wake continuation window: when an echo-origin task completes, a wake
+// within this many ms is treated as a follow-up to the SAME conversation
+// instead of starting a fresh one. After the window the next wake starts
+// new again. This is the renderer-side approximation of the
+// "post-result short-window continuation" pattern; if/when codex lands the
+// main-owned EchoContextLease design, this window can be retired or kept as
+// a fallback.
+const ECHO_CONTINUATION_WINDOW_MS = 30_000;
+let lastEchoTaskCompletedAt = 0;
+let lastEchoTaskConversationId = null;
+
 function shouldSurfaceTaskPopupCards() {
   try {
     return document.visibilityState !== "visible";
@@ -3736,6 +3747,15 @@ async function refreshActiveTask() {
         }));
         conversationState.updatedAt = Date.now();
       }
+      // Echo continuation window: any echo-origin task completion (with or
+      // without artifacts) opens a 30s window during which the next wake
+      // continues this conversation instead of opening a new one. The
+      // companion branches below (success-without-artifacts, failed) record
+      // the same fields so the policy is uniform across terminal outcomes.
+      if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
+        lastEchoTaskCompletedAt = Date.now();
+        lastEchoTaskConversationId = task.conversation_id ?? conversationState?.id ?? null;
+      }
       const previewPath = choosePreviewArtifactPath(task.artifacts) ?? task.artifacts[0].path;
       lastArtifactPath = previewPath;
 
@@ -3844,6 +3864,13 @@ async function refreshActiveTask() {
         conversationState.lastCompletedAt = Date.now();
         conversationState.updatedAt = Date.now();
       }
+      // Echo continuation window — see the corresponding artifact branch
+      // above for the full rationale. Mirrored here so a conversational
+      // echo task (no artifact) also opens the 30s follow-up window.
+      if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
+        lastEchoTaskCompletedAt = Date.now();
+        lastEchoTaskConversationId = task.conversation_id ?? conversationState?.id ?? null;
+      }
       // conversational mode — no artifacts
       if (notifiedTaskId !== task.task_id && notifiedInlineResultTaskId !== task.task_id) {
         notifiedTaskId = task.task_id;
@@ -3905,6 +3932,15 @@ async function refreshActiveTask() {
       }
     } else if (task.status === "failed") {
       addBubble("assistant", `Task failed: ${task.failure_user_message ?? "Unknown error."}`);
+      // Echo continuation window applies to failures too: a user who said
+      // "灵犀, 整理这份文件" and the task failed often re-asks immediately
+      // ("再试一次 / 那换一种方式"). Inheriting the conversation lets that
+      // follow-up reach the same context. After 30s the wake reverts to
+      // starting fresh.
+      if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
+        lastEchoTaskCompletedAt = Date.now();
+        lastEchoTaskConversationId = task.conversation_id ?? conversationState?.id ?? null;
+      }
       try {
         window.ucaShell?.showPopupCard?.({
           kind: "error",
@@ -7640,17 +7676,50 @@ window.ucaShell?.onEchoWake?.(async (payload = {}) => {
   const kind = payload.kind === "note" ? "note" : "voice";
   const hasPendingInputContext = Boolean(pendingFileSelection?.filePaths?.length || pendingCapture?.capture);
   const preservePendingInputContext = Boolean(payload.preserveContext || hasPendingInputContext);
-  if (!payload.preserveContext) {
+
+  // 30s continuation window: if the user's previous echo task finished
+  // recently AND we still know which conversation it belonged to, this
+  // wake is treated as a follow-up — keep the current conversation,
+  // skip captureActiveWindowHint (we already have context), and surface
+  // a "继续上一任务" HUD so the user knows the difference between a
+  // fresh wake and a follow-up. Note thread (kind === "note") is excluded
+  // because note recordings always open a fresh transcript surface.
+  const continuationAgeMs = lastEchoTaskCompletedAt > 0
+    ? Date.now() - lastEchoTaskCompletedAt
+    : Infinity;
+  const inEchoContinuationWindow = kind === "voice"
+    && continuationAgeMs < ECHO_CONTINUATION_WINDOW_MS
+    && Boolean(lastEchoTaskConversationId);
+
+  if (!payload.preserveContext && !inEchoContinuationWindow) {
     startNewConversation({ preservePendingInputContext });
+  } else if (inEchoContinuationWindow) {
+    // Carry the conversation forward without touching message history; the
+    // pending continuation hint makes the next /task POST attach via
+    // parent_task_id + conversation_id (see line ~4055 submitOverlayTask).
+    pendingContinuationConversationId = lastEchoTaskConversationId;
   }
+
   await beginEchoSession();
-  if (!payload.preserveContext && !hasPendingInputContext) {
+  if (!payload.preserveContext && !hasPendingInputContext && !inEchoContinuationWindow) {
+    // Skip active-window hint capture during a follow-up — the context
+    // the user wants is the LAST task's conversation, not whatever app
+    // they happen to have foreground right now.
     void captureActiveWindowHintForVoice({ captureMode: kind === "note" ? "echo_note_wake" : "echo_voice_wake" });
   }
   if (kind === "note") {
     showEchoHud({ text: "开始录音笔记…", kind: "wake", durationMs: 1800, throttleMs: 0 });
     if (voiceRecording) stopVoiceRecognition();
     void enterNoteMode();
+  } else if (inEchoContinuationWindow) {
+    const remainingSec = Math.max(1, Math.round((ECHO_CONTINUATION_WINDOW_MS - continuationAgeMs) / 1000));
+    showEchoHud({
+      text: `🔁 继续上一任务（${remainingSec}s 内）`,
+      kind: "wake",
+      durationMs: 1800,
+      throttleMs: 0
+    });
+    openVoicePanel({ autoStart: true });
   } else {
     showEchoHud({ text: "已唤醒，请说", kind: "wake", durationMs: 1800, throttleMs: 0 });
     openVoicePanel({ autoStart: true });
