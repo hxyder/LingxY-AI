@@ -78,6 +78,9 @@ import {
   renderConversationsListHtml
 } from "./console-conversation-viewer.mjs";
 import {
+  isImageFilePath
+} from "../../shared/context-resolver.mjs";
+import {
   extractTaskProviderInfo,
   renderDowngradedWarning,
   renderTimelineEntry
@@ -2455,6 +2458,16 @@ async function revealConversationArtifactPath(filePath) {
   await openConversationArtifactPath(filePath);
 }
 
+function consoleChatAttachmentPayload(filePaths = []) {
+  const paths = Array.isArray(filePaths)
+    ? filePaths.filter((filePath) => typeof filePath === "string" && filePath.length > 0)
+    : [];
+  if (paths.length === 0) return {};
+  return paths.every(isImageFilePath)
+    ? { imagePaths: paths, source: "file" }
+    : { filePaths: paths };
+}
+
 async function submitConsoleChat() {
   const text = consoleChatInput?.value?.trim() ?? "";
   if (!text) return;
@@ -2499,7 +2512,7 @@ async function submitConsoleChat() {
         client_message_id: clientMessageId,
         ...(conversationId ? { conversation_id: conversationId } : {}),
         ...(projectId ? { project_id: projectId, selectionMetadata: { project_id: projectId } } : {}),
-        ...(attachedFilePaths.length > 0 ? { filePaths: attachedFilePaths } : {})
+        ...consoleChatAttachmentPayload(attachedFilePaths)
       })
     });
     const taskId = result.task?.task_id;

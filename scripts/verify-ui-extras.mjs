@@ -543,6 +543,10 @@ assert.ok(/startNewConversation\(\{ preservePendingInputContext \}\)/.test(overl
     && /已收到 \$\{fileCount\} 个文件。按 V 直接说话/.test(read("src/desktop/renderer/dock.js"))
     && /onWakeDetected\("voice", "dock_file_voice", \{[\s\S]{0,120}preserveContext:\s*true/.test(read("src/desktop/renderer/dock.js")),
   "echo dock drop: file handoff must survive V wake and surface a HUD receipt without opening overlay");
+assert.ok(/consoleChatAttachmentPayload/.test(consoleJs)
+    && /paths\.every\(isImageFilePath\)[\s\S]{0,80}\{ imagePaths: paths, source: "file" \}/.test(consoleJs)
+    && /\.\.\.consoleChatAttachmentPayload\(attachedFilePaths\)/.test(consoleJs),
+  "console chat attachments: all-image attachments must route through imagePaths instead of the slower file ingest path");
 assert.ok(!/id="providerOnboardingList"/.test(consoleHtml),
   "provider settings must not show global capability onboarding cards inside AI Providers");
 assert.equal((consoleHtml.match(/Add any OpenAI-compatible or Anthropic API\. Saved instantly/g) ?? []).length, 1,
