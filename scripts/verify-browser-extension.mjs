@@ -522,6 +522,11 @@ assert.equal(serviceWorkerJs.includes("const markStarted = () =>"), true);
 assert.equal(serviceWorkerJs.includes("function createQuickActionTiming()"), true);
 assert.equal(serviceWorkerJs.includes("desktop_first_visible_output"), true);
 assert.equal(serviceWorkerJs.includes("timings: result.timings ?? null"), true);
+assert.equal(serviceWorkerJs.includes("onChunk = null"), true);
+assert.ok(/event === "text_delta"[\s\S]{0,360}onChunk\?\.\(delta, streamedText\)/.test(serviceWorkerJs),
+  "desktop quick-action SSE text_delta frames must stream visible chunks to the inline UI");
+assert.ok(/runDesktopTask\(\{[\s\S]{0,260}onChunk: \(delta, full\)/.test(serviceWorkerJs),
+  "quick action desktop_task path must pass the stream callback into runDesktopTask");
 assert.ok(/markStarted\(\);[\s\S]{0,120}if \(shouldEnrichForAction\(action\)\)/.test(serviceWorkerJs),
   "quick action inline frame must enter started state before slow enrichment");
 assert.ok(/port\.postMessage\(\{ type: "start" \}\)[\s\S]{0,160}loadStandaloneConfig/.test(serviceWorkerJs),

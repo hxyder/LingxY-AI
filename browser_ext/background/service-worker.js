@@ -350,7 +350,8 @@ async function runDesktopTask({
   userCommand,
   capture,
   fetchImpl = fetch,
-  onTiming = null
+  onTiming = null,
+  onChunk = null
 }) {
   let submitJson;
   try {
@@ -390,6 +391,7 @@ async function runDesktopTask({
   try {
     let sawSseFrame = false;
     let sawVisibleOutput = false;
+    let streamedText = "";
     const streamed = await runTaskWithStream(`${runtimeBase}/task/${taskId}`, {
       signal: controller.signal,
       onFrame(frame) {
@@ -399,6 +401,15 @@ async function runDesktopTask({
         }
         const event = frame.event ?? frame.data?.event_type ?? "";
         const payload = frame.data?.payload ?? frame.data ?? {};
+        if (event === "text_delta") {
+          const delta = payload.delta ?? payload.text ?? "";
+          if (typeof delta === "string" && delta.length > 0) {
+            streamedText += delta;
+            sawVisibleOutput = true;
+            onTiming?.("desktop_first_visible_output");
+            try { onChunk?.(delta, streamedText); } catch { /* rendering callback only */ }
+          }
+        }
         if (!sawVisibleOutput && (event === "inline_result" || event === "success") && typeof payload.text === "string" && payload.text.length > 0) {
           sawVisibleOutput = true;
           onTiming?.("desktop_first_visible_output");
@@ -676,7 +687,11 @@ export async function executeQuickAction({
     userCommand,
     capture: buildDesktopCaptureForAction(action, selectionState, enrichment),
     fetchImpl,
-    onTiming: (name) => timing.mark(name)
+    onTiming: (name) => timing.mark(name),
+    onChunk: (delta, full) => {
+      timing.mark("desktop_first_visible_output");
+      onChunk?.(delta, full);
+    }
   });
   return { ...result, timings: timing.finish() };
 }
