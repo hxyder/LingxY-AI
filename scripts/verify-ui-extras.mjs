@@ -159,6 +159,10 @@ assert.ok(/enrollEchoKeywordViaShell/.test(dockJs) && /window\.ucaShell\.enrollE
   "echo enrollment: dock must use desktop shell bridge");
 assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/kws`\s*,\s*\{[\s\S]{0,180}method:\s*["'`]POST/.test(dockJs),
   "echo KWS: dock must not POST /echo/kws directly");
+assert.ok(!/const\s+seed\s*=\s*pendingCapture\?\.capture\s*\?\?\s*conversationState\?\.seedCapture/.test(overlayJs),
+  "overlay send: pendingCapture must not seed conversation before context resolver runs");
+assert.ok(/if\s*\(text\)\s*\{\s*ensureConversation\(null,\s*conversationState\?\.seedCommand\s*\?\?\s*text\);/.test(overlayJs),
+  "overlay send: conversation should be created without pre-resolving pending context");
 assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/enroll-keyword\?/.test(dockJs),
   "echo enrollment: dock must not POST /echo/enroll-keyword directly");
 assert.ok(/html\s*\{[\s\S]{0,120}position:\s*fixed;[\s\S]{0,80}inset:\s*0;[\s\S]{0,180}overflow:\s*hidden;/.test(dockHtml),

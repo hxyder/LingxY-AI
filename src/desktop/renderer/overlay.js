@@ -7404,8 +7404,7 @@ async function handleUserSend() {
     // pending registration are handled inside submitTask via
     // markPendingUserMessage — adding them here would double-render.
     if (text) {
-      const seed = pendingCapture?.capture ?? conversationState?.seedCapture ?? null;
-      ensureConversation(seed, conversationState?.seedCommand ?? text);
+      ensureConversation(null, conversationState?.seedCommand ?? text);
     }
 
     await submitTask();
