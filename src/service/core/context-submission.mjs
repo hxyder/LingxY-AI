@@ -22,6 +22,7 @@ import {
 } from "../../shared/project-store.mjs";
 import {
   createFileGenerationAttemptState,
+  hasFileGenerationToolCapability,
   recordArtifactGenerated,
   recordFileGenerationToolEvent,
   shouldSynthesizeRequestedFallbackArtifact
@@ -916,7 +917,11 @@ async function runExecutor({ runtime, task, executor }) {
       requestedFormat,
       generatedArtifacts,
       task,
-      fileGeneration
+      fileGeneration,
+      fileGenerationToolCapability: hasFileGenerationToolCapability({
+        executorId: executor.id,
+        actionToolRegistry: runtime.actionToolRegistry
+      })
     });
     if (shouldSynthesizeFallbackArtifact) {
       const outputDir = await createOutputDirForTask({ runtime, artifactStore, task });

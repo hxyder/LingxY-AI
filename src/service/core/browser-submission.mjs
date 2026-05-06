@@ -29,6 +29,7 @@ import {
 } from "./artifact-action-contract.mjs";
 import {
   createFileGenerationAttemptState,
+  hasFileGenerationToolCapability,
   recordArtifactGenerated,
   recordFileGenerationToolEvent,
   shouldSynthesizeRequestedFallbackArtifact
@@ -741,7 +742,11 @@ async function runBrowserExecutor({ task, runtime }) {
       requestedFormat,
       generatedArtifacts,
       task,
-      fileGeneration
+      fileGeneration,
+      fileGenerationToolCapability: hasFileGenerationToolCapability({
+        executorId: executor.id,
+        actionToolRegistry: runtime.actionToolRegistry
+      })
     })) {
       const outputDir = await artifactStore.createTaskOutputDir(task.task_id, new Date(task.created_at));
       const artifacts = await writeRequestedArtifacts({

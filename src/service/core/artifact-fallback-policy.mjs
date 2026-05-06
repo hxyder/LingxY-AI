@@ -6,6 +6,8 @@ export const FILE_GENERATION_TOOL_IDS = new Set([
   "render_svg"
 ]);
 
+const EXECUTORS_WITH_FILE_GENERATION_TOOLS = new Set(["tool_using", "agentic"]);
+
 export function createFileGenerationAttemptState() {
   return {
     attempted: false,
@@ -27,11 +29,33 @@ export function recordArtifactGenerated(state) {
   return state;
 }
 
+export function hasFileGenerationToolCapability({
+  executorId = null,
+  actionToolRegistry = null
+} = {}) {
+  if (!EXECUTORS_WITH_FILE_GENERATION_TOOLS.has(executorId)) return false;
+  if (!actionToolRegistry) return false;
+
+  if (typeof actionToolRegistry.get === "function") {
+    for (const toolId of FILE_GENERATION_TOOL_IDS) {
+      if (actionToolRegistry.get(toolId)) return true;
+    }
+    return false;
+  }
+
+  if (typeof actionToolRegistry.list === "function") {
+    return actionToolRegistry.list().some((tool) => FILE_GENERATION_TOOL_IDS.has(tool?.id));
+  }
+
+  return false;
+}
+
 export function shouldSynthesizeRequestedFallbackArtifact({
   requestedFormat = null,
   generatedArtifacts = [],
   task = null,
-  fileGeneration = null
+  fileGeneration = null,
+  fileGenerationToolCapability = false
 } = {}) {
   if (!requestedFormat || requestedFormat.id === "conversational") return false;
   if (Array.isArray(generatedArtifacts) && generatedArtifacts.length > 0) return false;
@@ -39,12 +63,11 @@ export function shouldSynthesizeRequestedFallbackArtifact({
 
   const artifactRequired = task?.task_spec?.artifact?.required === true
     || task?.task_spec?.success_contract?.artifact_created === true;
-  const toolUseRequired = task?.task_spec?.success_contract?.tool_called === true;
   const blockedByFailedGenerator = artifactRequired
     && fileGeneration?.attempted === true
     && fileGeneration?.succeeded !== true;
   const blockedByMissingGenerator = artifactRequired
-    && toolUseRequired
+    && fileGenerationToolCapability === true
     && fileGeneration?.attempted !== true;
   if (blockedByMissingGenerator) return false;
   return !blockedByFailedGenerator;

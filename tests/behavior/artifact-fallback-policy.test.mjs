@@ -34,7 +34,7 @@ test("artifact fallback policy preserves legacy fallback when no file generator 
   }), true);
 });
 
-test("artifact fallback policy blocks synthetic files when a tool-required artifact task never called a generator", () => {
+test("artifact fallback policy allows synthetic files when current executor cannot generate files", () => {
   assert.equal(shouldSynthesizeRequestedFallbackArtifact({
     requestedFormat: pdfFormat,
     generatedArtifacts: [],
@@ -44,7 +44,23 @@ test("artifact fallback policy blocks synthetic files when a tool-required artif
         success_contract: { artifact_created: true, tool_called: true }
       }
     },
-    fileGeneration: createFileGenerationAttemptState()
+    fileGeneration: createFileGenerationAttemptState(),
+    fileGenerationToolCapability: false
+  }), true);
+});
+
+test("artifact fallback policy blocks synthetic files when a capable executor never called a generator", () => {
+  assert.equal(shouldSynthesizeRequestedFallbackArtifact({
+    requestedFormat: pdfFormat,
+    generatedArtifacts: [],
+    task: {
+      task_spec: {
+        artifact: { required: true, kind: "pdf" },
+        success_contract: { artifact_created: true, tool_called: true }
+      }
+    },
+    fileGeneration: createFileGenerationAttemptState(),
+    fileGenerationToolCapability: true
   }), false);
 });
 
