@@ -1955,6 +1955,14 @@ async function appendConsoleChatFinalResult(taskId, payload = {}) {
   }
 }
 
+function artifactPathFromConsoleToolPayload(payload = {}) {
+  if (Array.isArray(payload?.artifact_paths)) {
+    const artifactPath = payload.artifact_paths.find((item) => typeof item === "string" && item.length > 0);
+    if (artifactPath) return artifactPath;
+  }
+  return payload?.metadata?.path ?? payload?.artifact_path ?? payload?.path ?? "";
+}
+
 function subscribeConsoleChatTask(taskId) {
   consoleChatEventStream?.close?.();
   consoleChatToolCards = new Map();
@@ -2010,9 +2018,7 @@ function subscribeConsoleChatTask(taskId) {
         });
         consoleChatState.textContent = payload.success === false ? `${toolLabel}失败` : `${toolLabel}完成`;
         if (window.livePreview?.isFileGenTool?.(toolName)) {
-          const artifactPath = Array.isArray(payload.artifact_paths)
-            ? (payload.artifact_paths.find((item) => typeof item === "string" && item.length > 0) ?? "")
-            : (payload.metadata?.path ?? payload.artifact_path ?? "");
+          const artifactPath = artifactPathFromConsoleToolPayload(payload);
           window.livePreview.commit({
             toolName,
             success: payload.success !== false,
@@ -2021,6 +2027,18 @@ function subscribeConsoleChatTask(taskId) {
             observation: outcome
           });
         }
+      } else if (frame.event === "artifact_created") {
+        const artifactPath = artifactPathFromConsoleToolPayload(payload);
+        if (artifactPath) {
+          window.livePreview?.commit?.({
+            toolName: payload.tool_id ?? payload.tool ?? "",
+            success: true,
+            artifactPath,
+            mime: payload.mime ?? payload.mime_type ?? payload.metadata?.mime_type ?? null,
+            observation: payload.observation ?? ""
+          });
+        }
+        appendConsoleChatProgress(frame);
       } else if (frame.event === "conversation_step") {
         const source = payload.source_event ?? "";
         if (!String(source).startsWith("tool_call")) {

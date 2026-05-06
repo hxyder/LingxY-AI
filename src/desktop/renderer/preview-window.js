@@ -135,7 +135,15 @@
 
   function applyCommit(payload = {}) {
     const { toolName, success, artifactPath, mime, observation } = payload;
-    if (!toolName || state.toolName !== toolName) return;
+    const committedToolName = toolName || state.toolName || "__artifact__";
+    if (state.toolName && toolName && state.toolName !== toolName) return;
+    if (!state.toolName) {
+      state.toolName = committedToolName;
+      state.toolPath = artifactPath || "";
+      state.toolKind = inferKind(artifactPath || "", committedToolName);
+      setTitle(artifactPath ? basename(artifactPath) : "预览");
+      setSub(committedToolName === "__artifact__" ? "" : committedToolName);
+    }
     setStatus(success === false ? "err" : "ok");
     if (success === false) {
       setMeta(observation ? `失败 · ${String(observation).slice(0, 80)}` : "失败");
@@ -147,7 +155,9 @@
       state.toolPath = artifactPath;
       setTitle(basename(artifactPath));
       renderFinal(artifactPath, mime);
+      return;
     }
+    body.innerHTML = `<div class="pv-empty">生成已完成，但没有收到可预览的文件路径。</div>`;
   }
 
   async function renderFinal(filePath, mime) {

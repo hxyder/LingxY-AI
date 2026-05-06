@@ -825,7 +825,10 @@ assert.ok(/function artifactPathFromToolPayload/.test(overlayJs)
   "live preview: overlay must commit from canonical artifact_paths arrays, not only legacy metadata.path");
 assert.ok(/if \(!state\.toolName\)[\s\S]{0,260}state\.toolName = toolName[\s\S]{0,260}setStatus\("running"\)/.test(previewWindowJs),
   "live preview: preview window must bootstrap from early tool_input_delta before tool_call_started");
-assert.ok(/Array\.isArray\(payload\.artifact_paths\)[\s\S]{0,220}payload\.artifact_paths\.find/.test(consoleJs),
+assert.ok(/function artifactPathFromConsoleToolPayload/.test(consoleJs)
+    && consoleJs.includes("Array.isArray(payload?.artifact_paths)")
+    && consoleJs.includes("payload.artifact_paths.find")
+    && consoleJs.includes("const artifactPath = artifactPathFromConsoleToolPayload(payload);"),
   "live preview: console must commit from canonical artifact_paths arrays, not only metadata.path");
 
 // ── Bubble timestamps ──────────────────────────────────────────────────

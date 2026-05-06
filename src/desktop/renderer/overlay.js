@@ -1612,7 +1612,7 @@ function artifactPathFromToolPayload(payload = {}) {
     const path = payload.artifact_paths.find((item) => typeof item === "string" && item.length > 0);
     if (path) return path;
   }
-  return payload?.metadata?.path ?? payload?.artifact_path ?? "";
+  return payload?.metadata?.path ?? payload?.artifact_path ?? payload?.path ?? "";
 }
 
 // 83.3 — Tool-call card. Renders as a <details> so the user can collapse
@@ -2387,6 +2387,19 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
           observation: frame.data?.observation ?? ""
         });
       }
+    }
+  }
+
+  if (frame.event === "artifact_created") {
+    const artifactPath = artifactPathFromToolPayload(frame.data);
+    if (artifactPath) {
+      window.livePreview?.commit?.({
+        toolName: getToolEventId(frame),
+        success: true,
+        artifactPath,
+        mime: frame.data?.mime ?? frame.data?.mime_type ?? frame.data?.metadata?.mime_type ?? null,
+        observation: frame.data?.observation ?? ""
+      });
     }
   }
 

@@ -85,4 +85,20 @@ const ROOT = path.resolve(__dirname, "..");
     "electron-main must handle previewWindowCommit");
 }
 
+// --- 6. terminal preview states never remain loading ------------------
+{
+  const previewSrc = await readFile(path.join(ROOT, "src/desktop/renderer/preview-window.js"), "utf8");
+  assert.ok(previewSrc.includes("没有收到可预览的文件路径"),
+    "preview-window must render a terminal empty state when commit succeeds without an artifact path");
+  assert.ok(/const committedToolName = toolName \|\| state\.toolName/.test(previewSrc),
+    "preview-window commits must be able to finalize artifact_created events without a toolName");
+
+  const overlaySrc = await readFile(path.join(ROOT, "src/desktop/renderer/overlay.js"), "utf8");
+  const consoleSrc = await readFile(path.join(ROOT, "src/desktop/renderer/console.js"), "utf8");
+  assert.ok(/frame\.event === "artifact_created"[\s\S]{0,260}livePreview\?\.commit/.test(overlaySrc),
+    "overlay must allow artifact_created to finalize the live preview");
+  assert.ok(/frame\.event === "artifact_created"[\s\S]{0,260}livePreview\?\.commit/.test(consoleSrc),
+    "console must allow artifact_created to finalize the live preview");
+}
+
 console.log("ok verify-preview-window");
