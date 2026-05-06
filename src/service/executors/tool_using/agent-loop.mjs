@@ -662,7 +662,56 @@ function appendAuditLog(runtime, task, subtype, payload) {
  */
 export async function runToolAgentLoop(opts = {}) {
   const result = await _runToolAgentLoopCore(opts);
-  return finaliseWithEvidence(result, opts);
+  const contracted = finaliseWithArtifactContract(result, opts);
+  return finaliseWithEvidence(contracted, opts);
+}
+
+function artifactContractViolations(task, transcript = []) {
+  if (!task) return [];
+  const spec = selectSuccessContractValidationSpec(task);
+  const validation = validateSuccessContract(spec, transcript);
+  return (validation.violations ?? []).filter((violation) =>
+    violation?.kind === "artifact_required_not_created"
+    || violation?.kind === "artifact_required_kind_mismatch"
+  );
+}
+
+function finaliseWithArtifactContract(result, { runtime, task } = {}) {
+  if (!result || typeof result !== "object") return result;
+  if (result.status !== "success") return result;
+  const transcript = Array.isArray(result.transcript) ? result.transcript : [];
+  const violations = artifactContractViolations(task, transcript);
+  if (violations.length === 0) return result;
+
+  const violationKinds = violations.map((violation) => violation.kind).filter(Boolean);
+  const phaseGate = {
+    next_action: "abort",
+    iteration: null,
+    violations,
+    runbook_suggested: null
+  };
+  runtime?.emitTaskEvent?.("contract_finalization_blocked", {
+    reason: "artifact_contract_unsatisfied",
+    violation_kinds: violationKinds
+  });
+  if (runtime?.store && task?.task_id) {
+    appendAuditLog(runtime, task, "tool_loop.contract_finalization_blocked", {
+      reason: "artifact_contract_unsatisfied",
+      violation_kinds: violationKinds
+    });
+  }
+
+  return {
+    ...result,
+    status: "partial_success",
+    final_text: localFallbackFinal({
+      task,
+      transcript,
+      reason: violations.map((violation) => violation.message || violation.kind).join("; ")
+    }),
+    phase_gate: phaseGate,
+    contract_violations: violations
+  };
 }
 
 function finaliseWithEvidence(result, { runtime, task } = {}) {

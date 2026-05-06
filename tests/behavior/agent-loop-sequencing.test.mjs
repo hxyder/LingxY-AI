@@ -375,6 +375,107 @@ test("artifact-required tasks cannot finalize before creating a file", async () 
   ));
 });
 
+test("artifact-required tasks do not report success after exhausting invalid artifact tool calls", async () => {
+  const { runtime, events } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([makeGenerateDocumentTool()]),
+    finalAnswerComposer: async () => "I can describe the document, but no file was created."
+  });
+  const task = {
+    task_id: "task_artifact_invalid_until_exhausted",
+    user_command: "生成一份 docx 文档",
+    execution_mode: "interactive",
+    task_spec: {
+      goal: "generate_document",
+      artifact: { required: true, kind: "docx", quality: "draft" },
+      synthesis: { expected_output: "artifact", user_goal: "generate a document" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: true,
+        tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: []
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async () => ({ type: "tool_call", tool: "generate_document", args: { kind: "docx" } }),
+    maxIterations: 2
+  });
+
+  assert.equal(result.status, "partial_success");
+  assert.ok(result.phase_gate?.violations?.some((violation) =>
+    violation.kind === "artifact_required_not_created"
+  ));
+  assert.equal(
+    result.transcript.filter((entry) => entry.type === "validation_error" && entry.tool === "generate_document").length,
+    2
+  );
+  assert.ok(events.some((event) =>
+    event.eventType === "contract_finalization_blocked"
+    && event.payload?.violation_kinds?.includes("artifact_required_not_created")
+  ));
+});
+
+test("artifact-required tasks reject a successful artifact with the wrong kind", async () => {
+  const { runtime, events } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([makeGenerateDocumentTool()]),
+    finalAnswerComposer: async () => "A PDF was generated."
+  });
+  const task = {
+    task_id: "task_artifact_wrong_kind",
+    user_command: "生成一份 docx 文档",
+    execution_mode: "interactive",
+    task_spec: {
+      goal: "generate_document",
+      artifact: { required: true, kind: "docx", quality: "draft" },
+      synthesis: { expected_output: "artifact", user_goal: "generate a document" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: true,
+        tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: []
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ iteration }) => {
+      if (iteration === 0) {
+        return {
+          type: "tool_call",
+          tool: "generate_document",
+          args: {
+            kind: "pdf",
+            outline: {
+              title: "Wrong Kind",
+              sections: [{ heading: "Summary", body: "This is intentionally a PDF." }]
+            }
+          }
+        };
+      }
+      return { type: "final", text: "done" };
+    },
+    maxIterations: 3
+  });
+
+  assert.equal(result.status, "partial_success");
+  assert.ok(result.phase_gate?.violations?.some((violation) =>
+    violation.kind === "artifact_required_kind_mismatch"
+  ));
+  assert.ok(events.some((event) =>
+    event.eventType === "contract_finalization_blocked"
+    && event.payload?.violation_kinds?.includes("artifact_required_kind_mismatch")
+  ));
+});
+
 test("phase gate preserves initial artifact contract when current SR patch is incomplete", async () => {
   const { runtime, events } = makeRuntime({
     actionToolRegistry: createActionToolRegistry([
