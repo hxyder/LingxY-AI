@@ -575,6 +575,21 @@ function buildWhisperProvider(result, fallbackModel) {
   };
 }
 
+// Rate-limited diagnostic for daemon failures. Without this a stuck daemon
+// reduces to "transcription got slower" with no signal in the log; with it
+// we see the underlying error at most once per minute per error kind.
+const WHISPER_DAEMON_WARN_INTERVAL_MS = 60_000;
+const _whisperDaemonWarnAt = new Map();
+function logWhisperDaemonFailure(error) {
+  const key = String(error?.code ?? error?.message ?? error ?? "unknown").slice(0, 200);
+  const last = _whisperDaemonWarnAt.get(key) ?? 0;
+  const nowMs = Date.now();
+  if (nowMs - last < WHISPER_DAEMON_WARN_INTERVAL_MS) return;
+  _whisperDaemonWarnAt.set(key, nowMs);
+  // eslint-disable-next-line no-console
+  console.warn(`[audio] whisper daemon transcribe failed; falling back to fork-exec: ${key}`);
+}
+
 async function tryWhisperDaemonTranscribe(audioPath, { language, beamSize, noVad, model, device, computeType }) {
   const daemon = getWhisperDaemon({
     pythonCommand: getPythonCommand(),
@@ -599,6 +614,7 @@ async function tryWhisperDaemonTranscribe(audioPath, { language, beamSize, noVad
     });
     return { ok: true, daemon: true, result };
   } catch (error) {
+    logWhisperDaemonFailure(error);
     return { ok: false, daemon: true, error };
   }
 }

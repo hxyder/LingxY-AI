@@ -103,17 +103,16 @@ export function createWhisperDaemon({
   };
 
   const recordFailure = (error) => {
-    if (shuttingDown) {
-      // Close event from a kill we initiated — already counted.
-      shuttingDown = false;
-      return;
-    }
     failureCount = Math.min(failureCount + 1, backoffSteps.length);
     const cooldown = backoffSteps[Math.min(failureCount, backoffSteps.length) - 1] ?? backoffSteps[backoffSteps.length - 1];
     blockedUntil = now() + cooldown;
     failPending(error);
     stop();
-    shuttingDown = false;
+    // Codex Round 7 review: do NOT clear `shuttingDown` here. In production
+    // the `close` event from `child.kill()` fires asynchronously; if we
+    // cleared the flag before close arrived, the close handler would see
+    // shuttingDown=false and recordFailure a second time, doubling the
+    // backoff step. Let the close handler consume the flag.
   };
 
   const recordSuccess = () => {
@@ -169,49 +168,64 @@ export function createWhisperDaemon({
       recordFailure(error);
     });
     child.on?.("close", (code) => {
+      if (shuttingDown) {
+        // We initiated this kill (via stop / recordFailure / idle); the
+        // failure has already been counted. Consume the flag and stop.
+        shuttingDown = false;
+        return;
+      }
       const error = new Error(`whisper daemon exited with code ${code}${stderrText ? `: ${stderrText.slice(-400)}` : ""}`);
       recordFailure(error);
     });
+    // Defensive stdin error handler — child crash mid-write surfaces here as
+    // EPIPE on some platforms; without a listener Node would crash the
+    // parent process.
+    child.stdin?.on?.("error", () => { /* surfaced via the write callback */ });
     resetIdleTimer();
   };
 
+  let pumping = false;
   const pump = () => {
-    if (inflight) return;
-    const next = queue.shift();
-    if (!next) {
-      resetIdleTimer();
-      return;
-    }
+    // Codex Round 7 review: when the breaker is open and N callers stack
+    // up, the previous version recursed once per rejection (stack depth =
+    // N). Iterate instead so an unbounded backlog cannot overflow.
+    if (pumping) return;
+    pumping = true;
     try {
-      ensureStarted();
-    } catch (error) {
-      next.reject(error);
-      pump();
-      return;
-    }
-    if (idleTimer) clearTimeout(idleTimer);
-    const timer = setTimeout(() => {
-      if (inflight && inflight.id === next.id) {
-        inflight = null;
-        recordFailure(new Error(`whisper daemon request ${next.id} timed out after ${next.timeoutMs}ms`));
-        next.reject(new Error(`whisper daemon request timed out after ${next.timeoutMs}ms`));
-        pump();
+      while (!inflight && queue.length > 0) {
+        const next = queue.shift();
+        try {
+          ensureStarted();
+        } catch (error) {
+          try { next.reject(error); } catch { /* ignore */ }
+          continue;
+        }
+        if (idleTimer) clearTimeout(idleTimer);
+        const timer = setTimeout(() => {
+          if (inflight && inflight.id === next.id) {
+            inflight = null;
+            recordFailure(new Error(`whisper daemon request ${next.id} timed out after ${next.timeoutMs}ms`));
+            try { next.reject(new Error(`whisper daemon request timed out after ${next.timeoutMs}ms`)); } catch { /* ignore */ }
+            pump();
+          }
+        }, next.timeoutMs);
+        inflight = { ...next, timer };
+        child.stdin.write(`${JSON.stringify(next.payload)}\n`, "utf8", (error) => {
+          if (!error) return;
+          const entry = inflight;
+          inflight = null;
+          if (entry?.timer) clearTimeout(entry.timer);
+          recordFailure(error);
+          try { entry?.reject?.(error); } catch { /* ignore */ }
+          pump();
+        });
+        // After a successful start the loop exits naturally because
+        // inflight is now set; we wait for the response or the timeout.
       }
-    }, next.timeoutMs);
-    inflight = { ...next, timer };
-    const wireTimerCleanup = (entry) => {
-      if (entry.timer) clearTimeout(entry.timer);
-    };
-    child.stdin.write(`${JSON.stringify(next.payload)}\n`, "utf8", (error) => {
-      if (!error) return;
-      // Write failure: bounce this caller, kick the breaker, drain queue.
-      const entry = inflight;
-      inflight = null;
-      if (entry) wireTimerCleanup(entry);
-      recordFailure(error);
-      try { entry?.reject?.(error); } catch { /* ignore */ }
-      pump();
-    });
+    } finally {
+      pumping = false;
+    }
+    if (!inflight && queue.length === 0) resetIdleTimer();
   };
 
   const transcribe = async ({

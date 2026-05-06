@@ -122,6 +122,70 @@ test("whisper daemon serialises requests (single in-flight)", async () => {
   daemon.stop();
 });
 
+test("kill -> async close does not double-count the breaker step", async () => {
+  // Codex Round 7: in production the close event from `child.kill()` is
+  // asynchronous. An earlier version cleared `shuttingDown` synchronously
+  // inside recordFailure, so when the close event arrived later it
+  // re-entered recordFailure and incremented failureCount a second time
+  // (10s -> 60s backoff for what should be a single fault). This test
+  // pins the async-close shape with a fake child whose kill emits close
+  // on the next microtask, mirroring real Node behaviour.
+  const spawnCalls = [];
+  let fakeNow = 1_000_000;
+  const observed = { failureSteps: [] };
+  const spawnImpl = (command, args, options) => {
+    spawnCalls.push({ command, args, options });
+    const child = new EventEmitter();
+    child.stdin = new PassThrough();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.killed = false;
+    child.kill = () => {
+      child.killed = true;
+      // ASYNC close, like real Node spawn.
+      queueMicrotask(() => child.emit("close", 0));
+    };
+    let buffer = "";
+    child.stdin.on("data", (chunk) => {
+      buffer += Buffer.from(chunk).toString("utf8");
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        // Emit ONE bad (non-JSON) line, then no further responses.
+        child.stdout.write("garbage line\n", "utf8");
+      }
+    });
+    return child;
+  };
+  const daemon = createWhisperDaemon({
+    pythonCommand: "python",
+    scriptPath: "scripts/local-whisper-transcribe.py",
+    spawnImpl,
+    requestTimeoutMs: 1000,
+    idleTimeoutMs: 0,
+    backoffSteps: [10_000, 60_000, 300_000],
+    now: () => fakeNow
+  });
+
+  await assert.rejects(
+    () => daemon.transcribe({ audioPath: "a.webm" }),
+    /non-JSON line/i
+  );
+
+  // Let the async close event settle.
+  await new Promise((resolve) => queueMicrotask(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // First step is 10s. After exactly 10s + 1ms the breaker MUST be closed.
+  // If it had double-counted, blockedUntil would be 60s out and this would
+  // remain open — the regression we are guarding against.
+  fakeNow += 10_001;
+  assert.equal(daemon.circuitOpen, false,
+    "breaker should be on the FIRST backoff step (10s) after a single fault, not the SECOND step (60s)");
+  daemon.stop();
+});
+
 test("whisper daemon trips circuit breaker on stdout pollution and lets fallback proceed", async () => {
   const spawnCalls = [];
   let pollutionCount = 0;
