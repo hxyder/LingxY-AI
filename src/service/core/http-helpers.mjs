@@ -3,11 +3,13 @@ export function sendJson(response, statusCode, payload) {
     "Content-Type": "application/json; charset=utf-8"
   });
   response.end(`${JSON.stringify(payload)}\n`);
+  return true;
 }
 
 export function sendHtml(response, statusCode, html) {
   response.writeHead(statusCode, { "Content-Type": "text/html; charset=utf-8" });
   response.end(html);
+  return true;
 }
 
 export class HttpBodyTooLargeError extends Error {

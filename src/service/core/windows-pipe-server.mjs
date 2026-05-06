@@ -10,6 +10,7 @@ async function handleEnvelope(runtime, envelope) {
     captureMode: envelope.capture_mode ?? envelope.source ?? "hotkey",
     sourceApp: "explorer.exe",
     executionMode: envelope.execution_mode,
+    background: true,
     runtime
   });
 

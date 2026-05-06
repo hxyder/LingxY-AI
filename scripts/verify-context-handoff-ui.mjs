@@ -39,6 +39,7 @@ assert.equal(preload.includes("resolveDroppedFilePaths"), true);
 assert.equal(preload.includes("submitDroppedFiles"), true);
 
 const mainProcess = await read("src/desktop/tray/electron-main.mjs");
+const windowsPipeServer = await read("src/service/core/windows-pipe-server.mjs");
 assert.equal(mainProcess.includes("requestSingleInstanceLock"), true);
 assert.equal(mainProcess.includes("--uca-handoff-file"), true);
 assert.equal(mainProcess.includes("shellContextReceived"), true);
@@ -66,6 +67,9 @@ assert.equal(helperProgram.includes("--uca-open-overlay"), true);
 assert.equal(helperProgram.includes("explorer-selection-batch.json"), true);
 assert.equal(helperProgram.includes("--electron-cli"), true);
 assert.equal(helperProgram.includes("ELECTRON_RUN_AS_NODE"), true);
+assert.match(windowsPipeServer,
+  /submitFileTask\(\{[\s\S]{0,260}background:\s*true[\s\S]{0,80}runtime/,
+  "Explorer/file-selection pipe must return after task creation instead of waiting for file ingest/execution");
 
 const installScript = await read("scripts/install-explorer-entry.ps1");
 assert.equal(installScript.includes("UcaExplorerSelectionHelper.exe"), true);
