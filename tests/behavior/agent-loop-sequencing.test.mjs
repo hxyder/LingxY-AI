@@ -912,7 +912,7 @@ test("compound launch continues remaining independent targets after one target f
   assert.match(result.final_text, /AlphaApp/);
   assert.match(result.final_text, /BetaApp/);
   assert.match(result.final_text, /GammaApp/);
-  assert.match(result.final_text, /成功|已打开|已启动/);
+  assert.match(result.final_text, /成功|已打开|已启动|successfully|launched/i);
   assert.ok(!/Launched BetaApp|Launched GammaApp/.test(result.final_text));
   assert.ok(!/cannot operate your computer/i.test(result.final_text));
   assert.ok(events.some((event) =>

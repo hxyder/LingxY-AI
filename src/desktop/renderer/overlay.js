@@ -4518,6 +4518,11 @@ commandInput.addEventListener("input", autoSizeInput);
 commandInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
+    e.stopPropagation();
+    if (voiceMode && !noteActive) {
+      closeVoicePanel({ submit: true });
+      return;
+    }
     void submitComposerInput();
   }
 });

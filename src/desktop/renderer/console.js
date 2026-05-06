@@ -504,10 +504,15 @@ function renderEchoDiagnostics(payload = null) {
   const selfCheckPassed = Boolean(enrollment.selfCheckPassed ?? matchedCount >= requiredMatches);
   const customPhrases = Array.isArray(profile.phrases) ? profile.phrases.length : 0;
   const profileLabel = profile.displayName || "linxi";
+  const enrollmentValue = enrollmentEnabled
+    ? (selfCheckPassed ? "Enabled" : "Fallback enabled")
+    : sampleCount > 0 ? "Needs samples" : "Not recorded";
   const sampleHint = enrollment.ok === false
     ? (enrollment.message || enrollment.reason || "Enrollment status unavailable.")
     : enrollmentEnabled
-      ? `${usableSampleCount}/${requiredSamples} usable samples. KWS self-check ${matchedCount}/${requiredMatches}${selfCheckPassed ? "." : " (diagnostic only)." }`
+      ? selfCheckPassed
+        ? `${usableSampleCount}/${requiredSamples} usable samples. Sherpa self-check ${matchedCount}/${requiredMatches}.`
+        : `${usableSampleCount}/${requiredSamples} usable samples. Sherpa self-check ${matchedCount}/${requiredMatches}; personal template fallback remains active.`
       : `${sampleCount}/${requiredSamples} samples, ${matchedCount}/${requiredMatches} KWS matches.`;
   const transcriptionProvider = transcription.provider?.name
     || transcription.provider?.id
@@ -530,7 +535,7 @@ function renderEchoDiagnostics(payload = null) {
     </div>
     <div class="voice-status-card">
       <strong>Personal samples</strong>
-      <div class="value">${enrollmentEnabled ? "Enabled" : sampleCount > 0 ? "Needs samples" : "Not recorded"}</div>
+      <div class="value">${enrollmentValue}</div>
       <div class="hint">${escapeHtml(sampleHint)}</div>
     </div>
     <div class="voice-status-card">

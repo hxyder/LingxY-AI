@@ -511,6 +511,8 @@ assert.ok(!/addBubble\("assistant", `Artifact created:/.test(overlayJs),
   "overlay chat surface must not expose internal artifact_created event labels as assistant text");
 assert.ok(/captureActiveWindowHintForVoice/.test(overlayJs) && /voice_wake/.test(overlayJs) && /echo_voice_wake/.test(overlayJs),
   "voice mode: voice and Echo sessions must capture active browser context before page-analysis commands");
+assert.ok(/commandInput\.addEventListener\("keydown"[\s\S]{0,180}e\.stopPropagation\(\)[\s\S]{0,180}voiceMode && !noteActive[\s\S]{0,120}closeVoicePanel\(\{ submit: true \}\)/.test(overlayJs),
+  "voice mode: Enter in the composer must route through the voice submit controller and not bubble into a second submit");
 assert.ok(/captureActiveWindowHintForVoice[\s\S]{0,420}includeSelection:\s*true/.test(overlayJs)
     && /captureActiveWindowHintForVoice[\s\S]{0,760}applyShellHandoff\(payload\)/.test(overlayJs),
   "voice mode: voice and Echo context capture must hand off selected text/files, not only passive active-window hints");
@@ -544,7 +546,9 @@ assert.ok(/id="voiceEchoSettingsPanel"/.test(consoleHtml) && /setEchoWakeProfile
 assert.ok(/id="echoDiagnosticsPanel"/.test(consoleHtml)
     && /getEchoDiagnostics/.test(consoleJs)
     && /startWakeEnrollment/.test(consoleJs)
-    && /Transcription/.test(consoleJs),
+    && /Transcription/.test(consoleJs)
+    && /Fallback enabled/.test(consoleJs)
+    && /personal template fallback remains active/.test(consoleJs),
   "echo mode: Console settings must expose non-hot-path diagnostics and wake enrollment controls");
 assert.ok(/const settings = await loadSettings\(\);[\s\S]{0,420}if \(!settings\?\.echoMode\)[\s\S]{0,100}showWindow\("overlay"\)/.test(electronMain),
   "dock file drop: normal mode must open overlay while Echo mode only hands off files for V-to-ask");
