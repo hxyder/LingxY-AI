@@ -99,15 +99,19 @@ const ROOT = path.resolve(__dirname, "..");
   const types = events.map((e) => e.event_type);
   assert.ok(appended.some((e) => e.event_type === "phase_timing" && e.payload?.phase === "executor_first_delta"),
     "first text_delta must emit an executor_first_delta phase_timing event");
+  assert.ok(appended.some((e) => e.event_type === "phase_timing" && e.payload?.phase === "executor_first_event"),
+    "first executor event must emit an executor_first_event phase_timing event");
+  assert.ok(appended.some((e) => e.event_type === "phase_timing" && e.payload?.phase === "executor_first_progress"),
+    "first executor progress must emit an executor_first_progress phase_timing event");
   assert.ok(appended.some((e) => e.event_type === "phase_timing" && e.payload?.phase === "executor_first_visible_output"),
     "first visible output must emit an executor_first_visible_output phase_timing event");
   assert.deepEqual(
     types,
-    ["started", "tool_call", "phase_timing", "phase_timing", "artifact_created", "status_changed"],
-    "persisted events must be in-order, include first-delta and first-visible timing, and skip streaming deltas"
+    ["started", "tool_call", "phase_timing", "phase_timing", "phase_timing", "phase_timing", "artifact_created", "status_changed"],
+    "persisted events must be in-order, include first executor/progress/delta/visible timing, and skip streaming deltas"
   );
   assert.equal(events[0].payload.intent, "demo");
-  assert.equal(events[4].payload.path, "C:\\foo.docx");
+  assert.equal(events[6].payload.path, "C:\\foo.docx");
 
   // Unknown task → empty.
   const missing = await readTaskEventLog(runtime, "task_does_not_exist");

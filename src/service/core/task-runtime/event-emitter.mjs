@@ -141,7 +141,23 @@ export const EPHEMERAL_EVENT_TYPES = new Set([
 ]);
 
 const firstDeltaTimingEmitted = new Set();
+const firstEventTimingEmitted = new Set();
+const firstProgressTimingEmitted = new Set();
 const firstVisibleTimingEmitted = new Set();
+
+const EXECUTOR_PROGRESS_EVENT_TYPES = new Set([
+  "planner_request_started",
+  "step_started",
+  "step_finished",
+  "reasoning_delta",
+  "tool_input_delta",
+  "tool_call_started",
+  "tool_call_proposed",
+  "tool_call_completed",
+  "tool_call_denied",
+  "log",
+  "final_composer_started"
+]);
 
 function isVisibleOutputEvent(eventType, payload = {}) {
   if (eventType === "text_delta") return true;
@@ -153,6 +169,14 @@ function isVisibleOutputEvent(eventType, payload = {}) {
     return typeof payload?.text === "string" && payload.text.trim().length > 0;
   }
   return false;
+}
+
+function isExecutorProgressEvent(eventType) {
+  return EXECUTOR_PROGRESS_EVENT_TYPES.has(eventType);
+}
+
+function isExecutorEvent(eventType, payload = {}) {
+  return isExecutorProgressEvent(eventType) || isVisibleOutputEvent(eventType, payload);
 }
 
 function taskCreatedPayloadWithSubmissionOrigin(runtime, taskId, payload = {}) {
@@ -193,6 +217,14 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
     runtime.store.appendEvent(record);
   }
   runtime.eventBus.publish(record);
+  if (taskId && !firstEventTimingEmitted.has(taskId) && isExecutorEvent(eventType, effectivePayload)) {
+    firstEventTimingEmitted.add(taskId);
+    emitPhaseTiming(runtime, taskId, "executor_first_event");
+  }
+  if (taskId && !firstProgressTimingEmitted.has(taskId) && isExecutorProgressEvent(eventType)) {
+    firstProgressTimingEmitted.add(taskId);
+    emitPhaseTiming(runtime, taskId, "executor_first_progress");
+  }
   if (eventType === "text_delta" && taskId && !firstDeltaTimingEmitted.has(taskId)) {
     firstDeltaTimingEmitted.add(taskId);
     emitPhaseTiming(runtime, taskId, "executor_first_delta");
@@ -202,6 +234,8 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
     emitPhaseTiming(runtime, taskId, "executor_first_visible_output");
   }
   if (eventType === "status_changed" && ["success", "failed", "cancelled", "partial_success"].includes(payload?.status)) {
+    firstEventTimingEmitted.delete(taskId);
+    firstProgressTimingEmitted.delete(taskId);
     firstDeltaTimingEmitted.delete(taskId);
     firstVisibleTimingEmitted.delete(taskId);
   }
@@ -293,6 +327,8 @@ function emitDecisionTraceFollowUp(runtime, taskId) {
 }
 
 export function resetTaskEventEmitterStateForTests() {
+  firstEventTimingEmitted.clear();
+  firstProgressTimingEmitted.clear();
   firstDeltaTimingEmitted.clear();
   firstVisibleTimingEmitted.clear();
 }

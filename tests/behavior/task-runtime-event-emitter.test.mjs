@@ -56,11 +56,12 @@ test("task event emitter keeps streaming deltas ephemeral and emits first-token 
   emitTaskEvent({ runtime, taskId: "task_emitter", eventType: "text_delta", payload: { delta: "b" } });
 
   assert.equal(appended.some((event) => event.event_type === "text_delta"), false);
-  assert.equal(appended.filter((event) => event.event_type === "phase_timing").length, 2);
+  assert.equal(appended.filter((event) => event.event_type === "phase_timing").length, 3);
+  assert.ok(appended.some((event) => event.payload?.phase === "executor_first_event"));
   assert.ok(appended.some((event) => event.payload?.phase === "executor_first_delta"));
   assert.ok(appended.some((event) => event.payload?.phase === "executor_first_visible_output"));
   assert.equal(published.filter((event) => event.event_type === "text_delta").length, 2);
-  assert.equal(published.filter((event) => event.event_type === "phase_timing").length, 2);
+  assert.equal(published.filter((event) => event.event_type === "phase_timing").length, 3);
 });
 
 test("task event emitter records first visible output for non-streaming results", () => {
@@ -70,9 +71,25 @@ test("task event emitter records first visible output for non-streaming results"
   emitTaskEvent({ runtime, taskId: "task_emitter", eventType: "inline_result", payload: { text: "done" } });
   emitTaskEvent({ runtime, taskId: "task_emitter", eventType: "artifact_created", payload: { path: "C:\\tmp\\report.docx" } });
 
+  assert.equal(appended.filter((event) => event.payload?.phase === "executor_first_event").length, 1);
   assert.equal(appended.filter((event) => event.payload?.phase === "executor_first_delta").length, 0);
   assert.equal(appended.filter((event) => event.payload?.phase === "executor_first_visible_output").length, 1);
   assert.equal(published.filter((event) => event.payload?.phase === "executor_first_visible_output").length, 1);
+});
+
+test("task event emitter records first executor progress before visible output", () => {
+  resetTaskEventEmitterStateForTests();
+  const { runtime, appended, published } = makeRuntime();
+
+  emitTaskEvent({ runtime, taskId: "task_emitter", eventType: "planner_request_started", payload: { iteration: 0 } });
+  emitTaskEvent({ runtime, taskId: "task_emitter", eventType: "reasoning_delta", payload: { delta: "thinking" } });
+  emitTaskEvent({ runtime, taskId: "task_emitter", eventType: "inline_result", payload: { text: "done" } });
+
+  assert.equal(appended.filter((event) => event.payload?.phase === "executor_first_event").length, 1);
+  assert.equal(appended.filter((event) => event.payload?.phase === "executor_first_progress").length, 1);
+  assert.equal(appended.filter((event) => event.payload?.phase === "executor_first_delta").length, 0);
+  assert.equal(appended.filter((event) => event.payload?.phase === "executor_first_visible_output").length, 1);
+  assert.equal(published.filter((event) => event.event_type === "reasoning_delta").length, 1);
 });
 
 test("task event emitter publishes decision trace projection on task_created", () => {

@@ -59,6 +59,10 @@ assert.ok(/JSONL_SKIP_EVENT_TYPES[\s\S]*"reasoning_delta"/.test(taskEventLog),
   "reasoning_delta must be skipped from jsonl task logs");
 assert.ok(taskEventEmitter.includes('"executor_first_delta"'),
   "task event emitter must record first-token latency as executor_first_delta");
+assert.ok(taskEventEmitter.includes('"executor_first_event"'),
+  "task event emitter must record first executor activity as executor_first_event");
+assert.ok(taskEventEmitter.includes('"executor_first_progress"'),
+  "task event emitter must record first non-visible executor progress as executor_first_progress");
 assert.ok(taskEventEmitter.includes('"executor_first_visible_output"'),
   "task event emitter must record first visible output latency across streaming, inline, and artifact outputs");
 
