@@ -182,8 +182,15 @@ async function runScenario(scenario, options = {}) {
   assert.equal(ctx.activeWindow.extra.reason, "address_bar_unreadable");
 }
 
-assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,1600}allowClipboardFallback:\s*false[\s\S]{0,220}clipboardBaseline:\s*hotKeyClipboardSnapshot/.test(electronMainSource),
+assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,2200}allowClipboardFallback:\s*false[\s\S]{0,220}clipboardBaseline:\s*hotKeyClipboardSnapshot/.test(electronMainSource),
   "capture-and-ask must only accept text copied after the hotkey, not stale clipboard fallback");
+{
+  const captureBlockStart = electronMainSource.indexOf('shortcut.id === "capture-and-ask"');
+  const revealIndex = electronMainSource.indexOf("captureInFlight = true;\n          revealOverlayForCapture();", captureBlockStart);
+  const captureIndex = electronMainSource.indexOf("captureActiveWindowContext({", captureBlockStart);
+  assert.ok(captureBlockStart >= 0 && revealIndex > captureBlockStart && captureIndex > revealIndex,
+    "capture-and-ask must reveal the overlay before slow active-window capture resolves");
+}
 assert.ok(/async function captureActiveWindowContext\s*\(\{\s*includeSelection[\s\S]{0,220}clipboardBaseline\s*=\s*null/.test(electronMainSource)
   && /runCaptureActiveWindowContext\(\{[\s\S]{0,520}clipboardBaseline/.test(electronMainSource)
   && /ipcMain\.handle\("uca:capture-active-window-context"[\s\S]{0,520}clipboardBaseline:\s*typeof options\?\.clipboardBaseline/.test(electronMainSource),

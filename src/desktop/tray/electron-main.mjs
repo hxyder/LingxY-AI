@@ -1976,11 +1976,18 @@ export function createElectronShellRuntime({
           // UCA-050: guard against rapid double-press racing two concurrent
           // captureActiveWindowContext() promises that could each try to
           // enqueue a different context payload to the overlay.
-          if (captureInFlight) {
+          const revealOverlayForCapture = () => {
             showWindow("overlay");
+            for (const bw of windows.values()) {
+              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
+            }
+          };
+          if (captureInFlight) {
+            revealOverlayForCapture();
             return;
           }
           captureInFlight = true;
+          revealOverlayForCapture();
           // Snapshot clipboard synchronously right now — before any async work
           // that might shift focus or delay the SimulateCopy execution. This
           // lets us detect whether SimulateCopy completed late (Add-Type JIT
@@ -2004,11 +2011,6 @@ export function createElectronShellRuntime({
               }
             }
 
-            showWindow("overlay");
-            for (const bw of windows.values()) {
-              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-            }
-
             const hasFiles = ctx.filePaths.length > 0;
             const hasText = Boolean(ctx.selectedText);
             const hasActiveWindow = Boolean(ctx.activeWindow && !ctx.activeWindow.blocked);
@@ -2022,10 +2024,8 @@ export function createElectronShellRuntime({
               enqueueWindowMessage("overlay", IPC_CHANNELS.shellContextReceived, shellPayload);
             }
           }).catch(() => {
-            showWindow("overlay");
-            for (const bw of windows.values()) {
-              bw.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
-            }
+            // Overlay is already visible; a failed capture simply leaves the
+            // user with a fresh composer instead of delaying the UI.
           }).finally(() => {
             captureInFlight = false;
           });
