@@ -4220,7 +4220,7 @@ async function captureActiveWindowHintForVoice({ captureMode = "voice_context" }
   try {
     const payload = await timeoutWithFallback(
       window.ucaShell.getActiveWindowContext({
-        includeSelection: false,
+        includeSelection: true,
         excludeShellWindow: true,
         preferLastExternal: true,
         maxExternalAgeMs: 10 * 60 * 1000,
@@ -4230,6 +4230,9 @@ async function captureActiveWindowHintForVoice({ captureMode = "voice_context" }
       null
     );
     const activeWindow = payload?.active_window ?? payload?.activeWindow ?? null;
+    if (payload?.capture || (Array.isArray(payload?.file_paths) && payload.file_paths.length > 0)) {
+      applyShellHandoff(payload);
+    }
     if (isActiveBrowserWindow(activeWindow) || activeWindowFilePath(activeWindow)) {
       pendingActiveWindowContext = { ...activeWindow };
     }

@@ -493,6 +493,9 @@ assert.ok(/frame\.event === "success"[\s\S]{0,260}showEchoResultHudOnce/.test(ov
   "echo mode: terminal success events without inline_result must still surface through the Echo HUD");
 assert.ok(/captureActiveWindowHintForVoice/.test(overlayJs) && /voice_wake/.test(overlayJs) && /echo_voice_wake/.test(overlayJs),
   "voice mode: voice and Echo sessions must capture active browser context before page-analysis commands");
+assert.ok(/captureActiveWindowHintForVoice[\s\S]{0,420}includeSelection:\s*true/.test(overlayJs)
+    && /captureActiveWindowHintForVoice[\s\S]{0,760}applyShellHandoff\(payload\)/.test(overlayJs),
+  "voice mode: voice and Echo context capture must hand off selected text/files, not only passive active-window hints");
 assert.ok(/explicitBrowserContextRequest[\s\S]{0,180}resolveActiveWindowBrowserCapture/.test(overlayJs)
     && /if \(activeBrowserCapture\)[\s\S]{0,280}stale clipboard\/email text/.test(overlayJs)
     && /else if \(pendingCapture\?\.capture \|\| conversationState\?\.seedCapture\)/.test(overlayJs),
