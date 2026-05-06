@@ -375,6 +375,90 @@ test("artifact-required tasks cannot finalize before creating a file", async () 
   ));
 });
 
+test("phase gate preserves initial artifact contract when current SR patch is incomplete", async () => {
+  const { runtime, events } = makeRuntime({
+    actionToolRegistry: createActionToolRegistry([
+      makeLookupTool(),
+      makeGenerateDocumentTool()
+    ]),
+    finalAnswerComposer: async ({ transcript }) => {
+      assert.ok(transcript.some((entry) =>
+        entry.type === "tool_result"
+        && entry.tool === "generate_document"
+        && entry.artifact_paths?.length === 1
+      ));
+      return "document generated";
+    }
+  });
+  const task = {
+    task_id: "task_artifact_initial_contract",
+    user_command: "生成一份 docx 文档",
+    execution_mode: "interactive",
+    task_spec: {
+      goal: "qa",
+      synthesis: { expected_output: "direct_answer", user_goal: "answer" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } }
+    },
+    task_spec_initial: {
+      goal: "generate_document",
+      artifact: { required: true, kind: "docx", quality: "draft" },
+      synthesis: { expected_output: "artifact", user_goal: "generate a document" },
+      tool_policy: { web_search_fetch: { mode: "forbidden" } },
+      success_contract: {
+        artifact_created: true,
+        artifact_registered: true,
+        tool_called: true,
+        required_tool_names: [],
+        required_policy_groups: []
+      }
+    }
+  };
+
+  const result = await runToolAgentLoop({
+    task,
+    runtime,
+    planner: async ({ transcript, iteration }) => {
+      if (iteration === 0) {
+        return { type: "tool_call", tool: "lookup_fixture", args: { value: "irrelevant" } };
+      }
+      const guidance = transcript.find((entry) =>
+        entry.type === "contract_guidance"
+        && entry.groups?.includes("artifact_generation")
+      );
+      const generated = transcript.some((entry) =>
+        entry.type === "tool_result"
+        && entry.tool === "generate_document"
+        && entry.artifact_paths?.length === 1
+      );
+      if (generated) return { type: "final", text: "done" };
+      if (guidance) {
+        return {
+          type: "tool_call",
+          tool: "generate_document",
+          args: {
+            kind: "docx",
+            outline: {
+              title: "Generated Document",
+              sections: [
+                { heading: "Overview", body: "A concise generated document." }
+              ]
+            }
+          }
+        };
+      }
+      return { type: "final", text: "Here is prose only." };
+    },
+    maxIterations: 5
+  });
+
+  assert.equal(result.status, "success");
+  assert.equal(result.final_text, "document generated");
+  assert.ok(events.some((event) =>
+    event.eventType === "phase_gate_signal"
+    && event.payload?.violation_kinds?.includes("artifact_required_not_created")
+  ));
+});
+
 test("valid repeated tool calls still trigger repeated-call synthesis guidance", async () => {
   const { runtime, events } = makeRuntime({
     finalAnswerComposer: async ({ transcript }) => {

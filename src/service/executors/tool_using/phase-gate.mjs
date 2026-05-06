@@ -1,4 +1,7 @@
-import { validateStepGate } from "../../core/policy/success-contract-validator.mjs";
+import {
+  selectSuccessContractValidationSpec,
+  validateStepGate
+} from "../../core/policy/success-contract-validator.mjs";
 import { ACTION_OBLIGATION_GROUPS } from "../../core/policy/obligation-evaluator.mjs";
 import { toolsInGroup } from "../../core/policy/policy-groups.mjs";
 import { suggestRunbookForStepGate } from "../../core/runtime/runbook-engine.mjs";
@@ -21,7 +24,7 @@ const ACTION_GROUP_SET = new Set(ACTION_OBLIGATION_GROUPS);
 const REQUIRED_POLICY_GROUP_VIOLATION_RE = /^(.+)_required_(?:not_called|all_failed|returned_empty)$/;
 
 export function evaluatePhaseGate({ task, transcript, iteration, maxIterations }) {
-  const stepGateSpec = task.task_spec ?? task.task_spec_initial;
+  const stepGateSpec = selectSuccessContractValidationSpec(task);
   return validateStepGate(stepGateSpec, transcript, {
     iteration,
     maxIterations
