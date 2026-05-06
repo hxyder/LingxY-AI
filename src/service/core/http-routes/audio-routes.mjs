@@ -1310,13 +1310,16 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
       ? `${text.slice(0, preference.maxChars - 1)}…`
       : text;
     const engine = getTtsEngine();
+    // Codex review: capture this speak call's generation before any race
+    // so the response always reflects THIS utterance, not whichever
+    // generation happens to be in-flight when the race resolves.
     const speakPromise = engine.speak(capped, {
       rate: preference.rate,
       voice: preference.voice
     });
-    // Race against a short timeout so the HTTP response returns promptly
-    // for long utterances. The engine's generation token guards against
-    // any race between this fire-and-forget continuation and cancel().
+    // engine.speak increments generation synchronously, so inflightGeneration
+    // immediately after the call is this utterance's id.
+    const myGeneration = engine.inflightGeneration;
     const earlyTimeout = new Promise((resolve) => {
       setTimeout(() => resolve({ ok: true, started: true, async: true }), 300);
     });
@@ -1324,7 +1327,7 @@ export async function tryHandleAudioRoute({ request, response, method, url, runt
     sendJson(response, 200, {
       ok: result?.ok !== false,
       muted: false,
-      generation: engine.inflightGeneration,
+      generation: myGeneration,
       detail: result
     });
     return true;

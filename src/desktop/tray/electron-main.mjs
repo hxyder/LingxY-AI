@@ -2410,17 +2410,18 @@ export function createElectronShellRuntime({
         const current = await loadSettings();
         const dockWin = windows.get("dock");
         if (!dockWin || dockWin.webContents?.isDestroyed?.()) return;
-        // Best-effort fetch of the echo TTS preference. If the service is
-        // unreachable we still build the menu — the toggle just defaults
-        // to "enabled". Codex review noted: keep this fast and never let
-        // service issues block the menu.
+        // Best-effort fetch of the echo TTS preference with a hard timeout
+        // so a stuck service never blocks the menu from popping. Codex
+        // review caught this: an awaited fetch with no abort signal would
+        // leave the user staring at a frozen orb on right-click.
         let ttsPreference = { enabled: true };
         let ttsEngineUnavailable = false;
         try {
           if (resolvedServiceBaseUrl) {
             const ttsResp = await fetch(`${resolvedServiceBaseUrl}/echo/tts/preference`, {
               method: "GET",
-              headers: { "x-uca-actor": "desktop_shell" }
+              headers: { "x-uca-actor": "desktop_shell" },
+              signal: AbortSignal.timeout(500)
             });
             if (ttsResp.ok) {
               const ttsData = await ttsResp.json().catch(() => ({}));
@@ -2428,7 +2429,7 @@ export function createElectronShellRuntime({
               ttsEngineUnavailable = Boolean(ttsData.engineUnavailable);
             }
           }
-        } catch { /* fall through with defaults */ }
+        } catch { /* fall through with defaults — timeout, abort, or service down */ }
         const setEchoTtsEnabled = async (enabled) => {
           if (!resolvedServiceBaseUrl) return;
           try {

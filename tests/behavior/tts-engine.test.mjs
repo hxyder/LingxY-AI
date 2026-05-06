@@ -158,3 +158,87 @@ test("empty / whitespace text returns empty_text without spawning", async () => 
   assert.equal(result.reason, "empty_text");
   assert.equal(calls.length, 0);
 });
+
+test("Windows EncodedCommand escapes single quotes in text and voice", async () => {
+  const calls = [];
+  const engine = createTtsEngine({
+    spawnImpl: makeFakeSpawn(calls),
+    platform: "win32"
+  });
+  const tricky = `don't say "stop" — it's tricky`;
+  const promise = engine.speak(tricky, { voice: "Ms O'Hara" });
+  await new Promise((r) => setImmediate(r));
+  calls[0].child._finishOk();
+  await promise;
+
+  const idx = calls[0].args.indexOf("-EncodedCommand");
+  const decoded = Buffer.from(calls[0].args[idx + 1], "base64").toString("utf16le");
+  // PowerShell single-quote literal escapes ' → ''. We expect the decoded
+  // script to contain the original text with each ' doubled and a single
+  // top-level Speak() call with paired quotes.
+  const speakMatches = [...decoded.matchAll(/\$s\.Speak\('([^']|'')*'\)/g)];
+  assert.equal(speakMatches.length, 1, "exactly one well-formed Speak() literal");
+  assert.ok(decoded.includes("don''t"), "single quote in text doubled");
+  assert.ok(decoded.includes("Ms O''Hara"), "single quote in voice doubled");
+});
+
+test("rate is only emitted when a finite number in [-10, 10]", async () => {
+  const calls = [];
+  const engine = createTtsEngine({
+    spawnImpl: makeFakeSpawn(calls),
+    platform: "win32"
+  });
+  // out-of-range / NaN / non-number → no $s.Rate= line in decoded script
+  for (const bad of [Number.NaN, 99, -99, "5", null, undefined]) {
+    const calls2 = [];
+    const subEngine = createTtsEngine({
+      spawnImpl: makeFakeSpawn(calls2),
+      platform: "win32"
+    });
+    const p = subEngine.speak("hi", { rate: bad });
+    await new Promise((r) => setImmediate(r));
+    calls2[0].child._finishOk();
+    await p;
+    const idx = calls2[0].args.indexOf("-EncodedCommand");
+    const decoded = Buffer.from(calls2[0].args[idx + 1], "base64").toString("utf16le");
+    assert.ok(!decoded.includes("$s.Rate="),
+      `bad rate ${JSON.stringify(bad)} must NOT be written to script, decoded: ${decoded}`);
+  }
+  // valid in-range rate is emitted (and rounded)
+  const p = engine.speak("hi", { rate: 3.4 });
+  await new Promise((r) => setImmediate(r));
+  calls[0].child._finishOk();
+  await p;
+  const idx = calls[0].args.indexOf("-EncodedCommand");
+  const decoded = Buffer.from(calls[0].args[idx + 1], "base64").toString("utf16le");
+  assert.ok(decoded.includes("$s.Rate=3"), `expected rounded rate=3 in script, got: ${decoded}`);
+});
+
+test("non-zero exit (script error) returns ok:false but does NOT mark engine unavailable", async () => {
+  const calls = [];
+  const engine = createTtsEngine({
+    spawnImpl: makeFakeSpawn(calls),
+    platform: "darwin"
+  });
+  const p = engine.speak("hello");
+  await new Promise((r) => setImmediate(r));
+  // Simulate the child exiting with code 1 (e.g. SAPI voice not found)
+  // WITHOUT a kill signal. close handler should resolve ok:false but not
+  // flip the engine to unavailable — the next speak() should still try.
+  calls[0].child.exitCode = 1;
+  calls[0].child.emit("close", 1, null);
+  const result = await p;
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "tts_exit_nonzero");
+  assert.notEqual(result.cancelled, true, "non-zero exit must not be misreported as cancelled");
+  assert.equal(engine.isUnavailable(), false,
+    "a single failing utterance must not disable the engine — only ENOENT does");
+
+  // Subsequent speak should attempt again (calls.length increments).
+  const q = engine.speak("again");
+  await new Promise((r) => setImmediate(r));
+  assert.equal(calls.length, 2, "engine still tries after a non-ENOENT failure");
+  calls[1].child._finishOk();
+  const r2 = await q;
+  assert.equal(r2.ok, true);
+});
