@@ -540,8 +540,8 @@ assert.ok(/const settings = await loadSettings\(\);[\s\S]{0,420}if \(!settings\?
   "dock file drop: normal mode must open overlay while Echo mode only hands off files for V-to-ask");
 assert.ok(/startNewConversation\(\{ preservePendingInputContext \}\)/.test(overlayJs)
     && /const hasPendingInputContext = Boolean\(pendingFileSelection\?\.filePaths\?\.length \|\| pendingCapture\?\.capture\)/.test(overlayJs)
-    && /allowOutsideSession:\s*true/.test(overlayJs)
-    && /已收到 \$\{pendingFileSelection\.filePaths\.length\} 个文件，按 V 直接提问/.test(overlayJs),
+    && /已收到 \$\{fileCount\} 个文件。按 V 直接说话/.test(read("src/desktop/renderer/dock.js"))
+    && /onWakeDetected\("voice", "dock_file_voice", \{[\s\S]{0,120}preserveContext:\s*true/.test(read("src/desktop/renderer/dock.js")),
   "echo dock drop: file handoff must survive V wake and surface a HUD receipt without opening overlay");
 assert.ok(!/id="providerOnboardingList"/.test(consoleHtml),
   "provider settings must not show global capability onboarding cards inside AI Providers");

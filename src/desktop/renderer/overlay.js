@@ -4342,15 +4342,6 @@ function applyShellHandoff(payload) {
       filePaths: payload.file_paths ?? []
     };
     showContextReceivedBubble();
-    if ((payload.capture_mode ?? payload.captureMode) === "dock_drop") {
-      showEchoHud({
-        text: `已收到 ${pendingFileSelection.filePaths.length} 个文件，按 V 直接提问`,
-        kind: "wake",
-        durationMs: 5000,
-        throttleMs: 0,
-        allowOutsideSession: true
-      });
-    }
     if (payload.active_window) {
       showActiveWindowPreviewCard(payload.active_window);
     }
@@ -4794,8 +4785,8 @@ function isEchoNoteCommand(text = "") {
   return ECHO_NOTE_COMMAND_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-function showEchoHud({ text = "", kind = "info", durationMs = 1600, throttleMs = 700, allowOutsideSession = false } = {}) {
-  if ((!echoSessionActive && !allowOutsideSession) || !text) return;
+function showEchoHud({ text = "", kind = "info", durationMs = 1600, throttleMs = 700 } = {}) {
+  if (!echoSessionActive || !text) return;
   const now = Date.now();
   if (text === echoHudLastText && now - echoHudLastAt < throttleMs) return;
   echoHudLastText = text;
