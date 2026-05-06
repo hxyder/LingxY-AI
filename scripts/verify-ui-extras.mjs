@@ -523,6 +523,14 @@ assert.ok(/const echoTask = isEchoTask\(taskId\);/.test(overlayJs)
     && /allowLongBody: echoTask/.test(overlayJs)
     && /forcePopup: echoTask/.test(overlayJs),
   "echo result cards: Echo success cards must carry the complete answer without requiring overlay open");
+assert.ok(/conversationId: taskOwnerConversationId\(taskConversationMap, taskId\)/.test(overlayJs)
+    && /pendingContinuationConversationId/.test(overlayJs)
+    && /conversationId: payload\?\.conversationId/.test(popupCardJs),
+  "echo result cards: popup-card continuations must preserve the originating conversation id");
+assert.ok(/frame\.event === "success"[\s\S]{0,220}fireSuccessPopupCardOnce/.test(overlayJs),
+  "echo result cards: terminal-only success events must still surface a full popup result card");
+assert.ok(!/clearTaskConversationBinding\(taskConversationMap, frameTaskId\)/.test(overlayJs),
+  "echo result cards: terminal cleanup must not discard task-to-conversation bindings needed by delayed continuations");
 assert.ok(/const shouldOpenOverlay = payload\?\.openWindow === "overlay" \|\| payload\?\.handoff;/.test(popupCardJs)
     && /else if \(!shouldOpenOverlay\)[\s\S]{0,160}openTaskDetail/.test(popupCardJs)
     && /\(payload\?\.taskId \|\| payload\?\.openWindow\) && !shouldOpenOverlay/.test(popupCardJs),

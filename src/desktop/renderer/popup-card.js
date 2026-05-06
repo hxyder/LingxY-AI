@@ -294,7 +294,10 @@ function renderBatchedEntry() {
     buttons.push({
       label: "继续追问",
       variant: "ghost",
-      onClick: () => resolveCard("continue", { taskId: entry.taskId ?? batchState.taskId ?? null })
+      onClick: () => resolveCard("continue", {
+        taskId: entry.taskId ?? batchState.taskId ?? null,
+        conversationId: entry.conversationId ?? null
+      })
     });
   }
   buttons.push({ label: "关闭", variant: "ghost", onClick: () => closeCard("dismissed") });
@@ -383,7 +386,10 @@ function applyInit(payload) {
       buttons.push({ label: "复制", variant: "ghost", onClick: () => resolveCard("copy", { artifactPath: payload?.artifactPath ?? null, inlinePreview: payload?.inlinePreview ?? null }) });
     }
     if (payload?.allowContinue !== false) {
-      buttons.push({ label: "继续追问", variant: "ghost", onClick: () => resolveCard("continue", { taskId: payload?.taskId ?? null }) });
+      buttons.push({ label: "继续追问", variant: "ghost", onClick: () => resolveCard("continue", {
+        taskId: payload?.taskId ?? null,
+        conversationId: payload?.conversationId ?? null
+      }) });
     }
     if (buttons.length === 0) {
       buttons.push({ label: "好", variant: "primary", onClick: () => closeCard("dismissed") });
@@ -447,7 +453,10 @@ document.addEventListener("keydown", (event) => {
   const taskId = payload.taskId ?? batchState.entries[batchState.currentIndex]?.taskId ?? batchState.taskId ?? null;
   if (!taskId) return;
   event.preventDefault();
-  void resolveCard("voice_continue", { taskId });
+  void resolveCard("voice_continue", {
+    taskId,
+    conversationId: payload.conversationId ?? batchState.entries[batchState.currentIndex]?.conversationId ?? null
+  });
 });
 
 function defaultTitleFor(kind) {

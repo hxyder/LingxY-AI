@@ -78,7 +78,6 @@ import {
 } from "./overlay-auto-tasks.mjs";
 import {
   bindTaskToConversationId,
-  clearTaskConversationBinding,
   taskOwnerConversationId
 } from "./overlay-task-routing.mjs";
 import {
@@ -185,6 +184,7 @@ let echoTaskIds = new Set();
 let echoResultHudTaskIds = new Set();
 let echoSessionId = null;
 let pendingContinuationTaskId = null;
+let pendingContinuationConversationId = null;
 
 function shouldSurfaceTaskPopupCards() {
   try {
@@ -212,6 +212,7 @@ function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, open
     window.ucaShell?.notify?.({
       kind: "success",
       taskId,
+      conversationId: taskOwnerConversationId(taskConversationMap, taskId) ?? conversationState?.id ?? null,
       title: title || "任务完成",
       body: echoTask ? fullBody : fullBody.slice(0, 160),
       inlinePreview: echoTask ? fullBody : null,
@@ -2909,12 +2910,22 @@ async function handleTaskEventFrame(rawEvent) {
       }
     }
     if (frame.event === "partial_success") {
+      fireSuccessPopupCardOnce(frameTaskId, {
+        title: lastTask?.intent ?? "部分完成",
+        body: frame.data?.text ?? frame.data?.summary ?? "任务已部分完成。",
+        openWindow: "overlay"
+      });
       showEchoResultHudOnce(frameTaskId, {
         title: lastTask?.intent ?? "部分完成",
         text: frame.data?.text ?? "任务已完成，但有一些限制。",
         kind: "info"
       });
     } else if (frame.event === "success") {
+      fireSuccessPopupCardOnce(frameTaskId, {
+        title: lastTask?.intent ?? "任务完成",
+        body: frame.data?.text ?? frame.data?.summary ?? lastTask?.result_summary ?? lastArtifactPreview ?? "任务已完成。",
+        openWindow: "overlay"
+      });
       showEchoResultHudOnce(frameTaskId, {
         title: lastTask?.intent ?? "任务完成",
         text: frame.data?.text ?? frame.data?.summary ?? lastTask?.result_summary ?? lastArtifactPreview ?? "任务已完成。",
@@ -2951,7 +2962,6 @@ async function handleTaskEventFrame(rawEvent) {
           saveProjectStore();
         }
       }
-      clearTaskConversationBinding(taskConversationMap, frameTaskId);
       finishEchoTaskSurface(frameTaskId);
     }
   }
@@ -4009,7 +4019,7 @@ async function submitTask() {
       ? conversationState?.lastCompletedTaskId ?? null
       : null);
     const continuationConversationId = explicitContinuationTaskId
-      ? taskOwnerConversationId(taskConversationMap, explicitContinuationTaskId)
+      ? (pendingContinuationConversationId ?? taskOwnerConversationId(taskConversationMap, explicitContinuationTaskId))
       : null;
 
     const clientMessageId = createClientMessageId();
@@ -4051,6 +4061,7 @@ async function submitTask() {
 
     activeTaskId = result.task.task_id;
     pendingContinuationTaskId = null;
+    pendingContinuationConversationId = null;
     lastTask = result.task;
     if (echoSessionActive || isEchoOriginTask(result.task)) rememberEchoTask(activeTaskId);
     notifiedTaskId = null;
@@ -7470,6 +7481,7 @@ window.ucaShell?.onPopupCardResolved?.(async (payload) => {
       if (taskId) {
         rememberEchoTask(taskId);
         pendingContinuationTaskId = taskId;
+        pendingContinuationConversationId = meta.conversationId ?? payload.conversationId ?? null;
       }
       await beginEchoSession();
       showEchoHud({ text: "继续追问，请直接说；Enter 立即发送", kind: "wake", durationMs: 9000, throttleMs: 0 });
@@ -7478,7 +7490,10 @@ window.ucaShell?.onPopupCardResolved?.(async (payload) => {
       }
     } else if (action === "continue") {
       const taskId = meta.taskId ?? payload.taskId;
-      if (taskId) pendingContinuationTaskId = taskId;
+      if (taskId) {
+        pendingContinuationTaskId = taskId;
+        pendingContinuationConversationId = meta.conversationId ?? payload.conversationId ?? null;
+      }
       commandInput?.focus?.();
       void maybeRevealOverlay?.();
     }
