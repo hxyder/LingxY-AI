@@ -107,7 +107,7 @@ export async function triage({
   //    handling. This keeps task_created snappy for the dominant chat
   //    path.
   let enrichedContextPacket = inputContextPacket;
-  if (background && !hasTimePhrase(initialCommand)) {
+  if (!hasTimePhrase(initialCommand)) {
     return {
       lane: scoreComplexity(initialCommand) >= 0.7
         && runtime?.featureFlags?.dagPlanner === true

@@ -9,6 +9,7 @@ import { detectRequestedOutputFormatForTask, writeRequestedArtifacts } from "../
 import { routeIntent } from "./router/intent-router.mjs";
 import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import { applySemanticRouterPreflight } from "./intent/router-preflight.mjs";
+import { hasTimePhrase } from "./intent/trigger.mjs";
 import { classifyContextSources } from "./intent/context-sources.mjs";
 import { pushBackgroundContextInPlace } from "./intent/background-contexts.mjs";
 import {
@@ -78,6 +79,10 @@ function hasChatApiProvider(task = null, runtime = null) {
 
 function hasFileOrImageContext(contextPacket = {}) {
   return Boolean(contextPacket.file_paths?.length || contextPacket.image_paths?.length);
+}
+
+export function shouldDeferPreExecutionPlanning({ background = false, userCommand = "" } = {}) {
+  return Boolean(background || !hasTimePhrase(userCommand));
 }
 
 function runtimeWithTaskEmitter(runtime, taskId) {
@@ -1105,7 +1110,7 @@ export async function submitContextTask({
   // back to no_provider rejection unless a chat adapter is wired —
   // both states are handled inside createTaskSpec via the
   // SEMANTIC_ROUTER DecisionTrace stage.
-  const deferPreExecutionPlanning = background;
+  const deferPreExecutionPlanning = shouldDeferPreExecutionPlanning({ background, userCommand });
   let routerEnrichedContext = deferPreExecutionPlanning
     ? {
         ...normalizedContextPacket,
