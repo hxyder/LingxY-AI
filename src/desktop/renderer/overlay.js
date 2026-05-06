@@ -1601,6 +1601,14 @@ function getToolEventId(frame) {
   return frame.data?.tool_id ?? frame.data?.tool ?? "";
 }
 
+function artifactPathFromToolPayload(payload = {}) {
+  if (Array.isArray(payload?.artifact_paths)) {
+    const path = payload.artifact_paths.find((item) => typeof item === "string" && item.length > 0);
+    if (path) return path;
+  }
+  return payload?.metadata?.path ?? payload?.artifact_path ?? "";
+}
+
 // 83.3 — Tool-call card. Renders as a <details> so the user can collapse
 // long arg blobs and result previews. Plain ✓ / ✗ + tool name remains the
 // single-line summary (matches the screenshot the user critiqued, just
@@ -2363,7 +2371,7 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
         window.livePreview.commit({
           toolName: toolId,
           success: ok,
-          artifactPath: frame.data?.metadata?.path ?? frame.data?.artifact_path ?? "",
+          artifactPath: artifactPathFromToolPayload(frame.data),
           mime: frame.data?.metadata?.mime_type ?? null,
           observation: frame.data?.observation ?? ""
         });

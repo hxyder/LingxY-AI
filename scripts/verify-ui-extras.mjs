@@ -772,6 +772,10 @@ assert.ok(/toolName === "render_svg"/.test(previewStreaming)
     && /renderSvgStream/.test(previewStreaming)
     && /extractStringField\(rawJson,\s*"svg"\)/.test(previewStreaming),
   "live preview: render_svg must stream SVG source before final artifact render");
+assert.ok(/function artifactPathFromToolPayload/.test(overlayJs)
+    && /Array\.isArray\(payload\?\.artifact_paths\)/.test(overlayJs)
+    && /artifactPath:\s*artifactPathFromToolPayload\(frame\.data\)/.test(overlayJs),
+  "live preview: overlay must commit from canonical artifact_paths arrays, not only legacy metadata.path");
 
 // ── Bubble timestamps ──────────────────────────────────────────────────
 assert.ok(/function formatRelativeTime\s*\(/.test(sharedUi), "timestamps: shared formatRelativeTime() missing");
