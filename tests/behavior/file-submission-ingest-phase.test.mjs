@@ -32,6 +32,57 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function createResolvedFilePacket(filePath, text = "local file content") {
+  return {
+    schema_version: "1.0",
+    context_id: "ctx_test",
+    trace_id: "trace_test",
+    source_type: "file",
+    source_app: "explorer.exe",
+    capture_mode: "shell_menu",
+    file_paths: [filePath],
+    original_file_paths: [filePath],
+    file_metadata: [{ path: filePath, size: text.length, mime: "text/plain", extraction_mode: "test" }],
+    image_paths: [],
+    text,
+    selection_metadata: {}
+  };
+}
+
+async function withApiProviderConfig(fn) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "lingxy-file-provider-"));
+  const configPath = path.join(dir, "runtime.json");
+  const originalConfigPath = process.env.UCA_CONFIG_PATH;
+  const originalForceBootKimi = process.env.UCA_FORCE_BOOT_KIMI_RUNTIME;
+  await writeFile(configPath, JSON.stringify({
+    ai: {
+      customProviders: [{
+        id: "test-api",
+        name: "Test API",
+        kind: "openai",
+        apiKey: "test-key",
+        baseUrl: "https://example.invalid/v1",
+        model: "test-model"
+      }],
+      taskRouting: {
+        chat: { providerId: "test-api", model: "test-model" },
+        file_analysis: { providerId: "test-api", model: "test-model" }
+      }
+    }
+  }));
+  process.env.UCA_CONFIG_PATH = configPath;
+  delete process.env.UCA_FORCE_BOOT_KIMI_RUNTIME;
+  try {
+    return await fn();
+  } finally {
+    if (originalConfigPath === undefined) delete process.env.UCA_CONFIG_PATH;
+    else process.env.UCA_CONFIG_PATH = originalConfigPath;
+    if (originalForceBootKimi === undefined) delete process.env.UCA_FORCE_BOOT_KIMI_RUNTIME;
+    else process.env.UCA_FORCE_BOOT_KIMI_RUNTIME = originalForceBootKimi;
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 async function withBootCliRuntime(fn) {
   const originalForceBootKimi = process.env.UCA_FORCE_BOOT_KIMI_RUNTIME;
   process.env.UCA_FORCE_BOOT_KIMI_RUNTIME = "1";
@@ -91,6 +142,109 @@ test("file submission can create a visible background task before file ingest co
       await delay(0);
       assert.equal(buildCalled, true);
       releaseBuild();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test("context-like file submissions create one visible task before ingest completes", async () => {
+  await withBootCliRuntime(async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "lingxy-file-context-like-"));
+    try {
+      const filePath = path.join(dir, "notes.txt");
+      await writeFile(filePath, "local file content", "utf8");
+      const runtime = createRuntime();
+      runtime.executors = [{
+        id: "tool_using",
+        async *execute() {
+          yield { event_type: "success", payload: { text: "done" } };
+        }
+      }];
+      let buildCalled = false;
+      let releaseBuild;
+      const buildReleased = new Promise((resolve) => { releaseBuild = resolve; });
+
+      const submitPromise = submitFileTask({
+        runtime,
+        filePaths: [filePath],
+        userCommand: "这是什么",
+        executionMode: "interactive",
+        background: true,
+        async buildFileContextPacketImpl({ onProgress }) {
+          buildCalled = true;
+          onProgress?.({ phase: "file_ingest_started", total: 1 });
+          await buildReleased;
+          onProgress?.({ phase: "file_ingest_finished", completed: 1, total: 1 });
+          return createResolvedFilePacket(filePath);
+        }
+      });
+
+      const result = await Promise.race([
+        submitPromise,
+        delay(30).then(() => null)
+      ]);
+      assert.ok(result, "file submission should return before context-like ingest completes");
+      assert.equal(result.background, true);
+      assert.equal(runtime.store.listTasks().length, 1);
+      assert.ok(runtime.store.getTaskEvents(result.task.task_id).some((event) => event.event_type === "task_created"));
+
+      await delay(0);
+      assert.equal(buildCalled, true);
+      releaseBuild();
+      await submitPromise;
+      await delay(20);
+      assert.equal(runtime.store.listTasks().length, 1);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+test("API-provider file submissions create one visible task before ingest completes", async () => {
+  await withApiProviderConfig(async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), "lingxy-file-api-"));
+    try {
+      const filePath = path.join(dir, "notes.txt");
+      await writeFile(filePath, "local file content", "utf8");
+      const runtime = createRuntime();
+      runtime.kimiRuntime = null;
+      runtime.executors = [{
+        id: "tool_using",
+        async *execute() {
+          yield { event_type: "success", payload: { text: "done" } };
+        }
+      }];
+      let releaseBuild;
+      const buildReleased = new Promise((resolve) => { releaseBuild = resolve; });
+
+      const submitPromise = submitFileTask({
+        runtime,
+        filePaths: [filePath],
+        userCommand: "总结这个文件",
+        executionMode: "interactive",
+        background: true,
+        async buildFileContextPacketImpl({ onProgress }) {
+          onProgress?.({ phase: "file_ingest_started", total: 1 });
+          await buildReleased;
+          onProgress?.({ phase: "file_ingest_finished", completed: 1, total: 1 });
+          return createResolvedFilePacket(filePath);
+        }
+      });
+
+      const result = await Promise.race([
+        submitPromise,
+        delay(30).then(() => null)
+      ]);
+      assert.ok(result, "file submission should return before API-provider ingest completes");
+      assert.equal(result.background, true);
+      assert.equal(runtime.store.listTasks().length, 1);
+      assert.ok(runtime.store.getTaskEvents(result.task.task_id).some((event) => event.event_type === "task_created"));
+
+      releaseBuild();
+      await submitPromise;
+      await delay(20);
+      assert.equal(runtime.store.listTasks().length, 1);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

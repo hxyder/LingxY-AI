@@ -13,7 +13,7 @@ import {
   describeCodeCliRuntime
 } from "../executors/shared/provider-resolver.mjs";
 import { appendAuditLog } from "../security/audit-log.mjs";
-import { submitContextTask } from "./context-submission.mjs";
+import { executeExistingContextTask } from "./context-submission.mjs";
 
 function attachProviderFieldsToEvent(descriptor, payload) {
   if (!descriptor) return payload ?? {};
@@ -167,46 +167,14 @@ export async function submitFileTask({
   const shouldPreferContextPipeline = !fileFocusedGoals.has(preflightTaskSpec.goal)
     && !((route.intent_tags ?? []).some((tag) => fileFocusedIntentTags.has(tag)));
 
-  if (shouldPreferContextPipeline) {
-    const rawContextPacket = await buildEnrichedFileContextPacket();
-    return submitContextTask({
-      contextPacket: rawContextPacket,
-      userCommand,
-      runtime,
-      executionMode,
-      parentTaskId,
-      conversationId,
-      clientMessageId,
-      projectId,
-      retryCount,
-      executorOverride: executorOverride ?? null,
-      skipDecomposition: false,
-      contentEvidenceGateMode: "inline_context_only"
-    });
-  }
-
   // User chose an API provider (DeepSeek / Anthropic API / OpenAI / Ollama)
   // for file analysis — we have no Code CLI to drive, but the context packet
   // already carries the extracted file text. Hand off to the normal context
   // pipeline so the API provider can answer over that text.
   const fileAnalysisProvider = resolveProviderForTask("file_analysis");
   const apiProviderAvailable = fileAnalysisProvider && fileAnalysisProvider.kind !== "code_cli";
-  if (!cliRuntime && apiProviderAvailable) {
-    const rawContextPacket = await buildEnrichedFileContextPacket();
-    return submitContextTask({
-      contextPacket: rawContextPacket,
-      userCommand,
-      runtime,
-      executionMode,
-      parentTaskId,
-      conversationId,
-      clientMessageId,
-      projectId,
-      retryCount,
-      executorOverride: executorOverride ?? null,
-      skipDecomposition: false
-    });
-  }
+  const shouldRunContextLikeFileTask = shouldPreferContextPipeline || (!cliRuntime && apiProviderAvailable);
+  const contextLikeContentEvidenceGateMode = shouldPreferContextPipeline ? "inline_context_only" : null;
   const pendingContextPacket = createPendingFileContextPacket({
     filePaths: normalizedFilePaths,
     captureMode,
@@ -283,7 +251,7 @@ export async function submitFileTask({
   // Note: the API-provider fast path above already handles the "no CLI but has
   // DeepSeek/OpenAI/..." case. Reaching here means neither CLI nor API are
   // configured for file_analysis.
-  if ((task.executor !== "kimi" && task.executor !== "code_cli") || !cliRuntime) {
+  if (!shouldRunContextLikeFileTask && ((task.executor !== "kimi" && task.executor !== "code_cli") || !cliRuntime)) {
     markTaskFailed(runtime, task, {
       message: cliRuntime
         ? `No runnable file executor found for ${task.executor}.`
@@ -357,6 +325,22 @@ export async function submitFileTask({
       updateTask(runtime, task, {
         sub_status: "starting_executor"
       }, true);
+
+      if (shouldRunContextLikeFileTask) {
+        return executeExistingContextTask({
+          runtime,
+          task,
+          route,
+          userCommand,
+          routerEnrichedContext: task.context_packet,
+          inspection,
+          executorOverride: executorOverride ?? null,
+          parentTaskId,
+          contentEvidenceGateMode: contextLikeContentEvidenceGateMode,
+          deferPreExecutionPlanning: true,
+          background: false
+        });
+      }
 
       emitTaskEvent({
         runtime,

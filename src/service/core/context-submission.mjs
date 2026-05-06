@@ -980,6 +980,282 @@ async function runExecutor({ runtime, task, executor }) {
   }
 }
 
+export async function executeExistingContextTask({
+  runtime,
+  task,
+  route,
+  userCommand,
+  routerEnrichedContext,
+  inspection = { allowed: true },
+  executorOverride = null,
+  parentTaskId = null,
+  contentEvidenceGateMode = null,
+  deferPreExecutionPlanning = false,
+  background = false
+}) {
+  ensureRuntimeServices(runtime);
+  const store = runtime.store;
+  const queue = runtime.queue;
+
+  if (contentEvidenceGateMode) {
+    const evidenceGate = validateContentEvidenceGate({
+      taskSpec: task.task_spec,
+      contextPacket: task.context_packet,
+      mode: contentEvidenceGateMode,
+      allowImagePixels: task.executor === "multi_modal"
+    });
+    if (!evidenceGate.ok) {
+      emitTaskEvent({
+        runtime,
+        taskId: task.task_id,
+        eventType: "step_warning",
+        payload: {
+          step: "content_evidence_gate",
+          mode: contentEvidenceGateMode,
+          violations: evidenceGate.violations
+        }
+      });
+      markTaskFailed(runtime, task, {
+        message: firstContentEvidenceViolationMessage(evidenceGate)
+      });
+      return {
+        task,
+        taskEvents: store.getTaskEvents(task.task_id),
+        artifacts: []
+      };
+    }
+  }
+
+  const execute = async () => {
+    let executionContext = routerEnrichedContext;
+    if (deferPreExecutionPlanning && inspection.allowed) {
+      const srPromise = scheduleInternalTaskPromise(() => runExecutionPhase({
+        runtime: runtimeWithTaskEmitter(runtime, task.task_id),
+        taskId: task.task_id,
+        phase: EXECUTION_PHASES.SEMANTIC_ROUTER_PATCH,
+        step: "semantic_router_patch",
+        progress: 0.04,
+        state: EXECUTION_STATES.ROUTING,
+        fn: () => applySemanticRouterPreflight({
+          userCommand,
+          contextPacket: routerEnrichedContext
+        }),
+        timingPayload: (result) => {
+          const spec = createTaskSpec(userCommand, result, route);
+          return {
+            routing_status: spec.routing_status,
+            executor: executorOverride ?? spec.suggested_executor ?? route.executor
+          };
+        }
+      }));
+      setInternalTaskPromise(task, "__srPatchPromise", srPromise.then((srEnriched) => {
+        if (!srEnriched) return null;
+        try {
+          const mergedContext = mergeContextPacketPatch(task.context_packet ?? executionContext, srEnriched);
+          executionContext = mergedContext;
+          routerEnrichedContext = mergedContext;
+          const refreshedSpec = createTaskSpec(userCommand, mergedContext, route);
+          const refreshedValidation = validateTaskSpec(refreshedSpec);
+          task.context_packet = mergedContext;
+          task.task_spec = refreshedSpec;
+          task.task_spec_valid = refreshedValidation.valid;
+          task.task_spec_errors = refreshedValidation.errors;
+          task.task_spec_source = "semantic_router_patched";
+          task.sr_patch_applied_at = new Date().toISOString();
+          store.updateTask(task.task_id, task);
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: "sr_patch_applied",
+            payload: {
+              applied_at: task.sr_patch_applied_at,
+              executor_suggestion: refreshedSpec.suggested_executor ?? null,
+              tool_policy_web: refreshedSpec.tool_policy?.web_search_fetch?.mode ?? null,
+              expected_output: refreshedSpec.synthesis?.expected_output ?? null,
+              research_quality: refreshedSpec.research_quality ?? null
+            }
+          });
+          return refreshedSpec;
+        } catch { /* parallel SR patch must never break a running executor */ }
+        return null;
+      }).catch(() => null));
+    }
+
+    if (inspection.allowed) {
+      const memoryPatchPromise = (async () => {
+        try {
+          const entry = await computeMemoryRecallEntry({
+            runtime,
+            userCommand,
+            parentTaskId
+          });
+          if (!entry) return null;
+          task.context_packet = pushBackgroundContextInPlace(task.context_packet, entry);
+          task.context_packet.selection_metadata = {
+            ...(task.context_packet.selection_metadata ?? {}),
+            semantic_recall_ids: entry.metadata.semantic_recall_ids,
+            semantic_recall_scores: entry.metadata.semantic_recall_scores,
+            memory_background_injected: true
+          };
+          store.updateTask(task.task_id, task);
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: "background_context_added",
+            payload: { kind: "memory_recall", count: entry.metadata.semantic_recall_ids.length }
+          });
+          return entry;
+        } catch { return null; }
+      })();
+      const artifactPatchPromise = (async () => {
+        try {
+          const result = await computeRecentArtifactEntry({
+            runtime,
+            userCommand,
+            contextPacket: task.context_packet
+          });
+          if (!result) return null;
+          task.context_packet = pushBackgroundContextInPlace(task.context_packet, result.entry);
+          const existingFiles = task.context_packet.file_paths ?? [];
+          if (!existingFiles.includes(result.targetPath)) {
+            task.context_packet.file_paths = [...existingFiles, result.targetPath];
+          }
+          task.context_packet.selection_metadata = {
+            ...(task.context_packet.selection_metadata ?? {}),
+            ...result.entry.metadata
+          };
+          store.updateTask(task.task_id, task);
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: "background_context_added",
+            payload: { kind: "recent_artifact", target_path: result.targetPath }
+          });
+          return result.entry;
+        } catch { return null; }
+      })();
+      const fileContentPatchPromise = (async () => {
+        try {
+          const entry = await computeFileContentRecallEntry({
+            runtime,
+            userCommand,
+            task
+          });
+          if (!entry) return null;
+          task.context_packet = pushBackgroundContextInPlace(task.context_packet, entry);
+          task.context_packet.selection_metadata = {
+            ...(task.context_packet.selection_metadata ?? {}),
+            file_content_recall_ids: entry.metadata.file_content_recall_ids,
+            file_content_recall_scores: entry.metadata.file_content_recall_scores,
+            file_content_recall_project_id: entry.metadata.project_id,
+            file_content_recall_injected: true
+          };
+          store.updateTask(task.task_id, task);
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: "background_context_added",
+            payload: { kind: "file_content_recall", count: entry.metadata.file_content_recall_ids.length }
+          });
+          return entry;
+        } catch { return null; }
+      })();
+      setInternalTaskPromise(task, "__memoryPatchPromise", memoryPatchPromise);
+      setInternalTaskPromise(task, "__recentArtifactPatchPromise", artifactPatchPromise);
+      setInternalTaskPromise(task, "__fileContentPatchPromise", fileContentPatchPromise);
+    }
+
+    const shouldUseKimi = task.executor !== "translate"
+      && task.executor !== "agentic"
+      && ((task.executor === "kimi" || task.executor === "code_cli")
+        || (task.executor === "fast" && !hasFastProvider())
+        || (task.executor === "general" && !hasFastProvider())
+        || chatRoutedToCodeCli(task, runtime));
+
+    const requestedFormat = detectRequestedOutputFormatForTask(task);
+    const shouldPreferProviderArtifactFlow = requestedFormat.id !== "conversational"
+      && hasChatApiProvider(task, runtime)
+      && !hasFileOrImageContext(executionContext);
+
+    if (shouldPreferProviderArtifactFlow && (task.executor === "kimi" || task.executor === "code_cli")) {
+      task.executor = "tool_using";
+      store.updateTask(task.task_id, task);
+    }
+
+    const resolvedCliRuntime = resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime, providerOptionsForTask(task, runtime));
+
+    if (shouldUseKimi && resolvedCliRuntime && !shouldPreferProviderArtifactFlow) {
+      const artifactStore = runtime.artifactStore ?? createArtifactStore();
+      const allowFallback = !hasFileOrImageContext(executionContext);
+      const providerDescriptor = describeCodeCliRuntime(resolvedCliRuntime);
+      const kimiResult = await runKimiExecutor({
+        task,
+        runtime,
+        store,
+        queue,
+        artifactStore,
+        markFailure: !allowFallback,
+        cliRuntime: resolvedCliRuntime,
+        providerDescriptor
+      });
+      if (kimiResult.status !== "success" && allowFallback) {
+        const fallbackExecutor = runtime.executors?.find((executor) => executor.id === "tool_using");
+        if (fallbackExecutor) {
+          updateTask(runtime, task, {
+            status: "queued",
+            sub_status: "fallback_to_tool_using_executor",
+            failure_category: null,
+            failure_user_message: null,
+            failure_internal_log_excerpt: null
+          }, true);
+          task.executor = "tool_using";
+          store.updateTask(task.task_id, task);
+          const fallbackResult = await runExecutor({ runtime, task, executor: fallbackExecutor });
+          return {
+            task,
+            taskEvents: store.getTaskEvents(task.task_id),
+            artifacts: fallbackResult.artifacts ?? []
+          };
+        }
+        markTaskFailed(runtime, task, {
+          message: `Kimi CLI failed with exit code ${kimiResult.exitCode ?? "unknown"}`
+        });
+      }
+      return {
+        task,
+        taskEvents: store.getTaskEvents(task.task_id),
+        artifacts: kimiResult.artifacts ?? []
+      };
+    }
+
+    const executor = pickRunnableExecutor(task, runtime);
+    if (!executor) {
+      markTaskFailed(runtime, task, {
+        message: `No runnable executor found for ${task.executor}`
+      });
+      return {
+        task,
+        taskEvents: store.getTaskEvents(task.task_id),
+        artifacts: []
+      };
+    }
+
+    const executionResult = await runExecutor({ runtime, task, executor });
+    return {
+      task,
+      taskEvents: store.getTaskEvents(task.task_id),
+      artifacts: executionResult.artifacts ?? []
+    };
+  };
+
+  if (background) {
+    setTimeout(() => { void execute(); }, 0);
+    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [], background: true };
+  }
+
+  return execute();
+}
+
 export async function submitContextTask({
   contextPacket,
   userCommand,
@@ -1242,304 +1518,17 @@ export async function submitContextTask({
     };
   }
 
-  if (contentEvidenceGateMode) {
-    const evidenceGate = validateContentEvidenceGate({
-      taskSpec: task.task_spec,
-      contextPacket: task.context_packet,
-      mode: contentEvidenceGateMode,
-      allowImagePixels: task.executor === "multi_modal"
-    });
-    if (!evidenceGate.ok) {
-      emitTaskEvent({
-        runtime,
-        taskId: task.task_id,
-        eventType: "step_warning",
-        payload: {
-          step: "content_evidence_gate",
-          mode: contentEvidenceGateMode,
-          violations: evidenceGate.violations
-        }
-      });
-      markTaskFailed(runtime, task, {
-        message: firstContentEvidenceViolationMessage(evidenceGate)
-      });
-      return {
-        task,
-        taskEvents: store.getTaskEvents(task.task_id),
-        artifacts: []
-      };
-    }
-  }
-
-  const execute = async () => {
-    let executionContext = routerEnrichedContext;
-    if (deferPreExecutionPlanning && inspection.allowed) {
-      // Phase 1.11 — LLM-first zero-wait start.
-      //
-      // SR runs after the immediate executor-start turn — the deterministic
-      // preflight task_spec is sufficient to start the agent loop. When SR
-      // returns we patch task.task_spec / task.context_packet for any
-      // downstream iteration to read. Pre-Phase-1.6 this was an `await`,
-      // which made the main executor LLM wait ~1-2s on SR before it could
-      // even start thinking — that was the actual user-visible latency.
-      //
-      // Hard constraints for the parallel Semantic Router patch:
-      //   1. task_spec_initial is NEVER touched here — validators use it
-      //      to avoid retroactive failure when SR arrives late and tightens
-      //      the bar.
-      //   2. task.executor is NEVER mutated — the loop has already locked
-      //      it in.
-      //   3. Stamp `task_spec_source = "semantic_router_patched"` and
-      //      `sr_patch_applied_at` so observability can tell the difference
-      //      between "deterministic only" and "SR-patched mid-flight".
-      //   4. Expose the SR patch via task event so the agent loop's next
-      //      iteration (and final synthesis) read the latest task_spec.
-      //
-      // Tasks where SR's verdict MUST gate the executor (schedule lane,
-      // clarify lane) already short-circuited inside triage — they never
-      // enter execute().
-      const srPromise = scheduleInternalTaskPromise(() => runExecutionPhase({
-        runtime: runtimeWithTaskEmitter(runtime, task.task_id),
-        taskId: task.task_id,
-        phase: EXECUTION_PHASES.SEMANTIC_ROUTER_PATCH,
-        step: "semantic_router_patch",
-        progress: 0.04,
-        state: EXECUTION_STATES.ROUTING,
-        fn: () => applySemanticRouterPreflight({
-          userCommand,
-          contextPacket: routerEnrichedContext
-        }),
-        timingPayload: (result) => {
-          const spec = createTaskSpec(userCommand, result, route);
-          return {
-            routing_status: spec.routing_status,
-            executor: executorOverride ?? spec.suggested_executor ?? route.executor
-          };
-        }
-      }));
-      // Fire-and-forget patch. scheduleInternalTaskPromise keeps SR setup off
-      // the immediate status/provider/first-delta path; failures degrade
-      // silently because the executor already has a valid spec to run with.
-      setInternalTaskPromise(task, "__srPatchPromise", srPromise.then((srEnriched) => {
-        if (!srEnriched) return null;
-        try {
-          const mergedContext = mergeContextPacketPatch(task.context_packet ?? executionContext, srEnriched);
-          executionContext = mergedContext;
-          routerEnrichedContext = mergedContext;
-          const refreshedSpec = createTaskSpec(userCommand, mergedContext, route);
-          const refreshedValidation = validateTaskSpec(refreshedSpec);
-          task.context_packet = mergedContext;
-          task.task_spec = refreshedSpec;
-          // Hard constraint #1: do NOT mutate task_spec_initial.
-          task.task_spec_valid = refreshedValidation.valid;
-          task.task_spec_errors = refreshedValidation.errors;
-          task.task_spec_source = "semantic_router_patched";
-          task.sr_patch_applied_at = new Date().toISOString();
-          store.updateTask(task.task_id, task);
-          emitTaskEvent({
-            runtime,
-            taskId: task.task_id,
-            eventType: "sr_patch_applied",
-            payload: {
-              applied_at: task.sr_patch_applied_at,
-              executor_suggestion: refreshedSpec.suggested_executor ?? null,
-              tool_policy_web: refreshedSpec.tool_policy?.web_search_fetch?.mode ?? null,
-              expected_output: refreshedSpec.synthesis?.expected_output ?? null,
-              research_quality: refreshedSpec.research_quality ?? null
-            }
-          });
-          return refreshedSpec;
-        } catch { /* parallel SR patch must never break a running executor */ }
-        return null;
-      }).catch(() => null /* swallowed by runExecutionPhase already; defensive */));
-    }
-
-    // Phase 1.11 — memory recall + recent-artifact recall as fire-and-forget
-    // post-task patches. Used to be awaited in the pre-task path (1000 ms
-    // budget × two recalls, sequential) which dominated `task_created`
-    // latency for chat. Now the agent loop iter ≥ 1 reads
-    // `task.context_packet.background_contexts` if either patch landed.
-    // First-iteration prompts proceed without waiting.
-    if (inspection.allowed) {
-      const memoryPatchPromise = (async () => {
-        try {
-          const entry = await computeMemoryRecallEntry({
-            runtime,
-            userCommand,
-            parentTaskId
-          });
-          if (!entry) return null;
-          task.context_packet = pushBackgroundContextInPlace(task.context_packet, entry);
-          // Mirror the legacy classifier flag so context-source detection
-          // continues to work without relying on the old text sentinel.
-          task.context_packet.selection_metadata = {
-            ...(task.context_packet.selection_metadata ?? {}),
-            semantic_recall_ids: entry.metadata.semantic_recall_ids,
-            semantic_recall_scores: entry.metadata.semantic_recall_scores,
-            memory_background_injected: true
-          };
-          store.updateTask(task.task_id, task);
-          emitTaskEvent({
-            runtime,
-            taskId: task.task_id,
-            eventType: "background_context_added",
-            payload: { kind: "memory_recall", count: entry.metadata.semantic_recall_ids.length }
-          });
-          return entry;
-        } catch { return null; }
-      })();
-      const artifactPatchPromise = (async () => {
-        try {
-          const result = await computeRecentArtifactEntry({
-            runtime,
-            userCommand,
-            contextPacket: task.context_packet
-          });
-          if (!result) return null;
-          task.context_packet = pushBackgroundContextInPlace(task.context_packet, result.entry);
-          // Make the artifact reachable to connector tools by adding the
-          // path to file_paths (post-task; agent loop re-reads each iter).
-          const existingFiles = task.context_packet.file_paths ?? [];
-          if (!existingFiles.includes(result.targetPath)) {
-            task.context_packet.file_paths = [...existingFiles, result.targetPath];
-          }
-          task.context_packet.selection_metadata = {
-            ...(task.context_packet.selection_metadata ?? {}),
-            ...result.entry.metadata
-          };
-          store.updateTask(task.task_id, task);
-          emitTaskEvent({
-            runtime,
-            taskId: task.task_id,
-            eventType: "background_context_added",
-            payload: { kind: "recent_artifact", target_path: result.targetPath }
-          });
-          return result.entry;
-        } catch { return null; }
-      })();
-      const fileContentPatchPromise = (async () => {
-        try {
-          const entry = await computeFileContentRecallEntry({
-            runtime,
-            userCommand,
-            task
-          });
-          if (!entry) return null;
-          task.context_packet = pushBackgroundContextInPlace(task.context_packet, entry);
-          task.context_packet.selection_metadata = {
-            ...(task.context_packet.selection_metadata ?? {}),
-            file_content_recall_ids: entry.metadata.file_content_recall_ids,
-            file_content_recall_scores: entry.metadata.file_content_recall_scores,
-            file_content_recall_project_id: entry.metadata.project_id,
-            file_content_recall_injected: true
-          };
-          store.updateTask(task.task_id, task);
-          emitTaskEvent({
-            runtime,
-            taskId: task.task_id,
-            eventType: "background_context_added",
-            payload: { kind: "file_content_recall", count: entry.metadata.file_content_recall_ids.length }
-          });
-          return entry;
-        } catch { return null; }
-      })();
-      setInternalTaskPromise(task, "__memoryPatchPromise", memoryPatchPromise);
-      setInternalTaskPromise(task, "__recentArtifactPatchPromise", artifactPatchPromise);
-      setInternalTaskPromise(task, "__fileContentPatchPromise", fileContentPatchPromise);
-    }
-
-    // Route to code_cli (Kimi/Claude CLI/etc.) only when explicitly selected
-    // or when chat is configured to use a code_cli provider. Normal chat stays
-    // on the tool-capable AI agent.
-    const shouldUseKimi = task.executor !== "translate"
-      && task.executor !== "agentic"
-      && ((task.executor === "kimi" || task.executor === "code_cli")
-        || (task.executor === "fast" && !hasFastProvider())
-        || (task.executor === "general" && !hasFastProvider())
-        || chatRoutedToCodeCli(task, runtime));
-
-    const requestedFormat = detectRequestedOutputFormatForTask(task);
-    const shouldPreferProviderArtifactFlow = requestedFormat.id !== "conversational"
-      && hasChatApiProvider(task, runtime)
-      && !hasFileOrImageContext(executionContext);
-
-    if (shouldPreferProviderArtifactFlow && (task.executor === "kimi" || task.executor === "code_cli")) {
-      task.executor = "tool_using";
-      store.updateTask(task.task_id, task);
-    }
-
-    // Resolve the code_cli runtime *per task* so that provider switches in the
-    // UI take effect on the next submission without needing a service restart.
-    const resolvedCliRuntime = resolveCodeCliRuntimeForTask("chat", runtime.kimiRuntime, providerOptionsForTask(task, runtime));
-
-    if (shouldUseKimi && resolvedCliRuntime && !shouldPreferProviderArtifactFlow) {
-      const artifactStore = runtime.artifactStore ?? createArtifactStore();
-      const allowFallback = !hasFileOrImageContext(executionContext);
-      const providerDescriptor = describeCodeCliRuntime(resolvedCliRuntime);
-      const kimiResult = await runKimiExecutor({
-        task,
-        runtime,
-        store,
-        queue,
-        artifactStore,
-        markFailure: !allowFallback,
-        cliRuntime: resolvedCliRuntime,
-        providerDescriptor
-      });
-      if (kimiResult.status !== "success" && allowFallback) {
-        const fallbackExecutor = runtime.executors?.find((executor) => executor.id === "tool_using");
-        if (fallbackExecutor) {
-          updateTask(runtime, task, {
-            status: "queued",
-            sub_status: "fallback_to_tool_using_executor",
-            failure_category: null,
-            failure_user_message: null,
-            failure_internal_log_excerpt: null
-          }, true);
-          task.executor = "tool_using";
-          store.updateTask(task.task_id, task);
-          const fallbackResult = await runExecutor({ runtime, task, executor: fallbackExecutor });
-          return {
-            task,
-            taskEvents: store.getTaskEvents(task.task_id),
-            artifacts: fallbackResult.artifacts ?? []
-          };
-        }
-        markTaskFailed(runtime, task, {
-          message: `Kimi CLI failed with exit code ${kimiResult.exitCode ?? "unknown"}`
-        });
-      }
-      return {
-        task,
-        taskEvents: store.getTaskEvents(task.task_id),
-        artifacts: kimiResult.artifacts ?? []
-      };
-    }
-
-    const executor = pickRunnableExecutor(task, runtime);
-    if (!executor) {
-      markTaskFailed(runtime, task, {
-        message: `No runnable executor found for ${task.executor}`
-      });
-      return {
-        task,
-        taskEvents: store.getTaskEvents(task.task_id),
-        artifacts: []
-      };
-    }
-
-    const executionResult = await runExecutor({ runtime, task, executor });
-    return {
-      task,
-      taskEvents: store.getTaskEvents(task.task_id),
-      artifacts: executionResult.artifacts ?? []
-    };
-  };
-
-  if (background) {
-    setTimeout(() => { void execute(); }, 0);
-    return { task, taskEvents: store.getTaskEvents(task.task_id), artifacts: [], background: true };
-  }
-
-  return execute();
+  return executeExistingContextTask({
+    runtime,
+    task,
+    route,
+    userCommand,
+    routerEnrichedContext,
+    inspection,
+    executorOverride,
+    parentTaskId,
+    contentEvidenceGateMode,
+    deferPreExecutionPlanning,
+    background
+  });
 }
