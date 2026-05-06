@@ -33,6 +33,39 @@ test("read_file_text extracts text from an attached local file", async () => {
   }
 });
 
+test("read_file_text emits progress and timing events around extraction", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "uca-read-file-events-"));
+  try {
+    const filePath = path.join(dir, "notes.md");
+    await writeFile(filePath, "Observable file read progress.", "utf8");
+    const emitted = [];
+    const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+    const result = await registry.call("read_file_text", { path: filePath, max_chars: 500 }, {
+      task: { context_packet: { file_paths: [filePath] } },
+      runtime: {
+        emitTaskEvent(eventType, payload) {
+          emitted.push({ eventType, payload });
+        }
+      }
+    });
+
+    assert.equal(result.success, true);
+    assert.deepEqual(emitted.map((event) => event.eventType), [
+      "file_read_started",
+      "file_read_finished",
+      "phase_timing"
+    ]);
+    assert.equal(emitted[0].payload.tool_id, "read_file_text");
+    assert.equal(emitted[0].payload.path, filePath);
+    assert.equal(emitted[1].payload.success, true);
+    assert.equal(emitted[1].payload.recursive, false);
+    assert.equal(emitted[2].payload.phase, "tool_file_read");
+    assert.equal(emitted[2].payload.failed, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("file_read capability exposes read_file_text to the planner", () => {
   const tools = filterToolsForTask(BUILTIN_ACTION_TOOLS, {
     context_packet: {
@@ -74,6 +107,48 @@ test("read_folder_text recursively extracts bounded text from a folder", async (
     assert.equal(result.metadata.coverage_scope, FILE_EVIDENCE_COVERAGE.FOLDER_RECURSIVE_TEXT);
     assert.equal(result.metadata.content_extracted, true);
     assert.equal(result.metadata.recursive, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("read_folder_text emits per-file progress and aggregate timing", async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "uca-read-folder-events-"));
+  try {
+    await writeFile(path.join(dir, "a.md"), "Alpha", "utf8");
+    await writeFile(path.join(dir, "b.txt"), "Beta", "utf8");
+    const emitted = [];
+    const registry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
+    const result = await registry.call("read_folder_text", {
+      path: dir,
+      pattern: "*.{md,txt}",
+      max_depth: 1,
+      max_files: 10,
+      max_total_chars: 5000
+    }, {
+      runtime: {
+        emitTaskEvent(eventType, payload) {
+          emitted.push({ eventType, payload });
+        }
+      }
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(emitted[0].eventType, "file_read_started");
+    assert.equal(emitted[0].payload.tool_id, "read_folder_text");
+    assert.equal(emitted.filter((event) => event.eventType === "file_read_progress").length, 2);
+    assert.deepEqual(emitted.filter((event) => event.eventType === "file_read_progress").map((event) => event.payload.completed), [1, 2]);
+    assert.ok(emitted.some((event) =>
+      event.eventType === "file_read_finished"
+      && event.payload.success === true
+      && event.payload.files_read === 2
+    ));
+    assert.ok(emitted.some((event) =>
+      event.eventType === "phase_timing"
+      && event.payload.phase === "tool_file_read"
+      && event.payload.tool_id === "read_folder_text"
+      && event.payload.failed === false
+    ));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

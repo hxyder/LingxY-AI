@@ -286,6 +286,28 @@ export function formatTaskEventSummary(rawEvent, context = {}) {
         title: "文件读取完成",
         body: `${payload.completed ?? payload.total ?? 0}/${payload.total ?? payload.completed ?? 0}`
       };
+    case "file_read_started":
+      return {
+        title: payload.recursive ? "深入读取文件夹" : "读取文件原文",
+        body: payload.path ? String(payload.path).split(/[\\/]/).pop() : "准备读取内容"
+      };
+    case "file_read_progress":
+      return {
+        title: "读取文件原文",
+        body: [
+          `${payload.completed ?? "?"}/${payload.total ?? "?"}`,
+          payload.file_path ? String(payload.file_path).split(/[\\/]/).pop() : null
+        ].filter(Boolean).join(" · ")
+      };
+    case "file_read_finished":
+      return {
+        title: payload.success === false ? "文件读取失败" : "文件读取完成",
+        body: payload.success === false
+          ? (payload.error ?? "读取失败")
+          : payload.recursive
+            ? `${payload.files_read ?? 0}/${payload.files_seen ?? payload.files_read ?? 0} 个文件`
+            : `${payload.chars_extracted ?? 0} 字符`
+      };
     case "step_started":
       return {
         title: "开始执行",

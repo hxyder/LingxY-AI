@@ -221,6 +221,10 @@ assert.ok(/if \(!isEchoTask\(taskId\) && !shouldSurfaceTaskPopupCards\(\)\) retu
 assert.ok(/ensureStreamingAnswerPlaceholder\(\{[\s\S]{0,180}label:\s*"正在处理请求…"/.test(overlayJs)
     && /reveal:\s*!isEchoTask\(frameTaskId\)/.test(overlayJs),
   "overlay streaming: tool steps must anchor above an answer placeholder without forcing Echo tasks to open the overlay");
+assert.ok(/case ["']file_read_started["']/.test(taskEventStream)
+    && /case ["']file_read_progress["']/.test(taskEventStream)
+    && /case ["']file_read_finished["']/.test(taskEventStream),
+  "file-read tool progress events must have user-readable renderer labels");
 assert.ok(/resolveCard\(["']voice_continue["']/.test(popupCardJs)
     && /action === ["']voice_continue["']/.test(overlayJs)
     && /pendingContinuationTaskId = taskId/.test(overlayJs)

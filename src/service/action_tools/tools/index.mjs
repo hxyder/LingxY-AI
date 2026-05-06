@@ -2751,10 +2751,35 @@ export const READ_FILE_TEXT_TOOL = {
           max_chars_per_file: args.max_chars_per_file ?? fileReadBudget.max_chars_per_file
         }, ctx);
       }
+      const startedAt = Date.now();
+      emitFileReadEvent(ctx, "file_read_started", {
+        tool_id: "read_file_text",
+        path: filePath,
+        recursive: false,
+        max_chars: maxChars
+      });
       const extracted = await extractFileContent(filePath);
       const text = String(extracted.text ?? "");
       const clipped = text.slice(0, maxChars);
       const truncated = text.length > clipped.length;
+      const durationMs = Date.now() - startedAt;
+      emitFileReadEvent(ctx, "file_read_finished", {
+        tool_id: "read_file_text",
+        path: filePath,
+        recursive: false,
+        success: true,
+        chars_extracted: clipped.length,
+        chars_total: text.length,
+        truncated,
+        duration_ms: durationMs
+      });
+      emitToolFileReadTiming(ctx, {
+        tool_id: "read_file_text",
+        path: filePath,
+        recursive: false,
+        failed: false,
+        duration_ms: durationMs
+      });
       return createActionResult({
         success: true,
         observation: [
@@ -2778,6 +2803,20 @@ export const READ_FILE_TEXT_TOOL = {
         }
       });
     } catch (error) {
+      emitFileReadEvent(ctx, "file_read_finished", {
+        tool_id: "read_file_text",
+        path: filePath,
+        recursive: false,
+        success: false,
+        error: error.message
+      });
+      emitToolFileReadTiming(ctx, {
+        tool_id: "read_file_text",
+        path: filePath,
+        recursive: false,
+        failed: true,
+        error: error.message
+      });
       return createActionResult({
         success: false,
         observation: `read_file_text failed: ${error.message}`,
@@ -2791,6 +2830,19 @@ function clampNumber(value, { min, max, fallback }) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
+}
+
+function emitFileReadEvent(ctx, eventType, payload = {}) {
+  try {
+    ctx?.runtime?.emitTaskEvent?.(eventType, payload);
+  } catch { /* optional progress hook */ }
+}
+
+function emitToolFileReadTiming(ctx, payload = {}) {
+  emitFileReadEvent(ctx, "phase_timing", {
+    phase: "tool_file_read",
+    ...payload
+  });
 }
 
 export const READ_FOLDER_TEXT_TOOL = {
@@ -2811,6 +2863,18 @@ export const READ_FOLDER_TEXT_TOOL = {
     const maxTotalChars = clampNumber(args.max_total_chars, { min: 1000, max: 100000, fallback: fileReadBudget.max_total_chars });
     const patternRegex = args.pattern ? globToRegex(String(args.pattern)) : null;
 
+    const startedAt = Date.now();
+    emitFileReadEvent(ctx, "file_read_started", {
+      tool_id: "read_folder_text",
+      path: rootPath,
+      recursive: true,
+      pattern: args.pattern ?? null,
+      max_depth: maxDepth,
+      max_files: maxFiles,
+      max_total_chars: maxTotalChars,
+      max_chars_per_file: maxCharsPerFile
+    });
+
     try {
       const collection = await collectPathReadableFiles(rootPath, { patternRegex, maxDepth, maxFiles });
       const candidateFiles = collection.files;
@@ -2825,8 +2889,21 @@ export const READ_FOLDER_TEXT_TOOL = {
           break;
         }
         const remaining = maxTotalChars - totalChars;
+        const fileStartedAt = Date.now();
         const extracted = await extractReadableFileText(filePath, Math.min(maxCharsPerFile, remaining));
         records.push(extracted);
+        emitFileReadEvent(ctx, "file_read_progress", {
+          tool_id: "read_folder_text",
+          path: rootPath,
+          file_path: filePath,
+          recursive: true,
+          completed: records.length,
+          total: candidateFiles.length,
+          success: extracted.success === true,
+          chars_extracted: extracted.chars_extracted ?? 0,
+          truncated: extracted.truncated === true,
+          duration_ms: Date.now() - fileStartedAt
+        });
         if (!extracted.success) continue;
         totalChars += extracted.chars_extracted;
         chunks.push([
@@ -2840,6 +2917,27 @@ export const READ_FOLDER_TEXT_TOOL = {
 
       const successful = records.filter((record) => record.success);
       const truncated = stoppedByBudget || records.some((record) => record.truncated);
+      const durationMs = Date.now() - startedAt;
+      emitFileReadEvent(ctx, "file_read_finished", {
+        tool_id: "read_folder_text",
+        path: rootPath,
+        recursive: true,
+        success: true,
+        files_seen: candidateFiles.length,
+        files_read: successful.length,
+        chars_extracted: totalChars,
+        truncated,
+        duration_ms: durationMs
+      });
+      emitToolFileReadTiming(ctx, {
+        tool_id: "read_folder_text",
+        path: rootPath,
+        recursive: true,
+        failed: false,
+        files_seen: candidateFiles.length,
+        files_read: successful.length,
+        duration_ms: durationMs
+      });
       return createActionResult({
         success: true,
         observation: successful.length > 0
@@ -2880,6 +2978,23 @@ export const READ_FOLDER_TEXT_TOOL = {
         }
       });
     } catch (error) {
+      const durationMs = Date.now() - startedAt;
+      emitFileReadEvent(ctx, "file_read_finished", {
+        tool_id: "read_folder_text",
+        path: rootPath,
+        recursive: true,
+        success: false,
+        error: error.message,
+        duration_ms: durationMs
+      });
+      emitToolFileReadTiming(ctx, {
+        tool_id: "read_folder_text",
+        path: rootPath,
+        recursive: true,
+        failed: true,
+        error: error.message,
+        duration_ms: durationMs
+      });
       return createActionResult({
         success: false,
         observation: `read_folder_text failed: ${error.message}`,
