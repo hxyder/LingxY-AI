@@ -163,6 +163,10 @@ assert.ok(!/const\s+seed\s*=\s*pendingCapture\?\.capture\s*\?\?\s*conversationSt
   "overlay send: pendingCapture must not seed conversation before context resolver runs");
 assert.ok(/if\s*\(text\)\s*\{\s*ensureConversation\(null,\s*conversationState\?\.seedCommand\s*\?\?\s*text\);/.test(overlayJs),
   "overlay send: conversation should be created without pre-resolving pending context");
+assert.ok(!/await\s+window\.ucaShell\.notify\(\{\s*title:\s*"LingxY processing"/.test(overlayJs),
+  "overlay submit: task-submitted notification must not block the SSE/first-output path");
+assert.ok(/void\s+window\.ucaShell\.notify\?\.\(\{\s*title:\s*"LingxY processing"/.test(overlayJs),
+  "overlay submit: task-submitted notification should be fire-and-forget");
 assert.ok(!/fetch\(\s*`\$\{serviceBaseUrl\}\/echo\/enroll-keyword\?/.test(dockJs),
   "echo enrollment: dock must not POST /echo/enroll-keyword directly");
 assert.ok(/html\s*\{[\s\S]{0,120}position:\s*fixed;[\s\S]{0,80}inset:\s*0;[\s\S]{0,180}overflow:\s*hidden;/.test(dockHtml),

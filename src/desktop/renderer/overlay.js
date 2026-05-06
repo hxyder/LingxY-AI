@@ -4087,11 +4087,11 @@ async function submitTask() {
     timelineAddStep("任务已创建，正在执行…", "active");
 
     if (shouldSurfaceTaskPopupCards()) {
-      await window.ucaShell.notify({
+      void window.ucaShell.notify?.({
         title: "LingxY processing",
         body: "Task submitted. You'll be notified when it's done.",
         taskId: activeTaskId
-      });
+      })?.catch?.(() => {});
     }
 
     conversationPhase = "idle";
@@ -6871,11 +6871,11 @@ ${sourceAssistRequirement}`;
 
     addBubble("assistant", "Processing in background...");
     if (shouldSurfaceTaskPopupCards()) {
-      await window.ucaShell.notify({
+      void window.ucaShell.notify?.({
         title: "LingxY processing",
         body: "录音笔记正在整理。",
         taskId: activeTaskId
-      });
+      })?.catch?.(() => {});
     }
     conversationPhase = "idle";
   } catch (error) {
