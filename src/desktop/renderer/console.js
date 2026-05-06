@@ -2028,7 +2028,10 @@ function subscribeConsoleChatTask(taskId) {
         "planner_request_started",
         "sr_patch_applied",
         "background_context_added",
-        "local_file_read_guidance"
+        "local_file_read_guidance",
+        "file_ingest_started",
+        "file_ingest_progress",
+        "file_ingest_finished"
       ].includes(frame.event)) {
         appendConsoleChatProgress(frame);
       } else if (frame.event === "inline_result") {

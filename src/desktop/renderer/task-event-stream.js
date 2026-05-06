@@ -258,6 +258,24 @@ export function formatTaskEventSummary(rawEvent, context = {}) {
             ? "已加入最近产物上下文"
             : "已加入背景上下文"
       };
+    case "file_ingest_started":
+      return {
+        title: "读取文件",
+        body: `准备读取 ${payload.total ?? payload.input_count ?? 0} 个文件`
+      };
+    case "file_ingest_progress":
+      return {
+        title: "读取文件",
+        body: [
+          `${payload.completed ?? "?"}/${payload.total ?? "?"}`,
+          payload.path ? String(payload.path).split(/[\\/]/).pop() : null
+        ].filter(Boolean).join(" · ")
+      };
+    case "file_ingest_finished":
+      return {
+        title: "文件读取完成",
+        body: `${payload.completed ?? payload.total ?? 0}/${payload.total ?? payload.completed ?? 0}`
+      };
     case "step_started":
       return {
         title: "开始执行",

@@ -27,8 +27,62 @@ function attachProviderFieldsToEvent(descriptor, payload) {
     transport: descriptor.transport ?? null
   };
 }
+
+function normalizeFilePaths(filePaths) {
+  return Array.isArray(filePaths)
+    ? filePaths.filter((value) => typeof value === "string" && value.trim())
+    : [];
+}
+
+function createPendingFileContextPacket({
+  filePaths,
+  captureMode,
+  sourceApp,
+  traceId,
+  contextId,
+  capturedAt = new Date().toISOString(),
+  selectionMetadata = {}
+}) {
+  return {
+    schema_version: "1.0",
+    context_id: contextId,
+    trace_id: traceId,
+    source_type: filePaths.length > 1 ? "file_group" : "file",
+    source_app: sourceApp,
+    capture_mode: captureMode,
+    security_level: "user",
+    redaction_applied: false,
+    file_paths: filePaths,
+    original_file_paths: filePaths,
+    file_metadata: filePaths.map((filePath) => ({
+      path: filePath,
+      extraction_mode: "pending"
+    })),
+    image_paths: [],
+    text: "",
+    captured_at: capturedAt,
+    selection_metadata: {
+      ...(selectionMetadata && typeof selectionMetadata === "object" ? selectionMetadata : {}),
+      file_ingest_status: "pending"
+    }
+  };
+}
+
+function attachFileContentEvidence(contextPacket, selectionMetadata = {}) {
+  contextPacket.selection_metadata = {
+    ...withContentEvidence(
+      {
+        ...(contextPacket.selection_metadata ?? {}),
+        ...(selectionMetadata && typeof selectionMetadata === "object" ? selectionMetadata : {}),
+        file_ingest_status: "finished"
+      },
+      fileContentEvidenceFromContextPacket(contextPacket)
+    )
+  };
+  return contextPacket;
+}
 import { routeIntent } from "./router/intent-router.mjs";
-import { createTaskSpec } from "./task-spec.mjs";
+import { createTaskSpec, validateTaskSpec } from "./task-spec.mjs";
 import {
   applyExecutorEvent,
   createTaskRecord,
@@ -56,18 +110,22 @@ export async function submitFileTask({
   retryCount = 0,
   executorOverride = null,
   background = false,
+  buildFileContextPacketImpl = buildFileContextPacket,
   runtime
 }) {
   ensureRuntimeServices(runtime);
+  const normalizedFilePaths = normalizeFilePaths(filePaths);
   const store = runtime.store;
   const queue = runtime.queue;
   const artifactStore = runtime.artifactStore ?? createArtifactStore();
+  const traceId = `trace_${crypto.randomUUID()}`;
+  const contextId = `ctx_${crypto.randomUUID()}`;
   const route = routeIntent(userCommand);
   const preflightTaskSpec = createTaskSpec(userCommand, {
     source_type: "file",
     source_app: sourceApp,
     capture_mode: captureMode,
-    file_paths: Array.isArray(filePaths) ? filePaths : []
+    file_paths: normalizedFilePaths
   }, route);
   const cliRuntime = resolveKimiRuntimeForTask("file_analysis", runtime.kimiRuntime);
   // file-submission specialises in file-backed analysis, which the code_cli
@@ -80,21 +138,16 @@ export async function submitFileTask({
   // degrades gracefully to "code_cli on files".
   const preferredExecutorOverride = executorOverride
     ?? ((cliRuntime && ["fast", "none", "agentic"].includes(route.executor)) ? "code_cli" : null);
-  const rawContextPacket = await buildFileContextPacket({
-    filePaths,
-    captureMode,
-    sourceApp,
-    traceId: `trace_${crypto.randomUUID()}`,
-    contextId: `ctx_${crypto.randomUUID()}`
-  });
-  rawContextPacket.selection_metadata = {
-    ...withContentEvidence(
-      {
-        ...(rawContextPacket.selection_metadata ?? {}),
-        ...(selectionMetadata && typeof selectionMetadata === "object" ? selectionMetadata : {})
-      },
-      fileContentEvidenceFromContextPacket(rawContextPacket)
-    )
+
+  const buildEnrichedFileContextPacket = (options = {}) => {
+    return buildFileContextPacketImpl({
+      filePaths: normalizedFilePaths,
+      captureMode,
+      sourceApp,
+      traceId,
+      contextId,
+      onProgress: options.onProgress
+    }).then((packet) => attachFileContentEvidence(packet, selectionMetadata));
   };
 
   const fileFocusedGoals = new Set([
@@ -115,6 +168,7 @@ export async function submitFileTask({
     && !((route.intent_tags ?? []).some((tag) => fileFocusedIntentTags.has(tag)));
 
   if (shouldPreferContextPipeline) {
+    const rawContextPacket = await buildEnrichedFileContextPacket();
     return submitContextTask({
       contextPacket: rawContextPacket,
       userCommand,
@@ -138,6 +192,7 @@ export async function submitFileTask({
   const fileAnalysisProvider = resolveProviderForTask("file_analysis");
   const apiProviderAvailable = fileAnalysisProvider && fileAnalysisProvider.kind !== "code_cli";
   if (!cliRuntime && apiProviderAvailable) {
+    const rawContextPacket = await buildEnrichedFileContextPacket();
     return submitContextTask({
       contextPacket: rawContextPacket,
       userCommand,
@@ -152,10 +207,18 @@ export async function submitFileTask({
       skipDecomposition: false
     });
   }
-  const inspection = runtime.securityBroker.inspectContext(rawContextPacket, {
-    trigger: "file_submission"
+  const pendingContextPacket = createPendingFileContextPacket({
+    filePaths: normalizedFilePaths,
+    captureMode,
+    sourceApp,
+    traceId,
+    contextId,
+    selectionMetadata
   });
-  const contextPacket = inspection.allowed ? inspection.contextPacket : rawContextPacket;
+  const pendingInspection = runtime.securityBroker.inspectContext(pendingContextPacket, {
+    trigger: "file_submission_pending"
+  });
+  const contextPacket = pendingInspection.allowed ? pendingInspection.contextPacket : pendingContextPacket;
 
   const { task } = submitTaskWithConversation({
     route,
@@ -178,13 +241,14 @@ export async function submitFileTask({
     eventType: "task_created",
     payload: {
       source_type: contextPacket.source_type,
-      file_count: filePaths.length
+      file_count: normalizedFilePaths.length,
+      file_ingest_status: "pending"
     }
   });
 
-  if (!inspection.allowed) {
+  if (!pendingInspection.allowed) {
     markTaskFailed(runtime, task, {
-      message: `Security broker blocked context capture: ${inspection.reason}`
+      message: `Security broker blocked context capture: ${pendingInspection.reason}`
     });
     return {
       task,
@@ -192,8 +256,6 @@ export async function submitFileTask({
       artifacts: []
     };
   }
-
-  runtime.securityBroker.registerTaskRedactionMap(task.task_id, inspection.redactionMap);
 
   if (!enqueued.accepted) {
     updateTask(runtime, task, {
@@ -242,6 +304,57 @@ export async function submitFileTask({
       queue.markRunning(task.task_id);
       updateTask(runtime, task, {
         status: "running",
+        sub_status: "ingesting_files"
+      }, true);
+
+      const ingestStartedAt = Date.now();
+      const rawContextPacket = await buildEnrichedFileContextPacket({
+        onProgress(event = {}) {
+          const phase = event.phase ?? "";
+          const eventType = phase === "file_ingest_started"
+            ? "file_ingest_started"
+            : phase === "file_ingest_finished"
+              ? "file_ingest_finished"
+              : "file_ingest_progress";
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType,
+            payload: event
+          });
+        }
+      });
+      const inspection = runtime.securityBroker.inspectContext(rawContextPacket, {
+        trigger: "file_submission"
+      });
+      if (!inspection.allowed) {
+        markTaskFailed(runtime, task, {
+          message: `Security broker blocked context capture: ${inspection.reason}`
+        });
+        return {
+          task,
+          taskEvents: store.getTaskEvents(task.task_id),
+          artifacts: []
+        };
+      }
+      task.context_packet = inspection.contextPacket;
+      task.task_spec = createTaskSpec(userCommand, task.context_packet, route);
+      const refreshedValidation = validateTaskSpec(task.task_spec);
+      task.task_spec_source = "file_ingest_patched";
+      task.task_spec_valid = refreshedValidation.valid;
+      task.task_spec_errors = refreshedValidation.errors;
+      store.updateTask(task.task_id, task);
+      runtime.securityBroker.registerTaskRedactionMap(task.task_id, inspection.redactionMap);
+      emitTaskEvent({
+        runtime,
+        taskId: task.task_id,
+        eventType: "phase_timing",
+        payload: {
+          phase: "file_ingest",
+          duration_ms: Date.now() - ingestStartedAt
+        }
+      });
+      updateTask(runtime, task, {
         sub_status: "starting_executor"
       }, true);
 

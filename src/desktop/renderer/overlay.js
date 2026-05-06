@@ -1521,7 +1521,8 @@ function eventToPhase(eventType) {
   if ([
     "task_created", "accepted", "started", "provider_resolved",
     "planner_request_started", "sr_patch_applied",
-    "background_context_added", "phase_timing"
+    "background_context_added", "phase_timing",
+    "file_ingest_started", "file_ingest_progress", "file_ingest_finished"
   ].includes(eventType)) return "PLANNING";
   if ([
     "step_started", "step_finished", "conversation_step",
@@ -2284,7 +2285,13 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     if (label) timelineAddStep(label, "active");
   }
 
-  if (["task_created", "accepted", "started", "provider_resolved", "phase_timing", "status_changed", "planner_request_started", "final_composer_started", "sr_patch_applied", "background_context_added", "local_file_read_guidance", "log", "artifact_created"].includes(frame.event)) {
+  if ([
+    "task_created", "accepted", "started", "provider_resolved", "phase_timing",
+    "status_changed", "planner_request_started", "final_composer_started",
+    "sr_patch_applied", "background_context_added", "local_file_read_guidance",
+    "file_ingest_started", "file_ingest_progress", "file_ingest_finished",
+    "log", "artifact_created"
+  ].includes(frame.event)) {
     timelineAddStep(`${summary.title}: ${summary.body}`, frame.event === "artifact_created" ? "done" : "active");
   }
 
