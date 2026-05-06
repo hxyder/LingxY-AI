@@ -308,10 +308,16 @@ function scoreBrowserContext(context, { url = "", title = "" } = {}) {
   return score;
 }
 
-function listRecentBrowserContexts(recentBrowserContexts, query = {}) {
+export function listRecentBrowserContexts(recentBrowserContexts, query = {}) {
   const limit = Math.max(1, Math.min(10, Number(query.limit ?? 3) || 3));
+  const requireExactUrl = Boolean(query.requireExactUrl) && Boolean(query.url);
   return recentBrowserContexts
     .map((context) => ({ context, score: scoreBrowserContext(context, query) }))
+    .filter((item) => {
+      if (!requireExactUrl) return true;
+      const contextUrl = item.context.url || item.context.metadata?.youtube?.canonicalUrl || "";
+      return contextUrl === query.url;
+    })
     .filter((item) => !query.url && !query.title ? true : item.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, limit)
@@ -380,6 +386,7 @@ export async function tryHandleBrowserContextRoute({ request, response, method, 
     const contexts = listRecentBrowserContexts(recentBrowserContexts, {
       url: url.searchParams.get("url") ?? "",
       title: url.searchParams.get("title") ?? "",
+      requireExactUrl: url.searchParams.get("require_url_match") === "1",
       limit: url.searchParams.get("limit") ?? "3"
     });
     sendJson(response, 200, { ok: true, contexts });

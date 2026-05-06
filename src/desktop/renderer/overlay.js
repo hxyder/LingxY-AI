@@ -4240,6 +4240,7 @@ async function fetchRecentBrowserContextForActiveWindow(activeWindow = null) {
   const params = new URLSearchParams();
   params.set("url", activeWindow.url);
   if (activeWindow.title) params.set("title", activeWindow.title);
+  params.set("require_url_match", "1");
   params.set("limit", "1");
 
   try {
@@ -6270,6 +6271,7 @@ async function fetchRecentBrowserContextForNote(sourceContext = null) {
   if (!sourceUrl && !sourceTitle) return null;
   if (sourceUrl) params.set("url", sourceUrl);
   if (sourceTitle) params.set("title", sourceTitle);
+  if (sourceUrl) params.set("require_url_match", "1");
   params.set("limit", "1");
 
   try {
