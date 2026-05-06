@@ -176,8 +176,9 @@ let notifiedInlineResultTaskId = null;
 // notifiedTaskId guard runs AFTER the inline-result event has already
 // flipped notifiedInlineResultTaskId, so success-card emission was being
 // skipped for streaming conversational replies ("你好" style). This flag
-// is set by whichever path actually shows the card first (inline_result
-// or status_changed=success) and cleared per new task.
+// is set by whichever path actually shows the card first. Terminal events
+// are still allowed to re-notify with the same task dedupe key so a short
+// inline_result cannot permanently block the fuller success payload.
 let popupSuccessCardTaskId = null;
 let suppressOverlayAutoReveal = false;
 let echoTaskIds = new Set();
@@ -202,8 +203,8 @@ function shouldAutoRevealTaskResult() {
   }
 }
 
-function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, openWindow = null } = {}) {
-  if (!taskId || popupSuccessCardTaskId === taskId) return;
+function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, openWindow = null, terminal = false } = {}) {
+  if (!taskId || (popupSuccessCardTaskId === taskId && !terminal)) return;
   if (!isEchoTask(taskId) && !shouldSurfaceTaskPopupCards()) return;
   popupSuccessCardTaskId = taskId;
   const fullBody = Array.isArray(body) ? body.filter(Boolean).join("\n") : String(body ?? "");
@@ -219,7 +220,8 @@ function fireSuccessPopupCardOnce(taskId, { title, body, autoHideMs = 8000, open
       allowLongBody: echoTask,
       forcePopup: echoTask,
       autoHideMs,
-      openWindow
+      openWindow,
+      dedupeKey: `notify:${taskId}`
     });
   } catch { /* optional */ }
 }
@@ -2921,7 +2923,8 @@ async function handleTaskEventFrame(rawEvent) {
       fireSuccessPopupCardOnce(frameTaskId, {
         title: lastTask?.intent ?? "部分完成",
         body: frame.data?.text ?? frame.data?.summary ?? "任务已部分完成。",
-        openWindow: "overlay"
+        openWindow: "overlay",
+        terminal: true
       });
       showEchoResultHudOnce(frameTaskId, {
         title: lastTask?.intent ?? "部分完成",
@@ -2932,7 +2935,8 @@ async function handleTaskEventFrame(rawEvent) {
       fireSuccessPopupCardOnce(frameTaskId, {
         title: lastTask?.intent ?? "任务完成",
         body: frame.data?.text ?? frame.data?.summary ?? lastTask?.result_summary ?? lastArtifactPreview ?? "任务已完成。",
-        openWindow: "overlay"
+        openWindow: "overlay",
+        terminal: true
       });
       showEchoResultHudOnce(frameTaskId, {
         title: lastTask?.intent ?? "任务完成",
@@ -3798,7 +3802,8 @@ async function refreshActiveTask() {
         fireSuccessPopupCardOnce(task.task_id, {
           title: task.intent ?? "任务完成",
           body: [filename, previewText ? previewText.slice(0, 140) : null].filter(Boolean),
-          autoHideMs: 10000
+          autoHideMs: 10000,
+          terminal: true
         });
       }
       // Auto-open removed: previously the host file viewer would steal focus
@@ -3870,7 +3875,8 @@ async function refreshActiveTask() {
         fireSuccessPopupCardOnce(task.task_id, {
           title: task.intent ?? "任务完成",
           body: finalText,
-          openWindow: "overlay"
+          openWindow: "overlay",
+          terminal: true
         });
       }
     } else if (task.status === "failed") {

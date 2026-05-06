@@ -507,7 +507,7 @@ assert.ok(/rememberEchoTask/.test(overlayJs) && /showEchoResultHudOnce/.test(ove
   "echo mode: echo-submitted task results must surface through the Echo HUD");
 assert.ok(/isEchoOriginEventFrame/.test(overlayJs) && /voice_session_id/.test(overlayJs),
   "echo mode: any task event carrying Echo origin metadata must keep the result HUD eligible");
-assert.ok(/frame\.event === "success"[\s\S]{0,260}showEchoResultHudOnce/.test(overlayJs),
+assert.ok(/frame\.event === "success"[\s\S]{0,420}showEchoResultHudOnce/.test(overlayJs),
   "echo mode: terminal success events without inline_result must still surface through the Echo HUD");
 assert.ok(!/addBubble\("assistant", `Artifact created:/.test(overlayJs),
   "overlay chat surface must not expose internal artifact_created event labels as assistant text");
@@ -532,8 +532,16 @@ assert.ok(/conversationId: taskOwnerConversationId\(taskConversationMap, taskId\
     && /pendingContinuationConversationId/.test(overlayJs)
     && /conversationId: payload\?\.conversationId/.test(popupCardJs),
   "echo result cards: popup-card continuations must preserve the originating conversation id");
-assert.ok(/frame\.event === "success"[\s\S]{0,220}fireSuccessPopupCardOnce/.test(overlayJs),
+assert.ok(/function normalizeBatchEntry\(payload\)[\s\S]{0,260}conversationId: payload\.conversationId \?\? null/.test(electronMain)
+    && /conversationId: only\.conversationId \?\? null/.test(electronMain)
+    && /conversationId: card\.payload\?\.conversationId \?\? card\.meta\?\.conversationId/.test(electronMain),
+  "echo result cards: notification batching and resolve broadcasts must not drop conversationId");
+assert.ok(/frame\.event === "success"[\s\S]{0,320}fireSuccessPopupCardOnce/.test(overlayJs),
   "echo result cards: terminal-only success events must still surface a full popup result card");
+assert.ok(/popupSuccessCardTaskId === taskId && !terminal/.test(overlayJs)
+    && /dedupeKey: `notify:\$\{taskId\}`/.test(overlayJs)
+    && /frame\.event === "success"[\s\S]{0,320}terminal: true/.test(overlayJs),
+  "echo result cards: terminal success must be allowed to update a prior inline_result popup card");
 assert.ok(!/clearTaskConversationBinding\(taskConversationMap, frameTaskId\)/.test(overlayJs),
   "echo result cards: terminal cleanup must not discard task-to-conversation bindings needed by delayed continuations");
 assert.ok(/const shouldOpenOverlay = payload\?\.openWindow === "overlay" \|\| payload\?\.handoff;/.test(popupCardJs)
