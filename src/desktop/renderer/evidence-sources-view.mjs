@@ -340,7 +340,10 @@ export function wireEvidenceSourceActions(container, shell) {
   for (const btn of container.querySelectorAll("[data-evidence-url]")) {
     btn.addEventListener("click", () => {
       const url = btn.dataset.evidenceUrl;
-      if (url) void shell.openExternal?.(url);
+      if (url) {
+        void (shell.openUrl?.(url, { ask: true, source: "evidence_source" })
+          ?? shell.openExternal?.(url));
+      }
     });
   }
   for (const btn of container.querySelectorAll("[data-evidence-path]")) {

@@ -624,6 +624,8 @@ assert.ok(/\.chat-preview-pane \.lp-iframe\b/.test(sharedCss),
   "chat preview: inline preview iframe must have stable dimensions outside the standalone live-preview shell");
 assert.ok(/exportBundle:\s*["']uca:export-bundle["']/.test(desktopManifest),
   "data export: IPC channel missing from desktop manifest");
+assert.ok(/data-evidence-url[\s\S]{0,220}shell\.openUrl\?\.\(url,\s*\{\s*ask:\s*true,\s*source:\s*["']evidence_source["']\s*\}/.test(evidenceSourcesView),
+  "evidence source links must use the unified ask-before-open URL policy instead of forcing the system browser");
 assert.ok(/diagnosticBundle:\s*["']uca:diagnostic-bundle["']/.test(desktopManifest),
   "diagnostics: IPC channel missing from desktop manifest");
 assert.ok(/rendererErrorReport:\s*["']uca:renderer-error["']/.test(desktopManifest),
