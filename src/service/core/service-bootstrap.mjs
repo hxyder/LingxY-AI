@@ -202,17 +202,21 @@ export function createServiceBootstrap({
     const savedLocation = runtime.configStore?.load?.()?.location?.userLocation ?? null;
     if (savedLocation) {
       hydrateUserLocation(savedLocation);
-      const persistFreshLocation = (result) => {
-        if (!result?.ok || !result.location) return;
-        runtime.configStore?.patch?.({
-          location: {
-            userLocation: { ...result.location }
-          }
-        });
-      };
-      // Startup stays fast: hydrate immediately, refresh Windows location in
-      // the background so moving between places is picked up without another
-      // manual click.
+    }
+    const persistFreshLocation = (result) => {
+      if (!result?.ok || !result.location) return;
+      runtime.configStore?.patch?.({
+        location: {
+          userLocation: { ...result.location }
+        }
+      });
+    };
+    // Startup stays fast: hydrate immediately when we have a saved fix, then
+    // refresh Windows location in the background. On Windows we also try even
+    // without a saved fix: if the user already granted OS location access,
+    // restart should not require another Console click; if access is denied,
+    // refreshWindowsLocation fails softly.
+    if (savedLocation || process.platform === "win32") {
       refreshWindowsLocation({ timeoutMs: 8_000 }).then(persistFreshLocation).catch(() => {});
       runtime.locationRefreshInterval = setInterval(() => {
         refreshWindowsLocation({ timeoutMs: 8_000 }).then(persistFreshLocation).catch(() => {});

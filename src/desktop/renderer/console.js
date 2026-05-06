@@ -7041,6 +7041,8 @@ locationButton?.addEventListener("click", async (event) => {
 
 // Hydrate on boot so the icon tooltip shows the current state immediately.
 void refreshDesktopLocationChip();
+setTimeout(() => { void refreshDesktopLocationChip(); }, 9_000);
+setInterval(() => { void refreshDesktopLocationChip(); }, 30 * 60 * 1000);
 
 // UCA-104: keyboard-shortcut cheatsheet — open with Ctrl+/ or the ? button,
 // close with Esc / backdrop click / × button.

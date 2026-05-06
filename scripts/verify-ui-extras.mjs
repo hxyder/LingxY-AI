@@ -561,6 +561,8 @@ assert.ok(/id="echoDiagnosticsPanel"/.test(consoleHtml)
     && /Fallback enabled/.test(consoleJs)
     && /personal template fallback remains active/.test(consoleJs),
   "echo mode: Console settings must expose non-hot-path diagnostics and wake enrollment controls");
+assert.ok(/void refreshDesktopLocationChip\(\);[\s\S]{0,80}setTimeout\(\(\) => \{ void refreshDesktopLocationChip\(\); \}, 9_000\);[\s\S]{0,100}setInterval\(\(\) => \{ void refreshDesktopLocationChip\(\); \}, 30 \* 60 \* 1000\);/.test(consoleJs),
+  "location: Console must re-sync after startup background refresh and then refresh periodically");
 assert.ok(/const settings = await loadSettings\(\);[\s\S]{0,420}if \(!settings\?\.echoMode\)[\s\S]{0,100}showWindow\("overlay"\)/.test(electronMain),
   "dock file drop: normal mode must open overlay while Echo mode only hands off files for V-to-ask");
 assert.ok(/startNewConversation\(\{ preservePendingInputContext \}\)/.test(overlayJs)

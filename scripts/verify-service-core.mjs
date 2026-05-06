@@ -12,6 +12,7 @@ import { createProviderAdapter } from "../src/service/executors/agentic/provider
 
 const service = createServiceBootstrap();
 const httpServerSource = await readFile(new URL("../src/service/core/http-server.mjs", import.meta.url), "utf8");
+const serviceBootstrapSource = await readFile(new URL("../src/service/core/service-bootstrap.mjs", import.meta.url), "utf8");
 const aiStatusRouteSource = await readFile(new URL("../src/service/core/http-routes/ai-status-routes.mjs", import.meta.url), "utf8");
 const audioRouteSource = await readFile(new URL("../src/service/core/http-routes/audio-routes.mjs", import.meta.url), "utf8");
 const browserContextRouteSource = await readFile(new URL("../src/service/core/http-routes/browser-context-routes.mjs", import.meta.url), "utf8");
@@ -179,6 +180,9 @@ if (!browserContextRouteSource.includes('url.pathname === "/location"')
     || !browserContextRouteSource.includes('url.pathname === "/browser/context"')
     || !browserContextRouteSource.includes('url.pathname === "/browser/context/recent"')) {
   throw new Error("browser-context-routes.mjs must own browser context, location, handoff, and page explain endpoints.");
+}
+if (!serviceBootstrapSource.includes('savedLocation || process.platform === "win32"')) {
+  throw new Error("service bootstrap must refresh Windows location on startup without requiring a fresh Console click.");
 }
 if (httpServerSource.includes('url.pathname === "/executors"')
     || httpServerSource.includes('url.pathname === "/ai/providers"')
