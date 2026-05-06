@@ -572,6 +572,8 @@ assert.ok(/payload\.allowLongBody === true && payload\.forcePopup === true[\s\S]
     && /\(payload\.forcePopup === true && payload\.allowLongBody === true\)/.test(electronMain)
     && /forcePopup: only\.forcePopup/.test(electronMain),
   "echo result cards: forcePopup long-body cards must render the full body instead of batch-truncated preview lines");
+assert.ok(/appendTurn\("assistant", memorySnippet\);[\s\S]{0,120}if \(!isEchoTask\(task\.task_id\)\) \{[\s\S]{0,100}maybeRevealOverlay\(\{ markEngaged: true \}\)/.test(overlayJs),
+  "echo artifact completion: generated files from Echo tasks must not force-open the overlay");
 assert.ok(/frame\.event === "success"[\s\S]{0,320}fireSuccessPopupCardOnce/.test(overlayJs),
   "echo result cards: terminal-only success events must still surface a full popup result card");
 assert.ok(/popupSuccessCardTaskId === taskId && !terminal/.test(overlayJs)

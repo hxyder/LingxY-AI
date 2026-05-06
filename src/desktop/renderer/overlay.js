@@ -3760,7 +3760,9 @@ async function refreshActiveTask() {
           ? `生成了文件 ${filename}\n\n${previewText.slice(0, 600)}`
           : `生成了文件 ${filename}`;
         appendTurn("assistant", memorySnippet);
-        await maybeRevealOverlay({ markEngaged: true });
+        if (!isEchoTask(task.task_id)) {
+          await maybeRevealOverlay({ markEngaged: true });
+        }
         if (isAudioNoteTask && previewText) {
           addBubble("assistant", `录音笔记整理好了：\n\n${previewText.slice(0, 1200)}`);
         }
