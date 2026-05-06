@@ -82,6 +82,44 @@ function requestSelectionMetadata(body = {}) {
     : {};
 }
 
+function normalizeRequestPathArray(value) {
+  return Array.isArray(value)
+    ? value.filter((item) => typeof item === "string" && item.trim()).map((item) => item.trim())
+    : [];
+}
+
+function buildMixedAttachmentContextPacket(body, {
+  filePaths,
+  imagePaths,
+  selectionMetadata
+}) {
+  const traceId = `trace_${crypto.randomUUID()}`;
+  const contextId = `ctx_${crypto.randomUUID()}`;
+  return {
+    schema_version: "1.0",
+    context_id: contextId,
+    trace_id: traceId,
+    source_type: "mixed_attachments",
+    source_app: body.sourceApp ?? "uca.client",
+    capture_mode: body.captureMode ?? "attachment",
+    security_level: "internal",
+    redaction_applied: false,
+    text: [
+      filePaths.length ? `Attached files: ${filePaths.join(", ")}` : "",
+      imagePaths.length ? `Attached images: ${imagePaths.join(", ")}` : ""
+    ].filter(Boolean).join("\n"),
+    file_paths: filePaths,
+    image_paths: imagePaths,
+    selection_metadata: {
+      ...selectionMetadata,
+      attachment_mode: "mixed",
+      file_count: filePaths.length,
+      image_count: imagePaths.length
+    },
+    captured_at: new Date().toISOString()
+  };
+}
+
 export function buildTaskSummaryPayload(runtime, { recentLimit = 80 } = {}) {
   const tasks = listTaskSummaries(runtime)
     .sort((left, right) =>
@@ -211,7 +249,7 @@ function mergeArtifactsForTask(taskId, persistedArtifacts = [], events = []) {
   return merged;
 }
 
-async function submitTaskFromBody(runtime, body) {
+export async function submitTaskFromBody(runtime, body) {
   // Pick up any location fix the caller shipped along with the task
   // (browser extension does this whenever the user has granted precise
   // location). Every task submission doubles as a low-latency freshness
@@ -249,14 +287,36 @@ async function submitTaskFromBody(runtime, body) {
     ? body.client_message_id
     : (typeof body.clientMessageId === "string" && body.clientMessageId ? body.clientMessageId : null);
   const requestProjectId = normalizeRequestProjectId(body);
+  const requestFilePaths = normalizeRequestPathArray(body.filePaths);
+  const requestImagePaths = normalizeRequestPathArray(body.imagePaths);
+  const selectionMetadata = requestSelectionMetadata(body);
 
-  if (body.filePaths?.length) {
+  if (requestFilePaths.length && requestImagePaths.length) {
+    return submitContextTask({
+      contextPacket: buildMixedAttachmentContextPacket(body, {
+        filePaths: requestFilePaths,
+        imagePaths: requestImagePaths,
+        selectionMetadata
+      }),
+      userCommand: body.userCommand,
+      runtime,
+      executionMode: body.executionMode,
+      executorOverride: body.executorOverride,
+      parentTaskId: effectiveRequestParentTaskId,
+      conversationId: requestConversationId,
+      clientMessageId: requestClientMessageId,
+      projectId: requestProjectId,
+      background
+    });
+  }
+
+  if (requestFilePaths.length) {
     return submitFileTask({
-      filePaths: body.filePaths,
+      filePaths: requestFilePaths,
       userCommand: body.userCommand,
       captureMode: body.captureMode,
       sourceApp: body.sourceApp,
-      selectionMetadata: requestSelectionMetadata(body),
+      selectionMetadata,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride,
       parentTaskId: effectiveRequestParentTaskId,
@@ -274,7 +334,7 @@ async function submitTaskFromBody(runtime, body) {
         ...body.capture,
         selectionMetadata: {
           ...(body.capture.selectionMetadata ?? {}),
-          ...requestSelectionMetadata(body)
+          ...selectionMetadata
         }
       },
       userCommand: body.userCommand,
@@ -289,14 +349,14 @@ async function submitTaskFromBody(runtime, body) {
     });
   }
 
-  if (body.imagePaths?.length) {
+  if (requestImagePaths.length) {
     return submitImageTask({
-      imagePaths: body.imagePaths,
+      imagePaths: requestImagePaths,
       userCommand: body.userCommand,
       source: body.source,
       sourceApp: body.sourceApp,
       captureMode: body.captureMode,
-      selectionMetadata: requestSelectionMetadata(body),
+      selectionMetadata,
       executionMode: body.executionMode,
       executorOverride: body.executorOverride ?? null,
       parentTaskId: effectiveRequestParentTaskId,

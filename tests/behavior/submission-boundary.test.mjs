@@ -14,6 +14,7 @@ import { submitImageTask } from "../../src/service/core/image-submission.mjs";
 import { submitOfficeTask } from "../../src/service/core/office-submission.mjs";
 import { submitScreenshotTask } from "../../src/service/core/screenshot-submission.mjs";
 import { submitTaskWithConversation } from "../../src/service/core/task-runtime.mjs";
+import { submitTaskFromBody } from "../../src/service/core/http-routes/task-routes.mjs";
 
 function createRuntime({ enqueueAccepted = true } = {}) {
   return {
@@ -299,6 +300,28 @@ test("composite submission declares its submission kind through the central boun
     .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
   assert.ok(audit);
   assert.equal(audit.payload.submission_kind, "composite");
+});
+
+test("task route preserves mixed file and image attachments in one context envelope", async () => {
+  const runtime = createRuntime({ enqueueAccepted: false });
+  const { task } = await submitTaskFromBody(runtime, {
+    userCommand: "Analyze these materials together",
+    filePaths: ["E:\\docs\\brief.pdf"],
+    imagePaths: ["E:\\shots\\diagram.png"],
+    sourceApp: "uca.test",
+    captureMode: "drag_drop",
+    background: true
+  });
+
+  assert.equal(task.submission_boundary.submission_kind, "context");
+  assert.deepEqual(task.context_packet.file_paths, ["E:\\docs\\brief.pdf"]);
+  assert.deepEqual(task.context_packet.image_paths, ["E:\\shots\\diagram.png"]);
+  assert.equal(task.context_packet.selection_metadata.attachment_mode, "mixed");
+
+  const audit = runtime.store.listAuditLogs()
+    .find((entry) => entry.event_subtype === "submission.boundary_evaluated");
+  assert.ok(audit);
+  assert.equal(audit.payload.submission_kind, "context");
 });
 
 test("browser submission declares its submission kind through the central boundary", async () => {
