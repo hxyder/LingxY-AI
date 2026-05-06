@@ -203,16 +203,22 @@ function renderBody(lines) {
 function renderActions(buttons = []) {
   actionsEl.innerHTML = "";
   const seenActions = new Set();
+  const seenLabels = new Set();
   for (const spec of buttons) {
     const label = String(spec?.label ?? "").trim();
     const isPager = label === "‹" || label === "›";
     const actionKey = String(spec?.actionKey ?? spec?.id ?? "").trim();
+    const labelKey = label.toLowerCase();
     const dedupeKey = isPager
       ? `pager:${label}:${seenActions.size}`
       : actionKey || (label ? `label:${label}` : "");
     if (dedupeKey && !isPager) {
       if (seenActions.has(dedupeKey)) continue;
       seenActions.add(dedupeKey);
+    }
+    if (labelKey && !isPager) {
+      if (seenLabels.has(labelKey)) continue;
+      seenLabels.add(labelKey);
     }
     actionsEl.appendChild(makeButton(spec));
   }

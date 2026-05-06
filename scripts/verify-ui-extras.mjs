@@ -229,9 +229,11 @@ assert.ok(/resolveCard\(["']voice_continue["']/.test(popupCardJs)
 assert.ok(/else if \(voiceMode \|\| voiceRecording\)[\s\S]{0,80}submitEchoVoiceCommand\(\)/.test(overlayJs),
   "echo result cards: popup-card V starts composer voice capture, so global Enter must submit even when the full voice panel is hidden");
 assert.ok(/function renderActions\(buttons = \[\]\)[\s\S]{0,420}seenActions[\s\S]{0,260}actionKey[\s\S]{0,260}seenActions\.has\(dedupeKey\)[\s\S]{0,160}continue/.test(popupCardJs)
+    && /seenLabels/.test(popupCardJs)
+    && /seenLabels\.has\(labelKey\)/.test(popupCardJs)
     && /function openOverlayAction/.test(popupCardJs)
     && /actionKey:\s*["']open_overlay["']/.test(popupCardJs),
-  "popup-card actions must dedupe by stable semantic action keys instead of relying on repeated open-dialog labels");
+  "popup-card actions must dedupe by stable semantic action keys and visible labels instead of repeating open-dialog actions");
 assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml),
   "voice language: overlay voice input must default to simplified Chinese with English words preserved");
 assert.ok(/if \(\s*\/\^zh\/i\.test\([\s\S]{0,120}\)\) return "zh-CN";/.test(overlayJs),
