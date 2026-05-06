@@ -32,13 +32,11 @@ export function extractArticleFromHtml({ html, url = "", maxChars = 60000 } = {}
   const { document } = parseHTML(html, { url: url || undefined });
   const title = (document.querySelector("title")?.textContent ?? "").trim();
   const lang = document.documentElement?.getAttribute?.("lang") ?? "";
+  const bodyText = (document.body?.textContent ?? "").replace(/\s+/g, " ").trim();
 
   const readable = isProbablyReaderable(document);
   if (readable) {
-    // Readability mutates the document it reads; clone via re-parse so the
-    // caller's document (if reused) isn't stripped.
-    const { document: readabilityDoc } = parseHTML(html, { url: url || undefined });
-    const article = new Readability(readabilityDoc).parse();
+    const article = new Readability(document).parse();
     if (article?.textContent && article.textContent.trim().length > 0) {
       return {
         ok: true,
@@ -57,7 +55,6 @@ export function extractArticleFromHtml({ html, url = "", maxChars = 60000 } = {}
   }
 
   // Readability rejected the page — dump a trimmed body text as a fallback.
-  const bodyText = (document.body?.textContent ?? "").replace(/\s+/g, " ").trim();
   return {
     ok: true,
     kind: "fallback",
