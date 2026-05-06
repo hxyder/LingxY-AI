@@ -61,6 +61,44 @@ function runtimeWithTaskEmitter(runtime, taskId) {
   };
 }
 
+function setInternalTaskPromise(task, name, promise) {
+  Object.defineProperty(task, name, {
+    value: promise,
+    enumerable: false,
+    configurable: true,
+    writable: true
+  });
+}
+
+function scheduleInternalTaskPromise(work) {
+  return new Promise((resolve, reject) => {
+    setTimeout(() => {
+      Promise.resolve()
+        .then(work)
+        .then(resolve, reject);
+    }, 0);
+  });
+}
+
+function mergeBrowserContextPacketPatch(current = {}, patch = {}) {
+  return {
+    ...(current ?? {}),
+    ...(patch ?? {}),
+    selection_metadata: {
+      ...(current?.selection_metadata ?? {}),
+      ...(patch?.selection_metadata ?? {})
+    },
+    context_sources: {
+      ...(current?.context_sources ?? {}),
+      ...(patch?.context_sources ?? {})
+    },
+    background_contexts: [
+      ...(Array.isArray(current?.background_contexts) ? current.background_contexts : []),
+      ...(Array.isArray(patch?.background_contexts) ? patch.background_contexts : [])
+    ]
+  };
+}
+
 function createSelectionMetadata(capture) {
   const hasPageContent = capture.sourceType === "webpage" || capture.sourceType === "page_explanation"
     ? capture.metadata?.hasPageContent === true
@@ -908,7 +946,7 @@ export async function submitBrowserTask({
 
   const execute = async () => {
     if (deferPreExecutionPlanning && inspection.allowed) {
-      routerEnrichedContext = await runExecutionPhase({
+      const srPromise = scheduleInternalTaskPromise(() => runExecutionPhase({
         runtime: runtimeWithTaskEmitter(runtime, task.task_id),
         taskId: task.task_id,
         phase: EXECUTION_PHASES.SEMANTIC_ROUTER_PATCH,
@@ -926,15 +964,37 @@ export async function submitBrowserTask({
             executor: executorOverride ?? spec.suggested_executor ?? route.executor
           };
         }
-      });
-      const refreshedSpec = createTaskSpec(userCommand, routerEnrichedContext, route);
-      const refreshedValidation = validateTaskSpec(refreshedSpec);
-      task.context_packet = routerEnrichedContext;
-      task.task_spec = refreshedSpec;
-      task.task_spec_valid = refreshedValidation.valid;
-      task.task_spec_errors = refreshedValidation.errors;
-      task.executor = executorOverride ?? refreshedSpec.suggested_executor ?? route.executor;
-      store.updateTask(task.task_id, task);
+      }));
+      setInternalTaskPromise(task, "__srPatchPromise", srPromise.then((srEnriched) => {
+        if (!srEnriched) return null;
+        try {
+          const mergedContext = mergeBrowserContextPacketPatch(task.context_packet ?? routerEnrichedContext, srEnriched);
+          routerEnrichedContext = mergedContext;
+          const refreshedSpec = createTaskSpec(userCommand, mergedContext, route);
+          const refreshedValidation = validateTaskSpec(refreshedSpec);
+          task.context_packet = mergedContext;
+          task.task_spec = refreshedSpec;
+          task.task_spec_valid = refreshedValidation.valid;
+          task.task_spec_errors = refreshedValidation.errors;
+          task.task_spec_source = "semantic_router_patched";
+          task.sr_patch_applied_at = new Date().toISOString();
+          store.updateTask(task.task_id, task);
+          emitTaskEvent({
+            runtime,
+            taskId: task.task_id,
+            eventType: "sr_patch_applied",
+            payload: {
+              applied_at: task.sr_patch_applied_at,
+              executor_suggestion: refreshedSpec.suggested_executor ?? null,
+              tool_policy_web: refreshedSpec.tool_policy?.web_search_fetch?.mode ?? null,
+              expected_output: refreshedSpec.synthesis?.expected_output ?? null,
+              research_quality: refreshedSpec.research_quality ?? null
+            }
+          });
+          return refreshedSpec;
+        } catch { /* parallel SR patch must never break a running browser executor */ }
+        return null;
+      }).catch(() => null));
     }
 
     if (capture.sourceType === "image") {

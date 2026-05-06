@@ -370,19 +370,21 @@ await it("Case 7 (regression-positive): synthesised reply for the same input →
 // ────────────────────────────────────────────────────────────────────
 await it("Case 8 (latency): background task creation defers SemanticRouter preflight into execute()", () => {
   const src = readFileSync("src/service/core/context-submission.mjs", "utf8");
-  assert.match(src, /const\s+deferPreExecutionPlanning\s*=\s*background\s*;/,
-    "background submissions must defer pre-execution planning without a skipDecomposition exception");
+  assert.ok(/const\s+deferPreExecutionPlanning\s*=\s*background\s*;/.test(src)
+      || /const\s+deferPreExecutionPlanning\s*=\s*shouldDeferPreExecutionPlanning\(\{\s*background,\s*userCommand\s*\}\)/.test(src),
+    "background/immediate submissions must defer pre-execution planning without a skipDecomposition exception");
 
   const submitIndex = src.indexOf("const { task } = submitTaskWithConversation");
-  const executeIndex = src.indexOf("const execute = async () =>");
-  assert.ok(submitIndex > 0 && executeIndex > submitIndex,
-    "task must be persisted before execute() is declared");
+  const dispatchIndex = src.indexOf("return executeExistingContextTask");
+  assert.ok(submitIndex > 0 && dispatchIndex > submitIndex,
+    "task must be persisted before the execution shell is dispatched");
 
   const beforeSubmit = src.slice(0, submitIndex);
   assert.match(beforeSubmit, /let\s+routerEnrichedContext\s*=\s*deferPreExecutionPlanning\s*\?\s*\{[\s\S]*?context_sources:\s*classifyContextSources[\s\S]*?\}\s*:\s*await\s+applySemanticRouterPreflight/,
     "background pre-submit must use a cheap classified packet; only the non-deferred branch may await SemanticRouter");
 
-  const executeBody = src.slice(executeIndex);
+  const executeIndex = src.indexOf("const execute = async () =>");
+  const executeBody = executeIndex >= 0 ? src.slice(executeIndex) : src;
   assert.match(executeBody, /if\s*\(\s*deferPreExecutionPlanning\s*&&\s*inspection\.allowed\s*\)/,
     "execute() must contain the deferred preflight branch");
   assert.match(executeBody, /phase:\s*EXECUTION_PHASES\.SEMANTIC_ROUTER_PATCH/,
@@ -429,8 +431,12 @@ await it("Case 8b (latency): browser capture background tasks use the same defer
     "browser deferred worker SR must emit a semantic_router_patch step");
   assert.match(executeBody, /fn:\s*\(\)\s*=>\s*applySemanticRouterPreflight/,
     "browser worker preflight must still call SemanticRouter before executor selection");
+  assert.match(executeBody, /srPromise\.then/,
+    "browser SR result must be applied as a fire-and-forget patch, not awaited before executor start");
   assert.match(executeBody, /task\.task_spec\s*=\s*refreshedSpec/,
     "browser worker preflight must refresh the persisted task spec");
+  assert.ok(!/task\.executor\s*=\s*executorOverride\s*\?\?\s*refreshedSpec/.test(executeBody),
+    "browser SR patcher MUST NOT mutate task.executor mid-flight");
 });
 
 // ────────────────────────────────────────────────────────────────────
