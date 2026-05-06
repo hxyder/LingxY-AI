@@ -23,6 +23,7 @@ logs/
 .idea/
 .vscode/
 .claude/settings.local.json
+.claude/*.lock
 *.suo
 *.user
 *.userosscache

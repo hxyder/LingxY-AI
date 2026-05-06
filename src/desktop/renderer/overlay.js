@@ -4931,6 +4931,7 @@ function noteEchoSpeechHeard(text = "") {
 async function submitEchoVoiceCommand() {
   if (!echoSessionActive || echoVoiceAutoSubmitInFlight) return;
   echoVoiceAutoSubmitInFlight = true;
+  let deferredForMoreSpeech = false;
   clearEchoVoiceAutoSubmit();
   try {
     showEchoHud({ text: "正在转写…", kind: "info", durationMs: 2000, throttleMs: 0 });
@@ -4955,6 +4956,7 @@ async function submitEchoVoiceCommand() {
     const heardRecently = echoCommandLastSpeechAt
       && Date.now() - echoCommandLastSpeechAt < Math.max(900, ECHO_COMMAND_SILENCE_MS - 250);
     if (heardRecently) {
+      deferredForMoreSpeech = true;
       scheduleEchoVoiceAutoSubmit(ECHO_COMMAND_SILENCE_MS, {
         message: "继续听你说完…",
         durationMs: 1500
@@ -4976,6 +4978,7 @@ async function submitEchoVoiceCommand() {
     await handleUserSend();
   } finally {
     echoVoiceAutoSubmitInFlight = false;
+    if (deferredForMoreSpeech) return;
     if (!noteActive) {
       resetVoiceState();
       if (voiceMode) {

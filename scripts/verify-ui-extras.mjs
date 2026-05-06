@@ -232,6 +232,8 @@ assert.ok(/resolveCard\(["']voice_continue["']/.test(popupCardJs)
   "echo result cards: pressing V on a result card must start a voice follow-up without opening the overlay");
 assert.ok(/else if \(voiceMode \|\| voiceRecording\)[\s\S]{0,80}submitEchoVoiceCommand\(\)/.test(overlayJs),
   "echo result cards: popup-card V starts composer voice capture, so global Enter must submit even when the full voice panel is hidden");
+assert.ok(/let deferredForMoreSpeech = false;[\s\S]{0,1200}deferredForMoreSpeech = true;[\s\S]{0,260}scheduleEchoVoiceAutoSubmit\(ECHO_COMMAND_SILENCE_MS[\s\S]{0,1200}echoVoiceAutoSubmitInFlight = false;[\s\S]{0,120}if \(deferredForMoreSpeech\) return;/.test(overlayJs),
+  "echo voice state machine: when speech is still active, deferred auto-submit must keep the Echo session and timer alive");
 assert.ok(/function renderActions\(buttons = \[\]\)[\s\S]{0,420}seenActions[\s\S]{0,260}actionKey[\s\S]{0,260}seenActions\.has\(dedupeKey\)[\s\S]{0,160}continue/.test(popupCardJs)
     && /seenLabels/.test(popupCardJs)
     && /seenLabels\.has\(labelKey\)/.test(popupCardJs)
