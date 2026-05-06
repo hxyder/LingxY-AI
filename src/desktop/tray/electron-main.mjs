@@ -2812,28 +2812,19 @@ export function createElectronShellRuntime({
       ipcMain.handle(IPC_CHANNELS.shellOpenUrl, async (event, payload = {}) => {
         const url = normalizeOpenableUrl(payload.url);
         if (!url) return { ok: false, error: "invalid_url" };
-        const protocol = new URL(url).protocol;
-        const canOpenInLingxy = protocol === "http:" || protocol === "https:";
-        let mode = payload.mode === "system" || payload.mode === "lingxy_browser"
-          ? payload.mode
-          : null;
-        if (!mode && payload.ask === true && canOpenInLingxy) {
-          const owner = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
-          const choice = await dialog.showMessageBox(owner ?? undefined, {
-            type: "question",
-            title: "Open link",
-            message: "打开这个链接",
-            detail: url,
-            buttons: ["LingxY 新窗口", "系统浏览器", "取消"],
-            defaultId: 0,
-            cancelId: 2,
-            noLink: true
-          });
-          if (choice.response === 2) return { ok: false, cancelled: true };
-          mode = choice.response === 1 ? "system" : "lingxy_browser";
-        }
-        if (mode === "lingxy_browser" && canOpenInLingxy) {
-          return showLinkBrowserWindow(url);
+        // Always defer to the OS default browser. The previous in-app
+        // BrowserWindow path produced a window that on some Windows 11
+        // configs rendered without OS chrome (no close/minimize), trapping
+        // the user. The system browser is the safer default and what users
+        // expect when clicking a link.
+        if (payload.mode === "lingxy_browser") {
+          // Honour the explicit override but only when the caller really
+          // asked for it (e.g. an internal flow that needs the in-app
+          // BrowserWindow). Default UI clicks no longer reach this branch.
+          const protocol = new URL(url).protocol;
+          if (protocol === "http:" || protocol === "https:") {
+            return showLinkBrowserWindow(url);
+          }
         }
         await shell.openExternal(url);
         return { ok: true, mode: "system" };

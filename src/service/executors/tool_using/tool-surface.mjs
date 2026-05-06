@@ -12,9 +12,17 @@ export function neededCapabilitiesOf(task) {
 }
 
 const CAPABILITY_TOOL_MATCHERS = Object.freeze({
+  // open_url intentionally NOT listed here: the contract validator only
+  // counts actual web fetchers (web_search / web_search_fetch /
+  // fetch_url_content) as satisfying external_web_read. Listing open_url
+  // here misled the LLM planner into picking it for research-class
+  // queries, after which the success contract still failed and the task
+  // ended in partial_success with Google.com uselessly opened (see
+  // task_f90251bc, 2026-05-06). open_url remains exposed as a
+  // browser_control capability for explicit "打开 URL" commands.
   external_web_read: (tool) =>
     tool.policy_group === "external_web_read"
-    || ["web_search", "web_search_fetch", "fetch_url_content", "open_url"].includes(tool.id),
+    || ["web_search", "web_search_fetch", "fetch_url_content"].includes(tool.id),
   file_read: (tool) =>
     /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|read_file_text|read_folder_text|search_file_content|index_file_content|verify_file_exists|file_op)$/.test(tool.id),
   artifact_generation: (tool) =>
