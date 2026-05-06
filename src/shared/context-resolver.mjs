@@ -18,6 +18,19 @@ function normalizePaths(value) {
     : [];
 }
 
+export function normalizeAttachmentSubmission({ filePaths = [], imagePaths = [] } = {}) {
+  const files = normalizePaths(filePaths);
+  const images = normalizePaths(imagePaths);
+  if (files.length === 0 && images.length === 0) return {};
+  if (files.length === 0) return { imagePaths: images, source: "file" };
+  if (images.length === 0 && files.every(isImageFilePath)) {
+    return { imagePaths: files, source: "file" };
+  }
+  return images.length > 0
+    ? { filePaths: files, imagePaths: images, source: "file" }
+    : { filePaths: files };
+}
+
 export function resolveOverlayContextSubmission({
   explicitBrowserContextRequest = false,
   activeBrowserCapture = null,
@@ -44,9 +57,10 @@ export function resolveOverlayContextSubmission({
 
   const activeFilePaths = normalizePaths(activeFileSelection?.filePaths);
   if (activeFilePaths.length > 0) {
+    const allImages = activeFilePaths.every(isImageFilePath);
     return {
-      kind: "file_paths",
-      reason: "explicit_file_context",
+      kind: allImages ? "image_paths" : "file_paths",
+      reason: allImages ? "explicit_image_context" : "explicit_file_context",
       sourceApp: activeFileSelection?.sourceApp,
       captureMode: activeFileSelection?.captureMode,
       filePaths: activeFilePaths

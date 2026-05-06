@@ -610,35 +610,55 @@ async function onAnalyzeSelection({ resetConversation = true } = {}) {
     const [result] = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
+        const cached = window.__ucaSelectionState ?? null;
         const sel = window.getSelection();
-        const text = sel ? sel.toString().trim() : "";
-        return { text, url: location.href, title: document.title };
+        const text = cached?.text ?? (sel ? sel.toString().trim() : "");
+        return {
+          text,
+          url: location.href,
+          title: document.title,
+          selectedAnchorUrl: cached?.selectedAnchorUrl ?? "",
+          anchorText: cached?.anchorText ?? "",
+          contextBefore: cached?.contextBefore ?? "",
+          contextAfter: cached?.contextAfter ?? ""
+        };
       }
     });
     const payload = result?.result ?? {};
-    if (!payload.text) {
+    const selectedAnchorUrl = `${payload.selectedAnchorUrl ?? ""}`.trim();
+    if (!payload.text && !selectedAnchorUrl) {
       appendTurnEl({ role: "error", content: "当前页面没有选中的文本。先选一段再点。" });
       return;
     }
-    const userText = `请分析以下网页选区内容，给出要点和我可能感兴趣的延伸问题：\n\n标题：${payload.title}\nURL：${payload.url}\n\n选区：\n${payload.text}`;
-    const preview = payload.text.slice(0, 40) + (payload.text.length > 40 ? "…" : "");
+    const isSelectedLink = /^https?:\/\//i.test(selectedAnchorUrl);
+    const targetUrl = isSelectedLink ? selectedAnchorUrl : payload.url;
+    const sourceLabel = isSelectedLink ? "网页链接" : "网页选区内容";
+    const selectedText = payload.text || payload.anchorText || selectedAnchorUrl;
+    const userText = `请分析以下${sourceLabel}，给出要点和我可能感兴趣的延伸问题：\n\n标题：${payload.title}\nURL：${targetUrl}\n\n选区：\n${selectedText}`;
+    const preview = selectedText.slice(0, 40) + (selectedText.length > 40 ? "…" : "");
     const browserCapture = {
-      sourceType: "text_selection",
+      sourceType: isSelectedLink ? "link" : "text_selection",
       browser: "chrome.exe",
-      url: payload.url ?? "",
+      url: targetUrl ?? "",
       pageTitle: payload.title ?? "",
-      text: payload.text,
-      selectionText: payload.text,
+      text: selectedText,
+      selectionText: selectedText,
+      anchorText: payload.anchorText ?? "",
+      selectedAnchorUrl,
+      contextBefore: payload.contextBefore ?? "",
+      contextAfter: payload.contextAfter ?? "",
       metadata: {
         source: "browser_sidepanel",
-        contentKind: "selection"
+        contentKind: isSelectedLink ? "link" : "selection"
       }
     };
     await sendTurn({
       userContent: userText,
-      requestText: "请分析当前网页选区内容，基于随请求附带的选区文本给出要点和延伸问题。",
-      displayLabel: `✂️ 分析选区：${preview}`,
-      attached: payload.text,
+      requestText: isSelectedLink
+        ? "请分析当前选中的网页链接，优先基于随请求附带的链接 URL 获取或引用目标内容；如果无法读取目标页，请明确说明。"
+        : "请分析当前网页选区内容，基于随请求附带的选区文本给出要点和延伸问题。",
+      displayLabel: `${isSelectedLink ? "🔗" : "✂️"} 分析${isSelectedLink ? "链接" : "选区"}：${preview}`,
+      attached: selectedText,
       maxTokens: 1024,
       browserCapture
     });

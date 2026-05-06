@@ -202,6 +202,9 @@ function resolveCaptureAction(actionId) {
 
 function buildCapturePayload({ actionId, info = {}, tab, selectionState, overrideSourceType = null }) {
   const selected = resolveCaptureAction(actionId);
+  const sourceType = overrideSourceType ?? selected.sourceType;
+  const selectedAnchorUrl = `${selectionState?.selectedAnchorUrl ?? ""}`.trim();
+  const linkUrl = info.linkUrl ?? (sourceType === "link" && selectedAnchorUrl ? selectedAnchorUrl : "");
 
   return {
     userCommand: selected.userCommand,
@@ -220,15 +223,16 @@ function buildCapturePayload({ actionId, info = {}, tab, selectionState, overrid
     userTimezone: getSystemTimezone(),
     userLocation: _locationCache ?? null,
     capture: {
-      sourceType: overrideSourceType ?? selected.sourceType,
+      sourceType,
       browser: "chrome.exe",
-      url: info.linkUrl ?? info.pageUrl ?? tab?.url ?? selectionState?.url ?? "",
+      url: linkUrl || info.pageUrl || tab?.url || selectionState?.url || "",
       pageTitle: tab?.title ?? selectionState?.pageTitle ?? "",
       text: selectionState?.text ?? info.selectionText ?? "",
       selectionText: selectionState?.text ?? info.selectionText ?? "",
       contextBefore: selectionState?.contextBefore ?? "",
       contextAfter: selectionState?.contextAfter ?? "",
       anchorText: info.linkText ?? selectionState?.anchorText ?? "",
+      selectedAnchorUrl,
       imageUrl: info.srcUrl ?? selectionState?.imageUrl ?? "",
       html: selectionState?.html ?? "",
       tabId: tab?.id ?? selectionState?.tabId ?? null,
@@ -593,6 +597,28 @@ function normalizeBrowserCaptureForChat(capture = null) {
       ...(capture.metadata && typeof capture.metadata === "object" ? capture.metadata : {}),
       source: capture.metadata?.source ?? "browser_sidepanel"
     }
+  };
+}
+
+function createSelectionEnvelope({ info = {}, tab = {}, selectionState = {} } = {}) {
+  const text = selectionState?.text ?? info.selectionText ?? "";
+  const selectedAnchorUrl = `${selectionState?.selectedAnchorUrl ?? ""}`.trim();
+  const linkUrl = `${info.linkUrl ?? selectedAnchorUrl ?? ""}`.trim();
+  return {
+    text,
+    selectionText: text,
+    url: linkUrl || info.pageUrl || tab?.url || selectionState?.url || "",
+    pageUrl: info.pageUrl ?? tab?.url ?? selectionState?.url ?? "",
+    pageTitle: tab?.title ?? selectionState?.pageTitle ?? "",
+    selectedAnchorUrl,
+    imageUrl: info.srcUrl ?? selectionState?.imageUrl ?? "",
+    anchorText: info.linkText ?? selectionState?.anchorText ?? "",
+    contextBefore: selectionState?.contextBefore ?? "",
+    contextAfter: selectionState?.contextAfter ?? "",
+    html: selectionState?.html ?? "",
+    selectionKey: selectionState?.selectionKey ?? "",
+    rect: selectionState?.rect ?? null,
+    tabId: tab?.id ?? selectionState?.tabId ?? null
   };
 }
 
@@ -1004,13 +1030,7 @@ export function registerExtensionRuntime(chromeApi = chrome) {
       func: () => window.__ucaSelectionState ?? null
     });
 
-    const quickActionSelectionState = {
-      text: selectionState?.text ?? info.selectionText ?? "",
-      url: info.linkUrl ?? info.pageUrl ?? tab?.url ?? "",
-      pageTitle: tab?.title ?? "",
-      imageUrl: info.srcUrl ?? "",
-      anchorText: info.linkText ?? ""
-    };
+    const quickActionSelectionState = createSelectionEnvelope({ info, tab, selectionState });
     const inlineRouteContext = await resolveQuickActionRouteContext({
       action: info.menuItemId,
       origin: "context_menu",

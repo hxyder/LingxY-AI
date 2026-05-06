@@ -2853,7 +2853,13 @@ async function handleTaskEventFrame(rawEvent) {
   }
 
   if (frame.event === "artifact_created") {
-    if (isForActiveConv) addBubble("assistant", `Artifact created: ${summary.body}`);
+    // Artifact events are operational status, not assistant speech. The
+    // artifact itself is surfaced by preview/result cards and task detail;
+    // rendering "Artifact created: ..." in the chat makes normal users see
+    // internal event names.
+    if (isForActiveConv) {
+      lastArtifactPath = frame.data?.path ?? lastArtifactPath;
+    }
   }
 
   if (frame.event === "evidence_summary" && isForActiveConv) {

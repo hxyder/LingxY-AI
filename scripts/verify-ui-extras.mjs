@@ -507,6 +507,8 @@ assert.ok(/isEchoOriginEventFrame/.test(overlayJs) && /voice_session_id/.test(ov
   "echo mode: any task event carrying Echo origin metadata must keep the result HUD eligible");
 assert.ok(/frame\.event === "success"[\s\S]{0,260}showEchoResultHudOnce/.test(overlayJs),
   "echo mode: terminal success events without inline_result must still surface through the Echo HUD");
+assert.ok(!/addBubble\("assistant", `Artifact created:/.test(overlayJs),
+  "overlay chat surface must not expose internal artifact_created event labels as assistant text");
 assert.ok(/captureActiveWindowHintForVoice/.test(overlayJs) && /voice_wake/.test(overlayJs) && /echo_voice_wake/.test(overlayJs),
   "voice mode: voice and Echo sessions must capture active browser context before page-analysis commands");
 assert.ok(/captureActiveWindowHintForVoice[\s\S]{0,420}includeSelection:\s*true/.test(overlayJs)
@@ -544,9 +546,13 @@ assert.ok(/startNewConversation\(\{ preservePendingInputContext \}\)/.test(overl
     && /onWakeDetected\("voice", "dock_file_voice", \{[\s\S]{0,120}preserveContext:\s*true/.test(read("src/desktop/renderer/dock.js")),
   "echo dock drop: file handoff must survive V wake and surface a HUD receipt without opening overlay");
 assert.ok(/consoleChatAttachmentPayload/.test(consoleJs)
-    && /paths\.every\(isImageFilePath\)[\s\S]{0,80}\{ imagePaths: paths, source: "file" \}/.test(consoleJs)
+    && /normalizeAttachmentSubmission\(\{ filePaths \}\)/.test(consoleJs)
+    && /export function normalizeAttachmentSubmission/.test(read("src/shared/context-resolver.mjs"))
     && /\.\.\.consoleChatAttachmentPayload\(attachedFilePaths\)/.test(consoleJs),
   "console chat attachments: all-image attachments must route through imagePaths instead of the slower file ingest path");
+assert.ok(/activeFilePaths\.every\(isImageFilePath\)/.test(read("src/shared/context-resolver.mjs"))
+    && /reason: allImages \? "explicit_image_context" : "explicit_file_context"/.test(read("src/shared/context-resolver.mjs")),
+  "overlay active current-file image selections must use imagePaths instead of the slower file ingest path");
 assert.ok(!/id="providerOnboardingList"/.test(consoleHtml),
   "provider settings must not show global capability onboarding cards inside AI Providers");
 assert.equal((consoleHtml.match(/Add any OpenAI-compatible or Anthropic API\. Saved instantly/g) ?? []).length, 1,

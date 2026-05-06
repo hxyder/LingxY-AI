@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  normalizeAttachmentSubmission,
   resolveOverlayContextSubmission
 } from "../../src/shared/context-resolver.mjs";
 
@@ -37,6 +38,35 @@ test("pending image files route separately from document files", () => {
   assert.equal(resolveOverlayContextSubmission({
     pendingFileSelection: { filePaths: ["E:/report.pdf", "E:/photo.jpg"] }
   }).kind, "file_paths");
+});
+
+test("active current-file image selections use image context, not file ingest", () => {
+  const decision = resolveOverlayContextSubmission({
+    explicitFileContextRequest: true,
+    activeFileSelection: { filePaths: ["E:/Screenshots/current.webp"] }
+  });
+
+  assert.equal(decision.kind, "image_paths");
+  assert.equal(decision.reason, "explicit_image_context");
+  assert.deepEqual(decision.filePaths, ["E:/Screenshots/current.webp"]);
+});
+
+test("attachment normalization keeps images out of file ingest when possible", () => {
+  assert.deepEqual(normalizeAttachmentSubmission({
+    filePaths: ["E:/a.png", "E:/b.jpg"]
+  }), {
+    imagePaths: ["E:/a.png", "E:/b.jpg"],
+    source: "file"
+  });
+
+  assert.deepEqual(normalizeAttachmentSubmission({
+    filePaths: ["E:/report.pdf"],
+    imagePaths: ["E:/figure.png"]
+  }), {
+    filePaths: ["E:/report.pdf"],
+    imagePaths: ["E:/figure.png"],
+    source: "file"
+  });
 });
 
 test("explicit current-file requests do not fall back to stale seed capture", () => {

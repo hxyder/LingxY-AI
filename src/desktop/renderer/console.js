@@ -78,7 +78,7 @@ import {
   renderConversationsListHtml
 } from "./console-conversation-viewer.mjs";
 import {
-  isImageFilePath
+  normalizeAttachmentSubmission
 } from "../../shared/context-resolver.mjs";
 import {
   extractTaskProviderInfo,
@@ -2459,13 +2459,7 @@ async function revealConversationArtifactPath(filePath) {
 }
 
 function consoleChatAttachmentPayload(filePaths = []) {
-  const paths = Array.isArray(filePaths)
-    ? filePaths.filter((filePath) => typeof filePath === "string" && filePath.length > 0)
-    : [];
-  if (paths.length === 0) return {};
-  return paths.every(isImageFilePath)
-    ? { imagePaths: paths, source: "file" }
-    : { filePaths: paths };
+  return normalizeAttachmentSubmission({ filePaths });
 }
 
 async function submitConsoleChat() {

@@ -498,6 +498,13 @@ assert.equal(serviceWorkerJs.includes("uca.browser.contextSnapshot"), true);
 assert.equal(serviceWorkerJs.includes("RUNTIME_BROWSER_CONTEXT_URL"), true);
 assert.equal(serviceWorkerJs.includes("hasStandaloneProviderConfig"), true);
 assert.equal(serviceWorkerJs.includes("standaloneConfig?.apiKey"), false);
+assert.equal(serviceWorkerJs.includes("function createSelectionEnvelope"), true);
+assert.equal(serviceWorkerJs.includes("createSelectionEnvelope({ info, tab, selectionState })"), true);
+assert.equal(serviceWorkerJs.includes("selectedAnchorUrl,"), true);
+
+const sidepanelJs = await readFile(path.join(repoRoot, "browser_ext", "sidepanel", "index.js"), "utf8");
+assert.equal(sidepanelJs.includes("window.__ucaSelectionState"), true);
+assert.equal(sidepanelJs.includes("sourceType: isSelectedLink ? \"link\" : \"text_selection\""), true);
 assert.equal(serviceWorkerJs.includes("resolveQuickActionRouteContext"), true);
 assert.equal(serviceWorkerJs.includes("resolvePageExplainRouteContext"), true);
 assert.equal(serviceWorkerJs.includes("function isValidRoutePlan("), false,
@@ -520,7 +527,6 @@ assert.equal(manifest.commands["explain-page"].suggested_key.default, "Ctrl+Shif
 const popupHtml = await readFile(path.join(repoRoot, "browser_ext", "popup", "index.html"), "utf8");
 assert.equal(popupHtml.includes("快捷键 Ctrl+Shift+E"), true);
 const popupJs = await readFile(path.join(repoRoot, "browser_ext", "popup", "index.js"), "utf8");
-const sidepanelJs = await readFile(path.join(repoRoot, "browser_ext", "sidepanel", "index.js"), "utf8");
 const runModeViewJs = await readFile(path.join(repoRoot, "browser_ext", "shared", "run-mode-view.js"), "utf8");
 assert.equal(popupJs.includes("../shared/run-mode-view.js"), true);
 assert.equal(sidepanelJs.includes("../shared/run-mode-view.js"), true);
