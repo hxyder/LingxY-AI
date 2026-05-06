@@ -283,7 +283,11 @@ export async function submitFileTask({
             ? "file_ingest_started"
             : phase === "file_ingest_finished"
               ? "file_ingest_finished"
-              : "file_ingest_progress";
+              : phase === "file_expand_started"
+                ? "file_expand_started"
+                : phase === "file_expand_finished"
+                  ? "file_expand_finished"
+                  : "file_ingest_progress";
           emitTaskEvent({
             runtime,
             taskId: task.task_id,

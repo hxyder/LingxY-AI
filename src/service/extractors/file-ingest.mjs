@@ -318,7 +318,16 @@ export async function buildFileContextPacket({
   extractionConcurrency = DEFAULT_EXTRACTION_CONCURRENCY,
   onProgress = null
 }) {
+  onProgress?.({
+    phase: "file_expand_started",
+    input_count: Array.isArray(filePaths) ? filePaths.length : 0
+  });
   const expandedFilePaths = await expandInputFilePaths(filePaths);
+  onProgress?.({
+    phase: "file_expand_finished",
+    expanded_count: expandedFilePaths.length,
+    input_count: Array.isArray(filePaths) ? filePaths.length : 0
+  });
 
   // When the inputs are folders and expansion found real files, use those.
   // When expansion is empty (empty folder, or only ignored subdirs), fall

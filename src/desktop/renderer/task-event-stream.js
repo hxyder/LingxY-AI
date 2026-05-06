@@ -263,6 +263,16 @@ export function formatTaskEventSummary(rawEvent, context = {}) {
         title: "读取文件",
         body: `准备读取 ${payload.total ?? payload.input_count ?? 0} 个文件`
       };
+    case "file_expand_started":
+      return {
+        title: "整理文件",
+        body: `正在检查 ${payload.input_count ?? 0} 个输入`
+      };
+    case "file_expand_finished":
+      return {
+        title: "整理文件",
+        body: `找到 ${payload.expanded_count ?? 0} 个可读取文件`
+      };
     case "file_ingest_progress":
       return {
         title: "读取文件",

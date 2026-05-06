@@ -1539,6 +1539,7 @@ function eventToPhase(eventType) {
     "task_created", "accepted", "started", "provider_resolved",
     "planner_request_started", "sr_patch_applied",
     "background_context_added", "phase_timing",
+    "file_expand_started", "file_expand_finished",
     "file_ingest_started", "file_ingest_progress", "file_ingest_finished"
   ].includes(eventType)) return "PLANNING";
   if ([
@@ -2250,6 +2251,11 @@ function renderTaskTimelineEvent(frame, { showOverlay = false, replayAnchor = nu
     "started",
     "provider_resolved",
     "phase_timing",
+    "file_expand_started",
+    "file_expand_finished",
+    "file_ingest_started",
+    "file_ingest_progress",
+    "file_ingest_finished",
     "status_changed",
     "step_started",
     "step_finished",

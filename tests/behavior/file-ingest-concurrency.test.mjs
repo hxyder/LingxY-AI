@@ -54,7 +54,9 @@ test("file ingest extracts multiple files with bounded concurrency and preserves
       "d.txt"
     ]);
     assert.match(packet.text, /## a\.txt\ncontents:a\.txt[\s\S]*## d\.txt\ncontents:d\.txt/);
-    assert.equal(progress[0].phase, "file_ingest_started");
+    assert.equal(progress[0].phase, "file_expand_started");
+    assert.equal(progress[1].phase, "file_expand_finished");
+    assert.ok(progress.some((event) => event.phase === "file_ingest_started"));
     assert.equal(progress.at(-1).phase, "file_ingest_finished");
     assert.equal(progress.filter((event) => event.phase === "file_ingest_progress").length, 4);
   } finally {
