@@ -228,8 +228,10 @@ assert.ok(/resolveCard\(["']voice_continue["']/.test(popupCardJs)
   "echo result cards: pressing V on a result card must start a voice follow-up without opening the overlay");
 assert.ok(/else if \(voiceMode \|\| voiceRecording\)[\s\S]{0,80}submitEchoVoiceCommand\(\)/.test(overlayJs),
   "echo result cards: popup-card V starts composer voice capture, so global Enter must submit even when the full voice panel is hidden");
-assert.ok(/function renderActions\(buttons = \[\]\)[\s\S]{0,260}seenLabels[\s\S]{0,260}seenLabels\.has\(label\)[\s\S]{0,160}continue/.test(popupCardJs),
-  "popup-card actions must dedupe duplicate labels such as repeated open-dialog buttons");
+assert.ok(/function renderActions\(buttons = \[\]\)[\s\S]{0,420}seenActions[\s\S]{0,260}actionKey[\s\S]{0,260}seenActions\.has\(dedupeKey\)[\s\S]{0,160}continue/.test(popupCardJs)
+    && /function openOverlayAction/.test(popupCardJs)
+    && /actionKey:\s*["']open_overlay["']/.test(popupCardJs),
+  "popup-card actions must dedupe by stable semantic action keys instead of relying on repeated open-dialog labels");
 assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml),
   "voice language: overlay voice input must default to simplified Chinese with English words preserved");
 assert.ok(/if \(\s*\/\^zh\/i\.test\([\s\S]{0,120}\)\) return "zh-CN";/.test(overlayJs),
@@ -567,8 +569,9 @@ assert.ok(/popupSuccessCardTaskId === taskId && !terminal/.test(overlayJs)
 assert.ok(!/clearTaskConversationBinding\(taskConversationMap, frameTaskId\)/.test(overlayJs),
   "echo result cards: terminal cleanup must not discard task-to-conversation bindings needed by delayed continuations");
 assert.ok(/const shouldOpenOverlay = payload\?\.openWindow === "overlay" \|\| payload\?\.handoff;/.test(popupCardJs)
-    && /else if \(!shouldOpenOverlay\)[\s\S]{0,160}openTaskDetail/.test(popupCardJs)
-    && /\(payload\?\.taskId \|\| payload\?\.openWindow\) && !shouldOpenOverlay/.test(popupCardJs),
+    && /else if \(!shouldOpenOverlay\)[\s\S]{0,160}detailAction/.test(popupCardJs)
+    && /\(payload\?\.taskId \|\| payload\?\.openWindow\) && !shouldOpenOverlay/.test(popupCardJs)
+    && /function detailAction/.test(popupCardJs),
   "popup cards: open-overlay actions must not duplicate the generic detail button");
 assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml)
     && /selectedVoiceLanguage/.test(overlayJs)

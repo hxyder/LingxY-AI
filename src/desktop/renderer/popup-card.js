@@ -202,16 +202,75 @@ function renderBody(lines) {
 
 function renderActions(buttons = []) {
   actionsEl.innerHTML = "";
-  const seenLabels = new Set();
+  const seenActions = new Set();
   for (const spec of buttons) {
     const label = String(spec?.label ?? "").trim();
     const isPager = label === "‹" || label === "›";
-    if (label && !isPager) {
-      if (seenLabels.has(label)) continue;
-      seenLabels.add(label);
+    const actionKey = String(spec?.actionKey ?? spec?.id ?? "").trim();
+    const dedupeKey = isPager
+      ? `pager:${label}:${seenActions.size}`
+      : actionKey || (label ? `label:${label}` : "");
+    if (dedupeKey && !isPager) {
+      if (seenActions.has(dedupeKey)) continue;
+      seenActions.add(dedupeKey);
     }
     actionsEl.appendChild(makeButton(spec));
   }
+}
+
+function taskMetaFromPayload(payload = {}, fallbackTaskId = null) {
+  return {
+    taskId: payload?.taskId ?? fallbackTaskId ?? null,
+    conversationId: payload?.conversationId ?? null,
+    artifactPath: payload?.artifactPath ?? null,
+    mime: payload?.mime ?? null,
+    inlinePreview: payload?.inlinePreview ?? null,
+    handoff: payload?.handoff ?? null,
+    title: payload?.title ?? null,
+    lines: payload?.lines ?? null
+  };
+}
+
+function openOverlayAction(payload = {}, { variant = "primary", fallbackTaskId = null } = {}) {
+  return {
+    actionKey: "open_overlay",
+    label: "打开对话框",
+    variant,
+    onClick: () => resolveCard("open_overlay", taskMetaFromPayload(payload, fallbackTaskId))
+  };
+}
+
+function copyAction(payload = {}) {
+  return {
+    actionKey: "copy_result",
+    label: "复制",
+    variant: "ghost",
+    onClick: () => resolveCard("copy", {
+      artifactPath: payload?.artifactPath ?? null,
+      inlinePreview: payload?.inlinePreview ?? null
+    })
+  };
+}
+
+function continueAction(payload = {}, { fallbackTaskId = null } = {}) {
+  return {
+    actionKey: "continue_text",
+    label: "继续追问",
+    variant: "ghost",
+    onClick: () => resolveCard("continue", {
+      taskId: payload?.taskId ?? fallbackTaskId ?? null,
+      conversationId: payload?.conversationId ?? null
+    })
+  };
+}
+
+function detailAction(payload = {}, { label = "查看详情", variant = "primary", fallbackTaskId = null } = {}) {
+  return {
+    actionKey: "open_detail",
+    label,
+    variant,
+    onClick: () => openTaskDetail(payload?.taskId ?? fallbackTaskId ?? null, payload)
+  };
 }
 
 // 83.2 — Batched notification state. When kind === "batched", we hold the
@@ -253,61 +312,32 @@ function renderBatchedEntry() {
   // Per-entry action (artifact → 预览, conversational → 查看详情, fallback → 好)
   if (entry.artifactPath) {
     buttons.push({
+      actionKey: "preview_artifact",
       label: "预览",
       variant: "primary",
       onClick: () => resolveCard("preview", { artifactPath: entry.artifactPath, mime: entry.mime ?? null })
     });
     if (entry.openWindow === "overlay" || entry.handoff) {
-      buttons.push({
-        label: "打开对话框",
+      buttons.push(openOverlayAction(entry, {
         variant: "ghost",
-        onClick: () => resolveCard("open_overlay", {
-          taskId: entry.taskId ?? batchState.taskId ?? null,
-          artifactPath: entry.artifactPath,
-          mime: entry.mime ?? null,
-          inlinePreview: entry.inlinePreview ?? null,
-          handoff: entry.handoff ?? null,
-          title: entry.title ?? null,
-          lines: entry.lines ?? null
-        })
-      });
+        fallbackTaskId: batchState.taskId
+      }));
     }
   } else {
-    buttons.push({
-      label: entry.openWindow === "overlay" ? "打开对话框" : "查看详情",
-      variant: "primary",
-      onClick: () => entry.openWindow === "overlay" || entry.handoff
-        ? resolveCard("open_overlay", {
-            taskId: entry.taskId ?? batchState.taskId ?? null,
-            inlinePreview: entry.inlinePreview ?? null,
-            handoff: entry.handoff ?? null,
-            title: entry.title ?? null,
-            lines: entry.lines ?? null
-          })
-        : openTaskDetail(batchState.taskId, entry)
-    });
+    buttons.push(entry.openWindow === "overlay" || entry.handoff
+      ? openOverlayAction(entry, { fallbackTaskId: batchState.taskId })
+      : detailAction(entry, {
+          label: "查看详情",
+          fallbackTaskId: batchState.taskId
+        }));
   }
   if (entry.inlinePreview || entry.artifactPath) {
-    buttons.push({
-      label: "复制",
-      variant: "ghost",
-      onClick: () => resolveCard("copy", {
-        artifactPath: entry.artifactPath ?? null,
-        inlinePreview: entry.inlinePreview ?? null
-      })
-    });
+    buttons.push(copyAction(entry));
   }
   if (entry.allowContinue !== false) {
-    buttons.push({
-      label: "继续追问",
-      variant: "ghost",
-      onClick: () => resolveCard("continue", {
-        taskId: entry.taskId ?? batchState.taskId ?? null,
-        conversationId: entry.conversationId ?? null
-      })
-    });
+    buttons.push(continueAction(entry, { fallbackTaskId: batchState.taskId }));
   }
-  buttons.push({ label: "关闭", variant: "ghost", onClick: () => closeCard("dismissed") });
+  buttons.push({ actionKey: "dismiss", label: "关闭", variant: "ghost", onClick: () => closeCard("dismissed") });
   renderActions(buttons);
   measureAndResize();
 }
@@ -355,9 +385,9 @@ function applyInit(payload) {
 
   if (kind === "approval") {
     renderActions([
-      { label: "拒绝", variant: "danger", onClick: () => resolveCard("reject") },
-      { label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) },
-      { label: "通过", variant: "primary", onClick: () => resolveCard("approve") }
+      { actionKey: "reject", label: "拒绝", variant: "danger", onClick: () => resolveCard("reject") },
+      detailAction(payload, { label: detailLabel, variant: "ghost" }),
+      { actionKey: "approve", label: "通过", variant: "primary", onClick: () => resolveCard("approve") }
     ]);
   } else if (kind === "success") {
     // UCA-182 Phase 8: success cards now carry artifact actions. When
@@ -369,76 +399,52 @@ function applyInit(payload) {
     const shouldOpenOverlay = payload?.openWindow === "overlay" || payload?.handoff;
     const buttons = [];
     if (hasArtifact) {
-      buttons.push({ label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });
-      buttons.push({ label: "打开文件夹", variant: "ghost", onClick: () => resolveCard("reveal", { artifactPath: payload.artifactPath }) });
+      buttons.push({ actionKey: "preview_artifact", label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });
+      buttons.push({ actionKey: "reveal_artifact", label: "打开文件夹", variant: "ghost", onClick: () => resolveCard("reveal", { artifactPath: payload.artifactPath }) });
     } else if (!shouldOpenOverlay) {
-      buttons.push({ label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) });
+      buttons.push(detailAction(payload, { label: detailLabel, variant: "ghost" }));
     }
     if (shouldOpenOverlay) {
-      buttons.push({
-        label: "打开对话框",
-        variant: hasArtifact ? "ghost" : "primary",
-        onClick: () => resolveCard("open_overlay", {
-          taskId: payload?.taskId ?? null,
-          artifactPath: payload?.artifactPath ?? null,
-          mime: payload?.mime ?? null,
-          inlinePreview: payload?.inlinePreview ?? null,
-          handoff: payload?.handoff ?? null,
-          title: payload?.title ?? null,
-          lines: payload?.lines ?? null
-        })
-      });
+      buttons.push(openOverlayAction(payload, { variant: hasArtifact ? "ghost" : "primary" }));
     }
     if (hasInline) {
-      buttons.push({ label: "复制", variant: "ghost", onClick: () => resolveCard("copy", { artifactPath: payload?.artifactPath ?? null, inlinePreview: payload?.inlinePreview ?? null }) });
+      buttons.push(copyAction(payload));
     }
     if (payload?.allowContinue !== false) {
-      buttons.push({ label: "继续追问", variant: "ghost", onClick: () => resolveCard("continue", {
-        taskId: payload?.taskId ?? null,
-        conversationId: payload?.conversationId ?? null
-      }) });
+      buttons.push(continueAction(payload));
     }
     if (buttons.length === 0) {
-      buttons.push({ label: "好", variant: "primary", onClick: () => closeCard("dismissed") });
+      buttons.push({ actionKey: "dismiss", label: "好", variant: "primary", onClick: () => closeCard("dismissed") });
     }
     renderActions(buttons);
     scheduleAutoHide(payload?.autoHideMs ?? 10000);
   } else if (kind === "error") {
     renderActions([
-      { label: "查看日志", variant: "ghost", onClick: () => resolveCard("view_log", { taskId: payload?.taskId ?? null }) },
-      { label: detailLabel, variant: "ghost", onClick: () => openTaskDetail(payload?.taskId, payload) },
-      { label: "关闭", variant: "primary", onClick: () => closeCard("dismissed") }
+      { actionKey: "view_log", label: "查看日志", variant: "ghost", onClick: () => resolveCard("view_log", { taskId: payload?.taskId ?? null }) },
+      detailAction(payload, { label: detailLabel, variant: "ghost" }),
+      { actionKey: "dismiss", label: "关闭", variant: "primary", onClick: () => closeCard("dismissed") }
     ]);
     scheduleAutoHide(payload?.autoHideMs ?? 12000);
   } else {
     const buttons = [];
     const shouldOpenOverlay = payload?.openWindow === "overlay" || payload?.handoff;
     if (payload?.artifactPath) {
-      buttons.push({ label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });
-      buttons.push({ label: "打开文件夹", variant: "ghost", onClick: () => resolveCard("reveal", { artifactPath: payload.artifactPath }) });
+      buttons.push({ actionKey: "preview_artifact", label: "预览", variant: "primary", onClick: () => resolveCard("preview", { artifactPath: payload.artifactPath, mime: payload.mime ?? null }) });
+      buttons.push({ actionKey: "reveal_artifact", label: "打开文件夹", variant: "ghost", onClick: () => resolveCard("reveal", { artifactPath: payload.artifactPath }) });
     }
     if (shouldOpenOverlay) {
-      buttons.push({
-        label: "打开对话框",
-        variant: buttons.length ? "ghost" : "primary",
-        onClick: () => resolveCard("open_overlay", {
-          taskId: payload?.taskId ?? null,
-          artifactPath: payload?.artifactPath ?? null,
-          mime: payload?.mime ?? null,
-          inlinePreview: payload?.inlinePreview ?? null,
-          handoff: payload?.handoff ?? null,
-          title: payload?.title ?? null,
-          lines: payload?.lines ?? null
-        })
-      });
+      buttons.push(openOverlayAction(payload, { variant: buttons.length ? "ghost" : "primary" }));
     }
     if ((payload?.taskId || payload?.openWindow) && !shouldOpenOverlay) {
-      buttons.push({ label: detailLabel, variant: buttons.length ? "ghost" : "primary", onClick: () => openTaskDetail(payload?.taskId, payload) });
+      buttons.push(detailAction(payload, {
+        label: detailLabel,
+        variant: buttons.length ? "ghost" : "primary"
+      }));
     }
     if (payload?.inlinePreview || payload?.artifactPath) {
-      buttons.push({ label: "复制", variant: "ghost", onClick: () => resolveCard("copy", { artifactPath: payload?.artifactPath ?? null, inlinePreview: payload?.inlinePreview ?? null }) });
+      buttons.push(copyAction(payload));
     }
-    buttons.push({ label: "好", variant: buttons.length ? "ghost" : "primary", onClick: () => closeCard("dismissed") });
+    buttons.push({ actionKey: "dismiss", label: "好", variant: buttons.length ? "ghost" : "primary", onClick: () => closeCard("dismissed") });
     renderActions(buttons);
     scheduleAutoHide(payload?.autoHideMs ?? 6000);
   }
