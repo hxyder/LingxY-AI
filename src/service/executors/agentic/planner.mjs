@@ -55,6 +55,7 @@ import {
 import { detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 import { normalizeSources } from "../../core/evidence/source-envelope.mjs";
 import { appendAuditLog } from "../../security/audit-log.mjs";
+import { validateStepGate } from "../../core/policy/success-contract-validator.mjs";
 // J1: per-iteration parity. Pre-J1 agentic ran for the full
 // maxIterations even when the same tool failed repeatedly OR when the
 // success contract was already known to be unreachable. tool_using
@@ -73,6 +74,28 @@ import {
 import { artifactEventFieldsForToolResult } from "../../core/artifact-action-contract.mjs";
 
 const DEFAULT_MAX_ITERATIONS = 8;
+
+function artifactContractViolation(stepGate) {
+  return (stepGate?.violations ?? []).find((entry) =>
+    entry?.kind === "artifact_required_not_created"
+    || entry?.kind === "artifact_required_kind_mismatch"
+  ) ?? null;
+}
+
+function artifactKindFromTaskSpec(taskSpec = {}) {
+  return taskSpec?.artifact?.kind
+    ?? taskSpec?.contract?.output_contract?.kind
+    ?? "docx";
+}
+
+function buildAgenticArtifactContractGuidance({ taskSpec, violation } = {}) {
+  const kind = artifactKindFromTaskSpec(taskSpec);
+  return [
+    "The task contract is not satisfied yet. Do not finalize with prose only.",
+    `A real file artifact is required (${kind}). Call an artifact-producing tool now, such as generate_document with kind="${kind}" and a structured outline, or another visible artifact tool if it better fits the request.`,
+    violation?.message ? `Current violation: ${violation.message}` : null
+  ].filter(Boolean).join("\n");
+}
 
 /**
  * Main entry point for the agentic planner.
@@ -456,6 +479,50 @@ export async function runAgenticPlanner({
           kind: "action_obligation_terminal",
           obligations: terminalActionObligations
         };
+      }
+      const finalStepGate = validateStepGate(task?.task_spec, validatorTx, {
+        iteration: iterations,
+        maxIterations
+      });
+      const artifactViolation = artifactContractViolation(finalStepGate);
+      if (artifactViolation && iterations < maxIterations - 1) {
+        if (text && text.trim()) {
+          messages.push({ role: "assistant", content: text });
+          transcript.push({ role: "assistant", text });
+        }
+        const artifactKind = artifactKindFromTaskSpec(task?.task_spec);
+        const guidance = buildAgenticArtifactContractGuidance({
+          taskSpec: task?.task_spec,
+          violation: artifactViolation
+        });
+        const guidancePayload = {
+          iteration: iterations,
+          required_policy_groups: ["artifact_generation"],
+          artifact_kind: artifactKind,
+          action_only: false,
+          source: "final_gate"
+        };
+        messages.push({
+          role: "user",
+          content: `[Artifact contract]\n${guidance}`
+        });
+        onEvent?.({
+          event_type: "phase_gate_signal",
+          payload: {
+            iteration: iterations,
+            next_action: finalStepGate.next_action,
+            satisfied: false,
+            violation_kinds: (finalStepGate.violations ?? []).map((v) => v.kind)
+          }
+        });
+        onEvent?.({
+          event_type: "contract_guidance",
+          payload: guidancePayload
+        });
+        if (runtime?.store?.appendAuditLog) {
+          appendAuditLog(runtime, "tool_loop.contract_guidance", guidancePayload, task?.task_id ?? null);
+        }
+        continue;
       }
       finalText = text;
       break;
