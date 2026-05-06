@@ -96,14 +96,14 @@ test("plain attached-file summary remains deterministic local", () => {
   assert.ok(spec.success_contract.required_policy_groups.includes("local_file_text_read"));
 });
 
-test("selected URL text is allowed as an exact source without broad-search opt-in", () => {
+test("selected URL text requires exact-source reading without broad-search opt-in", () => {
   const spec = createTaskSpec("分析一下这个链接", {
     source_type: "text_selection",
     text: "https://news.example.org/story/123"
   }, {});
 
-  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "optional");
-  assert.match(spec.tool_policy?.web_search_fetch?.reason ?? "", /provided a URL\/link/i);
+  assert.equal(spec.tool_policy?.policy_groups?.external_web_read?.mode, "required");
+  assert.match(spec.tool_policy?.web_search_fetch?.reason ?? "", /exact-source reading is required/i);
 });
 
 test("selected paragraph that only contains a URL stays local by default", () => {

@@ -187,6 +187,37 @@ async function run() {
     assert.match(policy.web_search_fetch.reason, /LLM-primary baseline is optional/);
   });
 
+  it("deterministic: selected URL/link context requires exact-source web read", () => {
+    const text = "分析这个链接";
+    const ctx = {
+      source_type: "link",
+      url: "https://news.un.org/en/story/example"
+    };
+    const policy = resolveDeterministicPolicy({
+      signals: makeSignals(text, ctx),
+      contextPacket: ctx,
+      text
+    });
+    assert.equal(policy.web_search_fetch.mode, "required");
+    assert.equal(policy.fetch_url_content.mode, "required");
+    assert.match(policy.web_search_fetch.reason, /exact-source reading is required/);
+  });
+
+  it("deterministic: selected text with page URL metadata does not force web read", () => {
+    const text = "翻译这段";
+    const ctx = {
+      source_type: "text_selection",
+      text: "Seven years old: living like a princess in Pakistan.",
+      url: "https://example.com/article"
+    };
+    const policy = resolveDeterministicPolicy({
+      signals: makeSignals(text, ctx),
+      contextPacket: ctx,
+      text
+    });
+    assert.notEqual(policy.web_search_fetch.mode, "required");
+  });
+
   it("merge/ambiguous: SR timeout still yields optional (P5-2 baseline already optional)", () => {
     const text = "天气怎么样";
     const signals = makeSignals(text);

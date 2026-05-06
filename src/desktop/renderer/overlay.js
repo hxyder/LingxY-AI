@@ -168,6 +168,7 @@ let pendingFileSelection = null;
 let pendingCapture = null;
 let pendingActiveWindowContext = null;
 let pendingActiveWindowContextCapturedAt = 0;
+const EXPLICIT_BROWSER_CONTEXT_FALLBACK_MAX_AGE_MS = 30 * 1000;
 let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
 let notifiedTaskId = null;
@@ -4316,7 +4317,7 @@ async function resolveActiveWindowBrowserCapture() {
 
   const candidate = isActiveBrowserWindow(activeWindow)
     ? activeWindow
-    : freshPendingActiveWindowContext();
+    : freshPendingActiveWindowContext(EXPLICIT_BROWSER_CONTEXT_FALLBACK_MAX_AGE_MS);
   if (!isActiveBrowserWindow(candidate)) return null;
   const browserContext = await fetchRecentBrowserContextForActiveWindow(candidate);
   return buildBrowserContextCapture(browserContext, candidate);

@@ -246,9 +246,10 @@ assert.ok(/const explicitBrowserContextRequest = commandTargetsCurrentBrowserCon
     && /explicitBrowserContextRequest && !activeBrowserCapture/.test(overlayJs),
   "current-page routing: active browser capture must be gated by explicit current-page intent");
 assert.ok(/getActiveWindowContext\(\{[\s\S]{0,220}preferLastExternal:\s*true[\s\S]{0,220}current_page_submit/.test(overlayJs)
-    && /freshPendingActiveWindowContext/.test(overlayJs)
+    && /EXPLICIT_BROWSER_CONTEXT_FALLBACK_MAX_AGE_MS\s*=\s*30\s*\*\s*1000/.test(overlayJs)
+    && /freshPendingActiveWindowContext\(EXPLICIT_BROWSER_CONTEXT_FALLBACK_MAX_AGE_MS\)/.test(overlayJs)
     && /pendingActiveWindowContextCapturedAt/.test(overlayJs),
-  "current-page routing: explicit current-page submits must refresh external browser context instead of using stale seed context");
+  "current-page routing: explicit current-page submits must refresh external browser context and only use a fresh pending external hint");
 assert.ok(!/command:\s*`[^`]*页面[^`]*\$\{activeWindow\.url\}/.test(overlayJs),
   "current-page quick actions: URL must stay as structured context, not user command text");
 
