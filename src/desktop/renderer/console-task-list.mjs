@@ -13,6 +13,28 @@ export function isNestedChildTask(task = {}) {
   return task.is_continuation === true && Boolean(task.parent_task_id);
 }
 
+const ROUTINE_CONVERSATION_SOURCES = new Set(["chat", "clipboard", "context"]);
+
+function taskHasArtifactSurface(task = {}) {
+  return Boolean(
+    Number(task.artifact_count ?? 0) > 0
+    || Number(task.artifacts_count ?? 0) > 0
+    || (Array.isArray(task.artifacts) && task.artifacts.length > 0)
+    || (Array.isArray(task.artifact_paths) && task.artifact_paths.length > 0)
+    || task.task_spec?.artifact?.required === true
+    || task.task_spec_initial?.artifact?.required === true
+  );
+}
+
+export function isRoutineCompletedConversationTask(task = {}) {
+  if (task?.status !== "success") return false;
+  if (taskHasArtifactSurface(task)) return false;
+  if (Number(task.child_count ?? 0) > 0 || (Array.isArray(task.child_task_ids) && task.child_task_ids.length > 0)) return false;
+  if (Boolean(task.parent_task_id) || task.is_continuation === true) return false;
+  const sourceType = task.source_type ?? task.context_packet?.source_type ?? "";
+  return ROUTINE_CONVERSATION_SOURCES.has(sourceType);
+}
+
 function compareNestedTasks(left = {}, right = {}) {
   const leftIndex = Number.isInteger(left.child_index) ? left.child_index : null;
   const rightIndex = Number.isInteger(right.child_index) ? right.child_index : null;
@@ -24,8 +46,11 @@ function compareNestedTasks(left = {}, right = {}) {
   return `${left.created_at ?? ""}`.localeCompare(`${right.created_at ?? ""}`);
 }
 
-export function buildTaskListEntries(list = [], { limit = 12 } = {}) {
-  const tasks = Array.isArray(list) ? list : [];
+export function buildTaskListEntries(list = [], { limit = 12, hideRoutineCompleted = false } = {}) {
+  const sourceTasks = Array.isArray(list) ? list : [];
+  const tasks = hideRoutineCompleted
+    ? sourceTasks.filter((task) => !isRoutineCompletedConversationTask(task))
+    : sourceTasks;
   const max = Math.max(1, Number(limit) || 12);
   const tasksById = new Set(tasks.map((task) => task?.task_id).filter(Boolean));
   const childrenByParent = new Map();

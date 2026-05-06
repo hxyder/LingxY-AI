@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildTaskListEntries,
+  isRoutineCompletedConversationTask,
   isNestedChildTask
 } from "../../src/desktop/renderer/console-task-list.mjs";
 
@@ -81,4 +82,38 @@ test("task list keeps multi-turn continuation chains under the original visible 
     ["task_second", 1, true],
     ["task_third", 2, true]
   ]);
+});
+
+test("task list can hide routine completed chat tasks while keeping operational work", () => {
+  const routine = task("task_chat", {
+    source_type: "clipboard",
+    executor: "tool_using"
+  });
+  const fileTask = task("task_file", {
+    source_type: "file",
+    executor: "code_cli"
+  });
+  const failedChat = task("task_failed", {
+    source_type: "clipboard",
+    status: "failed"
+  });
+  const artifactTask = task("task_artifact", {
+    source_type: "clipboard",
+    task_spec: { artifact: { required: true } }
+  });
+
+  assert.equal(isRoutineCompletedConversationTask(routine), true);
+  assert.equal(isRoutineCompletedConversationTask(fileTask), false);
+  assert.equal(isRoutineCompletedConversationTask(failedChat), false);
+  assert.equal(isRoutineCompletedConversationTask(artifactTask), false);
+
+  const entries = buildTaskListEntries([routine, fileTask, failedChat, artifactTask], {
+    limit: 10,
+    hideRoutineCompleted: true
+  });
+  assert.deepEqual(new Set(entries.map((entry) => entry.task.task_id)), new Set([
+    "task_file",
+    "task_failed",
+    "task_artifact"
+  ]));
 });

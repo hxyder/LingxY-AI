@@ -4580,8 +4580,10 @@ function renderTasks() {
     );
   }
 
-  taskCount.textContent = `${tasks.length}`;
-  if (tasks.length === 0) {
+  const hideRoutineCompletedTasks = filter === "all" && !search && dateFilter === "all" && sourceFilter === "all";
+  const entries = buildTaskListEntries(tasks, { hideRoutineCompleted: hideRoutineCompletedTasks });
+  taskCount.textContent = `${entries.length}`;
+  if (entries.length === 0) {
     if (allTasks.length === 0) {
       // First-run friendly empty state — give them a clear next step.
       // The page-head already has "New task" + Refresh; this just
@@ -4610,6 +4612,20 @@ function renderTasks() {
       });
       state.selectedTaskId = null;
       renderTaskDetail(null);
+    } else if (hideRoutineCompletedTasks && tasks.length > 0) {
+      taskList.innerHTML = `
+        <div class="empty-state" style="text-align:center;padding:28px 16px;">
+          <p class="muted" style="margin:0 0 12px;font-size:13px;line-height:1.55;">
+            没有需要关注的执行任务。普通聊天结果保留在 Chat 对话里。
+          </p>
+          <button type="button" class="btn btn-sm" id="taskListEmptyChatBtn">去 Chat</button>
+        </div>
+      `;
+      taskList.querySelector("#taskListEmptyChatBtn")?.addEventListener("click", () => {
+        switchTab("chat");
+      });
+      state.selectedTaskId = null;
+      renderTaskDetail(null);
     } else {
       // Filter / search hides everything but raw data exists — keep
       // it minimal, the user is in active filter mode.
@@ -4618,11 +4634,11 @@ function renderTasks() {
     return;
   }
 
-  if (!state.selectedTaskId || !tasks.some((t) => t.task_id === state.selectedTaskId)) {
-    state.selectedTaskId = tasks[0].task_id;
+  const visibleTasks = entries.map((entry) => entry.task);
+  if (!state.selectedTaskId || !visibleTasks.some((t) => t.task_id === state.selectedTaskId)) {
+    state.selectedTaskId = visibleTasks[0].task_id;
   }
 
-  const entries = buildTaskListEntries(tasks);
   // Outer signature gate: if (id, status, sub_status, child_count) for the
   // whole entry list is unchanged AND the selection didn't change, we can
   // skip the entire reconcile pass. This handles the no-op poll tick where
