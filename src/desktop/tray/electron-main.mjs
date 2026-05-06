@@ -4254,7 +4254,10 @@ export function createElectronShellRuntime({
         );
         return {
           accepted: true,
-          fileCount: acceptedFilePaths.length
+          fileCount: acceptedFilePaths.length,
+          mode: settings?.echoMode ? "echo" : "normal",
+          surface: settings?.echoMode ? "echo_receipt" : "overlay",
+          voiceContinueTtlMs: settings?.echoMode ? 12_000 : 0
         };
       });
       ipcMain.handle(IPC_CHANNELS.shellMoveWindowBy, (_event, { windowId, deltaX, deltaY } = {}) => {

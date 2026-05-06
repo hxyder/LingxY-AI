@@ -1218,18 +1218,21 @@ async function startVoiceForDroppedFiles() {
   return true;
 }
 
-function announceDroppedFiles(fileCount) {
-  droppedFileVoiceReadyUntil = Date.now() + DOCK_DROP_VOICE_READY_MS;
+function announceDroppedFiles(result = {}) {
+  const fileCount = Number(result.fileCount) || 0;
+  const isEchoReceipt = result.surface === "echo_receipt" || result.mode === "echo";
+  droppedFileVoiceReadyUntil = isEchoReceipt
+    ? Date.now() + (Number(result.voiceContinueTtlMs) || DOCK_DROP_VOICE_READY_MS)
+    : 0;
   dockButton?.focus?.({ preventScroll: true });
-  if (echoEnabled) {
+  if (isEchoReceipt) {
     void window.ucaShell?.showEchoBubble?.({
       text: `已收到 ${fileCount} 个文件。按 V 直接说话，或点击 dock 打开对话框`,
       kind: "info",
-      durationMs: DOCK_DROP_VOICE_READY_MS
+      durationMs: Number(result.voiceContinueTtlMs) || DOCK_DROP_VOICE_READY_MS
     });
     return;
   }
-  void window.ucaShell?.showWindow?.("overlay");
   void window.ucaShell.notify({
     title: "LingxY",
     body: `Received ${fileCount} file(s). Opening chat.`
@@ -1249,7 +1252,7 @@ async function handleDrop(event) {
   }
   const result = await window.ucaShell.submitDroppedFiles(filePaths);
   if (result?.accepted) {
-    announceDroppedFiles(result.fileCount);
+    announceDroppedFiles(result);
   }
 }
 

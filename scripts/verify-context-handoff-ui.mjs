@@ -50,12 +50,15 @@ assert.equal(mainProcess.includes("captureActiveWindowContext"), true);
 assert.equal(mainProcess.includes("capture-context.ps1"), true);
 assert.equal(mainProcess.includes("shellSubmitDroppedFiles"), true);
 assert.equal(mainProcess.includes("hotkey_preview"), true);
+assert.ok(mainProcess.includes("Dropping onto the dock is mode-aware:")
+    && /shellSubmitDroppedFiles[\s\S]{0,700}const settings = await loadSettings\(\);[\s\S]{0,520}if \(!settings\?\.echoMode\)[\s\S]{0,80}showWindow\("overlay"\)[\s\S]{0,360}enqueueWindowMessage\(\s*"overlay"/.test(mainProcess),
+  "dock file drop mode policy must live in main: normal opens overlay, Echo only hands off context");
 assert.match(mainProcess,
-  /shellSubmitDroppedFiles[\s\S]{0,900}Dropping onto the dock is a context handoff[\s\S]{0,500}enqueueWindowMessage\(\s*"overlay"/,
-  "dock file drop should hand off context without forcing the overlay open");
-assert.doesNotMatch(mainProcess,
-  /shellSubmitDroppedFiles[\s\S]{0,700}showWindow\("overlay"\)[\s\S]{0,300}enqueueWindowMessage\(\s*"overlay"/,
-  "dock file drop must not open overlay before enqueueing dropped files");
+  /surface:\s*settings\?\.echoMode \? "echo_receipt" : "overlay"/,
+  "dock file drop must return a structured surface so the dock only renders feedback");
+assert.doesNotMatch(overlayJs + await read("src/desktop/renderer/dock.js"),
+  /announceDroppedFiles[\s\S]{0,700}showWindow\?\.\("overlay"\)/,
+  "dock renderer must not duplicate the main-process overlay-open policy");
 
 const helperProgram = await read("src/helper/explorer_selection/UcaExplorerSelectionHelper/Program.cs");
 assert.equal(helperProgram.includes("overlay_prompt"), true);

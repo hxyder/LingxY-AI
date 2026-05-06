@@ -579,6 +579,9 @@ assert.ok(/void refreshDesktopLocationChip\(\);[\s\S]{0,80}setTimeout\(\(\) => \
   "location: Console must re-sync after startup background refresh and then refresh periodically");
 assert.ok(/const settings = await loadSettings\(\);[\s\S]{0,420}if \(!settings\?\.echoMode\)[\s\S]{0,100}showWindow\("overlay"\)/.test(electronMain),
   "dock file drop: normal mode must open overlay while Echo mode only hands off files for V-to-ask");
+assert.ok(/surface:\s*settings\?\.echoMode \? "echo_receipt" : "overlay"/.test(electronMain)
+    && !/announceDroppedFiles[\s\S]{0,700}showWindow\?\.\("overlay"\)/.test(read("src/desktop/renderer/dock.js")),
+  "dock file drop: main owns mode policy; dock only renders the returned receipt surface");
 assert.ok(/startNewConversation\(\{ preservePendingInputContext \}\)/.test(overlayJs)
     && /const hasPendingInputContext = Boolean\(pendingFileSelection\?\.filePaths\?\.length \|\| pendingCapture\?\.capture\)/.test(overlayJs)
     && /已收到 \$\{fileCount\} 个文件。按 V 直接说话/.test(read("src/desktop/renderer/dock.js"))
