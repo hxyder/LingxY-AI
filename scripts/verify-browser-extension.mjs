@@ -501,6 +501,11 @@ assert.equal(serviceWorkerJs.includes("standaloneConfig?.apiKey"), false);
 assert.equal(serviceWorkerJs.includes("function createSelectionEnvelope"), true);
 assert.equal(serviceWorkerJs.includes("createSelectionEnvelope({ info, tab, selectionState })"), true);
 assert.equal(serviceWorkerJs.includes("selectedAnchorUrl,"), true);
+assert.equal(serviceWorkerJs.includes("const markStarted = () =>"), true);
+assert.ok(/markStarted\(\);[\s\S]{0,120}if \(shouldEnrichForAction\(action\)\)/.test(serviceWorkerJs),
+  "quick action inline frame must enter started state before slow enrichment");
+assert.ok(/port\.postMessage\(\{ type: "start" \}\)[\s\S]{0,160}loadStandaloneConfig/.test(serviceWorkerJs),
+  "quick action stream port must show immediate feedback before route probing/config load");
 
 const sidepanelJs = await readFile(path.join(repoRoot, "browser_ext", "sidepanel", "index.js"), "utf8");
 assert.equal(sidepanelJs.includes("window.__ucaSelectionState"), true);

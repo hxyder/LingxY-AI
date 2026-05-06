@@ -527,6 +527,12 @@ export async function executeQuickAction({
   if (requiresSelectionText && !text) {
     return { ok: false, error: "empty_selection" };
   }
+  let startSent = false;
+  const markStarted = () => {
+    if (startSent) return;
+    startSent = true;
+    onStart?.();
+  };
   const userCommand = CAPTURE_ACTIONS[action]?.userCommand ?? QUICK_ACTION_COMMANDS[action] ?? QUICK_ACTION_COMMANDS.summarize;
 
   let effectiveRoutePlan = isValidRoutePlan(routePlan) ? routePlan : null;
@@ -552,7 +558,7 @@ export async function executeQuickAction({
 
   if (effectiveRoutePlan.transport === "desktop_task"
       && (action === "uca.translate-selection" || action === "translate")) {
-    onStart?.();
+    markStarted();
     return runDesktopTranslate({
       runtimeBase: effectiveRuntimeBase,
       selectionState,
@@ -565,7 +571,7 @@ export async function executeQuickAction({
     if (action === "uca.inspect-image") {
       const imageUrl = selectionState?.imageUrl ?? "";
       if (!imageUrl) return { ok: false, mode: "standalone", error: "no_image_url" };
-      onStart?.();
+      markStarted();
       const prompt = buildPromptFor(action, selectionState, "").prompt;
       const result = await callLLMDirectVision({ config: effectiveStandaloneConfig, prompt, imageUrl });
       if (result.ok) return { ok: true, mode: "standalone", text: result.text, status: "success" };
@@ -573,6 +579,7 @@ export async function executeQuickAction({
     }
 
     let enrichmentMarkdown = "";
+    markStarted();
     if (shouldEnrichForAction(action)) {
       try {
         const enrichment = await enrichContextForAction({ action, selectionState, tab });
@@ -580,7 +587,6 @@ export async function executeQuickAction({
       } catch { /* enrichment is best-effort */ }
     }
     const { prompt, systemPrompt } = buildPromptFor(action, selectionState, enrichmentMarkdown);
-    onStart?.();
     const translateMaxTokens = action === "uca.translate-selection" || action === "translate"
       ? (stream ? Math.min(256, Math.max(96, Math.round(text.length * 1.4))) : undefined)
       : undefined;
@@ -606,13 +612,13 @@ export async function executeQuickAction({
   }
 
   let enrichment = null;
+  markStarted();
   if (shouldEnrichForAction(action)) {
     try {
       enrichment = await enrichContextForAction({ action, selectionState, tab });
     } catch { /* best-effort */ }
   }
 
-  onStart?.();
   return runDesktopTask({
     runtimeBase: effectiveRuntimeBase,
     userCommand,
@@ -1557,6 +1563,7 @@ function registerQuickActionStreamPort(chromeApi = chrome) {
     port.onMessage.addListener(async (message) => {
       if (message?.type !== "quickaction") return;
       const { action, selectionState } = message;
+      if (!aborted) port.postMessage({ type: "start" });
       const config = await loadStandaloneConfig();
       const runtimeBase = (config?.runtimeUrl ?? "http://127.0.0.1:4310").replace(/\/+$/, "");
       const routePlan = isValidRoutePlan(message.routePlan)
