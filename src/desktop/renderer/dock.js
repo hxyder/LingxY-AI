@@ -931,20 +931,44 @@ async function runWakeEnrollment({ samples = 3, countdownMs = 1400 } = {}) {
       const kwsSelfCheck = result.kwsSelfCheck ?? {};
       const transcript = result.transcript ?? "";
 
-      // Mid-session validation: if Whisper heard meaningful speech that does
-      // NOT contain the wake word, the user almost certainly said something
-      // else (or the mic picked up a different sound). Re-record THIS sample
-      // up to MAX_TRANSCRIPT_RETRIES_PER_SAMPLE times before accepting it,
-      // so the user gets immediate corrective feedback instead of finishing
-      // 3 garbage samples and then seeing "enabled:false" at the end.
+      // Mid-session validation. Codex Round 1+2 review pointed out two
+      // issues with the previous implementation:
+      //
+      //   1. Using matchesWake() here was too lax — that helper falls
+      //      through to default WAKE_REGEX_CN/LATIN, so a custom-displayName
+      //      enrollment session would silently accept the user uttering
+      //      the default "灵犀/linxi" instead of their custom phrase, while
+      //      the HUD still says "请念「<custom>」". Mismatch between gate
+      //      and UI promise. Fix: gate on the configured phrase set
+      //      (matchesAny against echoWakeProfile.phrases), not on the
+      //      runtime-listener fuzzy regex.
+      //
+      //   2. An empty transcript was accepted unconditionally. If KWS also
+      //      didn't match, the user just got a silent "OK" for what's
+      //      actually a "didn't hear you" sample, and the failure surfaces
+      //      only at the end. Fix: when transcript is empty AND KWS missed,
+      //      treat it as a retry candidate just like a transcribed wrong
+      //      word.
       const transcriptHasContent = transcript.trim().length > 0;
-      const transcriptHitsWake = transcriptHasContent && matchesWake(transcript);
-      if (transcriptHasContent
-        && !transcriptHitsWake
-        && transcriptRetries < MAX_TRANSCRIPT_RETRIES_PER_SAMPLE) {
+      const transcriptHitsTarget = transcriptHasContent
+        && matchesAny(transcript, echoWakeProfile.phrases);
+      const kwsMatched = Boolean(kwsSelfCheck.matched);
+      // Retry trigger: heard a word that wasn't the target, OR heard nothing
+      // and the local KWS also didn't pick anything up. If KWS matched we
+      // accept (the personalized model heard the keyword even if Whisper
+      // mistranscribed it).
+      const shouldRetry = transcriptRetries < MAX_TRANSCRIPT_RETRIES_PER_SAMPLE
+        && (
+          (transcriptHasContent && !transcriptHitsTarget && !kwsMatched)
+          || (!transcriptHasContent && !kwsMatched)
+        );
+      if (shouldRetry) {
         transcriptRetries += 1;
+        const corrective = transcriptHasContent
+          ? `❌ 听到「${transcript}」不是「${getWakeDisplayName()}」`
+          : `⚠ 没听清，请靠近麦克风、放慢语速`;
         window.ucaShell?.showEchoBubble?.({
-          text: `❌ 听到「${transcript}」不是「${getWakeDisplayName()}」，请重念（${transcriptRetries}/${MAX_TRANSCRIPT_RETRIES_PER_SAMPLE}）`,
+          text: `${corrective}，请重念（${transcriptRetries}/${MAX_TRANSCRIPT_RETRIES_PER_SAMPLE}）`,
           kind: "error",
           durationMs: 3600
         });

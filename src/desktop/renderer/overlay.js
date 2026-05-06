@@ -192,14 +192,21 @@ let pendingContinuationConversationId = null;
 
 // Echo wake continuation window: when an echo-origin task completes, a wake
 // within this many ms is treated as a follow-up to the SAME conversation
-// instead of starting a fresh one. After the window the next wake starts
-// new again. This is the renderer-side approximation of the
-// "post-result short-window continuation" pattern; if/when codex lands the
-// main-owned EchoContextLease design, this window can be retired or kept as
-// a fallback.
+// AND task thread instead of starting a fresh one. After the window the
+// next wake starts new again. This is the renderer-side approximation of
+// the "post-result short-window continuation" pattern; if/when codex lands
+// the main-owned EchoContextLease design, this window can be retired or
+// kept as a fallback.
+//
+// Codex Round 1+2 review caught that setting only conversationId without
+// taskId was a no-op: the /task POST path (line ~4055) only reads
+// pendingContinuationConversationId WHEN pendingContinuationTaskId is set,
+// so we now also remember lastEchoTaskId and seed both pending fields when
+// the window fires.
 const ECHO_CONTINUATION_WINDOW_MS = 30_000;
 let lastEchoTaskCompletedAt = 0;
 let lastEchoTaskConversationId = null;
+let lastEchoTaskId = null;
 
 function shouldSurfaceTaskPopupCards() {
   try {
@@ -3755,6 +3762,7 @@ async function refreshActiveTask() {
       if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
         lastEchoTaskCompletedAt = Date.now();
         lastEchoTaskConversationId = task.conversation_id ?? conversationState?.id ?? null;
+        lastEchoTaskId = task.task_id;
       }
       const previewPath = choosePreviewArtifactPath(task.artifacts) ?? task.artifacts[0].path;
       lastArtifactPath = previewPath;
@@ -3870,6 +3878,7 @@ async function refreshActiveTask() {
       if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
         lastEchoTaskCompletedAt = Date.now();
         lastEchoTaskConversationId = task.conversation_id ?? conversationState?.id ?? null;
+        lastEchoTaskId = task.task_id;
       }
       // conversational mode — no artifacts
       if (notifiedTaskId !== task.task_id && notifiedInlineResultTaskId !== task.task_id) {
@@ -3931,7 +3940,24 @@ async function refreshActiveTask() {
         });
       }
     } else if (task.status === "failed") {
-      addBubble("assistant", `Task failed: ${task.failure_user_message ?? "Unknown error."}`);
+      const failureMsg = task.failure_user_message ?? "Unknown error.";
+      addBubble("assistant", `Task failed: ${failureMsg}`);
+      // Codex Round 1+2 review: the 30s echo continuation window for failures
+      // is only useful if shouldAttachParentTaskForCommand actually finds the
+      // failed task as the conversation's most recent terminal state. The
+      // success branches already update conversationState.lastCompletedTaskId
+      // /lastCompletedAt; mirror that for failures so a user re-saying
+      // "灵犀, 再试一次" within the window attaches via parent_task_id and
+      // the LLM sees the failure context instead of starting fresh.
+      if (conversationState) {
+        conversationState.lastCompletedTaskId = task.task_id;
+        conversationState.lastCompletedAt = Date.now();
+        conversationState.updatedAt = Date.now();
+      }
+      // Record the failure as an assistant turn so memory rollup includes it
+      // on the next follow-up (otherwise the LLM's transcript only sees the
+      // user's previous request and no outcome).
+      appendTurn("assistant", `任务失败：${failureMsg}`);
       // Echo continuation window applies to failures too: a user who said
       // "灵犀, 整理这份文件" and the task failed often re-asks immediately
       // ("再试一次 / 那换一种方式"). Inheriting the conversation lets that
@@ -3940,6 +3966,7 @@ async function refreshActiveTask() {
       if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
         lastEchoTaskCompletedAt = Date.now();
         lastEchoTaskConversationId = task.conversation_id ?? conversationState?.id ?? null;
+        lastEchoTaskId = task.task_id;
       }
       try {
         window.ucaShell?.showPopupCard?.({
@@ -7694,9 +7721,12 @@ window.ucaShell?.onEchoWake?.(async (payload = {}) => {
   if (!payload.preserveContext && !inEchoContinuationWindow) {
     startNewConversation({ preservePendingInputContext });
   } else if (inEchoContinuationWindow) {
-    // Carry the conversation forward without touching message history; the
-    // pending continuation hint makes the next /task POST attach via
-    // parent_task_id + conversation_id (see line ~4055 submitOverlayTask).
+    // Carry the conversation forward without touching message history. The
+    // submitOverlayTask path (line ~4055) only reads pendingContinuationConversationId
+    // when pendingContinuationTaskId is also set, so seed BOTH so the next
+    // /task POST attaches parent_task_id + conversation_id and the LLM
+    // sees the prior turn.
+    if (lastEchoTaskId) pendingContinuationTaskId = lastEchoTaskId;
     pendingContinuationConversationId = lastEchoTaskConversationId;
   }
 
