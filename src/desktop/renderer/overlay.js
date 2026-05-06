@@ -169,6 +169,8 @@ let pendingCapture = null;
 let pendingActiveWindowContext = null;
 let pendingActiveWindowContextCapturedAt = 0;
 const EXPLICIT_BROWSER_CONTEXT_FALLBACK_MAX_AGE_MS = 30 * 1000;
+const VOICE_CONTEXT_FALLBACK_MAX_AGE_MS = 60 * 1000;
+const NOTE_SOURCE_CONTEXT_MAX_AGE_MS = 60 * 1000;
 let lastArtifactPath = null;
 let autoOpenedArtifactTaskId = null;
 let notifiedTaskId = null;
@@ -4352,7 +4354,7 @@ async function captureActiveWindowHintForVoice({ captureMode = "voice_context" }
         clipboardBaseline: typeof clipboardBaseline === "string" ? clipboardBaseline : null,
         excludeShellWindow: true,
         preferLastExternal: true,
-        maxExternalAgeMs: 10 * 60 * 1000,
+        maxExternalAgeMs: VOICE_CONTEXT_FALLBACK_MAX_AGE_MS,
         captureMode
       }),
       1200,
@@ -6265,6 +6267,7 @@ async function fetchRecentBrowserContextForNote(sourceContext = null) {
   const params = new URLSearchParams();
   const sourceUrl = getNoteSourceUrl(sourceContext);
   const sourceTitle = getNoteSourceTitle(sourceContext);
+  if (!sourceUrl && !sourceTitle) return null;
   if (sourceUrl) params.set("url", sourceUrl);
   if (sourceTitle) params.set("title", sourceTitle);
   params.set("limit", "1");
@@ -6322,7 +6325,7 @@ function captureNoteSourceContext(sessionId = noteSessionId) {
         includeSelection: false,
         excludeShellWindow: true,
         preferLastExternal: true,
-        maxExternalAgeMs: 10 * 60 * 1000,
+        maxExternalAgeMs: NOTE_SOURCE_CONTEXT_MAX_AGE_MS,
         captureMode: "note_recording"
       });
       if (sessionId === noteSessionId) {

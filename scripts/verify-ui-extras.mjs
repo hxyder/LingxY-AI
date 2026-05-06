@@ -530,8 +530,14 @@ assert.ok(/commandInput\.addEventListener\("keydown"[\s\S]{0,180}e\.stopPropagat
 assert.ok(/captureActiveWindowHintForVoice[\s\S]{0,760}includeSelection:\s*true/.test(overlayJs)
     && /captureActiveWindowHintForVoice[\s\S]{0,820}allowClipboardFallback:\s*false/.test(overlayJs)
     && /captureActiveWindowHintForVoice[\s\S]{0,900}clipboardBaseline/.test(overlayJs)
+    && /VOICE_CONTEXT_FALLBACK_MAX_AGE_MS\s*=\s*60\s*\*\s*1000/.test(overlayJs)
+    && /maxExternalAgeMs:\s*VOICE_CONTEXT_FALLBACK_MAX_AGE_MS/.test(overlayJs)
     && /captureActiveWindowHintForVoice[\s\S]{0,1100}applyShellHandoff\(payload\)/.test(overlayJs),
   "voice mode: voice and Echo context capture must hand off selected text/files without promoting stale clipboard fallback");
+assert.ok(/NOTE_SOURCE_CONTEXT_MAX_AGE_MS\s*=\s*60\s*\*\s*1000/.test(overlayJs)
+    && /function fetchRecentBrowserContextForNote[\s\S]{0,260}if \(!sourceUrl && !sourceTitle\) return null;/.test(overlayJs)
+    && /maxExternalAgeMs:\s*NOTE_SOURCE_CONTEXT_MAX_AGE_MS[\s\S]{0,120}captureMode:\s*"note_recording"/.test(overlayJs),
+  "note/Echo source context: note enrichment must not reuse arbitrary stale browser contexts without a URL/title anchor");
 assert.ok(/explicitBrowserContextRequest[\s\S]{0,180}resolveActiveWindowBrowserCapture/.test(overlayJs)
     && /resolveOverlayContextSubmission/.test(overlayJs)
     && /kind:\s*"missing_explicit_browser_context"/.test(read("src/shared/context-resolver.mjs")),
