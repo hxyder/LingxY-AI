@@ -197,6 +197,8 @@ assert.ok(audioRoutes.includes("normalizeTranscriptionTextForLocale") && audioRo
   "audio routes must normalize both one-shot and streaming transcription text by requested output locale");
 assert.ok(dockJs.includes("keywords: echoWakeProfile.phrases"),
   "echo KWS: dock must pass the saved wake profile phrases into local KWS detection");
+assert.ok(dockJs.includes("const ECHO_VAD_SPEECH_MULTIPLIER = 2;"),
+  "echo KWS: VAD speech multiplier must stay loose enough for soft wake utterances");
 assert.ok(main.includes("params.set(\"keywords\"") && main.includes("pathname: \"/echo/kws\""),
   "echo KWS: main process must forward wake-profile keywords to the local service route");
 assert.ok(audioRoutes.includes("parseWakeKeywordsParam") && audioRoutes.includes("--keywords"),

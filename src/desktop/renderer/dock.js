@@ -229,7 +229,7 @@ const ECHO_VAD_ABS_FLOOR = 0.004;
 // Multiplier applied on top of the learned noise floor to decide
 // "speech vs ambient". 3× gives enough headroom that a steady ambient hum
 // doesn't keep tripping the gate.
-const ECHO_VAD_SPEECH_MULTIPLIER = 3;
+const ECHO_VAD_SPEECH_MULTIPLIER = 2;
 // How recently voice had to register for us to bother sending audio. Long
 // enough that the wake word + a bit of trailing silence always counts.
 const ECHO_VAD_WINDOW_MS = 1800;
