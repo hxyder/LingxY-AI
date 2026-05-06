@@ -33,7 +33,7 @@ export function planDeterministicToolCall(userCommand = "", catalog = null) {
   // pattern accepted bare nouns (链接 / 网页 / 网站 / url) which auto-opened
   // browser tabs for "给我 google.com 的链接" / "把 X 网页发我" style asks
   // where the user wanted the URL as text, not an open action.
-  if (url && /(打开|访问|跳转到|open\b|visit\b|go to)/i.test(text)) {
+  if (url && /(打开|访问|跳转到|前往|导航到|带我去|open\b|visit\b|go to\b|navigate to\b|take me to\b|load\b)/i.test(text)) {
     return {
       type: "tool_call",
       tool: "open_url",

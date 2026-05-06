@@ -36,3 +36,18 @@ test("'send me the url for X https://example.com' does NOT fire open_url (passiv
   assert.notDeepEqual(decision?.tool, "open_url",
     `passive url ask should not auto-open: ${JSON.stringify(decision)}`);
 });
+
+test("'load https://example.com' fires open_url (load = action verb)", () => {
+  const decision = planDeterministicToolCall("load https://example.com");
+  assert.deepEqual(decision, { type: "tool_call", tool: "open_url", args: { url: "https://example.com" } });
+});
+
+test("'navigate to https://example.com' fires open_url", () => {
+  const decision = planDeterministicToolCall("navigate to https://example.com");
+  assert.deepEqual(decision, { type: "tool_call", tool: "open_url", args: { url: "https://example.com" } });
+});
+
+test("'前往 https://example.com' fires open_url (Chinese alt verb)", () => {
+  const decision = planDeterministicToolCall("前往 https://example.com");
+  assert.deepEqual(decision, { type: "tool_call", tool: "open_url", args: { url: "https://example.com" } });
+});
