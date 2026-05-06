@@ -53,6 +53,9 @@ import {
   commandTargetsCurrentFileContext
 } from "../../shared/current-context-intent.mjs";
 import {
+  resolveOverlayContextSubmission
+} from "../../shared/context-resolver.mjs";
+import {
   buildOverlayProjectStore,
   ensureDefaultProjectInStore,
   ensureSystemProjectInStore,
@@ -3928,56 +3931,41 @@ async function submitTask() {
     // P6-F1: legacy outbound history removed. Backend conversation_messages
     // is now the single source of conversation history (see Phase D loader).
     // The frontend cache is rendered locally but never re-injected here.
-    if (activeBrowserCapture) {
-      // Explicit "current page/tab" requests are about the active browser
-      // surface, so they must override passive clipboard captures or an old
-      // conversation seed. Otherwise Echo/hotkey submits can accidentally
-      // analyze stale clipboard/email text.
-      ensureConversation(activeBrowserCapture, conversationState?.seedCommand ?? rawCommand ?? commandText);
+    const contextDecision = resolveOverlayContextSubmission({
+      explicitBrowserContextRequest,
+      activeBrowserCapture,
+      explicitFileContextRequest,
+      activeFileSelection,
+      pendingFileSelection,
+      pendingCapture,
+      seedCapture: conversationState?.seedCapture ?? null
+    });
+    if (contextDecision.kind === "capture") {
+      const capture = { ...contextDecision.capture };
+      if (contextDecision.reason === "explicit_browser_context") {
+        ensureConversation(capture, conversationState?.seedCommand ?? rawCommand ?? commandText);
+      }
       payload = {
         userCommand: commandText,
         executionMode: "interactive",
-        capture: { ...activeBrowserCapture }
+        capture
       };
-    } else if (activeFileSelection) {
+    } else if (contextDecision.kind === "image_paths") {
       payload = {
-        sourceApp: activeFileSelection.sourceApp,
-        captureMode: activeFileSelection.captureMode,
-        filePaths: activeFileSelection.filePaths,
-        userCommand: commandText,
-        executionMode: "interactive"
-      };
-    } else if (pendingFileSelection?.filePaths?.length) {
-      const imageExts = [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"];
-      const allImages = pendingFileSelection.filePaths.every((fp) =>
-        imageExts.some((ext) => fp.toLowerCase().endsWith(ext))
-      );
-      payload = allImages ? {
-        imagePaths: pendingFileSelection.filePaths,
+        imagePaths: contextDecision.filePaths,
         userCommand: commandText,
         source: "file",
-        sourceApp: pendingFileSelection.sourceApp ?? "explorer.exe",
-        captureMode: pendingFileSelection.captureMode ?? "shell_menu",
-        executionMode: "interactive"
-      } : {
-        sourceApp: pendingFileSelection.sourceApp ?? "explorer.exe",
-        captureMode: pendingFileSelection.captureMode ?? "shell_menu",
-        filePaths: pendingFileSelection.filePaths,
-        userCommand: commandText,
+        sourceApp: contextDecision.sourceApp ?? "explorer.exe",
+        captureMode: contextDecision.captureMode ?? "shell_menu",
         executionMode: "interactive"
       };
-    } else if (pendingCapture?.capture || conversationState?.seedCapture) {
-      // Re-attach the conversation seed on every turn so multi-turn chats
-      // against the same context keep working even after pendingCapture is
-      // cleared. Conversation history (all prior turns) is folded into the
-      // capture text so the LLM sees the whole thread.
-      const capture = pendingCapture?.capture
-        ? { ...pendingCapture.capture }
-        : { ...conversationState.seedCapture };
+    } else if (contextDecision.kind === "file_paths") {
       payload = {
+        sourceApp: contextDecision.sourceApp ?? "explorer.exe",
+        captureMode: contextDecision.captureMode ?? "shell_menu",
+        filePaths: contextDecision.filePaths,
         userCommand: commandText,
-        executionMode: "interactive",
-        capture: { ...capture }
+        executionMode: "interactive"
       };
     } else {
       payload = {

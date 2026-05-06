@@ -392,8 +392,9 @@ assert.ok(/const\s+clarifyPayload\s*=\s*attachOverlayProjectScope\(\{/.test(over
 assert.ok(/const\s+taskBody\s*=\s*attachOverlayProjectScope\(\s*(?:attachOverlaySubmissionMetadata\(payload\)|payload)\s*\)/.test(overlayJs),
   "overlay projects: note transcription task submission must preserve project scope");
 assert.ok(/function\s+resolveActiveWindowFileSelection/.test(overlayJs)
-    && /captureMode:\s*activeFileSelection\.captureMode/.test(overlayJs)
-    && /filePaths:\s*activeFileSelection\.filePaths/.test(overlayJs),
+    && /activeFileSelection/.test(overlayJs)
+    && /contextDecision\.kind === "file_paths"/.test(overlayJs)
+    && /filePaths:\s*contextDecision\.filePaths/.test(overlayJs),
   "active-window files: overlay must route explicit current-file/document commands through file submission");
 assert.ok(/refreshProjectConversationSummaries/.test(consoleJs) && /fetchConversationsList\(\{\s*limit:\s*200,\s*archived:\s*["']0["'],\s*projectId\s*\}/.test(consoleJs),
   "projects: project tab must read SQL conversation summaries by project_id");
@@ -512,8 +513,8 @@ assert.ok(/captureActiveWindowHintForVoice[\s\S]{0,420}includeSelection:\s*true/
     && /captureActiveWindowHintForVoice[\s\S]{0,760}applyShellHandoff\(payload\)/.test(overlayJs),
   "voice mode: voice and Echo context capture must hand off selected text/files, not only passive active-window hints");
 assert.ok(/explicitBrowserContextRequest[\s\S]{0,180}resolveActiveWindowBrowserCapture/.test(overlayJs)
-    && /if \(activeBrowserCapture\)[\s\S]{0,280}stale clipboard\/email text/.test(overlayJs)
-    && /else if \(pendingCapture\?\.capture \|\| conversationState\?\.seedCapture\)/.test(overlayJs),
+    && /resolveOverlayContextSubmission/.test(overlayJs)
+    && /kind:\s*"missing_explicit_browser_context"/.test(read("src/shared/context-resolver.mjs")),
   "overlay context priority: explicit current-page requests must override passive clipboard/seed captures before submit");
 assert.ok(/const echoTask = isEchoTask\(taskId\);/.test(overlayJs)
     && /inlinePreview: echoTask \? fullBody : null/.test(overlayJs)
