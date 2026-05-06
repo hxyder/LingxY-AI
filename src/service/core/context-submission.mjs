@@ -182,6 +182,19 @@ function setInternalTaskPromise(task, name, promise) {
   });
 }
 
+function descriptorForExecutor(executorId, resolvedProvider) {
+  if (executorId === "translate") {
+    return {
+      provider_id: "lingxy.free_translator",
+      provider_kind: "translator",
+      provider_name: "LingxY Free Translator",
+      model: "google_web+mymemory",
+      transport: "https"
+    };
+  }
+  return describeResolvedProvider(resolvedProvider);
+}
+
 function scheduleInternalTaskPromise(work) {
   return new Promise((resolve, reject) => {
     setTimeout(() => {
@@ -799,7 +812,7 @@ async function runExecutor({ runtime, task, executor }) {
     task,
     store: runtime.store
   });
-  const executorDescriptor = describeResolvedProvider(resolvedProvider);
+  const executorDescriptor = descriptorForExecutor(executor.id, resolvedProvider);
   if (executorDescriptor) {
     emitTaskEvent({
       runtime,

@@ -2,8 +2,8 @@
  * Free translation client.
  *
  * Provides translation without an API key by using two free, public endpoints:
- *   1. MyMemory  (https://api.mymemory.translated.net) — primary, ~5000 chars/IP/day
- *   2. Google web translate_a/single endpoint — fallback when MyMemory fails or is rate-limited
+ *   1. Google web translate_a/single endpoint — primary for low-latency selections
+ *   2. MyMemory  (https://api.mymemory.translated.net) — fallback, ~5000 chars/IP/day
  *
  * Both providers are no-key, no-signup. The module is designed for short-to-medium
  * snippets (selection text, paragraphs). Long inputs are chunked on sentence
@@ -15,7 +15,7 @@
 const DEFAULT_FETCH = (typeof fetch === "function") ? fetch : null;
 
 const MAX_CHUNK_CHARS = 480;       // MyMemory single-request limit is ~500
-const PROVIDERS = ["mymemory", "google_web"];
+const PROVIDERS = ["google_web", "mymemory"];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Language helpers
