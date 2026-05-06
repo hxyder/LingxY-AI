@@ -47,14 +47,25 @@ test("validateGitHubSkillUrl rejects non-github / non-https / userinfo / path tr
   }
 });
 
-test("validateBranchName rejects argument-injection shapes", () => {
+test("validateBranchName accepts common legal git ref names", () => {
+  for (const name of ["main", "feature-x", "feat/x", "v1.2.3", "release-2026.05"]) {
+    const result = validateBranchName(name);
+    assert.equal(result.ok, true, JSON.stringify(name) + ": " + JSON.stringify(result));
+    assert.equal(result.branch, name);
+  }
+});
+
+test("validateBranchName rejects argument-injection shapes and git-illegal refs", () => {
   assert.equal(validateBranchName("").ok, true);
   assert.equal(validateBranchName(null).ok, true);
-  assert.equal(validateBranchName("main").ok, true);
-  assert.equal(validateBranchName("feat/x").ok, true);
-  for (const bad of ["-main", "--upload-pack=foo", "with space", "ctrl", `bad'name`, "double..dot"]) {
+  for (const bad of [
+    "-main", "--upload-pack=foo",
+    "with space", "tab\there", "quote'name", "back`tick",
+    "main^", "main:foo", "main?", "main*", "main[", "main\\",
+    "main..", "main@{1}", "main/", "main.", "foo.lock"
+  ]) {
     const result = validateBranchName(bad);
-    assert.equal(result.ok, false, `expected reject: ${JSON.stringify(bad)}`);
+    assert.equal(result.ok, false, "expected reject: " + JSON.stringify(bad) + " got " + JSON.stringify(result));
     assert.equal(result.reason, SKILL_INSTALL_ERROR.INVALID_BRANCH);
   }
 });
@@ -247,6 +258,58 @@ test("re-install of same repo overwrites via atomic swap and dedupes registry", 
     const externals = await readdir(path.join(skillsDir, "external")).catch(() => []);
     assert.deepEqual(externals.filter((e) => e.startsWith(".backup")), [], "backup cleaned after swap");
     assert.deepEqual(externals.filter((e) => e.startsWith(".staging")), [], "staging cleaned after swap");
+  });
+});
+
+test("rollback failure during atomic swap preserves backupPath in the error", async () => {
+  await withTempRuntime(async ({ runtime, skillsDir }) => {
+    const finalDir = path.join(skillsDir, "external", "owner--repo");
+    await mkdir(finalDir, { recursive: true });
+    await writeFile(path.join(finalDir, "SKILL.md"), "# old\ndescription: previous version\n");
+
+    const spawnImpl = makeSpawnImpl({
+      scenarios: [
+        gitVersionScenario(),
+        gitCloneScenario({ skillFiles: { "SKILL.md": "# new\ndescription: next\n" } })
+      ]
+    });
+
+    const fsModule = await import("node:fs/promises");
+    let renameCalls = 0;
+    const fsImpl = {
+      mkdir: fsModule.mkdir,
+      stat: fsModule.stat,
+      rm: fsModule.rm,
+      rename: async (from, to) => {
+        renameCalls += 1;
+        // 1st: final -> backup (succeed)
+        // 2nd: staging -> final (fail with EBUSY)
+        // 3rd: backup -> final rollback (also fail)
+        if (renameCalls === 1) return fsModule.rename(from, to);
+        if (renameCalls === 2) {
+          const err = new Error("EBUSY: locked"); err.code = "EBUSY"; throw err;
+        }
+        if (renameCalls === 3) {
+          const err = new Error("EPERM: rollback also blocked"); err.code = "EPERM"; throw err;
+        }
+        return fsModule.rename(from, to);
+      }
+    };
+
+    const result = await installSkillFromGitHub({
+      url: "https://github.com/owner/repo",
+      runtime,
+      spawnImpl,
+      fsImpl
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.error, SKILL_INSTALL_ERROR.FINAL_LOCKED);
+    assert.match(result.backupPath ?? "", /\.backup-/);
+    assert.match(result.recovery ?? "", /Rename it back/);
+    assert.ok(existsSync(result.backupPath), "backup must remain on disk for manual recovery");
+    const backupSkill = await readFile(path.join(result.backupPath, "SKILL.md"), "utf8");
+    assert.match(backupSkill, /# old/);
   });
 });
 
