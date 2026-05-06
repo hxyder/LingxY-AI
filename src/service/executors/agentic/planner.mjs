@@ -55,7 +55,10 @@ import {
 import { detectSearchSaturation } from "../../core/policy/evidence-normalizer.mjs";
 import { normalizeSources } from "../../core/evidence/source-envelope.mjs";
 import { appendAuditLog } from "../../security/audit-log.mjs";
-import { validateStepGate } from "../../core/policy/success-contract-validator.mjs";
+import {
+  selectSuccessContractValidationSpec,
+  validateStepGate
+} from "../../core/policy/success-contract-validator.mjs";
 // J1: per-iteration parity. Pre-J1 agentic ran for the full
 // maxIterations even when the same tool failed repeatedly OR when the
 // success contract was already known to be unreachable. tool_using
@@ -315,7 +318,7 @@ export async function runAgenticPlanner({
         errorBudget,
         iteration: 0,
         maxIterations,
-        taskSpec: task?.task_spec,
+        taskSpec: selectSuccessContractValidationSpec(task),
         onEvent,
         preflight: true
       });
@@ -480,7 +483,8 @@ export async function runAgenticPlanner({
           obligations: terminalActionObligations
         };
       }
-      const finalStepGate = validateStepGate(task?.task_spec, validatorTx, {
+      const validationSpec = selectSuccessContractValidationSpec(task);
+      const finalStepGate = validateStepGate(validationSpec, validatorTx, {
         iteration: iterations,
         maxIterations
       });
@@ -490,9 +494,9 @@ export async function runAgenticPlanner({
           messages.push({ role: "assistant", content: text });
           transcript.push({ role: "assistant", text });
         }
-        const artifactKind = artifactKindFromTaskSpec(task?.task_spec);
+        const artifactKind = artifactKindFromTaskSpec(validationSpec);
         const guidance = buildAgenticArtifactContractGuidance({
-          taskSpec: task?.task_spec,
+          taskSpec: validationSpec,
           violation: artifactViolation
         });
         const guidancePayload = {
@@ -645,7 +649,7 @@ export async function runAgenticPlanner({
         errorBudget,
         iteration: iterations,
         maxIterations,
-        taskSpec: task?.task_spec,
+        taskSpec: selectSuccessContractValidationSpec(task),
         onEvent,
         preflight: false,
         localFileReadGuidanceCount

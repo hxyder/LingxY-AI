@@ -19,6 +19,18 @@ function makeArtifactTask() {
   };
 }
 
+function makeCurrentSpecMissingArtifactTask() {
+  const task = makeArtifactTask();
+  return {
+    ...task,
+    task_spec: {
+      goal: "qa",
+      synthesis: { expected_output: "direct_answer" }
+    },
+    task_spec_initial: task.task_spec
+  };
+}
+
 function makeRegistry(tool) {
   return {
     list() {
@@ -123,5 +135,82 @@ test("agentic final gate retries prose-only artifact tasks with artifact guidanc
   assert.ok(auditLog.some((entry) =>
     entry.event_subtype === "tool_loop.contract_guidance"
     && entry.payload?.source === "final_gate"
+  ));
+});
+
+test("agentic final gate uses the initial artifact contract when current spec is incomplete", async () => {
+  const events = [];
+  const tool = {
+    id: "generate_document",
+    name: "Generate Document",
+    risk_level: "low",
+    requires_confirmation: false,
+    parameters: {
+      type: "object",
+      properties: {
+        kind: { type: "string" },
+        outline: { type: "object" }
+      }
+    },
+    async execute() {
+      return {
+        success: true,
+        observation: "DOCX generated.",
+        artifact_paths: ["E:/linxiDoc/task_agentic_initial_contract/result.docx"],
+        metadata: { path: "E:/linxiDoc/task_agentic_initial_contract/result.docx" }
+      };
+    }
+  };
+  const adapter = {
+    supportsStreaming: false,
+    async generate({ messages }) {
+      const hasArtifactGuidance = messages.some((message) =>
+        message.role === "user"
+        && String(message.content ?? "").includes("[Artifact contract]")
+      );
+      if (!hasArtifactGuidance) {
+        return { text: "Plain text report.", tool_calls: [] };
+      }
+      const generated = messages.some((message) =>
+        message.role === "tool"
+        && String(message.content ?? "").includes("artifact_paths")
+      );
+      if (generated) return { text: "Generated.", tool_calls: [] };
+      return {
+        text: "",
+        tool_calls: [{
+          id: "call_doc",
+          name: "generate_document",
+          arguments: {
+            kind: "docx",
+            outline: {
+              title: "Report",
+              sections: [{ heading: "Summary", body: "A concise report." }]
+            }
+          }
+        }]
+      };
+    }
+  };
+
+  const result = await runAgenticPlanner({
+    task: makeCurrentSpecMissingArtifactTask(),
+    runtime: {
+      actionToolRegistry: makeRegistry(tool),
+      store: { appendAuditLog() {} },
+      toolContext: {}
+    },
+    adapterOverride: adapter,
+    onEvent(event) {
+      events.push(event);
+    },
+    maxIterations: 4
+  });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(result.artifactPaths, ["E:/linxiDoc/task_agentic_initial_contract/result.docx"]);
+  assert.ok(events.some((event) =>
+    event.event_type === "contract_guidance"
+    && event.payload?.artifact_kind === "docx"
   ));
 });

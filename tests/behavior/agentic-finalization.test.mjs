@@ -94,6 +94,36 @@ test("agentic finalization downgrades unsatisfied success contracts", () => {
   assert.match(result.finalText, /SuccessContract/);
 });
 
+test("agentic finalization preserves the initial artifact contract after an incomplete SR patch", () => {
+  const result = finalizeAgenticPlannerRun({
+    task: {
+      task_id: "task_agentic_initial_artifact_contract",
+      task_spec: {
+        goal: "qa",
+        synthesis: { expected_output: "direct_answer" }
+      },
+      task_spec_initial: {
+        goal: "generate_document",
+        artifact: { required: true, kind: "docx" },
+        synthesis: { expected_output: "artifact" },
+        success_contract: {
+          artifact_created: true,
+          required_policy_groups: [],
+          required_tool_names: []
+        }
+      }
+    },
+    finalText: "Here is the report content as plain text.",
+    transcript: [],
+    iterations: 1
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(result.downgraded, true);
+  assert.ok(result.violations.some((violation) => violation.kind === "artifact_required_not_created"));
+  assert.match(result.finalText, /SuccessContract/);
+});
+
 test("agentic finalization does not accept indexed file hits as fresh local file reads", () => {
   const result = finalizeAgenticPlannerRun({
     task: {

@@ -1,5 +1,6 @@
 import {
   detectUnbackedActionClaims,
+  selectSuccessContractValidationSpec,
   validateAnswerSynthesis,
   validateSuccessContract
 } from "../../core/policy/success-contract-validator.mjs";
@@ -40,6 +41,7 @@ export function finalizeAgenticPlannerRun({
   let downgraded = false;
   let violations = null;
   const validatorTranscript = transcriptForValidator(transcript);
+  const validationSpec = selectSuccessContractValidationSpec(task);
   const actionObligationTerminal = earlyExitState?.kind === "action_obligation_terminal"
     ? earlyExitState.obligations
     : null;
@@ -86,7 +88,7 @@ export function finalizeAgenticPlannerRun({
 
   const contract = (waitingExternalDecision || actionObligationTerminal?.length > 0)
     ? { satisfied: true, violations: [] }
-    : validateSuccessContract(task?.task_spec, validatorTranscript);
+    : validateSuccessContract(validationSpec, validatorTranscript);
   if (!contract.satisfied) {
     downgraded = true;
     violations = (violations ?? []).concat(contract.violations);
@@ -97,7 +99,7 @@ export function finalizeAgenticPlannerRun({
   const synthesisViolations = waitingExternalDecision
     ? []
     : validateAnswerSynthesis(
-      task?.task_spec,
+      validationSpec,
       validatorTranscript,
       outputText
     );
