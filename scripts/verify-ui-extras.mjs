@@ -217,6 +217,8 @@ assert.ok(/resolveCard\(["']voice_continue["']/.test(popupCardJs)
     && /pendingContinuationTaskId = taskId/.test(overlayJs)
     && /toggleComposerVoiceInput\(\)/.test(overlayJs),
   "echo result cards: pressing V on a result card must start a voice follow-up without opening the overlay");
+assert.ok(/function renderActions\(buttons = \[\]\)[\s\S]{0,260}seenLabels[\s\S]{0,260}seenLabels\.has\(label\)[\s\S]{0,160}continue/.test(popupCardJs),
+  "popup-card actions must dedupe duplicate labels such as repeated open-dialog buttons");
 assert.ok(/<option value="zh-CN" selected>中文（普通话，保留英文词）<\/option>/.test(overlayHtml),
   "voice language: overlay voice input must default to simplified Chinese with English words preserved");
 assert.ok(/if \(\s*\/\^zh\/i\.test\([\s\S]{0,120}\)\) return "zh-CN";/.test(overlayJs),

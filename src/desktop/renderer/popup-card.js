@@ -202,7 +202,14 @@ function renderBody(lines) {
 
 function renderActions(buttons = []) {
   actionsEl.innerHTML = "";
+  const seenLabels = new Set();
   for (const spec of buttons) {
+    const label = String(spec?.label ?? "").trim();
+    const isPager = label === "‹" || label === "›";
+    if (label && !isPager) {
+      if (seenLabels.has(label)) continue;
+      seenLabels.add(label);
+    }
     actionsEl.appendChild(makeButton(spec));
   }
 }
