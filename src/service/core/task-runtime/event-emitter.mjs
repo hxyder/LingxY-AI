@@ -141,6 +141,19 @@ export const EPHEMERAL_EVENT_TYPES = new Set([
 ]);
 
 const firstDeltaTimingEmitted = new Set();
+const firstVisibleTimingEmitted = new Set();
+
+function isVisibleOutputEvent(eventType, payload = {}) {
+  if (eventType === "text_delta") return true;
+  if (eventType === "inline_result") return typeof payload?.text === "string" && payload.text.trim().length > 0;
+  if (eventType === "artifact_created") {
+    return Boolean(payload?.path || payload?.artifact_path || payload?.artifact_paths?.length);
+  }
+  if (eventType === "success") {
+    return typeof payload?.text === "string" && payload.text.trim().length > 0;
+  }
+  return false;
+}
 
 function taskCreatedPayloadWithSubmissionOrigin(runtime, taskId, payload = {}) {
   let task;
@@ -182,10 +195,15 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   runtime.eventBus.publish(record);
   if (eventType === "text_delta" && taskId && !firstDeltaTimingEmitted.has(taskId)) {
     firstDeltaTimingEmitted.add(taskId);
-    emitFirstDeltaTiming(runtime, taskId);
+    emitPhaseTiming(runtime, taskId, "executor_first_delta");
+  }
+  if (taskId && !firstVisibleTimingEmitted.has(taskId) && isVisibleOutputEvent(eventType, effectivePayload)) {
+    firstVisibleTimingEmitted.add(taskId);
+    emitPhaseTiming(runtime, taskId, "executor_first_visible_output");
   }
   if (eventType === "status_changed" && ["success", "failed", "cancelled", "partial_success"].includes(payload?.status)) {
     firstDeltaTimingEmitted.delete(taskId);
+    firstVisibleTimingEmitted.delete(taskId);
   }
   void persistTaskEvent(runtime, record);
 
@@ -217,7 +235,7 @@ export function emitTaskEvent({ runtime, taskId, eventType, payload }) {
   return record;
 }
 
-function emitFirstDeltaTiming(runtime, taskId) {
+function emitPhaseTiming(runtime, taskId, phase) {
   let durationMs = null;
   try {
     const createdAt = runtime?.store?.getTask?.(taskId)?.created_at;
@@ -234,7 +252,7 @@ function emitFirstDeltaTiming(runtime, taskId) {
     ts: nowIso(),
     event_type: "phase_timing",
     payload: {
-      phase: "executor_first_delta",
+      phase,
       duration_ms: durationMs
     }
   };
@@ -276,4 +294,5 @@ function emitDecisionTraceFollowUp(runtime, taskId) {
 
 export function resetTaskEventEmitterStateForTests() {
   firstDeltaTimingEmitted.clear();
+  firstVisibleTimingEmitted.clear();
 }

@@ -57,8 +57,10 @@ assert.ok(/EPHEMERAL_EVENT_TYPES[\s\S]*"reasoning_delta"/.test(taskEventEmitter)
   "reasoning_delta must be ephemeral");
 assert.ok(/JSONL_SKIP_EVENT_TYPES[\s\S]*"reasoning_delta"/.test(taskEventLog),
   "reasoning_delta must be skipped from jsonl task logs");
-assert.ok(taskEventEmitter.includes('phase: "executor_first_delta"'),
+assert.ok(taskEventEmitter.includes('"executor_first_delta"'),
   "task event emitter must record first-token latency as executor_first_delta");
+assert.ok(taskEventEmitter.includes('"executor_first_visible_output"'),
+  "task event emitter must record first visible output latency across streaming, inline, and artifact outputs");
 
 const main = await source("src/desktop/tray/electron-main.mjs");
 assert.ok(main.includes('reason: "primary_ui_visible"'),
@@ -69,7 +71,7 @@ assert.ok(main.includes("setIgnoreMouseEvents(Boolean(ignore)"),
 const manifest = await source("src/desktop/shared/manifest.mjs");
 assert.ok(manifest.includes('shellSetIgnoreMouseEvents: "uca:shell-set-ignore-mouse-events"'),
   "manifest must include mouse-event IPC");
-assert.ok(manifest.includes("width: 52") && manifest.includes("height: 52"),
+assert.ok(manifest.includes("width: 48") && manifest.includes("height: 48"),
   "dock manifest must use reduced hitbox");
 
 console.log("ok verify-execution-graph-layering");
