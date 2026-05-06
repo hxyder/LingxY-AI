@@ -91,6 +91,7 @@ const IGNORED_DIRECTORY_NAMES = new Set([
   ".tmp"
 ]);
 const MAX_EXPANDED_DIRECTORY_FILES = 200;
+const DEFAULT_EXTRACTION_CONCURRENCY = 3;
 
 function asLatin1(buffer) {
   return Buffer.from(buffer).toString("latin1");
@@ -150,6 +151,21 @@ async function expandInputFilePaths(filePaths = []) {
     if (output.length >= MAX_EXPANDED_DIRECTORY_FILES) break;
   }
   return [...new Set(output)];
+}
+
+async function mapWithConcurrency(items = [], concurrency = DEFAULT_EXTRACTION_CONCURRENCY, worker) {
+  const limit = Math.max(1, Math.min(Number(concurrency) || DEFAULT_EXTRACTION_CONCURRENCY, items.length || 1));
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function runWorker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await worker(items[index], index);
+    }
+  }
+  await Promise.all(Array.from({ length: limit }, () => runWorker()));
+  return results;
 }
 
 async function readTextFile(filePath) {
@@ -297,7 +313,10 @@ export async function buildFileContextPacket({
   sourceApp = "explorer.exe",
   traceId,
   contextId,
-  capturedAt = new Date().toISOString()
+  capturedAt = new Date().toISOString(),
+  extractFileContentImpl = extractFileContent,
+  extractionConcurrency = DEFAULT_EXTRACTION_CONCURRENCY,
+  onProgress = null
 }) {
   const expandedFilePaths = await expandInputFilePaths(filePaths);
 
@@ -311,8 +330,35 @@ export async function buildFileContextPacket({
   const fileMetadata = [];
   const extractedTexts = [];
 
-  for (const filePath of effectiveFilePaths) {
-    const extracted = await extractFileContent(filePath);
+  const total = effectiveFilePaths.length;
+  onProgress?.({
+    phase: "file_ingest_started",
+    total,
+    expanded_count: expandedFilePaths.length,
+    input_count: Array.isArray(filePaths) ? filePaths.length : 0
+  });
+
+  let completedCount = 0;
+  const extractedFiles = await mapWithConcurrency(
+    effectiveFilePaths,
+    extractionConcurrency,
+    async (filePath, index) => {
+      const extracted = await extractFileContentImpl(filePath);
+      completedCount += 1;
+      onProgress?.({
+        phase: "file_ingest_progress",
+        path: extracted.path ?? filePath,
+        index,
+        completed: completedCount,
+        total
+      });
+      return extracted;
+    }
+  );
+
+  for (let index = 0; index < extractedFiles.length; index += 1) {
+    const filePath = effectiveFilePaths[index];
+    const extracted = extractedFiles[index];
     fileMetadata.push({
       path: extracted.path,
       size: extracted.size,
@@ -324,6 +370,12 @@ export async function buildFileContextPacket({
     });
     extractedTexts.push(`## ${path.basename(filePath)}\n${extracted.text}`);
   }
+
+  onProgress?.({
+    phase: "file_ingest_finished",
+    completed: total,
+    total
+  });
 
   // Paths CLIs should try to read as files (NOT directories). If expansion
   // yielded no files, pass an empty list — the directory listing lives in
