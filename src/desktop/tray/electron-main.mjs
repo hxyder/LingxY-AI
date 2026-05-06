@@ -1974,7 +1974,10 @@ export function createElectronShellRuntime({
           // arrive after the PowerShell script's own read but before we show
           // the overlay).
           const hotKeyClipboardSnapshot = clipboard.readText() ?? "";
-          captureActiveWindowContext().then((ctx) => {
+          captureActiveWindowContext({
+            allowClipboardFallback: false,
+            clipboardBaseline: hotKeyClipboardSnapshot
+          }).then((ctx) => {
             // If the in-script clipboard read missed the SimulateCopy result
             // (timing race on first run), check whether the clipboard changed
             // since the hotkey fired and adopt the new value.

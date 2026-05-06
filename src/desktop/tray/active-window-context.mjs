@@ -11,6 +11,7 @@
  *
  *     runPowerShell({ script, args, timeoutMs }) → Promise<{ stdout, stderr }>
  *     clipboardFallback() → string | null  (optional)
+ *     clipboardBaseline → string | null     (optional, filters stale copy text)
  *
  * Returns:
  *
@@ -116,7 +117,8 @@ export async function captureActiveWindowContext({
   timeoutMs = 3000,
   activeWindowEnabled = true,
   includeSelection = true,
-  allowClipboardFallback = true
+  allowClipboardFallback = true,
+  clipboardBaseline = null
 } = {}) {
   if (typeof runPowerShell !== "function") {
     throw new Error("captureActiveWindowContext requires a runPowerShell({script,args}) function.");
@@ -156,8 +158,10 @@ export async function captureActiveWindowContext({
         result.filePaths = info.files.filter((f) => typeof f === "string" && f.length > 0);
       }
       const clipText = info.text ?? "";
-      if (typeof clipText === "string" && clipText.trim().length > 2) {
-        result.selectedText = clipText.trim();
+      const trimmed = typeof clipText === "string" ? clipText.trim() : "";
+      const baseline = typeof clipboardBaseline === "string" ? clipboardBaseline.trim() : null;
+      if (trimmed.length > 2 && (!baseline || trimmed !== baseline)) {
+        result.selectedText = trimmed;
       }
     }
   }

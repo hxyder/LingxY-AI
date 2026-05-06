@@ -29,6 +29,7 @@
 
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,6 +45,7 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
 const mockFixturePath = path.join(repoRoot, "tests", "fixtures", "mock-active-window-probe.mjs");
+const electronMainSource = readFileSync(path.join(repoRoot, "src", "desktop", "tray", "electron-main.mjs"), "utf8");
 
 /* ------------------------------------------------------------------------ */
 /* Parser unit tests                                                         */
@@ -97,7 +99,7 @@ const mockFixturePath = path.join(repoRoot, "tests", "fixtures", "mock-active-wi
 /* End-to-end: mock PowerShell runner invoking the Node fixture              */
 /* ------------------------------------------------------------------------ */
 
-function createMockRunner(scenario) {
+function createMockRunner(scenario, options = {}) {
   return async ({ script, args }) => {
     if (script === "capture-context.ps1") {
       // Canned capture-context output: no files, clipboard string.
@@ -106,7 +108,7 @@ function createMockRunner(scenario) {
           title: "Mocked window",
           process: scenario === "browser-edge-url" ? "msedge" : "",
           files: [],
-          text: "",
+          text: options.captureText ?? "",
           folder: ""
         }) + "\n",
         stderr: ""
@@ -126,7 +128,7 @@ function createMockRunner(scenario) {
 
 async function runScenario(scenario, options = {}) {
   return captureActiveWindowContext({
-    runPowerShell: createMockRunner(scenario),
+    runPowerShell: createMockRunner(scenario, options),
     ...options
   });
 }
@@ -158,11 +160,30 @@ async function runScenario(scenario, options = {}) {
 }
 
 {
+  const ctx = await runScenario("browser-edge-url", {
+    captureText: "selected text from page",
+    clipboardBaseline: "selected text from page"
+  });
+  assert.equal(ctx.selectedText, null, "clipboard text matching the hotkey baseline must be treated as stale");
+}
+
+{
+  const ctx = await runScenario("browser-edge-url", {
+    captureText: "new selected text",
+    clipboardBaseline: "old clipboard text"
+  });
+  assert.equal(ctx.selectedText, "new selected text");
+}
+
+{
   const ctx = await runScenario("browser-address-unreadable");
   assert.equal(ctx.activeWindow.detectedKind, "window_title");
   assert.equal(ctx.activeWindow.url, undefined);
   assert.equal(ctx.activeWindow.extra.reason, "address_bar_unreadable");
 }
+
+assert.ok(/shortcut\.id === "capture-and-ask"[\s\S]{0,1600}allowClipboardFallback:\s*false[\s\S]{0,220}clipboardBaseline:\s*hotKeyClipboardSnapshot/.test(electronMainSource),
+  "capture-and-ask must only accept text copied after the hotkey, not stale clipboard fallback");
 
 {
   const ctx = await runScenario("office-word-com");
