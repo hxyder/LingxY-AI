@@ -89,12 +89,22 @@ export function createWhisperDaemon({
     }
   };
 
-  const stop = () => {
+  const stop = ({ skipKill = false } = {}) => {
     if (idleTimer) clearTimeout(idleTimer);
     idleTimer = null;
     try { rl?.close?.(); } catch { /* ignore */ }
     rl = null;
-    if (child && !child.killed) {
+    // Codex Round 7 final review: never call kill() on a child that has
+    // already exited. `close` means the process is gone; on a long-running
+    // host its PID may have been recycled by the OS, and a delayed
+    // `kill(SIGTERM)` would land on an unrelated process. The close
+    // handler passes skipKill:true; ordinary stop() paths still kill
+    // running children but check exit codes first as belt-and-braces.
+    const childAlreadyExited = !child
+      || child.killed
+      || (child.exitCode !== null && child.exitCode !== undefined)
+      || (child.signalCode !== null && child.signalCode !== undefined);
+    if (!skipKill && !childAlreadyExited) {
       shuttingDown = true;
       try { child.kill("SIGTERM"); } catch { /* ignore */ }
     }
@@ -102,17 +112,15 @@ export function createWhisperDaemon({
     stderrText = "";
   };
 
-  const recordFailure = (error) => {
+  const recordFailure = (error, { skipKill = false } = {}) => {
     failureCount = Math.min(failureCount + 1, backoffSteps.length);
     const cooldown = backoffSteps[Math.min(failureCount, backoffSteps.length) - 1] ?? backoffSteps[backoffSteps.length - 1];
     blockedUntil = now() + cooldown;
     failPending(error);
-    stop();
-    // Codex Round 7 review: do NOT clear `shuttingDown` here. In production
-    // the `close` event from `child.kill()` fires asynchronously; if we
-    // cleared the flag before close arrived, the close handler would see
-    // shuttingDown=false and recordFailure a second time, doubling the
-    // backoff step. Let the close handler consume the flag.
+    stop({ skipKill });
+    // Do NOT clear `shuttingDown` here. In production the `close` event
+    // from `child.kill()` fires asynchronously; the close handler consumes
+    // the flag.
   };
 
   const recordSuccess = () => {
@@ -175,7 +183,9 @@ export function createWhisperDaemon({
         return;
       }
       const error = new Error(`whisper daemon exited with code ${code}${stderrText ? `: ${stderrText.slice(-400)}` : ""}`);
-      recordFailure(error);
+      // Codex Round 7 final: pass skipKill so stop() does not signal a
+      // recycled PID — close means the child is already gone.
+      recordFailure(error, { skipKill: true });
     });
     // Defensive stdin error handler — child crash mid-write surfaces here as
     // EPIPE on some platforms; without a listener Node would crash the

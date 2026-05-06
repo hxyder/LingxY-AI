@@ -186,6 +186,66 @@ test("kill -> async close does not double-count the breaker step", async () => {
   daemon.stop();
 });
 
+test("close path does not signal an already-exited child (PID recycle safety)", async () => {
+  // Codex Round 7 final review: when the child crashes on its own and the
+  // close event fires, the handler must NOT call kill() on the dead pid —
+  // on a long-running host that PID may already belong to an unrelated
+  // process. We assert by counting kill invocations on a fake child whose
+  // close emits BEFORE recordFailure runs (i.e. the daemon was not the
+  // one who killed it).
+  const spawnCalls = [];
+  let killCount = 0;
+  let fakeNow = 1_000_000;
+  const spawnImpl = (command, args, options) => {
+    spawnCalls.push({ command, args, options });
+    const child = new EventEmitter();
+    child.stdin = new PassThrough();
+    child.stdout = new PassThrough();
+    child.stderr = new PassThrough();
+    child.killed = false;
+    child.exitCode = null;
+    child.signalCode = null;
+    child.kill = () => {
+      killCount += 1;
+      child.killed = true;
+    };
+    child.stdin.on("data", () => {
+      // Simulate child crash: set exitCode and emit close async, never
+      // respond to the request.
+      queueMicrotask(() => {
+        child.exitCode = 137;
+        child.emit("close", 137);
+      });
+    });
+    return child;
+  };
+  const daemon = createWhisperDaemon({
+    pythonCommand: "python",
+    scriptPath: "scripts/local-whisper-transcribe.py",
+    spawnImpl,
+    requestTimeoutMs: 1000,
+    idleTimeoutMs: 0,
+    backoffSteps: [10_000, 60_000],
+    now: () => fakeNow
+  });
+
+  await assert.rejects(
+    () => daemon.transcribe({ audioPath: "a.webm" }),
+    /exited with code 137/i
+  );
+  // Settle event loop.
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+
+  assert.equal(killCount, 0,
+    "kill() must NOT be called from the close path — the PID is gone and could be recycled");
+  // breaker still trips (single counted failure, first step).
+  assert.equal(daemon.circuitOpen, true, "single failure trips breaker");
+  fakeNow += 10_001;
+  assert.equal(daemon.circuitOpen, false, "breaker closes at first backoff step (10s)");
+  daemon.stop();
+});
+
 test("whisper daemon trips circuit breaker on stdout pollution and lets fallback proceed", async () => {
   const spawnCalls = [];
   let pollutionCount = 0;
