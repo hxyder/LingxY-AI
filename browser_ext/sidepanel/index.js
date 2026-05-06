@@ -15,6 +15,7 @@ import {
   clearCachedLocation,
   formatLocationLabel,
   getCachedLocation,
+  refreshLocationIfAlreadyGranted,
   requestPreciseLocation
 } from "../shared/location.js";
 
@@ -819,6 +820,21 @@ async function refreshLocationChip() {
   }
 }
 
+async function syncKnownLocationToDesktop({ refresh = false } = {}) {
+  try {
+    const result = refresh
+      ? await refreshLocationIfAlreadyGranted()
+      : { ok: true, location: await getCachedLocation() };
+    if (!result?.location) return;
+    await pushLocationToDesktop(result.location);
+    if (refresh && result.refreshed) {
+      await refreshLocationChip();
+    }
+  } catch {
+    /* advisory only */
+  }
+}
+
 // Forward a fresh fix to the desktop service so the agent-loop sees it
 // without waiting for the next capture submission. Best effort — if the
 // desktop isn't up, the next task POST will carry the location anyway.
@@ -891,7 +907,10 @@ async function onLocationChipClick() {
   await loadHistory();
   renderHistory();
   void refreshMode();
-  void refreshLocationChip();
+  await refreshLocationChip();
+  void syncKnownLocationToDesktop();
+  void syncKnownLocationToDesktop({ refresh: true });
+  setInterval(() => { void syncKnownLocationToDesktop({ refresh: true }); }, 30 * 60 * 1000);
   await consumePendingAnalysis();
   chrome.storage.onChanged?.addListener((changes, area) => {
     if (area !== "local") return;

@@ -10,6 +10,7 @@
 
 export const STORAGE_KEY = "ucaUserLocation";
 export const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 h
+export const BACKGROUND_REFRESH_MIN_AGE_MS = 30 * 60 * 1000; // 30 min
 
 /**
  * Geolocation permission is requested by navigator.geolocation itself. This
@@ -26,6 +27,16 @@ export async function ensureGeolocationPermission() {
 /** Chrome does not expose a geolocation optional permission to revoke here. */
 export async function revokeGeolocationPermission() {
   return false;
+}
+
+export async function getGeolocationPermissionState() {
+  try {
+    if (!navigator?.permissions?.query) return "unknown";
+    const status = await navigator.permissions.query({ name: "geolocation" });
+    return status?.state ?? "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 export function getSystemTimezone() {
@@ -159,6 +170,37 @@ export async function requestPreciseLocation({ highAccuracy = false } = {}) {
   };
   await writeCachedLocation(record);
   return { ok: true, location: record, alreadyGranted: perm.alreadyGranted === true };
+}
+
+/**
+ * Refresh location only when the browser already reports geolocation as
+ * granted. This is intentionally separate from requestPreciseLocation():
+ * boot/periodic refresh must never pop a permission prompt or require a user
+ * gesture. If permission state is unavailable, we keep the cached value and
+ * wait for an explicit click.
+ */
+export async function refreshLocationIfAlreadyGranted({
+  highAccuracy = false,
+  minAgeMs = BACKGROUND_REFRESH_MIN_AGE_MS
+} = {}) {
+  const cached = await getCachedLocation({ maxAgeMs: Infinity });
+  const cachedAt = cached?.fetchedAt ? Date.parse(cached.fetchedAt) : 0;
+  if (Number.isFinite(cachedAt) && cachedAt > 0 && Date.now() - cachedAt < minAgeMs) {
+    return { ok: true, location: cached, refreshed: false, reason: "fresh_cache" };
+  }
+  const state = await getGeolocationPermissionState();
+  if (state !== "granted") {
+    return {
+      ok: Boolean(cached),
+      location: cached ?? null,
+      refreshed: false,
+      reason: state === "denied" ? "permission_denied" : "permission_not_granted"
+    };
+  }
+  const refreshed = await requestPreciseLocation({ highAccuracy });
+  return refreshed.ok
+    ? { ...refreshed, refreshed: true }
+    : { ...refreshed, location: cached ?? null, refreshed: false };
 }
 
 /**
