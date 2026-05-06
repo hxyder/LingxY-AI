@@ -395,6 +395,26 @@ function normalizeDecisionRequiredPolicyGroups(groups = [], { contextPacket = nu
   return { groups: accepted, rejected };
 }
 
+// Side-effect groups (real send/create/upload) where SR LLM hallucination
+// has caused real production stalls (task_c7f592f0: SR claimed `email_send`
+// for a "美股今天行情" research query → phase-gate `email_send_required_not_called`
+// → action-only handoff blocked all read tools → partial_success).
+//
+// Regex layer (`inferSideEffectPolicyGroups` via SIDE_EFFECT_CONTRACT_REGISTRY)
+// already requires a concrete entity (email address / file path / attendees)
+// for these groups. Require the regex layer to ALSO infer the same group
+// before trusting SR's claim — drop SR-only side-effect claims with a
+// rejection trace.
+//
+// `schedule_create` intentionally NOT in this set: the regex side-effect
+// registry has no schedule entity, so SR remains the sole source of
+// truth there.
+const REGEX_CONFIRMED_SIDE_EFFECT_GROUPS = new Set([
+  "email_send",
+  "calendar_create",
+  "file_upload"
+]);
+
 function resolveRequiredPolicyGroupsFromIntentRoute(decision = null, { text = "", contextPacket = null, signals = null } = {}) {
   const decisionGroups = decision && typeof decision === "object" && Array.isArray(decision.required_policy_groups)
     ? decision.required_policy_groups
@@ -414,16 +434,29 @@ function resolveRequiredPolicyGroupsFromIntentRoute(decision = null, { text = ""
       context_packet: contextPacket
     }
   });
+  const inferredSet = new Set(inferredGroups);
+  const sideEffectRejected = [];
+  const sideEffectAccepted = [];
+  for (const group of normalizedDecisionGroups.groups) {
+    if (REGEX_CONFIRMED_SIDE_EFFECT_GROUPS.has(group) && !inferredSet.has(group)) {
+      sideEffectRejected.push({
+        candidate: group,
+        reason: `${group} requires concrete entity evidence (recipient/attendees/file path) extracted from the user text; SR LLM proposed the group but the regex side-effect layer found no entity.`
+      });
+      continue;
+    }
+    sideEffectAccepted.push(group);
+  }
   const localFileGroups = shouldRequireLocalFileTextRead({ decision, signals, contextPacket })
     ? [LOCAL_FILE_TEXT_READ_GROUP]
     : [];
   return {
     groups: [...new Set([
-      ...normalizedDecisionGroups.groups,
+      ...sideEffectAccepted,
       ...inferredGroups,
       ...localFileGroups
     ].filter((group) => NON_WEB_POLICY_GROUPS_FROM_INTENT_ROUTE.has(group)))],
-    rejected: normalizedDecisionGroups.rejected
+    rejected: [...normalizedDecisionGroups.rejected, ...sideEffectRejected]
   };
 }
 
