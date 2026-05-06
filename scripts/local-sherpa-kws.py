@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import shutil
@@ -408,7 +409,67 @@ def run_template_fallback(input_samples, sample_rate: int, tmp_dir: Path) -> dic
     return best
 
 
-def run_kws(audio_path: Path, model_dir: Path, keywords: list[str], template_fallback: bool = False) -> dict:
+def create_keyword_spotter(sherpa_onnx, files: dict[str, Path], keywords_file: Path):
+    return sherpa_onnx.KeywordSpotter(
+        tokens=str(files["tokens"]),
+        encoder=str(files["encoder"]),
+        decoder=str(files["decoder"]),
+        joiner=str(files["joiner"]),
+        keywords_file=str(keywords_file),
+        num_threads=int(os.environ.get("UCA_SHERPA_KWS_NUM_THREADS", "2")),
+        sample_rate=16000,
+        feature_dim=80,
+        max_active_paths=int(os.environ.get("UCA_SHERPA_KWS_MAX_ACTIVE_PATHS", "6")),
+        keywords_score=float(os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE", "2.0")),
+        keywords_threshold=float(os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD", "0.15")),
+        num_trailing_blanks=int(os.environ.get("UCA_SHERPA_KWS_NUM_TRAILING_BLANKS", "1")),
+        provider=os.environ.get("UCA_SHERPA_KWS_PROVIDER", "cpu"),
+    )
+
+
+def spotter_cache_key(model_dir: Path, keywords: list[str]) -> str:
+    payload = {
+        "modelDir": str(model_dir),
+        "keywords": keywords,
+        "configuredKeywordsFile": os.environ.get("UCA_SHERPA_KWS_KEYWORDS_FILE", ""),
+        "score": os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE", "2.0"),
+        "threshold": os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD", "0.15"),
+        "maxActivePaths": os.environ.get("UCA_SHERPA_KWS_MAX_ACTIVE_PATHS", "6"),
+        "numThreads": os.environ.get("UCA_SHERPA_KWS_NUM_THREADS", "2"),
+        "numTrailingBlanks": os.environ.get("UCA_SHERPA_KWS_NUM_TRAILING_BLANKS", "1"),
+        "provider": os.environ.get("UCA_SHERPA_KWS_PROVIDER", "cpu"),
+    }
+    text = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+class KwsSpotterCache:
+    def __init__(self):
+        self._entries: dict[str, dict] = {}
+
+    def get(self, sherpa_onnx, model_dir: Path, files: dict[str, Path], keywords: list[str]) -> dict:
+        key = spotter_cache_key(model_dir, keywords)
+        entry = self._entries.get(key)
+        if entry:
+            return entry
+        work_dir = Path(tempfile.mkdtemp(prefix="uca-sherpa-kws-cache-"))
+        keywords_file = build_keywords_file(model_dir, files["tokens"], keywords, work_dir)
+        entry = {
+            "key": key,
+            "workDir": work_dir,
+            "spotter": create_keyword_spotter(sherpa_onnx, files, keywords_file),
+            "keywordsFile": keywords_file,
+        }
+        self._entries[key] = entry
+        return entry
+
+    def close(self) -> None:
+        for entry in self._entries.values():
+            shutil.rmtree(entry.get("workDir"), ignore_errors=True)
+        self._entries.clear()
+
+
+def run_kws(audio_path: Path, model_dir: Path, keywords: list[str], template_fallback: bool = False, spotter_cache: KwsSpotterCache | None = None) -> dict:
     try:
         import numpy as np
         import sherpa_onnx
@@ -453,21 +514,14 @@ def run_kws(audio_path: Path, model_dir: Path, keywords: list[str], template_fal
 
         sample_rate, samples = read_wav_samples(wav_path)
 
-        spotter = sherpa_onnx.KeywordSpotter(
-            tokens=str(files["tokens"]),
-            encoder=str(files["encoder"]),
-            decoder=str(files["decoder"]),
-            joiner=str(files["joiner"]),
-            keywords_file=str(keywords_file),
-            num_threads=int(os.environ.get("UCA_SHERPA_KWS_NUM_THREADS", "2")),
-            sample_rate=16000,
-            feature_dim=80,
-            max_active_paths=int(os.environ.get("UCA_SHERPA_KWS_MAX_ACTIVE_PATHS", "6")),
-            keywords_score=float(os.environ.get("UCA_SHERPA_KWS_KEYWORDS_SCORE", "2.0")),
-            keywords_threshold=float(os.environ.get("UCA_SHERPA_KWS_KEYWORDS_THRESHOLD", "0.15")),
-            num_trailing_blanks=int(os.environ.get("UCA_SHERPA_KWS_NUM_TRAILING_BLANKS", "1")),
-            provider=os.environ.get("UCA_SHERPA_KWS_PROVIDER", "cpu"),
-        )
+        if spotter_cache:
+            cached = spotter_cache.get(sherpa_onnx, model_dir, files, keywords)
+            spotter = cached["spotter"]
+            cache_used = True
+        else:
+            keywords_file = build_keywords_file(model_dir, files["tokens"], keywords, tmp_dir)
+            spotter = create_keyword_spotter(sherpa_onnx, files, keywords_file)
+            cache_used = False
         stream = spotter.create_stream()
         stream.accept_waveform(sample_rate, samples)
         stream.input_finished()
@@ -508,40 +562,46 @@ def run_kws(audio_path: Path, model_dir: Path, keywords: list[str], template_fal
                 "kind": "local",
                 "name": "Local sherpa-onnx KWS",
                 "modelDir": str(model_dir),
+                "cache": "daemon" if cache_used else "one_shot",
             },
         }
 
 
 def run_server(default_model_dir: Path, default_keywords: list[str]) -> int:
-    for line in sys.stdin:
-        text = line.strip()
-        if not text:
-            continue
-        request_id = None
-        try:
-            payload = json.loads(text)
-            request_id = payload.get("id")
-            apply_kws_profile(bool(payload.get("personalized")))
-            request_keywords = payload.get("keywords")
-            explicit_keywords = [str(item).strip() for item in request_keywords if str(item).strip()] if isinstance(request_keywords, list) else []
-            keywords = explicit_keywords or default_keywords
-            model_dir = resolve_model_dir(payload.get("model_dir") or str(default_model_dir))
-            result = run_kws(
-                Path(str(payload.get("audio_path") or "")).resolve(),
-                model_dir,
-                keywords,
-                template_fallback=bool(payload.get("template_fallback")),
-            )
-        except Exception as exc:
-            result = {
-                "ok": False,
-                "reason": "kws_exception",
-                "message": str(exc),
-            }
-        if request_id is not None:
-            result["id"] = request_id
-        print(json.dumps(result, ensure_ascii=True), flush=True)
-    return 0
+    spotter_cache = KwsSpotterCache()
+    try:
+        for line in sys.stdin:
+            text = line.strip()
+            if not text:
+                continue
+            request_id = None
+            try:
+                payload = json.loads(text)
+                request_id = payload.get("id")
+                apply_kws_profile(bool(payload.get("personalized")))
+                request_keywords = payload.get("keywords")
+                explicit_keywords = [str(item).strip() for item in request_keywords if str(item).strip()] if isinstance(request_keywords, list) else []
+                keywords = explicit_keywords or default_keywords
+                model_dir = resolve_model_dir(payload.get("model_dir") or str(default_model_dir))
+                result = run_kws(
+                    Path(str(payload.get("audio_path") or "")).resolve(),
+                    model_dir,
+                    keywords,
+                    template_fallback=bool(payload.get("template_fallback")),
+                    spotter_cache=spotter_cache,
+                )
+            except Exception as exc:
+                result = {
+                    "ok": False,
+                    "reason": "kws_exception",
+                    "message": str(exc),
+                }
+            if request_id is not None:
+                result["id"] = request_id
+            print(json.dumps(result, ensure_ascii=True), flush=True)
+        return 0
+    finally:
+        spotter_cache.close()
 
 
 def main() -> int:

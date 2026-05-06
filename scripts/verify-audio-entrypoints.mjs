@@ -207,6 +207,8 @@ assert.ok(audioRoutes.includes("parseWakeKeywordsParam") && audioRoutes.includes
   "echo KWS: audio route must pass forwarded wake-profile keywords to the sherpa helper");
 assert.ok(audioRoutes.includes("detectWakeKeywordWithSherpaDaemon") && sherpaScript.includes("--server"),
   "echo KWS: local sherpa must expose a reusable daemon path with one-shot fallback");
+assert.ok(sherpaScript.includes("class KwsSpotterCache") && sherpaScript.includes("spotter_cache=spotter_cache"),
+  "echo KWS: sherpa daemon must cache KeywordSpotter instances instead of only keeping Python alive");
 assert.ok(overlayJs.includes("function toggleComposerVoiceInput()")
   && overlayJs.includes("if (payload.shortcutId === \"voice-wake\")")
   && overlayJs.includes("toggleComposerVoiceInput();"),
