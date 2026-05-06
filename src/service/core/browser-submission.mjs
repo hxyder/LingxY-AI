@@ -64,8 +64,8 @@ function runtimeWithTaskEmitter(runtime, taskId) {
 function createSelectionMetadata(capture) {
   const hasPageContent = capture.sourceType === "webpage" || capture.sourceType === "page_explanation"
     ? capture.metadata?.hasPageContent === true
-      || Boolean(String(capture.text ?? "").trim())
       || Boolean(String(capture.html ?? "").trim())
+      || (capture.metadata?.hasPageContent !== false && Boolean(String(capture.text ?? "").trim()))
     : false;
   return withContentEvidence({
     page_title: capture.pageTitle,

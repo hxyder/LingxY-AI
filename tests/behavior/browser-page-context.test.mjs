@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
-import { submitBrowserTask } from "../../src/service/core/browser-submission.mjs";
+import {
+  buildBrowserContextPacket,
+  submitBrowserTask
+} from "../../src/service/core/browser-submission.mjs";
 import { createEventBusScaffold } from "../../src/service/core/events/event-bus.mjs";
 import { createTaskQueueScaffold } from "../../src/service/core/queue/task-queue.mjs";
 import { createInMemoryStoreScaffold } from "../../src/service/core/store/memory-store.mjs";
@@ -27,6 +30,28 @@ function createFetchResponse(body, contentType = "text/html; charset=utf-8") {
     }
   };
 }
+
+test("URL-only browser capture is metadata until page text is fetched", () => {
+  const packet = buildBrowserContextPacket({
+    traceId: "trace_url_only",
+    contextId: "ctx_url_only",
+    capture: {
+      sourceType: "webpage",
+      browser: "chrome.exe",
+      url: "https://example.com/current",
+      pageTitle: "Current Page",
+      text: "URL：https://example.com/current",
+      metadata: { hasPageContent: false }
+    }
+  });
+
+  assert.equal(packet.selection_metadata.browser_page_content, false);
+  assert.ok(packet.selection_metadata.content_evidence.some((entry) =>
+    entry.source_kind === "browser_page_metadata"
+    && entry.coverage_scope === "url_title_only"
+    && entry.content_extracted === false
+  ));
+});
 
 test("explicit current-page browser capture fetches page text before execution", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "lingxy-browser-page-"));
