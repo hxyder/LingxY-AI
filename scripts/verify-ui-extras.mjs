@@ -45,6 +45,7 @@ const overlayHtml = read("src/desktop/renderer/overlay.html");
 const overlayJs = read("src/desktop/renderer/overlay.js");
 const taskEventStream = read("src/desktop/renderer/task-event-stream.js");
 const livePreview = read("src/desktop/renderer/live-preview.js");
+const previewWindowJs = read("src/desktop/renderer/preview-window.js");
 const previewStreaming = read("src/desktop/renderer/preview/streaming.js");
 const sharedCss = readCssWithImports(root, "src/desktop/renderer/shared.css");
 const sharedUi = read("src/desktop/renderer/shared-ui.mjs");
@@ -793,6 +794,10 @@ assert.ok(/function artifactPathFromToolPayload/.test(overlayJs)
     && /Array\.isArray\(payload\?\.artifact_paths\)/.test(overlayJs)
     && /artifactPath:\s*artifactPathFromToolPayload\(frame\.data\)/.test(overlayJs),
   "live preview: overlay must commit from canonical artifact_paths arrays, not only legacy metadata.path");
+assert.ok(/if \(!state\.toolName\)[\s\S]{0,260}state\.toolName = toolName[\s\S]{0,260}setStatus\("running"\)/.test(previewWindowJs),
+  "live preview: preview window must bootstrap from early tool_input_delta before tool_call_started");
+assert.ok(/Array\.isArray\(payload\.artifact_paths\)[\s\S]{0,220}payload\.artifact_paths\.find/.test(consoleJs),
+  "live preview: console must commit from canonical artifact_paths arrays, not only metadata.path");
 
 // ── Bubble timestamps ──────────────────────────────────────────────────
 assert.ok(/function formatRelativeTime\s*\(/.test(sharedUi), "timestamps: shared formatRelativeTime() missing");

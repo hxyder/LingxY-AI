@@ -102,7 +102,17 @@
 
   function applyDelta(payload = {}) {
     const { toolName, partialJson } = payload;
-    if (!toolName || state.toolName !== toolName) return;
+    if (!toolName) return;
+    if (!state.toolName) {
+      state.toolName = toolName;
+      state.toolPath = "";
+      state.toolKind = inferKind("", toolName);
+      setStatus("running");
+      setTitle(`${toolName} 生成中…`);
+      setSub(toolName);
+      body.innerHTML = `<div class="pv-loading">正在生成…</div>`;
+    }
+    if (state.toolName !== toolName) return;
     state.rawJson = partialJson || "";
 
     if (!state.toolPath && window.livePreviewStreaming?.extractStringField) {

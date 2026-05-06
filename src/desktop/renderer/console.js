@@ -2010,7 +2010,9 @@ function subscribeConsoleChatTask(taskId) {
         });
         consoleChatState.textContent = payload.success === false ? `${toolLabel}失败` : `${toolLabel}完成`;
         if (window.livePreview?.isFileGenTool?.(toolName)) {
-          const artifactPath = payload.metadata?.path ?? payload.artifact_path ?? "";
+          const artifactPath = Array.isArray(payload.artifact_paths)
+            ? (payload.artifact_paths.find((item) => typeof item === "string" && item.length > 0) ?? "")
+            : (payload.metadata?.path ?? payload.artifact_path ?? "");
           window.livePreview.commit({
             toolName,
             success: payload.success !== false,
