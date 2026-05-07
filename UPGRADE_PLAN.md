@@ -96,6 +96,14 @@
 - **win-unpacked: 241 MB** = **安装后目录 / 解包体积**（非 NSIS 安装包），实际 NSIS installer 通常更小（dist/*.exe 是真实下载文件）。
 - **src/: 5.5 MB / tests/: 1.2 MB / scripts/: 2.8 MB** = 我们的源码，仅几 MB，不是体积主因。
 
+**2026-05-07 实测刷新（A1 + A3-α 后）**：
+- 真实 baseline 是 **546 MB**（不是 plan 起草时的 241 MB — node_modules 期间在长，dependencies 增加）
+- A1 locales trim：546 → 505 MB（-41 MB）
+- A3-α scripts allowlist：505 → 543 MB（-3 MB；scripts/ 2.5→0.16MB，asar 226→224MB）
+- 当前 543 MB；离 plan §3 的 ≤ 200 MB 硬指标差 343 MB
+- **必须 stretch goal 才能挨近 200 MB**：A3-β（mermaid CDN）+ A3-γ（pdfjs 文件级裁剪）+ 重新评估 exceljs / docx / mammoth 是否能 lazy import / cherry-pick
+- **新 reality check**：周末做完 A1 + A3-α，体积目标降到 **≤ 500 MB**（比 baseline -46 MB），200 MB 留 hotfix 周期的 stretch
+
 ---
 
 ## 1. 周末上线 GitHub 的"硬阻塞"清单
@@ -331,8 +339,8 @@ verify-github-readiness / verify-issue-templates / verify-pr-template / verify-s
 |----|------|------|------|-----|
 | 109-RUN | 109-prompt corpus 跑完 + 失败聚类 | DONE（94/109） | - | ✓ |
 | RC-1 | 开源前内容剥离 audit | **PARTIAL-PENDING（待用户 A 决定 git-history 处置）** | R-CODE | 2h+ |
-| A1 | 裁 Chromium locales | TODO | R-CODE | 30m |
-| A3-α | app.asar files + extraResources 双收紧 | TODO | R-CODE | 1h |
+| A1 | 裁 Chromium locales | DONE（33a0146；42→1.1MB） | R-CODE | 30m |
+| A3-α | app.asar files + extraResources 双收紧 | DONE（13c911c；scripts 2.5→0.16MB，asar -2MB） | R-CODE | 1h |
 | A3-β | mermaid CDN 化 | TODO | R-CODE | 1h |
 | B1 | schedule 字段一致性（冻结 display_name） | TODO | R-CODE | 1.5h |
 | B2-a | 109 失败硬阻塞修（open_url + artifact + SR override） | TODO | R-CODE | 3-4h |
