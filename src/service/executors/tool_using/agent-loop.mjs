@@ -141,6 +141,62 @@ function collectArtifactPathsFromTranscript(transcript = []) {
   return [...paths];
 }
 
+function collectTranscriptObservations(transcript = []) {
+  const parts = [];
+  for (const entry of transcript ?? []) {
+    if (entry?.type === "tool_call_completed" && typeof entry.observation === "string") {
+      const trimmed = entry.observation.trim();
+      if (trimmed) parts.push(trimmed);
+    }
+  }
+  return parts.join("\n\n---\n\n");
+}
+
+const EMAIL_SEND_FALLBACK_TOOL_PREFERENCE = Object.freeze([
+  "account_send_email",
+  "send_email_smtp",
+  "google.gmail.send_email",
+  "microsoft.outlook.send_email"
+]);
+
+// Audit (2026-05-07, task_f62f95d0): when a stubborn LLM planner refuses to
+// call any of the action_only-allowed tools after every retry, but the
+// scheduler had pre-authorized the side effect with explicit slot values,
+// the framework should honour the pre-authorization and execute the
+// action deterministically. This is intentionally narrow:
+//   - Only fires for explicitly preauthorized scheduled fires (the user
+//     consented to "send to X@example.com" when creating the schedule).
+//   - Today only handles email_send because that's the only action group
+//     with a fully-specified slot contract in the scheduler. Calendar /
+//     file_upload can be wired later once their slot specs land.
+//   - Picks the highest-trust tool the planner is allowed to call.
+export function synthesiseDeterministicActionFallback({ task, transcript = [], allowed = [] }) {
+  const auth = task?.context_packet?.selection_metadata?.side_effect_authorization;
+  if (auth?.decision !== "preauthorized") return null;
+  if (!Array.isArray(auth.groups) || !auth.groups.includes("email_send")) return null;
+  if (!Array.isArray(allowed) || allowed.length === 0) return null;
+  const contract = task?.context_packet?.selection_metadata?.side_effect_contract;
+  const recipients = contract?.groups?.email_send?.slots?.to?.values;
+  if (!Array.isArray(recipients) || recipients.length === 0) return null;
+  const allowedSet = new Set(allowed);
+  const tool = EMAIL_SEND_FALLBACK_TOOL_PREFERENCE.find((id) => allowedSet.has(id));
+  if (!tool) return null;
+  const userCommand = String(task?.user_command ?? "").trim();
+  const subject = (userCommand.split(/\n/)[0] || "LingxY 任务结果").slice(0, 80);
+  const body = collectTranscriptObservations(transcript).slice(0, 8000)
+    || `LingxY 已完成调度任务（${userCommand.slice(0, 200)}）但未能整理出文本内容。`;
+  return {
+    type: "tool_call",
+    tool,
+    args: {
+      to: recipients,
+      subject,
+      body
+    },
+    __deterministic_fallback: true
+  };
+}
+
 function defaultPlanner({ task, runtime: plannerRuntime = null }) {
   const catalog = plannerRuntime?.connectorCatalog ?? task.__runtime?.connectorCatalog ?? null;
   const deterministic = planDeterministicToolCall(task.user_command, catalog);
@@ -831,7 +887,10 @@ async function _runToolAgentLoopCore({
       transcript
     );
     const visibleToolIds = new Set(visibleTools.map((tool) => tool.id));
-    const decision = await resolvedPlanner({
+    // `decision` is reassignable: the deterministic action_only fallback
+    // path may overwrite a stalled LLM decision with a synthesised
+    // tool_call after the planner exhausts its retries.
+    let decision = await resolvedPlanner({
       task,
       transcript,
       tools: visibleTools,
@@ -1330,11 +1389,36 @@ async function _runToolAgentLoopCore({
         });
         continue;
       }
-      return {
-        status: "partial_success",
-        final_text: localFallbackFinal({ task, transcript, reason: hint }),
-        transcript
-      };
+      // Audit (2026-05-07, task_f62f95d0): a stubborn LLM planner kept
+      // proposing fetch_url_content past 3 retries even with the tool
+      // surface already filtered to email_send. The schedule had
+      // pre-authorized email_send with explicit recipients in
+      // side_effect_contract.email_send.to.values; the framework should
+      // honour that authorization and execute the action deterministically
+      // rather than ending in partial_success with no email sent. We only
+      // do this for explicitly preauthorized scheduled fires so user-typed
+      // chat tasks never surprise-send anything.
+      const fallbackDecision = synthesiseDeterministicActionFallback({
+        task, transcript, allowed
+      });
+      if (fallbackDecision) {
+        transcript.push({
+          type: "deterministic_action_fallback",
+          tool: fallbackDecision.tool,
+          reason: "planner_stalled_in_action_only"
+        });
+        runtime?.emitTaskEvent?.("deterministic_action_fallback", {
+          tool_id: fallbackDecision.tool,
+          reason: "planner_stalled_in_action_only"
+        });
+        decision = fallbackDecision;
+      } else {
+        return {
+          status: "partial_success",
+          final_text: localFallbackFinal({ task, transcript, reason: hint }),
+          transcript
+        };
+      }
     }
 
     if (decision?.type === "tool_call" && !visibleToolIds.has(decision.tool)) {

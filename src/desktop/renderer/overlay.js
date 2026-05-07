@@ -4092,6 +4092,24 @@ async function refreshActiveTask() {
       speakEchoFinalIfApplicable(task, partialText);
     } else if (task.status === "cancelled") {
       addSystemBubble("Task cancelled.");
+      // Audit (2026-05-07): cancelled tasks left lastEchoTaskCompletedAt at
+      // 0, so a wake within 30s of pressing Esc started a fresh
+      // conversation instead of carrying the prior context. Mirror the
+      // success/failed/partial branches so "灵犀, 重新试一下" inherits
+      // the conversation that just got cancelled.
+      if (conversationState) {
+        conversationState.lastCompletedTaskId = task.task_id;
+        conversationState.lastCompletedAt = Date.now();
+        conversationState.updatedAt = Date.now();
+      }
+      if (isEchoTask(task.task_id) || isEchoOriginTask(task)) {
+        lastEchoTaskCompletedAt = Date.now();
+        lastEchoTaskConversationId = task.conversation_id
+          ?? taskOwnerConversationId(taskConversationMap, task.task_id)
+          ?? conversationState?.id
+          ?? null;
+        lastEchoTaskId = task.task_id;
+      }
     }
 
     // UCA-038 bug fix: reset conversationPhase to "idle" once a task reaches

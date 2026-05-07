@@ -351,7 +351,17 @@ async function onWakeDetected(kind, transcript = "", options = {}) {
   // us out for 8s at a time, which is why a second "linxi" silently failed.
   const now = Date.now();
   if (now - echoLastWakeTime < ECHO_MIN_REWAKE_MS) {
+    // Audit (2026-05-07): silently dropping the second wake left the user
+    // staring at the orb wondering if the mic died. Surface a brief HUD
+    // so the user gets feedback that the wake was heard but throttled.
     console.debug("[echo] wake ignored — within re-wake cooldown");
+    try {
+      window.ucaShell?.showEchoBubble?.({
+        text: "🎙 刚刚已唤醒，请直接说指令",
+        kind: "info",
+        durationMs: 1200
+      });
+    } catch { /* HUD is best-effort */ }
     return;
   }
   echoLastWakeTime = now;

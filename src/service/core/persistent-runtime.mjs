@@ -76,6 +76,13 @@ export function createPersistentRuntime({
     secretStore,
     defaults: {
       security: {},
+      ui: {
+        // "system" | "lingxy_browser" | "ask"
+        // Codex review notes: default to system browser so users never
+        // get trapped in an unexpected in-app window. Users who want the
+        // in-app browser can flip this in Console settings.
+        linkOpenMode: "system"
+      },
       echo: {
         // Phase 1 Echo TTS. enabled defaults to true because the user
         // explicitly asked for "voice reply with optional mute". The
