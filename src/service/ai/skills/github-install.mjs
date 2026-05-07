@@ -391,7 +391,34 @@ function appendRegistryEntry(runtime, rootPath) {
   return registries;
 }
 
-export async function installSkillFromGitHub({
+// C18 #2 (D pre-design ACCEPT, 2026-05-08): installSkillFromGitHub is
+// split into a stage phase (clone + validate, no user-visible mutation)
+// and a finalize phase (atomic swap + registry update). The split lets
+// the LLM-callable action tool surface a real SKILL.md PREVIEW in the
+// approval card before the user commits to install — D's "preview-then-
+// install" requirement that single-step requires_confirmation can't
+// satisfy. installSkillFromGitHub is preserved as a thin shim that
+// chains stage → finalize so existing callers (POST /skills/install/
+// github + verify-skill-github-install behavior tests) keep working.
+
+/**
+ * Stage a skill clone for a GitHub URL. Clones to a temp staging dir,
+ * validates SKILL.md, but does NOT touch the user's installed skill set.
+ *
+ * Returns either a failure shape (error code + message) OR a success
+ * shape:
+ *   { ok: true, stagingInfo: {
+ *       stagingDir, finalName, finalDir, owner, repo, branch, subPath,
+ *       descriptor: { heading, description },
+ *       preview: { markdown, sizeBytes, contentHash },
+ *       gitRemoveFailed: bool
+ *     } }
+ *
+ * The caller must EITHER finalizeStagedInstall(stagingInfo) to commit
+ * OR call discardStagedInstall(stagingInfo) to clean up the temp dir.
+ * Leaving staging dirs orphaned is a slow-leak bug.
+ */
+export async function stageSkillFromGitHub({
   url,
   branch = null,
   subPath = null,
@@ -415,16 +442,11 @@ export async function installSkillFromGitHub({
   if (!branchValidation.ok) return { ok: false, error: branchValidation.reason, message: branchValidation.message };
   const effectiveBranch = branchValidation.branch;
 
-  // C18 #3: explicit subPath kwarg (from action tool / future API)
-  // takes precedence over the one parsed from the URL. validateSubPath
-  // is strict — charset, no .. , no leading /, no shell metas.
   const subPathValidation = validateSubPath(subPath ?? urlValidation.subPath);
   if (!subPathValidation.ok) {
     return { ok: false, error: subPathValidation.reason, message: subPathValidation.message };
   }
   const effectiveSubPath = subPathValidation.subPath;
-  // Stable identifier for user-facing error copy. Never includes the
-  // temp clone path; safe to surface even if recovery succeeds later.
   const targetIdentifier = effectiveSubPath
     ? `${urlValidation.owner}/${urlValidation.repo}@${effectiveBranch ?? "default"}:/${effectiveSubPath}`
     : `${urlValidation.owner}/${urlValidation.repo}@${effectiveBranch ?? "default"}`;
@@ -443,7 +465,6 @@ export async function installSkillFromGitHub({
   const finalName = deriveFinalDirName(urlValidation.owner, urlValidation.repo, effectiveSubPath);
   const finalDir = path.join(externalDir, finalName);
   const stagingDir = path.join(externalDir, `.staging-${now()}-${randomId().slice(0, 8)}`);
-  let backupDir = null;
 
   // git clone --depth 1 [-b branch] <url> <stagingDir>
   const args = ["clone", "--depth", "1"];
@@ -535,8 +556,9 @@ export async function installSkillFromGitHub({
 
   // Best-effort .git removal so the user does not get a "ghost git repo"
   // shape in their skills dir. Failure is downgraded to a warning rather
-  // than failing the install — Codex review noted this is critical on
-  // Windows where file locks can block recursive rm.
+  // than failing the install — critical on Windows where file locks can
+  // block recursive rm. Done in stage so the staged content already has
+  // the right shape for finalize's atomic move.
   let gitRemoveFailed = false;
   if (removeGitDir) {
     const gitDir = path.join(stagingDir, ".git");
@@ -545,14 +567,74 @@ export async function installSkillFromGitHub({
     }
   }
 
-  // Atomic swap. If `finalDir` exists, move it aside as a backup, then
-  // rename staging -> final. On any failure, rollback. Codex review:
-  // never delete the user's previous skill until the new one is fully in
-  // place. If the rollback rename also fails (worst-case Windows file
-  // lock), we MUST NOT clean up `backupDir` — it holds the user's last
-  // good skill and must be reachable for manual recovery. `backupTaken`
-  // ensures we don't lie about a backup path that was never actually
-  // created (e.g. when the very first rename throws).
+  // C18 #2: bind the previewed content to a deterministic hash so the
+  // approval token (next commit) can detect any tampering between
+  // stage-time and finalize-time. The hash spans owner/repo/branch/
+  // subPath + the SKILL.md bytes the user is implicitly approving by
+  // clicking Confirm.
+  const contentHash = createHash("sha256")
+    .update([urlValidation.owner, urlValidation.repo, effectiveBranch ?? "", effectiveSubPath ?? "", guarded.markdown].join(" "))
+    .digest("hex")
+    .slice(0, 16);
+
+  return {
+    ok: true,
+    stagingInfo: {
+      stagingDir,
+      finalName,
+      finalDir,
+      owner: urlValidation.owner,
+      repo: urlValidation.repo,
+      branch: effectiveBranch,
+      subPath: effectiveSubPath,
+      targetIdentifier,
+      skillDir: located.skillDir,
+      entryPath: located.entryPath,
+      descriptor: {
+        heading: validation.heading,
+        description: validation.description
+      },
+      preview: {
+        markdown: guarded.markdown,
+        sizeBytes: guarded.markdown.length,
+        contentHash
+      },
+      gitRemoveFailed,
+      // Helpers locked into stagingInfo so finalize doesn't re-read
+      // global state and risk diverging.
+      now,
+      removeGitDir
+    }
+  };
+}
+
+/**
+ * Discard a staged install — clean up the temp clone dir without
+ * promoting it. Safe to call on any non-finalized stagingInfo.
+ */
+export async function discardStagedInstall(stagingInfo) {
+  if (!stagingInfo?.stagingDir) return;
+  await tryRm(stagingInfo.stagingDir);
+}
+
+/**
+ * Finalize a previously-staged install. Atomic-swaps the staging dir
+ * into the final skills location and registers the rootPath. Returns
+ * the same success shape installSkillFromGitHub used to return.
+ *
+ * The fsImpl + now opts default to staging's bound values so callers
+ * don't need to track them; they can be overridden for tests.
+ */
+export async function finalizeStagedInstall(stagingInfo, {
+  runtime,
+  fsImpl = { rm, rename, mkdir, stat },
+  now = stagingInfo?.now ?? (() => Date.now())
+} = {}) {
+  if (!stagingInfo || typeof stagingInfo !== "object") {
+    return { ok: false, error: SKILL_INSTALL_ERROR.IO_FAILED, message: "stagingInfo is required" };
+  }
+  const { stagingDir, finalDir, owner, repo, branch, subPath, descriptor, gitRemoveFailed, skillDir } = stagingInfo;
+  let backupDir = null;
   let rollbackFailedBackup = null;
   let backupTaken = false;
   try {
@@ -587,24 +669,32 @@ export async function installSkillFromGitHub({
   }
   if (backupDir) await tryRm(backupDir);
 
-  const skillRoot = located.skillDir === stagingDir
+  const skillRoot = skillDir === stagingDir
     ? finalDir
-    : path.join(finalDir, path.relative(stagingDir, located.skillDir));
+    : path.join(finalDir, path.relative(stagingDir, skillDir));
 
   const registries = appendRegistryEntry(runtime, skillRoot);
 
   return {
     ok: true,
-    owner: urlValidation.owner,
-    repo: urlValidation.repo,
-    branch: effectiveBranch,
-    subPath: effectiveSubPath,
+    owner,
+    repo,
+    branch,
+    subPath,
     rootPath: skillRoot,
-    descriptor: {
-      heading: validation.heading,
-      description: validation.description
-    },
+    descriptor,
     registries: registries ?? [],
     warnings: gitRemoveFailed ? ["git_dir_remove_failed"] : []
   };
+}
+
+/**
+ * Backwards-compatible wrapper. Stages, then if successful, finalizes.
+ * Existing callers (POST /skills/install/github and the trial scripts)
+ * continue to work unchanged.
+ */
+export async function installSkillFromGitHub(opts = {}) {
+  const stageResult = await stageSkillFromGitHub(opts);
+  if (!stageResult.ok) return stageResult;
+  return finalizeStagedInstall(stageResult.stagingInfo, opts);
 }

@@ -48,6 +48,7 @@
     "verify:failure-classifier": "node scripts/verify-failure-classifier.mjs",
     "verify:token-visibility": "node scripts/verify-token-visibility.mjs",
     "verify:skill-github-deeptree": "node scripts/verify-skill-github-deeptree.mjs",
+    "verify:skill-stage-finalize": "node scripts/verify-skill-stage-finalize.mjs",
     "verify:research-quality": "node scripts/verify-research-quality.mjs",
     "verify:research-quality-e2e": "node scripts/verify-research-quality-e2e.mjs",
     "verify:explicit-no-search": "node scripts/verify-explicit-no-search.mjs",
