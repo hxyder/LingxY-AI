@@ -151,6 +151,13 @@ function intentRouteFields(overrides = {}) {
     needed_capabilities: ["external_web_read"],
     required_policy_groups: ["external_web_read"],
     source_mode: "multi_source_research",
+    // file_read_depth was added to the SR schema after this helper
+    // was written; without it the validation step rejected with
+    // schema_invalid before detectHardFactConflict could fire,
+    // masking the real assertion this test was checking. Default
+    // to "shallow" (the smallest valid enum value, appropriate for
+    // a non-file research task).
+    file_read_depth: "shallow",
     complexity: "medium",
     risk_level: "low",
     rationale_summary: "The request would normally need external information, but hard facts may constrain it.",

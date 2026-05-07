@@ -22,8 +22,8 @@
 {"id":"local-only-file-search-still-forbidden","input":"仅基于这份文件搜索并总结","context":{"file_paths":["a.docx"],"semantic_router_decision":{"source_scope":"external_world","web_policy":"required","output_kind":"conversation","artifact_required":false,"executor":"tool_using","research_depth":"multi_source","confidence":0.86,"reason":"simulated external upgrade"}},"expected":{"web":"forbidden","executor":"tool_using"},"comment":"Explicit local-only constraint beats search verbs and SR upgrades."}
 {"id":"generate-from-uploaded","input":"基于上传文件生成报告","context":{"file_paths":["data.md"]},"expected":{"web":"forbidden","executor":"tool_using"}}
 {"id":"summarize-attachment","input":"总结下面内容","expected":{"web":"forbidden","executor":"tool_using"}}
-{"id":"translate-zh","input":"翻译这段","expected":{"web":"forbidden","executor":"tool_using"}}
-{"id":"translate-en","input":"translate this paragraph","expected":{"web":"optional","executor":"tool_using"},"comment":"AI-agent default: translation can be answered directly or via translate_text."}
+{"id":"translate-zh","input":"翻译这段","expected":{"web":"forbidden","executor":"translate"},"comment":"Dedicated translate executor (src/service/executors/translate/) handles pure translation prompts; routes here instead of tool_using's translate_text round-trip. Stale tool_using expectation updated 2026-05-08."}
+{"id":"translate-en","input":"translate this paragraph","expected":{"web":"optional","executor":"translate"},"comment":"Dedicated translate executor; web stays optional because the runtime allows but does not require web for translation (e.g. for term lookup). Stale tool_using expectation updated 2026-05-08."}
 {"id":"image-attached","input":"识别这张图","context":{"image_paths":["x.png"]},"expected":{"web":"forbidden","executor":"multi_modal"}}
 {"id":"desktop-image-files-are-file-query","input":"我桌面有几个图片文件","expected":{"web":"optional","executor":"tool_using"}}
 {"id":"launch-app","input":"打开微信","expected":{"web":"optional","executor":"tool_using"},"comment":"P5-2: launch-app has no hard local anchor; web=optional is fine, executor=tool_using uses the launch tool (no web call)."}
