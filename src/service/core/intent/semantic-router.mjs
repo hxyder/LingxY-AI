@@ -34,6 +34,7 @@ import crypto from "node:crypto";
 
 import { SIGNAL_KINDS } from "./signals/index.mjs";
 import { hasTimePhrase } from "./trigger.mjs";
+import { applyStableQAOverride } from "./stable-qa-override.mjs";
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_CACHE_TTL_MS = 300_000; // 5 minutes
@@ -387,13 +388,23 @@ export function createSemanticRouter(opts = {}) {
         `Confidence ${decision.confidence.toFixed(2)} below threshold ${confidenceThreshold}`);
     }
 
-    const conflict = detectHardFactConflict(decision, signals);
+    // B2-a (c): deterministic stable-QA override — for "什么是 X" /
+    // "解释 Y" / "怎么用 Z" prompts with no freshness time-words and
+    // no freshness topic-words, force web_policy=forbidden /
+    // source_mode=no_external regardless of LLM judgment. The 109
+    // corpus regression: A.dependency_inversion / A.indexing /
+    // F.par_b were stable QA but SR routed them to web_policy=
+    // required, leading to wasted web_search round-trips.
+    const override = applyStableQAOverride({ text, decision, signals });
+    const finalDecision = override.applied ? override.decision : decision;
+
+    const conflict = detectHardFactConflict(finalDecision, signals);
     if (conflict) {
       return reject("fact_conflict", conflict);
     }
 
-    cache.set(cacheKey, { decision, ts: now() });
-    return { kind: "decision", decision, source: "provider" };
+    cache.set(cacheKey, { decision: finalDecision, ts: now() });
+    return { kind: "decision", decision: finalDecision, source: override.applied ? "provider+stable_qa_override" : "provider" };
   }
 
   return {
