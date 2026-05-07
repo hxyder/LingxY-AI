@@ -132,6 +132,7 @@ export const CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-file-size-inventory.mjs",
   "node scripts/verify-dependency-hygiene.mjs",
   "node scripts/verify-public-branding.mjs",
+  "node scripts/verify-auto-updater.mjs",
   "node scripts/verify-functional-acceptance.mjs",
   "node scripts/verify-user-interaction-smoke.mjs",
   "node scripts/verify-security-policy.mjs",
@@ -153,6 +154,7 @@ export const FAST_CHECK_COMMANDS = Object.freeze([
   "node scripts/verify-connectors-page.mjs",
   "node scripts/verify-console-inbox-view.mjs",
   "node scripts/verify-ui-extras.mjs",
+  "node scripts/verify-auto-updater.mjs",
   "node scripts/verify-functional-acceptance.mjs",
   "node scripts/verify-user-interaction-smoke.mjs"
 ]);

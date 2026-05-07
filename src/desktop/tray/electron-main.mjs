@@ -9,6 +9,7 @@ import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
 import { createPersistentRuntime } from "../../service/core/persistent-runtime.mjs";
 import { createPopupCardManager } from "./popup-card-manager.mjs";
 import { BRAND_AUMID, createBrandIconResolver } from "./brand-icons.mjs";
+import { createAutoUpdater, DEFAULT_UPDATE_STRATEGY, UPDATE_STRATEGIES } from "./auto-updater.mjs";
 import {
   DESKTOP_CONSOLE_ACTOR,
   desktopActorForSender as resolveDesktopActorForSender
@@ -2649,6 +2650,140 @@ export function createElectronShellRuntime({
         }
       });
       registeredPopupCardManager = popupCardManager;
+
+      // ──── P0-1 auto-updater wiring ────
+      // Lazy-loaded so Electron 'app' is available at module init time
+      // and so dev runs (npm run start:desktop, no real publish feed)
+      // don't crash if electron-updater throws on construction.
+      // Strategy persists in runtime config (config.updates.strategy).
+      // First-run flow: if config has no consentRecordedAt yet, we
+      // show a one-time popup-card asking for consent. Until the user
+      // makes a choice the effective strategy is `off` (no network
+      // call to GitHub Releases).
+      let autoUpdaterController = null;
+      try {
+        const updaterModule = await import("electron-updater");
+        const { autoUpdater } = updaterModule;
+        autoUpdaterController = createAutoUpdater({
+          autoUpdater,
+          getStrategy: () => {
+            try {
+              const config = embeddedServiceRuntime?.runtime?.configStore?.load?.() ?? {};
+              const stored = String(config?.updates?.strategy ?? "").toLowerCase();
+              if (UPDATE_STRATEGIES.includes(stored) && config?.updates?.consentRecordedAt) {
+                return stored;
+              }
+            } catch { /* fall through to off */ }
+            return DEFAULT_UPDATE_STRATEGY;
+          },
+          notify: async ({ kind, payload }) => {
+            try {
+              if (kind === "update-available") {
+                await safeNotify({
+                  title: "更新可用",
+                  body: `LingxY ${payload?.info?.version ?? ""} 可下载${payload?.autoDownload ? "（正在自动下载…）" : "。打开设置查看。"}`,
+                  taskId: `updater:available:${payload?.info?.version ?? "unknown"}`,
+                  dedupeKey: `updater:available:${payload?.info?.version ?? "unknown"}`,
+                  allowContinue: false
+                });
+              } else if (kind === "update-ready") {
+                await safeNotify({
+                  title: "新版本已下载",
+                  body: `LingxY ${payload?.info?.version ?? ""} 已就绪。重启即可生效。`,
+                  taskId: `updater:ready:${payload?.info?.version ?? "unknown"}`,
+                  dedupeKey: `updater:ready:${payload?.info?.version ?? "unknown"}`,
+                  allowContinue: false
+                });
+              } else if (kind === "update-error") {
+                // Errors go to diagnostics; UI noise stays low.
+                void appendDesktopDiagnosticError("auto_updater_user_facing", new Error(payload?.message ?? "unknown"), { phase: payload?.phase });
+              }
+            } catch (err) {
+              safeWarn("[LingxY] auto-updater notify failed:", err?.message ?? err);
+            }
+          },
+          appendDiagnostic: (event, error, ctx) => {
+            void appendDesktopDiagnosticError(event, error, ctx);
+          },
+          logger: { info: safeError, warn: safeWarn, error: safeError }
+        });
+      } catch (err) {
+        safeWarn("[LingxY] electron-updater unavailable (running unpacked dev?):", err?.message ?? err);
+        void appendDesktopDiagnosticError("auto_updater_unavailable", err, {});
+      }
+
+      // IPC handlers — Settings UI / Console can read status, change
+      // strategy, trigger user-initiated checks, and apply downloaded
+      // updates. All handlers fail-soft when the controller is absent
+      // (dev-mode where electron-updater couldn't load).
+      ipcMain.handle(IPC_CHANNELS.shellUpdaterStatus, async () => {
+        if (!autoUpdaterController) return { available: false };
+        return { available: true, ...autoUpdaterController.getStatus() };
+      });
+      ipcMain.handle(IPC_CHANNELS.shellUpdaterSetStrategy, async (_event, payload = {}) => {
+        const next = String(payload?.strategy ?? "").toLowerCase();
+        if (!UPDATE_STRATEGIES.includes(next)) {
+          return { ok: false, error: "invalid_strategy" };
+        }
+        try {
+          embeddedServiceRuntime?.runtime?.configStore?.patch?.({
+            updates: { strategy: next, consentRecordedAt: new Date().toISOString() }
+          });
+        } catch (err) {
+          return { ok: false, error: "config_persist_failed", message: err?.message };
+        }
+        return { ok: true, strategy: next };
+      });
+      ipcMain.handle(IPC_CHANNELS.shellUpdaterCheckNow, async () => {
+        if (!autoUpdaterController) return { ok: false, error: "updater_unavailable" };
+        const result = await autoUpdaterController.checkForUpdates({ trigger: "user" });
+        return { ok: true, result };
+      });
+      ipcMain.handle(IPC_CHANNELS.shellUpdaterApply, async (_event, payload = {}) => {
+        if (!autoUpdaterController) return { ok: false, error: "updater_unavailable" };
+        try {
+          autoUpdaterController.applyUpdate({
+            silent: Boolean(payload?.silent),
+            restart: payload?.restart !== false
+          });
+          return { ok: true };
+        } catch (err) {
+          return { ok: false, error: err?.message ?? "apply_failed" };
+        }
+      });
+
+      // First-run consent: schedule a popup-card AFTER service runtime
+      // is up so configStore is reachable. The card is shown only if
+      // there's no recorded consent yet. Choosing any strategy other
+      // than `off` triggers an immediate scheduled check.
+      setTimeout(async () => {
+        try {
+          const config = embeddedServiceRuntime?.runtime?.configStore?.load?.() ?? {};
+          if (config?.updates?.consentRecordedAt) return;
+          const card = await popupCardManager.show?.({
+            kind: "info",
+            title: "自动检查更新？",
+            body: "LingxY 可以从 GitHub Releases 自动检查新版本。检查会向 GitHub 暴露你的 IP 与浏览器标识；除此之外没有任何遥测路由经过 LingxY 服务器。",
+            buttons: [
+              { id: "auto", label: "检查 + 下载（auto）" },
+              { id: "notify", label: "仅通知（notify）", primary: true },
+              { id: "manual", label: "仅手动（manual）" },
+              { id: "off", label: "完全关闭（off）" }
+            ],
+            allowContinue: false,
+            dedupeKey: "updater:consent"
+          }).catch?.(() => null);
+          const choice = card?.id ?? "off";
+          embeddedServiceRuntime?.runtime?.configStore?.patch?.({
+            updates: { strategy: choice, consentRecordedAt: new Date().toISOString() }
+          });
+          if (choice !== "off" && autoUpdaterController) {
+            autoUpdaterController.checkForUpdates({ trigger: "scheduled" }).catch(() => {});
+          }
+        } catch (err) {
+          safeWarn("[LingxY] first-run updater consent failed:", err?.message ?? err);
+        }
+      }, 5000).unref?.();
 
       // UCA-182 Phase 14: preview window lifecycle. Created on demand,
       // positioned to cover the right ~42% of the primary workArea.

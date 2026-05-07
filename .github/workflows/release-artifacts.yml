@@ -62,7 +62,12 @@ jobs:
             !dist/win-unpacked/**
 
   publish-github-release:
-    if: ${{ github.event_name == 'push' || inputs.publish_github_release }}
+    # P0-1 fork-safety gate: only the canonical repo is allowed to push
+    # release assets. Forks running this workflow would otherwise either
+    # fail with a 403 (no write token) or — worse — succeed if the fork
+    # owner accidentally provided a token, polluting the canonical
+    # update feed clients are pinned to.
+    if: ${{ (github.event_name == 'push' || inputs.publish_github_release) && github.repository == 'lingxy-ai/lingxy-desktop' }}
     needs: windows-installer
     runs-on: windows-latest
     permissions:
@@ -102,6 +107,13 @@ jobs:
             if (-not (Test-Path $requiredAsset -PathType Leaf)) {
               throw "missing required release asset: $requiredAsset"
             }
+          }
+          # P0-1 release blocker: electron-updater metadata must be
+          # present alongside the installer. Without latest.yml the
+          # updater client cannot discover this release and 100% of
+          # users stay on the old build.
+          if (-not (Test-Path "dist\latest.yml" -PathType Leaf)) {
+            throw "missing dist\latest.yml — electron-updater metadata is required for auto-update to work"
           }
           $checksums = Get-Content -Path dist\checksums.sha256 -Raw
           foreach ($requiredChecksum in @("LICENSE", "THIRD_PARTY_LICENSES.md")) {

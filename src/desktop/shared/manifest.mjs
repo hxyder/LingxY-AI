@@ -26,6 +26,11 @@ export const IPC_CHANNELS = Object.freeze({
   shellClipboardChanged: "uca:shell-clipboard-changed",
   shellNavigateConsole: "uca:shell-navigate-console",
   rendererErrorReport: "uca:renderer-error",
+  // P0-1 auto-updater control channels (Settings UI + first-run consent).
+  shellUpdaterStatus: "uca:shell-updater-status",
+  shellUpdaterSetStrategy: "uca:shell-updater-set-strategy",
+  shellUpdaterCheckNow: "uca:shell-updater-check-now",
+  shellUpdaterApply: "uca:shell-updater-apply",
   overlayToggle: "uca:overlay-toggle",
   // Sent main → overlay renderer when the overlay window blurs and focus
   // has left the application entirely. The renderer runs the same
