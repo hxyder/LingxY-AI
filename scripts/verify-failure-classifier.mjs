@@ -50,7 +50,19 @@ function check(label, condition) {
     "ETIMEDOUT after 30000ms",
     "getaddrinfo ENOTFOUND example.com",
     "AbortError: timeout",
-    "Network request failed"
+    "Network request failed",
+    // codex round-1 additions
+    "EAI_AGAIN temporary failure in name resolution",
+    "ECONNABORTED",
+    "ENETDOWN",
+    "socket hang up",
+    "EPROTO",
+    // TLS / cert
+    "Error: CERT_HAS_EXPIRED",
+    "DEPTH_ZERO_SELF_SIGNED_CERT",
+    "SELF_SIGNED_CERT_IN_CHAIN",
+    "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+    "ERR_TLS_CERT_ALTNAME_INVALID"
   ]) {
     const result = classifyToolFailure({ error, toolId: "fetch_url_content" });
     check(`network_unreachable: '${error.slice(0, 40)}…'`, result.kind === "network_unreachable");
@@ -74,7 +86,10 @@ function check(label, condition) {
     "401 Unauthorized",
     "invalid_grant: refresh token expired",
     "Please connect your Google account",
-    "未连接邮箱"
+    "未连接邮箱",
+    // codex round-1: proxy auth
+    "407 Proxy Authentication Required",
+    "Proxy Authentication Required: Bad gateway"
   ]) {
     const result = classifyToolFailure({ error });
     check(`auth_missing: '${error.slice(0, 40)}…'`, result.kind === "auth_missing");
@@ -85,7 +100,10 @@ function check(label, condition) {
     "429 Too Many Requests",
     "rate limit exceeded",
     "quota exceeded for the day",
-    "频率限制，请稍后再试"
+    "频率限制，请稍后再试",
+    // codex round-1: provider-specific aliases
+    "RESOURCE_EXHAUSTED: please retry later",
+    "insufficient_quota: you exceeded your current quota"
   ]) {
     const result = classifyToolFailure({ error });
     check(`rate_limited: '${error.slice(0, 40)}…'`, result.kind === "rate_limited");
@@ -276,6 +294,72 @@ function check(label, condition) {
   const final = localFallbackFinal({ task, transcript });
   check("e2e/en (no obs): auth_missing message stands alone",
     /connected account/i.test(final) && /Connectors/.test(final));
+}
+
+// ---------------------------------------------------------------------
+// 6b. Integration test against the REAL tool_using transcript shape
+//     (codex round-1 finding). agent-loop builds entries with shape:
+//     { type:"tool_result", tool, args, success, observation, metadata,
+//       artifact_paths, [error] }. The `error` field was newly added
+//     in this commit so the classifier can see typed error strings
+//     directly (not just observation prose). This test asserts the
+//     classifier reads from the real shape.
+// ---------------------------------------------------------------------
+{
+  // Real tool_using shape with error populated separately from observation.
+  const transcript = [
+    {
+      type: "tool_result",
+      tool: "fetch_url_content",
+      args: { url: "https://example.com" },
+      success: false,
+      observation: "Failed to fetch the page.",
+      metadata: { tool_id: "fetch_url_content" },
+      artifact_paths: [],
+      error: "fetch failed: ENOTFOUND example.com"
+    }
+  ];
+  const detected = detectNetworkFailureInTranscript(transcript);
+  check("integration: classifier reads tool_using-shape entry.error",
+    detected?.kind === "network_unreachable");
+}
+
+{
+  // Auth-missing case via account_send_email (real connector shape).
+  const transcript = [
+    {
+      type: "tool_result",
+      tool: "account_send_email",
+      args: { provider: "google", to: "alice@example.com" },
+      success: false,
+      observation: "Connector workflow halted before send.",
+      metadata: { tool_id: "account_send_email" },
+      artifact_paths: [],
+      error: "no connected account for google"
+    }
+  ];
+  const detected = detectNetworkFailureInTranscript(transcript);
+  check("integration: account_send_email entry.error → auth_missing",
+    detected?.kind === "auth_missing");
+}
+
+{
+  // Provider missing via web_search_fetch with the typed error.
+  const transcript = [
+    {
+      type: "tool_result",
+      tool: "web_search_fetch",
+      args: { query: "x" },
+      success: false,
+      observation: "search backend unavailable",
+      metadata: { tool_id: "web_search_fetch" },
+      artifact_paths: [],
+      error: "API key is missing for the configured search provider"
+    }
+  ];
+  const detected = detectNetworkFailureInTranscript(transcript);
+  check("integration: web_search_fetch entry.error → provider_missing",
+    detected?.kind === "provider_missing");
 }
 
 // ---------------------------------------------------------------------

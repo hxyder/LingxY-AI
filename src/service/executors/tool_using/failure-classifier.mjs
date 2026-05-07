@@ -31,14 +31,26 @@ const NETWORK_UNREACHABLE_PATTERNS = [
   /ENOTFOUND/i,
   /ECONNREFUSED/i,
   /ECONNRESET/i,
+  /ECONNABORTED/i,
   /ETIMEDOUT/i,
   /EHOSTUNREACH/i,
   /ENETUNREACH/i,
+  /ENETDOWN/i,
+  /EAI_AGAIN/i,
+  /EPROTO\b/i,
   /\bfetch failed\b/i,
   /\bnetwork (request )?failed\b/i,
+  /\bsocket hang up\b/i,
   /getaddrinfo\b/i,
   /AbortError.*timeout/i,
   /timed out/i,
+  // TLS / cert problems — user-fixable but in the network class
+  // because the request never reaches the application layer.
+  /CERT_HAS_EXPIRED/i,
+  /DEPTH_ZERO_SELF_SIGNED_CERT/i,
+  /SELF_SIGNED_CERT_IN_CHAIN/i,
+  /UNABLE_TO_VERIFY_LEAF_SIGNATURE/i,
+  /ERR_TLS_CERT_ALTNAME_INVALID/i,
   // jsdelivr / CDN-style hint
   /\boffline\b/i,
   /\bno internet\b/i
@@ -60,6 +72,10 @@ const AUTH_MISSING_PATTERNS = [
   /\baccount.*not authoriz/i,
   /\b401\b.*Unauthor/i,
   /\bUnauthorized\b/i,
+  // 407 Proxy Authentication Required — also auth-class because the
+  // network layer wants credentials the user hasn't supplied.
+  /\b407\b.*Proxy/i,
+  /Proxy Authentication Required/i,
   /\binvalid_grant\b/i,
   /token (has )?expired/i,
   /please (connect|sign in|authenticate)/i,
@@ -72,6 +88,8 @@ const RATE_LIMIT_PATTERNS = [
   /\b429\b/,
   /\brate[_ -]?limit/i,
   /quota.*exceed/i,
+  /\bRESOURCE_EXHAUSTED\b/,
+  /\binsufficient_quota\b/i,
   /too many requests/i,
   /\bratelimited\b/i,
   /频率限制/u,

@@ -1945,6 +1945,17 @@ async function _runToolAgentLoopCore({
       metadata: result.metadata,
       artifact_paths: Array.isArray(result.artifact_paths) ? result.artifact_paths.filter(Boolean) : []
     };
+    // C15 codex round-1: carry result.error into the transcript so
+    // the network-failure classifier (failure-classifier.mjs) can see
+    // the richer signal. Many connector / fetch tools surface a
+    // typed error string (ENOTFOUND / 401 Unauthorized / etc.) only
+    // in `result.error`; without this the classifier falls back to
+    // observation, which is often a friendlier-but-classification-
+    // poor message. Only attach when present so existing consumers
+    // that do `entry.error ?? null` stay shape-compatible.
+    if (typeof result.error === "string" && result.error.trim()) {
+      transcriptEntry.error = result.error;
+    }
     runtime.emitTaskEvent?.("tool_call_completed", {
       tool_id: tool.id,
       success: result.success,
