@@ -154,6 +154,44 @@ function filterOpenUrl(list = [], task) {
   return list.filter((tool) => tool?.id !== OPEN_URL_TOOL_ID);
 }
 
+// C18 #2b: skill-install action tools are HIGH risk (third-party
+// SKILL.md becomes future LLM prompt context). Mirror the open_url
+// gating shape — only expose when the user's live text contains
+// BOTH an install verb AND a github.com URL in the SAME source.
+// Without that co-occurrence the LLM proposing an install would be
+// pure hallucination, so we hide the tools by default. The pre-design
+// D-consult was explicit: "don't fire on bare install without a
+// GitHub URL".
+const SKILL_INSTALL_TOOL_IDS = new Set([
+  "preview_skill_from_github",
+  "install_skill_from_github"
+]);
+const SKILL_INSTALL_VERB_RE = /(安装|帮我安装|添加(?:这个)?技能|装上|装这个|install(?:\s+this)?\s+skill|add(?:\s+this)?\s+skill)/iu;
+const GITHUB_URL_RE = /github\.com\/[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*/i;
+
+export function shouldExposeSkillInstall(task) {
+  for (const text of liveUserIntentSources(task)) {
+    if (SKILL_INSTALL_VERB_RE.test(text) && GITHUB_URL_RE.test(text)) {
+      return true;
+    }
+  }
+  // Explicit task-spec override (e.g. a follow-up turn where the
+  // planner is mid-install and needs install_skill_from_github after
+  // a previous preview_skill_from_github).
+  const spec = task?.task_spec ?? task?.task_spec_initial;
+  const requiredTools = spec?.success_contract?.required_tool_names;
+  if (Array.isArray(requiredTools)
+      && requiredTools.some((id) => SKILL_INSTALL_TOOL_IDS.has(id))) {
+    return true;
+  }
+  return false;
+}
+
+function filterSkillInstall(list = [], task) {
+  if (shouldExposeSkillInstall(task)) return list;
+  return list.filter((tool) => !SKILL_INSTALL_TOOL_IDS.has(tool?.id));
+}
+
 // Surface-visibility set for artifact-required tasks. Intentionally
 // a SUPERSET of POLICY_GROUPS.artifact_generation: the policy group
 // is the no-side-effect-PRODUCER floor used by recovery; this set
@@ -243,9 +281,10 @@ export function filterToolsForTask(tools = [], task) {
   const stripTaskScopedTools = (list) => {
     const withoutDirectOpen = filterDirectFileOpenTools(list, task);
     const withoutOpenUrl = filterOpenUrl(withoutDirectOpen, task);
+    const withoutSkillInstall = filterSkillInstall(withoutOpenUrl, task);
     return insideScheduledFire
-      ? withoutOpenUrl.filter((tool) => !isScheduleRegistryTool(tool))
-      : withoutOpenUrl;
+      ? withoutSkillInstall.filter((tool) => !isScheduleRegistryTool(tool))
+      : withoutSkillInstall;
   };
 
   const capabilities = neededCapabilitiesOf(task).filter((capability) => capability !== "none");

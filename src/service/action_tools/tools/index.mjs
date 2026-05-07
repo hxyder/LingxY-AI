@@ -27,6 +27,10 @@ import {
 } from "../../core/capability-creator/index.mjs";
 import { resolveMcpDraftsDir } from "../../ai/mcp/drafts.mjs";
 import { createEditableSkill, slugifySkillId } from "../../ai/skills/lifecycle.mjs";
+import {
+  PREVIEW_SKILL_FROM_GITHUB_TOOL,
+  INSTALL_SKILL_FROM_GITHUB_TOOL
+} from "./skill-install-tools.mjs";
 import { extractFileContent } from "../../extractors/file-ingest.mjs";
 import { FILE_EVIDENCE_COVERAGE } from "../../core/file-evidence-coverage.mjs";
 import { resolveFileReadBudgetFromTask } from "../../core/file-read-budget.mjs";
@@ -4010,6 +4014,14 @@ export const BUILTIN_ACTION_TOOLS = Object.freeze([
   // UCA-077: Save the capability draft. High-risk + confirmation-required;
   // never enables an MCP server or mutates runtime config.
   SAVE_CAPABILITY_DRAFT_TOOL,
+  // C18 #2b: two-step LLM-callable skill install. Preview (low risk,
+  // no confirmation) stages + returns SKILL.md preview + state token.
+  // Install (high risk, requires_confirmation) consumes the token to
+  // commit. Surface gating in tool-surface.mjs.shouldExposeSkillInstall
+  // requires user_command to contain BOTH an install verb AND a
+  // github.com URL in the same source.
+  PREVIEW_SKILL_FROM_GITHUB_TOOL,
+  INSTALL_SKILL_FROM_GITHUB_TOOL,
   // Connector catalog + provider account tools (single aggregation point)
   ...CONNECTOR_ACTION_TOOLS
 ]);

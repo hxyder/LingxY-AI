@@ -28,6 +28,7 @@ import { createActionToolRegistry } from "../action_tools/registry.mjs";
 import { BUILTIN_ACTION_TOOLS } from "../action_tools/tools/index.mjs";
 import { createSecurityBroker } from "../security/broker.mjs";
 import { createSchedulerRuntime } from "../scheduler/engine.mjs";
+import { createInstallStateRegistry } from "../ai/skills/install-state.mjs";
 import { createOfficeHttpsRuntime } from "../https/port-9413.mjs";
 import { createBuiltinTemplateRegistry, createPersistentTemplateRegistry } from "../templates/runtime.mjs";
 import { createBudgetManager } from "../cost/budget.mjs";
@@ -217,6 +218,11 @@ export function createServiceBootstrap({
     pluginsDir: paths?.pluginsDir ?? null
   });
   runtime.connectorCatalog.reload();
+  // C18 #2b: skill-install state registry holds stagingInfo between
+  // preview_skill_from_github (low-risk staging) and
+  // install_skill_from_github (high-risk finalize). 10-min TTL,
+  // capped at 5 entries; orphans are cleaned up automatically.
+  runtime.skillInstallState = createInstallStateRegistry();
   runtime.actionToolRegistry = createActionToolRegistry(BUILTIN_ACTION_TOOLS);
   runtime.executorRegistry = createExecutorRegistry(executors);
   runtime.previewRegistry = createPreviewRegistry({
