@@ -1,0 +1,30 @@
+# EditorConfig — https://editorconfig.org
+# Keeps whitespace consistent across IDEs (VS Code, JetBrains, Visual
+# Studio, vim) so contributors don't fight git over indent or line
+# endings.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Markdown allows trailing spaces (line break syntax) — don't trim.
+[*.md]
+trim_trailing_whitespace = false
+
+# Python sidecars use 4-space indent.
+[*.py]
+indent_size = 4
+
+# PowerShell scripts use 4-space indent.
+[*.ps1]
+indent_size = 4
+
+# Makefiles require literal tabs.
+[Makefile]
+indent_style = tab

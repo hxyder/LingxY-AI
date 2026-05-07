@@ -2663,7 +2663,17 @@ export function createElectronShellRuntime({
       let autoUpdaterController = null;
       try {
         const updaterModule = await import("electron-updater");
-        const { autoUpdater } = updaterModule;
+        // electron-updater is published as CJS; ESM dynamic import
+        // wraps it in `default`. Native-ESM future also possible.
+        // Try both shapes — without this fallback, autoUpdater stays
+        // undefined and createAutoUpdater throws (P0-1 dev-mode bug
+        // R reported 2026-05-07).
+        const autoUpdater = updaterModule.autoUpdater
+          ?? updaterModule.default?.autoUpdater
+          ?? null;
+        if (!autoUpdater) {
+          throw new Error("electron-updater module did not export `autoUpdater` (neither as named export nor on default)");
+        }
         autoUpdaterController = createAutoUpdater({
           autoUpdater,
           getStrategy: () => {
