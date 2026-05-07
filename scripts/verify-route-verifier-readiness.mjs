@@ -15,12 +15,17 @@
  *      consistency rules)
  *   3. judge availability — invalid_payload + parse_error +
  *      unavailable cumulative rate < 5% (configurable)
- *   4. reject precision proxy — when the judge reject-s, the
- *      diff direction (upgrade vs downgrade) must agree with what
- *      structural signals would suggest (no random direction)
- *   5. dual-track coherence — `verifier_shadow.raw` and
+ *   4. dual-track coherence — `verifier_shadow.raw` and
  *      `verifier_shadow.post_override` must not contradict each
  *      other when both are present
+ *
+ * Reject precision against ground-truth labels is intentionally NOT
+ * gated by this script. It requires labelled corpus data (each
+ * case's expected web_policy/source_mode) and is filed for round-9
+ * (codex round-7 #2 says: don't ship readiness on a residual
+ * stub). Until the labelled gate lands, the four criteria above
+ * confirm the verifier hasn't melted, but DON'T claim it's making
+ * correct calls — that judgement waits on labelled corpus.
  *
  * The script is intentionally NOT auto-flipping enforce on. It only
  * reports readiness; turning enforce on stays a deliberate operator
@@ -52,6 +57,11 @@ import { fileURLToPath } from "node:url";
 const UNAVAILABILITY_BUDGET = 0.05;          // 5%
 const INCONSISTENT_CORRECTION_BUDGET = 0;    // 0 = no breaks
 const HARD_OVERRIDE_BUDGET = 0;              // 0 = no breaks
+// Round-8 (codex round-7 #1): minimum sample count to consider the
+// gate result trustworthy. Below this, an empty/skipped/fully-
+// cache-hit corpus would otherwise pass with `ready: true` because
+// every counter would be zero.
+const MIN_TRACKS_FOR_READY = 50;             // ≈ 109 corpus / 2 with override-applied gating
 
 function parseRows(text) {
   const rows = [];
@@ -70,6 +80,8 @@ function parseRows(text) {
  */
 export function summariseRows(rows) {
   let total = 0;
+  let rows_seen = 0;
+  let rows_skipped_no_track = 0;
   let unavailable = 0;
   let parse_error = 0;
   let invalid_payload = 0;
@@ -79,11 +91,20 @@ export function summariseRows(rows) {
   let reject_with_diff = 0;
 
   for (const row of rows) {
+    rows_seen += 1;
     const tracks = [
       row?.verifier_shadow?.raw,
       row?.verifier_shadow?.post_override
     ].filter(Boolean);
-    if (tracks.length === 0) continue;
+    if (tracks.length === 0) {
+      // Round-8 (codex round-7 #1): a row with no verifier tracks
+      // means the corpus runner skipped (cache hit, SR rejected,
+      // service down, etc.). We must surface this rather than
+      // silently dropping the row, otherwise readiness can pass on
+      // an empty/cache-saturated corpus.
+      rows_skipped_no_track += 1;
+      continue;
+    }
     total += tracks.length;
     for (const t of tracks) {
       const s = t?.judge_status;
@@ -112,6 +133,8 @@ export function summariseRows(rows) {
   }
 
   return {
+    rows_seen,
+    rows_skipped_no_track,
     total,
     unavailable,
     parse_error,
@@ -124,8 +147,17 @@ export function summariseRows(rows) {
   };
 }
 
-export function evaluateReadiness(summary) {
+export function evaluateReadiness(summary, { minTracksForReady = MIN_TRACKS_FOR_READY } = {}) {
   const failures = [];
+  // Round-8 fix (codex round-7 #1): empty / fully-cached / no-track
+  // telemetry must never satisfy readiness. Without this gate, a
+  // corpus runner that silently skipped every case (cache hit,
+  // service down, SR rejected) would output `ready: true`.
+  if (summary.total < minTracksForReady) {
+    failures.push(
+      `total_tracks=${summary.total} < minimum ${minTracksForReady} — corpus shadow has too few verifier tracks to evaluate readiness reliably (rows_seen=${summary.rows_seen}, rows_skipped_no_track=${summary.rows_skipped_no_track})`
+    );
+  }
   if (summary.hard_signal_override > HARD_OVERRIDE_BUDGET) {
     failures.push(
       `hard_signal_override=${summary.hard_signal_override} (budget ${HARD_OVERRIDE_BUDGET}) — judge proposed corrections that violated structural signals; verifier blocked them but enforce should not ship until judge stops doing this`

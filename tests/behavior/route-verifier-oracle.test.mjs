@@ -202,3 +202,93 @@ test("apply oracle: judge_unavailable in shadow never changes anything", () => {
     assert.equal(result.judge_status, "unavailable");
   }
 });
+
+// ── Round-8 oracle additions (codex round-7 #5) ─────────────────────────
+
+test("apply oracle: invalid payload is no-op with status invalid_payload across the matrix", () => {
+  // A judge response that misses verdict / has bad confidence /
+  // rejects without corrections must be a no-op for every input
+  // shape — no field of the decision changes.
+  const invalidPayloads = [
+    null,                                                    // null is also invalid (but goes through judgeError path; skip)
+    { confidence: 0.9, reason: "missing verdict" },
+    { verdict: "bogus", confidence: 0.9, reason: "bad" },
+    { verdict: "reject", confidence: 0.9, reason: "no corrected_*", evidence_basis: [] },
+    { verdict: "accept", confidence: 1.5, reason: "out of range" }
+  ];
+  for (const args of inputs()) {
+    for (const payload of invalidPayloads) {
+      if (payload === null) continue;  // null payload routes through judgeError, separate test
+      const result = applyJudgeVerdict({ ...args, judgePayload: payload });
+      assert.equal(result.applied, false,
+        `invalid payload must be no-op: ${JSON.stringify(args)} | payload=${JSON.stringify(payload)}`);
+      assert.equal(result.judge_status, "invalid_payload",
+        `invalid payload must surface status=invalid_payload: ${JSON.stringify(payload)}`);
+    }
+  }
+});
+
+test("apply oracle: source_mode-only correction satisfies axis + derived needs_external_info on apply", () => {
+  // A judge that only changes source_mode (no web_policy /
+  // needs_current change) must still produce a consistent enforce
+  // decision — otherwise the apply path is doing the wrong thing.
+  const decision = { web_policy: "optional", source_mode: "no_external", needs_current_information: false, needs_external_info: false };
+  const result = applyJudgeVerdict({
+    decision,
+    signals: {},
+    judgePayload: {
+      verdict: "reject",
+      corrected_source_mode: "single_lookup",  // optional + single_lookup is consistent
+      confidence: 0.9,
+      reason: "needs single lookup",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, true);
+  assert.equal(result.decision.source_mode, "single_lookup");
+  assert.equal(result.decision.web_policy, "optional", "web_policy untouched by source_mode-only correction");
+  // Round-6 invariant: derived needs_external_info reflects final state.
+  assert.equal(result.decision.needs_external_info, deriveNeedsExternalInfo(result.decision));
+});
+
+test("apply oracle: needs_current-only correction satisfies axis + derive on apply", () => {
+  const decision = { web_policy: "optional", source_mode: "single_lookup", needs_current_information: false, needs_external_info: true };
+  const result = applyJudgeVerdict({
+    decision,
+    signals: {},
+    judgePayload: {
+      verdict: "reject",
+      corrected_needs_current_information: true,  // bumps needs_current up; web/source already external
+      confidence: 0.9,
+      reason: "fresh signal",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, true);
+  assert.equal(result.decision.needs_current_information, true);
+});
+
+test("apply oracle: reject with no actual diff is normalized to ok no-op", () => {
+  // Codex round-7 #5: a reject that doesn't actually change any
+  // field must NOT count as a valid correction. The verifier
+  // should normalize it to a no-op with judge_status=ok rather
+  // than letting it sit in invalid_payload land (it parsed fine).
+  const decision = { web_policy: "required", source_mode: "single_lookup", needs_current_information: true };
+  const result = applyJudgeVerdict({
+    decision,
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "required",         // same as decision
+      corrected_source_mode: "single_lookup",   // same as decision
+      corrected_needs_current_information: true, // same as decision
+      confidence: 0.9,
+      reason: "actually I agree",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, false, "no-diff reject must be no-op");
+  assert.equal(result.judge_status, "ok", "no-diff reject must be normalized to ok (not invalid_payload)");
+});
