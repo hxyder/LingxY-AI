@@ -14,6 +14,15 @@
 //   "解释一下 NVDA 今日股价" → 今日 + 股价 → search ✓
 //   "TypeScript 5.5 怎么用 …" → 怎么 + no freshness → forbidden ✓
 //   "Bun 当前版本号"        → 当前 + 版本号 → search ✓
+//
+// Codex round-1: freshness time-word coverage MUST come from the
+// canonical repo signal (signals/weak-freshness.mjs) so we never
+// drift below the existing detector — terms like 明天/后天/今年/下周
+// /实时 plus the EN equivalents are owned there. Re-run detect()
+// here so the override works whether or not the SR caller pre-
+// computed the signal bundle.
+
+import { detect as detectWeakFreshness } from "./signals/weak-freshness.mjs";
 
 const LEARNING_VERB_RE = new RegExp(
   [
@@ -22,15 +31,6 @@ const LEARNING_VERB_RE = new RegExp(
     "介绍", "概述", "入门", "教程",
     "最佳实践", "优缺点", "对比", "举例",
     "总结", "梳理", "科普"
-  ].join("|"),
-  "u"
-);
-
-const FRESHNESS_TIME_WORD_RE = new RegExp(
-  [
-    "最新", "今天", "现在", "当前", "近期",
-    "本周", "本月", "昨天", "刚刚", "目前",
-    "截至", "近日", "今日"
   ].join("|"),
   "u"
 );
@@ -49,8 +49,16 @@ const FRESHNESS_TOPIC_WORD_RE = new RegExp(
 );
 
 function hasFreshnessSignal(text, signals = {}) {
-  if (FRESHNESS_TIME_WORD_RE.test(text)) return true;
+  // Time-word freshness: defer to the canonical detector so this
+  // override stays in lockstep with the rest of the SR pipeline.
+  // Prefer the pre-computed signal if the caller already ran it.
+  if (signals?.weak_freshness?.matched === true) return true;
+  if (detectWeakFreshness(text)?.matched === true) return true;
+  // Topic-word freshness is plan-specific to B2-a (c) — domains the
+  // plan explicitly flagged as freshness-bearing even without a time
+  // marker. (政策 / 报税 / 股价 / 版本号 etc.)
   if (FRESHNESS_TOPIC_WORD_RE.test(text)) return true;
+  // Explicit user signals dominate as well.
   if (signals?.explicit_search?.matched) return true;
   if (signals?.explicit_external?.matched) return true;
   if (signals?.explicit_single_url?.matched) return true;

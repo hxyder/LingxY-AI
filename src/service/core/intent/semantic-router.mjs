@@ -268,7 +268,8 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
  */
 
 /**
- * @typedef {{ kind: "decision", decision: SemanticDecision, source: "cache"|"provider" }
+ * @typedef {{ kind: "decision", decision: SemanticDecision,
+ *             source: "cache"|"provider"|"provider+stable_qa_override" }
  *         | { kind: "rejection", code: RejectionCode, reason: string }} RouterResult
  *
  * @typedef {"disabled"|"no_provider"|"unsupported_provider"|"timeout"

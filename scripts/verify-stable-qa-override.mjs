@@ -107,6 +107,40 @@ for (const text of FRESHNESS_TIME) {
 }
 
 // ----------------------------------------------------------------------
+// 7b. Codex round-1: freshness terms owned by signals/weak-freshness
+//     (明天/后天/今年/下周/实时 + EN equivalents) MUST NOT trigger
+//     override. Previously the local time-word regex missed these.
+// ----------------------------------------------------------------------
+const WEAK_FRESHNESS_TERMS = [
+  "如何看明天的天气",
+  "怎么查实时汇率",
+  "解释一下下周的会议安排",
+  "什么是后天的活动",
+  "今年怎么报税",
+  "explain today's news",
+  "what is the latest research",
+  "how do recent papers compare"
+];
+for (const text of WEAK_FRESHNESS_TERMS) {
+  const r = applyStableQAOverride({ text, decision: { ...baseDecision } });
+  check(`weak-freshness '${text}' → SR untouched`, r.applied === false);
+}
+
+// ----------------------------------------------------------------------
+// 7c. Pre-computed signals.weak_freshness from upstream SR pipeline
+//     should also disable the override.
+// ----------------------------------------------------------------------
+{
+  const text = "解释一下深度学习";
+  const signals = { weak_freshness: { matched: true } };
+  const r = applyStableQAOverride({ text, decision: { ...baseDecision }, signals });
+  check(
+    "pre-computed signals.weak_freshness disables override",
+    r.applied === false
+  );
+}
+
+// ----------------------------------------------------------------------
 // 8. Freshness topic-words must NOT trigger override.
 // ----------------------------------------------------------------------
 const FRESHNESS_TOPIC = [
