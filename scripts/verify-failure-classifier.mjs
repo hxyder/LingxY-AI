@@ -1,0 +1,297 @@
+#!/usr/bin/env node
+/**
+ * verify-failure-classifier.mjs — C15 (UPGRADE_PLAN.md §C15)
+ *
+ * R rule (2026-05-08, post-A3-β): "离线时也不要假装不能做，而是
+ * 明确提示'这个任务需要联网/需要配置 provider'，本地可做部分继续做."
+ *
+ * The classifier maps a failed network-class tool result to one of:
+ *   - network_unreachable: offline / DNS / TCP refused / timeout
+ *   - provider_missing:    no API key / no usable provider
+ *   - auth_missing:        no connected account / OAuth expired
+ *   - rate_limited:        429 / quota exceeded
+ *   - other:               unknown shape (caller composes a generic line)
+ *
+ * Constitution (CADRE C):
+ *   - 不打补丁: classifier is a pure function on (error, observation,
+ *     toolId). No per-task carve-outs.
+ *   - 不针对特定提问: regex patterns are domain-class, not prompt-
+ *     specific. Adding a new connector tool just means adding the id
+ *     prefix (or letting the existing /^account_/ etc. match).
+ */
+
+import {
+  classifyToolFailure,
+  detectNetworkFailureInTranscript,
+  formatFailureMessage,
+  isNetworkClassTool
+} from "../src/service/executors/tool_using/failure-classifier.mjs";
+import { localFallbackFinal } from "../src/service/executors/tool_using/finalization.mjs";
+
+let passed = 0;
+let failed = 0;
+function check(label, condition) {
+  if (condition) {
+    console.log(`PASS  ${label}`);
+    passed += 1;
+  } else {
+    console.log(`FAIL  ${label}`);
+    failed += 1;
+  }
+}
+
+// ---------------------------------------------------------------------
+// 1. classifyToolFailure: each kind has multiple recognisable signals.
+// ---------------------------------------------------------------------
+{
+  // network_unreachable
+  for (const error of [
+    "fetch failed: ECONNREFUSED 127.0.0.1:443",
+    "ETIMEDOUT after 30000ms",
+    "getaddrinfo ENOTFOUND example.com",
+    "AbortError: timeout",
+    "Network request failed"
+  ]) {
+    const result = classifyToolFailure({ error, toolId: "fetch_url_content" });
+    check(`network_unreachable: '${error.slice(0, 40)}…'`, result.kind === "network_unreachable");
+  }
+
+  // provider_missing
+  for (const error of [
+    "No API key configured for OpenAI",
+    "API key is missing",
+    "provider not configured",
+    "no usable provider for chat",
+    "未配置任何 provider"
+  ]) {
+    const result = classifyToolFailure({ error });
+    check(`provider_missing: '${error.slice(0, 40)}…'`, result.kind === "provider_missing");
+  }
+
+  // auth_missing
+  for (const error of [
+    "no connected account for google",
+    "401 Unauthorized",
+    "invalid_grant: refresh token expired",
+    "Please connect your Google account",
+    "未连接邮箱"
+  ]) {
+    const result = classifyToolFailure({ error });
+    check(`auth_missing: '${error.slice(0, 40)}…'`, result.kind === "auth_missing");
+  }
+
+  // rate_limited
+  for (const error of [
+    "429 Too Many Requests",
+    "rate limit exceeded",
+    "quota exceeded for the day",
+    "频率限制，请稍后再试"
+  ]) {
+    const result = classifyToolFailure({ error });
+    check(`rate_limited: '${error.slice(0, 40)}…'`, result.kind === "rate_limited");
+  }
+
+  // other (unknown)
+  for (const error of [
+    "internal server error",
+    "schema validation failed: missing field 'to'",
+    "tool_id not found"
+  ]) {
+    const result = classifyToolFailure({ error });
+    check(`other: '${error.slice(0, 40)}…'`, result.kind === "other");
+  }
+}
+
+// ---------------------------------------------------------------------
+// 2. Order matters: 429 > auth > provider > network. A 429 with a
+//    timeout-suffixed error string must classify as rate_limited
+//    (the actionable fix is "wait", not "reconnect").
+// ---------------------------------------------------------------------
+{
+  const result = classifyToolFailure({
+    error: "HTTP 429 Too Many Requests; ETIMEDOUT during retry"
+  });
+  check("priority: 429 + ETIMEDOUT classifies as rate_limited", result.kind === "rate_limited");
+
+  const result2 = classifyToolFailure({
+    error: "401 Unauthorized; ENOTFOUND on retry"
+  });
+  check("priority: 401 + ENOTFOUND classifies as auth_missing", result2.kind === "auth_missing");
+}
+
+// ---------------------------------------------------------------------
+// 3. isNetworkClassTool: known IDs + connector / provider prefixes.
+// ---------------------------------------------------------------------
+{
+  for (const id of [
+    "web_search_fetch", "fetch_url_content", "open_url", "send_email_smtp",
+    "account_send_email", "account_list_emails", "account_search_drive",
+    "connector_workflow_run",
+    "google.gmail.send_email", "microsoft.outlook.send_email"
+  ]) {
+    check(`isNetworkClassTool('${id}') = true`, isNetworkClassTool(id) === true);
+  }
+  for (const id of [
+    "read_file_text", "generate_document", "write_file", "render_diagram",
+    "verify_file_exists", "take_screenshot", "list_files"
+  ]) {
+    check(`isNetworkClassTool('${id}') = false`, isNetworkClassTool(id) === false);
+  }
+}
+
+// ---------------------------------------------------------------------
+// 4. detectNetworkFailureInTranscript: pulls the FIRST classified
+//    failure; ignores successes and ignores tool failures with
+//    non-network classification.
+// ---------------------------------------------------------------------
+{
+  const transcript = [
+    { type: "tool_result", tool: "read_file_text", success: true, observation: "ok" },
+    { type: "tool_result", tool: "fetch_url_content", success: false, error: "ETIMEDOUT" },
+    { type: "tool_result", tool: "web_search_fetch", success: false, error: "401 Unauthorized" }
+  ];
+  const detected = detectNetworkFailureInTranscript(transcript);
+  check("detectNetworkFailure: returns the FIRST network-class failure", detected?.kind === "network_unreachable");
+  check("detectNetworkFailure: carries the toolId of the failure", detected?.toolId === "fetch_url_content");
+}
+
+{
+  // No network failures at all.
+  const transcript = [
+    { type: "tool_result", tool: "read_file_text", success: true, observation: "ok" },
+    { type: "tool_result", tool: "generate_document", success: false, error: "schema_invalid" }
+  ];
+  check("detectNetworkFailure: returns null when no network-class failure",
+    detectNetworkFailureInTranscript(transcript) === null);
+}
+
+{
+  // Network failure with "other" classification — should be skipped
+  // (caller will fall back to generic message rather than inventing
+  // a non-existent class label).
+  const transcript = [
+    { type: "tool_result", tool: "fetch_url_content", success: false, error: "internal server error" }
+  ];
+  check("detectNetworkFailure: skips 'other'-class network failures",
+    detectNetworkFailureInTranscript(transcript) === null);
+}
+
+// ---------------------------------------------------------------------
+// 5. formatFailureMessage: returns bilingual {zh, en}; mentions tool
+//    id; suggests a specific next step.
+// ---------------------------------------------------------------------
+{
+  const msg = formatFailureMessage({ kind: "network_unreachable", toolId: "fetch_url_content" });
+  check("formatFailureMessage: zh contains '需要联网'", msg.zh.includes("需要联网"));
+  check("formatFailureMessage: en contains 'network'", /network/i.test(msg.en));
+  check("formatFailureMessage: mentions toolId", msg.zh.includes("fetch_url_content"));
+}
+
+{
+  const msg = formatFailureMessage({ kind: "provider_missing", toolId: "" });
+  check("provider_missing: en mentions 'Console → Providers'", msg.en.includes("Console → Providers"));
+  check("provider_missing: zh mentions 'Console → Providers'", msg.zh.includes("Console → Providers"));
+}
+
+{
+  const msg = formatFailureMessage({ kind: "auth_missing", toolId: "account_send_email" });
+  check("auth_missing: en mentions 'Connectors'", msg.en.includes("Connectors"));
+  check("auth_missing: zh mentions '重新连接'", msg.zh.includes("重新连接"));
+}
+
+{
+  const msg = formatFailureMessage({ kind: "rate_limited" });
+  check("rate_limited: en mentions 'rate limit'", /rate limit/i.test(msg.en));
+  check("rate_limited: zh mentions '速率限制'", msg.zh.includes("速率限制"));
+}
+
+{
+  const msg = formatFailureMessage({ kind: "other" });
+  check("other: returns null (caller composes generic message)", msg === null);
+}
+
+// ---------------------------------------------------------------------
+// 6. End-to-end via localFallbackFinal: when transcript carries a
+//    classified network failure AND a successful tool produced
+//    observations, the fallback shows BOTH the local progress AND
+//    the classified message. Per R's rule "本地可做部分继续做".
+// ---------------------------------------------------------------------
+{
+  const task = {
+    user_command: "搜索最新 AI 论文并总结",
+    task_spec: {}
+  };
+  const transcript = [
+    {
+      type: "tool_result",
+      tool: "read_file_text",
+      success: true,
+      observation: "user note: focus on retrieval-augmented agents"
+    },
+    {
+      type: "tool_result",
+      tool: "web_search_fetch",
+      success: false,
+      error: "ECONNREFUSED 127.0.0.1:443"
+    }
+  ];
+  const final = localFallbackFinal({ task, transcript });
+  check("e2e/zh: local progress preserved (note observation appears)",
+    final.includes("retrieval-augmented agents"));
+  check("e2e/zh: classified network message appended",
+    final.includes("需要联网") && final.includes("web_search_fetch"));
+}
+
+{
+  const task = {
+    user_command: "search for the latest news on quantum computing",
+    task_spec: {}
+  };
+  const transcript = [
+    {
+      type: "tool_result",
+      tool: "fetch_url_content",
+      success: false,
+      error: "API key is missing"
+    }
+  ];
+  const final = localFallbackFinal({ task, transcript });
+  check("e2e/en: classified provider_missing message renders",
+    /provider configured/i.test(final) && /Console.+Providers/.test(final));
+}
+
+{
+  const task = {
+    user_command: "send email to alice",
+    task_spec: {}
+  };
+  const transcript = [
+    {
+      type: "tool_result",
+      tool: "account_send_email",
+      success: false,
+      error: "no connected account for google"
+    }
+  ];
+  const final = localFallbackFinal({ task, transcript });
+  check("e2e/en (no obs): auth_missing message stands alone",
+    /connected account/i.test(final) && /Connectors/.test(final));
+}
+
+// ---------------------------------------------------------------------
+// 7. Regression: when there's NO network failure at all, the existing
+//    fallback shape is unchanged (don't accidentally inject "needs
+//    network" into pure local-only failures).
+// ---------------------------------------------------------------------
+{
+  const task = { user_command: "总结这个文件", task_spec: {} };
+  const transcript = [
+    { type: "tool_result", tool: "read_file_text", success: false, error: "ENOENT: file not found" }
+  ];
+  const final = localFallbackFinal({ task, transcript });
+  check("regression: no network failure → no '需要联网' / 'network' injection",
+    !final.includes("需要联网") && !/needs the network/i.test(final));
+}
+
+console.log(`\n${passed} pass / ${failed} fail`);
+if (failed > 0) process.exit(1);

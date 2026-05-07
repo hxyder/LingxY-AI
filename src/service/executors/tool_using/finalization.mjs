@@ -1,4 +1,8 @@
 import { SYNTHESIS_REQUIRED_OUTPUTS } from "../../core/intent/semantic-router.mjs";
+import {
+  detectNetworkFailureInTranscript,
+  formatFailureMessage
+} from "./failure-classifier.mjs";
 
 function hasCjk(value = "") {
   return /[\u3400-\u9fff]/.test(String(value ?? ""));
@@ -374,14 +378,32 @@ export function localFallbackFinal({ task, transcript, reason = "" }) {
   if (connectorSynthesis) return connectorSynthesis;
   const connector = connectorFallbackText(transcript, userCommand, { synthesis: { expected_output: "raw_results" } });
   if (connector) return connector;
+  // C15: classify network-class failures and surface a specific
+  // user-facing message ("needs network" / "needs provider config" /
+  // "needs connected account" / "rate limited") instead of a generic
+  // "Reason: <opaque>". Per R's rule the message MUST tell the user
+  // what to do, not pretend the task is impossible. Local progress
+  // (transcript observations from successful tools) is preserved
+  // below — the classified message is appended to the existing
+  // observation summary.
+  const networkFailure = detectNetworkFailureInTranscript(transcript);
+  const failureMsg = networkFailure ? formatFailureMessage(networkFailure) : null;
   const latest = [...(transcript ?? [])].reverse()
     .find((entry) => entry?.type === "tool_result" && String(entry.observation ?? "").trim());
   const zh = hasCjk(userCommand);
   const obs = String(latest?.observation ?? "").trim().slice(0, 800);
   if (obs) {
-    return zh
+    const summaryHeader = zh
       ? `我已经拿到工具返回的信息，但最终整理没有完成。可用信息如下：\n${obs}`
       : `I collected tool results, but final synthesis did not complete. Available information:\n${obs}`;
+    if (failureMsg) {
+      const tail = zh ? failureMsg.zh : failureMsg.en;
+      return `${summaryHeader}\n\n${tail}`;
+    }
+    return summaryHeader;
+  }
+  if (failureMsg) {
+    return zh ? failureMsg.zh : failureMsg.en;
   }
   return zh
     ? `这次没有拿到足够的工具结果来完成最终答复。${reason ? `原因：${reason}` : ""}`.trim()
