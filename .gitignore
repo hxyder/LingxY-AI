@@ -57,3 +57,14 @@ internal/
 # scripts/real-llm-test/mock-shadow-run.mjs; reproducible from
 # corpus + mock fixtures)
 scripts/real-llm-test/mock-shadow.jsonl
+
+# Task artifacts the runtime sometimes drops in repo root when
+# the user runs an artifact-generating task with no explicit
+# output dir. These are user-content; never commit.
+/*.md
+!/CHANGELOG.md
+!/CODE_OF_CONDUCT.md
+!/CONTRIBUTING.md
+!/README.md
+!/SECURITY.md
+!/THIRD_PARTY_LICENSES.md
