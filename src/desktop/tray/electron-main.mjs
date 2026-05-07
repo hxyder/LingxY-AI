@@ -2992,7 +2992,7 @@ export function createElectronShellRuntime({
           : readLinkOpenPreference();
         if (mode === "ask" && canOpenInLingxy) {
           const owner = BrowserWindow.fromWebContents(event.sender) ?? BrowserWindow.getFocusedWindow();
-          const choice = await dialog.showMessageBox(owner ?? undefined, {
+          const choice = await brandIcons.showBrandedMessageBox(dialog, owner ?? undefined, {
             type: "question",
             title: "Open link",
             message: "用什么方式打开这个链接？",

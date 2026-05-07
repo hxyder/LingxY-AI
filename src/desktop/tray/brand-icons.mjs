@@ -163,12 +163,36 @@ export function createBrandIconResolver({ app, nativeImage }) {
     return new Notification(merged);
   }
 
+  /**
+   * Wrap `dialog.showMessageBox` (or its window-scoped overload) so
+   * the dialog header carries the brand icon. Codex round-4 review
+   * flagged this as a missed native surface — the link-open dialog
+   * was using raw `dialog.showMessageBox` without an icon, falling
+   * back to the OS default. Caller signature mirrors Electron's:
+   *   showBrandedMessageBox(dialog, options)
+   *   showBrandedMessageBox(dialog, parentWindow, options)
+   */
+  function showBrandedMessageBox(dialog, ownerOrOptions, maybeOptions) {
+    const hasOwner = maybeOptions !== undefined;
+    const ownerWindow = hasOwner ? ownerOrOptions : undefined;
+    const options = hasOwner ? maybeOptions : ownerOrOptions;
+    const merged = { ...options };
+    if (!("icon" in merged)) {
+      merged.icon = resolveBrandIcon({ size: 64 });
+    }
+    if (hasOwner) {
+      return dialog.showMessageBox(ownerWindow, merged);
+    }
+    return dialog.showMessageBox(merged);
+  }
+
   return {
     iconsDir,
     resolveBrandIcon,
     resolveBrandIcoPath,
     composeTrayIcon,
     createBrandedBrowserWindow,
-    createBrandedNotification
+    createBrandedNotification,
+    showBrandedMessageBox
   };
 }

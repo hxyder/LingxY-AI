@@ -223,13 +223,29 @@ for (const sym of [
   "resolveBrandIcoPath",
   "composeTrayIcon",
   "createBrandedBrowserWindow",
-  "createBrandedNotification"
+  "createBrandedNotification",
+  "showBrandedMessageBox"
 ]) {
   assert.ok(
     brandIconsSrc.includes(sym),
-    `brand-icons.mjs must export/define '${sym}' (round-3 contract)`
+    `brand-icons.mjs must export/define '${sym}' (round-3+4 contract)`
   );
 }
+
+// BRAND_AUMID must equal package.json build.appId. Round-4 codex
+// flagged the two values as duplicate sources of truth — the gate
+// turns drift into a verifier failure rather than silent
+// taskbar/installer mismatch (e.g. installer registers
+// `com.uca.desktop` but runtime sends `com.uca.desktop-v2`).
+const aumidMatch = brandIconsSrc.match(/export const BRAND_AUMID\s*=\s*"([^"]+)"/);
+assert.ok(aumidMatch, "brand-icons.mjs must declare `export const BRAND_AUMID = \"...\"`");
+const declaredAumid = aumidMatch[1];
+const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+assert.equal(
+  declaredAumid,
+  pkg.build?.appId,
+  `BRAND_AUMID (${declaredAumid}) must equal package.json build.appId (${pkg.build?.appId}) — installer/runtime AUMID drift would break Windows taskbar grouping`
+);
 
 // electron-main.mjs invariants
 const electronMainSrc = readFileSync(ELECTRON_MAIN_PATH, "utf8");
@@ -358,6 +374,36 @@ for (const filePath of desktopFiles) {
   if (!/\bnew Notification\s*\(|Reflect\.construct\s*\(\s*Notification\b|\bnew\s+electron\.Notification\s*\(/.test(src)) continue;
   const relLabel = path.relative(root, filePath).replaceAll("\\", "/");
   assertNotificationsAreBranded(src, relLabel);
+}
+
+// (f) dialog.showMessageBox is a brand surface (the dialog header
+//     carries the app icon on Windows). Round-4 codex flagged this
+//     as a missed surface: link-open ask dialog used raw
+//     `dialog.showMessageBox(...)`. The wrapper
+//     `brandIcons.showBrandedMessageBox(dialog, ...)` defaults the
+//     icon. Whitelist: brand-icons.mjs.
+function assertMessageBoxesAreBranded(src, label) {
+  const lines = src.split("\n");
+  const offences = [];
+  for (let i = 0; i < lines.length; i++) {
+    const code = lines[i].replace(/^\s*\/\/.*$/, "");
+    if (!/\bdialog\.showMessageBox\s*\(/.test(code)) continue;
+    const context = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
+    if (/showBrandedMessageBox/.test(context)) continue;
+    offences.push(`${label}:${i + 1}  ${lines[i].trim()}`);
+  }
+  assert.equal(
+    offences.length,
+    0,
+    `raw 'dialog.showMessageBox(' callsite(s) must go through brandIcons.showBrandedMessageBox:\n${offences.join("\n")}`
+  );
+}
+for (const filePath of desktopFiles) {
+  if (BRAND_HELPER_WHITELIST.has(filePath)) continue;
+  const src = readFileSync(filePath, "utf8");
+  if (!/\bdialog\.showMessageBox\s*\(/.test(src)) continue;
+  const relLabel = path.relative(root, filePath).replaceAll("\\", "/");
+  assertMessageBoxesAreBranded(src, relLabel);
 }
 
 console.log(
