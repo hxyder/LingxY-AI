@@ -81,21 +81,49 @@ const VALID_SOURCE_MODES = new Set([
 ]);
 
 /**
- * Detect "hard structural signals" that the judge cannot override.
- * The judge's verdict only takes effect when none of these dominate;
- * otherwise the SR-or-deterministic decision is final.
+ * Detect "hard structural signals" that constrain the judge's verdict
+ * — but as DIRECTIONAL constraints, not a flat veto list (codex
+ * round-2 review). One-size-fits-all veto would let an
+ * `explicit_no_search` block a (correct) downgrade to forbidden, or
+ * let an `explicit_search` block a (correct) upgrade to required.
+ *
+ * `local_only_constraint` and `explicit_no_search` are the user
+ * saying "do NOT go external" — they veto upgrades only.
+ *
+ * `explicit_search` / `explicit_external` / `explicit_single_url`
+ * and freshness markers are the user (or context) demanding fresh
+ * external info — they veto downgrades only.
+ *
+ * Returns:
+ *   {
+ *     blockUpgrade: string[]    // signals that prevent forbidden→required moves
+ *     blockDowngrade: string[]  // signals that prevent required→forbidden moves
+ *     all: string[]              // union for diagnostics
+ *   }
+ *
+ * Signal names are taken from `src/service/core/intent/signals/*.mjs`
+ * canonical SIGNAL_NAME constants. Round-2 caught a stale name
+ * (`explicit_local_only` → actual is `local_only_constraint`).
  */
 export function detectHardStructuralSignals(signals = {}) {
-  const hard = [];
-  if (signals?.explicit_search?.matched) hard.push("explicit_search");
-  if (signals?.explicit_external?.matched) hard.push("explicit_external");
-  if (signals?.explicit_no_search?.matched) hard.push("explicit_no_search");
-  if (signals?.explicit_single_url?.matched) hard.push("explicit_single_url");
-  if (signals?.explicit_local_only?.matched) hard.push("explicit_local_only");
-  if (signals?.attachment_present?.matched) hard.push("attachment_present");
-  if (signals?.destructive_action?.matched) hard.push("destructive_action");
-  if (signals?.external_side_effect?.matched) hard.push("external_side_effect");
-  return hard;
+  const blockUpgrade = [];
+  const blockDowngrade = [];
+
+  // "Do NOT go external" → only veto required upgrades.
+  if (signals?.local_only_constraint?.matched) blockUpgrade.push("local_only_constraint");
+  if (signals?.explicit_no_search?.matched) blockUpgrade.push("explicit_no_search");
+
+  // "Need external" → only veto forbidden downgrades.
+  if (signals?.explicit_search?.matched) blockDowngrade.push("explicit_search");
+  if (signals?.explicit_external?.matched) blockDowngrade.push("explicit_external");
+  if (signals?.explicit_single_url?.matched) blockDowngrade.push("explicit_single_url");
+  if (signals?.weak_freshness?.matched) blockDowngrade.push("weak_freshness");
+
+  return {
+    blockUpgrade,
+    blockDowngrade,
+    all: [...blockUpgrade, ...blockDowngrade]
+  };
 }
 
 function validateJudgePayload(payload) {
@@ -108,16 +136,35 @@ function validateJudgePayload(payload) {
   }
   if (typeof payload.reason !== "string" || !payload.reason.trim()) return null;
   if (payload.verdict === "reject") {
-    // Reject must specify at least one corrected field.
+    // Reject must specify at least one corrected field. Round-2
+    // adds corrected_needs_current_information to the schema —
+    // EvidencePolicy uses it to upgrade external web, so a judge
+    // that only wants to flip that flag must not be classed
+    // invalid_payload.
     const hasWebPolicy = payload.corrected_web_policy !== undefined
-      ? VALID_WEB_POLICIES.has(payload.corrected_web_policy)
-      : false;
+      && VALID_WEB_POLICIES.has(payload.corrected_web_policy);
     const hasSourceMode = payload.corrected_source_mode !== undefined
-      ? VALID_SOURCE_MODES.has(payload.corrected_source_mode)
-      : false;
-    if (!hasWebPolicy && !hasSourceMode) return null;
+      && VALID_SOURCE_MODES.has(payload.corrected_source_mode);
+    const hasNeedsCurrent = typeof payload.corrected_needs_current_information === "boolean";
+    if (!hasWebPolicy && !hasSourceMode && !hasNeedsCurrent) return null;
   }
   return payload;
+}
+
+/**
+ * Classify a proposed web_policy change by direction so directional
+ * vetoes can apply. Anything moving toward `required` is an UPGRADE;
+ * anything moving toward `forbidden` is a DOWNGRADE; same value or
+ * optional↔optional is NEUTRAL.
+ */
+function classifyWebPolicyChange(from, to) {
+  if (from === to) return "neutral";
+  if (to === "required") return "upgrade";        // optional|forbidden → required
+  if (to === "forbidden") return "downgrade";      // required|optional → forbidden
+  // optional movements (required↔optional, forbidden↔optional)
+  if (from === "required") return "downgrade";
+  if (from === "forbidden") return "upgrade";
+  return "neutral";
 }
 
 /**
@@ -156,10 +203,13 @@ export function applyJudgeVerdict({
     const hard = detectHardStructuralSignals(signals);
     let next = decision;
     let applied = false;
-    if (mode === "enforce" && decision.web_policy === "required" && hard.length === 0) {
-      // SR demanded mandatory web with no hard external signal —
-      // degrade to optional rather than burn search calls on an
-      // unverified policy.
+    // Only degrade required→optional in enforce mode AND only when
+    // the user did not already signal external need (blockDowngrade
+    // means freshness/explicit_search/etc. — those legitimately
+    // demand required, leave them alone).
+    if (mode === "enforce"
+        && decision.web_policy === "required"
+        && hard.blockDowngrade.length === 0) {
       next = { ...decision, web_policy: "optional" };
       applied = true;
     }
@@ -196,26 +246,21 @@ export function applyJudgeVerdict({
     };
   }
 
-  // Reject: judge wants to change the decision. Hard structural
-  // signals can veto the judge.
-  const hard = detectHardStructuralSignals(signals);
-  if (hard.length > 0) {
-    return {
-      applied: false,
-      decision,
-      diff: null,
-      reason: `hard_structural_signals_dominate: ${hard.join(",")}`,
-      mode,
-      judge_status: "hard_signal_override"
-    };
-  }
-
+  // Reject: judge wants to change the decision. Compute the proposed
+  // diff first so directional vetoes can be applied per-field.
   const proposedDiff = {};
   if (valid.corrected_web_policy && valid.corrected_web_policy !== decision.web_policy) {
     proposedDiff.web_policy = { from: decision.web_policy, to: valid.corrected_web_policy };
   }
   if (valid.corrected_source_mode && valid.corrected_source_mode !== decision.source_mode) {
     proposedDiff.source_mode = { from: decision.source_mode, to: valid.corrected_source_mode };
+  }
+  if (typeof valid.corrected_needs_current_information === "boolean"
+      && valid.corrected_needs_current_information !== decision.needs_current_information) {
+    proposedDiff.needs_current_information = {
+      from: decision.needs_current_information,
+      to: valid.corrected_needs_current_information
+    };
   }
 
   if (Object.keys(proposedDiff).length === 0) {
@@ -228,6 +273,65 @@ export function applyJudgeVerdict({
       mode,
       judge_status: "ok"
     };
+  }
+
+  // Directional hard-signal veto (round-2 fix). Each constraint only
+  // applies in one direction — `local_only_constraint` blocks
+  // upgrades to web_policy=required; freshness/explicit_search blocks
+  // downgrades to forbidden. A flat veto would have wrongly blocked
+  // legitimate corrections.
+  const hard = detectHardStructuralSignals(signals);
+  if (proposedDiff.web_policy) {
+    const dir = classifyWebPolicyChange(
+      proposedDiff.web_policy.from,
+      proposedDiff.web_policy.to
+    );
+    if (dir === "upgrade" && hard.blockUpgrade.length > 0) {
+      return {
+        applied: false,
+        decision,
+        diff: null,
+        reason: `hard_signals_block_upgrade: ${hard.blockUpgrade.join(",")}`,
+        mode,
+        judge_status: "hard_signal_override"
+      };
+    }
+    if (dir === "downgrade" && hard.blockDowngrade.length > 0) {
+      return {
+        applied: false,
+        decision,
+        diff: null,
+        reason: `hard_signals_block_downgrade: ${hard.blockDowngrade.join(",")}`,
+        mode,
+        judge_status: "hard_signal_override"
+      };
+    }
+  }
+  // needs_current_information false → block when external info is
+  // explicitly demanded; needs_current_information true → block when
+  // user said no-search.
+  if (proposedDiff.needs_current_information) {
+    const goingFalse = proposedDiff.needs_current_information.to === false;
+    if (goingFalse && hard.blockDowngrade.length > 0) {
+      return {
+        applied: false,
+        decision,
+        diff: null,
+        reason: `hard_signals_block_needs_current_false: ${hard.blockDowngrade.join(",")}`,
+        mode,
+        judge_status: "hard_signal_override"
+      };
+    }
+    if (!goingFalse && hard.blockUpgrade.length > 0) {
+      return {
+        applied: false,
+        decision,
+        diff: null,
+        reason: `hard_signals_block_needs_current_true: ${hard.blockUpgrade.join(",")}`,
+        mode,
+        judge_status: "hard_signal_override"
+      };
+    }
   }
 
   if (mode === "shadow") {
@@ -246,6 +350,9 @@ export function applyJudgeVerdict({
   const next = { ...decision };
   if (proposedDiff.web_policy) next.web_policy = proposedDiff.web_policy.to;
   if (proposedDiff.source_mode) next.source_mode = proposedDiff.source_mode.to;
+  if (proposedDiff.needs_current_information) {
+    next.needs_current_information = proposedDiff.needs_current_information.to;
+  }
   return {
     applied: true,
     decision: next,

@@ -65,22 +65,106 @@ test("hard structural signals dominate even when judge says reject", () => {
   assert.equal(result.decision.web_policy, "required");
 });
 
-test("detectHardStructuralSignals enumerates all 8 categories", () => {
-  // Spot-check each signal flag flips into the result.
-  const cases = [
-    ["explicit_search", "explicit_search"],
-    ["explicit_external", "explicit_external"],
-    ["explicit_no_search", "explicit_no_search"],
-    ["explicit_single_url", "explicit_single_url"],
-    ["explicit_local_only", "explicit_local_only"],
-    ["attachment_present", "attachment_present"],
-    ["destructive_action", "destructive_action"],
-    ["external_side_effect", "external_side_effect"]
-  ];
-  for (const [input, expected] of cases) {
-    const result = detectHardStructuralSignals({ [input]: { matched: true } });
-    assert.ok(result.includes(expected), `signal '${input}' must surface`);
-  }
+test("detectHardStructuralSignals returns directional buckets — block-upgrade vs block-downgrade", () => {
+  // Local-only constraints block upgrades to required.
+  const localOnly = detectHardStructuralSignals({ local_only_constraint: { matched: true } });
+  assert.ok(localOnly.blockUpgrade.includes("local_only_constraint"));
+  assert.equal(localOnly.blockDowngrade.length, 0);
+
+  const noSearch = detectHardStructuralSignals({ explicit_no_search: { matched: true } });
+  assert.ok(noSearch.blockUpgrade.includes("explicit_no_search"));
+  assert.equal(noSearch.blockDowngrade.length, 0);
+
+  // Search/URL/freshness signals block downgrades to forbidden.
+  const search = detectHardStructuralSignals({ explicit_search: { matched: true } });
+  assert.ok(search.blockDowngrade.includes("explicit_search"));
+  assert.equal(search.blockUpgrade.length, 0);
+
+  const fresh = detectHardStructuralSignals({ weak_freshness: { matched: true } });
+  assert.ok(fresh.blockDowngrade.includes("weak_freshness"));
+  assert.equal(fresh.blockUpgrade.length, 0);
+
+  // Use of stale name `explicit_local_only` (caught in round-2)
+  // should NOT surface — the canonical name is local_only_constraint.
+  const stale = detectHardStructuralSignals({ explicit_local_only: { matched: true } });
+  assert.equal(stale.blockUpgrade.length, 0);
+  assert.equal(stale.blockDowngrade.length, 0);
+});
+
+test("hard signal block — local_only_constraint vetoes forbidden→required upgrade only", () => {
+  const decision = { web_policy: "forbidden", source_mode: "no_external" };
+  const upgrade = applyJudgeVerdict({
+    decision,
+    signals: { local_only_constraint: { matched: true } },
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "required",
+      confidence: 0.9,
+      reason: "judge wants external",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(upgrade.applied, false);
+  assert.equal(upgrade.judge_status, "hard_signal_override");
+  assert.ok(upgrade.reason.includes("hard_signals_block_upgrade"));
+});
+
+test("hard signal block — explicit_search vetoes required→forbidden downgrade only", () => {
+  const decision = { web_policy: "required", source_mode: "single_lookup" };
+  const downgrade = applyJudgeVerdict({
+    decision,
+    signals: { explicit_search: { matched: true } },
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "forbidden",
+      corrected_source_mode: "no_external",
+      confidence: 0.9,
+      reason: "judge thinks stable QA",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(downgrade.applied, false);
+  assert.ok(downgrade.reason.includes("hard_signals_block_downgrade"));
+});
+
+test("hard signal does NOT block correction in the other direction", () => {
+  // local_only_constraint should NOT block a (correct) downgrade.
+  const decision = { web_policy: "required", source_mode: "single_lookup" };
+  const result = applyJudgeVerdict({
+    decision,
+    signals: { local_only_constraint: { matched: true } },
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "forbidden",
+      corrected_source_mode: "no_external",
+      confidence: 0.9,
+      reason: "user said local-only and judge agrees",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, true, "downgrade is consistent with local_only_constraint, must apply");
+  assert.equal(result.decision.web_policy, "forbidden");
+});
+
+test("corrected_needs_current_information is a valid corrected field on its own", () => {
+  const decision = { web_policy: "optional", source_mode: "no_external", needs_current_information: true };
+  const result = applyJudgeVerdict({
+    decision,
+    judgePayload: {
+      verdict: "reject",
+      corrected_needs_current_information: false,
+      confidence: 0.85,
+      reason: "stable concept; needs_current is wrong",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, true);
+  assert.equal(result.decision.needs_current_information, false);
+  assert.equal(result.decision.web_policy, "optional", "other fields untouched");
 });
 
 test("shadow mode — judge says reject + corrected web_policy → diff logged but decision unchanged", () => {
