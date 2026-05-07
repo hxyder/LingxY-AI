@@ -74,8 +74,14 @@ function check(label, condition) {
 }
 
 // ----------------------------------------------------------------------
-// 3. INVARIANT: no outbound side-effect tools may live in this group.
-//    Cross-check against every other policy group's side-effect membership.
+// 3. INVARIANT: no side-effect tools may live in this group. Includes
+//    OUTBOUND side effects (email_send / calendar / drive / etc.)
+//    AND LOCAL side effects (run_script / launch_app / open_file /
+//    file_op / notify / clipboard write / open_url). Codex round-1
+//    expanded coverage from outbound-only — a future maintainer
+//    adding run_script "for the LLM to bash-render markdown" would
+//    otherwise route artifact recovery through a code-execution
+//    sidedoor.
 // ----------------------------------------------------------------------
 const FORBIDDEN_SIDE_EFFECT_TOOLS = [
   // email_send group
@@ -95,7 +101,22 @@ const FORBIDDEN_SIDE_EFFECT_TOOLS = [
   // schedule_create group
   "create_scheduled_task",
   // browser navigate
-  "open_url"
+  "open_url",
+  // local code/exec side effects
+  "run_script",
+  "launch_app",
+  // local fs side effects beyond the artifact contract — file_op
+  // can delete/move; open_file invokes the OS app handler.
+  "open_file",
+  "reveal_in_explorer",
+  "file_op",
+  // clipboard / notification — small but observable side effects
+  "copy_to_clipboard",
+  "notify",
+  // GUI automation
+  "gui_click",
+  "gui_type",
+  "gui_screenshot"
 ];
 
 {
@@ -134,7 +155,28 @@ const SIDE_EFFECT_GROUPS = [
 }
 
 // ----------------------------------------------------------------------
-// 5. Group is frozen so accidental at-runtime mutation is blocked.
+// 5. POSITIVE ALLOWLIST: artifact_generation must equal exactly the
+//    canonical no-side-effect producer set. Adding a new producer is
+//    a *deliberate* contract change — this assertion forces that
+//    decision into the open rather than letting it slip in.
+// ----------------------------------------------------------------------
+{
+  const CANONICAL = [
+    "generate_document",
+    "write_file",
+    "edit_file",
+    "render_diagram",
+    "render_svg",
+    "resolve_output_path",
+    "register_artifact"
+  ].sort();
+  const actual = [...toolsInGroup("artifact_generation")].sort();
+  assert.deepEqual(actual, CANONICAL, "artifact_generation must match canonical no-side-effect producer set");
+  check("artifact_generation membership equals canonical allowlist", true);
+}
+
+// ----------------------------------------------------------------------
+// 6. Group is frozen so accidental at-runtime mutation is blocked.
 // ----------------------------------------------------------------------
 {
   check(

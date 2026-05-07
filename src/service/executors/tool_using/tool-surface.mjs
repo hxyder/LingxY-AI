@@ -26,8 +26,11 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
     || ["web_search", "web_search_fetch", "fetch_url_content"].includes(tool.id),
   file_read: (tool) =>
     /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|read_file_text|read_folder_text|search_file_content|index_file_content|verify_file_exists|file_op)$/.test(tool.id),
+  // B2-a (b) round-1 codex catch: verify_file_exists is a *verifier*,
+  // not a producer. Removed from artifact_generation so the policy
+  // group and capability matcher agree (single source of truth).
   artifact_generation: (tool) =>
-    /^(write_file|generate_document|edit_file|render_diagram|render_svg|resolve_output_path|register_artifact|verify_file_exists)$/.test(tool.id),
+    /^(write_file|generate_document|edit_file|render_diagram|render_svg|resolve_output_path|register_artifact)$/.test(tool.id),
   code_execution: (tool) => tool.id === "run_script",
   browser_control: (tool) => ["open_url", "take_screenshot"].includes(tool.id),
   email_calendar_action: (tool) =>
@@ -145,6 +148,9 @@ function filterOpenUrl(list = [], task) {
   return list.filter((tool) => tool?.id !== OPEN_URL_TOOL_ID);
 }
 
+// Mirrors POLICY_GROUPS.artifact_generation in
+// src/service/core/policy/policy-groups.mjs — verify_file_exists used
+// to be here but is a verifier, not a producer (codex round-1 catch).
 const ARTIFACT_TOOL_IDS = new Set([
   "write_file",
   "generate_document",
@@ -152,8 +158,7 @@ const ARTIFACT_TOOL_IDS = new Set([
   "render_diagram",
   "render_svg",
   "resolve_output_path",
-  "register_artifact",
-  "verify_file_exists"
+  "register_artifact"
 ]);
 
 export function isScheduledFireTask(task) {
