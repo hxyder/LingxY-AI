@@ -596,14 +596,20 @@ export async function stageSkillFromGitHub({
       },
       preview: {
         markdown: guarded.markdown,
-        sizeBytes: guarded.markdown.length,
+        // codex round-1: JS string `.length` is UTF-16 code units, not
+        // bytes. A SKILL.md with CJK / emoji content would report the
+        // wrong size. Use Buffer.byteLength(..., "utf8") for the real
+        // on-disk byte count, matching how readSkillMarkdownGuarded
+        // checks against SKILL_MD_MAX_BYTES.
+        sizeBytes: Buffer.byteLength(guarded.markdown, "utf8"),
         contentHash
       },
       gitRemoveFailed,
-      // Helpers locked into stagingInfo so finalize doesn't re-read
-      // global state and risk diverging.
-      now,
-      removeGitDir
+      // codex round-1: removeGitDir is dead state at finalize time
+      // (the .git removal already ran in stage). Dropped. `now` is
+      // kept because finalize uses it for the backup-dir timestamp;
+      // it's session-scoped so the function-as-state is acceptable.
+      now
     }
   };
 }
@@ -634,6 +640,9 @@ export async function finalizeStagedInstall(stagingInfo, {
     return { ok: false, error: SKILL_INSTALL_ERROR.IO_FAILED, message: "stagingInfo is required" };
   }
   const { stagingDir, finalDir, owner, repo, branch, subPath, descriptor, gitRemoveFailed, skillDir } = stagingInfo;
+  // codex round-1: `now` from stagingInfo is preferred so the backup
+  // dir timestamp aligns with stage-time bookkeeping. Caller-supplied
+  // `now` (the destructured kwarg above) overrides for tests.
   let backupDir = null;
   let rollbackFailedBackup = null;
   let backupTaken = false;

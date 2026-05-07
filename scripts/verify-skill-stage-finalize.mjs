@@ -238,6 +238,37 @@ await withTempSkillsDir("contentHash determinism", async ({ skillsDir }) => {
 });
 
 // ---------------------------------------------------------------------
+// 6b. preview.sizeBytes is REAL byte count, not JS string length.
+//     CJK / emoji content takes >1 byte per code point in UTF-8.
+//     codex round-1: JS `.length` returns UTF-16 code units, which
+//     would underreport for CJK by ~3x.
+// ---------------------------------------------------------------------
+await withTempSkillsDir("sizeBytes is real byte count", async ({ skillsDir }) => {
+  // 6 CJK chars = 18 UTF-8 bytes vs 6 string-length code units.
+  // Pad with newlines + ASCII so the SKILL.md descriptor validator
+  // sees a non-empty heading + description.
+  const cjkSkill = "# 研究助手\n\n这是一个用于研究任务的助手。\n\n## 触发\n\n用户提到研究时激活。\n";
+  const result = await stageSkillFromGitHub({
+    url: "https://github.com/owner/repo",
+    runtime: { paths: { skillsDir } },
+    spawnImpl: makeFakeSpawn({ skillBody: cjkSkill })
+  });
+  check("sizeBytes (CJK): stage ok", result.ok === true);
+  if (result.ok) {
+    const utf8Bytes = Buffer.byteLength(cjkSkill, "utf8");
+    check(
+      `sizeBytes (CJK): equals utf8 byte count (${utf8Bytes}, NOT ${cjkSkill.length} string length)`,
+      result.stagingInfo.preview.sizeBytes === utf8Bytes
+    );
+    check(
+      "sizeBytes (CJK): >> string length (CJK takes >1 byte/codepoint)",
+      result.stagingInfo.preview.sizeBytes > cjkSkill.length
+    );
+    await discardStagedInstall(result.stagingInfo);
+  }
+});
+
+// ---------------------------------------------------------------------
 // 7. Different SKILL.md bytes → different contentHash (tamper detection).
 // ---------------------------------------------------------------------
 await withTempSkillsDir("contentHash tamper detection", async ({ skillsDir }) => {
