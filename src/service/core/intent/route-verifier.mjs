@@ -67,6 +67,13 @@
  * then enforce.
  */
 
+import {
+  isExternalSourceMode,
+  isLocalSourceMode,
+  deriveNeedsExternalInfo,
+  detectEvidenceInconsistency
+} from "./evidence-axes.mjs";
+
 export const VERIFIER_MODES = Object.freeze(["off", "shadow", "enforce"]);
 export const DEFAULT_VERIFIER_MODE = "shadow";
 
@@ -80,49 +87,10 @@ const VALID_SOURCE_MODES = new Set([
   "deep_research"
 ]);
 
-// Source modes that require fetching/integrating external (web)
-// information vs ones that don't. Round-4 (codex round-3 fix) makes
-// directional veto and consistency-floor logic depend on this so
-// `required + no_external` / `forbidden + single_lookup` cannot be
-// reached via the verifier. Round-5 (codex round-4 fix): also list
-// local modes explicitly so the consistency floor can reject
-// `required + provided_context`, which EvidencePolicy treats as
-// local just like `no_external`.
-const EXTERNAL_SOURCE_MODES = new Set([
-  "single_lookup",
-  "multi_source_research",
-  "deep_research"
-]);
-const LOCAL_SOURCE_MODES = new Set([
-  "no_external",
-  "provided_context"
-]);
-function isExternalSourceMode(m) {
-  return EXTERNAL_SOURCE_MODES.has(m);
-}
-function isLocalSourceMode(m) {
-  return LOCAL_SOURCE_MODES.has(m);
-}
-
-/**
- * Derive `needs_external_info` from the three normalized fields
- * (web_policy / source_mode / needs_current_information). Codex
- * round-4 caught: EvidencePolicy still reads the raw
- * `decision.needs_external_info === false` and uses it as a
- * standalone gate that can override our corrections — so even after
- * we move the route to required + single_lookup, a stale
- * `needs_external_info=false` from SR drags it back to forbidden.
- *
- * The fix keeps the schema small (no `corrected_needs_external_info`)
- * and instead has the verifier write a derived value into the
- * applied decision so EvidencePolicy sees a consistent record.
- */
-export function deriveNeedsExternalInfo({ web_policy, source_mode, needs_current_information } = {}) {
-  if (needs_current_information === true) return true;
-  if (web_policy === "required") return true;
-  if (isExternalSourceMode(source_mode)) return true;
-  return false;
-}
+// Re-export the axis algebra so existing callers / tests of the
+// verifier module don't have to discover the new evidence-axes
+// module path. The canonical source is `evidence-axes.mjs`.
+export { deriveNeedsExternalInfo };
 
 /**
  * Detect "hard structural signals" that constrain the judge's verdict
@@ -339,6 +307,10 @@ export function applyJudgeVerdict({
   // which obscured the real reason. Floor first → veto → apply
   // separates "your correction is invalid" from "your correction is
   // valid but violates a hard signal".
+  //
+  // Round-6 (codex round-5): consistency rules live in
+  // `evidence-axes.mjs` so EvidencePolicy and verifier share one
+  // definition.
   function simulatedAfterApply() {
     const next = { ...decision };
     if (proposedDiff.web_policy) next.web_policy = proposedDiff.web_policy.to;
@@ -346,34 +318,25 @@ export function applyJudgeVerdict({
     if (proposedDiff.needs_current_information) next.needs_current_information = proposedDiff.needs_current_information.to;
     return next;
   }
-  function detectInconsistency(state) {
-    const violations = [];
-    const externalSource = isExternalSourceMode(state.source_mode);
-    const localSource = isLocalSourceMode(state.source_mode);
-    if (state.web_policy === "forbidden" && externalSource) {
-      violations.push("forbidden_with_external_source_mode");
-    }
-    // Round-5: EvidencePolicy treats both `no_external` and
-    // `provided_context` as local — a `required + provided_context`
-    // would also collapse downstream.
-    if (state.web_policy === "required" && localSource) {
-      violations.push("required_with_local_source_mode");
-    }
-    if (state.needs_current_information === true && state.web_policy === "forbidden") {
-      violations.push("needs_current_with_forbidden");
-    }
-    return violations;
-  }
   const post = simulatedAfterApply();
-  const inconsistencies = detectInconsistency(post);
+  const inconsistencies = detectEvidenceInconsistency(post);
   if (inconsistencies.length > 0) {
+    // Round-6 (codex round-5 #C): expose hard signals alongside
+    // the inconsistency so a "double bug" (broken correction AND
+    // hard-signal conflict) is visible without obscuring the
+    // primary failure.
+    const hardForDiagnostic = detectHardStructuralSignals(signals);
     return {
       applied: false,
       decision,
       diff: null,
       reason: `evidence_axis_inconsistent: ${inconsistencies.join(",")}`,
       mode,
-      judge_status: "inconsistent_correction"
+      judge_status: "inconsistent_correction",
+      diagnostics: {
+        inconsistencies,
+        hard_signals_present: hardForDiagnostic.all
+      }
     };
   }
 
@@ -437,8 +400,28 @@ export function applyJudgeVerdict({
 
   // (Round-5: consistency floor moved above veto block.)
 
+  // Round-6 (codex round-5 #A): the diff must reflect what enforce
+  // *would* change downstream — including the derived
+  // needs_external_info — even in shadow mode. Otherwise shadow
+  // corpus telemetry shows "verifier wants no change" for a route
+  // that enforce would actually move external-side, and the
+  // shadow→enforce gate evaluation is unreliable.
+  const derivedAfter = deriveNeedsExternalInfo({
+    web_policy: post.web_policy,
+    source_mode: post.source_mode,
+    needs_current_information: post.needs_current_information
+  });
+  if (derivedAfter !== decision.needs_external_info) {
+    proposedDiff.needs_external_info = {
+      from: decision.needs_external_info,
+      to: derivedAfter,
+      derived: true
+    };
+  }
+
   if (mode === "shadow") {
-    // Shadow: log diff, return original decision unchanged.
+    // Shadow: log diff (including the derived axis change), return
+    // original decision unchanged.
     return {
       applied: false,
       decision,
@@ -458,15 +441,10 @@ export function applyJudgeVerdict({
   }
   // Round-5: keep `needs_external_info` consistent with the three
   // normalized fields. EvidencePolicy reads the raw value as a
-  // standalone gate (line 48 of evidence-policy.mjs), so a stale
-  // false from SR would otherwise drag a corrected route back to
-  // forbidden. Derive it from the post-apply state instead of
-  // adding a fourth corrected_* schema field.
-  next.needs_external_info = deriveNeedsExternalInfo({
-    web_policy: next.web_policy,
-    source_mode: next.source_mode,
-    needs_current_information: next.needs_current_information
-  });
+  // standalone gate; a stale false from SR would otherwise drag a
+  // corrected route back to forbidden. Derive it from the post-
+  // apply state instead of adding a fourth corrected_* schema field.
+  next.needs_external_info = derivedAfter;
   return {
     applied: true,
     decision: next,

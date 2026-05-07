@@ -189,10 +189,14 @@ test("shadow mode — judge says reject + corrected web_policy → diff logged b
   });
   assert.equal(result.applied, false, "shadow must NOT change the decision");
   assert.equal(result.decision.web_policy, "required");
-  assert.deepEqual(result.diff, {
-    web_policy: { from: "required", to: "forbidden" },
-    source_mode: { from: "single_lookup", to: "no_external" }
-  });
+  // Round-6: shadow diff records derived needs_external_info too,
+  // so the corpus telemetry shows what enforce *would* change.
+  // Original decision had no needs_external_info; derived after =
+  // false (forbidden + no_external + no needs_current).
+  assert.deepEqual(result.diff.web_policy, { from: "required", to: "forbidden" });
+  assert.deepEqual(result.diff.source_mode, { from: "single_lookup", to: "no_external" });
+  assert.equal(result.diff.needs_external_info?.to, false);
+  assert.equal(result.diff.needs_external_info?.derived, true);
   assert.equal(result.mode, "shadow");
 });
 
