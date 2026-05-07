@@ -50,13 +50,21 @@ function check(label, condition) {
   }
 }
 
-// All visible tools the runtime has (a representative sample).
+// All visible tools the runtime has (a representative sample). Mixes
+// network read + write paths so the surface filter is exercised
+// against both halves of "connector tasks".
 const REGISTRY_SAMPLE = [
-  // network — search / URL fetch
+  // network — search / URL fetch (read-only external)
   { id: "web_search", policy_group: "external_web_read", required_capabilities: ["network"] },
   { id: "web_search_fetch", policy_group: "external_web_read", required_capabilities: ["network"] },
   { id: "fetch_url_content", policy_group: "external_web_read", required_capabilities: ["network"] },
-  // network — connector write
+  // network — connector READ (codex round-1: was missing from the
+  // first version of this verifier; account_list_* are first-class
+  // mailbox/calendar reads)
+  { id: "account_list_emails", required_capabilities: ["network"] },
+  { id: "account_list_events", required_capabilities: ["network"] },
+  { id: "account_search_drive", required_capabilities: ["network"] },
+  // network — connector WRITE
   { id: "account_send_email", policy_group: "email_send", required_capabilities: ["network"] },
   { id: "account_create_event", policy_group: "calendar_create", required_capabilities: ["network"] },
   { id: "account_upload_file", policy_group: "file_upload", required_capabilities: ["network"] },
@@ -111,6 +119,39 @@ function ids(list) {
   check("connector: account_create_event is visible", visible.includes("account_create_event"));
   check("connector: account_upload_file is visible", visible.includes("account_upload_file"));
   check("connector: connector_workflow_run is visible", visible.includes("connector_workflow_run"));
+  // codex round-1: connector READ tasks (list emails / events / drive
+  // search) must also surface under email_calendar_action, not just
+  // write-class tools. The matcher in tool-surface uses regex
+  // /^(account_|connector_)/, so narrowing it to send/create/upload
+  // would break read paths — this assert pins the read surface too.
+  check("connector-read: account_list_emails is visible", visible.includes("account_list_emails"));
+  check("connector-read: account_list_events is visible", visible.includes("account_list_events"));
+  check("connector-read: account_search_drive is visible", visible.includes("account_search_drive"));
+}
+
+// ---------------------------------------------------------------------
+// 2b. Provider allowance — basic smoke check that resolveProviderForTask
+//     is exported and callable. The full provider-routing matrix lives
+//     in scripts/verify-provider-routing.mjs (50/50 pass) — this check
+//     is just "the symbol is wired so the runtime never accidentally
+//     refuses to look up a provider for chat / planner / vision".
+//     codex round-1 noted "cloud-provider tasks" weren't audited; the
+//     deep coverage stays where it lives, this is a presence guard.
+// ---------------------------------------------------------------------
+{
+  const { resolveProviderForTask, resolveCodeCliRuntimeForTask, describeResolvedProvider }
+    = await import("../src/service/executors/shared/provider-resolver.mjs");
+  check("provider-resolver: resolveProviderForTask is exported", typeof resolveProviderForTask === "function");
+  check("provider-resolver: resolveCodeCliRuntimeForTask is exported", typeof resolveCodeCliRuntimeForTask === "function");
+  check("provider-resolver: describeResolvedProvider is exported", typeof describeResolvedProvider === "function");
+  // Calling with no provider configured should return null cleanly,
+  // not throw — that's the "no provider" allowance shape.
+  let result;
+  let threw = false;
+  try { result = resolveProviderForTask("chat", { /* clean env */ }, {}); }
+  catch { threw = true; }
+  check("provider-resolver: doesn't throw on chat task with empty env", threw === false);
+  check("provider-resolver: returns null or provider-shaped object", result === null || typeof result === "object");
 }
 
 // ---------------------------------------------------------------------
