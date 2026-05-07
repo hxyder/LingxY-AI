@@ -43,6 +43,7 @@
     "verify:open-url-surface-gating": "node scripts/verify-open-url-surface-gating.mjs",
     "verify:stable-qa-override": "node scripts/verify-stable-qa-override.mjs",
     "verify:artifact-generation-invariant": "node scripts/verify-artifact-generation-invariant.mjs",
+    "verify:artifact-recovery-hook": "node scripts/verify-artifact-recovery-hook.mjs",
     "verify:research-quality": "node scripts/verify-research-quality.mjs",
     "verify:research-quality-e2e": "node scripts/verify-research-quality-e2e.mjs",
     "verify:explicit-no-search": "node scripts/verify-explicit-no-search.mjs",

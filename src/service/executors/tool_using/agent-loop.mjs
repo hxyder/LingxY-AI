@@ -718,7 +718,7 @@ function appendAuditLog(runtime, task, subtype, payload) {
  */
 export async function runToolAgentLoop(opts = {}) {
   const result = await _runToolAgentLoopCore(opts);
-  const contracted = finaliseWithArtifactContract(result, opts);
+  const contracted = await finaliseWithArtifactContract(result, opts);
   return finaliseWithEvidence(contracted, opts);
 }
 
@@ -732,13 +732,133 @@ function artifactContractViolations(task, transcript = []) {
   );
 }
 
-function finaliseWithArtifactContract(result, { runtime, task } = {}) {
+// B2-a (b) deterministic artifact-required recovery hook.
+//
+// When the agent loop reports status="success" but the success-contract
+// validator says no artifact was created (D-class missing_artifact in
+// the 109 corpus), try ONCE to materialise the LLM's final_text into
+// an artifact by calling generate_document directly. If recovery
+// succeeds the result stays "success"; if recovery is unavailable or
+// fails, fall through to the existing partial_success path.
+//
+// SAFETY (locked by POLICY_GROUPS.artifact_generation invariant +
+// scripts/verify-artifact-generation-invariant.mjs):
+//   - Only no-side-effect tools may be invoked here. The membership of
+//     the artifact_generation group enforces this; we just route
+//     through generate_document, which is the canonical producer.
+//   - Never reach for email_send / open_url / connector_workflow_run
+//     during recovery. The verifier blocks adding any side-effect
+//     tool to artifact_generation, so it cannot accidentally land on
+//     this path.
+export async function attemptArtifactRecovery({ runtime, task, result }) {
+  const registry = runtime?.actionToolRegistry;
+  if (!registry || typeof registry.list !== "function") {
+    return { ok: false, reason: "no_registry" };
+  }
+  const finalText = String(result?.final_text ?? result?.finalText ?? "").trim();
+  if (!finalText) {
+    return { ok: false, reason: "no_final_text" };
+  }
+  const generateTool = registry.list().find((tool) => tool?.id === "generate_document");
+  if (!generateTool || typeof generateTool.execute !== "function") {
+    return { ok: false, reason: "no_generate_document" };
+  }
+
+  // Map task_spec.artifact.kind into generate_document.kind. The
+  // schema allows pptx/docx/xlsx/pdf/html only; map the synonyms
+  // (word/excel/ppt) and default to html for any other shape so the
+  // LLM's markdown-ish final text materialises somewhere readable.
+  const taskSpec = task?.task_spec ?? task?.task_spec_initial ?? {};
+  const rawKind = String(taskSpec?.artifact?.kind ?? taskSpec?.contract?.output_contract?.kind ?? "")
+    .trim().toLowerCase();
+  const kindAliases = { word: "docx", excel: "xlsx", ppt: "pptx", powerpoint: "pptx" };
+  const supportedKinds = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
+  const kind = supportedKinds.has(rawKind)
+    ? rawKind
+    : (kindAliases[rawKind] ?? "html");
+
+  const titleSource = String(
+    task?.user_command ?? taskSpec?.user_goal_text ?? "Document"
+  ).trim().slice(0, 80) || "Document";
+
+  const outline = kind === "xlsx"
+    ? { headers: ["Content"], rows: [[finalText]] }
+    : kind === "pptx"
+      ? { title: titleSource, slides: [{ heading: titleSource, body: finalText }] }
+      : { title: titleSource, sections: [{ heading: titleSource, body: finalText }] };
+
+  try {
+    const recovered = await generateTool.execute({ kind, outline }, { runtime, task });
+    if (!recovered?.success) {
+      return {
+        ok: false,
+        reason: `recovery_failed:${recovered?.observation ?? "unknown_error"}`
+      };
+    }
+    return { ok: true, recovered, kind };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: `recovery_exception:${error?.message ?? String(error)}`
+    };
+  }
+}
+
+export async function finaliseWithArtifactContract(result, { runtime, task } = {}) {
   if (!result || typeof result !== "object") return result;
   if (result.status !== "success") return result;
   const transcript = Array.isArray(result.transcript) ? result.transcript : [];
   const violations = artifactContractViolations(task, transcript);
   if (violations.length === 0) return result;
 
+  // B2-a (b) deterministic recovery: try ONCE to materialise the LLM's
+  // final_text into an artifact via generate_document before downgrading
+  // to partial_success. Recovery is the right place for D-class
+  // missing_artifact failures (LLM emitted markdown content but never
+  // called generate_document); the safety floor (POLICY_GROUPS.
+  // artifact_generation) prevents this hook from ever reaching for a
+  // side-effect tool.
+  const recovery = await attemptArtifactRecovery({ runtime, task, result });
+  if (recovery.ok) {
+    const recoveryTranscript = [
+      ...transcript,
+      {
+        type: "tool_result",
+        tool: "generate_document",
+        success: true,
+        observation: recovery.recovered.observation,
+        metadata: recovery.recovered.metadata,
+        recovery: "artifact_required_deterministic"
+      }
+    ];
+    const remainingViolations = artifactContractViolations(task, recoveryTranscript);
+    if (remainingViolations.length === 0) {
+      runtime?.emitTaskEvent?.("artifact_recovery_succeeded", {
+        kind: recovery.kind,
+        path: recovery.recovered.metadata?.path ?? null
+      });
+      if (runtime?.store && task?.task_id) {
+        appendAuditLog(runtime, task, "tool_loop.artifact_recovery_succeeded", {
+          kind: recovery.kind,
+          path: recovery.recovered.metadata?.path ?? null
+        });
+      }
+      return {
+        ...result,
+        transcript: recoveryTranscript,
+        artifact_recovery: {
+          applied: true,
+          source: "deterministic",
+          kind: recovery.kind
+        }
+      };
+    }
+    // Recovery produced a tool result but contract still unsatisfied
+    // (e.g. kind mismatch). Fall through to partial_success with the
+    // remaining violations so the user sees the real reason.
+  }
+
+  // No recovery (or recovery failed). Existing partial_success path.
   const violationKinds = violations.map((violation) => violation.kind).filter(Boolean);
   const phaseGate = {
     next_action: "abort",
@@ -748,12 +868,14 @@ function finaliseWithArtifactContract(result, { runtime, task } = {}) {
   };
   runtime?.emitTaskEvent?.("contract_finalization_blocked", {
     reason: "artifact_contract_unsatisfied",
-    violation_kinds: violationKinds
+    violation_kinds: violationKinds,
+    recovery_outcome: recovery.ok ? "recovered_but_kind_mismatch" : recovery.reason
   });
   if (runtime?.store && task?.task_id) {
     appendAuditLog(runtime, task, "tool_loop.contract_finalization_blocked", {
       reason: "artifact_contract_unsatisfied",
-      violation_kinds: violationKinds
+      violation_kinds: violationKinds,
+      recovery_outcome: recovery.ok ? "recovered_but_kind_mismatch" : recovery.reason
     });
   }
 
@@ -766,7 +888,11 @@ function finaliseWithArtifactContract(result, { runtime, task } = {}) {
       reason: violations.map((violation) => violation.message || violation.kind).join("; ")
     }),
     phase_gate: phaseGate,
-    contract_violations: violations
+    contract_violations: violations,
+    artifact_recovery: {
+      applied: false,
+      reason: recovery.ok ? "kind_mismatch_after_recovery" : recovery.reason
+    }
   };
 }
 
