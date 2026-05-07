@@ -16,33 +16,37 @@ export function splitCjk(value) {
   return String(value ?? "").replace(CJK_RE, (c) => ` ${c} `);
 }
 
+// Codex review final: the previous shape stripped a few FTS5 metacharacters
+// from plain words (`:`, `()`, `"`) but still let OR / NOT / NEAR /
+// `field:value` reach FTS5's parser as bare-token operators. Switch to a
+// stricter shape: every token is wrapped in double-quoted phrase syntax so
+// FTS5's phrase rules apply — operators inside a phrase are literal text.
+// Quoted spans from the user are preserved as phrases. The result is a
+// pure (phrase | phrase | ...) expression that FTS5 cannot misread.
+function safePhraseInner(value) {
+  // Inside an FTS5 phrase, only `"` is structural; strip it (alongside the
+  // other structural metacharacters as belt-and-braces) and run through the
+  // CJK splitter so each ideograph becomes its own token in the index.
+  return splitCjk(value).replace(/["()*:]/g, "").trim();
+}
+
 export function normalisePhraseQuery(query) {
-  // FTS5's MATCH syntax is powerful but exposing it directly to users is a
-  // UX trap (`"`, `*`, `^` all change semantics). Translate user input into
-  // a safe MATCH expression: split on whitespace, strip FTS5 metacharacters,
-  // require every token (AND), and prefix-match. Quoted spans become FTS5
-  // phrase queries.
   const raw = String(query ?? "").trim();
   if (!raw) return "";
+  // Cap absurdly long queries so a malicious / accidental megabyte input
+  // cannot inflate the MATCH expression beyond reasonable bounds.
+  const capped = raw.length > 1024 ? raw.slice(0, 1024) : raw;
   const tokens = [];
-  // Pull out "quoted phrases" first.
   const phraseRe = /"([^"]+)"/g;
-  let consumed = "";
   let m;
-  while ((m = phraseRe.exec(raw)) !== null) {
-    const phrase = m[1].trim();
-    if (phrase) tokens.push(`"${splitCjk(phrase).trim().replace(/"/g, "")}"`);
-    consumed = `${consumed}${raw.slice(0, m.index)} `;
+  while ((m = phraseRe.exec(capped)) !== null) {
+    const safe = safePhraseInner(m[1]);
+    if (safe) tokens.push(`"${safe}"`);
   }
-  const remainder = raw.replace(phraseRe, " ");
+  const remainder = capped.replace(phraseRe, " ");
   for (const word of remainder.split(/\s+/).filter(Boolean)) {
-    const safe = splitCjk(word).trim()
-      // FTS5 reserved tokens stripped (we already control quotes via the
-      // phrase loop). Keep `*` so prefix queries are at least theoretically
-      // possible, but never inject them ourselves.
-      .replace(/[():"]/g, "");
-    if (!safe) continue;
-    tokens.push(safe);
+    const safe = safePhraseInner(word);
+    if (safe) tokens.push(`"${safe}"`);
   }
   return tokens.join(" ");
 }
@@ -106,6 +110,10 @@ export function createSearchIndex(db) {
     const deletedClause = includeDeleted
       ? ""
       : ` AND (deleted_at IS NULL OR deleted_at = '')`;
+    // Codex review: rely on FTS5's documented `rank` auxiliary column
+    // (bm25 by default) and order ASC because bm25 is "smaller is more
+    // relevant". Selecting bm25() explicitly so the test layer can pin
+    // the sign convention.
     const sql = `SELECT
         source_type,
         source_id,
@@ -113,12 +121,12 @@ export function createSearchIndex(db) {
         deleted_at,
         snippet(unified_search_index, 0, '<mark>', '</mark>', '...', 16) AS title_snippet,
         snippet(unified_search_index, 1, '<mark>', '</mark>', '...', 32) AS body_snippet,
-        rank
+        bm25(unified_search_index) AS rank
       FROM unified_search_index
       WHERE unified_search_index MATCH ?
         AND source_type IN (${placeholders})
         ${deletedClause}
-      ORDER BY rank
+      ORDER BY bm25(unified_search_index) ASC
       LIMIT ?`;
     const stmt = db.prepare(sql);
     return stmt.all(matchExpr, ...validScope, cap).map((row) => ({

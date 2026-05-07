@@ -29,16 +29,45 @@ test("splitCjk inserts spaces around CJK chars and leaves Latin alone", () => {
 
 // ─── normalisePhraseQuery ─────────────────────────────────────────────────
 
-test("normalisePhraseQuery splits keywords and quotes phrases", () => {
+test("normalisePhraseQuery wraps every token as an FTS5 phrase", () => {
   assert.equal(normalisePhraseQuery(""), "");
   assert.equal(normalisePhraseQuery("  "), "");
-  assert.equal(normalisePhraseQuery("alpha beta"), "alpha beta");
+  assert.equal(normalisePhraseQuery("alpha beta"), `"alpha" "beta"`);
   // Quoted phrase becomes an FTS5 phrase query (still CJK-split inside).
   assert.equal(normalisePhraseQuery(`"plan b"`), `"plan b"`);
   // FTS5 reserved metacharacters in plain words are stripped.
-  assert.equal(normalisePhraseQuery("a:b (c)"), "ab c");
-  // CJK keyword split.
-  assert.match(normalisePhraseQuery("讨论"), /讨\s+论/);
+  assert.equal(normalisePhraseQuery("a:b (c)"), `"ab" "c"`);
+  // CJK keyword split, then re-quoted as a phrase.
+  assert.match(normalisePhraseQuery("讨论"), /^"\s*讨\s+论\s*"$/);
+});
+
+test("normalisePhraseQuery neutralises FTS5 operators (OR / NOT / NEAR / field:)", () => {
+  // Codex review: bare OR / NOT / NEAR survived the previous shape and
+  // would change FTS5 semantics. The phrase-wrapped output now treats
+  // them as literal tokens.
+  assert.equal(normalisePhraseQuery("alpha OR beta"), `"alpha" "OR" "beta"`);
+  assert.equal(normalisePhraseQuery("alpha NOT beta"), `"alpha" "NOT" "beta"`);
+  assert.equal(normalisePhraseQuery("alpha NEAR beta"), `"alpha" "NEAR" "beta"`);
+  // Field qualifiers like `title:alpha` lose the `:` and become a single
+  // phrase, so FTS5 cannot apply column-level filtering.
+  assert.equal(normalisePhraseQuery("title:alpha"), `"titlealpha"`);
+});
+
+test("normalisePhraseQuery rejects pure-metacharacter input cleanly", () => {
+  assert.equal(normalisePhraseQuery(`"`), "");
+  assert.equal(normalisePhraseQuery(`""`), "");
+  assert.equal(normalisePhraseQuery(`(*)`), "");
+  assert.equal(normalisePhraseQuery(`::: ()`), "");
+});
+
+test("normalisePhraseQuery caps overlong input at 1024 chars", () => {
+  const long = `${"alpha ".repeat(2000)}beta`;
+  const out = normalisePhraseQuery(long);
+  // Output is bounded by FTS5-overhead of wrapping each token; capping the
+  // input keeps the MATCH expression from inflating without bound.
+  assert.ok(out.length <= long.length * 3, "output stays linear in capped input");
+  // The trailing "beta" past the cap must not be present.
+  assert.ok(!out.includes(`"beta"`));
 });
 
 // ─── createSearchIndex CRUD ────────────────────────────────────────────────

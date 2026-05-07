@@ -1,6 +1,13 @@
 import { sanitizeProviderConfig, sanitizeTaskRouteForProvider } from "../../shared/provider-catalog.mjs";
 import { buildStoreManifest } from "./store/sqlite-schema.mjs";
-import { createSearchIndex, rebuildSearchIndex } from "./store/search-index.mjs";
+import {
+  createSearchIndex,
+  indexConversation,
+  indexTask,
+  rebuildSearchIndex,
+  unindexConversation,
+  unindexTask
+} from "./store/search-index.mjs";
 import { createInMemoryStoreScaffold } from "./store/memory-store.mjs";
 import { createEventBusScaffold } from "./events/event-bus.mjs";
 import { createTaskQueueScaffold } from "./queue/task-queue.mjs";
@@ -108,6 +115,87 @@ export function createServiceBootstrap({
   runtime.searchIndex = storeAdapter?.db
     ? createSearchIndex(storeAdapter.db)
     : null;
+  // Codex review: tasks / conversations need write-through hooks too,
+  // otherwise users searching for a task they just created would not find
+  // it until the next service restart — a "search is broken" UX trap.
+  // Wrap the store's mutation methods in place so the indexer is updated
+  // immediately after every successful write. Original methods are
+  // captured by reference so the wrapper is idempotent against repeated
+  // bootstrap calls (which never happens today, but the shape is safer).
+  if (runtime.searchIndex && storeAdapter) {
+    const originalInsertTask = storeAdapter.insertTask?.bind(storeAdapter);
+    const originalUpdateTask = storeAdapter.updateTask?.bind(storeAdapter);
+    const originalSoftDeleteTask = storeAdapter.softDeleteTask?.bind(storeAdapter);
+    const originalRestoreTask = storeAdapter.restoreTask?.bind(storeAdapter);
+    const originalDeleteTask = storeAdapter.deleteTask?.bind(storeAdapter);
+    const originalInsertConversation = storeAdapter.insertConversation?.bind(storeAdapter);
+    const originalUpdateConversation = storeAdapter.updateConversation?.bind(storeAdapter);
+    const originalSoftDeleteConversation = storeAdapter.softDeleteConversation?.bind(storeAdapter);
+    const originalRestoreConversation = storeAdapter.restoreConversation?.bind(storeAdapter);
+    if (originalInsertTask) {
+      storeAdapter.insertTask = (task) => {
+        const result = originalInsertTask(task);
+        try { indexTask(runtime, result ?? task); } catch { /* best-effort */ }
+        return result;
+      };
+    }
+    if (originalUpdateTask) {
+      storeAdapter.updateTask = (taskId, task) => {
+        const result = originalUpdateTask(taskId, task);
+        try { indexTask(runtime, result ?? task); } catch { /* best-effort */ }
+        return result;
+      };
+    }
+    if (originalSoftDeleteTask) {
+      storeAdapter.softDeleteTask = (taskId, options) => {
+        const result = originalSoftDeleteTask(taskId, options);
+        try { if (result) indexTask(runtime, result); } catch { /* best-effort */ }
+        return result;
+      };
+    }
+    if (originalRestoreTask) {
+      storeAdapter.restoreTask = (taskId, options) => {
+        const result = originalRestoreTask(taskId, options);
+        try { if (result) indexTask(runtime, result); } catch { /* best-effort */ }
+        return result;
+      };
+    }
+    if (originalDeleteTask) {
+      storeAdapter.deleteTask = (taskId) => {
+        const result = originalDeleteTask(taskId);
+        try { unindexTask(runtime, taskId); } catch { /* best-effort */ }
+        return result;
+      };
+    }
+    if (originalInsertConversation) {
+      storeAdapter.insertConversation = (convo) => {
+        const result = originalInsertConversation(convo);
+        try { indexConversation(runtime, result ?? convo); } catch { /* best-effort */ }
+        return result;
+      };
+    }
+    if (originalUpdateConversation) {
+      storeAdapter.updateConversation = (convoId, patch) => {
+        const result = originalUpdateConversation(convoId, patch);
+        try { indexConversation(runtime, result); } catch { /* best-effort */ }
+        return result;
+      };
+    }
+    if (originalSoftDeleteConversation) {
+      storeAdapter.softDeleteConversation = (convoId, options) => {
+        const result = originalSoftDeleteConversation(convoId, options);
+        try { if (result) indexConversation(runtime, result); } catch { /* best-effort */ }
+        return result;
+      };
+    }
+    if (originalRestoreConversation) {
+      storeAdapter.restoreConversation = (convoId, options) => {
+        const result = originalRestoreConversation(convoId, options);
+        try { if (result) indexConversation(runtime, result); } catch { /* best-effort */ }
+        return result;
+      };
+    }
+  }
   runtime.securityBroker = createSecurityBroker({
     runtime,
     config: securityConfig
