@@ -526,12 +526,20 @@ export async function uploadGoogleFile(runtime, account, input = {}, { fetchImpl
 export async function createGoogleEvent(runtime, account, input = {}, { fetchImpl = fetch } = {}) {
   const accessToken = await getValidAccessToken(runtime, account.id, { fetchImpl });
   if (!accessToken) return { status: "reauth_required", accountId: account.id, provider: account.provider };
+  // R-feedback 2026-05-07: Google Calendar API rejects events without
+  // a timeZone field on RFC3339-naive dateTime values. Microsoft
+  // connector defaults to "UTC"; Google was missing this and returned
+  // 400 "Missing time zone definition for start time."
+  // Resolution: default to the host system tz (matches what users
+  // expect when they say "create an event tomorrow at 3pm") and let
+  // explicit input.timeZone override.
+  const tz = input.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
   const body = {
     summary: input.title,
     description: input.description ?? "",
     location: input.location ?? "",
-    start: { dateTime: input.startTime },
-    end: { dateTime: input.endTime },
+    start: { dateTime: input.startTime, timeZone: tz },
+    end: { dateTime: input.endTime, timeZone: tz },
     attendees: (input.attendees ?? []).map((email) => ({ email }))
   };
   const response = await fetchImpl("https://www.googleapis.com/calendar/v3/calendars/primary/events", {

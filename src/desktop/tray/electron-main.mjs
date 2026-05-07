@@ -2101,6 +2101,39 @@ export function createElectronShellRuntime({
         if (shortcut.id === "open-console") {
           showWindow("console");
         }
+        if (shortcut.id === "toggle-presenter-mode") {
+          // R-feedback 2026-05-07: shortcut was registered in
+          // manifest.mjs but no handler — accelerator did nothing.
+          // Toggle via the runtime config endpoint so other surfaces
+          // (Console security panel, broker) stay in sync. Best-effort
+          // — failure logs to diagnostics, doesn't bubble.
+          (async () => {
+            try {
+              const base = resolvedServiceBaseUrl ?? "http://127.0.0.1:4310";
+              const current = await requestDesktopServiceJson({
+                base, method: "GET", actor: "shortcut", pathname: "/security/state"
+              }).catch(() => null);
+              const currentPresenter = current?.security?.presenter_mode === true;
+              const next = !currentPresenter;
+              await requestDesktopServiceJson({
+                base, method: "POST", actor: "shortcut",
+                pathname: "/security/state",
+                body: { presenter_mode: next }
+              });
+              await safeNotify({
+                title: next ? "Presenter Mode 已开启" : "Presenter Mode 已关闭",
+                body: next
+                  ? "已隐藏 dock / overlay / popup card。再次按 Ctrl+Alt+P 关闭。"
+                  : "桌面浮窗已恢复。",
+                taskId: `presenter:${next ? "on" : "off"}`,
+                dedupeKey: "presenter-mode-toggle",
+                allowContinue: false
+              });
+            } catch (err) {
+              void appendDesktopDiagnosticError("presenter_mode_toggle_failed", err, {});
+            }
+          })();
+        }
         for (const browserWindow of windows.values()) {
           browserWindow.webContents.send(IPC_CHANNELS.shortcutTriggered, payload);
         }
@@ -2598,6 +2631,27 @@ export function createElectronShellRuntime({
       popupCardManager.registerIpcHandlers({
         onResolve: async (card) => {
           try {
+            // P0-1 first-run consent: button click → record strategy
+            // in config + trigger first scheduled check if non-off.
+            if (card.payload?.consentCard) {
+              const action = String(card.action ?? "").trim();
+              const choice = action.startsWith("consent:")
+                ? action.slice("consent:".length)
+                : "off";
+              if (UPDATE_STRATEGIES.includes(choice)) {
+                try {
+                  embeddedServiceRuntime?.runtime?.configStore?.patch?.({
+                    updates: { strategy: choice, consentRecordedAt: new Date().toISOString() }
+                  });
+                } catch (err) {
+                  safeWarn("[LingxY] consent persist failed:", err?.message ?? err);
+                }
+                if (choice !== "off" && autoUpdaterController) {
+                  autoUpdaterController.checkForUpdates({ trigger: "scheduled" }).catch(() => {});
+                }
+              }
+              return;  // consent path is fully handled here.
+            }
             if (card.kind === "approval" && card.payload?.approvalId) {
               const approvalId = card.payload.approvalId;
               const action = card.action === "approve" ? "approve" : card.action === "reject" ? "reject" : null;
@@ -2762,34 +2816,40 @@ export function createElectronShellRuntime({
         }
       });
 
-      // First-run consent: schedule a popup-card AFTER service runtime
+      // First-run consent: fire a popup-card AFTER service runtime
       // is up so configStore is reachable. The card is shown only if
-      // there's no recorded consent yet. Choosing any strategy other
-      // than `off` triggers an immediate scheduled check.
-      setTimeout(async () => {
+      // there's no recorded consent yet. The actual strategy gets
+      // recorded in `onResolve` (registered above with the popup-card
+      // manager) when the user clicks one of the action buttons.
+      //
+      // Round-7 R-feedback fix: previously called `popupCardManager
+      // .show?.()` — the manager exposes `showCard`, not `show`, so
+      // the consent popup never rendered. The fire-and-resolve
+      // pattern matches how approvals work (showCard returns
+      // immediately; onResolve fires later when the user clicks).
+      setTimeout(() => {
         try {
           const config = embeddedServiceRuntime?.runtime?.configStore?.load?.() ?? {};
           if (config?.updates?.consentRecordedAt) return;
-          const card = await popupCardManager.show?.({
+          popupCardManager.showCard?.({
             kind: "info",
             title: "自动检查更新？",
             body: "LingxY 可以从 GitHub Releases 自动检查新版本。检查会向 GitHub 暴露你的 IP 与浏览器标识；除此之外没有任何遥测路由经过 LingxY 服务器。",
+            // Round-7 fix: button shape uses `id` + `actionKey` so
+            // popup-card.js's renderActions() picks them up. Each
+            // click sends popupCardResolve with `action: <id>` which
+            // the onResolve handler below maps to a strategy string.
             buttons: [
-              { id: "auto", label: "检查 + 下载（auto）" },
-              { id: "notify", label: "仅通知（notify）", primary: true },
-              { id: "manual", label: "仅手动（manual）" },
-              { id: "off", label: "完全关闭（off）" }
+              { id: "auto", actionKey: "consent:auto", label: "检查 + 下载（auto）" },
+              { id: "notify", actionKey: "consent:notify", label: "仅通知（notify）", primary: true },
+              { id: "manual", actionKey: "consent:manual", label: "仅手动（manual）" },
+              { id: "off", actionKey: "consent:off", label: "完全关闭（off）" }
             ],
             allowContinue: false,
-            dedupeKey: "updater:consent"
-          }).catch?.(() => null);
-          const choice = card?.id ?? "off";
-          embeddedServiceRuntime?.runtime?.configStore?.patch?.({
-            updates: { strategy: choice, consentRecordedAt: new Date().toISOString() }
+            dedupeKey: "updater:consent",
+            // Tag so onResolve knows this is a consent card.
+            consentCard: true
           });
-          if (choice !== "off" && autoUpdaterController) {
-            autoUpdaterController.checkForUpdates({ trigger: "scheduled" }).catch(() => {});
-          }
         } catch (err) {
           safeWarn("[LingxY] first-run updater consent failed:", err?.message ?? err);
         }
