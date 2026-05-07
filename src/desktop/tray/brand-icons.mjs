@@ -111,14 +111,25 @@ export function createBrandIconResolver({ app, nativeImage }) {
   }
 
   function composeTrayIcon({ count = 0, size = 32 } = {}) {
-    const actual = nearestAvailableSize(size);
-    const pngPath = path.join(iconsDir, `lingxy-${actual}.png`);
+    // No badge → use canonical PNG directly via createFromPath. The OS
+    // tray then handles DPI scaling against the source bitmap rather
+    // than a fixed-size SVG bake (codex round-3 flagged the SVG-bake
+    // path as 4K/200% blur risk). For badged tray we still need the
+    // SVG composition, but render onto a 2x canvas so HiDPI down-
+    // scale stays sharp.
+    if (count <= 0) {
+      return resolveBrandIcon({ size });
+    }
+    const renderSize = size * 2;
+    const sourceSize = nearestAvailableSize(renderSize);
+    const pngPath = path.join(iconsDir, `lingxy-${sourceSize}.png`);
     if (!existsSync(pngPath)) {
-      // No PNG → fall back to plain branded icon, no badge.
       return resolveBrandIcon({ size });
     }
     const pngBase64 = readFileSync(pngPath).toString("base64");
-    const svg = composeTrayBadgeSvg({ pngBase64, size, count });
+    // composeTrayBadgeSvg viewBox stays at renderSize; the icon will
+    // render sharply at logical size on 1x, 2x, and 3x displays.
+    const svg = composeTrayBadgeSvg({ pngBase64, size: renderSize, count });
     const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
     return nativeImage.createFromDataURL(dataUrl);
   }

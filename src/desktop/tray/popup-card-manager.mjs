@@ -43,14 +43,18 @@ function estimateCardHeight(payload) {
 }
 
 export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolveServiceBaseUrl, createBrandedBrowserWindow }) {
-  // Round-3 brand-icon wiring: caller passes
+  // Brand-icon wiring is mandatory: callers must pass
   //   createBrandedBrowserWindow(BrowserWindow, options) → BrowserWindow
-  // so popup cards inherit the canonical taskbar/title icon. The
-  // verifier rejects raw `new BrowserWindow(` here. Default falls
-  // back to bare `new BrowserWindow` for tests that don't wire icons.
-  const newBrandedWindow = typeof createBrandedBrowserWindow === "function"
-    ? (options) => createBrandedBrowserWindow(BrowserWindow, options)
-    : (options) => new BrowserWindow(options);
+  // so popup cards inherit the canonical taskbar/title icon. Round-3
+  // had an opt-out fallback to raw `new BrowserWindow(...)` for tests;
+  // codex round-3 flagged that as a second production entry point
+  // that bypasses brand wiring. Round-4 removes it — tests that need
+  // a bare BrowserWindow must inject their own pass-through helper
+  // explicitly so the dependency is visible in the test fixture.
+  if (typeof createBrandedBrowserWindow !== "function") {
+    throw new Error("createPopupCardManager requires `createBrandedBrowserWindow` injection (brand-icon wiring is mandatory)");
+  }
+  const newBrandedWindow = (options) => createBrandedBrowserWindow(BrowserWindow, options);
   const cards = new Map(); // cardId -> { window, kind, pinned, payload, resolve }
   const pendingInit = new Map();
 

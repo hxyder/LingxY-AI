@@ -1,7 +1,7 @@
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
 
 export function validateShellManifest(manifest = DESKTOP_SHELL_MANIFEST) {
-  if (!manifest.appId || !manifest.trayTooltip) {
+  if (!manifest.runtimeNamespace || !manifest.trayTooltip) {
     throw new Error("Desktop shell manifest is missing top-level identity fields.");
   }
 

@@ -164,7 +164,13 @@ export const DEFAULT_SHORTCUTS = Object.freeze([
 ]);
 
 export const DESKTOP_SHELL_MANIFEST = Object.freeze({
-  appId: "uca.desktop",
+  // Logical runtime namespace (NOT the Windows AppUserModelID — that
+  // is "com.uca.desktop", mirrored in BRAND_AUMID in
+  // src/desktop/tray/brand-icons.mjs and pinned by
+  // scripts/verify-public-branding.mjs against package.json
+  // build.appId). Renamed from `appId` in C18 #B5 round-4 to make
+  // the two identities distinguishable.
+  runtimeNamespace: "uca.desktop",
   trayTooltip: "LingxY",
   windows: [
     {

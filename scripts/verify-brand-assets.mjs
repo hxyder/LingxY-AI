@@ -46,13 +46,28 @@
  */
 
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import path from "node:path";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, "..");
+
+function walkJsFiles(dir, acc = []) {
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    const stat = statSync(full);
+    if (stat.isDirectory()) {
+      // Skip node_modules / generated / output dirs.
+      if (entry === "node_modules" || entry === "dist" || entry === "out") continue;
+      walkJsFiles(full, acc);
+    } else if (/\.(mjs|cjs|js)$/.test(entry)) {
+      acc.push(full);
+    }
+  }
+  return acc;
+}
 
 const CANONICAL_PNG_PATH = path.join(root, "assets/icons/lingxy-64.png");
 const ICONS_DIR = path.join(root, "assets/icons");
@@ -231,36 +246,62 @@ assert.ok(
   "electron-main.mjs must instantiate createBrandIconResolver({ app, nativeImage })"
 );
 
-// (c) Every `new BrowserWindow(` site is brand-aware. Allowed forms:
-//   - brandIcons.createBrandedBrowserWindow(BrowserWindow, ...)
-//   - newBrandedWindow(...)        (popup-card-manager helper)
-// Raw `new BrowserWindow(` outside these wrappers is rejected.
+// (c) Every `new BrowserWindow(` site across src/desktop/ is brand-
+//     aware. Whitelisted file: brand-icons.mjs (the wrapper helper
+//     is the single allowed raw constructor in production code).
+//     Allowed callsite forms outside the whitelist:
+//       - brandIcons.createBrandedBrowserWindow(BrowserWindow, ...)
+//       - newBrandedWindow(...)        (popup-card-manager helper)
+//     Round-4 also rejects three known escape patterns codex flagged:
+//       - aliasing: `const BW = BrowserWindow; new BW(...)`
+//       - reflection: `Reflect.construct(BrowserWindow, ...)`
+//       - member dereference at call site: `electron.BrowserWindow(`
 function assertBrowserWindowSitesAreBranded(src, label) {
-  // Strip out the helper definitions themselves; we only want to look
-  // at *callsites*, not the wrapper's own constructor expression.
-  // The branded helper internally calls `new BrowserWindow(merged)` —
-  // that one occurrence is whitelisted by sitting inside brand-icons.mjs
-  // (which we don't pass in here).
   const lines = src.split("\n");
   const offences = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    if (!/\bnew BrowserWindow\s*\(/.test(line)) continue;
-    // Skip the wrapper helper's own `new BrowserWindow(merged)` if
-    // present in this file (popup-card-manager fallback path).
+    // Strip line-leading comment so commented-out `new BrowserWindow(`
+    // doesn't look like a callsite. (Block-comment handling is a known
+    // gap and is fine for our actual sources.)
+    const code = line.replace(/^\s*\/\/.*$/, "");
+    const isRawConstruct = /\bnew BrowserWindow\s*\(/.test(code);
+    const isReflectConstruct = /Reflect\.construct\s*\(\s*BrowserWindow\b/.test(code);
+    const isMemberConstruct = /\bnew\s+electron\.BrowserWindow\s*\(/.test(code);
+    if (!isRawConstruct && !isReflectConstruct && !isMemberConstruct) continue;
     const context = lines.slice(Math.max(0, i - 5), i + 1).join("\n");
-    if (/createBrandedBrowserWindow|newBrandedWindow|brand-icon/i.test(context)) continue;
+    if (/createBrandedBrowserWindow|newBrandedWindow/.test(context)) continue;
     offences.push(`${label}:${i + 1}  ${line.trim()}`);
   }
+  // Naive alias check: flag any `= BrowserWindow;` assignment outside
+  // the whitelist. Codex round-3 listed this as a theoretical escape;
+  // catching the pattern preempts even the appearance.
+  const aliasOffences = src
+    .split("\n")
+    .map((line, idx) => ({ line, idx }))
+    .filter(({ line }) => /=\s*BrowserWindow\s*;/.test(line))
+    .map(({ line, idx }) => `${label}:${idx + 1}  ${line.trim()}`);
   assert.equal(
-    offences.length,
+    [...offences, ...aliasOffences].length,
     0,
-    `raw 'new BrowserWindow(' callsite(s) must go through createBrandedBrowserWindow:\n${offences.join("\n")}`
+    `raw 'new BrowserWindow(' / Reflect.construct / alias callsite(s) must go through createBrandedBrowserWindow:\n${[...offences, ...aliasOffences].join("\n")}`
   );
 }
-assertBrowserWindowSitesAreBranded(electronMainSrc, "electron-main.mjs");
-const popupCardSrc = readFileSync(POPUP_CARD_PATH, "utf8");
-assertBrowserWindowSitesAreBranded(popupCardSrc, "popup-card-manager.mjs");
+
+// Whitelist: brand-icons.mjs is the single file allowed to raw-
+// construct BrowserWindow (it's the wrapper). Walk all .mjs/.cjs/.js
+// under src/desktop/ — round-4 widened the scan from "two specific
+// files" so future native consumers can't add a raw constructor
+// in a new module without tripping the gate.
+const desktopFiles = walkJsFiles(path.join(root, "src/desktop"));
+const BRAND_HELPER_WHITELIST = new Set([BRAND_ICONS_PATH]);
+for (const filePath of desktopFiles) {
+  if (BRAND_HELPER_WHITELIST.has(filePath)) continue;
+  const src = readFileSync(filePath, "utf8");
+  if (!/\bnew BrowserWindow\s*\(|Reflect\.construct\s*\(\s*BrowserWindow\b|\bnew\s+electron\.BrowserWindow\s*\(/.test(src)) continue;
+  const relLabel = path.relative(root, filePath).replaceAll("\\", "/");
+  assertBrowserWindowSitesAreBranded(src, relLabel);
+}
 
 // (d) Tray icon goes through composeTrayIcon, not legacy indigo orb.
 //     Reject the legacy color / gradient signature anywhere in
@@ -289,14 +330,18 @@ assert.ok(
 );
 
 // (e) Notification fallback uses createBrandedNotification.
-//     Whitelist: the wrapper helper itself contains `new Notification(`
-//     inside brand-icons.mjs; we don't include that file here so any
-//     `new Notification(` in electron-main.mjs is offending.
+//     Whitelist: brand-icons.mjs (the wrapper helper itself).
+//     Walk all desktop files for raw `new Notification(` /
+//     reflective construct / member-call.
 function assertNotificationsAreBranded(src, label) {
   const lines = src.split("\n");
   const offences = [];
   for (let i = 0; i < lines.length; i++) {
-    if (!/\bnew Notification\s*\(/.test(lines[i])) continue;
+    const code = lines[i].replace(/^\s*\/\/.*$/, "");
+    const isRaw = /\bnew Notification\s*\(/.test(code);
+    const isMember = /\bnew\s+electron\.Notification\s*\(/.test(code);
+    const isReflect = /Reflect\.construct\s*\(\s*Notification\b/.test(code);
+    if (!isRaw && !isMember && !isReflect) continue;
     const context = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
     if (/createBrandedNotification/.test(context)) continue;
     offences.push(`${label}:${i + 1}  ${lines[i].trim()}`);
@@ -307,7 +352,13 @@ function assertNotificationsAreBranded(src, label) {
     `raw 'new Notification(' callsite(s) must go through createBrandedNotification:\n${offences.join("\n")}`
   );
 }
-assertNotificationsAreBranded(electronMainSrc, "electron-main.mjs");
+for (const filePath of desktopFiles) {
+  if (BRAND_HELPER_WHITELIST.has(filePath)) continue;
+  const src = readFileSync(filePath, "utf8");
+  if (!/\bnew Notification\s*\(|Reflect\.construct\s*\(\s*Notification\b|\bnew\s+electron\.Notification\s*\(/.test(src)) continue;
+  const relLabel = path.relative(root, filePath).replaceAll("\\", "/");
+  assertNotificationsAreBranded(src, relLabel);
+}
 
 console.log(
   `ok verify-brand-assets (canonical sha256 ${canonicalSha256.slice(0, 12)}…, ` +
