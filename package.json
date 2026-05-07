@@ -265,9 +265,11 @@
       "scripts/ocr-image.ps1",
       "scripts/setup-office-addins.ps1",
       "scripts/app_launcher/**/*",
-      "!scripts/app_launcher/__pycache__/**"
+      "!scripts/app_launcher/__pycache__/**",
+      "assets/icons/**/*"
     ],
     "win": {
+      "icon": "assets/icons/lingxy.ico",
       "target": [
         {
           "target": "nsis",
@@ -283,7 +285,9 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "LingxY"
+      "shortcutName": "LingxY",
+      "installerIcon": "assets/icons/lingxy.ico",
+      "uninstallerIcon": "assets/icons/lingxy.ico"
     },
     "extraResources": [
       {
