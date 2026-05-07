@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, statSync, lstatSync, realpathSync } from "node:fs";
 import { mkdir, rm, rename, stat } from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { validateSkillDescriptorMarkdown } from "./discovery.mjs";
 
 // Codex review (2026-05-03): Skill GitHub install is not "execute code" —
@@ -23,7 +23,16 @@ import { validateSkillDescriptorMarkdown } from "./discovery.mjs";
 // Combining `#branch` with `/tree/<branch>/...` is rejected as ambiguous.
 
 const GITHUB_HTTPS_RE = /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/([A-Za-z0-9][A-Za-z0-9_.-]*?)(?:\.git)?(?:#([^\s?#]+))?\/?$/;
-const GITHUB_TREE_HTTPS_RE = /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/([A-Za-z0-9][A-Za-z0-9_.-]*?)(?:\.git)?\/tree\/([^/]+)\/(.+?)\/?(?:#([^\s?#]+))?$/;
+// Codex round-1: the branch capture in the tree-URL regex MUST NOT
+// span `/` because a URL like `.../tree/feat/x/skills/research`
+// is genuinely ambiguous from the URL alone — `feat` could be the
+// branch with `x/skills/research` as the path, OR `feat/x` could be
+// the branch with `skills/research` as the path. Without an API call
+// we cannot tell. Restricting tree-form branches to a strict
+// charset (no `/`) closes the ambiguity. Users with a slash-branch
+// fall back to the repo-root URL + #branch form, where the fragment
+// is unambiguously the branch.
+const GITHUB_TREE_HTTPS_RE = /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9_.-]*)\/([A-Za-z0-9][A-Za-z0-9_.-]*?)(?:\.git)?\/tree\/([A-Za-z0-9][A-Za-z0-9._-]*)\/(.+?)\/?(?:#([^\s?#]+))?$/;
 const SKILL_MD_MAX_BYTES = 100 * 1024;
 const DEFAULT_CLONE_TIMEOUT_MS = 60_000;
 
@@ -331,23 +340,32 @@ async function dirExists(target) {
   try { const s = await stat(target); return s.isDirectory(); } catch { return false; }
 }
 
-function deriveFinalDirName(owner, repo, subPath = null) {
+// Codex round-1 catch: round-0 only used the leaf segment, so
+// `skills/research` and `tools/research` in the same repo collided
+// at `owner--repo--research`. Round-1 fix: slug the FULL subPath
+// (segments joined with `--`), then either keep it verbatim if
+// short, OR truncate + append a deterministic 6-char hash of the
+// raw subPath so identical subPaths always yield identical dirs.
+export function deriveFinalDirName(owner, repo, subPath = null) {
   const base = `${owner}--${repo}`.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
-  // C18 #3 (codex round-1): when the URL specifies a sub-path, append
-  // a slug derived from the LAST segment so two repos with the same
-  // leaf name don't collide (`repoA/tools/research` vs
-  // `repoB/skills/research`). Keeping the owner--repo prefix means
-  // even within a single repo two installs of different sub-paths
-  // get distinct directories.
-  if (typeof subPath === "string" && subPath.trim()) {
-    const segments = subPath.split("/").filter(Boolean);
-    const leaf = segments[segments.length - 1];
-    if (leaf) {
-      const leafSlug = leaf.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
-      return `${base}--${leafSlug}`;
-    }
+  if (typeof subPath !== "string" || !subPath.trim()) return base;
+  const segments = subPath.split("/").filter(Boolean);
+  if (segments.length === 0) return base;
+  const fullSlug = segments
+    .map((seg) => seg.toLowerCase().replace(/[^a-z0-9._-]/g, "-"))
+    .join("--");
+  // Cap suffix at ~32 chars so the total dir name stays comfortably
+  // under common path-length limits. When truncated, suffix the
+  // SHA-256 prefix of the raw subPath so two distinct deep paths
+  // that share a leaf slug still resolve to distinct dirs.
+  const MAX_SLUG = 32;
+  if (fullSlug.length <= MAX_SLUG) {
+    return `${base}--${fullSlug}`;
   }
-  return base;
+  const hash = createHash("sha256").update(subPath).digest("hex").slice(0, 6);
+  const leafSlug = segments[segments.length - 1].toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+  const trimmedLeaf = leafSlug.slice(0, MAX_SLUG - 7); // room for "-XXXXXX"
+  return `${base}--${trimmedLeaf}-${hash}`;
 }
 
 function appendRegistryEntry(runtime, rootPath) {
@@ -438,11 +456,25 @@ export async function installSkillFromGitHub({
   });
   if (!cloneResult.ok) {
     await tryRm(stagingDir);
+    // codex round-1: when the user pasted a tree URL like
+    // .../tree/feat/x/skills/research and their actual branch is
+    // `feat/x`, our parser can only guess (branch=feat,
+    // subPath=x/...). The clone then fails with "Remote branch
+    // 'feat' not found". Detect that pattern and surface a specific
+    // actionable hint so the user knows to use the #branch form.
+    const stderr = cloneResult.stderr ?? "";
+    const branchNotFound = /Remote branch .* not found|couldn't find remote ref|fatal: Remote branch/i.test(stderr);
+    let cloneMessage = cloneResult.error?.message ?? "git clone failed";
+    if (branchNotFound && effectiveSubPath && effectiveSubPath.includes("/")) {
+      cloneMessage = `Branch '${effectiveBranch}' not found in ${urlValidation.owner}/${urlValidation.repo}. If your branch is actually a slash-form (e.g. ${effectiveBranch}/${effectiveSubPath.split("/")[0]}), paste the URL as https://github.com/${urlValidation.owner}/${urlValidation.repo}#<full/branch> and pass the sub-path separately.`;
+    } else if (branchNotFound) {
+      cloneMessage = `Branch '${effectiveBranch}' not found in ${urlValidation.owner}/${urlValidation.repo}.`;
+    }
     return {
       ok: false,
       error: cloneResult.timedOut ? SKILL_INSTALL_ERROR.CLONE_TIMED_OUT : SKILL_INSTALL_ERROR.CLONE_FAILED,
-      message: cloneResult.error?.message ?? "git clone failed",
-      stderr: cloneResult.stderr ?? "",
+      message: cloneMessage,
+      stderr,
       timedOut: Boolean(cloneResult.timedOut)
     };
   }
