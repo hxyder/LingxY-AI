@@ -655,10 +655,12 @@ verify-github-readiness / verify-issue-templates / verify-pr-template / verify-s
 - B2-a 三类真 bug 修法已写进 plan，待开工
 - 减肥 A1+A3-α 待开工
 - **RC-1 进 REVIEW round 2**：
-  - round 1: 工作区扫 / git history 扫（867 commits 无 PAT/AWS/GoogleAPI/私钥）/ PII 扫；5 个 verifier scripts 真邮箱（hanxy308 / sophieliang1998）替换为 `user@example.com` 占位；`internal/` `models/` `dist/` `secrets.json` 都在 gitignore
-  - **codex round-1 反驳**：还有 `hxy94045@gmail.com` 在 src 和 test fixture 中漏了 — `src/service/connectors/core/account-router.mjs:39-71` 文档 comment 用真邮箱举例，`scripts/verify-account-router-fallback.mjs` / `scripts/verify-email-recipient-splitter.mjs` 测试 fixture 用真邮箱
+  - round 1: 工作区扫 / git history 扫（867 commits 无 PAT/AWS/GoogleAPI/私钥）/ PII 扫；5 个 verifier scripts 真邮箱（用户 A 的 163 + 用户 B 的 gmail）替换为 `user@example.com` 占位；`internal/` `models/` `dist/` `secrets.json` 都在 gitignore
+  - **codex round-1 反驳**：还有维护者本人邮箱在 src 和 test fixture 中漏了 — `src/service/connectors/core/account-router.mjs:39-71` 文档 comment 用真邮箱举例，`scripts/verify-account-router-fallback.mjs` / `scripts/verify-email-recipient-splitter.mjs` 测试 fixture 用真邮箱
   - round 2 修：上述 3 文件全部替换为 `user@gmail.com` / `user@outlook.com` 通用占位；24/24 + 23/23 verifier 仍 PASS
-  - **公开维护者邮箱（by-design 暴露）**：`hxy94045@gmail.com` 在 `package.json` author / `SECURITY.md` / `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `docs/public/privacy.html` / `docs/public/terms.html` / `docs/release/github_release_checklist.md` 仍存在，**这是用户主动选择的 OSS 公共维护者联系方式**，由 `verify-public-branding.mjs:11 CONTACT_EMAIL` / `verify-code-of-conduct.mjs:46` / `verify-security-policy.mjs:28` enforce。**不动**。如用户希望换用 project-specific email（如 lingxy-noreply@example.dev），需用户单独决定后改 verifier + 文件
+  - **codex round-2 反驳**：UPGRADE_PLAN.md 自身的审计日志把刚 redact 的真邮箱字面量又写回来了（"audit log leaks the secret it's scrubbing"）→ round 3 修：本节用 "用户 A / 用户 B / 维护者邮箱" 等代号，不写字面量
+  - **公开维护者邮箱（by-design 暴露）**：维护者邮箱在 `package.json` author / `SECURITY.md` / `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `docs/public/privacy.html` / `docs/public/terms.html` / `docs/release/github_release_checklist.md` 仍存在，**这是用户主动选择的 OSS 公共维护者联系方式**，由 `verify-public-branding.mjs:11 CONTACT_EMAIL` / `verify-code-of-conduct.mjs:46` / `verify-security-policy.mjs:28` enforce。**不动**。如用户希望换用 project-specific email（如 `lingxy-noreply@example.dev`），需用户单独决定后改 verifier + 文件
+  - **git 历史残留问题（待用户 A 决定）**：commit 8ef96a3 / 41a7e2e 的 diff 本身在 git 历史中保留了真邮箱字面量（diff 同时含 old + new）。要彻底清掉需 `git filter-repo --replace-text`，affecting clone history. 列入"上线前 user A 单独决定"项；不在 RC-1 默认范围。**最低底线**：若上线后再被发现，按 plan §1 RC-1 第 2 类的"底线例外条款"做 history purge + rotate
   - `assets/brand-source/lingxy-icon-source.png` 已落位等 B5 用
 - 用户已确认 multi-agent 方向走 design.md，但**不在本周末范围**
 - 用户 2026-05-07 强制提醒「不打补丁 / 不针对特定提问」 → 已写入文档头 + RACI 表 11.1
