@@ -270,7 +270,9 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 14. registry.inspect: introspection without TTL refresh.
+// 14. registry.inspect: returns the same data future approval card
+//     wiring (#2c) will need (descriptor + previewMarkdown +
+//     previewSizeBytes + targetIdentifier on top of basic metadata).
 // ---------------------------------------------------------------------
 {
   const reg = createInstallStateRegistry();
@@ -280,15 +282,119 @@ function check(label, condition) {
     repo: "agents",
     branch: "main",
     subPath: "skills/research",
-    preview: { contentHash: "abc123" }
+    targetIdentifier: "openai/agents@main:/skills/research",
+    descriptor: { heading: "Research", description: "Helps gather sources." },
+    preview: {
+      contentHash: "abc123",
+      markdown: "# Research\n\nFull SKILL.md body here.",
+      sizeBytes: 42
+    }
   });
   const info = reg.inspect(token);
   check("inspect: owner exposed", info?.owner === "openai");
   check("inspect: repo exposed", info?.repo === "agents");
   check("inspect: subPath exposed", info?.subPath === "skills/research");
   check("inspect: contentHash exposed", info?.contentHash === "abc123");
+  check("inspect: targetIdentifier exposed (#2c will use it)",
+    info?.targetIdentifier === "openai/agents@main:/skills/research");
+  check("inspect: descriptor.heading + description exposed (#2c will use)",
+    info?.descriptor?.heading === "Research"
+    && info?.descriptor?.description === "Helps gather sources.");
+  check("inspect: previewMarkdown exposed (#2c will use for approval card)",
+    typeof info?.previewMarkdown === "string" && info.previewMarkdown.length > 0);
+  check("inspect: previewSizeBytes exposed",
+    typeof info?.previewSizeBytes === "number" && info.previewSizeBytes > 0);
   check("inspect: createdAt + expiresAt present",
     typeof info?.createdAt === "number" && typeof info?.expiresAt === "number");
+}
+
+// ---------------------------------------------------------------------
+// 15. (codex round-1) inspect runs cleanupExpired so an expired token
+//     is reported as gone — critical for #2c when the approval gate
+//     uses inspect to build preview_text. Otherwise an expired token
+//     could surface stale data to the user.
+// ---------------------------------------------------------------------
+{
+  let clock = 1000;
+  const reg = createInstallStateRegistry({
+    ttlMs: 5000,
+    now: () => clock,
+    discardImpl: async () => {}
+  });
+  const token = reg.put({ stagingDir: "/tmp/Y", preview: { contentHash: "h" } });
+  check("inspect (fresh): returns data", reg.inspect(token) !== null);
+  clock = 7000; // past TTL
+  check("inspect (expired): returns null (cleanup runs first)",
+    reg.inspect(token) === null);
+}
+
+// ---------------------------------------------------------------------
+// 16. (codex round-1) constructor rejects invalid maxEntries / ttlMs.
+//     Without this guard, put() with maxEntries <= 0 would spin
+//     forever in the eviction loop.
+// ---------------------------------------------------------------------
+{
+  let threw = false;
+  try { createInstallStateRegistry({ maxEntries: 0 }); }
+  catch { threw = true; }
+  check("constructor: maxEntries=0 rejected", threw === true);
+
+  threw = false;
+  try { createInstallStateRegistry({ maxEntries: -1 }); }
+  catch { threw = true; }
+  check("constructor: maxEntries=-1 rejected", threw === true);
+
+  threw = false;
+  try { createInstallStateRegistry({ ttlMs: 0 }); }
+  catch { threw = true; }
+  check("constructor: ttlMs=0 rejected", threw === true);
+
+  threw = false;
+  try { createInstallStateRegistry({ ttlMs: Number.NaN }); }
+  catch { threw = true; }
+  check("constructor: ttlMs=NaN rejected", threw === true);
+}
+
+// ---------------------------------------------------------------------
+// 17. (codex round-1) verb regex expansion catches "install the skill",
+//     "set up this skill", etc. without firing on bare "install".
+// ---------------------------------------------------------------------
+{
+  function task(text) {
+    return {
+      user_command: text,
+      context_packet: { semantic_router_decision: { needed_capabilities: [] } },
+      task_spec: {}
+    };
+  }
+  const positives = [
+    "install the skill from https://github.com/owner/repo",
+    "please install this skill at https://github.com/owner/repo",
+    "set up the skill at https://github.com/owner/repo",
+    "set up this skill from https://github.com/openai/agents"
+  ];
+  for (const text of positives) {
+    check(`expanded verb '${text.slice(0, 40)}…': → true`,
+      shouldExposeSkillInstall(task(text)) === true);
+  }
+  // Negative — bare "install" without "skill" noun still hidden.
+  check("hide: 'install something from github.com/x/y' (no 'skill') → false",
+    shouldExposeSkillInstall(task("install something from github.com/x/y")) === false);
+}
+
+// ---------------------------------------------------------------------
+// 18. (codex round-1) Install tool description warns about partial
+//     preview until #2c lands — the LLM should relay full SKILL.md
+//     to the user before approving.
+// ---------------------------------------------------------------------
+{
+  const desc = INSTALL_SKILL_FROM_GITHUB_TOOL.description;
+  check("install tool desc: warns 'approval card currently shows ... NOT the full SKILL.md'",
+    desc.includes("currently shows") && desc.includes("NOT the full SKILL.md"));
+  check("install tool desc: tells LLM to relay preview to user",
+    desc.includes("show the user the full SKILL.md"));
+  check("install tool desc: notes contentHash binding",
+    desc.includes("contentHash"));
 }
 
 console.log(`\n${passed} pass / ${failed} fail`);

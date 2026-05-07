@@ -166,7 +166,11 @@ const SKILL_INSTALL_TOOL_IDS = new Set([
   "preview_skill_from_github",
   "install_skill_from_github"
 ]);
-const SKILL_INSTALL_VERB_RE = /(安装|帮我安装|添加(?:这个)?技能|装上|装这个|install(?:\s+this)?\s+skill|add(?:\s+this)?\s+skill)/iu;
+// codex round-1: expanded EN coverage minimally — "install the skill",
+// "set up the/this skill". False negatives are UX loss not safety
+// loss, so the regex stays narrow on the verb-noun shape; bare
+// "install" without "skill" still doesn't fire.
+const SKILL_INSTALL_VERB_RE = /(安装|帮我安装|添加(?:这个|那个|这条)?技能|装上|装这个|install(?:\s+(?:this|the))?\s+skill|add(?:\s+(?:this|the))?\s+skill|set\s+up\s+(?:this\s+|the\s+)?skill)/iu;
 const GITHUB_URL_RE = /github\.com\/[A-Za-z0-9][A-Za-z0-9_.-]*\/[A-Za-z0-9][A-Za-z0-9_.-]*/i;
 
 export function shouldExposeSkillInstall(task) {

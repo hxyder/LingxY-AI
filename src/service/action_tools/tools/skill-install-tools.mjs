@@ -132,7 +132,9 @@ export const INSTALL_SKILL_FROM_GITHUB_TOOL = {
   name: "Install Skill from GitHub (Confirm)",
   description: `Commit a skill install staged by preview_skill_from_github. Takes the state_token from the preview's metadata.
 
-REQUIRES CONFIRMATION. The user is approving the EXACT SKILL.md they saw in the preview — installing third-party SKILL.md introduces external instructions into the LLM's future prompt context, so this is a high-risk action.
+REQUIRES CONFIRMATION. The user is approving the SKILL.md they saw in the preview — installing third-party SKILL.md introduces external instructions into the LLM's future prompt context, so this is a high-risk action.
+
+IMPORTANT (until C18 #2c lands): the approval card currently shows owner/repo/branch/subPath but NOT the full SKILL.md markdown. Before calling this tool, ALWAYS show the user the full SKILL.md content from the preview tool's observation so they can read what they're approving. The state_token is anchored to the exact SKILL.md bytes via contentHash, but the user-facing card doesn't yet display them.
 
 Failure modes:
 - state_token expired (TTL is 10 min) or already used → call preview_skill_from_github again

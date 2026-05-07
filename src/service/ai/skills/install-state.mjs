@@ -55,6 +55,16 @@ export function createInstallStateRegistry({
   now = () => Date.now(),
   discardImpl = discardStagedInstall
 } = {}) {
+  // codex round-1: defensive constructor checks. put() has a
+  // `while (entries.size >= maxEntries) evictOldest()` loop; with
+  // maxEntries <= 0 and an empty map this would spin forever.
+  // Reject malformed config up front rather than tripwire later.
+  if (!Number.isFinite(maxEntries) || maxEntries < 1) {
+    throw new Error(`createInstallStateRegistry: maxEntries must be ≥ 1 (got ${maxEntries})`);
+  }
+  if (!Number.isFinite(ttlMs) || ttlMs < 1) {
+    throw new Error(`createInstallStateRegistry: ttlMs must be ≥ 1 (got ${ttlMs})`);
+  }
   /** @type {Map<string, { stagingInfo: any, expiresAt: number, createdAt: number }>} */
   const entries = new Map();
 
@@ -148,10 +158,14 @@ export function createInstallStateRegistry({
     },
 
     /**
-     * Inspect a token without consuming or affecting TTL. For
-     * test / introspection only.
+     * Inspect a token without consuming it. Runs the same expiry
+     * cleanup as get/consume so an expired token is reported as
+     * gone (codex round-1: this previously skipped cleanup, which
+     * matters for #2c when the approval gate uses inspect to build
+     * the preview_text — must not show stale expired entries).
      */
     inspect(token) {
+      cleanupExpired();
       const entry = entries.get(token);
       if (!entry) return null;
       return {
@@ -161,6 +175,10 @@ export function createInstallStateRegistry({
         repo: entry.stagingInfo.repo,
         branch: entry.stagingInfo.branch,
         subPath: entry.stagingInfo.subPath,
+        targetIdentifier: entry.stagingInfo.targetIdentifier,
+        descriptor: entry.stagingInfo.descriptor,
+        previewMarkdown: entry.stagingInfo.preview?.markdown,
+        previewSizeBytes: entry.stagingInfo.preview?.sizeBytes,
         contentHash: entry.stagingInfo.preview?.contentHash
       };
     }
