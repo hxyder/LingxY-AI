@@ -1813,9 +1813,19 @@ async function _runToolAgentLoopCore({
         tool: tool.id,
         reason: securityDecision.reason
       });
+      // C15 follow-up codex round-1: route the security-denied path
+      // through the failure classifier so the user sees the bilingual
+      // "你已启用离线模式 / 请到 Console → Privacy 关闭" guidance,
+      // not the raw `offline_mode_blocks_network_tool` string. The
+      // classifier already recognises broker-emitted reasons as
+      // `offline_mode_blocks` / `kill_switch_enabled`; localFallback-
+      // Final picks them up via detectNetworkFailureInTranscript.
+      // Reasons the classifier doesn't recognise (e.g. a future
+      // broker code) fall through to the existing literal "Blocked
+      // tool ..." string — safer than swallowing them silently.
       return {
         status: "partial_success",
-        final_text: `Blocked tool ${tool.id}: ${securityDecision.reason}`,
+        final_text: localFallbackFinal({ task, transcript, reason: `Blocked tool ${tool.id}: ${securityDecision.reason}` }),
         transcript
       };
     }

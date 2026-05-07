@@ -437,6 +437,14 @@ function check(label, condition) {
 // 6c. E2E via localFallbackFinal for the user-deliberate block paths.
 //     User toggled offline mode → final_text says "你已启用离线模式";
 //     user toggled kill switch → final_text says "全局停止开关".
+//
+// codex round-1 pointed out that the agent-loop's security-denied
+// return path used to short-circuit with a raw "Blocked tool ...:
+// offline_mode_blocks_network_tool" string before localFallbackFinal
+// ran. That call site now ALSO routes through localFallbackFinal so
+// the same bilingual classified message reaches the user. The two
+// e2e tests here cover both shapes; the real call-site change is
+// in agent-loop.mjs:1816 — exercised through this finaliser path.
 // ---------------------------------------------------------------------
 {
   const task = { user_command: "搜索最新论文", task_spec: {} };
@@ -456,6 +464,76 @@ function check(label, condition) {
   const final = localFallbackFinal({ task, transcript });
   check("e2e/en: kill_switch_enabled message rendered",
     /kill switch/i.test(final) && /Console.+Privacy/.test(final));
+}
+
+// ---------------------------------------------------------------------
+// 6d. Integration test: drive the REAL agent-loop denial path via a
+//     stub broker that returns offline_mode_blocks_network_tool. This
+//     proves the user actually sees the classified message — not the
+//     raw "Blocked tool ..." literal — when the security broker
+//     denies a network tool. (codex round-1 caught this seam.)
+// ---------------------------------------------------------------------
+{
+  const { runToolAgentLoop } = await import("../src/service/executors/tool_using/agent-loop.mjs");
+  const stubProvider = {
+    async generate() {
+      return { content: [{ type: "text", text: "fallback prose" }] };
+    }
+  };
+  // Planner returns a single fetch_url_content tool call.
+  const stubPlanner = async () => ({
+    type: "tool_call",
+    tool: "fetch_url_content",
+    args: { url: "https://example.com" }
+  });
+  const fetchTool = {
+    id: "fetch_url_content",
+    name: "Fetch URL Content",
+    description: "stub",
+    policy_group: "external_web_read",
+    required_capabilities: ["network"],
+    parameters: {
+      type: "object",
+      properties: { url: { type: "string" } },
+      required: ["url"]
+    },
+    risk_level: "low",
+    execute: async () => ({ success: true, observation: "should not run" })
+  };
+  const stubRuntime = {
+    actionToolRegistry: {
+      list() { return [fetchTool]; },
+      get(id) { return id === "fetch_url_content" ? fetchTool : null; },
+      evaluate() { return { requires_confirmation: false }; },
+      async call() { throw new Error("registry.call should not be invoked when broker denies"); }
+    },
+    securityBroker: {
+      authorizeToolCall() {
+        return { allowed: false, reason: "offline_mode_blocks_network_tool" };
+      }
+    },
+    emitTaskEvent() {},
+    store: { appendAuditLog() {} },
+    toolContext: {},
+    toolOutputDir: "/tmp"
+  };
+  const task = {
+    task_id: "task_offline_e2e",
+    user_command: "搜索最新论文",
+    task_spec: {}
+  };
+  const result = await runToolAgentLoop({
+    task,
+    runtime: stubRuntime,
+    planner: stubPlanner,
+    provider: stubProvider,
+    maxIterations: 1
+  });
+  check("real-loop denial: status = partial_success", result.status === "partial_success");
+  check("real-loop denial: final_text contains classified offline-mode message",
+    result.final_text.includes("离线模式") && result.final_text.includes("Console → Privacy"));
+  check("real-loop denial: final_text does NOT show raw 'offline_mode_blocks_network_tool' to the user",
+    !result.final_text.includes("offline_mode_blocks_network_tool"));
 }
 
 // ---------------------------------------------------------------------
