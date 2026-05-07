@@ -5,6 +5,13 @@
 > **互审分两档**（codex 建议）：
 > - **R-CODE**（强制 codex review）：进安装包 / 影响运行时行为 / 安全边界 / 打包配置（A* / B1 / B2）
 > - **R-DOC**（轻量互审）：README / .github / 文档 — codex 只做"泄密扫描 + 事实一致性 + 用户路径可跑通"三项，通过即 DONE
+>
+> ### 最高宪法（用户 2026-05-07 强制提醒）
+> **每条 task 开工前要在 commit message / codex prompt 里 reaffirm 这两条**：
+> 1. **不打补丁**：发现框架级 bug 不要按 case 临时贴。找根因，从框架/流程上解。
+> 2. **不针对特定提问**：不要为单个 prompt 写 if-else，要让规则在所有相似 prompt 上都成立。
+>
+> 如果违反这两条 → codex 必须反驳；Claude 也必须自觉拒绝写"补丁式"代码。
 
 ---
 
@@ -273,6 +280,7 @@ verify-github-readiness / verify-issue-templates / verify-pr-template / verify-s
 - **C7** A3-γ pdfjs 文件裁剪（risky weight loss）
 - **C8** 真实桌面 UI 流测试（Playwright + Electron）
 - **C9** Multi-agent 共创工作台（**长期方向**，见 §11）
+- **C10** System prompt 长度治理（**用户 2026-05-07 强制提醒**，见 §13）
 
 ## 2.5 B5 图标统一（上线前最低成本，非阻塞）
 
@@ -322,7 +330,7 @@ verify-github-readiness / verify-issue-templates / verify-pr-template / verify-s
 | ID | 任务 | 状态 | 等级 | ETA |
 |----|------|------|------|-----|
 | 109-RUN | 109-prompt corpus 跑完 + 失败聚类 | DONE（94/109） | - | ✓ |
-| RC-1 | 开源前内容剥离 audit | TODO | R-CODE | 2h |
+| RC-1 | 开源前内容剥离 audit | REVIEW（待 codex C） | R-CODE | 2h |
 | A1 | 裁 Chromium locales | TODO | R-CODE | 30m |
 | A3-α | app.asar files + extraResources 双收紧 | TODO | R-CODE | 1h |
 | A3-β | mermaid CDN 化 | TODO | R-CODE | 1h |
@@ -549,7 +557,36 @@ verify-github-readiness / verify-issue-templates / verify-pr-template / verify-s
 
 **用户原话**：「多 agent 按这个文件的方向走 — `internal/root-docs/linxi_co_creation_workspace_design.md`。先预留空间和方向，当前不需要解决，上线以后，更新的时候才做。」
 
+**用户 2026-05-07 补充**：「我建议你可以把项目管理里的 RACI 框架带进来，除非你和 codex 有更好的办法管理任务，各个 LLM，以及合作。」
+
 文件**已复制到 `internal/root-docs/`，gitignore 覆盖，不会上传到 GitHub**。
+
+### 11.1 RACI 协作框架（用户指定，待 codex round-N 复审）
+
+把 RACI（Responsible / Accountable / Consulted / Informed）落到 LingxY 的 multi-agent 与多 LLM 工程化里。每条任务必须有：
+
+| 角色 | 含义 | 在 LingxY 的对应 |
+|------|------|------------------|
+| **R**esponsible | 真正下手做的人 / agent | Coder agent / Researcher agent / Writer agent / Operator agent / 当前下手的 LLM |
+| **A**ccountable | 最终拍板和负责的人（每条任务**有且仅有一个** A）| Supervisor agent / 在 LingxY 当前阶段是用户本人或 codex |
+| **C**onsulted | 需要在动手前 / 决策前征求意见的（双向沟通） | Reviewer agent / verifier agent / codex（R-CODE 任务永远是 C）|
+| **I**nformed | 决策后被通知（单向）| Memory agent / Audit log / 用户的 timeline / 其它无依赖 agent |
+
+**落地映射（写 design.md §40 anchor，post-launch 实现）**：
+- 任务对象 schema 加 `raci: { responsible: agent_id, accountable: agent_id|user, consulted: [agent_ids], informed: [agent_ids] }` 字段
+- DAG 节点之间的边带语义：`requires_C_signoff_from`（C 角色未签 → 节点不能进 DOING）/ `notifies` （I 角色被推送 event）
+- 每个 LLM provider 注册时声明它**能担任的角色集合**（fast 模型不能当 Accountable，强模型可以）
+- Project Workspace 的「成员」面板 = RACI 视图：每条任务一行，4 列分别显示当前 R/A/C/I 是谁
+
+**当前 plan 的隐式 RACI**（用作 v0 dogfooding 模板）：
+- R = Claude（代码 / 文档）
+- A = 用户（最终拍板 / 上线决定）
+- C = codex（R-CODE 强制 review；R-DOC 轻量 review）
+- I = `UPGRADE_PLAN.md` 的修订记录 + commit log + Memory 系统
+
+**与 codex 的边界**：codex 在每个 R-CODE 任务里以 C 身份出现，反对意见**必须落到 plan 的修订记录**，不能口头 hand-wave 通过。codex 接受/反驳后，A（用户）可推翻 C 的意见，但要写在 plan 里。
+
+**alternative we considered**：除 RACI 外还看过 DACI（Driver/Approver/Contributors/Informed）和 ARCI 变体；codex 可在 review 时反提议替换。当前默认走 RACI，除非 codex round 里给出更适合 multi-LLM 的替代。
 
 ### 文件核心方向（摘要 — 给将来回看的 anchor）
 
@@ -617,8 +654,44 @@ verify-github-readiness / verify-issue-templates / verify-pr-template / verify-s
 - 109 corpus 第一轮已跑完（94/109 = 86.2%）
 - B2-a 三类真 bug 修法已写进 plan，待开工
 - 减肥 A1+A3-α 待开工
-- 内容剥离 RC-1 待开工
+- **RC-1 进 REVIEW**：工作区扫 / git history 扫（867 commits 无 PAT/AWS/GoogleAPI/私钥）/ PII 扫已完成；4 个 verifier scripts 真邮箱已替换为 `user@example.com` 占位；`internal/` `models/` `dist/` `secrets.json` 都在 gitignore；`assets/brand-source/lingxy-icon-source.png` 已落位等 B5 用
 - 用户已确认 multi-agent 方向走 design.md，但**不在本周末范围**
+- 用户 2026-05-07 强制提醒「不打补丁 / 不针对特定提问」 → 已写入文档头 + RACI 表 11.1
+- 用户问 system prompt 长度 → 进 §13 / C10 调研任务，post-launch
+
+---
+
+## 13. System Prompt 长度治理（**post-launch C10**）
+
+**用户 2026-05-07 原话**：「我看到你说系统 prompt 过长，希望可以好好下功夫，看看怎么解决，或者它是必须的。我不做评论，你们专业。看看别人的。」
+
+**当前问题（已观察证据）**：
+- 109 corpus 失败模式直接证据：D 类 6/10 missing_artifact = LLM 没看见 / 没注意到 generate_document 工具
+- run_script 仅被调 1 次（109 题中）— 工具描述被埋没
+- M 类两题误选 open_url：tool list 中段注意力衰减
+- system prompt 完整体见 [src/service/core/policy/system-prompt-builder.mjs](src/service/core/policy/system-prompt-builder.mjs) 与 [tool-formatter.mjs](src/service/core/policy/tool-formatter.mjs)
+
+**调研行动（C10 子任务）**：
+1. **量化 baseline**：跑一次 `getSystemPromptForRequest(...)` 对各 task type 输出 token / 字符长度，落 `docs/system-prompt-audit.md`（不开源）
+2. **业界对照**：
+   - **Claude Code** 公开 system prompt（leaked / 反推）—— 主体 < 4k token，工具走 dynamic injection
+   - **Cursor** —— 主提示约 3-5k，code context separately injected
+   - **Cline / Aider** —— 工具描述按需展开
+   - **OpenAI Assistants** —— tools 用 strict JSON schema，不走 prose 描述
+   - **AutoGen / CrewAI** —— 每个 agent role 独立短 prompt，不共用大 prompt
+3. **可能方案**（待 codex round-N 拍板）：
+   - **A. Tool surface gating + lazy injection**（已做雏形 in §5.7 B2-a）— 把当前 30+ 工具按 SR 判定的"goal"压到 5-10 个，剩下走 "你可以请求展开 X 类工具" 协议
+   - **B. 动态段裁剪**：phase / source_mode / artifact_required 决定哪些 policy 段进 prompt
+   - **C. Tool schema 替代 prose**：现在每个工具 200-500 字符 prose，改 OpenAI strict mode JSON schema 平均 80 字符
+   - **D. Cache key 优化**：把不变的"persona / 行为约束"前置（stable cache prefix），变化的"环境 / 工具"后置（cache miss 仅在尾部）— 减少冷启动 latency
+   - **E. Multi-agent role split**：每个 role 自带短 system prompt，不再共用一个 mega prompt（与 §11 RACI 自然结合）
+4. **必须避免**：
+   - 不能为缩短 prompt 而**默认隐藏 critical safety obligation**（preauthorization / side-effect contract / claim guard）
+   - 不能在 review 不过的情况下擅自删段（每条 prompt 段背后都有 mutation guard 或事故记录）
+
+**status**：调研 only，**不在周末范围**。upgrade 时优先级：在 §11 multi-agent C9 之前，因为 C10 是 C9 的前置（multi-agent 必须 role-split prompt）。
+
+**估时**：调研 0.5d，方案落地 2-5d 视选型。
 
 ---
 

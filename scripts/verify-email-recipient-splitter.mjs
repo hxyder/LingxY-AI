@@ -227,7 +227,7 @@ function decodeGmailRaw(raw) {
   check("real-tool: Gmail send succeeds with malformed accountId + 和-separated recipients",
     result.success === true);
   check("real-tool: Gmail To header contains both recipients",
-    /^To: hanxy308@163\.com, sophieliang1998@gmail\.com/m.test(rawMessage));
+    /^To: user-a@example\.com, user-b@example\.com/m.test(rawMessage));
 }
 
 {
@@ -288,7 +288,7 @@ function decodeGmailRaw(raw) {
       attachmentPaths: [attachmentPath]
     }, { runtime, fetchImpl, task: { user_command: "send attachment" } });
     check("real-tool: Gmail attachment path containing @ is not mistaken for an email",
-      result.success === true && /report-hanxy308@163\.com\.txt/.test(rawMessage));
+      result.success === true && /report-user-a@example\.com\.txt/.test(rawMessage));
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }

@@ -4,8 +4,8 @@
 //   - Pre-define expected outcomes per test for tight pass/fail grading.
 //   - Cover "complex" (multi-step), "multi-task" (concurrent / scheduled /
 //     follow-up), and "semantically ambiguous" prompts.
-//   - Avoid prompts the user has tested or pasted in chat ("美股今天",
-//     "整理新闻发邮件到 user-a@example.com", etc.).
+//   - Avoid prompts the user has tested or pasted in chat (e.g. specific
+//     stock-market + email scenarios from prior bug reports).
 //
 // Each item:
 //   - id: stable identifier for failure tracking across runs.

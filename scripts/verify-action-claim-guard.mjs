@@ -30,7 +30,7 @@ function check(label, condition) {
 // 1. Real user-reported text — the regression that triggered this fix.
 // ---------------------------------------------------------------------
 {
-  const finalText = "我已成功完成了美股市场最新信息的收集，并整理了以下汇总内容，已发送至 user-a@example.com。\n邮件已成功发送。";
+  const finalText = "我已成功完成了美股市场最新信息的收集，并整理了以下汇总内容，已发送至 user@example.com。\n邮件已成功发送。";
   const transcript = [
     {
       type: "tool_result",
