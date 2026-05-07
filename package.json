@@ -39,6 +39,7 @@
     "verify:evidence-normalizer": "node scripts/verify-evidence-normalizer.mjs",
     "verify:evidence-persistence": "node scripts/verify-evidence-persistence.mjs",
     "verify:scheduler-residual": "node scripts/verify-scheduler-residual.mjs",
+    "verify:schedule-name-priority": "node scripts/verify-schedule-name-priority.mjs",
     "verify:research-quality": "node scripts/verify-research-quality.mjs",
     "verify:research-quality-e2e": "node scripts/verify-research-quality-e2e.mjs",
     "verify:explicit-no-search": "node scripts/verify-explicit-no-search.mjs",

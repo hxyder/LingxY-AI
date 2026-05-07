@@ -17,29 +17,72 @@ import {
 // The scheduler's DB column is NOT NULL, and the tool description doesn't
 // always lead the LLM to supply `name`, so crashing on missing name
 // surfaces a confusing SQL error instead of just working.
-function deriveScheduleName(input) {
-  const direct = typeof input?.name === "string" ? input.name.trim() : "";
-  if (direct) return direct;
+//
+// B1 priority (UPGRADE_PLAN.md):
+//   1. action.params.userCommand   — most faithful to the actual action
+//      because plan-executor crafts it from the residual command, so
+//      drift-prone fields (recipient lists, counts) match what will
+//      actually run.
+//   2. input.name                   — only when userCommand is absent.
+//      Last because LLM-emitted names sometimes summarise stale planner
+//      intent (regression: title showed 2 recipients, run sent 1).
+//   3. action.target / trigger.natural_language — terse fallbacks.
+//
+// Returns { name, audit } so callers can surface the unselected
+// candidate via metadata.naming_audit for drift triage.
+function pickScheduleName(input) {
+  const candidates = collectScheduleNameCandidates(input);
+  for (const candidate of candidates) {
+    if (candidate.value) {
+      return {
+        name: candidate.format(candidate.value),
+        audit: buildNamingAudit(candidates, candidate.source)
+      };
+    }
+  }
+  return {
+    name: "Scheduled task",
+    audit: buildNamingAudit(candidates, "fallback")
+  };
+}
 
+function collectScheduleNameCandidates(input) {
   const params = input?.action?.params ?? input?.action?.args ?? {};
-  const userCommand = typeof params.userCommand === "string" ? params.userCommand.trim()
-    : typeof params.command === "string" ? params.command.trim()
-      : "";
-  if (userCommand) {
-    return userCommand.length > 80 ? userCommand.slice(0, 77) + "…" : userCommand;
-  }
+  const userCommand = readNonEmpty(params.userCommand) || readNonEmpty(params.command);
+  const direct = readNonEmpty(input?.name);
+  const target = readNonEmpty(input?.action?.target ?? input?.action?.tool);
+  const nl = readNonEmpty(input?.trigger?.natural_language);
+  return [
+    { source: "params.userCommand", value: userCommand, format: truncateName },
+    { source: "input.name", value: direct, format: truncateName },
+    { source: "action.target", value: target, format: (v) => `Scheduled ${v}` },
+    { source: "trigger.natural_language", value: nl, format: (v) => `Scheduled: ${v}` }
+  ];
+}
 
-  const target = input?.action?.target ?? input?.action?.tool;
-  if (typeof target === "string" && target.trim()) {
-    return `Scheduled ${target.trim()}`;
-  }
+function buildNamingAudit(candidates, selectedSource) {
+  const unselected = candidates
+    .filter((entry) => entry.value && entry.source !== selectedSource)
+    .map((entry) => ({ source: entry.source, value: entry.value }));
+  return {
+    selected_source: selectedSource,
+    unselected_candidates: unselected
+  };
+}
 
-  const nl = input?.trigger?.natural_language;
-  if (typeof nl === "string" && nl.trim()) {
-    return `Scheduled: ${nl.trim()}`;
-  }
+function readNonEmpty(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  return trimmed || "";
+}
 
-  return "Scheduled task";
+function truncateName(value) {
+  return value.length > 80 ? `${value.slice(0, 77)}…` : value;
+}
+
+// Back-compat shim — older callers expect a string return.
+function deriveScheduleName(input) {
+  return pickScheduleName(input).name;
 }
 
 function ensureTrigger(trigger) {
@@ -143,9 +186,12 @@ export function createSchedulerRuntime({ runtime, maxSchedules = MAX_SCHEDULE_CO
         throw new Error(`Schedule limit reached: ${maxSchedules}`);
       }
 
+      const { name: pickedName, audit: namingAudit } = pickScheduleName(input);
+      const inheritedMetadata = input.metadata ?? {};
       const schedule = createScheduleRecord({
         ...input,
-        name: deriveScheduleName(input),
+        name: pickedName,
+        metadata: { ...inheritedMetadata, naming_audit: namingAudit },
         trigger: ensureTrigger(input.trigger),
         createdBy
       });
