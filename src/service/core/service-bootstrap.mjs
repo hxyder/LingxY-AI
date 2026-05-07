@@ -122,7 +122,14 @@ export function createServiceBootstrap({
   // immediately after every successful write. Original methods are
   // captured by reference so the wrapper is idempotent against repeated
   // bootstrap calls (which never happens today, but the shape is safer).
-  if (runtime.searchIndex && storeAdapter) {
+  if (runtime.searchIndex && storeAdapter && !storeAdapter.__searchIndexHooksInstalled) {
+    // Idempotency guard. If bootstrap is ever called more than once for
+    // the same storeAdapter (test rigs / hot-reload), a second wrap would
+    // capture the already-wrapped methods and double-fire indexing on
+    // every mutation. Codex review caught this.
+    Object.defineProperty(storeAdapter, "__searchIndexHooksInstalled", {
+      value: true, enumerable: false, configurable: false, writable: false
+    });
     const originalInsertTask = storeAdapter.insertTask?.bind(storeAdapter);
     const originalUpdateTask = storeAdapter.updateTask?.bind(storeAdapter);
     const originalSoftDeleteTask = storeAdapter.softDeleteTask?.bind(storeAdapter);

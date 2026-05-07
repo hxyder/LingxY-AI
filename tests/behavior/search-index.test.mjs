@@ -35,10 +35,20 @@ test("normalisePhraseQuery wraps every token as an FTS5 phrase", () => {
   assert.equal(normalisePhraseQuery("alpha beta"), `"alpha" "beta"`);
   // Quoted phrase becomes an FTS5 phrase query (still CJK-split inside).
   assert.equal(normalisePhraseQuery(`"plan b"`), `"plan b"`);
-  // FTS5 reserved metacharacters in plain words are stripped.
-  assert.equal(normalisePhraseQuery("a:b (c)"), `"ab" "c"`);
-  // CJK keyword split, then re-quoted as a phrase.
-  assert.match(normalisePhraseQuery("讨论"), /^"\s*讨\s+论\s*"$/);
+  // FTS5 reserved metacharacters in plain words become whitespace, so
+  // unrelated tokens get split apart rather than merged.
+  assert.equal(normalisePhraseQuery("a:b (c)"), `"a" "b" "c"`);
+  // CJK keyword split, then each ideograph re-quoted as a phrase.
+  // splitCjk produces ` 讨  论 ` which then splits into "讨" and "论".
+  assert.equal(normalisePhraseQuery("讨论"), `"讨" "论"`);
+});
+
+test("normalisePhraseQuery does NOT merge tokens around stripped operators", () => {
+  // Codex follow-up review: the previous shape stripped `:` outright and
+  // turned `title:alpha` into one phrase `"titlealpha"`, killing recall.
+  // Now the colon becomes whitespace and we get two AND'd phrases.
+  assert.equal(normalisePhraseQuery("title:alpha"), `"title" "alpha"`);
+  assert.equal(normalisePhraseQuery("body:foo*bar"), `"body" "foo" "bar"`);
 });
 
 test("normalisePhraseQuery neutralises FTS5 operators (OR / NOT / NEAR / field:)", () => {
@@ -48,9 +58,10 @@ test("normalisePhraseQuery neutralises FTS5 operators (OR / NOT / NEAR / field:)
   assert.equal(normalisePhraseQuery("alpha OR beta"), `"alpha" "OR" "beta"`);
   assert.equal(normalisePhraseQuery("alpha NOT beta"), `"alpha" "NOT" "beta"`);
   assert.equal(normalisePhraseQuery("alpha NEAR beta"), `"alpha" "NEAR" "beta"`);
-  // Field qualifiers like `title:alpha` lose the `:` and become a single
-  // phrase, so FTS5 cannot apply column-level filtering.
-  assert.equal(normalisePhraseQuery("title:alpha"), `"titlealpha"`);
+  // Field qualifiers like `title:alpha` lose the `:` and split into two
+  // independent phrases — FTS5 cannot apply column-level filtering, but
+  // recall is preserved (codex follow-up review).
+  assert.equal(normalisePhraseQuery("title:alpha"), `"title" "alpha"`);
 });
 
 test("normalisePhraseQuery rejects pure-metacharacter input cleanly", () => {

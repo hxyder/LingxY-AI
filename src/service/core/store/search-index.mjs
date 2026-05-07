@@ -24,10 +24,12 @@ export function splitCjk(value) {
 // Quoted spans from the user are preserved as phrases. The result is a
 // pure (phrase | phrase | ...) expression that FTS5 cannot misread.
 function safePhraseInner(value) {
-  // Inside an FTS5 phrase, only `"` is structural; strip it (alongside the
-  // other structural metacharacters as belt-and-braces) and run through the
-  // CJK splitter so each ideograph becomes its own token in the index.
-  return splitCjk(value).replace(/["()*:]/g, "").trim();
+  // Inside an FTS5 phrase, only `"` is structural; replace structural
+  // metacharacters with a SPACE rather than deleting them so unrelated
+  // tokens never accidentally merge — codex follow-up review caught
+  // `title:alpha` collapsing to `"titlealpha"` instead of `"title" "alpha"`.
+  // The trailing collapse keeps the phrase tidy and CJK-friendly.
+  return splitCjk(value).replace(/["()*:]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 export function normalisePhraseQuery(query) {
@@ -40,13 +42,23 @@ export function normalisePhraseQuery(query) {
   const phraseRe = /"([^"]+)"/g;
   let m;
   while ((m = phraseRe.exec(capped)) !== null) {
+    // Quoted user input is preserved as a phrase (adjacent tokens). Even
+    // here we replace `:` etc. with spaces rather than deleting them so
+    // the phrase represents what the user actually typed.
     const safe = safePhraseInner(m[1]);
     if (safe) tokens.push(`"${safe}"`);
   }
   const remainder = capped.replace(phraseRe, " ");
   for (const word of remainder.split(/\s+/).filter(Boolean)) {
     const safe = safePhraseInner(word);
-    if (safe) tokens.push(`"${safe}"`);
+    if (!safe) continue;
+    // Codex review: when sanitisation introduces internal whitespace
+    // (e.g. "title:alpha" -> "title alpha"), split back into atomic
+    // tokens so they are AND'd as independent phrases rather than
+    // collapsed into one strict-adjacency phrase.
+    for (const sub of safe.split(/\s+/).filter(Boolean)) {
+      tokens.push(`"${sub}"`);
+    }
   }
   return tokens.join(" ");
 }
