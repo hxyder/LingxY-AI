@@ -84,14 +84,44 @@ const VALID_SOURCE_MODES = new Set([
 // information vs ones that don't. Round-4 (codex round-3 fix) makes
 // directional veto and consistency-floor logic depend on this so
 // `required + no_external` / `forbidden + single_lookup` cannot be
-// reached via the verifier.
+// reached via the verifier. Round-5 (codex round-4 fix): also list
+// local modes explicitly so the consistency floor can reject
+// `required + provided_context`, which EvidencePolicy treats as
+// local just like `no_external`.
 const EXTERNAL_SOURCE_MODES = new Set([
   "single_lookup",
   "multi_source_research",
   "deep_research"
 ]);
+const LOCAL_SOURCE_MODES = new Set([
+  "no_external",
+  "provided_context"
+]);
 function isExternalSourceMode(m) {
   return EXTERNAL_SOURCE_MODES.has(m);
+}
+function isLocalSourceMode(m) {
+  return LOCAL_SOURCE_MODES.has(m);
+}
+
+/**
+ * Derive `needs_external_info` from the three normalized fields
+ * (web_policy / source_mode / needs_current_information). Codex
+ * round-4 caught: EvidencePolicy still reads the raw
+ * `decision.needs_external_info === false` and uses it as a
+ * standalone gate that can override our corrections — so even after
+ * we move the route to required + single_lookup, a stale
+ * `needs_external_info=false` from SR drags it back to forbidden.
+ *
+ * The fix keeps the schema small (no `corrected_needs_external_info`)
+ * and instead has the verifier write a derived value into the
+ * applied decision so EvidencePolicy sees a consistent record.
+ */
+export function deriveNeedsExternalInfo({ web_policy, source_mode, needs_current_information } = {}) {
+  if (needs_current_information === true) return true;
+  if (web_policy === "required") return true;
+  if (isExternalSourceMode(source_mode)) return true;
+  return false;
 }
 
 /**
@@ -303,6 +333,50 @@ export function applyJudgeVerdict({
     };
   }
 
+  // Round-5 (codex round-4 #5): consistency floor BEFORE veto.
+  // Codex caught: when correction is internally inconsistent, the
+  // veto path was previously surfacing it as `hard_signal_override`
+  // which obscured the real reason. Floor first → veto → apply
+  // separates "your correction is invalid" from "your correction is
+  // valid but violates a hard signal".
+  function simulatedAfterApply() {
+    const next = { ...decision };
+    if (proposedDiff.web_policy) next.web_policy = proposedDiff.web_policy.to;
+    if (proposedDiff.source_mode) next.source_mode = proposedDiff.source_mode.to;
+    if (proposedDiff.needs_current_information) next.needs_current_information = proposedDiff.needs_current_information.to;
+    return next;
+  }
+  function detectInconsistency(state) {
+    const violations = [];
+    const externalSource = isExternalSourceMode(state.source_mode);
+    const localSource = isLocalSourceMode(state.source_mode);
+    if (state.web_policy === "forbidden" && externalSource) {
+      violations.push("forbidden_with_external_source_mode");
+    }
+    // Round-5: EvidencePolicy treats both `no_external` and
+    // `provided_context` as local — a `required + provided_context`
+    // would also collapse downstream.
+    if (state.web_policy === "required" && localSource) {
+      violations.push("required_with_local_source_mode");
+    }
+    if (state.needs_current_information === true && state.web_policy === "forbidden") {
+      violations.push("needs_current_with_forbidden");
+    }
+    return violations;
+  }
+  const post = simulatedAfterApply();
+  const inconsistencies = detectInconsistency(post);
+  if (inconsistencies.length > 0) {
+    return {
+      applied: false,
+      decision,
+      diff: null,
+      reason: `evidence_axis_inconsistent: ${inconsistencies.join(",")}`,
+      mode,
+      judge_status: "inconsistent_correction"
+    };
+  }
+
   // Directional hard-signal veto (round-2 fix, round-4 extension to
   // source_mode). Each hard structural signal only applies in one
   // direction — `local_only_constraint` blocks moves toward
@@ -310,12 +384,6 @@ export function applyJudgeVerdict({
   // deep_research); freshness/explicit_search blocks moves toward
   // local (forbidden / no_external). A flat veto would have
   // wrongly blocked legitimate corrections.
-  //
-  // Round-4 (codex round-3 catch): without source_mode in the veto
-  // axis, the judge could leave web_policy alone but flip
-  // source_mode in a way that contradicts hard signals, e.g.
-  // `explicit_search` + judge changes source_mode to no_external →
-  // `required + no_external` inconsistent state.
   const hard = detectHardStructuralSignals(signals);
   function vetoCheck(diffEntry, classify, fieldLabel) {
     if (!diffEntry) return null;
@@ -367,48 +435,7 @@ export function applyJudgeVerdict({
   );
   if (vetoNeedsCurrent) return vetoNeedsCurrent;
 
-  // Evidence-axis consistency floor (codex round-3 #3). After veto
-  // checks but before applying, simulate the post-apply state and
-  // reject if web_policy / source_mode / needs_current_information
-  // would be self-contradictory:
-  //   web_policy=forbidden  + source_mode=external_kind  → contradiction
-  //   web_policy=required   + source_mode=no_external    → contradiction
-  //   needs_current=true    + web_policy=forbidden       → contradiction
-  // This is NOT a topic regex — it's an evidence-axis invariant
-  // independent of any term/dictionary.
-  function simulatedAfterApply() {
-    const next = { ...decision };
-    if (proposedDiff.web_policy) next.web_policy = proposedDiff.web_policy.to;
-    if (proposedDiff.source_mode) next.source_mode = proposedDiff.source_mode.to;
-    if (proposedDiff.needs_current_information) next.needs_current_information = proposedDiff.needs_current_information.to;
-    return next;
-  }
-  function detectInconsistency(state) {
-    const violations = [];
-    const externalSource = isExternalSourceMode(state.source_mode);
-    if (state.web_policy === "forbidden" && externalSource) {
-      violations.push("forbidden_with_external_source_mode");
-    }
-    if (state.web_policy === "required" && state.source_mode === "no_external") {
-      violations.push("required_with_no_external");
-    }
-    if (state.needs_current_information === true && state.web_policy === "forbidden") {
-      violations.push("needs_current_with_forbidden");
-    }
-    return violations;
-  }
-  const post = simulatedAfterApply();
-  const inconsistencies = detectInconsistency(post);
-  if (inconsistencies.length > 0) {
-    return {
-      applied: false,
-      decision,
-      diff: null,
-      reason: `evidence_axis_inconsistent: ${inconsistencies.join(",")}`,
-      mode,
-      judge_status: "inconsistent_correction"
-    };
-  }
+  // (Round-5: consistency floor moved above veto block.)
 
   if (mode === "shadow") {
     // Shadow: log diff, return original decision unchanged.
@@ -429,6 +456,17 @@ export function applyJudgeVerdict({
   if (proposedDiff.needs_current_information) {
     next.needs_current_information = proposedDiff.needs_current_information.to;
   }
+  // Round-5: keep `needs_external_info` consistent with the three
+  // normalized fields. EvidencePolicy reads the raw value as a
+  // standalone gate (line 48 of evidence-policy.mjs), so a stale
+  // false from SR would otherwise drag a corrected route back to
+  // forbidden. Derive it from the post-apply state instead of
+  // adding a fourth corrected_* schema field.
+  next.needs_external_info = deriveNeedsExternalInfo({
+    web_policy: next.web_policy,
+    source_mode: next.source_mode,
+    needs_current_information: next.needs_current_information
+  });
   return {
     applied: true,
     decision: next,
@@ -463,7 +501,11 @@ export function buildJudgePrompt({ text, decision, signals }) {
     "2. reject = SR is clearly wrong. You MUST emit at least one corrected field that differs from the current value: corrected_web_policy, corrected_source_mode, OR corrected_needs_current_information.",
     "3. Stable QA (\"什么是 X\", \"如何 do Y\", \"解释 Z\", \"comparison of A vs B without 最新/current\") → forbidden / no_external / needs_current=false when no freshness signal exists.",
     "4. Freshness-bearing requests (volatile facts: today's price/score, current version, latest news, ongoing policies) → required / single_lookup or multi_source_research / needs_current=true.",
-    "5. Keep the three fields CONSISTENT with each other — never propose web_policy=forbidden alongside an external source_mode (single_lookup / multi_source_research / deep_research), and never propose web_policy=required alongside source_mode=no_external. The framework rejects inconsistent corrections.",
+    "5. Keep web_policy, source_mode, and needs_current_information CONSISTENT:",
+    "   - never propose web_policy=forbidden with an external source_mode (single_lookup / multi_source_research / deep_research);",
+    "   - never propose web_policy=required with a local source_mode (no_external / provided_context);",
+    "   - never propose needs_current_information=true with web_policy=forbidden.",
+    "   The framework rejects inconsistent corrections — getting any one of these wrong wastes the whole correction.",
     "6. Hard structural signals (explicit search verb, no-search constraint, URL, freshness markers) take priority over your verdict — emit your assessment anyway; framework veto handles the override.",
     "",
     "OUTPUT (JSON only, no prose)",

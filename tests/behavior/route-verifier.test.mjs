@@ -18,6 +18,7 @@ import {
   applyJudgeVerdict,
   buildJudgePrompt,
   detectHardStructuralSignals,
+  deriveNeedsExternalInfo,
   runRouteVerifier,
   VERIFIER_MODES,
   DEFAULT_VERIFIER_MODE
@@ -92,6 +93,9 @@ test("detectHardStructuralSignals returns directional buckets — block-upgrade 
 });
 
 test("hard signal block — local_only_constraint vetoes forbidden→required upgrade only", () => {
+  // Use a consistent correction (web_policy + source_mode both move
+  // external) so the consistency floor passes and we exercise the
+  // veto path.
   const decision = { web_policy: "forbidden", source_mode: "no_external" };
   const upgrade = applyJudgeVerdict({
     decision,
@@ -99,6 +103,7 @@ test("hard signal block — local_only_constraint vetoes forbidden→required up
     judgePayload: {
       verdict: "reject",
       corrected_web_policy: "required",
+      corrected_source_mode: "single_lookup",
       confidence: 0.9,
       reason: "judge wants external",
       evidence_basis: []
@@ -372,17 +377,18 @@ test("buildJudgePrompt schema mentions all three corrected_* fields (round-4 ali
     "prompt must instruct the judge about evidence-axis consistency");
 });
 
-test("source_mode directional veto — explicit_search blocks downgrade to no_external", () => {
-  // Round-4 fix (codex round-3 #1): without source_mode in the
-  // veto axis, judge could leave web_policy alone but flip
-  // source_mode to no_external while explicit_search is set →
-  // inconsistent state.
+test("source_mode directional veto — explicit_search blocks downgrade to no_external (consistent correction)", () => {
+  // Round-4 fix (codex round-3 #1) + round-5 (codex round-4):
+  // floor runs first, so use a *consistent* downgrade (both
+  // web_policy and source_mode move local) to exercise the veto
+  // path without tripping the floor.
   const decision = { web_policy: "required", source_mode: "single_lookup" };
   const result = applyJudgeVerdict({
     decision,
     signals: { explicit_search: { matched: true } },
     judgePayload: {
       verdict: "reject",
+      corrected_web_policy: "forbidden",
       corrected_source_mode: "no_external",
       confidence: 0.9,
       reason: "judge thinks no source needed",
@@ -392,7 +398,9 @@ test("source_mode directional veto — explicit_search blocks downgrade to no_ex
   });
   assert.equal(result.applied, false);
   assert.equal(result.judge_status, "hard_signal_override");
-  assert.ok(result.reason.includes("source_mode_downgrade"));
+  // Either web_policy or source_mode veto fires first — both are
+  // valid; assert the field-level shape.
+  assert.ok(/hard_signals_block_(web_policy|source_mode)_downgrade/.test(result.reason));
 });
 
 test("source_mode directional veto — local_only_constraint blocks upgrade to single_lookup", () => {
@@ -431,7 +439,9 @@ test("evidence-axis consistency floor — rejects required + no_external (correc
   });
   assert.equal(result.applied, false);
   assert.equal(result.judge_status, "inconsistent_correction");
-  assert.ok(result.reason.includes("required_with_no_external"));
+  // Round-5: floor message generalized to required_with_local_source_mode
+  // (covers both no_external and provided_context).
+  assert.ok(result.reason.includes("required_with_local_source_mode"));
 });
 
 test("evidence-axis consistency floor — rejects forbidden + single_lookup", () => {
@@ -468,6 +478,112 @@ test("evidence-axis consistency floor — rejects needs_current=true + forbidden
   });
   assert.equal(result.applied, false);
   assert.equal(result.judge_status, "inconsistent_correction");
+});
+
+test("evidence-axis consistency floor — rejects required + provided_context (round-5)", () => {
+  // EvidencePolicy treats provided_context as local just like
+  // no_external. Codex round-4 caught this gap.
+  const decision = { web_policy: "optional", source_mode: "provided_context" };
+  const result = applyJudgeVerdict({
+    decision,
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "required",  // required + provided_context inconsistent
+      confidence: 0.9,
+      reason: "broken",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, false);
+  assert.equal(result.judge_status, "inconsistent_correction");
+  assert.ok(result.reason.includes("required_with_local_source_mode"));
+});
+
+test("deriveNeedsExternalInfo — true when web_policy=required", () => {
+  assert.equal(deriveNeedsExternalInfo({ web_policy: "required", source_mode: "no_external" }), true);
+});
+
+test("deriveNeedsExternalInfo — true when source_mode is external", () => {
+  assert.equal(deriveNeedsExternalInfo({ web_policy: "optional", source_mode: "single_lookup" }), true);
+  assert.equal(deriveNeedsExternalInfo({ web_policy: "optional", source_mode: "deep_research" }), true);
+});
+
+test("deriveNeedsExternalInfo — true when needs_current_information=true", () => {
+  assert.equal(deriveNeedsExternalInfo({ web_policy: "optional", source_mode: "provided_context", needs_current_information: true }), true);
+});
+
+test("deriveNeedsExternalInfo — false for fully local route", () => {
+  assert.equal(deriveNeedsExternalInfo({ web_policy: "forbidden", source_mode: "no_external", needs_current_information: false }), false);
+});
+
+test("enforce apply rewrites needs_external_info to derived value (round-5)", () => {
+  // Stale false on the original SR decision must NOT survive a
+  // verifier correction that moves the route external — otherwise
+  // EvidencePolicy's standalone read of needs_external_info would
+  // drag it back to forbidden downstream.
+  const decision = {
+    web_policy: "forbidden",
+    source_mode: "no_external",
+    needs_current_information: false,
+    needs_external_info: false
+  };
+  const result = applyJudgeVerdict({
+    decision,
+    signals: {},
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "required",
+      corrected_source_mode: "single_lookup",
+      corrected_needs_current_information: true,
+      confidence: 0.9,
+      reason: "freshness signal missed",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, true);
+  assert.equal(result.decision.needs_external_info, true,
+    "applied decision must expose derived needs_external_info=true");
+});
+
+test("buildJudgePrompt rule 5 lists all three invariants (round-5)", () => {
+  const prompt = buildJudgePrompt({
+    text: "test",
+    decision: { web_policy: "optional", source_mode: "provided_context" },
+    signals: {}
+  });
+  // rule 5 must mention each forbidden combo so judge avoids
+  // emitting impossible corrections.
+  assert.ok(/forbidden with an external source_mode/i.test(prompt),
+    "prompt must list `web_policy=forbidden + external source_mode` invariant");
+  assert.ok(/required with a local source_mode/i.test(prompt),
+    "prompt must list `web_policy=required + local source_mode` invariant");
+  assert.ok(/needs_current_information=true with web_policy=forbidden/i.test(prompt),
+    "prompt must list `needs_current=true + forbidden` invariant");
+});
+
+test("consistency floor runs BEFORE veto — inconsistent correction surfaces inconsistent_correction not hard_signal_override (round-5)", () => {
+  // Round-5 reorder: when a correction is both inconsistent AND
+  // would trip a hard signal, the floor should win (better
+  // diagnostic for the operator — the correction is broken before
+  // we even ask whether signals contradict it).
+  const decision = { web_policy: "optional", source_mode: "provided_context" };
+  const result = applyJudgeVerdict({
+    decision,
+    signals: { explicit_search: { matched: true } },  // hard downgrade-block signal
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "required",
+      corrected_source_mode: "no_external",  // inconsistent
+      confidence: 0.9,
+      reason: "broken",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.judge_status, "inconsistent_correction",
+    "floor should fire before veto so the operator sees the real bug");
 });
 
 test("evidence-axis consistency floor — accepts coherent triple change", () => {
