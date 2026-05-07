@@ -237,6 +237,10 @@
   "build": {
     "appId": "com.uca.desktop",
     "productName": "LingxY",
+    "electronLanguages": [
+      "en-US",
+      "zh-CN"
+    ],
     "directories": {
       "output": "dist"
     },
