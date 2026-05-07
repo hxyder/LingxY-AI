@@ -107,7 +107,7 @@ test("hard signal block — local_only_constraint vetoes forbidden→required up
   });
   assert.equal(upgrade.applied, false);
   assert.equal(upgrade.judge_status, "hard_signal_override");
-  assert.ok(upgrade.reason.includes("hard_signals_block_upgrade"));
+  assert.ok(upgrade.reason.includes("hard_signals_block_web_policy_upgrade"));
 });
 
 test("hard signal block — explicit_search vetoes required→forbidden downgrade only", () => {
@@ -126,7 +126,7 @@ test("hard signal block — explicit_search vetoes required→forbidden downgrad
     mode: "enforce"
   });
   assert.equal(downgrade.applied, false);
-  assert.ok(downgrade.reason.includes("hard_signals_block_downgrade"));
+  assert.ok(downgrade.reason.includes("hard_signals_block_web_policy_downgrade"));
 });
 
 test("hard signal does NOT block correction in the other direction", () => {
@@ -351,6 +351,145 @@ test("buildJudgePrompt includes user_command + SR decision subset + structural s
   // Must NOT leak any topic-regex / dictionary into the prompt.
   assert.ok(!prompt.includes("LEARNING_VERB_RE"));
   assert.ok(!prompt.includes("FRESHNESS_TOPIC_WORD_RE"));
+});
+
+test("buildJudgePrompt schema mentions all three corrected_* fields (round-4 alignment)", () => {
+  // Codex round-3 caught: code accepted corrected_needs_current_
+  // information but the prompt didn't mention it, so judges in the
+  // wild would never emit it. The prompt must reflect the schema.
+  const prompt = buildJudgePrompt({
+    text: "test",
+    decision: { web_policy: "optional", source_mode: "provided_context" },
+    signals: {}
+  });
+  assert.ok(prompt.includes("corrected_web_policy"), "prompt must list corrected_web_policy");
+  assert.ok(prompt.includes("corrected_source_mode"), "prompt must list corrected_source_mode");
+  assert.ok(prompt.includes("corrected_needs_current_information"), "prompt must list corrected_needs_current_information");
+  // Consistency rule must be in the prompt so the judge avoids
+  // emitting impossible combos that the consistency floor would
+  // bounce.
+  assert.ok(/consistent|inconsistent|never propose web_policy=forbidden/i.test(prompt),
+    "prompt must instruct the judge about evidence-axis consistency");
+});
+
+test("source_mode directional veto — explicit_search blocks downgrade to no_external", () => {
+  // Round-4 fix (codex round-3 #1): without source_mode in the
+  // veto axis, judge could leave web_policy alone but flip
+  // source_mode to no_external while explicit_search is set →
+  // inconsistent state.
+  const decision = { web_policy: "required", source_mode: "single_lookup" };
+  const result = applyJudgeVerdict({
+    decision,
+    signals: { explicit_search: { matched: true } },
+    judgePayload: {
+      verdict: "reject",
+      corrected_source_mode: "no_external",
+      confidence: 0.9,
+      reason: "judge thinks no source needed",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, false);
+  assert.equal(result.judge_status, "hard_signal_override");
+  assert.ok(result.reason.includes("source_mode_downgrade"));
+});
+
+test("source_mode directional veto — local_only_constraint blocks upgrade to single_lookup", () => {
+  const decision = { web_policy: "forbidden", source_mode: "no_external" };
+  const result = applyJudgeVerdict({
+    decision,
+    signals: { local_only_constraint: { matched: true } },
+    judgePayload: {
+      verdict: "reject",
+      corrected_source_mode: "single_lookup",
+      corrected_web_policy: "required",
+      confidence: 0.9,
+      reason: "judge wants external",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, false);
+  assert.equal(result.judge_status, "hard_signal_override");
+});
+
+test("evidence-axis consistency floor — rejects required + no_external (correction creates inconsistency)", () => {
+  // Round-4 (codex round-3 #3): final/corrected route must be
+  // self-consistent across web_policy / source_mode / needs_current.
+  const decision = { web_policy: "required", source_mode: "single_lookup" };
+  const result = applyJudgeVerdict({
+    decision,
+    judgePayload: {
+      verdict: "reject",
+      corrected_source_mode: "no_external",  // would leave web_policy=required + source_mode=no_external
+      confidence: 0.9,
+      reason: "broken correction",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, false);
+  assert.equal(result.judge_status, "inconsistent_correction");
+  assert.ok(result.reason.includes("required_with_no_external"));
+});
+
+test("evidence-axis consistency floor — rejects forbidden + single_lookup", () => {
+  const decision = { web_policy: "optional", source_mode: "provided_context" };
+  const result = applyJudgeVerdict({
+    decision,
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "forbidden",
+      corrected_source_mode: "single_lookup",  // contradictory
+      confidence: 0.9,
+      reason: "broken correction",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, false);
+  assert.equal(result.judge_status, "inconsistent_correction");
+});
+
+test("evidence-axis consistency floor — rejects needs_current=true + forbidden", () => {
+  const decision = { web_policy: "optional", source_mode: "provided_context", needs_current_information: false };
+  const result = applyJudgeVerdict({
+    decision,
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "forbidden",
+      corrected_needs_current_information: true,
+      confidence: 0.9,
+      reason: "broken",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, false);
+  assert.equal(result.judge_status, "inconsistent_correction");
+});
+
+test("evidence-axis consistency floor — accepts coherent triple change", () => {
+  // Verifies the floor doesn't reject *valid* corrections.
+  const decision = { web_policy: "required", source_mode: "single_lookup", needs_current_information: true };
+  const result = applyJudgeVerdict({
+    decision,
+    judgePayload: {
+      verdict: "reject",
+      corrected_web_policy: "forbidden",
+      corrected_source_mode: "no_external",
+      corrected_needs_current_information: false,
+      confidence: 0.9,
+      reason: "stable QA",
+      evidence_basis: []
+    },
+    mode: "enforce"
+  });
+  assert.equal(result.applied, true, "coherent triple change must apply");
+  assert.equal(result.decision.web_policy, "forbidden");
+  assert.equal(result.decision.source_mode, "no_external");
+  assert.equal(result.decision.needs_current_information, false);
 });
 
 test("runRouteVerifier integration — invokeJudge stub returns reject → shadow logs diff", async () => {

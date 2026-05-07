@@ -590,7 +590,13 @@ export async function resolveSemanticDecision(input) {
       // C18 #C' round-3: judge invoker with classified failure
       // surfaces (codex round-2 fix). Timeout + parse-vs-provider
       // distinction + at-most-one repair retry on prose responses.
-      const JUDGE_TIMEOUT_MS = Number(process.env.LINGXY_ROUTER_JUDGE_TIMEOUT_MS ?? 5000);
+      // Round-4 (codex round-3 #6): clamp env to a finite positive
+      // value — non-numeric or non-positive env values fell through
+      // to NaN/0 and produced 0ms-effectively-immediate timeouts.
+      const envTimeoutRaw = Number(process.env.LINGXY_ROUTER_JUDGE_TIMEOUT_MS);
+      const JUDGE_TIMEOUT_MS = Number.isFinite(envTimeoutRaw) && envTimeoutRaw > 0
+        ? envTimeoutRaw
+        : 5000;
       function callOnce(messages) {
         return Promise.race([
           judgeAdapter.generate({ messages, maxTokens: 256 }),
