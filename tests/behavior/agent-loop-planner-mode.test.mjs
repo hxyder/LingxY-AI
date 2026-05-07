@@ -108,6 +108,10 @@ test("agent planner mode renders artifact contract for required file outputs", (
   assert.match(block, /artifact_required: true/);
   assert.match(block, /artifact_kind: docx/);
   assert.match(block, /artifact_tools: .*generate_document/);
+  // B2-a (b): artifact_tools list contains producers only; the verify
+  // step is surfaced separately so the LLM doesn't conflate verifier
+  // with producer.
+  assert.match(block, /artifact_verify_tool: verify_file_exists/);
   assert.match(block, /must_verify_artifact: true/);
 });
 

@@ -26,11 +26,17 @@ const CAPABILITY_TOOL_MATCHERS = Object.freeze({
     || ["web_search", "web_search_fetch", "fetch_url_content"].includes(tool.id),
   file_read: (tool) =>
     /^(list_files|glob_files|find_recent_files|get_latest_artifact|stat_file|read_file_text|read_folder_text|search_file_content|index_file_content|verify_file_exists|file_op)$/.test(tool.id),
-  // B2-a (b) round-1 codex catch: verify_file_exists is a *verifier*,
-  // not a producer. Removed from artifact_generation so the policy
-  // group and capability matcher agree (single source of truth).
+  // The capability matcher surfaces every tool the LLM may need
+  // when artifact_required=true. That's a SUPERSET of the
+  // POLICY_GROUPS.artifact_generation no-side-effect-producer floor
+  // because the LLM also needs verify_file_exists to satisfy
+  // task-spec required_steps for artifact tasks
+  // (task-spec.mjs:1183/1193 inject verify_file_exists). The
+  // policy group is the recovery-safety floor; this matcher is the
+  // surface-visibility set — they are different abstractions on
+  // purpose.
   artifact_generation: (tool) =>
-    /^(write_file|generate_document|edit_file|render_diagram|render_svg|resolve_output_path|register_artifact)$/.test(tool.id),
+    /^(write_file|generate_document|edit_file|render_diagram|render_svg|resolve_output_path|register_artifact|verify_file_exists)$/.test(tool.id),
   code_execution: (tool) => tool.id === "run_script",
   browser_control: (tool) => ["open_url", "take_screenshot"].includes(tool.id),
   email_calendar_action: (tool) =>
@@ -148,9 +154,13 @@ function filterOpenUrl(list = [], task) {
   return list.filter((tool) => tool?.id !== OPEN_URL_TOOL_ID);
 }
 
-// Mirrors POLICY_GROUPS.artifact_generation in
-// src/service/core/policy/policy-groups.mjs — verify_file_exists used
-// to be here but is a verifier, not a producer (codex round-1 catch).
+// Surface-visibility set for artifact-required tasks. Intentionally
+// a SUPERSET of POLICY_GROUPS.artifact_generation: the policy group
+// is the no-side-effect-PRODUCER floor used by recovery; this set
+// includes verify_file_exists because task-spec injects it into
+// required_steps (src/service/core/task-spec.mjs:1183/1193) so the
+// LLM must see it. Codex round-2/3 caught the contract drift when
+// these two were conflated; they're now intentionally distinct.
 const ARTIFACT_TOOL_IDS = new Set([
   "write_file",
   "generate_document",
@@ -158,7 +168,8 @@ const ARTIFACT_TOOL_IDS = new Set([
   "render_diagram",
   "render_svg",
   "resolve_output_path",
-  "register_artifact"
+  "register_artifact",
+  "verify_file_exists"
 ]);
 
 export function isScheduledFireTask(task) {
