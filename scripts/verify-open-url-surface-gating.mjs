@@ -215,9 +215,9 @@ function ids(list) {
 }
 
 // ------------------------------------------------------------------
-// 9d. Legit context_packet.url + verb: user is on a page (clipboard /
-//     active-window URL) AND types an open verb → expose. URL came
-//     from a first-class extracted field, not heterogeneous text.
+// 9d. Legit context_packet.url + verb + current-browser-context
+//     reference: user is on a page (clipboard / active-window URL)
+//     AND types "打开当前页面" / "open this page" → expose.
 // ------------------------------------------------------------------
 {
   const t = {
@@ -225,16 +225,55 @@ function ids(list) {
     context_packet: { url: "https://example.com/article" }
   };
   check(
-    "context_packet.url + open verb: shouldExposeOpenUrl=true (legit clipboard path)",
+    "context_packet.url + open verb + 当前页面: shouldExposeOpenUrl=true",
     shouldExposeOpenUrl(t) === true
   );
-  const t2 = {
+  const tEn = {
+    user_command: "open this page",
+    context_packet: { url: "https://example.com/article" }
+  };
+  check(
+    "context_packet.url + 'open this page': shouldExposeOpenUrl=true",
+    shouldExposeOpenUrl(tEn) === true
+  );
+}
+
+// ------------------------------------------------------------------
+// 9e. context_packet.url + open verb but the verb refers to a
+//     different target (codex round-2 regression): "打开计算器" /
+//     "open calculator" while a stale browser URL sits in the packet
+//     must NOT unlock open_url.
+// ------------------------------------------------------------------
+{
+  const t = {
+    user_command: "打开计算器",
+    context_packet: { url: "https://example.com/article" }
+  };
+  check(
+    "context_packet.url + verb but no current-browser reference: hidden",
+    shouldExposeOpenUrl(t) === false
+  );
+  const tEn = {
+    user_command: "open calculator",
+    context_packet: { url: "https://example.com/article" }
+  };
+  check(
+    "context_packet.url + 'open calculator': hidden",
+    shouldExposeOpenUrl(tEn) === false
+  );
+}
+
+// ------------------------------------------------------------------
+// 9f. context_packet.url WITHOUT any open verb: still hidden.
+// ------------------------------------------------------------------
+{
+  const t = {
     user_command: "summarise this",
     context_packet: { url: "https://example.com/article" }
   };
   check(
     "context_packet.url WITHOUT open verb: still hidden",
-    shouldExposeOpenUrl(t2) === false
+    shouldExposeOpenUrl(t) === false
   );
 }
 

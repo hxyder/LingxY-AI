@@ -1,4 +1,5 @@
 import { toolsInGroup } from "../../core/policy/policy-groups.mjs";
+import { commandTargetsCurrentBrowserContext } from "../../../shared/current-context-intent.mjs";
 
 function semanticDecisionOf(task) {
   return task?.context_packet?.semantic_router_decision ?? null;
@@ -107,13 +108,18 @@ function userExplicitlyAskedToOpenUrl(task) {
     }
   }
   // Legit "open the page I'm currently browsing" path: clipboard or
-  // active-window probe surfaced a URL via context_packet.url AND the
-  // user typed an open-verb in their live command. The URL is a
-  // first-class user-selected target here, not background metadata.
+  // active-window probe surfaced a URL via context_packet.url AND
+  // the user's live command references the current browser context
+  // ("打开当前页面 / 这个页面 / open this page / current tab"). Both
+  // halves required so a generic "open calculator" while a stale
+  // browser URL is in the packet does NOT unlock open_url
+  // (codex round-2 catch).
   const cpUrl = task?.context_packet?.url;
   if (typeof cpUrl === "string" && cpUrl.trim()) {
     for (const text of liveUserIntentSources(task)) {
-      if (OPEN_URL_VERB_RE.test(text)) return true;
+      if (OPEN_URL_VERB_RE.test(text) && commandTargetsCurrentBrowserContext(text)) {
+        return true;
+      }
     }
   }
   return false;
