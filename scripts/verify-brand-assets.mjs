@@ -19,6 +19,7 @@ const root = path.resolve(__dirname, "..");
 const MARK_PATH = path.join(root, "src/desktop/assets/logo/lingxy-mark.svg");
 const WORDMARK_PATH = path.join(root, "src/desktop/assets/logo/lingxy-wordmark.svg");
 const CONSOLE_PATH = path.join(root, "src/desktop/renderer/console.html");
+const ICONS_MJS_PATH = path.join(root, "src/desktop/renderer/icons.mjs");
 
 // ── mark.svg exists and is clean ─────────────────────────────────────────
 // 2026-05-07 brand identity update: replaced the old "一点通" two-dots
@@ -52,18 +53,51 @@ assert.equal(
 //     reads as a directional arrow at small sizes.
 const filledPathMatch = mark.match(/<path[^>]*d="([^"]+)"[^>]*fill="currentColor"/);
 assert.ok(filledPathMatch, "mark must have a <path> filled with currentColor");
-const pathD = filledPathMatch[1];
+const pathD = filledPathMatch[1].trim();
 const xCoords = Array.from(pathD.matchAll(/[ML]\s*(-?\d+(?:\.\d+)?)/g)).map((m) => Number(m[1]));
 assert.ok(xCoords.length >= 4, "mark path must have at least four anchor points (arrow geometry)");
 const maxX = Math.max(...xCoords);
 assert.ok(maxX >= 24, `mark arrow tip must reach toward the right edge (got max x=${maxX})`);
 const minX = Math.min(...xCoords);
 assert.ok(minX <= 8, `mark arrow tail must start near the left edge (got min x=${minX})`);
-// Regression guard: the old "一点通" geometry — two circles + one
-// cubic-bezier arc — must NOT come back unless we deliberately undo
-// this brand update.
+// Regression guard: the old "一点通" geometry — two circles plus a
+// cubic-bezier arc — must NOT come back. <circle> is the simple
+// guard. The path-side guard rejects ANY curve command (C/c/S/s/
+// Q/q/T/t/A/a), with or without commas — `M`/`L`/`H`/`V`/`Z` plus
+// numerics is the entire allowed alphabet for the new arrow
+// silhouette. Stricter than the old "look for C followed by commas"
+// regex codex round-1 caught (commas are optional in SVG).
 assert.ok(!/<circle/.test(mark), "mark must not carry the legacy 一点通 dots");
-assert.ok(!/[Cc]\s+\d.*\d.*,\s*\d/.test(pathD), "mark must not carry the legacy cubic-bezier arc");
+const curveCommands = pathD.match(/[CcSsQqTtAa]/g) ?? [];
+assert.equal(
+  curveCommands.length,
+  0,
+  `mark path must use only straight-line commands (M/L/H/V/Z); found curve(s): ${curveCommands.join(", ")}`
+);
+
+// codex round-1: the verifier previously checked only `lingxy-mark.svg`
+// even though the path d is duplicated into wordmark / console.html /
+// icons.mjs LOGO_MARK. Future drift in any consumer would have passed
+// green. Single-source-of-truth check: extract the canonical path d
+// from lingxy-mark.svg, then assert each consumer carries that exact
+// string. Editing brand geometry in one place requires editing all
+// four; the verifier is now the gate that enforces it.
+const canonicalPathD = pathD;
+const wordmarkSrcForCheck = readFileSync(WORDMARK_PATH, "utf8");
+assert.ok(
+  wordmarkSrcForCheck.includes(`d="${canonicalPathD}"`),
+  "wordmark must mirror the canonical mark path d (drift detected)"
+);
+const consoleSrcForCheck = readFileSync(CONSOLE_PATH, "utf8");
+assert.ok(
+  consoleSrcForCheck.includes(`d="${canonicalPathD}"`),
+  "console.html rail-brand-mark inline SVG must mirror the canonical mark path d (drift detected)"
+);
+const iconsSrcForCheck = readFileSync(ICONS_MJS_PATH, "utf8");
+assert.ok(
+  iconsSrcForCheck.includes(`d="${canonicalPathD}"`),
+  "icons.mjs LOGO_MARK must mirror the canonical mark path d (drift detected)"
+);
 
 // ── wordmark.svg exists, references same mark geometry ───────────────────
 assert.ok(existsSync(WORDMARK_PATH), `missing wordmark: ${WORDMARK_PATH}`);
