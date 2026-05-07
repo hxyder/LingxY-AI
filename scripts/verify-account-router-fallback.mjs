@@ -108,18 +108,18 @@ function check(label, condition) {
 // ---------------------------------------------------------------------
 {
   const variants = [
-    "google hxy94045@gmail.com",         // bug repro: provider + space + email
-    "google/hxy94045@gmail.com",         // forward slash
-    "Google: hxy94045@gmail.com",        // colon + uppercase
-    "hxy94045@gmail.com (google)",       // email + parenthesised provider
-    "  hxy94045@gmail.com  ",            // pure email with whitespace
-    "<hxy94045@gmail.com>"               // angle brackets
+    "google user@gmail.com",         // bug repro: provider + space + email
+    "google/user@gmail.com",         // forward slash
+    "Google: user@gmail.com",        // colon + uppercase
+    "user@gmail.com (google)",       // email + parenthesised provider
+    "  user@gmail.com  ",            // pure email with whitespace
+    "<user@gmail.com>"               // angle brackets
   ];
   const accountsWithBugRepro = [{
     id: "acc_real_001",
     accountId: "acc_real_001",
     provider: "google",
-    email: "hxy94045@gmail.com",
+    email: "user@gmail.com",
     tokenStatus: "active",
     capabilities: { emailWrite: true }
   }];

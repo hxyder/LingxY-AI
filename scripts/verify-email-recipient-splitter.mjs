@@ -205,7 +205,7 @@ function decodeGmailRaw(raw) {
   const runtime = createRuntimeWithAccounts([{
     id: "acc_google",
     provider: "google",
-    email: "hxy94045@gmail.com",
+    email: "user@gmail.com",
     userId: "local",
     tokenStatus: "active",
     capabilities: { emailWrite: true },
@@ -218,7 +218,7 @@ function decodeGmailRaw(raw) {
     return { ok: true, json: async () => ({ id: "msg_two_recipients" }) };
   };
   const result = await ACCOUNT_SEND_EMAIL_TOOL.execute({
-    accountId: "google hxy94045@gmail.com",
+    accountId: "google user@gmail.com",
     provider: "google",
     to: "user-a@example.com和user-b@example.com",
     subject: "x",
@@ -267,7 +267,7 @@ function decodeGmailRaw(raw) {
     const runtime = createRuntimeWithAccounts([{
       id: "acc_google_attach",
       provider: "google",
-      email: "hxy94045@gmail.com",
+      email: "user@gmail.com",
       userId: "local",
       tokenStatus: "active",
       capabilities: { emailWrite: true },
@@ -280,7 +280,7 @@ function decodeGmailRaw(raw) {
       return { ok: true, json: async () => ({ id: "msg_attachment" }) };
     };
     const result = await ACCOUNT_SEND_EMAIL_TOOL.execute({
-      accountId: "hxy94045@gmail.com",
+      accountId: "user@gmail.com",
       provider: "google",
       to: "recipient@example.com",
       subject: "x",

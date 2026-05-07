@@ -36,17 +36,17 @@ function sameText(left, right) {
 
 // UCA-181 follow-up: the LLM frequently emits malformed accountIds that
 // it copy-pasted from prior error messages or reasoned by analogy:
-//   "google hxy94045@gmail.com"  (provider + space + email)
-//   "google/hxy94045@gmail.com"  (the format the error listed)
-//   "Google: hxy94045@gmail.com"
-//   "hxy94045@gmail.com (google)"
+//   "google user@gmail.com"  (provider + space + email)
+//   "google/user@gmail.com"  (the format the error listed)
+//   "Google: user@gmail.com"
+//   "user@gmail.com (google)"
 // Strict equality misses every one. Extract the @-bearing email token
 // from the candidate string and try matching by that — the email
 // itself is a globally unique identifier inside our account list.
 // Conservative local-part charset (\w means [A-Za-z0-9_], plus
 // `.` `+` `-`). RFC 5322 technically allows `/` and other
 // punctuation, but accepting them lets a human-readable separator
-// like "google/hxy94045@gmail.com" be misread as a single email
+// like "google/user@gmail.com" be misread as a single email
 // token. Real-world Gmail/Outlook addresses use the conservative
 // subset, so we trade RFC purity for separator robustness.
 const EMAIL_LIKE_REGEX = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
@@ -68,7 +68,7 @@ function matchesAccountIdentity(account, value) {
   }
   // Forgiving fallback: pull the email out of the candidate, compare
   // against the account's email. Avoids dead-ending the LLM on
-  // "google hxy94045@gmail.com"-style typos. Only matches when the
+  // "google user@gmail.com"-style typos. Only matches when the
   // account has a usable email (the strict path already covered the
   // id-only case).
   const emailToken = extractEmailToken(value);
