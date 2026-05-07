@@ -247,7 +247,10 @@ async function run() {
       assert.deepEqual(toolsInGroup("does_not_exist"), []);
     });
     it("metadata: groupsOfTool returns empty array for ungrouped tool", () => {
-      assert.deepEqual(groupsOfTool("write_file"), []);
+      // B2-a (b): write_file moved INTO the artifact_generation policy
+      // group as part of the no-side-effect artifact-recovery floor.
+      // Use take_screenshot (true ungrouped) as the negative example.
+      assert.deepEqual(groupsOfTool("take_screenshot"), []);
     });
   })();
 

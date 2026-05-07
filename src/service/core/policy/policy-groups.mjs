@@ -83,6 +83,30 @@ export const POLICY_GROUPS = Object.freeze({
    */
   schedule_create: Object.freeze([
     "create_scheduled_task"
+  ]),
+
+  /**
+   * B2-a (b) — local-side-effect-free artifact producers. These are the
+   * ONLY tools allowed in any future deterministic recovery for an
+   * `artifact_required` task that the planner failed to satisfy. The
+   * 109-corpus regression (D class 6/10 missing_artifact) had the LLM
+   * emit markdown content but never call generate_document; a future
+   * recovery hook will use these tools to materialise the body.
+   *
+   * INVARIANT: this group MUST NOT include any tool that performs an
+   * outbound side effect — no email_send, calendar_create, file_upload,
+   * connector_workflow_run, or open_url. Adding such a tool here would
+   * let a recovery path silently reach a remote system. The verifier
+   * scripts/verify-artifact-generation-invariant.mjs locks this.
+   */
+  artifact_generation: Object.freeze([
+    "generate_document",
+    "write_file",
+    "edit_file",
+    "render_diagram",
+    "render_svg",
+    "resolve_output_path",
+    "register_artifact"
   ])
 });
 
