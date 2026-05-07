@@ -22,10 +22,17 @@
  */
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   renderTaskKvGrid,
   describeTaskTokens
 } from "../src/desktop/renderer/console-task-detail.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(__dirname, "..");
+const consoleJsSource = readFileSync(path.join(repoRoot, "src/desktop/renderer/console.js"), "utf8");
 
 let passed = 0;
 let failed = 0;
@@ -121,12 +128,25 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 7. describeTaskTokens: no usage data → null (caller omits the cell).
+// 7. describeTaskTokens: no MEANINGFUL token data → null. Empty,
+//    zero, and corrupted (negative) values all return null so the
+//    cell is omitted instead of rendering "0 tokens" / "-1 tokens".
 // ---------------------------------------------------------------------
 {
   check("empty task: returns null", describeTaskTokens({}) === null);
-  check("zero usage: returns null (don't show '0 tokens')",
+  check("zero tokens_used: returns null (don't show '0 tokens')",
     describeTaskTokens({ tokens_used: 0 }) === null);
+  // codex round-1: 0 in + 0 out used to render "0 (0 in / 0 out)"
+  // because Number.isFinite(0) is true. Now requires positive total.
+  check("usage_summary 0/0: returns null (don't show '0 (0 in / 0 out)')",
+    describeTaskTokens({ usage_summary: { tokens_in: 0, tokens_out: 0 } }) === null);
+  // codex round-1: -1 used to render because Number.isFinite(-1) is true.
+  check("negative tokens_used: returns null (corrupted data)",
+    describeTaskTokens({ tokens_used: -1 }) === null);
+  check("negative usage_summary.tokens_in: returns null",
+    describeTaskTokens({ usage_summary: { tokens_in: -10, tokens_out: 5 } }) === null);
+  check("NaN tokens_used: returns null",
+    describeTaskTokens({ tokens_used: Number.NaN }) === null);
 }
 
 // ---------------------------------------------------------------------
@@ -141,6 +161,37 @@ function check(label, condition) {
   });
   check("priority: usage_summary wins over tokens_used + total_tokens",
     display === "150 (100 in / 50 out)");
+}
+
+// ---------------------------------------------------------------------
+// 9. Console stat strip / idle line / budget panel no longer surface
+//    USD as a primary signal anywhere. This is a TEXT-LEVEL guard
+//    against accidental drift back to monetary display.
+//    codex round-1: the original C17 commit missed the stat strip's
+//    "Spend" card (computeSummary.monthlySpend → renderSummary
+//    cards label "Spend"). This regression guard locks the new shape.
+// ---------------------------------------------------------------------
+{
+  // The stat strip card label is now "Tokens", not "Spend".
+  check("stat strip: label 'Spend' is gone",
+    !/label:\s*"Spend"/.test(consoleJsSource));
+  check("stat strip: label 'Tokens' present",
+    /label:\s*"Tokens"/.test(consoleJsSource));
+  // computeSummary returns monthlyTokens, not monthlySpend.
+  check("computeSummary: monthlySpend computation dropped",
+    !/monthlySpend:\s*budget\?\.spent\?\.this_month_usd/.test(consoleJsSource));
+  check("computeSummary: monthlyTokens computation present",
+    /monthlyTokens:/.test(consoleJsSource));
+  // Idle line shows "X tokens this month", not "$X this month".
+  check("idle line: '$X this month' phrasing is gone",
+    !/formatMoney\(spend\)\}\}\s*this month/.test(consoleJsSource));
+  check("idle line: 'tokens this month' phrasing present",
+    /tokens this month/.test(consoleJsSource));
+  // renderBudget no longer has a "This Month" tile.
+  check("budget panel: 'This Month' tile dropped",
+    !/\["This Month",\s*formatMoney\(b\.spent\?\.this_month_usd/.test(consoleJsSource));
+  check("budget panel: 'Tokens (this month)' tile present",
+    /\["Tokens \(this month\)"/.test(consoleJsSource));
 }
 
 console.log(`\n${passed} pass / ${failed} fail`);

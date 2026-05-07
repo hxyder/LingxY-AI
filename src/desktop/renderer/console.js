@@ -2956,19 +2956,26 @@ function updateTopRuntimePill() {
 
 function computeSummary(tasks, budget) {
   const today = new Date().toISOString().slice(0, 10);
+  // C17 codex round-1: the stat strip used to surface monthlySpend
+  // (USD this month) alongside running/queued/today. R flagged USD
+  // as the inaccurate signal, so we now compute monthlyTokens
+  // instead — same role (running tally that should reset monthly)
+  // but with the honest unit.
+  const tokensIn = Number(budget?.spent?.this_month_tokens_in ?? 0);
+  const tokensOut = Number(budget?.spent?.this_month_tokens_out ?? 0);
   return {
     running: tasks.filter((t) => ["running", "cancelling"].includes(t.status)).length,
     queued: tasks.filter((t) => t.status === "queued").length,
     todaySuccess: tasks.filter((t) => t.status === "success" && `${t.updated_at ?? t.created_at ?? ""}`.startsWith(today)).length,
-    monthlySpend: budget?.spent?.this_month_usd ?? 0
+    monthlyTokens: (Number.isFinite(tokensIn) ? Math.max(0, tokensIn) : 0)
+      + (Number.isFinite(tokensOut) ? Math.max(0, tokensOut) : 0)
   };
 }
 
 // UCA-108: render a 4-card stat strip. The "Today" card embeds an SVG
 // sparkline of completed tasks bucketed into the last 15 hours — a
-// rough-but-real signal of recent throughput. The other three cards are
-// plain numbers; "Spend" shows the monthly $ total and a "this month"
-// subtitle so the denominator is explicit.
+// rough-but-real signal of recent throughput. The fourth card shows
+// monthly token consumption (post-C17; was USD spend before).
 function buildTodaySparkline(tasks) {
   const now = Date.now();
   const bucketMs = 60 * 60 * 1000; // 1 hour per bucket
@@ -2996,12 +3003,23 @@ function buildTodaySparkline(tasks) {
   `;
 }
 
+// C17 helper: compact token count for the stat strip ("1.2K", "12.3K",
+// "1.2M"). Keeps the card a fixed visual width regardless of order
+// of magnitude.
+function formatTokensCompact(n) {
+  const v = Number(n ?? 0);
+  if (!Number.isFinite(v) || v <= 0) return "0";
+  if (v < 1000) return String(Math.round(v));
+  if (v < 1_000_000) return `${(v / 1000).toFixed(v < 10_000 ? 1 : 0)}K`;
+  return `${(v / 1_000_000).toFixed(v < 10_000_000 ? 1 : 0)}M`;
+}
+
 function renderSummary() {
   const tasks = state.workspace.tasks ?? [];
   const s = computeSummary(tasks, state.workspace.budget);
   const running = s.running ?? 0;
   const queued = s.queued ?? 0;
-  const spend = s.monthlySpend ?? 0;
+  const monthlyTokens = s.monthlyTokens ?? 0;
   // Rail badge — show in-flight count so users notice from any tab
   // when something is still running. Hides at zero. The .stat-strip
   // already shows the same numbers in detail; this is the at-a-glance
@@ -3016,11 +3034,14 @@ function renderSummary() {
       railBadge.hidden = true;
     }
   }
-  // Idle mode: nothing in motion AND no money burned this month. Collapse
-  // the 4-card strip to a thin summary line so zero-value cards stop
-  // dominating the page. Today's success count + sparkline stay visible
-  // because they still carry signal even when the queue is empty.
-  const isIdle = running === 0 && queued === 0 && spend === 0;
+  // Idle mode: nothing in motion AND no tokens burned this month.
+  // C17: switched the idle check from "spend === 0" to "monthlyTokens
+  // === 0" — same role (running tally that's zero at the start of
+  // a fresh month), honest unit. Collapses the 4-card strip to a
+  // thin summary line so zero-value cards stop dominating the page.
+  // Today's success count + sparkline stay visible because they
+  // still carry signal even when the queue is empty.
+  const isIdle = running === 0 && queued === 0 && monthlyTokens === 0;
   if (isIdle) {
     summaryGrid.classList.add("stat-strip--idle");
     summaryGrid.innerHTML = `
@@ -3030,7 +3051,7 @@ function renderSummary() {
         <span class="stat-idle-sep" aria-hidden="true"></span>
         <span class="stat-idle-metric"><strong>${escapeHtml(String(s.todaySuccess))}</strong> succeeded today</span>
         <span class="stat-idle-sep" aria-hidden="true"></span>
-        <span class="stat-idle-metric stat-idle-metric--muted">${escapeHtml(formatMoney(spend))} this month</span>
+        <span class="stat-idle-metric stat-idle-metric--muted">${escapeHtml(formatTokensCompact(monthlyTokens))} tokens this month</span>
       </div>
     `;
     return;
@@ -3040,7 +3061,7 @@ function renderSummary() {
     { label: "Running", value: running, sub: "Active right now" },
     { label: "Queued", value: queued, sub: "Waiting for a worker" },
     { label: "Today", value: s.todaySuccess, sub: "Succeeded today", spark: buildTodaySparkline(tasks) },
-    { label: "Spend", value: formatMoney(spend), sub: "This month" }
+    { label: "Tokens", value: formatTokensCompact(monthlyTokens), sub: "This month" }
   ];
   summaryGrid.innerHTML = cards.map((c) => `
     <div class="stat-card">

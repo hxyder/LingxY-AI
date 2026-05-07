@@ -4,9 +4,9 @@ import {
 
 // C17 (UPGRADE_PLAN.md §C17, R rule "cost 不准 → 改 token"):
 // Task detail KV grid displays Tokens (in/out/total) as the primary
-// usage signal, replacing the prior `Cost` cell. The legacy `cost`
-// keyword arg is accepted but no longer rendered — keeps callers
-// shape-compatible while transitioning.
+// usage signal, replacing the prior `Cost` cell. Object destructuring
+// silently ignores any extra keys, so legacy callers passing `cost`
+// still work without an explicit binding.
 export function renderTaskKvGrid({
   provider,
   model,
@@ -15,12 +15,8 @@ export function renderTaskKvGrid({
   retry,
   tokens,
   duration,
-  transport,
-  // Legacy: accepted for shape compatibility but no longer rendered.
-  // The user (R) flagged cost numbers as inaccurate; tokens are the
-  // honest signal.
-  cost: _legacyCost
-}, _legacyOptions = {}) {
+  transport
+} = {}) {
   const hasText = (value) => value != null && value !== "" && value !== "—";
   const cells = [];
   if (hasText(provider)) cells.push(["Provider", provider]);
@@ -40,17 +36,28 @@ export function renderTaskKvGrid({
 }
 
 // C17: derive a human-readable token-usage string from a task record.
-// Returns null when no token data is available so the KV grid omits
-// the cell instead of rendering a misleading "0 tokens" line.
+// Returns null when no MEANINGFUL token data is available so the KV
+// grid omits the cell instead of rendering a misleading "0 tokens" /
+// "-1 tokens" line.
+//
+// Codex round-1: tightened guards to require non-negative values
+// AND a positive total. The previous Number.isFinite-only guard
+// rendered "0 (0 in / 0 out)" for the legitimate "no usage yet"
+// case and would render negative numbers from corrupted data.
 export function describeTaskTokens(task = {}) {
+  const isNonNegFinite = (v) => Number.isFinite(v) && Number(v) >= 0;
   const tokensIn = task?.usage_summary?.tokens_in ?? task?.usage?.input_tokens ?? null;
   const tokensOut = task?.usage_summary?.tokens_out ?? task?.usage?.output_tokens ?? null;
   const fallbackTotal = task?.tokens_used ?? task?.usage?.total_tokens ?? null;
-  if (Number.isFinite(tokensIn) && Number.isFinite(tokensOut)) {
-    const total = Number(tokensIn) + Number(tokensOut);
-    return `${total.toLocaleString("en-US")} (${Number(tokensIn).toLocaleString("en-US")} in / ${Number(tokensOut).toLocaleString("en-US")} out)`;
+  if (isNonNegFinite(tokensIn) && isNonNegFinite(tokensOut)) {
+    const inN = Number(tokensIn);
+    const outN = Number(tokensOut);
+    const total = inN + outN;
+    if (total > 0) {
+      return `${total.toLocaleString("en-US")} (${inN.toLocaleString("en-US")} in / ${outN.toLocaleString("en-US")} out)`;
+    }
   }
-  if (Number.isFinite(fallbackTotal) && Number(fallbackTotal) > 0) {
+  if (isNonNegFinite(fallbackTotal) && Number(fallbackTotal) > 0) {
     return `${Number(fallbackTotal).toLocaleString("en-US")}`;
   }
   return null;
