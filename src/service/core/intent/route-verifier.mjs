@@ -74,6 +74,58 @@ import {
   detectEvidenceInconsistency
 } from "./evidence-axes.mjs";
 
+/**
+ * Round-9 schema typedefs (codex round-7 #4). The verifier's
+ * structural contract — used by tests, telemetry, and the
+ * forthcoming corpus runner. JSDoc rather than .d.ts because the
+ * rest of the project is JS-with-JSDoc; tooling picks these up
+ * for IDE hints without needing a TS toolchain.
+ */
+
+/**
+ * @typedef {Object} JudgePayload   Schema the LLM judge MUST emit.
+ * @property {"accept"|"reject"|"abstain"} verdict
+ * @property {("required"|"optional"|"forbidden"|null)} [corrected_web_policy]
+ * @property {("no_external"|"provided_context"|"single_lookup"
+ *             |"multi_source_research"|"deep_research"|null)} [corrected_source_mode]
+ * @property {(true|false|null)} [corrected_needs_current_information]
+ * @property {number} confidence    In [0, 1].
+ * @property {string} reason        One sentence operator-facing.
+ * @property {string[]} evidence_basis
+ */
+
+/**
+ * @typedef {Object} VerifierDiff   Per-field diff record.
+ * @property {*}       from         Original value.
+ * @property {*}       to           Corrected value.
+ * @property {boolean} [derived]    True when the diff was computed by the
+ *                                   framework (e.g. needs_external_info)
+ *                                   rather than emitted by the judge.
+ */
+
+/**
+ * @typedef {Object} VerifierResult  Output of `applyJudgeVerdict()` /
+ *                                    `runRouteVerifier()`.
+ * @property {boolean} applied        True only when enforce + valid +
+ *                                    consistent + non-vetoed correction.
+ * @property {object}  decision       The post-apply decision. Same
+ *                                    reference as input when applied=false.
+ * @property {Object<string, VerifierDiff>|null} diff  Per-field diff;
+ *                                    populated for shadow OR enforce
+ *                                    when the judge proposed changes.
+ * @property {string}  reason         Operator-facing explanation
+ *                                    (`shadow:`, `enforce:`, `judge_*:`,
+ *                                    `evidence_axis_inconsistent:`,
+ *                                    `hard_signals_block_*:`, etc.).
+ * @property {"off"|"shadow"|"enforce"} mode
+ * @property {"ok"|"abstain"|"unavailable"|"invalid_payload"
+ *            |"hard_signal_override"|"inconsistent_correction"} judge_status
+ * @property {{
+ *    inconsistencies: string[],
+ *    hard_signals_present: string[]
+ *  }} [diagnostics]                 Populated for inconsistent_correction.
+ */
+
 export const VERIFIER_MODES = Object.freeze(["off", "shadow", "enforce"]);
 export const DEFAULT_VERIFIER_MODE = "shadow";
 

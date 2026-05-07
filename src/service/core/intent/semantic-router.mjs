@@ -272,8 +272,39 @@ export const SEMANTIC_DECISION_TOOL = Object.freeze({
  */
 
 /**
+ * @typedef {Object} VerifierDiagnostics
+ * @property {string[]} inconsistencies        Codes from `detectEvidenceInconsistency()`.
+ * @property {string[]} hard_signals_present   Names of hard structural signals present
+ *                                              when the diagnostic was captured.
+ */
+
+/**
+ * @typedef {Object} VerifierTrackSummary  Output of `summariseVerifier()`.
+ * @property {"off"|"shadow"|"enforce"|null}  mode
+ * @property {"ok"|"abstain"|"unavailable"|"invalid_payload"
+ *            |"hard_signal_override"|"inconsistent_correction"|null} judge_status
+ * @property {object|null}                     diff
+ * @property {string|null}                     reason
+ * @property {VerifierDiagnostics|null}        diagnostics  Round-7 passthrough
+ *                                              (inconsistent_correction populates;
+ *                                              other paths leave null).
+ */
+
+/**
+ * @typedef {Object} VerifierShadowTelemetry
+ * @property {VerifierTrackSummary|null} raw           Audit of pre-override SR decision.
+ * @property {VerifierTrackSummary|null} post_override Audit of post-override decision
+ *                                                     (null when stable-qa-override
+ *                                                     did NOT apply — saves a redundant
+ *                                                     LLM call).
+ * @property {boolean}                   override_applied Whether stable-qa-override
+ *                                                     fired on this decision.
+ */
+
+/**
  * @typedef {{ kind: "decision", decision: SemanticDecision,
- *             source: "cache"|"provider"|"provider+stable_qa_override" }
+ *             source: "cache"|"provider"|"provider+stable_qa_override",
+ *             verifier_shadow?: VerifierShadowTelemetry|null }
  *         | { kind: "rejection", code: RejectionCode, reason: string }} RouterResult
  *
  * @typedef {"disabled"|"no_provider"|"unsupported_provider"|"timeout"
