@@ -21,6 +21,13 @@ const WORDMARK_PATH = path.join(root, "src/desktop/assets/logo/lingxy-wordmark.s
 const CONSOLE_PATH = path.join(root, "src/desktop/renderer/console.html");
 
 // ── mark.svg exists and is clean ─────────────────────────────────────────
+// 2026-05-07 brand identity update: replaced the old "一点通" two-dots
+// + arc geometry with a right-pointing arrow that mirrors the new
+// installer / .exe / Office add-in icon source
+// (assets/brand-source/lingxy-icon-source.png). The wrapping CSS
+// (rail-mark / rail-brand-mark / topbar-logo) paints the rounded
+// black-square silhouette; the SVG only carries the foreground
+// arrow in currentColor so theme switches still recolor it.
 assert.ok(existsSync(MARK_PATH), `missing brand mark: ${MARK_PATH}`);
 const mark = readFileSync(MARK_PATH, "utf8");
 assert.ok(
@@ -29,7 +36,7 @@ assert.ok(
 );
 assert.ok(
   /currentColor/.test(mark),
-  "mark must use currentColor so theme accent drives the stroke/fill"
+  "mark must use currentColor so theme accent drives the fill"
 );
 // No hardcoded hex / rgb except the well-known none/transparent.
 const hardcodedColors = mark.match(/#[0-9a-fA-F]{3,6}\b|rgb\(|rgba\(|hsl\(/g) ?? [];
@@ -38,9 +45,25 @@ assert.equal(
   0,
   `mark must not hardcode colors, got: ${hardcodedColors.join(", ")}`
 );
-// Two endpoints + one arc = the "一点通" concept.
-assert.ok(/<circle[\s\S]*<circle/.test(mark), "mark must have two dots");
-assert.ok(/<path[\s\S]*C /.test(mark), "mark must have a cubic-bezier arc between them");
+// New identity: a single right-arrow path. The path must:
+//   - exist and be filled with currentColor
+//   - extend horizontally toward the right edge of the viewBox
+//     (arrow tip x ≥ 24 in the 0–32 viewBox) so the silhouette
+//     reads as a directional arrow at small sizes.
+const filledPathMatch = mark.match(/<path[^>]*d="([^"]+)"[^>]*fill="currentColor"/);
+assert.ok(filledPathMatch, "mark must have a <path> filled with currentColor");
+const pathD = filledPathMatch[1];
+const xCoords = Array.from(pathD.matchAll(/[ML]\s*(-?\d+(?:\.\d+)?)/g)).map((m) => Number(m[1]));
+assert.ok(xCoords.length >= 4, "mark path must have at least four anchor points (arrow geometry)");
+const maxX = Math.max(...xCoords);
+assert.ok(maxX >= 24, `mark arrow tip must reach toward the right edge (got max x=${maxX})`);
+const minX = Math.min(...xCoords);
+assert.ok(minX <= 8, `mark arrow tail must start near the left edge (got min x=${minX})`);
+// Regression guard: the old "一点通" geometry — two circles + one
+// cubic-bezier arc — must NOT come back unless we deliberately undo
+// this brand update.
+assert.ok(!/<circle/.test(mark), "mark must not carry the legacy 一点通 dots");
+assert.ok(!/[Cc]\s+\d.*\d.*,\s*\d/.test(pathD), "mark must not carry the legacy cubic-bezier arc");
 
 // ── wordmark.svg exists, references same mark geometry ───────────────────
 assert.ok(existsSync(WORDMARK_PATH), `missing wordmark: ${WORDMARK_PATH}`);

@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 32" role="img" aria-label="LingxY">
-  <title>LingxY — 心有灵犀一点通</title>
-  <!-- mark (one-point-through) -->
+  <title>LingxY</title>
+  <!-- Mark — see lingxy-mark.svg for the full notes. The wordmark
+       composes the same arrow + the LingxY type so call-sites that
+       want both can pull this single file. -->
   <g>
-    <path d="M 6 20 C 10 8, 22 8, 26 20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
-    <circle cx="6" cy="20" r="2" fill="currentColor"/>
-    <circle cx="26" cy="20" r="2" fill="currentColor"/>
+    <path d="M 6 14 L 6 18 L 16 18 L 16 21 L 26 16 L 16 11 L 16 14 Z" fill="currentColor"/>
   </g>
   <!-- wordmark: system font rendering handles the type so we stay single-file -->
   <text x="40" y="22" font-family="'Segoe UI Variable Display','PingFang SC','Microsoft YaHei UI',system-ui,sans-serif" font-size="17" font-weight="600" fill="currentColor" letter-spacing="0.2">LingxY</text>

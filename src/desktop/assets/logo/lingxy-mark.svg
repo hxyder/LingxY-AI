@@ -1,6 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="LingxY">
-  <title>LingxY — 心有灵犀一点通</title>
-  <path d="M 6 20 C 10 8, 22 8, 26 20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/>
-  <circle cx="6" cy="20" r="2" fill="currentColor"/>
-  <circle cx="26" cy="20" r="2" fill="currentColor"/>
+  <title>LingxY</title>
+  <!-- Right-pointing arrow drawn in currentColor. The .rail-mark /
+       .rail-brand-mark / .topbar-logo CSS wrappers paint the rounded
+       black square (background: var(--ink); border-radius: 8px), so
+       this SVG only carries the white foreground content. Echoes
+       assets/brand-source/lingxy-icon-source.png — the pixelated
+       arrow + line-art hand of the new identity — at a size where
+       full pixelation would be unreadable. -->
+  <path d="M 6 14 L 6 18 L 16 18 L 16 21 L 26 16 L 16 11 L 16 14 Z" fill="currentColor"/>
 </svg>

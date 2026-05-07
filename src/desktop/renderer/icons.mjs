@@ -11,7 +11,7 @@
  *   element.innerHTML = icon("calendar", 20);        // explicit size
  *   element.innerHTML = `<button aria-label="Send">${icon("send")}</button>`;
  *
- * The LOGO_MARK export is the LingxY "一点通" brand mark kept in the same
+ * The LOGO_MARK export is the LingxY brand mark kept in the same
  * module so everything visual lives in one place.
  */
 
@@ -60,8 +60,9 @@ export function icon(name, size = 16) {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" ${BASE_ATTRS} aria-hidden="true">${body}</svg>`;
 }
 
-/** The LingxY brand mark (两点一线 — "一点通"). */
-export const LOGO_MARK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" aria-hidden="true"><path d="M 6 20 C 10 8, 22 8, 26 20" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="6" cy="20" r="2" fill="currentColor"/><circle cx="26" cy="20" r="2" fill="currentColor"/></svg>`;
+/** The LingxY brand mark (right-arrow on a rounded-black-square wrapper).
+ *  Mirrors src/desktop/assets/logo/lingxy-mark.svg geometry. */
+export const LOGO_MARK = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="20" height="20" aria-hidden="true"><path d="M 6 14 L 6 18 L 16 18 L 16 21 L 26 16 L 16 11 L 16 14 Z" fill="currentColor"/></svg>`;
 
 /** Enumerate available names for verify / tooling. */
 export function listIconNames() {
