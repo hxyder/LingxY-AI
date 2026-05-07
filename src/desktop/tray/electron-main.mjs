@@ -2807,15 +2807,50 @@ export function createElectronShellRuntime({
         }
       }
 
-      function showLinkBrowserWindow(url) {
-        const { workArea } = screen.getPrimaryDisplay();
+      // Persistence key for the LingxY Browser window. All link-browser
+      // windows share this single bounds entry — opening multiple
+      // popups in quick succession is fine; the LAST close wins for
+      // position memory. (Per-URL persistence would cluster on first
+      // visits and feel random; one stable position matches user
+      // intent: "open my reading panel where I left it".)
+      const LINK_BROWSER_PREF_ID = "link_browser";
+
+      function readLinkBrowserBounds(workArea) {
+        const prefs = settingsCache?.windowPreferences?.[LINK_BROWSER_PREF_ID] ?? {};
+        const persisted = prefs.bounds;
+        if (
+          persisted
+          && Number.isFinite(persisted.x)
+          && Number.isFinite(persisted.y)
+          && Number.isFinite(persisted.width)
+          && Number.isFinite(persisted.height)
+          && persisted.width >= 480
+          && persisted.height >= 360
+        ) {
+          // Clamp into the current display so a remembered position from
+          // an unplugged monitor doesn't put the window off-screen.
+          return {
+            x: Math.max(workArea.x, Math.min(persisted.x, workArea.x + workArea.width - 200)),
+            y: Math.max(workArea.y, Math.min(persisted.y, workArea.y + workArea.height - 150)),
+            width: Math.min(persisted.width, workArea.width),
+            height: Math.min(persisted.height, workArea.height)
+          };
+        }
         const width = Math.max(920, Math.min(Math.round(workArea.width * 0.58), 1280));
         const height = Math.max(620, Math.min(workArea.height - 48, 900));
-        const win = new BrowserWindow({
+        return {
           width,
           height,
           x: workArea.x + Math.max(12, Math.round((workArea.width - width) / 2)),
-          y: workArea.y + 24,
+          y: workArea.y + 24
+        };
+      }
+
+      function showLinkBrowserWindow(url) {
+        const { workArea } = screen.getPrimaryDisplay();
+        const initialBounds = readLinkBrowserBounds(workArea);
+        const win = new BrowserWindow({
+          ...initialBounds,
           show: false,
           frame: true,
           resizable: true,
@@ -2849,6 +2884,50 @@ export function createElectronShellRuntime({
           const safeUrl = normalizeOpenableUrl(nextUrl);
           if (!safeUrl) event.preventDefault();
         });
+
+        // UX polish: window title reflects the live page title rather
+        // than the static "LingxY Browser" string. Falls back to the
+        // host name when the page hasn't set a title yet (or is in the
+        // middle of navigating). Keeps the "LingxY ·" prefix so the
+        // window is still recognisable as our browser in the taskbar.
+        function applyDynamicTitle() {
+          if (win.isDestroyed?.()) return;
+          let suffix = "";
+          try {
+            const pageTitle = (win.webContents.getTitle?.() ?? "").trim();
+            if (pageTitle) {
+              suffix = pageTitle;
+            } else {
+              const currentUrl = win.webContents.getURL?.() ?? "";
+              suffix = currentUrl ? new URL(currentUrl).hostname : "";
+            }
+          } catch { /* ignore */ }
+          try {
+            win.setTitle(suffix ? `LingxY · ${suffix}` : "LingxY Browser");
+          } catch { /* ignore */ }
+        }
+        win.webContents.on("page-title-updated", applyDynamicTitle);
+        win.webContents.on("did-navigate", applyDynamicTitle);
+        win.webContents.on("did-finish-load", applyDynamicTitle);
+
+        // Persist bounds whenever the user moves or resizes the window
+        // so the next open lands where they left it. Debounce the
+        // events because Electron fires "resize" / "move" repeatedly
+        // during a drag; coalescing avoids settings.json churn.
+        let persistTimer = null;
+        function schedulePersist() {
+          if (persistTimer) return;
+          persistTimer = setTimeout(() => {
+            persistTimer = null;
+            if (win.isDestroyed?.()) return;
+            try {
+              const bounds = win.getBounds();
+              persistWindowPreferences(LINK_BROWSER_PREF_ID, { bounds });
+            } catch { /* ignore */ }
+          }, 400);
+        }
+        win.on("resize", schedulePersist);
+        win.on("move", schedulePersist);
         // Show + bring-to-front only after the page is loading, so the
         // user sees a real navigation rather than a blank chrome flash.
         // The dock is the only alwaysOnTop window in the app, but it is
@@ -2865,7 +2944,10 @@ export function createElectronShellRuntime({
         };
         win.once("ready-to-show", showOnce);
         const fallbackShowTimer = setTimeout(showOnce, 8000);
-        win.on("closed", () => { clearTimeout(fallbackShowTimer); });
+        win.on("closed", () => {
+          clearTimeout(fallbackShowTimer);
+          if (persistTimer) clearTimeout(persistTimer);
+        });
         win.loadURL(url);
         return { ok: true, mode: "lingxy_browser" };
       }
