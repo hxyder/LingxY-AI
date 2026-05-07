@@ -61,6 +61,57 @@ const SCHEDULE_REGISTRY_TOOL_IDS = new Set([
 ]);
 
 const DIRECT_FILE_OPEN_TOOL_IDS = new Set(["open_file", "reveal_in_explorer"]);
+
+// B2-a (a): open_url is "interactive browse / navigate", NOT "fetch
+// page content". The LLM regularly conflated the two and emitted
+// open_url for queries like "send me the link for X" or
+// "https://example.com" alone, leaving content-fetch obligations
+// unmet. Hide open_url by default; only expose when the user
+// explicitly asked the runtime to *navigate* somewhere.
+const OPEN_URL_TOOL_ID = "open_url";
+
+const OPEN_URL_VERB_RE = /(打开|访问|进入|跳转|浏览|前往|登录到|登录上)|\bopen\b|\bvisit\b|\bnavigate\b|\bgo\s+to\b|\bload\s+(this\s+page|that\s+page|the\s+url)\b/iu;
+
+const URL_OR_DOMAIN_RE = /(https?:\/\/\S+|\b[a-z0-9-]+\.(com|org|net|io|dev|co|cn|me|app|ai)(?:\/\S*)?\b)/iu;
+
+function commandSourcesFromTask(task) {
+  const sources = [];
+  if (typeof task?.user_command === "string") sources.push(task.user_command);
+  const cp = task?.context_packet;
+  if (typeof cp?.text === "string") sources.push(cp.text);
+  if (typeof cp?.user_command === "string") sources.push(cp.user_command);
+  const spec = task?.task_spec ?? task?.task_spec_initial;
+  if (typeof spec?.user_goal_text === "string") sources.push(spec.user_goal_text);
+  return sources.filter(Boolean).join("\n");
+}
+
+function userExplicitlyAskedToOpenUrl(task) {
+  const text = commandSourcesFromTask(task);
+  if (!text) return false;
+  return URL_OR_DOMAIN_RE.test(text) && OPEN_URL_VERB_RE.test(text);
+}
+
+function taskRequiresOpenUrlExplicitly(task) {
+  const spec = task?.task_spec ?? task?.task_spec_initial;
+  if (!spec) return false;
+  if (spec.goal === "browser_control") return true;
+  const requiredTools = spec.success_contract?.required_tool_names;
+  if (Array.isArray(requiredTools) && requiredTools.includes(OPEN_URL_TOOL_ID)) {
+    return true;
+  }
+  const requiredSteps = Array.isArray(spec.required_steps) ? spec.required_steps : [];
+  return requiredSteps.includes(OPEN_URL_TOOL_ID);
+}
+
+export function shouldExposeOpenUrl(task) {
+  return userExplicitlyAskedToOpenUrl(task) || taskRequiresOpenUrlExplicitly(task);
+}
+
+function filterOpenUrl(list = [], task) {
+  if (shouldExposeOpenUrl(task)) return list;
+  return list.filter((tool) => tool?.id !== OPEN_URL_TOOL_ID);
+}
+
 const ARTIFACT_TOOL_IDS = new Set([
   "write_file",
   "generate_document",
@@ -142,9 +193,10 @@ export function filterToolsForTask(tools = [], task) {
   const insideScheduledFire = isScheduledFireTask(task);
   const stripTaskScopedTools = (list) => {
     const withoutDirectOpen = filterDirectFileOpenTools(list, task);
+    const withoutOpenUrl = filterOpenUrl(withoutDirectOpen, task);
     return insideScheduledFire
-      ? withoutDirectOpen.filter((tool) => !isScheduleRegistryTool(tool))
-      : withoutDirectOpen;
+      ? withoutOpenUrl.filter((tool) => !isScheduleRegistryTool(tool))
+      : withoutOpenUrl;
   };
 
   const capabilities = neededCapabilitiesOf(task).filter((capability) => capability !== "none");
