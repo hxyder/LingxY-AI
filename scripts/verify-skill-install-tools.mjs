@@ -383,18 +383,25 @@ function check(label, condition) {
 }
 
 // ---------------------------------------------------------------------
-// 18. (codex round-1) Install tool description warns about partial
-//     preview until #2c lands — the LLM should relay full SKILL.md
-//     to the user before approving.
+// 18. (codex round-1 → #2c land) Install tool description anchors
+//     the user-facing trust contract. The interim "partial preview"
+//     warning was removed once C18 #2c wired the SKILL.md into the
+//     approval card directly (verify-skill-install-approval-preview
+//     locks that path). The description still names the high-risk
+//     surface and the contentHash binding so the LLM can't claim
+//     the install is harmless.
 // ---------------------------------------------------------------------
 {
   const desc = INSTALL_SKILL_FROM_GITHUB_TOOL.description;
-  check("install tool desc: warns 'approval card currently shows ... NOT the full SKILL.md'",
-    desc.includes("currently shows") && desc.includes("NOT the full SKILL.md"));
-  check("install tool desc: tells LLM to relay preview to user",
-    desc.includes("show the user the full SKILL.md"));
-  check("install tool desc: notes contentHash binding",
-    desc.includes("contentHash"));
+  check("install tool desc: requires confirmation framing",
+    desc.includes("REQUIRES CONFIRMATION"));
+  check("install tool desc: names third-party prompt-context risk",
+    desc.includes("third-party")
+    && desc.includes("LLM's future prompt context"));
+  check("install tool desc: notes content hash binding",
+    desc.includes("content hash") || desc.includes("contentHash"));
+  check("install tool desc: no longer claims approval card lacks SKILL.md (post-#2c)",
+    !desc.includes("NOT the full SKILL.md"));
 }
 
 console.log(`\n${passed} pass / ${failed} fail`);

@@ -1,6 +1,12 @@
 const FILE_CONTENT_INDEX_TOOL_ID = "index_file_content";
 const FILE_TEXT_TOOLS = new Set(["read_file_text", "read_folder_text"]);
+const SKILL_INSTALL_TOOL_ID = "install_skill_from_github";
 const MAX_DEFERRED_TRANSCRIPT_ENTRIES = 20;
+// C18 #2c: cap the SKILL.md preview text shown in the approval card
+// so a malicious 100KB SKILL.md doesn't blow up the popup. The full
+// markdown is still bound by contentHash in the staging registry —
+// this is purely about rendering width.
+const APPROVAL_CARD_PREVIEW_MAX_CHARS = 4000;
 
 function normalizeFileReadTranscriptEntry(entry = {}) {
   const toolId = entry?.type === "tool_result"
@@ -57,9 +63,66 @@ function previewIndexFileContent(deferredContext = null) {
   return lines.join("\n");
 }
 
-export function buildDeferredToolContext({ tool, transcript = [] } = {}) {
+// C18 #2c: when an install_skill_from_github approval is being built,
+// look up the staging entry for the supplied state_token and pull
+// out the SKILL.md preview the user needs to read. The deferred
+// context is what buildToolApprovalPreview turns into card text.
+function buildSkillInstallDeferredContext({ runtime, args = {} } = {}) {
+  const token = String(args?.state_token ?? "").trim();
+  if (!token) return null;
+  const registry = runtime?.skillInstallState;
+  if (!registry || typeof registry.inspect !== "function") return null;
+  const info = registry.inspect(token);
+  if (!info) return null;
+  return {
+    targetIdentifier: info.targetIdentifier ?? null,
+    owner: info.owner ?? null,
+    repo: info.repo ?? null,
+    branch: info.branch ?? null,
+    subPath: info.subPath ?? null,
+    descriptor: info.descriptor ?? null,
+    previewMarkdown: info.previewMarkdown ?? "",
+    previewSizeBytes: info.previewSizeBytes ?? 0,
+    contentHash: info.contentHash ?? null
+  };
+}
+
+function previewSkillInstall(deferredContext = null) {
+  if (!deferredContext) {
+    return "Install skill from GitHub\nstate_token expired or unknown — call preview_skill_from_github first.";
+  }
+  const lines = [];
+  lines.push("⚠️ Install third-party skill — its SKILL.md becomes part of the LLM's future prompt context.");
+  lines.push("");
+  lines.push(`Source: ${deferredContext.targetIdentifier ?? `${deferredContext.owner}/${deferredContext.repo}`}`);
+  if (deferredContext.descriptor?.heading) {
+    lines.push(`Heading: ${deferredContext.descriptor.heading}`);
+  }
+  if (deferredContext.descriptor?.description) {
+    lines.push(`Description: ${deferredContext.descriptor.description}`);
+  }
+  if (deferredContext.contentHash) {
+    lines.push(`Content hash: ${deferredContext.contentHash} (${deferredContext.previewSizeBytes} bytes)`);
+  }
+  lines.push("");
+  lines.push("--- SKILL.md ---");
+  const md = String(deferredContext.previewMarkdown ?? "");
+  if (md.length > APPROVAL_CARD_PREVIEW_MAX_CHARS) {
+    lines.push(md.slice(0, APPROVAL_CARD_PREVIEW_MAX_CHARS));
+    lines.push("");
+    lines.push(`[…truncated; ${md.length - APPROVAL_CARD_PREVIEW_MAX_CHARS} more chars in staging. Full bytes are bound to the approval token via contentHash.]`);
+  } else {
+    lines.push(md);
+  }
+  return lines.join("\n");
+}
+
+export function buildDeferredToolContext({ tool, transcript = [], runtime, args } = {}) {
   if (tool?.id === FILE_CONTENT_INDEX_TOOL_ID) {
     return buildIndexFileContentDeferredContext(transcript);
+  }
+  if (tool?.id === SKILL_INSTALL_TOOL_ID) {
+    return buildSkillInstallDeferredContext({ runtime, args });
   }
   return null;
 }
@@ -67,6 +130,9 @@ export function buildDeferredToolContext({ tool, transcript = [] } = {}) {
 export function buildToolApprovalPreview(tool, args = {}, { deferredContext = null } = {}) {
   if (tool?.id === FILE_CONTENT_INDEX_TOOL_ID) {
     return previewIndexFileContent(deferredContext);
+  }
+  if (tool?.id === SKILL_INSTALL_TOOL_ID) {
+    return previewSkillInstall(deferredContext);
   }
   if (tool?.id === "account_send_email" || tool?.id === "send_email_smtp") {
     const to = Array.isArray(args.to) ? args.to.join(", ") : String(args.to ?? "");

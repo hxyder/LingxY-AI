@@ -69,7 +69,11 @@ export function resolveScheduledSideEffectAuthorization({ task, tool }) {
 }
 
 export function createPendingToolApproval({ runtime, task, tool, args, risk, transcript = [] }) {
-  const deferredToolContext = buildDeferredToolContext({ tool, args, task, transcript });
+  // C18 #2c: pass runtime + args into buildDeferredToolContext so
+  // install_skill_from_github can pull the staged SKILL.md preview
+  // out of runtime.skillInstallState.inspect(state_token) and
+  // surface it via previewText. Other tools ignore the new params.
+  const deferredToolContext = buildDeferredToolContext({ tool, args, task, transcript, runtime });
   const approval = runtime.pendingApprovals.create({
     sourceType: "agent_tool_call",
     sourceId: task.task_id,
