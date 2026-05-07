@@ -155,11 +155,26 @@ export function classifyToolFailure({ error = "", observation = "", toolId = "" 
   return { kind: "other" };
 }
 
+// Recognise USER-DELIBERATE blocks that come through the security
+// broker's authorizeToolCall (broker.mjs:159-178). These land in the
+// transcript as `tool_denied` entries with a known reason string.
+// The fix is qualitatively different from a network failure — the
+// user has to toggle a Console → Privacy switch back, not reconnect.
+const DENIAL_REASON_TO_KIND = {
+  offline_mode_blocks_network_tool: "offline_mode_blocks",
+  kill_switch_enabled: "kill_switch_enabled"
+};
+
 /**
- * Pull the first network-class tool failure out of a transcript and
- * classify it. Returns null when no such failure exists. Caller
- * decides whether to prepend the classified message to user-visible
- * final_text.
+ * Pull the first network-blocker out of a transcript and classify it.
+ * Recognises:
+ *   - tool_denied entries from the security broker (offline_mode /
+ *     kill_switch — USER-DELIBERATE blocks).
+ *   - tool_result / tool_call_completed entries with success=false on
+ *     a network-class tool (transient failures → classifyToolFailure).
+ *
+ * Returns null when no recognised blocker exists. Caller decides
+ * whether to prepend the classified message to user-visible final_text.
  *
  * @param {Array} transcript
  * @returns {{ kind: string, toolId: string, error: string, observation: string } | null}
@@ -167,6 +182,20 @@ export function classifyToolFailure({ error = "", observation = "", toolId = "" 
 export function detectNetworkFailureInTranscript(transcript = []) {
   for (const entry of transcript ?? []) {
     if (!entry) continue;
+    // tool_denied: user-deliberate block via broker.authorizeToolCall.
+    if (entry.type === "tool_denied" && typeof entry.reason === "string") {
+      const denialKind = DENIAL_REASON_TO_KIND[entry.reason];
+      if (denialKind) {
+        return {
+          kind: denialKind,
+          toolId: entry.tool ?? "",
+          error: "",
+          observation: ""
+        };
+      }
+      continue;
+    }
+    // tool_result / tool_call_completed: real failures → classify.
     if (entry.success === true) continue;
     if (entry.type !== "tool_result" && entry.type !== "tool_call_completed") continue;
     if (!isNetworkClassTool(entry.tool)) continue;
@@ -220,6 +249,16 @@ export function formatFailureMessage(failure) {
       return {
         zh: `这一步达到了 provider 的速率限制${tool}。请稍等片刻或检查配额额度后重试。`,
         en: `This step hit a provider rate limit${tool}. Wait a moment or check your quota, then retry.`
+      };
+    case "offline_mode_blocks":
+      return {
+        zh: `这一步需要联网${tool}，但你已在 Console → Privacy 启用了离线模式。关闭离线模式后即可使用网络工具。`,
+        en: `This step needs the network${tool}, but Offline Mode is enabled in Console → Privacy. Disable it to use network tools.`
+      };
+    case "kill_switch_enabled":
+      return {
+        zh: `全局停止开关已启用，所有联网工具都被冻结${tool}。请在 Console → Privacy 解除全局停止后重试。`,
+        en: `The global kill switch is enabled — all network tools are frozen${tool}. Disable it in Console → Privacy and retry.`
       };
     default:
       return null;

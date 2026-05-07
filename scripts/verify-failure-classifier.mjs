@@ -224,8 +224,79 @@ function check(label, condition) {
 }
 
 {
+  const msg = formatFailureMessage({ kind: "offline_mode_blocks", toolId: "fetch_url_content" });
+  check("offline_mode_blocks: zh mentions '离线模式'", msg.zh.includes("离线模式"));
+  check("offline_mode_blocks: en mentions 'Offline Mode'", msg.en.includes("Offline Mode"));
+  check("offline_mode_blocks: zh hints at Console → Privacy",
+    msg.zh.includes("Console → Privacy"));
+}
+
+{
+  const msg = formatFailureMessage({ kind: "kill_switch_enabled", toolId: "" });
+  check("kill_switch_enabled: zh mentions '全局停止'", msg.zh.includes("全局停止"));
+  check("kill_switch_enabled: en mentions 'kill switch'", /kill switch/i.test(msg.en));
+}
+
+{
   const msg = formatFailureMessage({ kind: "other" });
   check("other: returns null (caller composes generic message)", msg === null);
+}
+
+// ---------------------------------------------------------------------
+// 5b. detectNetworkFailureInTranscript also classifies tool_denied
+//     entries that come from the security broker (offline_mode toggle
+//     and global kill switch — USER-DELIBERATE blocks). The fix is
+//     "toggle off the setting", not "reconnect network", so the
+//     message must be different from a network_unreachable.
+// ---------------------------------------------------------------------
+{
+  const transcript = [
+    {
+      type: "tool_denied",
+      tool: "fetch_url_content",
+      reason: "offline_mode_blocks_network_tool"
+    }
+  ];
+  const detected = detectNetworkFailureInTranscript(transcript);
+  check("tool_denied: offline_mode_blocks_network_tool → kind=offline_mode_blocks",
+    detected?.kind === "offline_mode_blocks");
+  check("tool_denied: carries the toolId", detected?.toolId === "fetch_url_content");
+}
+
+{
+  const transcript = [
+    {
+      type: "tool_denied",
+      tool: "web_search_fetch",
+      reason: "kill_switch_enabled"
+    }
+  ];
+  const detected = detectNetworkFailureInTranscript(transcript);
+  check("tool_denied: kill_switch_enabled → kind=kill_switch_enabled",
+    detected?.kind === "kill_switch_enabled");
+}
+
+{
+  // Unknown denial reason (e.g. user_denied from approval card) — must
+  // not classify as a network blocker. user_denied is a different flow.
+  const transcript = [
+    { type: "tool_denied", tool: "account_send_email", reason: "user_denied" }
+  ];
+  check("tool_denied: unknown reason (user_denied) → null",
+    detectNetworkFailureInTranscript(transcript) === null);
+}
+
+{
+  // tool_denied appears BEFORE a tool_result network failure. The
+  // denied entry should win because it's the reason the task didn't
+  // proceed in the first place.
+  const transcript = [
+    { type: "tool_denied", tool: "fetch_url_content", reason: "offline_mode_blocks_network_tool" },
+    { type: "tool_result", tool: "fetch_url_content", success: false, error: "ENOTFOUND" }
+  ];
+  const detected = detectNetworkFailureInTranscript(transcript);
+  check("ordering: tool_denied before tool_result → tool_denied wins",
+    detected?.kind === "offline_mode_blocks");
 }
 
 // ---------------------------------------------------------------------
@@ -360,6 +431,31 @@ function check(label, condition) {
   const detected = detectNetworkFailureInTranscript(transcript);
   check("integration: web_search_fetch entry.error → provider_missing",
     detected?.kind === "provider_missing");
+}
+
+// ---------------------------------------------------------------------
+// 6c. E2E via localFallbackFinal for the user-deliberate block paths.
+//     User toggled offline mode → final_text says "你已启用离线模式";
+//     user toggled kill switch → final_text says "全局停止开关".
+// ---------------------------------------------------------------------
+{
+  const task = { user_command: "搜索最新论文", task_spec: {} };
+  const transcript = [
+    { type: "tool_denied", tool: "fetch_url_content", reason: "offline_mode_blocks_network_tool" }
+  ];
+  const final = localFallbackFinal({ task, transcript });
+  check("e2e/zh: offline_mode_blocks message rendered",
+    final.includes("离线模式") && final.includes("Console → Privacy"));
+}
+
+{
+  const task = { user_command: "send email", task_spec: {} };
+  const transcript = [
+    { type: "tool_denied", tool: "account_send_email", reason: "kill_switch_enabled" }
+  ];
+  const final = localFallbackFinal({ task, transcript });
+  check("e2e/en: kill_switch_enabled message rendered",
+    /kill switch/i.test(final) && /Console.+Privacy/.test(final));
 }
 
 // ---------------------------------------------------------------------
