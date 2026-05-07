@@ -14,7 +14,15 @@
  * The schedule.metadata.naming_audit must record the unselected
  * candidates so drift is debuggable post-hoc.
  *
- * The schedule.name is *frozen* at create time; never re-derived.
+ * Frozen-name invariant scope (codex round-1 narrowed):
+ *   - schedule.name is set once via pickScheduleName() at createSchedule
+ *     time and never *re-derived* afterwards.
+ *   - rescheduleSchedule() and other scheduler-engine methods MUST NOT
+ *     touch schedule.name.
+ *   - **Out of scope**: explicit user rename via
+ *     `PATCH /schedule/{id} { name }` in scheduler-template-routes.mjs
+ *     IS allowed. That path is intentional UI-driven editing and is
+ *     guarded separately by the desktop_actor gate.
  */
 
 import { createSchedulerRuntime } from "../src/service/scheduler/engine.mjs";

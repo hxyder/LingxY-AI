@@ -263,6 +263,7 @@
       "scripts/active-window-probe.ps1",
       "scripts/render-document.ps1",
       "scripts/ocr-image.ps1",
+      "scripts/setup-office-addins.ps1",
       "scripts/app_launcher/**/*",
       "!scripts/app_launcher/__pycache__/**"
     ],
@@ -299,6 +300,7 @@
           "active-window-probe.ps1",
           "render-document.ps1",
           "ocr-image.ps1",
+          "setup-office-addins.ps1",
           "app_launcher/**/*",
           "!app_launcher/__pycache__/**"
         ]
