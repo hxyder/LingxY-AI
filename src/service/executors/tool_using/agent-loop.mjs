@@ -1401,7 +1401,22 @@ async function _runToolAgentLoopCore({
       const fallbackDecision = synthesiseDeterministicActionFallback({
         task, transcript, allowed
       });
-      if (fallbackDecision) {
+      // Codex review: even though synthesiseDeterministicActionFallback
+      // already gates on preauthorization + group + recipients, double-
+      // check at the execution boundary so a future change to authorization
+      // semantics cannot accidentally bypass the invariant. The selected
+      // tool MUST be in the still-allowed action_only set, AND the task
+      // MUST still carry a preauthorized side_effect_authorization for the
+      // same group.
+      const fallbackInvariantOk = (() => {
+        if (!fallbackDecision) return false;
+        const auth = task?.context_packet?.selection_metadata?.side_effect_authorization;
+        if (auth?.decision !== "preauthorized") return false;
+        if (!Array.isArray(auth?.groups) || !auth.groups.includes("email_send")) return false;
+        if (!actionOnlyAllowedTools.has(fallbackDecision.tool)) return false;
+        return true;
+      })();
+      if (fallbackDecision && fallbackInvariantOk) {
         transcript.push({
           type: "deterministic_action_fallback",
           tool: fallbackDecision.tool,

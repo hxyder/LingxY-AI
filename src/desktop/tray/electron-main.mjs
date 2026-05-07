@@ -2853,9 +2853,19 @@ export function createElectronShellRuntime({
         // user sees a real navigation rather than a blank chrome flash.
         // The dock is the only alwaysOnTop window in the app, but it is
         // tiny (48x48) so the link browser still dominates the viewport.
-        win.once("ready-to-show", () => {
+        // Codex review: ready-to-show is not guaranteed to fire on every
+        // load (paintWhenInitiallyHidden quirks, slow remote resources).
+        // Belt-and-braces with an 8 s fallback timer so the window is
+        // never left invisible without recourse.
+        let shownOnce = false;
+        const showOnce = () => {
+          if (shownOnce) return;
+          shownOnce = true;
           try { win.show(); win.focus(); } catch { /* ignore */ }
-        });
+        };
+        win.once("ready-to-show", showOnce);
+        const fallbackShowTimer = setTimeout(showOnce, 8000);
+        win.on("closed", () => { clearTimeout(fallbackShowTimer); });
         win.loadURL(url);
         return { ok: true, mode: "lingxy_browser" };
       }
