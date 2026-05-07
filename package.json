@@ -46,6 +46,7 @@
     "verify:artifact-recovery-hook": "node scripts/verify-artifact-recovery-hook.mjs",
     "verify:network-task-allowance": "node scripts/verify-network-task-allowance.mjs",
     "verify:failure-classifier": "node scripts/verify-failure-classifier.mjs",
+    "verify:token-visibility": "node scripts/verify-token-visibility.mjs",
     "verify:research-quality": "node scripts/verify-research-quality.mjs",
     "verify:research-quality-e2e": "node scripts/verify-research-quality-e2e.mjs",
     "verify:explicit-no-search": "node scripts/verify-explicit-no-search.mjs",

@@ -116,7 +116,8 @@ import {
   renderCapabilityToolViewHtml
 } from "./capability-tool-view.mjs";
 import {
-  renderTaskKvGrid
+  renderTaskKvGrid,
+  describeTaskTokens
 } from "./console-task-detail.mjs";
 import {
   createConsoleTaskEventController
@@ -5227,7 +5228,12 @@ function renderTaskDetail(detail) {
   const transport = providerDescriptor?.transport ?? "—";
   const source = task.context_packet?.source_type ?? task.source_app ?? "—";
   const duration = task.elapsed_ms ? `${(task.elapsed_ms / 1000).toFixed(1)}s` : "—";
-  const tokensUsed = task.tokens_used ?? task.usage?.total_tokens ?? null;
+  // C17: tokens replace cost as the primary usage signal in the KV
+  // grid below. describeTaskTokens returns "<total> (<in> in / <out>
+  // out)" when the breakdown is available, "<total>" when only the
+  // total is known, and null when no usage data is available (so the
+  // KV grid omits the cell rather than displaying a misleading 0).
+  const tokensDisplay = describeTaskTokens(task);
   const canRetry = !!task.retryable;
   const canCancel = ["queued", "running", "cancelling"].includes(task.status);
   // UCA-125 Phase 2b: action buttons live INSIDE the hero now (v3 style)
@@ -5262,8 +5268,7 @@ function renderTaskDetail(detail) {
         ${task.retry_count ? `<span>Retry ${escapeHtml(task.retry_count)}</span>` : ""}
         ${parentLink}
       </div>
-      ${renderTaskKvGrid({ provider, model, executor: task.executor, source, retry: task.retry_count, cost: task.cost_usd, duration, transport }, { formatMoney })}
-      ${tokensUsed ? `<div class="muted" style="font-size:11px;margin-top:10px;font-family:var(--font-mono);">tokens: ${escapeHtml(tokensUsed)}</div>` : ""}
+      ${renderTaskKvGrid({ provider, model, executor: task.executor, source, retry: task.retry_count, tokens: tokensDisplay, duration, transport })}
       ${heroActions}
     </div>
     ${renderDowngradedWarning(downgraded)}
@@ -6056,11 +6061,20 @@ function renderDagExecutions() {
 
 function renderBudget() {
   const b = state.workspace.budget ?? { limits: {}, spent: {} };
+  // C17: tokens are the primary usage signal (R: "cost 不准 → 改 token").
+  // Tokens used this month sit at the top of the panel; USD limits
+  // remain because the user explicitly sets them as a cap, but
+  // monetary `this_month_usd` is dropped — it's the inaccurate
+  // figure the user complained about.
+  const tokensIn = Number(b.spent?.this_month_tokens_in ?? 0);
+  const tokensOut = Number(b.spent?.this_month_tokens_out ?? 0);
+  const tokensTotal = tokensIn + tokensOut;
+  const formatTokens = (n) => Number(n).toLocaleString("en-US");
   const entries = [
+    ["Tokens (this month)", formatTokens(tokensTotal)],
+    ["↳ in / out", `${formatTokens(tokensIn)} / ${formatTokens(tokensOut)}`],
     ["Monthly Limit", formatMoney(b.limits?.monthly_usd_limit ?? 0)],
-    ["Per Task", formatMoney(b.limits?.per_task_usd_limit ?? 0)],
-    ["This Month", formatMoney(b.spent?.this_month_usd ?? 0)],
-    ["Tokens In", `${b.spent?.this_month_tokens_in ?? 0}`]
+    ["Per Task Limit", formatMoney(b.limits?.per_task_usd_limit ?? 0)]
   ];
   budgetSummary.innerHTML = entries.map(([l, v]) => `
     <div class="summary-tile"><span class="muted" style="font-size:11px;">${escapeHtml(l)}</span><strong>${escapeHtml(v)}</strong></div>
