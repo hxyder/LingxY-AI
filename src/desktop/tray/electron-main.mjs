@@ -2815,7 +2815,7 @@ export function createElectronShellRuntime({
       // intent: "open my reading panel where I left it".)
       const LINK_BROWSER_PREF_ID = "link_browser";
 
-      function readLinkBrowserBounds(workArea) {
+      function readLinkBrowserBounds() {
         const prefs = settingsCache?.windowPreferences?.[LINK_BROWSER_PREF_ID] ?? {};
         const persisted = prefs.bounds;
         if (
@@ -2827,15 +2827,28 @@ export function createElectronShellRuntime({
           && persisted.width >= 480
           && persisted.height >= 360
         ) {
-          // Clamp into the current display so a remembered position from
-          // an unplugged monitor doesn't put the window off-screen.
+          // Codex round-1: pick the display nearest the persisted bounds
+          // (multi-monitor); only fall back to primary if matching fails.
+          // First clamp size to the target work area, THEN clamp x/y so
+          // the WHOLE window fits — the previous "200x150 visible" rule
+          // could leave the window mostly off-screen.
+          const targetDisplay = screen.getDisplayMatching?.({
+            x: persisted.x,
+            y: persisted.y,
+            width: persisted.width,
+            height: persisted.height
+          }) ?? screen.getPrimaryDisplay();
+          const wa = targetDisplay.workArea;
+          const width = Math.min(persisted.width, wa.width);
+          const height = Math.min(persisted.height, wa.height);
           return {
-            x: Math.max(workArea.x, Math.min(persisted.x, workArea.x + workArea.width - 200)),
-            y: Math.max(workArea.y, Math.min(persisted.y, workArea.y + workArea.height - 150)),
-            width: Math.min(persisted.width, workArea.width),
-            height: Math.min(persisted.height, workArea.height)
+            width,
+            height,
+            x: Math.max(wa.x, Math.min(persisted.x, wa.x + wa.width - width)),
+            y: Math.max(wa.y, Math.min(persisted.y, wa.y + wa.height - height))
           };
         }
+        const { workArea } = screen.getPrimaryDisplay();
         const width = Math.max(920, Math.min(Math.round(workArea.width * 0.58), 1280));
         const height = Math.max(620, Math.min(workArea.height - 48, 900));
         return {
@@ -2847,8 +2860,7 @@ export function createElectronShellRuntime({
       }
 
       function showLinkBrowserWindow(url) {
-        const { workArea } = screen.getPrimaryDisplay();
-        const initialBounds = readLinkBrowserBounds(workArea);
+        const initialBounds = readLinkBrowserBounds();
         const win = new BrowserWindow({
           ...initialBounds,
           show: false,
@@ -2911,12 +2923,25 @@ export function createElectronShellRuntime({
         win.webContents.on("did-finish-load", applyDynamicTitle);
 
         // Persist bounds whenever the user moves or resizes the window
-        // so the next open lands where they left it. Debounce the
-        // events because Electron fires "resize" / "move" repeatedly
-        // during a drag; coalescing avoids settings.json churn.
+        // so the next open lands where they left it. True trailing-edge
+        // debounce: every resize/move event RESETS the timer so only
+        // the final bounds get written. Codex round-1 caught the
+        // earlier `if (persistTimer) return` shape — that was a
+        // leading-edge throttle which dropped the user's final position
+        // when they closed the window before the throttle period
+        // elapsed.
         let persistTimer = null;
+        function flushPersistNow() {
+          if (persistTimer) clearTimeout(persistTimer);
+          persistTimer = null;
+          if (win.isDestroyed?.()) return;
+          try {
+            const bounds = win.getBounds();
+            persistWindowPreferences(LINK_BROWSER_PREF_ID, { bounds });
+          } catch { /* ignore */ }
+        }
         function schedulePersist() {
-          if (persistTimer) return;
+          if (persistTimer) clearTimeout(persistTimer);
           persistTimer = setTimeout(() => {
             persistTimer = null;
             if (win.isDestroyed?.()) return;
@@ -2928,6 +2953,11 @@ export function createElectronShellRuntime({
         }
         win.on("resize", schedulePersist);
         win.on("move", schedulePersist);
+        // `close` fires synchronously *before* the window is destroyed
+        // so getBounds() still works; `closed` fires after destroy.
+        // Flush any pending bounds write here so a fast close after a
+        // drag doesn't lose the final position.
+        win.on("close", flushPersistNow);
         // Show + bring-to-front only after the page is loading, so the
         // user sees a real navigation rather than a blank chrome flash.
         // The dock is the only alwaysOnTop window in the app, but it is
