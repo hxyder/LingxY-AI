@@ -330,7 +330,7 @@ verify-github-readiness / verify-issue-templates / verify-pr-template / verify-s
 | ID | 任务 | 状态 | 等级 | ETA |
 |----|------|------|------|-----|
 | 109-RUN | 109-prompt corpus 跑完 + 失败聚类 | DONE（94/109） | - | ✓ |
-| RC-1 | 开源前内容剥离 audit | REVIEW（待 codex C） | R-CODE | 2h |
+| RC-1 | 开源前内容剥离 audit | **PARTIAL-PENDING（待用户 A 决定 git-history 处置）** | R-CODE | 2h+ |
 | A1 | 裁 Chromium locales | TODO | R-CODE | 30m |
 | A3-α | app.asar files + extraResources 双收紧 | TODO | R-CODE | 1h |
 | A3-β | mermaid CDN 化 | TODO | R-CODE | 1h |
@@ -660,7 +660,14 @@ verify-github-readiness / verify-issue-templates / verify-pr-template / verify-s
   - round 2 修：上述 3 文件全部替换为 `user@gmail.com` / `user@outlook.com` 通用占位；24/24 + 23/23 verifier 仍 PASS
   - **codex round-2 反驳**：UPGRADE_PLAN.md 自身的审计日志把刚 redact 的真邮箱字面量又写回来了（"audit log leaks the secret it's scrubbing"）→ round 3 修：本节用 "用户 A / 用户 B / 维护者邮箱" 等代号，不写字面量
   - **公开维护者邮箱（by-design 暴露）**：维护者邮箱在 `package.json` author / `SECURITY.md` / `CONTRIBUTING.md` / `CODE_OF_CONDUCT.md` / `docs/public/privacy.html` / `docs/public/terms.html` / `docs/release/github_release_checklist.md` 仍存在，**这是用户主动选择的 OSS 公共维护者联系方式**，由 `verify-public-branding.mjs:11 CONTACT_EMAIL` / `verify-code-of-conduct.mjs:46` / `verify-security-policy.mjs:28` enforce。**不动**。如用户希望换用 project-specific email（如 `lingxy-noreply@example.dev`），需用户单独决定后改 verifier + 文件
-  - **git 历史残留问题（待用户 A 决定）**：commit 8ef96a3 / 41a7e2e 的 diff 本身在 git 历史中保留了真邮箱字面量（diff 同时含 old + new）。要彻底清掉需 `git filter-repo --replace-text`，affecting clone history. 列入"上线前 user A 单独决定"项；不在 RC-1 默认范围。**最低底线**：若上线后再被发现，按 plan §1 RC-1 第 2 类的"底线例外条款"做 history purge + rotate
+  - **git 历史残留问题 — codex round-3 升级为 launch-blocker（待用户 A 决定）**：
+    - commit 8ef96a3 / 41a7e2e / 历史更早的添加 commit 都包含真邮箱字面量（diff 含 -/+，blob 含原文）
+    - codex 的判断：「if launch publishes full history with these blobs, RC-1 is PARTIAL — do not mark DONE」
+    - **决策矩阵（待用户 A 选）**：
+      - **A. `git filter-repo --replace-text`**（推荐）：surgical 替换 3 个 PII 字符串到全历史 blob；保留 commit 拓扑；所有受影响 commit 重新算 SHA。脚本：`echo "user-a@example.com==>user-a@example.com" > ../redact.txt && git filter-repo --replace-text ../redact.txt`（同理对其它两个邮箱）。约 5 min 执行，30 min 验证。
+      - **B. squash 到 clean root + 重新写 history**：彻底但失去 commit narrative（mutation guard sweep 22 刀的提交故事）；不推荐。
+      - **C. 接受历史泄露**：push 时不动；用户的真邮箱在 diff 里可被 grep。**对 hxy94045 不痛**（已在 package.json 公开）；**对 hanxy308 / sophieliang1998 真痛**（OSS 用户的旁观者邮箱）。
+    - **建议**：A 路径，作为 RC-1 收尾的最后一刀。若用户暂不决定，A1/A3-α/B1/B3/B4 可以先跑（不阻塞），但 push public 之前 RC-1 必须 ACCEPT。
   - `assets/brand-source/lingxy-icon-source.png` 已落位等 B5 用
 - 用户已确认 multi-agent 方向走 design.md，但**不在本周末范围**
 - 用户 2026-05-07 强制提醒「不打补丁 / 不针对特定提问」 → 已写入文档头 + RACI 表 11.1
