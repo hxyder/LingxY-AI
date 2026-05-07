@@ -454,6 +454,56 @@ function makeSuccessResult(finalText, transcript = []) {
 }
 
 // ----------------------------------------------------------------------
+// 8b. Recovery does NOT fire when LLM already tried generate_document
+//     and failed (validation error OR wrong kind). This is the
+//     2026-05-08 regression fix — recovery is for D-class
+//     missing_artifact (LLM never called the tool), NOT for hide-
+//     LLM-mistakes cases. agent-loop-sequencing.test asserts the
+//     partial_success path stays visible to the user.
+// ----------------------------------------------------------------------
+{
+  const runtime = createStubRuntime();
+  const task = makeArtifactRequiredTask({ kind: "docx" });
+  // Two prior generate_document validation_errors in the transcript.
+  const transcript = [
+    { type: "validation_error", tool: "generate_document", error: "kind missing" },
+    { type: "validation_error", tool: "generate_document", error: "outline missing" }
+  ];
+  const result = makeSuccessResult("Doc body in plaintext.", transcript);
+  const out = await finaliseWithArtifactContract(result, { runtime, task });
+  check(
+    "LLM already tried (validation_error in transcript): recovery skipped",
+    out.status === "partial_success"
+      && out.artifact_recovery?.applied === false
+      && out.artifact_recovery?.reason === "llm_already_attempted_artifact"
+  );
+}
+
+{
+  // LLM successfully called generate_document but with wrong KIND.
+  const runtime = createStubRuntime();
+  const task = makeArtifactRequiredTask({ kind: "docx" });
+  const transcript = [
+    {
+      type: "tool_result",
+      tool: "generate_document",
+      success: true,
+      observation: "(test) generated pdf",
+      metadata: { kind: "pdf", path: "/tmp/wrong.pdf" },
+      artifact_paths: ["/tmp/wrong.pdf"]
+    }
+  ];
+  const result = makeSuccessResult("A PDF was generated.", transcript);
+  const out = await finaliseWithArtifactContract(result, { runtime, task });
+  check(
+    "LLM tried with wrong kind: recovery skipped (user sees the kind-mismatch failure)",
+    out.status === "partial_success"
+      && out.artifact_recovery?.applied === false
+      && out.artifact_recovery?.reason === "llm_already_attempted_artifact"
+  );
+}
+
+// ----------------------------------------------------------------------
 // 9. Status != success → finaliser passes through unchanged (don't
 //    spawn recovery on failed runs).
 // ----------------------------------------------------------------------

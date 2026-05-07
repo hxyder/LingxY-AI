@@ -759,6 +759,23 @@ export async function attemptArtifactRecovery({ runtime, task, result, transcrip
   if (!finalText) {
     return { ok: false, reason: "no_final_text" };
   }
+  // 2026-05-08 regression fix: recovery is for D-class
+  // missing_artifact ("LLM produced final_text but never called
+  // generate_document at all"), NOT for LLM-tried-and-failed cases.
+  // If the transcript already has a generate_document attempt
+  // (success OR failed validation OR wrong kind), the LLM had its
+  // chance and the user should see the explicit failure. Silent
+  // recovery in those cases masks real LLM mistakes from the user.
+  const transcriptList = Array.isArray(transcript) ? transcript : [];
+  const llmAlreadyTriedArtifact = transcriptList.some((entry) => {
+    if (!entry) return false;
+    if (entry.tool === "generate_document") return true;
+    if (entry.type === "validation_error" && entry.tool === "generate_document") return true;
+    return false;
+  });
+  if (llmAlreadyTriedArtifact) {
+    return { ok: false, reason: "llm_already_attempted_artifact" };
+  }
   const visibleIds = registry.list().map((tool) => tool?.id);
   if (!visibleIds.includes("generate_document")) {
     return { ok: false, reason: "no_generate_document" };
