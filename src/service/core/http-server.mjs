@@ -5,6 +5,7 @@ import { tryHandleAudioRoute } from "./http-routes/audio-routes.mjs";
 import { tryHandleBrowserContextRoute } from "./http-routes/browser-context-routes.mjs";
 import { tryHandleConnectorRoute } from "./http-routes/connector-routes.mjs";
 import { tryHandleConfigProviderRoute } from "./http-routes/config-provider-routes.mjs";
+import { tryHandleSearchRoute } from "./http-routes/search-routes.mjs";
 import { tryHandleMcpInstallRoute } from "./http-routes/mcp-install-routes.mjs";
 import { tryHandleNoteProjectConversationRoute } from "./http-routes/note-project-conversation-routes.mjs";
 import { tryHandleOfficeRoute } from "./http-routes/office-routes.mjs";
@@ -94,6 +95,10 @@ export function createServiceHttpServer({ runtime, paths, port = 0, host = "127.
     {
       name: "connector",
       handle: tryHandleConnectorRoute
+    },
+    {
+      name: "search",
+      handle: tryHandleSearchRoute
     }
   ];
 

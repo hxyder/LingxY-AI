@@ -608,6 +608,10 @@ export function createSqliteStore({ dbPath }) {
 
   return {
     dbPath,
+    // Underlying handle for cross-cutting features (search index, diagnostics)
+    // that need to add their own virtual tables / triggers. Exposed
+    // intentionally — the store still owns lifecycle (close()).
+    db,
     close() {
       db.close();
     },

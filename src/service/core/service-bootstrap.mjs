@@ -1,5 +1,6 @@
 import { sanitizeProviderConfig, sanitizeTaskRouteForProvider } from "../../shared/provider-catalog.mjs";
 import { buildStoreManifest } from "./store/sqlite-schema.mjs";
+import { createSearchIndex, rebuildSearchIndex } from "./store/search-index.mjs";
 import { createInMemoryStoreScaffold } from "./store/memory-store.mjs";
 import { createEventBusScaffold } from "./events/event-bus.mjs";
 import { createTaskQueueScaffold } from "./queue/task-queue.mjs";
@@ -104,6 +105,9 @@ export function createServiceBootstrap({
       queue
     })
   };
+  runtime.searchIndex = storeAdapter?.db
+    ? createSearchIndex(storeAdapter.db)
+    : null;
   runtime.securityBroker = createSecurityBroker({
     runtime,
     config: securityConfig
@@ -226,6 +230,17 @@ export function createServiceBootstrap({
   } catch { /* location is advisory; never block service startup */ }
   runtime.emailMonitor = createEmailMonitor({ runtime });
   runtime.emailMonitor.start();
+  // Search index warm-up: rebuild on every boot so user-edited notes /
+  // tasks / conversations stay in sync with the FTS table even if a
+  // previous run was killed mid-mutation. Cost is O(records) and runs
+  // once at startup; for typical user volumes this is sub-100 ms.
+  if (runtime.searchIndex) {
+    try { rebuildSearchIndex({ index: runtime.searchIndex, runtime }); }
+    catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`[search-index] rebuild failed at startup: ${err?.message ?? err}`);
+    }
+  }
   runtime.persistSecurityConfig = (patch) => {
     const security = runtime.securityBroker.setConfig(patch);
     runtime.configStore?.patch({

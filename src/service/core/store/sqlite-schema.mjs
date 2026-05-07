@@ -174,6 +174,21 @@ export const SQLITE_SCHEMA_SQL = Object.freeze({
   migration_id TEXT PRIMARY KEY,
   applied_at TEXT NOT NULL,
   notes TEXT
+);`,
+  // Cross-source search index. CJK queries below 3 chars do not work with
+  // FTS5's `trigram` tokenizer, so we tokenize via `unicode61` and pre-split
+  // CJK characters with spaces in the indexer (each Han / kana / katakana
+  // codepoint becomes its own token). 2-char Chinese keywords like "讨论"
+  // therefore match. Original title/body are not stored here — the indexer
+  // looks them up from the source store at result-render time.
+  unifiedSearchIndex: `CREATE VIRTUAL TABLE IF NOT EXISTS unified_search_index USING fts5(
+  title,
+  body,
+  source_type UNINDEXED,
+  source_id UNINDEXED,
+  updated_at UNINDEXED,
+  deleted_at UNINDEXED,
+  tokenize='unicode61'
 );`
 });
 

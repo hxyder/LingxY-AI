@@ -20,6 +20,11 @@ import {
   attachProjectFiles,
   removeProjectFileIndex
 } from "../project-file-attachments.mjs";
+import {
+  indexNote,
+  reindexNotesArray,
+  unindexNote
+} from "../store/search-index.mjs";
 
 const NOTES_EDITOR_ACTORS = ["desktop_console"];
 const NOTES_CHIP_ACTORS = ["desktop_console", "desktop_overlay"];
@@ -68,6 +73,7 @@ export async function tryHandleNoteProjectConversationRoute({
     }
     const body = await readJsonBody(request);
     const notes = runtime.notesStore.saveNotes(body.notes ?? []);
+    reindexNotesArray(runtime, notes);
     sendJson(response, 200, { notes });
     return true;
   }
@@ -80,6 +86,7 @@ export async function tryHandleNoteProjectConversationRoute({
     }
     const body = await readJsonBody(request);
     const note = runtime.notesStore.upsertNote(body.note ?? body);
+    indexNote(runtime, note);
     sendJson(response, 200, { note });
     return true;
   }
@@ -93,6 +100,12 @@ export async function tryHandleNoteProjectConversationRoute({
     }
     const body = await readJsonBody(request);
     const note = runtime.notesStore.deleteNote(body.id ?? "", { actor });
+    if (note) {
+      // Soft delete: re-upsert so the index records the deleted_at timestamp
+      // and the default search hides it. Hard delete removes the entry.
+      if (note.deleted_at) indexNote(runtime, note);
+      else unindexNote(runtime, body.id ?? "");
+    }
     sendJson(response, 200, { ok: Boolean(note), note });
     return true;
   }
@@ -106,6 +119,7 @@ export async function tryHandleNoteProjectConversationRoute({
     }
     const body = await readJsonBody(request);
     const note = runtime.notesStore.restoreNote(body.id ?? "", { actor });
+    indexNote(runtime, note);
     sendJson(response, 200, { ok: Boolean(note), note });
     return true;
   }
@@ -123,6 +137,7 @@ export async function tryHandleNoteProjectConversationRoute({
       sourceLabel: body.sourceLabel ?? null,
       title: body.title ?? null
     });
+    if (result?.note) indexNote(runtime, result.note);
     sendJson(response, 200, result);
     return true;
   }
