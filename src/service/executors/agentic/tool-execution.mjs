@@ -80,7 +80,12 @@ export async function executeAgenticToolCall({
     const { evaluateToolRisk } = await import("../../action_tools/risk_matrix.mjs");
     const risk = evaluateToolRisk(tool, callArgs, toolContext ?? {});
     if (risk.requires_confirmation && runtime?.pendingApprovals?.create) {
-      const deferredToolContext = buildDeferredToolContext({ tool, args: callArgs, task, transcript });
+      // C18 #2c: pass runtime through so install_skill_from_github
+      // approvals can pull the staged SKILL.md preview out of
+      // runtime.skillInstallState.inspect(state_token). Other tools
+      // ignore the new param; this matches the tool_using path's
+      // wiring in confirmation-gate.mjs.
+      const deferredToolContext = buildDeferredToolContext({ tool, args: callArgs, task, transcript, runtime });
       const approval = runtime.pendingApprovals.create({
         sourceType: "agent_tool_call",
         sourceId: task?.task_id ?? call.id ?? call.name,
