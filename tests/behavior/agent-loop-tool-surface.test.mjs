@@ -141,7 +141,9 @@ test("agent tool surface preserves artifact tools when artifact is required", ()
   assert.ok(visible.includes("generate_document"));
   assert.ok(visible.includes("write_file"));
   assert.ok(visible.includes("register_artifact"));
-  assert.ok(visible.includes("verify_file_exists"));
+  // B2-a (b) round-1 codex: verify_file_exists is a verifier, not a
+  // producer. Tasks that need to *verify* an artifact still get it
+  // via the file_read capability, not artifact_generation.
   assert.ok(!visible.includes("launch_app"));
 });
 
