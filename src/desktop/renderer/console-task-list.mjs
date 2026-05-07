@@ -3,6 +3,33 @@ import {
   formatDateTime
 } from "./shared-ui.mjs";
 
+// R-feedback 2026-05-07: voice-recording tasks where transcription
+// failed produced unusable titles — entire raw transcript or fallback
+// text wrapped onto multiple lines. Titles get a single-line trim
+// + a friendly fallback when the recording produced no transcript at all.
+const TASK_TITLE_MAX_CHARS = 60;
+function deriveTaskListTitle(task) {
+  const raw = (typeof task?.user_command === "string" && task.user_command.trim())
+    || task?.intent
+    || "Unnamed";
+  const single = String(raw).replace(/\s+/g, " ").trim();
+  if (!single) return "Unnamed";
+  // Voice-note-shape titles when the transcript is empty / placeholder.
+  // Detect the "[empty transcript]" / "(无转写文本)" / dash-only patterns
+  // the runtime emits and replace with a duration hint when possible.
+  if (/^[-—\s]+$/.test(single) || single.length < 2) {
+    const durationSec = Number(task?.metadata?.recording_duration_sec
+      ?? task?.context_packet?.audio?.duration_sec
+      ?? task?.task_spec?.audio?.duration_sec);
+    if (Number.isFinite(durationSec) && durationSec > 0) {
+      return `录音笔记（${Math.round(durationSec)}秒，未识别到文字）`;
+    }
+    return "录音笔记（未识别到文字）";
+  }
+  if (single.length <= TASK_TITLE_MAX_CHARS) return single;
+  return `${single.slice(0, TASK_TITLE_MAX_CHARS)}…`;
+}
+
 export function isCompositeChildTask(task = {}) {
   return Boolean(task?.parent_task_id) && Number.isInteger(task?.child_index);
 }
@@ -121,7 +148,7 @@ export function renderTaskListItemHtml({ task = {}, indent = 0, isChild = false,
       <button class="task-item ${selected ? "selected" : ""}" data-task-id="${escapeHtml(task.task_id)}" style="text-align:left;${indent ? "margin-left:18px;" : ""}">
         <div class="row">
           <div>
-            <h4>${childPrefix}${escapeHtml(task.user_command ?? task.intent ?? "Unnamed")}${childCountChip}</h4>
+            <h4>${childPrefix}${escapeHtml(deriveTaskListTitle(task))}${childCountChip}</h4>
             <p class="muted">${escapeHtml(task.executor ?? "unknown")} · ${escapeHtml(task.source_type ?? "unknown")}</p>
           </div>
           <span class="chip ${statusClass}">${escapeHtml(task.status)}</span>
