@@ -8,6 +8,7 @@ import os from "node:os";
 import { DESKTOP_SHELL_MANIFEST, IPC_CHANNELS } from "../shared/manifest.mjs";
 import { createPersistentRuntime } from "../../service/core/persistent-runtime.mjs";
 import { createPopupCardManager } from "./popup-card-manager.mjs";
+import { BRAND_AUMID, createBrandIconResolver } from "./brand-icons.mjs";
 import {
   DESKTOP_CONSOLE_ACTOR,
   desktopActorForSender as resolveDesktopActorForSender
@@ -787,6 +788,14 @@ export function createElectronShellRuntime({
 
   const { app, BrowserWindow, Tray, Menu, Notification, globalShortcut, ipcMain, nativeImage, screen, clipboard, session, desktopCapturer, crashReporter, dialog, shell } = electron;
   installDesktopDiagnostics({ app, crashReporter });
+  const brandIcons = createBrandIconResolver({ app, nativeImage });
+  // Windows taskbar groups by AppUserModelID. Without this call our
+  // windows would inherit Electron's default AUMID, which is the
+  // root cause of the "blue electron orb" taskbar/title icon R
+  // reported even after the SVG/HTML brand mark was switched.
+  if (process.platform === "win32" && typeof app.setAppUserModelId === "function") {
+    app.setAppUserModelId(BRAND_AUMID);
+  }
   const windows = new Map();
   const readyWindows = new Set();
   const pendingWindowMessages = new Map();
@@ -1380,7 +1389,7 @@ export function createElectronShellRuntime({
       return { shown: false, reason: "unsupported" };
     }
 
-    const notification = new Notification({
+    const notification = brandIcons.createBrandedNotification(Notification, {
       title: payload.title ?? "LingxY",
       body: payload.body ?? payload.message ?? "",
       silent: false
@@ -1685,7 +1694,7 @@ export function createElectronShellRuntime({
       if (windows.has(windowDef.id)) {
         continue;
       }
-      const browserWindow = new BrowserWindow({
+      const browserWindow = brandIcons.createBrandedBrowserWindow(BrowserWindow, {
         width: windowDef.width,
         height: windowDef.height,
         show: !windowDef.startsHidden,
@@ -2102,7 +2111,7 @@ export function createElectronShellRuntime({
   }
 
   function createTray() {
-    tray = new Tray(buildTrayIcon(0));
+    tray = new Tray(brandIcons.composeTrayIcon({ count: 0, size: 32 }));
     tray.setToolTip(DESKTOP_SHELL_MANIFEST.trayTooltip);
     tray.setContextMenu(Menu.buildFromTemplate([
       {
@@ -2126,33 +2135,10 @@ export function createElectronShellRuntime({
     ]));
   }
 
-  // UCA-069: Generate a tray icon with optional badge number using SVG data URL.
-  function buildTrayIcon(count) {
-    const hasBadge = count > 0;
-    const label = count > 99 ? "99+" : count > 0 ? String(count) : "";
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32">
-      <!-- orb base -->
-      <circle cx="16" cy="16" r="14" fill="url(#base)"/>
-      <defs>
-        <radialGradient id="base" cx="40%" cy="35%">
-          <stop offset="0%" stop-color="#6366f1"/>
-          <stop offset="60%" stop-color="#312e81"/>
-          <stop offset="100%" stop-color="#0f0f1a"/>
-        </radialGradient>
-      </defs>
-      <!-- glass highlight -->
-      <ellipse cx="12" cy="10" rx="5" ry="3" fill="rgba(255,255,255,0.3)" transform="rotate(-20,12,10)"/>
-      ${hasBadge ? `
-      <!-- badge circle -->
-      <circle cx="24" cy="8" r="${label.length > 1 ? 9 : 7}" fill="#22c55e"/>
-      <text x="24" y="${label.length > 1 ? 12 : 12}" text-anchor="middle"
-        font-family="system-ui,sans-serif" font-size="${label.length > 1 ? 7 : 9}"
-        font-weight="bold" fill="white">${label}</text>` : ""}
-    </svg>`;
-    const dataUrl = `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
-    return nativeImage.createFromDataURL(dataUrl);
-  }
-
+  // C18 #B5 round-3: tray icon now goes through brandIcons.composeTrayIcon
+  // (canonical PNG base + optional count badge). The legacy indigo
+  // radial-gradient "orb" was a UCA-069-era placeholder that survived
+  // round-2's SVG-domain refresh — round-3 closes the native domain.
   async function updateTrayBadge() {
     if (!tray) return;
     try {
@@ -2168,7 +2154,7 @@ export function createElectronShellRuntime({
         return Number.isFinite(ms) && ms >= todayMs;
       }).length;
 
-      tray.setImage(buildTrayIcon(completed));
+      tray.setImage(brandIcons.composeTrayIcon({ count: completed, size: 32 }));
       tray.setToolTip(completed > 0
         ? `LingxY · 今日完成 ${completed} 个任务`
         : DESKTOP_SHELL_MANIFEST.trayTooltip);
@@ -2605,7 +2591,8 @@ export function createElectronShellRuntime({
         BrowserWindow,
         screen,
         ipcMain,
-        resolveServiceBaseUrl: () => resolvedServiceBaseUrl
+        resolveServiceBaseUrl: () => resolvedServiceBaseUrl,
+        createBrandedBrowserWindow: brandIcons.createBrandedBrowserWindow
       });
       popupCardManager.registerIpcHandlers({
         onResolve: async (card) => {
@@ -2681,7 +2668,7 @@ export function createElectronShellRuntime({
         const baseUrl = resolvedServiceBaseUrl ?? "";
         const url = pathToFileURL(path.join(RENDERER_DIR, "preview-window.html")).toString()
           + `?serviceBaseUrl=${encodeURIComponent(baseUrl)}`;
-        previewWindow = new BrowserWindow({
+        previewWindow = brandIcons.createBrandedBrowserWindow(BrowserWindow, {
           ...bounds,
           show: false,
           frame: false,
@@ -2861,7 +2848,7 @@ export function createElectronShellRuntime({
 
       function showLinkBrowserWindow(url) {
         const initialBounds = readLinkBrowserBounds();
-        const win = new BrowserWindow({
+        const win = brandIcons.createBrandedBrowserWindow(BrowserWindow, {
           ...initialBounds,
           show: false,
           frame: true,

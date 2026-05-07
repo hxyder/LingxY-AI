@@ -42,7 +42,15 @@ function estimateCardHeight(payload) {
   return Math.min(CARD_HEIGHT_MAX, Math.max(CARD_HEIGHT_MIN, estimated));
 }
 
-export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolveServiceBaseUrl }) {
+export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolveServiceBaseUrl, createBrandedBrowserWindow }) {
+  // Round-3 brand-icon wiring: caller passes
+  //   createBrandedBrowserWindow(BrowserWindow, options) → BrowserWindow
+  // so popup cards inherit the canonical taskbar/title icon. The
+  // verifier rejects raw `new BrowserWindow(` here. Default falls
+  // back to bare `new BrowserWindow` for tests that don't wire icons.
+  const newBrandedWindow = typeof createBrandedBrowserWindow === "function"
+    ? (options) => createBrandedBrowserWindow(BrowserWindow, options)
+    : (options) => new BrowserWindow(options);
   const cards = new Map(); // cardId -> { window, kind, pinned, payload, resolve }
   const pendingInit = new Map();
 
@@ -124,7 +132,7 @@ export function createPopupCardManager({ BrowserWindow, screen, ipcMain, resolve
     }
     const { x, y } = computeStackPosition(workArea, yCursor);
 
-    const window = new BrowserWindow({
+    const window = newBrandedWindow({
       width: CARD_WIDTH,
       height,
       x,
