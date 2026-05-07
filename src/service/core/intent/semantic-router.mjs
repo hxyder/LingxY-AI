@@ -35,6 +35,10 @@ import crypto from "node:crypto";
 import { SIGNAL_KINDS } from "./signals/index.mjs";
 import { hasTimePhrase } from "./trigger.mjs";
 import { applyStableQAOverride } from "./stable-qa-override.mjs";
+import {
+  runRouteVerifier,
+  DEFAULT_VERIFIER_MODE
+} from "./route-verifier.mjs";
 
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_CACHE_TTL_MS = 300_000; // 5 minutes
@@ -314,6 +318,10 @@ export function createSemanticRouter(opts = {}) {
     : () => process.env.SEMANTIC_ROUTER_DISABLED !== "1";
   const now = typeof opts.now === "function" ? opts.now : () => Date.now();
   const cache = opts.cache instanceof Map ? opts.cache : new Map();
+  // C18 #C': optional async judge invoker. When absent, the verifier
+  // logs unavailable status but never throws. Caller (the default
+  // SR runner below) wires this to the router_judge provider.
+  const invokeJudge = typeof opts.invokeJudge === "function" ? opts.invokeJudge : null;
   const envTimeoutMs = Number(process.env.SEMANTIC_ROUTER_TIMEOUT_MS ?? "");
   const timeoutMs = Number.isFinite(opts.timeoutMs)
     ? opts.timeoutMs
@@ -396,8 +404,43 @@ export function createSemanticRouter(opts = {}) {
     // corpus regression: A.dependency_inversion / A.indexing /
     // F.par_b were stable QA but SR routed them to web_policy=
     // required, leading to wasted web_search round-trips.
+    //
+    // C18 #C' (codex round-1) — this regex-based override is
+    // scheduled for replacement by `route-verifier.mjs` (a
+    // structured router_judge LLM call). For the first integration
+    // round, the verifier runs in *shadow* mode alongside the
+    // existing override so we can compare verdicts on the 109
+    // corpus before deleting the regex layer. Once the diff stays
+    // green, the override is removed and verifier flips to enforce.
     const override = applyStableQAOverride({ text, decision, signals });
     const finalDecision = override.applied ? override.decision : decision;
+
+    // Shadow-mode verifier hook. Caller can pass `invokeJudge` (an
+    // async function that calls a cheap LLM and returns the JSON
+    // payload). When absent, the verifier records a `judge_status:
+    // unavailable` row but never throws. The result is attached to
+    // the rejection-typed `verifier_shadow` field on the decision
+    // for downstream telemetry; we never let the verifier change
+    // the decision in this round.
+    const verifierMode = process.env.LINGXY_ROUTE_VERIFIER_MODE
+      ?? DEFAULT_VERIFIER_MODE;
+    let verifierResult = null;
+    if (verifierMode !== "off") {
+      try {
+        verifierResult = await runRouteVerifier({
+          text,
+          decision: finalDecision,
+          signals,
+          invokeJudge,
+          mode: verifierMode === "enforce" ? "shadow" : verifierMode
+          // ^ even if env says "enforce", we keep shadow until the
+          //   round-2 corpus run validates the diff. Hard-coded
+          //   stop-down until codex C' round-2 review.
+        });
+      } catch (verifierErr) {
+        verifierResult = { judge_status: "unavailable", reason: `verifier_threw: ${verifierErr?.message ?? verifierErr}`, applied: false };
+      }
+    }
 
     const conflict = detectHardFactConflict(finalDecision, signals);
     if (conflict) {
@@ -405,7 +448,19 @@ export function createSemanticRouter(opts = {}) {
     }
 
     cache.set(cacheKey, { decision: finalDecision, ts: now() });
-    return { kind: "decision", decision: finalDecision, source: override.applied ? "provider+stable_qa_override" : "provider" };
+    return {
+      kind: "decision",
+      decision: finalDecision,
+      source: override.applied ? "provider+stable_qa_override" : "provider",
+      verifier_shadow: verifierResult
+        ? {
+            mode: verifierResult.mode ?? null,
+            judge_status: verifierResult.judge_status ?? null,
+            diff: verifierResult.diff ?? null,
+            reason: verifierResult.reason ?? null
+          }
+        : null
+    };
   }
 
   return {
@@ -490,7 +545,43 @@ export async function resolveSemanticDecision(input) {
     return reject("exception", `adapter build failed: ${err?.message ?? String(err)}`);
   }
 
-  const router = createSemanticRouter({ adapter, cache: _processCache });
+  // C18 #C' shadow-mode wiring: build an `invokeJudge` callable
+  // backed by the `router_judge` task route. The factory returns
+  // null when no provider is available (env-only deployments, no
+  // routing config) — the verifier records `unavailable` and the
+  // SR proceeds with its original decision unchanged.
+  let invokeJudge = null;
+  try {
+    const { resolveProviderForTask: resolveJudgeProvider } = await import("../../executors/shared/provider-resolver.mjs");
+    const judgeResolved = resolveJudgeProvider("router_judge");
+    if (judgeResolved && !UNSUPPORTED_FOR_SEMANTIC_ROUTER.has(judgeResolved.kind)) {
+      const { createProviderAdapter: buildJudgeAdapter } = await import("../../executors/agentic/provider-adapter.mjs");
+      const judgeAdapter = buildJudgeAdapter(judgeResolved);
+      invokeJudge = async (prompt) => {
+        const raw = await judgeAdapter.generate({
+          messages: [
+            { role: "system", content: "You are LingxY's IntentRoute Verifier. Output JSON only." },
+            { role: "user", content: prompt }
+          ],
+          maxTokens: 256
+        });
+        const text = typeof raw?.text === "string"
+          ? raw.text
+          : Array.isArray(raw?.content)
+            ? raw.content.map((p) => p?.text ?? "").join("")
+            : "";
+        // Strip code fences if the judge wrapped JSON in ```json … ```
+        const stripped = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "");
+        return JSON.parse(stripped);
+      };
+    }
+  } catch {
+    // Best-effort: judge unavailable just means shadow log captures
+    // judge_status=unavailable. SR continues with its own decision.
+    invokeJudge = null;
+  }
+
+  const router = createSemanticRouter({ adapter, cache: _processCache, invokeJudge });
   return router.resolveSemanticDecision(input);
 }
 
@@ -548,7 +639,16 @@ function buildMessages({ text, contextPacket, signals }) {
     "- `immediate` (default): execute now. Use this whenever the request can be acted on with the available context, even if the text mentions a time as DATA (event start time, meeting time, reminder datetime that the tool itself accepts). Example: \"在日历里新建一个时间在明天下午1点的任务\" — create the event NOW; the time is an argument, not a defer.",
     "- `schedule`: the user wants the AI to EXECUTE LATER, after a delay or at an absolute future time. Set `schedule_at` to an ISO8601 timestamp in the user's local timezone (use the current local time provided in the user turn) and set `residual_command` to a self-contained instruction that, when handed back later, fully captures the user's intent (strip the time phrase, keep the rest coherent). Example: \"5 分钟后发美股汇总到 x@y.com\" → schedule_at = now+5min, residual = \"发美股汇总到 x@y.com\".",
     "- `needs_clarification`: a required field is missing AND cannot be inferred from context. Set `clarification_question` to ONE short question in the user's language. Use this sparingly — prefer `immediate` if the agent loop can proceed with sensible defaults.",
-    "Prefer `immediate` when in doubt. Multi-clause commands with a time argument almost always mean `immediate`."
+    "Prefer `immediate` when in doubt. Multi-clause commands with a time argument almost always mean `immediate`.",
+    "",
+    "**Calibration examples — stable QA vs freshness-bearing requests**",
+    "These are reference points to anchor your `web_policy` / `source_mode` / `needs_current_information` calls; they are NOT a topic checklist. Reason about each user request from first principles using the structural signals and ask: does the answer depend on facts that change with time? If no, it's stable.",
+    "  - \"什么是 RAG\" / \"What is RAG?\" → stable concept. web_policy=forbidden, source_mode=no_external, needs_current_information=false.",
+    "  - \"TypeScript 5.5 怎么用 inferred predicate\" → stable language feature. forbidden / no_external. (Version number alone is NOT freshness — it identifies the spec.)",
+    "  - \"如何报税\" / \"How do I file taxes\" → policy/process domain that changes year-to-year. required / multi_source_research.",
+    "  - \"解释一下 NVDA 今日股价\" → 今日 + price = freshness-bearing. required / single_lookup.",
+    "  - \"Bun 当前版本号\" → 当前 + 版本号 = freshness-bearing. required / single_lookup.",
+    "  - \"comparison: Vue 3 vs React 18\" → stable feature comparison. forbidden / no_external. (Adding \"latest\" or \"current\" would flip it.)"
   ].join("\n");
 
   // Strip out fields we don't want to feed the model. ctx.text and url

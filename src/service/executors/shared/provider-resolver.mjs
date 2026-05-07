@@ -261,9 +261,20 @@ export function resolveProviderForTask(taskType, env = process.env, options = {}
   // configured a routing model, inherit the active chat model. This keeps
   // first-run setup simple while still allowing Settings -> Routing to pin a
   // cheap/fast router model later.
-  const inheritedRoute = (taskType === "router" && !route?.providerId)
-    ? (routing.chat ?? null)
-    : (route ?? routing.chat ?? null);
+  let inheritedRoute;
+  if (taskType === "router_judge" && !route?.providerId) {
+    // C18 #C' route_judge fallback chain:
+    //   routing.router_judge (explicit) → routing.router → routing.chat
+    // Codex round-1 noted judge should ideally use a *different*
+    // provider family from SR (uncorrelated errors); the shadow run
+    // will surface whether same-provider correlation is a real problem
+    // before we make the cross-family requirement mandatory.
+    inheritedRoute = routing.router ?? routing.chat ?? null;
+  } else if (taskType === "router" && !route?.providerId) {
+    inheritedRoute = routing.chat ?? null;
+  } else {
+    inheritedRoute = route ?? routing.chat ?? null;
+  }
   const baseRoute = inheritedRoute;
   if (customProviders.length > 0) {
     // for vision tasks, prefer providers that support vision
