@@ -39,14 +39,18 @@ def main():
         pngs.append(resized)
 
     # Single .ico with all sizes — electron-builder picks the best for
-    # the .exe, NSIS installer, and shortcut.
+    # the .exe, NSIS installer, and shortcut. PIL ICO save must be
+    # called on the LARGEST image and sizes= downscales (it cannot
+    # upscale), so use the highest resolution as the base.
+    ico_sizes = [(s, s) for s in PNG_SIZES if s <= 256]
     ico_path = ICON_DIR / "lingxy.ico"
-    pngs[0].save(
+    base_for_ico = pngs[PNG_SIZES.index(max(s for s in PNG_SIZES if s <= 256))]
+    base_for_ico.save(
         ico_path,
         format="ICO",
-        sizes=[(s, s) for s in PNG_SIZES if s <= 256],  # ICO format max 256
+        sizes=ico_sizes,
     )
-    print(f"  wrote {ico_path.relative_to(ROOT)} (multi-size)")
+    print(f"  wrote {ico_path.relative_to(ROOT)} (sizes={ico_sizes})")
 
     # Office add-in ribbon icons.
     office_dir = ROOT / "office_addin" / "shared"

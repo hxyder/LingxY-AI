@@ -30,14 +30,17 @@ const forbidden = [
   "rgba(21,94,117", "rgba(21, 94, 117"
 ];
 
+// B5 cleanup: previously checked office_addin/shared/icon-{16,32,80}.svg
+// for v3 terracotta accent, but those SVGs were never loaded at runtime
+// (Office manifests point to icon-{16,32,80}.png) and the brand identity
+// is now driven by assets/brand-source/lingxy-icon-source.png. Removed
+// from the verifier; the PNGs themselves are validated structurally by
+// verify-icons (existence) and verify-brand-assets (in-app SVG mark).
 const targets = [
   "browser_ext/popup/styles.css",
   "browser_ext/shadow_ui/floating-chip.js",
   "browser_ext/content_script/selection-cache.js",
-  "office_addin/shared/task_pane.html",
-  "office_addin/shared/icon-16.svg",
-  "office_addin/shared/icon-32.svg",
-  "office_addin/shared/icon-80.svg"
+  "office_addin/shared/task_pane.html"
 ];
 
 for (const rel of targets) {
