@@ -164,16 +164,77 @@ function ids(list) {
 }
 
 // ------------------------------------------------------------------
-// 9. goal === "browser_control" forces expose.
+// 9. required_steps explicitly names open_url.
 // ------------------------------------------------------------------
 {
   const t = task({
     user_command: "any unrelated text",
-    spec: { goal: "browser_control" }
+    spec: { required_steps: ["open_url"] }
   });
   check(
-    "goal=browser_control: shouldExposeOpenUrl=true",
+    "required_steps override: shouldExposeOpenUrl=true",
     shouldExposeOpenUrl(t) === true
+  );
+}
+
+// ------------------------------------------------------------------
+// 9b. Public-sector / international TLDs (codex round-1 regression):
+//     usa.gov / mit.edu / service.gov.uk / 例 example.jp must expose.
+// ------------------------------------------------------------------
+{
+  for (const cmd of [
+    "open usa.gov please",
+    "visit mit.edu",
+    "go to service.gov.uk",
+    "打开 example.jp",
+    "navigate to api.example.co.jp"
+  ]) {
+    const t = task({ user_command: cmd });
+    check(
+      `tld-coverage '${cmd}': shouldExposeOpenUrl=true`,
+      shouldExposeOpenUrl(t) === true
+    );
+  }
+}
+
+// ------------------------------------------------------------------
+// 9c. Source-isolation (codex round-1): background URL bleed must NOT
+//     re-expose open_url. URL in context_packet.text + verb in
+//     user_command should NOT count, because context_packet.text can
+//     carry browser metadata / fetched-page URLs.
+// ------------------------------------------------------------------
+{
+  const t = {
+    user_command: "打开",
+    context_packet: { text: "Background page metadata: https://example.com" }
+  };
+  check(
+    "source-isolation: URL in context.text + verb in user_command does NOT expose",
+    shouldExposeOpenUrl(t) === false
+  );
+}
+
+// ------------------------------------------------------------------
+// 9d. Legit context_packet.url + verb: user is on a page (clipboard /
+//     active-window URL) AND types an open verb → expose. URL came
+//     from a first-class extracted field, not heterogeneous text.
+// ------------------------------------------------------------------
+{
+  const t = {
+    user_command: "打开当前页面看看",
+    context_packet: { url: "https://example.com/article" }
+  };
+  check(
+    "context_packet.url + open verb: shouldExposeOpenUrl=true (legit clipboard path)",
+    shouldExposeOpenUrl(t) === true
+  );
+  const t2 = {
+    user_command: "summarise this",
+    context_packet: { url: "https://example.com/article" }
+  };
+  check(
+    "context_packet.url WITHOUT open verb: still hidden",
+    shouldExposeOpenUrl(t2) === false
   );
 }
 

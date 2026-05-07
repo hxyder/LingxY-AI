@@ -72,29 +72,56 @@ const OPEN_URL_TOOL_ID = "open_url";
 
 const OPEN_URL_VERB_RE = /(打开|访问|进入|跳转|浏览|前往|登录到|登录上)|\bopen\b|\bvisit\b|\bnavigate\b|\bgo\s+to\b|\bload\s+(this\s+page|that\s+page|the\s+url)\b/iu;
 
-const URL_OR_DOMAIN_RE = /(https?:\/\/\S+|\b[a-z0-9-]+\.(com|org|net|io|dev|co|cn|me|app|ai)(?:\/\S*)?\b)/iu;
+// Permissive TLD coverage (codex round-1: original list missed .gov,
+// .edu, .gov.uk, .ac.jp etc.). Match http(s) URLs explicitly, OR any
+// `domain.<2+letters>` with up to one nested suffix (so service.gov.uk
+// and api.example.co.jp work). The trailing /\S* is optional path.
+const URL_OR_DOMAIN_RE = /(?:https?:\/\/\S+)|(?:\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:\.[a-z]{2,})?\b(?:\/\S*)?)/iu;
 
-function commandSourcesFromTask(task) {
+// Live-user-intent sources only. We do NOT join with context_packet.text
+// or background_contexts[] — those carry synthetic URLs and prior page
+// metadata which would otherwise let a background URL + a foreground
+// verb falsely re-expose open_url (codex round-1 regression note).
+function liveUserIntentSources(task) {
   const sources = [];
-  if (typeof task?.user_command === "string") sources.push(task.user_command);
+  if (typeof task?.user_command === "string" && task.user_command.trim()) {
+    sources.push(task.user_command);
+  }
   const cp = task?.context_packet;
-  if (typeof cp?.text === "string") sources.push(cp.text);
-  if (typeof cp?.user_command === "string") sources.push(cp.user_command);
+  if (typeof cp?.user_command === "string" && cp.user_command.trim()) {
+    sources.push(cp.user_command);
+  }
   const spec = task?.task_spec ?? task?.task_spec_initial;
-  if (typeof spec?.user_goal_text === "string") sources.push(spec.user_goal_text);
-  return sources.filter(Boolean).join("\n");
+  if (typeof spec?.user_goal_text === "string" && spec.user_goal_text.trim()) {
+    sources.push(spec.user_goal_text);
+  }
+  return sources;
 }
 
 function userExplicitlyAskedToOpenUrl(task) {
-  const text = commandSourcesFromTask(task);
-  if (!text) return false;
-  return URL_OR_DOMAIN_RE.test(text) && OPEN_URL_VERB_RE.test(text);
+  // URL+verb must co-occur in the *same* source — protects against
+  // background-context URL + live-prompt verb bleed.
+  for (const text of liveUserIntentSources(task)) {
+    if (URL_OR_DOMAIN_RE.test(text) && OPEN_URL_VERB_RE.test(text)) {
+      return true;
+    }
+  }
+  // Legit "open the page I'm currently browsing" path: clipboard or
+  // active-window probe surfaced a URL via context_packet.url AND the
+  // user typed an open-verb in their live command. The URL is a
+  // first-class user-selected target here, not background metadata.
+  const cpUrl = task?.context_packet?.url;
+  if (typeof cpUrl === "string" && cpUrl.trim()) {
+    for (const text of liveUserIntentSources(task)) {
+      if (OPEN_URL_VERB_RE.test(text)) return true;
+    }
+  }
+  return false;
 }
 
 function taskRequiresOpenUrlExplicitly(task) {
   const spec = task?.task_spec ?? task?.task_spec_initial;
   if (!spec) return false;
-  if (spec.goal === "browser_control") return true;
   const requiredTools = spec.success_contract?.required_tool_names;
   if (Array.isArray(requiredTools) && requiredTools.includes(OPEN_URL_TOOL_ID)) {
     return true;
