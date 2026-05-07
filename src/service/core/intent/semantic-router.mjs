@@ -467,11 +467,17 @@ export function createSemanticRouter(opts = {}) {
 
     function summariseVerifier(result) {
       if (!result) return null;
+      // Round-7 (codex round-6 #4): preserve `diagnostics` so the
+      // shadow telemetry surfaces double-bug situations
+      // (inconsistent correction + hard signal). Without this the
+      // operator only sees the primary judge_status and the
+      // diagnostic context is lost on the way out of the SR.
       return {
         mode: result.mode ?? null,
         judge_status: result.judge_status ?? null,
         diff: result.diff ?? null,
-        reason: result.reason ?? null
+        reason: result.reason ?? null,
+        diagnostics: result.diagnostics ?? null
       };
     }
 

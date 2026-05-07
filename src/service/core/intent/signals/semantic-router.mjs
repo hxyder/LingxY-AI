@@ -76,7 +76,17 @@ export function detect(_text, contextPacket = {}) {
       primary_intent: decision.primary_intent ?? null,
       domain: decision.domain ?? null,
       expected_output: decision.expected_output ?? null,
+      // Round-7 (codex round-6 #1): expose BOTH the raw value
+      // (for migration/debugging) and the derived/effective value
+      // EvidencePolicy actually uses. Downstream consumers reading
+      // raw `needs_external_info` would see SR's stale `false`
+      // even after a verifier correction; reading
+      // effective_needs_external_info matches what EvidencePolicy
+      // resolves the route to.
       needs_external_info: decision.needs_external_info === true,
+      effective_needs_external_info: ((decision.needs_current_information === true)
+        || (decision.web_policy === "required")
+        || ["single_lookup", "multi_source_research", "deep_research"].includes(decision.source_mode)),
       needs_current_information: decision.needs_current_information === true,
       needs_user_files: decision.needs_user_files === true,
       needs_tool_use: decision.needs_tool_use === true,
