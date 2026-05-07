@@ -52,15 +52,17 @@ function createStubRegistry({ generateImpl } = {}) {
       parameters: {},
       async execute(args, ctx) {
         if (!generateImpl) {
+          const stubPath = `${ctx?.outputDir ?? "/tmp"}/stub.${args.kind}`;
           return {
             success: true,
             observation: `(stub) generated ${args.kind}`,
             metadata: {
               tool_id: "generate_document",
               kind: args.kind,
-              path: `/tmp/stub.${args.kind}`,
+              path: stubPath,
               artifact_kind: args.kind
-            }
+            },
+            artifact_paths: [stubPath]
           };
         }
         return generateImpl(args, ctx);
@@ -68,18 +70,32 @@ function createStubRegistry({ generateImpl } = {}) {
     }
   ];
   return {
-    list() { return tools; }
+    list() { return tools; },
+    get(toolId) {
+      return tools.find((tool) => tool?.id === toolId) ?? null;
+    },
+    async call(toolId, args, ctx) {
+      const tool = tools.find((t) => t?.id === toolId);
+      if (!tool) throw new Error(`Unknown tool: ${toolId}`);
+      return tool.execute(args, ctx);
+    }
   };
 }
 
-function createStubRuntime({ generateImpl, omitGenerateTool = false } = {}) {
+function createStubRuntime({ generateImpl, omitGenerateTool = false, toolOutputDir = "/tmp/task_workspace" } = {}) {
   const events = [];
   const audit = [];
   const registry = omitGenerateTool
-    ? { list() { return []; } }
+    ? {
+      list() { return []; },
+      get() { return null; },
+      async call() { throw new Error("no tools"); }
+    }
     : createStubRegistry({ generateImpl });
   return {
     actionToolRegistry: registry,
+    toolContext: {},
+    toolOutputDir,
     emitTaskEvent(name, payload) { events.push({ name, payload }); },
     store: {
       appendAuditLog(entry) { audit.push(entry); }
@@ -148,6 +164,48 @@ function makeSuccessResult(finalText, transcript = []) {
         entry?.tool === "generate_document"
         && entry?.recovery === "artifact_required_deterministic"
       )
+  );
+  // codex round-1: the recovered transcript entry MUST carry
+  // artifact_paths so collectArtifactPathsFromTranscript surfaces
+  // the recovered file in the success event, task artifact index,
+  // and Files UI. Also exposed on the artifact_recovery summary
+  // so the executor's terminal artifact_paths can include it.
+  check(
+    "recovery success: transcript entry carries artifact_paths",
+    out.transcript.some((entry) =>
+      entry?.tool === "generate_document"
+      && Array.isArray(entry?.artifact_paths)
+      && entry.artifact_paths.length > 0
+    )
+  );
+  check(
+    "recovery success: artifact_recovery.artifact_paths is non-empty",
+    Array.isArray(out.artifact_recovery?.artifact_paths)
+      && out.artifact_recovery.artifact_paths.length > 0
+  );
+  // codex round-1: outputDir must come from runtime.toolOutputDir,
+  // not from generate_document's Desktop fallback. The stub appends
+  // ctx.outputDir into its synthetic path, so the test workspace
+  // path must appear in the recovered artifact.
+  check(
+    "recovery success: file lands in runtime.toolOutputDir, not Desktop fallback",
+    out.artifact_recovery.artifact_paths.some((p) => p.includes("/tmp/task_workspace"))
+  );
+  // synthetic flag tells downstream code these entries weren't
+  // planner-driven (codex round-1 future-proofing).
+  check(
+    "recovery success: transcript entry tagged synthetic:true",
+    out.transcript.some((entry) =>
+      entry?.tool === "generate_document" && entry?.synthetic === true
+    )
+  );
+  check(
+    "recovery success: kind_default_applied is false when spec has docx",
+    out.artifact_recovery?.kind_default_applied === false
+  );
+  check(
+    "recovery success: raw_kind preserved",
+    out.artifact_recovery?.raw_kind === "docx"
   );
 }
 
@@ -293,31 +351,84 @@ function makeSuccessResult(finalText, transcript = []) {
 }
 
 // ----------------------------------------------------------------------
-// 7. Unknown kind defaults to html (don't fail; produce something).
+// 7. Unsupported rawKind ('markdown') → recovery is SKIPPED with a
+//    single-reason "unsupported_kind:<rawKind>" instead of silently
+//    substituting html. codex round-1: silent substitution would
+//    produce a kind-mismatch shadow downstream that confuses the user.
 // ----------------------------------------------------------------------
 {
   const captured = [];
   const runtime = createStubRuntime({
     generateImpl: async (args) => {
       captured.push(args);
-      return {
-        success: true,
-        observation: "(stub) ok",
-        metadata: {
-          tool_id: "generate_document",
-          kind: args.kind,
-          path: `/tmp/stub.${args.kind}`,
-          artifact_kind: args.kind
-        }
-      };
+      return { success: true, observation: "(stub) ok", metadata: {}, artifact_paths: [] };
     }
   });
   const task = makeArtifactRequiredTask({ kind: "markdown" });
   const result = makeSuccessResult("fallback content");
-  await finaliseWithArtifactContract(result, { runtime, task });
+  const out = await finaliseWithArtifactContract(result, { runtime, task });
   check(
-    "unknown kind 'markdown' defaults to html",
+    "unsupported kind 'markdown': recovery skipped (tool not invoked)",
+    captured.length === 0
+  );
+  check(
+    "unsupported kind 'markdown': status = partial_success",
+    out.status === "partial_success"
+  );
+  check(
+    "unsupported kind 'markdown': reason = unsupported_kind:markdown",
+    out.artifact_recovery?.reason === "unsupported_kind:markdown"
+  );
+}
+
+// ----------------------------------------------------------------------
+// 7b. Empty rawKind → kind defaults to html with kind_default_applied
+//     = true on both the artifact_recovery shape and the event payload.
+//     This separates "user didn't specify" (legitimate default) from
+//     "user specified but unsupported" (handled in test 7).
+// ----------------------------------------------------------------------
+{
+  const captured = [];
+  const runtime = createStubRuntime({
+    generateImpl: async (args) => {
+      captured.push(args);
+      const stubPath = `/tmp/task_workspace/stub.${args.kind}`;
+      return {
+        success: true,
+        observation: "(stub) ok",
+        metadata: { tool_id: "generate_document", kind: args.kind, path: stubPath },
+        artifact_paths: [stubPath]
+      };
+    }
+  });
+  // Empty kind in the spec — common when the planner forgot to set
+  // it but artifact.required is true.
+  const task = {
+    task_id: "task_no_kind",
+    user_command: "make a doc",
+    task_spec: {
+      goal: "generate_document",
+      artifact: { required: true },
+      success_contract: { artifact_created: true, required_policy_groups: ["artifact_generation"] }
+    }
+  };
+  const result = makeSuccessResult("fallback content");
+  const out = await finaliseWithArtifactContract(result, { runtime, task });
+  check(
+    "empty kind: defaults to html (tool called with kind=html)",
     captured.length === 1 && captured[0].kind === "html"
+  );
+  check(
+    "empty kind: kind_default_applied = true on artifact_recovery",
+    out.artifact_recovery?.kind_default_applied === true
+  );
+  check(
+    "empty kind: emitted event payload carries kind_default_applied=true + raw_kind=''",
+    runtime.events.some((e) =>
+      e.name === "artifact_recovery_succeeded"
+      && e.payload?.kind_default_applied === true
+      && e.payload?.raw_kind === ""
+    )
   );
 }
 

@@ -750,7 +750,7 @@ function artifactContractViolations(task, transcript = []) {
 //     during recovery. The verifier blocks adding any side-effect
 //     tool to artifact_generation, so it cannot accidentally land on
 //     this path.
-export async function attemptArtifactRecovery({ runtime, task, result }) {
+export async function attemptArtifactRecovery({ runtime, task, result, transcript = [] }) {
   const registry = runtime?.actionToolRegistry;
   if (!registry || typeof registry.list !== "function") {
     return { ok: false, reason: "no_registry" };
@@ -759,23 +759,42 @@ export async function attemptArtifactRecovery({ runtime, task, result }) {
   if (!finalText) {
     return { ok: false, reason: "no_final_text" };
   }
-  const generateTool = registry.list().find((tool) => tool?.id === "generate_document");
-  if (!generateTool || typeof generateTool.execute !== "function") {
+  const visibleIds = registry.list().map((tool) => tool?.id);
+  if (!visibleIds.includes("generate_document")) {
     return { ok: false, reason: "no_generate_document" };
   }
 
   // Map task_spec.artifact.kind into generate_document.kind. The
-  // schema allows pptx/docx/xlsx/pdf/html only; map the synonyms
-  // (word/excel/ppt) and default to html for any other shape so the
-  // LLM's markdown-ish final text materialises somewhere readable.
+  // schema allows pptx/docx/xlsx/pdf/html only.
+  // codex round-1: silently substituting unsupported rawKind → html
+  // can hide a real contract mismatch (e.g. user asked for markdown
+  // but we delivered html, then the validator catches kind mismatch
+  // and the recovery falls through with a confusing reason). Resolve
+  // up front:
+  //   - rawKind empty → kind = "html" (best-effort default), and
+  //     audit emits kind_default_applied=true.
+  //   - rawKind in supported set or alias → kind = (resolved), no
+  //     default applied.
+  //   - rawKind non-empty but unrecognised → SKIP recovery with a
+  //     single-reason "unsupported_kind:<rawKind>" so the user sees
+  //     the real cause rather than a downstream kind-mismatch shadow.
   const taskSpec = task?.task_spec ?? task?.task_spec_initial ?? {};
   const rawKind = String(taskSpec?.artifact?.kind ?? taskSpec?.contract?.output_contract?.kind ?? "")
     .trim().toLowerCase();
   const kindAliases = { word: "docx", excel: "xlsx", ppt: "pptx", powerpoint: "pptx" };
   const supportedKinds = new Set(["pptx", "docx", "xlsx", "pdf", "html"]);
-  const kind = supportedKinds.has(rawKind)
-    ? rawKind
-    : (kindAliases[rawKind] ?? "html");
+  let kind;
+  let kindDefaultApplied = false;
+  if (rawKind === "") {
+    kind = "html";
+    kindDefaultApplied = true;
+  } else if (supportedKinds.has(rawKind)) {
+    kind = rawKind;
+  } else if (kindAliases[rawKind]) {
+    kind = kindAliases[rawKind];
+  } else {
+    return { ok: false, reason: `unsupported_kind:${rawKind}` };
+  }
 
   const titleSource = String(
     task?.user_command ?? taskSpec?.user_goal_text ?? "Document"
@@ -787,15 +806,35 @@ export async function attemptArtifactRecovery({ runtime, task, result }) {
       ? { title: titleSource, slides: [{ heading: titleSource, body: finalText }] }
       : { title: titleSource, sections: [{ heading: titleSource, body: finalText }] };
 
+  // codex round-1: use registry.call(...) (not raw tool.execute) so
+  // the recovery shares the same context the normal loop uses —
+  // outputDir lands in the active task workspace, the policy guard
+  // runs, and rate-limit counters tick. Without this the recovered
+  // file could land on Desktop instead of next to the task's other
+  // artifacts.
+  const ctx = {
+    ...(runtime.toolContext ?? {}),
+    outputDir: runtime.toolOutputDir,
+    runtime,
+    task,
+    transcript: Array.isArray(transcript) ? transcript.slice() : []
+  };
+
   try {
-    const recovered = await generateTool.execute({ kind, outline }, { runtime, task });
-    if (!recovered?.success) {
+    const recovered = typeof registry.call === "function"
+      ? await registry.call("generate_document", { kind, outline }, ctx)
+      : await registry.list().find((tool) => tool?.id === "generate_document")
+          ?.execute?.({ kind, outline }, ctx);
+    if (!recovered) {
+      return { ok: false, reason: "recovery_failed:no_result" };
+    }
+    if (!recovered.success) {
       return {
         ok: false,
-        reason: `recovery_failed:${recovered?.observation ?? "unknown_error"}`
+        reason: `recovery_failed:${recovered.observation ?? "unknown_error"}`
       };
     }
-    return { ok: true, recovered, kind };
+    return { ok: true, recovered, kind, kindDefaultApplied, rawKind };
   } catch (error) {
     return {
       ok: false,
@@ -818,8 +857,16 @@ export async function finaliseWithArtifactContract(result, { runtime, task } = {
   // called generate_document); the safety floor (POLICY_GROUPS.
   // artifact_generation) prevents this hook from ever reaching for a
   // side-effect tool.
-  const recovery = await attemptArtifactRecovery({ runtime, task, result });
+  const recovery = await attemptArtifactRecovery({ runtime, task, result, transcript });
   if (recovery.ok) {
+    const recoveredArtifactPaths = Array.isArray(recovery.recovered.artifact_paths)
+      ? recovery.recovered.artifact_paths.filter(Boolean)
+      : [];
+    // codex round-1: include artifact_paths so collectArtifactPaths-
+    // FromTranscript surfaces the recovered file in the success
+    // event, the task artifact index, and the Files UI. Without this
+    // the recovered file existed on disk but was invisible to the
+    // rest of the system.
     const recoveryTranscript = [
       ...transcript,
       {
@@ -828,20 +875,23 @@ export async function finaliseWithArtifactContract(result, { runtime, task } = {
         success: true,
         observation: recovery.recovered.observation,
         metadata: recovery.recovered.metadata,
-        recovery: "artifact_required_deterministic"
+        artifact_paths: recoveredArtifactPaths,
+        recovery: "artifact_required_deterministic",
+        synthetic: true
       }
     ];
     const remainingViolations = artifactContractViolations(task, recoveryTranscript);
     if (remainingViolations.length === 0) {
-      runtime?.emitTaskEvent?.("artifact_recovery_succeeded", {
+      const recoveryEventPayload = {
         kind: recovery.kind,
-        path: recovery.recovered.metadata?.path ?? null
-      });
+        path: recovery.recovered.metadata?.path ?? null,
+        artifact_paths: recoveredArtifactPaths,
+        kind_default_applied: recovery.kindDefaultApplied === true,
+        raw_kind: recovery.rawKind ?? null
+      };
+      runtime?.emitTaskEvent?.("artifact_recovery_succeeded", recoveryEventPayload);
       if (runtime?.store && task?.task_id) {
-        appendAuditLog(runtime, task, "tool_loop.artifact_recovery_succeeded", {
-          kind: recovery.kind,
-          path: recovery.recovered.metadata?.path ?? null
-        });
+        appendAuditLog(runtime, task, "tool_loop.artifact_recovery_succeeded", recoveryEventPayload);
       }
       return {
         ...result,
@@ -849,7 +899,10 @@ export async function finaliseWithArtifactContract(result, { runtime, task } = {
         artifact_recovery: {
           applied: true,
           source: "deterministic",
-          kind: recovery.kind
+          kind: recovery.kind,
+          artifact_paths: recoveredArtifactPaths,
+          kind_default_applied: recovery.kindDefaultApplied === true,
+          raw_kind: recovery.rawKind ?? null
         }
       };
     }
