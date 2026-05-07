@@ -1,10 +1,20 @@
 # LingxY AI Desktop
 
-LingxY AI is a Windows desktop AI workspace that can understand the window you are working in, choose tools, and complete tasks through your own model providers. The desktop app name is LingxY.
+> A local-first AI workspace for Windows. Reads what's on your screen, calls tools, generates documents, runs schedules, drafts side effects you can approve. Powered by your own model providers and credentials — nothing routes through a LingxY-hosted server.
 
-It is not meant to be just another chat box. The goal is a local-first assistant for everyday knowledge work: reading pages and files, generating documents, launching apps, creating scheduled jobs, drafting emails for approval, and keeping a searchable task history on your machine.
+LingxY AI is a Windows desktop AI workspace that understands the window you are working in, picks tools, and completes tasks through model providers you bring yourself. The packaged app is named **LingxY**.
 
-The project is currently in active pre-1.0 development. It is usable for local development and trials, with the main remaining release work focused on signed packaging, automatic updates, OS keychain-backed secrets, import/zip export polish, and a full Trash management view.
+It is not just another chat box. The goal is an everyday-knowledge-work assistant: reading pages and files, generating documents, launching apps, creating scheduled jobs, drafting emails for approval, and keeping a searchable local task history.
+
+## Why LingxY
+
+- **Local-first data**: prompts, captured context, conversation history, artifacts, and credentials live under `%APPDATA%\UCA\` on your machine. Model calls and connector calls go from your machine straight to the provider you configured.
+- **Bring your own provider**: Anthropic, OpenAI / OpenAI-compatible, DeepSeek, Kimi, xAI, Mistral, Ollama for local models, and code/agent CLIs (Claude Code, Codex, Kimi).
+- **Tools, not just chat**: web search + page fetch, file read/write/glob, document generation (DOCX / XLSX / PPTX / HTML / Mermaid), screenshots, clipboard, app launcher, scheduler, email/calendar/drive connectors, and MCP-server / plugin / Skill extension paths.
+- **Side effects ask first**: sending email, mutating connected accounts, installing MCP packages, or running approved local scripts run through approval cards. AI drafts; you confirm.
+- **Approachable extension**: Skills are plain `SKILL.md` folders. MCP servers can install from a sandboxed path with manifest detection and verifier coverage.
+
+The project is in active pre-1.0 development. It is usable for local development and trials. The remaining release work focuses on signed packaging, automatic updates, OS keychain-backed secrets, import/zip export polish, and a full Trash management view.
 
 ## Feature Overview
 
