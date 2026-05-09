@@ -37,6 +37,31 @@ record.
 - Legacy paths are retired only after reachability and replacement behavior are
   verified.
 
+## Mandatory Upgrade PR Protocol
+
+Every program-upgrade PR in this runtime spine starts with an explicit intake.
+The intake is the design stage before code generation and is part of the
+engineering contract, not a runtime rule for every user task that LingxY
+executes.
+
+- Module boundaries: identify the owning runtime layer, cross-layer boundary,
+  and adjacent modules that must remain untouched.
+- Architecture rules file: follow `AGENTS.md`, this spine, and the Electron
+  performance plan before editing runtime code.
+- Upgrade task scope: name the exact PR step, in-scope behavior, out-of-scope
+  behavior, migration shape, and feature flags if any.
+- Forbidden modification areas: record generated files, unrelated product
+  surfaces, old paths, or compatibility layers that must not be modified.
+- Interface contracts: list affected storage schemas, task events, HTTP routes,
+  IPC channels, public module exports, and verifier contracts.
+- Test gate: add or update targeted tests/verifiers before broad wiring and run
+  the relevant commands before marking the PR done.
+- Design-before-generation: inspect existing code and document the intended
+  design shape before broad edits or generated code.
+- Patch check: reject changes that only special-case a symptom; every change
+  must enforce a framework invariant or update the PR plan to explain why the
+  framework shape changed.
+
 ## PR Sequence
 
 | Step | Scope | Status |
@@ -64,6 +89,9 @@ record.
 - Root `AGENTS.md` is present and points contributors to this spine.
 - Electron performance guardrails live at
   `docs/architecture/electron-js-runtime-performance-plan.md`.
+- Mandatory upgrade PR protocol covers module boundaries, architecture rules,
+  upgrade task scope, forbidden modification areas, interface contracts, test gates,
+  design-before-generation, and patch checks.
 - Guardrails reject prompt-only fixes and phrase/task-id special cases.
 - Guardrails forbid heavy work in Electron main process or renderer.
 - Legacy archive/delete policy requires evidence before removal.

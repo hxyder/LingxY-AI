@@ -19,6 +19,11 @@ process or renderer code.
 - Runtime features must expose baseline metrics before broad wiring.
 - Performance fixes must be verifiable by scripts, smoke tests, or captured
   timing thresholds.
+- Every program-upgrade PR must pass the mandatory upgrade PR protocol from
+  `AGENTS.md` and `docs/architecture/agent-runtime-spine.md`: module
+  boundaries, architecture rules file, upgrade task scope, forbidden
+  modification areas, interface contracts, test gate, design-before-generation,
+  and patch check. This is not a runtime requirement for every user task.
 
 ## PR Sequence
 

@@ -21,6 +21,30 @@ Core rules:
 - Treat context, memory, task state, artifacts, tool calls, and observations as
   typed runtime data, not loose prompt text.
 
+Mandatory upgrade PR intake protocol:
+
+Before upgrading runtime, memory, conversation, artifact, Electron, desktop, or
+execution-stack code, the implementer must identify and obey these gates. This
+protocol governs code upgrade work only; it is not a rule that LingxY's runtime
+must apply to every user task it executes.
+
+1. Module boundaries: name the owning layer or module, the caller boundary, and
+   which adjacent modules must remain untouched.
+2. Architecture rules file: read and follow this file plus the canonical
+   architecture files listed above.
+3. Task scope: state the current PR/task step, explicit in-scope work, and
+   explicit out-of-scope work.
+4. Forbidden modification areas: list no-touch files, generated outputs,
+   unrelated feature areas, or legacy paths that may not be changed in this PR.
+5. Interface contracts: identify public APIs, schemas, IPC routes, HTTP routes,
+   task events, storage records, or verifier contracts affected by the change.
+6. Test gate: add or update targeted tests/verifiers before broad wiring and run
+   the relevant verification commands before completion.
+7. Design-before-generation: inspect the existing design and record the intended
+   migration shape before generating or editing broad code.
+8. Patch check: explicitly check whether the change is only a local patch; if it
+   is not enforcing a framework invariant, redesign it before implementation.
+
 Verification expectations:
 
 - Run `npm run check:fast` after JavaScript runtime changes.
@@ -40,4 +64,3 @@ Legacy code policy:
   replacement path is verified.
 - If old code is still reachable, either migrate callers to the new framework
   first or keep the compatibility path behind a named feature flag.
-
