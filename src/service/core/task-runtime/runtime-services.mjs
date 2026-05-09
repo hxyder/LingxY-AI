@@ -6,6 +6,7 @@ import { createPendingApprovalService } from "../../scheduler/pending-approvals.
 import { createRuntimeGraphCheckpointService } from "../graph/runtime-graph-checkpoints.mjs";
 import { createRuntimeGraphReplayService } from "../graph/runtime-graph-replay.mjs";
 import { createArtifactExtractService } from "../artifact-extracts/artifact-extract-service.mjs";
+import { createArtifactExtractBackgroundLane } from "../artifact-extracts/artifact-extract-background-lane.mjs";
 import { createArtifactLineageService } from "../artifact-lineage/artifact-lineage-service.mjs";
 import { createArtifactTransformService } from "../artifact-transforms/artifact-transform-service.mjs";
 import { createSessionCompactionService } from "../session/session-compaction-service.mjs";
@@ -118,6 +119,12 @@ export function ensureRuntimeServices(runtime) {
   if (!runtime.artifactExtracts && hasArtifactExtractStore(runtime.store)) {
     runtime.artifactExtracts = createArtifactExtractService({
       store: runtime.store,
+      metrics: runtime.metrics
+    });
+  }
+  if (!runtime.artifactExtractBackgroundLane && runtime.artifactExtracts) {
+    runtime.artifactExtractBackgroundLane = createArtifactExtractBackgroundLane({
+      artifactExtracts: runtime.artifactExtracts,
       metrics: runtime.metrics
     });
   }

@@ -35,7 +35,7 @@ process or renderer code.
 | PR-03 | Main process blocking verifier | Done |
 | PR-04 | Renderer streaming batching verifier and fixes | Done |
 | PR-05 | Context compiler off hot Electron paths | Done |
-| PR-06 | Artifact extraction background lane | Extract/transform work does not block UI |
+| PR-06 | Artifact extraction background lane | Done |
 | PR-07 | Runtime graph scheduling budget | Graph execution has concurrency and cancellation guards |
 | PR-08 | Desktop GUI perf smoke | Startup and interaction smoke reports remain bounded |
 
@@ -180,8 +180,13 @@ Conversation/session spine status:
 - GX-002 is done: replay/fork checkpoint planning is a service-layer contract
   over durable task events; it does not move graph execution or time-travel work
   into Electron main process or renderer code.
+- PR-06 is done: `artifactExtractBackgroundLane` queues artifact extraction
+  work behind a service-owned background lane with progress events, timeouts,
+  AbortSignal support, and structured failed/partial `ArtifactExtract` records.
+  The worker foundation lives under `src/service/workers/` and imports no
+  Electron main process or renderer code.
 
-Current next step: PR-06, artifact extraction background lane.
+Current next step: PR-07, runtime graph scheduling budget.
 
 ## Sidecar Decision Gate
 

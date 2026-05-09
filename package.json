@@ -199,6 +199,7 @@
     "verify:conversation-session-foundation": "node scripts/verify-conversation-session-foundation.mjs",
     "verify:follow-up-resolver-foundation": "node scripts/verify-follow-up-resolver-foundation.mjs",
     "verify:artifact-extract-foundation": "node scripts/verify-artifact-extract-foundation.mjs",
+    "verify:artifact-extract-background-lane": "node scripts/verify-artifact-extract-background-lane.mjs",
     "verify:artifact-lineage-contracts": "node scripts/verify-artifact-lineage-contracts.mjs",
     "verify:artifact-transform-flows": "node scripts/verify-artifact-transform-flows.mjs",
     "verify:memory-governance": "node scripts/verify-memory-governance.mjs",

@@ -232,13 +232,20 @@ executes.
   `listArtifactExtractsForArtifact`, and `listArtifactExtractsForTask`.
 - `ArtifactExtractService` owns typed extract normalization, schema versioning,
   text bounds, and metrics for already-produced extraction results.
+- `artifactExtractBackgroundLane` owns queued artifact extraction work outside
+  task/executor hot paths, emits progress events, enforces timeout and
+  AbortSignal cancellation, and writes structured partial/failed
+  `ArtifactExtract` records through the service.
 - ContextCompiler reads existing typed extracts and can select summaries, text,
   sections, tables, and metadata without reading artifact files on the task
   creation hot path.
-- This PR does not perform heavy artifact parsing; background extraction lanes
-  and richer file-format extractors remain separate follow-up work.
+- Heavy file-format parsing remains behind the worker foundation; richer
+  extractors can replace the metadata-only worker path without adding work to
+  Electron main, renderer, or executor hot paths.
 - `npm run verify:artifact-extract-foundation` verifies storage, service wiring,
   compiler inclusion, and no blocking extraction in runtime hot paths.
+- `npm run verify:artifact-extract-background-lane` verifies progress, timeout,
+  AbortSignal, structured failure, runtime wiring, and worker boundary rules.
 
 ## AX-002 Acceptance
 
